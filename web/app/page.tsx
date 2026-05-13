@@ -20,7 +20,7 @@ export default function Home() {
   const { state, investigate } = useInvestigation();
   const [input, setInput] = useState("");
   const [tab, setTab] = useState<Tab>("investigate");
-  const [selectedConn, setSelectedConn] = useState("fixture");
+  const [selectedConn, setSelectedConn] = useState("mydb");
   const logEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

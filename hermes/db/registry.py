@@ -20,6 +20,12 @@ REGISTRY_DB = Path(__file__).parent.parent.parent / "data" / "connections.db"
 KEY_FILE    = Path(__file__).parent.parent.parent / "data" / ".hermes_key"
 
 BUILTIN_ID = "fixture"
+POSTGRES_BUILTIN_ID = "mydb"
+
+
+def _postgres_builtin_dsn() -> str:
+    """Read at call time so .env loaded by the API startup is picked up."""
+    return os.getenv("HERMES_DEFAULT_POSTGRES_DSN", "")
 
 
 def _get_fernet() -> Fernet:
@@ -68,7 +74,6 @@ def list_connections() -> list[dict]:
     rows = []
 
     # Always include the built-in fixture
-    from hermes.db.connection import DuckDBConnection
     fixture_path = Path(__file__).parent.parent.parent / "data" / "hermes.duckdb"
     rows.append({
         "id": BUILTIN_ID,
@@ -78,6 +83,17 @@ def list_connections() -> list[dict]:
         "meta": {},
         "builtin": True,
     })
+
+    # Include default Postgres if configured
+    if _postgres_builtin_dsn():
+        rows.append({
+            "id": POSTGRES_BUILTIN_ID,
+            "name": "mydb (default)",
+            "conn_type": "postgres",
+            "dsn_preview": "postgresql://***",
+            "meta": {},
+            "builtin": True,
+        })
 
     with _db() as conn:
         for row in conn.execute("SELECT id, name, conn_type, meta FROM connections ORDER BY rowid"):
@@ -108,6 +124,10 @@ def get_dsn(conn_id: str) -> tuple[str, str]:
     if conn_id == BUILTIN_ID:
         fixture_path = Path(__file__).parent.parent.parent / "data" / "hermes.duckdb"
         return "duckdb", str(fixture_path)
+    if conn_id == POSTGRES_BUILTIN_ID:
+        if not _postgres_builtin_dsn():
+            raise KeyError("Default Postgres connection is not configured (set HERMES_DEFAULT_POSTGRES_DSN)")
+        return "postgres", _postgres_builtin_dsn()
     with _db() as conn:
         row = conn.execute(
             "SELECT conn_type, dsn_enc FROM connections WHERE id = ?", [conn_id]
@@ -118,8 +138,8 @@ def get_dsn(conn_id: str) -> tuple[str, str]:
 
 
 def delete_connection(conn_id: str) -> None:
-    if conn_id == BUILTIN_ID:
-        raise ValueError("Cannot delete the built-in fixture connection")
+    if conn_id in (BUILTIN_ID, POSTGRES_BUILTIN_ID):
+        raise ValueError("Cannot delete a built-in connection")
     with _db() as conn:
         conn.execute("DELETE FROM connections WHERE id = ?", [conn_id])
         conn.commit()

@@ -6,6 +6,13 @@ import os
 from pathlib import Path
 from typing import AsyncGenerator, Optional
 
+# Load .env from the project root (no-op if python-dotenv not installed)
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).parent.parent / ".env")
+except ImportError:
+    pass
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
