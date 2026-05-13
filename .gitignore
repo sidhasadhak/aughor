@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+dist/
+.env
+
+# uv
+.python-version
+
+# Data & secrets
+data/connections.db
+data/.hermes_key
+data/hermes.duckdb
+
+# macOS
+.DS_Store
+
+# Node
+web/node_modules/
+web/.next/
+web/.env.local
+
+# IDEs
+.idea/
+.vscode/

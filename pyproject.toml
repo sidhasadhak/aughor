@@ -1,0 +1,34 @@
+[project]
+name = "hermes"
+version = "0.1.0"
+description = "Autonomous Data Analyst — investigative agent over your warehouse"
+requires-python = ">=3.11"
+dependencies = [
+    "langgraph>=0.2.0",
+    "langchain-core>=0.3.0",
+    "openai>=1.50.0",
+    "instructor>=1.4.0",
+    "duckdb>=1.1.0",
+    "polars>=1.0.0",
+    "scipy>=1.13.0",
+    "numpy>=1.26.0",
+    "sqlglot>=25.0.0",
+    "rich>=13.0.0",
+    "click>=8.1.0",
+    "pydantic>=2.7.0",
+    "python-dotenv>=1.0.0",
+    "fastapi>=0.136.1",
+    "uvicorn>=0.46.0",
+    "cryptography>=48.0.0",
+    "psycopg2-binary>=2.9.12",
+]
+
+[project.scripts]
+hermes = "hermes.cli:cli"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["hermes"]
