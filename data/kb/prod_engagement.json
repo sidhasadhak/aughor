@@ -1,0 +1,406 @@
+[
+  {
+    "id": "prod_dau_mau",
+    "title": "DAU/MAU Ratio (Stickiness)",
+    "intent_tags": [
+      "dau mau",
+      "daily active users monthly active users",
+      "stickiness ratio",
+      "user retention rate",
+      "da/u/ma",
+      "daily engagement",
+      "how sticky are users",
+      "dau to mau ratio",
+      "frequency of use",
+      "what is my stickiness"
+    ],
+    "sql_features": [
+      "aggregation",
+      "window_function",
+      "cte",
+      "coalesce",
+      "nullif"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "ratio",
+    "when_to_use": [
+      "assessing user engagement frequency and product stickiness",
+      "identifying drops in daily engagement before churn spikes",
+      "comparing engagement across user segments or cohorts",
+      "measuring impact of feature launches on daily usage",
+      "benchmarking against industry benchmarks (e.g., gaming >0.4, SaaS >0.2)"
+    ],
+    "related_patterns": [
+      "prod_session_length",
+      "prod_feature_usage_rate",
+      "prod_breadth_of_use"
+    ],
+    "business_definition": "Daily Active Users (DAU) divided by Monthly Active Users (MAU) in the same month, expressed as a ratio (0\u20131). DAU = distinct users with \u22651 event on a given day; MAU = distinct users with \u22651 event in the month. Excludes test accounts, internal users, and null user_id rows.",
+    "metric_nature": {
+      "what_it_measures": "How frequently active users return each day \u2014 a signal of habitual engagement. High ratios indicate users visit multiple times per month; low ratios suggest one-off or infrequent use.",
+      "what_it_does_not_measure": "Depth of engagement (e.g., time spent or features used). A user with 10 one-second sessions counts as highly sticky as a user with 1 10-minute session.",
+      "common_misconception": "A high DAU/MAU does not guarantee retention \u2014 users could be highly frequent but dropping off completely after one week, or churned users could be overrepresented in DAU due to recency bias."
+    },
+    "template": "WITH dau AS (SELECT DATE_TRUNC('day', event_date) AS day, COUNT(DISTINCT user_id) AS dau_count FROM events WHERE event_date BETWEEN {start_date} AND {end_date} GROUP BY 1), mau AS (SELECT DATE_TRUNC('month', event_date) AS month, COUNT(DISTINCT user_id) AS mau_count FROM events WHERE event_date BETWEEN {start_date} AND {end_date} GROUP BY 1) SELECT dau.day, dau.dau_count, mau.mau_count, ROUND(dau.dau_count::decimal / NULLIF(mau.mau_count, 0), 4) AS dau_mau_ratio FROM dau JOIN mau ON DATE_TRUNC('month', dau.day) = mau.month ORDER BY dau.day",
+    "inflation_causes": [
+      {
+        "cause": "Test accounts not filtered",
+        "how_it_inflates": "Internal test accounts (e.g., test_user*, QA_bot) generate many daily events, inflating DAU disproportionately \u2014 a single test user hitting the endpoint 100\u00d7/day can add 5%+ to DAU.",
+        "detection_sql": "SELECT user_id, DATE_TRUNC('day', event_date) AS day, COUNT(*) AS events FROM events WHERE user_id LIKE '%test%' OR user_id LIKE '%qa%' OR user_id IN (SELECT user_id FROM user_attributes WHERE is_internal = TRUE) GROUP BY 1, 2 ORDER BY events DESC LIMIT 50",
+        "fix": "Filter to WHERE user_id NOT IN (SELECT user_id FROM user_attributes WHERE is_internal = TRUE OR is_test_account = TRUE)"
+      },
+      {
+        "cause": "Aggregating by event_id instead of user_id",
+        "how_it_inflates": "If DAU is computed as COUNT(DISTINCT event_id) per day instead of COUNT(DISTINCT user_id), a single user with 100 sessions/day inflates DAU by 100\u00d7 \u2014 effectively counting sessions as users.",
+        "detection_sql": "SELECT COUNT(DISTINCT event_id) AS event_count, COUNT(DISTINCT user_id) AS user_count, ROUND(COUNT(DISTINCT event_id)::decimal / NULLIF(COUNT(DISTINCT user_id), 0), 2) AS events_per_user FROM events WHERE event_date BETWEEN '2024-06-01' AND '2024-06-30'",
+        "fix": "Always use COUNT(DISTINCT user_id), never COUNT(DISTINCT event_id), for DAU/MAU"
+      },
+      {
+        "cause": "Timezone mismatch in daily buckets",
+        "how_it_inflates": "If event timestamps are stored in UTC but bucketed by local business time (e.g., PST), a user active at 01:30 UTC on June 2 may be counted as active on June 1 (PST), while another at 23:30 UTC is counted on June 2 \u2014 artificially splitting one user into two DAU.",
+        "detection_sql": "SELECT DATE_TRUNC('day', event_date AT TIME ZONE 'PST') AS pst_day, COUNT(DISTINCT user_id) AS dau, COUNT(DISTINCT user_id) OVER (PARTITION BY DATE_TRUNC('day', event_date AT TIME ZONE 'PST')) AS daily_users FROM events WHERE event_date >= '2024-06-01' AND event_date < '2024-07-01' GROUP BY 1 ORDER BY 1",
+        "fix": "Standardize all date truncation to a single, consistent timezone (e.g., UTC) or to business-localized time via explicit AT TIME ZONE in the aggregation layer"
+      },
+      {
+        "cause": "Sessionization spill from previous month",
+        "how_it_inflates": "If user sessions cross month boundaries (e.g., session starts June 30 23:50, ends July 1 00:10), and the analytics pipeline assigns the entire session to June 30, that user\u2019s July 1 activity is omitted \u2014 but July 1\u2019s session is still counted as an MAU user on June 30, inflating June\u2019s MAU and deflating the ratio. Conversely, missing July data inflates DAU/MAU.",
+        "detection_sql": "SELECT EXTRACT(MONTH FROM session_start) AS month_start, EXTRACT(MONTH FROM session_end) AS month_end, COUNT(*) AS sessions FROM sessions WHERE session_start >= '2024-05-25' GROUP BY 1, 2 ORDER BY 1, 2",
+        "fix": "Assign sessions to the day of their first activity only, or reassign cross-boundary sessions to the correct day based on first_event_time"
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Excluding sessions < 10 seconds",
+        "how_it_deflates": "Some filters mark sessions <10s as 'bounced' and exclude them from active user counts. This deflates DAU \u2014 especially for utility products (e.g., search, calculator) where a 3-second lookup is a full engagement.",
+        "detection_sql": "SELECT CASE WHEN session_duration_seconds < 10 THEN 'bounced' ELSE 'engaged' END AS session_type, COUNT(DISTINCT user_id) AS dau FROM events WHERE event_date = '2024-06-15' GROUP BY 1 ORDER BY dau DESC",
+        "fix": "Include all sessions with \u22651 tracked event; optionally add session_duration_seconds to the metric definition but exclude filters from DAU counting logic"
+      }
+    ],
+    "diagnostic_questions": [
+      "Did DAU spike while MAU stayed flat \u2014 indicating a marketing campaign drove one-time visitors?",
+      "Is the drop concentrated in a specific cohort or segment (e.g., iOS users, new signups)?",
+      "Did any user ID renaming or de-deduplication logic change in the pipeline?",
+      "Are there timezone differences between source data (e.g., mobile app vs web) causing duplication or loss?",
+      "Did a recent data loss event (e.g., event schema migration, pipeline downtime) omit a critical event type?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "DAU/MAU up, session_length down",
+        "then": "users are visiting more often but each visit is shorter \u2014 likely a feature launch driving quick-check behavior (e.g., mobile app push notifications)"
+      },
+      {
+        "if": "DAU/MAU down, churn_rate up",
+        "then": "users are dropping off more quickly between sessions \u2014 early warning of engagement erosion or product-market-fit issues"
+      },
+      {
+        "if": "DAU/MAU up only in new users, not returning",
+        "then": "acquisition channel worked but retention is broken \u2014 onboarding or first-value experience needs review"
+      },
+      {
+        "if": "DAU/MAU flat but MAU down",
+        "then": "core active users are retreating \u2014 possible churn signal despite stable frequency"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "DAU/MAU drops >10% WoW with DAU down and MAU flat",
+        "and_also": "prod_feature_usage_rate shows no drop in core features",
+        "shared_root_cause": "A spike in bot traffic or crawler activity inflated DAU previously (e.g., via a viral botnet exploiting the API), and now the pipeline added bot-filtering logic \u2014 causing DAU to correct downward while true user MAU remained stable.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('day', event_date) AS day, COUNT(DISTINCT user_id) AS dau, COUNT(DISTINCT CASE WHEN event_name = 'page_view' THEN user_id END) AS real_users FROM events WHERE event_date >= '2024-06-01' GROUP BY 1 ORDER BY day"
+      },
+      {
+        "if_this_metric": "DAU/MAU stable, but prod_dau_mau using session_only users drops >15%",
+        "and_also": "prod_session_length shows average session duration falling",
+        "shared_root_cause": "Mobile app version update removed auto-play video from feed, reducing session depth. Users now open the app more frequently (same DAU/MAU), but sessions end faster \u2014 the metric change reflects engagement quality, not engagement quantity.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', session_start) AS week, COUNT(DISTINCT user_id) AS dau, COUNT(DISTINCT CASE WHEN session_duration_seconds >= 120 THEN user_id END) AS long_sessions FROM sessions WHERE session_start >= '2024-05-01' GROUP BY 1 ORDER BY 1"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Using event_count / unique_user_id per day instead of per-day user aggregation",
+        "why_wrong": "Dividing total events by unique users in the month (e.g., 30 days) produces a distorted average \u2014 a user active 1 day out of 30 inflates DAU/MAU if counted as 1/30 of MAU, not 100%.",
+        "bad_sql": "SELECT COUNT(*)::decimal / COUNT(DISTINCT user_id) AS dau_mau FROM events WHERE event_date BETWEEN '2024-06-01' AND '2024-06-30'",
+        "good_sql": "WITH daily_users AS (SELECT DATE_TRUNC('day', event_date) AS day, COUNT(DISTINCT user_id) AS dau FROM events WHERE event_date BETWEEN '2024-06-01' AND '2024-06-30' GROUP BY 1), monthly_users AS (SELECT COUNT(DISTINCT user_id) AS mau FROM events WHERE event_date BETWEEN '2024-06-01' AND '2024-06-30') SELECT AVG(daily_users.dau)::decimal / monthly_users.mau AS dau_mau_ratio FROM daily_users, monthly_users"
+      },
+      {
+        "pattern": "Counting DAU by session_start only, ignoring follow-up events",
+        "why_wrong": "Sessions with only a session_start event and no subsequent events may be auto-closed bots or failures. Including them inflates DAU with phantom activity.",
+        "bad_sql": "SELECT COUNT(DISTINCT user_id) AS dau FROM sessions WHERE session_start >= CURRENT_DATE - INTERVAL '1 day'",
+        "good_sql": "SELECT COUNT(DISTINCT e.user_id) AS dau FROM events e WHERE e.event_date = CURRENT_DATE - INTERVAL '1 day' AND e.user_id IS NOT NULL AND e.event_name NOT IN ('session_start_failed', 'heartbeat_timeout')"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT DATE_TRUNC('day', event_date) AS day, COUNT(DISTINCT user_id) AS dau, COUNT(DISTINCT CASE WHEN event_date < DATE_TRUNC('month', CURRENT_DATE) THEN user_id END) AS mau FROM events WHERE event_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 month' GROUP BY 1 ORDER BY 1",
+      "intermediate_sql": "WITH dau_daily AS (SELECT DATE_TRUNC('day', event_date) AS day, COUNT(DISTINCT user_id) AS dau FROM events WHERE event_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '2 month' GROUP BY 1), mau_monthly AS (SELECT DATE_TRUNC('month', event_date) AS month, COUNT(DISTINCT user_id) AS mau FROM events WHERE event_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '2 month' GROUP BY 1) SELECT d.day, d.dau, m.mau, ROUND(d.dau::decimal / NULLIF(m.mau, 0), 4) AS ratio FROM dau_daily d JOIN mau_monthly m ON DATE_TRUNC('month', d.day) = m.month ORDER BY d.day",
+      "advanced_sql": "WITH dau_mau_raw AS (\n  -- Grain: one row per day per user active on that day\n  SELECT\n    DATE_TRUNC('day', event_date) AS day,\n    user_id,\n    DATE_TRUNC('month', event_date) AS month\n  FROM events\n  WHERE event_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '6 month'\n),\ndaily_agg AS (\n  SELECT\n    day,\n    COUNT(DISTINCT user_id) AS dau\n  FROM dau_mau_raw\n  GROUP BY day\n),\nmonthly_agg AS (\n  SELECT\n    month,\n    COUNT(DISTINCT user_id) AS mau\n  FROM dau_mau_raw\n  GROUP BY month\n),\ndau_mau_with_mau AS (\n  SELECT\n    d.day,\n    d.dau,\n    m.mau,\n    DATE_TRUNC('month', d.day) AS month\n  FROM daily_agg d\n  JOIN monthly_agg m ON DATE_TRUNC('month', d.day) = m.month\n)\nSELECT\n  day,\n  dau,\n  mau,\n  ROUND(dau::decimal / NULLIF(mau, 0), 4) AS dau_mau_ratio,\n  ROUND(AVG(dau::decimal / NULLIF(mau, 0)) OVER (ORDER BY day ROWS BETWEEN 6 PRECEDING AND CURRENT ROW), 4) AS dau_mau_7d_ma\nFROM dau_mau_with_mau\nORDER BY day"
+    }
+  },
+  {
+    "id": "prod_session_length",
+    "title": "Average Session Length",
+    "intent_tags": [
+      "session duration",
+      "time per session",
+      "engagement time",
+      "session time",
+      "how long do users stay",
+      "avg session length",
+      "time on app",
+      "session length",
+      "how much time spent",
+      "what is my session time"
+    ],
+    "sql_features": [
+      "aggregation",
+      "window_function",
+      "cte",
+      "lead_lag",
+      "coalesce",
+      "nullif"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "assessing depth of user engagement",
+      "tracking impact of content or feature changes on time spent",
+      "benchmarking against engagement goals (e.g., >5 mins for content apps)",
+      "identifying drop-offs during onboarding flows",
+      "evaluating retention correlates (longer sessions often predict lower churn)"
+    ],
+    "related_patterns": [
+      "prod_dau_mau",
+      "prod_feature_usage_rate",
+      "prod_breadth_of_use",
+      "prod_dau_mau"
+    ],
+    "business_definition": "Average duration (in seconds) of user sessions that include at least one meaningful event (e.g., not just session_start or heartbeat). Calculated as SUM(session_duration_seconds) / COUNT(DISTINCT session_id). Excludes sessions <5 seconds and sessions with null or zero duration. Includes only sessions where event_count \u2265 2.",
+    "metric_nature": {
+      "what_it_measures": "How deeply users engage per visit \u2014 a proxy for attention, interest, or task completion. High values indicate immersive experiences.",
+      "what_it_does_not_measure": "Quality of engagement. A user can watch 10 low-value ads (high time) or scroll rapidly through 200 items without reading (low value per time unit).",
+      "common_misconception": "Session length measures product quality \u2014 not necessarily. A buggy app with infinite loading spinners inflates session length artificially."
+    },
+    "template": "SELECT AVG(session_duration_seconds) AS avg_session_length FROM sessions WHERE session_start BETWEEN {start_date} AND {end_date} AND session_duration_seconds >= 5 AND event_count >= 2",
+    "inflation_causes": [
+      {
+        "cause": "Including zero-duration sessions (session_start without follow-up)",
+        "how_it_inflates": "Sessions auto-closed due to timeout (e.g., app crash) have session_duration_seconds = 0 or NULL. Including them in the average pulls the mean down \u2014 but more commonly, *excluding* filters causes the average to be artificially deflated; however, mis-filtering such that *only* zero-duration sessions remain inflates the *apparent* engagement per session when averaged with normal sessions, but the dominant inflation risk is actually *deflation* from excluding valid sessions. The true inflation cause is: including sessions where session_duration_seconds is inferred incorrectly via (last_event_time - first_event_time) when events are delayed and the lag causes negative or zero durations \u2014 which some pipelines replace with 0 instead of capping at a minimum.",
+        "detection_sql": "SELECT COUNT(*) AS total_sessions, COUNT(DISTINCT CASE WHEN session_duration_seconds = 0 OR session_duration_seconds IS NULL THEN session_id END) AS zero_duration_sessions, COUNT(DISTINCT CASE WHEN session_duration_seconds > 0 THEN session_id END) AS valid_sessions FROM sessions WHERE session_start >= '2024-06-01'",
+        "fix": "Filter out sessions with session_duration_seconds <= 0 AND event_count < 2; replace inferred durations with LEAST(LEAST(last_event_time, session_timeout) - first_event_time, max_allowed_duration_seconds) or use session_end timestamp if available"
+      },
+      {
+        "cause": "Multi-device session stitching error",
+        "how_it_inflates": "If a user switches device mid-session (e.g., mobile to desktop), two sessions are created (one from each device), but the session_start time on device B is set to device A\u2019s session_end \u2014 inflating session_duration_seconds by hours or days.",
+        "detection_sql": "SELECT session_id, user_id, device, session_start, session_end, EXTRACT(EPOCH FROM (session_end - session_start)) AS duration_seconds FROM sessions WHERE session_start >= '2024-06-01' AND EXTRACT(EPOCH FROM (session_end - session_start)) > 3600 ORDER BY duration_seconds DESC LIMIT 20",
+        "fix": "Use a sessionization window (e.g., 30 minutes of inactivity) and avoid stitching across devices \u2014 or treat cross-device sessions as separate and cap max duration per session"
+      },
+      {
+        "cause": "Background app time not excluded (mobile background sessions)",
+        "how_it_inflates": "Mobile apps report session_duration_seconds from app foreground start to background *or* cold kill, but background time (e.g., app paused while user reads email) inflates duration without user interaction.",
+        "detection_sql": "SELECT event_name, COUNT(*) AS events, COUNT(DISTINCT session_id) AS sessions FROM events WHERE session_start >= '2024-06-01' GROUP BY 1 ORDER BY events DESC",
+        "fix": "Calculate session_duration_seconds as SUM(DATEDIFF(seconds, event_time, next_event_time)) OVER (PARTITION BY session_id) using lead_lag, excluding idle gaps > 30 seconds"
+      },
+      {
+        "cause": "Using wall-clock duration instead of active-event duration",
+        "how_it_inflates": "If session_end = last_event_time + 10 minutes (fixed timeout), users with many long idle periods appear to have very long sessions \u2014 but they were not actively engaged.",
+        "detection_sql": "SELECT session_id, session_end - session_start AS wall_duration, COUNT(*) FILTER (WHERE event_type IN ('click', 'view', 'search')) AS active_events FROM sessions s JOIN events e ON s.session_id = e.session_id WHERE s.session_start >= '2024-06-01' GROUP BY 1 HAVING wall_duration > INTERVAL '10 minutes' ORDER BY wall_duration DESC LIMIT 10",
+        "fix": "Aggregate only durations between consecutive events (with lead_lag) and sum; exclude idle gaps > 30 seconds"
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Filtering out all sessions with < 2 events",
+        "how_it_deflates": "Some products have valid single-event sessions (e.g., one-click purchase, instant lookup). Filtering them out underestimates average engagement \u2014 especially after introducing one-step flows or AI chat completions.",
+        "detection_sql": "SELECT CASE WHEN event_count = 1 THEN 'single_event' ELSE 'multi_event' END AS session_type, COUNT(*) AS sessions, AVG(session_duration_seconds) AS avg_duration FROM sessions WHERE session_start >= '2024-06-01' GROUP BY 1",
+        "fix": "Use session_duration_seconds \u2265 0 AND (event_count \u2265 2 OR event_name IN ('purchase', 'search', 'quick_reply')) to preserve one-step sessions"
+      }
+    ],
+    "diagnostic_questions": [
+      "Did session length drop for all users, or only in specific segments (e.g., iOS, new signups)?",
+      "Is the change in session length correlated with a drop in conversion rate?",
+      "Did any event schema change (e.g., session_end time moved from server-side to client-side)?",
+      "Are sessions from web and mobile being measured with the same logic?",
+      "Did a recent cache-clearing or login-reset event cause users to re-open sessions prematurely?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "session_length down, feature_usage_rate down",
+        "then": "core content is less engaging \u2014 check for content quality issues, layout changes, or algorithmic filtering (e.g., less recommended items shown)"
+      },
+      {
+        "if": "session_length up, churn_rate down",
+        "then": "deeper engagement is sticky \u2014 likely caused by a successful onboarding or feature enhancement"
+      },
+      {
+        "if": "session_length flat, DAU/MAU up",
+        "then": "more users are visiting, but engagement per visit unchanged \u2014 likely acquisition growth, not product improvement"
+      },
+      {
+        "if": "session_length up in one segment only",
+        "then": "a localized feature test (e.g., video autoplay for mobile) improved that cohort's depth without affecting others"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Session length increases >15% WoW with session_count flat",
+        "and_also": "prod_dau_mau is stable and prod_feature_usage_rate increases",
+        "shared_root_cause": "A new feature (e.g., interactive tutorial, embedded video) increased time spent *per* session without changing visit frequency \u2014 an incremental quality boost, not a traffic shift.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', event_date) AS week, COUNT(DISTINCT session_id) AS sessions, SUM(session_duration_seconds) / COUNT(DISTINCT session_id) AS avg_duration, COUNT(DISTINCT CASE WHEN event_name = 'video_started' THEN session_id END) AS video_sessions FROM events WHERE event_date >= '2024-06-01' GROUP BY 1 ORDER BY 1"
+      },
+      {
+        "if_this_metric": "Session length down with prod_dau_mau up",
+        "and_also": "prod_feature_usage_rate shows fewer features used per session",
+        "shared_root_cause": "New traffic source (e.g., paid ad campaign targeting broad keywords) brought low-intent users who open the app and leave quickly \u2014 increasing DAU but reducing depth.",
+        "diagnostic_sql": "SELECT attribution_source, COUNT(DISTINCT session_id) AS sessions, AVG(session_duration_seconds) AS avg_duration, COUNT(DISTINCT CASE WHEN event_name IN ('purchase', 'share') THEN session_id END) / COUNT(DISTINCT session_id) AS high_value_rate FROM sessions s JOIN events e ON s.session_id = e.session_id GROUP BY 1 ORDER BY 2 DESC"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Using MAX(session_end) - MIN(session_start) for the entire session group",
+        "why_wrong": "If a user has multiple sessions in one day (e.g., morning and evening), SUM(MAX - MIN) inflates duration by merging non-contiguous sessions into one pseudo-session.",
+        "bad_sql": "SELECT (MAX(session_end) - MIN(session_start)) / COUNT(*) AS avg_session_length FROM sessions WHERE session_start >= '2024-06-01'",
+        "good_sql": "SELECT AVG(session_duration_seconds) FROM sessions WHERE session_start >= '2024-06-01' AND session_duration_seconds > 0"
+      },
+      {
+        "pattern": "Averaging unfiltered raw durations from backend logs",
+        "why_wrong": "Backend logs often include test requests, health checks, and server-to-server pings \u2014 all with 0-duration or negative durations that distort averages.",
+        "bad_sql": "SELECT AVG(session_duration_seconds) FROM raw_sessions_log",
+        "good_sql": "SELECT AVG(session_duration_seconds) FROM sessions WHERE session_start >= '2024-06-01' AND source_type IN ('web', 'mobile') AND session_duration_seconds BETWEEN 5 AND 7200"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT AVG(session_duration_seconds) AS avg_session_length FROM sessions WHERE session_start BETWEEN '2024-06-01' AND '2024-06-30' AND session_duration_seconds >= 5",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', session_start) AS month, device, AVG(session_duration_seconds) AS avg_duration, COUNT(DISTINCT session_id) AS sessions FROM sessions WHERE session_start >= '2024-06-01' AND session_duration_seconds >= 5 GROUP BY 1, 2 ORDER BY 1, 2",
+      "advanced_sql": "WITH active_durations AS (\n  -- Grain: one row per session. Active time = sum of time between consecutive events, capped 30s gaps.\n  SELECT\n    session_id,\n    user_id,\n    session_start,\n    session_end,\n    session_duration_seconds,\n    event_count\n  FROM sessions\n  WHERE session_start >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '2 month'\n),\nfiltered_sessions AS (\n  SELECT * FROM active_durations WHERE session_duration_seconds >= 5 AND event_count >= 2\n)\nSELECT\n  DATE_TRUNC('month', session_start) AS month,\n  ROUND(AVG(session_duration_seconds), 2) AS avg_session_length,\n  ROUND(AVG(session_duration_seconds) FILTER (WHERE device = 'mobile'), 2) AS mobile_avg,\n  ROUND(AVG(session_duration_seconds) FILTER (WHERE device = 'web'), 2) AS web_avg,\n  COUNT(DISTINCT session_id) AS sessions\nFROM filtered_sessions\nGROUP BY 1\nORDER BY 1"
+    }
+  },
+  {
+    "id": "prod_feature_usage_rate",
+    "title": "Feature Usage Rate",
+    "intent_tags": [
+      "feature adoption",
+      "feature usage",
+      "feature penetration",
+      "feature adoption rate",
+      "what % use feature X",
+      "feature engagement",
+      "how many use new features",
+      "product usage",
+      "feature adoption",
+      "what features do users use"
+    ],
+    "sql_features": [
+      "aggregation",
+      "cte",
+      "conditional_count",
+      "coalesce",
+      "nullif"
+    ],
+    "difficulty": "beginner",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "tracking rollout success of new features",
+      "identifying underused features for deprecation or redesign",
+      "benchmarking against adoption goals (e.g., >50% of active users in 30 days)",
+      "measuring impact of in-app guidance or onboarding flows",
+      "segmenting users by feature adoption for targeted messaging"
+    ],
+    "related_patterns": [
+      "prod_session_length",
+      "prod_breadth_of_use",
+      "prod_dau_mau"
+    ],
+    "business_definition": "Percentage of active users in a period who have triggered at least one event associated with a specific feature, defined as feature_event_name IN ('feature_X_triggered', 'feature_X_viewed', 'feature_X_used'). Computed as COUNT(DISTINCT feature_users) / COUNT(DISTINCT total_active_users). Excludes test users and self-events from feature counts.",
+    "metric_nature": {
+      "what_it_measures": "Adoption breadth \u2014 how many users engage with a given feature, regardless of frequency or depth. High rates indicate discovery and accessibility; low rates suggest friction or poor signaling.",
+      "what_it_does_not_measure": "Feature effectiveness. Users can trigger 'feature_used' events without completing the intended action (e.g., aborting mid-flow).",
+      "common_misconception": "High feature usage rate guarantees business impact \u2014 but usage may be superficial (e.g., accidentally tapped buttons) or driven by bug-related spikes."
+    },
+    "template": "WITH active_users AS (SELECT DISTINCT user_id FROM events WHERE event_date BETWEEN {start_date} AND {end_date}), feature_users AS (SELECT DISTINCT user_id FROM events WHERE feature_event_name = {feature} AND event_date BETWEEN {start_date} AND {end_date}) SELECT COUNT(DISTINCT feature_users.user_id) * 1.0 / NULLIF(COUNT(DISTINCT active_users.user_id), 0) AS feature_usage_rate FROM active_users LEFT JOIN feature_users USING (user_id)",
+    "inflation_causes": [
+      {
+        "cause": "Counting feature events that are not actual feature usage (e.g., system-generated or retry events)",
+        "how_it_inflates": "If a feature emits repeated 'retry' or 'error_retry' events for one user action, one user is counted multiple times \u2014 but since we use COUNT(DISTINCT user_id), this inflates only if the feature is *not* deduplicated. More commonly: counting *all* feature_event_name values as the target feature instead of a specific event (e.g., 'feature_X_triggered', 'feature_X_viewed', 'feature_X_aborted' all counted as usage).",
+        "detection_sql": "SELECT feature_event_name, COUNT(DISTINCT user_id) AS users, COUNT(*) AS events FROM events WHERE event_date >= '2024-06-01' AND feature_event_name LIKE 'feature_X%' GROUP BY 1 ORDER BY 2 DESC",
+        "fix": "Use only the primary 'triggered' or 'completed' event for usage counts; exclude 'viewed', 'aborted', 'error' variants unless they're explicitly business-significant"
+      },
+      {
+        "cause": "Counting internal users (engineers, QA) as feature users",
+        "how_it_inflates": "Engineers testing the feature in staging environment trigger thousands of events \u2014 a few test accounts can inflate usage rate from 10% to 15%+ in a 10k-user population.",
+        "detection_sql": "SELECT user_id, COUNT(DISTINCT feature_event_name) AS features_used, COUNT(*) AS events FROM events WHERE feature_event_name = 'feature_X_triggered' GROUP BY 1 ORDER BY 3 DESC LIMIT 50",
+        "fix": "Join to user_attributes WHERE is_internal = FALSE OR is_test_account = FALSE in both active_users and feature_users"
+      },
+      {
+        "cause": "Using session_id as proxy for unique feature usage (e.g., feature_used_count / sessions)",
+        "how_it_inflates": "One user with 20 sessions triggers the feature in each session \u2014 counted as 20 uses, but if we count *users*, it should be 1. Using event counts inflates the rate when users visit frequently.",
+        "detection_sql": "SELECT user_id, COUNT(DISTINCT feature_event_name) AS features_used, COUNT(*) AS feature_events FROM events WHERE feature_event_name = 'feature_X_triggered' GROUP BY 1 HAVING COUNT(*) > COUNT(DISTINCT feature_event_name) ORDER BY 3 DESC LIMIT 10",
+        "fix": "Always use COUNT(DISTINCT user_id) in numerator, not COUNT(*), for adoption-style rates"
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Missing event for edge-case feature interactions",
+        "how_it_deflates": "A feature has optional secondary usage (e.g., 'export to CSV' after 'view report') but only 'view' events are tracked. Users who skip view and go straight to export are not counted as users.",
+        "detection_sql": "SELECT event_name, COUNT(*) AS events FROM events WHERE feature_event_name = 'feature_X_triggered' GROUP BY 1 ORDER BY 2 DESC",
+        "fix": "Define feature usage as any event in a set of business-significant events (e.g., 'view_report', 'export_csv', 'share_report')"
+      }
+    ],
+    "diagnostic_questions": [
+      "Did the feature usage rate jump or drop immediately after a release, or gradually over time?",
+      "Is the usage concentrated in one cohort (e.g., early adopters, power users)?",
+      "Did the event name change (e.g., 'feature_x_triggered' \u2192 'feature_X_used') during tracking migration?",
+      "Are feature events filtered by device or OS version, excluding certain users?",
+      "Did any consent or privacy change (e.g., CCPA opt-out) suppress event tracking?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "feature_usage_rate up, session_length up",
+        "then": "users are engaging deeper with the feature \u2014 likely indicating real utility, not just surface-level clicks"
+      },
+      {
+        "if": "feature_usage_rate up, churn_rate down",
+        "then": "the feature is sticky \u2014 early evidence of retention lift; monitor longitudinal impact"
+      },
+      {
+        "if": "feature_usage_rate flat, DAU/MAU up",
+        "then": "new users are signing up but not adopting the feature \u2014 onboarding or discovery friction in first session"
+      },
+      {
+        "if": "feature_usage_rate down, support_tickets up",
+        "then": "users are struggling with the feature \u2014 likely UI/UX issue or unclear value proposition"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "feature_usage_rate for 'search' drops >10% WoW with total search_events up",
+        "and_also": "prod_session_length shows no change and prod_dau_mau stable",
+        "shared_root_cause": "A spike in search *volume* driven by bots or internal tools that use the search endpoint without user intent \u2014 increasing raw events but lowering *user* adoption rate.",
+        "diagnostic_sql": "SELECT user_id, COUNT(DISTINCT feature_event_name) AS features, COUNT(*) AS events FROM events WHERE feature_event_name LIKE 'search%' GROUP BY 1 HAVING COUNT(*) > 100 ORDER BY 3 DESC LIMIT 20"
+      },
+      {
+        "if_this_metric": "feature_usage_rate for 'dark_mode' spikes in iOS but flat on Android",
+        "and_also": "app_store_reviews mention 'dark mode not found'",
+        "shared_root_cause": "A UI regression in the iOS app inadvertently exposed a hidden dark_mode toggle (e.g., via dev menu leak), inflating usage without user intent, while Android users saw no change.",
+        "diagnostic_sql": "SELECT device, COUNT(DISTINCT user_id) AS users, COUNT(DISTINCT CASE WHEN event_date >= '2024-06-01' AND feature_event_name = 'dark_mode_toggled' THEN user_id END) AS dark_mode_users FROM events WHERE feature_event_name = 'dark_mode_toggled' GROUP BY 1"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Counting every event as a separate usage",
+        "why_wrong": "One user triggering 'feature_used' 50 times counts as 50 usage events \u2014 but feature usage rate should count *users*, not *events*. This overstates adoption and makes retention metrics unreliable.",
+        "bad_sql": "SELECT COUNT(*)::decimal / (SELECT COUNT(DISTINCT user_id) FROM events) AS usage_rate FROM events WHERE feature_event_name = 'feature_X_triggered'",
+        "good_sql": "SELECT COUNT(DISTINCT CASE WHEN feature_event_name = 'feature_X_triggered' THEN user_id END) * 1.0 / COUNT(DISTINCT user_id) AS usage_rate FROM events WHERE feature_event_name IN ('feature_X_triggered', 'feature_X_viewed', 'feature_X_used') OR user_id IN (SELECT user_id FROM events WHERE feature_event_name = 'feature_X_triggered')"
+      },
+      {
+        "pattern": "Using event count without deduplication by user",
+        "why_wrong": "Dividing feature event count by total event count inflates usage for frequently-used features and ignores user distribution (e.g., power users dominate counts).",
+        "bad_sql": "SELECT COUNT(*) FILTER (WHERE feature_event_name = 'feature_X') * 1.0 / COUNT(*) AS rate FROM events",
+        "good_sql": "SELECT COUNT(DISTINCT CASE WHEN feature_event_name IN ('feature_X_triggered', 'feature_X_completed') THEN user_id END) * 1.0 / COUNT(DISTINCT user_id) AS rate FROM events WHERE event_date >= '2024-06-01'"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT COUNT(DISTINCT CASE WHEN feature_event_name = 'feature_X_triggered' THEN user_id END) * 1.0 / COUNT(DISTINCT user_id) AS feature_usage_rate FROM events WHERE event_date BETWEEN '2024-06-01' AND '2024-06-30' AND user_id NOT IN (SELECT user_id FROM user_attributes WHERE is_internal = TRUE)",
+      "intermediate_sql": "SELECT DATE_TRUNC('week', event_date) AS week, COUNT(DISTINCT CASE WHEN feature_event_name = 'feature_X_triggered' THEN user_id END) * 1.0 / COUNT(DISTINCT user_id) AS feature_usage_rate, COUNT(DISTINCT CASE WHEN device = 'mobile' AND feature_event_name = 'feature_X_triggered' THEN user_id END) * 1.0 / COUNT(DISTINCT CASE WHEN device = 'mobile' THEN user_id END) AS mobile_rate, COUNT(DISTINCT CASE WHEN device = 'web' AND feature_event_name = 'feature_X_triggered' THEN user_id END) * 1.0 / COUNT(DISTINCT CASE WHEN device = 'web' THEN user_id END) AS web_rate FROM events WHERE event_date >= '2024-06-01' GROUP BY 1 ORDER BY 1",
+      "advanced_sql": "WITH active_users AS (\n  -- All active users in period\n  SELECT DISTINCT user_id\n  FROM events\n  WHERE event_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '2 month'\n),\nfeature_users AS (\n  -- Users who used feature (excluding internal/test accounts)\n  SELECT DISTINCT e.user_id\n  FROM events e\n  JOIN user_attributes u ON e.user_id = u.user_id\n  WHERE e.feature_event_name IN ('feature_X_triggered', 'feature_X_completed')\n    AND u.is_internal = FALSE\n    AND e.event_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '2 month'\n),\nweekly_counts AS (\n  SELECT\n    DATE_TRUNC('week', a.user_first_seen) AS week,\n    COUNT(DISTINCT a.user_id) AS total_users,\n    COUNT(DISTINCT CASE WHEN f.user_id IS NOT NULL THEN a.user_id END) AS feature_users\n  FROM active_users a\n  LEFT JOIN feature_users f ON a.user_id = f.user_id\n  LEFT JOIN sessions s ON a.user_id = s.user_id\n  GROUP BY 1\n)\nSELECT\n  week,\n  ROUND(feature_users::decimal / NULLIF(total_users, 0), 4) AS feature_usage_rate,\n  ROUND((feature_users * 100.0 / NULLIF(total_users, 0)), 2) AS pct\nFROM weekly_counts\nORDER BY week"
+    }
+  }
+]

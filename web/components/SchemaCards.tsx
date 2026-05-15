@@ -1,0 +1,190 @@
+"use client";
+
+import { RichSchema, SchemaTable, SchemaJoin, SchemaWarning } from "@/lib/api";
+
+// ── Color palette cycling per table ──────────────────────────────────────────
+const TABLE_PALETTES = [
+  { border: "border-violet-500/30", header: "bg-violet-500/10", badge: "bg-violet-500/20 text-violet-300", dot: "bg-violet-400" },
+  { border: "border-blue-500/30",   header: "bg-blue-500/10",   badge: "bg-blue-500/20 text-blue-300",   dot: "bg-blue-400"   },
+  { border: "border-emerald-500/30",header: "bg-emerald-500/10",badge: "bg-emerald-500/20 text-emerald-300",dot:"bg-emerald-400"},
+  { border: "border-amber-500/30",  header: "bg-amber-500/10",  badge: "bg-amber-500/20 text-amber-300", dot: "bg-amber-400"  },
+  { border: "border-rose-500/30",   header: "bg-rose-500/10",   badge: "bg-rose-500/20 text-rose-300",   dot: "bg-rose-400"   },
+  { border: "border-cyan-500/30",   header: "bg-cyan-500/10",   badge: "bg-cyan-500/20 text-cyan-300",   dot: "bg-cyan-400"   },
+  { border: "border-indigo-500/30", header: "bg-indigo-500/10", badge: "bg-indigo-500/20 text-indigo-300",dot:"bg-indigo-400" },
+  { border: "border-teal-500/30",   header: "bg-teal-500/10",   badge: "bg-teal-500/20 text-teal-300",   dot: "bg-teal-400"   },
+];
+
+// ── Column type → colour chip ─────────────────────────────────────────────────
+function typeChip(rawType: string): { label: string; cls: string } {
+  const t = rawType.toUpperCase();
+  if (/^(INT|BIGINT|INTEGER|SMALLINT|TINYINT|NUMERIC|DECIMAL|FLOAT|DOUBLE|REAL|HUGEINT|UBIGINT)/.test(t))
+    return { label: rawType, cls: "bg-blue-500/15 text-blue-300" };
+  if (/^(VARCHAR|TEXT|CHAR|STRING|BLOB)/.test(t))
+    return { label: rawType, cls: "bg-emerald-500/15 text-emerald-300" };
+  if (/^(DATE|TIME|TIMESTAMP|INTERVAL)/.test(t))
+    return { label: rawType, cls: "bg-amber-500/15 text-amber-300" };
+  if (/^(BOOL|BOOLEAN)/.test(t))
+    return { label: rawType, cls: "bg-violet-500/15 text-violet-300" };
+  return { label: rawType, cls: "bg-zinc-700/60 text-zinc-400" };
+}
+
+// ── Table card ────────────────────────────────────────────────────────────────
+function TableCard({ table, palette }: { table: SchemaTable; palette: typeof TABLE_PALETTES[0] }) {
+  const totalCols = table.columns.length;
+
+  return (
+    <div className={`rounded-lg border ${palette.border} bg-zinc-900 overflow-hidden flex flex-col`}>
+      {/* Card header */}
+      <div className={`${palette.header} px-3 py-2 flex items-center justify-between gap-2`}>
+        <div className="flex items-center gap-2 min-w-0">
+          <span className={`w-2 h-2 rounded-full shrink-0 ${palette.dot}`} />
+          <span className="font-mono font-semibold text-xs text-white truncate">{table.name}</span>
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0">
+          {table.row_count && (
+            <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${palette.badge}`}>
+              {Number(table.row_count).toLocaleString()} rows
+            </span>
+          )}
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-500 font-mono">
+            {totalCols} cols
+          </span>
+        </div>
+      </div>
+
+      {/* Column list */}
+      <div className="divide-y divide-zinc-800/60 flex-1">
+        {table.columns.map((col) => {
+          const chip = typeChip(col.type);
+          return (
+            <div key={col.name} className="px-3 py-1.5 flex items-center justify-between gap-2 hover:bg-zinc-800/40 transition-colors">
+              <div className="flex items-center gap-1.5 min-w-0">
+                {col.is_fk && (
+                  <span title="Join key" className="text-[9px] text-zinc-500 font-mono border border-zinc-700 rounded px-0.5 leading-tight shrink-0">FK</span>
+                )}
+                <span className="text-xs font-mono text-zinc-300 truncate">{col.name}</span>
+              </div>
+              <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded shrink-0 ${chip.cls}`}>{chip.label}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Join paths ────────────────────────────────────────────────────────────────
+function JoinPaths({ joins }: { joins: SchemaJoin[] }) {
+  if (!joins.length) return null;
+  return (
+    <div>
+      <h3 className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider mb-2">
+        Detected Join Paths
+      </h3>
+      <div className="grid grid-cols-1 gap-1.5">
+        {joins.map((j, i) => (
+          <div
+            key={i}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-xs font-mono"
+          >
+            <span className="text-zinc-300">{j.t1}</span>
+            <span className="text-zinc-600">.</span>
+            <span className="text-violet-400">{j.c1}</span>
+            <span className="text-zinc-600 mx-1">→</span>
+            <span className="text-zinc-300">{j.t2}</span>
+            <span className="text-zinc-600">.</span>
+            <span className="text-violet-400">{j.c2}</span>
+            <span className={`ml-auto text-[10px] px-1.5 py-0.5 rounded ${
+              j.match === "exact"
+                ? "bg-emerald-500/15 text-emerald-400"
+                : "bg-amber-500/15 text-amber-400"
+            }`}>
+              {j.match}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── SQL Warnings & Modeling Notes ────────────────────────────────────────────
+function Warnings({ warnings }: { warnings: SchemaWarning[] }) {
+  return (
+    <div>
+      <h3 className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider mb-2">
+        SQL Warnings &amp; Modeling Notes
+      </h3>
+      {warnings.length === 0 ? (
+        <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-zinc-900 border border-zinc-800 text-xs text-zinc-500">
+          <span className="text-emerald-500">✓</span>
+          No type mismatches or modeling issues detected
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          {warnings.map((w, i) => (
+            <div
+              key={i}
+              className={`flex items-start gap-2 px-3 py-2 rounded-lg text-xs border ${
+                w.level === "warn"
+                  ? "bg-amber-500/5 border-amber-500/20 text-amber-300"
+                  : "bg-zinc-900 border-zinc-800 text-zinc-400"
+              }`}
+            >
+              <span className="shrink-0 mt-px">{w.level === "warn" ? "⚠" : "ℹ"}</span>
+              <span>{w.message}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Stats bar ─────────────────────────────────────────────────────────────────
+function StatChip({ value, label, accent }: { value: string | number; label: string; accent?: string }) {
+  return (
+    <div className="flex items-baseline gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800">
+      <span className={`text-sm font-semibold tabular-nums ${accent ?? "text-zinc-100"}`}>{value}</span>
+      <span className="text-[11px] text-zinc-500">{label}</span>
+    </div>
+  );
+}
+
+function StatsBar({ schema }: { schema: RichSchema }) {
+  const totalCols = schema.tables.reduce((s, t) => s + t.columns.length, 0);
+  const warnCount = schema.warnings.filter(w => w.level === "warn").length;
+  return (
+    <div className="flex items-center gap-2 flex-wrap mb-2">
+      <StatChip value={schema.tables.length} label="tables" />
+      <StatChip value={totalCols} label="columns" />
+      <StatChip value={schema.joins.length} label="join paths" />
+      {warnCount > 0 && (
+        <StatChip value={`⚠ ${warnCount}`} label={warnCount === 1 ? "warning" : "warnings"} accent="text-amber-400" />
+      )}
+    </div>
+  );
+}
+
+// ── Main export ───────────────────────────────────────────────────────────────
+export function SchemaCards({ schema }: { schema: RichSchema }) {
+  return (
+    <div className="p-4 space-y-6">
+      <StatsBar schema={schema} />
+
+      {/* Table cards grid */}
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+        {schema.tables.map((table, i) => (
+          <TableCard
+            key={table.name}
+            table={table}
+            palette={TABLE_PALETTES[i % TABLE_PALETTES.length]}
+          />
+        ))}
+      </div>
+
+      <JoinPaths joins={schema.joins} />
+      <Warnings warnings={schema.warnings} />
+    </div>
+  );
+}

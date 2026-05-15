@@ -30,6 +30,12 @@
 21. [SQL Knowledge Base](#21-sql-knowledge-base)
 22. [Direct Query Graceful Failure](#22-direct-query-graceful-failure)
 23. [Report UX — Smart Formatting & Collapsible Sections](#23-report-ux--smart-formatting--collapsible-sections)
+24. [Metrics Catalog](#24-metrics-catalog)
+25. [Error Classification & SQL Hardening](#25-error-classification--sql-hardening)
+26. [Schema Intelligence — Join Inference & Fingerprinting](#26-schema-intelligence--join-inference--fingerprinting)
+27. [KB Pattern Enrichment](#27-kb-pattern-enrichment)
+28. [ER Diagram](#28-er-diagram)
+29. [Rich Schema Card UI](#29-rich-schema-card-ui)
 
 ---
 
@@ -791,6 +797,148 @@ Raw query results from a business database frequently contain fractional values 
 
 ---
 
+## 24. Metrics Catalog
+
+### What
+Named business KPI formulas stored persistently and injected into every schema context — so the LLM always uses the same approved SQL expression for MRR, CAC, LTV, and other KPIs rather than re-deriving them from scratch on each investigation.
+
+### Why
+Even with a rich glossary, the agent re-derives metric logic on every run. "MRR" might be computed differently across three investigations, creating inconsistent numbers. The Metrics Catalog is the formula layer above the glossary: tables/columns describe what data exists; metrics describe what to compute from it.
+
+### How
+`hermes/semantic/metrics.py` defines a `MetricDefinition` Pydantic model (`name`, `label`, `sql`, `tables`, `dimensions`, `filters`, `unit`, `caveats`). Metrics are persisted as a JSON array in `data/metrics.json`. `build_metrics_block()` formats all saved metrics as a `METRICS CATALOG` block appended to the schema context string. The full CRUD API (`GET/POST/PUT/DELETE /metrics`) is exposed via FastAPI. The `MetricsPanel.tsx` UI provides a two-column editor (list left, form right) with comma-separated inputs for array fields, accessible as a sub-tab in the Connections panel.
+
+### Component interactions
+- `build_schema_context()` calls `build_metrics_block()` — metrics are visible in every LLM prompt that receives the schema context
+- `MetricsPanel.tsx` in the Connections tab → right pane sub-tabs (Schema | Metrics Catalog)
+- Metrics Catalog takes precedence over glossary column annotations for formula definitions
+
+### Tech / libraries
+- **Pydantic** — `MetricDefinition` model with validation
+- **JSON** — simple flat file store; no new database needed
+
+---
+
+## 25. Error Classification & SQL Hardening
+
+### What
+Three complementary layers that reduce SQL errors before and during execution: structured error diagnosis injected into the fix prompt, proactive dialect post-processing before queries hit the wire, and column ambiguity detection on generated SQL.
+
+### Why
+FIX_SQL previously received raw error strings and asked the LLM to interpret them. Pre-classifying errors into targeted diagnostic hints dramatically increases first-fix success rate. Proactive dialect transforms catch the predictable error classes before they even reach the database.
+
+### How
+**2h-i Error Classification:** `hermes/tools/error_classifier.py` maps 30+ Postgres error patterns to targeted diagnostic hints. Called in `plan_and_execute` before the FIX_SQL LLM call — result prepended to the fix prompt as a `DIAGNOSIS:` block.
+
+**2h-ii Dialect Post-processing:** `PostgresConnection._apply_dialect_fixes(sql)` applies three sequential transforms to every Postgres query before execution: `ROUND(expr, N)` → `ROUND((expr)::numeric, N)` for AVG/SUM args; empty-string-safe timestamp cast; interval → epoch conversion. DuckDB has a no-op stub.
+
+**2h-iii Column Ambiguity Pre-flight:** `hermes/tools/ambiguity.py` scans generated SQL for unqualified column references that exist in multiple joined tables. Warnings injected into `data_quality_notes` and the next FIX_SQL prompt: `"Column 'status' exists in orders AND payments — qualify as orders.status"`.
+
+### Component interactions
+- `_classify_sql_error()` in `nodes.py` → `{error_diagnosis}` placeholder in `FIX_SQL_PROMPT`
+- `_apply_dialect_fixes()` called inside `PostgresConnection.execute()` — transparent to calling code
+- `detect_ambiguous_columns()` called post-LLM, pre-execution in `plan_and_execute`
+
+### Tech / libraries
+- Pure Python regex — no new dependencies
+
+---
+
+## 26. Schema Intelligence — Join Inference & Fingerprinting
+
+### What
+Two complementary schema enrichments: automatic detection of likely foreign-key relationships via column-name analysis (injected into prompts and the ER diagram), and MD5-based schema fingerprinting that caches enriched metadata so reconnecting to an unchanged database is instant.
+
+### Why
+Without join hints, the LLM infers JOIN columns from raw DDL alone — and misses relationships when naming isn't perfectly consistent (`customer_id` in orders, `cust_id` in customers). Schema fingerprinting eliminates redundant auto-seed LLM calls on every reconnect.
+
+### How
+**2i-i Fuzzy Join Inference:** `_col_root()` strips 8 suffix variants (`_id`, `_key`, `_code`, `_num`, `_number`, `_identifier`, `_pseudonym`, `_code`) to get the semantic root of a column. Columns with matching roots across tables form join candidates — classified as `exact` (same column name or both have `_id` suffix) or `inferred` (fuzzy root match). Join hints and `NO DIRECT JOIN DETECTED` warnings are appended to the schema context string, the Mermaid ER diagram, and the new Rich Schema Card UI.
+
+**2i-ii Schema Fingerprinting:** `hermes/db/schema_cache.py` maintains a 50-entry LRU cache in `data/schema_cache.json`, keyed by `MD5(sorted_table_names + column_counts)`. `autoseed.py` checks the fingerprint before running any LLM seed calls — tables whose fingerprint matches the cache are skipped entirely.
+
+### Component interactions
+- `infer_joins()` and `_compute_join_map()` in `hermes/tools/schema.py` — called inside `build_schema_context()` and `build_mermaid_er()` and `build_rich_schema()`
+- Schema fingerprint written after every `build_schema_context()` call; read by `autoseed.seed_missing_tables()`
+- Join confidence levels (`exact` / `inferred`) shown as colour-coded badges in both the ER Diagram and Rich Schema Card join paths grid
+
+### Tech / libraries
+- **hashlib** (stdlib) — MD5 fingerprint
+- Pure Python regex for column root normalisation
+
+---
+
+## 27. KB Pattern Enrichment
+
+### What
+252 SQL and domain knowledge patterns embedded in Qdrant — combining the talonsight knowledge base (43 files, 235 entries) with 15 custom domain files. Patterns include causal relationship chains, metric inflation/deflation detection, cross-metric signals, and diagnostic questions that directly improve hypothesis generation.
+
+### Why
+The original KB helped the LLM avoid SQL syntax mistakes. Enriched patterns help it generate better *hypotheses* — understanding that "if monthly revenue drops, check order frequency, then AOV, then refund rate" as a structured causal chain, not just a SQL correctness pattern.
+
+### How
+`hermes/semantic/kb_loader.py` handles two JSON schema families: the native Aughor shape (`{symptom, check_in_order, detection_sql}`) and the talonsight shape (`{if, then}`). Both are normalised into the same `KBEntry` embed text. Three tiers: Tier 1 (47 SQL correctness patterns — dialect traps, good/bad SQL pairs), Tier 2 (84 domain knowledge entries — metrics, causal chains, diagnostic questions), Tier 3 (121 stubs). `kb_retriever.py` formatters for `_format_for_decompose()` and `_format_for_planning()` surface causal chains, misconceptions, and inflation signals.
+
+### Component interactions
+- 252 entries indexed in Qdrant `sql_knowledge_base` collection at `build_kb_index()` time
+- `retrieve_for_decompose()` → Tier 2 only → injected into `DECOMPOSE_PROMPT` before hypothesis generation
+- `retrieve_for_planning()` → Tier 1+2 → injected into `PLAN_QUERIES_PROMPT`
+- `retrieve_for_fix_sql()` → Tier 1 dialect traps → injected into `FIX_SQL_PROMPT`
+
+### Tech / libraries
+- **Qdrant** — same shared instance; `sql_knowledge_base` collection
+- **nomic-embed-text** — batch-embedded in chunks of 64
+
+---
+
+## 28. ER Diagram
+
+### What
+A Mermaid erDiagram view of the database schema, automatically generated from the live schema — with solid lines for exact FK joins and dashed lines for fuzzy inferred joins. Accessible as a sub-tab alongside the Schema tab in the Connections panel.
+
+### Why
+A static table list tells you what columns exist; an ER diagram shows how tables relate. For databases with 5+ tables, the relationship view makes the JOIN structure immediately clear — especially useful when onboarding a new database or debugging why the agent is writing incorrect JOINs.
+
+### How
+`build_mermaid_er(schema_str)` in `hermes/tools/schema.py` parses the schema string, runs `_compute_join_map()` for join inference, marks FK candidate columns, and generates Mermaid `erDiagram` syntax. Solid lines (`||--|{`) = exact match; dashed (`||..|{`) = inferred. The `/connections/{id}/schema/mermaid` endpoint returns the diagram source. `SchemaPanel.tsx` lazy-loads mermaid.js via `import("mermaid")` only when the ER Diagram tab is first opened — the 500KB+ library never loads for Schema-only users.
+
+### Component interactions
+- `build_mermaid_er()` reuses `_parse_schema_tables()` and `_compute_join_map()` from join inference (2i)
+- Mermaid rendered client-side into a `<div ref>` via `mermaid.render()` with dark theme + LR layout
+- "Mermaid source" collapsible shows the raw diagram text below the rendered SVG
+
+### Tech / libraries
+- **mermaid.js** — dynamically imported; 500KB; lazy-loaded on first tab open
+- `GET /connections/{id}/schema/mermaid` FastAPI endpoint
+
+---
+
+## 29. Rich Schema Card UI
+
+### What
+A visual, card-based schema browser replacing the plain-text schema dump. Each table gets a gradient-coloured card showing columns with type chips and FK badges, plus a stats bar, a join paths grid, and a SQL Warnings & Modeling Notes section.
+
+### Why
+A wall of monospace DDL text requires mental effort to parse. The card view makes a multi-table schema scannable in seconds: colour identifies the table, type chips classify columns at a glance, and the join paths grid makes FK relationships explicit — reducing the chance of analysts writing incorrect JOINs.
+
+### How
+`build_rich_schema(schema_str)` in `hermes/tools/schema.py` parses the schema into structured data: `tables` (name, row_count, columns with types and FK flags), `joins` (from join inference), `isolated` tables, and `warnings` (type mismatches on join columns, isolated tables, wide tables). The `/connections/{id}/schema/rich` endpoint returns this JSON. `SchemaCards.tsx` renders:
+- **Stats bar** — three `StatChip` pills (N tables · N columns · N join paths) + amber warning chip if issues exist
+- **Table cards grid** — 8-colour palette cycling; card header with row count and column count badges; per-column rows with colour-coded type chips and FK badges
+- **Join paths section** — one row per join; emerald badge = exact, amber = inferred
+- **SQL Warnings & Modeling Notes** — always visible; ✓ green empty state when no issues detected; ⚠ amber rows for type mismatches; ℹ zinc rows for info notes
+
+### Component interactions
+- `SchemaPanel.tsx` fetches `/schema/rich` on connection select; renders `<SchemaCards>` in the Schema sub-tab
+- Column type chip colours: blue = numeric, green = text, amber = date/time, violet = boolean, zinc = other
+- `build_rich_schema()` stops parsing at section headers (DETECTED JOIN, NO DIRECT JOIN, METRICS CATALOG) to avoid join-hint lines being misread as table columns
+
+### Tech / libraries
+- Pure Tailwind CSS — no charting library; gradient palette via utility classes
+- `GET /connections/{id}/schema/rich` FastAPI endpoint
+
+---
+
 ## How features connect — end-to-end data flow
 
 ```
@@ -858,4 +1006,4 @@ Cache check (Prior Investigations RAG)          [skipped for direct-signal quest
 
 ---
 
-*Last updated: 2026-05-15 · 23 features. See `ROADMAP.md` for upcoming features.*
+*Last updated: 2026-05-16 · 29 features. See `ROADMAP.md` for upcoming features.*

@@ -1,0 +1,45 @@
+[
+  {
+    "id": "funnel_sql_pattern",
+    "title": "Funnel Analysis SQL Pattern",
+    "intent_tags": ["funnel", "conversion funnel", "funnel SQL", "step conversion", "drop-off", "funnel drop"],
+    "when_to_use": ["funnel step conversion rates", "where users drop off in a flow", "checkout funnel", "onboarding funnel"],
+    "dialect_traps": [
+      {
+        "construct": "Ordered funnel with strict sequence enforcement",
+        "postgres_behavior": "PostgreSQL supports FILTER (WHERE ...) on aggregates and lateral joins for ordered funnels. Use MIN(event_time) per step to get first occurrence.",
+        "safe_alternative": "Use conditional aggregation (COUNT(CASE WHEN step = 'X' THEN 1 END)) for simple funnels. For ordered funnels (must complete step A before B), use MIN(event_time) and WHERE b.event_time > a.event_time."
+      }
+    ],
+    "mistake_patterns": [
+      {
+        "mistake": "Counting events instead of users at each funnel step",
+        "symptom": "Funnel conversion > 100% because one user hits a step multiple times",
+        "bad_sql": "SELECT step_name, COUNT(*) AS count FROM funnel_events GROUP BY step_name",
+        "good_sql": "SELECT step_name, COUNT(DISTINCT user_id) AS users FROM funnel_events GROUP BY step_name, step_order ORDER BY step_order"
+      },
+      {
+        "mistake": "Not computing conversion relative to top-of-funnel",
+        "symptom": "Step conversion rates are raw counts not percentages",
+        "bad_sql": "SELECT step_name, COUNT(DISTINCT user_id) FROM funnel_events GROUP BY 1",
+        "good_sql": "SELECT step_name, step_order, COUNT(DISTINCT user_id) AS users, COUNT(DISTINCT user_id) * 100.0 / FIRST_VALUE(COUNT(DISTINCT user_id)) OVER (ORDER BY step_order) AS pct_of_top FROM funnel_events GROUP BY step_name, step_order ORDER BY step_order"
+      },
+      {
+        "mistake": "Including users who skipped steps in later step counts (non-ordered funnel)",
+        "symptom": "Later funnel steps show more users than earlier steps",
+        "bad_sql": "SELECT COUNT(DISTINCT user_id) FROM events WHERE event = 'checkout_complete'",
+        "good_sql": "SELECT COUNT(DISTINCT user_id) FROM events e1 WHERE event = 'checkout_complete' AND EXISTS (SELECT 1 FROM events e2 WHERE e2.user_id = e1.user_id AND e2.event = 'add_to_cart' AND e2.event_time < e1.event_time)"
+      }
+    ],
+    "concept_explanation": {
+      "what_it_does": "Funnel SQL counts distinct users at each step and computes conversion rates between steps. The key choices: (1) whether order matters (ordered vs unordered funnel), (2) time window for completing the funnel, (3) whether to count users or sessions.",
+      "mental_model": "Each funnel step is a filter — count who survived each filter relative to the total who started. FIRST_VALUE() OVER window gives you the denominator without a self-join."
+    },
+    "template": "SELECT step_name, step_order, users, users * 100.0 / FIRST_VALUE(users) OVER (ORDER BY step_order) AS pct_from_top, LAG(users) OVER (ORDER BY step_order) AS prev_step_users, users * 100.0 / NULLIF(LAG(users) OVER (ORDER BY step_order), 0) AS step_conversion FROM (SELECT step_name, step_order, COUNT(DISTINCT user_id) AS users FROM funnel_events WHERE event_date >= CURRENT_DATE - INTERVAL '30 days' GROUP BY 1, 2) t ORDER BY step_order",
+    "anti_patterns": [
+      "Do not count sessions or events — always count DISTINCT users",
+      "Do not ignore the time window — a user who completes step 1 today and step 5 in 6 months is probably not the same funnel attempt",
+      "Do not mix device/platform funnels — mobile and desktop may have different step names"
+    ]
+  }
+]

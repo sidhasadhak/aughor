@@ -1,0 +1,47 @@
+[
+  {
+    "id": "conversion_funnel",
+    "title": "Conversion Funnel Analysis",
+    "business_definition": "A conversion funnel tracks the percentage of users who complete each step toward a goal (e.g. visit → signup → activation → payment). Funnel analysis finds where and why users drop off.",
+    "intent_tags": ["conversion", "funnel", "drop-off", "conversion rate", "signup conversion", "trial conversion", "checkout conversion"],
+    "when_to_use": ["conversion rate dropped", "funnel drop-off increased", "fewer users completing checkout", "trial-to-paid conversion fell"],
+    "diagnostic_questions": [
+      "Which funnel step has the worst conversion rate and when did it start degrading?",
+      "Did a specific traffic source, device type, or geography drive the conversion drop?",
+      "Did any product change or A/B test launch coincide with the change?",
+      "Is the absolute volume of top-of-funnel traffic also changing, or just conversion rate?"
+    ],
+    "causal_relationships": [
+      {
+        "symptom": "overall funnel conversion rate dropped",
+        "check_in_order": ["step_by_step_dropoff", "conversion_by_traffic_source", "conversion_by_device", "page_load_time"],
+        "detection_sql": "SELECT step, COUNT(DISTINCT user_id) AS users, COUNT(DISTINCT user_id) * 100.0 / FIRST_VALUE(COUNT(DISTINCT user_id)) OVER (ORDER BY step_order) AS conversion_pct FROM funnel_events WHERE event_date >= CURRENT_DATE - INTERVAL '30 days' GROUP BY step, step_order ORDER BY step_order"
+      },
+      {
+        "symptom": "trial-to-paid conversion dropped",
+        "check_in_order": ["trial_activation_rate", "trial_engagement_depth", "pricing_page_views", "upgrade_cta_clicks"],
+        "detection_sql": "SELECT DATE_TRUNC('month', trial_start) AS cohort, COUNT(*) AS trials, COUNT(CASE WHEN converted_at IS NOT NULL THEN 1 END) AS converted, COUNT(CASE WHEN converted_at IS NOT NULL THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0) AS conversion_rate FROM trials GROUP BY 1 ORDER BY 1"
+      }
+    ],
+    "inflation_causes": [
+      {
+        "cause": "Bot or automated traffic inflating top-of-funnel without converting",
+        "detection_sql": "SELECT traffic_source, COUNT(*) AS sessions, SUM(CASE WHEN converted THEN 1 ELSE 0 END) AS conversions FROM sessions GROUP BY 1 ORDER BY 2 DESC"
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Session tracking gap — users who converted not attributed due to cookie loss",
+        "detection_sql": "SELECT COUNT(*) AS conversions_without_session FROM orders o LEFT JOIN sessions s ON o.session_id = s.session_id WHERE s.session_id IS NULL"
+      }
+    ],
+    "related_patterns": ["product_activation", "new_customer_acquisition", "average_order_value"],
+    "anti_patterns": [
+      "Do not compare funnel conversion across different traffic sources without segmenting — intent quality varies wildly",
+      "Do not measure funnel conversion within a single day — use cohort windows (e.g. 7-day or 30-day conversion rate)"
+    ],
+    "sql_assets": {
+      "funnel_by_step": "SELECT step_name, step_order, COUNT(DISTINCT user_id) AS users, LAG(COUNT(DISTINCT user_id)) OVER (ORDER BY step_order) AS prev_step_users, COUNT(DISTINCT user_id) * 100.0 / NULLIF(LAG(COUNT(DISTINCT user_id)) OVER (ORDER BY step_order), 0) AS step_conversion FROM funnel_events GROUP BY step_name, step_order ORDER BY step_order"
+    }
+  }
+]

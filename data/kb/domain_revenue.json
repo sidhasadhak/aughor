@@ -1,0 +1,61 @@
+[
+  {
+    "id": "revenue_drop_analysis",
+    "title": "Revenue Drop Analysis",
+    "business_definition": "Revenue is the total monetary value of sales in a period. A drop means fewer orders, lower order values, or higher refunds — each requiring a different fix.",
+    "intent_tags": ["revenue drop", "revenue decline", "revenue fell", "revenue decreased", "sales down"],
+    "when_to_use": ["revenue is lower than expected", "month-over-month revenue declined", "revenue anomaly detected"],
+    "diagnostic_questions": [
+      "Did order volume drop or did average order value drop?",
+      "Is the drop concentrated in a specific region, segment, or product category?",
+      "Did refunds spike in the same period?",
+      "Did new customer acquisition slow, or did existing customers spend less?",
+      "Is this a data quality issue — missing orders, timezone shift, duplicate cancellations?"
+    ],
+    "causal_relationships": [
+      {
+        "symptom": "overall revenue drops month-over-month",
+        "check_in_order": ["order_count", "average_order_value", "new_vs_returning_mix", "refund_rate", "cancellation_rate"],
+        "detection_sql": "SELECT DATE_TRUNC('month', order_date) AS month, COUNT(*) AS orders, AVG(amount) AS aov, SUM(amount) AS revenue FROM orders WHERE order_date >= CURRENT_DATE - INTERVAL '90 days' GROUP BY 1 ORDER BY 1"
+      },
+      {
+        "symptom": "revenue drop concentrated in one region or segment",
+        "check_in_order": ["regional_order_volume", "regional_aov", "regional_churn"],
+        "detection_sql": "SELECT region, DATE_TRUNC('month', order_date) AS month, COUNT(*) AS orders, SUM(amount) AS revenue FROM orders WHERE order_date >= CURRENT_DATE - INTERVAL '60 days' GROUP BY 1, 2 ORDER BY 1, 2"
+      },
+      {
+        "symptom": "revenue drop driven by fewer new customers",
+        "check_in_order": ["new_customer_count", "acquisition_channel_mix", "marketing_spend"],
+        "detection_sql": "SELECT DATE_TRUNC('month', first_order.first_date) AS cohort_month, COUNT(*) AS new_customers FROM (SELECT customer_id, MIN(order_date) AS first_date FROM orders GROUP BY 1) first_order GROUP BY 1 ORDER BY 1"
+      }
+    ],
+    "inflation_causes": [
+      {
+        "cause": "Cancelled or refunded orders still counted in revenue",
+        "detection_sql": "SELECT order_status, COUNT(*), SUM(amount) FROM orders GROUP BY 1 ORDER BY 2 DESC"
+      },
+      {
+        "cause": "Test or internal orders inflating revenue figures",
+        "detection_sql": "SELECT is_test, SUM(amount) FROM orders WHERE is_test IS NOT NULL GROUP BY 1"
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Revenue recognition delay — orders created but not yet captured",
+        "detection_sql": "SELECT COUNT(*), SUM(amount) FROM orders WHERE status = 'pending' AND order_date >= CURRENT_DATE - INTERVAL '7 days'"
+      },
+      {
+        "cause": "Currency conversion applied inconsistently across periods",
+        "detection_sql": "SELECT currency, COUNT(*), SUM(amount) FROM orders WHERE order_date >= CURRENT_DATE - INTERVAL '30 days' GROUP BY 1"
+      }
+    ],
+    "related_patterns": ["average_order_value", "customer_churn", "refund_rate", "new_customer_acquisition"],
+    "anti_patterns": [
+      "Do not compare raw revenue across different time zones without normalising to UTC",
+      "Do not include pending or draft orders in finalised revenue figures"
+    ],
+    "sql_assets": {
+      "revenue_by_period": "SELECT DATE_TRUNC('month', order_date) AS month, SUM(amount) AS revenue, COUNT(*) AS orders, AVG(amount) AS aov FROM orders WHERE status = 'completed' GROUP BY 1 ORDER BY 1"
+    }
+  }
+]

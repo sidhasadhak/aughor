@@ -101,6 +101,7 @@ ORIGINAL QUERY:
 ERROR MESSAGE:
 {error}
 
+{error_diagnosis}
 SCHEMA:
 {schema}
 
@@ -111,6 +112,7 @@ Fix the query for the target dialect. Common issues to watch for:
 - Type casting: Postgres requires explicit CAST() for type coercion
 - Interval syntax: Postgres uses INTERVAL '30 days', not date arithmetic shorthands
 - String functions: dialect differences (e.g. STRFTIME vs TO_CHAR)
+- Ambiguous columns: if a column exists in multiple joined tables, qualify it with the table name
 
 Return the corrected query and a one-sentence explanation of what was wrong.
 If the error reveals a data quality problem in the underlying data (not just a SQL syntax issue),

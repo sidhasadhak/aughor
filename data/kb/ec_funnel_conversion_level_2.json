@@ -1,0 +1,634 @@
+[
+  {
+    "id": "ec_pdp_to_cart_rate",
+    "title": "Product Detail Page to Cart Rate",
+    "intent_tags": [
+      "PDP to cart rate",
+      "PDP conversion rate",
+      "product page to cart",
+      "PDP add-to-cart rate",
+      "product page conversion",
+      "pdp cart rate",
+      "what is pdp conversion",
+      "product page to cart %",
+      "add to cart rate",
+      "product page efficiency",
+      "page to cart %"
+    ],
+    "sql_features": [
+      "aggregation",
+      "left_join",
+      "nullif"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "funnel",
+    "when_to_use": [
+      "assess product page effectiveness and content quality",
+      "benchmark product categories or individual items",
+      "diagnose friction in product page-to-action journey",
+      "evaluate impact of A/B tests on product page variants",
+      "identify underperforming SKUs for optimization"
+    ],
+    "related_patterns": [
+      "ec_search_to_purchase_rate",
+      "ec_cart_to_checkout_rate",
+      "ec_conversion_rate",
+      "ec_checkout_step_drop_off"
+    ],
+    "business_definition": "Percentage of product detail page views that resulted in an add-to-cart action in the same session. A page view is defined as a view of a product detail page (PDVP), and an add-to-cart is an event where the customer added at least one item to their cart.",
+    "metric_nature": {
+      "what_it_measures": "How effectively product pages convert visitors into cart adders \u2014 a mid-funnel indicator of product appeal, pricing clarity, and page experience.",
+      "what_it_does_not_measure": "Purchase intent or conversion. A customer may add to cart and abandon, or abandon immediately after \u2014 this only measures initial cart interest.",
+      "common_misconception": "PDP to cart rate is not the same as cart abandonment rate. PDP to cart measures *entry* to the cart step; abandonment measures *drop-off* after entry."
+    },
+    "template": "SELECT COUNT(DISTINCT CASE WHEN c.customer_id IS NOT NULL THEN p.session_id END) AS pdp_to_cart_sessions, COUNT(DISTINCT p.session_id) AS total_pdp_views, COUNT(DISTINCT CASE WHEN c.customer_id IS NOT NULL THEN p.session_id END) * 100.0 / NULLIF(COUNT(DISTINCT p.session_id), 0) AS rate FROM pdp_views p LEFT JOIN cart_adds c ON p.session_id = c.session_id AND p.product_id = c.product_id WHERE p.view_date BETWEEN {start_date} AND {end_date}",
+    "inflation_causes": [
+      {
+        "cause": "Counting add-to-cart events per item instead of per session",
+        "how_it_inflates": "If the numerator counts *items* added to cart instead of *sessions* with at least one add-to-cart, sessions with multiple items (e.g., bulk order) are counted multiple times \u2014 inflating the rate above 100%.",
+        "detection_sql": "SELECT session_id, COUNT(DISTINCT product_id) AS items_added, COUNT(*) AS add_to_cart_events FROM cart_adds GROUP BY session_id HAVING COUNT(*) > 1 ORDER BY add_to_cart_events DESC LIMIT 10",
+        "fix": "Count distinct sessions with at least one add-to-cart, not total add events: `COUNT(DISTINCT CASE WHEN add_to_cart = 1 THEN session_id END)`."
+      },
+      {
+        "cause": "Including PDP views from bots or crawlers",
+        "how_it_inflates": "If PDP views table includes non-human traffic (bots, SEO crawlers), and cart adds table filters only humans, the denominator inflates disproportionately \u2014 deflating rate. However, if both include bots but bots never add carts, the *relative* effect is deflation, but if bots sometimes add carts via API, the numerator may inflate slightly \u2014 net effect: erratic volatility.",
+        "detection_sql": "SELECT COUNT(DISTINCT session_id) AS total_sessions, COUNT(DISTINCT CASE WHEN is_bot = true THEN session_id END) AS bot_sessions FROM pdp_views WHERE view_date >= '2024-01-01'",
+        "fix": "Filter both PDP views and cart adds to exclude known bots using a user-agent or bot_score filter."
+      },
+      {
+        "cause": "Cart event timestamp mismatch with PDP view session",
+        "how_it_inflates": "If cart adds are recorded *after* the session ends (e.g., delayed ETL), they are matched to incorrect sessions or future sessions \u2014 inflating or deflating PDP-to-cart for the current period depending on data latency.",
+        "detection_sql": "SELECT session_id, view_time, add_time, DATEDIFF(minute, view_time, add_time) AS minutes_diff FROM pdp_views p JOIN cart_adds c ON p.session_id = c.session_id WHERE add_time > view_time AND add_time > DATEADD(hour, 1, view_time) ORDER BY minutes_diff DESC LIMIT 10",
+        "fix": "Match cart adds to PDP views using the *session_id* and enforce a narrow time window (e.g., add within 15 minutes of view in the same session)."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Excluding mobile sessions with cart sync delay",
+        "how_it_deflates": "If mobile cart syncing is delayed (e.g., cart stored locally and synced after page exit), cart events are recorded in a new session \u2014 PDP view in session A, add-to-cart in session B, and the conversion is missed.",
+        "detection_sql": "SELECT COUNT(DISTINCT CASE WHEN device_type = 'mobile' AND cart_sync_delay_minutes > 5 THEN session_id END) AS delayed_mobile_adds FROM cart_adds WHERE add_date >= '2024-01-01'",
+        "fix": "Attribute cart adds to the original session using persistent user_id or device_id cross-session, or extend the session window (e.g., 30-minute inactivity timeout)."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the rate anomaly concentrated in specific products, categories, or SKUs?",
+      "Has a new product image, description, or pricing display been updated?",
+      "Did mobile vs desktop performance shift recently?",
+      "Are cart add events properly attributed to the original session or fragmented?",
+      "Has bot filtering logic changed (e.g., new bot signatures introduced)?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "PDP to cart rate up, conversion_rate up",
+        "then": "product page optimizations are driving more *and* deeper engagement \u2014 likely improved imagery, reviews, or pricing transparency"
+      },
+      {
+        "if": "PDP to cart rate up, AOV down",
+        "then": "more items added per order but lower value \u2014 likely upsell mechanics failing or promotional bundling shifting mix"
+      },
+      {
+        "if": "PDP to cart rate down, revenue per visitor up",
+        "then": "fewer cart adds but higher value per convert \u2014 likely more qualified traffic or better targeting, not page issues"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "PDP to cart rate drops >15% MoM with stable traffic volume",
+        "and_also": "ec_cart_to_checkout_rate increases",
+        "shared_root_cause": "Cart add events are being recorded, but checkout is not \u2014 likely a checkout flow regression (e.g., new form fields, payment failures). This shows that the drop is not in product appeal, but in friction *after* cart addition.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', p.view_date) AS month, COUNT(DISTINCT p.session_id) AS pdp_views, COUNT(DISTINCT CASE WHEN c.session_id IS NOT NULL THEN p.session_id END) AS cart_add_sessions, COUNT(DISTINCT CASE WHEN checkout_started = true THEN p.session_id END) AS checkout_starts FROM pdp_views p LEFT JOIN cart_adds c ON p.session_id = c.session_id LEFT JOIN checkout_events ce ON p.session_id = ce.session_id WHERE p.view_date >= '2024-01-01' GROUP BY 1 ORDER BY month"
+      },
+      {
+        "if_this_metric": "PDP to cart rate spikes during a flash sale",
+        "and_also": "ec_search_to_purchase_rate remains flat or drops",
+        "shared_root_cause": "A time-sensitive promotion drives urgency to add items to cart, but users still abandon before checkout \u2014 likely due to shipping cost surprises, size uncertainty, or friction at the cart page itself.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', p.view_date) AS week, p.promotion_code, COUNT(DISTINCT p.session_id) AS pdp_sessions, COUNT(DISTINCT CASE WHEN c.session_id IS NOT NULL THEN p.session_id END) AS cart_adds, COUNT(DISTINCT CASE WHEN o.order_id IS NOT NULL THEN p.session_id END) AS purchases FROM pdp_views p LEFT JOIN cart_adds c ON p.session_id = c.session_id LEFT JOIN orders o ON c.session_id = o.session_id WHERE p.view_date >= '2024-01-01' AND p.promotion_code IS NOT NULL GROUP BY 1, p.promotion_code ORDER BY week, pdp_sessions DESC"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Using total cart adds instead of sessions with at least one add",
+        "why_wrong": "If a customer adds 5 items to cart in one session, this counts as 5 conversions \u2014 inflating rate above 100% and misleading the signal about page efficiency.",
+        "bad_sql": "SELECT COUNT(c.cart_id) * 100.0 / NULLIF(COUNT(DISTINCT p.session_id), 0) AS rate FROM pdp_views p LEFT JOIN cart_adds c ON p.session_id = c.session_id",
+        "good_sql": "SELECT COUNT(DISTINCT CASE WHEN c.session_id IS NOT NULL THEN p.session_id END) * 100.0 / NULLIF(COUNT(DISTINCT p.session_id), 0) AS rate FROM pdp_views p LEFT JOIN (SELECT DISTINCT session_id FROM cart_adds) c ON p.session_id = c.session_id"
+      },
+      {
+        "pattern": "Matching cart add to *any* product PDP view in session, not specific product view",
+        "why_wrong": "If a session views product A, leaves, returns, and adds product B to cart, and attribution uses `session_id` only, the conversion is misattributed to product A \u2014 inflating A's conversion rate and distorting optimization priorities.",
+        "bad_sql": "SELECT COUNT(DISTINCT CASE WHEN c.session_id IS NOT NULL THEN p.session_id END) * 100.0 / NULLIF(COUNT(DISTINCT p.session_id), 0) AS rate FROM pdp_views p LEFT JOIN cart_adds c ON p.session_id = c.session_id",
+        "good_sql": "SELECT COUNT(DISTINCT CASE WHEN c.session_id IS NOT NULL AND c.product_id = p.product_id THEN p.session_id END) * 100.0 / NULLIF(COUNT(DISTINCT p.session_id), 0) AS rate FROM pdp_views p LEFT JOIN (SELECT session_id, product_id FROM cart_adds) c ON p.session_id = c.session_id AND p.product_id = c.product_id"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT COUNT(DISTINCT CASE WHEN c.session_id IS NOT NULL THEN p.session_id END) * 100.0 / NULLIF(COUNT(DISTINCT p.session_id), 0) AS rate FROM pdp_views p LEFT JOIN (SELECT DISTINCT session_id, product_id FROM cart_adds) c ON p.session_id = c.session_id AND p.product_id = c.product_id WHERE p.view_date BETWEEN '2024-01-01' AND '2024-01-31'",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', p.view_date) AS month, p.category, COUNT(DISTINCT p.session_id) AS pdp_views, COUNT(DISTINCT CASE WHEN c.session_id IS NOT NULL THEN p.session_id END) AS cart_add_sessions, COUNT(DISTINCT CASE WHEN c.session_id IS NOT NULL THEN p.session_id END) * 100.0 / NULLIF(COUNT(DISTINCT p.session_id), 0) AS rate FROM pdp_views p LEFT JOIN (SELECT DISTINCT session_id, product_id FROM cart_adds) c ON p.session_id = c.session_id AND p.product_id = c.product_id GROUP BY 1, p.category ORDER BY 1, 4 DESC",
+      "advanced_sql": "WITH pdp_sessions AS (\n  -- Grain: sessions with at least one PDP view\n  SELECT\n    session_id,\n    product_id,\n    category,\n    MIN(view_date) AS first_view\n  FROM pdp_views\n  WHERE view_date BETWEEN '2024-01-01' AND '2024-01-31'\n  GROUP BY session_id, product_id, category\n),\ncart_sessions AS (\n  SELECT DISTINCT session_id, product_id\n  FROM cart_adds\n),\npdp_to_cart AS (\n  SELECT\n    p.category,\n    COUNT(DISTINCT p.session_id) AS pdp_views,\n    COUNT(DISTINCT CASE WHEN c.session_id IS NOT NULL THEN p.session_id END) AS cart_adds\n  FROM pdp_sessions p\n  LEFT JOIN cart_sessions c ON p.session_id = c.session_id AND p.product_id = c.product_id\n  GROUP BY p.category\n)\nSELECT\n  category,\n  pdp_views,\n  cart_adds,\n  ROUND(cart_adds * 100.0 / NULLIF(pdp_views, 0), 2) AS pdp_to_cart_rate,\n  ROUND(pdp_views / NULLIF(cart_adds, 0), 2) AS views_per_add\nFROM pdp_to_cart"
+    }
+  },
+  {
+    "id": "ec_checkout_step_drop_off_rate",
+    "title": "Checkout Step Drop-off Rate",
+    "intent_tags": [
+      "checkout drop-off rate",
+      "checkout step abandonment",
+      "checkout drop-off",
+      "step drop-off",
+      "cart to checkout drop-off",
+      "checkout leakage",
+      "what % abandon checkout",
+      "checkout step failure rate",
+      "drop-off %",
+      "cart abandonment rate",
+      "checkout friction"
+    ],
+    "sql_features": [
+      "window_function",
+      "lead_lag",
+      "conditional_count",
+      "coalesce",
+      "nullif"
+    ],
+    "difficulty": "advanced",
+    "pattern_type": "funnel",
+    "when_to_use": [
+      "diagnose friction points in checkout journey",
+      "prioritize checkout optimization (e.g., form reduction, payment alternatives)",
+      "benchmark checkout efficiency across device types or cohorts",
+      "measure impact of checkout experiments and A/B tests",
+      "estimate lost revenue from abandonment"
+    ],
+    "related_patterns": [
+      "ec_cart_to_checkout_rate",
+      "ec_conversion_rate",
+      "ec_pdp_to_cart_rate",
+      "ec_payment_failure_rate"
+    ],
+    "business_definition": "Percentage of sessions that exit the checkout funnel at each step, relative to sessions that entered that step. A checkout step is defined as: Cart, Shipping, Billing, Review, Payment, Confirmation. Drop-off is measured as (sessions entering step *n* minus sessions entering step *n+1*) \u00f7 sessions entering step *n*.",
+    "metric_nature": {
+      "what_it_measures": "Where and how severely customers abandon the checkout process \u2014 a high-friction diagnostic signal for UX and business logic issues.",
+      "what_it_does_not_measure": "Root cause of drop-off. It quantifies *where* abandonment occurs, but not *why* (e.g., shipping cost, unexpected fees, account creation).",
+      "common_misconception": "Checkout drop-off rate is not the same as cart abandonment rate. Drop-off is step-by-step; cart abandonment is overall exit after cart entry \u2014 this metric isolates friction at each stage."
+    },
+    "template": "WITH step_funnel AS (\n  SELECT\n    session_id,\n    MAX(CASE WHEN step = 'cart' THEN 1 ELSE 0 END) AS entered_cart,\n    MAX(CASE WHEN step = 'shipping' THEN 1 ELSE 0 END) AS entered_shipping,\n    MAX(CASE WHEN step = 'billing' THEN 1 ELSE 0 END) AS entered_billing,\n    MAX(CASE WHEN step = 'review' THEN 1 ELSE 0 END) AS entered_review,\n    MAX(CASE WHEN step = 'payment' THEN 1 ELSE 0 END) AS entered_payment,\n    MAX(CASE WHEN step = 'confirmation' THEN 1 ELSE 0 END) AS entered_confirmation\n  FROM checkout_events WHERE session_date BETWEEN {start_date} AND {end_date}\n  GROUP BY session_id\n),\nstep_counts AS (\n  SELECT\n    COUNT(DISTINCT CASE WHEN entered_cart = 1 THEN session_id END) AS cart_entered,\n    COUNT(DISTINCT CASE WHEN entered_shipping = 1 THEN session_id END) AS shipping_entered,\n    COUNT(DISTINCT CASE WHEN entered_billing = 1 THEN session_id END) AS billing_entered,\n    COUNT(DISTINCT CASE WHEN entered_review = 1 THEN session_id END) AS review_entered,\n    COUNT(DISTINCT CASE WHEN entered_payment = 1 THEN session_id END) AS payment_entered,\n    COUNT(DISTINCT CASE WHEN entered_confirmation = 1 THEN session_id END) AS confirmation_entered\n  FROM step_funnel\n)\nSELECT\n  cart_entered,\n  shipping_entered,\n  billing_entered,\n  review_entered,\n  payment_entered,\n  confirmation_entered,\n  ROUND((cart_entered - shipping_entered) * 100.0 / NULLIF(cart_entered, 0), 2) AS cart_to_shipping_drop_off,\n  ROUND((shipping_entered - billing_entered) * 100.0 / NULLIF(shipping_entered, 0), 2) AS shipping_to_billing_drop_off,\n  ROUND((billing_entered - review_entered) * 100.0 / NULLIF(billing_entered, 0), 2) AS billing_to_review_drop_off,\n  ROUND((review_entered - payment_entered) * 100.0 / NULLIF(review_entered, 0), 2) AS review_to_payment_drop_off,\n  ROUND((payment_entered - confirmation_entered) * 100.0 / NULLIF(payment_entered, 0), 2) AS payment_to_confirmation_drop_off\nFROM step_counts",
+    "inflation_causes": [
+      {
+        "cause": "Counting multi-step exits as multiple drop-offs",
+        "how_it_inflates": "If a session skips step 2 and goes from step 1 to step 3, it is counted as a drop-off at step 2 *and* step 3 \u2014 inflating drop-off rates artificially. Funnel math requires step-wise progression.",
+        "detection_sql": "SELECT session_id, step, LAG(step) OVER (PARTITION BY session_id ORDER BY step_order) AS prev_step FROM checkout_events WHERE session_date >= '2024-01-01' ORDER BY session_id, step_order LIMIT 50",
+        "fix": "Use lead_lag to ensure only *sequential* step transitions are counted, or aggregate by session-level max per step (as in the template)."
+      },
+      {
+        "cause": "Not filtering to unique sessions per step",
+        "how_it_inflates": "If a session re-enters a step (e.g., due to back navigation, form validation retry), and step counts are summed instead of `COUNT(DISTINCT)`, that session inflates the denominator for that step \u2014 deflating drop-off rate. However, if re-entries only happen *after* abandonment (e.g., retry after failure), it may slightly inflate drop-off at earlier steps \u2014 net effect: erratic volatility.",
+        "detection_sql": "SELECT session_id, COUNT(*) AS total_events, COUNT(DISTINCT step) AS unique_steps FROM checkout_events WHERE session_date >= '2024-01-01' GROUP BY session_id HAVING COUNT(*) > COUNT(DISTINCT step) ORDER BY total_events DESC LIMIT 10",
+        "fix": "Always use `COUNT(DISTINCT session_id)` per step to avoid double-counting re-entries."
+      },
+      {
+        "cause": "Including test or internal traffic in checkout events",
+        "how_it_inflates": "If internal staff or QA sessions are included, and they abandon checkout intentionally (to test flows), drop-off rates spike in steps tested \u2014 distorting real customer abandonment signals.",
+        "detection_sql": "SELECT session_id, COUNT(DISTINCT step) AS steps_count, COUNT(*) AS events FROM checkout_events WHERE session_date >= '2024-01-01' GROUP BY session_id HAVING COUNT(DISTINCT step) > 10 ORDER BY events DESC LIMIT 10",
+        "fix": "Filter to sessions with user_type = 'customer' or exclude known internal IPs/users before funnel aggregation."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Excluding mobile sessions with delayed step events",
+        "how_it_deflates": "If mobile step events are logged late (e.g., after session timeout), the session appears to have skipped steps (e.g., entered shipping directly), deflating earlier step drop-off rates.",
+        "detection_sql": "SELECT device_type, AVG(DATEDIFF(minute, entered_shipping, entered_billing)) AS avg_billing_delay FROM (SELECT session_id, MIN(CASE WHEN step = 'shipping' THEN event_time END) AS entered_shipping, MIN(CASE WHEN step = 'billing' THEN event_time END) AS entered_billing FROM checkout_events WHERE session_date >= '2024-01-01' GROUP BY session_id) sub GROUP BY device_type",
+        "fix": "Attribute step events to session using persistent session_id and device_id, not timestamp-based session reassignment."
+      }
+    ],
+    "diagnostic_questions": [
+      "Which specific checkout step shows the highest drop-off, and is it consistent across devices?",
+      "Has a new form field, policy (e.g., account creation), or payment gateway been introduced?",
+      "Is the drop-off correlated with cart value (e.g., high-value carts abandon at shipping)?",
+      "Did a shipping cost calculation error or unexpected fee appear in the period?",
+      "Are drop-offs concentrated in specific user segments (e.g., new vs returning, mobile vs desktop)?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "Shipping-to-Billing drop-off up, shipping_cost up",
+        "then": "unexpected or increased shipping cost is driving abandonment \u2014 likely a change in carrier rates or delivery policy"
+      },
+      {
+        "if": "Review-to-Payment drop-off up, new_payment_methods added",
+        "then": "new payment methods may lack trust or user familiarity \u2014 likely technical friction or incomplete implementation"
+      },
+      {
+        "if": "Cart-to-Shipping drop-off up, cart_value up",
+        "then": "high-value carts fear commitment \u2014 likely account creation friction or lack of guest checkout option"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Shipping-to-Billing drop-off increases >20% WoW",
+        "and_also": "ec_shipping_cost_per_order increases same period",
+        "shared_root_cause": "A carrier rate increase or new surcharge (e.g., fuel, peak season) was passed through to customers, making shipping costs visible at the shipping step and triggering abandonment.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', c.session_date) AS week, COUNT(DISTINCT c.session_id) AS sessions, COUNT(DISTINCT CASE WHEN c.step = 'shipping' THEN c.session_id END) AS entered_shipping, COUNT(DISTINCT CASE WHEN c.step = 'billing' THEN c.session_id END) AS entered_billing, AVG(s.shipping_cost) AS avg_shipping FROM checkout_events c JOIN shipping_costs s ON c.session_id = s.session_id WHERE c.session_date >= '2024-01-01' GROUP BY 1 ORDER BY week"
+      },
+      {
+        "if_this_metric": "Payment-to-Confirmation drop-off spikes during maintenance windows",
+        "and_also": "ec_payment_failure_rate increases",
+        "shared_root_cause": "A payment gateway maintenance or rate-limiting event caused declined payments to be logged as *abandonments* instead of *failures* \u2014 misclassifying a technical error as a UX drop-off.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('day', e.event_time) AS day, COUNT(DISTINCT CASE WHEN e.event = 'payment_declined' THEN e.session_id END) AS declines, COUNT(DISTINCT CASE WHEN e.event = 'abandon_checkout' THEN e.session_id END) AS abandonments FROM events e WHERE e.event IN ('payment_declined', 'abandon_checkout') AND e.event_time >= '2024-01-01' GROUP BY 1 ORDER BY day"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Counting drop-off as (step_n - step_n+1) *before* grouping",
+        "why_wrong": "If step counts are subtracted *per session* (e.g., 1-1=0, 1-0=1), sessions with multiple step gaps are miscounted \u2014 inflating or deflating drop-off rates unpredictably.",
+        "bad_sql": "SELECT session_id, SUM(CASE WHEN step = 'shipping' AND prev_step != 'cart' THEN 1 ELSE 0 END) AS cart_to_shipping_drop FROM (SELECT session_id, step, LAG(step) OVER (PARTITION BY session_id ORDER BY step_order) AS prev_step FROM checkout_events) sub",
+        "good_sql": "SELECT COUNT(DISTINCT CASE WHEN entered_cart = 1 AND entered_shipping = 0 THEN session_id END) AS cart_to_shipping_drop FROM step_funnel"
+      },
+      {
+        "pattern": "Using event counts instead of session counts",
+        "why_wrong": "If drop-off rate is computed as (events missing step_n+1 / events at step_n), sessions with many events at step_n (e.g., retries) are overcounted \u2014 deflating drop-off rate.",
+        "bad_sql": "SELECT COUNT(*) FILTER (WHERE step = 'shipping') * 100.0 / NULLIF(COUNT(*) FILTER (WHERE step = 'cart'), 0) AS cart_to_shipping_drop FROM checkout_events",
+        "good_sql": "SELECT COUNT(DISTINCT CASE WHEN entered_cart = 1 AND entered_shipping = 0 THEN session_id END) * 100.0 / NULLIF(COUNT(DISTINCT CASE WHEN entered_cart = 1 THEN session_id END), 0) AS cart_to_shipping_drop FROM step_funnel"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "WITH step_funnel AS (SELECT session_id, MAX(CASE WHEN step = 'cart' THEN 1 ELSE 0 END) AS entered_cart, MAX(CASE WHEN step = 'shipping' THEN 1 ELSE 0 END) AS entered_shipping, MAX(CASE WHEN step = 'billing' THEN 1 ELSE 0 END) AS entered_billing, MAX(CASE WHEN step = 'review' THEN 1 ELSE 0 END) AS entered_review, MAX(CASE WHEN step = 'payment' THEN 1 ELSE 0 END) AS entered_payment, MAX(CASE WHEN step = 'confirmation' THEN 1 ELSE 0 END) AS entered_confirmation FROM checkout_events WHERE session_date BETWEEN '2024-01-01' AND '2024-01-31' GROUP BY session_id), step_counts AS (SELECT COUNT(DISTINCT CASE WHEN entered_cart = 1 THEN session_id END) AS cart_entered, COUNT(DISTINCT CASE WHEN entered_shipping = 1 THEN session_id END) AS shipping_entered, COUNT(DISTINCT CASE WHEN entered_billing = 1 THEN session_id END) AS billing_entered, COUNT(DISTINCT CASE WHEN entered_review = 1 THEN session_id END) AS review_entered, COUNT(DISTINCT CASE WHEN entered_payment = 1 THEN session_id END) AS payment_entered, COUNT(DISTINCT CASE WHEN entered_confirmation = 1 THEN session_id END) AS confirmation_entered FROM step_funnel) SELECT cart_entered, shipping_entered, billing_entered, review_entered, payment_entered, confirmation_entered, ROUND((cart_entered - shipping_entered) * 100.0 / NULLIF(cart_entered, 0), 2) AS cart_to_shipping_drop_off, ROUND((shipping_entered - billing_entered) * 100.0 / NULLIF(shipping_entered, 0), 2) AS shipping_to_billing_drop_off FROM step_counts",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', c.session_date) AS month, c.device_type, COUNT(DISTINCT CASE WHEN c.step = 'cart' THEN c.session_id END) AS cart_entered, COUNT(DISTINCT CASE WHEN c.step = 'shipping' THEN c.session_id END) AS shipping_entered, COUNT(DISTINCT CASE WHEN c.step = 'billing' THEN c.session_id END) AS billing_entered, ROUND((COUNT(DISTINCT CASE WHEN c.step = 'cart' THEN c.session_id END) - COUNT(DISTINCT CASE WHEN c.step = 'shipping' THEN c.session_id END)) * 100.0 / NULLIF(COUNT(DISTINCT CASE WHEN c.step = 'cart' THEN c.session_id END), 0), 2) AS cart_to_shipping_drop_off FROM checkout_events c WHERE c.session_date >= '2024-01-01' GROUP BY 1, c.device_type ORDER BY 1, 5 DESC",
+      "advanced_sql": "WITH step_funnel AS (\n  -- Grain: one row per session with step entry flags\n  SELECT\n    session_id,\n    device_type,\n    MAX(CASE WHEN step = 'cart' THEN 1 ELSE 0 END) AS entered_cart,\n    MAX(CASE WHEN step = 'shipping' THEN 1 ELSE 0 END) AS entered_shipping,\n    MAX(CASE WHEN step = 'billing' THEN 1 ELSE 0 END) AS entered_billing,\n    MAX(CASE WHEN step = 'review' THEN 1 ELSE 0 END) AS entered_review,\n    MAX(CASE WHEN step = 'payment' THEN 1 ELSE 0 END) AS entered_payment,\n    MAX(CASE WHEN step = 'confirmation' THEN 1 ELSE 0 END) AS entered_confirmation\n  FROM checkout_events\n  WHERE session_date BETWEEN '2024-01-01' AND '2024-01-31'\n  GROUP BY session_id, device_type\n),\nstep_counts AS (\n  SELECT\n    COUNT(DISTINCT CASE WHEN entered_cart = 1 THEN session_id END) AS cart_entered,\n    COUNT(DISTINCT CASE WHEN entered_shipping = 1 THEN session_id END) AS shipping_entered,\n    COUNT(DISTINCT CASE WHEN entered_billing = 1 THEN session_id END) AS billing_entered,\n    COUNT(DISTINCT CASE WHEN entered_review = 1 THEN session_id END) AS review_entered,\n    COUNT(DISTINCT CASE WHEN entered_payment = 1 THEN session_id END) AS payment_entered,\n    COUNT(DISTINCT CASE WHEN entered_confirmation = 1 THEN session_id END) AS confirmation_entered\n  FROM step_funnel\n),\nfunnel_metrics AS (\n  SELECT\n    cart_entered,\n    shipping_entered,\n    billing_entered,\n    review_entered,\n    payment_entered,\n    confirmation_entered,\n    ROUND((cart_entered - shipping_entered) * 100.0 / NULLIF(cart_entered, 0), 2) AS cart_to_shipping_drop_off,\n    ROUND((shipping_entered - billing_entered) * 100.0 / NULLIF(shipping_entered, 0), 2) AS shipping_to_billing_drop_off,\n    ROUND((billing_entered - review_entered) * 100.0 / NULLIF(billing_entered, 0), 2) AS billing_to_review_drop_off,\n    ROUND((review_entered - payment_entered) * 100.0 / NULLIF(review_entered, 0), 2) AS review_to_payment_drop_off,\n    ROUND((payment_entered - confirmation_entered) * 100.0 / NULLIF(payment_entered, 0), 2) AS payment_to_confirmation_drop_off\n  FROM step_counts\n)\nSELECT\n  cart_to_shipping_drop_off,\n  shipping_to_billing_drop_off,\n  billing_to_review_drop_off,\n  review_to_payment_drop_off,\n  payment_to_confirmation_drop_off\nFROM funnel_metrics"
+    }
+  },
+  {
+    "id": "ec_payment_failure_rate",
+    "title": "Payment Failure Rate",
+    "intent_tags": [
+      "payment failure rate",
+      "payment decline rate",
+      "payment errors",
+      "declined payments %",
+      "payment issues",
+      "payment rejection",
+      "what % payments fail",
+      "payment failures %",
+      "declined transaction rate",
+      "payment gateway errors",
+      "card declined"
+    ],
+    "sql_features": [
+      "aggregation",
+      "conditional_count",
+      "nullif"
+    ],
+    "difficulty": "beginner",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "monitor payment gateway health and provider reliability",
+      "diagnose checkout friction and lost sales",
+      "evaluate impact of payment method changes (new gateways, card networks)",
+      "identify customer segments with high failure rates (e.g., new cards, international)",
+      "trigger real-time recovery (e.g., alternative payment methods)"
+    ],
+    "related_patterns": [
+      "ec_checkout_step_drop_off",
+      "ec_conversion_rate",
+      "ec_refund_rate",
+      "ec_abandoned_cart_rate"
+    ],
+    "business_definition": "Percentage of payment attempts that failed (declined, expired, or technical error) out of total payment attempts in the period. A payment attempt is defined as a submission to the payment processor, regardless of outcome.",
+    "metric_nature": {
+      "what_it_measures": "The reliability and success rate of payment processing \u2014 a direct indicator of technical and fraud-related friction in the checkout flow.",
+      "what_it_does_not_measure": "Reason for failure. This metric quantifies *that* a failure occurred, but not *why* (e.g., insufficient funds, card expired, fraud block).",
+      "common_misconception": "Payment failure rate is not the same as refund rate. Refunds occur post-fulfillment; payment failures occur *before* order confirmation and prevent fulfillment."
+    },
+    "template": "SELECT COUNT(DISTINCT CASE WHEN p.status IN ('declined', 'expired', 'error') THEN p.payment_id END) AS failed_payments, COUNT(DISTINCT p.payment_id) AS total_attempts, COUNT(DISTINCT CASE WHEN p.status IN ('declined', 'expired', 'error') THEN p.payment_id END) * 100.0 / NULLIF(COUNT(DISTINCT p.payment_id), 0) AS failure_rate FROM payments p WHERE p.payment_date BETWEEN {start_date} AND {end_date}",
+    "inflation_causes": [
+      {
+        "cause": "Including duplicate payment attempts in failure count",
+        "how_it_inflates": "If retries are logged as new payment_id entries (e.g., same order retried 3 times), a single failed card is counted as 3 failures \u2014 inflating failure rate and masking true customer-level error rates.",
+        "detection_sql": "SELECT order_id, COUNT(*) AS attempts, COUNT(DISTINCT CASE WHEN status IN ('declined', 'expired', 'error') THEN payment_id END) AS failures FROM payments WHERE payment_date >= '2024-01-01' GROUP BY order_id HAVING COUNT(*) > 1 ORDER BY attempts DESC LIMIT 10",
+        "fix": "Deduplicate payment attempts per order using `ROW_NUMBER() OVER (PARTITION BY order_id ORDER BY payment_date DESC) = 1` to count only final attempts."
+      },
+      {
+        "cause": "Counting partial payments (e.g., gift card + credit card split)",
+        "how_it_inflates": "If a split payment uses two methods (e.g., $50 gift card + $50 credit), and only the credit card fails, it is counted as *one* failure \u2014 correct. However, if *both* are logged separately (e.g., as two payments), and one succeeds and one fails, it counts as *one* failure out of *two* attempts \u2014 inflating failure rate because only one partial attempt was needed to succeed.",
+        "detection_sql": "SELECT order_id, COUNT(DISTINCT payment_id) AS payments, COUNT(DISTINCT CASE WHEN status IN ('declined', 'expired', 'error') THEN payment_id END) AS failures FROM payments WHERE payment_date >= '2024-01-01' GROUP BY order_id HAVING COUNT(DISTINCT payment_id) > 1 ORDER BY payments DESC LIMIT 10",
+        "fix": "Count failures as percentage of *successful orders* where any payment attempt failed \u2014 e.g., `COUNT(DISTINCT CASE WHEN order_status = 'failed' THEN order_id END) * 100.0 / NULLIF(COUNT(DISTINCT order_id), 0)`."
+      },
+      {
+        "cause": "Not filtering to first-party payments",
+        "how_it_inflates": "If third-party payment methods (e.g., PayPal, Apple Pay) are included but their failure semantics differ (e.g., PayPal declines before redirect, credit card declines at confirmation), the failure rate appears inflated due to inconsistent definitions.",
+        "detection_sql": "SELECT payment_method, COUNT(DISTINCT payment_id) AS attempts, COUNT(DISTINCT CASE WHEN status IN ('declined', 'expired', 'error') THEN payment_id END) AS failures FROM payments WHERE payment_date >= '2024-01-01' GROUP BY 1 ORDER BY attempts DESC",
+        "fix": "Filter to core card payments (or normalize failure definitions across methods) before aggregation."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Excluding 'soft' declines (e.g., fraud check pending, CVV mismatch)",
+        "how_it_deflates": "If only 'hard' declines (insufficient funds) are counted, but 'soft' declines (CVV, address mismatch, fraud block) are excluded, failure rate appears artificially low \u2014 masking preventable friction.",
+        "detection_sql": "SELECT decline_code, COUNT(DISTINCT payment_id) AS attempts FROM payments WHERE payment_date >= '2024-01-01' GROUP BY decline_code ORDER BY attempts DESC",
+        "fix": "Include all non-success statuses (declined, expired, error) unless business defines 'failure' narrowly (e.g., only hard declines)."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the failure rate anomaly concentrated in specific payment methods or gateways?",
+      "Has a new fraud rule or 3DS2 mandate been introduced recently?",
+      "Are failures correlated with order value (e.g., high-value orders fail more)?",
+      "Did a change in card BIN ranges or international processing occur?",
+      "Are failures tied to specific customer segments (e.g., new cards, international)?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "Payment failure rate up, checkout_step_drop_off at payment up",
+        "then": "payment gateway issues (e.g., rate limits, maintenance) causing failures \u2014 likely technical, not customer-side"
+      },
+      {
+        "if": "Payment failure rate up, new_card_rate up",
+        "then": "new card introductions (e.g., post-launch, promotions) with unfamiliar BINs are triggering fraud blocks"
+      },
+      {
+        "if": "Payment failure rate down, fraud_rate up",
+        "then": "less aggressive fraud rules now allow more transactions \u2014 likely a balance shift toward lower rejection and higher true fraud"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Payment failure rate increases >25% WoW with no change in order volume",
+        "and_also": "ec_abandoned_cart_rate increases same period",
+        "shared_root_cause": "A new fraud detection rule (e.g., address verification, velocity check) or gateway maintenance window is causing more payment rejections *and* pushing customers to abandon rather than retry.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('day', f.event_time) AS day, COUNT(DISTINCT CASE WHEN f.event = 'payment_declined' THEN f.session_id END) AS declines, COUNT(DISTINCT CASE WHEN f.event = 'abandon_checkout' THEN f.session_id END) AS abandonments, COUNT(DISTINCT CASE WHEN f.event = 'order_completed' THEN f.session_id END) AS conversions FROM events f WHERE f.event IN ('payment_declined', 'abandon_checkout', 'order_completed') AND f.event_time >= '2024-01-01' GROUP BY 1 ORDER BY day"
+      },
+      {
+        "if_this_metric": "Payment failure rate drops MoM",
+        "and_also": "ec_avg_order_value increases same period",
+        "shared_root_cause": "A new high-value payment method (e.g., Klarna, Afterpay) or financing option was introduced, reducing declines for large orders \u2014 increasing AOV *and* reducing failure rate by diversifying payment options.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', o.order_date) AS month, COUNT(DISTINCT o.order_id) AS orders, AVG(o.order_total) AS aov, COUNT(DISTINCT CASE WHEN p.status IN ('declined', 'expired', 'error') THEN p.payment_id END) * 100.0 / NULLIF(COUNT(DISTINCT p.payment_id), 0) AS failure_rate FROM orders o LEFT JOIN payments p ON o.order_id = p.order_id WHERE o.order_date >= '2024-01-01' GROUP BY 1 ORDER BY month"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Counting failures as percentage of *orders*, not *payment attempts*",
+        "why_wrong": "If a multi-method payment fails on the first attempt but succeeds on retry, and only the successful order is counted, failure rate appears as 0% \u2014 masking the friction.",
+        "bad_sql": "SELECT COUNT(DISTINCT CASE WHEN order_status = 'failed' THEN order_id END) * 100.0 / NULLIF(COUNT(DISTINCT order_id), 0) AS failure_rate FROM orders",
+        "good_sql": "SELECT COUNT(DISTINCT CASE WHEN p.status IN ('declined', 'expired', 'error') THEN p.payment_id END) * 100.0 / NULLIF(COUNT(DISTINCT p.payment_id), 0) AS failure_rate FROM payments p WHERE p.payment_date BETWEEN '2024-01-01' AND '2024-01-31'"
+      },
+      {
+        "pattern": "Using order_status='failed' to define failure",
+        "why_wrong": "If order_status is only set after *all* payment attempts are exhausted, and failed orders are not immediately captured, payment failure rate appears lower than reality \u2014 masking near-term losses.",
+        "bad_sql": "SELECT COUNT(DISTINCT CASE WHEN order_status = 'failed' THEN order_id END) * 100.0 / NULLIF(COUNT(DISTINCT order_id), 0) AS failure_rate FROM orders WHERE order_date >= '2024-01-01'",
+        "good_sql": "SELECT COUNT(DISTINCT CASE WHEN p.status IN ('declined', 'expired', 'error') THEN p.payment_id END) * 100.0 / NULLIF(COUNT(DISTINCT p.payment_id), 0) AS failure_rate FROM payments p WHERE p.payment_date >= '2024-01-01'"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT COUNT(DISTINCT CASE WHEN p.status IN ('declined', 'expired', 'error') THEN p.payment_id END) * 100.0 / NULLIF(COUNT(DISTINCT p.payment_id), 0) AS failure_rate FROM payments p WHERE p.payment_date BETWEEN '2024-01-01' AND '2024-01-31'",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', p.payment_date) AS month, p.payment_method, COUNT(DISTINCT p.payment_id) AS attempts, COUNT(DISTINCT CASE WHEN p.status IN ('declined', 'expired', 'error') THEN p.payment_id END) AS failures, COUNT(DISTINCT CASE WHEN p.status IN ('declined', 'expired', 'error') THEN p.payment_id END) * 100.0 / NULLIF(COUNT(DISTINCT p.payment_id), 0) AS failure_rate FROM payments p WHERE p.payment_date >= '2024-01-01' GROUP BY 1, p.payment_method ORDER BY 1, 5 DESC",
+      "advanced_sql": "WITH payment_attempts AS (\n  -- Grain: payment attempt details\n  SELECT\n    payment_id,\n    order_id,\n    payment_method,\n    status,\n    payment_date,\n    decline_code,\n    ROW_NUMBER() OVER (PARTITION BY order_id ORDER BY payment_date DESC) AS attempt_rank\n  FROM payments\n  WHERE payment_date BETWEEN '2024-01-01' AND '2024-01-31'\n),\nfinal_attempts AS (\n  SELECT * FROM payment_attempts WHERE attempt_rank = 1\n),\nfailure_metrics AS (\n  SELECT\n    COUNT(DISTINCT order_id) AS total_orders,\n    COUNT(DISTINCT CASE WHEN status IN ('declined', 'expired', 'error') THEN order_id END) AS failed_orders,\n    COUNT(DISTINCT CASE WHEN status IN ('declined', 'expired', 'error') THEN payment_id END) AS failed_payments\n  FROM final_attempts\n)\nSELECT\n  total_orders,\n  failed_orders,\n  failed_payments,\n  ROUND(failed_orders * 100.0 / NULLIF(total_orders, 0), 2) AS order_failure_rate,\n  ROUND(failed_payments * 100.0 / NULLIF(total_orders, 0), 2) AS payment_failure_rate\nFROM failure_metrics"
+    }
+  },
+  {
+    "id": "ec_search_to_purchase_rate",
+    "title": "Search-to-Purchase Rate",
+    "intent_tags": [
+      "search to purchase rate",
+      "search conversion rate",
+      "search purchase rate",
+      "search effectiveness",
+      "search revenue rate",
+      "search results to order",
+      "what % search leads to purchase",
+      "search-driven purchases",
+      "search-to-buy rate",
+      "search funnel efficiency",
+      "search purchase conversion"
+    ],
+    "sql_features": [
+      "aggregation",
+      "conditional_count",
+      "left_join",
+      "nullif"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "funnel",
+    "when_to_use": [
+      "assess search functionality quality and relevance",
+      "benchmark search performance across categories or seasons",
+      "diagnose drop-offs between search queries and purchases",
+      "evaluate impact of search UX or algorithm changes",
+      "estimate search-driven revenue contribution"
+    ],
+    "related_patterns": [
+      "ec_pdp_to_cart_rate",
+      "ec_conversion_rate",
+      "ec_product_relevance_score",
+      "ec_top_search_terms"
+    ],
+    "business_definition": "Percentage of search sessions (sessions with a search event) that resulted in a completed purchase in the same session or within a short follow-up window (e.g., 30 minutes or next session). A search session is defined as one with at least one search event.",
+    "metric_nature": {
+      "what_it_measures": "How effectively search drives purchases \u2014 a direct measure of search relevance, keyword quality, and conversion path from search to purchase.",
+      "what_it_does_not_measure": "Incrementality. This metric does not distinguish between search-driven purchases and purchases that would have happened anyway.",
+      "common_misconception": "Search-to-purchase rate is not the same as organic search traffic conversion rate. It measures *within-site search* effectiveness, not *external* search engine traffic."
+    },
+    "template": "WITH search_sessions AS (\n  SELECT DISTINCT session_id FROM events WHERE event_type = 'search' AND event_date BETWEEN {start_date} AND {end_date}\n),\npurchased_sessions AS (\n  SELECT DISTINCT s.session_id FROM search_sessions s JOIN orders o ON s.session_id = o.session_id WHERE o.status = 'completed' AND o.order_date BETWEEN {start_date} AND {end_date}\n)\nSELECT COUNT(DISTINCT s.session_id) AS search_sessions, COUNT(DISTINCT p.session_id) AS purchased_sessions, COUNT(DISTINCT p.session_id) * 100.0 / NULLIF(COUNT(DISTINCT s.session_id), 0) AS conversion_rate FROM search_sessions s LEFT JOIN purchased_sessions p ON s.session_id = p.session_id",
+    "inflation_causes": [
+      {
+        "cause": "Counting purchases across sessions as part of search session",
+        "how_it_inflates": "If the metric includes purchases from *subsequent sessions* (e.g., user searches today, purchases tomorrow), search sessions are attributed to future purchases \u2014 inflating conversion rate when users browse across sessions.",
+        "detection_sql": "SELECT DATE_TRUNC('day', o.order_date) AS order_day, COUNT(DISTINCT CASE WHEN search_session_date < o.order_date THEN o.session_id END) AS cross_session_purchases FROM orders o JOIN search_sessions s ON o.session_id = s.session_id WHERE o.order_date >= '2024-01-01' GROUP BY 1 ORDER BY order_day",
+        "fix": "Constrain purchase attribution to the *same session* or a narrow follow-up window (e.g., \u226430 minutes after search event)."
+      },
+      {
+        "cause": "Including empty or irrelevant search queries",
+        "how_it_inflates": "If 'search' events are logged for empty inputs or system tests, and users who search 'a', 'test', 'help' are included in the denominator, search quality appears artificially high \u2014 especially if those users browse and purchase anyway.",
+        "detection_sql": "SELECT search_query, COUNT(DISTINCT session_id) AS sessions, COUNT(DISTINCT CASE WHEN order_id IS NOT NULL THEN session_id END) AS purchases FROM search_events LEFT JOIN orders ON search_events.session_id = orders.session_id WHERE search_query IS NOT NULL GROUP BY search_query HAVING COUNT(*) > 10 ORDER BY sessions DESC LIMIT 20",
+        "fix": "Filter search events to exclude empty, single-character, or known-test queries before aggregation."
+      },
+      {
+        "cause": "Counting purchases *before* search in same session",
+        "how_it_inflates": "If a session adds items to cart *before* the search event, and the purchase is counted as 'search to purchase', search is credited for purchases it did not drive \u2014 inflating rate.",
+        "detection_sql": "SELECT session_id, MIN(event_time) AS first_event, MAX(CASE WHEN event_type = 'search' THEN event_time END) AS search_time FROM events WHERE session_id IN (SELECT DISTINCT session_id FROM search_events) GROUP BY session_id HAVING MAX(CASE WHEN event_type = 'search' THEN event_time END) IS NULL OR MIN(event_time) < MAX(CASE WHEN event_type = 'search' THEN event_time END) ORDER BY search_time DESC LIMIT 10",
+        "fix": "Require search event to occur *before* purchase in the same session: `search_event_time < purchase_event_time`."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Excluding mobile sessions with delayed search logs",
+        "how_it_deflates": "If mobile search events are logged late due to offline caching, the search appears after purchase \u2014 exclusion of the session inflates the denominator and deflates conversion rate.",
+        "detection_sql": "SELECT COUNT(DISTINCT session_id) AS sessions, COUNT(DISTINCT CASE WHEN event_type = 'search' AND event_time > purchase_time THEN session_id END) AS misordered_events FROM (SELECT session_id, MIN(CASE WHEN event_type = 'search' THEN event_time END) AS search_time, MIN(CASE WHEN event_type = 'order_completed' THEN event_time END) AS purchase_time FROM events WHERE event_date >= '2024-01-01' GROUP BY session_id) sub",
+        "fix": "Attribute search events to sessions using persistent session_id and device_id, and allow a grace period (e.g., search within 10 minutes after session creation)."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the conversion rate anomaly concentrated in specific search categories or queries?",
+      "Has a new search algorithm, synonyms, or autocomplete feature been introduced?",
+      "Are high-conversion searches correlated with specific product types or prices?",
+      "Did mobile vs desktop search performance shift recently?",
+      "Are low-conversion searches due to poor relevance or intent mismatch?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "Search-to-purchase rate up, search_volume up",
+        "then": "more search users + better quality \u2014 likely improved search UX or product catalog alignment"
+      },
+      {
+        "if": "Search-to-purchase rate down, search_volume up",
+        "then": "search traffic growth is lower quality \u2014 likely marketing campaigns driving untargeted traffic or keyword stuffing"
+      },
+      {
+        "if": "Search-to-purchase rate up, revenue per visitor down",
+        "then": "search-driven purchases are lower value \u2014 likely discount-driven searches (e.g., 'cheap') or high-add-to-cart, low-checkout behavior"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Search-to-purchase rate drops >15% MoM with stable traffic",
+        "and_also": "ec_search_bounce_rate increases",
+        "shared_root_cause": "Search relevance has degraded \u2014 likely due to a catalog update, synonym removal, or algorithm change \u2014 causing users to search and leave without purchasing.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', s.search_date) AS week, COUNT(DISTINCT s.session_id) AS searches, COUNT(DISTINCT CASE WHEN o.order_id IS NOT NULL THEN s.session_id END) AS purchases, COUNT(DISTINCT CASE WHEN page_views = 1 AND page_exit = true THEN s.session_id END) AS bounces FROM search_sessions s LEFT JOIN orders o ON s.session_id = o.session_id LEFT JOIN page_events p ON s.session_id = p.session_id WHERE s.search_date >= '2024-01-01' GROUP BY 1 ORDER BY week"
+      },
+      {
+        "if_this_metric": "Search-to-purchase rate increases with no change in search volume",
+        "and_also": "ec_product_relevance_score increases",
+        "shared_root_cause": "A search algorithm optimization (e.g., improved vector search, semantic relevance) is driving more relevant results \u2014 increasing purchase likelihood without altering search volume.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', s.search_date) AS week, COUNT(DISTINCT s.session_id) AS searches, COUNT(DISTINCT CASE WHEN o.order_id IS NOT NULL THEN s.session_id END) AS purchases, AVG(p.relevance_score) AS avg_relevance FROM search_sessions s LEFT JOIN orders o ON s.session_id = o.session_id JOIN product_search p ON s.search_query = p.search_query WHERE s.search_date >= '2024-01-01' GROUP BY 1 ORDER BY week"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Counting *all* search events as search sessions",
+        "why_wrong": "If multiple search events in one session are treated as multiple search sessions, the denominator inflates \u2014 deflating conversion rate.",
+        "bad_sql": "SELECT COUNT(DISTINCT CASE WHEN o.order_id IS NOT NULL THEN s.search_id END) * 100.0 / NULLIF(COUNT(DISTINCT s.search_id), 0) AS rate FROM search_events s LEFT JOIN orders o ON s.session_id = o.session_id",
+        "good_sql": "SELECT COUNT(DISTINCT CASE WHEN o.order_id IS NOT NULL THEN s.session_id END) * 100.0 / NULLIF(COUNT(DISTINCT s.session_id), 0) AS rate FROM (SELECT DISTINCT session_id FROM search_events) s LEFT JOIN (SELECT DISTINCT session_id FROM orders WHERE status = 'completed') o ON s.session_id = o.session_id"
+      },
+      {
+        "pattern": "Using purchase_session_id to match search_session_id",
+        "why_wrong": "If search and purchase sessions are assigned IDs differently (e.g., new session on purchase), matching by ID fails \u2014 deflating conversion rate and masking true search influence.",
+        "bad_sql": "SELECT COUNT(DISTINCT CASE WHEN s.search_session_id = o.search_session_id THEN s.search_session_id END) * 100.0 / NULLIF(COUNT(DISTINCT s.search_session_id), 0) AS rate FROM search_events s LEFT JOIN orders o ON s.search_session_id = o.search_session_id",
+        "good_sql": "SELECT COUNT(DISTINCT CASE WHEN o.session_id IS NOT NULL THEN s.session_id END) * 100.0 / NULLIF(COUNT(DISTINCT s.session_id), 0) AS rate FROM search_sessions s LEFT JOIN orders o ON s.session_id = o.session_id"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "WITH search_sessions AS (SELECT DISTINCT session_id FROM events WHERE event_type = 'search' AND event_date BETWEEN '2024-01-01' AND '2024-01-31'), purchased_sessions AS (SELECT DISTINCT s.session_id FROM search_sessions s JOIN orders o ON s.session_id = o.session_id WHERE o.status = 'completed' AND o.order_date BETWEEN '2024-01-01' AND '2024-01-31') SELECT COUNT(DISTINCT s.session_id) AS search_sessions, COUNT(DISTINCT p.session_id) AS purchased_sessions, COUNT(DISTINCT p.session_id) * 100.0 / NULLIF(COUNT(DISTINCT s.session_id), 0) AS conversion_rate FROM search_sessions s LEFT JOIN purchased_sessions p ON s.session_id = p.session_id",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', s.session_date) AS month, s.search_query, COUNT(DISTINCT s.session_id) AS searches, COUNT(DISTINCT CASE WHEN o.order_id IS NOT NULL THEN s.session_id END) AS purchases, COUNT(DISTINCT CASE WHEN o.order_id IS NOT NULL THEN s.session_id END) * 100.0 / NULLIF(COUNT(DISTINCT s.session_id), 0) AS rate FROM search_sessions s LEFT JOIN orders o ON s.session_id = o.session_id WHERE s.session_date >= '2024-01-01' GROUP BY 1, s.search_query ORDER BY 1, 5 DESC",
+      "advanced_sql": "WITH search_sessions AS (\n  -- Grain: sessions with search events, filtered to valid queries\n  SELECT DISTINCT session_id, MIN(event_time) AS search_time\n  FROM events\n  WHERE event_type = 'search'\n    AND event_date BETWEEN '2024-01-01' AND '2024-01-31'\n  GROUP BY session_id\n),\npurchased_sessions AS (\n  SELECT DISTINCT session_id, MIN(event_time) AS purchase_time\n  FROM events\n  WHERE event_type = 'order_completed'\n    AND event_date BETWEEN '2024-01-01' AND '2024-01-31'\n  GROUP BY session_id\n),\nmatched AS (\n  SELECT\n    s.session_id,\n    s.search_time,\n    p.purchase_time,\n    DATEDIFF(minute, s.search_time, p.purchase_time) AS minutes_to_purchase\n  FROM search_sessions s\n  LEFT JOIN purchased_sessions p ON s.session_id = p.session_id\n  WHERE p.purchase_time IS NOT NULL AND p.purchase_time >= s.search_time AND p.purchase_time <= DATEADD(minute, 30, s.search_time)\n)\nSELECT\n  COUNT(DISTINCT m.session_id) AS purchased_sessions,\n  COUNT(DISTINCT s.session_id) AS search_sessions,\n  ROUND(COUNT(DISTINCT m.session_id) * 100.0 / NULLIF(COUNT(DISTINCT s.session_id), 0), 2) AS conversion_rate,\n  ROUND(AVG(minutes_to_purchase), 2) AS avg_minutes_to_purchase\nFROM search_sessions s\nLEFT JOIN matched m ON s.session_id = m.session_id"
+    }
+  },
+  {
+    "id": "ec_cross_sell_attach_rate",
+    "title": "Cross-sell Attach Rate",
+    "intent_tags": [
+      "cross-sell attach rate",
+      "cross-sell rate",
+      "attachment rate",
+      "cross-selling rate",
+      "product bundling rate",
+      "cross-sell success",
+      "what % orders have multiple categories",
+      "cross-category attach",
+      "cross-category rate",
+      "bundling attach rate"
+    ],
+    "sql_features": [
+      "aggregation",
+      "conditional_count",
+      "nullif"
+    ],
+    "difficulty": "beginner",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "assess cross-selling strategy effectiveness",
+      "benchmark attachment rates across product categories or merchants",
+      "optimize bundling, recommendations, or bundling pricing",
+      "identify high- or low-attachment products for inventory planning",
+      "measure revenue uplift from cross-selling initiatives"
+    ],
+    "related_patterns": [
+      "ec_gross_profit_per_order",
+      "ec_aov",
+      "ec_order_frequency",
+      "ec_product_relevance_score"
+    ],
+    "business_definition": "Percentage of orders containing at least two distinct product categories (e.g., 'electronics' and 'home') out of total orders. A category is defined at the product level and aggregated to order level.",
+    "metric_nature": {
+      "what_it_measures": "The frequency of multi-category purchases \u2014 a proxy for cross-selling success and customer willingness to buy disparate items in one transaction.",
+      "what_it_does_not_measure": "Value or profit contribution of attached items. An order may have two categories but only one high-margin item \u2014 attach rate doesn\u2019t quantify economic impact.",
+      "common_misconception": "Cross-sell attach rate is not the same as basket size. Attach rate requires *category* diversity; basket size measures *item* count regardless of category."
+    },
+    "template": "SELECT COUNT(DISTINCT CASE WHEN category_count >= 2 THEN order_id END) AS cross_sell_orders, COUNT(DISTINCT order_id) AS total_orders, COUNT(DISTINCT CASE WHEN category_count >= 2 THEN order_id END) * 100.0 / NULLIF(COUNT(DISTINCT order_id), 0) AS attach_rate FROM (SELECT order_id, COUNT(DISTINCT category) AS category_count FROM order_items oi JOIN products p ON oi.product_id = p.product_id GROUP BY order_id) sub",
+    "inflation_causes": [
+      {
+        "cause": "Counting sub-categories as distinct categories",
+        "how_it_inflates": "If category hierarchy is flat (e.g., 'electronics', 'electronics/accessories', 'electronics/smartphones'), sub-categories are counted separately \u2014 an order with one main category and three sub-categories inflates category_count to 4.",
+        "detection_sql": "SELECT category, COUNT(DISTINCT product_id) AS products FROM products GROUP BY category ORDER BY products DESC LIMIT 20",
+        "fix": "Use a normalized category taxonomy (e.g., parent category) or aggregate categories to a consistent level before counting."
+      },
+      {
+        "cause": "Including test or fraud orders",
+        "how_it_inflates": "If test orders with many categories (e.g., QA orders) are included, attachment rate appears higher \u2014 test orders may artificially inflate category diversity without commercial relevance.",
+        "detection_sql": "SELECT order_id, status, COUNT(DISTINCT category) AS categories FROM order_items oi JOIN products p ON oi.product_id = p.product_id JOIN orders o ON oi.order_id = o.order_id WHERE o.status = 'test' GROUP BY order_id, status HAVING COUNT(DISTINCT category) > 5 ORDER BY categories DESC LIMIT 10",
+        "fix": "Filter to completed or confirmed orders only, excluding test, fraud, and cancelled statuses."
+      },
+      {
+        "cause": "Deduplicating category at product level instead of order level",
+        "how_it_inflates": "If category_count is computed before order aggregation (e.g., using `COUNT(DISTINCT category) OVER (PARTITION BY order_id)`), and then summed across line items, the same category is counted multiple times \u2014 inflating cross-sell orders.",
+        "detection_sql": "SELECT order_id, COUNT(DISTINCT category) AS item_categories, COUNT(DISTINCT category) OVER (PARTITION BY order_id) AS order_categories FROM order_items oi JOIN products p ON oi.product_id = p.product_id ORDER BY order_id LIMIT 20",
+        "fix": "First aggregate to order level (`GROUP BY order_id`), *then* count distinct categories."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Excluding low-category items (e.g., services, digital)",
+        "how_it_deflates": "If digital or service items lack a category, they are excluded \u2014 orders with physical product + digital bundle appear as single-category, deflating attach rate.",
+        "detection_sql": "SELECT COUNT(DISTINCT CASE WHEN category IS NULL THEN product_id END) AS uncategorized_products FROM products",
+        "fix": "Assign a default category (e.g., 'miscellaneous') or include uncategorized items in cross-sell count only if they are non-physical items."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the attach rate anomaly concentrated in specific categories or product types?",
+      "Has a new recommendation engine, bundling offer, or upsell prompt been introduced?",
+      "Are attach rates higher for first-time buyers or repeat customers?",
+      "Did seasonal demand shifts affect category diversity (e.g., holiday bundles)?",
+      "Are low-attach categories due to product constraints or merchandising?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "Cross-sell attach rate up, AOV up",
+        "then": "cross-selling is driving higher basket size \u2014 likely successful recommendation algorithm or bundling strategy"
+      },
+      {
+        "if": "Cross-sell attach rate down, AOV up",
+        "then": "fewer categories but higher value per category \u2014 likely premiumization (e.g., high-price\u5355\u54c1) or category focus"
+      },
+      {
+        "if": "Cross-sell attach rate up, return_rate up",
+        "then": "more diverse orders are harder to match expectations \u2014 likely over-selling or mismatched recommendations causing returns"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Cross-sell attach rate drops >10% MoM with stable order volume",
+        "and_also": "ec_recommendation_click_rate decreases same period",
+        "shared_root_cause": "A recommendation engine refresh or algorithm change reduced suggestion relevance \u2014 users engaged less with cross-sell prompts and purchased fewer categories.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', r.event_time) AS week, COUNT(DISTINCT r.session_id) AS recommendations, COUNT(DISTINCT CASE WHEN r.event = 'click' THEN r.session_id END) AS clicks, COUNT(DISTINCT CASE WHEN o.order_id IS NOT NULL THEN r.session_id END) AS purchases FROM recommendation_events r LEFT JOIN orders o ON r.session_id = o.session_id WHERE r.event_time >= '2024-01-01' GROUP BY 1 ORDER BY week"
+      },
+      {
+        "if_this_metric": "Cross-sell attach rate spikes during holiday season",
+        "and_also": "ec_gross_profit_per_order increases",
+        "shared_root_cause": "Seasonal bundling campaigns (e.g., gift packs, holiday bundles) are driving multi-category purchases with higher-margin items \u2014 increasing both attach rate and margin per order.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', o.order_date) AS month, COUNT(DISTINCT CASE WHEN p.is_holiday_bundled = true THEN o.order_id END) AS bundled_orders, COUNT(DISTINCT CASE WHEN c.category_count >= 2 THEN o.order_id END) AS cross_sell_orders, AVG(nr.net_revenue) AS avg_nrv FROM orders o JOIN order_items oi ON o.order_id = oi.order_id JOIN products p ON oi.product_id = p.product_id JOIN net_revenue_daily nr ON o.order_id = nr.order_id LEFT JOIN (SELECT order_id, COUNT(DISTINCT category) AS category_count FROM order_items oi JOIN products p ON oi.product_id = p.product_id GROUP BY order_id) c ON o.order_id = c.order_id WHERE o.order_date >= '2024-01-01' GROUP BY 1 ORDER BY month"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Using item count instead of category count",
+        "why_wrong": "If attach rate is defined as orders with \u22652 items (not categories), orders with 10 identical items from the same category are misclassified as cross-sells \u2014 inflating rate and obscuring true category diversity.",
+        "bad_sql": "SELECT COUNT(DISTINCT CASE WHEN item_count >= 2 THEN order_id END) * 100.0 / NULLIF(COUNT(DISTINCT order_id), 0) AS rate FROM (SELECT order_id, COUNT(*) AS item_count FROM order_items GROUP BY order_id) sub",
+        "good_sql": "SELECT COUNT(DISTINCT CASE WHEN category_count >= 2 THEN order_id END) * 100.0 / NULLIF(COUNT(DISTINCT order_id), 0) AS rate FROM (SELECT order_id, COUNT(DISTINCT category) AS category_count FROM order_items oi JOIN products p ON oi.product_id = p.product_id GROUP BY order_id) sub"
+      },
+      {
+        "pattern": "Counting category at line-item level without deduplication",
+        "why_wrong": "If category count is performed on order_items without aggregation, each line item counts as a separate 'order' with its own category \u2014 breaking the metric entirely.",
+        "bad_sql": "SELECT COUNT(DISTINCT CASE WHEN category_count >= 2 THEN order_id END) * 100.0 / NULLIF(COUNT(DISTINCT order_id), 0) AS rate FROM (SELECT order_id, COUNT(DISTINCT category) OVER (PARTITION BY order_id) AS category_count FROM order_items oi JOIN products p ON oi.product_id = p.product_id) sub",
+        "good_sql": "SELECT COUNT(DISTINCT CASE WHEN category_count >= 2 THEN order_id END) * 100.0 / NULLIF(COUNT(DISTINCT order_id), 0) AS rate FROM (SELECT order_id, COUNT(DISTINCT category) AS category_count FROM order_items oi JOIN products p ON oi.product_id = p.product_id GROUP BY order_id) sub"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT COUNT(DISTINCT CASE WHEN category_count >= 2 THEN order_id END) * 100.0 / NULLIF(COUNT(DISTINCT order_id), 0) AS attach_rate FROM (SELECT order_id, COUNT(DISTINCT category) AS category_count FROM order_items oi JOIN products p ON oi.product_id = p.product_id JOIN orders o ON oi.order_id = o.order_id WHERE o.status = 'completed' GROUP BY order_id) sub",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', o.order_date) AS month, p.parent_category, COUNT(DISTINCT CASE WHEN c.category_count >= 2 THEN o.order_id END) * 100.0 / NULLIF(COUNT(DISTINCT o.order_id), 0) AS attach_rate, COUNT(DISTINCT o.order_id) AS orders FROM orders o JOIN (SELECT order_id, COUNT(DISTINCT p.category) AS category_count FROM order_items oi JOIN products p ON oi.product_id = p.product_id GROUP BY order_id) c ON o.order_id = c.order_id JOIN order_items oi ON o.order_id = oi.order_id JOIN products p ON oi.product_id = p.product_id WHERE o.status = 'completed' AND o.order_date >= '2024-01-01' GROUP BY 1, p.parent_category ORDER BY 1, 3 DESC",
+      "advanced_sql": "WITH order_categories AS (\n  -- Grain: one row per order with category diversity\n  SELECT\n    order_id,\n    COUNT(DISTINCT p.category) AS category_count\n  FROM order_items oi\n  JOIN products p ON oi.product_id = p.product_id\n  JOIN orders o ON oi.order_id = o.order_id\n  WHERE o.status = 'completed'\n    AND o.order_date BETWEEN '2024-01-01' AND '2024-01-31'\n  GROUP BY order_id\n),\norder_metrics AS (\n  SELECT\n    COUNT(DISTINCT CASE WHEN category_count >= 2 THEN order_id END) AS cross_sell_orders,\n    COUNT(DISTINCT order_id) AS total_orders\n  FROM order_categories\n)\nSELECT\n  cross_sell_orders,\n  total_orders,\n  ROUND(cross_sell_orders * 100.0 / NULLIF(total_orders, 0), 2) AS attach_rate,\n  ROUND(total_orders / NULLIF(cross_sell_orders, 0), 2) AS orders_per_cross_sell\nFROM order_metrics"
+    }
+  }
+]

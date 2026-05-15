@@ -1,0 +1,43 @@
+[
+  {
+    "id": "cohort_sql_pattern",
+    "title": "Cohort Analysis SQL Pattern",
+    "intent_tags": ["cohort", "cohort analysis", "cohort retention", "cohort revenue", "user cohorts", "monthly cohorts"],
+    "when_to_use": ["cohort retention grid", "revenue by cohort", "comparing cohorts over time"],
+    "dialect_traps": [
+      {
+        "construct": "DATEDIFF / date subtraction for interval calculation",
+        "postgres_behavior": "In PostgreSQL: EXTRACT(EPOCH FROM (date2 - date1)) / 2592000.0 for months, or DATE_PART('month', AGE(date2, date1)). DATEDIFF does not exist.",
+        "safe_alternative": "Use DATE_TRUNC to snap both dates to month boundaries, then subtract: (DATE_TRUNC('month', activity_date) - DATE_TRUNC('month', signup_date)). Or use EXTRACT(EPOCH FROM ...) / 86400 for days."
+      },
+      {
+        "construct": "FIRST_VALUE vs MIN for cohort assignment",
+        "postgres_behavior": "Both work but MIN(signup_date) in a subquery is cleaner and faster than FIRST_VALUE for cohort assignment",
+        "safe_alternative": "Use MIN(date_col) in a subquery to get cohort start date, then join back"
+      }
+    ],
+    "mistake_patterns": [
+      {
+        "mistake": "Not snapping dates to period boundaries before computing interval",
+        "symptom": "Cohort intervals look wrong — users appear in wrong month buckets",
+        "bad_sql": "SELECT user_id, signup_date, activity_date, activity_date - signup_date AS days_active FROM users JOIN activity USING (user_id)",
+        "good_sql": "SELECT user_id, DATE_TRUNC('month', signup_date) AS cohort_month, DATE_TRUNC('month', activity_date) AS activity_month, EXTRACT(EPOCH FROM (DATE_TRUNC('month', activity_date) - DATE_TRUNC('month', signup_date))) / 2592000 AS months_since_signup FROM users JOIN activity USING (user_id)"
+      },
+      {
+        "mistake": "Counting events instead of distinct users in cohort retention",
+        "symptom": "Retention > 100% because one user generates multiple events",
+        "bad_sql": "SELECT cohort_month, interval_month, COUNT(*) AS retained FROM cohort_activity GROUP BY 1, 2",
+        "good_sql": "SELECT cohort_month, interval_month, COUNT(DISTINCT user_id) AS retained FROM cohort_activity GROUP BY 1, 2"
+      }
+    ],
+    "concept_explanation": {
+      "what_it_does": "Cohort analysis groups users by their acquisition date and tracks their behaviour over time. The key steps: (1) assign each user to a cohort month, (2) for each user activity, compute the interval since cohort start, (3) aggregate distinct users per cohort × interval cell.",
+      "mental_model": "Think of a grid: rows are cohorts (signup month), columns are intervals (month 0, 1, 2...). Each cell = % of that cohort still active at that interval."
+    },
+    "template": "WITH cohorts AS (SELECT user_id, DATE_TRUNC('month', MIN(created_at)) AS cohort_month FROM users GROUP BY 1), activity AS (SELECT user_id, DATE_TRUNC('month', activity_date) AS active_month FROM user_activity) SELECT c.cohort_month, EXTRACT(EPOCH FROM (a.active_month - c.cohort_month)) / 2592000 AS months_since_start, COUNT(DISTINCT c.user_id) AS retained_users FROM cohorts c JOIN activity a USING (user_id) GROUP BY 1, 2 ORDER BY 1, 2",
+    "anti_patterns": [
+      "Do not use COUNT(*) for retention — always COUNT(DISTINCT user_id)",
+      "Do not mix cohort boundaries (e.g. weekly cohort vs monthly activity) without explicit conversion"
+    ]
+  }
+]

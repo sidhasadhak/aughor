@@ -1,0 +1,331 @@
+[
+  {
+    "id": "adv_gap_detection",
+    "title": "Event gap detection with LAG and conditional revenue split",
+    "intent_tags": [
+      "gap detection", "inactive period", "dead period", "no activity for N days",
+      "seller churn resurrection", "consecutive gap", "longest gap", "gap between events",
+      "revenue before and after event", "revenue split by timestamp", "conditional sum by boundary",
+      "days since last order", "dormant then active", "reactivation"
+    ],
+    "sql_features": ["window", "cte", "aggregation"],
+    "difficulty": "advanced",
+    "pattern_type": "analytical",
+    "template": "WITH entity_dates AS (\n    SELECT entity_id, DATE(event_timestamp) AS event_date, SUM(value) AS daily_value\n    FROM events\n    WHERE status NOT IN ('canceled')\n    GROUP BY entity_id, DATE(event_timestamp)\n),\ngaps AS (\n    SELECT entity_id, event_date, daily_value,\n        LAG(event_date) OVER (PARTITION BY entity_id ORDER BY event_date) AS prev_date,\n        DATEDIFF(event_date, LAG(event_date) OVER (PARTITION BY entity_id ORDER BY event_date)) AS gap_days\n    FROM entity_dates\n),\nsignificant_gaps AS (\n    SELECT entity_id,\n        prev_date  AS gap_start,\n        event_date AS gap_end,\n        gap_days,\n        ROW_NUMBER() OVER (PARTITION BY entity_id ORDER BY gap_days DESC) AS gap_rank\n    FROM gaps\n    WHERE gap_days >= 60\n),\ntop_gap AS (SELECT * FROM significant_gaps WHERE gap_rank = 1),\nrevenue_split AS (\n    SELECT ed.entity_id,\n        SUM(CASE WHEN ed.event_date <= tg.gap_start THEN ed.daily_value ELSE 0 END) AS value_before_gap,\n        SUM(CASE WHEN ed.event_date >= tg.gap_end   THEN ed.daily_value ELSE 0 END) AS value_after_gap\n    FROM entity_dates ed\n    JOIN top_gap tg ON ed.entity_id = tg.entity_id\n    GROUP BY ed.entity_id\n)\nSELECT tg.entity_id, tg.gap_days AS longest_gap_days, tg.gap_start, tg.gap_end,\n    ROUND(rs.value_before_gap, 2) AS revenue_before_gap,\n    ROUND(rs.value_after_gap,  2) AS revenue_after_gap\nFROM top_gap tg\nJOIN revenue_split rs ON tg.entity_id = rs.entity_id\nORDER BY tg.gap_days DESC",
+    "when_to_use": [
+      "find entities (sellers, customers) that went inactive for N+ consecutive days then resumed",
+      "compute the longest gap between consecutive events per entity",
+      "split any metric (revenue, orders, logins) into 'before event X' and 'after event X' using conditional SUM(CASE WHEN date <= boundary THEN ...)",
+      "churn resurrection analysis, seller reactivation, customer win-back"
+    ],
+    "anti_patterns": [
+      "using GROUP BY date without LAG — you need the PREVIOUS date per entity to compute gap; LAG() OVER (PARTITION BY entity ORDER BY date) is mandatory",
+      "computing gaps at the order level instead of deduplicating to one row per (entity, date) first — multiple orders on the same day create false small gaps",
+      "using DATEDIFF on raw timestamps instead of DATE() — time-of-day differences inflate gap counts",
+      "picking the largest gap without ROW_NUMBER() — a single entity may have multiple 60+ day gaps; rank to find the worst one",
+      "conditional SUM for revenue split: use <= gap_start for 'before' and >= gap_end for 'after' — the boundary dates themselves belong to the period they closed/opened"
+    ],
+    "notes": [
+      "LAG(date) OVER (PARTITION BY entity_id ORDER BY date) gives the previous event date; DATEDIFF on (current, previous) is the gap.",
+      "To find the longest gap per entity: filter WHERE gap_days >= threshold, then ROW_NUMBER() OVER (PARTITION BY entity_id ORDER BY gap_days DESC), keep rank = 1.",
+      "Revenue split pattern: SUM(CASE WHEN event_date <= gap_start THEN value ELSE 0 END) — this is simpler and faster than joining two separate date-filtered subqueries."
+    ],
+    "related_patterns": ["adv_dual_rolling_windows", "wf_lag", "ca_churn_features"]
+  },
+  {
+    "id": "adv_cohort_retention_pivot",
+    "title": "Monthly cohort retention table (pivot via CASE WHEN)",
+    "intent_tags": [
+      "cohort retention", "monthly cohort", "retention table", "month 1 retention", "month 3 retention",
+      "cohort analysis", "first purchase cohort", "repeat purchase rate by cohort",
+      "what percentage returned", "cohort month offset", "TIMESTAMPDIFF months", "retention pivot",
+      "customer retention by cohort", "cohort size", "months since first purchase"
+    ],
+    "sql_features": ["cte", "aggregation", "window"],
+    "difficulty": "advanced",
+    "pattern_type": "analytical",
+    "template": "WITH customer_events AS (\n    SELECT customer_unique_id,\n        DATE_FORMAT(event_timestamp, '%Y-%m-01') AS event_month\n    FROM customers c\n    JOIN orders o ON c.customer_id = o.customer_id\n    WHERE o.order_status NOT IN ('canceled')\n    GROUP BY customer_unique_id, DATE_FORMAT(event_timestamp, '%Y-%m-01')\n),\nfirst_event AS (\n    SELECT customer_unique_id, MIN(event_month) AS cohort_month\n    FROM customer_events\n    GROUP BY customer_unique_id\n),\nactivity AS (\n    SELECT fp.customer_unique_id, fp.cohort_month,\n        TIMESTAMPDIFF(MONTH, fp.cohort_month, ce.event_month) AS months_since_first\n    FROM first_event fp\n    JOIN customer_events ce ON fp.customer_unique_id = ce.customer_unique_id\n),\ncohort_sizes AS (\n    SELECT cohort_month, COUNT(DISTINCT customer_unique_id) AS cohort_size\n    FROM first_event\n    GROUP BY cohort_month\n)\nSELECT\n    cs.cohort_month,\n    cs.cohort_size,\n    ROUND(100.0 * COUNT(DISTINCT CASE WHEN a.months_since_first = 1  THEN a.customer_unique_id END) / cs.cohort_size, 1) AS ret_m1,\n    ROUND(100.0 * COUNT(DISTINCT CASE WHEN a.months_since_first = 2  THEN a.customer_unique_id END) / cs.cohort_size, 1) AS ret_m2,\n    ROUND(100.0 * COUNT(DISTINCT CASE WHEN a.months_since_first = 3  THEN a.customer_unique_id END) / cs.cohort_size, 1) AS ret_m3,\n    ROUND(100.0 * COUNT(DISTINCT CASE WHEN a.months_since_first = 6  THEN a.customer_unique_id END) / cs.cohort_size, 1) AS ret_m6,\n    ROUND(100.0 * COUNT(DISTINCT CASE WHEN a.months_since_first = 12 THEN a.customer_unique_id END) / cs.cohort_size, 1) AS ret_m12\nFROM cohort_sizes cs\nJOIN activity a ON cs.cohort_month = a.cohort_month\nGROUP BY cs.cohort_month, cs.cohort_size\nORDER BY cs.cohort_month",
+    "when_to_use": [
+      "monthly cohort retention table showing % of customers who returned at M+1, M+2, M+3, M+6, M+12",
+      "cohort analysis anchored to first purchase/event month",
+      "any pivot of per-customer activity into fixed month-offset columns",
+      "subscription or e-commerce repeat purchase funnel"
+    ],
+    "anti_patterns": [
+      "using customer_id instead of customer_unique_id when a single real person can have multiple IDs (e.g. Olist creates a new customer_id per order) — always deduplicate to the true person identifier",
+      "counting rows instead of COUNT(DISTINCT customer_unique_id) for retention — one customer with 3 orders in month 2 must count as 1 retained customer, not 3",
+      "using DATEDIFF / 30 for month offset — month lengths vary; TIMESTAMPDIFF(MONTH, ...) handles this correctly",
+      "joining activity back to cohort_sizes without GROUP BY cohort_month in the final SELECT — produces fan-out and inflated cohort_size",
+      "including the cohort month itself (months_since_first = 0) in the retention columns — that is the acquisition row, not a return visit"
+    ],
+    "notes": [
+      "TIMESTAMPDIFF(MONTH, cohort_month, activity_month) returns the integer month offset; month +1 = returned next calendar month.",
+      "Cohort size = COUNT(DISTINCT customer_unique_id) in first_event, grouped by cohort_month.",
+      "The CASE WHEN pivot pattern works for any finite set of offsets; for arbitrary offsets use a separate activity_offsets table and avoid wide pivots.",
+      "For Exasol / Postgres use DATE_TRUNC('month', ts) instead of DATE_FORMAT."
+    ],
+    "related_patterns": ["adv_ltv_tier_benchmarking", "ca_segment_migration", "ca_churn_features"]
+  },
+  {
+    "id": "adv_multi_filter_anomaly",
+    "title": "Multi-condition anomaly detection (ratio + count + anti-join)",
+    "intent_tags": [
+      "fraud detection", "payment anomaly", "overpayment detection", "suspicious orders",
+      "multi-payment type", "payment discrepancy", "ratio filter and count filter",
+      "no reviews ever", "customer never reviewed", "combine three independent filters",
+      "multi-condition where clause", "aggregation then filter"
+    ],
+    "sql_features": ["cte", "aggregation", "join"],
+    "difficulty": "advanced",
+    "pattern_type": "analytical",
+    "template": "WITH order_item_totals AS (\n    SELECT order_id, ROUND(SUM(price + freight_value), 2) AS items_total\n    FROM order_items\n    GROUP BY order_id\n),\norder_payment_totals AS (\n    SELECT order_id,\n        ROUND(SUM(payment_value), 2)      AS payment_total,\n        COUNT(DISTINCT payment_type)       AS distinct_payment_types\n    FROM order_payments\n    GROUP BY order_id\n),\nreviewed_customers AS (\n    SELECT DISTINCT c.customer_unique_id\n    FROM order_reviews r\n    JOIN orders o      ON r.order_id   = o.order_id\n    JOIN customers c   ON o.customer_id = c.customer_id\n)\nSELECT o.order_id, c.customer_unique_id, c.customer_state,\n    oit.items_total, opt.payment_total,\n    ROUND(opt.payment_total - oit.items_total, 2) AS overpayment,\n    opt.distinct_payment_types\nFROM orders o\nJOIN customers c              ON o.customer_id  = c.customer_id\nJOIN order_item_totals oit    ON o.order_id      = oit.order_id\nJOIN order_payment_totals opt ON o.order_id      = opt.order_id\nWHERE opt.payment_total > oit.items_total * 1.01\n  AND opt.distinct_payment_types > 1\n  AND c.customer_unique_id NOT IN (SELECT customer_unique_id FROM reviewed_customers)\nORDER BY overpayment DESC",
+    "when_to_use": [
+      "detect anomalous orders using multiple independent conditions: a ratio threshold, a count threshold, and an existence check",
+      "payment fraud: overpayment > 1% AND split payment types AND customer never reviewed",
+      "any pattern where you pre-aggregate from 2-3 tables into CTEs, then apply compound WHERE filters on the aggregated results",
+      "anti-join (NOT IN / NOT EXISTS) to exclude entities with a history in another table"
+    ],
+    "anti_patterns": [
+      "applying ratio filter before aggregation — payment_value must be SUMmed per order first; filtering individual payment rows gives wrong results",
+      "using customer_id instead of customer_unique_id for the 'never reviewed' check — one real customer with multiple customer_ids could be missed",
+      "using NOT IN with a subquery that can return NULLs — NOT IN returns no rows if the subquery contains any NULL; use NOT EXISTS or add WHERE customer_unique_id IS NOT NULL in the subquery",
+      "the 1% threshold (items_total * 1.01) is intentional to absorb floating-point rounding; using strict equality = fails on nearly-matching amounts"
+    ],
+    "notes": [
+      "Pattern: pre-aggregate each table independently in CTEs → join on order_id → apply compound WHERE filters. This keeps the main query clean and each CTE testable.",
+      "To avoid NOT IN / NULL trap: use NOT EXISTS (SELECT 1 FROM reviewed_customers rc WHERE rc.customer_unique_id = c.customer_unique_id) instead."
+    ],
+    "related_patterns": ["adv_gap_detection", "ec_return_rate", "join_anti"]
+  },
+  {
+    "id": "adv_composite_weighted_score",
+    "title": "Composite weighted score from multiple LEFT JOIN paths + PERCENT_RANK",
+    "intent_tags": [
+      "composite score", "weighted score", "seller score", "performance score", "blended metric",
+      "multiple metrics combined", "weighted average of KPIs", "percentile rank score",
+      "on time delivery rate", "review score normalized", "repeat product rate",
+      "three independent metrics joined", "COALESCE zero", "NULLIF denominator",
+      "seller ranking", "vendor performance"
+    ],
+    "sql_features": ["cte", "window", "aggregation"],
+    "difficulty": "advanced",
+    "pattern_type": "analytical",
+    "template": "WITH metric_a AS (\n    SELECT entity_id, AVG(score_col) / 5.0 AS normalized_a\n    FROM table_a\n    JOIN related ON table_a.id = related.id\n    GROUP BY entity_id\n),\nmetric_b AS (\n    SELECT entity_id,\n        COUNT(*) AS total_b,\n        SUM(CASE WHEN condition THEN 1 ELSE 0 END) AS passing_b\n    FROM table_b\n    WHERE status = 'completed'\n    GROUP BY entity_id\n),\nmetric_c AS (\n    SELECT entity_id,\n        COUNT(DISTINCT item_id) AS total_c,\n        COUNT(DISTINCT CASE WHEN item_count > 1 THEN item_id END) AS repeat_c\n    FROM (SELECT entity_id, item_id, COUNT(*) AS item_count FROM detail_table GROUP BY 1, 2) sub\n    GROUP BY entity_id\n),\nscored AS (\n    SELECT e.entity_id,\n        COALESCE(a.normalized_a, 0) * 0.4\n        + COALESCE(b.passing_b * 1.0 / NULLIF(b.total_b, 0), 0) * 0.4\n        + COALESCE(c.repeat_c  * 1.0 / NULLIF(c.total_c,  0), 0) * 0.2  AS composite_score\n    FROM entities e\n    LEFT JOIN metric_a a ON e.entity_id = a.entity_id\n    LEFT JOIN metric_b b ON e.entity_id = b.entity_id\n    LEFT JOIN metric_c c ON e.entity_id = c.entity_id\n)\nSELECT entity_id, composite_score,\n    ROUND(PERCENT_RANK() OVER (ORDER BY composite_score), 4) AS percentile_rank\nFROM scored\nORDER BY composite_score DESC",
+    "when_to_use": [
+      "build a composite KPI score from 3+ independently sourced metrics (each from different join paths)",
+      "seller/vendor/employee performance ranking with weighted components",
+      "normalize metrics to 0–1 scale before blending: rates are already 0–1; point scores divide by max (e.g. /5.0)",
+      "PERCENT_RANK() to assign global percentile position after scoring"
+    ],
+    "anti_patterns": [
+      "using INNER JOIN instead of LEFT JOIN for each metric CTE — sellers with no reviews or no deliveries will be dropped entirely; LEFT JOIN + COALESCE(value, 0) penalises them correctly",
+      "forgetting NULLIF in the denominator — division by zero when a seller has 0 delivered orders; always wrap: passing / NULLIF(total, 0)",
+      "summing metrics with different scales without normalising first — a 0–5 review score added directly to a 0–1 delivery rate distorts the blend",
+      "recomputing the same window function multiple times in one SELECT for tier assignment — compute PERCENT_RANK once in a subquery/CTE and reference it"
+    ],
+    "notes": [
+      "Pattern: one CTE per metric → all CTEs LEFT JOIN onto the master entity table → COALESCE each to 0 → blend with weights → window rank over blended score.",
+      "Weights must sum to 1.0. If a dimension is unavailable for an entity it scores 0 on that dimension (not excluded).",
+      "PERCENT_RANK() returns 0 for the lowest scorer, 1 for the highest (if ORDER BY DESC, 0 = best)."
+    ],
+    "related_patterns": ["adv_ltv_tier_benchmarking", "stat_percentile", "ca_health_score"]
+  },
+  {
+    "id": "adv_dual_rolling_windows",
+    "title": "Dual non-overlapping rolling windows for period-over-period comparison and anomaly flagging",
+    "intent_tags": [
+      "rolling 30 day comparison", "period over period", "current window vs prior window",
+      "rolling revenue drop", "anomaly flag revenue", "non-overlapping windows",
+      "ROWS BETWEEN 59 PRECEDING AND 30 PRECEDING", "dual window", "rolling window comparison",
+      "20 percent drop", "revenue anomaly", "trailing 30 days vs previous 30 days",
+      "worst category in anomaly window", "revenue decline detection"
+    ],
+    "sql_features": ["window", "cte"],
+    "difficulty": "advanced",
+    "pattern_type": "analytical",
+    "template": "WITH daily_total AS (\n    SELECT order_date, SUM(revenue) AS day_revenue\n    FROM daily_metrics\n    GROUP BY order_date\n),\nrolling_windows AS (\n    SELECT order_date, day_revenue,\n        SUM(day_revenue) OVER (\n            ORDER BY order_date\n            ROWS BETWEEN 29 PRECEDING AND CURRENT ROW\n        ) AS rolling_current,\n        SUM(day_revenue) OVER (\n            ORDER BY order_date\n            ROWS BETWEEN 59 PRECEDING AND 30 PRECEDING\n        ) AS rolling_prior\n    FROM daily_total\n),\nanomalies AS (\n    SELECT order_date, rolling_current, rolling_prior,\n        ROUND((rolling_current - rolling_prior) / NULLIF(rolling_prior, 0) * 100, 2) AS pct_change\n    FROM rolling_windows\n    WHERE rolling_prior IS NOT NULL\n      AND rolling_current < rolling_prior * 0.80\n)\nSELECT * FROM anomalies ORDER BY order_date",
+    "when_to_use": [
+      "compare a rolling N-day window to the immediately preceding N-day window (non-overlapping)",
+      "flag days where rolling revenue dropped more than X% vs the prior window",
+      "period-over-period change on a rolling basis rather than calendar month/week",
+      "find anomaly days in a time series and then drill into category/segment breakdown for that window"
+    ],
+    "anti_patterns": [
+      "using ROWS BETWEEN N PRECEDING AND CURRENT ROW for both windows — they will overlap; the prior window must use ROWS BETWEEN 2N-1 PRECEDING AND N PRECEDING to be non-overlapping",
+      "using RANGE BETWEEN instead of ROWS BETWEEN on date columns — RANGE groups equal values; if two rows share a date both are included in the boundary, corrupting the window size",
+      "checking rolling_prior IS NOT NULL but forgetting the warm-up period — the first 30 rows have no valid prior window; the IS NOT NULL check handles this for ROWS BETWEEN (it returns NULL naturally)",
+      "applying the anomaly filter inside the window CTE — always compute windows first, then filter in a subsequent CTE so you can inspect all rows"
+    ],
+    "notes": [
+      "Current 30-day window:  ROWS BETWEEN 29 PRECEDING AND CURRENT ROW",
+      "Prior (non-overlapping) 30-day window: ROWS BETWEEN 59 PRECEDING AND 30 PRECEDING",
+      "To drill into which category drove a drop: replicate the same two windows PARTITION BY category, then ROW_NUMBER() OVER (PARTITION BY anomaly_date ORDER BY drop DESC) to pick the worst category per anomaly day.",
+      "Percentage change: (current - prior) / NULLIF(prior, 0) * 100. Negative = decline, positive = growth."
+    ],
+    "related_patterns": ["stat_moving_average", "stat_running_zscore", "adv_gap_detection"]
+  },
+  {
+    "id": "adv_ltv_tier_benchmarking",
+    "title": "LTV percentile tiers with cross-tier ratio benchmarking per segment",
+    "intent_tags": [
+      "ltv tiers", "customer tiers", "top 5 percent", "top 5%", "percentile tiers",
+      "LTV distribution", "top spenders", "bottom 50 percent", "tier ratio",
+      "flat distribution flag", "state level ltv", "customer value segments",
+      "PERCENT_RANK tier assignment", "conditional max pivot", "cross tier comparison",
+      "top 5 vs middle tier", "segment benchmarking"
+    ],
+    "sql_features": ["cte", "window", "aggregation"],
+    "difficulty": "advanced",
+    "pattern_type": "analytical",
+    "template": "WITH customer_ltv AS (\n    SELECT c.customer_unique_id, c.customer_state,\n        ROUND(SUM(oi.price + oi.freight_value), 2) AS ltv\n    FROM customers c\n    JOIN orders o       ON c.customer_id  = o.customer_id\n    JOIN order_items oi ON o.order_id     = oi.order_id\n    WHERE o.order_status = 'delivered'\n    GROUP BY c.customer_unique_id, c.customer_state\n),\ncustomer_tiers AS (\n    SELECT customer_unique_id, customer_state, ltv,\n        CASE\n            WHEN PERCENT_RANK() OVER (ORDER BY ltv DESC) <= 0.05 THEN 'Top 5%'\n            WHEN PERCENT_RANK() OVER (ORDER BY ltv DESC) <= 0.20 THEN '5-20%'\n            WHEN PERCENT_RANK() OVER (ORDER BY ltv DESC) <= 0.50 THEN '20-50%'\n            ELSE 'Bottom 50%'\n        END AS tier\n    FROM customer_ltv\n),\nstate_tier_stats AS (\n    SELECT customer_state, tier,\n        COUNT(*)           AS customer_count,\n        ROUND(AVG(ltv), 2) AS avg_ltv\n    FROM customer_tiers\n    GROUP BY customer_state, tier\n),\nstate_pivot AS (\n    SELECT customer_state,\n        MAX(CASE WHEN tier = 'Top 5%' THEN avg_ltv END) AS top5_avg,\n        MAX(CASE WHEN tier = '5-20%'  THEN avg_ltv END) AS mid_avg\n    FROM state_tier_stats\n    GROUP BY customer_state\n)\nSELECT sts.customer_state, sts.tier, sts.customer_count, sts.avg_ltv,\n    ROUND(sp.top5_avg / NULLIF(sp.mid_avg, 0), 2) AS top5_to_mid_ratio,\n    CASE WHEN sp.top5_avg < sp.mid_avg * 2 THEN 'FLAT DISTRIBUTION' ELSE '' END AS flag\nFROM state_tier_stats sts\nJOIN state_pivot sp ON sts.customer_state = sp.customer_state\nORDER BY sts.customer_state, sts.tier",
+    "when_to_use": [
+      "assign customers to LTV percentile tiers (Top 5%, 5-20%, 20-50%, Bottom 50%) using PERCENT_RANK",
+      "compare tier averages within each geographic or demographic segment",
+      "flag segments where the top tier does not dominate (top5 avg < 2× mid-tier avg = flat distribution)",
+      "any analysis requiring: compute metric → assign tier → re-aggregate by (segment × tier) → compare tiers"
+    ],
+    "anti_patterns": [
+      "PERCENT_RANK ORDER BY ltv DESC means 0 = highest LTV customer; <= 0.05 captures the top 5% — if you use ASC, the logic inverts",
+      "computing PERCENT_RANK multiple times in one SELECT for different tiers is valid SQL but wasteful — wrap in a subquery and reference the computed rank column once",
+      "using NTILE(20) for 'Top 5%' — NTILE gives equal counts; PERCENT_RANK is correct for percentile-position tiers based on value rank",
+      "cross-tier pivot using SUM instead of MAX — there is only one avg_ltv per (state, tier) row; MAX(CASE WHEN tier='Top 5%' THEN avg_ltv END) collapses correctly"
+    ],
+    "notes": [
+      "Pivot technique: MAX(CASE WHEN tier = 'X' THEN avg_ltv END) in a GROUP BY state — this brings multiple tier rows for the same state onto one row for ratio computation.",
+      "Flat distribution flag: top5_avg < 2 × mid_avg indicates the top-tier customers are not dramatically more valuable than mid-tier — may signal pricing or retention opportunity.",
+      "Use NULLIF in the ratio denominator to prevent division by zero when a state has no mid-tier customers."
+    ],
+    "related_patterns": ["adv_composite_weighted_score", "ca_customer_profitability", "seg_equal_count_ntile"]
+  },
+  {
+    "id": "adv_delay_attribution",
+    "title": "Multi-cause attribution with route-level baseline (seller vs carrier delay)",
+    "intent_tags": [
+      "delay attribution", "seller delay vs carrier delay", "delivery delay cause",
+      "route median transit", "baseline comparison", "delay classification",
+      "three way classification", "seller handling days", "carrier transit days",
+      "on time delivery", "late delivery root cause", "delay breakdown percentage",
+      "route level benchmark", "median by route"
+    ],
+    "sql_features": ["cte", "aggregation"],
+    "difficulty": "advanced",
+    "pattern_type": "analytical",
+    "template": "WITH delivered AS (\n    SELECT o.order_id, s.seller_state, c.customer_state,\n        DATEDIFF(o.order_delivered_customer_date, o.order_estimated_delivery_date) AS delay_days,\n        DATEDIFF(o.order_delivered_carrier_date,  o.order_purchase_timestamp)      AS handling_days,\n        DATEDIFF(o.order_delivered_customer_date, o.order_delivered_carrier_date)  AS transit_days\n    FROM orders o\n    JOIN order_items oi ON o.order_id    = oi.order_id\n    JOIN customers c    ON o.customer_id  = c.customer_id\n    JOIN sellers s      ON oi.seller_id   = s.seller_id\n    WHERE o.order_status = 'delivered'\n      AND o.order_delivered_customer_date > o.order_estimated_delivery_date\n),\nroute_baseline AS (\n    SELECT seller_state, customer_state,\n        AVG(transit_days) AS median_transit  -- replace AVG with PERCENTILE_CONT(0.5) if supported\n    FROM delivered\n    GROUP BY seller_state, customer_state\n),\nclassified AS (\n    SELECT d.order_id,\n        CASE\n            WHEN d.handling_days > 3 AND d.transit_days <= rb.median_transit * 1.2 THEN 'seller'\n            WHEN d.handling_days <= 3 AND d.transit_days >  rb.median_transit * 1.2 THEN 'carrier'\n            WHEN d.handling_days > 3 AND d.transit_days >  rb.median_transit * 1.2 THEN 'both'\n            ELSE 'ambiguous'\n        END AS delay_cause\n    FROM delivered d\n    JOIN route_baseline rb ON d.seller_state = rb.seller_state AND d.customer_state = rb.customer_state\n)\nSELECT COUNT(*) AS total_delayed,\n    ROUND(100.0 * SUM(CASE WHEN delay_cause = 'seller'    THEN 1 ELSE 0 END) / COUNT(*), 1) AS pct_seller,\n    ROUND(100.0 * SUM(CASE WHEN delay_cause = 'carrier'   THEN 1 ELSE 0 END) / COUNT(*), 1) AS pct_carrier,\n    ROUND(100.0 * SUM(CASE WHEN delay_cause = 'both'      THEN 1 ELSE 0 END) / COUNT(*), 1) AS pct_both,\n    ROUND(100.0 * SUM(CASE WHEN delay_cause = 'ambiguous' THEN 1 ELSE 0 END) / COUNT(*), 1) AS pct_ambiguous\nFROM classified",
+    "when_to_use": [
+      "attribute a delay (or any outcome) to one of multiple possible causes using independent thresholds",
+      "compare each entity's metric against a dynamic route/segment-level baseline (not a global threshold)",
+      "three-way or four-way classification: seller only / carrier only / both / neither",
+      "summary percentage rollup after individual row classification (SUM(CASE WHEN))"
+    ],
+    "anti_patterns": [
+      "using a single global baseline for transit time — routes from SP→SP take days; routes from SP→AM take weeks; always group by (origin_state, dest_state) or equivalent route key",
+      "classifying on the raw transit days without a route baseline — a 10-day transit is normal for long routes but alarming for local delivery",
+      "using PERCENTILE_CONT when it is not supported — fall back to AVG for the route median or compute it via NTILE",
+      "the 20% margin (transit_days <= median * 1.2) absorbs natural variance; a strict equal-to-median filter misclassifies many normal deliveries as carrier delays"
+    ],
+    "notes": [
+      "Compute all DATEDIFF columns inline in the first CTE to avoid repeating the expressions.",
+      "Route baseline (seller_state, customer_state) is computed from the same delayed orders set — this is a self-referencing baseline. For production, compute it on ALL delivered orders including on-time ones.",
+      "SUM(CASE WHEN delay_cause = 'X' THEN 1 ELSE 0 END) / COUNT(*) is the standard percentage rollup pattern — always divide by COUNT(*) of the full classified set."
+    ],
+    "related_patterns": ["adv_composite_weighted_score", "stat_percentile", "supply_chain"]
+  },
+  {
+    "id": "adv_cross_sell_pairs",
+    "title": "Cross-sell / co-purchase pair analysis with canonical self-join deduplication",
+    "intent_tags": [
+      "cross sell", "co-purchase", "bought together", "product pairs", "category pairs",
+      "market basket analysis", "frequently bought together", "self join", "canonical pair",
+      "a less than b", "avoid duplicate pairs", "order pair count", "basket value for pairs",
+      "top N pairs", "product affinity", "category affinity", "items in same order"
+    ],
+    "sql_features": ["cte", "join", "aggregation"],
+    "difficulty": "advanced",
+    "pattern_type": "analytical",
+    "template": "WITH order_entities AS (\n    -- One row per (order_id, entity) — deduplicate to avoid item-level explosion\n    SELECT DISTINCT oi.order_id, COALESCE(t.category_english, p.category_name) AS entity\n    FROM order_items oi\n    JOIN products p ON oi.product_id = p.product_id\n    LEFT JOIN category_translation t ON p.category_name = t.category_name\n    WHERE p.category_name IS NOT NULL\n),\norder_totals AS (\n    SELECT order_id, SUM(price + freight_value) AS order_value\n    FROM order_items\n    GROUP BY order_id\n),\npairs AS (\n    -- a.entity < b.entity ensures each unordered pair appears exactly once\n    SELECT a.entity AS entity_a, b.entity AS entity_b, a.order_id\n    FROM order_entities a\n    JOIN order_entities b\n        ON a.order_id = b.order_id\n       AND a.entity < b.entity\n)\nSELECT p.entity_a, p.entity_b,\n    COUNT(*)                       AS co_purchase_count,\n    ROUND(AVG(ot.order_value), 2)  AS avg_basket_value\nFROM pairs p\nJOIN order_totals ot ON p.order_id = ot.order_id\nGROUP BY p.entity_a, p.entity_b\nORDER BY co_purchase_count DESC\nLIMIT 20",
+    "when_to_use": [
+      "find which product categories (or products) are most frequently purchased together in the same order",
+      "market basket analysis, 'customers who bought X also bought Y'",
+      "any self-join where you want unordered pairs — always use a.key < b.key to avoid (A,B) and (B,A) appearing as separate rows",
+      "compute average basket value for orders containing a given pair"
+    ],
+    "anti_patterns": [
+      "self-joining on order_items directly without first reducing to (order_id, entity) — one order with 5 items of category A and 3 items of category B produces 15 pair rows instead of 1; always DISTINCT-reduce first",
+      "using a.entity != b.entity instead of a.entity < b.entity — this keeps both (A,B) and (B,A), doubling every count",
+      "joining on product_id for category analysis — categories with many products inflate counts; deduplicate to category level first",
+      "not using COALESCE for translated category names — untranslated rows return NULL and are excluded from pairs"
+    ],
+    "notes": [
+      "Canonical deduplication trick: a.key < b.key on the self-join ensures each unordered pair (A, B) where A < B appears exactly once.",
+      "Reduce to (order_id, category) DISTINCT before the self-join — this is the most important performance step; skipping it causes N² row explosion on large item tables.",
+      "Lift metric: co_purchase_count / (total_orders_with_A * total_orders_with_B / total_orders) — higher than 1 = true affinity. Not included above to keep template readable."
+    ],
+    "related_patterns": ["ec_product_affinity", "ca_upsell_opportunity", "adv_multi_filter_anomaly"]
+  },
+  {
+    "id": "adv_sliding_window_join",
+    "title": "Sliding date-range window via self-join BETWEEN (sparse time-series)",
+    "intent_tags": [
+      "sliding window", "7 day window", "rolling date range", "window per event date",
+      "between date and date plus 6", "review spike detection", "temporal clustering",
+      "sliding window without window function", "BETWEEN join", "event density in window",
+      "spike vs baseline", "fraud spike", "review bombing",
+      "count events in date range", "date interval self join"
+    ],
+    "sql_features": ["cte", "join", "aggregation"],
+    "difficulty": "advanced",
+    "pattern_type": "analytical",
+    "template": "WITH entity_events AS (\n    SELECT entity_id, DATE(event_timestamp) AS event_date, score\n    FROM events\n    JOIN related ON events.id = related.id\n),\nentity_baseline AS (\n    SELECT entity_id,\n        COUNT(*) AS total_events,\n        SUM(CASE WHEN score = 5 THEN 1 ELSE 0 END) * 1.0 / COUNT(*) AS baseline_rate\n    FROM entity_events\n    GROUP BY entity_id\n),\nwindow_seeds AS (\n    SELECT DISTINCT entity_id, event_date AS window_start\n    FROM entity_events\n),\nwindow_stats AS (\n    SELECT ws.entity_id, ws.window_start,\n        COUNT(ee.score) AS window_count,\n        SUM(CASE WHEN ee.score = 5 THEN 1 ELSE 0 END) AS window_5star,\n        SUM(CASE WHEN ee.score = 5 THEN 1 ELSE 0 END) * 1.0\n            / NULLIF(COUNT(ee.score), 0) AS window_rate\n    FROM window_seeds ws\n    JOIN entity_events ee\n        ON ws.entity_id = ee.entity_id\n       AND ee.event_date BETWEEN ws.window_start AND ws.window_start + INTERVAL 6 DAY\n    GROUP BY ws.entity_id, ws.window_start\n)\nSELECT ws.entity_id, ws.window_start,\n    ws.window_5star AS spike_count,\n    ROUND(ws.window_rate, 3) AS window_rate,\n    ROUND(eb.baseline_rate, 3) AS baseline_rate,\n    ROUND(ws.window_rate / NULLIF(eb.baseline_rate, 0), 2) AS spike_ratio\nFROM window_stats ws\nJOIN entity_baseline eb ON ws.entity_id = eb.entity_id\nWHERE ws.window_5star >= 5\n  AND ws.window_rate > eb.baseline_rate * 3\nORDER BY spike_ratio DESC",
+    "when_to_use": [
+      "count events within a sliding date range when rows are sparse and ROWS BETWEEN gives wrong counts (ROWS BETWEEN counts rows, not calendar days)",
+      "detect temporal clustering: N+ events in any 7-day window per entity",
+      "compare a windowed rate to an entity-level baseline to find spikes",
+      "review bombing, fraud bursts, activity spikes — any 'X events in Y consecutive days' pattern"
+    ],
+    "anti_patterns": [
+      "using ROWS BETWEEN 6 PRECEDING AND CURRENT ROW for a 7-day calendar window — ROWS counts rows, not days; if an entity has 2 events on day 1 and 1 on day 8, the 7-row window may span more than 7 calendar days",
+      "using every row as a window seed — only use DISTINCT (entity, date) as seeds; duplicate event dates on the same day seed redundant windows with identical counts",
+      "baseline rate from the same windowed data — always compute baseline from the full entity history, not just the anomaly window",
+      "forgetting NULLIF in spike_ratio denominator — an entity with baseline_rate = 0 (new entity) causes division by zero"
+    ],
+    "notes": [
+      "The BETWEEN join approach: for each (entity, seed_date), join all events WHERE event_date BETWEEN seed_date AND seed_date + INTERVAL 6 DAY. This is a range join — index on (entity_id, event_date) is critical for performance.",
+      "Spike ratio = window_rate / baseline_rate. A ratio > 3 means the windowed rate is 3× the entity's historical norm.",
+      "For Exasol / Postgres use + INTERVAL '6 days'; for MySQL use DATE_ADD(seed_date, INTERVAL 6 DAY)."
+    ],
+    "related_patterns": ["stat_running_zscore", "adv_dual_rolling_windows", "adv_multi_filter_anomaly"]
+  },
+  {
+    "id": "adv_haversine_geospatial",
+    "title": "Haversine great-circle distance in SQL with zip-code deduplication",
+    "intent_tags": [
+      "haversine", "distance in km", "great circle distance", "geospatial distance",
+      "latitude longitude distance", "seller customer distance", "distance between zip codes",
+      "ASIN SQRT SQL", "distance bands", "geo bucket", "distance analysis",
+      "average lat lng per zip", "geolocation dedup", "zip code multiple rows",
+      "distance banding", "delivery distance", "near vs far orders"
+    ],
+    "sql_features": ["cte", "aggregation"],
+    "difficulty": "advanced",
+    "pattern_type": "analytical",
+    "template": "WITH geo_a AS (\n    -- Average coordinates per zip code — geolocation tables often have duplicate rows per zip\n    SELECT zip_code_prefix, AVG(lat) AS lat, AVG(lng) AS lng\n    FROM geolocation\n    GROUP BY zip_code_prefix\n),\ngeo_b AS (\n    SELECT zip_code_prefix, AVG(lat) AS lat, AVG(lng) AS lng\n    FROM geolocation\n    GROUP BY zip_code_prefix\n),\norder_distances AS (\n    SELECT o.order_id,\n        -- Haversine formula: distance in km\n        6371 * 2 * ASIN(SQRT(\n            POWER(SIN((RADIANS(gb.lat) - RADIANS(ga.lat)) / 2), 2)\n            + COS(RADIANS(ga.lat)) * COS(RADIANS(gb.lat))\n            * POWER(SIN((RADIANS(gb.lng) - RADIANS(ga.lng)) / 2), 2)\n        )) AS distance_km,\n        (oi.price + oi.freight_value) AS item_value,\n        DATEDIFF(o.order_delivered_customer_date, o.order_estimated_delivery_date) AS delay_days,\n        r.review_score\n    FROM orders o\n    JOIN order_items oi  ON o.order_id    = oi.order_id\n    JOIN customers c     ON o.customer_id  = c.customer_id\n    JOIN sellers s       ON oi.seller_id   = s.seller_id\n    LEFT JOIN order_reviews r ON o.order_id = r.order_id\n    JOIN geo_a ga ON s.seller_zip_code_prefix   = ga.zip_code_prefix\n    JOIN geo_b gb ON c.customer_zip_code_prefix = gb.zip_code_prefix\n    WHERE o.order_status = 'delivered'\n),\nbanded AS (\n    SELECT *,\n        CASE\n            WHEN distance_km < 100  THEN '1. <100km'\n            WHEN distance_km < 500  THEN '2. 100-500km'\n            WHEN distance_km < 1000 THEN '3. 500-1000km'\n            ELSE                         '4. 1000km+'\n        END AS distance_band\n    FROM order_distances\n)\nSELECT distance_band,\n    COUNT(*)                  AS order_count,\n    ROUND(AVG(item_value), 2) AS avg_order_value,\n    ROUND(AVG(review_score), 3) AS avg_review_score,\n    ROUND(AVG(delay_days),   2) AS avg_delay_days,\n    ROUND(100.0 * SUM(CASE WHEN delay_days > 0 THEN 1 ELSE 0 END) / COUNT(*), 1) AS pct_late\nFROM banded\nWHERE review_score IS NOT NULL\nGROUP BY distance_band\nORDER BY distance_band",
+    "when_to_use": [
+      "compute straight-line (great-circle) distance between two geographic points given lat/lng",
+      "join seller and customer locations via zip code when direct lat/lng is not on the transaction table",
+      "bucket orders into distance bands (<100km, 100-500km, etc.) for delivery or pricing analysis",
+      "correlate distance with delivery delay, review score, freight cost, or conversion rate"
+    ],
+    "anti_patterns": [
+      "joining geolocation directly without deduplicating by zip first — geolocation tables typically have multiple rows per zip (different neighbourhoods); always GROUP BY zip and AVG(lat), AVG(lng) before joining",
+      "using INNER JOIN on zip code — some zip codes may not be in the geolocation table; use LEFT JOIN and handle NULLs or pre-filter to known zips",
+      "distance band labels must be sortable — prefix with '1. ', '2. ' etc. so ORDER BY distance_band sorts correctly as a string",
+      "applying Haversine in a WHERE clause without a CTE — the expression is expensive; compute it once in a CTE, then filter/aggregate downstream"
+    ],
+    "notes": [
+      "Haversine formula: 6371 * 2 * ASIN(SQRT(POWER(SIN((RADIANS(lat2) - RADIANS(lat1))/2),2) + COS(RADIANS(lat1)) * COS(RADIANS(lat2)) * POWER(SIN((RADIANS(lng2) - RADIANS(lng1))/2),2))). Earth radius = 6371 km.",
+      "Standard SQL trig functions: RADIANS(), SIN(), COS(), ASIN(), SQRT(), POWER() — available in Exasol, Postgres, MySQL, Snowflake, BigQuery.",
+      "For best-category-per-band: add a second CTE with GROUP BY (distance_band, category), then ROW_NUMBER() OVER (PARTITION BY distance_band ORDER BY AVG(review_score) DESC) to pick the top-rated category per band."
+    ],
+    "related_patterns": ["adv_delay_attribution", "seg_equal_range_width_bucket", "stat_percentile"]
+  }
+]

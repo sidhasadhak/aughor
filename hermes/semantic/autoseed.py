@@ -124,6 +124,7 @@ def seed_missing_tables(raw_schema: str) -> bool:
 def _seed(raw_schema: str) -> bool:
     from hermes.llm.provider import get_provider
     from hermes.semantic.glossary import load_merged_glossary
+    from hermes.db.schema_cache import compute_fingerprint, is_complete, mark_complete
 
     # Check the fully merged glossary (manual + dbt) so we never re-seed
     # tables that dbt already covers.
@@ -134,7 +135,13 @@ def _seed(raw_schema: str) -> bool:
     table_blocks = _parse_table_blocks(raw_schema)
     missing = {t: b for t, b in table_blocks.items() if t not in existing}
 
+    # Fast-path: schema fingerprint matches a previously fully-seeded schema
+    fp = compute_fingerprint(table_blocks)
+    if not missing and is_complete(fp):
+        return False  # identical schema, all tables already covered — skip LLM calls
+
     if not missing:
+        mark_complete(fp)  # all tables covered by glossary — record and return
         return False
 
     provider = get_provider()
@@ -173,5 +180,13 @@ def _seed(raw_schema: str) -> bool:
 
     if wrote_any:
         save_glossary(glossary)
+        # If all tables are now covered, record the fingerprint so the next
+        # call with the same schema skips LLM calls entirely.
+        remaining = {
+            t for t in table_blocks
+            if t not in (load_merged_glossary().get("tables") or {})
+        }
+        if not remaining:
+            mark_complete(fp)
 
     return wrote_any

@@ -1,0 +1,636 @@
+[
+  {
+    "id": "fin_revenue_concentration_risk",
+    "title": "Revenue Concentration Risk",
+    "intent_tags": [
+      "revenue concentration risk",
+      "top customer revenue share",
+      "revenue skew",
+      "revenue dependency",
+      "top 5 customers %",
+      "revenue by top accounts",
+      "customer revenue concentration",
+      "revenue concentration %",
+      "revenue risk",
+      "revenue diversification",
+      "top customers revenue %"
+    ],
+    "sql_features": [
+      "aggregation",
+      "ntile",
+      "conditional_count",
+      "nullif"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "ranking",
+    "when_to_use": [
+      "assess revenue diversification and business risk",
+      "evaluate customer portfolio health for investors",
+      "identify high-value customers for strategic account management",
+      "benchmark against industry concentration norms",
+      "support pricing and negotiation decisions for large customers"
+    ],
+    "related_patterns": [
+      "fin_price_realization_rate",
+      "fin_revenue_per_employee",
+      "fin_upsell_revenue_rate",
+      "fin_contract_renewal_rate"
+    ],
+    "business_definition": "Percentage of total net revenue in the period contributed by the top 5 customers (by revenue) out of total net revenue. Only includes signed contracts and excludes one-time or non-recurring items.",
+    "metric_nature": {
+      "what_it_measures": "Revenue dependency on a small subset of customers \u2014 a risk metric indicating vulnerability to customer churn, negotiation pressure, or economic shifts.",
+      "what_it_does_not_measure": "Profitability or loyalty of top customers. A high concentration risk customer may be profitable, low-churn, and strategic \u2014 or volatile and margin-eroding.",
+      "common_misconception": "Revenue concentration risk is not the same as top customer LTV. Risk measures *revenue share*, not *future value* \u2014 a top revenue customer may have negative contribution margin."
+    },
+    "template": "WITH customer_revenue AS (\n  SELECT customer_id, SUM(net_revenue) AS total_revenue FROM revenue_events WHERE period = {period} AND recurring_only = true GROUP BY customer_id\n),\nranked AS (\n  SELECT customer_id, total_revenue, ROW_NUMBER() OVER (ORDER BY total_revenue DESC) AS rank FROM customer_revenue\n),\ntop_5 AS (\n  SELECT SUM(total_revenue) AS top_5_revenue FROM ranked WHERE rank <= 5\n),\ntotal AS (\n  SELECT SUM(total_revenue) AS total_revenue FROM customer_revenue\n)\nSELECT COALESCE(t5.top_5_revenue, 0) AS top_5_revenue, COALESCE(t.total_revenue, 0) AS total_revenue, COALESCE(t5.top_5_revenue, 0) * 100.0 / NULLIF(COALESCE(t.total_revenue, 0), 0) AS concentration_risk FROM top_5 t5, total t",
+    "inflation_causes": [
+      {
+        "cause": "Including non-recurring or one-time revenue in numerator",
+        "how_it_inflates": "If revenue includes one-time items (e.g., consulting fees, professional services, migration fees), and top customers are primarily service-based, revenue share inflates \u2014 making concentration appear higher than sustainable recurring risk.",
+        "detection_sql": "SELECT customer_id, SUM(net_revenue) FILTER (WHERE revenue_type = 'recurring') AS recurring, SUM(net_revenue) FILTER (WHERE revenue_type = 'one_time') AS one_time FROM revenue_events WHERE period = '2024-01-01' GROUP BY customer_id ORDER BY one_time DESC LIMIT 10",
+        "fix": "Filter to recurring revenue only (`recurring_only = true` or `revenue_type = 'subscription'`) when computing concentration risk for strategic risk assessment."
+      },
+      {
+        "cause": "Excluding customers with zero revenue in denominator",
+        "how_it_inflates": "If the total revenue denominator excludes customers with $0 revenue, the denominator shrinks \u2014 deflating total revenue and inflating concentration risk.",
+        "detection_sql": "SELECT COUNT(DISTINCT customer_id) AS total_customers, COUNT(DISTINCT CASE WHEN total_revenue > 0 THEN customer_id END) AS paying_customers FROM (SELECT customer_id, SUM(net_revenue) AS total_revenue FROM revenue_events WHERE period = '2024-01-01' GROUP BY customer_id) sub",
+        "fix": "Include all customers in denominator (even $0 revenue) if business defines risk as dependency on *any* revenue-generating customer; otherwise define 'paying customers' subset explicitly."
+      },
+      {
+        "cause": "Counting customers by order count instead of revenue",
+        "how_it_inflates": "If revenue share is computed using *order count* instead of *revenue amount*, low-value customers with many small orders dominate the top 5 \u2014 inflating concentration risk for non-material revenue.",
+        "detection_sql": "SELECT customer_id, COUNT(DISTINCT order_id) AS orders, SUM(net_revenue) AS revenue FROM revenue_events WHERE period = '2024-01-01' GROUP BY 1 ORDER BY orders DESC LIMIT 10",
+        "fix": "Always rank customers by *revenue amount*, not order count, to reflect true revenue dependency."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Excluding small customers with zero revenue",
+        "how_it_deflates": "If customers with zero revenue are excluded from the denominator, the denominator shrinks more than the top 5 numerator \u2014 deflating concentration risk and overestimating diversification.",
+        "detection_sql": "SELECT COUNT(DISTINCT customer_id) AS total_customers, COUNT(DISTINCT CASE WHEN total_revenue > 0 THEN customer_id END) AS paying_customers FROM (SELECT customer_id, SUM(net_revenue) AS total_revenue FROM revenue_events WHERE period = '2024-01-01' GROUP BY customer_id) sub",
+        "fix": "Include all customers in denominator, or define 'paying customers' subset explicitly and apply consistently to numerator and denominator."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the concentration risk driven by one customer or a few in the top 5?",
+      "Has a new enterprise customer or bulk deal changed the revenue distribution?",
+      "Are concentration risk patterns stable across sub-segments (e.g., by region, product)?",
+      "Did a large customer churn or reduce orders recently?",
+      "Is concentration risk seasonal \u2014 e.g., year-end spikes inflating top customer share?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "Concentration risk up, revenue growth up",
+        "then": "growth driven by large customers \u2014 likely strategic expansion but increased vulnerability to churn or negotiation"
+      },
+      {
+        "if": "Concentration risk up, churn_rate up",
+        "then": "top customers are volatile \u2014 likely over-reliance on key accounts without broadening base"
+      },
+      {
+        "if": "Concentration risk down, revenue growth down",
+        "then": "diversification came at the cost of top-end growth \u2014 likely losing high-value customers or shrinking enterprise segment"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Revenue concentration risk spikes >10pp WoW with flat total revenue",
+        "and_also": "fin_revenue_per_employee decreases same period",
+        "shared_root_cause": "A large enterprise customer increased spend significantly, while employee count remained flat \u2014 inflating revenue concentration and reducing revenue per employee due to fixed overhead.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', e.employee_hire_date) AS month, COUNT(DISTINCT e.employee_id) AS employees, SUM(r.net_revenue) AS revenue, SUM(r.net_revenue) / NULLIF(COUNT(DISTINCT e.employee_id), 0) AS revenue_per_employee, COUNT(DISTINCT CASE WHEN r.rank <= 5 THEN r.customer_id END) * 100.0 / NULLIF(COUNT(DISTINCT r.customer_id), 0) AS concentration FROM revenue_events r LEFT JOIN employees e ON r.customer_id = e.customer_id WHERE r.period >= '2024-01-01' GROUP BY 1 ORDER BY month"
+      },
+      {
+        "if_this_metric": "Revenue concentration risk drops MoM",
+        "and_also": "fin_upsell_revenue_rate increases",
+        "shared_root_cause": "Upsell and expansion initiatives are increasing revenue among mid-tier customers, reducing the dominance of top-tier spenders \u2014 diversifying revenue without losing volume.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', o.order_date) AS month, COUNT(DISTINCT o.customer_id) AS customers, SUM(o.net_revenue) AS revenue, COUNT(DISTINCT CASE WHEN o.expansion_flag = true THEN o.order_id END) * 100.0 / NULLIF(COUNT(DISTINCT o.order_id), 0) AS upsell_rate, SUM(o.net_revenue) FILTER (WHERE r.rank <= 5) * 100.0 / NULLIF(SUM(o.net_revenue), 0) AS concentration FROM orders o LEFT JOIN (SELECT customer_id, ROW_NUMBER() OVER (ORDER BY SUM(net_revenue) DESC) AS rank FROM revenue_events WHERE period = '2024-01-01' GROUP BY customer_id) r ON o.customer_id = r.customer_id WHERE o.order_date >= '2024-01-01' GROUP BY 1 ORDER BY month"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Counting customers by order count instead of revenue",
+        "why_wrong": "If revenue share is computed using *order count* instead of *revenue amount*, low-value customers with many small orders dominate the top 5 \u2014 inflating concentration risk for non-material revenue.",
+        "bad_sql": "SELECT COUNT(DISTINCT CASE WHEN orders >= 5 THEN customer_id END) * 100.0 / NULLIF(COUNT(DISTINCT customer_id), 0) AS concentration FROM (SELECT customer_id, COUNT(DISTINCT order_id) AS orders FROM orders GROUP BY 1) sub",
+        "good_sql": "SELECT SUM(net_revenue) FILTER (WHERE rank <= 5) * 100.0 / NULLIF(SUM(net_revenue), 0) AS concentration FROM (SELECT customer_id, SUM(net_revenue) AS net_revenue, ROW_NUMBER() OVER (ORDER BY SUM(net_revenue) DESC) AS rank FROM revenue_events WHERE period = '2024-01-01' GROUP BY customer_id) sub"
+      },
+      {
+        "pattern": "Using total customers instead of active customers in denominator",
+        "why_wrong": "If denominator includes *all* customers (including dormant or unengaged), the denominator inflates \u2014 deflating concentration risk.",
+        "bad_sql": "SELECT SUM(net_revenue) FILTER (WHERE rank <= 5) * 100.0 / NULLIF(COUNT(DISTINCT customer_id), 0) AS concentration FROM (SELECT customer_id, SUM(net_revenue) AS net_revenue, ROW_NUMBER() OVER (ORDER BY SUM(net_revenue) DESC) AS rank FROM revenue_events GROUP BY 1) sub",
+        "good_sql": "SELECT SUM(net_revenue) FILTER (WHERE rank <= 5) * 100.0 / NULLIF(SUM(net_revenue), 0) AS concentration FROM (SELECT customer_id, SUM(net_revenue) AS net_revenue, ROW_NUMBER() OVER (ORDER BY SUM(net_revenue) DESC) AS rank FROM revenue_events WHERE period = '2024-01-01' GROUP BY customer_id) sub"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "WITH customer_revenue AS (SELECT customer_id, SUM(net_revenue) AS total_revenue FROM revenue_events WHERE period = '2024-01-01' AND recurring_only = true GROUP BY customer_id), ranked AS (SELECT customer_id, total_revenue, ROW_NUMBER() OVER (ORDER BY total_revenue DESC) AS rank FROM customer_revenue), top_5 AS (SELECT SUM(total_revenue) AS top_5_revenue FROM ranked WHERE rank <= 5), total AS (SELECT SUM(total_revenue) AS total_revenue FROM customer_revenue) SELECT COALESCE(t5.top_5_revenue, 0) AS top_5_revenue, COALESCE(t.total_revenue, 0) AS total_revenue, COALESCE(t5.top_5_revenue, 0) * 100.0 / NULLIF(COALESCE(t.total_revenue, 0), 0) AS concentration_risk FROM top_5 t5, total t",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', r.period) AS month, COUNT(DISTINCT r.customer_id) AS customers, SUM(r.net_revenue) AS revenue, SUM(r.net_revenue) FILTER (WHERE r.rank <= 5) * 100.0 / NULLIF(SUM(r.net_revenue), 0) AS concentration_risk FROM (SELECT customer_id, period, SUM(net_revenue) AS net_revenue, ROW_NUMBER() OVER (PARTITION BY period ORDER BY SUM(net_revenue) DESC) AS rank FROM revenue_events WHERE recurring_only = true GROUP BY 1, 2) r WHERE r.period >= '2024-01-01' GROUP BY 1 ORDER BY 1, 4 DESC",
+      "advanced_sql": "WITH customer_revenue AS (\n  -- Grain: revenue per customer, period, recurring only\n  SELECT\n    customer_id,\n    period,\n    SUM(net_revenue) AS total_revenue\n  FROM revenue_events\n  WHERE recurring_only = true\n  GROUP BY customer_id, period\n),\nranked AS (\n  -- Grain: customers ranked by revenue per period\n  SELECT\n    customer_id,\n    period,\n    total_revenue,\n    ROW_NUMBER() OVER (PARTITION BY period ORDER BY total_revenue DESC) AS rank\n  FROM customer_revenue\n),\nconcentration AS (\n  SELECT\n    period,\n    SUM(total_revenue) FILTER (WHERE rank <= 5) AS top_5_revenue,\n    SUM(total_revenue) AS total_revenue\n  FROM ranked\n  GROUP BY period\n)\nSELECT\n  period,\n  top_5_revenue,\n  total_revenue,\n  ROUND(top_5_revenue * 100.0 / NULLIF(total_revenue, 0), 2) AS concentration_risk_pct,\n  COUNT(DISTINCT customer_id) FILTER (WHERE rank <= 5) AS top_5_customers\nFROM ranked\nGROUP BY period, top_5_revenue, total_revenue\nORDER BY period"
+    }
+  },
+  {
+    "id": "fin_price_realization_rate",
+    "title": "Price Realization Rate",
+    "intent_tags": [
+      "price realization rate",
+      "price realization %",
+      "realized price %",
+      "pricing effectiveness",
+      "discount pressure",
+      "list vs actual price",
+      "price realization",
+      "realized margin",
+      "price capture",
+      "pricing health",
+      "price erosion"
+    ],
+    "sql_features": [
+      "aggregation",
+      "conditional_count",
+      "nullif",
+      "coalesce"
+    ],
+    "difficulty": "beginner",
+    "pattern_type": "ratio",
+    "when_to_use": [
+      "assess pricing effectiveness and discount pressure",
+      "benchmark price realization across products, channels, or regions",
+      "diagnose pricing strategy impact on margin and revenue",
+      "evaluate impact of pricing changes or promotions",
+      "model price elasticity and discount sensitivity"
+    ],
+    "related_patterns": [
+      "fin_revenue_concentration_risk",
+      "fin_revenue_per_employee",
+      "fin_upsell_revenue_rate",
+      "fin_contract_renewal_rate"
+    ],
+    "business_definition": "Ratio of actual average selling price (ASP) to list price, expressed as a percentage. ASP is calculated as net revenue / units sold; list price is the pre-discounted list price per unit.",
+    "metric_nature": {
+      "what_it_measures": "The degree of discount pressure \u2014 a lower rate indicates deeper discounts or pricing weakness; a higher rate suggests pricing power or limited discounting.",
+      "what_it_does_not_measure": "Profitability or volume impact. A high price realization rate may reflect high prices but low volume, or poor unit economics.",
+      "common_misconception": "Price realization rate is not the same as gross margin. It focuses on *price* vs *list*, not *price* vs *cost* \u2014 it isolates pricing decisions from cost structure."
+    },
+    "template": "SELECT SUM(nr.net_revenue) AS net_revenue, SUM(oi.quantity) AS units_sold, SUM(oi.quantity * p.list_price) AS list_revenue, SUM(nr.net_revenue) / NULLIF(SUM(oi.quantity * p.list_price), 0) AS price_realization_rate FROM orders o JOIN order_items oi ON o.order_id = oi.order_id JOIN products p ON oi.product_id = p.product_id JOIN net_revenue_daily nr ON o.order_id = nr.order_id WHERE o.status = 'completed' AND o.order_date BETWEEN {start_date} AND {end_date}",
+    "inflation_causes": [
+      {
+        "cause": "Using net_price instead of list_price",
+        "how_it_inflates": "If list_price is stored as post-discount net_price, and actual ASP is calculated as net_revenue / units, the denominator (list_revenue) is deflated \u2014 inflating price realization rate above 100%.",
+        "detection_sql": "SELECT AVG(list_price) AS avg_list_price, AVG(net_price) AS avg_net_price, AVG(list_price - net_price) AS avg_discount FROM products WHERE list_price > 0",
+        "fix": "Ensure list_price reflects *pre-discount* MSRP or official list price; use list_price column explicitly, not net_price."
+      },
+      {
+        "cause": "Excluding discounted items from list_price",
+        "how_it_inflates": "If list_price is only stored for non-discounted items, and discounted items use net_price, the denominator (list_revenue) under-represents true list revenue \u2014 inflating realization rate.",
+        "detection_sql": "SELECT COUNT(DISTINCT CASE WHEN list_price IS NOT NULL THEN product_id END) AS with_list_price, COUNT(DISTINCT CASE WHEN list_price IS NULL THEN product_id END) AS without_list_price FROM products",
+        "fix": "Include all items in list_price denominator, even if they are discounted; use a fixed list_price field (e.g., MSRP) not conditional list_price."
+      },
+      {
+        "cause": "Counting refunds and cancellations in numerator but not denominator",
+        "how_it_inflates": "If net_revenue includes refunds (negative) but list_price only includes initial order items, the numerator (net_revenue) is deflated while denominator (list_revenue) is inflated \u2014 deflating price realization rate.",
+        "detection_sql": "SELECT COUNT(DISTINCT CASE WHEN refund_amount IS NOT NULL THEN order_id END) AS refunds, SUM(refund_amount) AS refund_amount FROM orders o LEFT JOIN refunds r ON o.order_id = r.order_id WHERE o.order_date >= '2024-01-01'",
+        "fix": "Exclude refunds and cancellations from numerator (use only completed order revenue) to match denominator's scope."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Excluding low-margin items with deep discounts",
+        "how_it_deflates": "If discounted items are excluded from list_price denominator, only high-margin items remain \u2014 inflating price realization rate.",
+        "detection_sql": "SELECT COUNT(DISTINCT CASE WHEN discount_amount > 0 THEN product_id END) AS discounted_items, AVG(list_price - net_price) AS avg_discount FROM products WHERE discount_amount > 0",
+        "fix": "Include all items in list_price denominator, even with deep discounts, to reflect true pricing pressure."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the price realization anomaly isolated to one product, channel, or region?",
+      "Has a new pricing strategy, discount policy, or promotion been deployed?",
+      "Are price realization patterns higher for new products or existing products?",
+      "Did external factors (e.g., competition, demand shift) affect pricing?",
+      "Are price realization metrics based on *net* revenue or *gross* revenue?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "Price realization down, revenue up",
+        "then": "more volume at lower prices \u2014 likely aggressive discounting to drive growth"
+      },
+      {
+        "if": "Price realization down, gross_profit_per_order down",
+        "then": "pricing pressure eroding margins \u2014 likely unsustainable discounting or competitive pressure"
+      },
+      {
+        "if": "Price realization up, revenue down",
+        "then": "higher prices but lower volume \u2014 likely pricing power but demand decline"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Price realization rate drops >10pp WoW with flat volume",
+        "and_also": "fin_discount_rate increases",
+        "shared_root_cause": "Increased promotional pressure \u2014 likely deeper discounts or wider coupon usage to drive volume, eroding realized price while maintaining order volume.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', o.order_date) AS week, SUM(oi.discount_amount) / NULLIF(SUM(oi.list_price * oi.quantity), 0) AS discount_rate, SUM(nr.net_revenue) / NULLIF(SUM(oi.list_price * oi.quantity), 0) AS price_realization_rate, SUM(oi.quantity) AS units_sold FROM orders o JOIN order_items oi ON o.order_id = oi.order_id JOIN products p ON oi.product_id = p.product_id JOIN net_revenue_daily nr ON o.order_id = nr.order_id WHERE o.status = 'completed' AND o.order_date >= '2024-01-01' GROUP BY 1 ORDER BY week"
+      },
+      {
+        "if_this_metric": "Price realization rate increases MoM",
+        "and_also": "fin_revenue_concentration_risk increases",
+        "shared_root_cause": "Higher price realization driven by premium or large customer contracts \u2014 likely a strategic shift toward high-value customers with less discount pressure, increasing revenue concentration.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', o.order_date) AS month, COUNT(DISTINCT o.customer_id) AS customers, SUM(nr.net_revenue) AS revenue, SUM(nr.net_revenue) / NULLIF(SUM(oi.list_price * oi.quantity), 0) AS price_realization_rate, COUNT(DISTINCT CASE WHEN r.rank <= 5 THEN o.customer_id END) * 100.0 / NULLIF(COUNT(DISTINCT o.customer_id), 0) AS concentration FROM orders o JOIN order_items oi ON o.order_id = oi.order_id JOIN products p ON oi.product_id = p.product_id JOIN net_revenue_daily nr ON o.order_id = nr.order_id LEFT JOIN (SELECT customer_id, SUM(net_revenue) AS revenue, ROW_NUMBER() OVER (ORDER BY SUM(net_revenue) DESC) AS rank FROM revenue_events WHERE period = '2024-01-01' GROUP BY customer_id) r ON o.customer_id = r.customer_id WHERE o.status = 'completed' AND o.order_date >= '2024-01-01' GROUP BY 1 ORDER BY month"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Using net_price instead of list_price",
+        "why_wrong": "If list_price is stored as post-discount net_price, and actual ASP is calculated as net_revenue / units, the denominator (list_revenue) is deflated \u2014 inflating price realization rate above 100%.",
+        "bad_sql": "SELECT SUM(net_revenue) / NULLIF(SUM(net_price * quantity), 0) AS price_realization_rate FROM order_items",
+        "good_sql": "SELECT SUM(net_revenue) / NULLIF(SUM(list_price * quantity), 0) AS price_realization_rate FROM order_items oi JOIN products p ON oi.product_id = p.product_id"
+      },
+      {
+        "pattern": "Counting refunds in numerator but not denominator",
+        "why_wrong": "If net_revenue includes refunds (negative) but list_price only includes initial order items, the numerator (net_revenue) is deflated while denominator (list_revenue) is inflated \u2014 deflating price realization rate.",
+        "bad_sql": "SELECT SUM(COALESCE(nr.net_revenue, 0) + COALESCE(r.refund_amount, 0)) / NULLIF(SUM(oi.list_price * oi.quantity), 0) AS price_realization_rate FROM orders o LEFT JOIN refunds r ON o.order_id = r.order_id JOIN order_items oi ON o.order_id = oi.order_id JOIN products p ON oi.product_id = p.product_id",
+        "good_sql": "SELECT SUM(nr.net_revenue) / NULLIF(SUM(oi.list_price * oi.quantity), 0) AS price_realization_rate FROM orders o JOIN order_items oi ON o.order_id = oi.order_id JOIN products p ON oi.product_id = p.product_id JOIN net_revenue_daily nr ON o.order_id = nr.order_id WHERE o.status = 'completed'"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT SUM(nr.net_revenue) / NULLIF(SUM(oi.list_price * oi.quantity), 0) AS price_realization_rate FROM orders o JOIN order_items oi ON o.order_id = oi.order_id JOIN products p ON oi.product_id = p.product_id JOIN net_revenue_daily nr ON o.order_id = nr.order_id WHERE o.status = 'completed' AND o.order_date BETWEEN '2024-01-01' AND '2024-01-31'",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', o.order_date) AS month, p.category, SUM(nr.net_revenue) / NULLIF(SUM(oi.list_price * oi.quantity), 0) AS price_realization_rate, SUM(oi.quantity) AS units_sold FROM orders o JOIN order_items oi ON o.order_id = oi.order_id JOIN products p ON oi.product_id = p.product_id JOIN net_revenue_daily nr ON o.order_id = nr.order_id WHERE o.status = 'completed' AND o.order_date >= '2024-01-01' GROUP BY 1, p.category ORDER BY 1, 3 DESC",
+      "advanced_sql": "WITH pricing AS (\n  -- Grain: order-level price metrics, excluding refunds\n  SELECT\n    o.order_id,\n    o.order_date,\n    oi.product_id,\n    oi.quantity,\n    oi.list_price,\n    oi.net_revenue\n  FROM orders o\n  JOIN order_items oi ON o.order_id = oi.order_id\n  JOIN products p ON oi.product_id = p.product_id\n  JOIN net_revenue_daily nr ON o.order_id = nr.order_id\n  WHERE o.status = 'completed'\n    AND o.order_date BETWEEN '2024-01-01' AND '2024-01-31'\n),\npricing_metrics AS (\n  SELECT\n    SUM(net_revenue) AS total_net_revenue,\n    SUM(quantity * list_price) AS total_list_revenue\n  FROM pricing\n)\nSELECT\n  total_net_revenue,\n  total_list_revenue,\n  ROUND(total_net_revenue / NULLIF(total_list_revenue, 0), 4) AS price_realization_rate,\n  ROUND((total_list_revenue - total_net_revenue) / NULLIF(total_list_revenue, 0) * 100, 2) AS discount_rate_pct\nFROM pricing_metrics"
+    }
+  },
+  {
+    "id": "fin_revenue_per_employee",
+    "title": "Revenue per Employee",
+    "intent_tags": [
+      "revenue per employee",
+      "RPE",
+      "revenue employee",
+      "revenue efficiency",
+      "employee revenue",
+      "what is my revenue per employee",
+      "revenue productivity",
+      "revenue headcount",
+      "revenue per FTE",
+      "revenue per FTE"
+    ],
+    "sql_features": [
+      "aggregation",
+      "coalesce",
+      "nullif",
+      "cte"
+    ],
+    "difficulty": "beginner",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "assess operational efficiency and productivity",
+      "benchmark revenue productivity against industry peers",
+      "evaluate impact of growth initiatives on headcount efficiency",
+      "model scalability and unit economics",
+      "inform hiring decisions and cost optimization"
+    ],
+    "related_patterns": [
+      "fin_revenue_concentration_risk",
+      "fin_price_realization_rate",
+      "fin_upsell_revenue_rate",
+      "fin_contract_renewal_rate"
+    ],
+    "business_definition": "Total net revenue in the period divided by the average number of full-time equivalent (FTE) employees during the period. Net revenue is GAAP-compliant; FTE excludes contractors and part-time staff (prorated).",
+    "metric_nature": {
+      "what_it_measures": "The efficiency of the workforce in generating revenue \u2014 a high ratio indicates high productivity; a low ratio may indicate overstaffing or inefficient operations.",
+      "what_it_does_not_measure": "Profitability or cost efficiency. A high RPE may reflect high prices, not low costs \u2014 it does not account for margin structure.",
+      "common_misconception": "Revenue per employee is not the same as profit per employee. RPE measures top-line efficiency; profit per employee measures bottom-line efficiency after costs."
+    },
+    "template": "WITH revenue AS (\n  SELECT SUM(net_revenue) AS total_revenue FROM net_revenue_daily WHERE period = {period}\n),\nemployees AS (\n  SELECT AVG(FTE) AS avg_fte FROM employee_fte WHERE period BETWEEN {start_date} AND {end_date}\n)\nSELECT COALESCE(r.total_revenue, 0) AS total_revenue, COALESCE(e.avg_fte, 0) AS avg_fte, COALESCE(r.total_revenue, 0) / NULLIF(COALESCE(e.avg_fte, 0), 0) AS revenue_per_employee FROM revenue r, employees e",
+    "inflation_causes": [
+      {
+        "cause": "Counting part-time and contractors as full-time equivalents",
+        "how_it_inflates": "If FTE includes part-time staff without proration, or contractors without legal employment status, the denominator inflates \u2014 deflating revenue per employee.",
+        "detection_sql": "SELECT COUNT(DISTINCT CASE WHEN employee_type = 'part_time' THEN employee_id END) AS part_time, COUNT(DISTINCT CASE WHEN employee_type = 'contractor' THEN employee_id END) AS contractors FROM employees WHERE period = '2024-01-01'",
+        "fix": "Prorate part-time hours (e.g., hours_worked / 40) and exclude contractors unless they have full-time equivalents (e.g., via vendor contract)."
+      },
+      {
+        "cause": "Using period-end headcount instead of average FTE",
+        "how_it_inflates": "If FTE uses period-end headcount and headcount fluctuates (e.g., hires mid-period), the denominator shrinks \u2014 inflating revenue per employee for the period.",
+        "detection_sql": "SELECT DATE_TRUNC('month', hire_date) AS month, COUNT(DISTINCT employee_id) AS new_hires FROM employees WHERE hire_date >= '2024-01-01' GROUP BY 1 ORDER BY month",
+        "fix": "Use *average FTE* over the period: `AVG(FTE)` for each day or period, not period-end snapshot."
+      },
+      {
+        "cause": "Excluding deferred revenue from net_revenue numerator",
+        "how_it_inflates": "If net_revenue includes only recognized revenue and excludes deferred revenue recognition in the period, revenue is understated \u2014 deflating revenue per employee.",
+        "detection_sql": "SELECT SUM(revenue) AS recognized_revenue, SUM(deferred_revenue) AS deferred_revenue FROM revenue_events WHERE period = '2024-01-01'",
+        "fix": "Use *recognized* revenue only (GAAP-compliant) in numerator to match denominator (FTE over same period)."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Excluding new hires from FTE denominator",
+        "how_it_deflates": "If FTE only includes long-tenure employees (e.g., >90 days), new hires are excluded \u2014 inflating average FTE and deflating revenue per employee.",
+        "detection_sql": "SELECT COUNT(DISTINCT CASE WHEN tenure_days >= 90 THEN employee_id END) AS senior_employees, COUNT(DISTINCT employee_id) AS total_employees FROM employees WHERE period = '2024-01-01'",
+        "fix": "Include all FTEs in denominator, regardless of tenure, to reflect total workforce effort during the period."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the revenue per employee anomaly isolated to one region, segment, or function?",
+      "Has a new hire, layoff, or restructuring event occurred recently?",
+      "Are revenue per employee patterns higher for new or existing employees?",
+      "Did external factors (e.g., market expansion, economic shift) affect revenue or headcount?",
+      "Are revenue per employee metrics based on *recognized* revenue or *booked* revenue?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "Revenue per employee up, headcount flat",
+        "then": "higher revenue without more staff \u2014 likely productivity gains or pricing power"
+      },
+      {
+        "if": "Revenue per employee up, headcount down",
+        "then": "layoffs improved efficiency \u2014 likely cost optimization but potential burnout risk"
+      },
+      {
+        "if": "Revenue per employee down, headcount up",
+        "then": "hiring increased headcount without proportional revenue \u2014 likely scaling inefficiency or market misstep"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Revenue per employee drops >10% MoM with flat revenue",
+        "and_also": "fin_customer_acquisition_cost increases same period",
+        "shared_root_cause": " Increased marketing and sales spend to acquire customers \u2014 likely new campaigns or channel expansion \u2014 increasing total FTE-equivalent cost (e.g., marketing hires) without immediate revenue lift.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', e.hire_date) AS month, COUNT(DISTINCT e.employee_id) AS new_hires, SUM(m.spend) AS marketing_spend, SUM(nr.net_revenue) AS revenue, SUM(nr.net_revenue) / NULLIF(COUNT(DISTINCT e.employee_id), 0) AS revenue_per_employee FROM employees e LEFT JOIN marketing_spend m ON e.department = m.department LEFT JOIN net_revenue_daily nr ON e.department = nr.department WHERE e.hire_date >= '2024-01-01' GROUP BY 1 ORDER BY month"
+      },
+      {
+        "if_this_metric": "Revenue per employee increases MoM",
+        "and_also": "fin_revenue_concentration_risk increases same period",
+        "shared_root_cause": "Revenue growth driven by large enterprise customers \u2014 likely strategic focus on high-value accounts, which increases revenue per employee but also revenue concentration risk.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', o.order_date) AS month, COUNT(DISTINCT o.customer_id) AS customers, SUM(nr.net_revenue) AS revenue, COUNT(DISTINCT o.customer_id) / NULLIF(COUNT(DISTINCT e.employee_id), 0) AS revenue_per_employee, COUNT(DISTINCT CASE WHEN r.rank <= 5 THEN o.customer_id END) * 100.0 / NULLIF(COUNT(DISTINCT o.customer_id), 0) AS concentration FROM orders o JOIN net_revenue_daily nr ON o.order_id = nr.order_id JOIN employees e ON o.region = e.region LEFT JOIN (SELECT customer_id, SUM(net_revenue) AS revenue, ROW_NUMBER() OVER (ORDER BY SUM(net_revenue) DESC) AS rank FROM revenue_events WHERE period = '2024-01-01' GROUP BY customer_id) r ON o.customer_id = r.customer_id WHERE o.status = 'completed' AND o.order_date >= '2024-01-01' GROUP BY 1 ORDER BY month"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Counting part-time and contractors as full-time equivalents",
+        "why_wrong": "If FTE includes part-time staff without proration, or contractors without legal employment status, the denominator inflates \u2014 deflating revenue per employee.",
+        "bad_sql": "SELECT SUM(net_revenue) / NULLIF(COUNT(DISTINCT employee_id), 0) AS revenue_per_employee FROM net_revenue_daily nrd JOIN employees e ON 1=1",
+        "good_sql": "SELECT SUM(net_revenue) / NULLIF(AVG(e.fte), 0) AS revenue_per_employee FROM net_revenue_daily nrd CROSS JOIN (SELECT AVG(fte) AS fte FROM employee_fte WHERE period BETWEEN '2024-01-01' AND '2024-01-31') e"
+      },
+      {
+        "pattern": "Using period-end headcount instead of average FTE",
+        "why_wrong": "If FTE uses period-end headcount and headcount fluctuates (e.g., hires mid-period), the denominator shrinks \u2014 inflating revenue per employee for the period.",
+        "bad_sql": "SELECT SUM(net_revenue) / NULLIF(MAX(e.employee_count), 0) AS revenue_per_employee FROM net_revenue_daily nrd CROSS JOIN (SELECT COUNT(DISTINCT employee_id) AS employee_count FROM employees WHERE period = '2024-01-31') e",
+        "good_sql": "SELECT SUM(net_revenue) / NULLIF(AVG(e.fte), 0) AS revenue_per_employee FROM net_revenue_daily nrd CROSS JOIN (SELECT AVG(fte) AS fte FROM employee_fte WHERE period BETWEEN '2024-01-01' AND '2024-01-31') e"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT SUM(nr.net_revenue) / NULLIF(AVG(e.fte), 0) AS revenue_per_employee FROM net_revenue_daily nr CROSS JOIN (SELECT AVG(fte) AS fte FROM employee_fte WHERE period BETWEEN '2024-01-01' AND '2024-01-31') e",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', nr.period) AS month, e.department, SUM(nr.net_revenue) / NULLIF(AVG(e.fte), 0) AS revenue_per_employee, COUNT(DISTINCT e.employee_id) AS avg_employees FROM net_revenue_daily nr JOIN employee_fte e ON nr.period = e.period WHERE nr.period >= '2024-01-01' GROUP BY 1, e.department ORDER BY 1, 3 DESC",
+      "advanced_sql": "WITH revenue_per_period AS (\n  -- Grain: total revenue per period\n  SELECT period, SUM(net_revenue) AS total_revenue\n  FROM net_revenue_daily\n  WHERE period BETWEEN '2024-01-01' AND '2024-01-31'\n  GROUP BY period\n),\nemployees_per_period AS (\n  -- Grain: average FTE per period\n  SELECT period, AVG(fte) AS avg_fte\n  FROM employee_fte\n  WHERE period BETWEEN '2024-01-01' AND '2024-01-31'\n  GROUP BY period\n),\nrpe_calc AS (\n  SELECT\n    r.period,\n    r.total_revenue,\n    e.avg_fte,\n    ROUND(r.total_revenue / NULLIF(e.avg_fte, 0), 2) AS revenue_per_employee\n  FROM revenue_per_period r\n  JOIN employees_per_period e ON r.period = e.period\n)\nSELECT\n  period,\n  total_revenue,\n  avg_fte,\n  revenue_per_employee,\n  ROUND(r.total_revenue / NULLIF(e.avg_fte, 0) * 12, 2) AS annualized_rpe\nFROM rpe_calc r\nCROSS JOIN employees_per_period e\nWHERE r.period = '2024-01-31'"
+    }
+  },
+  {
+    "id": "fin_upsell_revenue_rate",
+    "title": "Upsell Revenue Rate",
+    "intent_tags": [
+      "upsell revenue rate",
+      "upsell rate",
+      "expansion revenue",
+      "upsell revenue %",
+      "revenue expansion",
+      "upsell expansion",
+      "upsell growth",
+      "upsell contribution",
+      "upsell success",
+      "upsell revenue",
+      "upsell %"
+    ],
+    "sql_features": [
+      "aggregation",
+      "conditional_count",
+      "cte",
+      "nullif"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "assess expansion revenue growth and upsell effectiveness",
+      "benchmark upsell rates across customer segments or products",
+      "diagnose upsell funnel friction and opportunities",
+      "evaluate impact of upsell campaigns or training",
+      "model expansion revenue potential and runway"
+    ],
+    "related_patterns": [
+      "fin_revenue_concentration_risk",
+      "fin_price_realization_rate",
+      "fin_revenue_per_employee",
+      "fin_contract_renewal_rate"
+    ],
+    "business_definition": "Percentage of net revenue in the period derived from upsell or expansion transactions (e.g., upgrades, add-ons, quantity increases) out of total net revenue. An upsell is defined as a transaction with a higher revenue per unit than the customer's baseline contract.",
+    "metric_nature": {
+      "what_it_measures": "The contribution of expansion revenue to overall growth \u2014 a high rate indicates strong upsell and expansion capabilities.",
+      "what_it_does_not_measure": "Upsell profitability or customer impact. A high upsell rate may reflect aggressive tactics that harm long-term relationships.",
+      "common_misconception": "Upsell revenue rate is not the same as cross-sell revenue rate. Upsell refers to *increasing* existing deals (e.g., upgrade); cross-sell refers to *new* products (e.g., add-ons)."
+    },
+    "template": "WITH upsell_revenue AS (\n  SELECT SUM(net_revenue) AS upsell_revenue FROM orders o JOIN order_items oi ON o.order_id = oi.order_id JOIN upsell_events u ON o.customer_id = u.customer_id AND oi.product_id = u.product_id WHERE o.order_date BETWEEN {start_date} AND {end_date} AND u.upsell_type = 'upgrade'\n),\ntotal_revenue AS (\n  SELECT SUM(net_revenue) AS total_revenue FROM net_revenue_daily WHERE period = {period}\n)\nSELECT COALESCE(ur.upsell_revenue, 0) AS upsell_revenue, COALESCE(tr.total_revenue, 0) AS total_revenue, COALESCE(ur.upsell_revenue, 0) * 100.0 / NULLIF(COALESCE(tr.total_revenue, 0), 0) AS upsell_revenue_rate FROM upsell_revenue ur, total_revenue tr",
+    "inflation_causes": [
+      {
+        "cause": "Counting renewals as upsells",
+        "how_it_inflates": "If renewal transactions (same terms as prior period) are classified as upsells, revenue is double-counted \u2014 inflating upsell revenue rate because renewals are not *new* expansion.",
+        "detection_sql": "SELECT COUNT(DISTINCT CASE WHEN renewal_flag = true THEN order_id END) AS renewals, COUNT(DISTINCT CASE WHEN upsell_flag = true THEN order_id END) AS upsells FROM orders o JOIN order_items oi ON o.order_id = oi.order_id WHERE o.order_date >= '2024-01-01'",
+        "fix": "Exclude renewals from upsell definition \u2014 only include transactions with *increased* value per unit or *new* products not previously purchased."
+      },
+      {
+        "cause": "Excluding small upsells (e.g., <10% increase)",
+        "how_it_inflates": "If only large upsells (e.g., >10% increase) are counted, small but frequent upsells are excluded \u2014 inflating upsell revenue rate for large deals while masking overall trends.",
+        "detection_sql": "SELECT COUNT(DISTINCT CASE WHEN increase_pct < 10 THEN order_id END) AS small_upsells, COUNT(DISTINCT CASE WHEN increase_pct >= 10 THEN order_id END) AS large_upsells FROM (SELECT order_id, SUM(net_revenue) AS revenue, LAG(SUM(net_revenue)) OVER (PARTITION BY customer_id ORDER BY order_date) AS prev_revenue, (SUM(net_revenue) - LAG(SUM(net_revenue)) OVER (PARTITION BY customer_id ORDER BY order_date)) / NULLIF(LAG(SUM(net_revenue)) OVER (PARTITION BY customer_id ORDER BY order_date), 0) * 100 AS increase_pct FROM orders GROUP BY 1) sub",
+        "fix": "Include all upsells, regardless of size, to reflect true expansion volume \u2014 or define *meaningful* upsell threshold explicitly (e.g., >$100 or >10% increase)."
+      },
+      {
+        "cause": "Counting upsells by order count instead of revenue",
+        "how_it_inflates": "If upsell rate is computed as *upsell order count* / *total order count*, small upsell orders inflate the numerator \u2014 causing rate to exceed 100% if upsell orders are frequent but low-value.",
+        "detection_sql": "SELECT COUNT(DISTINCT CASE WHEN upsell_flag = true THEN order_id END) AS upsell_orders, COUNT(DISTINCT CASE WHEN upsell_flag = false THEN order_id END) AS base_orders FROM orders o JOIN order_items oi ON o.order_id = oi.order_id WHERE o.order_date >= '2024-01-01'",
+        "fix": "Use *upsell revenue* / *total revenue*, not *upsell orders* / *total orders*, to reflect true revenue contribution."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Excluding upsells with zero revenue increase",
+        "how_it_deflates": "If upsell rate excludes orders where revenue is flat (e.g., same price but new SKU), and such orders are included in upsell definition, upsell rate appears lower \u2014 masking true expansion activity.",
+        "detection_sql": "SELECT COUNT(DISTINCT CASE WHEN revenue_change = 0 THEN order_id END) AS flat_orders, COUNT(DISTINCT CASE WHEN revenue_change > 0 THEN order_id END) AS upsell_orders FROM (SELECT order_id, SUM(net_revenue) AS revenue, LAG(SUM(net_revenue)) OVER (PARTITION BY customer_id ORDER BY order_date) AS prev_revenue, SUM(net_revenue) - LAG(SUM(net_revenue)) OVER (PARTITION BY customer_id ORDER BY order_date) AS revenue_change FROM orders GROUP BY 1) sub",
+        "fix": "Include all upsell orders, even with flat revenue, if they reflect product expansion (e.g., new SKU purchase) \u2014 or define *meaningful* revenue increase explicitly."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the upsell rate anomaly isolated to one segment, product, or channel?",
+      "Has a new upsell process, training, or incentive been deployed?",
+      "Are upsell rates higher for new or existing customers?",
+      "Did external factors (e.g., market shift, competition) affect upsell success?",
+      "Are upsell metrics based on *revenue* or *order count*?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "Upsell rate up, revenue growth up",
+        "then": "expansion driving growth \u2014 likely effective upsell tactics and product-market fit"
+      },
+      {
+        "if": "Upsell rate up, churn_rate down",
+        "then": "upsell improving retention \u2014 likely increased stickiness and reduced switching risk"
+      },
+      {
+        "if": "Upsell rate down, revenue growth up",
+        "then": "growth from new customers, not expansion \u2014 likely acquisition success but weak upsell"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Upsell revenue rate increases >15pp WoW with flat total revenue",
+        "and_also": "fin_customer_ltv increases same period",
+        "shared_root_cause": "A successful upsell initiative \u2014 likely product bundling, tier upgrades, or pricing optimization \u2014 increasing expansion revenue and customer lifetime value without new customer acquisition.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', o.order_date) AS week, SUM(nr.net_revenue) FILTER (WHERE u.upsell_flag = true) AS upsell_revenue, SUM(nr.net_revenue) AS total_revenue, SUM(nr.net_revenue) FILTER (WHERE u.upsell_flag = true) * 100.0 / NULLIF(SUM(nr.net_revenue), 0) AS upsell_rate, COUNT(DISTINCT o.customer_id) AS customers, SUM(nr.net_revenue) / NULLIF(COUNT(DISTINCT o.customer_id), 0) AS avg_ltv FROM orders o JOIN net_revenue_daily nr ON o.order_id = nr.order_id LEFT JOIN upsell_events u ON o.order_id = u.order_id WHERE o.order_date >= '2024-01-01' GROUP BY 1 ORDER BY week"
+      },
+      {
+        "if_this_metric": "Upsell revenue rate drops MoM",
+        "and_also": "fin_churn_rate increases same period",
+        "shared_root_cause": "Upsell program underperforming \u2014 likely poor timing, product misalignment, or customer fatigue \u2014 reducing expansion revenue while increasing churn.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', o.order_date) AS month, SUM(nr.net_revenue) FILTER (WHERE u.upsell_flag = true) AS upsell_revenue, SUM(nr.net_revenue) AS total_revenue, SUM(nr.net_revenue) FILTER (WHERE u.upsell_flag = true) * 100.0 / NULLIF(SUM(nr.net_revenue), 0) AS upsell_rate, COUNT(DISTINCT CASE WHEN r.customer_id IS NOT NULL THEN o.customer_id END) * 100.0 / NULLIF(COUNT(DISTINCT o.customer_id), 0) AS churn_rate FROM orders o JOIN net_revenue_daily nr ON o.order_id = nr.order_id LEFT JOIN upsell_events u ON o.order_id = u.order_id LEFT JOIN returns r ON o.order_id = r.order_id WHERE o.order_date >= '2024-01-01' GROUP BY 1 ORDER BY month"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Counting upsells by order count instead of revenue",
+        "why_wrong": "If upsell rate is computed as *upsell order count* / *total order count*, small upsell orders inflate the numerator \u2014 causing rate to exceed 100% if upsell orders are frequent but low-value.",
+        "bad_sql": "SELECT COUNT(DISTINCT CASE WHEN upsell_flag = true THEN order_id END) * 100.0 / NULLIF(COUNT(DISTINCT order_id), 0) AS upsell_rate FROM orders o JOIN order_items oi ON o.order_id = oi.order_id",
+        "good_sql": "SELECT SUM(nr.net_revenue) FILTER (WHERE u.upsell_flag = true) * 100.0 / NULLIF(SUM(nr.net_revenue), 0) AS upsell_rate FROM orders o JOIN net_revenue_daily nr ON o.order_id = nr.order_id LEFT JOIN upsell_events u ON o.order_id = u.order_id"
+      },
+      {
+        "pattern": "Counting renewals as upsells",
+        "why_wrong": "If renewal transactions (same terms as prior period) are classified as upsells, revenue is double-counted \u2014 inflating upsell revenue rate because renewals are not *new* expansion.",
+        "bad_sql": "SELECT COUNT(DISTINCT CASE WHEN renewal_flag = true THEN order_id END) * 100.0 / NULLIF(COUNT(DISTINCT order_id), 0) AS upsell_rate FROM orders o JOIN order_items oi ON o.order_id = oi.order_id",
+        "good_sql": "SELECT SUM(nr.net_revenue) FILTER (WHERE u.upsell_flag = true AND renewal_flag = false) * 100.0 / NULLIF(SUM(nr.net_revenue) FILTER (WHERE renewal_flag = false), 0) AS upsell_rate FROM orders o JOIN net_revenue_daily nr ON o.order_id = nr.order_id LEFT JOIN upsell_events u ON o.order_id = u.order_id"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT SUM(nr.net_revenue) FILTER (WHERE u.upsell_flag = true) * 100.0 / NULLIF(SUM(nr.net_revenue), 0) AS upsell_revenue_rate FROM orders o JOIN net_revenue_daily nr ON o.order_id = nr.order_id LEFT JOIN upsell_events u ON o.order_id = u.order_id WHERE o.order_date BETWEEN '2024-01-01' AND '2024-01-31'",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', o.order_date) AS month, p.category, SUM(nr.net_revenue) FILTER (WHERE u.upsell_flag = true) AS upsell_revenue, SUM(nr.net_revenue) AS total_revenue, SUM(nr.net_revenue) FILTER (WHERE u.upsell_flag = true) * 100.0 / NULLIF(SUM(nr.net_revenue), 0) AS upsell_rate FROM orders o JOIN net_revenue_daily nr ON o.order_id = nr.order_id JOIN order_items oi ON o.order_id = oi.order_id JOIN products p ON oi.product_id = p.product_id LEFT JOIN upsell_events u ON o.order_id = u.order_id WHERE o.order_date >= '2024-01-01' GROUP BY 1, p.category ORDER BY 1, 4 DESC",
+      "advanced_sql": "WITH upsell_revenue AS (\n  -- Grain: upsell revenue, excluding renewals\n  SELECT SUM(nr.net_revenue) AS upsell_revenue\n  FROM orders o\n  JOIN net_revenue_daily nr ON o.order_id = nr.order_id\n  LEFT JOIN upsell_events u ON o.order_id = u.order_id\n  WHERE o.order_date BETWEEN '2024-01-01' AND '2024-01-31'\n    AND u.upsell_flag = true\n    AND u.renewal_flag = false\n),\ntotal_revenue AS (\n  -- Grain: total revenue, excluding renewals\n  SELECT SUM(nr.net_revenue) AS total_revenue\n  FROM orders o\n  JOIN net_revenue_daily nr ON o.order_id = nr.order_id\n  WHERE o.order_date BETWEEN '2024-01-01' AND '2024-01-31'\n    AND renewal_flag = false\n)\nSELECT\n  ur.upsell_revenue,\n  tr.total_revenue,\n  ROUND(ur.upsell_revenue * 100.0 / NULLIF(tr.total_revenue, 0), 2) AS upsell_revenue_rate,\n  ROUND(ur.upsell_revenue / NULLIF(tr.total_revenue, 0) * 10000, 2) AS upsell_per_10k_revenue\nFROM upsell_revenue ur, total_revenue tr"
+    }
+  },
+  {
+    "id": "fin_contract_renewal_rate",
+    "title": "Contract Renewal Rate",
+    "intent_tags": [
+      "contract renewal rate",
+      "renewal rate",
+      "renewal %",
+      "subscription renewal",
+      "customer retention",
+      "renewal success",
+      "renewal rate %",
+      "contract retention",
+      "renewal efficiency",
+      "renewal rate",
+      "contract renewal %"
+    ],
+    "sql_features": [
+      "aggregation",
+      "conditional_count",
+      "nullif",
+      "cte"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "retention",
+    "when_to_use": [
+      "assess subscription health and customer retention",
+      "benchmark renewal rates across segments, products, or geos",
+      "diagnose churn drivers and retention opportunities",
+      "evaluate impact of renewal campaigns or support",
+      "model ARR sustainability and growth runway"
+    ],
+    "related_patterns": [
+      "fin_revenue_concentration_risk",
+      "fin_price_realization_rate",
+      "fin_revenue_per_employee",
+      "fin_upsell_revenue_rate"
+    ],
+    "business_definition": "Percentage of contracts up for renewal in the period that were successfully renewed out of total contracts up for renewal. A contract is up for renewal if its end_date is within the period and status = 'active'.",
+    "metric_nature": {
+      "what_it_measures": "Customer retention and satisfaction \u2014 a high renewal rate indicates strong product-market fit and customer satisfaction.",
+      "what_it_does_not_measure": "Renewal value or pricing. A high renewal rate may include renewals at lower pricing or reduced scope \u2014 it only measures *completion*, not *value*.",
+      "common_misconception": "Contract renewal rate is not the same as gross retention rate. Renewal rate measures *contract completion*; gross retention measures *revenue retention* (excluding new expansion)."
+    },
+    "template": "WITH contracts_up_for_renewal AS (\n  SELECT contract_id, customer_id FROM contracts WHERE end_date BETWEEN {start_date} AND {end_date} AND status = 'active'\n),\nrenewed AS (\n  SELECT contract_id FROM contracts WHERE status = 'renewed' AND renewal_date BETWEEN {start_date} AND {end_date}\n),\nmetrics AS (\n  SELECT COUNT(DISTINCT c.contract_id) AS total_up_for_renewal, COUNT(DISTINCT r.contract_id) AS renewed FROM contracts_up_for_renewal c LEFT JOIN renewed r ON c.contract_id = r.contract_id\n)\nSELECT total_up_for_renewal, renewed, renewed * 100.0 / NULLIF(total_up_for_renewal, 0) AS renewal_rate FROM metrics",
+    "inflation_causes": [
+      {
+        "cause": "Counting renewals as new contracts",
+        "how_it_inflates": "If renewals are treated as *new* contracts and included in total_up_for_renewal, the denominator inflates \u2014 deflating renewal rate because renewals are excluded from numerator.",
+        "detection_sql": "SELECT COUNT(DISTINCT CASE WHEN contract_type = 'new' THEN contract_id END) AS new_contracts, COUNT(DISTINCT CASE WHEN contract_type = 'renewal' THEN contract_id END) AS renewals FROM contracts WHERE start_date >= '2024-01-01'",
+        "fix": "Only include *active* contracts ending in period in denominator; exclude new contracts and renewals from the pool."
+      },
+      {
+        "cause": "Including expired or cancelled contracts in denominator",
+        "how_it_inflates": "If expired or cancelled contracts are included in total_up_for_renewal, the denominator inflates \u2014 deflating renewal rate because only active contracts should be up for renewal.",
+        "detection_sql": "SELECT status, COUNT(DISTINCT contract_id) AS contracts FROM contracts WHERE end_date >= '2024-01-01' GROUP BY 1 ORDER BY contracts DESC",
+        "fix": "Filter to status = 'active' in denominator; exclude expired, cancelled, or churned contracts."
+      },
+      {
+        "cause": "Excluding partial renewals (e.g., reduced scope)",
+        "how_it_inflates": "If only full renewals are counted, and partial renewals (e.g., reduced scope, downgrades) are excluded, the numerator shrinks \u2014 inflating renewal rate for full renewals but masking overall attrition.",
+        "detection_sql": "SELECT COUNT(DISTINCT CASE WHEN renewal_type = 'full' THEN contract_id END) AS full_renewals, COUNT(DISTINCT CASE WHEN renewal_type = 'partial' THEN contract_id END) AS partial_renewals FROM contracts WHERE renewal_date >= '2024-01-01'",
+        "fix": "Include all renewals (full and partial) unless business defines *meaningful* renewal explicitly (e.g., >90% scope retained)."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Excluding contracts with auto-renewal",
+        "how_it_deflates": "If contracts with auto-renewal are excluded from denominator, only manual renewals are counted \u2014 deflating renewal rate and masking automated retention success.",
+        "detection_sql": "SELECT COUNT(DISTINCT CASE WHEN auto_renewal = true THEN contract_id END) AS auto_renewal_contracts, COUNT(DISTINCT CASE WHEN auto_renewal = false THEN contract_id END) AS manual_contracts FROM contracts WHERE end_date >= '2024-01-01'",
+        "fix": "Include all contracts up for renewal, regardless of renewal mechanism, to reflect true retention rate."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the renewal rate anomaly isolated to one segment, product, or region?",
+      "Has a new renewal process, contract terms, or support initiative been deployed?",
+      "Are renewal rates higher for new or existing customers?",
+      "Did external factors (e.g., pricing change, competition) affect renewal success?",
+      "Are renewal metrics based on *contracts* or *revenue*?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "Renewal rate up, churn_rate down",
+        "then": "retention improving \u2014 likely product-market fit or customer success efforts"
+      },
+      {
+        "if": "Renewal rate up, upsell_revenue_rate up",
+        "then": "renewals paired with expansion \u2014 likely successful upsell tactics and strong customer relationships"
+      },
+      {
+        "if": "Renewal rate down, churn_rate up",
+        "then": "retention declining \u2014 likely product or service issues causing customers to leave"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Contract renewal rate drops >10pp WoW with stable active contracts",
+        "and_also": "fin_customer_ltv decreases same period",
+        "shared_root_cause": "A decline in customer satisfaction or product relevance \u2014 likely service issues, pricing misalignment, or feature gaps causing customers to decline renewal and reduce future spend.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', c.end_date) AS month, COUNT(DISTINCT c.contract_id) AS contracts_up_for_renewal, COUNT(DISTINCT CASE WHEN c.status = 'renewed' THEN c.contract_id END) AS renewed, COUNT(DISTINCT CASE WHEN c.status = 'renewed' THEN c.contract_id END) * 100.0 / NULLIF(COUNT(DISTINCT c.contract_id), 0) AS renewal_rate, COUNT(DISTINCT CASE WHEN nr.net_revenue > 0 THEN c.customer_id END) * 100.0 / NULLIF(COUNT(DISTINCT c.customer_id), 0) AS ltv_rate FROM contracts c LEFT JOIN net_revenue_daily nr ON c.customer_id = nr.customer_id WHERE c.end_date >= '2024-01-01' GROUP BY 1 ORDER BY month"
+      },
+      {
+        "if_this_metric": "Contract renewal rate increases MoM",
+        "and_also": "fin_upsell_revenue_rate decreases same period",
+        "shared_root_cause": "Renewal focus shifting toward retention over expansion \u2014 likely a strategic pivot to ensure core retention, with reduced upsell effort or timing delays in expansion opportunities.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', c.end_date) AS month, COUNT(DISTINCT c.contract_id) AS contracts_up_for_renewal, COUNT(DISTINCT CASE WHEN c.status = 'renewed' THEN c.contract_id END) * 100.0 / NULLIF(COUNT(DISTINCT c.contract_id), 0) AS renewal_rate, SUM(nr.net_revenue) FILTER (WHERE u.upsell_flag = true) * 100.0 / NULLIF(SUM(nr.net_revenue), 0) AS upsell_rate FROM contracts c LEFT JOIN net_revenue_daily nr ON c.customer_id = nr.customer_id LEFT JOIN upsell_events u ON nr.order_id = u.order_id WHERE c.end_date >= '2024-01-01' GROUP BY 1 ORDER BY month"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Counting renewals as new contracts",
+        "why_wrong": "If renewals are treated as *new* contracts and included in total_up_for_renewal, the denominator inflates \u2014 deflating renewal rate because renewals are excluded from numerator.",
+        "bad_sql": "SELECT COUNT(DISTINCT CASE WHEN c.status = 'renewed' THEN c.contract_id END) * 100.0 / NULLIF(COUNT(DISTINCT c.contract_id), 0) AS renewal_rate FROM contracts c WHERE c.start_date >= '2024-01-01'",
+        "good_sql": "SELECT COUNT(DISTINCT CASE WHEN c.status = 'renewed' THEN c.contract_id END) * 100.0 / NULLIF(COUNT(DISTINCT CASE WHEN c.end_date BETWEEN '2024-01-01' AND '2024-01-31' AND c.status = 'active' THEN c.contract_id END), 0) AS renewal_rate FROM contracts c"
+      },
+      {
+        "pattern": "Excluding auto-renewal contracts from denominator",
+        "why_wrong": "If contracts with auto-renewal are excluded, only manual renewals are counted \u2014 deflating renewal rate and masking automated retention success.",
+        "bad_sql": "SELECT COUNT(DISTINCT CASE WHEN c.status = 'renewed' THEN c.contract_id END) * 100.0 / NULLIF(COUNT(DISTINCT CASE WHEN c.auto_renewal = false THEN c.contract_id END), 0) AS renewal_rate FROM contracts c WHERE c.end_date >= '2024-01-01'",
+        "good_sql": "SELECT COUNT(DISTINCT CASE WHEN c.status = 'renewed' THEN c.contract_id END) * 100.0 / NULLIF(COUNT(DISTINCT c.contract_id), 0) AS renewal_rate FROM contracts c WHERE c.end_date BETWEEN '2024-01-01' AND '2024-01-31' AND c.status = 'active'"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "WITH contracts_up_for_renewal AS (SELECT contract_id, customer_id FROM contracts WHERE end_date BETWEEN '2024-01-01' AND '2024-01-31' AND status = 'active'), renewed AS (SELECT contract_id FROM contracts WHERE status = 'renewed' AND renewal_date BETWEEN '2024-01-01' AND '2024-01-31'), metrics AS (SELECT COUNT(DISTINCT c.contract_id) AS total_up_for_renewal, COUNT(DISTINCT r.contract_id) AS renewed FROM contracts_up_for_renewal c LEFT JOIN renewed r ON c.contract_id = r.contract_id) SELECT total_up_for_renewal, renewed, renewed * 100.0 / NULLIF(total_up_for_renewal, 0) AS renewal_rate FROM metrics",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', c.end_date) AS month, c.segment, COUNT(DISTINCT c.contract_id) AS contracts_up_for_renewal, COUNT(DISTINCT CASE WHEN c.status = 'renewed' THEN c.contract_id END) AS renewed, COUNT(DISTINCT CASE WHEN c.status = 'renewed' THEN c.contract_id END) * 100.0 / NULLIF(COUNT(DISTINCT c.contract_id), 0) AS renewal_rate FROM contracts c WHERE c.end_date >= '2024-01-01' GROUP BY 1, c.segment ORDER BY 1, 4 DESC",
+      "advanced_sql": "WITH contracts_up_for_renewal AS (\n  -- Grain: active contracts ending in period\n  SELECT contract_id, customer_id, end_date, segment\n  FROM contracts\n  WHERE end_date BETWEEN '2024-01-01' AND '2024-01-31' AND status = 'active'\n),\nrenewed AS (\n  -- Grain: renewed contracts in period\n  SELECT contract_id, renewal_date\n  FROM contracts\n  WHERE status = 'renewed' AND renewal_date BETWEEN '2024-01-01' AND '2024-01-31'\n),\nrenewal_metrics AS (\n  SELECT\n    c.segment,\n    COUNT(DISTINCT c.contract_id) AS total_up_for_renewal,\n    COUNT(DISTINCT CASE WHEN r.contract_id IS NOT NULL THEN c.contract_id END) AS renewed\n  FROM contracts_up_for_renewal c\n  LEFT JOIN renewed r ON c.contract_id = r.contract_id\n  GROUP BY c.segment\n)\nSELECT\n  segment,\n  total_up_for_renewal,\n  renewed,\n  ROUND(renewed * 100.0 / NULLIF(total_up_for_renewal, 0), 2) AS renewal_rate,\n  ROUND(renewed / NULLIF(total_up_for_renewal, 0) * 10000, 2) AS renewals_per_10k_contracts\nFROM renewal_metrics"
+    }
+  }
+]

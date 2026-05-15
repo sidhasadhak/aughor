@@ -1,0 +1,641 @@
+[
+  {
+    "id": "ec_customer_acquisition_cost",
+    "title": "Customer Acquisition Cost",
+    "intent_tags": [
+      "CAC",
+      "customer acquisition cost",
+      "acquisition cost per customer",
+      "cost per acquire",
+      "marketing CAC",
+      "sales CAC",
+      "customer acquisition cost",
+      "what is my CAC",
+      "how much to acquire a customer",
+      "CAC by channel",
+      "acquisition spend per customer",
+      "cost to acquire"
+    ],
+    "sql_features": [
+      "aggregation",
+      "left_join",
+      "coalesce",
+      "nullif"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "evaluate marketing and sales efficiency",
+      "calculate payback period and LTV:CAC ratio",
+      "benchmark channel or campaign performance",
+      "assess scalability of growth initiatives",
+      "inform customer lifetime value modeling"
+    ],
+    "related_patterns": [
+      "ec_customer_count",
+      "ec_net_revenue",
+      "ec_gross_profit_per_order",
+      "ec_payback_period"
+    ],
+    "business_definition": "Total marketing and sales spend (including advertising, influencer, content, sales team compensation, CRM tools) divided by the number of new customers acquired in the period. A new customer is defined as a user who placed their first order in the period and had no prior orders.",
+    "metric_nature": {
+      "what_it_measures": "The average dollar amount spent to acquire each new customer \u2014 a core efficiency metric for growth teams and investors.",
+      "what_it_does_not_measure": "Revenue or profit from acquired customers. CAC is a cost metric only; it must be paired with LTV or gross profit to assess ROI.",
+      "common_misconception": "CAC is not the same as cost per click (CPC) or cost per lead (CPL). CAC incorporates the *entire* funnel, including leads that never converted, and reflects the cost per *customer*, not per *lead*."
+    },
+    "template": "SELECT COALESCE(SUM(s.spend), 0) AS total_spend, COUNT(DISTINCT c.customer_id) AS new_customers, COALESCE(SUM(s.spend), 0) / NULLIF(COUNT(DISTINCT c.customer_id), 0) AS cac FROM customer_spend s LEFT JOIN new_customers c ON s.acquisition_channel = c.acquisition_channel AND c.first_order_date BETWEEN {start_date} AND {end_date} WHERE s.spend_date BETWEEN {start_date} AND {end_date}",
+    "inflation_causes": [
+      {
+        "cause": " Including first-party channel costs (email, organic social) in marketing spend",
+        "how_it_inflates": "First-party channels (owned email lists, organic social posts, website SEO) often have negligible marginal cost but are counted in spend. This inflates CAC when no true acquisition cost was incurred.",
+        "detection_sql": "SELECT channel_type, SUM(spend) AS total_spend, COUNT(DISTINCT customer_id) AS new_customers FROM marketing_spend s LEFT JOIN new_customers c ON s.acquisition_channel = c.acquisition_channel WHERE s.spend_date >= '2024-01-01' GROUP BY 1 ORDER BY total_spend DESC",
+        "fix": "Exclude 'first-party' or 'organic' channels unless they have verifiable marginal cost (e.g., CRM tool fees), or apply a cost allocation rule (e.g., CPM-based attribution)."
+      },
+      {
+        "cause": "Attributing customers to *last* touch spend instead of *causal* spend",
+        "how_it_inflates": "If all spend in the customer\u2019s conversion window is attributed to *that* customer, early funnel spend gets double-counted for one conversion \u2014 inflating CAC, especially for multi-week attribution windows.",
+        "detection_sql": "SELECT c.customer_id, MIN(s.spend_date) AS first_spend, c.first_order_date, DATEDIFF(day, first_spend, first_order_date) AS days_to_conversion FROM customer_spend s JOIN new_customers c ON s.acquisition_channel = c.acquisition_channel WHERE c.first_order_date >= '2024-01-01' GROUP BY c.customer_id, first_order_date ORDER BY days_to_conversion DESC LIMIT 10",
+        "fix": "Use attributable spend per cohort: sum only marketing spend that occurred *before* and within a defined time-to-conversion window (e.g., 30 days) of first order."
+      },
+      {
+        "cause": "Sales team compensation counted without revenue linkage",
+        "how_it_inflates": "If base salaries (not performance-based) are included in marketing spend, fixed overhead costs inflate CAC without reflecting variable acquisition effort. For example, $100k base salary \u00f7 20 new customers = $5k CAC, but salespeople are employed year-round.",
+        "detection_sql": "SELECT spend_type, SUM(spend) AS total_spend FROM customer_spend WHERE spend_date >= '2024-01-01' GROUP BY 1 ORDER BY total_spend DESC",
+        "fix": "Exclude base salaries and non-attributable overhead; only include variable, campaign-specific costs (ad spend, bonuses, performance commissions, tools)."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Assigning all new customers to top channel only",
+        "how_it_deflates": "If new_customers table assigns acquisition_channel based on last touch, and top channel gets credit for *all* conversions, denominator inflates while spend remains fixed \u2014 deflating CAC unrealistically.",
+        "detection_sql": "SELECT acquisition_channel, COUNT(DISTINCT customer_id) AS new_customers FROM new_customers WHERE first_order_date >= '2024-01-01' GROUP BY 1 ORDER BY new_customers DESC",
+        "fix": "Use multi-touch attribution or weighted credit (e.g., linear, time-decay) across all channels in the customer\u2019s path to calculate fair spend allocation."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the CAC anomaly concentrated in one channel or acquisition type?",
+      "Has the mix of paid vs organic acquisition shifted recently?",
+      "Did a new compensation plan or sales incentive go live affecting channel focus?",
+      "Are customers being misclassified as 'new' when they\u2019re actually returning?",
+      "Has spend data been delayed, causing under-reporting in current period?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "CAC up, conversion_rate down",
+        "then": "spend is inefficient \u2014 likely poor targeting, creative fatigue, or channel saturation; verify ad frequency and click-through trends"
+      },
+      {
+        "if": "CAC up, new_customer_count flat",
+        "then": "spend increased without more conversions \u2014 likely lower-quality leads or less effective channels"
+      },
+      {
+        "if": "CAC down, new_customer_count down",
+        "then": "spend reduced *and* conversions dropped disproportionately \u2014 likely cutting channels that drive incremental volume"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "CAC increases >25% MoM with flat spend",
+        "and_also": "ec_customer_count decreases same period",
+        "shared_root_cause": "A decline in conversion funnel efficiency \u2014 likely due to site changes (e.g., checkout friction, broken tracking), traffic quality drop (e.g., misaligned audience), or increased competition. Fewer conversions with same spend directly inflates CAC.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', s.spend_date) AS month, SUM(s.spend) AS spend, COUNT(DISTINCT c.customer_id) AS new_customers, COUNT(DISTINCT c.customer_id) * 100.0 / NULLIF(COUNT(DISTINCT l.lead_id), 0) AS lead_to_customer_rate, COUNT(DISTINCT c.customer_id) * 100.0 / NULLIF(COUNT(DISTINCT s.acquisition_channel), 0) AS channel_coverage FROM marketing_spend s LEFT JOIN new_customers c ON s.acquisition_channel = c.acquisition_channel LEFT JOIN leads l ON s.acquisition_channel = l.source WHERE s.spend_date >= '2024-01-01' GROUP BY 1 ORDER BY month DESC"
+      },
+      {
+        "if_this_metric": "CAC drops while marketing_spend increases",
+        "and_also": "ec_conversion_rate increases",
+        "shared_root_cause": "A successful campaign or channel\u4f18\u5316 \u2014 likely improved targeting, creative refresh, or landing page experiment \u2014 increasing conversion volume disproportionately to spend, driving down CAC while spend rises.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', s.spend_date) AS week, SUM(s.spend) AS spend, COUNT(DISTINCT c.customer_id) AS new_customers, COUNT(DISTINCT c.customer_id) / NULLIF(COUNT(DISTINCT s.spend), 0) * 1000 AS customers_per_thousand_spend FROM marketing_spend s LEFT JOIN new_customers c ON s.acquisition_channel = c.acquisition_channel WHERE s.spend_date >= '2024-01-01' GROUP BY 1 ORDER BY week"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Counting all leads as customers in denominator",
+        "why_wrong": "If the denominator uses total leads instead of *new customers*, CAC is deflated because many leads never convert. CAC must use customers, not leads.",
+        "bad_sql": "SELECT SUM(s.spend) / NULLIF(COUNT(DISTINCT l.lead_id), 0) AS cac FROM marketing_spend s LEFT JOIN leads l ON s.acquisition_channel = l.source",
+        "good_sql": "SELECT SUM(s.spend) / NULLIF(COUNT(DISTINCT c.customer_id), 0) AS cac FROM marketing_spend s LEFT JOIN new_customers c ON s.acquisition_channel = c.acquisition_channel"
+      },
+      {
+        "pattern": "Using spend_date instead of acquisition_date window",
+        "why_wrong": "If spend in January is assigned to all customers acquired in the prior quarter, CAC for January inflates and is uncorrelated with actual acquisition activity.",
+        "bad_sql": "SELECT SUM(s.spend) / NULLIF(COUNT(DISTINCT c.customer_id), 0) AS cac FROM marketing_spend s LEFT JOIN new_customers c ON 1=1 WHERE s.spend_date BETWEEN '2024-01-01' AND '2024-01-31'",
+        "good_sql": "SELECT SUM(s.spend) / NULLIF(COUNT(DISTINCT c.customer_id), 0) AS cac FROM marketing_spend s JOIN new_customers c ON s.acquisition_channel = c.acquisition_channel AND c.first_order_date BETWEEN s.spend_date AND DATEADD(day, 30, s.spend_date) WHERE s.spend_date BETWEEN '2024-01-01' AND '2024-01-31'"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT SUM(s.spend) / NULLIF(COUNT(DISTINCT c.customer_id), 0) AS cac FROM marketing_spend s LEFT JOIN new_customers c ON s.acquisition_channel = c.acquisition_channel WHERE s.spend_date BETWEEN '2024-01-01' AND '2024-01-31' AND c.first_order_date BETWEEN '2024-01-01' AND '2024-01-31'",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', c.first_order_date) AS month, s.channel, SUM(s.spend) / NULLIF(COUNT(DISTINCT c.customer_id), 0) AS cac, COUNT(DISTINCT c.customer_id) AS new_customers FROM marketing_spend s JOIN new_customers c ON s.acquisition_channel = c.acquisition_channel AND s.spend_date BETWEEN DATEADD(day, -30, c.first_order_date) AND c.first_order_date WHERE s.spend_date >= '2024-01-01' GROUP BY 1, s.channel ORDER BY 1, 3 DESC",
+      "advanced_sql": "WITH spend_by_channel AS (\n  -- Grain: marketing spend by channel per period\n  SELECT\n    acquisition_channel AS channel,\n    SUM(spend) AS total_spend\n  FROM marketing_spend\n  WHERE spend_date BETWEEN '2024-01-01' AND '2024-01-31'\n  GROUP BY acquisition_channel\n),\ncustomers_by_channel AS (\n  -- Grain: new customers by acquisition channel (with spend attribution window)\n  SELECT\n    c.acquisition_channel AS channel,\n    COUNT(DISTINCT c.customer_id) AS new_customers\n  FROM new_customers c\n  JOIN marketing_spend s ON c.acquisition_channel = s.acquisition_channel\n  WHERE c.first_order_date BETWEEN s.spend_date AND DATEADD(day, 30, s.spend_date)\n    AND s.spend_date BETWEEN '2024-01-01' AND '2024-01-31'\n  GROUP BY c.acquisition_channel\n)\nSELECT\n  co.channel,\n  sp.total_spend,\n  co.new_customers,\n  ROUND(sp.total_spend / NULLIF(co.new_customers, 0), 2) AS cac,\n  ROUND(sp.total_spend / NULLIF(co.new_customers, 0) * 12, 2) AS annualized_cac_assuming_12mo_ltv\nFROM customers_by_channel co\nJOIN spend_by_channel sp ON co.channel = sp.channel"
+    }
+  },
+  {
+    "id": "ec_time_between_orders",
+    "title": "Time Between Orders",
+    "intent_tags": [
+      "time between orders",
+      "TBO",
+      "inter-purchase interval",
+      "repurchase time",
+      "order frequency",
+      "customer re-buy interval",
+      "repurchase rate",
+      "what is my re-buy time",
+      "how soon do customers buy again",
+      "purchase cadence",
+      "reorder interval"
+    ],
+    "sql_features": [
+      "window_function",
+      "lead_lag",
+      "date_diff",
+      "coalesce",
+      "nullif"
+    ],
+    "difficulty": "advanced",
+    "pattern_type": "analytical",
+    "when_to_use": [
+      "assess product stickiness and repurchase behavior",
+      "predict inventory needs and replenishment windows",
+      "design win-back campaigns and re-engagement timing",
+      "segment customers by behavior (fast vs slow replacers)",
+      "benchmark\u54c1\u7c7b-specific behavior (e.g., consumables vs durable)"
+    ],
+    "related_patterns": [
+      "ec_repeat_buy_rate",
+      "ec_customer_lifecycle",
+      "ec_churn_rate",
+      "ec_order_frequency"
+    ],
+    "business_definition": "Median number of days between consecutive orders for the same customer, calculated only for completed orders and excluding returns. For customers with N orders, N-1 intervals are computed (order_2 - order_1, order_3 - order_2, etc.).",
+    "metric_nature": {
+      "what_it_measures": "How quickly customers repurchase \u2014 a behavioral indicator of product consumption cycle, satisfaction, and perceived value.",
+      "what_it_does_not_measure": "Revenue or volume per purchase. A short TBO with low-spend orders may reflect price-driven churn, not satisfaction.",
+      "common_misconception": "Time between orders is not the same as purchase frequency (orders per year). TBO is the inverse but median TBO better captures distribution skew (e.g., many fast replacers + long-tail slow replacers)."
+    },
+    "template": "WITH order_intervals AS (\n  SELECT\n    customer_id,\n    order_date,\n    LAG(order_date) OVER (PARTITION BY customer_id ORDER BY order_date) AS prev_order_date\n  FROM orders\n  WHERE status = 'completed'\n),\nintervals AS (\n  SELECT\n    customer_id,\n    DATEDIFF(day, prev_order_date, order_date) AS days_between\n  FROM order_intervals\n  WHERE prev_order_date IS NOT NULL\n)\nSELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY days_between) AS median_time_between_orders FROM intervals",
+    "inflation_causes": [
+      {
+        "cause": "Including test orders or non-standard order statuses",
+        "how_it_inflates": "If test, cancelled, or return orders are included in order sequence, the calculated intervals are distorted (e.g., a test order creates a 0-day interval, pulling median down, or a cancelled order creates a false long gap, pulling it up).",
+        "detection_sql": "SELECT status, COUNT(*) AS order_count, MIN(order_date) AS first_order, MAX(order_date) AS last_order FROM orders WHERE order_date >= '2024-01-01' GROUP BY status ORDER BY order_count DESC",
+        "fix": "Filter to only 'completed' orders and exclude orders with status 'cancelled', 'test', or 'fraud' before computing order sequence."
+      },
+      {
+        "cause": "Order date using created_at instead of shipped_date",
+        "how_it_inflates": "If orders are dated at creation but shipped weeks later, and customers reorder before fulfillment, the interval between creation dates artificially inflates (e.g., order 1 created on Jan 1, shipped Jan 20; order 2 created Jan 5 \u2014 interval shows -15 days, handled incorrectly as positive, leading to inflated median).",
+        "detection_sql": "SELECT customer_id, COUNT(*) AS orders, MIN(DATEDIFF(day, order_date, shipped_date)) AS min_ship_delay, MAX(DATEDIFF(day, order_date, shipped_date)) AS max_ship_delay FROM orders WHERE shipped_date IS NOT NULL AND order_date >= '2024-01-01' GROUP BY customer_id HAVING COUNT(*) > 1 ORDER BY max_ship_delay DESC LIMIT 10",
+        "fix": "Use shipped_date or fulfilled_date for interval calculation, or ensure all orders in sequence are fulfilled before subsequent orders are placed."
+      },
+      {
+        "cause": "Missing time-based deduplication of batched orders",
+        "how_it_inflates": "If customers place multiple small orders over short periods (e.g., weekly replenishment), and they are not deduplicated or batched, the interval is reported as 0 days \u2014 pulling median downward unrealistically.",
+        "detection_sql": "SELECT customer_id, COUNT(*) AS order_count, MIN(DATEDIFF(minute, LAG(order_date) OVER (PARTITION BY customer_id ORDER BY order_date), order_date)) AS min_minutes_between FROM orders WHERE customer_id IN (SELECT customer_id FROM orders WHERE order_date >= '2024-01-01' GROUP BY customer_id HAVING COUNT(*) > 2) GROUP BY customer_id ORDER BY order_count DESC LIMIT 10",
+        "fix": "Deduplicate orders placed within X minutes/hours of each other by the same customer, or aggregate to daily or weekly granular intervals for repeat customers."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Excluding very long intervals beyond retention window",
+        "how_it_deflates": "If intervals > 365 days are excluded as 'churn', but churn is not defined, the tail (which may represent true seasonal replacers) is removed, pulling median down and masking infrequent but loyal behavior.",
+        "detection_sql": "SELECT CASE WHEN days_between <= 365 THEN 'retained' ELSE 'long-interval' END AS interval_type, COUNT(*) AS counts, AVG(days_between) AS avg_days FROM (SELECT customer_id, DATEDIFF(day, LAG(order_date) OVER (PARTITION BY customer_id ORDER BY order_date), order_date) AS days_between FROM orders WHERE status = 'completed') sub WHERE days_between IS NOT NULL GROUP BY 1",
+        "fix": "Report median separately for retained and long-interval customers, or define churn only as confirmed inactive periods (e.g., 12 months since last order) and retain intervals for analysis."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the median TBO anomaly concentrated in a specific product category or customer segment?",
+      "Has a new product launch or seasonality shift affected repurchase frequency?",
+      "Are TBO changes correlated with marketing initiatives (e.g., replenishment reminders)?",
+      "Did a change in shipping speed or fulfillment time affect reorder timing?",
+      "Is the median stable but mean trending differently \u2014 indicating a skew shift (e.g., new high-frequency segment)?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "TBO down, repeat_buy_rate up",
+        "then": "more frequent repurchases \u2014 likely successful replenishment campaigns, consumable product mix, or improved fulfillment timing"
+      },
+      {
+        "if": "TBO up, return_rate up",
+        "then": "longer intervals reflect poor satisfaction \u2014 customers return items and delay reordering, possibly due to quality or fit issues"
+      },
+      {
+        "if": "TBO up, churn_rate up",
+        "then": "customers are less engaged \u2014 likely product obsolescence, competitive displacement, or failing win-back programs"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Median TBO increases 20+ days MoM with stable order volume",
+        "and_also": "ec_repeat_buy_rate decreases",
+        "shared_root_cause": "A change in product mix toward durable goods or one-time purchases (e.g., a new appliance launch) is increasing time between replenishment cycles, while repeat orders decline \u2014 shifting composition of the customer base.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', o.order_date) AS month, p.category, COUNT(DISTINCT o.order_id) AS orders, DATEDIFF(day, LAG(MIN(o.order_date)) OVER (PARTITION BY p.category ORDER BY DATE_TRUNC('month', o.order_date)), MIN(o.order_date)) AS tbo_shift FROM orders o JOIN order_items oi ON o.order_id = oi.order_id JOIN products p ON oi.product_id = p.id WHERE o.status = 'completed' AND o.order_date >= '2024-01-01' GROUP BY 1, p.category ORDER BY month, category"
+      },
+      {
+        "if_this_metric": "TBO drops dramatically for new customers",
+        "and_also": "ec_first_order_to_second_order_conversion_rate increases",
+        "shared_root_cause": "A successful onboarding experience (e.g., automated replenishment reminder, first-order discount, or post-fulfillment email sequence) reduced time to first repurchase \u2014 driving both lower TBO and higher early repurchase rates.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', c.first_order_date) AS week, AVG(DATEDIFF(day, c.first_order_date, c.second_order_date)) AS tbo, COUNT(DISTINCT CASE WHEN c.second_order_date IS NOT NULL THEN c.customer_id END) / NULLIF(COUNT(DISTINCT c.customer_id), 0) AS conv_rate FROM (SELECT customer_id, MIN(order_date) AS first_order_date, MIN(CASE WHEN order_sequence = 2 THEN order_date END) AS second_order_date FROM orders WHERE status = 'completed' GROUP BY customer_id) c WHERE c.first_order_date >= '2024-01-01' GROUP BY 1 ORDER BY week"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Using average instead of median",
+        "why_wrong": "TBO distributions are heavily right-skewed (many fast replacers + few long-interval outliers). Mean is easily distorted by extreme values; median better reflects typical repurchase behavior.",
+        "bad_sql": "SELECT AVG(DATEDIFF(day, prev_order_date, order_date)) AS avg_tbo FROM order_intervals WHERE prev_order_date IS NOT NULL",
+        "good_sql": "SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY days_between) AS median_tbo FROM intervals"
+      },
+      {
+        "pattern": "Calculating interval as first order to last order divided by order count",
+        "why_wrong": "This computes average *inter-arrival* time across entire tenure, not *per-pair* intervals. It ignores variance and assumes constant frequency, distorting true repurchase cadence.",
+        "bad_sql": "SELECT customer_id, DATEDIFF(day, MIN(order_date), MAX(order_date)) / NULLIF(COUNT(*) - 1, 0) AS tbo FROM orders WHERE status = 'completed' GROUP BY customer_id",
+        "good_sql": "SELECT DATEDIFF(day, LAG(order_date) OVER (PARTITION BY customer_id ORDER BY order_date), order_date) AS days_between FROM orders WHERE status = 'completed'"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY days_between) AS median_time_between_orders FROM (SELECT customer_id, order_date, LAG(order_date) OVER (PARTITION BY customer_id ORDER BY order_date) AS prev_order_date FROM orders WHERE status = 'completed') sub WHERE prev_order_date IS NOT NULL AND DATEDIFF(day, prev_order_date, order_date) > 0",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', c.first_order_date) AS month, p.category, PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY DATEDIFF(day, prev_order_date, order_date)) AS median_tbo FROM (SELECT customer_id, order_date, LAG(order_date) OVER (PARTITION BY customer_id ORDER BY order_date) AS prev_order_date FROM orders WHERE status = 'completed') o JOIN order_items oi ON o.order_id = oi.order_id JOIN products p ON oi.product_id = p.id WHERE prev_order_date IS NOT NULL GROUP BY 1, p.category ORDER BY 1, 3 DESC",
+      "advanced_sql": "WITH order_sequence AS (\n  -- Grain: one row per customer order with previous order date\n  SELECT\n    customer_id,\n    order_date,\n    LAG(order_date) OVER (PARTITION BY customer_id ORDER BY order_date) AS prev_order_date,\n    ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY order_date) AS order_sequence\n  FROM orders\n  WHERE status = 'completed'\n),\nintervals AS (\n  SELECT\n    customer_id,\n    order_sequence,\n    DATEDIFF(day, prev_order_date, order_date) AS days_between\n  FROM order_sequence\n  WHERE prev_order_date IS NOT NULL\n),\ntbo_dist AS (\n  SELECT\n    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY days_between) AS median_tbo,\n    PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY days_between) AS p90_tbo,\n    AVG(days_between) AS mean_tbo,\n    STDDEV(days_between) AS stddev_tbo,\n    COUNT(*) AS total_intervals\n  FROM intervals\n)\nSELECT\n  median_tbo,\n  p90_tbo,\n  ROUND(mean_tbo, 2) AS mean_tbo,\n  ROUND(stddev_tbo, 2) AS stddev_tbo,\n  total_intervals\nFROM tbo_dist"
+    }
+  },
+  {
+    "id": "ec_win_back_rate",
+    "title": "Win-back Rate",
+    "intent_tags": [
+      "win-back rate",
+      "reactivation rate",
+      "churned customer reactivation",
+      "churn recovery",
+      "win back customers",
+      "recovered customers",
+      "what is win-back",
+      "re-engage rate",
+      "win-back success rate",
+      "lapsed customer recovery",
+      "reactivation rate"
+    ],
+    "sql_features": [
+      "aggregation",
+      "conditional_count",
+      "cte",
+      "date_spine",
+      "nullif"
+    ],
+    "difficulty": "advanced",
+    "pattern_type": "cohort",
+    "when_to_use": [
+      "measure win-back program effectiveness",
+      "evaluate retention program ROI and messaging success",
+      "benchmark re-engagement success across channels or segments",
+      "forecast incremental revenue from win-back efforts",
+      "identify high-potential lapsed customers for targeted outreach"
+    ],
+    "related_patterns": [
+      "ec_churn_rate",
+      "ec_customer_retention",
+      "ec_re_engagement",
+      "ec_repeat_buy_rate"
+    ],
+    "business_definition": "Percentage of lapsed customers (no orders in the prior 90 days) in a cohort who placed an order within the reporting period. A lapsed customer is defined as one with last order >90 days before the period start and at least one prior order.",
+    "metric_nature": {
+      "what_it_measures": "How successfully the business re-engages customers who left \u2014 a direct measure of win-back program health and product-market fit for lapsed users.",
+      "what_it_does_not_measure": "Profitability or revenue from reactivated customers. Win-back rate measures *activity*, not *value* \u2014 a reactivated customer may have low spend.",
+      "common_misconception": "Win-back rate is not the same as general retention rate. Retention includes active customers; win-back specifically targets *churned* (lapsed) customers and measures their return."
+    },
+    "template": "WITH lapsed_cohort AS (\n  -- Lapsed customers: last order >90 days before period start\n  SELECT customer_id FROM orders WHERE order_date <= DATEADD(day, -90, {start_date}) AND order_date >= DATEADD(day, -365, {start_date}) GROUP BY customer_id HAVING MAX(order_date) <= DATEADD(day, -90, {start_date})\n),\nreactivated AS (\n  SELECT DISTINCT o.customer_id FROM orders o JOIN lapsed_cohort l ON o.customer_id = l.customer_id WHERE o.order_date BETWEEN {start_date} AND {end_date}\n),\ncohort_size AS (\n  SELECT COUNT(DISTINCT customer_id) AS lapsed_customers FROM lapsed_cohort\n)\nSELECT COALESCE(COUNT(DISTINCT r.customer_id), 0) AS reactivated_customers, cs.lapsed_customers, COALESCE(COUNT(DISTINCT r.customer_id), 0) * 100.0 / NULLIF(cs.lapsed_customers, 0) AS win_back_rate FROM reactivated r, cohort_size cs",
+    "inflation_causes": [
+      {
+        "cause": "Including customers who left *after* period start in lapsed cohort",
+        "how_it_inflates": "If the lapsed customer definition uses order_date > period_start - 90 days instead of last_order <= period_start - 90 days, customers who purchased just before the period ends but reactivated later are incorrectly excluded \u2014 inflating win-back rate.",
+        "detection_sql": "SELECT CASE WHEN last_order_date <= DATEADD(day, -90, '2024-01-01') THEN 'lapsed' ELSE 'active' END AS status, COUNT(DISTINCT customer_id) AS customers FROM (SELECT customer_id, MAX(order_date) AS last_order_date FROM orders WHERE order_date >= DATEADD(day, -365, '2024-01-01') GROUP BY customer_id) sub GROUP BY 1",
+        "fix": "Ensure lapsed cohort is defined as `MAX(order_date) <= {start_date} - 90 days` using window aggregation over all prior history, not order_date in the window."
+      },
+      {
+        "cause": "Using order placement date instead of fulfillment date",
+        "how_it_inflates": "If the reactivated order is dated at creation but fulfillment happens weeks later, orders placed early in the period may not have shipped yet \u2014 but are counted as reactivated, inflating win-back if fulfillment is incomplete.",
+        "detection_sql": "SELECT COUNT(DISTINCT CASE WHEN shipped_date IS NULL THEN customer_id END) AS unfulfilled_orders, COUNT(DISTINCT CASE WHEN shipped_date IS NOT NULL THEN customer_id END) AS fulfilled_orders FROM orders WHERE order_date BETWEEN '2024-01-01' AND '2024-01-31' AND status = 'completed'",
+        "fix": "Use shipped_date or fulfilled_date for reactivation confirmation \u2014 only count reactivation when the order is fulfilled, not merely placed."
+      },
+      {
+        "cause": "Not filtering to completed orders only",
+        "how_it_inflates": "If cancelled, fraud, or pending orders are included in reactivation count, win-back rate appears higher because 'orders' were placed but not fulfilled.",
+        "detection_sql": "SELECT status, COUNT(DISTINCT customer_id) AS customers FROM orders o JOIN lapsed_cohhort l ON o.customer_id = l.customer_id WHERE o.order_date BETWEEN '2024-01-01' AND '2024-01-31' GROUP BY 1 ORDER BY customers DESC",
+        "fix": "Filter to status='completed' in both lapsed cohort and reactivated queries."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Excluding orders with zero value (e.g., free trials, promotions)",
+        "how_it_deflates": "If win-back excludes free or zero-dollar orders, customers who reactivated via promotions but never paid are excluded \u2014 deflating win-back rate, even though the win-back goal (engagement) was achieved.",
+        "detection_sql": "SELECT COUNT(DISTINCT customer_id) AS zero_value_orders FROM orders WHERE order_date BETWEEN '2024-01-01' AND '2024-01-31' AND net_revenue = 0 AND customer_id IN (SELECT customer_id FROM lapsed_cohort WHERE last_order_date <= '2023-09-30')",
+        "fix": "Decide methodology: if win-back goal is 'engagement', include zero-value reactivation; if 'revenue', exclude them \u2014 and document the choice explicitly in the metric definition."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the win-back rate anomaly concentrated in a specific channel or customer segment?",
+      "Did a new win-back campaign (email, SMS, offer) go live in the period?",
+      "Are win-back efforts targeting the right cadence \u2014 too early (before lapsed) or too late (after churned)?",
+      "Has churn behavior changed (e.g., shorter or longer lapses) affecting lapsed cohort size?",
+      "Are win-backs concentrated in high-value segments \u2014 is the rate driven by a few large groups?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "Win-back rate up, churn_rate down",
+        "then": "win-back efforts are reducing net churn \u2014 likely effective re-engagement messaging or product re-alignment"
+      },
+      {
+        "if": "Win-back rate up, marketing_spend up",
+        "then": "incremental spend drove reactivation \u2014 likely successful new channel or creative testing"
+      },
+      {
+        "if": "Win-back rate down, churn_rate up",
+        "then": "product or service issues causing more customers to leave and fewer to return \u2014 likely declining satisfaction or competitive threat"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Win-back rate increases >15% WoW",
+        "and_also": "ec_customer_ltv for reactivated cohort increases",
+        "shared_root_cause": "A win-back campaign with personalized offers (e.g., tailored discounts, product recommendations) is not only increasing reactivation frequency but also lifting reactivated customer value \u2014 converting reactivation into growth.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', o.order_date) AS week, COUNT(DISTINCT CASE WHEN o.order_date >= DATEADD(day, 90, c.last_order_date) THEN o.customer_id END) AS win_backs, AVG(nr.net_revenue) AS avg_revenue_per_reactivated FROM orders o JOIN (SELECT customer_id, MAX(order_date) AS last_order_date FROM orders WHERE order_date < '2024-01-01' GROUP BY customer_id) c ON o.customer_id = c.customer_id JOIN net_revenue_daily nr ON o.order_id = nr.order_id WHERE c.last_order_date <= '2023-09-30' AND o.order_date BETWEEN '2024-01-01' AND '2024-01-31' GROUP BY 1 ORDER BY week"
+      },
+      {
+        "if_this_metric": "Win-back rate drops MoM",
+        "and_also": "ec_churn_rate increases same period",
+        "shared_root_cause": "A change in product-market fit or competitive landscape is causing more customers to churn *and* making re-engagement less effective \u2014 both signals indicating declining satisfaction or value perception.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', c.churn_date) AS month, COUNT(DISTINCT c.customer_id) AS churned, COUNT(DISTINCT CASE WHEN r.order_date IS NOT NULL THEN c.customer_id END) AS win_backs, COUNT(DISTINCT CASE WHEN r.order_date IS NOT NULL THEN c.customer_id END) * 100.0 / NULLIF(COUNT(DISTINCT c.customer_id), 0) AS win_back_rate FROM (SELECT customer_id, DATEADD(day, 90, MAX(order_date)) AS churn_date FROM orders WHERE order_date < '2024-01-01' GROUP BY customer_id HAVING MAX(order_date) < '2023-09-30') c LEFT JOIN orders r ON c.customer_id = r.customer_id AND r.order_date BETWEEN c.churn_date AND DATEADD(day, 90, c.churn_date) GROUP BY 1 ORDER BY month"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Using overall win-back customers instead of cohort-based",
+        "why_wrong": "If win-back counts any customer who reactivated in the period without defining a prior lapsed cohort, it conflates win-back with general retention \u2014 deflating the specific win-back signal.",
+        "bad_sql": "SELECT COUNT(DISTINCT CASE WHEN o.order_date >= DATEADD(day, 365, c.first_order_date) THEN o.customer_id END) * 100.0 / COUNT(DISTINCT o.customer_id) AS win_back FROM orders o",
+        "good_sql": "SELECT COUNT(DISTINCT r.customer_id) * 100.0 / NULLIF((SELECT COUNT(DISTINCT customer_id) FROM lapsed_cohort WHERE last_order_date <= DATEADD(day, -90, '2024-01-01')), 0) AS win_back_rate FROM reactivated r"
+      },
+      {
+        "pattern": "Excluding customers with no prior order history",
+        "why_wrong": "If the cohort only includes customers with \u22652 prior orders, customers who placed one order and never returned (true churn) are excluded \u2014 deflating win-back rate and missing a significant reactivation segment.",
+        "bad_sql": "SELECT customer_id FROM orders WHERE last_order_date <= DATEADD(day, -90, {start_date}) GROUP BY customer_id HAVING COUNT(*) > 1",
+        "good_sql": "SELECT customer_id FROM orders WHERE last_order_date <= DATEADD(day, -90, {start_date}) GROUP BY customer_id HAVING MAX(order_date) = last_order_date"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "WITH lapsed_cohort AS (SELECT customer_id FROM orders WHERE order_date <= DATEADD(day, -90, '2024-01-01') GROUP BY customer_id HAVING MAX(order_date) <= DATEADD(day, -90, '2024-01-01')), reactivated AS (SELECT DISTINCT customer_id FROM orders WHERE status = 'completed' AND order_date BETWEEN '2024-01-01' AND '2024-01-31' AND customer_id IN (SELECT customer_id FROM lapsed_cohort)), cohort_size AS (SELECT COUNT(DISTINCT customer_id) AS lapsed_customers FROM lapsed_cohort) SELECT COALESCE(COUNT(DISTINCT r.customer_id), 0) AS reactivated_customers, cs.lapsed_customers, COALESCE(COUNT(DISTINCT r.customer_id), 0) * 100.0 / NULLIF(cs.lapsed_customers, 0) AS win_back_rate FROM reactivated r, cohort_size cs",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', o.order_date) AS month, c.segment, COUNT(DISTINCT CASE WHEN o.order_date >= DATEADD(day, 90, c.last_order_date) THEN o.customer_id END) * 100.0 / NULLIF(COUNT(DISTINCT c.customer_id), 0) AS win_back_rate FROM (SELECT customer_id, segment, MAX(order_date) AS last_order_date FROM orders GROUP BY customer_id, segment) c JOIN orders o ON c.customer_id = o.customer_id WHERE o.status = 'completed' AND o.order_date BETWEEN '2024-01-01' AND '2024-01-31' AND c.last_order_date <= DATEADD(day, -90, '2024-01-01') GROUP BY 1, c.segment ORDER BY 1, 3 DESC",
+      "advanced_sql": "WITH lapsed_cohort AS (\n  -- Grain: customers who lapsed >90 days before period start (cohort definition)\n  SELECT\n    customer_id,\n    MAX(order_date) AS last_order_date,\n    DATEDIFF(day, MAX(order_date), DATEADD(day, -90, '2024-01-01')) AS lapse_duration\n  FROM orders\n  WHERE order_date >= DATEADD(day, -365, '2024-01-01')\n  GROUP BY customer_id\n  HAVING MAX(order_date) <= DATEADD(day, -90, '2024-01-01')\n),\nreactivated AS (\n  SELECT DISTINCT o.customer_id, o.order_date AS reactivation_date\n  FROM orders o\n  JOIN lapsed_cohhort l ON o.customer_id = l.customer_id\n  WHERE o.status = 'completed' AND o.order_date BETWEEN '2024-01-01' AND '2024-01-31'\n),\ncohort_metrics AS (\n  SELECT\n    COUNT(DISTINCT l.customer_id) AS lapsed_customers,\n    COUNT(DISTINCT r.customer_id) AS reactivated_customers\n  FROM lapsed_cohort l\n  LEFT JOIN reactivated r ON l.customer_id = r.customer_id\n)\nSELECT\n  lapsed_customers,\n  reactivated_customers,\n  ROUND(reactivated_customers * 100.0 / NULLIF(lapsed_customers, 0), 2) AS win_back_rate,\n  ROUND(AVG(DATEDIFF(day, lc.last_order_date, r.reactivation_date)), 2) AS avg_days_to_reactivation\nFROM cohort_metrics cm\nJOIN lapsed_cohort lc ON 1=1\nLEFT JOIN reactivated r ON lc.customer_id = r.customer_id\nGROUP BY cm.lapsed_customers, cm.reactivated_customers"
+    }
+  },
+  {
+    "id": "ec_first_order_to_second_order_conversion",
+    "title": "First Order to Second Order Conversion",
+    "intent_tags": [
+      "first to second order conversion",
+      "F2S conversion",
+      "repeat purchase rate",
+      "repurchase conversion",
+      "conversion to repeat",
+      "second order uptake",
+      "what % buy again",
+      "how many buy twice",
+      "repeat buyer rate first order",
+      "buy again rate",
+      "F2S rate"
+    ],
+    "sql_features": [
+      "aggregation",
+      "conditional_count",
+      "cte",
+      "nullif"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "funnel",
+    "when_to_use": [
+      "assess product stickiness and onboarding success",
+      "measure impact of replenishment campaigns or post-purchase emails",
+      "benchmark category-specific repurchase behavior",
+      "model cohort LTV and predict future revenue retention",
+      "identify bottlenecks between first-time purchase and repeat adoption"
+    ],
+    "related_patterns": [
+      "ec_repeat_buy_rate",
+      "ec_customer_lifecycle",
+      "ec_churn_rate",
+      "ec_time_between_orders"
+    ],
+    "business_definition": "Percentage of customers who placed their first order in the period and placed a second order within N days (default 60 days). A customer qualifies if they have at least two completed orders, with the second order dated within the conversion window.",
+    "metric_nature": {
+      "what_it_measures": "How many first-time buyers become repeat buyers \u2014 a direct indicator of product-market fit for early adopters.",
+      "what_it_does_not_measure": "Revenue or frequency of repeat purchases. High conversion doesn\u2019t imply high spend \u2014 customers may buy once more and churn.",
+      "common_misconception": "This is not the same as general repeat purchase rate. General rate includes customers with \u22652 orders over any period; this metric isolates *first-order cohort* behavior within a defined window."
+    },
+    "template": "WITH first_orders AS (\n  SELECT customer_id, MIN(order_date) AS first_order_date FROM orders WHERE status = 'completed' GROUP BY customer_id HAVING MIN(order_date) BETWEEN {start_date} AND {end_date}\n),\nsecond_orders AS (\n  SELECT customer_id, MIN(order_date) AS second_order_date FROM orders WHERE status = 'completed' AND order_date > first_order_date GROUP BY customer_id\n),\nconverted AS (\n  SELECT s.customer_id FROM first_orders f JOIN second_orders s ON f.customer_id = s.customer_id WHERE s.second_order_date <= DATEADD(day, {conversion_window_days}, f.first_order_date)\n)\nSELECT COUNT(DISTINCT c.customer_id) AS converted_customers, COUNT(DISTINCT f.customer_id) AS first_orders, COUNT(DISTINCT c.customer_id) * 100.0 / NULLIF(COUNT(DISTINCT f.customer_id), 0) AS conversion_rate FROM converted c, first_orders f",
+    "inflation_causes": [
+      {
+        "cause": "Including non-completed orders in second order count",
+        "how_it_inflates": "If pending, cancelled, or fraud orders are counted as second orders, conversion rate appears higher \u2014 e.g., a customer places an order and cancels it immediately, but it still counts as 'second order'.",
+        "detection_sql": "SELECT o.customer_id, o.order_id, o.status, o.order_date FROM orders o JOIN first_orders f ON o.customer_id = f.customer_id WHERE o.order_date > f.first_order_date AND o.order_date <= DATEADD(day, 60, f.first_order_date) AND o.status != 'completed' ORDER BY o.order_date DESC LIMIT 20",
+        "fix": "Filter second_orders to status='completed' before computing conversion."
+      },
+      {
+        "cause": "Using first order placement date instead of fulfillment date",
+        "how_it_inflates": "If first_order_date = order_date (placement) but second order is placed before the first ships, the 'conversion' is artificially fast \u2014 conversion_window may be exceeded due to fulfillment lag, but the metric still counts it if placement is used.",
+        "detection_sql": "SELECT f.customer_id, f.first_order_date, s.second_order_date, DATEDIFF(day, f.first_order_date, s.second_order_date) AS days_between FROM first_orders f JOIN second_orders s ON f.customer_id = s.customer_id WHERE DATEDIFF(day, f.first_order_date, s.second_order_date) < 0 ORDER BY days_between LIMIT 10",
+        "fix": "Use shipped_date or fulfilled_date for first order to ensure only fulfilled first orders are eligible for conversion tracking."
+      },
+      {
+        "cause": "Overlapping conversion windows across cohorts",
+        "how_it_inflates": "If the metric aggregates across multiple cohorts without cohort-date grouping, customers who placed first orders in one cohort and second orders in the next will be double-counted if their second order falls within another cohort\u2019s window.",
+        "detection_sql": "SELECT DATE_TRUNC('month', first_order_date) AS cohort_month, COUNT(DISTINCT customer_id) AS first_orders FROM first_orders GROUP BY 1 ORDER BY cohort_month",
+        "fix": "Ensure each customer appears in only one cohort (by first_order_date month) and compute conversion rate separately per cohort."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Excluding orders with zero or very low value",
+        "how_it_deflates": "If second orders are filtered to net_revenue > 0, customers who reactivated via free or promotional orders are excluded \u2014 deflating conversion rate despite actual engagement.",
+        "detection_sql": "SELECT COUNT(DISTINCT customer_id) AS zero_revenue_orders FROM orders WHERE status = 'completed' AND net_revenue = 0 AND order_id IN (SELECT order_id FROM second_orders)",
+        "fix": "Use 'completed' status and order_date only; exclude value filters unless business defines 'conversion' as *paid* repurchase."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the conversion rate anomaly concentrated in a specific product category or channel?",
+      "Has a new post-purchase sequence (e.g., email, SMS, retargeting) gone live?",
+      "Are conversion windows aligned with product consumption cycles (e.g., too short for durable goods)?",
+      "Did fulfillment delays impact second-order timing (e.g., first order took longer to ship)?",
+      "Is the cohort definition correctly isolating first-time customers (no prior orders)?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "F2S conversion up, first_order_count up",
+        "then": "more first-time buyers + more repeat buyers \u2014 likely successful acquisition campaigns or improved product appeal"
+      },
+      {
+        "if": "F2S conversion up, churn_rate down",
+        "then": "early adopters are becoming retained \u2014 likely effective onboarding, product satisfaction, or win-back timing"
+      },
+      {
+        "if": "F2S conversion down, first_order_count down",
+        "then": "fewer first-time buyers, and fewer converting to second \u2014 likely declining brand visibility, competitive pressure, or product quality"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "F2S conversion drops >15% WoW with stable first-order volume",
+        "and_also": "ec_time_between_orders increases",
+        "shared_root_cause": "A change in fulfillment or product availability is increasing time between first and second orders \u2014 likely delayed shipping, backorders, or inventory shortages \u2014 delaying reactivation without reducing first orders.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', f.first_order_date) AS week, COUNT(DISTINCT f.customer_id) AS first_orders, COUNT(DISTINCT s.customer_id) AS second_orders, DATEDIFF(day, f.first_order_date, s.second_order_date) AS days_to_second FROM first_orders f LEFT JOIN second_orders s ON f.customer_id = s.customer_id WHERE f.first_order_date >= '2024-01-01' GROUP BY 1, 3 ORDER BY week"
+      },
+      {
+        "if_this_metric": "F2S conversion increases with no change in first orders",
+        "and_also": "ec_repeat_buy_rate and ec_order_frequency increase",
+        "shared_root_cause": "A successful post-purchase re-engagement initiative (e.g., personalized email, loyalty referral, replenishment reminder) is accelerating second-order timing \u2014 converting more first-time buyers into repeat customers without affecting initial acquisition volume.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', f.first_order_date) AS week, COUNT(DISTINCT s.customer_id) AS converted, COUNT(DISTINCT s.customer_id) * 100.0 / NULLIF(COUNT(DISTINCT f.customer_id), 0) AS f2s_conversion, COUNT(DISTINCT CASE WHEN DATEDIFF(day, f.first_order_date, s.second_order_date) <= 14 THEN s.customer_id END) * 100.0 / NULLIF(COUNT(DISTINCT f.customer_id), 0) AS fast_converts_14d FROM first_orders f LEFT JOIN second_orders s ON f.customer_id = s.customer_id WHERE f.first_order_date >= '2024-01-01' GROUP BY 1 ORDER BY week"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Using overall repeat buyer rate instead of cohort-specific",
+        "why_wrong": "If the denominator includes customers who placed multiple orders *before* the period, they are incorrectly included in 'first order' \u2014 deflating conversion rate and confounding the cohort signal.",
+        "bad_sql": "SELECT COUNT(DISTINCT CASE WHEN order_sequence >= 2 THEN customer_id END) * 100.0 / COUNT(DISTINCT customer_id) AS f2s_rate FROM orders WHERE order_date >= '2024-01-01'",
+        "good_sql": "SELECT COUNT(DISTINCT CASE WHEN s.second_order_date IS NOT NULL THEN f.customer_id END) * 100.0 / NULLIF(COUNT(DISTINCT f.customer_id), 0) AS f2s_rate FROM first_orders f LEFT JOIN second_orders s ON f.customer_id = s.customer_id"
+      },
+      {
+        "pattern": "Counting third+ orders as second orders",
+        "why_wrong": "If second_order is defined as *any* order after first, not the *first* subsequent order, conversion rate is deflated because many orders may be skipped or missed.",
+        "bad_sql": "SELECT COUNT(DISTINCT customer_id) AS second_orders FROM orders WHERE order_sequence >= 2",
+        "good_sql": "SELECT customer_id, MIN(order_date) AS second_order_date FROM orders WHERE order_date > first_order_date GROUP BY customer_id"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "WITH first_orders AS (SELECT customer_id, MIN(order_date) AS first_order_date FROM orders WHERE status = 'completed' GROUP BY customer_id HAVING MIN(order_date) BETWEEN '2024-01-01' AND '2024-01-31'), second_orders AS (SELECT customer_id, MIN(order_date) AS second_order_date FROM orders WHERE status = 'completed' AND order_date > first_order_date GROUP BY customer_id), converted AS (SELECT s.customer_id FROM first_orders f JOIN second_orders s ON f.customer_id = s.customer_id WHERE s.second_order_date <= DATEADD(day, 60, f.first_order_date)) SELECT COUNT(DISTINCT c.customer_id) * 100.0 / NULLIF(COUNT(DISTINCT f.customer_id), 0) AS conversion_rate FROM converted c, first_orders f",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', f.first_order_date) AS month, c.segment, COUNT(DISTINCT s.customer_id) * 100.0 / NULLIF(COUNT(DISTINCT f.customer_id), 0) AS f2s_conversion FROM first_orders f LEFT JOIN second_orders s ON f.customer_id = s.customer_id JOIN customers c ON f.customer_id = c.customer_id WHERE s.second_order_date <= DATEADD(day, 60, f.first_order_date) GROUP BY 1, c.segment ORDER BY 1, 3 DESC",
+      "advanced_sql": "WITH first_orders AS (\n  -- Grain: first completed order per customer within period\n  SELECT\n    customer_id,\n    MIN(order_date) AS first_order_date\n  FROM orders\n  WHERE status = 'completed'\n  GROUP BY customer_id\n  HAVING MIN(order_date) BETWEEN '2024-01-01' AND '2024-01-31'\n),\nsecond_orders AS (\n  -- Grain: first subsequent completed order per customer\n  SELECT\n    customer_id,\n    MIN(order_date) AS second_order_date\n  FROM orders\n  WHERE status = 'completed'\n    AND order_date > first_order_date\n  GROUP BY customer_id\n),\nconversion AS (\n  SELECT\n    f.customer_id,\n    f.first_order_date,\n    s.second_order_date,\n    DATEDIFF(day, f.first_order_date, s.second_order_date) AS days_to_second\n  FROM first_orders f\n  LEFT JOIN second_orders s ON f.customer_id = s.customer_id\n)\nSELECT\n  COUNT(DISTINCT CASE WHEN second_order_date IS NOT NULL THEN customer_id END) * 100.0 / NULLIF(COUNT(DISTINCT customer_id), 0) AS f2s_conversion_rate,\n  COUNT(DISTINCT CASE WHEN second_order_date IS NOT NULL AND days_to_second <= 14 THEN customer_id END) * 100.0 / NULLIF(COUNT(DISTINCT customer_id), 0) AS fast_convert_14d_rate,\n  COUNT(DISTINCT CASE WHEN second_order_date IS NOT NULL THEN customer_id END) AS converted_customers\nFROM conversion"
+    }
+  },
+  {
+    "id": "ec_customer_concentration_risk",
+    "title": "Customer Concentration Risk",
+    "intent_tags": [
+      "customer concentration risk",
+      "top customer revenue share",
+      "revenue by top customers",
+      "revenue skew",
+      "customer dependency",
+      "top 10% revenue share",
+      "revenue concentration",
+      "what % from top customers",
+      "customer concentration %",
+      "revenue concentration risk",
+      "top customers %"
+    ],
+    "sql_features": [
+      "aggregation",
+      "window_function",
+      "ntile",
+      "coalesce",
+      "nullif"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "ranking",
+    "when_to_use": [
+      "assess revenue diversification and business risk",
+      "evaluate customer portfolio health for investors",
+      "identify high-value customers for strategic account management",
+      "benchmark against industry concentration norms",
+      "support pricing and negotiation decisions for large customers"
+    ],
+    "related_patterns": [
+      "ec_net_revenue",
+      "ec_gross_profit",
+      "ec_customer_ltv",
+      "ec_customer_segmentation"
+    ],
+    "business_definition": "Percentage of total net revenue in the period contributed by the top X% of customers (default 10%). Top customers are ranked by net revenue and the top decile is selected using NTILE(10).",
+    "metric_nature": {
+      "what_it_measures": "Revenue dependency on a small subset of customers \u2014 a risk metric indicating vulnerability to customer churn, negotiation pressure, or economic shifts.",
+      "what_it_does_not_measure": "Profitability or loyalty of top customers. A high concentration risk customer may be profitable, low-churn, and strategic \u2014 or volatile and margin-eroding.",
+      "common_misconception": "Concentration risk is not the same as top customer LTV. Risk measures *revenue share*, not *future value* \u2014 a top revenue customer may have negative contribution margin."
+    },
+    "template": "WITH customer_revenue AS (\n  SELECT customer_id, SUM(net_revenue) AS total_revenue FROM net_revenue_daily GROUP BY customer_id\n),\nranked AS (\n  SELECT customer_id, total_revenue, NTILE(10) OVER (ORDER BY total_revenue DESC) AS decile FROM customer_revenue\n),\ntop_decile AS (\n  SELECT SUM(total_revenue) AS top_10_revenue FROM ranked WHERE decile = 1\n),\ntotal_revenue AS (\n  SELECT SUM(total_revenue) AS all_revenue FROM customer_revenue\n)\nSELECT tr.top_10_revenue, t.total_revenue, tr.top_10_revenue * 100.0 / NULLIF(t.total_revenue, 0) AS concentration_risk FROM top_decile tr, total_revenue t",
+    "inflation_causes": [
+      {
+        "cause": "Using gross revenue instead of net revenue",
+        "how_it_inflates": "If revenue excludes refunds but the top customers are high-return segments (e.g., B2B with credit terms), gross revenue inflates their share \u2014 masking true net concentration risk.",
+        "detection_sql": "SELECT customer_id, SUM(gross_revenue) AS gross, SUM(net_revenue) AS net, SUM(gross_revenue - net_revenue) AS difference FROM (SELECT customer_id, order_total AS gross_revenue, net_revenue FROM orders WHERE order_date >= '2024-01-01') sub GROUP BY customer_id ORDER BY gross DESC LIMIT 20",
+        "fix": "Use net_revenue consistently (GMV minus refunds, discounts, fees) in the revenue calculation."
+      },
+      {
+        "cause": "Including one-time large transactions in revenue",
+        "how_it_inflates": "If a one-off enterprise deal or bulk order is included in revenue without normalization (e.g., annual vs. period revenue), a single customer may dominate the decile \u2014 inflating concentration risk for that period only.",
+        "detection_sql": "SELECT customer_id, COUNT(DISTINCT order_id) AS orders, SUM(net_revenue) AS revenue, SUM(net_revenue) / NULLIF(COUNT(DISTINCT order_id), 0) AS aov FROM net_revenue_daily GROUP BY customer_id ORDER BY revenue DESC LIMIT 20",
+        "fix": "Cap annualized revenue or exclude non-recurring items; consider reporting *recurring* revenue concentration if business relies on subscription-like revenue."
+      },
+      {
+        "cause": "Not filtering to completed orders only",
+        "how_it_inflates": "If pending, cancelled, or fraud orders are included, a customer\u2019s theoretical revenue (e.g., large order later cancelled) inflates their decile position \u2014 overstating concentration risk.",
+        "detection_sql": "SELECT customer_id, COUNT(DISTINCT CASE WHEN status = 'completed' THEN order_id END) AS completed_orders, COUNT(DISTINCT CASE WHEN status != 'completed' THEN order_id END) AS incomplete_orders FROM orders WHERE order_date >= '2024-01-01' GROUP BY customer_id ORDER BY completed_orders DESC LIMIT 10",
+        "fix": "Filter net_revenue_daily or orders table to only completed orders before aggregation."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Excluding small customers with zero revenue",
+        "how_it_deflates": "If the total revenue denominator excludes customers with $0 revenue, the denominator shrinks more than the top-10 numerator \u2014 deflating concentration risk and overestimating diversification.",
+        "detection_sql": "SELECT COUNT(DISTINCT customer_id) AS total_customers, COUNT(DISTINCT CASE WHEN total_revenue > 0 THEN customer_id END) AS paying_customers FROM customer_revenue",
+        "fix": "Include all customers in denominator (even $0 revenue) if business defines risk as dependency on *any* revenue-generating customer; otherwise define 'paying customers' subset explicitly."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the concentration risk driven by one customer or a few in the top decile?",
+      "Has a new enterprise customer or bulk deal changed the revenue distribution?",
+      "Are concentration risk patterns stable across sub-segments (e.g., by channel, geography)?",
+      "Did a large customer churn or reduce orders recently?",
+      "Is concentration risk seasonal \u2014 e.g., holiday spikes inflating top customer share?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "Concentration risk up, revenue growth up",
+        "then": "growth driven by large customers \u2014 likely strategic expansion but increased vulnerability to churn or negotiation"
+      },
+      {
+        "if": "Concentration risk up, churn_rate up",
+        "then": "top customers are volatile \u2014 likely over-reliance on key accounts without broadening base"
+      },
+      {
+        "if": "Concentration risk down, revenue growth down",
+        "then": "diversification came at the cost of top-end growth \u2014 likely losing high-value customers or shrinking enterprise segment"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Concentration risk spikes >10pp WoW with flat total revenue",
+        "and_also": "ec_churn_rate increases same period",
+        "shared_root_cause": "A few large customers churned, reducing overall customer count and shifting revenue share to the remaining top decile \u2014 inflating concentration risk while total revenue and churn rise.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', o.order_date) AS month, COUNT(DISTINCT o.customer_id) AS customers, COUNT(DISTINCT CASE WHEN nr.net_revenue > 0 THEN o.customer_id END) AS paying_customers, SUM(nr.net_revenue) AS revenue FROM orders o LEFT JOIN net_revenue_daily nr ON o.order_id = nr.order_id WHERE o.order_date >= '2024-01-01' GROUP BY 1 ORDER BY month"
+      },
+      {
+        "if_this_metric": "Concentration risk drops while total customer count stays flat",
+        "and_also": "ec_aov increases",
+        "shared_root_cause": "Product-led expansion (e.g., upsells, bundling) is increasing spend among mid-tier customers, reducing the dominance of top-tier spenders \u2014 diversifying revenue without losing volume.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', o.order_date) AS month, PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY nr.net_revenue) AS revenue_p90, PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY nr.net_revenue) AS revenue_median, SUM(nr.net_revenue) / NULLIF(COUNT(DISTINCT o.customer_id), 0) AS aov FROM orders o LEFT JOIN net_revenue_daily nr ON o.order_id = nr.order_id WHERE o.order_date >= '2024-01-01' GROUP BY 1 ORDER BY month"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Counting customers by order count instead of revenue",
+        "why_wrong": "If concentration is based on order frequency, a low-spending high-frequency customer may dominate \u2014 masking true revenue risk, especially in freemium or low-margin models.",
+        "bad_sql": "SELECT COUNT(DISTINCT CASE WHEN order_rank <= 10 THEN customer_id END) * 100.0 / COUNT(DISTINCT customer_id) AS concentration_risk FROM (SELECT customer_id, ROW_NUMBER() OVER (ORDER BY COUNT(*) DESC) AS order_rank FROM orders GROUP BY customer_id) sub",
+        "good_sql": "SELECT SUM(CASE WHEN decile = 1 THEN total_revenue END) * 100.0 / NULLIF(SUM(total_revenue), 0) AS concentration_risk FROM (SELECT customer_id, SUM(net_revenue) AS total_revenue, NTILE(10) OVER (ORDER BY SUM(net_revenue) DESC) AS decile FROM orders WHERE status = 'completed' GROUP BY customer_id) sub"
+      },
+      {
+        "pattern": "Using lifetime revenue instead of period revenue",
+        "why_wrong": "If top customers are ranked by lifetime revenue, their historical dominance skews the risk metric regardless of current activity \u2014 deflating concentration risk for recent periods and masking churn.",
+        "bad_sql": "SELECT SUM(total_lifetime_revenue) FILTER (WHERE decile = 1) * 100.0 / SUM(total_lifetime_revenue) AS concentration_risk FROM customer_ranks",
+        "good_sql": "SELECT SUM(CASE WHEN decile = 1 THEN total_revenue END) * 100.0 / NULLIF(SUM(total_revenue), 0) AS concentration_risk FROM (SELECT customer_id, SUM(net_revenue) AS total_revenue, NTILE(10) OVER (ORDER BY SUM(net_revenue) DESC) AS decile FROM orders WHERE order_date BETWEEN '2024-01-01' AND '2024-01-31' GROUP BY customer_id) sub"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "WITH customer_revenue AS (SELECT customer_id, SUM(net_revenue) AS total_revenue FROM orders o JOIN net_revenue_daily nr ON o.order_id = nr.order_id WHERE o.status = 'completed' AND o.order_date BETWEEN '2024-01-01' AND '2024-01-31' GROUP BY customer_id), ranked AS (SELECT customer_id, total_revenue, NTILE(10) OVER (ORDER BY total_revenue DESC) AS decile FROM customer_revenue), top_decile AS (SELECT SUM(total_revenue) AS top_10_revenue FROM ranked WHERE decile = 1), total_revenue AS (SELECT SUM(total_revenue) AS all_revenue FROM customer_revenue) SELECT tr.top_10_revenue, t.all_revenue, tr.top_10_revenue * 100.0 / NULLIF(t.all_revenue, 0) AS concentration_risk FROM top_decile tr, total_revenue t",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', o.order_date) AS month, c.segment, SUM(CASE WHEN r.decile = 1 THEN nr.net_revenue END) * 100.0 / NULLIF(SUM(nr.net_revenue), 0) AS concentration_risk FROM orders o JOIN net_revenue_daily nr ON o.order_id = nr.order_id JOIN customers c ON o.customer_id = c.customer_id JOIN (SELECT customer_id, NTILE(10) OVER (ORDER BY SUM(net_revenue) DESC) AS decile FROM net_revenue_daily GROUP BY customer_id) r ON o.customer_id = r.customer_id WHERE o.status = 'completed' AND o.order_date >= '2024-01-01' GROUP BY 1, c.segment ORDER BY 1, 3 DESC",
+      "advanced_sql": "WITH monthly_revenue AS (\n  -- Grain: customer revenue per month\n  SELECT\n    DATE_TRUNC('month', o.order_date) AS month,\n    o.customer_id,\n    SUM(nr.net_revenue) AS revenue\n  FROM orders o\n  JOIN net_revenue_daily nr ON o.order_id = nr.order_id\n  WHERE o.status = 'completed'\n    AND o.order_date BETWEEN '2024-01-01' AND '2024-01-31'\n  GROUP BY 1, o.customer_id\n),\nranked AS (\n  SELECT\n    month,\n    customer_id,\n    revenue,\n    NTILE(10) OVER (PARTITION BY month ORDER BY revenue DESC) AS decile\n  FROM monthly_revenue\n),\nconcentration AS (\n  SELECT\n    month,\n    SUM(CASE WHEN decile = 1 THEN revenue ELSE 0 END) AS top_10_revenue,\n    SUM(revenue) AS total_revenue\n  FROM ranked\n  GROUP BY month\n)\nSELECT\n  month,\n  top_10_revenue,\n  total_revenue,\n  ROUND(top_10_revenue * 100.0 / NULLIF(total_revenue, 0), 2) AS concentration_risk_pct,\n  ROUND(top_10_revenue / NULLIF(SUM(revenue) FILTER (WHERE decile = 1), 0), 4) AS top_10_average_revenue\nFROM concentration c\nJOIN ranked r ON c.month = r.month AND r.decile = 1\nGROUP BY c.month, c.top_10_revenue, c.total_revenue\nORDER BY month"
+    }
+  }
+]

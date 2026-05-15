@@ -1,0 +1,542 @@
+[
+  {
+    "id": "fin_recognized_revenue",
+    "title": "Recognized Revenue",
+    "intent_tags": [
+      "recognized revenue",
+      "revenue recognized",
+      "rec_rev",
+      "revenue income",
+      "what is my revenue",
+      "income statement revenue",
+      "net revenue",
+      "earned revenue",
+      "revenue in period",
+      "revenue from contracts"
+    ],
+    "sql_features": [
+      "aggregation",
+      "cte",
+      "left_join",
+      "coalesce",
+      "nullif",
+      "first_last_value"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "preparing income statements and regulatory filings (e.g., GAAP/IFRS)",
+      "tracking revenue progression over time (e.g., YoY, MoM growth)",
+      "validating booking/billing reconcile with actual revenue",
+      "calculating key ratios (e.g., revenue per user, revenue growth rate)",
+      "supporting M&A due diligence and audit trails"
+    ],
+    "related_patterns": [
+      "fin_deferred_revenue",
+      "fin_bookings",
+      "fin_billings",
+      "fin_revenue_waterfall"
+    ],
+    "business_definition": "Revenue recognized in a period per ASC 606 / IFRS 15: the amount allocated to satisfied performance obligations, net of refunds, discounts, and variable consideration (estimated at completion). Includes multi-element arrangements (e.g., SaaS + support) allocated to deliverables and recognized over time or at a point in time.",
+    "metric_nature": {
+      "what_it_measures": "True economic value earned \u2014 not cash received. It reflects performance obligations satisfied, supporting accurate profit measurement and comparability across periods.",
+      "what_it_does_not_measure": "Cash inflow. A company can recognize revenue before receiving cash (e.g., net 90 terms) or after (e.g., advance billing with service lag).",
+      "common_misconception": "Recognized revenue = cash collected \u2014 it does not. Cash collections relate to *billings*, while revenue reflects *earned* value."
+    },
+    "template": "SELECT SUM(allocated_amount) AS recognized_revenue FROM revenue_allocations ra JOIN performance_obligations po ON ra.obligation_id = po.obligation_id WHERE po.satisfaction_date BETWEEN {start_date} AND {end_date} AND po.status IN ('satisfied', 'delivered')",
+    "inflation_causes": [
+      {
+        "cause": "Premature recognition (e.g., booking revenue before delivery)",
+        "how_it_inflates": "If subscription revenue is recognized at invoice date instead of over the service period, revenue is overstated in early periods \u2014 revenue recognized for future services not yet delivered.",
+        "detection_sql": "SELECT customer_id, invoice_date, service_start_date, service_end_date, revenue_amount, CASE WHEN invoice_date < service_start_date THEN 'premature' END AS recognition_issue FROM subscription_invoices WHERE invoice_date >= '2024-01-01' AND invoice_date < service_start_date",
+        "fix": "Apply the *over time* or *at a point in time* rules per ASC 606: for subscriptions, recognize revenue daily over the term; for SaaS + support, allocate and recognize support ratably over term."
+      },
+      {
+        "cause": "Ignoring variable consideration constraints (e.g., not applying refund estimate)",
+        "how_it_inflates": "If returns/refunds are not estimated at contract inception (or updated monthly), revenue is recognized at full price, then adjusted downward later \u2014 inflating interim revenue and causing volatile month-end close.",
+        "detection_sql": "SELECT DATE_TRUNC('month', invoice_date) AS month, SUM(invoice_amount) AS invoiced, SUM(refund_amount) AS refunds, ROUND(SUM(refund_amount) * 100.0 / NULLIF(SUM(invoice_amount), 0), 2) AS refund_rate FROM refunds GROUP BY 1 ORDER BY 1",
+        "fix": "Estimate variable consideration (refunds, rebates, discounts) at contract inception using historical data, and recognize net of estimate \u2014 update monthly with actuals."
+      },
+      {
+        "cause": "Misallocating multi-element arrangements (e.g., SaaS + professional services)",
+        "how_it_inflates": "If professional services (point-in-time) and SaaS (over time) are bundled and not allocated separately, revenue is recognized all at once upon service delivery \u2014 inflating early revenue and understating ongoing SaaS revenue.",
+        "detection_sql": "SELECT contract_id, SUM(allocation_amount) AS total_allocation, SUM(allocation_amount) FILTER (WHERE deliverable_type = 'ps') AS ps_alloc, SUM(allocation_amount) FILTER (WHERE deliverable_type = 'saas') AS saas_alloc FROM revenue_allocations GROUP BY 1 HAVING ps_alloc + saas_alloc = SUM(allocation_amount) AND ps_alloc > saas_alloc ORDER BY ps_alloc DESC",
+        "fix": "Allocate transaction price to each distinct performance obligation based on standalone selling price (SSP), then recognize when (or as) each is satisfied."
+      },
+      {
+        "cause": " Including non-contractual revenue (e.g., one-time grants, giveaways)",
+        "how_it_inflates": "If free trials or promotional credits are converted to revenue without contractual basis (e.g., auto-upgrade after trial), recognized revenue includes value not earned under binding terms.",
+        "detection_sql": "SELECT customer_segment, COUNT(DISTINCT customer_id) AS customers, SUM(revenue_amount) FILTER (WHERE contract_status = 'expired_trial') AS trial_rev, SUM(revenue_amount) FILTER (WHERE contract_status = 'contracted') AS contract_rev FROM revenue_allocations WHERE revenue_date >= '2024-01-01' GROUP BY 1",
+        "fix": "Only recognize revenue under binding contracts with enforceable rights and obligations \u2014 exclude promotional or non-contractual arrangements until contracted."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Over-estimating variable consideration (e.g., excessive refund reserve)",
+        "how_it_deflates": "If refund or discount estimates are too aggressive (e.g., reserve 30% when historical rate is 5%), recognized revenue is understated \u2014 revenue is withheld unnecessarily, masking true performance.",
+        "detection_sql": "SELECT COUNT(*) AS contracts, AVG(refund_rate) AS avg_refund_rate, AVG(refund_reserve_pct) AS avg_reserve_pct FROM (SELECT customer_id, COUNT(*) FILTER (WHERE refund_received = TRUE) * 100.0 / COUNT(*) AS refund_rate, MAX(refund_reserve_pct) AS refund_reserve_pct FROM contracts WHERE contract_start_date >= '2024-01-01' GROUP BY 1) GROUP BY 1",
+        "fix": "Re-estimate variable consideration quarterly using trailing 12-month data, not static or overly cautious assumptions."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the revenue spike driven by a specific segment, product, or channel \u2014 or is it broad-based?",
+      "Did the recognition policy change in the current period (e.g., new accounting framework or system migration)?",
+      "Are multi-element contracts properly allocated per ASC 606?",
+      "Have significant refunds or disputes occurred that require revenue reversal?",
+      "Is deferred revenue being recognized over the correct period (e.g., subscription term vs. payment term)?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "recognized_revenue up, billings up more",
+        "then": "deferred revenue build \u2014 customers are prepaying but services not yet delivered"
+      },
+      {
+        "if": "recognized_revenue up, bookings flat",
+        "then": "prior bookings are being recognized \u2014 evidence of strong fulfillment or low cancellation"
+      },
+      {
+        "if": "recognized_revenue down, bookings down more",
+        "then": "customer churn or reduced purchasing \u2014 both demand and fulfillment weakness"
+      },
+      {
+        "if": "recognized_revenue up, book-to-bill ratio down",
+        "then": "revenue growth driven by prior periods' bookings \u2014 possible catch-up from prior lags"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Recognized revenue up MoM, but bookings down and deferred_revenue down",
+        "and_also": "fin_revenue_waterfall shows decline in 'current period bookings' line item",
+        "shared_root_cause": "Recognition of prior period bookings is driving revenue growth \u2014 likely a catch-up from deferred revenue amortization (e.g., large Q4 bookings recognized in Q1) rather than new demand strength.",
+        "diagnostic_sql": "WITH deferral_activity AS (SELECT DATE_TRUNC('month', period) AS month, SUM(deferred_revenue_begin) AS beg, SUM(recognized) AS recog, SUM(deferred_revenue_end) AS end FROM deferral_ledger GROUP BY 1) SELECT month, beg, recog, end, recog / NULLIF(beg, 0) * 100.0 AS recognition_rate FROM deferral_activity ORDER BY month"
+      },
+      {
+        "if_this_metric": "Recognized revenue flat, but bookings up significantly",
+        "and_also": "fin_deferred_revenue shows large increase",
+        "shared_root_cause": "Customer preference for annual billing increased \u2014 bookings grew, but revenue recognition lags as cash is received upfront and revenue is amortized over the term.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', contract_start_date) AS month, COUNT(DISTINCT customer_id) AS customers, SUM(contract_value) AS bookings, AVG(contract_duration_months) AS avg_term FROM contracts WHERE contract_start_date >= '2024-01-01' GROUP BY 1 ORDER BY month"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Recognizing revenue at invoicing date instead of over time",
+        "why_wrong": "For subscription or SaaS services, ASC 606 requires revenue to be recognized over the service period. Invoice date may precede service delivery \u2014 inflating near-term revenue.",
+        "bad_sql": "SELECT SUM(invoice_amount) AS revenue FROM invoices WHERE invoice_date BETWEEN '2024-04-01' AND '2024-06-30'",
+        "good_sql": "SELECT SUM(allocated_amount) AS revenue FROM revenue_allocations WHERE satisfaction_date BETWEEN '2024-04-01' AND '2024-06-30'"
+      },
+      {
+        "pattern": "Not allocating transaction price to distinct performance obligations",
+        "why_wrong": "If a bundled offer includes SaaS + professional services, and no separate SSP exists, all revenue may be recognized upon PS delivery \u2014 distorting timing and understating recurring SaaS revenue.",
+        "bad_sql": "SELECT SUM(contract_amount) AS revenue FROM contracts WHERE delivery_date = '2024-06-01'",
+        "good_sql": "WITH ssps AS (SELECT product_type, standalone_selling_price FROM product_catalog WHERE product_type IN ('saas', 'ps')), allocations AS (SELECT c.contract_id, c.customer_id, c.total_price * p.ssps / SUM(p.ssps) OVER (PARTITION BY c.contract_id) AS allocated_revenue FROM contracts c JOIN ssps p ON c.product_type = p.product_type WHERE c.contract_start_date >= '2024-01-01') SELECT SUM(allocated_revenue) FILTER (WHERE product_type = 'saas') AS saas_rev, SUM(allocated_revenue) FILTER (WHERE product_type = 'ps') AS ps_rev FROM allocations"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT SUM(allocated_amount) AS recognized_revenue FROM revenue_allocations WHERE satisfaction_date BETWEEN '2024-04-01' AND '2024-06-30' AND status = 'satisfied'",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', satisfaction_date) AS month, customer_segment, SUM(allocated_amount) AS revenue, COUNT(DISTINCT contract_id) AS contracts, SUM(allocated_amount) / COUNT(DISTINCT contract_id) AS rev_per_contract FROM revenue_allocations WHERE satisfaction_date >= '2024-01-01' GROUP BY 1, 2 ORDER BY 1, 3 DESC",
+      "advanced_sql": "WITH monthly_rev AS (\n  -- Grain: one row per month per contract\n  SELECT\n    ra.contract_id,\n    DATE_TRUNC('month', ra.satisfaction_date) AS month,\n    SUM(ra.allocated_amount) AS recognized,\n    c.customer_segment,\n    c.plan_type\n  FROM revenue_allocations ra\n  JOIN contracts c ON ra.contract_id = c.contract_id\n  WHERE ra.satisfaction_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '12 month'\n  GROUP BY 1, 2, 3, 4\n),\nwith_cumulative AS (\n  SELECT\n    month,\n    customer_segment,\n    plan_type,\n    SUM(recognized) AS revenue,\n    SUM(SUM(recognized)) OVER (PARTITION BY customer_segment, plan_type ORDER BY month ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS cumulative_rev\n  FROM monthly_rev\n  GROUP BY 1, 2, 3\n)\nSELECT\n  month,\n  customer_segment,\n  plan_type,\n  revenue,\n  LAG(revenue) OVER (PARTITION BY customer_segment, plan_type ORDER BY month) AS prev_month_rev,\n  ROUND((revenue - COALESCE(LAG(revenue) OVER (PARTITION BY customer_segment, plan_type ORDER BY month), 0)) * 100.0 / NULLIF(LAG(revenue) OVER (PARTITION BY customer_segment, plan_type ORDER BY month), 0), 2) AS mom_growth_pct\nFROM with_cumulative\nORDER BY month, customer_segment"
+    }
+  },
+  {
+    "id": "fin_deferred_revenue",
+    "title": "Deferred Revenue",
+    "intent_tags": [
+      "deferred revenue",
+      "deferred revenue balance",
+      "unearned revenue",
+      "dr",
+      "deferred rev",
+      "billings in advance",
+      "future revenue",
+      "recognition pipeline",
+      "what's in deferred",
+      "deferred revenue ratio"
+    ],
+    "sql_features": [
+      "aggregation",
+      "cte",
+      "window_function",
+      "coalesce",
+      "nullif"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "assessing future revenue visibility and growth runway",
+      "calculating book-to-bill ratios and ARR (Annualized Recurring Revenue)",
+      "forecasting revenue recognition over next 12\u201324 months",
+      "evaluating subscription health (e.g., net revenue retention via deferred waterfalls)",
+      "supporting investor reporting (e.g., deferred revenue, ending balance)"
+    ],
+    "related_patterns": [
+      "fin_recognized_revenue",
+      "fin_bookings",
+      "fin_billings",
+      "fin_revenue_waterfall"
+    ],
+    "business_definition": "Liability representing cash received (or billed) but not yet earned \u2014 the unamortized portion of customer contracts. Calculated as: Deferred Revenue Beginning + New Billings \u2212 Revenue Recognized = Deferred Revenue Ending. Only includes *recurring* or *multi-period* contracts (e.g., SaaS subscriptions, support renewals). Excludes one-time professional services or custom projects.",
+    "metric_nature": {
+      "what_it_measures": "Revenue visibility \u2014 the pipeline of cash that will be recognized in future periods, supporting growth forecasts and runway analysis.",
+      "what_it_does_not_measure": "Cash on hand. Deferred revenue is a liability, not an asset \u2014 it represents an obligation to deliver, and can reverse if customers cancel.",
+      "common_misconception": "Deferred revenue = future revenue \u2014 it is *not guaranteed*. It can reverse if customers cancel before services are delivered (e.g., churn during the term)."
+    },
+    "template": "SELECT SUM(deferred_revenue_end) AS deferred_revenue FROM deferral_ledger WHERE period = {end_date}",
+    "inflation_causes": [
+      {
+        "cause": "Including non-qualifying contracts (e.g., one-time services in deferred)",
+        "how_it_inflates": "If professional services or custom implementation fees (point-in-time deliverables) are incorrectly classified as deferred, the liability grows artificially \u2014 these should be recognized upon delivery, not deferred.",
+        "detection_sql": "SELECT contract_id, contract_value, service_type, completion_date, CASE WHEN service_type = 'ps' AND completion_date IS NULL THEN 'in_deferred_early' END AS issue FROM contracts WHERE contract_start_date >= '2024-01-01' AND service_type = 'ps'",
+        "fix": "Define deferred revenue scope explicitly: only multi-period, recurring obligations (e.g., subscriptions, support, SaaS). One-time services go to *accounts receivable* or *billings*, not deferred."
+      },
+      {
+        "cause": "Recording deferred revenue at gross amount without netting discounts",
+        "how_it_inflates": "If contract value is recorded at list price before discounts are applied, deferred revenue is overstated \u2014 the discount reduces the transaction price allocated to deferred obligations.",
+        "detection_sql": "SELECT contract_id, list_price, discount_pct, actual_contract_value, SUM(deferred_amount) FILTER (WHERE deferred_amount = list_price * contract_duration) AS over_deferred FROM contracts c JOIN deferral_ledger d ON c.contract_id = d.contract_id WHERE c.contract_start_date >= '2024-01-01' GROUP BY 1, 2, 3, 4 HAVING over_deferred > 0",
+        "fix": "Record deferred revenue at *net* transaction price after discounts, rebates, and variable consideration estimates."
+      },
+      {
+        "cause": "Failing to reverse deferred revenue on cancellations",
+        "how_it_inflates": "If a customer cancels mid-term, the remaining deferred balance is not reversed \u2014 liability remains overstated, and revenue is understated in future periods.",
+        "detection_sql": "SELECT c.customer_id, c.contract_id, c.start_date, c.end_date, c.cancellation_date, SUM(d.deferred_revenue_end) FILTER (WHERE d.period > c.cancellation_date) AS unreversed_deferred FROM contracts c JOIN deferral_ledger d ON c.contract_id = d.contract_id WHERE c.cancellation_date >= '2024-01-01' GROUP BY 1, 2, 3, 4, 5 HAVING unreversed_deferred > 0",
+        "fix": "Add automated reversal logic in the finance system: when a contract is canceled, reverse all future deferred entries and recognize revenue (if any) up to cancellation date."
+      },
+      {
+        "cause": "Including future auto-renewal periods in initial deferral",
+        "how_it_inflates": "If a 1-year contract includes 2-year auto-renewal terms and both are booked upfront, deferred revenue includes revenue for services not yet contracted \u2014 inflating visibility and future leverage.",
+        "detection_sql": "SELECT contract_id, initial_term_months, auto_renewal_term_months, SUM(deferred_amount) FILTER (WHERE period BETWEEN DATE_TRUNC('month', start_date + INTERVAL 'initial_term_months' || ' months') AND end_date) AS future_deferral FROM contracts c JOIN deferral_ledger d ON c.contract_id = d.contract_id GROUP BY 1, 2, 3 HAVING future_deferral > 0",
+        "fix": "Only defer revenue for *committed* periods. Auto-renewals are *not* contracted until renewed \u2014 defer only for the initial term, plus any fixed renewal options if renewal is highly probable."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Excluding renewals from deferred balance at renewal date",
+        "how_it_deflates": "If a customer renews before the initial term ends, and the renewal is not added to the deferred ledger, the balance drops unexpectedly \u2014 masking continuity and future revenue.",
+        "detection_sql": "SELECT c.customer_id, c.contract_id, c.end_date, r.renewal_date, r.renewal_value FROM contracts c JOIN renewals r ON c.customer_id = r.customer_id WHERE r.renewal_date < c.end_date AND r.renewal_value NOT IN (SELECT deferred_amount FROM deferral_ledger WHERE period >= r.renewal_date)",
+        "fix": "Add renewal entries to the deferral ledger at the renewal effective date, allocating the renewal amount to the appropriate Obligation ID."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the deferred revenue concentration in new vs. existing customers \u2014 and what does that indicate about growth sustainability?",
+      "Has churn increased in high-deferred-revenue segments \u2014 indicating future reversal risk?",
+      "Did any accounting policy change affect the definition of deferred revenue (e.g., including/excluding tax or shipping)?",
+      "Are multi-element contracts properly split between service and product elements?",
+      "Is deferred revenue reconciled to the general ledger and customer billing system monthly?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "deferred_revenue up, bookings up",
+        "then": "strong billings \u2014 new or renewed contracts are being prepaid"
+      },
+      {
+        "if": "deferred_revenue down, recognized_revenue up",
+        "then": "amortization acceleration \u2014 prior period bookings are being recognized faster"
+      },
+      {
+        "if": "deferred_revenue down, cancellations up",
+        "then": "customer attrition \u2014 contracts terminated early, reducing future obligations"
+      },
+      {
+        "if": "deferred_revenue flat, bookings up",
+        "then": "deferred revenue conversion rate down \u2014 fewer bookings are prepaid or terms shortened"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Deferred revenue drops >10% WoW with recognized_revenue flat",
+        "and_also": "fin_bookings shows no change but fin_billings down",
+        "shared_root_cause": "A billing failure or payment processing error caused new auto-debit charges to fail \u2014 bills were issued but cash not collected, reducing deferred revenue (no cash received to defer) and billings (no payment collected).",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', billing_attempt_date) AS week, COUNT(*) FILTER (WHERE status = 'success') AS success, COUNT(*) FILTER (WHERE status = 'failed') AS failed, SUM(amount) FILTER (WHERE status = 'failed') AS failed_amount FROM billing_log WHERE billing_attempt_date >= '2024-06-01' GROUP BY 1 ORDER BY 1"
+      },
+      {
+        "if_this_metric": "Deferred revenue up MoM, but recognized_revenue flat",
+        "and_also": "fin_customer_churn_rate is stable and fin_ltv_deflating is not visible",
+        "shared_root_cause": "Shift to annual billing \u2014 customers opted for longer terms (e.g., 12 months vs. 3), deferring more cash but spreading revenue recognition over more months.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', contract_start_date) AS month, COUNT(DISTINCT customer_id) AS customers, AVG(contract_duration_months) AS avg_term, SUM(contract_value) FILTER (WHERE contract_duration_months = 12) AS annual_rev, SUM(contract_value) FILTER (WHERE contract_duration_months = 3) AS quarterly_rev FROM contracts WHERE contract_start_date >= '2024-01-01' GROUP BY 1 ORDER BY 1"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Counting deferred revenue as revenue or cash on hand",
+        "why_wrong": "Deferred revenue is a liability \u2014 it represents an obligation to deliver. Reporting it as 'revenue' or 'cash' misleads stakeholders and violates accounting standards.",
+        "bad_sql": "SELECT SUM(deferred_revenue_end) AS total_revenue FROM deferral_ledger",
+        "good_sql": "SELECT SUM(deferred_revenue_end) AS deferred_revenue FROM deferral_ledger"
+      },
+      {
+        "pattern": "Not adjusting deferred revenue for contract modifications (e.g., downgrades)",
+        "why_wrong": "If a customer downgrades (e.g., Pro to Basic), the remaining deferred balance is not adjusted \u2014 overstatement of liability and understatement of future revenue recognition.",
+        "bad_sql": "SELECT SUM(deferred_amount) FROM deferral_ledger WHERE period <= {end_date}",
+        "good_sql": "WITH adjustments AS (SELECT contract_id, SUM(CASE WHEN modification_type = 'downgrade' THEN (old_deferred - new_deferred) ELSE 0 END) AS rev_adj FROM contract_modifications WHERE effective_date >= {start_date} GROUP BY 1) SELECT SUM(deferred_revenue_end) + COALESCE(SUM(adjustments.rev_adj), 0) AS adj_deferred FROM deferral_ledger LEFT JOIN adjustments USING (contract_id)"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT SUM(deferred_revenue_end) AS deferred_revenue FROM deferral_ledger WHERE period = '2024-06-30'",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', period) AS month, SUM(deferred_revenue_begin) AS begin_balance, SUM(new_deferrals) AS new_deferrals, SUM(reversals) AS reversals, SUM(deferred_revenue_end) AS end_balance FROM deferral_ledger WHERE period >= '2024-01-01' GROUP BY 1 ORDER BY 1",
+      "advanced_sql": "WITH monthly_deferral AS (\n  -- Grain: one row per month with beginning, additions, reversals, ending\n  SELECT\n    period,\n    SUM(deferred_revenue_begin) AS dr_begin,\n    SUM(new_deferrals) AS new_dr,\n    SUM(reversals) AS rev_dr,\n    SUM(deferred_revenue_end) AS dr_end\n  FROM deferral_ledger\n  WHERE period >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '12 month'\n  GROUP BY 1\n),\nwith_waterfall AS (\n  SELECT\n    period,\n    dr_begin,\n    new_dr,\n    rev_dr,\n    dr_end,\n    LAG(dr_end) OVER (ORDER BY period) AS prev_dr_end\n  FROM monthly_deferral\n)\nSELECT\n  period,\n  dr_end,\n  dr_end - prev_dr_end AS net_change,\n  ROUND(new_dr * 100.0 / NULLIF(prev_dr_end, 0), 2) AS new_dr_yield_pct,\n  ROUND((dr_end - prev_dr_end) * 100.0 / NULLIF(prev_dr_end, 0), 2) AS dr_growth_pct\nFROM with_waterfall\nORDER BY period"
+    }
+  },
+  {
+    "id": "fin_revenue_waterfall",
+    "title": "Revenue Waterfall",
+    "intent_tags": [
+      "revenue waterfall",
+      "revenue breakdown",
+      "dr waterfall",
+      "revenue drivers",
+      "revenue composition",
+      "what drives revenue",
+      "revenue movement",
+      "revenue reconciliation",
+      "revenue by category"
+    ],
+    "sql_features": [
+      "aggregation",
+      "cte",
+      "window_function",
+      "coalesce",
+      "nullif"
+    ],
+    "difficulty": "advanced",
+    "pattern_type": "analytical",
+    "when_to_use": [
+      "diagnosing period-over-period revenue changes (e.g., YoY growth drivers)",
+      "presenting revenue movement to finance leadership and auditors",
+      "forecasting revenue by segment and understanding sensitivity",
+      "auditing deferred revenue conversion and new business impact",
+      "tracking ARR vs. cash flow alignment"
+    ],
+    "related_patterns": [
+      "fin_recognized_revenue",
+      "fin_deferred_revenue",
+      "fin_bookings",
+      "fin_billings"
+    ],
+    "business_definition": "A reconciliation of ending revenue to beginning revenue, showing how each component moved it: Beginning Deferred Revenue + New Bookings + Deferred Revenue Conversion + New Direct Revenue \u2212 Reversals \u2212 Adjustments = Ending Revenue Recognized. Used to isolate the impact of new business, renewal rates, and deferral dynamics.",
+    "metric_nature": {
+      "what_it_measures": "Revenue drivers by source \u2014 distinguishing between revenue from prior bookings (conversion), new sales (direct), and adjustments (e.g., refunds).",
+      "what_it_does_not_measure": "Cash flow or profitability. Revenue waterfall tracks *recognition*, not cash receipt or margin.",
+      "common_misconception": "Revenue waterfall shows cash collected \u2014 it shows *earned* revenue. Cash can lag (e.g., net 90) or lead (e.g., prepay) recognition."
+    },
+    "template": "WITH waterfall AS (SELECT SUM(deferred_revenue_begin) AS dr_start, SUM(new_bookings) AS bookings, SUM(deferred_revenue_conversion) AS dr_conv, SUM(new_direct_revenue) AS direct_rev, SUM(reversals) AS rev_adj, SUM(deferred_revenue_end) AS dr_end FROM fin_waterfall_summary WHERE period = {period}) SELECT dr_start, bookings, dr_conv, direct_rev, rev_adj, dr_end, dr_end + direct_rev AS total_revenue_recognized FROM waterfall",
+    "inflation_causes": [
+      {
+        "cause": "Double-counting deferred conversion and direct revenue",
+        "how_it_inflates": "If a subscription renewal is recorded *both* as a new booking (in bookings) and as deferred conversion (in dr_conv), revenue is overstated \u2014 the same cash is counted twice.",
+        "detection_sql": "SELECT contract_id, COUNT(*) FILTER (WHERE entry_type IN ('booking', 'conversion')) AS entry_count FROM fin_waterfall_detail WHERE period = '2024-06-01' GROUP BY 1 HAVING entry_count > 1",
+        "fix": "Ensure renewal bookings are classified as *renewals*, not new bookings \u2014 and deferred conversion tracks only amortization of *prior* period bookings, not current bookings."
+      },
+      {
+        "cause": "Excluding revenue reversals from waterfall reconciliation",
+        "how_it_inflates": "If refunds or chargebacks are omitted from the 'reversals' line, ending revenue appears higher than actual \u2014 waterfall does not reconcile to revenue recognized in the income statement.",
+        "detection_sql": "SELECT SUM(revenue_recognized) AS recog, SUM(deferred_revenue_end) AS dr_end, SUM(bookings) AS book, SUM(deferred_conversion) AS conv, SUM(reversals) AS rev, SUM(recognized_revenue) AS actual FROM fin_waterfall_summary WHERE period = '2024-06-01' HAVING recog + conv - rev != dr_end + bookings + direct_rev - dr_start",
+        "fix": "Include all revenue reversals (refunds, chargebacks, discounts) in the 'reversals' line \u2014 match to actual revenue in the GL."
+      },
+      {
+        "cause": "Incorrect timing of deferred conversion",
+        "how_it_inflates": "If deferred conversion includes *current period bookings* (not just prior period), revenue is overstated \u2014 the same cash is counted in both bookings and conversion.",
+        "detection_sql": "SELECT contract_id, period, SUM(deferred_conversion) FILTER (WHERE period = '2024-06-01') AS jun_conv, SUM(new_bookings) FILTER (WHERE period = '2024-06-01') AS jun_bookings FROM fin_waterfall_detail GROUP BY 1, 2 HAVING jun_conv > 0 AND jun_bookings > 0",
+        "fix": "Define deferred conversion as: *amortization of deferred revenue from prior periods*, not including any cash received in the current period."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Over-stating reversals (e.g., gross refunds instead of net)",
+        "how_it_deflates": "If refunds include amounts not related to revenue (e.g., shipping refunds, fee refunds), reversals are overstated \u2014 revenue recognized is understated.",
+        "detection_sql": "SELECT SUM(refund_amount) FILTER (WHERE refund_type = 'product') AS product_refunds, SUM(refund_amount) FILTER (WHERE refund_type = 'shipping') AS shipping_refunds FROM refunds WHERE refund_date >= '2024-01-01'",
+        "fix": "Net refunds against revenue only if they relate directly to a revenue event (e.g., product return). Exclude shipping, processing fees, or goodwill credits."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the revenue delta driven by bookings growth or deferral conversion?",
+      "Are reversals (refunds, adjustments) increasing \u2014 indicating quality issues?",
+      "Did any accounting policy or system change affect revenue recognition in the period?",
+      "Is new direct revenue (non-subscription, non-deferred) growing sustainably?",
+      "Are there seasonality effects in deferred conversion (e.g., Q4 renewals recognized in Q1)?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "revenue_waterfall shows bookings up, dr_conversion flat",
+        "then": "new business growth is primary driver \u2014 likely strong sales execution"
+      },
+      {
+        "if": "revenue_waterfall shows dr_conversion down, bookings up",
+        "then": "customer churn or short-term contracts \u2014 prior bookings are not converting"
+      },
+      {
+        "if": "revenue_waterfall shows reversals up, revenue flat",
+        "then": "quality or fulfillment issues \u2014 customers are disputing or returning"
+      },
+      {
+        "if": "revenue_waterfall shows dr_conversion up, bookings flat",
+        "then": "legacy bookings recognized \u2014 strong historical performance but stagnant new sales"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Revenue waterfall shows bookings up >20% MoM but dr_conversion down",
+        "and_also": "fin_customer_churn_rate increased",
+        "shared_root_cause": "A surge in short-term or low-commitment bookings (e.g., free trials converted to 1-month trials) boosted bookings but did not improve deferral conversion \u2014 customers churned quickly and did not renew, reducing conversion.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', contract_start_date) AS month, COUNT(DISTINCT customer_id) AS customers, AVG(contract_duration_months) AS avg_term, COUNT(DISTINCT CASE WHEN churned = TRUE THEN customer_id END) * 100.0 / COUNT(DISTINCT customer_id) AS churn_rate FROM contracts WHERE contract_start_date >= '2024-01-01' GROUP BY 1 ORDER BY 1"
+      },
+      {
+        "if_this_metric": "Revenue waterfall shows dr_conversion up significantly, but bookings flat and new_direct_revenue flat",
+        "and_also": "fin_deferred_revenue down and fin_billings stable",
+        "shared_root_cause": "A shift to longer contract terms (e.g., annual vs. monthly) increased the *amount* deferred per customer, so more cash is converted to revenue over time \u2014 even though bookings (number of contracts) and cash receipts (billings) were flat.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', contract_start_date) AS month, COUNT(DISTINCT customer_id) AS customers, SUM(contract_value) AS bookings, AVG(contract_duration_months) AS avg_term, SUM(deferred_revenue_end) FILTER (WHERE period = MAX(period)) AS dr_end FROM contracts c LEFT JOIN deferral_ledger d ON c.contract_id = d.contract_id WHERE contract_start_date >= '2024-01-01' GROUP BY 1 ORDER BY 1"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Manual waterfall reconciliation with inconsistent assumptions",
+        "why_wrong": "Different teams (sales ops, finance, reporting) use different formulas or data sources \u2014 waterfall fails reconciliation, masking true revenue drivers.",
+        "bad_sql": "SELECT SUM(bookings) - SUM(reversals) + SUM(conversion) AS revenue FROM ops_data UNION ALL SELECT SUM(recognized_revenue) AS revenue FROM finance_data",
+        "good_sql": "WITH waterfall AS (SELECT SUM(deferred_revenue_begin) AS dr_start, SUM(new_bookings) AS bookings, SUM(deferred_conversion) AS conversion, SUM(reversals) AS rev_adj FROM fin_waterfall_summary WHERE period = '2024-06-01'), income AS (SELECT SUM(revenue) AS recog FROM fin_income_statement WHERE period = '2024-06-01') SELECT dr_start, bookings, conversion, rev_adj, recog, dr_start + bookings + conversion - rev_adj - recog AS reconciliation_error FROM waterfall, income"
+      },
+      {
+        "pattern": "Not aligning waterfall to GAAP revenue (e.g., using cash basis)",
+        "why_wrong": "Cash collections include revenue that will be recognized in future periods (deferred), and exclude revenue recognized but not yet billed \u2014 waterfall misaligns with income statement.",
+        "bad_sql": "SELECT SUM(billing_amount) AS revenue FROM billing WHERE billing_date BETWEEN {start} AND {end}",
+        "good_sql": "SELECT SUM(allocated_amount) AS revenue FROM revenue_allocations WHERE satisfaction_date BETWEEN {start} AND {end}"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT SUM(deferred_revenue_begin) AS dr_begin, SUM(new_bookings) AS bookings, SUM(deferred_conversion) AS conv, SUM(new_direct_revenue) AS direct, SUM(reversals) AS adj, SUM(deferred_revenue_end) AS dr_end, SUM(deferred_revenue_end + direct_revenue) AS total_rev FROM fin_waterfall_summary WHERE period = '2024-06-30'",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', period) AS month, SUM(deferred_revenue_begin) AS dr_start, SUM(new_bookings) AS bookings, SUM(deferred_conversion) AS conversion, SUM(new_direct_revenue) AS direct, SUM(reversals) AS adj, SUM(deferred_revenue_end) AS dr_end, SUM(deferred_revenue_end + direct) AS total_revenue FROM fin_waterfall_summary WHERE period >= '2024-01-01' GROUP BY 1 ORDER BY 1",
+      "advanced_sql": "WITH monthly_waterfall AS (\n  -- Grain: one row per month\n  SELECT\n    period,\n    SUM(deferred_revenue_begin) AS dr_start,\n    SUM(new_bookings) AS bookings,\n    SUM(deferred_conversion) AS conversion,\n    SUM(new_direct_revenue) AS direct,\n    SUM(reversals) AS adj,\n    SUM(deferred_revenue_end) AS dr_end\n  FROM fin_waterfall_summary\n  WHERE period >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '12 month'\n  GROUP BY 1\n),\nwith_reconciliation AS (\n  SELECT\n    period,\n    dr_start,\n    bookings,\n    conversion,\n    direct,\n    adj,\n    dr_end,\n    dr_start + bookings + conversion - adj - dr_end AS required_direct,\n    direct AS actual_direct,\n    direct - (dr_start + bookings + conversion - adj - dr_end) AS reconciliation_diff\n  FROM monthly_waterfall\n)\nSELECT\n  period,\n  bookings,\n  conversion,\n  adj,\n  dr_end,\n  required_direct,\n  actual_direct,\n  reconciliation_diff,\n  ROUND(reconciliation_diff * 100.0 / NULLIF(actual_direct, 0), 2) AS diff_pct\nFROM with_reconciliation\nORDER BY period"
+    }
+  },
+  {
+    "id": "fin_bookings_vs_billings_vs_revenue",
+    "title": "Bookings vs Billings vs Revenue",
+    "intent_tags": [
+      "bookings billings revenue",
+      "bbr",
+      "bookings vs revenue",
+      "billed vs recognized",
+      "revenue reconciliation",
+      "cash vs GAAP revenue",
+      "new vs recognized revenue",
+      "bookings vs billings vs rec_rev",
+      "what is bookings"
+    ],
+    "sql_features": [
+      "aggregation",
+      "cte",
+      "window_function",
+      "coalesce",
+      "nullif"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "analytical",
+    "when_to_use": [
+      "diagnosing growth anomalies (e.g., bookings up but revenue flat \u2014 why?)",
+      "validating sales team performance vs actual revenue contribution",
+      "aligning sales compensation with financial outcomes",
+      "forecasting revenue visibility and cash runway",
+      "auditing revenue recognition compliance and timing"
+    ],
+    "related_patterns": [
+      "fin_recognized_revenue",
+      "fin_deferred_revenue",
+      "fin_revenue_waterfall"
+    ],
+    "business_definition": "Three distinct metrics: *Bookings* = value of signed contracts (commitment to pay); *Billings* = cash invoiced or received (when payment terms are met); *Revenue* = recognized per ASC 606 (performance obligations satisfied). Bookings drives future billings; billings drives future revenue; all three should trend together over time in healthy businesses.",
+    "metric_nature": {
+      "what_it_measures": "The timing and conversion efficiency of customer commitments to actual earnings \u2014 a diagnostic tool for sales, billing, and finance alignment.",
+      "what_it_does_not_measure": "Profitability. Bookings, billings, and revenue can all be high while margins are negative (e.g., discounting, churn, high CAC).",
+      "common_misconception": "Bookings = revenue \u2014 it is not. Bookings is a *promise*; revenue is *earned*. Billings is the *cash event*."
+    },
+    "template": "SELECT SUM(bookings) AS bookings, SUM(billings) AS billings, SUM(revenue) AS revenue FROM fin_metrics_summary WHERE period = {end_date}",
+    "inflation_causes": [
+      {
+        "cause": "Booking unenforceable agreements (e.g., LOIs, verbal commitments)",
+        "how_it_inflates": "If letters of intent (LOIs) or verbal agreements are counted as bookings, bookings growth is inflated \u2014 these do not result in billings or revenue.",
+        "detection_sql": "SELECT source, COUNT(*) FILTER (WHERE status = 'signed') AS signed, COUNT(*) FILTER (WHERE source = 'loa') AS loa_count, COUNT(*) FILTER (WHERE source = 'verbal') AS verbal_count FROM contracts WHERE contract_date >= '2024-01-01' GROUP BY 1",
+        "fix": "Define bookings as contracts with *executed signatures* and enforceable terms \u2014 exclude LOAs, NDAs, or verbal commitments."
+      },
+      {
+        "cause": "Billings includes non-cash items (e.g., barter, credit swaps)",
+        "how_it_inflates": "If barter arrangements (e.g., services for ads) or credit swaps are recorded as billings, cash runway is overstated \u2014 no actual cash received.",
+        "detection_sql": "SELECT COUNT(*) AS billings, SUM(amount) FILTER (WHERE payment_type = 'barter') AS barter, SUM(amount) FILTER (WHERE payment_type = 'credit') AS credits FROM billing_log WHERE billing_date >= '2024-01-01'",
+        "fix": "Define billings as *cash received* or *accounts receivable* only \u2014 exclude barter, equity, or deferred credit entries."
+      },
+      {
+        "cause": "Revenue recognition delays due to manual review bottlenecks",
+        "how_it_inflates": "If revenue recognition is manually delayed (e.g., for audit), revenue lags billings significantly \u2014 bookings \u2192 billings growth appears strong, but revenue looks stagnant \u2014 falsely suggesting a conversion problem.",
+        "detection_sql": "SELECT DATE_TRUNC('month', billing_date) AS month, AVG(DATE_DIFF('day', billing_date, revenue_satisfaction_date)) AS avg_delay_days FROM revenue_timing_log WHERE billing_date >= '2024-01-01' GROUP BY 1 ORDER BY 1",
+        "fix": "Automate revenue recognition (e.g., using subscription accounting software) to align with ASC 606 timing \u2014 monthly reconciliation, not quarterly or manual batch."
+      },
+      {
+        "cause": "Excluding multi-period revenue in revenue calculation",
+        "how_it_inflates": "If revenue includes only direct, one-time sales but excludes amortized deferred revenue, revenue appears lower than billings \u2014 masking the conversion of deferred bookings to revenue.",
+        "detection_sql": "SELECT SUM(revenue) FILTER (WHERE revenue_type = 'one_time') AS one_time, SUM(revenue) FILTER (WHERE revenue_type = 'amortized') AS amortized FROM revenue_allocations WHERE period = '2024-06-01'",
+        "fix": "Include all recognized revenue \u2014 one-time *and* amortized (deferred conversion) \u2014 in the revenue calculation."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Bookings includes non-recurring or non-core revenue",
+        "how_it_deflates": "If one-time grants or non-core contracts (e.g., consulting wins) are included in bookings, but those do not recur or convert to recurring revenue, bookings growth appears strong while core revenue is flat.",
+        "detection_sql": "SELECT contract_type, COUNT(*) FILTER (WHERE status = 'signed') AS signed, SUM(contract_value) AS value FROM contracts WHERE contract_date >= '2024-01-01' GROUP BY 1 ORDER BY 3 DESC",
+        "fix": "Segment bookings by type (core, non-core, recurring, non-recurring) and report core bookings separately \u2014 focus on sustainable patterns."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the gap between bookings and billings due to payment terms (e.g., net 90) or failures (e.g., payment issues)?",
+      "Is the gap between billings and revenue due to deferred revenue (prepaid) or recognition delays?",
+      "Have sales compensation incentives created misaligned behaviors (e.g., pushing long-term contracts to book early but revenue late)?",
+      "Is revenue recognized at the correct level (e.g., SaaS vs. PS, over time vs. point in time)?",
+      "Do bookings and revenue trends align with customer cohort health (e.g., churn, expansion)?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "bookings up, billings flat, revenue down",
+        "then": "new contracts are long-term or prepaid \u2014 deferred revenue increased, recognition will catch up"
+      },
+      {
+        "if": "bookings flat, billings up, revenue up",
+        "then": "customer payments accelerated \u2014 strong cash conversion, possibly due to shorter terms or churn reduction"
+      },
+      {
+        "if": "bookings up, revenue flat",
+        "then": "new business is not converting to revenue \u2014 churn or fulfillment issues"
+      },
+      {
+        "if": "billings up, revenue up less",
+        "then": "deferred revenue build \u2014 customers prepaying, revenue recognition lags"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Bookings up >30% WoW, billings up <5%, revenue flat",
+        "and_also": "fin_deferred_revenue shows large increase and fin_customer_churn_rate stable",
+        "shared_root_cause": "A shift to annual billing drove bookings (more commitment), but cash is received upfront \u2014 deferred revenue build increased while billings (cash) only grew modestly, and revenue recognition lagged due to amortization over 12 months.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', contract_start_date) AS month, COUNT(DISTINCT customer_id) AS customers, AVG(contract_duration_months) AS avg_term, SUM(contract_value) FILTER (WHERE contract_duration_months = 12) AS annual_rev FROM contracts WHERE contract_start_date >= '2024-01-01' GROUP BY 1 ORDER BY 1"
+      },
+      {
+        "if_this_metric": "Bookings down, billings down more, revenue flat",
+        "and_also": "fin_deferred_revenue down and fin_revenue_waterfall shows large reversals",
+        "shared_root_cause": "Customer churn increased \u2014 existing contracts were canceled (bookings down), deferred revenue reversed (billings down more as cash not received), and revenue recognition reversed (reversals in waterfall) \u2014 early warning of demand deterioration.",
+        "diagnostic_sql": "WITH churned_contracts AS (SELECT customer_id, contract_id, contract_value, start_date, cancellation_date, SUM(deferred_revenue_end) AS unreversed_dr FROM contracts c JOIN deferral_ledger d ON c.contract_id = d.contract_id WHERE cancellation_date >= '2024-06-01' GROUP BY 1, 2, 3, 4, 5 HAVING unreversed_dr > 0) SELECT COUNT(*) AS churned, SUM(contract_value) AS bookings_lost, SUM(unreversed_dr) AS dr_reversal FROM churned_contracts"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Using bookings as a proxy for revenue growth in public reporting",
+        "why_wrong": "Public companies (e.g., SaaS) must report revenue per ASC 606 \u2014 bookings is an operational metric, not GAAP. Misusing bookings as revenue misleads investors and violates SEC guidance.",
+        "bad_sql": "SELECT SUM(bookings) AS revenue FROM bookings_view",
+        "good_sql": "SELECT SUM(allocated_amount) AS revenue FROM revenue_allocations WHERE satisfaction_date BETWEEN {start} AND {end}"
+      },
+      {
+        "pattern": "Calculating book-to-revenue ratio without time-lag adjustment",
+        "why_wrong": "If bookings in month M and revenue in M+2 (due to deferred), book-to-revenue is low \u2014 but this reflects timing, not conversion failure.",
+        "bad_sql": "SELECT SUM(bookings) / SUM(revenue) AS ratio FROM fin_metrics WHERE period = {end}",
+        "good_sql": "WITH lagged AS (SELECT DATE_TRUNC('month', period) AS month, SUM(bookings) AS book, LAG(SUM(revenue)) OVER (ORDER BY month) AS prev_rev FROM fin_metrics WHERE period >= '2024-01-01' GROUP BY 1) SELECT AVG(book / NULLIF(prev_rev, 0)) AS book_to_rev_ratio FROM lagged"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT SUM(bookings) AS bookings, SUM(billings) AS billings, SUM(revenue) AS revenue FROM fin_metrics_summary WHERE period = '2024-06-30'",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', period) AS month, SUM(bookings) AS bookings, SUM(billings) AS billings, SUM(revenue) AS revenue, SUM(bookings) / NULLIF(SUM(revenue), 0) AS book_to_rev, SUM(billings) / NULLIF(SUM(revenue), 0) AS bill_to_rev FROM fin_metrics_summary WHERE period >= '2024-01-01' GROUP BY 1 ORDER BY 1",
+      "advanced_sql": "WITH monthly_metrics AS (\n  -- Grain: one row per month\n  SELECT\n    DATE_TRUNC('month', period) AS month,\n    SUM(bookings) AS bookings,\n    SUM(billings) AS billings,\n    SUM(revenue) AS revenue,\n    SUM(deferred_revenue_end) AS dr_end\n  FROM fin_metrics_summary\n  WHERE period >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '18 month'\n  GROUP BY 1\n),\nwith_ratios AS (\n  SELECT\n    month,\n    bookings,\n    billings,\n    revenue,\n    dr_end,\n    LAG(bookings) OVER (ORDER BY month) AS prev_bookings,\n    LAG(revenue) OVER (ORDER BY month) AS prev_revenue,\n    LAG(dr_end) OVER (ORDER BY month) AS prev_dr\n  FROM monthly_metrics\n)\nSELECT\n  month,\n  bookings,\n  billings,\n  revenue,\n  dr_end,\n  ROUND(bookings / NULLIF(prev_revenue, 0) * 100.0, 2) AS book_to_prev_rev_pct,\n  ROUND((billings - prev_revenue) / NULLIF(prev_revenue, 0) * 100.0, 2) AS bill_rev_growth_pct,\n  ROUND(dr_end / NULLIF(bookings, 0) * 100.0, 2) AS dr_bookings_ratio\nFROM with_ratios\nORDER BY month"
+    }
+  }
+]

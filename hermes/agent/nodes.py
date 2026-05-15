@@ -137,19 +137,33 @@ def plan_and_execute(state: AgentState, conn: "DatabaseConnection") -> dict[str,
     new_pitfalls: list[Pitfall] = []
 
     for sql in plan.queries:
+        # ── Pre-flight: detect unqualified columns that exist in 2+ tables ──
+        from hermes.tools.ambiguity import detect_ambiguous_columns
+        ambiguity_warnings = detect_ambiguous_columns(sql, state["schema_context"])
+
         result = conn.execute(h.id, sql)
 
         # ── Self-correction: retry failed queries once ────────────────────
         if result.error:
             original_error = result.error
             from hermes.semantic.kb_retriever import retrieve_for_fix_sql
+            from hermes.tools.error_classifier import classify_sql_error
             kb_fix_patterns = retrieve_for_fix_sql(original_error, sql)
+            # Structured diagnosis from known error patterns
+            diagnosis = classify_sql_error(original_error, sql, conn.dialect)
+            # Append any ambiguity warnings detected before execution
+            if ambiguity_warnings:
+                warn_text = "\n".join(w.to_prompt_text() for w in ambiguity_warnings)
+                diagnosis = f"{diagnosis}\n{warn_text}".strip()
+            error_diagnosis_block = f"DIAGNOSIS:\n{diagnosis}\n" if diagnosis else ""
+
             fix: SQLFix = get_provider("coder").complete(
                 system="You are a SQL expert. Fix the broken query.",
                 user=FIX_SQL_PROMPT.format(
                     dialect=conn.dialect,
                     sql=sql,
                     error=original_error,
+                    error_diagnosis=error_diagnosis_block,
                     schema=state["schema_context"],
                     kb_patterns_section=kb_fix_patterns,
                 ),

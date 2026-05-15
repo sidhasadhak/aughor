@@ -1,0 +1,47 @@
+[
+  {
+    "id": "payment_failure",
+    "title": "Payment Failure & Involuntary Churn",
+    "business_definition": "Payment failure rate = failed charges / total charge attempts. Failed payments cause involuntary churn — customers who want to stay but can't pay. Recovery via dunning (retry logic + notifications) is critical.",
+    "intent_tags": ["payment failure", "failed payments", "dunning", "involuntary churn", "payment decline", "card decline"],
+    "when_to_use": ["payment failure rate increased", "dunning analysis", "involuntary churn spike", "billing issues"],
+    "diagnostic_questions": [
+      "What failure codes are most common — insufficient funds, expired card, bank decline?",
+      "Is the failure rate concentrated in a specific payment method or gateway?",
+      "What is the recovery rate after retry — is dunning logic working?",
+      "Did a processor or gateway change coincide with the failure spike?"
+    ],
+    "causal_relationships": [
+      {
+        "symptom": "payment failure rate increased",
+        "check_in_order": ["failure_code_breakdown", "payment_method_mix", "gateway_error_rate", "card_expiry_rate"],
+        "detection_sql": "SELECT failure_code, payment_method, COUNT(*) AS failures, COUNT(*) * 100.0 / SUM(COUNT(*)) OVER () AS pct FROM payment_attempts WHERE status = 'failed' AND attempted_at >= CURRENT_DATE - INTERVAL '30 days' GROUP BY 1, 2 ORDER BY 3 DESC"
+      },
+      {
+        "symptom": "dunning recovery rate declining",
+        "check_in_order": ["retry_attempt_count", "time_between_retries", "notification_open_rate"],
+        "detection_sql": "SELECT retry_number, COUNT(*) AS attempts, COUNT(CASE WHEN status = 'success' THEN 1 END) AS recovered, COUNT(CASE WHEN status = 'success' THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0) AS recovery_rate FROM payment_retries GROUP BY 1 ORDER BY 1"
+      }
+    ],
+    "inflation_causes": [
+      {
+        "cause": "Duplicate retry attempts counted as separate failures",
+        "detection_sql": "SELECT subscription_id, COUNT(*) AS attempts, MIN(attempted_at) AS first_attempt FROM payment_attempts WHERE status = 'failed' GROUP BY 1 HAVING COUNT(*) > 1"
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Soft declines (retry-able) not tracked separately from hard declines",
+        "detection_sql": "SELECT decline_type, COUNT(*), AVG(CASE WHEN recovered_at IS NOT NULL THEN 1 ELSE 0 END) AS recovery_rate FROM payment_failures GROUP BY 1"
+      }
+    ],
+    "related_patterns": ["customer_churn", "monthly_recurring_revenue", "refund_rate"],
+    "anti_patterns": [
+      "Do not treat all failed payment codes equally — expired card is recoverable, fraud block is not",
+      "Do not retry too aggressively — excessive retries increase bank flagging and worsen recovery rates"
+    ],
+    "sql_assets": {
+      "failure_rate_trend": "SELECT DATE_TRUNC('week', attempted_at) AS week, COUNT(CASE WHEN status = 'failed' THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0) AS failure_rate FROM payment_attempts GROUP BY 1 ORDER BY 1"
+    }
+  }
+]

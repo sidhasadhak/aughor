@@ -1,0 +1,47 @@
+[
+  {
+    "id": "engagement_metrics",
+    "title": "Product Engagement — DAU, MAU, Stickiness",
+    "business_definition": "DAU (Daily Active Users) and MAU (Monthly Active Users) measure how many unique users engage with the product per day/month. Stickiness = DAU/MAU — a ratio above 20% indicates strong habit formation. L28 (users active in last 28 days) is a more stable MAU proxy.",
+    "intent_tags": ["engagement", "DAU", "MAU", "stickiness", "active users", "L28", "daily active", "monthly active", "product engagement"],
+    "when_to_use": ["engagement dropped", "DAU fell", "MAU declining", "stickiness analysis", "how often are users using the product"],
+    "diagnostic_questions": [
+      "Did the drop affect DAU, MAU, or both — a DAU drop with stable MAU means less frequent use, not fewer users?",
+      "Is the drop in new user engagement or returning user engagement?",
+      "Did a specific feature removal, UI change, or bug deployment coincide with the drop?",
+      "Is engagement dropping on specific platforms (mobile vs desktop) or segments?"
+    ],
+    "causal_relationships": [
+      {
+        "symptom": "DAU dropped without MAU dropping proportionally",
+        "check_in_order": ["session_frequency_distribution", "feature_usage_by_day", "push_notification_open_rate"],
+        "detection_sql": "SELECT activity_date, COUNT(DISTINCT user_id) AS dau FROM user_activity WHERE activity_date >= CURRENT_DATE - INTERVAL '90 days' GROUP BY 1 ORDER BY 1"
+      },
+      {
+        "symptom": "stickiness (DAU/MAU) declining",
+        "check_in_order": ["session_length_trend", "core_feature_usage_rate", "notification_engagement"],
+        "detection_sql": "SELECT DATE_TRUNC('month', activity_date) AS month, COUNT(DISTINCT CASE WHEN activity_date = CURRENT_DATE - INTERVAL '1 day' THEN user_id END) AS dau, COUNT(DISTINCT user_id) AS mau, COUNT(DISTINCT CASE WHEN activity_date = CURRENT_DATE - INTERVAL '1 day' THEN user_id END) * 1.0 / NULLIF(COUNT(DISTINCT user_id), 0) AS stickiness FROM user_activity GROUP BY 1 ORDER BY 1"
+      }
+    ],
+    "inflation_causes": [
+      {
+        "cause": "Bot traffic or automated API calls counted as active user sessions",
+        "detection_sql": "SELECT user_type, COUNT(DISTINCT user_id) AS users, COUNT(*) AS events FROM user_activity GROUP BY 1"
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Activity events from a major feature not instrumented — missing engagement data",
+        "detection_sql": "SELECT event_type, COUNT(*), COUNT(DISTINCT user_id) FROM user_activity WHERE activity_date >= CURRENT_DATE - INTERVAL '7 days' GROUP BY 1 ORDER BY 2 DESC"
+      }
+    ],
+    "related_patterns": ["product_activation", "retention_cohorts", "customer_churn"],
+    "anti_patterns": [
+      "Do not use raw event count as engagement proxy — one user generating 1000 events is not more engaged than 1000 users generating 1 event each",
+      "Do not compare DAU across days without accounting for day-of-week seasonality"
+    ],
+    "sql_assets": {
+      "dau_mau_stickiness": "SELECT DATE_TRUNC('month', dt) AS month, AVG(dau) AS avg_dau, MAX(mau) AS mau, AVG(dau) / NULLIF(MAX(mau), 0) AS stickiness FROM (SELECT activity_date AS dt, COUNT(DISTINCT user_id) AS dau, COUNT(DISTINCT user_id) OVER (PARTITION BY DATE_TRUNC('month', activity_date)) AS mau FROM user_activity GROUP BY 1) t GROUP BY 1 ORDER BY 1"
+    }
+  }
+]

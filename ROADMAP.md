@@ -29,6 +29,12 @@
 | Direct Query Graceful Failure | `hermes/agent/nodes.py`, `hermes/api.py` | synthesize_report early-exits without an LLM call when all queries fail in direct mode; returns factual AnalysisReport with SQL errors as DataQualityNotes; dedicated frontend error state (red headline, Execution Error label) |
 | Chart Intelligence (8d) | `web/components/InvestigationChart.tsx` | DATE_PATTERN restricted to genuine date columns only (no false-positives on order_year/order_month); SHARE_PATTERN prefers share/pct/percent/rate/ratio columns as value axis; per-category averaging for share columns (not sum); percentage tick formatter for 0-1 range columns |
 | Report UX (8e) | `web/components/ReportView.tsx` | Section reorder: Headline → Executive Summary → Chart → KPI → Query Results → collapsibles; CollapsibleSection component wraps DQ Issues / Risks / Recommended Actions / Excluded Causes (all collapsed by default); smart formatCell: share 0-1 → XX.XX%, ordinal integers (year/month/id) → no locale comma, long decimals → 2 dp |
+| Metrics Catalog (1e) | `hermes/semantic/metrics.py`, `data/metrics.json`, `hermes/api.py`, `web/components/MetricsPanel.tsx` | Named business KPI formulas stored in JSON; injected as METRICS CATALOG block into every schema context; full CRUD API; two-column UI in Connections tab (list + form); comma-separated array inputs |
+| Error Classification & SQL Hardening (2h) | `hermes/tools/error_classifier.py`, `hermes/db/connection.py`, `hermes/agent/nodes.py`, `hermes/tools/ambiguity.py` | 2h-i: 30+ error patterns → targeted diagnostic hints prepended to FIX_SQL_PROMPT as DIAGNOSIS block; 2h-ii: Postgres dialect post-processing (ROUND::numeric, NULLIF timestamp, interval→epoch) before query hits wire; 2h-iii: column ambiguity pre-flight scans SQL for unqualified multi-table refs |
+| Schema Intelligence (2i) | `hermes/tools/schema.py`, `hermes/db/schema_cache.py` | 2i-i: Fuzzy join inference via root-normalised column names (8 suffix variants); exact/inferred tiers; NO DIRECT JOIN warnings; join hints appended to schema context and Mermaid diagram; 2i-ii: MD5 schema fingerprinting with 50-entry LRU JSON cache — zero LLM calls on unchanged reconnect |
+| KB Pattern Enrichment (2j) | `hermes/semantic/kb_loader.py`, `hermes/semantic/kb_retriever.py`, `data/kb/` | 252 entries indexed (47 Tier 1 SQL patterns, 84 Tier 2 domain knowledge, 121 stubs); talonsight KB (43 files) merged with 15 custom files; two causal_relationship shapes ({symptom, check_in_order, detection_sql} native + {if, then} talonsight); inflation_causes, deflation_causes, cross_metric_signals surfaces in DECOMPOSE and PLAN prompts |
+| ER Diagram (Mermaid) | `hermes/tools/schema.py`, `web/components/SchemaPanel.tsx`, `hermes/api.py` | `build_mermaid_er()` generates erDiagram source from schema string; solid lines (exact FK match), dashed lines (fuzzy root match); FK column markers; lazy-loaded via dynamic import; Schema \| ER Diagram sub-tabs in Connections panel |
+| Rich Schema Card UI | `hermes/tools/schema.py`, `hermes/api.py`, `web/components/SchemaCards.tsx`, `web/components/SchemaPanel.tsx`, `web/lib/api.ts` | `/schema/rich` endpoint returns structured tables + joins + warnings; gradient table cards with 8-colour cycling palette; column type chips (blue=numeric, green=text, amber=date, violet=bool); FK badges; row counts; join paths grid with exact/inferred badges; SQL Warnings & Modeling Notes section with empty state |
 
 ---
 
@@ -149,7 +155,7 @@ TABLE: orders (99,441 rows)
 
 ---
 
-### Phase 1e — Metrics Catalog
+### Phase 1e — Metrics Catalog ✅
 **What:** Named business KPI formulas stored persistently and injected into every schema context — so the LLM uses the *same approved SQL* for MRR, CAC, and LTV that the data team has already validated, rather than re-deriving them from scratch every time.
 
 **Why:** Even with a rich glossary, the agent re-derives metric logic on every run. "MRR" might be computed differently across three investigations, creating inconsistent numbers. The Metrics Catalog is the formula layer above the glossary: tables/columns describe what data exists; metrics describe what to compute from it.
@@ -281,7 +287,7 @@ events:
 
 ---
 
-### Phase 2h — Error Classification & SQL Hardening
+### Phase 2h — Error Classification & SQL Hardening ✅
 **What:** Three complementary improvements to how Aughor handles SQL errors and generates correct SQL in the first place — eliminating the most common failure classes before they reach the retry loop.
 
 **Why:** FIX_SQL currently receives raw database error strings (e.g. `"function round(double precision, integer) does not exist"`) and asks the LLM to fix them. LLMs fix raw errors inconsistently. Pre-classifying errors into structured diagnostic hints — "PostgreSQL ROUND requires ::numeric cast; AVG() returns double precision" — dramatically increases first-fix success rate. Proactive dialect transforms catch the predictable error classes before execution entirely.
@@ -324,7 +330,7 @@ Scan generated SQL before execution for unqualified column references that exist
 
 ---
 
-### Phase 2i — Schema Intelligence
+### Phase 2i — Schema Intelligence ✅
 **What:** Make the schema context injected into every prompt significantly richer — by detecting likely foreign-key relationships via column name analysis, and caching schema metadata to avoid redundant LLM calls when nothing has changed.
 
 **Why:** Aughor currently passes raw DDL to the LLM and relies on it to infer joins. For databases where column naming isn't perfectly consistent (`customer_id` in orders, `cust_id` in customers), the LLM hallucinates JOIN columns or misses the relationship entirely. Explicit join hints prevent this. Schema fingerprinting makes auto-seed and glossary injection idempotent and instant on reconnect.
@@ -364,7 +370,7 @@ Benefit: On reconnect to an unchanged database, all schema enrichment loads from
 
 ---
 
-### Phase 2j — KB Pattern Enrichment
+### Phase 2j — KB Pattern Enrichment ✅
 **What:** Upgrade the existing 235 SQL KB patterns with richer semantic structure — causal chains, metric inflation/deflation detection SQL, and related-pattern cross-links. The KB becomes a domain encyclopedia, not just a code example library.
 
 **Why:** Current patterns help the LLM avoid SQL syntax mistakes. Enriched patterns help the LLM generate better *hypotheses* — understanding that "if monthly revenue drops, check order frequency, then AOV, then refund rate" as a causal chain. This directly improves `decompose_question` output quality.
@@ -759,10 +765,10 @@ autoevals>=0.0.70
 
 | Sprint | Milestone(s) | Key unlock |
 |---|---|---|
-| **1 — SQL Hardening** | 2h (Error Classification + Dialect Transforms + Column Ambiguity) + 2i (Join Inference + Fingerprinting) | Every query gets smarter; no new infra needed |
-| **2 — Semantic Depth** | 1e (Metrics Catalog) + 2j (KB Pattern Enrichment) | Agent understands business KPIs and causal chains |
-| **3 — Provider Flexibility** | M5 (Anthropic backend) | Cloud deployment; prompt caching cuts costs |
-| **4 — Conversational** | M9 (Quick Chat + multi-turn history) | Analyst-feel experience; session memory |
+| **1 — SQL Hardening** ✅ | 2h (Error Classification + Dialect Transforms + Column Ambiguity) + 2i (Join Inference + Fingerprinting) | Every query gets smarter; no new infra needed |
+| **2 — Semantic Depth** ✅ | 1e (Metrics Catalog) + 2j (KB Pattern Enrichment) | Agent understands business KPIs and causal chains |
+| **3 — Conversational** | M9 (Quick Chat + multi-turn history) | Analyst-feel experience; session memory |
+| **4 — Provider Flexibility** | M5 (Anthropic backend) | Cloud deployment; prompt caching cuts costs |
 | **5 — Production Safety** | M6 (Security: Gradient Safety + PII + Audit + Budget) + M7 (Observability) | Enterprise-ready; Langfuse traces |
 | **6 — Analytical Depth** | M4 (Prophet forecasting) + M2d (Events Calendar) | "Is this drop unusual *given the trend*?" |
 | **7 — LLM-free Path** | M11 (Visual Query Builder) | Deterministic queries; power user UX |
@@ -845,19 +851,11 @@ Evals (M10)  ←  needs History ✅ + stable Two-Model Arch (2a) ✅
 
 ## Current focus
 
-**Shipped:** M1 (Semantic Layer), M2a–2c + 2e–2g (Agent hardening, HITL, Direct Query, Routing v2, SQL KB), M8 (Frontend Charts, Chart Intelligence, Report UX)
+**Shipped:** M1 (Semantic Layer), M2a–2c + 2e–2j (Agent hardening, HITL, Direct Query, Routing v2, SQL KB, Error Classification, Schema Intelligence, KB Enrichment), M8 (Frontend Charts, Chart Intelligence, Report UX), 1e (Metrics Catalog), ER Diagram, Rich Schema Card UI
 
-**Sprint 1 — Next up (SQL Hardening):**
-- **2h-i** Error Classification — map 30+ error patterns to targeted diagnostic hints before FIX_SQL LLM call
-- **2h-ii** Proactive Dialect Post-processing — 3 PostgreSQL transforms applied before execution
-- **2h-iii** Column Ambiguity Pre-flight — unqualified multi-table column detection, zero LLM cost
-- **2i-i** Fuzzy Join Inference — root-normalized column matching; join hints + no-join warnings in schema context
-- **2i-ii** Schema Fingerprinting — MD5-based cache invalidation for auto-seed; instant reconnect
+**Next — Sprint 3 — Conversational:**
+- **M9** Quick Chat Mode — multi-turn conversational data retrieval; bare answer bubbles; last-3-turn history in context
 
-**Sprint 2 — Semantic Depth:**
-- **1e** Metrics Catalog — named KPI formulas as first-class schema objects
-- **2j** KB Pattern Enrichment — add causal_relationships + detection_sql + inflation/deflation causes to 235 patterns
-
-**Sprint 3 onward:** M5 (Anthropic backend) → M9 (Quick Chat) → M6 + M7 (Security + Observability) → M4 (Prophet) → M11 (Visual Builder) → M3 (Query Engine) → M10 (Evals)
+**Sprint 4 onward:** M5 (Anthropic backend) → M6 + M7 (Security + Observability) → M4 (Prophet) → M11 (Visual Builder) → M3 (Query Engine) → M10 (Evals)
 
 **Deferred:** M6 Security must land before any multi-tenant or enterprise deployment

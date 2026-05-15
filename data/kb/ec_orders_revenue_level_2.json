@@ -1,0 +1,633 @@
+[
+  {
+    "id": "ec_discount_rate",
+    "title": "Discount Rate",
+    "intent_tags": [
+      "discount rate",
+      "discount percentage",
+      "promotional discount",
+      "discount pressure",
+      "average discount",
+      "discounts applied",
+      "what is my discount rate",
+      "promotional pricing impact",
+      "discount % of order",
+      "price reduction rate"
+    ],
+    "sql_features": [
+      "aggregation",
+      "conditional_count",
+      "nullif"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "ratio",
+    "when_to_use": [
+      "measure promotional pressure on gross margin",
+      "assess discount effectiveness vs revenue loss",
+      "track discount usage over time by campaign",
+      "evaluate pricing strategy impact on profitability",
+      "benchmark discounts across product categories"
+    ],
+    "related_patterns": [
+      "ec_gmv",
+      "ec_net_revenue",
+      "ec_aov",
+      "ec_discount_amount"
+    ],
+    "business_definition": "Ratio of total discount_amount applied across orders to gross_order_value (sum of quantity \u00d7 listed_price) in the period, expressed as a percentage. Includes promo codes, coupon redemptions, and manual price adjustments. Excludes tax, shipping, and platform fees from both numerator and denominator.",
+    "metric_nature": {
+      "what_it_measures": "The average discount depth applied to orders \u2014 a proxy for pricing flexibility and promotional intensity. Used by merchandising teams to assess discount efficiency and margin impact.",
+      "what_it_does_not_measure": "Discount effectiveness. A high discount rate does not indicate whether discounts drove new volume or just reduced revenue from full-price customers.",
+      "common_misconception": "Discount rate is not the same as discount redemption rate. Discount rate measures the dollar amount of discounts relative to GMV; redemption rate measures how often coupons were used (orders with coupon / total orders)."
+    },
+    "template": "SELECT (SUM(oi.discount_amount) * 100.0) / NULLIF(SUM(oi.listed_price * oi.quantity), 0) AS discount_rate FROM order_items oi JOIN orders o ON oi.order_id = o.order_id WHERE o.order_date BETWEEN {start_date} AND {end_date} AND o.status NOT IN ('cancelled', 'test', 'fraud')",
+    "inflation_causes": [
+      {
+        "cause": "Incorrect discount_amount source column",
+        "how_it_inflates": "If discount_amount is pulled from a post-gross column (e.g., line_item_total before tax) instead of the dedicated discount table, inflated or double-counted discounts appear \u2014 especially when multiple discount tiers apply to the same item.",
+        "detection_sql": "SELECT oi.discount_source, COUNT(DISTINCT oi.order_item_id) AS items, AVG(oi.discount_amount) AS avg_discount, SUM(oi.discount_amount) / NULLIF(SUM(oi.listed_price * oi.quantity), 0) * 100 AS discount_rate FROM order_items oi GROUP BY oi.discount_source ORDER BY discount_rate DESC",
+        "fix": "Ensure discount_amount always joins from a dedicated discount_events table or line_item_discounts CTE, and verify the formula: discount_amount = (listed_price - net_price) \u00d7 quantity."
+      },
+      {
+        "cause": "Including shipping or tax as discount",
+        "how_it_inflates": "Some systems misclassify free shipping promotions or tax exemptions as discounts in their reporting schema. This adds non-margin-impacting items to the discount numerator, inflating the rate.",
+        "detection_sql": "SELECT oi.discount_type, COUNT(DISTINCT oi.order_item_id) AS items, SUM(oi.discount_amount) AS discount_sum FROM order_items oi WHERE oi.discount_type IN ('shipping', 'tax', 'free_shipping') GROUP BY 1 ORDER BY discount_sum DESC",
+        "fix": "Filter discount_amount to only include types marked 'percentage' or 'fixed_amount' in the discounts table, excluding 'shipping_discount' and 'tax_exemption'."
+      },
+      {
+        "cause": "Time-zone mismatch in discount expiration",
+        "how_it_inflates": "If discount campaigns have time-zone-sensitive end dates and the warehouse timestamp and promotion engine use different zones, some expired discounts may be included in current period aggregates, inflating the rate.",
+        "detection_sql": "SELECT d.timezone, COUNT(DISTINCT oi.order_item_id) AS items, SUM(oi.discount_amount) AS discount_sum FROM order_items oi JOIN discount_events d ON oi.discount_event_id = d.id WHERE d.start_date <= oi.order_date AND oi.order_date > d.end_date GROUP BY 1 ORDER BY discount_sum DESC",
+        "fix": "Standardize all timestamps to UTC in the promotion engine and warehouse staging, and enforce a 5-minute tolerance buffer when matching discount events to orders."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Excluding partial discounts from calculation",
+        "how_it_deflates": "If the schema stores only total order-level discounts in one table and item-level partial discounts in another, but only one source is used, the denominator uses full listed_price while the numerator only counts part of the total discount applied.",
+        "detection_sql": "SELECT COUNT(DISTINCT order_id) AS total_orders, COUNT(DISTINCT CASE WHEN order_discount_source = 'coupon' THEN order_id END) AS coupon_orders, COUNT(DISTINCT CASE WHEN order_discount_source = 'promo' THEN order_id END) AS promo_orders FROM orders WHERE order_date >= '2024-01-01'",
+        "fix": "Unify discount sources into a single 'all_discounts' CTE that combines coupon, promo, and manual adjustments at line-item and order level before aggregation."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the discount rate anomaly isolated to a specific category or campaign?",
+      "Do discount codes with high redemption volume also have high discount rates?",
+      "Has a new discount type (e.g., flash sale, seasonal) been introduced?",
+      "Are discounts being applied after checkout (e.g., post-purchase adjustments)?",
+      "Did the discount events table experience ETL latency or late arriving data?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "Discount rate up, GMV flat",
+        "then": "more aggressive promotions are reducing prices but not increasing volume \u2014 likely price elasticity problem or channel cannibalization"
+      },
+      {
+        "if": "Discount rate up, net_revenue down",
+        "then": "margins are compressing \u2014 check if discount depth increased beyond sustainable levels or if full-price customers switched to discounted SKUs"
+      },
+      {
+        "if": "Discount rate up, coupon_redemption_rate flat",
+        "then": "discounts are now manual or system-wide (e.g., site-wide sale), not coupon-driven \u2014 likely a pricing strategy change rather than promotional lift"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "discount_rate spikes above 15% in a week with no major campaign",
+        "and_also": "ec_return_rate increases simultaneously",
+        "shared_root_cause": "A sudden discount surge often triggers return arbitrage \u2014 customers buy with intent to try and return items they don\u2019t want, especially if free returns policy is in place. This causes both higher discounts and more returns.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', oi.order_date) AS week, SUM(oi.discount_amount) / NULLIF(SUM(oi.listed_price * oi.quantity), 0) * 100 AS discount_rate, COUNT(DISTINCT r.order_id) AS returns_count FROM order_items oi LEFT JOIN returns r ON oi.order_id = r.order_id WHERE oi.order_date >= '2024-01-01' GROUP BY 1 ORDER BY week DESC LIMIT 8"
+      },
+      {
+        "if_this_metric": "discount_rate increases 5+ percentage points MoM",
+        "and_also": "ec_aov decreases same period \u2014 net change > discount rate increase",
+        "shared_root_cause": "High-discount promotions are attracting price-sensitive customers who buy lower-margin SKUs. The combined effect depresses average order value and margin \u2014 a mix shift not a volume issue.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', o.order_date) AS month, p.category, SUM(oi.listed_price * oi.quantity) / NULLIF(COUNT(DISTINCT o.order_id), 0) AS aov_full_price, (SUM(oi.listed_price * oi.quantity) - SUM(oi.discount_amount)) / NULLIF(COUNT(DISTINCT o.order_id), 0) AS aov_discounted FROM orders o JOIN order_items oi ON o.order_id = oi.order_id JOIN products p ON oi.product_id = p.id WHERE o.status NOT IN ('cancelled') GROUP BY 1, 2 ORDER BY 1, 2"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Using listed_price vs net_price without verifying source",
+        "why_wrong": "If listed_price is stored after initial discount (not original MSRP), and net_price is the final paid amount, the computed discount under-represents true promotional depth.",
+        "bad_sql": "SELECT AVG((oi.listed_price - oi.net_price) / oi.listed_price) AS discount_rate FROM order_items oi",
+        "good_sql": "SELECT SUM(oi.discount_amount) / NULLIF(SUM(oi.listed_price * oi.quantity), 0) AS discount_rate FROM order_items oi JOIN discount_events d ON oi.discount_event_id = d.id WHERE d.amount_type IN ('percentage', 'fixed')"
+      },
+      {
+        "pattern": "Averaging per-order discount rates instead of GMV-weighting",
+        "why_wrong": "Averaging discount_rate per order ignores order-size skew \u2014 one high-value order\u2019s impact is weighted the same as ten low-value ones, distorting the aggregate signal.",
+        "bad_sql": "SELECT AVG(discount_rate_per_order) AS discount_rate FROM (SELECT order_id, SUM(discount_amount) / NULLIF(SUM(listed_price * quantity), 0) AS discount_rate_per_order FROM order_items GROUP BY 1) sub",
+        "good_sql": "SELECT SUM(discount_amount) / NULLIF(SUM(listed_price * quantity), 0) AS discount_rate FROM order_items"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT (SUM(oi.discount_amount) * 100.0) / NULLIF(SUM(oi.listed_price * oi.quantity), 0) AS discount_rate FROM order_items oi JOIN orders o ON oi.order_id = o.order_id WHERE o.status NOT IN ('cancelled', 'test', 'fraud') AND o.order_date BETWEEN '2024-01-01' AND '2024-01-31'",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', o.order_date) AS month, p.category, (SUM(oi.discount_amount) * 100.0) / NULLIF(SUM(oi.listed_price * oi.quantity), 0) AS discount_rate, COUNT(DISTINCT o.order_id) AS orders FROM order_items oi JOIN orders o ON oi.order_id = o.order_id JOIN products p ON oi.product_id = p.id WHERE o.status NOT IN ('cancelled', 'test', 'fraud') GROUP BY 1, 2 ORDER BY 1, 3 DESC",
+      "advanced_sql": "WITH discount_agg AS (\n  -- Grain: order_items with validated discount events\n  SELECT\n    DATE_TRUNC('month', o.order_date) AS month,\n    p.category,\n    SUM(oi.listed_price * oi.quantity) AS gross_value,\n    SUM(COALESCE(oi.discount_amount, 0)) AS discount_amount,\n    COUNT(DISTINCT o.order_id) AS orders\n  FROM order_items oi\n  JOIN orders o ON oi.order_id = o.order_id\n  JOIN products p ON oi.product_id = p.id\n  JOIN discount_events d ON oi.discount_event_id = d.id\n  WHERE o.status NOT IN ('cancelled', 'test', 'fraud')\n  GROUP BY 1, 2\n)\nSELECT\n  month,\n  category,\n  gross_value,\n  discount_amount,\n  orders,\n  ROUND((discount_amount * 100.0) / NULLIF(gross_value, 0), 2) AS discount_rate_pct,\n  ROUND(discount_amount / NULLIF(orders, 0), 2) AS discount_per_order_avg\nFROM discount_agg\nORDER BY month DESC, discount_rate_pct DESC"
+    }
+  },
+  {
+    "id": "ec_revenue_per_visitor",
+    "title": "Revenue per Visitor",
+    "intent_tags": [
+      "revenue per visitor",
+      "RPV",
+      "revenue per unique visitor",
+      "visitor revenue",
+      "Revenue per session",
+      "RpV",
+      "what is revenue per visitor",
+      "how much do visitors spend",
+      "revenue / visits",
+      "RPV metric",
+      "traffic efficiency"
+    ],
+    "sql_features": [
+      "aggregation",
+      "conditional_count",
+      "left_join",
+      "coalesce",
+      "nullif"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "ratio",
+    "when_to_use": [
+      "evaluate marketing channel efficiency",
+      "benchmark site conversion value",
+      "track revenue efficiency of traffic sources",
+      "identify underperforming content or landing pages",
+      "complement AOV to distinguish quantity vs quality of visitors"
+    ],
+    "related_patterns": [
+      "ec_net_revenue",
+      "ec_visitor_count",
+      "ec_aov",
+      "ec_conversion_rate"
+    ],
+    "business_definition": "Net revenue divided by unique visitors in the period. Net revenue is GMV minus refunds and discounts. A unique visitor is a distinct GAID or anonymous ID (cookie/user_id) observed in sessions table, filtered to exclude bots and internal traffic.",
+    "metric_nature": {
+      "what_it_measures": "How effectively each site visitor converts into revenue \u2014 a top-line business efficiency metric for marketing ROI analysis.",
+      "what_it_does_not_measure": "Revenue per *order* or *session*. A visitor may visit multiple times or generate no revenue; this metric smooths across those behaviors.",
+      "common_misconception": "Revenue per visitor is not the same as revenue per *conversion* (e.g., purchase). It includes non-converting visitors in the denominator, so it captures funnel leakage implicitly."
+    },
+    "template": "SELECT COALESCE(SUM(nr.net_revenue), 0) AS net_revenue, COUNT(DISTINCT v.visitor_id) AS unique_visitors, COALESCE(SUM(nr.net_revenue), 0) / NULLIF(COUNT(DISTINCT v.visitor_id), 0) AS rpv FROM sessions v LEFT JOIN net_revenue_daily nr ON v.visitor_id = nr.visitor_id WHERE v.session_date BETWEEN {start_date} AND {end_date} AND v.is_bot = false",
+    "inflation_causes": [
+      {
+        "cause": "Duplicate visitor IDs in sessions table",
+        "how_it_inflates": "If visitor_id is generated inconsistently (e.g., multiple IDs per real user due to login/logout state, device changes), the unique visitor count is deflated relative to true visitor count, causing RPV to appear inflated.",
+        "detection_sql": "SELECT visitor_id, COUNT(DISTINCT device_id) AS devices, COUNT(DISTINCT session_id) AS sessions FROM sessions WHERE session_date >= '2024-01-01' GROUP BY 1 HAVING COUNT(DISTINCT device_id) > 1 ORDER BY sessions DESC LIMIT 20",
+        "fix": "Standardize visitor_id across devices via probabilistic stitching (e.g., fingerprintjs + CRM login), or switch to probabilistic cohort-based ID resolution."
+      },
+      {
+        "cause": "Net revenue includes refunds from prior period",
+        "how_it_inflates": "If net_revenue source includes historical refunds from months prior to the visitor's activity, it deflates the denominator (visitors only counted once) but inflates numerator with unrelated revenue netting, making RPV appear higher than current efficiency.",
+        "detection_sql": "SELECT DATE_TRUNC('month', nr.created_at) AS month, SUM(nr.net_revenue) AS revenue, COUNT(DISTINCT nr.visitor_id) AS visitors FROM net_revenue_daily nr WHERE nr.net_revenue < 0 GROUP BY 1 ORDER BY month",
+        "fix": "Ensure net_revenue is net of only refunds initiated in the same period, using refund_date (not created_at) for matching to visitor activity window."
+      },
+      {
+        "cause": "Sessions table includes non-web traffic (email, app, API)",
+        "how_it_inflates": "If sessions captures all traffic types but visitor_id uniqueness only applies to web sessions, non-web (e.g., email campaign) may be attributed to 'new' visitor_ids without actual site activity, deflating denominator and inflating RPV.",
+        "detection_sql": "SELECT source_channel, COUNT(DISTINCT visitor_id) AS visitors, SUM(net_revenue) AS revenue FROM sessions s LEFT JOIN net_revenue_daily nr ON s.visitor_id = nr.visitor_id WHERE s.session_date >= '2024-01-01' GROUP BY 1 ORDER BY revenue DESC",
+        "fix": "Filter sessions to only include web traffic (WHERE device_type IN ('desktop', 'mobile', 'tablet')) before computing unique visitor count."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Sessions counted with zero activity duration",
+        "how_it_deflates": "If a session is logged with 0 seconds duration (e.g., bot bounce or tracking glitch) and included in unique visitor count, the denominator inflates without revenue, dragging RPV down.",
+        "detection_sql": "SELECT COUNT(DISTINCT visitor_id) AS unique_visitors, SUM(net_revenue) AS revenue FROM sessions s LEFT JOIN net_revenue_daily nr ON s.visitor_id = nr.visitor_id WHERE s.session_duration_seconds = 0 AND s.session_date >= '2024-01-01'",
+        "fix": "Filter out sessions where session_duration_seconds < 5 AND event_count = 1 (bounce sessions), unless bounce rate is explicitly excluded from denominator in methodology."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the RPV anomaly concentrated in one traffic source or channel?",
+      "Has the ratio of new vs returning visitors changed recently?",
+      "Did a new landing page or redirect chain go live in the period?",
+      "Are refunds from prior periods being incorrectly attributed to this period\u2019s visitors?",
+      "Has session tracking changed (e.g., cookie policy update affecting visitor stitching)?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "RPV up, conversion_rate flat",
+        "then": "higher AOV or net_revenue per conversion is driving the increase \u2014 check basket size and product mix"
+      },
+      {
+        "if": "RPV up, visitor_count down",
+        "then": "fewer but higher-value visitors \u2014 likely targeted campaigns or improved targeting, not broad acquisition growth"
+      },
+      {
+        "if": "RPV down, net_revenue flat",
+        "then": "more visitors but same revenue \u2014 likely traffic quality drop or channel mix shift toward lower-intent channels"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "RPV drops >15% WoW with no change in traffic volume",
+        "and_also": "ec_conversion_rate falls same period",
+        "shared_root_cause": "A technical degradation (e.g., site latency, checkout failure, broken tracking) is reducing conversion success across the funnel. RPV depends on both conversion rate and AOV; if conversion drops, RPV typically falls even if AOV is stable.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', s.session_date) AS week, COUNT(DISTINCT s.visitor_id) AS visitors, COUNT(DISTINCT s.session_id) AS sessions, COUNT(DISTINCT CASE WHEN o.order_id IS NOT NULL THEN s.visitor_id END) / NULLIF(COUNT(DISTINCT s.visitor_id), 0) AS conv_rate FROM sessions s LEFT JOIN orders o ON s.visitor_id = o.visitor_id WHERE s.session_date >= '2024-01-01' GROUP BY 1 ORDER BY week DESC"
+      },
+      {
+        "if_this_metric": "RPV spikes while net_revenue is flat",
+        "and_also": "ec_visitor_count decreases significantly same week",
+        "shared_root_cause": "Visitor identification system failed \u2014 likely due to a cookie consent update, 3rd-party script error, or ID resolution bug \u2014 causing a subset of real visitors to be counted as new or unattributable, deflating the denominator without revenue loss.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', s.session_date) AS week, COUNT(DISTINCT s.visitor_id) AS visitors, COUNT(DISTINCT CASE WHEN s.first_visit = true THEN s.visitor_id END) AS new_visitors FROM sessions s WHERE s.session_date >= '2024-01-01' GROUP BY 1 ORDER BY week DESC LIMIT 6"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Using session count instead of unique visitor count",
+        "why_wrong": "Multiple sessions per visitor inflate the denominator, making RPV appear lower than true revenue efficiency per person. RPV should count visitors, not visits.",
+        "bad_sql": "SELECT SUM(nr.net_revenue) / COUNT(DISTINCT s.session_id) AS rpv FROM sessions s LEFT JOIN net_revenue_daily nr ON s.visitor_id = nr.visitor_id",
+        "good_sql": "SELECT SUM(nr.net_revenue) / NULLIF(COUNT(DISTINCT s.visitor_id), 0) AS rpv FROM sessions s LEFT JOIN net_revenue_daily nr ON s.visitor_id = nr.visitor_id WHERE s.session_date BETWEEN '2024-01-01' AND '2024-01-31'"
+      },
+      {
+        "pattern": "Using gross revenue instead of net revenue",
+        "why_wrong": "Gross revenue includes refunds and discounts, but visitors who return items still count in the denominator \u2014 distorting the metric upward and misrepresenting sustainable revenue per person.",
+        "bad_sql": "SELECT SUM(oi.quantity * oi.listed_price) / NULLIF(COUNT(DISTINCT v.visitor_id), 0) AS rpv FROM sessions v JOIN orders o ON v.visitor_id = o.visitor_id JOIN order_items oi ON o.order_id = oi.order_id",
+        "good_sql": "SELECT COALESCE(SUM(nr.net_revenue), 0) / NULLIF(COUNT(DISTINCT v.visitor_id), 0) AS rpv FROM sessions v LEFT JOIN net_revenue_daily nr ON v.visitor_id = nr.visitor_id"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT COALESCE(SUM(nr.net_revenue), 0) / NULLIF(COUNT(DISTINCT s.visitor_id), 0) AS rpv FROM sessions s LEFT JOIN net_revenue_daily nr ON s.visitor_id = nr.visitor_id WHERE s.session_date BETWEEN '2024-01-01' AND '2024-01-31' AND s.is_bot = false",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', s.session_date) AS month, s.source_channel, COALESCE(SUM(nr.net_revenue), 0) / NULLIF(COUNT(DISTINCT s.visitor_id), 0) AS rpv, COUNT(DISTINCT CASE WHEN o.order_id IS NOT NULL THEN s.visitor_id END) / NULLIF(COUNT(DISTINCT s.visitor_id), 0) AS conv_rate FROM sessions s LEFT JOIN net_revenue_daily nr ON s.visitor_id = nr.visitor_id LEFT JOIN orders o ON s.visitor_id = o.visitor_id WHERE s.session_date >= '2024-01-01' GROUP BY 1, 2 ORDER BY 1, 3 DESC",
+      "advanced_sql": "WITH visitor_revenue AS (\n  -- Grain: one row per visitor, aggregated revenue in period\n  SELECT\n    s.visitor_id,\n    COALESCE(SUM(nr.net_revenue), 0) AS net_revenue,\n    MIN(s.session_date) AS first_session\n  FROM sessions s\n  LEFT JOIN net_revenue_daily nr ON s.visitor_id = nr.visitor_id\n  WHERE s.session_date BETWEEN '2024-01-01' AND '2024-01-31'\n  GROUP BY s.visitor_id\n),\nvisitor_counts AS (\n  SELECT\n    COUNT(DISTINCT visitor_id) AS unique_visitors,\n    SUM(net_revenue) AS total_net_revenue\n  FROM visitor_revenue\n)\nSELECT\n  unique_visitors,\n  total_net_revenue,\n  ROUND(total_net_revenue / NULLIF(unique_visitors, 0), 2) AS rpv\nFROM visitor_counts"
+    }
+  },
+  {
+    "id": "ec_gross_profit_per_order",
+    "title": "Gross Profit per Order",
+    "intent_tags": [
+      "gross profit per order",
+      "GPPO",
+      "profit per order",
+      "gppo",
+      "order margin",
+      "gross profit on order",
+      "what is my profit per order",
+      "order-level profit",
+      "gp per transaction",
+      "gross margin per order"
+    ],
+    "sql_features": [
+      "aggregation",
+      "left_join",
+      "coalesce",
+      "nullif"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "assess profitability of individual orders",
+      "benchmark profit margin by product, customer segment, or channel",
+      "evaluate impact of returns, discounts, and fulfillment costs",
+      "model break-even thresholds and unit economics",
+      "input for CAC payback period and LTV modeling"
+    ],
+    "related_patterns": [
+      "ec_gmv",
+      "ec_net_revenue",
+      "ec_gross_profit",
+      "ec_cogs",
+      "ec_fulfillment_cost"
+    ],
+    "business_definition": "Net revenue (GMV \u2212 refunds \u2212 discounts) minus cost of goods sold (COGS) and direct fulfillment costs (packaging, shipping to customer) per order, expressed as a dollar amount per completed order. Excludes platform fees, payment processing, and overhead allocations.",
+    "metric_nature": {
+      "what_it_measures": "The contribution margin per order \u2014 how much value the business retains after covering variable costs directly tied to the sale.",
+      "what_it_does_not_measure": "Full profitability. It excludes fixed costs (rent, software, salaries), marketing spend, and support overhead \u2014 only measures operational contribution.",
+      "common_misconception": "Gross profit per order is not the same as net profit per order. It does not account for marketing or overhead; a positive GPPO does not guarantee a profitable order at the net P&L level."
+    },
+    "template": "SELECT COUNT(DISTINCT o.order_id) AS orders, SUM(nr.net_revenue) AS net_revenue, SUM(cogs.total_cogs) AS cogs, SUM(fc.shipping_cost + fc.packaging_cost) AS fulfillment_cost, (SUM(nr.net_revenue) - SUM(cogs.total_cogs) - SUM(fc.shipping_cost + fc.packaging_cost)) / NULLIF(COUNT(DISTINCT o.order_id), 0) AS gppo FROM orders o LEFT JOIN net_revenue_daily nr ON o.order_id = nr.order_id LEFT JOIN cogs_daily cogs ON o.order_id = cogs.order_id LEFT JOIN fulfillment_costs fc ON o.order_id = fc.order_id WHERE o.status = 'completed' AND o.order_date BETWEEN {start_date} AND {end_date}",
+    "inflation_causes": [
+      {
+        "cause": "COGS uses cost per unit instead of cost per sold unit",
+        "how_it_inflates": "If cogs_daily includes cost for *all* items on an order including returned or exchanged units, but returns are excluded post-aggregation, COGS is understated \u2014 inflating gross profit and GPPO.",
+        "detection_sql": "SELECT order_id, COUNT(DISTINCT item_id) AS items_sold, COUNT(DISTINCT CASE WHEN return_flag = true THEN item_id END) AS returned_items, SUM(cost_per_unit) AS total_cogs FROM cogs_daily WHERE order_date >= '2024-01-01' GROUP BY order_id HAVING returned_items > 0 ORDER BY total_cogs DESC LIMIT 10",
+        "fix": "Filter cogs_daily to only include items where return_flag = false, or join to returns table to subtract COGS for refunded items before aggregation."
+      },
+      {
+        "cause": "Fulfillment costs exclude variable shipping",
+        "how_it_inflates": "If shipping_cost table only includes *base* shipping and excludes third-party carrier surcharges (e.g., fuel, peak season), fulfillment cost is understated, inflating GPPO.",
+        "detection_sql": "SELECT fc.order_id, fc.shipping_cost AS base_shipping, SUM(sc.charge) AS surcharges FROM fulfillment_costs fc JOIN shipping_charges sc ON fc.order_id = sc.order_id WHERE fc.shipping_cost < sc.charge GROUP BY fc.order_id, fc.shipping_cost ORDER BY surcharges DESC LIMIT 10",
+        "fix": "Unify shipping cost to include all carrier, fuel, and handling charges via a consolidated shipping_cogs view."
+      },
+      {
+        "cause": "Refunds excluded from net_revenue but COGS not reversed",
+        "how_it_inflates": "If net_revenue subtracts refunds but COGS is recorded at fulfillment (not refund) date and not reversed, the gross profit calculation includes the *gross profit* on refunded items \u2014 artificially inflating GPPO.",
+        "detection_sql": "SELECT r.order_id, COUNT(DISTINCT r.return_item_id) AS items_returned, SUM(oi.quantity * oi.unit_price) AS gmv, SUM(cogs.total_cogs) AS cogs FROM orders o JOIN order_items oi ON o.order_id = oi.order_id JOIN refunds r ON o.order_id = r.order_id JOIN cogs_daily cogs ON oi.order_item_id = cogs.order_item_id GROUP BY r.order_id HAVING COUNT(DISTINCT r.return_item_id) > 0",
+        "fix": "Reverse COGS in the same period as refunds using a unified 'net_cogs' CTE that marks items as returned and subtracts their cost."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "COGS includes non-variable overhead",
+        "how_it_deflates": "If cogs_daily allocates fixed manufacturing overhead (e.g., rent, depreciation) per unit, COGS overstated, leading to deflated gross profit and GPPO.",
+        "detection_sql": "SELECT cogs_type, SUM(total_cogs) AS cogs_sum FROM cogs_daily GROUP BY cogs_type ORDER BY cogs_sum DESC",
+        "fix": "Exclude non-variable overhead from COGS (e.g., only include 'unit_cost', 'freight_in', 'direct labor' types); use contribution margin methodology for GPPO."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is GPPO anomaly isolated to specific product categories or fulfillment regions?",
+      "Have recent changes to shipping rates, supplier costs, or discounting impacted margins?",
+      "Are returns being correctly matched to COGS reversals in the same period?",
+      "Has a new fulfillment center or carrier been introduced affecting variable costs?",
+      "Did the definition of COGS change in the data warehouse (e.g., added or removed cost components)?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "GPPO down, net_revenue per order flat",
+        "then": "fulfillment costs increased (shipping, packaging) \u2014 verify carrier rate changes or material cost inflation"
+      },
+      {
+        "if": "GPPO down, GMV per order up",
+        "then": "higher revenue didn\u2019t compensate for rising costs \u2014 likely product mix shift toward lower-margin items or cost surges"
+      },
+      {
+        "if": "GPPO down, return_rate up",
+        "then": "more returns are increasing reverse logistics and restocking costs without offsetting revenue gains \u2014 check return reason category"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "GPPO drops >20% MoM while GMV is flat",
+        "and_also": "ec_fulfillment_cost_per_order increases same period",
+        "shared_root_cause": "A carrier rate hike, fuel surcharge, or seasonal logistics peak affected all shipments uniformly \u2014 increasing cost but not revenue, compressing margin per order.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', fc.shipped_date) AS month, SUM(fc.shipping_cost) / NULLIF(COUNT(DISTINCT fc.order_id), 0) AS avg_shipping_cost, COUNT(DISTINCT fc.order_id) AS orders FROM fulfillment_costs fc WHERE fc.shipped_date >= '2024-01-01' GROUP BY 1 ORDER BY month DESC"
+      },
+      {
+        "if_this_metric": "GPPO flat but net_revenue per order drops",
+        "and_also": "ec_gross_profit_per_order is stable, but ec_net_revenue_per_order fell",
+        "shared_root_cause": "COGS per order decreased (e.g., supplier cost reduction) but pricing or discounts eroded net revenue \u2014 a sign of competitive pressure or margin erosion despite cost advantage.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', o.order_date) AS month, AVG(nr.net_revenue) AS avg_net_rev, AVG(cogs.total_cogs) AS avg_cogs FROM orders o JOIN net_revenue_daily nr ON o.order_id = nr.order_id JOIN cogs_daily cogs ON o.order_id = cogs.order_id WHERE o.status = 'completed' GROUP BY 1 ORDER BY month DESC"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Using average COGS per item across *all* items instead of per *sold* item",
+        "why_wrong": "If COGS includes costs for unsold or returned SKUs, and GPPO divides net revenue by sold units, costs are mismatched \u2014 GPPO appears too low.",
+        "bad_sql": "SELECT (SUM(oi.quantity * oi.unit_price) - AVG(cogs.unit_cost) * SUM(oi.quantity)) / COUNT(DISTINCT oi.order_id) AS gppo FROM order_items oi JOIN cogs_daily cogs ON oi.product_id = cogs.product_id",
+        "good_sql": "SELECT (SUM(nr.net_revenue) - SUM(cogs.total_cogs)) / NULLIF(COUNT(DISTINCT o.order_id), 0) AS gppo FROM orders o LEFT JOIN net_revenue_daily nr ON o.order_id = nr.order_id LEFT JOIN cogs_daily cogs ON o.order_id = cogs.order_id"
+      },
+      {
+        "pattern": "Calculating GPPO using gross revenue (not net) and COGS only",
+        "why_wrong": "Excluding refunds and discounts inflates GPPO by counting profit on items that may be returned. This misrepresents sustainable profitability.",
+        "bad_sql": "SELECT (SUM(oi.quantity * oi.listed_price) - SUM(cogs.total_cogs)) / COUNT(DISTINCT oi.order_id) AS gppo FROM order_items oi JOIN cogs_daily cogs ON oi.order_item_id = cogs.order_item_id",
+        "good_sql": "SELECT (SUM(nr.net_revenue) - SUM(cogs.total_cogs)) / NULLIF(COUNT(DISTINCT o.order_id), 0) AS gppo FROM orders o LEFT JOIN net_revenue_daily nr ON o.order_id = nr.order_id LEFT JOIN cogs_daily cogs ON o.order_id = cogs.order_id WHERE o.status = 'completed'"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT (SUM(nr.net_revenue) - SUM(cogs.total_cogs) - SUM(fc.shipping_cost + fc.packaging_cost)) / NULLIF(COUNT(DISTINCT o.order_id), 0) AS gppo FROM orders o LEFT JOIN net_revenue_daily nr ON o.order_id = nr.order_id LEFT JOIN cogs_daily cogs ON o.order_id = cogs.order_id LEFT JOIN fulfillment_costs fc ON o.order_id = fc.order_id WHERE o.status = 'completed' AND o.order_date BETWEEN '2024-01-01' AND '2024-01-31'",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', o.order_date) AS month, p.category, COUNT(DISTINCT o.order_id) AS orders, (SUM(nr.net_revenue) - SUM(cogs.total_cogs) - SUM(fc.shipping_cost + fc.packaging_cost)) / NULLIF(COUNT(DISTINCT o.order_id), 0) AS gppo, ROUND((SUM(nr.net_revenue) - SUM(cogs.total_cogs) - SUM(fc.shipping_cost + fc.packaging_cost)) / NULLIF(SUM(nr.net_revenue), 0) * 100, 2) AS gp_margin FROM orders o JOIN order_items oi ON o.order_id = oi.order_id JOIN products p ON oi.product_id = p.id LEFT JOIN net_revenue_daily nr ON o.order_id = nr.order_id LEFT JOIN cogs_daily cogs ON o.order_id = cogs.order_id LEFT JOIN fulfillment_costs fc ON o.order_id = fc.order_id WHERE o.status = 'completed' GROUP BY 1, 2 ORDER BY 1, 3 DESC",
+      "advanced_sql": "WITH order_metrics AS (\n  -- Grain: one row per order with revenue, COGS, and fulfillment costs\n  SELECT\n    o.order_id,\n    o.order_date,\n    COALESCE(nr.net_revenue, 0) AS net_revenue,\n    COALESCE(cogs.total_cogs, 0) AS total_cogs,\n    COALESCE(fc.shipping_cost + fc.packaging_cost, 0) AS fulfillment_cost\n  FROM orders o\n  LEFT JOIN net_revenue_daily nr ON o.order_id = nr.order_id\n  LEFT JOIN cogs_daily cogs ON o.order_id = cogs.order_id\n  LEFT JOIN fulfillment_costs fc ON o.order_id = fc.order_id\n  WHERE o.status = 'completed'\n),\ngppo_calc AS (\n  SELECT\n    COUNT(DISTINCT order_id) AS orders,\n    SUM(net_revenue - total_cogs - fulfillment_cost) AS total_gross_profit\n  FROM order_metrics\n)\nSELECT\n  orders,\n  total_gross_profit,\n  ROUND(total_gross_profit / NULLIF(orders, 0), 2) AS gp_per_order,\n  ROUND(total_gross_profit / NULLIF(SUM(net_revenue), 0) * 100, 2) AS gross_margin_pct\nFROM gppo_calc, (SELECT SUM(net_revenue) AS net_revenue FROM order_metrics) nr"
+    }
+  },
+  {
+    "id": "ec_cancellation_rate",
+    "title": "Cancellation Rate",
+    "intent_tags": [
+      "cancellation rate",
+      "order cancellation rate",
+      "order cancel rate",
+      "order churn",
+      "cancelled orders %",
+      "cancellation %",
+      "what is my cancellation rate",
+      "why orders are cancelled",
+      "order attrition",
+      "pre-fulfillment drop-off"
+    ],
+    "sql_features": [
+      "aggregation",
+      "conditional_count",
+      "nullif"
+    ],
+    "difficulty": "beginner",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "monitor order quality and pipeline health",
+      "identify friction points in checkout or payment",
+      "measure impact of fraud detection, site stability, or UX changes",
+      "benchmark against category benchmarks or historical peaks",
+      "input for conversion funnel diagnostics and ROAS modeling"
+    ],
+    "related_patterns": [
+      "ec_conversion_rate",
+      "ec_gmv",
+      "ec_return_rate",
+      "ec_refund_rate"
+    ],
+    "business_definition": "Percentage of placed orders that were cancelled before fulfillment (status = 'cancelled') out of total placed orders in the period. A placed order is one with status 'placed', 'confirmed', or 'paid' (excludes cart abandonments). Excludes cancelled orders from fraud or test order buckets.",
+    "metric_nature": {
+      "what_it_measures": "The proportion of orders lost before shipping \u2014 a leading indicator of transaction friction, site stability, or customer satisfaction issues.",
+      "what_it_does_not_measure": "Post-fulfillment loss. It does not include returns or exchanges after shipping; those are captured in return_rate or exchange_rate.",
+      "common_misconception": "Cancellation rate is not the same as cart abandonment rate. Abandonment occurs before order creation; cancellation occurs after an order is formally placed and paid."
+    },
+    "template": "SELECT COUNT(DISTINCT CASE WHEN o.status = 'cancelled' THEN o.order_id END) AS cancelled_orders, COUNT(DISTINCT o.order_id) AS total_orders, (COUNT(DISTINCT CASE WHEN o.status = 'cancelled' THEN o.order_id END) * 100.0) / NULLIF(COUNT(DISTINCT o.order_id), 0) AS cancellation_rate FROM orders o WHERE o.order_date BETWEEN {start_date} AND {end_date} AND o.status NOT IN ('test', 'fraud')",
+    "inflation_causes": [
+      {
+        "cause": "Including cancelled orders with test or fraud status",
+        "how_it_inflates": "If status filters are applied too late in the pipeline or cancelled orders inherit test/fraud tags retroactively, cancelled orders may be double-counted or excluded inconsistently, causing erratic spikes in cancellation rate.",
+        "detection_sql": "SELECT status, COUNT(DISTINCT order_id) AS orders, SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled_flag FROM orders WHERE order_date >= '2024-01-01' GROUP BY 1 ORDER BY orders DESC",
+        "fix": "Ensure status='cancelled' is assigned at cancellation time and that test/fraud exclusions happen before status analysis."
+      },
+      {
+        "cause": "Counting cancelled line items as cancelled orders",
+        "how_it_inflates": "If aggregation uses order_item_id or item-level status, one order with 3 cancelled items is counted as 3 cancellations, inflating rate and masking true order-level cancellation rate.",
+        "detection_sql": "SELECT o.order_id, COUNT(DISTINCT oi.order_item_id) AS items, COUNT(DISTINCT CASE WHEN oi.status = 'cancelled' THEN oi.order_item_id END) AS cancelled_items FROM orders o JOIN order_items oi ON o.order_id = oi.order_id GROUP BY o.order_id HAVING COUNT(DISTINCT CASE WHEN oi.status = 'cancelled' THEN oi.order_item_id END) > 1 ORDER BY cancelled_items DESC LIMIT 10",
+        "fix": "Aggregate at the order level (GROUP BY o.order_id) and use COUNT(DISTINCT CASE WHEN order_status = 'cancelled' THEN order_id END)."
+      },
+      {
+        "cause": "Not filtering out abandoned carts as placed orders",
+        "how_it_inflates": "If abandoned carts are included in total_orders but cancelled orders are filtered by status='cancelled', the denominator is inflated (abandoned carts rarely cancel \u2014 they just disappear), causing cancellation rate to deflate. Conversely, if abandoned carts are mis-labeled 'cancelled', rate inflates.",
+        "detection_sql": "SELECT status, COUNT(DISTINCT order_id) AS orders FROM orders WHERE order_date >= '2024-01-01' GROUP BY 1 HAVING status IN ('abandoned', 'cart', 'cancelled')",
+        "fix": "Define 'placed orders' strictly as orders where payment was initiated (status in 'paid', 'confirmed', 'fulfilled') and exclude 'cart' and 'abandoned' entirely from denominator."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Late status updates in the warehouse",
+        "how_it_deflates": "If cancellation events are ingested with a delay (e.g., overnight ETL), the current period\u2019s total_orders includes orders that were cancelled in that period but marked 'confirmed' at day of ingestion \u2014 reducing the observed cancelled_orders count.",
+        "detection_sql": "SELECT o.order_id, o.order_date, o.status AS current_status, oc.status_change_date, oc.new_status AS new_status FROM orders o JOIN order_status_history oc ON o.order_id = oc.order_id WHERE oc.new_status = 'cancelled' AND oc.status_change_date > o.order_date AND o.order_date >= '2024-01-01' ORDER BY oc.status_change_date DESC LIMIT 10",
+        "fix": "Build the orders staging table from status_history with LAG window functions to determine status at period end, or filter cancellation_date <= end_date for inclusion."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the cancellation spike in a specific product category, price point, or shipping region?",
+      "Did a new fraud rule or payment gateway integration go live recently?",
+      "Are cancellations concentrated in a specific channel (mobile vs web) or device type?",
+      "Has customer service intervention (e.g., auto-cancel after 24h) changed?",
+      "Are cancelled orders concentrated around a specific time of day or week?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "Cancellation rate up, net_revenue down",
+        "then": "more orders lost before fulfillment \u2014 likely checkout or payment failure friction; verify payment decline rate and checkout drop-off"
+      },
+      {
+        "if": "Cancellation rate up, order_volume up",
+        "then": "increased volume exposes more cancellations \u2014 check if fraud or manual review thresholds changed with volume"
+      },
+      {
+        "if": "Cancellation rate down, return_rate up",
+        "then": "customers are shipping items and then returning them instead of cancelling \u2014 possibly due to return policy changes or better in-stock availability"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Cancellation rate spikes >10% WoW with flat order volume",
+        "and_also": "ec_payment_failure_rate increases same period",
+        "shared_root_cause": "A new fraud detection rule or card network change (e.g., 3DS2 mandate) is triggering more payment declines, which are incorrectly classified as cancellations in the downstream metrics system.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', o.order_date) AS week, COUNT(DISTINCT CASE WHEN o.status = 'cancelled' THEN o.order_id END) * 100.0 / NULLIF(COUNT(DISTINCT o.order_id), 0) AS cancellation_rate, COUNT(DISTINCT CASE WHEN pf.status = 'declined' THEN pf.payment_id END) * 100.0 / NULLIF(COUNT(DISTINCT o.order_id), 0) AS payment_decline_rate FROM orders o LEFT JOIN payment_flows pf ON o.order_id = pf.order_id WHERE o.order_date >= '2024-01-01' GROUP BY 1 ORDER BY week DESC"
+      },
+      {
+        "if_this_metric": "Cancellation rate increases while customer service volume drops",
+        "and_also": "ec_refund_rate decreases (less post-fulfillment loss)",
+        "shared_root_cause": "Policy change: e.g., moving from pre-fulfillment cancellation to shipping + return. Orders that would have been cancelled are now shipped and returned \u2014 shifting the loss from pre- to post-fulfillment.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', o.order_date) AS month, COUNT(DISTINCT CASE WHEN o.status = 'cancelled' THEN o.order_id END) * 100.0 / NULLIF(COUNT(DISTINCT o.order_id), 0) AS cancel_rate, COUNT(DISTINCT r.order_id) * 100.0 / NULLIF(COUNT(DISTINCT o.order_id), 0) AS return_rate FROM orders o LEFT JOIN returns r ON o.order_id = r.order_id WHERE o.order_date >= '2024-01-01' GROUP BY 1 ORDER BY month"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Counting cancelled orders as new cancellations on every ETL run",
+        "why_wrong": "If cancellation_date is stored as the row\u2019s loaded_at time, not the actual cancellation_time, the metric includes old cancellations republished daily \u2014 inflating rate, especially near month-end ETL batches.",
+        "bad_sql": "SELECT COUNT(*) * 100.0 / NULLIF((SELECT COUNT(*) FROM orders), 0) AS rate FROM orders WHERE status = 'cancelled' AND loaded_at BETWEEN '2024-01-01' AND '2024-01-31'",
+        "good_sql": "SELECT COUNT(DISTINCT CASE WHEN o.status = 'cancelled' AND oc.cancelled_at BETWEEN '2024-01-01' AND '2024-01-31' THEN o.order_id END) * 100.0 / NULLIF(COUNT(DISTINCT o.order_id), 0) AS rate FROM orders o JOIN order_status_history oc ON o.order_id = oc.order_id WHERE oc.new_status = 'cancelled'"
+      },
+      {
+        "pattern": "Defining denominator as 'all orders ever' instead of period-placed orders",
+        "why_wrong": "Using lifetime order count inflates denominator with past periods\u2019 data, deflating rate and masking spikes.",
+        "bad_sql": "SELECT COUNT(DISTINCT CASE WHEN status = 'cancelled' THEN order_id END) * 100.0 / NULLIF((SELECT COUNT(DISTINCT order_id) FROM orders), 0) AS rate FROM orders WHERE order_date BETWEEN '2024-01-01' AND '2024-01-31'",
+        "good_sql": "SELECT COUNT(DISTINCT CASE WHEN status = 'cancelled' THEN order_id END) * 100.0 / NULLIF(COUNT(DISTINCT order_id), 0) AS rate FROM orders WHERE order_date BETWEEN '2024-01-01' AND '2024-01-31' AND status NOT IN ('test', 'fraud')"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT (COUNT(DISTINCT CASE WHEN o.status = 'cancelled' THEN o.order_id END) * 100.0) / NULLIF(COUNT(DISTINCT o.order_id), 0) AS cancellation_rate FROM orders o WHERE o.order_date BETWEEN '2024-01-01' AND '2024-01-31' AND o.status NOT IN ('test', 'fraud')",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', o.order_date) AS month, o.channel, COUNT(DISTINCT CASE WHEN o.status = 'cancelled' THEN o.order_id END) * 100.0 / NULLIF(COUNT(DISTINCT o.order_id), 0) AS cancellation_rate, COUNT(DISTINCT o.order_id) AS orders FROM orders o WHERE o.order_date >= '2024-01-01' AND o.status NOT IN ('test', 'fraud') GROUP BY 1, 2 ORDER BY 1, 3 DESC",
+      "advanced_sql": "WITH placed_orders AS (\n  -- Grain: orders placed in period, excluding test, fraud, abandoned carts\n  SELECT\n    order_id,\n    order_date,\n    channel\n  FROM orders\n  WHERE order_date BETWEEN '2024-01-01' AND '2024-01-31'\n    AND status NOT IN ('test', 'fraud', 'abandoned')\n),\ncancelled AS (\n  SELECT order_id, MAX(CASE WHEN new_status = 'cancelled' THEN cancelled_at END) AS cancelled_at\n  FROM order_status_history\n  GROUP BY 1\n  HAVING MAX(CASE WHEN new_status = 'cancelled' THEN cancelled_at END) IS NOT NULL\n)\nSELECT\n  COUNT(DISTINCT CASE WHEN c.cancelled_at BETWEEN '2024-01-01' AND '2024-01-31' THEN p.order_id END) * 100.0 / NULLIF(COUNT(DISTINCT p.order_id), 0) AS cancellation_rate,\n  COUNT(DISTINCT CASE WHEN c.cancelled_at BETWEEN '2024-01-01' AND '2024-01-31' THEN p.order_id END) AS cancelled_orders,\n  COUNT(DISTINCT p.order_id) AS total_orders\nFROM placed_orders p\nLEFT JOIN cancelled c ON p.order_id = c.order_id"
+    }
+  },
+  {
+    "id": "ec_coupon_redemption_rate",
+    "title": "Coupon Redemption Rate",
+    "intent_tags": [
+      "coupon redemption rate",
+      "coupon usage rate",
+      "promo code redemption",
+      "coupon take rate",
+      "discount coupon adoption",
+      "promotional coupon usage",
+      "what is my coupon rate",
+      "how many coupons used",
+      "redemption %",
+      "promo code redemption rate",
+      "coupon uptake"
+    ],
+    "sql_features": [
+      "aggregation",
+      "left_join",
+      "nullif"
+    ],
+    "difficulty": "beginner",
+    "pattern_type": "ratio",
+    "when_to_use": [
+      "measure promotional campaign effectiveness",
+      "track coupon distribution vs. usage efficiency",
+      "identify coupon leakage or abuse patterns",
+      "evaluate coupon design (value, urgency, channel) impact on behavior",
+      "guide future promotional ROI and budget allocation"
+    ],
+    "related_patterns": [
+      "ec_discount_rate",
+      "ec_net_revenue",
+      "ec_conversion_rate",
+      "ec_order_volume"
+    ],
+    "business_definition": "Percentage of orders in the period that applied a valid coupon or promo code out of total completed orders. Only counts orders where the coupon was successfully redeemed (applied and retained post-validation), excludes cancelled or test orders.",
+    "metric_nature": {
+      "what_it_measures": "The rate at which customers use coupons \u2014 a proxy for promotional engagement and coupon appeal.",
+      "what_it_does_not_measure": "Coupon value or discount depth. This metric counts *usage*, not the amount discounted. Two 1% and two 50% coupons both count equally in the numerator.",
+      "common_misconception": "Coupon redemption rate is not the same as coupon redemption *per coupon issued*. It measures *orders* with coupons, not *coupons used per order* \u2014 one order may use multiple coupons."
+    },
+    "template": "SELECT COUNT(DISTINCT CASE WHEN c.order_id IS NOT NULL THEN o.order_id END) AS orders_with_coupon, COUNT(DISTINCT o.order_id) AS total_orders, (COUNT(DISTINCT CASE WHEN c.order_id IS NOT NULL THEN o.order_id END) * 100.0) / NULLIF(COUNT(DISTINCT o.order_id), 0) AS redemption_rate FROM orders o LEFT JOIN coupon_redemptions c ON o.order_id = c.order_id WHERE o.status = 'completed' AND o.order_date BETWEEN {start_date} AND {end_date}",
+    "inflation_causes": [
+      {
+        "cause": "Including invalid or expired coupon attempts",
+        "how_it_inflates": "If coupon_redemptions table includes failed validation attempts (e.g., status='failed'), and the join does not filter to successful redemptions, coupon orders are overcounted \u2014 especially near expiration windows.",
+        "detection_sql": "SELECT c.status, COUNT(DISTINCT c.order_id) AS orders FROM coupon_redemptions c JOIN orders o ON c.order_id = o.order_id WHERE o.order_date >= '2024-01-01' GROUP BY c.status ORDER BY orders DESC",
+        "fix": "Filter coupon_redemptions to status='applied' or 'redeemed' before joining to orders."
+      },
+      {
+        "cause": "Counting orders where coupons were removed post-checkout",
+        "how_it_inflates": "If coupon_redemptions includes the initial attempt but not subsequent removal, an order with a coupon that was removed during customer service adjustment still counts as 'with coupon' \u2014 inflating rate.",
+        "detection_sql": "SELECT o.order_id, c.coupon_code, c.applied_at, oc.status_change_date, oc.new_status AS final_status FROM orders o JOIN coupon_redemptions c ON o.order_id = c.order_id JOIN order_status_history oc ON o.order_id = oc.order_id WHERE oc.new_status = 'completed' AND c.status = 'applied' AND oc.status_change_date < c.applied_at",
+        "fix": "Join coupon_redemptions to a 'final_status' CTE that ensures the coupon was still applied at order completion."
+      },
+      {
+        "cause": "Duplicate coupon records per order",
+        "how_it_inflates": "If coupon_redemptions is not deduplicated (e.g., multiple rows per order for same coupon), the same order may be counted multiple times if aggregated with COUNT(*) instead of COUNT(DISTINCT order_id).",
+        "detection_sql": "SELECT c.order_id, COUNT(*) AS rows, c.coupon_code FROM coupon_redemptions c GROUP BY c.order_id, c.coupon_code HAVING COUNT(*) > 1 ORDER BY rows DESC LIMIT 10",
+        "fix": "Deduplicate coupon_redemptions using ROW_NUMBER() OVER (PARTITION BY order_id, coupon_code ORDER BY created_at DESC) = 1 before aggregation."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Excluding multi-coupon orders from numerator",
+        "how_it_deflates": "If only orders with *at least one* coupon are counted in numerator but some orders have multiple coupons applied (one record per coupon), and deduplication removes all but one coupon per order, the numerator may undercount orders where a second coupon was appended.",
+        "detection_sql": "SELECT COUNT(DISTINCT order_id) AS total_orders, COUNT(DISTINCT CASE WHEN coupon_count >= 1 THEN order_id END) AS orders_with_1plus_coupon, COUNT(DISTINCT CASE WHEN coupon_count >= 2 THEN order_id END) AS orders_with_2plus_coupon FROM (SELECT order_id, COUNT(*) AS coupon_count FROM coupon_redemptions GROUP BY 1) sub",
+        "fix": "Ensure numerator counts DISTINCT orders with at least one coupon, regardless of number of coupon rows per order."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the coupon redemption rate anomaly in a specific channel (email vs push vs web)?",
+      "Did a new coupon campaign or distribution channel go live?",
+      "Are redemption patterns clustered around specific time windows or customer segments?",
+      "Has coupon validation logic or expiration policy changed recently?",
+      "Are redemption rates higher for first-time customers or repeat buyers?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "Coupon redemption rate up, conversion_rate up",
+        "then": "coupons are effective acquisition or conversion catalyst \u2014 likely high-performing messaging or timing"
+      },
+      {
+        "if": "Coupon redemption rate up, net_revenue per order down",
+        "then": "coupons are attracting price-sensitive users or deep discounts are eroding value \u2014 consider targeting or tiered strategies"
+      },
+      {
+        "if": "Coupon redemption rate up, order_volume flat",
+        "then": "more customers used coupons but didn\u2019t increase order frequency \u2014 likely one-time promo adoption, not habitual behavior"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Coupon redemption rate spikes >30% WoW but order volume is flat",
+        "and_also": "ec_discount_rate also increased proportionally",
+        "shared_root_cause": "A time-limited, high-value coupon campaign (e.g., limited-time offer or holiday sale) was pushed via email, driving a surge in redemption without increasing visit or order volume \u2014 likely a top-of-funnel offer.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', c.redemption_date) AS week, COUNT(DISTINCT c.order_id) AS redemptions, COUNT(DISTINCT c.coupon_code) AS unique_coupons, COUNT(DISTINCT c.order_id) * 100.0 / NULLIF((SELECT COUNT(DISTINCT order_id) FROM coupon_redemptions WHERE redemption_date BETWEEN '2024-01-01' AND '2024-01-31'), 0) AS redemption_rate FROM coupon_redemptions c JOIN coupon_campaigns camp ON c.coupon_code = camp.coupon_code WHERE camp.campaign_type IN ('limited_time', 'flash_sale') GROUP BY 1 ORDER BY week DESC"
+      },
+      {
+        "if_this_metric": "Coupon redemption rate drops MoM",
+        "and_also": "ec_conversion_rate drops same period",
+        "shared_root_cause": "A recent coupon expiration policy or coupon fraud crackdown reduced eligible redemptions across the board \u2014 both redemption rate and conversion fell due to removed incentive or heightened trust barriers.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', c.redemption_date) AS week, COUNT(DISTINCT c.order_id) AS redemptions, COUNT(DISTINCT CASE WHEN o.status = 'completed' THEN o.order_id END) AS completed_orders FROM coupon_redemptions c LEFT JOIN orders o ON c.order_id = o.order_id WHERE c.redemption_date >= '2024-01-01' GROUP BY 1 ORDER BY week DESC"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Using coupon_redemptions created_at instead of redemption_date",
+        "why_wrong": "If coupon_redemptions logs when the record was inserted (not when the customer applied it), and ETL batches are delayed, many redemptions appear in a later period than they occurred \u2014 deflating rate for the actual redemption period.",
+        "bad_sql": "SELECT COUNT(DISTINCT c.order_id) * 100.0 / NULLIF(COUNT(DISTINCT o.order_id), 0) AS redemption_rate FROM orders o LEFT JOIN coupon_redemptions c ON o.order_id = c.order_id WHERE c.created_at BETWEEN '2024-01-01' AND '2024-01-31'",
+        "good_sql": "SELECT COUNT(DISTINCT c.order_id) * 100.0 / NULLIF(COUNT(DISTINCT o.order_id), 0) AS redemption_rate FROM orders o LEFT JOIN coupon_redemptions c ON o.order_id = c.order_id WHERE c.redemption_date BETWEEN '2024-01-01' AND '2024-01-31'"
+      },
+      {
+        "pattern": "Counting coupon redemptions per coupon_code instead of per order",
+        "why_wrong": "If the numerator counts coupon redemptions (e.g., COUNT(c.id)) instead of orders with at least one coupon, orders with multiple coupons are double-counted \u2014 inflating rate above possible 100%.",
+        "bad_sql": "SELECT COUNT(c.id) * 100.0 / NULLIF(COUNT(DISTINCT o.order_id), 0) AS redemption_rate FROM orders o LEFT JOIN coupon_redemptions c ON o.order_id = c.order_id",
+        "good_sql": "SELECT COUNT(DISTINCT CASE WHEN c.order_id IS NOT NULL THEN o.order_id END) * 100.0 / NULLIF(COUNT(DISTINCT o.order_id), 0) AS redemption_rate FROM orders o LEFT JOIN coupon_redemptions c ON o.order_id = c.order_id"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT (COUNT(DISTINCT CASE WHEN c.order_id IS NOT NULL THEN o.order_id END) * 100.0) / NULLIF(COUNT(DISTINCT o.order_id), 0) AS redemption_rate FROM orders o LEFT JOIN coupon_redemptions c ON o.order_id = c.order_id WHERE o.status = 'completed' AND o.order_date BETWEEN '2024-01-01' AND '2024-01-31'",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', o.order_date) AS month, o.channel, COUNT(DISTINCT CASE WHEN c.order_id IS NOT NULL THEN o.order_id END) * 100.0 / NULLIF(COUNT(DISTINCT o.order_id), 0) AS redemption_rate, COUNT(DISTINCT c.order_id) AS orders_with_coupon FROM orders o LEFT JOIN coupon_redemptions c ON o.order_id = c.order_id WHERE o.status = 'completed' AND o.order_date >= '2024-01-01' GROUP BY 1, 2 ORDER BY 1, 3 DESC",
+      "advanced_sql": "WITH orders_with_coupons AS (\n  -- Grain: distinct orders with at least one successful coupon redemption\n  SELECT DISTINCT\n    o.order_id,\n    o.order_date,\n    o.channel,\n    c.coupon_code,\n    c.redemption_date\n  FROM orders o\n  JOIN coupon_redemptions c ON o.order_id = c.order_id\n  WHERE o.status = 'completed'\n    AND c.redemption_date BETWEEN '2024-01-01' AND '2024-01-31'\n),\norder_counts AS (\n  SELECT\n    COUNT(DISTINCT order_id) AS total_orders,\n    COUNT(DISTINCT CASE WHEN coupon_code IS NOT NULL THEN order_id END) AS orders_with_coupon\n  FROM orders o\n  WHERE o.order_date BETWEEN '2024-01-01' AND '2024-01-31'\n    AND o.status = 'completed'\n)\nSELECT\n  total_orders,\n  orders_with_coupon,\n  ROUND(orders_with_coupon * 100.0 / NULLIF(total_orders, 0), 2) AS redemption_rate_pct,\n  ROUND(orders_with_coupon / NULLIF(total_orders, 0), 4) AS redemption_rate_decimal\nFROM order_counts"
+    }
+  }
+]

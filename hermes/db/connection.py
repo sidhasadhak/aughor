@@ -17,6 +17,54 @@ import sqlglot
 
 from hermes.agent.state import QueryResult
 
+# ── Proactive PostgreSQL dialect transforms ───────────────────────────────────
+# Applied to every Postgres query *before* execution to prevent the most
+# common class of type errors without needing a retry round-trip.
+
+# ROUND(AVG/SUM/MIN/MAX(col), N) → ROUND((agg)::numeric, N)
+# Handles the one-argument aggregate case; doesn't touch nested expressions.
+_ROUND_AGG = re.compile(
+    r"\bROUND\s*\(\s*((?:AVG|SUM|MIN|MAX)\s*\([^)]+\))\s*,\s*(\d+)\s*\)",
+    re.IGNORECASE,
+)
+
+# (col1 - col2)::numeric  where operands look like timestamp columns
+# → EXTRACT(EPOCH FROM (col1 - col2)) / 86400.0
+_INTERVAL_NUMERIC = re.compile(
+    r"\(([^()]+?)\s*-\s*([^()]+?)\)\s*::\s*(?:numeric|integer|float)",
+    re.IGNORECASE,
+)
+_TS_HINT = re.compile(
+    r"date|time|_at\b|timestamp|created|updated|delivered|approved|purchase|shipping",
+    re.IGNORECASE,
+)
+
+
+def _pg_fix_round(sql: str) -> str:
+    """ROUND(AVG/SUM/MIN/MAX(col), N) → ROUND((agg)::numeric, N)."""
+    return _ROUND_AGG.sub(lambda m: f"ROUND(({m.group(1)})::numeric, {m.group(2)})", sql)
+
+
+def _pg_fix_nullif_timestamps(sql: str, varchar_ts_cols: list[tuple[str, str]]) -> str:
+    """col::TIMESTAMP → NULLIF(col, '')::TIMESTAMP for known VARCHAR timestamp columns."""
+    for _table, col in varchar_ts_cols:
+        pat = re.compile(
+            rf"\b{re.escape(col)}\s*::\s*TIMESTAMP\b", re.IGNORECASE
+        )
+        sql = pat.sub(f"NULLIF({col}, '')::TIMESTAMP", sql)
+    return sql
+
+
+def _pg_fix_interval_arithmetic(sql: str) -> str:
+    """(ts_col - ts_col)::numeric → EXTRACT(EPOCH FROM (...)) / 86400.0."""
+    def _replace(m: re.Match) -> str:
+        a, b = m.group(1).strip(), m.group(2).strip()
+        if _TS_HINT.search(a) or _TS_HINT.search(b):
+            return f"EXTRACT(EPOCH FROM ({a} - {b})) / 86400.0"
+        return m.group(0)  # not timestamp-looking — leave as-is
+    return _INTERVAL_NUMERIC.sub(_replace, sql)
+
+
 # ── Safety ────────────────────────────────────────────────────────────────────
 
 _FORBIDDEN = re.compile(
@@ -125,6 +173,8 @@ class PostgresConnection(DatabaseConnection):
     def __init__(self, dsn: str):
         self._dsn = dsn
         self._conn = None
+        # Populated by get_schema() — used by proactive dialect transforms
+        self._varchar_ts_cols: list[tuple[str, str]] = []
         self._connect()
 
     def _connect(self):
@@ -132,14 +182,26 @@ class PostgresConnection(DatabaseConnection):
         self._conn = psycopg2.connect(self._dsn)
         self._conn.autocommit = True
 
+    def _apply_dialect_fixes(self, sql: str) -> str:
+        """
+        Three sequential proactive transforms for PostgreSQL.
+        Catches predictable type errors before they reach the database,
+        avoiding a FIX_SQL retry round-trip.
+        """
+        sql = _pg_fix_round(sql)
+        sql = _pg_fix_nullif_timestamps(sql, self._varchar_ts_cols)
+        sql = _pg_fix_interval_arithmetic(sql)
+        return sql
+
     def execute(self, hypothesis_id: str, sql: str) -> QueryResult:
         sql = sql.strip().rstrip(";")
         ok, reason = _validate(sql)
         if not ok:
             return QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[], row_count=0, error=reason)
 
-        # Translate DuckDB-flavoured SQL → Postgres
+        # Translate DuckDB-flavoured SQL → Postgres, then apply proactive fixes
         sql = self.translate(sql)
+        sql = self._apply_dialect_fixes(sql)
 
         try:
             with self._conn.cursor() as cur:
@@ -197,14 +259,19 @@ class PostgresConnection(DatabaseConnection):
             parts.append(f"  {col}  {dtype}")
 
         schema_str = "\n".join(parts)
-        hints = self._detect_sql_hints(rows)
+        hints = self._detect_sql_hints(rows)  # also populates self._varchar_ts_cols
         if hints:
             schema_str += "\n\n" + hints
 
         from hermes.semantic.autoseed import seed_missing_tables
         from hermes.semantic.glossary import apply_glossary
+        from hermes.tools.schema import infer_joins
         seed_missing_tables(schema_str)
-        return apply_glossary(schema_str)
+        enriched = apply_glossary(schema_str)
+        join_hints = infer_joins(enriched)
+        if join_hints:
+            enriched += "\n\n" + join_hints
+        return enriched
 
     def _detect_sql_hints(self, columns: list) -> str:
         """
@@ -223,6 +290,8 @@ class PostgresConnection(DatabaseConnection):
             if dtype == "character varying"
             and any(c.lower().endswith(p) or p in c.lower() for p in timestamp_pattern)
         ]
+        # Store for use by _apply_dialect_fixes on every subsequent execute() call
+        self._varchar_ts_cols = varchar_ts_cols
 
         if varchar_ts_cols:
             sample = ", ".join(f"{t}.{c}" for t, c in varchar_ts_cols[:5])

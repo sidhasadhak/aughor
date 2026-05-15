@@ -1,0 +1,204 @@
+[
+  {
+    "id": "wa_dau_mau",
+    "title": "DAU / MAU stickiness ratio",
+    "intent_tags": ["dau", "mau", "stickiness", "daily active users", "monthly active users", "engagement"],
+    "sql_features": ["cte", "aggregation"],
+    "difficulty": "intermediate",
+    "pattern_type": "metric",
+    "template": "WITH dau AS (SELECT event_date, COUNT(DISTINCT user_id) as daily_users FROM events GROUP BY 1), mau AS (SELECT DATE_TRUNC('month', event_date) as month, COUNT(DISTINCT user_id) as monthly_users FROM events GROUP BY 1) SELECT d.event_date, d.daily_users, m.monthly_users, d.daily_users * 1.0 / NULLIF(m.monthly_users, 0) as stickiness FROM dau d JOIN mau m ON DATE_TRUNC('month', d.event_date) = m.month",
+    "when_to_use": [
+      "product stickiness",
+      "DAU/MAU ratio",
+      "user engagement health"
+    ],
+    "anti_patterns": [
+      "counting sessions instead of distinct users",
+      "joining DAU to wrong month boundary"
+    ],
+    "related_patterns": ["wa_retention", "wa_session_duration"]
+  },
+  {
+    "id": "wa_bounce_rate",
+    "title": "Bounce rate",
+    "intent_tags": ["bounce rate", "single page sessions", "bounces"],
+    "sql_features": ["cte", "aggregation", "window"],
+    "difficulty": "intermediate",
+    "pattern_type": "metric",
+    "template": "WITH session_pages AS (SELECT session_id, COUNT(*) as page_count FROM pageviews GROUP BY 1) SELECT COUNT(CASE WHEN page_count = 1 THEN 1 END) * 1.0 / COUNT(*) as bounce_rate FROM session_pages",
+    "when_to_use": [
+      "bounce rate",
+      "single-page sessions",
+      "landing page quality"
+    ],
+    "anti_patterns": [
+      "counting events instead of sessions"
+    ],
+    "related_patterns": ["wa_session_duration", "wa_landing_page"]
+  },
+  {
+    "id": "wa_session_duration",
+    "title": "Average session duration",
+    "intent_tags": ["session duration", "time on site", "avg session", "engagement time"],
+    "sql_features": ["window", "aggregation"],
+    "difficulty": "intermediate",
+    "pattern_type": "metric",
+    "template": "WITH session_bounds AS (SELECT session_id, MIN(event_timestamp) as session_start, MAX(event_timestamp) as session_end FROM events GROUP BY 1) SELECT AVG(EXTRACT(EPOCH FROM (session_end - session_start))) as avg_duration_seconds FROM session_bounds WHERE session_end > session_start",
+    "when_to_use": [
+      "session duration",
+      "time on site",
+      "engagement depth"
+    ],
+    "anti_patterns": [
+      "including sessions with only one event — end equals start, giving zero duration",
+      "not filtering out bot sessions"
+    ],
+    "related_patterns": ["wa_bounce_rate", "wa_dau_mau"]
+  },
+  {
+    "id": "wa_funnel",
+    "title": "Multi-step funnel analysis",
+    "intent_tags": ["funnel", "conversion funnel", "step drop-off", "funnel analysis"],
+    "sql_features": ["cte", "aggregation"],
+    "difficulty": "advanced",
+    "pattern_type": "analytical",
+    "template": "SELECT COUNT(DISTINCT CASE WHEN step >= 1 THEN user_id END) as step1, COUNT(DISTINCT CASE WHEN step >= 2 THEN user_id END) as step2, COUNT(DISTINCT CASE WHEN step >= 3 THEN user_id END) as step3 FROM (SELECT user_id, MAX(CASE WHEN event='view_product' THEN 1 WHEN event='add_to_cart' THEN 2 WHEN event='purchase' THEN 3 ELSE 0 END) as step FROM events GROUP BY 1) t",
+    "when_to_use": [
+      "conversion funnel",
+      "drop-off at each step",
+      "onboarding funnel"
+    ],
+    "anti_patterns": [
+      "not enforcing step ordering — users can appear at step 3 without step 1",
+      "counting events instead of users per step"
+    ],
+    "related_patterns": ["wa_conversion_rate", "wa_bounce_rate"]
+  },
+  {
+    "id": "wa_retention",
+    "title": "User retention by cohort",
+    "intent_tags": ["retention", "cohort retention", "day 1 day 7 day 30", "user retention"],
+    "sql_features": ["cte", "window", "aggregation"],
+    "difficulty": "advanced",
+    "pattern_type": "analytical",
+    "template": "WITH cohorts AS (SELECT user_id, DATE_TRUNC('week', MIN(event_date)) as cohort_week FROM events GROUP BY 1), activity AS (SELECT e.user_id, c.cohort_week, DATE_DIFF('week', c.cohort_week, e.event_date) as week_number FROM events e JOIN cohorts c ON e.user_id = c.user_id) SELECT cohort_week, week_number, COUNT(DISTINCT user_id) * 1.0 / MAX(COUNT(DISTINCT user_id)) OVER (PARTITION BY cohort_week ORDER BY week_number ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) as retention FROM activity GROUP BY 1, 2 ORDER BY 1, 2",
+    "when_to_use": [
+      "cohort retention",
+      "D1/D7/D30 retention",
+      "churn analysis"
+    ],
+    "anti_patterns": [
+      "dividing by current cohort size instead of week-0 size",
+      "using calendar weeks instead of weeks-since-signup"
+    ],
+    "related_patterns": ["wa_dau_mau", "wa_churn"]
+  },
+  {
+    "id": "wa_churn",
+    "title": "User churn detection",
+    "intent_tags": ["churn", "churned users", "inactive users", "lapsed users"],
+    "sql_features": ["cte", "aggregation"],
+    "difficulty": "intermediate",
+    "pattern_type": "analytical",
+    "template": "SELECT user_id, MAX(event_date) as last_active, CURRENT_DATE - MAX(event_date) as days_since_active, CASE WHEN CURRENT_DATE - MAX(event_date) > 30 THEN 'churned' WHEN CURRENT_DATE - MAX(event_date) > 14 THEN 'at_risk' ELSE 'active' END as status FROM events GROUP BY 1",
+    "when_to_use": [
+      "churned users",
+      "inactive user detection",
+      "at-risk users"
+    ],
+    "anti_patterns": [
+      "hardcoding churn threshold — parameterise or make it a CTE constant"
+    ],
+    "related_patterns": ["wa_retention", "wa_dau_mau"]
+  },
+  {
+    "id": "wa_conversion_rate",
+    "title": "Goal conversion rate by channel / source",
+    "intent_tags": ["conversion rate", "channel conversion", "utm source", "goal completion"],
+    "sql_features": ["aggregation", "join"],
+    "difficulty": "intermediate",
+    "pattern_type": "metric",
+    "template": "SELECT utm_source, utm_medium, COUNT(DISTINCT session_id) as sessions, COUNT(DISTINCT CASE WHEN converted THEN session_id END) as conversions, COUNT(DISTINCT CASE WHEN converted THEN session_id END) * 1.0 / NULLIF(COUNT(DISTINCT session_id), 0) as conversion_rate FROM sessions GROUP BY 1, 2 ORDER BY 3 DESC",
+    "when_to_use": [
+      "channel performance",
+      "UTM source conversion",
+      "campaign effectiveness"
+    ],
+    "anti_patterns": [
+      "mixing session-level and user-level granularity in the same query"
+    ],
+    "related_patterns": ["wa_attribution", "wa_funnel"]
+  },
+  {
+    "id": "wa_attribution",
+    "title": "First-touch and last-touch attribution",
+    "intent_tags": ["attribution", "first touch", "last touch", "channel attribution", "marketing attribution"],
+    "sql_features": ["window", "cte"],
+    "difficulty": "advanced",
+    "pattern_type": "analytical",
+    "template": "WITH touches AS (SELECT user_id, channel, event_timestamp, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY event_timestamp) as first_touch, ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY event_timestamp DESC) as last_touch FROM sessions WHERE converted = true) SELECT channel, COUNT(CASE WHEN first_touch = 1 THEN 1 END) as first_touch_conversions, COUNT(CASE WHEN last_touch = 1 THEN 1 END) as last_touch_conversions FROM touches GROUP BY 1",
+    "when_to_use": [
+      "marketing attribution",
+      "first touch vs last touch",
+      "channel credit"
+    ],
+    "anti_patterns": [
+      "attributing all credit to a single touch — consider linear or time-decay models for multi-touch"
+    ],
+    "related_patterns": ["wa_conversion_rate"]
+  },
+  {
+    "id": "wa_landing_page",
+    "title": "Landing page performance",
+    "intent_tags": ["landing page", "page performance", "entry page", "top pages"],
+    "sql_features": ["aggregation", "window"],
+    "difficulty": "intermediate",
+    "pattern_type": "analytical",
+    "template": "WITH entry_pages AS (SELECT session_id, FIRST_VALUE(page_url) OVER (PARTITION BY session_id ORDER BY event_timestamp) as landing_page FROM pageviews) SELECT landing_page, COUNT(DISTINCT session_id) as sessions, AVG(CASE WHEN page_count = 1 THEN 1.0 ELSE 0 END) as bounce_rate FROM entry_pages ep JOIN session_pages sp USING (session_id) GROUP BY 1 ORDER BY 2 DESC",
+    "when_to_use": [
+      "landing page analysis",
+      "entry page bounce rate",
+      "top landing pages"
+    ],
+    "anti_patterns": [
+      "using page_url without stripping query parameters — fragments same page into many rows"
+    ],
+    "related_patterns": ["wa_bounce_rate", "wa_funnel"]
+  },
+  {
+    "id": "wa_page_views_per_session",
+    "title": "Pages per session",
+    "intent_tags": ["pages per session", "depth", "page views per visit"],
+    "sql_features": ["aggregation"],
+    "difficulty": "beginner",
+    "pattern_type": "metric",
+    "template": "SELECT AVG(page_count) as avg_pages_per_session FROM (SELECT session_id, COUNT(*) as page_count FROM pageviews GROUP BY session_id) t",
+    "when_to_use": [
+      "engagement depth",
+      "pages per session",
+      "content consumption"
+    ],
+    "anti_patterns": [
+      "dividing total page views by total sessions when sessions span days — gives misleading averages"
+    ],
+    "related_patterns": ["wa_session_duration", "wa_bounce_rate"]
+  },
+  {
+    "id": "wa_event_frequency",
+    "title": "Event frequency distribution",
+    "intent_tags": ["event frequency", "event count", "user actions", "event analysis"],
+    "sql_features": ["aggregation", "window"],
+    "difficulty": "intermediate",
+    "pattern_type": "analytical",
+    "template": "SELECT event_name, COUNT(*) as total_events, COUNT(DISTINCT user_id) as unique_users, COUNT(*) * 1.0 / COUNT(DISTINCT user_id) as events_per_user FROM events WHERE event_date BETWEEN :start AND :end GROUP BY 1 ORDER BY 2 DESC",
+    "when_to_use": [
+      "event volume breakdown",
+      "feature usage",
+      "most common user actions"
+    ],
+    "anti_patterns": [
+      "not filtering bots — skews event counts heavily"
+    ],
+    "related_patterns": ["wa_dau_mau", "wa_funnel"]
+  }
+]

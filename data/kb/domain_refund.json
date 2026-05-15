@@ -1,0 +1,47 @@
+[
+  {
+    "id": "refund_rate",
+    "title": "Refund Rate & Returns Analysis",
+    "business_definition": "Refund rate = refund amount or count / gross order amount or count. High refund rates signal product quality issues, expectation mismatches, fraud, or fulfillment problems. Refunds directly reduce net revenue.",
+    "intent_tags": ["refund rate", "returns", "refunds", "chargebacks", "disputes", "return rate"],
+    "when_to_use": ["refund rate increased", "refunds spiked", "chargeback analysis", "product quality issues"],
+    "diagnostic_questions": [
+      "Is the refund rate spike concentrated in a specific product category, SKU, or supplier?",
+      "Did a specific batch, fulfillment center, or shipping partner cause the issue?",
+      "Is this voluntary (customer request) or involuntary (failed charge, chargeback)?",
+      "Are refunds being processed within policy windows or are late refunds increasing liability?"
+    ],
+    "causal_relationships": [
+      {
+        "symptom": "refund rate spiked in a specific period",
+        "check_in_order": ["refund_reason_breakdown", "product_category_refund_rate", "shipping_partner_correlation", "customer_segment_refund_rate"],
+        "detection_sql": "SELECT refund_reason, product_category, COUNT(*) AS refunds, SUM(refund_amount) AS total_refunded, COUNT(*) * 100.0 / SUM(COUNT(*)) OVER () AS pct FROM refunds WHERE refunded_at >= CURRENT_DATE - INTERVAL '30 days' GROUP BY 1, 2 ORDER BY 3 DESC"
+      },
+      {
+        "symptom": "chargeback rate increasing",
+        "check_in_order": ["payment_method_mix", "fraud_score_distribution", "high_risk_customer_orders"],
+        "detection_sql": "SELECT payment_method, COUNT(CASE WHEN is_chargeback THEN 1 END) AS chargebacks, COUNT(*) AS total_orders, COUNT(CASE WHEN is_chargeback THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0) AS chargeback_rate FROM orders GROUP BY 1 ORDER BY 4 DESC"
+      }
+    ],
+    "inflation_causes": [
+      {
+        "cause": "Test refunds or internal credits included in refund figures",
+        "detection_sql": "SELECT refund_type, COUNT(*), SUM(refund_amount) FROM refunds GROUP BY 1"
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Store credits given instead of cash refunds not counted",
+        "detection_sql": "SELECT resolution_type, COUNT(*), SUM(amount) FROM customer_complaints WHERE resolved_at >= CURRENT_DATE - INTERVAL '30 days' GROUP BY 1"
+      }
+    ],
+    "related_patterns": ["revenue_drop_analysis", "average_order_value", "payment_failure"],
+    "anti_patterns": [
+      "Do not measure refund rate only by count — a few high-value refunds matter more than many small ones",
+      "Do not compare refund rates across product categories without accounting for expected return rate differences"
+    ],
+    "sql_assets": {
+      "refund_rate_by_category": "SELECT product_category, COUNT(r.refund_id) * 100.0 / NULLIF(COUNT(o.order_id), 0) AS refund_rate, SUM(r.refund_amount) AS total_refunded FROM orders o LEFT JOIN refunds r ON o.order_id = r.order_id WHERE o.order_date >= CURRENT_DATE - INTERVAL '30 days' GROUP BY 1 ORDER BY 2 DESC"
+    }
+  }
+]

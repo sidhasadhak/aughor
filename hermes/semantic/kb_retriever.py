@@ -16,6 +16,14 @@ Configure via:
 from __future__ import annotations
 
 import os
+from pathlib import Path
+
+# Load .env so HERMES_KB_PATH is available when running standalone scripts
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).parent.parent.parent / ".env")
+except ImportError:
+    pass
 
 KB_COLLECTION = "sql_knowledge_base"
 KB_PATH = os.getenv("HERMES_KB_PATH", "")
@@ -215,9 +223,16 @@ def _format_for_planning(hits: list[dict]) -> str:
             defn = h.get("business_definition", "")
             if defn:
                 parts.append(f"Business context: {defn}")
+            mn = h.get("metric_nature", {})
+            if isinstance(mn, dict) and mn.get("common_misconception"):
+                parts.append(f"⚠ Misconception: {mn['common_misconception']}")
             dqs = h.get("diagnostic_questions", [])[:2]
             if dqs:
                 parts.append("Key questions to answer: " + " | ".join(dqs))
+            inf = h.get("inflation_causes", [])[:1]
+            for ic in inf:
+                if isinstance(ic, dict):
+                    parts.append(f"Watch for inflation: {ic.get('cause', '')} — {ic.get('how_it_inflates', '')}")
             sql_ex = h.get("sql_example", "")
             if sql_ex:
                 parts.append(f"Reference SQL:\n{sql_ex}")
@@ -239,13 +254,63 @@ def _format_for_decompose(hits: list[dict]) -> str:
     parts: list[str] = ["DOMAIN KNOWLEDGE (use to form precise hypotheses):"]
     for h in hits:
         parts.append(f"\n── {h['title']} ──")
+
         defn = h.get("business_definition", "")
         if defn:
             parts.append(defn)
+
         dqs = h.get("diagnostic_questions", [])[:3]
         if dqs:
             parts.append("Diagnostic questions:\n" + "\n".join(f"  - {q}" for q in dqs))
-        causes = h.get("causal_relationships", [])[:3]
-        if causes:
-            parts.append("Known causal patterns:\n" + "\n".join(f"  - {c}" for c in causes))
+
+        # Structured causal chains — two shapes:
+        #   Aughor: {symptom, check_in_order, detection_sql}
+        #   Talonsight: {if, then}
+        causal = h.get("causal_relationships", [])[:4]
+        if causal:
+            parts.append("Causal signals:")
+            for cr in causal:
+                if isinstance(cr, dict):
+                    symptom = cr.get("symptom") or cr.get("if", "")
+                    then = cr.get("then", "")
+                    checks = cr.get("check_in_order", [])
+                    sql = cr.get("detection_sql", "")
+                    if symptom:
+                        parts.append(f"  If: {symptom}")
+                    if then:
+                        parts.append(f"    → {then}")
+                    if checks:
+                        parts.append(f"    → Check in order: {' → '.join(checks)}")
+                    if sql:
+                        parts.append(f"    Detection SQL: {sql}")
+                else:
+                    parts.append(f"  - {cr}")
+
+        cross = h.get("cross_metric_signals", [])[:2]
+        if cross:
+            parts.append("Cross-metric signals:")
+            for cs in cross:
+                if isinstance(cs, dict):
+                    parts.append(f"  If {cs.get('if', '')} → {cs.get('then', '')}")
+                else:
+                    parts.append(f"  {cs}")
+
+        inf = h.get("inflation_causes", [])[:2]
+        if inf:
+            parts.append("Metric inflation causes:")
+            for ic in inf:
+                cause = ic.get("cause", str(ic)) if isinstance(ic, dict) else str(ic)
+                parts.append(f"  ⚠ {cause}")
+
+        defl = h.get("deflation_causes", [])[:2]
+        if defl:
+            parts.append("Metric deflation causes:")
+            for dc in defl:
+                cause = dc.get("cause", str(dc)) if isinstance(dc, dict) else str(dc)
+                parts.append(f"  ⚠ {cause}")
+
+        related = h.get("related_patterns", [])
+        if related:
+            parts.append(f"  Related metrics to cross-check: {', '.join(related)}")
+
     return "\n".join(p for p in parts if p is not None)

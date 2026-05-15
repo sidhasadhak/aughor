@@ -1,0 +1,641 @@
+[
+  {
+    "id": "mkt_cpa_by_creative",
+    "title": "Cost per Acquisition by Creative",
+    "intent_tags": [
+      "CPA by creative",
+      "cost per acquisition creative",
+      "creative CPA",
+      "ad creative cost per acquire",
+      "what is my CPA creative",
+      "creative efficiency",
+      "creative performance CPA",
+      "ad creative ROI",
+      "creative variant CPA",
+      "which creative converts best",
+      "creative comparison CPA"
+    ],
+    "sql_features": [
+      "aggregation",
+      "left_join",
+      "cte",
+      "nullif"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "identify top-performing ad creatives by cost efficiency",
+      "optimize creative testing and creative rotation",
+      "benchmark creative variants against control or winning variants",
+      "allocate budget to highest-performing creative variations",
+      "diagnose creative fatigue or decline in specific variants"
+    ],
+    "related_patterns": [
+      "mkt_cac_by_channel",
+      "mkt_conversion_rate",
+      "mkt_roi",
+      "mkt_attribution_window_sensitivity"
+    ],
+    "business_definition": "Total spend for an ad creative divided by the number of new customers acquired through that creative in the period. A new customer is defined as a user with their first completed order in the period. Creatives are identified via creative_id and tracked at the campaign level.",
+    "metric_nature": {
+      "what_it_measures": "The acquisition efficiency of individual ad creatives \u2014 a direct measure of creative quality, messaging, and visual appeal in driving paid conversions.",
+      "what_it_does_not_measure": "Creative impact on brand awareness, retention, or long-term loyalty. A creative may have low CPA but poor long-term customer quality or high churn.",
+      "common_misconception": "CPA by creative is not the same as creative click-through rate (CTR). CTR measures engagement; CPA measures conversion efficiency \u2014 a high-CTR creative may have poor conversion and high CPA."
+    },
+    "template": "WITH creative_spend AS (\n  SELECT creative_id, SUM(spend) AS total_spend FROM ad_spend WHERE spend_date BETWEEN {start_date} AND {end_date} GROUP BY creative_id\n),\nnew_customers_by_creative AS (\n  SELECT c.creative_id, COUNT(DISTINCT o.customer_id) AS new_customers FROM orders o JOIN ad_clicks ac ON o.customer_id = ac.customer_id JOIN ad_spend s ON ac.ad_id = s.ad_id JOIN campaigns c ON s.campaign_id = c.campaign_id WHERE o.status = 'completed' AND o.order_date BETWEEN {start_date} AND {end_date} AND o.order_sequence = 1 GROUP BY c.creative_id\n)\nSELECT cs.creative_id, COALESCE(cs.total_spend, 0) AS spend, COALESCE(nc.new_customers, 0) AS customers, COALESCE(cs.total_spend, 0) / NULLIF(COALESCE(nc.new_customers, 0), 0) AS cpa FROM creative_spend cs LEFT JOIN new_customers_by_creative nc ON cs.creative_id = nc.creative_id",
+    "inflation_causes": [
+      {
+        "cause": "Counting all conversions instead of new customers",
+        "how_it_inflates": "If the denominator includes *all* conversions (including repeat customers), CPA is deflated \u2014 because the cost is spread over customers who were already acquired previously, inflating CPA for *new* customers.",
+        "detection_sql": "SELECT COUNT(DISTINCT customer_id) AS total_customers, COUNT(DISTINCT CASE WHEN order_sequence = 1 THEN customer_id END) AS new_customers FROM orders WHERE order_date >= '2024-01-01'",
+        "fix": "Filter to *new customers only* using order_sequence = 1 or first_order_date logic."
+      },
+      {
+        "cause": "Attributing conversions to *last-touch creative* instead of *causal creative*",
+        "how_it_inflates": "If conversions are attributed solely to the *last* creative in a multi-touch path, and earlier creatives are not credited, their spend is allocated to few conversions \u2014 inflating their CPA.",
+        "detection_sql": "SELECT creative_id, COUNT(DISTINCT customer_id) AS conversions, SUM(spend) AS spend FROM ad_spend s JOIN attribution_events a ON s.ad_id = a.ad_id WHERE a.conversion_date >= '2024-01-01' GROUP BY 1 ORDER BY conversions DESC",
+        "fix": "Use multi-touch attribution or weighted credit across creatives in the customer's path, not last-touch only."
+      },
+      {
+        "cause": "Including test or internal creative variants",
+        "how_it_inflates": "If internal test creatives (e.g., placeholder, QA) are included in spend but yield no conversions, CPA inflates \u2014 because spend is incurred without conversions.",
+        "detection_sql": "SELECT creative_id, creative_name, channel, SUM(spend) AS spend, COUNT(DISTINCT CASE WHEN conversion_id IS NOT NULL THEN customer_id END) AS conversions FROM ad_spend s LEFT JOIN attribution_events a ON s.ad_id = a.ad_id WHERE s.spend_date >= '2024-01-01' GROUP BY 1, 2, 3 HAVING spend > 0 AND conversions = 0 ORDER BY spend DESC LIMIT 10",
+        "fix": "Filter to external, approved creatives before aggregation \u2014 exclude creative_type = 'test' or creative_name LIKE '%internal%'."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Excluding creatives with zero impressions",
+        "how_it_deflates": "If creatives with zero impressions (and thus zero conversions) are excluded, only high-performing creatives remain \u2014 artificially deflating average CPA.",
+        "detection_sql": "SELECT creative_id, SUM(impressions) AS impressions, SUM(spend) AS spend, COUNT(DISTINCT CASE WHEN conversion_id IS NOT NULL THEN customer_id END) AS conversions FROM ad_spend s LEFT JOIN attribution_events a ON s.ad_id = a.ad_id WHERE s.spend_date >= '2024-01-01' GROUP BY 1 HAVING impressions = 0 ORDER BY spend DESC",
+        "fix": "Include all creatives with spend, assigning zero customers where applicable, to preserve accurate CPA distribution."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the CPA anomaly isolated to one creative or systemic across all?",
+      "Has a new creative testing framework or creative management platform been deployed?",
+      "Are high-CPA creatives associated with lower lifetime value or higher churn?",
+      "Did creative fatigue set in for top performers?",
+      "Are creative variants misattributed due to cross-device issues?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "CPA by creative up, ROAS down",
+        "then": "creative performance declined \u2014 likely creative fatigue, outdated creative, or relevance decay"
+      },
+      {
+        "if": "CPA by creative down, conversion_rate up",
+        "then": "creative improvements driving better performance \u2014 likely updated messaging or design"
+      },
+      {
+        "if": "CPA by creative down, new_customer_count down",
+        "then": "creative optimization reduced spend without volume \u2014 likely efficiency gains or channel shift"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "CPA by creative increases >25% WoW with spend held flat",
+        "and_also": "mkt_conversion_rate decreases same period",
+        "shared_root_cause": "Creative fatigue or ad platform devaluation \u2014 likely creative wear-out, algorithmic changes, or targeting decay causing higher cost per acquisition and lower conversion volume.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', a.conversion_date) AS week, s.creative_id, COUNT(DISTINCT a.customer_id) AS conversions, SUM(s.cost) / NULLIF(COUNT(DISTINCT a.customer_id), 0) AS cpa, COUNT(DISTINCT a.customer_id) / NULLIF(SUM(s.clicks), 0) * 100 AS conv_rate FROM ad_spend s LEFT JOIN attribution_events a ON s.ad_id = a.ad_id WHERE s.spend_date >= '2024-01-01' GROUP BY 1, s.creative_id ORDER BY week, cpa DESC"
+      },
+      {
+        "if_this_metric": "CPA by creative drops MoM",
+        "and_also": "mkt_roi decreases same period",
+        "shared_root_cause": "Shift to cheaper but lower-quality creatives (e.g., automated design, lower-tier vendors) reduced CPA but also reduced conversion quality \u2014 likely inefficient scale over quality.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', s.spend_date) AS month, s.creative_id, SUM(s.cost) / NULLIF(COUNT(DISTINCT a.customer_id), 0) AS cpa, SUM(a.attributed_revenue) - SUM(s.cost) AS profit FROM ad_spend s LEFT JOIN attribution_events a ON s.ad_id = a.ad_id WHERE s.spend_date >= '2024-01-01' GROUP BY 1, s.creative_id ORDER BY month, cpa ASC"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Using total conversions instead of new customers in denominator",
+        "why_wrong": "If CPA denominator includes *all* conversions (including repeat customers), the rate is deflated \u2014 because the cost is spread over customers who were already acquired previously.",
+        "bad_sql": "SELECT SUM(s.cost) / NULLIF(COUNT(DISTINCT a.customer_id), 0) AS cpa FROM ad_spend s LEFT JOIN attribution_events a ON s.ad_id = a.ad_id",
+        "good_sql": "SELECT SUM(s.cost) / NULLIF(COUNT(DISTINCT c.customer_id), 0) AS cpa FROM ad_spend s LEFT JOIN (SELECT customer_id, MIN(order_date) AS first_order_date, creative_id FROM orders o JOIN ad_clicks ac ON o.customer_id = ac.customer_id JOIN ad_spend s ON ac.ad_id = s.ad_id JOIN campaigns c ON s.campaign_id = c.campaign_id WHERE o.status = 'completed' AND o.order_sequence = 1 GROUP BY customer_id, creative_id) c ON s.creative_id = c.creative_id WHERE s.spend_date BETWEEN '2024-01-01' AND '2024-01-31' GROUP BY s.creative_id"
+      },
+      {
+        "pattern": "Averaging CPA per creative without weighting by spend",
+        "why_wrong": "If CPA is averaged across creatives without weighting by spend, small high-CPA creatives skew the mean \u2014 masking overall trend.",
+        "bad_sql": "SELECT AVG(cost / NULLIF(conversions, 0)) AS cpa FROM (SELECT creative_id, SUM(cost) AS cost, COUNT(DISTINCT customer_id) AS conversions FROM ad_spend s LEFT JOIN attribution_events a ON s.ad_id = a.ad_id GROUP BY creative_id) sub",
+        "good_sql": "SELECT SUM(cost) / NULLIF(SUM(conversions), 0) AS cpa FROM (SELECT creative_id, SUM(cost) AS cost, COUNT(DISTINCT customer_id) AS conversions FROM ad_spend s LEFT JOIN attribution_events a ON s.ad_id = a.ad_id GROUP BY creative_id) sub"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT s.creative_id, SUM(s.cost) / NULLIF(COUNT(DISTINCT c.customer_id), 0) AS cpa FROM ad_spend s LEFT JOIN (SELECT customer_id, MIN(order_date) AS first_order_date, creative_id FROM orders o JOIN ad_clicks ac ON o.customer_id = ac.customer_id JOIN ad_spend s ON ac.ad_id = s.ad_id JOIN campaigns c ON s.campaign_id = c.campaign_id WHERE o.status = 'completed' AND o.order_sequence = 1 GROUP BY customer_id, creative_id) c ON s.creative_id = c.creative_id WHERE s.spend_date BETWEEN '2024-01-01' AND '2024-01-31' GROUP BY s.creative_id",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', c.first_order_date) AS month, s.creative_id, SUM(s.cost) / NULLIF(COUNT(DISTINCT c.customer_id), 0) AS cpa, COUNT(DISTINCT c.customer_id) AS customers FROM ad_spend s LEFT JOIN (SELECT customer_id, MIN(order_date) AS first_order_date, creative_id FROM orders o JOIN ad_clicks ac ON o.customer_id = ac.customer_id JOIN ad_spend s ON ac.ad_id = s.ad_id JOIN campaigns c ON s.campaign_id = c.campaign_id WHERE o.status = 'completed' AND o.order_sequence = 1 GROUP BY customer_id, creative_id) c ON s.creative_id = c.creative_id WHERE s.spend_date BETWEEN DATEADD(day, -30, c.first_order_date) AND c.first_order_date GROUP BY 1, s.creative_id ORDER BY 1, 3 DESC",
+      "advanced_sql": "WITH creative_spend AS (\n  -- Grain: spend per creative per period\n  SELECT\n    creative_id,\n    SUM(spend) AS total_spend\n  FROM ad_spend\n  WHERE spend_date BETWEEN '2024-01-01' AND '2024-01-31'\n  GROUP BY creative_id\n),\nnew_customers AS (\n  -- Grain: new customers attributed to creative (first conversion)\n  SELECT\n    c.creative_id,\n    o.customer_id,\n    MIN(o.order_date) AS first_order_date\n  FROM orders o\n  JOIN ad_clicks ac ON o.customer_id = ac.customer_id\n  JOIN ad_spend s ON ac.ad_id = s.ad_id\n  JOIN campaigns c ON s.campaign_id = c.campaign_id\n  WHERE o.status = 'completed' AND o.order_sequence = 1\n  GROUP BY c.creative_id, o.customer_id\n),\nattributed_customers AS (\n  -- Grain: first conversion window attribution (30-day lookback)\n  SELECT\n    nc.creative_id,\n    nc.customer_id,\n    nc.first_order_date,\n    cs.total_spend\n  FROM new_customers nc\n  LEFT JOIN creative_spend cs ON nc.creative_id = cs.creative_id\n  WHERE nc.first_order_date BETWEEN '2024-01-01' AND '2024-01-31'\n)\nSELECT\n  creative_id,\n  COALESCE(SUM(total_spend), 0) AS spend,\n  COUNT(DISTINCT customer_id) AS customers,\n  ROUND(COALESCE(SUM(total_spend), 0) / NULLIF(COUNT(DISTINCT customer_id), 0), 2) AS cpa\nFROM attributed_customers\nGROUP BY creative_id\nORDER BY cpa ASC"
+    }
+  },
+  {
+    "id": "mkt_audience_overlap_rate",
+    "title": "Audience Overlap Rate",
+    "intent_tags": [
+      "audience overlap rate",
+      "audience overlap %",
+      "audience duplication",
+      "audience saturation",
+      "overlapping audiences",
+      "duplicate targeting",
+      "what % of audience overlaps",
+      "audience redundancy",
+      "audience bleed",
+      "targeting overlap",
+      "audience cross-targeting"
+    ],
+    "sql_features": [
+      "aggregation",
+      "self_join",
+      "conditional_count",
+      "nullif",
+      "cte"
+    ],
+    "difficulty": "expert",
+    "pattern_type": "analytical",
+    "when_to_use": [
+      "assess targeting efficiency and audience fragmentation",
+      "optimize campaign targeting to avoid internal competition",
+      "reduce waste from overlapping audiences across campaigns",
+      "identify campaign cannibalization opportunities",
+      "balance campaign frequency and saturation thresholds"
+    ],
+    "related_patterns": [
+      "mkt_frequency_cap",
+      "mkt_impression_volume",
+      "mkt_conversion_rate",
+      "mkt_cpa_by_creative"
+    ],
+    "business_definition": "Percentage of users targeted by *at least two* campaigns simultaneously out of the total users targeted in the period. An overlap is defined as a user appearing in the audience of multiple active campaigns during the same week.",
+    "metric_nature": {
+      "what_it_measures": "The degree of internal competition among campaigns \u2014 a high rate indicates wasted spend and potential audience fatigue.",
+      "what_it_does_not_measure": "Conversion impact or revenue loss from overlap. High overlap may reduce efficiency but not necessarily cause revenue loss if campaigns target different stages.",
+      "common_misconception": "Audience overlap rate is not the same as frequency. Frequency measures exposure *count*; overlap measures *audience duplication* across campaigns \u2014 overlap can occur even with low frequency."
+    },
+    "template": "WITH campaign_audiences AS (\n  SELECT DISTINCT campaign_id, user_id, DATE_TRUNC('week', campaign_start_date) AS week_start FROM campaign_audience_mapping WHERE campaign_start_date BETWEEN {start_date} AND {end_date}\n),\noverlap_users AS (\n  SELECT user_id, COUNT(DISTINCT campaign_id) AS campaign_count FROM campaign_audiences GROUP BY user_id HAVING COUNT(DISTINCT campaign_id) >= 2\n),\ntotal_users AS (\n  SELECT COUNT(DISTINCT user_id) AS total_users FROM campaign_audiences\n)\nSELECT ou.user_count, tu.total_users, ou.user_count * 100.0 / NULLIF(tu.total_users, 0) AS overlap_rate FROM (SELECT COUNT(DISTINCT user_id) AS user_count FROM overlap_users) ou, total_users tu",
+    "inflation_causes": [
+      {
+        "cause": "Using campaign_start_date instead of active_date range",
+        "how_it_inflates": "If campaign_start_date is used but campaigns overlap by active period (e.g., one starts late but ends late), overlap is overcounted \u2014 causing overlap rate to inflate artificially.",
+        "detection_sql": "SELECT campaign_id, campaign_name, campaign_start_date, campaign_end_date, DATEDIFF(day, campaign_start_date, campaign_end_date) AS duration FROM campaigns WHERE campaign_start_date >= '2024-01-01' ORDER BY duration DESC LIMIT 10",
+        "fix": "Use campaign_active_date ranges and check for *actual* overlap (WHERE start_date <= other_end AND end_date >= other_start)."
+      },
+      {
+        "cause": "Including internal or QA campaigns in audience mapping",
+        "how_it_inflates": "If internal, test, or QA campaigns are included in audience mapping, overlap is inflated \u2014 because the same internal users are targeted multiple times.",
+        "detection_sql": "SELECT campaign_id, campaign_name, campaign_type, COUNT(DISTINCT user_id) AS users FROM campaign_audience_mapping WHERE campaign_start_date >= '2024-01-01' GROUP BY 1, 2, 3 HAVING campaign_type IN ('test', 'internal') ORDER BY users DESC",
+        "fix": "Filter to campaign_type = 'live' or exclude campaign_name LIKE '%internal%' or '%test%' before aggregation."
+      },
+      {
+        "cause": "Counting overlap at *user_id* level without deduplication",
+        "how_it_inflates": "If overlap is counted as total campaign appearances (e.g., SUM(campaign_count)) instead of unique overlapping users, the numerator inflates \u2014 causing overlap rate to exceed 100% or appear inflated.",
+        "detection_sql": "SELECT user_id, COUNT(DISTINCT campaign_id) AS campaign_count, COUNT(*) AS total_applications FROM campaign_audience_mapping WHERE campaign_start_date >= '2024-01-01' GROUP BY 1 HAVING COUNT(DISTINCT campaign_id) > 1 ORDER BY total_applications DESC LIMIT 10",
+        "fix": "Count unique overlapping users: `COUNT(DISTINCT CASE WHEN campaign_count >= 2 THEN user_id END)`."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Excluding campaigns with <500 users",
+        "how_it_deflates": "If small campaigns are excluded, overlap is underestimated \u2014 because small campaigns rarely overlap with others, but excluding them shrinks the denominator without reducing numerator proportionally.",
+        "detection_sql": "SELECT COUNT(DISTINCT campaign_id) AS total_campaigns, COUNT(DISTINCT CASE WHEN user_count >= 500 THEN campaign_id END) AS large_campaigns FROM (SELECT campaign_id, COUNT(DISTINCT user_id) AS user_count FROM campaign_audience_mapping GROUP BY campaign_id) sub",
+        "fix": "Include all campaigns with \u22651 user in overlap calculation, unless business defines *meaningful* overlap threshold."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the overlap rate anomaly concentrated in specific audience segments or platforms?",
+      "Has a new campaign segmentation or audience management system been deployed?",
+      "Are overlap rates higher in campaigns with similar targeting or messaging?",
+      "Did campaign frequency caps or saturation controls change?",
+      "Are overlap rates driven by broad audiences (e.g., email list, lookalikes)?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "Overlap rate up, conversion_rate down",
+        "then": "internal competition reducing efficiency \u2014 likely audience saturation or fatigue from repeated exposure"
+      },
+      {
+        "if": "Overlap rate up, spend up",
+        "then": "more campaigns running simultaneously \u2014 likely expanded campaign portfolio without targeting alignment"
+      },
+      {
+        "if": "Overlap rate down, ROI down",
+        "then": "reduced overlap but lower performance \u2014 likely under-targeting or fragmented audience reach"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Audience overlap rate increases >20% WoW",
+        "and_also": "mkt_cpa_by_creative decreases same period",
+        "shared_root_cause": "More campaigns are targeting overlapping audiences \u2014 likely expanded campaign volume or loosened audience exclusivity rules \u2014 reducing CPA per campaign but increasing internal competition and potential waste.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', ca.campaign_start_date) AS week, COUNT(DISTINCT ca.user_id) AS users, COUNT(DISTINCT ca.campaign_id) AS campaigns, COUNT(DISTINCT ca.user_id) FILTER (WHERE ca.campaign_count >= 2) AS overlapping_users, COUNT(DISTINCT ca.user_id) FILTER (WHERE ca.campaign_count >= 2) * 100.0 / NULLIF(COUNT(DISTINCT ca.user_id), 0) AS overlap_rate FROM (SELECT campaign_id, user_id, campaign_start_date, COUNT(DISTINCT campaign_id) OVER (PARTITION BY user_id) AS campaign_count FROM campaign_audience_mapping WHERE campaign_start_date >= '2024-01-01') ca GROUP BY 1 ORDER BY week"
+      },
+      {
+        "if_this_metric": "Audience overlap rate drops MoM",
+        "and_also": "mkt_conversion_rate decreases same period",
+        "shared_root_cause": "Tighter audience exclusivity or fragmentation \u2014 likely stricter campaign segmentation or audience capping to reduce overlap \u2014 which reduced campaign reach and conversion volume.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', ca.campaign_start_date) AS month, COUNT(DISTINCT ca.user_id) AS users, COUNT(DISTINCT ca.campaign_id) AS campaigns, COUNT(DISTINCT ca.user_id) FILTER (WHERE ca.campaign_count >= 2) AS overlapping_users, COUNT(DISTINCT ca.user_id) FILTER (WHERE ca.campaign_count >= 2) * 100.0 / NULLIF(COUNT(DISTINCT ca.user_id), 0) AS overlap_rate, SUM(a.attributed_revenue) / NULLIF(SUM(s.cost), 0) AS roas FROM campaign_audience_mapping ca LEFT JOIN (SELECT user_id, SUM(spend) AS spend, campaign_id FROM ad_spend WHERE spend_date >= '2024-01-01' GROUP BY 1, 2) s ON ca.user_id = s.campaign_id LEFT JOIN attribution_events a ON ca.user_id = a.user_id GROUP BY 1 ORDER BY month"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Counting overlap as SUM(campaign_count) instead of unique overlapping users",
+        "why_wrong": "If overlap is computed as `SUM(campaign_count)`, a user in 5 campaigns counts as 5 overlaps \u2014 inflating rate and breaking logic.",
+        "bad_sql": "SELECT SUM(campaign_count) / NULLIF(COUNT(DISTINCT user_id), 0) * 100 AS overlap_rate FROM (SELECT user_id, COUNT(DISTINCT campaign_id) AS campaign_count FROM campaign_audience_mapping GROUP BY 1) sub",
+        "good_sql": "SELECT COUNT(DISTINCT CASE WHEN campaign_count >= 2 THEN user_id END) * 100.0 / NULLIF(COUNT(DISTINCT user_id), 0) AS overlap_rate FROM (SELECT user_id, COUNT(DISTINCT campaign_id) AS campaign_count FROM campaign_audience_mapping GROUP BY 1) sub"
+      },
+      {
+        "pattern": "Using campaign_start_date instead of campaign_active_date range",
+        "why_wrong": "If campaigns overlap in *active period* but not start dates, overlap is missed \u2014 deflating rate and masking internal competition.",
+        "bad_sql": "SELECT user_id, COUNT(DISTINCT campaign_id) AS campaign_count FROM campaign_audience_mapping GROUP BY 1 HAVING COUNT(DISTINCT campaign_id) >= 2",
+        "good_sql": "SELECT ca1.user_id, COUNT(DISTINCT ca1.campaign_id) AS campaign_count FROM campaign_audience_mapping ca1 JOIN campaign_audience_mapping ca2 ON ca1.user_id = ca2.user_id AND ca1.campaign_id < ca2.campaign_id AND ca1.campaign_start_date <= ca2.campaign_end_date AND ca1.campaign_end_date >= ca2.campaign_start_date GROUP BY 1 HAVING COUNT(DISTINCT ca2.campaign_id) >= 2"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "WITH campaign_audiences AS (SELECT DISTINCT campaign_id, user_id, DATE_TRUNC('week', campaign_start_date) AS week_start FROM campaign_audience_mapping WHERE campaign_start_date BETWEEN '2024-01-01' AND '2024-01-31'), overlap_users AS (SELECT user_id, COUNT(DISTINCT campaign_id) AS campaign_count FROM campaign_audiences GROUP BY 1 HAVING COUNT(DISTINCT campaign_id) >= 2), total_users AS (SELECT COUNT(DISTINCT user_id) AS total_users FROM campaign_audiences) SELECT ou.user_count, tu.total_users, ou.user_count * 100.0 / NULLIF(tu.total_users, 0) AS overlap_rate FROM (SELECT COUNT(DISTINCT user_id) AS user_count FROM overlap_users) ou, total_users tu",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', ca.campaign_start_date) AS month, ca.campaign_type, COUNT(DISTINCT ca.user_id) AS users, COUNT(DISTINCT CASE WHEN ca.campaign_count >= 2 THEN ca.user_id END) AS overlapping_users, COUNT(DISTINCT CASE WHEN ca.campaign_count >= 2 THEN ca.user_id END) * 100.0 / NULLIF(COUNT(DISTINCT ca.user_id), 0) AS overlap_rate FROM (SELECT user_id, campaign_id, campaign_start_date, campaign_type, COUNT(DISTINCT campaign_id) OVER (PARTITION BY user_id) AS campaign_count FROM campaign_audience_mapping WHERE campaign_start_date >= '2024-01-01') ca GROUP BY 1, ca.campaign_type ORDER BY 1, 5 DESC",
+      "advanced_sql": "WITH campaign_audience_overlap AS (\n  -- Grain: users in multiple campaigns during same week\n  SELECT\n    DATE_TRUNC('week', ca1.campaign_start_date) AS week_start,\n    ca1.user_id,\n    COUNT(DISTINCT ca1.campaign_id) AS campaigns_reached\n  FROM campaign_audience_mapping ca1\n  JOIN campaign_audience_mapping ca2 ON ca1.user_id = ca2.user_id\n    AND ca1.campaign_id < ca2.campaign_id\n    AND ca1.campaign_start_date <= ca2.campaign_end_date\n    AND ca1.campaign_end_date >= ca2.campaign_start_date\n  WHERE ca1.campaign_start_date BETWEEN '2024-01-01' AND '2024-01-31'\n  GROUP BY 1, 2\n  HAVING COUNT(DISTINCT ca1.campaign_id) >= 2\n),\noverlap_metrics AS (\n  SELECT\n    COUNT(DISTINCT user_id) AS overlapping_users,\n    COUNT(DISTINCT user_id) * 100.0 / NULLIF((SELECT COUNT(DISTINCT user_id) FROM campaign_audience_mapping WHERE campaign_start_date BETWEEN '2024-01-01' AND '2024-01-31'), 0) AS overlap_rate\n  FROM campaign_audience_overlap\n)\nSELECT\n  overlapping_users,\n  overlap_rate,\n  COUNT(DISTINCT user_id) FILTER (WHERE campaigns_reached = 2) AS dual_campaign_users,\n  COUNT(DISTINCT user_id) FILTER (WHERE campaigns_reached >= 3) AS multi_campaign_users\nFROM campaign_audience_overlap\nGROUP BY 1, 2"
+    }
+  },
+  {
+    "id": "mkt_campaign_incrementality",
+    "title": "Campaign Incrementality",
+    "intent_tags": [
+      "campaign incrementality",
+      "incremental impact",
+      "campaign lift",
+      "incrementality rate",
+      "what is incremental campaign impact",
+      "true campaign effect",
+      "campaign lift test",
+      "incremental conversions",
+      "holdout test lift",
+      "incrementality %",
+      "campaign lift percentage"
+    ],
+    "sql_features": [
+      "aggregation",
+      "left_join",
+      "cte",
+      "nullif",
+      "approximate_distinct"
+    ],
+    "difficulty": "expert",
+    "pattern_type": "incremental",
+    "when_to_use": [
+      "measure true causal impact of campaigns",
+      "validate attribution models and incrementality of spend",
+      "determine true ROI of marketing investment",
+      "optimize holdout test design and execution",
+      "assess campaign cannibalization or halo effects"
+    ],
+    "related_patterns": [
+      "mkt_roi",
+      "mkt_roas",
+      "mkt_cpa_by_creative",
+      "mkt_conversion_rate"
+    ],
+    "business_definition": "Incremental conversions (treatment group conversions - control group conversions) divided by treatment group conversions, expressed as a percentage. Incrementality is calculated via a randomized holdout test where users are randomly assigned to treatment (exposed to campaign) or control (exposed to no campaign) groups.",
+    "metric_nature": {
+      "what_it_measures": "The *causal* impact of a campaign \u2014 the portion of conversions that are attributable to the campaign, not baseline behavior.",
+      "what_it_does_not_measure": "Attribution share or revenue share. Incrementality isolates *incremental* impact, excluding conversions that would have happened anyway.",
+      "common_misconception": "Campaign incrementality is not the same as conversion rate. Conversion rate measures *total* conversions per impression; incrementality measures *\u589e\u91cf* conversions per exposure."
+    },
+    "template": "WITH holdout_assignment AS (\n  SELECT user_id, CASE WHEN campaign_exposure = true THEN 'treatment' ELSE 'control' END AS group FROM holdout_mapping hm WHERE hm.campaign_id = {campaign_id} AND hm.assignment_date BETWEEN {start_date} AND {end_date}\n),\ntreatment_conversions AS (\n  SELECT COUNT(DISTINCT CASE WHEN ha.group = 'treatment' THEN o.customer_id END) AS treatment_conversions FROM orders o JOIN holdout_assignment ha ON o.customer_id = ha.user_id WHERE o.status = 'completed' AND o.order_date BETWEEN {start_date} AND {end_date}\n),\ncontrol_conversions AS (\n  SELECT COUNT(DISTINCT CASE WHEN ha.group = 'control' THEN o.customer_id END) AS control_conversions FROM orders o JOIN holdout_assignment ha ON o.customer_id = ha.user_id WHERE o.status = 'completed' AND o.order_date BETWEEN {start_date} AND {end_date}\n)\nSELECT tc.treatment_conversions, cc.control_conversions, (tc.treatment_conversions - cc.control_conversions) * 100.0 / NULLIF(tc.treatment_conversions, 0) AS incrementality_pct FROM treatment_conversions tc, control_conversions cc",
+    "inflation_causes": [
+      {
+        "cause": "Counting conversions without holdout design",
+        "how_it_inflates": "If incrementality is computed as conversion rate or attributed conversions without a control group, all conversions are counted \u2014 inflating incrementality to 100% and ignoring baseline conversion behavior.",
+        "detection_sql": "SELECT COUNT(DISTINCT customer_id) AS conversions FROM orders WHERE status = 'completed' AND order_date >= '2024-01-01'",
+        "fix": "Always use randomized holdout design: random assignment to treatment/control groups with equal exposure timing."
+      },
+      {
+        "cause": "Attributing conversions to last-click channel instead of holdout group",
+        "how_it_inflates": "If holdout group attribution is last-click only, and earlier channels (e.g., awareness) are not credited, conversions may be misattributed \u2014 inflating or deflating incrementality depending on channel mix.",
+        "detection_sql": "SELECT COUNT(DISTINCT customer_id) AS conversions, acquisition_channel, SUM(spend) AS spend FROM marketing_spend s LEFT JOIN customer_attribution a ON s.channel = a.channel WHERE s.spend_date >= '2024-01-01' GROUP BY 1, 2 ORDER BY conversions DESC",
+        "fix": "Use holdout group assignment as the *only* exposure source \u2014 do not mix with attribution or campaign channel data."
+      },
+      {
+        "cause": "Including non-random holdout assignment",
+        "how_it_inflates": "If holdout assignment is not randomized (e.g., based on past behavior or segment), and treatment/control groups differ in baseline conversion propensity, incrementality is biased \u2014 inflating or deflating lift.",
+        "detection_sql": "SELECT assignment_group, COUNT(DISTINCT user_id) AS users, COUNT(DISTINCT CASE WHEN order_id IS NOT NULL THEN user_id END) AS conversions FROM (SELECT user_id, CASE WHEN campaign_exposure = true THEN 'treatment' ELSE 'control' END AS assignment_group FROM holdout_mapping) hm LEFT JOIN orders o ON hm.user_id = o.customer_id GROUP BY 1",
+        "fix": "Ensure holdout assignment is randomized (e.g., user_id % N = 0 for treatment) and validate baseline parity (e.g., pre-campaign metrics equal across groups)."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Excluding users with zero exposure in treatment group",
+        "how_it_deflates": "If users who were assigned to treatment but did not receive the ad are excluded, the treatment group shrinks \u2014 inflating conversion rate and deflating incrementality.",
+        "detection_sql": "SELECT COUNT(DISTINCT CASE WHEN exposure_log IS NOT NULL THEN user_id END) AS exposed_users, COUNT(DISTINCT CASE WHEN exposure_log IS NULL THEN user_id END) AS non_exposed_users FROM holdout_mapping WHERE campaign_exposure = true",
+        "fix": "Include all treatment-assigned users in denominator; use exposure log (not assignment) to measure actual exposure impact."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the incrementality anomaly due to test design, randomization, or targeting?",
+      "Has a new holdout strategy or randomization method been deployed?",
+      "Are holdout groups balanced in baseline conversion behavior?",
+      "Did external factors (e.g., seasonality, competition) affect control group?",
+      "Are incrementality results statistically significant and replicable?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "Incrementality up, conversion_rate down",
+        "then": "campaign is driving incremental conversions \u2014 likely new customers or new behavior, not cannibalization"
+      },
+      {
+        "if": "Incrementality up, spend up",
+        "then": "campaign is driving new volume \u2014 likely growth or market expansion"
+      },
+      {
+        "if": "Incrementality down, conversion_rate down",
+        "then": "campaign effectiveness declined \u2014 likely creative fatigue, targeting decay, or competitive pressure"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Campaign incrementality drops >20pp MoM",
+        "and_also": "mkt_attribution_window_sensitivity increases",
+        "shared_root_cause": "Attribution window expansion is causing double-counting of conversions \u2014 likely an increase in attribution window duration or overlap between campaigns \u2014 artificially inflating attributed conversions and deflating *incremental* lift.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', a.conversion_date) AS week, COUNT(DISTINCT CASE WHEN a.attribution_window = '7d' THEN a.customer_id END) AS conversions_7d, COUNT(DISTINCT CASE WHEN a.attribution_window = '28d' THEN a.customer_id END) AS conversions_28d FROM attribution_events a WHERE a.conversion_date >= '2024-01-01' GROUP BY 1 ORDER BY week"
+      },
+      {
+        "if_this_metric": "Campaign incrementality drops MoM",
+        "and_also": "mkt_conversion_rate increases same period",
+        "shared_root_cause": "A surge in baseline demand (e.g., seasonality, market expansion) is driving more conversions in *both* treatment and control groups \u2014 reducing incremental lift while absolute conversion rate rises.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', o.order_date) AS month, COUNT(DISTINCT o.customer_id) AS conversions, SUM(nr.net_revenue) AS revenue, COUNT(DISTINCT CASE WHEN o.order_date >= DATEADD(day, -7, '2024-01-31') THEN o.customer_id END) AS recent_conversions FROM orders o JOIN net_revenue_daily nr ON o.order_id = nr.order_id WHERE o.status = 'completed' AND o.order_date >= '2024-01-01' GROUP BY 1 ORDER BY month"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Calculating incrementality as (conversions_with_campaign / total conversions)",
+        "why_wrong": "If incrementality is computed as *conversion rate*, it measures *total* conversions, not *incremental* \u2014 inflating lift and ignoring baseline behavior.",
+        "bad_sql": "SELECT COUNT(DISTINCT CASE WHEN c.campaign_id IS NOT NULL THEN o.customer_id END) * 100.0 / NULLIF(COUNT(DISTINCT o.customer_id), 0) AS incrementality FROM orders o LEFT JOIN campaign_attribution c ON o.customer_id = c.customer_id",
+        "good_sql": "SELECT (tc.treatment_conversions - cc.control_conversions) * 100.0 / NULLIF(tc.treatment_conversions, 0) AS incrementality_pct FROM treatment_conversions tc, control_conversions cc"
+      },
+      {
+        "pattern": "Using last-touch attribution instead of holdout group assignment",
+        "why_wrong": "If holdout group is assigned but attributed to *last-touch channel*, conversions are misattributed \u2014 inflating or deflating incrementality depending on channel mix.",
+        "bad_sql": "SELECT COUNT(DISTINCT CASE WHEN a.conversion_id IS NOT NULL THEN o.customer_id END) * 100.0 / NULLIF(COUNT(DISTINCT o.customer_id), 0) AS incrementality FROM orders o LEFT JOIN attribution_events a ON o.customer_id = a.customer_id",
+        "good_sql": "SELECT (tc.treatment_conversions - cc.control_conversions) * 100.0 / NULLIF(tc.treatment_conversions, 0) AS incrementality_pct FROM treatment_conversions tc, control_conversions cc"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "WITH holdout_assignment AS (SELECT user_id, CASE WHEN campaign_exposure = true THEN 'treatment' ELSE 'control' END AS group FROM holdout_mapping WHERE campaign_id = 'c1' AND assignment_date BETWEEN '2024-01-01' AND '2024-01-31'), treatment_conversions AS (SELECT COUNT(DISTINCT CASE WHEN ha.group = 'treatment' THEN o.customer_id END) AS treatment_conversions FROM orders o JOIN holdout_assignment ha ON o.customer_id = ha.user_id WHERE o.status = 'completed' AND o.order_date BETWEEN '2024-01-01' AND '2024-01-31'), control_conversions AS (SELECT COUNT(DISTINCT CASE WHEN ha.group = 'control' THEN o.customer_id END) AS control_conversions FROM orders o JOIN holdout_assignment ha ON o.customer_id = ha.user_id WHERE o.status = 'completed' AND o.order_date BETWEEN '2024-01-01' AND '2024-01-31') SELECT tc.treatment_conversions, cc.control_conversions, (tc.treatment_conversions - cc.control_conversions) * 100.0 / NULLIF(tc.treatment_conversions, 0) AS incrementality_pct FROM treatment_conversions tc, control_conversions cc",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', ha.assignment_date) AS month, ha.assignment_group, COUNT(DISTINCT o.customer_id) AS conversions FROM holdout_assignment ha LEFT JOIN orders o ON ha.user_id = o.customer_id WHERE ha.campaign_id = 'c1' AND o.status = 'completed' AND o.order_date >= '2024-01-01' GROUP BY 1, ha.assignment_group ORDER BY 1, 3 DESC",
+      "advanced_sql": "WITH holdout_assignment AS (\n  -- Grain: users randomized to holdout groups\n  SELECT\n    user_id,\n    CASE WHEN campaign_exposure = true THEN 'treatment' ELSE 'control' END AS group\n  FROM holdout_mapping\n  WHERE campaign_id = 'c1' AND assignment_date BETWEEN '2024-01-01' AND '2024-01-31'\n),\ntreatment_conversions AS (\n  -- Grain: conversions in treatment group\n  SELECT COUNT(DISTINCT CASE WHEN ha.group = 'treatment' THEN o.customer_id END) AS treatment_conversions FROM orders o JOIN holdout_assignment ha ON o.customer_id = ha.user_id WHERE o.status = 'completed' AND o.order_date BETWEEN '2024-01-01' AND '2024-01-31'\n),\ncontrol_conversions AS (\n  -- Grain: conversions in control group\n  SELECT COUNT(DISTINCT CASE WHEN ha.group = 'control' THEN o.customer_id END) AS control_conversions FROM orders o JOIN holdout_assignment ha ON o.customer_id = ha.user_id WHERE o.status = 'completed' AND o.order_date BETWEEN '2024-01-01' AND '2024-01-31'\n),\nincrementality_calc AS (\n  SELECT\n    tc.treatment_conversions,\n    cc.control_conversions,\n    (tc.treatment_conversions - cc.control_conversions) * 100.0 / NULLIF(tc.treatment_conversions, 0) AS incrementality_pct\n  FROM treatment_conversions tc, control_conversions cc\n)\nSELECT\n  treatment_conversions,\n  control_conversions,\n  incrementality_pct,\n  ROUND((treatment_conversions - control_conversions) / NULLIF(control_conversions, 0) * 100, 2) AS lift_over_control_pct\nFROM incrementality_calc"
+    }
+  },
+  {
+    "id": "mkt_ad_frequency_fatigue_point",
+    "title": "Ad Frequency Fatigue Point",
+    "intent_tags": [
+      "frequency fatigue point",
+      "ad fatigue threshold",
+      "frequency cap break-even",
+      "what is my ad fatigue",
+      "optimal ad frequency",
+      "frequency decay point",
+      "ad fatigue CTR",
+      "frequency ROI",
+      "maximum ad frequency",
+      "frequency drop-off",
+      "frequency efficiency"
+    ],
+    "sql_features": [
+      "aggregation",
+      "window_function",
+      "ntile",
+      "coalesce",
+      "nullif",
+      "cte"
+    ],
+    "difficulty": "expert",
+    "pattern_type": "window_function",
+    "when_to_use": [
+      "identify the point where ad exposure no longer drives conversions",
+      "optimize frequency caps and ad rotation schedules",
+      "prevent campaign cannibalization from excessive exposure",
+      "benchmark frequency efficiency across campaigns or creatives",
+      "model diminishing returns and allocate frequency budget efficiently"
+    ],
+    "related_patterns": [
+      "mkt_cpc",
+      "mkt_conversion_rate",
+      "mkt_frequency_cap",
+      "mkt_audience_overlap_rate"
+    ],
+    "business_definition": "The ad frequency level (exposures per user) at which conversion rate begins to decline significantly (e.g., >10% MoM drop). Calculated by bucketing users into frequency bins (1, 2, 3+, etc.) and measuring conversion rate by bin.",
+    "metric_nature": {
+      "what_it_measures": "The upper bound of effective ad exposure \u2014 identifying when repeated exposure stops driving conversions and may cause fatigue or annoyance.",
+      "what_it_does_not_measure": "Brand impact or recall. A low fatigue point may indicate strong performance or poor targeting, not necessarily ad fatigue.",
+      "common_misconception": "Ad frequency fatigue point is not the same as frequency cap. The fatigue *point* identifies the *threshold* of diminishing returns; the *cap* is a business rule to prevent overexposure."
+    },
+    "template": "WITH user_exposures AS (\n  SELECT user_id, COUNT(DISTINCT impression_id) AS frequency FROM impression_events WHERE impression_date BETWEEN {start_date} AND {end_date} GROUP BY user_id\n),\nuser_conversions AS (\n  SELECT user_id, COUNT(DISTINCT CASE WHEN conversion_id IS NOT NULL THEN conversion_id END) AS conversions FROM attribution_events WHERE conversion_date BETWEEN {start_date} AND {end_date} GROUP BY user_id\n),\nfrequency_buckets AS (\n  SELECT\n    CASE WHEN ue.frequency <= 1 THEN '1' WHEN ue.frequency <= 3 THEN '2-3' WHEN ue.frequency <= 5 THEN '4-5' ELSE '6+' END AS frequency_bucket,\n    COUNT(DISTINCT ue.user_id) AS users,\n    COUNT(DISTINCT CASE WHEN uc.conversions > 0 THEN ue.user_id END) AS converters,\n    COUNT(DISTINCT CASE WHEN uc.conversions > 0 THEN ue.user_id END) * 100.0 / NULLIF(COUNT(DISTINCT ue.user_id), 0) AS conversion_rate\n  FROM user_exposures ue LEFT JOIN user_conversions uc ON ue.user_id = uc.user_id\n  GROUP BY 1\n)\nSELECT\n  frequency_bucket,\n  users,\n  converters,\n  conversion_rate,\n  ROW_NUMBER() OVER (ORDER BY conversion_rate DESC) AS rank_by_conv_rate,\n  LAG(conversion_rate) OVER (ORDER BY frequency_bucket) AS prev_conversion_rate\nFROM frequency_buckets ORDER BY frequency_bucket",
+    "inflation_causes": [
+      {
+        "cause": "Counting impressions instead of *engaged* exposures",
+        "how_it_inflates": "If impressions (including unviewable or bounce impressions) are counted, frequency is inflated \u2014 causing fatigue point to appear *lower* than actual, as unengaged impressions are treated as equivalent to engaged ones.",
+        "detection_sql": "SELECT COUNT(DISTINCT impression_id) AS total_impressions, COUNT(DISTINCT CASE WHEN viewability_score >= 50 THEN impression_id END) AS viewable_impressions FROM impression_events WHERE impression_date >= '2024-01-01'",
+        "fix": "Filter impressions to viewable ones (viewability_score \u2265 50%) before counting frequency."
+      },
+      {
+        "cause": "Attributing conversions to last-touch instead of exposure window",
+        "how_it_inflates": "If conversions are attributed to last-touch channel, and exposure frequency is computed per channel, users exposed to multiple channels are overcounted \u2014 inflating frequency and deflating fatigue point.",
+        "detection_sql": "SELECT user_id, COUNT(DISTINCT channel) AS channels, COUNT(DISTINCT conversion_id) AS conversions FROM attribution_events WHERE conversion_date >= '2024-01-01' GROUP BY 1 HAVING COUNT(DISTINCT channel) > 1 ORDER BY conversions DESC",
+        "fix": "Use *exposure date* window (not last-touch) and attribute conversions to *exposure channel* within attribution window."
+      },
+      {
+        "cause": "Excluding users with zero impressions",
+        "how_it_inflates": "If only users with \u22651 impression are included, high-frequency users are overrepresented \u2014 causing frequency buckets to shift and fatigue point to appear *lower* than actual.",
+        "detection_sql": "SELECT COUNT(DISTINCT user_id) AS total_users, COUNT(DISTINCT CASE WHEN impressions >= 1 THEN user_id END) AS users_with_impressions, COUNT(DISTINCT CASE WHEN impressions >= 5 THEN user_id END) AS heavy_impression_users FROM (SELECT user_id, COUNT(DISTINCT impression_id) AS impressions FROM impression_events WHERE impression_date >= '2024-01-01' GROUP BY 1) sub",
+        "fix": "Include all users (even with zero impressions) in denominator to preserve accurate conversion rate per frequency bin."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Excluding users with zero conversions in frequency bins",
+        "how_it_deflates": "If only users with conversions are included in conversion rate, the denominator shrinks \u2014 deflating conversion rate and inflating fatigue point.",
+        "detection_sql": "SELECT COUNT(DISTINCT user_id) AS total_users, COUNT(DISTINCT CASE WHEN conversions > 0 THEN user_id END) AS converters FROM (SELECT user_id, COUNT(DISTINCT conversion_id) AS conversions FROM attribution_events WHERE conversion_date >= '2024-01-01' GROUP BY 1) sub",
+        "fix": "Include all users in denominator, assigning zero conversions where applicable."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the fatigue point anomaly concentrated in one campaign, creative, or channel?",
+      "Has a new frequency cap or ad rotation policy been introduced?",
+      "Are fatigue points consistent across campaigns or varying by creative quality?",
+      "Did external factors (e.g., seasonality, competition) affect conversion rate?",
+      "Are frequency metrics based on impressions or *engaged* exposures?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "Fatigue point down, conversion_rate down",
+        "then": "ads are less effective at frequency \u2014 likely creative fatigue or audience saturation"
+      },
+      {
+        "if": "Fatigue point down, spend up",
+        "then": "more spending without efficiency \u2014 likely overexposure and diminishing returns"
+      },
+      {
+        "if": "Fatigue point up, conversion_rate up",
+        "then": "ads more effective at frequency \u2014 likely improved creative or targeting"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Ad frequency fatigue point drops >50% MoM",
+        "and_also": "mkt_conversion_rate decreases same period",
+        "shared_root_cause": "Creative wear-out or ad platform devaluation \u2014 likely ad creative fatigue, algorithmic changes, or increased competition causing users to disengage or ignore ads at lower frequency.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', i.impression_date) AS week, COUNT(DISTINCT i.user_id) AS users, COUNT(DISTINCT i.impression_id) AS impressions, COUNT(DISTINCT a.conversion_id) AS conversions, COUNT(DISTINCT i.user_id) / NULLIF(COUNT(DISTINCT a.conversion_id), 0) AS frequency_per_conversion FROM impression_events i LEFT JOIN attribution_events a ON i.user_id = a.user_id AND i.impression_date = a.conversion_date WHERE i.impression_date >= '2024-01-01' GROUP BY 1 ORDER BY week"
+      },
+      {
+        "if_this_metric": "Ad frequency fatigue point increases MoM",
+        "and_also": "mkt_roi increases same period",
+        "shared_root_cause": "Improved creative or targeting \u2014 likely a creative refresh or audience optimization that extends effective exposure frequency and improves ROI.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', i.impression_date) AS month, COUNT(DISTINCT i.user_id) AS users, COUNT(DISTINCT a.conversion_id) AS conversions, COUNT(DISTINCT i.user_id) / NULLIF(COUNT(DISTINCT a.conversion_id), 0) AS frequency_per_conversion, SUM(a.attributed_revenue) / NULLIF(SUM(s.cost), 0) AS roas FROM impression_events i LEFT JOIN attribution_events a ON i.user_id = a.user_id LEFT JOIN ad_spend s ON i.impression_id = s.impression_id WHERE i.impression_date >= '2024-01-01' GROUP BY 1 ORDER BY month"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Counting frequency as impressions instead of users",
+        "why_wrong": "If frequency is computed as *impressions per user*, high-frequency users are overrepresented \u2014 causing fatigue point to appear *lower* than actual.",
+        "bad_sql": "SELECT SUM(impressions) / NULLIF(COUNT(DISTINCT user_id), 0) AS frequency FROM impression_events",
+        "good_sql": "SELECT COUNT(DISTINCT impression_id) AS impressions, COUNT(DISTINCT user_id) AS users, SUM(impressions) / NULLIF(COUNT(DISTINCT user_id), 0) AS avg_frequency FROM impression_events WHERE impression_date BETWEEN '2024-01-01' AND '2024-01-31'"
+      },
+      {
+        "pattern": "Using conversion rate per impression instead of per user",
+        "why_wrong": "If frequency is defined as impressions and conversion rate is per impression, the denominator is inflated \u2014 deflating conversion rate and inflating fatigue point.",
+        "bad_sql": "SELECT SUM(impressions) / NULLIF(COUNT(DISTINCT user_id), 0) AS frequency, COUNT(DISTINCT a.conversion_id) / NULLIF(SUM(impressions), 0) * 100 AS conv_rate FROM impression_events i LEFT JOIN attribution_events a ON i.user_id = a.user_id",
+        "good_sql": "SELECT ue.user_id, ue.frequency, COUNT(DISTINCT CASE WHEN uc.conversions > 0 THEN ue.user_id END) * 100.0 / NULLIF(COUNT(DISTINCT ue.user_id), 0) AS conversion_rate FROM user_exposures ue LEFT JOIN user_conversions uc ON ue.user_id = uc.user_id GROUP BY ue.user_id, ue.frequency"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "WITH user_exposures AS (SELECT user_id, COUNT(DISTINCT impression_id) AS frequency FROM impression_events WHERE impression_date BETWEEN '2024-01-01' AND '2024-01-31' GROUP BY user_id), user_conversions AS (SELECT user_id, COUNT(DISTINCT CASE WHEN conversion_id IS NOT NULL THEN conversion_id END) AS conversions FROM attribution_events WHERE conversion_date BETWEEN '2024-01-01' AND '2024-01-31' GROUP BY user_id), frequency_buckets AS (SELECT CASE WHEN ue.frequency <= 1 THEN '1' WHEN ue.frequency <= 3 THEN '2-3' WHEN ue.frequency <= 5 THEN '4-5' ELSE '6+' END AS frequency_bucket, COUNT(DISTINCT ue.user_id) AS users, COUNT(DISTINCT CASE WHEN uc.conversions > 0 THEN ue.user_id END) AS converters, COUNT(DISTINCT CASE WHEN uc.conversions > 0 THEN ue.user_id END) * 100.0 / NULLIF(COUNT(DISTINCT ue.user_id), 0) AS conversion_rate FROM user_exposures ue LEFT JOIN user_conversions uc ON ue.user_id = uc.user_id GROUP BY 1) SELECT frequency_bucket, users, converters, conversion_rate FROM frequency_buckets ORDER BY frequency_bucket",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', ue.user_id) AS month, fb.frequency_bucket, COUNT(DISTINCT ue.user_id) AS users, COUNT(DISTINCT CASE WHEN uc.conversions > 0 THEN ue.user_id END) AS converters, COUNT(DISTINCT CASE WHEN uc.conversions > 0 THEN ue.user_id END) * 100.0 / NULLIF(COUNT(DISTINCT ue.user_id), 0) AS conversion_rate FROM (SELECT user_id, COUNT(DISTINCT impression_id) AS frequency FROM impression_events WHERE impression_date >= '2024-01-01' GROUP BY 1) ue LEFT JOIN (SELECT user_id, COUNT(DISTINCT CASE WHEN conversion_id IS NOT NULL THEN conversion_id END) AS conversions FROM attribution_events WHERE conversion_date >= '2024-01-01' GROUP BY 1) uc ON ue.user_id = uc.user_id, (SELECT CASE WHEN ue.frequency <= 1 THEN '1' WHEN ue.frequency <= 3 THEN '2-3' WHEN ue.frequency <= 5 THEN '4-5' ELSE '6+' END AS frequency_bucket FROM user_exposures) fb WHERE fb.frequency_bucket = CASE WHEN ue.frequency <= 1 THEN '1' WHEN ue.frequency <= 3 THEN '2-3' WHEN ue.frequency <= 5 THEN '4-5' ELSE '6+' END GROUP BY 1, fb.frequency_bucket ORDER BY 1, 2",
+      "advanced_sql": "WITH user_exposures AS (\n  -- Grain: user exposure counts, filtered to viewable impressions\n  SELECT\n    user_id,\n    COUNT(DISTINCT impression_id) AS frequency\n  FROM impression_events\n  WHERE impression_date BETWEEN '2024-01-01' AND '2024-01-31'\n    AND viewability_score >= 50\n  GROUP BY user_id\n),\nuser_conversions AS (\n  -- Grain: user conversions within attribution window\n  SELECT\n    user_id,\n    COUNT(DISTINCT CASE WHEN conversion_id IS NOT NULL THEN conversion_id END) AS conversions\n  FROM attribution_events\n  WHERE conversion_date BETWEEN '2024-01-01' AND '2024-01-31'\n  GROUP BY user_id\n),\nfrequency_buckets AS (\n  -- Grain: user frequency bucket and conversion rate\n  SELECT\n    CASE\n      WHEN ue.frequency <= 1 THEN '1'\n      WHEN ue.frequency <= 3 THEN '2-3'\n      WHEN ue.frequency <= 5 THEN '4-5'\n      ELSE '6+'\n    END AS frequency_bucket,\n    COUNT(DISTINCT ue.user_id) AS users,\n    COUNT(DISTINCT CASE WHEN uc.conversions > 0 THEN ue.user_id END) AS converters,\n    COALESCE(COUNT(DISTINCT CASE WHEN uc.conversions > 0 THEN ue.user_id END) * 100.0 / NULLIF(COUNT(DISTINCT ue.user_id), 0), 0) AS conversion_rate\n  FROM user_exposures ue\n  LEFT JOIN user_conversions uc ON ue.user_id = uc.user_id\n  GROUP BY 1\n),\nfatigue_analysis AS (\n  -- Grain: conversion rate by frequency bucket\n  SELECT\n    frequency_bucket,\n    users,\n    converters,\n    conversion_rate,\n    LAG(conversion_rate) OVER (ORDER BY frequency_bucket) AS prev_conversion_rate\n  FROM frequency_buckets\n)\nSELECT\n  frequency_bucket,\n  users,\n  converters,\n  conversion_rate,\n  ROUND(conversion_rate - COALESCE(prev_conversion_rate, 0), 2) AS conv_rate_change,\n  CASE\n    WHEN prev_conversion_rate IS NOT NULL AND (conversion_rate - prev_conversion_rate) < -10 THEN 'fatigue_detected'\n    ELSE 'increasing_or_stable'\n  END AS trend\nFROM fatigue_analysis\nORDER BY frequency_bucket"
+    }
+  },
+  {
+    "id": "mkt_landing_page_conversion_rate",
+    "title": "Landing Page Conversion Rate",
+    "intent_tags": [
+      "landing page conversion rate",
+      "LP conversion rate",
+      "LP CR",
+      "landing page conversion",
+      "what is my landing page CR",
+      "LP effectiveness",
+      "landing page performance",
+      "landing page efficiency",
+      "landing page ROI",
+      "LPCVR",
+      "landing page conversion %"
+    ],
+    "sql_features": [
+      "aggregation",
+      "left_join",
+      "nullif",
+      "coalesce"
+    ],
+    "difficulty": "beginner",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "assess landing page effectiveness and UX quality",
+      "benchmark landing pages across campaigns or creatives",
+      "optimize landing page variants for conversion",
+      "diagnose drop-offs in campaign-to-conversion flow",
+      "evaluate impact of landing page A/B tests"
+    ],
+    "related_patterns": [
+      "mkt_conversion_rate",
+      "mkt_cpa_by_creative",
+      "mkt_attribution_window_sensitivity",
+      "mkt_roi"
+    ],
+    "business_definition": "Percentage of users who landed on a campaign-specific landing page and completed a conversion (e.g., purchase, sign-up) within the attribution window (e.g., 30 days). A landing page is defined by UTM parameter or URL matching campaign_id.",
+    "metric_nature": {
+      "what_it_measures": "The conversion efficiency of landing pages \u2014 a key indicator of page UX, messaging alignment, and campaign-to-page fit.",
+      "what_it_does_not_measure": "Traffic quality or source influence. A low landing page CR may reflect poor targeting, not page issues.",
+      "common_misconception": "Landing page conversion rate is not the same as overall conversion rate. It isolates page-specific performance, excluding traffic that bypasses the landing page."
+    },
+    "template": "WITH landing_page_views AS (\n  SELECT session_id, landing_page_url, campaign_id FROM session_events WHERE event_type = 'page_view' AND landing_page_url LIKE '%utm_campaign=%' AND event_date BETWEEN {start_date} AND {end_date}\n),\nconversions AS (\n  SELECT DISTINCT session_id, campaign_id FROM orders o JOIN landing_page_views lpv ON o.session_id = lpv.session_id WHERE o.status = 'completed' AND o.order_date BETWEEN {start_date} AND {end_date}\n),\nlanding_metrics AS (\n  SELECT lpv.campaign_id, COUNT(DISTINCT lpv.session_id) AS landing_page_views, COUNT(DISTINCT c.session_id) AS conversions FROM landing_page_views lpv LEFT JOIN conversions c ON lpv.session_id = c.session_id AND lpv.campaign_id = c.campaign_id GROUP BY lpv.campaign_id\n)\nSELECT campaign_id, landing_page_views, conversions, conversions * 100.0 / NULLIF(landing_page_views, 0) AS conversion_rate FROM landing_metrics",
+    "inflation_causes": [
+      {
+        "cause": "Counting all page views instead of landing page views",
+        "how_it_inflates": "If all page views are included, traffic from *internal navigation* (not landing page) inflates denominator \u2014 deflating conversion rate and masking page-specific efficiency.",
+        "detection_sql": "SELECT COUNT(DISTINCT session_id) AS total_sessions, COUNT(DISTINCT CASE WHEN page_path = '/home' THEN session_id END) AS home_page_sessions FROM page_events WHERE page_date >= '2024-01-01'",
+        "fix": "Filter to *landing page events* (first page view in session or UTM parameter present) only."
+      },
+      {
+        "cause": "Attributing conversions to last-touch channel instead of landing page",
+        "how_it_inflates": "If conversions are attributed to last-touch channel, and landing page is not tracked, conversions from landing pages are misattributed \u2014 inflating or deflating CR depending on channel mix.",
+        "detection_sql": "SELECT COUNT(DISTINCT session_id) AS sessions, acquisition_channel, SUM(spend) AS spend FROM marketing_spend s LEFT JOIN customer_attribution a ON s.channel = a.channel WHERE s.spend_date >= '2024-01-01' GROUP BY 1, 2 ORDER BY sessions DESC",
+        "fix": "Track landing page URL and UTM parameters at session start, and attribute conversions to landing page, not last-touch channel."
+      },
+      {
+        "cause": "Excluding sessions with zero page views",
+        "how_it_inflates": "If only sessions with \u22651 page view are included, high-converting sessions are overrepresented \u2014 causing conversion rate to inflate.",
+        "detection_sql": "SELECT COUNT(DISTINCT session_id) AS total_sessions, COUNT(DISTINCT CASE WHEN page_view_count >= 1 THEN session_id END) AS sessions_with_pages FROM (SELECT session_id, COUNT(DISTINCT page_id) AS page_view_count FROM page_events WHERE page_date >= '2024-01-01' GROUP BY 1) sub",
+        "fix": "Include all sessions with landing page events, even if they convert without additional page views."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Excluding conversions outside attribution window",
+        "how_it_deflates": "If conversions outside the landing page's attribution window are excluded, and users take longer to convert, landing page CR appears lower \u2014 masking true effectiveness.",
+        "detection_sql": "SELECT COUNT(DISTINCT order_id) AS total_orders, COUNT(DISTINCT CASE WHEN days_to_conversion <= 30 THEN order_id END) AS conversions_30d, COUNT(DISTINCT CASE WHEN days_to_conversion > 30 THEN order_id END) AS conversions_30d_plus FROM (SELECT order_id, DATEDIFF(day, landing_page_date, order_date) AS days_to_conversion FROM landing_page_views lpv JOIN orders o ON lpv.session_id = o.session_id) sub",
+        "fix": "Include all conversions within business-defined attribution window (e.g., 30/60/90 days) and report conversion rate by time window."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the landing page CR anomaly isolated to one page or systemic across all?",
+      "Has a new landing page template or variant been deployed?",
+      "Are CR variations tied to campaign messaging or traffic source?",
+      "Did external factors (e.g., seasonality, competition) affect conversion rate?",
+      "Are CR metrics based on landing page views or *unique* landing page visits?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "Landing page CR up, ROAS up",
+        "then": "landing page improvements driving better ROI \u2014 likely optimized UX, copy, or offer alignment"
+      },
+      {
+        "if": "Landing page CR down, conversion_rate up",
+        "then": "landing page underperforms but overall funnel improves \u2014 likely traffic quality shift (e.g., better channel mix)"
+      },
+      {
+        "if": "Landing page CR down, bounce_rate up",
+        "then": "landing page quality declined \u2014 likely UX issues, slow load time, or misaligned messaging"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Landing page CR drops >15% MoM with stable traffic",
+        "and_also": "mkt_conversion_rate decreases same period",
+        "shared_root_cause": "A landing page regression \u2014 likely a design update, broken form, or content error \u2014 causing lower conversion across campaigns and overall funnel efficiency.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', p.page_date) AS week, COUNT(DISTINCT p.session_id) AS sessions, COUNT(DISTINCT CASE WHEN o.order_id IS NOT NULL THEN p.session_id END) AS conversions, COUNT(DISTINCT CASE WHEN o.order_id IS NOT NULL THEN p.session_id END) * 100.0 / NULLIF(COUNT(DISTINCT p.session_id), 0) AS cr FROM page_events p LEFT JOIN orders o ON p.session_id = o.session_id WHERE p.page_date >= '2024-01-01' GROUP BY 1 ORDER BY week"
+      },
+      {
+        "if_this_metric": "Landing page CR increases MoM",
+        "and_also": "mkt_cpa_by_creative increases same period",
+        "shared_root_cause": "A landing page optimization improved conversion rate \u2014 but campaigns are running less efficiently due to creative fatigue or targeting decay \u2014 increasing CPA despite better page performance.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', p.page_date) AS month, COUNT(DISTINCT p.session_id) AS sessions, COUNT(DISTINCT CASE WHEN o.order_id IS NOT NULL THEN p.session_id END) AS conversions, COUNT(DISTINCT CASE WHEN o.order_id IS NOT NULL THEN p.session_id END) * 100.0 / NULLIF(COUNT(DISTINCT p.session_id), 0) AS cr, SUM(s.cost) / NULLIF(COUNT(DISTINCT CASE WHEN o.order_id IS NOT NULL THEN p.session_id END), 0) AS cpa FROM page_events p LEFT JOIN orders o ON p.session_id = o.session_id LEFT JOIN ad_spend s ON p.session_id = s.session_id WHERE p.page_date >= '2024-01-01' GROUP BY 1 ORDER BY month"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Counting conversions as *total orders* instead of unique users",
+        "why_wrong": "If conversion rate is computed as orders / landing page views, and one user places multiple orders, conversion rate inflates \u2014 overestimating page efficiency.",
+        "bad_sql": "SELECT COUNT(o.order_id) * 100.0 / NULLIF(COUNT(DISTINCT p.session_id), 0) AS cr FROM page_events p LEFT JOIN orders o ON p.session_id = o.session_id",
+        "good_sql": "SELECT COUNT(DISTINCT CASE WHEN o.order_id IS NOT NULL THEN p.session_id END) * 100.0 / NULLIF(COUNT(DISTINCT p.session_id), 0) AS cr FROM page_events p LEFT JOIN orders o ON p.session_id = o.session_id"
+      },
+      {
+        "pattern": "Using session count instead of unique landing page visits",
+        "why_wrong": "If landing page views are counted as *page views*, and a user revisits the page, visits are double-counted \u2014 deflating conversion rate.",
+        "bad_sql": "SELECT COUNT(DISTINCT p.session_id) AS visits, COUNT(DISTINCT CASE WHEN o.order_id IS NOT NULL THEN p.session_id END) AS conversions, COUNT(DISTINCT CASE WHEN o.order_id IS NOT NULL THEN p.session_id END) * 100.0 / NULLIF(COUNT(DISTINCT p.session_id), 0) AS cr FROM page_events p LEFT JOIN orders o ON p.session_id = o.session_id GROUP BY 1",
+        "good_sql": "SELECT COUNT(DISTINCT p.session_id) AS visits, COUNT(DISTINCT CASE WHEN o.order_id IS NOT NULL THEN p.session_id END) AS conversions, COUNT(DISTINCT CASE WHEN o.order_id IS NOT NULL THEN p.session_id END) * 100.0 / NULLIF(COUNT(DISTINCT p.session_id), 0) AS cr FROM (SELECT session_id, landing_page_url, campaign_id FROM session_events WHERE event_type = 'page_view' AND landing_page_url LIKE '%utm_campaign=%' GROUP BY 1, 2, 3) p LEFT JOIN orders o ON p.session_id = o.session_id"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "WITH landing_page_views AS (SELECT DISTINCT session_id, landing_page_url, campaign_id FROM session_events WHERE event_type = 'page_view' AND landing_page_url LIKE '%utm_campaign=%' AND event_date BETWEEN '2024-01-01' AND '2024-01-31'), conversions AS (SELECT DISTINCT session_id, campaign_id FROM orders o JOIN landing_page_views lpv ON o.session_id = lpv.session_id WHERE o.status = 'completed' AND o.order_date BETWEEN '2024-01-01' AND '2024-01-31'), landing_metrics AS (SELECT lpv.campaign_id, COUNT(DISTINCT lpv.session_id) AS landing_page_views, COUNT(DISTINCT c.session_id) AS conversions FROM landing_page_views lpv LEFT JOIN conversions c ON lpv.session_id = c.session_id AND lpv.campaign_id = c.campaign_id GROUP BY lpv.campaign_id) SELECT campaign_id, landing_page_views, conversions, conversions * 100.0 / NULLIF(landing_page_views, 0) AS conversion_rate FROM landing_metrics",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', lpv.landing_page_url) AS month, lpv.campaign_id, COUNT(DISTINCT lpv.session_id) AS landing_page_views, COUNT(DISTINCT c.session_id) AS conversions, COUNT(DISTINCT c.session_id) * 100.0 / NULLIF(COUNT(DISTINCT lpv.session_id), 0) AS conversion_rate FROM landing_page_views lpv LEFT JOIN (SELECT DISTINCT session_id, campaign_id FROM orders o JOIN landing_page_views lpv ON o.session_id = lpv.session_id WHERE o.status = 'completed' AND o.order_date >= '2024-01-01') c ON lpv.session_id = c.session_id AND lpv.campaign_id = c.campaign_id GROUP BY 1, lpv.campaign_id ORDER BY 1, 5 DESC",
+      "advanced_sql": "WITH landing_page_views AS (\n  -- Grain: unique landing page visit per session\n  SELECT\n    session_id,\n    landing_page_url,\n    campaign_id\n  FROM session_events\n  WHERE event_type = 'page_view'\n    AND landing_page_url LIKE '%utm_campaign=%'\n    AND event_date BETWEEN '2024-01-01' AND '2024-01-31'\n  GROUP BY session_id, landing_page_url, campaign_id\n),\nconversions AS (\n  -- Grain: conversions attributed to landing page visit\n  SELECT DISTINCT\n    lpv.session_id,\n    lpv.campaign_id\n  FROM landing_page_views lpv\n  JOIN orders o ON lpv.session_id = o.session_id\n  WHERE o.status = 'completed'\n    AND o.order_date BETWEEN '2024-01-01' AND '2024-01-31'\n),\nlanding_metrics AS (\n  SELECT\n    lpv.campaign_id,\n    COUNT(DISTINCT lpv.session_id) AS landing_page_views,\n    COUNT(DISTINCT c.session_id) AS conversions\n  FROM landing_page_views lpv\n  LEFT JOIN conversions c ON lpv.session_id = c.session_id\n  GROUP BY lpv.campaign_id\n)\nSELECT\n  campaign_id,\n  landing_page_views,\n  conversions,\n  ROUND(conversions * 100.0 / NULLIF(landing_page_views, 0), 2) AS conversion_rate,\n  ROUND(landing_page_views / NULLIF(conversions, 0), 2) AS visits_per_conversion\nFROM landing_metrics\nORDER BY conversion_rate DESC"
+    }
+  }
+]

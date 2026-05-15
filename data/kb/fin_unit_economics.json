@@ -1,0 +1,532 @@
+[
+  {
+    "id": "fin_gross_margin",
+    "title": "Gross Margin",
+    "intent_tags": [
+      "gross margin",
+      "gross profit margin",
+      "gm",
+      "gmv margin",
+      "revenue minus cogs",
+      "what is my gross margin",
+      "gross margin %",
+      "profit before opex",
+      "how profitable are sales",
+      "gross margin ratio",
+      "margin rate"
+    ],
+    "sql_features": [
+      "aggregation",
+      "left_join",
+      "nullif",
+      "coalesce"
+    ],
+    "difficulty": "beginner",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "assessing core product profitability before operational costs",
+      "tracking margin trends over time or by segment (e.g., channel, product)",
+      "benchmarking against industry standards (e.g., SaaS >70%, hardware <40%)",
+      "validating pricing strategy or cost of goods changes",
+      "supporting valuation multiples that depend on gross profit (e.g., EV/Sales \u2192 EV/Gross Profit)"
+    ],
+    "related_patterns": [
+      "fin_contribution_margin",
+      "fin_cogs_per_unit",
+      "fin_operating_leverage"
+    ],
+    "business_definition": "Gross Profit divided by Revenue, expressed as a percentage: (Revenue \u2212 COGS) / Revenue. COGS includes only *direct* costs tied to producing each unit: cost of materials, direct labor, shipping, and platform fees (e.g., payment processing, marketplace take). Excludes R&D, sales & marketing, G&A, depreciation, and overhead.",
+    "metric_nature": {
+      "what_it_measures": "How much money is retained from each dollar of revenue to cover operating expenses and profit \u2014 a measure of core production efficiency.",
+      "what_it_does_not_measure": "Overall profitability. Gross margin ignores operating expenses; a company can have 90% gross margin but negative net income if S&M exceeds revenue growth.",
+      "common_misconception": "Gross margin measures customer profitability \u2014 it does not. Customer profitability requires *contribution margin*, which subtracts customer-specific variable costs (e.g., support, logistics)."
+    },
+    "template": "SELECT SUM(revenue) AS revenue, COALESCE(SUM(cogs_amount), 0) AS cogs, (SUM(revenue) - COALESCE(SUM(cogs_amount), 0)) * 100.0 / NULLIF(SUM(revenue), 0) AS gross_margin_pct FROM revenue_cogs_view WHERE period BETWEEN {start_date} AND {end_date}",
+    "inflation_causes": [
+      {
+        "cause": "COGS misallocated from overhead (e.g., including cloud infrastructure in COGS)",
+        "how_it_inflates": "If infrastructure costs (e.g., AWS, GCP) are classified as COGS instead of operating expense, COGS rises disproportionately \u2014 gross margin falls. Conversely, *misclassifying* overhead as *excluded* from COGS inflates gross margin by understating true cost of sales.",
+        "detection_sql": "SELECT expense_category, SUM(amount) AS spend FROM general_ledger WHERE account_type = 'expense' AND expense_category IN ('COGS', 'infrastructure', 'cloud', 'hosting') GROUP BY 1 ORDER BY 2 DESC",
+        "fix": "Define COGS as only *variable, unit-level* costs (material, labor, shipping, platform fees). Use activity-based costing or unit economics logic to reclassify infrastructure to OpEx."
+      },
+      {
+        "cause": "Revenue recognized before delivery (e.g., upfront payments for subscriptions)",
+        "how_it_inflates": "If subscription revenue is recognized at invoice (not ratably over service period), gross margin appears artificially high in early periods \u2014 revenue is recognized but COGS hasn\u2019t yet been incurred.",
+        "detection_sql": "SELECT DATE_TRUNC('month', invoice_date) AS invoice_month, SUM(invoice_amount) AS invoiced_revenue, SUM(paid_revenue) AS recognized_revenue FROM subscription_revenue WHERE invoice_date >= '2024-01-01' GROUP BY 1 ORDER BY 1",
+        "fix": "Recognize revenue over time (e.g., daily ratable for subscriptions) and match COGS incurred in the same period."
+      },
+      {
+        "cause": "Caching COGS at average rate instead of specific identification",
+        "how_it_inflates": "If inventory costs are averaged (FIFO/LIFO vs. average), and prices have dropped sharply, average COGS overstates true cost per unit sold \u2014 inflating gross margin (revenue fixed, COGS understated).",
+        "detection_sql": "SELECT product_id, AVG(cost_per_unit) AS avg_cogs, SUM(cost_per_unit) FILTER (WHERE transaction_type = 'sale') / COUNT(DISTINCT CASE WHEN transaction_type = 'sale' THEN transaction_id END) AS actual_cogs_per_unit FROM inventory_transactions GROUP BY 1 HAVING AVG(cost_per_unit) < SUM(cost_per_unit) FILTER (WHERE transaction_type = 'sale') / COUNT(DISTINCT CASE WHEN transaction_type = 'sale' THEN transaction_id END) ORDER BY 3 DESC",
+        "fix": "Use specific identification for high-value items or match COGS by batch/lot number for exact cost assignment."
+      },
+      {
+        "cause": "Platform fees excluded from COGS (e.g., Stripe, App Store take not recorded)",
+        "how_it_inflates": "If marketplace or platform transaction fees (e.g., 30% App Store cut) are not allocated to COGS, revenue appears higher relative to true cost \u2014 gross margin is overstated by the fee percentage.",
+        "detection_sql": "SELECT COUNT(*) AS transactions, SUM(transaction_amount) AS revenue, COALESCE(SUM(platform_fee), 0) AS platform_fees, ROUND(SUM(platform_fee) * 100.0 / NULLIF(SUM(transaction_amount), 0), 2) AS fee_pct FROM platform_fees WHERE event_date >= '2024-06-01'",
+        "fix": "Record platform fees as COGS in the same period as revenue, ideally via a joined fees table keyed by transaction_id."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "COGS includes non-cash depreciation (e.g., warehouse equipment)",
+        "how_it_deflates": "Depreciation on capital assets (e.g., robotics in fulfillment centers) is *fixed* and not unit-specific. Including it in COGS distorts unit economics \u2014 gross margin underrepresents true variable contribution.",
+        "detection_sql": "SELECT expense_category, SUM(amount) AS amount FROM general_ledger WHERE account_type = 'expense' AND expense_category = 'COGS' GROUP BY 1 HAVING SUM(amount) > 100000 ORDER BY 2 DESC",
+        "fix": "Allocate depreciation to operating expense (e.g., COGS overhead line) or use *cash COGS* (materials, labor, shipping, fees) for margin analysis."
+      }
+    ],
+    "diagnostic_questions": [
+      "Did gross margin change due to volume shifts (e.g., high-margin products sell more)?",
+      "Is the margin compression driven by a new product line, or a pricing/fee change?",
+      "Did revenue recognition policy change (e.g., deferred vs. upfront) in the current period?",
+      "Are COGS estimates (e.g., labor hours, shipping rates) outdated or uncalibrated?",
+      "Did a major vendor renegotiate contracts, altering cost structure?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "gross_margin up, cogs_per_unit flat",
+        "then": "pricing or mix shift (e.g., more premium SKUs sold) drove improvement \u2014 check revenue by category"
+      },
+      {
+        "if": "gross_margin down, cogs_per_unit up",
+        "then": "input cost inflation (e.g., semiconductors, freight) \u2014 validate unit cost history vs. commodity indices"
+      },
+      {
+        "if": "gross_margin down, revenue per unit flat",
+        "then": "operational inefficiency (e.g., scrap, rework) \u2014 inspect labor hours or yield metrics"
+      },
+      {
+        "if": "gross_margin stable, cogs_per_unit down, revenue per unit down",
+        "then": "discounting occurred \u2014 likely promotional activity or competitive pressure"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Gross margin drops >5% WoW, but cogs_per_unit is flat and revenue_per_unit is stable",
+        "and_also": "fin_contribution_margin shows similar drop",
+        "shared_root_cause": "A misclassified overhead expense moved from OpEx to COGS (e.g., a new accounting policy or system migration error). Gross margin and contribution margin both rely on accurate COGS allocation.",
+        "diagnostic_sql": "SELECT expense_type, SUM(amount) AS spend FROM general_ledger WHERE period = '2024-06-01' AND account_type = 'expense' GROUP BY 1 ORDER BY spend DESC"
+      },
+      {
+        "if_this_metric": "Gross margin up MoM, but cogs_per_unit up more than revenue_per_unit",
+        "and_also": "inventory_turnover dropped (fin_inventory_turnover down)",
+        "shared_root_cause": "Old inventory was written down or liquidated below cost \u2014 inflating gross margin by reducing COGS without real improvement in unit economics.",
+        "diagnostic_sql": "SELECT product_id, SUM(quantity) FILTER (WHERE transaction_type = 'write_down') AS write_downs, SUM(cogs_amount) FILTER (WHERE transaction_type = 'sale') AS cogs_sold, AVG(cost_per_unit) FILTER (WHERE transaction_type = 'write_down') AS avg_write_down_cost FROM inventory_transactions WHERE event_date >= '2024-06-01' GROUP BY 1 HAVING write_downs > 0 ORDER BY cogs_sold DESC"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Using gross revenue (pre-fee) and excluding platform fees from COGS",
+        "why_wrong": "If a company is a marketplace, only *take* (revenue net of fees) is revenue \u2014 COGS should include fees. Using gross revenue and excluding fees double-counts revenue and understates cost, inflating margin.",
+        "bad_sql": "SELECT SUM(transaction_amount) AS revenue, SUM(cost_of_goods) AS cogs, (SUM(transaction_amount) - SUM(cost_of_goods)) * 100.0 / NULLIF(SUM(transaction_amount), 0) AS margin FROM sales WHERE ...",
+        "good_sql": "SELECT SUM(net_revenue) AS revenue, SUM(platform_fee + cost_of_goods) AS cogs, (SUM(net_revenue) - SUM(platform_fee + cost_of_goods)) * 100.0 / NULLIF(SUM(net_revenue), 0) AS margin FROM sales WHERE ... AND platform_fee IS NOT NULL"
+      },
+      {
+        "pattern": "Calculating margin using GAAP revenue vs. cash COGS",
+        "why_wrong": "GAAP revenue includes deferred revenue, which has no corresponding COGS in the period \u2014 inflating gross margin. Cash COGS reflects real outflow but may not match revenue timing.",
+        "bad_sql": "SELECT SUM(revenue) AS revenue, SUM(cash_cogs) AS cogs, (SUM(revenue) - SUM(cash_cogs)) / NULLIF(SUM(revenue), 0) AS margin FROM revenue_cogs",
+        "good_sql": "SELECT SUM(revenue) AS revenue, SUM(matched_cogs) AS cogs, (SUM(revenue) - SUM(matched_cogs)) / NULLIF(SUM(revenue), 0) AS margin FROM revenue_cogs WHERE revenue_recognition_date = cogs_incurred_date"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT SUM(revenue) AS revenue, SUM(cogs) AS cogs, ROUND((SUM(revenue) - SUM(cogs)) * 100.0 / NULLIF(SUM(revenue), 0), 2) AS gross_margin_pct FROM fin_revenue_cogs WHERE period BETWEEN '2024-04-01' AND '2024-06-30'",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', revenue_date) AS month, SUM(revenue) AS revenue, SUM(cogs) AS cogs, ROUND((SUM(revenue) - SUM(cogs)) * 100.0 / NULLIF(SUM(revenue), 0), 2) AS gross_margin_pct, SUM(revenue) / COUNT(DISTINCT order_id) AS revenue_per_order, SUM(cogs) / COUNT(DISTINCT order_id) AS cogs_per_order FROM fin_revenue_cogs WHERE revenue_date >= '2024-01-01' GROUP BY 1 ORDER BY 1",
+      "advanced_sql": "WITH monthly_gmv AS (\n  -- Revenue and COGS matched to period\n  SELECT\n    DATE_TRUNC('month', r.revenue_date) AS month,\n    SUM(r.revenue) AS revenue,\n    SUM(c.cogs_amount) AS cogs\n  FROM fin_revenue r\n  LEFT JOIN fin_cogs c ON r.transaction_id = c.transaction_id\n  WHERE r.revenue_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '6 month'\n  GROUP BY 1\n),\nwith_margin AS (\n  SELECT\n    month,\n    revenue,\n    cogs,\n    revenue - cogs AS gross_profit,\n    ROUND((revenue - cogs) * 100.0 / NULLIF(revenue, 0), 2) AS gross_margin_pct,\n    LAG(revenue) OVER (ORDER BY month) AS prev_month_revenue,\n    LAG(cogs) OVER (ORDER BY month) AS prev_month_cogs\n  FROM monthly_gmv\n)\nSELECT\n  month,\n  revenue,\n  cogs,\n  gross_profit,\n  gross_margin_pct,\n  ROUND((gross_profit - COALESCE(prev_month_cogs, 0)) / NULLIF(prev_month_revenue - COALESCE(prev_month_cogs, 0), 0) * 100.0, 2) AS mom_margin_change_pct\nFROM with_margin\nORDER BY month"
+    }
+  },
+  {
+    "id": "fin_contribution_margin",
+    "title": "Contribution Margin",
+    "intent_tags": [
+      "contribution margin",
+      "cm",
+      "variable margin",
+      "unit contribution",
+      "contribution margin %",
+      "revenue minus variable costs",
+      "what covers fixed costs",
+      "customer contribution",
+      "product contribution margin",
+      "how much per user"
+    ],
+    "sql_features": [
+      "aggregation",
+      "cte",
+      "left_join",
+      "coalesce",
+      "nullif"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "assessing profitability of individual customers, segments, or SKUs",
+      "pricing decisions where fixed costs are sunk (e.g., discounts, promotions)",
+      "break-even analysis and volume requirements for profit targets",
+      "choosing between make-vs-buy or outsourcing scenarios",
+      "evaluating customer lifetime value (LTV) inputs"
+    ],
+    "related_patterns": [
+      "fin_gross_margin",
+      "fin_cogs_per_unit",
+      "fin_operating_leverage",
+      "fin_cac",
+      "fin_ltv"
+    ],
+    "business_definition": "Revenue minus *variable* costs (direct COGS + customer-specific variable SG&A), divided by revenue: (Revenue \u2212 Variable_COGS \u2212 Variable_SGA) / Revenue. Variable costs change with each unit sold (e.g., shipping, payment fees, support hand-offs). Fixed costs (e.g., rent, salaries) are excluded.",
+    "metric_nature": {
+      "what_it_measures": "How much each dollar of revenue contributes to covering fixed costs and profit \u2014 a forward-looking measure of marginal profitability.",
+      "what_it_does_not_measure": "Absolute profit. Contribution margin can be positive but still unprofitable if fixed costs exceed total contribution.",
+      "common_misconception": "Contribution margin = gross margin \u2014 it does not. Gross margin excludes *all* OpEx; contribution margin excludes *fixed* OpEx but includes *variable* OpEx."
+    },
+    "template": "SELECT SUM(revenue) AS revenue, COALESCE(SUM(cogs_amount), 0) AS cogs, COALESCE(SUM(variable_sga_amount), 0) AS var_sga, (SUM(revenue) - COALESCE(SUM(cogs_amount), 0) - COALESCE(SUM(variable_sga_amount), 0)) * 100.0 / NULLIF(SUM(revenue), 0) AS contribution_margin_pct FROM revenue_cost_view WHERE period BETWEEN {start_date} AND {end_date}",
+    "inflation_causes": [
+      {
+        "cause": "Misclassifying fixed SG&A as variable (e.g., including salesperson salaries)",
+        "how_it_inflates": "If a salesperson's base salary is allocated to variable SG&A, contribution margin appears *lower* than it should be for the period \u2014 but if the mistake is in *omitting* true variable costs (e.g., support per-ticket fee), contribution margin inflates, making promotions look more profitable than they are.",
+        "detection_sql": "SELECT expense_category, SUM(amount) AS spend, COUNT(DISTINCT CASE WHEN period IN (SELECT DISTINCT period FROM fin_contribution_margin) THEN transaction_id END) AS txn_count FROM general_ledger WHERE expense_category IN ('sales_commission', 'support_fee', 'shipping') GROUP BY 1 ORDER BY 2 DESC",
+        "fix": "Define variable SG&A as *per-transaction* costs: shipping, payment processing, customer support tickets, returns processing. Exclude salaries, rent, and base compensation."
+      },
+      {
+        "cause": "Excluding customer support costs tied to high-touch segments",
+        "how_it_inflates": "If enterprise customers require dedicated support (e.g., 50 tickets/user), but support cost per ticket is not allocated to those users, contribution margin is overstated \u2014 fixed support costs are effectively hidden in margin uplift.",
+        "detection_sql": "SELECT customer_segment, COUNT(DISTINCT customer_id) AS customers, SUM(ticket_count) AS tickets, SUM(ticket_cost) AS support_cost FROM (SELECT c.customer_id, c.segment, COUNT(*) AS ticket_count, COUNT(*) * 25 AS ticket_cost FROM support_tickets t JOIN customers c ON t.customer_id = c.customer_id GROUP BY 1, 2) GROUP BY 1 ORDER BY 3 DESC",
+        "fix": "Allocate support cost per ticket *and* per segment where support intensity varies, using ticket volume \u00d7 cost-per-ticket."
+      },
+      {
+        "cause": "Channel mix shifting to low-margin but high-volume traffic",
+        "how_it_inflates": "If referral traffic has near-zero variable cost but lower conversion, contribution margin per *customer acquired* is high \u2014 but contribution margin per *revenue* can be deflated by high-volume, low-price orders. The reverse: organic traffic driving many low-value orders can *deflate* per-unit margin while *inflating* volume-based metrics.",
+        "detection_sql": "SELECT attribution_source, COUNT(DISTINCT customer_id) AS customers, SUM(revenue) AS revenue, SUM(revenue) / COUNT(DISTINCT customer_id) AS rev_per_cust, SUM(revenue - cogs - variable_sga) / COUNT(DISTINCT customer_id) AS contrib_per_cust FROM revenue_costs GROUP BY 1 ORDER BY 3 DESC",
+        "fix": "Calculate contribution margin *per customer*, *per order*, and *per revenue* separately \u2014 do not average per-revenue if channel mix shifts."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Including fixed costs in variable SG&A (e.g., cloud infrastructure per customer)",
+        "how_it_deflates": "If compute costs (e.g., server hours per user) are allocated as *variable*, they fluctuate little with usage and inflate variable SG&A, compressing contribution margin even when marginal cost is flat.",
+        "detection_sql": "SELECT customer_id, SUM(compute_hours) AS hours, COUNT(*) FILTER (WHERE usage_type = 'api_call') AS api_calls FROM usage_logs GROUP BY 1 HAVING hours > 100 ORDER BY 2 DESC",
+        "fix": "Classify costs as variable *only* when they scale linearly with unit volume (e.g., shipping, fees, support tickets), not when they are fixed or step-function (e.g., cloud, rent)."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the contribution margin variance driven by pricing, volume, or cost changes?",
+      "Did a new feature or service tier introduce additional variable costs?",
+      "Are customer acquisition costs (CAC) being misclassified as variable when they are fixed (e.g., S&D campaigns)?",
+      "Has support cost per ticket changed (e.g., new ticketing system, outsourced labor)?",
+      "Is the metric calculated per customer, per order, or per revenue \u2014 and is the unit consistent?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "contribution_margin down, cogs_per_unit up",
+        "then": "input cost inflation \u2014 re-negotiate with suppliers or adjust pricing"
+      },
+      {
+        "if": "contribution_margin up, cogs_per_unit flat",
+        "then": "pricing increase or mix shift to higher-margin SKUs \u2014 validate with unit economics by product"
+      },
+      {
+        "if": "contribution_margin flat, rev_per_user up, var_sga up",
+        "then": "upsell or premium tier adoption \u2014 confirm variable costs track revenue (e.g., 1:1 support ratio)"
+      },
+      {
+        "if": "contribution_margin up, customer_count flat",
+        "then": "price increase \u2014 risk of churn if customers perceive value mismatch"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Contribution margin drops >10% WoW with no change in cogs_per_unit or var_sga_per_unit",
+        "and_also": "fin_gross_margin shows no change and rev_per_order down",
+        "shared_root_cause": "A promotional discount was applied to revenue but not reflected in COGS/SGA (e.g., promo code given post-invoice). Revenue was discounted, but cost of goods remained fixed \u2014 margin compressed without cost change.",
+        "diagnostic_sql": "SELECT promo_code, COUNT(DISTINCT order_id) AS orders, SUM(revenue) AS revenue, AVG(cogs_per_order) AS avg_cogs FROM orders WHERE promo_code IS NOT NULL AND order_date >= '2024-06-01' GROUP BY 1 ORDER BY 2 DESC"
+      },
+      {
+        "if_this_metric": "Contribution margin up MoM, but fin_ltv_deflating",
+        "and_also": "churn_rate up and product_usage_rate down",
+        "shared_root_cause": "A short-term price increase or cost optimization lifted margin, but reduced perceived value \u2014 leading to higher churn and lower long-term LTV. Contribution margin is a *period* metric; LTV decay reveals sustainability issues.",
+        "diagnostic_sql": "WITH cohort_ltv AS (SELECT cohort, COUNT(*) AS users, SUM(revenue) FILTER (WHERE event_date <= DATE_TRUNC('month', cohort + INTERVAL '3 months')) / COUNT(*) AS ltv_3m FROM users JOIN events USING (user_id) GROUP BY 1) SELECT * FROM cohort_ltv ORDER BY ltv_3m DESC"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Using gross margin instead of contribution margin for promotion decisions",
+        "why_wrong": "A promotion increases revenue but adds variable costs (e.g., shipping, support tickets). If only gross margin is considered, promotions appear profitable even when contribution margin is negative.",
+        "bad_sql": "SELECT AVG(revenue) - AVG(cogs) AS gross_contrib FROM orders WHERE promo = 'YES'",
+        "good_sql": "SELECT AVG(revenue) - AVG(cogs) - AVG(variable_sga) AS contrib_margin FROM orders WHERE promo = 'YES'"
+      },
+      {
+        "pattern": "Averaging contribution margin across customers without weighting",
+        "why_wrong": "A few high-value customers can inflate average margin while low-value customers have negative margin \u2014 masking a need for segmentation or retention strategy.",
+        "bad_sql": "SELECT AVG(revenue - cogs - var_sga) AS avg_contrib FROM customers",
+        "good_sql": "SELECT SUM(revenue - cogs - var_sga) / NULLIF(SUM(revenue), 0) * 100.0 AS contrib_margin_pct FROM customers"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT SUM(revenue) AS revenue, SUM(cogs) AS cogs, SUM(variable_sga) AS var_sga, (SUM(revenue) - SUM(cogs) - SUM(variable_sga)) * 100.0 / NULLIF(SUM(revenue), 0) AS contrib_margin_pct FROM fin_revenue_costs WHERE period BETWEEN '2024-04-01' AND '2024-06-30'",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', order_date) AS month, customer_segment, COUNT(DISTINCT order_id) AS orders, SUM(revenue) AS revenue, SUM(revenue - cogs - variable_sga) AS contrib, ROUND(SUM(revenue - cogs - variable_sga) * 100.0 / NULLIF(SUM(revenue), 0), 2) AS contrib_pct FROM orders WHERE order_date >= '2024-01-01' GROUP BY 1, 2 ORDER BY 1, 3 DESC",
+      "advanced_sql": "WITH monthly_contrib AS (\n  -- Grain: one row per month per customer segment\n  SELECT\n    DATE_TRUNC('month', o.order_date) AS month,\n    c.segment,\n    COUNT(DISTINCT o.order_id) AS orders,\n    SUM(o.revenue) AS revenue,\n    SUM(oc.cogs_amount) AS cogs,\n    SUM(osg.variable_sga_amount) AS var_sga,\n    SUM(o.revenue - oc.cogs_amount - osg.variable_sga_amount) AS contrib\n  FROM orders o\n  JOIN customers c ON o.customer_id = c.customer_id\n  LEFT JOIN order_cogs oc ON o.order_id = oc.order_id\n  LEFT JOIN order_variable_sga osg ON o.order_id = osg.order_id\n  WHERE o.order_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '6 month'\n  GROUP BY 1, 2\n),\nwith_trend AS (\n  SELECT\n    month,\n    segment,\n    orders,\n    revenue,\n    contrib,\n    contrib * 100.0 / NULLIF(revenue, 0) AS contrib_pct,\n    LAG(contrib) OVER (PARTITION BY segment ORDER BY month) AS prev_contrib\n  FROM monthly_contrib\n)\nSELECT\n  month,\n  segment,\n  orders,\n  contrib_pct,\n  ROUND((contrib - COALESCE(prev_contrib, 0)) * 100.0 / NULLIF(prev_contrib, 0), 2) AS contrib_mom_pct,\n  ROUND(contrib / NULLIF(orders, 0), 2) AS contrib_per_order\nFROM with_trend\nORDER BY month, segment"
+    }
+  },
+  {
+    "id": "fin_cogs_per_unit",
+    "title": "COGS per Unit",
+    "intent_tags": [
+      "cogs per unit",
+      "cost of goods per unit",
+      "unit cogs",
+      "cost per item sold",
+      "COGS per order",
+      "cost per sku",
+      "unit cost",
+      "production cost per unit",
+      "what does each sale cost",
+      "cost to serve per order"
+    ],
+    "sql_features": [
+      "aggregation",
+      "window_function",
+      "cte",
+      "coalesce",
+      "nullif"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "tracking production or procurement efficiency over time",
+      "benchmarking suppliers or manufacturers",
+      "setting pricing floors (e.g., never price below COGS per unit + margin)",
+      "evaluating scale economies (does COGS/unit fall as volume increases?)",
+      "identifying cost outliers for root-cause analysis (e.g., high shipping, scrap)"
+    ],
+    "related_patterns": [
+      "fin_gross_margin",
+      "fin_contribution_margin",
+      "fin_operating_leverage"
+    ],
+    "business_definition": "Total COGS divided by units sold (or orders, if units are ambiguous): SUM(COGS_amount) / SUM(units). COGS includes only direct, unit-level costs: materials, direct labor, shipping to customer, platform fees. Excludes overhead, R&D, and general administration.",
+    "metric_nature": {
+      "what_it_measures": "True cost to produce and deliver each unit \u2014 a baseline for margin analysis and cost control.",
+      "what_it_does_not_measure": "Customer acquisition cost or lifecycle value. A low COGS/unit can be offset by high CAC or churn.",
+      "common_misconception": "COGS per unit is static \u2014 it often varies by volume, product mix, geography, and channel due to volume discounts, shipping tiers, or fulfillment center pricing."
+    },
+    "template": "SELECT SUM(cogs_amount) AS total_cogs, SUM(units) AS total_units, SUM(cogs_amount) / NULLIF(SUM(units), 0) AS cogs_per_unit FROM cogs_view WHERE period BETWEEN {start_date} AND {end_date}",
+    "inflation_causes": [
+      {
+        "cause": "Including non-unit-level overhead (e.g., factory rent prorated per unit)",
+        "how_it_inflates": "If fixed overhead (e.g., factory rent, depreciation) is allocated using arbitrary units (e.g., labor hours), and units increase without proportional overhead growth, COGS/unit rises \u2014 even if true variable costs fall.",
+        "detection_sql": "SELECT expense_category, SUM(amount) AS spend, COUNT(DISTINCT transaction_id) AS txns FROM general_ledger WHERE expense_category = 'factory_overhead' AND period = '2024-06-01' GROUP BY 1 ORDER BY 2 DESC",
+        "fix": "Classify overhead as *operating expense*, not COGS, and use cash COGS (materials, labor, shipping) for unit-level analysis."
+      },
+      {
+        "cause": "Shipping costs allocated by revenue instead of units",
+        "how_it_inflates": "If a company sells high-value, low-weight items (e.g., jewelry), shipping cost per *dollar* of revenue is low, but per *unit* is high. Allocating shipping by revenue understates COGS per unit for those items.",
+        "detection_sql": "SELECT product_category, AVG(weight_oz) AS avg_weight, AVG(shipping_cost) AS avg_shipping, AVG(shipping_cost / NULLIF(revenue, 0)) AS shipping_per_rev, AVG(shipping_cost / NULLIF(units, 0)) AS shipping_per_unit FROM order_items GROUP BY 1 ORDER BY 5 DESC",
+        "fix": "Allocate shipping cost by units shipped (or weight if available), not by revenue."
+      },
+      {
+        "cause": "Platform fees allocated as % of revenue without unit basis",
+        "how_it_inflates": "If marketplace platform fees (e.g., 10%) are applied per *order*, but orders contain 1\u201310 units, COGS/unit is understated for multi-unit orders and inflated for single-unit orders \u2014 especially if average order units is trending up/down.",
+        "detection_sql": "SELECT COUNT(DISTINCT order_id) AS orders, SUM(units) AS units, SUM(platform_fee) AS fees, AVG(units) AS avg_units_per_order, SUM(platform_fee) / SUM(units) AS fee_per_unit, SUM(platform_fee) / COUNT(DISTINCT order_id) AS fee_per_order FROM platform_fees WHERE order_date >= '2024-06-01' GROUP BY 1",
+        "fix": "Use fee per order \u00f7 units per order (if stable) or allocate per unit via SKU-level fee tables."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Excluding freight-in (import duties, inbound shipping)",
+        "how_it_deflates": "If imported components include duties or inbound shipping, but those are classified as SG&A, COGS per unit understates true production cost \u2014 masking true margin sustainability.",
+        "detection_sql": "SELECT SUM(amount) FILTER (WHERE account_type = 'expense' AND category = 'freight_in') AS freight_in, SUM(amount) FILTER (WHERE account_type = 'expense' AND category = 'freight_out') AS freight_out FROM general_ledger WHERE period = '2024-06-01'",
+        "fix": "Include all costs necessary to bring goods to saleable condition (freight-in, import duties, receiving) in COGS."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the change in COGS/unit driven by volume (economies of scale), mix (more premium SKUs), or cost inflation?",
+      "Did any vendor contracts change in the period (e.g., price increase, new supplier)?",
+      "Are units counted consistently (e.g., includes containers vs. items)?",
+      "Did shipping carriers raise rates or change pricing tiers (e.g., weight-based vs. flat)?",
+      "Is COGS tracked per SKU, and do SKU-level changes explain the aggregate trend?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "cogs_per_unit down, gross_margin up",
+        "then": "input cost deflation or procurement efficiency \u2014 verify with commodity indices and supplier contracts"
+      },
+      {
+        "if": "cogs_per_unit up, revenue_per_unit up more",
+        "then": "successful price pass-through \u2014 customers accepted cost increases"
+      },
+      {
+        "if": "cogs_per_unit down, churn up",
+        "then": "product quality likely compromised \u2014 cheaper materials or outsourced labor affected satisfaction"
+      },
+      {
+        "if": "cogs_per_unit flat, gross_margin up",
+        "then": "pricing increase or mix shift \u2014 check revenue per unit trend"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "COGS/unit drops >5% WoW but gross_margin stable and revenue/unit stable",
+        "and_also": "supplier_lead_time down and inventory_turnover up",
+        "shared_root_cause": "A bulk purchase discount or volume-based rebate was applied retroactively \u2014 reducing COGS/unit without revenue change, and indicating improved procurement efficiency.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', invoice_date) AS month, SUM(amount) AS purchases, COUNT(DISTINCT supplier_id) AS suppliers, AVG(amount / NULLIF(purchased_units, 0)) AS cogs_per_unit FROM procurement WHERE invoice_date >= '2024-01-01' GROUP BY 1 ORDER BY 1"
+      },
+      {
+        "if_this_metric": "COGS/unit up MoM with no change in material or labor costs",
+        "and_also": "product_quality_score down and returns_rate up",
+        "shared_root_cause": "A supplier substitution occurred \u2014 lower-cost, lower-quality materials were used, reducing unit cost but increasing defects and warranty expenses.",
+        "diagnostic_sql": "SELECT supplier_id, AVG(cost_per_unit) AS cogs, AVG(return_rate) AS returns FROM orders o JOIN order_items oi ON o.order_id = oi.order_id JOIN products p ON oi.product_id = p.product_id GROUP BY 1 HAVING COUNT(*) > 100 ORDER BY cogs DESC"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Using average units per order without weighting",
+        "why_wrong": "A few large orders (e.g., 100 units) dilute COGS/unit averages, masking high cost for single-unit orders.",
+        "bad_sql": "SELECT SUM(cogs) / AVG(units) AS cogs_per_unit FROM orders",
+        "good_sql": "SELECT SUM(cogs) / SUM(units) AS cogs_per_unit FROM orders"
+      },
+      {
+        "pattern": "Counting COGS in currency without FX normalization",
+        "why_wrong": "If COGS is in local currency but units are aggregated globally, FX fluctuations inflate or deflate unit costs without real change in operational efficiency.",
+        "bad_sql": "SELECT SUM(cogs_local) / COUNT(DISTINCT unit_id) FROM international_orders",
+        "good_sql": "SELECT SUM(cogs_local * fx_rate_to_usd) / COUNT(DISTINCT unit_id) FROM international_orders"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT SUM(cogs_amount) AS total_cogs, SUM(units) AS total_units, SUM(cogs_amount) / NULLIF(SUM(units), 0) AS cogs_per_unit FROM cogs WHERE period BETWEEN '2024-04-01' AND '2024-06-30'",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', order_date) AS month, product_category, SUM(cogs_amount) AS cogs, SUM(units) AS units, SUM(cogs_amount) / NULLIF(SUM(units), 0) AS cogs_per_unit FROM orders WHERE order_date >= '2024-01-01' GROUP BY 1, 2 ORDER BY 1, 3 DESC",
+      "advanced_sql": "WITH cogs_by_order AS (\n  -- Grain: one row per order with unit-level cogs\n  SELECT\n    o.order_id,\n    DATE_TRUNC('month', o.order_date) AS month,\n    oi.product_id,\n    oi.quantity AS units,\n    oc.cogs_amount,\n    oc.cogs_amount / NULLIF(oi.quantity, 0) AS cogs_per_unit\n  FROM orders o\n  JOIN order_items oi ON o.order_id = oi.order_id\n  JOIN order_cogs oc ON oi.order_item_id = oc.order_item_id\n  WHERE o.order_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '6 month'\n),\nwith_trend AS (\n  SELECT\n    month,\n    SUM(cogs_per_unit * units) / NULLIF(SUM(units), 0) AS cogs_per_unit,\n    SUM(cogs_amount) AS total_cogs,\n    SUM(units) AS total_units,\n    LAG(SUM(cogs_per_unit * units) / NULLIF(SUM(units), 0)) OVER (ORDER BY month) AS prev_cogs_per_unit\n  FROM cogs_by_order\n  GROUP BY 1\n)\nSELECT\n  month,\n  cogs_per_unit,\n  total_units,\n  ROUND((cogs_per_unit - COALESCE(prev_cogs_per_unit, 0)) * 100.0 / NULLIF(prev_cogs_per_unit, 0), 2) AS mom_pct_change\nFROM with_trend\nORDER BY month"
+    }
+  },
+  {
+    "id": "fin_operating_leverage",
+    "title": "Operating Leverage",
+    "intent_tags": [
+      "operating leverage",
+      "degree of operating leverage",
+      "dol",
+      "fixed vs variable",
+      "fixed cost ratio",
+      "scalability ratio",
+      "profit elasticity",
+      "how much profit grows",
+      "fixed cost intensity",
+      "margin leverage"
+    ],
+    "sql_features": [
+      "aggregation",
+      "window_function",
+      "cte",
+      "coalesce",
+      "nullif",
+      "approximate_distinct"
+    ],
+    "difficulty": "expert",
+    "pattern_type": "analytical",
+    "when_to_use": [
+      "assessing scalability potential (e.g., doubling revenue \u2192 more than double profit?)",
+      "forecasting profit acceleration as revenue grows",
+      "comparing business models (SaaS > asset-heavy industries in leverage)",
+      "evaluating M&A synergy upside (fixed cost consolidation potential)",
+      "pricing strategy where volume drives margin leverage"
+    ],
+    "related_patterns": [
+      "fin_gross_margin",
+      "fin_contribution_margin",
+      "fin_gross_profit",
+      "fin_operating_income"
+    ],
+    "business_definition": "Percentage of contribution margin that represents coverage of fixed costs: (Contribution Margin \u2212 Operating Income) / Contribution Margin, or equivalently, Fixed Costs / Contribution Margin. Higher values indicate greater reliance on fixed costs \u2014 and higher profit elasticity as revenue scales.",
+    "metric_nature": {
+      "what_it_measures": "Profit scalability \u2014 how much operating income accelerates for each incremental dollar of revenue. A high operating leverage means small revenue growth yields large profit growth (and vice versa).",
+      "what_it_does_not_measure": "Absolute profitability or cash flow. A company with high leverage can be unprofitable if revenue is insufficient to cover fixed costs.",
+      "common_misconception": "High operating leverage = good \u2014 it is not inherently good or bad. It amplifies *both* upside (revenue growth \u2192 big profit jumps) and downside (revenue decline \u2192 deep losses)."
+    },
+    "template": "WITH periods AS (SELECT SUM(contribution_margin) AS contrib, SUM(fixed_costs) AS fixed FROM fin_metric_summary WHERE period BETWEEN {start_date} AND {end_date}) SELECT fixed, contrib, fixed * 100.0 / NULLIF(contrib, 0) AS operating_leverage_pct FROM periods",
+    "inflation_causes": [
+      {
+        "cause": "Misclassifying semi-variable costs as fixed (e.g., cloud usage with fixed minimums)",
+        "how_it_inflates": "If cloud infrastructure has a fixed monthly minimum + variable per-use fees, but only the fixed portion is allocated to fixed costs, operating leverage is overstated \u2014 true variable costs are undercounted.",
+        "detection_sql": "SELECT expense_category, SUM(amount) FILTER (WHERE period IN ('2024-04', '2024-05')) AS q2_cost, SUM(amount) FILTER (WHERE period = '2024-06') AS jun_cost, (SUM(amount) FILTER (WHERE period = '2024-06') - SUM(amount) FILTER (WHERE period IN ('2024-04', '2024-05')) / 2) AS delta FROM general_ledger WHERE expense_category = 'infrastructure' GROUP BY 1 ORDER BY 3 DESC",
+        "fix": "Split semi-variable costs using high-low method or regression: variable = (high_cost - low_cost) / (high_units - low_units), fixed = high_cost - variable \u00d7 high_units."
+      },
+      {
+        "cause": "Excluding employee stock-based compensation (SBEC) from fixed costs",
+        "how_it_inflates": "SBEC is fixed over the vesting period but highly variable per employee count. Excluding it understates true fixed costs and inflates operating leverage \u2014 making growth look more profitable than it is.",
+        "detection_sql": "SELECT SUM(amount) FILTER (WHERE account = 'stock_based_compensation') AS sbec, SUM(amount) FILTER (WHERE account = 'cash_salary') AS cash_salar FROM general_ledger WHERE period = '2024-06-01'",
+        "fix": "Include all fixed compensation (cash + stock-based, prorated to period) in fixed costs for operating leverage calculations."
+      },
+      {
+        "cause": "Revenue growth concentrated in low-margin channels with low contribution margin",
+        "how_it_inflates": "If revenue grows but contribution margin compresses (e.g., new channel with low margin), operating leverage *appears* to rise \u2014 because fixed costs are constant while contribution margin shrinks \u2014 but this reflects margin decay, not leverage.",
+        "detection_sql": "SELECT DATE_TRUNC('month', revenue_date) AS month, SUM(revenue) AS revenue, SUM(contribution_margin) AS contrib, ROUND(SUM(contribution_margin) * 100.0 / NULLIF(SUM(revenue), 0), 2) AS contrib_margin_pct, SUM(fixed_costs) / NULLIF(SUM(contribution_margin), 0) AS leverage FROM fin_metric_summary WHERE revenue_date >= '2024-01-01' GROUP BY 1 ORDER BY 1",
+        "fix": "Analyze operating leverage by contribution margin tier \u2014 separate high-margin (leverage beneficial) vs low-margin (leverage dangerous) segments."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Over-stating fixed costs by including discretionary spend (e.g., marketing, R&D)",
+        "how_it_deflates": "If marketing or R&D are treated as fixed, and they are actually variable (e.g., scaling with revenue), operating leverage underrepresents true scalability \u2014 because true fixed costs (rent, depreciation) are masked.",
+        "detection_sql": "SELECT expense_category, SUM(amount) AS spend, COUNT(DISTINCT CASE WHEN period IN (SELECT DISTINCT period FROM fin_metric_summary WHERE revenue > 0) THEN transaction_id END) AS txns FROM general_ledger WHERE period = '2024-06-01' GROUP BY 1 HAVING spend > 10000 ORDER BY spend DESC",
+        "fix": "Only include costs that do *not* vary with activity in a relevant range (e.g., rent, salaries for non-sales staff, depreciation) \u2014 exclude sales commissions, bonuses, and scaling-based marketing."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the change in operating leverage driven by revenue growth, fixed cost changes, or contribution margin shifts?",
+      "Did any facility or infrastructure expansion occur, increasing fixed costs?",
+      "Are revenue and contribution margin normalized to the same period (e.g., same revenue recognition policy)?",
+      "Has employee count changed significantly, affecting fixed compensation?",
+      "Is the metric calculated on a *cash* basis or *accrual* basis \u2014 and does that align with the business model?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "operating_leverage up, contribution_margin_pct up",
+        "then": "revenue scale is improving margins \u2014 fixed costs are being spread over more units, and pricing/costs are stable"
+      },
+      {
+        "if": "operating_leverage up, contribution_margin_pct down",
+        "then": "revenue growth is happening at lower margin \u2014 likely new, less profitable segments or competitive pressure"
+      },
+      {
+        "if": "operating_leverage down, contribution_margin_pct up",
+        "then": "variable costs increased faster than revenue (e.g., higher commission, lower price pass-through)"
+      },
+      {
+        "if": "operating_leverage down, fixed_costs down",
+        "then": "cost optimization (e.g., layoffs, facility closures) reduced fixed base \u2014 may affect long-term capability"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Operating leverage drops >15% WoW with revenue up and contribution_margin_pct up",
+        "and_also": "fin_gross_margin stable and fin_cogs_per_unit stable",
+        "shared_root_cause": "A significant reduction in fixed costs (e.g., sublease of excess office space, layoffs after Q2 planning) lowered the fixed base \u2014 making the business *less* leveraged but more resilient during downturns.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', period) AS month, SUM(amount) FILTER (WHERE account_type = 'expense' AND cost_behavior = 'fixed') AS fixed_costs FROM general_ledger WHERE period >= '2024-04-01' GROUP BY 1 ORDER BY 1"
+      },
+      {
+        "if_this_metric": "Operating leverage spikes >25% WoW with revenue flat and contribution_margin_pct down",
+        "and_also": "churn_rate up and fin_ltv_deflating",
+        "shared_root_cause": "Customer churn increased, but fixed costs remained constant \u2014 so contribution margin dropped while fixed base stayed fixed. The business is now *more* leveraged, amplifying risk \u2014 one more revenue dip could turn a small loss into a large one.",
+        "diagnostic_sql": "WITH monthly_metrics AS (SELECT DATE_TRUNC('month', event_date) AS month, COUNT(DISTINCT customer_id) AS customers, SUM(revenue) AS revenue, SUM(contribution_margin) AS contrib FROM events GROUP BY 1) SELECT month, customers, revenue, contrib, contrib / NULLIF(revenue, 0) * 100.0 AS contrib_pct FROM monthly_metrics ORDER BY month"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Using gross margin instead of contribution margin in leverage formula",
+        "why_wrong": "Gross margin excludes *all* OpEx, but operating leverage isolates *fixed* OpEx. If variable OpEx (e.g., commissions) dominates, using gross margin overstates fixed cost reliance and inflates leverage.",
+        "bad_sql": "SELECT SUM(fixed_costs) / NULLIF(SUM(revenue) - SUM(cogs), 0) AS leverage FROM fin_summary",
+        "good_sql": "SELECT SUM(fixed_costs) / NULLIF(SUM(contribution_margin), 0) AS leverage FROM fin_summary"
+      },
+      {
+        "pattern": "Calculating leverage on a single period without trend context",
+        "why_wrong": "A one-time fixed cost (e.g., asset write-down) can spike leverage temporarily \u2014 misleadingly suggesting structural change rather than a discrete event.",
+        "bad_sql": "SELECT fixed / contrib AS leverage FROM fin_period WHERE period = '2024-06-01'",
+        "good_sql": "WITH rolling AS (SELECT period, SUM(fixed) OVER (ORDER BY period ROWS BETWEEN 5 PRECEDING AND CURRENT ROW) / SUM(contrib) OVER (ORDER BY period ROWS BETWEEN 5 PRECEDING AND CURRENT ROW) AS lever FROM fin_period WHERE period >= '2024-01-01') SELECT * FROM rolling ORDER BY period DESC LIMIT 6"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT SUM(revenue) AS revenue, SUM(cogs) AS cogs, SUM(fixed_opex) AS fixed, SUM(revenue) - SUM(cogs) - SUM(variable_opex) AS contrib, SUM(fixed) / NULLIF(SUM(revenue) - SUM(cogs) - SUM(variable_opex), 0) AS leverage FROM fin_summary WHERE period BETWEEN '2024-04-01' AND '2024-06-30'",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', period) AS month, SUM(revenue) AS revenue, SUM(contribution_margin) AS contrib, SUM(fixed_costs) AS fixed, SUM(fixed_costs) * 100.0 / NULLIF(SUM(contribution_margin), 0) AS leverage_pct FROM fin_metric_summary WHERE period >= '2024-01-01' GROUP BY 1 ORDER BY 1",
+      "advanced_sql": "WITH monthly_metrics AS (\n  -- Grain: one row per month\n  SELECT\n    DATE_TRUNC('month', revenue_date) AS month,\n    SUM(revenue) AS revenue,\n    SUM(contribution_margin) AS contrib,\n    SUM(fixed_costs) AS fixed,\n    SUM(contribution_margin) / NULLIF(SUM(revenue), 0) * 100.0 AS contrib_pct,\n    SUM(fixed_costs) / NULLIF(SUM(contribution_margin), 0) AS leverage\n  FROM fin_metric_summary\n  WHERE revenue_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '18 month'\n  GROUP BY 1\n),\nwith_growth AS (\n  SELECT\n    month,\n    revenue,\n    contrib,\n    fixed,\n    contrib_pct,\n    leverage,\n    LAG(revenue) OVER (ORDER BY month) AS prev_revenue,\n    LAG(contrib) OVER (ORDER BY month) AS prev_contrib\n  FROM monthly_metrics\n)\nSELECT\n  month,\n  revenue,\n  contrib,\n  fixed,\n  contrib_pct,\n  leverage,\n  ROUND((revenue - COALESCE(prev_revenue, 0)) / NULLIF(prev_revenue, 0) * 100.0, 2) AS rev_mom_pct,\n  ROUND((contrib - COALESCE(prev_contrib, 0)) / NULLIF(prev_contrib, 0) * 100.0, 2) AS contrib_mom_pct,\n  ROUND((contrib - COALESCE(prev_contrib, 0)) / NULLIF((revenue - COALESCE(prev_revenue, 0)), 0) * 100.0, 2) AS delta_contrib_per_delta_rev\nFROM with_growth\nORDER BY month"
+    }
+  }
+]

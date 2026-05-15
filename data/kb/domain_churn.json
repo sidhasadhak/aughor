@@ -1,0 +1,57 @@
+[
+  {
+    "id": "customer_churn_analysis",
+    "title": "Customer Churn Analysis",
+    "business_definition": "Churn rate is the percentage of customers who stop being customers in a given period. For subscriptions: (customers lost / customers at start of period). High churn erodes revenue even when acquisition is strong.",
+    "intent_tags": ["churn", "customer churn", "churn rate", "customer retention", "customers leaving", "attrition"],
+    "when_to_use": ["churn rate increased", "customers are cancelling", "retention dropped", "why are customers leaving"],
+    "diagnostic_questions": [
+      "Is churn concentrated in a specific cohort, plan tier, or segment?",
+      "Did churn spike after a specific product change, pricing change, or support incident?",
+      "Are churned customers reaching out before cancelling (support tickets, NPS detractors)?",
+      "What is the median tenure of churned customers — are they churning early or after a long relationship?",
+      "Is involuntary churn (payment failure) a factor?"
+    ],
+    "causal_relationships": [
+      {
+        "symptom": "churn rate increased month-over-month",
+        "check_in_order": ["churn_by_plan_tier", "churn_by_cohort_age", "involuntary_churn_rate", "nps_score_trend", "support_ticket_volume"],
+        "detection_sql": "SELECT DATE_TRUNC('month', cancelled_at) AS month, plan_tier, COUNT(*) AS churned FROM subscriptions WHERE cancelled_at IS NOT NULL GROUP BY 1, 2 ORDER BY 1, 2"
+      },
+      {
+        "symptom": "churn concentrated in early cohorts (within 90 days of signup)",
+        "check_in_order": ["activation_rate", "time_to_first_value", "onboarding_completion"],
+        "detection_sql": "SELECT DATEDIFF('day', signup_date, cancelled_at) AS days_to_churn, COUNT(*) FROM subscriptions WHERE cancelled_at IS NOT NULL GROUP BY 1 ORDER BY 1"
+      },
+      {
+        "symptom": "involuntary churn from payment failures",
+        "check_in_order": ["payment_failure_rate", "dunning_recovery_rate", "card_expiry_rate"],
+        "detection_sql": "SELECT cancellation_reason, COUNT(*), COUNT(*) * 100.0 / SUM(COUNT(*)) OVER () AS pct FROM subscriptions WHERE cancelled_at IS NOT NULL GROUP BY 1 ORDER BY 2 DESC"
+      }
+    ],
+    "inflation_causes": [
+      {
+        "cause": "Free trial expirations counted as churn",
+        "detection_sql": "SELECT plan_type, cancellation_reason, COUNT(*) FROM subscriptions WHERE cancelled_at IS NOT NULL GROUP BY 1, 2"
+      },
+      {
+        "cause": "Downgrades to free tier counted as full churn",
+        "detection_sql": "SELECT previous_plan, new_plan, COUNT(*) FROM plan_changes WHERE changed_at >= CURRENT_DATE - INTERVAL '30 days' GROUP BY 1, 2"
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Paused or frozen subscriptions excluded — they may later churn",
+        "detection_sql": "SELECT status, COUNT(*) FROM subscriptions GROUP BY 1"
+      }
+    ],
+    "related_patterns": ["customer_lifetime_value", "monthly_recurring_revenue", "payment_failure", "product_activation"],
+    "anti_patterns": [
+      "Do not mix voluntary and involuntary churn — they require completely different interventions",
+      "Do not calculate churn using end-of-period customer count as denominator — use start-of-period"
+    ],
+    "sql_assets": {
+      "monthly_churn_rate": "SELECT DATE_TRUNC('month', period) AS month, churned / NULLIF(active_start, 0)::numeric AS churn_rate FROM (SELECT DATE_TRUNC('month', cancelled_at) AS period, COUNT(*) AS churned, LAG(COUNT(DISTINCT customer_id)) OVER (ORDER BY DATE_TRUNC('month', cancelled_at)) AS active_start FROM subscriptions GROUP BY 1) t"
+    }
+  }
+]

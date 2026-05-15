@@ -1,0 +1,47 @@
+[
+  {
+    "id": "monthly_recurring_revenue",
+    "title": "Monthly Recurring Revenue (MRR)",
+    "business_definition": "MRR is the predictable monthly revenue from active subscriptions. MRR = sum of all active subscription amounts normalised to monthly. New MRR + Expansion MRR - Churned MRR - Contraction MRR = Net New MRR.",
+    "intent_tags": ["MRR", "monthly recurring revenue", "ARR", "subscription revenue", "MRR growth", "MRR decline", "net new MRR"],
+    "when_to_use": ["MRR changed unexpectedly", "subscription revenue analysis", "SaaS revenue metrics"],
+    "diagnostic_questions": [
+      "Which MRR component drove the change — new, expansion, churn, or contraction?",
+      "Is ARR on track given current MRR growth rate?",
+      "What is the net revenue retention (NRR) — are existing customers expanding or contracting?",
+      "Which plan tier contributes most to MRR and how is that tier trending?"
+    ],
+    "causal_relationships": [
+      {
+        "symptom": "MRR declined month-over-month",
+        "check_in_order": ["churned_mrr", "contraction_mrr", "new_mrr", "expansion_mrr"],
+        "detection_sql": "SELECT DATE_TRUNC('month', event_date) AS month, SUM(CASE WHEN event_type = 'new' THEN amount ELSE 0 END) AS new_mrr, SUM(CASE WHEN event_type = 'expansion' THEN amount ELSE 0 END) AS expansion_mrr, SUM(CASE WHEN event_type = 'churn' THEN amount ELSE 0 END) AS churned_mrr, SUM(CASE WHEN event_type = 'contraction' THEN amount ELSE 0 END) AS contraction_mrr FROM mrr_events GROUP BY 1 ORDER BY 1"
+      },
+      {
+        "symptom": "MRR growth slowing despite stable churn",
+        "check_in_order": ["new_logo_count", "average_contract_value", "sales_cycle_length"],
+        "detection_sql": "SELECT DATE_TRUNC('month', created_at) AS month, COUNT(*) AS new_subscriptions, AVG(monthly_amount) AS avg_mrr_per_customer FROM subscriptions WHERE created_at >= CURRENT_DATE - INTERVAL '6 months' GROUP BY 1 ORDER BY 1"
+      }
+    ],
+    "inflation_causes": [
+      {
+        "cause": "Annual contracts counted fully in first month instead of spreading monthly",
+        "detection_sql": "SELECT billing_interval, COUNT(*), SUM(amount) FROM subscriptions WHERE status = 'active' GROUP BY 1"
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Paused subscriptions excluded but still represent committed revenue",
+        "detection_sql": "SELECT status, SUM(monthly_amount) FROM subscriptions GROUP BY 1"
+      }
+    ],
+    "related_patterns": ["customer_churn", "customer_lifetime_value", "average_order_value"],
+    "anti_patterns": [
+      "Do not add one-time charges to MRR — only include recurring amounts",
+      "Normalise all billing intervals to monthly before summing (annual / 12, quarterly / 3)"
+    ],
+    "sql_assets": {
+      "active_mrr": "SELECT SUM(CASE WHEN billing_interval = 'monthly' THEN amount WHEN billing_interval = 'annual' THEN amount / 12.0 WHEN billing_interval = 'quarterly' THEN amount / 3.0 ELSE amount END) AS mrr FROM subscriptions WHERE status = 'active'"
+    }
+  }
+]

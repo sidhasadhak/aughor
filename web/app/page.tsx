@@ -4,6 +4,7 @@ import { useState } from "react";
 import { ConnectionsPanel } from "@/components/ConnectionsPanel";
 import { HistoryPanel } from "@/components/HistoryPanel";
 import { HistoryDetailPanel } from "@/components/HistoryDetailPanel";
+import { MetricsPanel } from "@/components/MetricsPanel";
 import { SchemaPanel } from "@/components/SchemaPanel";
 import { FeedbackPrompt } from "@/components/FeedbackPrompt";
 import { HypothesisCard } from "@/components/HypothesisCard";
@@ -31,6 +32,7 @@ export default function Home() {
   const [selectedConn, setSelectedConn] = useState("mydb");
   const [schemaConnId, setSchemaConnId] = useState<string | null>(null);
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
+  const [connRightTab, setConnRightTab] = useState<"schema" | "metrics">("schema");
 
   const handleSubmit = (q?: string) => {
     const question = q ?? input.trim();
@@ -107,10 +109,31 @@ export default function Home() {
               activeSchemaId={schemaConnId}
               onSchemaSelect={setSchemaConnId}
             />
-            <SchemaPanel
-              connId={schemaConnId}
-              connName={schemaConnId ?? undefined}
-            />
+            {/* Right pane: Schema | Metrics sub-tabs */}
+            <div className="flex-1 flex flex-col overflow-hidden border-l border-zinc-800">
+              <div className="flex items-center gap-0 border-b border-zinc-800 px-4">
+                {(["schema", "metrics"] as const).map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => setConnRightTab(t)}
+                    className={`px-4 py-2.5 text-xs font-medium capitalize transition-colors border-b-2 -mb-px ${
+                      connRightTab === t
+                        ? "border-violet-500 text-violet-400"
+                        : "border-transparent text-zinc-500 hover:text-zinc-300"
+                    }`}
+                  >
+                    {t === "schema" ? "Schema" : "Metrics Catalog"}
+                  </button>
+                ))}
+              </div>
+              {connRightTab === "schema" ? (
+                <SchemaPanel connId={schemaConnId} connName={schemaConnId ?? undefined} />
+              ) : (
+                <div className="flex-1 overflow-auto p-4">
+                  <MetricsPanel />
+                </div>
+              )}
+            </div>
           </div>
         ) : (
           /* ── Investigation tab ── */

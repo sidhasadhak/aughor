@@ -1,0 +1,572 @@
+[
+  {
+    "id": "ec_conversion_rate",
+    "title": "Conversion Rate",
+    "intent_tags": [
+      "conversion rate",
+      "cvr",
+      "purchase conversion",
+      "visitor to buyer",
+      "session conversion rate",
+      "what is my conversion rate",
+      "how many visitors buy",
+      "ecommerce conversion rate",
+      "site conversion",
+      "traffic to order ratio",
+      "percent of visitors who purchase",
+      "order rate"
+    ],
+    "sql_features": [
+      "aggregation",
+      "cte",
+      "left_join",
+      "nullif",
+      "conditional_count"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "ratio",
+    "when_to_use": [
+      "measuring what percentage of website sessions result in a purchase",
+      "comparing conversion performance across traffic sources or channels",
+      "evaluating the impact of a site change or A/B test on purchase behavior",
+      "benchmarking against industry conversion standards",
+      "diagnosing why revenue changed \u2014 was it traffic volume or conversion efficiency?"
+    ],
+    "related_patterns": [
+      "ec_cart_abandonment",
+      "ec_checkout_funnel",
+      "ec_session_to_purchase",
+      "ec_gmv",
+      "ec_aov"
+    ],
+    "business_definition": "Number of sessions that resulted in at least one completed order divided by total sessions in the period, expressed as a percentage. A session is a contiguous period of user activity on the site (typically defined by a 30-minute inactivity timeout). Excludes bot traffic, internal test sessions, and orders with status cancelled, test, or fraud.",
+    "metric_nature": {
+      "what_it_measures": "The efficiency of turning website visitors into buyers. Answers: of every 100 people who visit, how many actually purchase?",
+      "what_it_does_not_measure": "Revenue per session or order value. A 5% conversion rate with $10 AOV is very different from 5% with $500 AOV. Use ec_aov or revenue per session for monetization efficiency. Also does not measure micro-conversions (add-to-cart, email signup) \u2014 use ec_checkout_funnel for intermediate steps.",
+      "common_misconception": "Conversion rate is heavily dependent on how 'session' is defined. A 30-minute timeout produces more sessions (and lower CVR) than a 24-hour window. Teams comparing CVR across tools (GA4 vs Mixpanel vs warehouse) often see different numbers because of different session definitions, not actual performance differences."
+    },
+    "template": "WITH session_orders AS (\n  SELECT\n    s.session_id,\n    s.session_date,\n    CASE WHEN COUNT(DISTINCT o.order_id) > 0 THEN 1 ELSE 0 END AS has_order\n  FROM sessions s\n  LEFT JOIN orders o ON s.session_id = o.session_id\n    AND o.status NOT IN ('cancelled', 'test', 'fraud')\n  WHERE s.is_bot = false\n    AND s.session_date BETWEEN {start_date} AND {end_date}\n  GROUP BY s.session_id, s.session_date\n)\nSELECT\n  COUNT(DISTINCT session_id) AS total_sessions,\n  SUM(has_order) AS converting_sessions,\n  ROUND(SUM(has_order) * 100.0 / NULLIF(COUNT(DISTINCT session_id), 0), 2) AS conversion_rate_pct\nFROM session_orders",
+    "inflation_causes": [
+      {
+        "cause": "Bot traffic excluded from sessions but bot-placed orders included",
+        "how_it_inflates": "If bot-detection filters remove bot sessions from the denominator but the corresponding bot-generated orders remain in the numerator (e.g., scraper bots that trigger checkout events), the conversion rate rises because the denominator shrinks while the numerator stays the same or grows.",
+        "detection_sql": "SELECT o.session_id, s.is_bot, s.user_agent, o.order_id, o.order_date FROM orders o LEFT JOIN sessions s ON o.session_id = s.session_id WHERE s.session_id IS NULL OR s.is_bot = true ORDER BY o.order_date DESC LIMIT 20",
+        "fix": "Ensure bot-detection logic is applied symmetrically: if a session is flagged as bot, all associated orders should also be excluded from conversion calculations. Join orders to sessions and inherit the is_bot flag."
+      },
+      {
+        "cause": "Session definition window too long, merging multiple visits into one",
+        "how_it_inflates": "If the session timeout is set to 24 hours instead of 30 minutes, a user who visits 5 times in a day and buys on the 5th visit counts as 1 session with 1 conversion \u2014 a 100% conversion rate for that user. With a 30-minute timeout, it would be 1 conversion out of 5 sessions (20%).",
+        "detection_sql": "SELECT AVG(session_duration_seconds) AS avg_duration, PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY session_duration_seconds) AS median_duration, PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY session_duration_seconds) AS p95_duration, MAX(session_duration_seconds) AS max_duration FROM sessions WHERE is_bot = false AND session_date >= CURRENT_DATE - INTERVAL '7 days'",
+        "fix": "Standardize session timeout to 30 minutes (industry standard). If using a custom sessionization, document the timeout and ensure it is consistent across all reporting tools."
+      },
+      {
+        "cause": "Counting only sessions with product page views in the denominator",
+        "how_it_inflates": "If the denominator excludes sessions that never reached a product page (homepage bounces, blog readers, support page visitors), the conversion rate is artificially high because low-intent traffic is excluded. This is 'product page conversion rate', not 'site conversion rate', but is often reported without the qualifier.",
+        "detection_sql": "SELECT CASE WHEN has_product_view = true THEN 'with_product_view' ELSE 'no_product_view' END AS session_type, COUNT(DISTINCT session_id) AS sessions, SUM(CASE WHEN has_order = true THEN 1 ELSE 0 END) AS converting FROM (SELECT s.session_id, MAX(CASE WHEN e.event_type = 'product_view' THEN true ELSE false END) AS has_product_view, MAX(CASE WHEN o.order_id IS NOT NULL THEN true ELSE false END) AS has_order FROM sessions s LEFT JOIN events e ON s.session_id = e.session_id LEFT JOIN orders o ON s.session_id = o.session_id AND o.status NOT IN ('cancelled', 'test', 'fraud') WHERE s.is_bot = false GROUP BY s.session_id) sub GROUP BY 1",
+        "fix": "Always use total site sessions in the denominator for the headline conversion rate. If you want product-page CVR, label it explicitly as 'product page conversion rate' and report both."
+      },
+      {
+        "cause": "Multi-device purchase attributed to the final session only",
+        "how_it_inflates": "If a customer browses on mobile (3 sessions) and buys on desktop (1 session), only the desktop session gets the conversion. The mobile sessions stay in the denominator as non-converting. But if session stitching merges these into fewer sessions, the denominator shrinks and CVR rises without any behavioral change.",
+        "detection_sql": "SELECT s.device_type, COUNT(DISTINCT s.session_id) AS sessions, COUNT(DISTINCT CASE WHEN o.order_id IS NOT NULL THEN s.session_id END) AS converting_sessions, ROUND(COUNT(DISTINCT CASE WHEN o.order_id IS NOT NULL THEN s.session_id END) * 100.0 / NULLIF(COUNT(DISTINCT s.session_id), 0), 2) AS cvr_pct FROM sessions s LEFT JOIN orders o ON s.session_id = o.session_id AND o.status NOT IN ('cancelled', 'test', 'fraud') WHERE s.is_bot = false GROUP BY s.device_type ORDER BY sessions DESC",
+        "fix": "Report conversion rate by device type separately. If cross-device stitching is applied, document it and understand that it will mechanically increase CVR by reducing session count."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Bot traffic inflating session denominator",
+        "how_it_deflates": "If bot detection is incomplete, automated crawlers, scrapers, and monitoring bots add thousands of non-converting sessions to the denominator. A site with 10% real sessions and 90% bot traffic would show ~10x lower conversion rate than reality.",
+        "detection_sql": "SELECT DATE_TRUNC('day', session_date) AS day, COUNT(DISTINCT CASE WHEN is_bot = true THEN session_id END) AS bot_sessions, COUNT(DISTINCT CASE WHEN is_bot = false THEN session_id END) AS human_sessions, ROUND(COUNT(DISTINCT CASE WHEN is_bot = true THEN session_id END) * 100.0 / NULLIF(COUNT(DISTINCT session_id), 0), 2) AS bot_pct FROM sessions GROUP BY 1 ORDER BY 1 DESC LIMIT 14",
+        "fix": "Improve bot detection using user_agent patterns, IP reputation lists, and behavioral signals (zero page interaction time, no mouse events). Filter WHERE is_bot = false in all conversion queries."
+      },
+      {
+        "cause": "Orders missing session_id linkage",
+        "how_it_deflates": "If the order table's session_id column is NULL for some orders (e.g., phone orders, API orders, offline POS), those orders do not join to any session and are excluded from the numerator. The denominator includes the sessions that led to those orders, but the conversion is not attributed.",
+        "detection_sql": "SELECT CASE WHEN o.session_id IS NULL THEN 'no_session' ELSE 'has_session' END AS linkage, COUNT(DISTINCT o.order_id) AS orders, SUM(oi.quantity * oi.unit_price) AS revenue FROM orders o JOIN order_items oi ON o.order_id = oi.order_id WHERE o.status NOT IN ('cancelled', 'test', 'fraud') GROUP BY 1",
+        "fix": "Either link these orders to their originating sessions (if web-originated), or exclude non-web channels from both the session denominator and order numerator to keep the ratio internally consistent."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the session definition consistent across the reporting tool and the warehouse? What is the inactivity timeout?",
+      "Are bot sessions being filtered from the denominator, and are bot-generated orders filtered from the numerator?",
+      "Did total session volume change, or did the number of converting sessions change \u2014 or both?",
+      "Is the conversion rate shift concentrated in a specific traffic source, device type, or landing page?",
+      "Were there any tracking outages (pixel failures, tag manager changes) that could cause sessions or orders to not be recorded?",
+      "Are offline or phone orders included in the order count but missing session attribution?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "conversion_rate up, ec_gmv also up",
+        "then": "more visitors are buying \u2014 likely a UX improvement, better product-market fit, or a successful promotion that increased purchase intent"
+      },
+      {
+        "if": "conversion_rate up, ec_gmv flat",
+        "then": "conversion improved but traffic volume decreased proportionally \u2014 check if a paid channel was cut (fewer but higher-intent visitors remaining)"
+      },
+      {
+        "if": "conversion_rate down, ec_cart_abandonment up",
+        "then": "users are adding to cart but not completing checkout \u2014 the friction is in the checkout flow, not in product discovery or consideration"
+      },
+      {
+        "if": "conversion_rate down, session count up dramatically",
+        "then": "traffic quality degraded \u2014 a new traffic source is sending high-volume, low-intent visitors that dilute CVR. Check traffic source mix."
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Conversion rate drops >1pp WoW without traffic volume change",
+        "and_also": "ec_checkout_funnel shows payment step completion rate dropped",
+        "shared_root_cause": "A payment processing issue is blocking conversions at the final step. The conversion rate drops because users who intend to buy cannot complete payment. The checkout funnel isolates the problem to the payment step specifically. Root causes include payment gateway outages, expired SSL certificates, new fraud rules rejecting legitimate cards, or a broken payment UI after a deploy.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('day', e.event_timestamp) AS day, e.event_type, COUNT(DISTINCT e.session_id) AS sessions FROM events e WHERE e.event_type IN ('begin_checkout', 'add_payment_info', 'payment_submitted', 'payment_success', 'payment_failed', 'order_confirmed') AND e.event_timestamp >= CURRENT_DATE - INTERVAL '14 days' GROUP BY 1, 2 ORDER BY 1, 2"
+      },
+      {
+        "if_this_metric": "Conversion rate increases after a site deploy",
+        "and_also": "ec_gmv does not increase proportionally \u2014 or total sessions dropped",
+        "shared_root_cause": "The deploy may have broken analytics tracking, causing sessions to not be recorded for some visitors. Fewer tracked sessions (smaller denominator) with the same number of orders produces a higher CVR. This is a data quality issue, not a real performance improvement. Verify by checking raw session counts and pageview event volumes against the pre-deploy baseline.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('hour', session_date) AS hour, COUNT(DISTINCT session_id) AS sessions, COUNT(DISTINCT CASE WHEN page_count > 0 THEN session_id END) AS sessions_with_pages FROM sessions WHERE is_bot = false AND session_date >= CURRENT_DATE - INTERVAL '3 days' GROUP BY 1 ORDER BY 1"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Using unique visitors instead of sessions as denominator",
+        "why_wrong": "A visitor who comes 5 times and buys once has a 100% visitor-level conversion rate but a 20% session-level conversion rate. Visitor-level CVR inflates the metric because returning visitors who eventually convert count as a single success regardless of how many non-converting visits preceded it.",
+        "bad_sql": "SELECT COUNT(DISTINCT CASE WHEN o.order_id IS NOT NULL THEN s.user_id END) * 100.0 / NULLIF(COUNT(DISTINCT s.user_id), 0) AS cvr FROM sessions s LEFT JOIN orders o ON s.user_id = o.customer_id AND o.status NOT IN ('cancelled','test','fraud') WHERE s.is_bot = false",
+        "good_sql": "SELECT COUNT(DISTINCT CASE WHEN o.order_id IS NOT NULL THEN s.session_id END) * 100.0 / NULLIF(COUNT(DISTINCT s.session_id), 0) AS cvr FROM sessions s LEFT JOIN orders o ON s.session_id = o.session_id AND o.status NOT IN ('cancelled','test','fraud') WHERE s.is_bot = false"
+      },
+      {
+        "pattern": "Dividing order count by session count without deduplicating multi-order sessions",
+        "why_wrong": "If a single session produces 2 orders (e.g., a customer completes one order and immediately starts another), the numerator counts 2 but the denominator counts 1, producing a CVR above 100% for that session. Conversion rate should be binary per session: did this session convert or not.",
+        "bad_sql": "SELECT COUNT(DISTINCT o.order_id) * 100.0 / NULLIF(COUNT(DISTINCT s.session_id), 0) AS cvr FROM sessions s LEFT JOIN orders o ON s.session_id = o.session_id AND o.status NOT IN ('cancelled','test','fraud') WHERE s.is_bot = false",
+        "good_sql": "SELECT COUNT(DISTINCT CASE WHEN o.order_id IS NOT NULL THEN s.session_id END) * 100.0 / NULLIF(COUNT(DISTINCT s.session_id), 0) AS cvr FROM sessions s LEFT JOIN orders o ON s.session_id = o.session_id AND o.status NOT IN ('cancelled','test','fraud') WHERE s.is_bot = false"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT COUNT(DISTINCT CASE WHEN o.order_id IS NOT NULL THEN s.session_id END) * 100.0 / NULLIF(COUNT(DISTINCT s.session_id), 0) AS conversion_rate_pct FROM sessions s LEFT JOIN orders o ON s.session_id = o.session_id AND o.status NOT IN ('cancelled', 'test', 'fraud') WHERE s.is_bot = false AND s.session_date BETWEEN '2024-01-01' AND '2024-01-31'",
+      "intermediate_sql": "SELECT DATE_TRUNC('week', s.session_date) AS week, s.traffic_source, COUNT(DISTINCT s.session_id) AS sessions, COUNT(DISTINCT CASE WHEN o.order_id IS NOT NULL THEN s.session_id END) AS converting_sessions, ROUND(COUNT(DISTINCT CASE WHEN o.order_id IS NOT NULL THEN s.session_id END) * 100.0 / NULLIF(COUNT(DISTINCT s.session_id), 0), 2) AS conversion_rate_pct FROM sessions s LEFT JOIN orders o ON s.session_id = o.session_id AND o.status NOT IN ('cancelled', 'test', 'fraud') WHERE s.is_bot = false GROUP BY 1, 2 ORDER BY 1, sessions DESC",
+      "advanced_sql": "WITH session_conversion AS (\n  -- Grain: one row per session with binary conversion flag\n  SELECT\n    s.session_id,\n    s.session_date,\n    s.traffic_source,\n    s.device_type,\n    CASE WHEN COUNT(DISTINCT o.order_id) > 0 THEN 1 ELSE 0 END AS converted\n  FROM sessions s\n  LEFT JOIN orders o ON s.session_id = o.session_id\n    AND o.status NOT IN ('cancelled', 'test', 'fraud')\n  WHERE s.is_bot = false\n  GROUP BY s.session_id, s.session_date, s.traffic_source, s.device_type\n),\nweekly_cvr AS (\n  SELECT\n    DATE_TRUNC('week', session_date) AS week,\n    traffic_source,\n    COUNT(DISTINCT session_id) AS sessions,\n    SUM(converted) AS conversions,\n    ROUND(SUM(converted) * 100.0 / NULLIF(COUNT(DISTINCT session_id), 0), 2) AS cvr_pct\n  FROM session_conversion\n  GROUP BY 1, 2\n),\nwith_trend AS (\n  SELECT\n    week,\n    traffic_source,\n    sessions,\n    conversions,\n    cvr_pct,\n    LAG(cvr_pct) OVER (PARTITION BY traffic_source ORDER BY week) AS prev_week_cvr,\n    ROUND(cvr_pct - LAG(cvr_pct) OVER (PARTITION BY traffic_source ORDER BY week), 2) AS cvr_change_pp\n  FROM weekly_cvr\n)\nSELECT\n  week,\n  traffic_source,\n  sessions,\n  conversions,\n  cvr_pct,\n  prev_week_cvr,\n  cvr_change_pp\nFROM with_trend\nORDER BY week DESC, sessions DESC"
+    }
+  },
+  {
+    "id": "ec_cart_abandonment",
+    "title": "Cart Abandonment Rate",
+    "intent_tags": [
+      "cart abandonment",
+      "cart abandonment rate",
+      "abandoned carts",
+      "shopping cart abandonment",
+      "add to cart but no purchase",
+      "why are people leaving their carts",
+      "cart drop off",
+      "how many carts are abandoned",
+      "checkout abandonment",
+      "cart recovery rate",
+      "lost carts",
+      "incomplete carts"
+    ],
+    "sql_features": [
+      "aggregation",
+      "cte",
+      "left_join",
+      "nullif",
+      "conditional_count",
+      "coalesce"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "funnel",
+    "when_to_use": [
+      "measuring what percentage of shopping carts are created but never completed",
+      "identifying friction points between add-to-cart and purchase",
+      "evaluating the effectiveness of cart recovery emails or retargeting",
+      "comparing abandonment rates across device types or traffic sources",
+      "estimating lost revenue from incomplete purchases"
+    ],
+    "related_patterns": [
+      "ec_conversion_rate",
+      "ec_checkout_funnel",
+      "ec_session_to_purchase",
+      "ec_aov"
+    ],
+    "business_definition": "Percentage of shopping cart sessions where at least one item was added to cart but no order was completed. Calculated as (carts created - carts that converted to orders) / carts created \u00d7 100. A cart is identified by cart_id or session_id with at least one add_to_cart event. Excludes bot sessions and test orders.",
+    "metric_nature": {
+      "what_it_measures": "The proportion of demonstrated purchase intent (adding an item to cart) that fails to convert to a completed order. Answers: how much demand are we losing between consideration and purchase?",
+      "what_it_does_not_measure": "Why users abandon. The rate alone tells you how many, not why. Common reasons include unexpected shipping costs, account creation requirements, payment failures, and comparison shopping. Use ec_checkout_funnel step-level analysis and session replay tools to diagnose causes.",
+      "common_misconception": "A 'good' cart abandonment rate is not 0%. Industry averages are 65-80%. Many users add to cart as a bookmarking or price-comparison mechanism with no immediate intent to purchase. Attempting to reduce abandonment to near-zero often means restricting what counts as a cart, not improving the checkout experience."
+    },
+    "template": "WITH cart_sessions AS (\n  SELECT\n    s.session_id,\n    s.session_date,\n    MAX(CASE WHEN e.event_type = 'add_to_cart' THEN 1 ELSE 0 END) AS has_add_to_cart,\n    MAX(CASE WHEN o.order_id IS NOT NULL THEN 1 ELSE 0 END) AS has_order\n  FROM sessions s\n  JOIN events e ON s.session_id = e.session_id\n  LEFT JOIN orders o ON s.session_id = o.session_id\n    AND o.status NOT IN ('cancelled', 'test', 'fraud')\n  WHERE s.is_bot = false\n    AND s.session_date BETWEEN {start_date} AND {end_date}\n  GROUP BY s.session_id, s.session_date\n)\nSELECT\n  COUNT(DISTINCT CASE WHEN has_add_to_cart = 1 THEN session_id END) AS cart_sessions,\n  COUNT(DISTINCT CASE WHEN has_add_to_cart = 1 AND has_order = 0 THEN session_id END) AS abandoned_sessions,\n  ROUND(COUNT(DISTINCT CASE WHEN has_add_to_cart = 1 AND has_order = 0 THEN session_id END) * 100.0 / NULLIF(COUNT(DISTINCT CASE WHEN has_add_to_cart = 1 THEN session_id END), 0), 2) AS abandonment_rate_pct\nFROM cart_sessions",
+    "inflation_causes": [
+      {
+        "cause": "Wishlist or save-for-later actions counted as add-to-cart",
+        "how_it_inflates": "If 'save for later' or 'add to wishlist' events are logged with event_type = 'add_to_cart', users who are bookmarking products (with no purchase intent) are counted as cart creators. Since they rarely convert in the same session, the abandonment rate is inflated with false intent signals.",
+        "detection_sql": "SELECT e.event_type, e.event_properties, COUNT(DISTINCT e.session_id) AS sessions, COUNT(DISTINCT CASE WHEN o.order_id IS NOT NULL THEN e.session_id END) AS converting_sessions FROM events e LEFT JOIN orders o ON e.session_id = o.session_id AND o.status NOT IN ('cancelled', 'test', 'fraud') WHERE e.event_type IN ('add_to_cart', 'add_to_wishlist', 'save_for_later') GROUP BY e.event_type, e.event_properties ORDER BY sessions DESC",
+        "fix": "Filter to event_type = 'add_to_cart' only and verify that wishlist events use a distinct event_type. Audit your event taxonomy for overlapping or ambiguous cart-related events."
+      },
+      {
+        "cause": "Bot sessions triggering add-to-cart events",
+        "how_it_inflates": "Price-monitoring bots and scraper bots may trigger add_to_cart events to check pricing or availability. These sessions never convert because the bot has no purchase intent, but they inflate the cart count in the denominator.",
+        "detection_sql": "SELECT s.user_agent, COUNT(DISTINCT s.session_id) AS sessions, COUNT(DISTINCT CASE WHEN e.event_type = 'add_to_cart' THEN s.session_id END) AS cart_sessions, COUNT(DISTINCT CASE WHEN o.order_id IS NOT NULL THEN s.session_id END) AS converting_sessions FROM sessions s LEFT JOIN events e ON s.session_id = e.session_id LEFT JOIN orders o ON s.session_id = o.session_id AND o.status NOT IN ('cancelled', 'test', 'fraud') WHERE s.session_date >= CURRENT_DATE - INTERVAL '7 days' GROUP BY s.user_agent HAVING COUNT(DISTINCT CASE WHEN e.event_type = 'add_to_cart' THEN s.session_id END) > 0 AND COUNT(DISTINCT CASE WHEN o.order_id IS NOT NULL THEN s.session_id END) = 0 ORDER BY cart_sessions DESC LIMIT 20",
+        "fix": "Apply bot detection before computing abandonment. Filter WHERE s.is_bot = false. Investigate high-cart-zero-conversion user agents for bot patterns."
+      },
+      {
+        "cause": "Cross-session cart persistence counting each session as a new cart",
+        "how_it_inflates": "If a user adds to cart in Session A, leaves, returns in Session B and completes the purchase, Session A is counted as an abandoned cart and Session B as a converted cart. The same purchase intent is counted twice \u2014 once as abandoned and once as converted \u2014 inflating the abandonment rate.",
+        "detection_sql": "SELECT c.customer_id, COUNT(DISTINCT s.session_id) AS sessions_with_cart, COUNT(DISTINCT CASE WHEN o.order_id IS NOT NULL THEN s.session_id END) AS converting_sessions FROM sessions s JOIN events e ON s.session_id = e.session_id JOIN customers c ON s.user_id = c.customer_id LEFT JOIN orders o ON s.session_id = o.session_id AND o.status NOT IN ('cancelled', 'test', 'fraud') WHERE e.event_type = 'add_to_cart' AND s.is_bot = false GROUP BY c.customer_id HAVING COUNT(DISTINCT s.session_id) > 1 ORDER BY sessions_with_cart DESC LIMIT 20",
+        "fix": "Use cart_id (persistent across sessions) rather than session_id as the unit of analysis. A cart that was created in Session A and completed in Session B is one converted cart, not one abandoned and one converted."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Only counting carts that reach the checkout page",
+        "how_it_deflates": "If abandonment is calculated only from sessions that reached the checkout page (rather than all sessions with add_to_cart), users who added to cart but bounced before reaching checkout are excluded. This artificially lowers the abandonment rate by removing the most immediate dropoffs.",
+        "detection_sql": "SELECT COUNT(DISTINCT CASE WHEN has_add_to_cart = true AND has_checkout = false THEN session_id END) AS cart_no_checkout, COUNT(DISTINCT CASE WHEN has_add_to_cart = true AND has_checkout = true AND has_order = false THEN session_id END) AS checkout_abandoned, COUNT(DISTINCT CASE WHEN has_add_to_cart = true AND has_order = true THEN session_id END) AS converted FROM (SELECT s.session_id, MAX(CASE WHEN e.event_type = 'add_to_cart' THEN true ELSE false END) AS has_add_to_cart, MAX(CASE WHEN e.event_type = 'begin_checkout' THEN true ELSE false END) AS has_checkout, MAX(CASE WHEN o.order_id IS NOT NULL THEN true ELSE false END) AS has_order FROM sessions s JOIN events e ON s.session_id = e.session_id LEFT JOIN orders o ON s.session_id = o.session_id AND o.status NOT IN ('cancelled', 'test', 'fraud') WHERE s.is_bot = false GROUP BY s.session_id) sub",
+        "fix": "Use add_to_cart as the entry point for abandonment calculation, not begin_checkout. Cart abandonment should measure all lost demand from the moment intent is shown."
+      },
+      {
+        "cause": "Successful cart recovery emails not counted as the original cart",
+        "how_it_deflates": "If a user abandons their cart, receives a recovery email, and completes the purchase via a new session, the original cart is still marked abandoned (no order in that session) even though the business ultimately captured the revenue. This overstates true demand loss.",
+        "detection_sql": "SELECT DATE_TRUNC('week', o.order_date) AS week, o.traffic_source, COUNT(DISTINCT o.order_id) AS orders FROM orders o WHERE o.status NOT IN ('cancelled', 'test', 'fraud') AND o.traffic_source IN ('cart_recovery_email', 'abandoned_cart_email', 'email_remarketing') GROUP BY 1, 2 ORDER BY 1 DESC",
+        "fix": "Report both raw abandonment rate and net abandonment rate (adjusting for carts recovered through remarketing). Link recovered orders back to the original cart_id to close the loop."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is abandonment measured at the session level or the cart level (persistent across sessions)?",
+      "Are wishlist or save-for-later events being conflated with add-to-cart events?",
+      "Has bot traffic been filtered before calculating the abandonment rate?",
+      "Is the abandonment spike concentrated on a specific device type (especially mobile)?",
+      "Did shipping costs, tax calculations, or payment options change recently?",
+      "Are cart recovery emails driving conversions that are not being attributed back to the original abandoned cart?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "cart_abandonment up, ec_conversion_rate down",
+        "then": "the same demand is being lost \u2014 users show purchase intent (add to cart) but fail to complete, directly reducing conversion"
+      },
+      {
+        "if": "cart_abandonment up, ec_aov also up",
+        "then": "higher-value carts are being abandoned at a greater rate \u2014 likely sticker shock at checkout when shipping or taxes are added to an already large basket"
+      },
+      {
+        "if": "cart_abandonment up on mobile only",
+        "then": "mobile checkout UX friction \u2014 check for form usability issues, payment method availability, or page load speed on mobile devices"
+      },
+      {
+        "if": "cart_abandonment flat, ec_conversion_rate down",
+        "then": "the conversion drop is upstream of add-to-cart \u2014 fewer sessions are reaching the cart stage. Check product discovery, search, and browsing experience."
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Cart abandonment spikes >10pp in a single week",
+        "and_also": "ec_checkout_funnel shows payment step conversion collapsing",
+        "shared_root_cause": "Payment processing failure or regression. Users add to cart normally, proceed through checkout, but cannot complete payment. This causes abandonment to spike (carts are created but not completed) and the checkout funnel's payment step to collapse simultaneously. The upstream cause is typically a payment gateway outage, a new fraud filter rejecting legitimate transactions, or a broken payment form after a code deploy.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('day', e.event_timestamp) AS day, e.event_type, COUNT(DISTINCT e.session_id) AS sessions FROM events e WHERE e.event_type IN ('add_to_cart', 'begin_checkout', 'add_payment_info', 'payment_submitted', 'payment_success', 'payment_failed') AND e.event_timestamp >= CURRENT_DATE - INTERVAL '14 days' GROUP BY 1, 2 ORDER BY 1, e.event_type"
+      },
+      {
+        "if_this_metric": "Cart abandonment increases gradually over several weeks",
+        "and_also": "ec_aov is increasing in the same period",
+        "shared_root_cause": "A pricing or merchandising change is driving higher cart values, which leads to more sticker shock at checkout. As AOV rises (larger baskets), the perceived cost at checkout increases, particularly when shipping fees are flat or tiered. Users add expensive items, see the total, and bail. Both metrics move because the same pricing dynamic inflates basket size while reducing completion willingness.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', s.session_date) AS week, AVG(c.cart_value) AS avg_cart_value, AVG(CASE WHEN o.order_id IS NOT NULL THEN c.cart_value END) AS avg_converted_cart_value, AVG(CASE WHEN o.order_id IS NULL THEN c.cart_value END) AS avg_abandoned_cart_value FROM sessions s JOIN carts c ON s.session_id = c.session_id LEFT JOIN orders o ON s.session_id = o.session_id AND o.status NOT IN ('cancelled', 'test', 'fraud') WHERE s.is_bot = false AND c.cart_value > 0 GROUP BY 1 ORDER BY 1 DESC LIMIT 12"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Using orders / sessions as an inverse proxy for abandonment",
+        "why_wrong": "Cart abandonment is NOT (1 - conversion_rate). Conversion rate uses total sessions as the denominator, but cart abandonment uses only sessions with add-to-cart as the denominator. If 100 people visit, 40 add to cart, and 10 buy, conversion rate is 10% but cart abandonment is 75%. Inverting CVR gives 90%, which is wrong.",
+        "bad_sql": "SELECT 100 - (COUNT(DISTINCT CASE WHEN o.order_id IS NOT NULL THEN s.session_id END) * 100.0 / NULLIF(COUNT(DISTINCT s.session_id), 0)) AS cart_abandonment_pct FROM sessions s LEFT JOIN orders o ON s.session_id = o.session_id WHERE s.is_bot = false",
+        "good_sql": "WITH cart_sessions AS (\n  SELECT s.session_id,\n    MAX(CASE WHEN o.order_id IS NOT NULL THEN 1 ELSE 0 END) AS has_order\n  FROM sessions s\n  JOIN events e ON s.session_id = e.session_id AND e.event_type = 'add_to_cart'\n  LEFT JOIN orders o ON s.session_id = o.session_id AND o.status NOT IN ('cancelled','test','fraud')\n  WHERE s.is_bot = false\n  GROUP BY s.session_id\n)\nSELECT ROUND(COUNT(DISTINCT CASE WHEN has_order = 0 THEN session_id END) * 100.0 / NULLIF(COUNT(DISTINCT session_id), 0), 2) AS cart_abandonment_pct FROM cart_sessions"
+      },
+      {
+        "pattern": "Counting empty carts (zero items) as abandoned",
+        "why_wrong": "Some implementations create a cart_id on page load or session start, before any items are added. If these empty carts are included, the abandonment rate is inflated with 'carts' that never had any items \u2014 the user never showed purchase intent.",
+        "bad_sql": "SELECT COUNT(DISTINCT CASE WHEN o.order_id IS NULL THEN c.cart_id END) * 100.0 / NULLIF(COUNT(DISTINCT c.cart_id), 0) AS abandonment_rate FROM carts c LEFT JOIN orders o ON c.cart_id = o.cart_id",
+        "good_sql": "SELECT COUNT(DISTINCT CASE WHEN o.order_id IS NULL THEN c.cart_id END) * 100.0 / NULLIF(COUNT(DISTINCT c.cart_id), 0) AS abandonment_rate FROM carts c LEFT JOIN orders o ON c.cart_id = o.cart_id AND o.status NOT IN ('cancelled','test','fraud') WHERE c.item_count > 0"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT COUNT(DISTINCT CASE WHEN has_order = 0 THEN session_id END) * 100.0 / NULLIF(COUNT(DISTINCT session_id), 0) AS cart_abandonment_pct FROM (SELECT s.session_id, MAX(CASE WHEN o.order_id IS NOT NULL THEN 1 ELSE 0 END) AS has_order FROM sessions s JOIN events e ON s.session_id = e.session_id AND e.event_type = 'add_to_cart' LEFT JOIN orders o ON s.session_id = o.session_id AND o.status NOT IN ('cancelled', 'test', 'fraud') WHERE s.is_bot = false AND s.session_date BETWEEN '2024-01-01' AND '2024-01-31' GROUP BY s.session_id) cart_sessions",
+      "intermediate_sql": "SELECT DATE_TRUNC('week', s.session_date) AS week, s.device_type, COUNT(DISTINCT s.session_id) AS cart_sessions, COUNT(DISTINCT CASE WHEN o.order_id IS NOT NULL THEN s.session_id END) AS converted, COUNT(DISTINCT CASE WHEN o.order_id IS NULL THEN s.session_id END) AS abandoned, ROUND(COUNT(DISTINCT CASE WHEN o.order_id IS NULL THEN s.session_id END) * 100.0 / NULLIF(COUNT(DISTINCT s.session_id), 0), 2) AS abandonment_rate_pct FROM sessions s JOIN events e ON s.session_id = e.session_id AND e.event_type = 'add_to_cart' LEFT JOIN orders o ON s.session_id = o.session_id AND o.status NOT IN ('cancelled', 'test', 'fraud') WHERE s.is_bot = false GROUP BY 1, 2 ORDER BY 1, cart_sessions DESC",
+      "advanced_sql": "WITH cart_sessions AS (\n  -- Grain: one row per session that had at least one add_to_cart event\n  SELECT\n    s.session_id,\n    s.session_date,\n    s.device_type,\n    s.traffic_source,\n    MAX(CASE WHEN o.order_id IS NOT NULL THEN 1 ELSE 0 END) AS converted,\n    COUNT(DISTINCT e.product_id) AS products_carted\n  FROM sessions s\n  JOIN events e ON s.session_id = e.session_id\n    AND e.event_type = 'add_to_cart'\n  LEFT JOIN orders o ON s.session_id = o.session_id\n    AND o.status NOT IN ('cancelled', 'test', 'fraud')\n  WHERE s.is_bot = false\n  GROUP BY s.session_id, s.session_date, s.device_type, s.traffic_source\n),\nweekly_abandonment AS (\n  SELECT\n    DATE_TRUNC('week', session_date) AS week,\n    device_type,\n    COUNT(DISTINCT session_id) AS cart_sessions,\n    SUM(converted) AS converted_sessions,\n    COUNT(DISTINCT session_id) - SUM(converted) AS abandoned_sessions,\n    ROUND((COUNT(DISTINCT session_id) - SUM(converted)) * 100.0 / NULLIF(COUNT(DISTINCT session_id), 0), 2) AS abandonment_rate_pct,\n    AVG(products_carted) AS avg_products_carted\n  FROM cart_sessions\n  GROUP BY 1, 2\n),\nwith_trend AS (\n  SELECT\n    week,\n    device_type,\n    cart_sessions,\n    converted_sessions,\n    abandoned_sessions,\n    abandonment_rate_pct,\n    avg_products_carted,\n    LAG(abandonment_rate_pct) OVER (PARTITION BY device_type ORDER BY week) AS prev_week_rate,\n    ROUND(abandonment_rate_pct - LAG(abandonment_rate_pct) OVER (PARTITION BY device_type ORDER BY week), 2) AS rate_change_pp\n  FROM weekly_abandonment\n)\nSELECT * FROM with_trend\nORDER BY week DESC, cart_sessions DESC"
+    }
+  },
+  {
+    "id": "ec_checkout_funnel",
+    "title": "Checkout Funnel Drop-off Rate",
+    "intent_tags": [
+      "checkout funnel",
+      "checkout steps",
+      "checkout drop off",
+      "funnel analysis",
+      "checkout conversion",
+      "where do users drop off",
+      "checkout step completion",
+      "payment funnel",
+      "shipping to payment drop off",
+      "funnel visualization",
+      "checkout abandonment by step",
+      "purchase funnel"
+    ],
+    "sql_features": [
+      "aggregation",
+      "cte",
+      "conditional_count",
+      "nullif",
+      "lead_lag",
+      "window_function"
+    ],
+    "difficulty": "advanced",
+    "pattern_type": "funnel",
+    "when_to_use": [
+      "identifying which specific step in the checkout process loses the most users",
+      "comparing funnel performance before and after a checkout redesign",
+      "diagnosing why cart abandonment increased \u2014 which step broke?",
+      "measuring the impact of adding or removing checkout steps (guest checkout, account creation)",
+      "benchmarking checkout friction across device types"
+    ],
+    "related_patterns": [
+      "ec_conversion_rate",
+      "ec_cart_abandonment",
+      "ec_session_to_purchase",
+      "ec_aov"
+    ],
+    "business_definition": "Step-by-step conversion rates through the checkout process, measured as the percentage of sessions that progress from one step to the next. Standard steps are: add_to_cart \u2192 begin_checkout \u2192 add_shipping_info \u2192 add_payment_info \u2192 order_confirmed. Each step's rate is sessions reaching that step / sessions reaching the previous step. Excludes bot sessions.",
+    "metric_nature": {
+      "what_it_measures": "Where in the checkout flow users give up. Answers: is the problem at the shipping step, the payment step, or the account creation step?",
+      "what_it_does_not_measure": "Why users drop off at a specific step. The funnel shows which step loses users, but not the reason. A 40% drop at the shipping step could be unexpected costs, slow load time, or address validation errors. Pair with session replay, error logs, and user research for diagnosis.",
+      "common_misconception": "Funnel steps are not always sequential. Users may skip steps (e.g., saved payment info skips add_payment_info), revisit previous steps, or trigger events out of order. A strict sequential funnel model will undercount users at later steps if they did not trigger every intermediate event."
+    },
+    "template": "WITH funnel_events AS (\n  SELECT\n    s.session_id,\n    MAX(CASE WHEN e.event_type = 'add_to_cart' THEN 1 ELSE 0 END) AS step_add_to_cart,\n    MAX(CASE WHEN e.event_type = 'begin_checkout' THEN 1 ELSE 0 END) AS step_begin_checkout,\n    MAX(CASE WHEN e.event_type = 'add_shipping_info' THEN 1 ELSE 0 END) AS step_shipping,\n    MAX(CASE WHEN e.event_type = 'add_payment_info' THEN 1 ELSE 0 END) AS step_payment,\n    MAX(CASE WHEN e.event_type = 'order_confirmed' THEN 1 ELSE 0 END) AS step_order_confirmed\n  FROM sessions s\n  JOIN events e ON s.session_id = e.session_id\n  WHERE s.is_bot = false\n    AND s.session_date BETWEEN {start_date} AND {end_date}\n  GROUP BY s.session_id\n)\nSELECT\n  SUM(step_add_to_cart) AS add_to_cart,\n  SUM(step_begin_checkout) AS begin_checkout,\n  SUM(step_shipping) AS add_shipping,\n  SUM(step_payment) AS add_payment,\n  SUM(step_order_confirmed) AS order_confirmed,\n  ROUND(SUM(step_begin_checkout) * 100.0 / NULLIF(SUM(step_add_to_cart), 0), 2) AS cart_to_checkout_pct,\n  ROUND(SUM(step_shipping) * 100.0 / NULLIF(SUM(step_begin_checkout), 0), 2) AS checkout_to_shipping_pct,\n  ROUND(SUM(step_payment) * 100.0 / NULLIF(SUM(step_shipping), 0), 2) AS shipping_to_payment_pct,\n  ROUND(SUM(step_order_confirmed) * 100.0 / NULLIF(SUM(step_payment), 0), 2) AS payment_to_order_pct\nFROM funnel_events",
+    "inflation_causes": [
+      {
+        "cause": "Page reload or back-navigation firing duplicate step events",
+        "how_it_inflates": "If a user clicks 'back' and re-submits their shipping info, the add_shipping_info event fires twice. Since the funnel uses MAX(CASE WHEN ...) per session, duplicates within a session do not inflate that session's count. However, if events are sessionized incorrectly and the reload creates a new session_id, the same user's checkout attempt is counted across multiple sessions, inflating the numerator at intermediate steps.",
+        "detection_sql": "SELECT e.session_id, e.event_type, COUNT(*) AS event_count FROM events e WHERE e.event_type IN ('add_to_cart', 'begin_checkout', 'add_shipping_info', 'add_payment_info', 'order_confirmed') GROUP BY e.session_id, e.event_type HAVING COUNT(*) > 3 ORDER BY event_count DESC LIMIT 20",
+        "fix": "Use MAX() per session_id to collapse duplicates. Verify that session_id is stable through the checkout flow \u2014 no mid-checkout session breaks due to domain changes (e.g., redirecting to a payment processor on a different domain)."
+      },
+      {
+        "cause": "Non-sequential funnel counting users who skipped steps",
+        "how_it_inflates": "If the funnel counts anyone who triggered step N regardless of whether they triggered step N-1, users who skip steps (returning customers with saved payment) appear at later steps without passing through earlier ones. This inflates later-step counts and makes intermediate step-to-step conversion rates exceed 100%.",
+        "detection_sql": "SELECT SUM(CASE WHEN step_payment = 1 AND step_shipping = 0 THEN 1 ELSE 0 END) AS payment_without_shipping, SUM(CASE WHEN step_order_confirmed = 1 AND step_payment = 0 THEN 1 ELSE 0 END) AS order_without_payment, COUNT(DISTINCT session_id) AS total_funnel_sessions FROM (SELECT s.session_id, MAX(CASE WHEN e.event_type = 'add_shipping_info' THEN 1 ELSE 0 END) AS step_shipping, MAX(CASE WHEN e.event_type = 'add_payment_info' THEN 1 ELSE 0 END) AS step_payment, MAX(CASE WHEN e.event_type = 'order_confirmed' THEN 1 ELSE 0 END) AS step_order_confirmed FROM sessions s JOIN events e ON s.session_id = e.session_id WHERE s.is_bot = false GROUP BY s.session_id) sub",
+        "fix": "Decide whether your funnel is strict-sequential or unordered. For strict, only count a session at step N if it also completed step N-1. For unordered, accept that step-to-step rates may exceed 100% and document this behavior."
+      },
+      {
+        "cause": "Server-side events mixed with client-side events creating phantom steps",
+        "how_it_inflates": "If some funnel events are fired client-side (begin_checkout via JavaScript) and others server-side (order_confirmed via backend), latency or failures in one system can create inconsistent step counts. A server-side order_confirmed without a client-side begin_checkout makes the final step appear to have more entries than the entry step.",
+        "detection_sql": "SELECT e.event_source, e.event_type, COUNT(DISTINCT e.session_id) AS sessions FROM events e WHERE e.event_type IN ('add_to_cart', 'begin_checkout', 'add_shipping_info', 'add_payment_info', 'order_confirmed') GROUP BY e.event_source, e.event_type ORDER BY e.event_type, e.event_source",
+        "fix": "Standardize event sourcing \u2014 either all client-side or reconcile server-side events with client-side session_ids. If mixing, document which events come from which source and account for gaps."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Ad blocker or tracking prevention blocking client-side funnel events",
+        "how_it_deflates": "If funnel events are tracked via JavaScript that ad blockers or Safari ITP suppress, sessions from users with ad blockers will show add_to_cart (if server-side) but missing begin_checkout, add_shipping_info, etc. These sessions appear to drop off at step 1 even though the user completed checkout. Completion rates at intermediate steps are understated.",
+        "detection_sql": "SELECT s.browser, COUNT(DISTINCT s.session_id) AS total_sessions, COUNT(DISTINCT CASE WHEN e_atc.session_id IS NOT NULL THEN s.session_id END) AS with_add_to_cart, COUNT(DISTINCT CASE WHEN e_bc.session_id IS NOT NULL THEN s.session_id END) AS with_begin_checkout, COUNT(DISTINCT CASE WHEN o.order_id IS NOT NULL THEN s.session_id END) AS with_order FROM sessions s LEFT JOIN events e_atc ON s.session_id = e_atc.session_id AND e_atc.event_type = 'add_to_cart' LEFT JOIN events e_bc ON s.session_id = e_bc.session_id AND e_bc.event_type = 'begin_checkout' LEFT JOIN orders o ON s.session_id = o.session_id AND o.status NOT IN ('cancelled', 'test', 'fraud') WHERE s.is_bot = false GROUP BY s.browser ORDER BY total_sessions DESC",
+        "fix": "Use server-side event tracking for critical funnel steps. If client-side only, measure the gap between server-confirmed orders and client-side order_confirmed events to estimate the ad-blocker blind spot."
+      },
+      {
+        "cause": "Single-page checkout not firing intermediate step events",
+        "how_it_deflates": "If the checkout is a single-page accordion or wizard and intermediate step events (add_shipping_info, add_payment_info) are only fired on page navigation (not form section completion), all intermediate steps show 0 sessions. The funnel jumps from begin_checkout to order_confirmed with no data in between.",
+        "detection_sql": "SELECT e.event_type, COUNT(DISTINCT e.session_id) AS sessions FROM events e WHERE e.event_type IN ('add_to_cart', 'begin_checkout', 'add_shipping_info', 'add_payment_info', 'order_confirmed') AND e.event_timestamp >= CURRENT_DATE - INTERVAL '7 days' GROUP BY e.event_type ORDER BY sessions DESC",
+        "fix": "Instrument each section of the single-page checkout to fire events when the user completes that section (form validation pass, section expand/collapse). Map these to the standard funnel step event names."
+      }
+    ],
+    "diagnostic_questions": [
+      "Which specific step in the funnel has the largest absolute drop-off (not percentage \u2014 raw session count lost)?",
+      "Is the drop-off pattern different between mobile and desktop?",
+      "Did a recent code deploy change the checkout flow or add/remove a step?",
+      "Are all funnel events firing correctly \u2014 check raw event counts by type for the last 7 days?",
+      "Do returning customers with saved addresses/payment show different funnel shapes than first-time buyers?",
+      "Is there a correlation between funnel drop-off and page load time at the problematic step?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "shipping step drop-off increases, ec_cart_abandonment also increases",
+        "then": "users are seeing unexpected shipping costs or delivery estimates and abandoning \u2014 check if shipping rates or delivery time messaging changed"
+      },
+      {
+        "if": "payment step drop-off spikes suddenly",
+        "then": "payment processing issue \u2014 gateway outage, new fraud rules, or expired payment processor credentials. Check payment error logs."
+      },
+      {
+        "if": "begin_checkout drop-off increases but cart_to_checkout conversion is stable",
+        "then": "users are adding to cart but choosing not to begin checkout \u2014 likely using cart as a wishlist or comparison tool, not a purchase signal"
+      },
+      {
+        "if": "all step-to-step rates stable but overall funnel volume drops",
+        "then": "upstream traffic volume declined \u2014 the funnel efficiency is unchanged but fewer users are entering it. Check ec_conversion_rate and session counts."
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Payment step completion rate drops >15pp in a single day",
+        "and_also": "ec_conversion_rate drops sharply with session volume unchanged",
+        "shared_root_cause": "Payment gateway failure or regression. The funnel is healthy through shipping but collapses at payment, which directly causes the overall conversion rate to drop. Since sessions are unchanged (traffic is fine), the problem is isolated to the payment infrastructure. Check for gateway error codes, SSL certificate expiry, 3DS verification failures, or a code deploy that broke the payment form.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('hour', e.event_timestamp) AS hour, e.event_type, COUNT(DISTINCT e.session_id) AS sessions, COUNT(DISTINCT CASE WHEN e.event_type = 'payment_failed' THEN e.session_id END) AS payment_failures FROM events e WHERE e.event_type IN ('add_payment_info', 'payment_submitted', 'payment_success', 'payment_failed', 'order_confirmed') AND e.event_timestamp >= CURRENT_DATE - INTERVAL '48 hours' GROUP BY 1, 2 ORDER BY 1, 2"
+      },
+      {
+        "if_this_metric": "Shipping step drop-off increases gradually over 2-3 weeks",
+        "and_also": "ec_aov is rising in the same period",
+        "shared_root_cause": "Shipping cost increases or threshold changes. If free shipping was raised from $50 to $75, users with carts between $50-$75 now see a shipping charge they did not expect. Higher-AOV carts may include bulky items with higher shipping fees. The shipping step is where cost transparency hits, so it absorbs the drop-off. AOV rises because low-value carts (which would have had free shipping before) are the ones abandoning.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', s.session_date) AS week, CASE WHEN c.cart_value < 50 THEN 'under_50' WHEN c.cart_value < 75 THEN '50_to_75' WHEN c.cart_value < 100 THEN '75_to_100' ELSE 'over_100' END AS cart_value_bucket, COUNT(DISTINCT s.session_id) AS cart_sessions, COUNT(DISTINCT CASE WHEN e_ship.session_id IS NOT NULL THEN s.session_id END) AS reached_shipping, COUNT(DISTINCT CASE WHEN o.order_id IS NOT NULL THEN s.session_id END) AS converted FROM sessions s JOIN carts c ON s.session_id = c.session_id LEFT JOIN events e_ship ON s.session_id = e_ship.session_id AND e_ship.event_type = 'add_shipping_info' LEFT JOIN orders o ON s.session_id = o.session_id AND o.status NOT IN ('cancelled', 'test', 'fraud') WHERE s.is_bot = false AND c.item_count > 0 GROUP BY 1, 2 ORDER BY 1 DESC, 2"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Requiring strict sequential ordering of funnel events",
+        "why_wrong": "Real user behavior is non-linear. Users go back to edit shipping, revisit product pages mid-checkout, or have saved payment info that skips steps. A strictly ordered funnel (step N only counts if step N-1 timestamp is earlier) will undercount users at later steps, making the funnel appear leakier than it is.",
+        "bad_sql": "-- Strict ordering: only counts session at step N if step N-1 happened first\nSELECT session_id FROM events WHERE event_type = 'add_payment_info' AND session_id IN (SELECT session_id FROM events WHERE event_type = 'add_shipping_info' AND event_timestamp < (SELECT MIN(event_timestamp) FROM events e2 WHERE e2.session_id = events.session_id AND e2.event_type = 'add_payment_info'))",
+        "good_sql": "-- Unordered: did the session trigger each event at any point?\nSELECT\n  s.session_id,\n  MAX(CASE WHEN e.event_type = 'add_to_cart' THEN 1 ELSE 0 END) AS step_cart,\n  MAX(CASE WHEN e.event_type = 'begin_checkout' THEN 1 ELSE 0 END) AS step_checkout,\n  MAX(CASE WHEN e.event_type = 'add_shipping_info' THEN 1 ELSE 0 END) AS step_shipping,\n  MAX(CASE WHEN e.event_type = 'add_payment_info' THEN 1 ELSE 0 END) AS step_payment,\n  MAX(CASE WHEN e.event_type = 'order_confirmed' THEN 1 ELSE 0 END) AS step_confirmed\nFROM sessions s\nJOIN events e ON s.session_id = e.session_id\nWHERE s.is_bot = false\nGROUP BY s.session_id"
+      },
+      {
+        "pattern": "Computing funnel percentages against the first step instead of the previous step",
+        "why_wrong": "If all percentages are relative to step 1 (add_to_cart), you see cumulative drop-off but cannot identify which step is the bottleneck. The shipping step might show 60% of add_to_cart and payment shows 55%, suggesting only a 5pp drop \u2014 but if begin_checkout was 65%, the real drop at shipping is 5pp and at payment is also 5pp. Step-over-step rates reveal where the biggest single-step losses occur.",
+        "bad_sql": "SELECT 'add_to_cart' AS step, 100.0 AS pct UNION ALL SELECT 'begin_checkout', SUM(step_checkout) * 100.0 / NULLIF(SUM(step_cart), 0) UNION ALL SELECT 'shipping', SUM(step_shipping) * 100.0 / NULLIF(SUM(step_cart), 0) UNION ALL SELECT 'payment', SUM(step_payment) * 100.0 / NULLIF(SUM(step_cart), 0) FROM funnel_events",
+        "good_sql": "SELECT\n  SUM(step_cart) AS s1_cart,\n  SUM(step_checkout) AS s2_checkout,\n  ROUND(SUM(step_checkout) * 100.0 / NULLIF(SUM(step_cart), 0), 2) AS s1_to_s2_pct,\n  SUM(step_shipping) AS s3_shipping,\n  ROUND(SUM(step_shipping) * 100.0 / NULLIF(SUM(step_checkout), 0), 2) AS s2_to_s3_pct,\n  SUM(step_payment) AS s4_payment,\n  ROUND(SUM(step_payment) * 100.0 / NULLIF(SUM(step_shipping), 0), 2) AS s3_to_s4_pct,\n  SUM(step_confirmed) AS s5_confirmed,\n  ROUND(SUM(step_confirmed) * 100.0 / NULLIF(SUM(step_payment), 0), 2) AS s4_to_s5_pct\nFROM funnel_events"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT MAX(CASE WHEN event_type = 'add_to_cart' THEN sessions END) AS add_to_cart, MAX(CASE WHEN event_type = 'begin_checkout' THEN sessions END) AS begin_checkout, MAX(CASE WHEN event_type = 'add_shipping_info' THEN sessions END) AS add_shipping, MAX(CASE WHEN event_type = 'add_payment_info' THEN sessions END) AS add_payment, MAX(CASE WHEN event_type = 'order_confirmed' THEN sessions END) AS order_confirmed FROM (SELECT e.event_type, COUNT(DISTINCT e.session_id) AS sessions FROM events e JOIN sessions s ON e.session_id = s.session_id WHERE s.is_bot = false AND e.event_type IN ('add_to_cart', 'begin_checkout', 'add_shipping_info', 'add_payment_info', 'order_confirmed') AND s.session_date BETWEEN '2024-01-01' AND '2024-01-31' GROUP BY e.event_type) step_counts",
+      "intermediate_sql": "WITH funnel AS (\n  SELECT\n    s.session_id,\n    s.device_type,\n    MAX(CASE WHEN e.event_type = 'add_to_cart' THEN 1 ELSE 0 END) AS step_cart,\n    MAX(CASE WHEN e.event_type = 'begin_checkout' THEN 1 ELSE 0 END) AS step_checkout,\n    MAX(CASE WHEN e.event_type = 'add_shipping_info' THEN 1 ELSE 0 END) AS step_shipping,\n    MAX(CASE WHEN e.event_type = 'add_payment_info' THEN 1 ELSE 0 END) AS step_payment,\n    MAX(CASE WHEN e.event_type = 'order_confirmed' THEN 1 ELSE 0 END) AS step_confirmed\n  FROM sessions s\n  JOIN events e ON s.session_id = e.session_id\n  WHERE s.is_bot = false\n  GROUP BY s.session_id, s.device_type\n)\nSELECT\n  device_type,\n  SUM(step_cart) AS add_to_cart,\n  SUM(step_checkout) AS begin_checkout,\n  ROUND(SUM(step_checkout) * 100.0 / NULLIF(SUM(step_cart), 0), 2) AS cart_to_checkout_pct,\n  SUM(step_shipping) AS add_shipping,\n  ROUND(SUM(step_shipping) * 100.0 / NULLIF(SUM(step_checkout), 0), 2) AS checkout_to_shipping_pct,\n  SUM(step_payment) AS add_payment,\n  ROUND(SUM(step_payment) * 100.0 / NULLIF(SUM(step_shipping), 0), 2) AS shipping_to_payment_pct,\n  SUM(step_confirmed) AS order_confirmed,\n  ROUND(SUM(step_confirmed) * 100.0 / NULLIF(SUM(step_payment), 0), 2) AS payment_to_order_pct\nFROM funnel\nGROUP BY device_type\nORDER BY add_to_cart DESC",
+      "advanced_sql": "WITH funnel_sessions AS (\n  -- Grain: one row per session with binary flags for each funnel step\n  SELECT\n    s.session_id,\n    s.session_date,\n    s.device_type,\n    s.traffic_source,\n    MAX(CASE WHEN e.event_type = 'add_to_cart' THEN 1 ELSE 0 END) AS step_cart,\n    MAX(CASE WHEN e.event_type = 'begin_checkout' THEN 1 ELSE 0 END) AS step_checkout,\n    MAX(CASE WHEN e.event_type = 'add_shipping_info' THEN 1 ELSE 0 END) AS step_shipping,\n    MAX(CASE WHEN e.event_type = 'add_payment_info' THEN 1 ELSE 0 END) AS step_payment,\n    MAX(CASE WHEN e.event_type = 'order_confirmed' THEN 1 ELSE 0 END) AS step_confirmed\n  FROM sessions s\n  JOIN events e ON s.session_id = e.session_id\n  WHERE s.is_bot = false\n  GROUP BY s.session_id, s.session_date, s.device_type, s.traffic_source\n),\nweekly_funnel AS (\n  SELECT\n    DATE_TRUNC('week', session_date) AS week,\n    SUM(step_cart) AS s1_cart,\n    SUM(step_checkout) AS s2_checkout,\n    SUM(step_shipping) AS s3_shipping,\n    SUM(step_payment) AS s4_payment,\n    SUM(step_confirmed) AS s5_confirmed\n  FROM funnel_sessions\n  GROUP BY 1\n),\nwith_rates_and_trend AS (\n  SELECT\n    week,\n    s1_cart,\n    s2_checkout,\n    ROUND(s2_checkout * 100.0 / NULLIF(s1_cart, 0), 2) AS cart_to_checkout_pct,\n    s3_shipping,\n    ROUND(s3_shipping * 100.0 / NULLIF(s2_checkout, 0), 2) AS checkout_to_shipping_pct,\n    s4_payment,\n    ROUND(s4_payment * 100.0 / NULLIF(s3_shipping, 0), 2) AS shipping_to_payment_pct,\n    s5_confirmed,\n    ROUND(s5_confirmed * 100.0 / NULLIF(s4_payment, 0), 2) AS payment_to_order_pct,\n    ROUND(s5_confirmed * 100.0 / NULLIF(s1_cart, 0), 2) AS overall_funnel_pct,\n    LAG(ROUND(s5_confirmed * 100.0 / NULLIF(s1_cart, 0), 2)) OVER (ORDER BY week) AS prev_week_overall_pct\n  FROM weekly_funnel\n)\nSELECT\n  *,\n  ROUND(overall_funnel_pct - COALESCE(prev_week_overall_pct, 0), 2) AS overall_change_pp\nFROM with_rates_and_trend\nORDER BY week DESC"
+    }
+  },
+  {
+    "id": "ec_session_to_purchase",
+    "title": "Session-to-Purchase Rate",
+    "intent_tags": [
+      "session to purchase",
+      "sessions per purchase",
+      "how many visits before buying",
+      "visits to conversion",
+      "purchase lag",
+      "consideration period",
+      "multi-session purchase",
+      "how long to convert",
+      "sessions before first order",
+      "browsing to buying",
+      "time to purchase",
+      "purchase decision sessions"
+    ],
+    "sql_features": [
+      "aggregation",
+      "cte",
+      "window_function",
+      "row_number",
+      "nullif",
+      "self_join"
+    ],
+    "difficulty": "advanced",
+    "pattern_type": "sessionization",
+    "when_to_use": [
+      "understanding how many sessions customers need before making a purchase",
+      "calibrating attribution windows to match actual consideration periods",
+      "comparing purchase decision speed across product categories or price points",
+      "evaluating whether site improvements are shortening the path to purchase",
+      "sizing the opportunity for remarketing based on multi-session buying patterns"
+    ],
+    "related_patterns": [
+      "ec_conversion_rate",
+      "ec_cart_abandonment",
+      "ec_checkout_funnel",
+      "ec_clv"
+    ],
+    "business_definition": "The number of distinct sessions a customer has before completing their first purchase, and the elapsed calendar time between first session and first order. Measured per customer, then aggregated as a distribution. Only includes customers who eventually purchased. Excludes bot sessions and cancelled/test/fraud orders.",
+    "metric_nature": {
+      "what_it_measures": "The length of the customer consideration journey. Answers: is our product an impulse buy (1 session) or a researched purchase (5-10 sessions over weeks)?",
+      "what_it_does_not_measure": "Session quality or depth. A customer with 5 sessions of 2 seconds each (accidental clicks) is not the same as 5 sessions of 10 minutes each (research sessions). This metric counts sessions, not engagement depth. Pair with session duration and page depth for a fuller picture.",
+      "common_misconception": "A lower sessions-to-purchase is not always better. For high-consideration products (electronics, furniture, B2B), multiple sessions indicate healthy research behavior. Forcing a single-session conversion on a $2000 product often means aggressive sales tactics rather than genuine purchase readiness."
+    },
+    "template": "WITH customer_sessions AS (\n  SELECT\n    s.user_id AS customer_id,\n    s.session_id,\n    s.session_date,\n    ROW_NUMBER() OVER (PARTITION BY s.user_id ORDER BY s.session_date, s.session_id) AS session_number\n  FROM sessions s\n  WHERE s.is_bot = false\n    AND s.session_date BETWEEN {start_date} AND {end_date}\n),\nfirst_orders AS (\n  SELECT\n    o.customer_id,\n    MIN(o.order_date) AS first_order_date,\n    MIN(o.session_id) AS first_order_session_id\n  FROM orders o\n  WHERE o.status NOT IN ('cancelled', 'test', 'fraud')\n  GROUP BY o.customer_id\n)\nSELECT\n  AVG(cs_count.sessions_before_purchase) AS avg_sessions_to_purchase,\n  PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY cs_count.sessions_before_purchase) AS median_sessions,\n  AVG(cs_count.days_to_purchase) AS avg_days_to_purchase\nFROM (\n  SELECT\n    fo.customer_id,\n    COUNT(DISTINCT cs.session_id) AS sessions_before_purchase,\n    fo.first_order_date - MIN(cs.session_date) AS days_to_purchase\n  FROM first_orders fo\n  JOIN customer_sessions cs ON fo.customer_id = cs.customer_id\n    AND cs.session_date <= fo.first_order_date\n  GROUP BY fo.customer_id, fo.first_order_date\n) cs_count",
+    "inflation_causes": [
+      {
+        "cause": "Bot sessions attributed to real user IDs",
+        "how_it_inflates": "If bot sessions are not filtered and share a user_id with a real customer (e.g., through cookie pollution or shared IPs), the customer's session count is inflated with visits they never made. A customer who visited 3 times appears to have visited 30 times if a bot inherited their tracking cookie.",
+        "detection_sql": "SELECT s.user_id, COUNT(DISTINCT s.session_id) AS total_sessions, COUNT(DISTINCT CASE WHEN s.is_bot = true THEN s.session_id END) AS bot_sessions, COUNT(DISTINCT CASE WHEN s.is_bot = false THEN s.session_id END) AS human_sessions FROM sessions s WHERE s.user_id IS NOT NULL GROUP BY s.user_id HAVING COUNT(DISTINCT CASE WHEN s.is_bot = true THEN s.session_id END) > 0 ORDER BY bot_sessions DESC LIMIT 20",
+        "fix": "Apply bot filtering (WHERE is_bot = false) before computing sessions-to-purchase. Investigate user_ids with abnormally high session counts for bot contamination."
+      },
+      {
+        "cause": "Session timeout too short, splitting real visits into multiple sessions",
+        "how_it_inflates": "If the session timeout is 5 minutes instead of 30, a user who browses for 20 minutes with a 6-minute pause to read product reviews gets split into 2+ sessions. This inflates the sessions-per-purchase count without reflecting additional distinct visits.",
+        "detection_sql": "SELECT AVG(session_duration_seconds) AS avg_duration, PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY session_duration_seconds) AS median_duration, COUNT(DISTINCT CASE WHEN session_duration_seconds < 60 THEN session_id END) * 100.0 / NULLIF(COUNT(DISTINCT session_id), 0) AS pct_under_1min FROM sessions WHERE is_bot = false AND session_date >= CURRENT_DATE - INTERVAL '7 days'",
+        "fix": "Standardize session timeout to 30 minutes. If using a shorter timeout, document it and understand the mechanical effect on sessions-to-purchase metrics."
+      },
+      {
+        "cause": "Cross-device sessions not stitched to a single user identity",
+        "how_it_inflates": "A customer who researches on mobile (3 sessions as anonymous user) and buys on desktop (1 session as logged-in user) appears as 1 session-to-purchase on desktop. But if the mobile sessions are eventually linked via login, the count jumps to 4. Without stitching, the metric underreports for desktop buyers and is unavailable for anonymous mobile sessions. With stitching, the count may overreport if stale sessions from months ago are included.",
+        "detection_sql": "SELECT s.device_type, AVG(sub.session_count) AS avg_sessions_to_purchase FROM (SELECT fo.customer_id, COUNT(DISTINCT cs.session_id) AS session_count FROM (SELECT customer_id, MIN(order_date) AS first_order_date FROM orders WHERE status NOT IN ('cancelled', 'test', 'fraud') GROUP BY customer_id) fo JOIN sessions cs ON fo.customer_id = cs.user_id AND cs.session_date <= fo.first_order_date AND cs.is_bot = false GROUP BY fo.customer_id) sub JOIN sessions s ON sub.customer_id = s.user_id GROUP BY s.device_type",
+        "fix": "Apply cross-device identity resolution before computing sessions-to-purchase. Include only sessions within a reasonable lookback window (e.g., 90 days before first purchase) to avoid including ancient unrelated sessions."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Anonymous sessions not linked to eventual purchaser",
+        "how_it_deflates": "If a user browses anonymously for 5 sessions and then logs in on session 6 and purchases, only session 6 has a user_id. Sessions 1-5 are anonymous and cannot be joined to the customer. The metric shows 1 session-to-purchase when the true count is 6.",
+        "detection_sql": "SELECT COUNT(DISTINCT s.session_id) AS total_sessions, COUNT(DISTINCT CASE WHEN s.user_id IS NOT NULL THEN s.session_id END) AS identified_sessions, COUNT(DISTINCT CASE WHEN s.user_id IS NULL THEN s.session_id END) AS anonymous_sessions, ROUND(COUNT(DISTINCT CASE WHEN s.user_id IS NULL THEN s.session_id END) * 100.0 / NULLIF(COUNT(DISTINCT s.session_id), 0), 2) AS anonymous_pct FROM sessions s WHERE s.is_bot = false AND s.session_date >= CURRENT_DATE - INTERVAL '30 days'",
+        "fix": "Use device_id or cookie_id to link anonymous sessions to the user_id established on login. Backfill user_id on prior sessions that share the same device_id once a login event occurs."
+      },
+      {
+        "cause": "First-touch session predates the data retention window",
+        "how_it_deflates": "If session data is retained for 90 days but a customer first visited 120 days before purchasing, their earliest sessions are gone. The metric shows fewer sessions-to-purchase than reality because the early consideration visits have been purged.",
+        "detection_sql": "SELECT MIN(session_date) AS earliest_session, MAX(session_date) AS latest_session, CURRENT_DATE - MIN(session_date) AS retention_days FROM sessions",
+        "fix": "Extend session data retention to at least match the longest typical consideration period for your product category. If retention is limited, document the truncation effect and acknowledge that sessions-to-purchase is a lower bound."
+      }
+    ],
+    "diagnostic_questions": [
+      "Are anonymous sessions being linked to customer identities, or are only logged-in sessions counted?",
+      "What session timeout is being used \u2014 could it be artificially splitting or merging visits?",
+      "Is the sessions-to-purchase distribution showing a single mode (most buy in 1-2 sessions) or bimodal (some impulse, some research)?",
+      "Has the average price point of purchased products changed, which would affect consideration length?",
+      "Are cross-device sessions being stitched, and if so, what is the lookback window?",
+      "Is the metric including only first purchases, or all purchases (which would skew toward fewer sessions for repeat buyers)?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "sessions_to_purchase increases, ec_conversion_rate decreases",
+        "then": "customers are taking longer to decide, which means more sessions exist in the denominator without converting \u2014 this is natural and does not necessarily indicate a problem if total conversions are stable"
+      },
+      {
+        "if": "sessions_to_purchase decreases, ec_aov also decreases",
+        "then": "the business may be shifting toward lower-priced impulse products that require less consideration \u2014 verify product category mix"
+      },
+      {
+        "if": "sessions_to_purchase increases for a specific category only",
+        "then": "that category may have introduced higher-priced items, more complex products, or reduced trust signals (fewer reviews, less product detail)"
+      },
+      {
+        "if": "sessions_to_purchase drops after a site change",
+        "then": "improved product information, better search, or streamlined UX reduced the need for multiple research visits \u2014 but verify this is not just a tracking change that merged sessions"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Average sessions-to-purchase increases from 3 to 5 over a quarter",
+        "and_also": "ec_cart_abandonment is also rising in the same period",
+        "shared_root_cause": "Increased checkout friction is forcing users to make multiple attempts before successfully completing a purchase. Users add to cart, hit a problem (payment error, shipping cost shock, account creation wall), abandon, return in a new session, and try again. The same friction event drives both metrics: longer paths to purchase and higher per-session abandonment. Check for new checkout steps, payment issues, or mandatory registration requirements added recently.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', fo.first_order_date) AS purchase_month, AVG(sub.session_count) AS avg_sessions_to_purchase, AVG(sub.cart_sessions) AS avg_sessions_with_cart FROM (SELECT fo.customer_id, fo.first_order_date, COUNT(DISTINCT cs.session_id) AS session_count, COUNT(DISTINCT CASE WHEN e.event_type = 'add_to_cart' THEN cs.session_id END) AS cart_sessions FROM (SELECT customer_id, MIN(order_date) AS first_order_date FROM orders WHERE status NOT IN ('cancelled', 'test', 'fraud') GROUP BY customer_id) fo JOIN sessions cs ON fo.customer_id = cs.user_id AND cs.session_date <= fo.first_order_date AND cs.is_bot = false LEFT JOIN events e ON cs.session_id = e.session_id GROUP BY fo.customer_id, fo.first_order_date) sub JOIN (SELECT customer_id, MIN(order_date) AS first_order_date FROM orders WHERE status NOT IN ('cancelled', 'test', 'fraud') GROUP BY customer_id) fo ON sub.customer_id = fo.customer_id GROUP BY 1 ORDER BY 1 DESC LIMIT 12"
+      },
+      {
+        "if_this_metric": "Sessions-to-purchase drops significantly after a product page redesign",
+        "and_also": "ec_conversion_rate improves in the same period",
+        "shared_root_cause": "The product page redesign improved information density, trust signals (reviews, guarantees), or visual presentation enough that users need fewer visits to reach purchase confidence. Both metrics improve because the same upstream cause \u2014 better product pages \u2014 reduces research friction (fewer sessions) and increases per-session conversion (higher CVR). Verify by checking product page engagement metrics (time on page, scroll depth) before and after the change.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', s.session_date) AS week, AVG(s.session_duration_seconds) AS avg_session_duration, AVG(s.page_count) AS avg_pages_per_session, COUNT(DISTINCT CASE WHEN e.event_type = 'product_view' THEN s.session_id END) * 100.0 / NULLIF(COUNT(DISTINCT s.session_id), 0) AS pct_sessions_with_product_view, COUNT(DISTINCT CASE WHEN o.order_id IS NOT NULL THEN s.session_id END) * 100.0 / NULLIF(COUNT(DISTINCT s.session_id), 0) AS cvr_pct FROM sessions s LEFT JOIN events e ON s.session_id = e.session_id LEFT JOIN orders o ON s.session_id = o.session_id AND o.status NOT IN ('cancelled', 'test', 'fraud') WHERE s.is_bot = false GROUP BY 1 ORDER BY 1 DESC LIMIT 12"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Computing average sessions-to-purchase including non-purchasers as 0",
+        "why_wrong": "Users who never purchase should not be included in the sessions-to-purchase calculation. If you include 10,000 non-purchasers as 0 and 100 purchasers averaging 4 sessions, the mean becomes 0.04 instead of 4. The metric becomes a variant of conversion rate rather than a measure of purchase consideration length.",
+        "bad_sql": "SELECT s.user_id, COUNT(DISTINCT s.session_id) AS sessions, CASE WHEN COUNT(DISTINCT o.order_id) > 0 THEN 1 ELSE 0 END AS purchased FROM sessions s LEFT JOIN orders o ON s.user_id = o.customer_id AND o.status NOT IN ('cancelled','test','fraud') WHERE s.is_bot = false GROUP BY s.user_id",
+        "good_sql": "WITH purchasers AS (\n  SELECT customer_id, MIN(order_date) AS first_order_date\n  FROM orders WHERE status NOT IN ('cancelled', 'test', 'fraud')\n  GROUP BY customer_id\n)\nSELECT\n  p.customer_id,\n  COUNT(DISTINCT s.session_id) AS sessions_before_purchase\nFROM purchasers p\nJOIN sessions s ON p.customer_id = s.user_id\n  AND s.session_date <= p.first_order_date\n  AND s.is_bot = false\nGROUP BY p.customer_id"
+      },
+      {
+        "pattern": "Using only the converting session instead of all pre-purchase sessions",
+        "why_wrong": "If you only count the session in which the order was placed, sessions-to-purchase is always 1 for every customer. This is a tautology, not a metric. The value of this metric comes from counting all sessions leading up to (and including) the purchase.",
+        "bad_sql": "SELECT o.customer_id, COUNT(DISTINCT o.session_id) AS sessions_to_purchase FROM orders o WHERE o.status NOT IN ('cancelled','test','fraud') GROUP BY o.customer_id",
+        "good_sql": "WITH first_purchase AS (\n  SELECT customer_id, MIN(order_date) AS first_order_date\n  FROM orders WHERE status NOT IN ('cancelled', 'test', 'fraud')\n  GROUP BY customer_id\n)\nSELECT fp.customer_id, COUNT(DISTINCT s.session_id) AS sessions_to_purchase\nFROM first_purchase fp\nJOIN sessions s ON fp.customer_id = s.user_id\n  AND s.session_date <= fp.first_order_date\n  AND s.is_bot = false\nGROUP BY fp.customer_id"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "WITH first_purchase AS (\n  SELECT customer_id, MIN(order_date) AS first_order_date\n  FROM orders WHERE status NOT IN ('cancelled', 'test', 'fraud')\n  GROUP BY customer_id\n)\nSELECT AVG(session_count) AS avg_sessions_to_purchase FROM (\n  SELECT fp.customer_id, COUNT(DISTINCT s.session_id) AS session_count\n  FROM first_purchase fp\n  JOIN sessions s ON fp.customer_id = s.user_id AND s.session_date <= fp.first_order_date AND s.is_bot = false\n  GROUP BY fp.customer_id\n) sub",
+      "intermediate_sql": "WITH first_purchase AS (\n  SELECT customer_id, MIN(order_date) AS first_order_date\n  FROM orders WHERE status NOT IN ('cancelled', 'test', 'fraud')\n  GROUP BY customer_id\n),\nsession_counts AS (\n  SELECT\n    fp.customer_id,\n    fp.first_order_date,\n    COUNT(DISTINCT s.session_id) AS sessions_before_purchase,\n    fp.first_order_date - MIN(s.session_date) AS days_to_purchase\n  FROM first_purchase fp\n  JOIN sessions s ON fp.customer_id = s.user_id\n    AND s.session_date <= fp.first_order_date\n    AND s.is_bot = false\n  GROUP BY fp.customer_id, fp.first_order_date\n)\nSELECT\n  sessions_before_purchase,\n  COUNT(DISTINCT customer_id) AS customers,\n  ROUND(COUNT(DISTINCT customer_id) * 100.0 / NULLIF(SUM(COUNT(DISTINCT customer_id)) OVER (), 0), 2) AS pct_of_total,\n  AVG(days_to_purchase) AS avg_days\nFROM session_counts\nGROUP BY sessions_before_purchase\nORDER BY sessions_before_purchase",
+      "advanced_sql": "WITH first_purchase AS (\n  -- Grain: one row per customer with their first order date\n  SELECT customer_id, MIN(order_date) AS first_order_date\n  FROM orders WHERE status NOT IN ('cancelled', 'test', 'fraud')\n  GROUP BY customer_id\n),\nsession_journey AS (\n  -- Grain: one row per customer with pre-purchase session stats\n  SELECT\n    fp.customer_id,\n    fp.first_order_date,\n    COUNT(DISTINCT s.session_id) AS sessions_before_purchase,\n    fp.first_order_date - MIN(s.session_date) AS days_to_purchase,\n    SUM(s.session_duration_seconds) AS total_browsing_seconds,\n    COUNT(DISTINCT s.device_type) AS devices_used\n  FROM first_purchase fp\n  JOIN sessions s ON fp.customer_id = s.user_id\n    AND s.session_date <= fp.first_order_date\n    AND s.is_bot = false\n  GROUP BY fp.customer_id, fp.first_order_date\n),\ncohort_journey AS (\n  SELECT\n    DATE_TRUNC('month', first_order_date) AS purchase_month,\n    COUNT(DISTINCT customer_id) AS purchasers,\n    AVG(sessions_before_purchase) AS avg_sessions,\n    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY sessions_before_purchase) AS median_sessions,\n    AVG(days_to_purchase) AS avg_days,\n    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY days_to_purchase) AS median_days,\n    AVG(total_browsing_seconds) / NULLIF(AVG(sessions_before_purchase), 0) AS avg_seconds_per_session\n  FROM session_journey\n  GROUP BY 1\n)\nSELECT\n  purchase_month,\n  purchasers,\n  ROUND(avg_sessions, 1) AS avg_sessions,\n  ROUND(median_sessions, 1) AS median_sessions,\n  ROUND(avg_days, 1) AS avg_days,\n  ROUND(median_days, 1) AS median_days,\n  ROUND(avg_seconds_per_session) AS avg_sec_per_session,\n  LAG(ROUND(avg_sessions, 1)) OVER (ORDER BY purchase_month) AS prev_month_avg_sessions,\n  ROUND(avg_sessions - LAG(avg_sessions) OVER (ORDER BY purchase_month), 2) AS sessions_change\nFROM cohort_journey\nORDER BY purchase_month DESC"
+    }
+  }
+]

@@ -1,0 +1,882 @@
+[
+  {
+    "id": "mkt_cac_by_channel",
+    "title": "Customer Acquisition Cost by Channel",
+    "intent_tags": [
+      "CAC by channel",
+      "cost per acquisition channel",
+      "channel CAC",
+      "acquisition cost channel",
+      "CAC per channel",
+      "what is my CAC",
+      "how much to acquire customer channel",
+      "channel marketing cost",
+      "customer acquisition channel cost",
+      "CAC breakdown"
+    ],
+    "sql_features": [
+      "aggregation",
+      "left_join",
+      "coalesce",
+      "nullif",
+      "cte"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "evaluate channel-specific acquisition efficiency",
+      "benchmark channel CAC against industry norms",
+      "optimize marketing budget allocation by channel",
+      "assess ROI of channel-level acquisition initiatives",
+      "identify underperforming channels for reallocation"
+    ],
+    "related_patterns": [
+      "mkt_roas",
+      "mkt_cpl",
+      "mkt_conversion_rate",
+      "mkt_revenue_by_channel"
+    ],
+    "business_definition": "Total marketing spend for a channel divided by the number of new customers acquired through that channel in the period. A new customer is defined as a user with their first completed order in the period. Excludes internal, organic, and non-attributable channels from spend attribution.",
+    "metric_nature": {
+      "what_it_measures": "The average cost to acquire a new customer via a specific marketing channel \u2014 enables direct channel-to-channel efficiency comparisons.",
+      "what_it_does_not_measure": "Customer lifetime value or long-term profitability. A channel may have low CAC but high churn, resulting in negative ROI over time.",
+      "common_misconception": "CAC by channel is not the same as cost per lead (CPL). CAC reflects the full funnel cost to convert a lead into a paying customer, including all touchpoints leading to conversion."
+    },
+    "template": "WITH channel_spend AS (\n  SELECT channel, SUM(spend) AS total_spend FROM marketing_spend WHERE spend_date BETWEEN {start_date} AND {end_date} GROUP BY channel\n),\nnew_customers_by_channel AS (\n  SELECT acquisition_channel, COUNT(DISTINCT customer_id) AS new_customers FROM orders o JOIN customer_acquisition a ON o.customer_id = a.customer_id WHERE o.order_date BETWEEN {start_date} AND {end_date} AND o.order_sequence = 1 GROUP BY acquisition_channel\n)\nSELECT s.channel, COALESCE(s.total_spend, 0) AS spend, COALESCE(c.new_customers, 0) AS customers, COALESCE(s.total_spend, 0) / NULLIF(COALESCE(c.new_customers, 0), 0) AS cac FROM channel_spend s LEFT JOIN new_customers_by_channel c ON s.channel = c.acquisition_channel",
+    "inflation_causes": [
+      {
+        "cause": "Attributing all conversions to last touch channel",
+        "how_it_inflates": "If customer acquisition channel is assigned solely to the *last* touch (e.g., last-click), and earlier channels (e.g., awareness) are not credited, their spend is allocated to few conversions \u2014 inflating their CAC, while the last-touch channel appears artificially cheap.",
+        "detection_sql": "SELECT channel, COUNT(DISTINCT order_id) AS conversions, SUM(spend) AS spend FROM marketing_spend s JOIN channel_attribution a ON s.channel = a.channel WHERE s.spend_date >= '2024-01-01' GROUP BY 1 ORDER BY conversions DESC",
+        "fix": "Use multi-touch attribution (e.g., linear, time-decay) to split credit across channels in the customer's path, not last-touch only."
+      },
+      {
+        "cause": "Including first-party marketing costs in spend",
+        "how_it_inflates": "If first-party channel costs (e.g., email lists, organic social posts) are counted as spend but yield few attributable conversions, channel CAC inflates \u2014 especially if emails or organic posts drive indirect conversions without clear attribution.",
+        "detection_sql": "SELECT channel, channel_type, SUM(spend) AS total_spend, COUNT(DISTINCT customer_id) AS new_customers FROM marketing_spend s LEFT JOIN customer_acquisition a ON s.channel = a.acquisition_channel WHERE s.spend_date >= '2024-01-01' GROUP BY 1, 2 HAVING channel_type = 'first-party' ORDER BY total_spend DESC",
+        "fix": "Exclude first-party channels unless marginal cost is tracked (e.g., CRM tool fees), or allocate spend based on attributable activity (e.g., email sends to new customers only)."
+      },
+      {
+        "cause": "Counting non-unique customers across attribution windows",
+        "how_it_inflates": "If a customer converts via multiple channels and is attributed to each, the customer is counted multiple times in the denominator, but spend is split \u2014 causing erratic CAC inflation for channels that *did* convert them, if conversion attribution is not deduplicated.",
+        "detection_sql": "SELECT customer_id, COUNT(DISTINCT channel) AS channels, MIN(conversion_date) AS first_conversion FROM customer_attribution WHERE conversion_date >= '2024-01-01' GROUP BY 1 HAVING COUNT(DISTINCT channel) > 1 ORDER BY channels DESC LIMIT 10",
+        "fix": "Deduplicate customers to *first conversion* per period: `ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY conversion_date) = 1` before counting customers."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Excluding channels with zero conversions but positive spend",
+        "how_it_deflates": "If channels with spend but no conversions (e.g., new tests, untracked channels) are excluded from the result set, only high-performance channels remain \u2014 artificially deflating average CAC across channels.",
+        "detection_sql": "SELECT channel, SUM(spend) AS spend, COUNT(DISTINCT CASE WHEN customer_id IS NOT NULL THEN customer_id END) AS conversions FROM marketing_spend s LEFT JOIN customer_acquisition a ON s.channel = a.acquisition_channel WHERE s.spend_date >= '2024-01-01' GROUP BY 1 ORDER BY conversions ASC LIMIT 10",
+        "fix": "Include all channels with spend, assigning zero customers where applicable, to preserve accurate channel-level CAC distribution."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the CAC anomaly isolated to one channel or systemic across all?",
+      "Has a new attribution window or conversion tracking integration been deployed?",
+      "Are high-CAC channels associated with lower lifetime value or higher churn?",
+      "Did marketing budget shifts (e.g., reallocating spend from paid to organic) affect attribution?",
+      "Are conversions being double-attributed or misattributed due to cross-device issues?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "Channel CAC up, ROAS down",
+        "then": "spend increased without proportional revenue lift \u2014 likely channel saturation, creative fatigue, or targeting decay"
+      },
+      {
+        "if": "Channel CAC down, CPL up",
+        "then": "channel efficiency improved \u2014 likely better targeting or optimization, not lower cost per lead"
+      },
+      {
+        "if": "Channel CAC down, customer_count down",
+        "then": "spend reduced *and* conversions dropped disproportionately \u2014 likely cutting channels that drive incremental volume"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Paid search CAC increases >25% WoW with flat spend",
+        "and_also": "mkt_conversion_rate decreases same period",
+        "shared_root_cause": "A quality score drop or keyword devaluation on Google Ads caused CPC to rise without improving conversion volume \u2014 likely due to algorithmic changes, increased competition, or declining ad relevance.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', s.spend_date) AS week, SUM(s.clicks) AS clicks, SUM(s.cost) AS spend, SUM(CASE WHEN a.conversion_id IS NOT NULL THEN 1 END) AS conversions, SUM(s.cost) / NULLIF(SUM(s.clicks), 0) AS cpc, SUM(CASE WHEN a.conversion_id IS NOT NULL THEN 1 END) / NULLIF(SUM(s.clicks), 0) * 100 AS conv_rate FROM marketing_spend s LEFT JOIN conversions a ON s.ad_id = a.ad_id WHERE s.channel = 'paid_search' AND s.spend_date >= '2024-01-01' GROUP BY 1 ORDER BY week"
+      },
+      {
+        "if_this_metric": "Email channel CAC increases MoM",
+        "and_also": "mkt_open_rate and mkt_click_rate both decrease",
+        "shared_root_cause": "A list hygiene issue (e.g., email deliverability drop due to ISP blacklisting or subscriber fatigue) reduced engagement \u2014 increasing cost per acquired customer despite stable campaign spend.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', e.send_date) AS month, COUNT(DISTINCT e.recipient_id) AS emails_sent, COUNT(DISTINCT e.open_id) AS opens, COUNT(DISTINCT e.click_id) AS clicks, COUNT(DISTINCT CASE WHEN o.order_id IS NOT NULL THEN e.recipient_id END) AS customers FROM email_events e LEFT JOIN orders o ON e.recipient_id = o.customer_id WHERE e.campaign_id = 'acquisition_email' AND e.send_date >= '2024-01-01' GROUP BY 1 ORDER BY month"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Dividing total spend by total conversions instead of new customers",
+        "why_wrong": "If the denominator counts *all* conversions (including repeat customers), CAC is deflated \u2014 because the cost is spread over customers who were already acquired previously.",
+        "bad_sql": "SELECT SUM(spend) / NULLIF(COUNT(DISTINCT order_id), 0) AS cac FROM marketing_spend s JOIN orders o ON s.channel = o.acquisition_channel",
+        "good_sql": "SELECT s.total_spend / NULLIF(COUNT(DISTINCT c.customer_id), 0) AS cac FROM (SELECT channel, SUM(spend) AS total_spend FROM marketing_spend WHERE spend_date BETWEEN '2024-01-01' AND '2024-01-31' GROUP BY channel) s LEFT JOIN (SELECT customer_id, MIN(order_date) AS first_order_date, acquisition_channel FROM orders WHERE order_sequence = 1 GROUP BY customer_id) c ON s.channel = c.acquisition_channel WHERE c.first_order_date BETWEEN '2024-01-01' AND '2024-01-31' GROUP BY s.channel"
+      },
+      {
+        "pattern": "Using customer spend date instead of conversion date window",
+        "why_wrong": "If spend is assigned to *all* conversions in a time window, but the conversion window is not constrained (e.g., all-time conversions), spend is misattributed \u2014 causing CAC to be inconsistent and inflated.",
+        "bad_sql": "SELECT SUM(s.spend) / NULLIF(COUNT(DISTINCT a.customer_id), 0) AS cac FROM marketing_spend s JOIN customer_attribution a ON s.channel = a.channel",
+        "good_sql": "SELECT SUM(s.spend) / NULLIF(COUNT(DISTINCT a.customer_id), 0) AS cac FROM marketing_spend s JOIN (SELECT customer_id, MIN(conversion_date) AS conversion_date FROM customer_attribution WHERE conversion_date BETWEEN '2024-01-01' AND '2024-01-31' GROUP BY customer_id) a ON s.channel = a.acquisition_channel AND s.spend_date = a.conversion_date"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT s.channel, SUM(s.spend) / NULLIF(COUNT(DISTINCT c.customer_id), 0) AS cac FROM marketing_spend s LEFT JOIN (SELECT customer_id, MIN(order_date) AS first_order_date, acquisition_channel FROM orders WHERE order_sequence = 1 GROUP BY customer_id) c ON s.channel = c.acquisition_channel WHERE s.spend_date BETWEEN '2024-01-01' AND '2024-01-31' AND c.first_order_date BETWEEN '2024-01-01' AND '2024-01-31' GROUP BY s.channel",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', c.first_order_date) AS month, c.acquisition_channel, SUM(s.spend) / NULLIF(COUNT(DISTINCT c.customer_id), 0) AS cac, COUNT(DISTINCT c.customer_id) AS customers FROM (SELECT customer_id, MIN(order_date) AS first_order_date, acquisition_channel FROM orders WHERE order_sequence = 1 GROUP BY customer_id) c LEFT JOIN marketing_spend s ON c.acquisition_channel = s.channel AND s.spend_date BETWEEN DATEADD(day, -30, c.first_order_date) AND c.first_order_date GROUP BY 1, c.acquisition_channel ORDER BY 1, 3 DESC",
+      "advanced_sql": "WITH channel_spend AS (\n  -- Grain: spend per channel per period, aggregated\n  SELECT\n    channel,\n    SUM(spend) AS total_spend\n  FROM marketing_spend\n  WHERE spend_date BETWEEN '2024-01-01' AND '2024-01-31'\n  GROUP BY channel\n),\nnew_customers AS (\n  -- Grain: new customers attributed to acquisition channel (first conversion)\n  SELECT\n    customer_id,\n    acquisition_channel,\n    MIN(order_date) AS first_order_date\n  FROM orders\n  WHERE order_sequence = 1\n  GROUP BY customer_id, acquisition_channel\n),\nattributed_customers AS (\n  -- Grain: first conversion window attribution (30-day lookback)\n  SELECT\n    nc.customer_id,\n    nc.acquisition_channel,\n    nc.first_order_date,\n    cs.total_spend\n  FROM new_customers nc\n  LEFT JOIN channel_spend cs ON nc.acquisition_channel = cs.channel\n  WHERE nc.first_order_date BETWEEN '2024-01-01' AND '2024-01-31'\n)\nSELECT\n  acquisition_channel,\n  COALESCE(SUM(total_spend), 0) AS spend,\n  COUNT(DISTINCT customer_id) AS customers,\n  ROUND(COALESCE(SUM(total_spend), 0) / NULLIF(COUNT(DISTINCT customer_id), 0), 2) AS cac\nFROM attributed_customers\nGROUP BY acquisition_channel\nORDER BY cac DESC"
+    }
+  },
+  {
+    "id": "mkt_roas",
+    "title": "Return on Ad Spend (ROAS)",
+    "intent_tags": [
+      "ROAS",
+      "return on ad spend",
+      "ad spend ROI",
+      "ROI from ads",
+      "what is my ROAS",
+      "how much revenue per ad dollar",
+      "ad ROI",
+      "revenue / ad spend",
+      "ad performance ROI",
+      "ad campaign ROI"
+    ],
+    "sql_features": [
+      "aggregation",
+      "left_join",
+      "nullif"
+    ],
+    "difficulty": "beginner",
+    "pattern_type": "ratio",
+    "when_to_use": [
+      "evaluate ad channel efficiency and profitability",
+      "benchmark ROAS across campaigns, creatives, or segments",
+      "optimize ad budget allocation based on revenue lift",
+      "assess impact of ad creative or targeting changes",
+      "determine break-even ROAS for margin targets"
+    ],
+    "related_patterns": [
+      "mkt_cac_by_channel",
+      "mkt_revenue_by_channel",
+      "mkt_conversion_rate",
+      "mkt_attribution_window_sensitivity"
+    ],
+    "business_definition": "Ratio of attributed revenue from advertising to total advertising spend, expressed as a multiplier or percentage. Attributed revenue is defined as revenue from orders where an advertising touchpoint occurred within a 30-day click window before the purchase.",
+    "metric_nature": {
+      "what_it_measures": "Revenue generated per dollar spent on advertising \u2014 a direct measure of ad campaign efficiency and top-line ROI.",
+      "what_it_does_not_measure": "Profitability or margin contribution. A ROAS of 4.0 may be unprofitable if margins are 10% and operating costs are high.",
+      "common_misconception": "ROAS is not the same as conversion rate. ROAS measures revenue efficiency relative to spend; conversion rate measures the percentage of clicks or impressions that result in a purchase."
+    },
+    "template": "SELECT SUM(COALESCE(a.attributed_revenue, 0)) / NULLIF(SUM(s.spend), 0) AS roas FROM ad_spend s LEFT JOIN attributed_revenue a ON s.ad_id = a.ad_id AND a.conversion_date BETWEEN s.spend_date AND DATEADD(day, 30, s.spend_date) WHERE s.spend_date BETWEEN {start_date} AND {end_date}",
+    "inflation_causes": [
+      {
+        "cause": "Attributing all conversions to last-click channel",
+        "how_it_inflates": "If attribution is last-click only, and earlier channels (e.g., awareness) are not credited, their ROAS appears low while the last-touch channel appears high \u2014 distorting ROAS for the funnel as a whole and inflating total ROAS if last-touch dominates spend.",
+        "detection_sql": "SELECT channel, SUM(spend) AS spend, SUM(attributed_revenue) AS revenue, SUM(attributed_revenue) / NULLIF(SUM(spend), 0) AS roas FROM ad_spend s LEFT JOIN attribution_events a ON s.ad_id = a.ad_id WHERE s.spend_date >= '2024-01-01' GROUP BY 1 ORDER BY roas DESC",
+        "fix": "Use multi-touch attribution (e.g., linear, data-driven) to distribute revenue across all touchpoints, not last-click only."
+      },
+      {
+        "cause": "Including non-ad revenue in attributed_revenue",
+        "how_it_inflates": "If attributed_revenue includes revenue from non-ad channels (e.g., organic, direct), ROAS inflates \u2014 because spend is attributed only to ads while revenue is counted from all channels.",
+        "detection_sql": "SELECT COUNT(DISTINCT CASE WHEN attribution_source = 'direct' THEN o.order_id END) AS direct_revenue_orders, COUNT(DISTINCT CASE WHEN attribution_source = 'organic' THEN o.order_id END) AS organic_revenue_orders FROM orders o JOIN attribution_events a ON o.order_id = a.order_id WHERE o.order_date >= '2024-01-01'",
+        "fix": "Ensure attributed_revenue only includes revenue from *ad-attributed* touchpoints, not non-ad channel conversions."
+      },
+      {
+        "cause": "Attribution window mismatch (e.g., 60-day window used instead of 30-day)",
+        "how_it_inflates": "If attribution includes conversions that happened *after* the intended window (e.g., 60 days instead of 30), spend is matched to unrelated conversions \u2014 inflating ROAS by associating ad spend with revenue not caused by the ad.",
+        "detection_sql": "SELECT a.conversion_date, s.spend_date, DATEDIFF(day, s.spend_date, a.conversion_date) AS days_to_conversion FROM ad_spend s JOIN attribution_events a ON s.ad_id = a.ad_id WHERE s.spend_date >= '2024-01-01' AND DATEDIFF(day, s.spend_date, a.conversion_date) > 30 ORDER BY days_to_conversion DESC LIMIT 20",
+        "fix": "Enforce strict attribution window (e.g., conversion_date BETWEEN spend_date AND DATEADD(day, 30, spend_date)) in all attribution models."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Excluding conversions with zero revenue (e.g., $0 free trials)",
+        "how_it_deflates": "If attributed_revenue excludes zero-dollar conversions (e.g., free trials that later convert), and those trials have ad touchpoints, ROAS is deflated \u2014 because early funnel efforts are ignored.",
+        "detection_sql": "SELECT COUNT(DISTINCT CASE WHEN net_revenue = 0 THEN o.order_id END) AS zero_revenue_orders, COUNT(DISTINCT CASE WHEN net_revenue > 0 THEN o.order_id END) AS paid_orders FROM orders o JOIN attribution_events a ON o.order_id = a.order_id WHERE o.order_date >= '2024-01-01'",
+        "fix": "Include zero-dollar conversions in numerator if business considers them as part of the acquisition funnel, or define ROAS separately for paid vs. trial conversions."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the ROAS anomaly concentrated in one channel, campaign, or creative?",
+      "Has a new attribution window or conversion tracking integration been deployed?",
+      "Did changes in product pricing or margins affect revenue attribution?",
+      "Are ROAS fluctuations tied to seasonality or external events (e.g., holidays)?",
+      "Is attribution data delayed, causing late-arriving conversions to be missed?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "ROAS up, conversion_rate up",
+        "then": "more efficient ads driving more purchases \u2014 likely improved targeting, creative, or landing page"
+      },
+      {
+        "if": "ROAS up, ad_spend down",
+        "then": "less spend but same or more revenue \u2014 likely increased efficiency or better prioritization"
+      },
+      {
+        "if": "ROAS down, conversion_rate flat",
+        "then": "spend increased without conversion lift \u2014 likely creative fatigue, targeting decay, or increased competition"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "ROAS drops >20% WoW with spend held flat",
+        "and_also": "mkt_conversion_rate decreases same period",
+        "shared_root_cause": "A decline in ad relevance or landing page performance \u2014 likely a broken tracking pixel, degraded ad creative, or negative seasonality \u2014 causing both lower conversion rate and lower revenue per ad dollar.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', s.spend_date) AS week, SUM(s.clicks) AS clicks, SUM(CASE WHEN a.conversion_id IS NOT NULL THEN 1 END) AS conversions, SUM(s.cost) / NULLIF(SUM(s.clicks), 0) AS cpc, SUM(CASE WHEN a.conversion_id IS NOT NULL THEN 1 END) / NULLIF(SUM(s.clicks), 0) * 100 AS conv_rate FROM ad_spend s LEFT JOIN attribution_events a ON s.ad_id = a.ad_id WHERE s.spend_date >= '2024-01-01' GROUP BY 1 ORDER BY week"
+      },
+      {
+        "if_this_metric": "ROAS drops MoM",
+        "and_also": "mkt_cac_by_channel increases",
+        "shared_root_cause": "A decline in conversion efficiency combined with higher CAC \u2014 likely a channel shift to lower-intent traffic (e.g., broader targeting, cheaper but lower-quality impressions) that increases spend per conversion and reduces revenue lift.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', s.spend_date) AS month, SUM(s.cost) / NULLIF(COUNT(DISTINCT a.customer_id), 0) AS cac, SUM(a.attributed_revenue) / NULLIF(SUM(s.cost), 0) AS roas, SUM(CASE WHEN a.conversion_id IS NOT NULL THEN 1 END) / NULLIF(SUM(s.clicks), 0) * 100 AS conv_rate FROM ad_spend s LEFT JOIN attribution_events a ON s.ad_id = a.ad_id WHERE s.spend_date >= '2024-01-01' GROUP BY 1 ORDER BY month"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Calculating ROAS as conversion_rate \u00d7 AOV / CPM",
+        "why_wrong": "If CPM (cost per 1000 impressions) is used instead of CPC or CPA, and ROAS assumes direct click-to-conversion linkage, ROAS is inflated \u2014 because impressions do not guarantee clicks, let alone conversions.",
+        "bad_sql": "SELECT (conv_rate * aov) / (cpm / 1000) AS roas FROM (SELECT COUNT(*) / NULLIF(SUM(clicks), 0) AS conv_rate, AVG(net_revenue) AS aov, SUM(cost) / NULLIF(SUM(impressions), 0) * 1000 AS cpm FROM ad_spend) sub",
+        "good_sql": "SELECT SUM(attributed_revenue) / NULLIF(SUM(cost), 0) AS roas FROM ad_spend s LEFT JOIN attribution_events a ON s.ad_id = a.ad_id WHERE s.spend_date BETWEEN '2024-01-01' AND '2024-01-31'"
+      },
+      {
+        "pattern": "Using gross revenue instead of net revenue",
+        "why_wrong": "If ROAS numerator includes refunds and discounts, ROAS appears higher than sustainable \u2014 because revenue is overstated while spend remains accurate.",
+        "bad_sql": "SELECT SUM(oi.quantity * oi.listed_price) / NULLIF(SUM(s.cost), 0) AS roas FROM ad_spend s JOIN attribution_events a ON s.ad_id = a.ad_id JOIN orders o ON a.order_id = o.order_id JOIN order_items oi ON o.order_id = oi.order_id",
+        "good_sql": "SELECT SUM(a.attributed_revenue) / NULLIF(SUM(s.cost), 0) AS roas FROM ad_spend s LEFT JOIN attributed_revenue a ON s.ad_id = a.ad_id WHERE s.spend_date BETWEEN '2024-01-01' AND '2024-01-31'"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT SUM(COALESCE(a.attributed_revenue, 0)) / NULLIF(SUM(s.cost), 0) AS roas FROM ad_spend s LEFT JOIN attributed_revenue a ON s.ad_id = a.ad_id AND a.conversion_date BETWEEN s.spend_date AND DATEADD(day, 30, s.spend_date) WHERE s.spend_date BETWEEN '2024-01-01' AND '2024-01-31'",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', s.spend_date) AS month, s.channel, SUM(COALESCE(a.attributed_revenue, 0)) / NULLIF(SUM(s.cost), 0) AS roas, COUNT(DISTINCT CASE WHEN a.conversion_id IS NOT NULL THEN a.order_id END) AS conversions FROM ad_spend s LEFT JOIN attributed_revenue a ON s.ad_id = a.ad_id WHERE s.spend_date >= '2024-01-01' GROUP BY 1, s.channel ORDER BY 1, 3 DESC",
+      "advanced_sql": "WITH ad_spend_filtered AS (\n  -- Grain: spend per ad, filtered to period and valid attribution window\n  SELECT\n    s.ad_id,\n    s.channel,\n    s.cost,\n    s.spend_date\n  FROM ad_spend s\n  WHERE s.spend_date BETWEEN '2024-01-01' AND '2024-01-31'\n),\nattributed_revenue AS (\n  -- Grain: revenue attributed within 30-day conversion window\n  SELECT\n    a.ad_id,\n    a.conversion_date,\n    COALESCE(a.attributed_revenue, 0) AS attributed_revenue\n  FROM attribution_events a\n  JOIN ad_spend_filtered s ON a.ad_id = s.ad_id\n  WHERE a.conversion_date BETWEEN s.spend_date AND DATEADD(day, 30, s.spend_date)\n),\nroas_calc AS (\n  SELECT\n    SUM(s.cost) AS total_spend,\n    SUM(COALESCE(a.attributed_revenue, 0)) AS total_revenue\n  FROM ad_spend_filtered s\n  LEFT JOIN attributed_revenue a ON s.ad_id = a.ad_id\n)\nSELECT\n  total_spend,\n  total_revenue,\n  ROUND(total_revenue / NULLIF(total_spend, 0), 2) AS roas,\n  ROUND((total_revenue - total_spend) / NULLIF(total_spend, 0) * 100, 2) AS net_margin_pct\nFROM roas_calc"
+    }
+  },
+  {
+    "id": "mkt_cpc",
+    "title": "Cost per Click (CPC)",
+    "intent_tags": [
+      "CPC",
+      "cost per click",
+      "click cost",
+      "price per click",
+      "ad click cost",
+      "what is my CPC",
+      "how much per click",
+      "click price",
+      "PPC",
+      "advertising click cost"
+    ],
+    "sql_features": [
+      "aggregation",
+      "conditional_count",
+      "nullif"
+    ],
+    "difficulty": "beginner",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "evaluate ad pricing efficiency and bidding strategy",
+      "benchmark CPC across channels, campaigns, or ad formats",
+      "optimize keyword bidding and audience targeting",
+      "assess impact of ad creative quality on CPC",
+      "determine break-even CPC for margin targets"
+    ],
+    "related_patterns": [
+      "mkt_roas",
+      "mkt_conversion_rate",
+      "mkt_cpl",
+      "mkt_attribution_window_sensitivity"
+    ],
+    "business_definition": "Average cost paid for a single click on an advertisement, calculated as total ad spend divided by total clicks. Only includes clicks that resulted in a page view (engaged clicks), excluding accidental or bot clicks.",
+    "metric_nature": {
+      "what_it_measures": "The efficiency of ad pricing and targeting \u2014 a lower CPC indicates better ad relevance, quality score, or bidding strategy.",
+      "what_it_does_not_measure": "Conversion quality or revenue impact. A low CPC may attract low-intent users who rarely convert, resulting in poor ROI.",
+      "common_misconception": "CPC is not the same as CPM or CPA. CPC measures cost per *engagement* (click), while CPM measures cost per 1000 *impressions*, and CPA measures cost per *conversion*."
+    },
+    "template": "SELECT SUM(s.cost) / NULLIF(SUM(s.clicks), 0) AS cpc FROM ad_spend s WHERE s.spend_date BETWEEN {start_date} AND {end_date} AND s.clicks > 0",
+    "inflation_causes": [
+      {
+        "cause": "Counting bot or accidental clicks",
+        "how_it_inflates": "If unfiltered click logs include bot traffic or accidental mouseovers, clicks are inflated more than spend, causing CPC to deflate. However, if bot clicks are charged (e.g., ad networks), and spend is real but clicks are not engaged, CPC inflates because cost is incurred for non-value clicks.",
+        "detection_sql": "SELECT COUNT(DISTINCT session_id) AS bot_clicks, COUNT(DISTINCT CASE WHEN duration_seconds < 2 THEN session_id END) AS low_duration_clicks FROM click_events WHERE click_date >= '2024-01-01'",
+        "fix": "Filter to engaged clicks using duration > 2 seconds, scroll depth, or viewability metrics before computing CPC."
+      },
+      {
+        "cause": "Excluding under-delivering impressions (CPM only)",
+        "how_it_inflates": "If ad impressions are billed on CPM but clicks are only counted for high-performing ad units, the denominator (clicks) under-represents total exposure \u2014 inflating CPC relative to actual cost efficiency.",
+        "detection_sql": "SELECT COUNT(DISTINCT CASE WHEN impressions >= 1000 THEN ad_id END) AS high_impression_ads, COUNT(DISTINCT ad_id) AS total_ads FROM ad_performance WHERE spend_date >= '2024-01-01'",
+        "fix": "Use weighted average CPC across all ad units, including low-impression units, or report CPC and CPM separately for context."
+      },
+      {
+        "cause": "Attributing all clicks to last ad touchpoint",
+        "how_it_inflates": "If click logs attribute multiple sessions to one ad ID (e.g., due to cookie loss or device switching), clicks are doubled \u2014 but spend is not, inflating CPC for that ad.",
+        "detection_sql": "SELECT ad_id, COUNT(DISTINCT session_id) AS sessions, COUNT(*) AS clicks FROM click_events WHERE click_date >= '2024-01-01' GROUP BY ad_id HAVING COUNT(*) > COUNT(DISTINCT session_id) ORDER BY clicks DESC LIMIT 10",
+        "fix": "Deduplicate clicks to unique sessions (or users, if identified) to avoid double-counting repeat clicks from the same person."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Excluding clicks with zero page views (e.g., bounce clicks)",
+        "how_it_deflates": "If CPC excludes clicks that bounced (no page view), and those clicks were charged, the denominator shrinks without reducing spend \u2014 deflating CPC and masking inefficiency.",
+        "detection_sql": "SELECT COUNT(DISTINCT click_id) AS total_clicks, COUNT(DISTINCT CASE WHEN page_viewed = true THEN click_id END) AS engaged_clicks FROM click_events WHERE click_date >= '2024-01-01'",
+        "fix": "Include all charged clicks in CPC calculation unless business defines 'click' as *engaged click* \u2014 and document the distinction."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the CPC anomaly concentrated in one channel, campaign, or creative?",
+      "Has a new bidding strategy, keyword list, or audience segment been introduced?",
+      "Did changes in ad quality score or relevance affect CPC?",
+      "Are CPC fluctuations tied to seasonal demand or competition changes?",
+      "Is click fraud detection affecting click inclusion/exclusion?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "CPC up, conversion_rate flat",
+        "then": "ad pricing increased without improved quality \u2014 likely reduced bid efficiency or declining quality score"
+      },
+      {
+        "if": "CPC down, ROAS down",
+        "then": "cheaper clicks but lower value \u2014 likely targeting decay or attracting low-intent traffic"
+      },
+      {
+        "if": "CPC down, click_volume up",
+        "then": "more clicks at lower cost \u2014 likely improved ad relevance or market expansion"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "CPC increases >20% WoW with spend held flat",
+        "and_also": "mkt_conversion_rate decreases same period",
+        "shared_root_cause": "A quality score drop on ad platforms (e.g., Google Ads) caused CPC to rise due to lower expected CTR, while conversion rate fell due to diminished ad relevance or landing page mismatch.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', s.spend_date) AS week, SUM(s.cost) AS spend, SUM(s.clicks) AS clicks, SUM(s.cost) / NULLIF(SUM(s.clicks), 0) AS cpc, SUM(CASE WHEN a.conversion_id IS NOT NULL THEN 1 END) / NULLIF(SUM(s.clicks), 0) * 100 AS conv_rate FROM ad_spend s LEFT JOIN attribution_events a ON s.ad_id = a.ad_id WHERE s.spend_date >= '2024-01-01' GROUP BY 1 ORDER BY week"
+      },
+      {
+        "if_this_metric": "CPC drops MoM",
+        "and_also": "mkt_revenue_by_channel decreases",
+        "shared_root_cause": "A channel shift to cheaper but lower-intent traffic (e.g., broad targeting, lookalike audience decay) reduced CPC but also reduced conversion volume and revenue \u2014 likely inefficient scale.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', s.spend_date) AS month, SUM(s.cost) / NULLIF(SUM(s.clicks), 0) AS cpc, SUM(CASE WHEN a.conversion_id IS NOT NULL THEN 1 END) / NULLIF(SUM(s.clicks), 0) * 100 AS conv_rate, SUM(a.attributed_revenue) AS revenue FROM ad_spend s LEFT JOIN attribution_events a ON s.ad_id = a.ad_id WHERE s.spend_date >= '2024-01-01' GROUP BY 1 ORDER BY month"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Using cost per impression (CPM) to calculate CPC",
+        "why_wrong": "If CPC is computed as CPM / 1000, it ignores actual click volume \u2014 assuming every impression results in a click, which overestimates efficiency and inflates CPC when CTR is low.",
+        "bad_sql": "SELECT SUM(cost) / NULLIF(SUM(impressions), 0) * 1000 AS cpc FROM ad_spend",
+        "good_sql": "SELECT SUM(cost) / NULLIF(SUM(clicks), 0) AS cpc FROM ad_spend"
+      },
+      {
+        "pattern": "Averaging CPC per ad without weighting by spend",
+        "why_wrong": "If CPC is averaged across ads without weighting by spend, small, high-CPC ads skew the mean \u2014 masking the overall trend.",
+        "bad_sql": "SELECT AVG(cost / NULLIF(clicks, 0)) AS cpc FROM ad_spend",
+        "good_sql": "SELECT SUM(cost) / NULLIF(SUM(clicks), 0) AS cpc FROM ad_spend"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT SUM(cost) / NULLIF(SUM(clicks), 0) AS cpc FROM ad_spend WHERE spend_date BETWEEN '2024-01-01' AND '2024-01-31' AND clicks > 0",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', spend_date) AS month, channel, SUM(cost) / NULLIF(SUM(clicks), 0) AS cpc, COUNT(DISTINCT ad_id) AS active_ads FROM ad_spend WHERE spend_date >= '2024-01-01' GROUP BY 1, channel ORDER BY 1, 3 DESC",
+      "advanced_sql": "WITH daily_spend AS (\n  -- Grain: spend and clicks per ad per day, with engaged clicks filter\n  SELECT\n    ad_id,\n    spend_date,\n    cost,\n    clicks\n  FROM ad_spend\n  WHERE spend_date BETWEEN '2024-01-01' AND '2024-01-31'\n    AND clicks > 0\n    AND click_events > 0\n),\naggregated AS (\n  SELECT\n    SUM(cost) AS total_cost,\n    SUM(clicks) AS total_clicks\n  FROM daily_spend\n)\nSELECT\n  total_cost,\n  total_clicks,\n  ROUND(total_cost / NULLIF(total_clicks, 0), 4) AS cpc,\n  ROUND(total_clicks / NULLIF(COUNT(DISTINCT ad_id), 0), 2) AS avg_clicks_per_ad\nFROM aggregated, (SELECT COUNT(DISTINCT ad_id) AS ad_count FROM daily_spend) ad_meta"
+    }
+  },
+  {
+    "id": "mkt_cpl",
+    "title": "Cost per Lead (CPL)",
+    "intent_tags": [
+      "CPL",
+      "cost per lead",
+      "lead cost",
+      "price per lead",
+      "marketing lead cost",
+      "what is my CPL",
+      "how much per lead",
+      "lead acquisition cost",
+      "lead generation cost",
+      "CPL marketing"
+    ],
+    "sql_features": [
+      "aggregation",
+      "left_join",
+      "nullif"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "evaluate lead generation efficiency across channels",
+      "benchmark CPL against industry standards or historical performance",
+      "optimize lead gen campaigns for cost and volume",
+      "assess impact of lead quality changes on CPL",
+      "determine break-even CPL for sales team capacity"
+    ],
+    "related_patterns": [
+      "mkt_cac_by_channel",
+      "mkt_conversion_rate",
+      "mkt_mql_to_sql",
+      "mkt_revenue_by_channel"
+    ],
+    "business_definition": "Total marketing spend to acquire leads in the period divided by the number of marketing qualified leads (MQLs) generated. An MQL is defined as a lead that meets predefined scoring criteria (e.g., engagement, firmographic fit) and is passed to sales.",
+    "metric_nature": {
+      "what_it_measures": "The efficiency of lead generation efforts \u2014 a key input for forecasting sales pipeline and ROI of marketing spend.",
+      "what_it_does_not_measure": "Sales conversion rate or customer lifetime value. A low CPL may produce low-quality leads that fail to convert, resulting in poor ROI.",
+      "common_misconception": "CPL is not the same as CPC or CAC. CPL measures cost per *lead*, not per *click* or *customer* \u2014 it sits between them in the funnel and depends heavily on lead quality and qualification."
+    },
+    "template": "SELECT SUM(s.spend) / NULLIF(COUNT(DISTINCT l.lead_id), 0) AS cpl FROM marketing_spend s LEFT JOIN leads l ON s.channel = l.acquisition_channel AND l.mql_date BETWEEN s.spend_date AND DATEADD(day, 30, s.spend_date) WHERE s.spend_date BETWEEN {start_date} AND {end_date}",
+    "inflation_causes": [
+      {
+        "cause": "Including non-MQL leads in denominator",
+        "how_it_inflates": "If lead counts include BANT-unqualified or unengaged leads, the denominator inflates \u2014 deflating CPL. However, if lead scoring changed mid-period, CPL inflates because fewer leads qualify as MQLs for the same spend.",
+        "detection_sql": "SELECT DATE_TRUNC('month', created_at) AS month, COUNT(DISTINCT lead_id) AS total_leads, COUNT(DISTINCT CASE WHEN mql_score >= 100 THEN lead_id END) AS mqls FROM leads WHERE created_at >= '2024-01-01' GROUP BY 1 ORDER BY month",
+        "fix": "Filter denominator to MQLs only (score threshold met) and ensure lead scoring rules are consistent across the period."
+      },
+      {
+        "cause": "Attributing all MQLs to last-touch channel",
+        "how_it_inflates": "If lead attribution is last-click only, and earlier channels (e.g., content, email) are not credited, their spend is allocated to fewer MQLs \u2014 inflating their CPL, while the last-touch channel appears cheap.",
+        "detection_sql": "SELECT channel, COUNT(DISTINCT lead_id) AS leads, SUM(spend) AS spend FROM marketing_spend s LEFT JOIN lead_attribution a ON s.channel = a.channel WHERE s.spend_date >= '2024-01-01' GROUP BY 1 ORDER BY leads DESC",
+        "fix": "Use multi-touch lead attribution (e.g., time-decay, linear) to distribute credit across channels in the lead's journey, not last-touch only."
+      },
+      {
+        "cause": "Counting duplicate leads from CRM deduplication gaps",
+        "how_it_inflates": "If the same lead exists multiple times (e.g., due to merge failures), and each record is counted as an MQL, the denominator inflates \u2014 deflating CPL for the same spend.",
+        "detection_sql": "SELECT email, COUNT(*) AS lead_count, COUNT(DISTINCT lead_id) AS distinct_leads FROM leads GROUP BY email HAVING COUNT(*) > 1 ORDER BY lead_count DESC LIMIT 10",
+        "fix": "Deduplicate leads before counting (e.g., `ROW_NUMBER() OVER (PARTITION BY email ORDER BY created_at DESC) = 1`) and ensure CRM deduplication is enforced."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Excluding leads with zero engagement",
+        "how_it_deflates": "If only *engaged* MQLs (e.g., with multiple interactions) are counted, and high-volume but low-engagement channels are excluded, CPL is deflated \u2014 masking inefficiency in volume channels.",
+        "detection_sql": "SELECT COUNT(DISTINCT lead_id) AS total_mqls, COUNT(DISTINCT CASE WHEN interaction_count >= 3 THEN lead_id END) AS engaged_mqls FROM leads WHERE mql_date >= '2024-01-01'",
+        "fix": "Define 'lead' consistently (e.g., all MQLs passed to sales) and report engagement separately if needed."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the CPL anomaly concentrated in one channel or lead source?",
+      "Has a new lead scoring model or MQL qualification criteria been deployed?",
+      "Did lead volume change due to campaign shifts, not efficiency?",
+      "Are MQLs from high-CPL channels actually high-quality?",
+      "Is lead attribution data delayed, causing late-arriving leads to be missed?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "CPL up, conversion_rate up",
+        "then": "higher cost per lead but better quality \u2014 likely improved targeting or messaging"
+      },
+      {
+        "if": "CPL up, lead_volume down",
+        "then": "spend increased without volume lift \u2014 likely inefficient channels or campaign misfire"
+      },
+      {
+        "if": "CPL down, mql_to_sql_rate down",
+        "then": "cheaper leads but lower sales velocity \u2014 likely lower-quality leads entering pipeline"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "CPL increases >25% WoW with flat lead volume",
+        "and_also": "mkt_mql_to_sql_rate decreases same period",
+        "shared_root_cause": "A change in lead scoring or qualification criteria \u2014 likely stricter MQL thresholds or updated lead sources that increase cost per lead but reduce sales-accepted lead volume.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', l.mql_date) AS week, COUNT(DISTINCT l.lead_id) AS leads, COUNT(DISTINCT CASE WHEN l.mql_score >= 100 THEN l.lead_id END) AS mqls, COUNT(DISTINCT CASE WHEN l.sql_status = 'accepted' THEN l.lead_id END) AS sqls, COUNT(DISTINCT l.lead_id) FILTER (WHERE l.mql_score >= 100) * 100.0 / NULLIF(COUNT(DISTINCT l.lead_id), 0) AS mql_rate, COUNT(DISTINCT CASE WHEN l.sql_status = 'accepted' THEN l.lead_id END) * 100.0 / NULLIF(COUNT(DISTINCT CASE WHEN l.mql_score >= 100 THEN l.lead_id END), 0) AS mql_to_sql_rate FROM leads l WHERE l.mql_date >= '2024-01-01' GROUP BY 1 ORDER BY week"
+      },
+      {
+        "if_this_metric": "CPL drops MoM",
+        "and_also": "mkt_mql_to_sql_rate drops",
+        "shared_root_cause": "Shift to cheaper but lower-quality lead sources (e.g., broader targeting, cheaper platforms) reduced CPL but also reduced sales-accepted lead rate \u2014 likely inefficient volume over quality.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', s.spend_date) AS month, SUM(s.spend) / NULLIF(COUNT(DISTINCT l.lead_id), 0) AS cpl, COUNT(DISTINCT CASE WHEN l.sql_status = 'accepted' THEN l.lead_id END) * 100.0 / NULLIF(COUNT(DISTINCT CASE WHEN l.mql_score >= 100 THEN l.lead_id END), 0) AS mql_to_sql_rate FROM marketing_spend s LEFT JOIN leads l ON s.channel = l.acquisition_channel WHERE s.spend_date >= '2024-01-01' GROUP BY 1 ORDER BY month"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Using total leads instead of MQLs in denominator",
+        "why_wrong": "If CPL denominator includes all leads (not MQLs), the rate is deflated \u2014 because marketing efforts are counted before lead qualification, masking true cost to produce sales-ready leads.",
+        "bad_sql": "SELECT SUM(spend) / NULLIF(COUNT(DISTINCT lead_id), 0) AS cpl FROM marketing_spend s LEFT JOIN leads l ON s.channel = l.acquisition_channel",
+        "good_sql": "SELECT SUM(s.spend) / NULLIF(COUNT(DISTINCT l.lead_id), 0) AS cpl FROM marketing_spend s LEFT JOIN (SELECT lead_id, acquisition_channel, mql_date FROM leads WHERE mql_score >= 100) l ON s.channel = l.acquisition_channel WHERE s.spend_date BETWEEN '2024-01-01' AND '2024-01-31' AND l.mql_date BETWEEN s.spend_date AND DATEADD(day, 30, s.spend_date)"
+      },
+      {
+        "pattern": "Averaging CPL per campaign without weighting",
+        "why_wrong": "If CPL is averaged across campaigns without weighting by spend, small high-CPL campaigns dominate the mean \u2014 masking overall trend.",
+        "bad_sql": "SELECT AVG(spend / NULLIF(lead_count, 0)) AS cpl FROM (SELECT campaign_id, SUM(spend) AS spend, COUNT(DISTINCT lead_id) AS lead_count FROM marketing_spend s LEFT JOIN leads l ON s.campaign_id = l.campaign_id GROUP BY campaign_id) sub",
+        "good_sql": "SELECT SUM(spend) / NULLIF(SUM(lead_count), 0) AS cpl FROM (SELECT campaign_id, SUM(spend) AS spend, COUNT(DISTINCT lead_id) AS lead_count FROM marketing_spend s LEFT JOIN leads l ON s.campaign_id = l.campaign_id GROUP BY campaign_id) sub"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT SUM(s.spend) / NULLIF(COUNT(DISTINCT l.lead_id), 0) AS cpl FROM marketing_spend s LEFT JOIN (SELECT lead_id, acquisition_channel, mql_date FROM leads WHERE mql_score >= 100) l ON s.channel = l.acquisition_channel WHERE s.spend_date BETWEEN '2024-01-01' AND '2024-01-31' AND l.mql_date BETWEEN s.spend_date AND DATEADD(day, 30, s.spend_date)",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', l.mql_date) AS month, l.acquisition_channel, SUM(s.spend) / NULLIF(COUNT(DISTINCT l.lead_id), 0) AS cpl, COUNT(DISTINCT CASE WHEN l.sql_status = 'accepted' THEN l.lead_id END) AS sqls FROM marketing_spend s LEFT JOIN (SELECT lead_id, acquisition_channel, mql_date, sql_status FROM leads WHERE mql_score >= 100) l ON s.channel = l.acquisition_channel WHERE s.spend_date >= '2024-01-01' GROUP BY 1, l.acquisition_channel ORDER BY 1, 3 DESC",
+      "advanced_sql": "WITH lead_attribution AS (\n  -- Grain: MQLs attributed to marketing channel within attribution window\n  SELECT\n    l.lead_id,\n    l.acquisition_channel,\n    l.mql_date\n  FROM leads l\n  WHERE l.mql_score >= 100\n),\nchannel_spend AS (\n  SELECT\n    channel,\n    SUM(spend) AS total_spend\n  FROM marketing_spend\n  WHERE spend_date BETWEEN '2024-01-01' AND '2024-01-31'\n  GROUP BY channel\n),\ncpl_calc AS (\n  SELECT\n    c.channel,\n    COALESCE(c.total_spend, 0) AS spend,\n    COUNT(DISTINCT l.lead_id) AS mqls\n  FROM channel_spend c\n  LEFT JOIN lead_attribution l ON c.channel = l.acquisition_channel\n    AND l.mql_date BETWEEN DATEADD(day, -30, '2024-01-01') AND '2024-01-31'\n  GROUP BY c.channel\n)\nSELECT\n  channel,\n  spend,\n  mqls,\n  ROUND(spend / NULLIF(mqls, 0), 2) AS cpl,\n  ROUND(mqls / NULLIF(COUNT(DISTINCT lead_id) FILTER (WHERE sql_status = 'accepted'), 0), 2) AS mql_to_sql_rate\nFROM cpl_calc\nGROUP BY channel, spend, mqls\nORDER BY cpl ASC"
+    }
+  },
+  {
+    "id": "mkt_cpm",
+    "title": "Cost per Mille (CPM)",
+    "intent_tags": [
+      "CPM",
+      "cost per mille",
+      "cost per thousand",
+      "cost per 1000 impressions",
+      "ad CPM",
+      "what is my CPM",
+      "impression cost",
+      "ad impression pricing",
+      "CPM marketing",
+      "price per 1000"
+    ],
+    "sql_features": [
+      "aggregation",
+      "conditional_count",
+      "nullif"
+    ],
+    "difficulty": "beginner",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "evaluate impression-based ad pricing efficiency",
+      "benchmark CPM across channels, formats, or placements",
+      "optimize ad inventory buying for cost and reach",
+      "assess impact of ad relevance and targeting on CPM",
+      "compare CPM across platforms (e.g., Facebook vs Google)"
+    ],
+    "related_patterns": [
+      "mkt_cpc",
+      "mkt_cpl",
+      "mkt_conversion_rate",
+      "mkt_attribution_window_sensitivity"
+    ],
+    "business_definition": "Average cost paid for 1,000 ad impressions, calculated as (total spend \u00f7 total impressions) \u00d7 1,000. Only includes impressions that met viewability criteria (e.g., \u226550% visibility for \u22651 second).",
+    "metric_nature": {
+      "what_it_measures": "The efficiency of ad reach \u2014 a key metric for brand awareness campaigns where impressions matter more than engagement.",
+      "what_it_does_not_measure": "Engagement quality or conversion impact. A low CPM may indicate poor placement quality or low visibility, resulting in wasted spend.",
+      "common_misconception": "CPM is not the same as CPC or CPA. CPM measures cost per *impression*, CPC measures cost per *click*, and CPA measures cost per *conversion* \u2014 each suited to different campaign goals."
+    },
+    "template": "SELECT (SUM(s.cost) / NULLIF(SUM(s.impressions), 0)) * 1000 AS cpm FROM ad_spend s WHERE s.spend_date BETWEEN {start_date} AND {end_date} AND s.impressions > 0",
+    "inflation_causes": [
+      {
+        "cause": "Counting non-viewable impressions",
+        "how_it_inflates": "If impression logs include unviewable impressions (e.g., below fold, hidden tabs), the denominator inflates without value \u2014 causing CPM to deflate. However, if impressions are sold on a *viewable* CPM basis but counted broadly, CPM inflates because cost is charged for non-qualified impressions.",
+        "detection_sql": "SELECT COUNT(DISTINCT impression_id) AS total_impressions, COUNT(DISTINCT CASE WHEN viewability_score >= 50 THEN impression_id END) AS viewable_impressions FROM impressions WHERE impression_date >= '2024-01-01'",
+        "fix": "Filter impressions to only viewable ones (viewability_score \u2265 50%) before computing CPM."
+      },
+      {
+        "cause": "Attributing impressions to last-touch channel",
+        "how_it_inflates": "If impressions are attributed solely to the last channel (e.g., last-click), earlier channels (e.g., awareness) are undercredited \u2014 inflating their CPM due to low impression counts relative to spend.",
+        "detection_sql": "SELECT channel, SUM(impressions) AS impressions, SUM(spend) AS spend, SUM(spend) / NULLIF(SUM(impressions), 0) * 1000 AS cpm FROM ad_spend s LEFT JOIN impression_attribution a ON s.channel = a.channel WHERE s.spend_date >= '2024-01-01' GROUP BY 1 ORDER BY cpm DESC",
+        "fix": "Use multi-touch impression attribution or report CPM per channel with weighted attribution, not last-touch only."
+      },
+      {
+        "cause": " Including impressions from test or internal traffic",
+        "how_it_inflates": "If internal or QA impressions are included, impressions inflate without corresponding revenue \u2014 deflating CPM, but masking true cost efficiency.",
+        "detection_sql": "SELECT COUNT(DISTINCT impression_id) AS impressions, COUNT(DISTINCT CASE WHEN source_ip IN ('127.0.0.1', 'localhost', 'internal') THEN impression_id END) AS internal_impressions FROM impressions WHERE impression_date >= '2024-01-01'",
+        "fix": "Filter impressions to exclude internal IPs, test accounts, or known bot sources before aggregation."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Excluding impressions with zero impressions (e.g., failed loads)",
+        "how_it_deflates": "If impressions are counted only when successfully served, and some impressions are dropped due to ad blockers or technical issues, the denominator shrinks without reducing spend \u2014 deflating CPM.",
+        "detection_sql": "SELECT COUNT(DISTINCT impression_id) AS total_impressions, COUNT(DISTINCT CASE WHEN served_status = 'success' THEN impression_id END) AS served_impressions FROM impressions WHERE impression_date >= '2024-01-01'",
+        "fix": "Include all charged impressions in CPM calculation unless business defines 'impression' as *served impression* \u2014 and document the distinction."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the CPM anomaly concentrated in one channel, format, or placement?",
+      "Has a new ad format, creative, or targeting rule been introduced?",
+      "Did changes in viewability standards or measurement tools affect CPM?",
+      "Are CPM fluctuations tied to seasonal demand or inventory shifts?",
+      "Is impression fraud detection affecting impression inclusion/exclusion?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "CPM up, impressions down",
+        "then": "spend increased without reach lift \u2014 likely inefficient placements or reduced inventory"
+      },
+      {
+        "if": "CPM down, conversion_rate up",
+        "then": "cheaper impressions but better engagement \u2014 likely improved targeting or ad relevance"
+      },
+      {
+        "if": "CPM down, click_volume down",
+        "then": "cheaper impressions but lower engagement \u2014 likely lower-quality placements or ad fatigue"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "CPM increases >25% WoW with spend held flat",
+        "and_also": "mkt_impression_volume decreases same period",
+        "shared_root_cause": "A scarcity of inventory or increased competition on high-performing placements (e.g., premium ad slots) raised CPM while reducing total impressions \u2014 likely a supply-side constraint.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', s.spend_date) AS week, SUM(s.cost) AS spend, SUM(s.impressions) AS impressions, SUM(s.cost) / NULLIF(SUM(s.impressions), 0) * 1000 AS cpm FROM ad_spend s WHERE s.spend_date >= '2024-01-01' GROUP BY 1 ORDER BY week"
+      },
+      {
+        "if_this_metric": "CPM drops MoM",
+        "and_also": "mkt_conversion_rate decreases",
+        "shared_root_cause": "A shift to cheaper but lower-visibility placements (e.g., network inventory, remnant exchanges) reduced CPM but also reduced ad visibility and conversion quality \u2014 likely inefficient scale.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', s.spend_date) AS month, SUM(s.cost) / NULLIF(SUM(s.impressions), 0) * 1000 AS cpm, SUM(CASE WHEN c.conversion_id IS NOT NULL THEN 1 END) / NULLIF(SUM(s.impressions), 0) * 1000000 AS cpm_per_mille_conv FROM ad_spend s LEFT JOIN conversions c ON s.ad_id = c.ad_id WHERE s.spend_date >= '2024-01-01' GROUP BY 1 ORDER BY month"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Using cost per impression instead of cost per 1000 impressions",
+        "why_wrong": "If CPM is computed as cost / impressions, the number is misleadingly small (e.g., 0.001 instead of 1.0) and obscures benchmarking against industry standards.",
+        "bad_sql": "SELECT SUM(cost) / NULLIF(SUM(impressions), 0) AS cpm FROM ad_spend",
+        "good_sql": "SELECT (SUM(cost) / NULLIF(SUM(impressions), 0)) * 1000 AS cpm FROM ad_spend"
+      },
+      {
+        "pattern": "Averaging CPM per ad without weighting",
+        "why_wrong": "If CPM is averaged across ads without weighting by impressions, small high-CPM ads skew the mean \u2014 masking overall trend.",
+        "bad_sql": "SELECT AVG(cost / NULLIF(impressions, 0) * 1000) AS cpm FROM ad_spend",
+        "good_sql": "SELECT (SUM(cost) / NULLIF(SUM(impressions), 0)) * 1000 AS cpm FROM ad_spend"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT (SUM(cost) / NULLIF(SUM(impressions), 0)) * 1000 AS cpm FROM ad_spend WHERE spend_date BETWEEN '2024-01-01' AND '2024-01-31' AND impressions > 0",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', spend_date) AS month, channel, (SUM(cost) / NULLIF(SUM(impressions), 0)) * 1000 AS cpm, COUNT(DISTINCT ad_id) AS active_ads FROM ad_spend WHERE spend_date >= '2024-01-01' GROUP BY 1, channel ORDER BY 1, 3 DESC",
+      "advanced_sql": "WITH impression_metrics AS (\n  -- Grain: impressions per ad, filtered to viewable impressions\n  SELECT\n    ad_id,\n    spend_date,\n    cost,\n    impressions\n  FROM ad_spend\n  WHERE spend_date BETWEEN '2024-01-01' AND '2024-01-31'\n    AND impressions > 0\n    AND viewability_score >= 50\n),\naggregated AS (\n  SELECT\n    SUM(cost) AS total_cost,\n    SUM(impressions) AS total_impressions\n  FROM impression_metrics\n)\nSELECT\n  total_cost,\n  total_impressions,\n  ROUND((total_cost / NULLIF(total_impressions, 0)) * 1000, 2) AS cpm,\n  ROUND(total_impressions / NULLIF(COUNT(DISTINCT ad_id), 0), 2) AS avg_impressions_per_ad\nFROM aggregated, (SELECT COUNT(DISTINCT ad_id) AS ad_count FROM impression_metrics) ad_meta"
+    }
+  },
+  {
+    "id": "mkt_blended_cac",
+    "title": "Blended Customer Acquisition Cost",
+    "intent_tags": [
+      "blended CAC",
+      "overall CAC",
+      "average CAC",
+      "total CAC",
+      "company-wide CAC",
+      "what is my CAC",
+      "total acquisition cost",
+      "customer acquisition cost",
+      "blended marketing CAC",
+      "aggregate CAC"
+    ],
+    "sql_features": [
+      "aggregation",
+      "left_join",
+      "coalesce",
+      "nullif",
+      "cte"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "assess company-wide acquisition efficiency",
+      "benchmark CAC against industry averages or targets",
+      "evaluate overall marketing ROI and budget allocation",
+      "determine break-even CAC for profitability goals",
+      "inform executive decision-making and funding requests"
+    ],
+    "related_patterns": [
+      "mkt_cac_by_channel",
+      "mkt_revenue_by_channel",
+      "mkt_roas",
+      "mkt_customer_ltv"
+    ],
+    "business_definition": "Total marketing and sales spend across all channels divided by the total number of new customers acquired in the period. A new customer is defined as a user with their first completed order in the period. Excludes internal, organic, and non-attributable channels.",
+    "metric_nature": {
+      "what_it_measures": "The average cost to acquire a new customer across the entire business \u2014 a top-line efficiency metric for growth and scalability assessment.",
+      "what_it_does_not_measure": "Channel-level efficiency or long-term profitability. Blended CAC may mask high CAC in poor-performing channels if offset by low CAC in strong channels.",
+      "common_misconception": "Blended CAC is not the same as channel-specific CAC. It is a holistic metric that aggregates all channels; interpreting it without channel breakdown can hide inefficiencies or opportunities."
+    },
+    "template": "WITH spend_total AS (\n  SELECT SUM(spend) AS total_spend FROM marketing_spend WHERE spend_date BETWEEN {start_date} AND {end_date}\n),\ncustomer_total AS (\n  SELECT COUNT(DISTINCT customer_id) AS new_customers FROM orders WHERE order_date BETWEEN {start_date} AND {end_date} AND order_sequence = 1\n)\nSELECT COALESCE(st.total_spend, 0) AS spend, COALESCE(ct.new_customers, 0) AS customers, COALESCE(st.total_spend, 0) / NULLIF(COALESCE(ct.new_customers, 0), 0) AS blended_cac FROM spend_total st, customer_total ct",
+    "inflation_causes": [
+      {
+        "cause": "Including non-new customers in denominator",
+        "how_it_inflates": "If the denominator counts *all* customers (including repeat buyers), CAC is deflated \u2014 because the cost is spread over customers who were already acquired previously.",
+        "detection_sql": "SELECT COUNT(DISTINCT customer_id) AS total_customers, COUNT(DISTINCT CASE WHEN order_sequence = 1 THEN customer_id END) AS new_customers FROM orders WHERE order_date >= '2024-01-01'",
+        "fix": "Filter to *new customers only* by using order_sequence = 1 or first_order_date logic."
+      },
+      {
+        "cause": "Attributing all conversions to last-touch channel",
+        "how_it_inflates": "If customer acquisition channel is assigned solely to the *last* touch (e.g., last-click), and earlier channels (e.g., awareness) are not credited, their spend is allocated to few conversions \u2014 inflating their CAC, while the last-touch channel appears artificially cheap.",
+        "detection_sql": "SELECT acquisition_channel, COUNT(DISTINCT customer_id) AS new_customers, SUM(spend) AS spend FROM marketing_spend s LEFT JOIN customer_acquisition a ON s.channel = a.channel WHERE s.spend_date >= '2024-01-01' GROUP BY 1 ORDER BY new_customers DESC",
+        "fix": "Use multi-touch attribution or first-conversion attribution to correctly allocate spend across channels in the customer's journey."
+      },
+      {
+        "cause": "Counting duplicate customers from CRM deduplication gaps",
+        "how_it_inflates": "If the same customer exists multiple times (e.g., due to merge failures), and each record is counted as a new customer, the denominator inflates \u2014 deflating CAC for the same spend.",
+        "detection_sql": "SELECT email, COUNT(*) AS customer_count, COUNT(DISTINCT customer_id) AS distinct_customers FROM customers GROUP BY email HAVING COUNT(*) > 1 ORDER BY customer_count DESC LIMIT 10",
+        "fix": "Deduplicate customers before counting (e.g., `ROW_NUMBER() OVER (PARTITION BY email ORDER BY created_at DESC) = 1`) and ensure CRM deduplication is enforced."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Excluding high-CAC channels with zero conversions",
+        "how_it_deflates": "If high-CAC channels with spend but no conversions (e.g., new tests) are excluded, only low-CAC channels remain \u2014 artificially deflating blended CAC across the business.",
+        "detection_sql": "SELECT channel, SUM(spend) AS spend, COUNT(DISTINCT CASE WHEN customer_id IS NOT NULL THEN customer_id END) AS conversions FROM marketing_spend s LEFT JOIN customer_acquisition a ON s.channel = a.channel WHERE s.spend_date >= '2024-01-01' GROUP BY 1 ORDER BY conversions ASC LIMIT 10",
+        "fix": "Include all channels with spend, assigning zero customers where applicable, to preserve accurate blended CAC."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the blended CAC anomaly due to one channel or systemic across all?",
+      "Has a new attribution window or conversion tracking integration been deployed?",
+      "Are high-CAC channels associated with lower lifetime value or higher churn?",
+      "Did marketing budget shifts (e.g., reallocating spend from paid to organic) affect attribution?",
+      "Are conversions being double-attributed or misattributed due to cross-device issues?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "Blended CAC up, revenue growth up",
+        "then": "more spending driving growth \u2014 likely scaling initiatives or market expansion"
+      },
+      {
+        "if": "Blended CAC up, revenue growth flat",
+        "then": "spend increased without top-line lift \u2014 likely inefficiency, saturation, or competitive pressure"
+      },
+      {
+        "if": "Blended CAC down, revenue growth down",
+        "then": "spend reduced *and* growth dropped disproportionately \u2014 likely channel cuts that drove volume"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Blended CAC increases >20% MoM with flat marketing spend",
+        "and_also": "mkt_new_customer_count decreases same period",
+        "shared_root_cause": "A decline in conversion efficiency across the funnel \u2014 likely due to ad platform changes, landing page degradation, or increased competition, reducing new customer volume without changing spend.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', s.spend_date) AS month, SUM(s.spend) AS spend, COUNT(DISTINCT CASE WHEN c.order_sequence = 1 THEN c.customer_id END) AS new_customers FROM marketing_spend s LEFT JOIN orders c ON s.channel = c.acquisition_channel WHERE s.spend_date >= '2024-01-01' GROUP BY 1 ORDER BY month"
+      },
+      {
+        "if_this_metric": "Blended CAC drops MoM",
+        "and_also": "mkt_revenue_by_channel decreases",
+        "shared_root_cause": "A shift to cheaper but lower-intent traffic (e.g., broader targeting, cheaper platforms) reduced CAC but also reduced conversion volume and revenue \u2014 likely inefficient scale over quality.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', s.spend_date) AS month, SUM(s.spend) / NULLIF(COUNT(DISTINCT c.customer_id), 0) AS cac, SUM(nr.net_revenue) AS revenue FROM marketing_spend s LEFT JOIN orders c ON s.channel = c.acquisition_channel LEFT JOIN net_revenue_daily nr ON c.order_id = nr.order_id WHERE s.spend_date >= '2024-01-01' GROUP BY 1 ORDER BY month"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Dividing total spend by total customers instead of new customers",
+        "why_wrong": "If the denominator counts *all* customers (including repeat buyers), CAC is deflated \u2014 because the cost is spread over customers who were already acquired previously.",
+        "bad_sql": "SELECT SUM(spend) / NULLIF(COUNT(DISTINCT customer_id), 0) AS cac FROM marketing_spend s JOIN orders o ON s.channel = o.acquisition_channel",
+        "good_sql": "SELECT SUM(s.spend) / NULLIF(COUNT(DISTINCT c.customer_id), 0) AS cac FROM marketing_spend s LEFT JOIN (SELECT customer_id, MIN(order_date) AS first_order_date, acquisition_channel FROM orders WHERE order_sequence = 1 GROUP BY customer_id) c ON s.channel = c.acquisition_channel WHERE s.spend_date BETWEEN '2024-01-01' AND '2024-01-31' AND c.first_order_date BETWEEN '2024-01-01' AND '2024-01-31' GROUP BY s.channel"
+      },
+      {
+        "pattern": "Using spend date instead of conversion date window",
+        "why_wrong": "If spend is assigned to *all* conversions in a time window, but the conversion window is not constrained (e.g., all-time conversions), spend is misattributed \u2014 causing CAC to be inconsistent and inflated.",
+        "bad_sql": "SELECT SUM(s.spend) / NULLIF(COUNT(DISTINCT c.customer_id), 0) AS cac FROM marketing_spend s LEFT JOIN orders c ON s.channel = c.acquisition_channel",
+        "good_sql": "SELECT SUM(s.spend) / NULLIF(COUNT(DISTINCT c.customer_id), 0) AS cac FROM marketing_spend s LEFT JOIN (SELECT customer_id, MIN(order_date) AS first_order_date, acquisition_channel FROM orders WHERE order_sequence = 1 GROUP BY customer_id) c ON s.channel = c.acquisition_channel WHERE s.spend_date BETWEEN '2024-01-01' AND '2024-01-31' AND c.first_order_date BETWEEN '2024-01-01' AND '2024-01-31' GROUP BY s.channel"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT SUM(s.spend) / NULLIF(COUNT(DISTINCT c.customer_id), 0) AS cac FROM marketing_spend s LEFT JOIN (SELECT customer_id, MIN(order_date) AS first_order_date, acquisition_channel FROM orders WHERE order_sequence = 1 GROUP BY customer_id) c ON s.channel = c.acquisition_channel WHERE s.spend_date BETWEEN '2024-01-01' AND '2024-01-31' AND c.first_order_date BETWEEN '2024-01-01' AND '2024-01-31' GROUP BY s.channel",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', c.first_order_date) AS month, SUM(s.spend) / NULLIF(COUNT(DISTINCT c.customer_id), 0) AS cac, COUNT(DISTINCT c.customer_id) AS customers FROM (SELECT customer_id, MIN(order_date) AS first_order_date, acquisition_channel FROM orders WHERE order_sequence = 1 GROUP BY customer_id) c LEFT JOIN marketing_spend s ON c.acquisition_channel = s.channel AND s.spend_date BETWEEN DATEADD(day, -30, c.first_order_date) AND c.first_order_date GROUP BY 1 ORDER BY 1, 3 DESC",
+      "advanced_sql": "WITH channel_spend AS (\n  -- Grain: spend per channel per period, aggregated\n  SELECT\n    channel,\n    SUM(spend) AS total_spend\n  FROM marketing_spend\n  WHERE spend_date BETWEEN '2024-01-01' AND '2024-01-31'\n  GROUP BY channel\n),\nnew_customers AS (\n  -- Grain: new customers attributed to acquisition channel (first conversion)\n  SELECT\n    customer_id,\n    acquisition_channel,\n    MIN(order_date) AS first_order_date\n  FROM orders\n  WHERE order_sequence = 1\n  GROUP BY customer_id, acquisition_channel\n),\nattributed_customers AS (\n  -- Grain: first conversion window attribution (30-day lookback)\n  SELECT\n    nc.customer_id,\n    nc.acquisition_channel,\n    nc.first_order_date,\n    cs.total_spend\n  FROM new_customers nc\n  LEFT JOIN channel_spend cs ON nc.acquisition_channel = cs.channel\n  WHERE nc.first_order_date BETWEEN '2024-01-01' AND '2024-01-31'\n)\nSELECT\n  SUM(COALESCE(total_spend, 0)) AS spend,\n  COUNT(DISTINCT customer_id) AS customers,\n  ROUND(SUM(COALESCE(total_spend, 0)) / NULLIF(COUNT(DISTINCT customer_id), 0), 2) AS blended_cac\nFROM attributed_customers"
+    }
+  },
+  {
+    "id": "mkt_payback_period",
+    "title": "Payback Period",
+    "intent_tags": [
+      "payback period",
+      "CAC payback",
+      "customer payback",
+      "acquisition cost payback",
+      "what is my payback",
+      "CAC recovery",
+      "customer payback period",
+      "marketing payback",
+      "break-even CAC",
+      "payback months"
+    ],
+    "sql_features": [
+      "aggregation",
+      "window_function",
+      "cte",
+      "nullif"
+    ],
+    "difficulty": "expert",
+    "pattern_type": "analytical",
+    "when_to_use": [
+      "assess sustainability of acquisition model",
+      "benchmark payback against industry targets (e.g., <12 months)",
+      "optimize acquisition strategy for cash flow efficiency",
+      "determine break-even point for customer acquisition spend",
+      "model cohort LTV vs. CAC trade-offs"
+    ],
+    "related_patterns": [
+      "mkt_cac_by_channel",
+      "mkt_ltv_by_channel",
+      "mkt_gross_profit_per_order",
+      "mkt_net_revenue"
+    ],
+    "business_definition": "Number of months required for cumulative gross profit from a new customer cohort to exceed the customer acquisition cost (CAC) for that cohort. Calculated by matching cohort-level CAC to cohort-level gross profit progression over time.",
+    "metric_nature": {
+      "what_it_measures": "How quickly the business recoups acquisition costs \u2014 a critical cash flow and scalability metric for growth-stage companies.",
+      "what_it_does_not_measure": "Customer lifetime value (LTV) or long-term profitability. A short payback period does not guarantee high LTV if retention is poor.",
+      "common_misconception": "Payback period is not the same as ROI. ROI measures total return over time; payback focuses solely on *when* the investment breaks even."
+    },
+    "template": "WITH cohort_cac AS (\n  SELECT\n    DATE_TRUNC('month', o.order_date) AS cohort_month,\n    SUM(s.spend) / NULLIF(COUNT(DISTINCT o.customer_id), 0) AS cac\n  FROM orders o\n  JOIN marketing_spend s ON o.customer_id = s.acquisition_channel\n  WHERE o.status = 'completed' AND o.order_date BETWEEN {start_date} AND {end_date}\n  GROUP BY 1\n),\ncohort_profit AS (\n  SELECT\n    DATE_TRUNC('month', o.order_date) AS order_month,\n    o.customer_id,\n    SUM(nr.net_revenue) FILTER (WHERE o.order_date >= DATE_TRUNC('month', o.order_date)) AS cumulative_profit\n  FROM orders o\n  JOIN net_revenue_daily nr ON o.order_id = nr.order_id\n  JOIN cohort_cac c ON o.customer_id = c.customer_id\n  WHERE o.status = 'completed'\n  GROUP BY 1, 2\n),\npayback AS (\n  SELECT\n    c.cohort_month,\n    c.cac,\n    MIN(cp.order_month) FILTER (WHERE cp.cumulative_profit >= c.cac) AS payback_month\n  FROM cohort_cac c\n  JOIN cohort_profit cp ON c.cohort_month <= cp.order_month\n  GROUP BY c.cohort_month, c.cac\n)\nSELECT\n  cohort_month,\n  cac,\n  payback_month,\n  DATEDIFF(month, cohort_month, payback_month) AS payback_months\nFROM payback",
+    "inflation_causes": [
+      {
+        "cause": "Using net revenue instead of gross profit in numerator",
+        "how_it_inflates": "If payback uses net_revenue (GMV - refunds) instead of gross_profit (net_revenue - COGS), the numerator is overstated \u2014 causing payback to deflate because costs of goods are ignored.",
+        "detection_sql": "SELECT DATE_TRUNC('month', o.order_date) AS month, SUM(nr.net_revenue) AS net_rev, SUM(nr.net_revenue) - SUM(cogs.cogs) AS gross_profit FROM orders o JOIN net_revenue_daily nr ON o.order_id = nr.order_id JOIN cogs_daily cogs ON o.order_id = cogs.order_id WHERE o.status = 'completed' AND o.order_date >= '2024-01-01' GROUP BY 1 ORDER BY month",
+        "fix": "Use gross_profit = net_revenue - COGS in numerator for accurate payback calculation."
+      },
+      {
+        "cause": "Attributing all conversions to last-touch channel",
+        "how_it_inflates": "If cohort attribution is last-click only, and earlier channels (e.g., awareness) are not credited, their CAC is overestimated \u2014 inflating payback period because spend is allocated incorrectly to channels that *did* acquire the customer.",
+        "detection_sql": "SELECT acquisition_channel, COUNT(DISTINCT customer_id) AS new_customers, SUM(spend) AS spend FROM marketing_spend s LEFT JOIN customer_acquisition a ON s.channel = a.channel WHERE s.spend_date >= '2024-01-01' GROUP BY 1 ORDER BY spend DESC",
+        "fix": "Use cohort-level multi-touch attribution or first-conversion attribution to correctly allocate spend to acquisition channels."
+      },
+      {
+        "cause": "Excluding customers with zero future purchases",
+        "how_it_inflates": "If only customers with \u22652 orders are included in cohort_profit, the numerator shrinks without adjusting denominator, causing payback to deflate \u2014 masking long-tail payback for one-time buyers.",
+        "detection_sql": "SELECT COUNT(DISTINCT customer_id) AS total_customers, COUNT(DISTINCT CASE WHEN order_count >= 2 THEN customer_id END) AS multi_order_customers FROM (SELECT customer_id, COUNT(DISTINCT order_id) AS order_count FROM orders GROUP BY customer_id) sub",
+        "fix": "Include all customers in cohort, with zero profit for one-time buyers, to accurately reflect payback for all acquisition channels."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Excluding refunding customers from COGS reversal",
+        "how_it_deflates": "If COGS is not reversed for refunded items, gross profit is overstated \u2014 causing payback to deflate and masking true cost efficiency.",
+        "detection_sql": "SELECT COUNT(DISTINCT CASE WHEN r.order_id IS NOT NULL THEN o.order_id END) AS refunded_orders, SUM(nr.net_revenue) FILTER (WHERE r.order_id IS NOT NULL) AS refunded_revenue FROM orders o LEFT JOIN net_revenue_daily nr ON o.order_id = nr.order_id LEFT JOIN returns r ON o.order_id = r.order_id WHERE o.order_date >= '2024-01-01'",
+        "fix": "Reverse COGS for refunds in gross_profit calculation, using a unified 'net_cogs' CTE."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the payback anomaly concentrated in one cohort or acquisition channel?",
+      "Has a new product line or pricing change affected gross margin?",
+      "Did acquisition strategy shift toward higher-CAC channels?",
+      "Are payback periods trending upward or downward over time?",
+      "Is churn rate affecting retention-based gross profit progression?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "Payback period up, CAC down",
+        "then": "cheaper acquisition but slower recovery \u2014 likely lower-margin customers or delayed revenue"
+      },
+      {
+        "if": "Payback period up, gross_profit per order up",
+        "then": "higher margin but longer recovery \u2014 likely delayed customer behavior or longer sales cycles"
+      },
+      {
+        "if": "Payback period down, churn_rate up",
+        "then": "faster recovery but higher churn \u2014 likely aggressive short-term tactics with long-term risk"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Payback period increases >30% WoW",
+        "and_also": "mkt_gross_profit_per_order decreases same period",
+        "shared_root_cause": "A decline in gross margin per order \u2014 likely due to promotional discounting, cost inflation, or mix shift toward lower-margin items \u2014 causing longer payback even if CAC is stable.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', o.order_date) AS week, COUNT(DISTINCT o.customer_id) AS customers, SUM(nr.net_revenue) - SUM(cogs.total_cogs) - SUM(fc.shipping_cost + fc.packaging_cost) AS gross_profit, SUM(nr.net_revenue) - SUM(cogs.total_cogs) - SUM(fc.shipping_cost + fc.packaging_cost) / NULLIF(COUNT(DISTINCT o.customer_id), 0) AS gpp FROM orders o JOIN net_revenue_daily nr ON o.order_id = nr.order_id JOIN cogs_daily cogs ON o.order_id = cogs.order_id JOIN fulfillment_costs fc ON o.order_id = fc.order_id WHERE o.status = 'completed' AND o.order_date >= '2024-01-01' GROUP BY 1 ORDER BY week"
+      },
+      {
+        "if_this_metric": "Payback period drops MoM",
+        "and_also": "mkt_customer_ltv decreases same period",
+        "shared_root_cause": "A focus on rapid early revenue (e.g., upfront annual billing) is accelerating payback but compressing long-term LTV \u2014 likely unsustainable growth at the cost of retention.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', o.order_date) AS month, COUNT(DISTINCT o.customer_id) AS customers, SUM(nr.net_revenue) AS revenue, SUM(nr.net_revenue) / NULLIF(COUNT(DISTINCT o.customer_id), 0) AS avg_revenue_per_customer FROM orders o JOIN net_revenue_daily nr ON o.order_id = nr.order_id WHERE o.order_date >= '2024-01-01' GROUP BY 1 ORDER BY month"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Dividing CAC by average gross profit per order",
+        "why_wrong": "If payback is calculated as CAC / average gross_profit_per_order, it ignores cohort-level timing \u2014 assuming constant monthly profit, which is rarely true and inflates accuracy.",
+        "bad_sql": "SELECT c.cac / NULLIF(AVG(nr.net_revenue - cogs.total_cogs), 0) AS payback_months FROM cohort_cac c CROSS JOIN (SELECT AVG(nr.net_revenue - cogs.total_cogs) AS avg_gross FROM orders o JOIN net_revenue_daily nr ON o.order_id = nr.order_id JOIN cogs_daily cogs ON o.order_id = cogs.order_id) sub",
+        "good_sql": "SELECT c.cohort_month, c.cac, MIN(cp.order_month) FILTER (WHERE cp.cumulative_profit >= c.cac) AS payback_month, DATEDIFF(month, c.cohort_month, MIN(cp.order_month) FILTER (WHERE cp.cumulative_profit >= c.cac)) AS payback_months FROM cohort_cac c JOIN cohort_profit cp ON c.cohort_month <= cp.order_month GROUP BY c.cohort_month, c.cac"
+      },
+      {
+        "pattern": "Using lifetime revenue instead of gross profit",
+        "why_wrong": "If payback uses total lifetime revenue instead of gross profit, it ignores COGS and fulfillment costs \u2014 inflating gross margin and deflating payback period.",
+        "bad_sql": "SELECT SUM(nr.net_revenue) / NULLIF(c.cac, 0) AS payback_months FROM cohort_cac c LEFT JOIN net_revenue_daily nr ON c.customer_id = nr.customer_id",
+        "good_sql": "SELECT SUM(nr.net_revenue) - SUM(cogs.total_cogs) - SUM(fc.shipping_cost + fc.packaging_cost) / NULLIF(c.cac, 0) AS payback_months FROM cohort_cac c LEFT JOIN net_revenue_daily nr ON c.customer_id = nr.customer_id LEFT JOIN cogs_daily cogs ON c.customer_id = cogs.customer_id LEFT JOIN fulfillment_costs fc ON c.customer_id = fc.customer_id"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "WITH cohort_cac AS (SELECT DATE_TRUNC('month', o.order_date) AS cohort_month, SUM(s.spend) / NULLIF(COUNT(DISTINCT o.customer_id), 0) AS cac FROM orders o JOIN marketing_spend s ON o.customer_id = s.acquisition_channel WHERE o.status = 'completed' AND o.order_date BETWEEN '2024-01-01' AND '2024-01-31' GROUP BY 1), cohort_profit AS (SELECT DATE_TRUNC('month', o.order_date) AS order_month, o.customer_id, SUM(nr.net_revenue) - SUM(cogs.total_cogs) - SUM(fc.shipping_cost + fc.packaging_cost) AS cumulative_profit FROM orders o JOIN net_revenue_daily nr ON o.order_id = nr.order_id JOIN cogs_daily cogs ON o.order_id = cogs.order_id JOIN fulfillment_costs fc ON o.order_id = fc.order_id WHERE o.status = 'completed' GROUP BY 1, 2), payback AS (SELECT c.cohort_month, c.cac, MIN(cp.order_month) FILTER (WHERE cp.cumulative_profit >= c.cac) AS payback_month FROM cohort_cac c JOIN cohort_profit cp ON c.cohort_month <= cp.order_month GROUP BY c.cohort_month, c.cac) SELECT cohort_month, cac, payback_month, DATEDIFF(month, cohort_month, payback_month) AS payback_months FROM payback",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', o.order_date) AS month, SUM(nr.net_revenue) - SUM(cogs.total_cogs) - SUM(fc.shipping_cost + fc.packaging_cost) AS gross_profit, SUM(nr.net_revenue) - SUM(cogs.total_cogs) - SUM(fc.shipping_cost + fc.packaging_cost) / NULLIF(COUNT(DISTINCT o.customer_id), 0) AS gross_profit_per_customer, SUM(nr.net_revenue) - SUM(cogs.total_cogs) - SUM(fc.shipping_cost + fc.packaging_cost) / NULLIF(COUNT(DISTINCT o.customer_id), 0) * 12 AS annualized_gpp FROM orders o JOIN net_revenue_daily nr ON o.order_id = nr.order_id JOIN cogs_daily cogs ON o.order_id = cogs.order_id JOIN fulfillment_costs fc ON o.order_id = fc.order_id WHERE o.status = 'completed' AND o.order_date >= '2024-01-01' GROUP BY 1 ORDER BY 1, 5 DESC",
+      "advanced_sql": "WITH cohort_cac AS (\n  -- Grain: CAC per cohort (marketing channel + start month)\n  SELECT\n    DATE_TRUNC('month', o.order_date) AS cohort_month,\n    s.channel,\n    SUM(s.spend) / NULLIF(COUNT(DISTINCT o.customer_id), 0) AS cac\n  FROM orders o\n  JOIN marketing_spend s ON o.customer_id = s.acquisition_channel\n  WHERE o.status = 'completed' AND o.order_date BETWEEN '2024-01-01' AND '2024-01-31'\n  GROUP BY 1, s.channel\n),\ncohort_profit AS (\n  -- Grain: gross profit per cohort month (cumulative)\n  SELECT\n    c.cohort_month,\n    c.customer_id,\n    DATE_TRUNC('month', o.order_date) AS order_month,\n    SUM(nr.net_revenue) - SUM(cogs.total_cogs) - SUM(fc.shipping_cost + fc.packaging_cost) AS cumulative_profit\n  FROM cohort_cac c\n  JOIN orders o ON c.customer_id = o.customer_id\n  JOIN net_revenue_daily nr ON o.order_id = nr.order_id\n  JOIN cogs_daily cogs ON o.order_id = cogs.order_id\n  JOIN fulfillment_costs fc ON o.order_id = fc.order_id\n  WHERE o.status = 'completed'\n  GROUP BY 1, 2, 3\n),\npayback_calc AS (\n  SELECT\n    c.cohort_month,\n    c.channel,\n    c.cac,\n    MIN(cp.order_month) FILTER (WHERE cp.cumulative_profit >= c.cac) AS payback_month\n  FROM cohort_cac c\n  JOIN cohort_profit cp ON c.cohort_month <= cp.order_month\n  GROUP BY c.cohort_month, c.channel, c.cac\n)\nSELECT\n  cohort_month,\n  channel,\n  cac,\n  payback_month,\n  DATEDIFF(month, cohort_month, payback_month) AS payback_months\nFROM payback_calc\nORDER BY cohort_month, channel"
+    }
+  }
+]

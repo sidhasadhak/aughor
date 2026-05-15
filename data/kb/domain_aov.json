@@ -1,0 +1,47 @@
+[
+  {
+    "id": "average_order_value",
+    "title": "Average Order Value (AOV)",
+    "business_definition": "AOV = total revenue / number of orders. Rising AOV means customers are buying more per transaction. Falling AOV can signal pricing pressure, mix shift to cheaper products, or promotional discounting.",
+    "intent_tags": ["AOV", "average order value", "basket size", "order value", "spend per order"],
+    "when_to_use": ["AOV dropped", "basket size analysis", "revenue per order changed"],
+    "diagnostic_questions": [
+      "Did AOV drop because of product mix shift (more cheap items) or lower prices overall?",
+      "Are discounts or promotions being applied more frequently?",
+      "Did a specific category or segment drive the AOV change?",
+      "Are customers buying fewer items per order (units per transaction dropped)?"
+    ],
+    "causal_relationships": [
+      {
+        "symptom": "AOV declined month-over-month",
+        "check_in_order": ["discount_rate", "product_category_mix", "units_per_order", "new_vs_returning_customer_mix"],
+        "detection_sql": "SELECT DATE_TRUNC('month', order_date) AS month, AVG(amount) AS aov, AVG(discount_amount / NULLIF(amount, 0)) AS avg_discount_rate, AVG(item_count) AS avg_items FROM orders WHERE status = 'completed' GROUP BY 1 ORDER BY 1"
+      },
+      {
+        "symptom": "AOV varies significantly by customer segment",
+        "check_in_order": ["aov_by_segment", "aov_by_channel", "aov_by_region"],
+        "detection_sql": "SELECT customer_segment, COUNT(*) AS orders, AVG(amount) AS aov, STDDEV(amount) AS aov_stddev FROM orders JOIN customers USING (customer_id) WHERE order_date >= CURRENT_DATE - INTERVAL '30 days' GROUP BY 1 ORDER BY 2 DESC"
+      }
+    ],
+    "inflation_causes": [
+      {
+        "cause": "Bulk or wholesale orders included — inflating retail AOV",
+        "detection_sql": "SELECT order_type, COUNT(*), AVG(amount) FROM orders GROUP BY 1"
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Shipping and taxes stripped from order amount inconsistently",
+        "detection_sql": "SELECT AVG(gross_amount) AS avg_gross, AVG(net_amount) AS avg_net, AVG(shipping) AS avg_shipping FROM orders WHERE order_date >= CURRENT_DATE - INTERVAL '30 days'"
+      }
+    ],
+    "related_patterns": ["revenue_drop_analysis", "conversion_funnel", "refund_rate"],
+    "anti_patterns": [
+      "Do not include cancelled or returned orders in AOV calculation",
+      "Do not compare AOV across B2B and B2C segments without separating them first"
+    ],
+    "sql_assets": {
+      "aov_trend": "SELECT DATE_TRUNC('week', order_date) AS week, AVG(amount) AS aov, COUNT(*) AS orders FROM orders WHERE status = 'completed' AND order_date >= CURRENT_DATE - INTERVAL '90 days' GROUP BY 1 ORDER BY 1"
+    }
+  }
+]

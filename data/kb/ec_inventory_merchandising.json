@@ -1,0 +1,683 @@
+[
+  {
+    "id": "ec_inventory_turnover",
+    "title": "Inventory Turnover Ratio",
+    "intent_tags": [
+      "inventory turnover",
+      "stock turnover",
+      "inventory turns",
+      "how fast is inventory selling",
+      "turn rate",
+      "inventory efficiency",
+      "inventory velocity",
+      "sell through rate",
+      "how quickly do we sell inventory",
+      "stock rotation",
+      "inventory turnover ratio"
+    ],
+    "sql_features": [
+      "aggregation",
+      "cte",
+      "left_join",
+      "nullif",
+      "coalesce",
+      "window_function"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "ratio",
+    "when_to_use": [
+      "measuring how efficiently inventory converts to sales",
+      "identifying slow-moving products or categories that tie up capital",
+      "comparing inventory efficiency across product categories or warehouses",
+      "benchmarking operational efficiency against industry standards",
+      "informing purchasing and reorder decisions"
+    ],
+    "related_patterns": [
+      "ec_dio",
+      "ec_stockout_rate",
+      "ec_revenue_by_category",
+      "ec_gmv"
+    ],
+    "business_definition": "Cost of Goods Sold (COGS) in a period divided by the average inventory value during that period. Average inventory is (beginning inventory value + ending inventory value) / 2. A higher ratio means inventory is selling faster. Uses inventory cost basis, not retail price. Excludes damaged, written-off, and consignment inventory unless specified.",
+    "metric_nature": {
+      "what_it_measures": "How many times the average inventory stock was sold and replaced during a period. Answers: is our capital tied up in unsold goods, or flowing efficiently through the business?",
+      "what_it_does_not_measure": "Profitability of sold inventory. High turnover with thin margins may be worse than moderate turnover with healthy margins. Also does not measure whether stockouts occurred \u2014 extremely high turnover may indicate chronic understocking. Use ec_stockout_rate alongside.",
+      "common_misconception": "Higher turnover is not always better. A turnover of 50 may mean the business is chronically understocked and losing sales to stockouts. The optimal turnover depends on the product category \u2014 perishable goods (groceries) should turn much faster than durable goods (furniture). Comparing turnover across categories without normalization is misleading."
+    },
+    "template": "WITH period_cogs AS (\n  SELECT\n    SUM(oi.quantity * oi.unit_cost) AS cogs\n  FROM order_items oi\n  JOIN orders o ON oi.order_id = o.order_id\n  WHERE o.status NOT IN ('cancelled', 'test', 'fraud')\n    AND o.order_date BETWEEN {start_date} AND {end_date}\n),\navg_inventory AS (\n  SELECT\n    (COALESCE(SUM(CASE WHEN snapshot_date = {start_date} THEN quantity_on_hand * unit_cost END), 0)\n     + COALESCE(SUM(CASE WHEN snapshot_date = {end_date} THEN quantity_on_hand * unit_cost END), 0)) / 2.0 AS avg_inventory_value\n  FROM inventory\n  WHERE snapshot_date IN ({start_date}, {end_date})\n)\nSELECT\n  pc.cogs,\n  ai.avg_inventory_value,\n  ROUND(pc.cogs / NULLIF(ai.avg_inventory_value, 0), 2) AS inventory_turnover\nFROM period_cogs pc\nCROSS JOIN avg_inventory ai",
+    "inflation_causes": [
+      {
+        "cause": "Using retail price instead of cost basis for COGS numerator",
+        "how_it_inflates": "If COGS is calculated using unit_price (retail) instead of unit_cost (wholesale/cost), the numerator is inflated by the gross margin percentage. A product with 50% margin shows double the COGS, doubling the turnover ratio and making inventory appear to move twice as fast as it actually does.",
+        "detection_sql": "SELECT p.product_id, p.product_name, oi.unit_price AS retail_price, oi.unit_cost AS cost_price, ROUND((oi.unit_price - oi.unit_cost) / NULLIF(oi.unit_price, 0) * 100, 2) AS margin_pct FROM order_items oi JOIN products p ON oi.product_id = p.product_id WHERE oi.unit_cost IS NOT NULL GROUP BY p.product_id, p.product_name, oi.unit_price, oi.unit_cost ORDER BY margin_pct DESC LIMIT 20",
+        "fix": "Always use unit_cost (cost basis) for COGS in the turnover numerator. If unit_cost is not available on order_items, join to the products table's cost column."
+      },
+      {
+        "cause": "Inventory snapshot taken at a seasonal low point",
+        "how_it_inflates": "If the average inventory denominator uses a snapshot taken right after a major sale (Black Friday, end-of-season clearance), inventory is at its yearly minimum. Dividing a full-period COGS by an artificially low average inventory inflates the turnover ratio. The metric suggests fast-moving inventory when in reality the denominator is just unusually small.",
+        "detection_sql": "SELECT snapshot_date, SUM(quantity_on_hand * unit_cost) AS total_inventory_value FROM inventory WHERE snapshot_date >= CURRENT_DATE - INTERVAL '12 months' GROUP BY snapshot_date ORDER BY total_inventory_value ASC LIMIT 10",
+        "fix": "Use monthly inventory snapshots and compute average inventory as the mean of all monthly snapshots, not just beginning and ending. This smooths seasonal swings: AVG(monthly_inventory_value) across all months in the period."
+      },
+      {
+        "cause": "Excluding consignment or in-transit inventory from denominator",
+        "how_it_inflates": "If inventory in transit from suppliers or held on consignment is excluded from the inventory snapshot, the denominator understates the total capital committed to inventory. Turnover appears higher because a significant portion of inventory is invisible to the calculation.",
+        "detection_sql": "SELECT i.inventory_status, COUNT(DISTINCT i.product_id) AS products, SUM(i.quantity_on_hand * i.unit_cost) AS inventory_value FROM inventory i GROUP BY i.inventory_status ORDER BY inventory_value DESC",
+        "fix": "Include all inventory statuses (on_hand, in_transit, consignment, reserved) in the denominator, or document which statuses are included and report separately."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Dead stock inflating average inventory value",
+        "how_it_deflates": "If obsolete, discontinued, or damaged products remain in the inventory table at full cost value, the average inventory denominator is inflated with goods that will never sell. This drags down the turnover ratio, making active inventory appear slower-moving than it is.",
+        "detection_sql": "SELECT p.product_id, p.product_name, i.quantity_on_hand, i.unit_cost, i.quantity_on_hand * i.unit_cost AS inventory_value, MAX(oi.order_date) AS last_sold_date, CURRENT_DATE - MAX(oi.order_date) AS days_since_last_sale FROM inventory i JOIN products p ON i.product_id = p.product_id LEFT JOIN order_items oi ON i.product_id = oi.product_id LEFT JOIN orders o ON oi.order_id = o.order_id AND o.status NOT IN ('cancelled', 'test', 'fraud') WHERE i.quantity_on_hand > 0 GROUP BY p.product_id, p.product_name, i.quantity_on_hand, i.unit_cost HAVING MAX(oi.order_date) IS NULL OR MAX(oi.order_date) < CURRENT_DATE - INTERVAL '180 days' ORDER BY inventory_value DESC LIMIT 20",
+        "fix": "Separate active inventory from dead stock in reporting. Either write off dead stock or compute turnover only for SKUs with at least one sale in the trailing 12 months."
+      },
+      {
+        "cause": "COGS missing for some order items",
+        "how_it_deflates": "If unit_cost is NULL for some order_items rows (new products without cost data, imported orders), those items contribute zero to the COGS numerator while their inventory still sits in the denominator. Turnover is understated because the numerator is incomplete.",
+        "detection_sql": "SELECT COUNT(DISTINCT oi.order_item_id) AS total_items, COUNT(DISTINCT CASE WHEN oi.unit_cost IS NULL OR oi.unit_cost = 0 THEN oi.order_item_id END) AS missing_cost_items, ROUND(COUNT(DISTINCT CASE WHEN oi.unit_cost IS NULL OR oi.unit_cost = 0 THEN oi.order_item_id END) * 100.0 / NULLIF(COUNT(DISTINCT oi.order_item_id), 0), 2) AS pct_missing FROM order_items oi JOIN orders o ON oi.order_id = o.order_id WHERE o.status NOT IN ('cancelled', 'test', 'fraud')",
+        "fix": "Backfill missing unit_cost from the products table's standard_cost column. If no cost data exists, use the category average cost as an estimate and flag these items for data quality follow-up."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is COGS calculated using unit_cost (cost basis) or unit_price (retail price)?",
+      "What inventory statuses are included in the denominator \u2014 on_hand only, or also in_transit and reserved?",
+      "Are the inventory snapshots representative of typical stock levels, or taken at seasonal extremes?",
+      "Is dead stock or obsolete inventory still included in the average inventory calculation?",
+      "Has the product mix shifted toward higher or lower turnover categories recently?",
+      "Are there products with missing unit_cost data that would understate COGS?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "inventory_turnover up, ec_stockout_rate also up",
+        "then": "inventory is turning faster because it is chronically understocked \u2014 the business is selling through but losing sales to stockouts on popular items"
+      },
+      {
+        "if": "inventory_turnover down, ec_revenue_by_category flat",
+        "then": "inventory levels grew without a corresponding sales increase \u2014 likely over-purchasing or slow-moving new SKUs added to the catalog"
+      },
+      {
+        "if": "inventory_turnover up, ec_gmv up",
+        "then": "genuine demand increase is pulling inventory through faster \u2014 healthy signal if not accompanied by rising stockouts"
+      },
+      {
+        "if": "inventory_turnover down in one category only",
+        "then": "that category has excess stock \u2014 check for seasonal products past their peak, discontinued items not yet written off, or a demand forecast miss"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Inventory turnover drops >20% QoQ",
+        "and_also": "ec_dio increases by a comparable amount in the same period",
+        "shared_root_cause": "Excess purchasing or demand forecast miss. These two metrics are mathematical inverses (DIO = 365 / turnover), so they always move together. The shared upstream cause is either over-ordering (purchasing team bought too much), a demand shortfall (sales declined but purchasing did not adjust), or a new product launch that has not yet gained traction. Check purchase orders vs sales velocity by category.",
+        "diagnostic_sql": "SELECT p.category, SUM(oi.quantity * oi.unit_cost) AS cogs_last_90d, AVG(i.quantity_on_hand * i.unit_cost) AS avg_inventory_value, ROUND(SUM(oi.quantity * oi.unit_cost) / NULLIF(AVG(i.quantity_on_hand * i.unit_cost), 0), 2) AS turnover, ROUND(AVG(i.quantity_on_hand * i.unit_cost) / NULLIF(SUM(oi.quantity * oi.unit_cost) / 90.0, 0), 1) AS dio FROM order_items oi JOIN orders o ON oi.order_id = o.order_id JOIN products p ON oi.product_id = p.product_id LEFT JOIN inventory i ON oi.product_id = i.product_id WHERE o.status NOT IN ('cancelled', 'test', 'fraud') AND o.order_date >= CURRENT_DATE - INTERVAL '90 days' GROUP BY p.category ORDER BY dio DESC"
+      },
+      {
+        "if_this_metric": "Inventory turnover increases sharply while ec_gmv growth is modest",
+        "and_also": "ec_stockout_rate is rising in the same period",
+        "shared_root_cause": "Inventory reduction without adequate replenishment. Turnover increases because the denominator (average inventory) shrank faster than sales, not because demand surged. Stockouts confirm the business is running out of popular items. The root cause is typically a cash flow constraint limiting reorders, a supply chain disruption delaying shipments, or an intentional inventory reduction strategy that went too far.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', i.snapshot_date) AS week, SUM(i.quantity_on_hand) AS total_units, SUM(i.quantity_on_hand * i.unit_cost) AS total_inventory_value, COUNT(DISTINCT CASE WHEN i.quantity_on_hand = 0 THEN i.product_id END) AS out_of_stock_skus, COUNT(DISTINCT i.product_id) AS total_skus FROM inventory i GROUP BY 1 ORDER BY 1 DESC LIMIT 12"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Using revenue instead of COGS in the numerator",
+        "why_wrong": "Revenue (retail price \u00d7 quantity) includes the gross margin markup. Using revenue inflates turnover by the margin percentage, making inventory appear to move faster than it actually does. The finance-correct formula uses COGS (cost \u00d7 quantity) because you are measuring how fast you sell through the cost value of inventory, not its retail value.",
+        "bad_sql": "SELECT SUM(oi.quantity * oi.unit_price) / NULLIF(AVG(i.quantity_on_hand * i.unit_cost), 0) AS turnover FROM order_items oi JOIN orders o ON oi.order_id = o.order_id LEFT JOIN inventory i ON oi.product_id = i.product_id WHERE o.status NOT IN ('cancelled', 'test', 'fraud')",
+        "good_sql": "SELECT SUM(oi.quantity * oi.unit_cost) / NULLIF(AVG(i.quantity_on_hand * i.unit_cost), 0) AS turnover FROM order_items oi JOIN orders o ON oi.order_id = o.order_id LEFT JOIN inventory i ON oi.product_id = i.product_id WHERE o.status NOT IN ('cancelled', 'test', 'fraud')"
+      },
+      {
+        "pattern": "Using a single point-in-time inventory snapshot instead of an average",
+        "why_wrong": "Inventory fluctuates daily \u2014 using a single day's snapshot as the denominator is fragile and can produce wildly different turnover ratios depending on which day you choose. A post-restock snapshot inflates the denominator; a pre-restock snapshot deflates it. Average inventory smooths these fluctuations.",
+        "bad_sql": "SELECT SUM(oi.quantity * oi.unit_cost) / NULLIF(SUM(i.quantity_on_hand * i.unit_cost), 0) AS turnover FROM order_items oi JOIN orders o ON oi.order_id = o.order_id JOIN inventory i ON oi.product_id = i.product_id WHERE o.status NOT IN ('cancelled', 'test', 'fraud') AND i.snapshot_date = CURRENT_DATE",
+        "good_sql": "WITH monthly_inventory AS (\n  SELECT DATE_TRUNC('month', snapshot_date) AS month, AVG(quantity_on_hand * unit_cost) AS avg_value\n  FROM inventory\n  WHERE snapshot_date >= CURRENT_DATE - INTERVAL '12 months'\n  GROUP BY 1\n)\nSELECT SUM(oi.quantity * oi.unit_cost) / NULLIF(AVG(mi.avg_value), 0) AS turnover\nFROM order_items oi\nJOIN orders o ON oi.order_id = o.order_id\nCROSS JOIN monthly_inventory mi\nWHERE o.status NOT IN ('cancelled', 'test', 'fraud')\n  AND o.order_date >= CURRENT_DATE - INTERVAL '12 months'"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT ROUND(SUM(oi.quantity * oi.unit_cost) / NULLIF((SELECT AVG(quantity_on_hand * unit_cost) FROM inventory WHERE snapshot_date >= '2024-01-01'), 0), 2) AS inventory_turnover FROM order_items oi JOIN orders o ON oi.order_id = o.order_id WHERE o.status NOT IN ('cancelled', 'test', 'fraud') AND o.order_date BETWEEN '2024-01-01' AND '2024-12-31'",
+      "intermediate_sql": "WITH cogs_by_category AS (\n  SELECT p.category, SUM(oi.quantity * oi.unit_cost) AS cogs\n  FROM order_items oi\n  JOIN orders o ON oi.order_id = o.order_id\n  JOIN products p ON oi.product_id = p.product_id\n  WHERE o.status NOT IN ('cancelled', 'test', 'fraud')\n    AND o.order_date BETWEEN '2024-01-01' AND '2024-12-31'\n  GROUP BY p.category\n),\navg_inv_by_category AS (\n  SELECT p.category, AVG(i.quantity_on_hand * i.unit_cost) AS avg_inventory\n  FROM inventory i\n  JOIN products p ON i.product_id = p.product_id\n  WHERE i.snapshot_date BETWEEN '2024-01-01' AND '2024-12-31'\n  GROUP BY p.category\n)\nSELECT c.category, c.cogs, a.avg_inventory, ROUND(c.cogs / NULLIF(a.avg_inventory, 0), 2) AS turnover\nFROM cogs_by_category c\nJOIN avg_inv_by_category a ON c.category = a.category\nORDER BY turnover DESC",
+      "advanced_sql": "WITH monthly_cogs AS (\n  -- Grain: one row per category per month\n  SELECT\n    DATE_TRUNC('month', o.order_date) AS month,\n    p.category,\n    SUM(oi.quantity * oi.unit_cost) AS monthly_cogs\n  FROM order_items oi\n  JOIN orders o ON oi.order_id = o.order_id\n  JOIN products p ON oi.product_id = p.product_id\n  WHERE o.status NOT IN ('cancelled', 'test', 'fraud')\n  GROUP BY 1, 2\n),\nmonthly_inventory AS (\n  -- Grain: one row per category per month snapshot\n  SELECT\n    DATE_TRUNC('month', i.snapshot_date) AS month,\n    p.category,\n    AVG(i.quantity_on_hand * i.unit_cost) AS avg_inventory_value\n  FROM inventory i\n  JOIN products p ON i.product_id = p.product_id\n  GROUP BY 1, 2\n),\nturnover_trend AS (\n  SELECT\n    mc.month,\n    mc.category,\n    mc.monthly_cogs,\n    mi.avg_inventory_value,\n    ROUND(mc.monthly_cogs / NULLIF(mi.avg_inventory_value, 0), 2) AS monthly_turnover,\n    ROUND(mc.monthly_cogs / NULLIF(mi.avg_inventory_value, 0) * 12, 2) AS annualized_turnover\n  FROM monthly_cogs mc\n  LEFT JOIN monthly_inventory mi ON mc.month = mi.month AND mc.category = mi.category\n)\nSELECT\n  month,\n  category,\n  monthly_cogs,\n  COALESCE(avg_inventory_value, 0) AS avg_inventory_value,\n  monthly_turnover,\n  annualized_turnover,\n  LAG(annualized_turnover) OVER (PARTITION BY category ORDER BY month) AS prev_month_annualized,\n  ROUND(annualized_turnover - COALESCE(LAG(annualized_turnover) OVER (PARTITION BY category ORDER BY month), 0), 2) AS turnover_change\nFROM turnover_trend\nORDER BY month DESC, monthly_cogs DESC"
+    }
+  },
+  {
+    "id": "ec_dio",
+    "title": "Days Inventory Outstanding (DIO)",
+    "intent_tags": [
+      "days inventory outstanding",
+      "dio",
+      "days of inventory",
+      "how many days of stock",
+      "inventory days",
+      "days sales in inventory",
+      "dsi",
+      "how long does inventory sit",
+      "days supply",
+      "inventory holding period",
+      "stock days on hand"
+    ],
+    "sql_features": [
+      "aggregation",
+      "cte",
+      "nullif",
+      "coalesce",
+      "left_join"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "ratio",
+    "when_to_use": [
+      "measuring how many days it takes on average to sell current inventory",
+      "identifying products or categories with excess holding periods",
+      "informing cash flow planning \u2014 how long is capital locked in inventory",
+      "comparing inventory efficiency across warehouses or regions",
+      "feeding into cash conversion cycle calculations alongside DSO and DPO"
+    ],
+    "related_patterns": [
+      "ec_inventory_turnover",
+      "ec_stockout_rate",
+      "ec_revenue_by_category"
+    ],
+    "business_definition": "Average number of days inventory is held before being sold. Calculated as (Average Inventory Value / COGS per day), or equivalently, 365 / Inventory Turnover Ratio. Uses cost basis for both inventory and COGS. Lower DIO means inventory is converting to sales faster.",
+    "metric_nature": {
+      "what_it_measures": "How long products sit on shelves or in warehouses before being sold. Answers: are we holding too much inventory, and how much working capital is tied up in unsold goods?",
+      "what_it_does_not_measure": "Whether holding inventory longer is actually a problem. For products with long shelf lives and stable demand (hardware, non-perishable goods), higher DIO may be optimal to prevent stockouts. For perishable or fashion goods, high DIO means spoilage or obsolescence risk.",
+      "common_misconception": "DIO is the mathematical inverse of inventory turnover (DIO = 365 / turnover), so they always tell the same story in opposite directions. Teams sometimes report both as if they provide independent insights \u2014 they do not. Pick one as the primary metric and use the other for context only."
+    },
+    "template": "WITH period_cogs AS (\n  SELECT\n    SUM(oi.quantity * oi.unit_cost) AS total_cogs,\n    COUNT(DISTINCT o.order_date) AS days_in_period\n  FROM order_items oi\n  JOIN orders o ON oi.order_id = o.order_id\n  WHERE o.status NOT IN ('cancelled', 'test', 'fraud')\n    AND o.order_date BETWEEN {start_date} AND {end_date}\n),\navg_inventory AS (\n  SELECT AVG(total_value) AS avg_inventory_value\n  FROM (\n    SELECT snapshot_date, SUM(quantity_on_hand * unit_cost) AS total_value\n    FROM inventory\n    WHERE snapshot_date BETWEEN {start_date} AND {end_date}\n    GROUP BY snapshot_date\n  ) daily_inv\n)\nSELECT\n  ai.avg_inventory_value,\n  pc.total_cogs,\n  pc.total_cogs / NULLIF(pc.days_in_period, 0) AS daily_cogs,\n  ROUND(ai.avg_inventory_value / NULLIF(pc.total_cogs / NULLIF(pc.days_in_period, 0), 0), 1) AS dio_days\nFROM avg_inventory ai\nCROSS JOIN period_cogs pc",
+    "inflation_causes": [
+      {
+        "cause": "Dead stock included in average inventory",
+        "how_it_inflates": "Obsolete, discontinued, or unsellable products that remain in the inventory table inflate the average inventory value (numerator). Since these products generate no COGS, DIO rises \u2014 the calculation says inventory takes longer to sell, but in reality a portion of that inventory will never sell.",
+        "detection_sql": "SELECT p.product_id, p.product_name, p.status AS product_status, i.quantity_on_hand, i.quantity_on_hand * i.unit_cost AS inventory_value, MAX(o.order_date) AS last_sold FROM inventory i JOIN products p ON i.product_id = p.product_id LEFT JOIN order_items oi ON i.product_id = oi.product_id LEFT JOIN orders o ON oi.order_id = o.order_id AND o.status NOT IN ('cancelled', 'test', 'fraud') WHERE i.quantity_on_hand > 0 GROUP BY p.product_id, p.product_name, p.status, i.quantity_on_hand, i.unit_cost HAVING MAX(o.order_date) IS NULL OR MAX(o.order_date) < CURRENT_DATE - INTERVAL '180 days' ORDER BY inventory_value DESC LIMIT 20",
+        "fix": "Exclude products with status = 'discontinued' or those with no sales in the trailing 12 months. Write off dead stock and remove from active inventory reporting."
+      },
+      {
+        "cause": "Seasonal inventory pre-build included in average",
+        "how_it_inflates": "If inventory is built up before a seasonal peak (holiday inventory received in October), DIO spikes in the pre-season months because inventory is high but sales have not yet started. The metric makes it look like inventory is moving slowly when it is actually strategically positioned for upcoming demand.",
+        "detection_sql": "SELECT DATE_TRUNC('month', i.snapshot_date) AS month, SUM(i.quantity_on_hand * i.unit_cost) AS inventory_value FROM inventory i GROUP BY 1 ORDER BY 1",
+        "fix": "Report DIO on a trailing basis (last 90 days COGS / current inventory) and annotate seasonal pre-build periods. Alternatively, compare DIO year-over-year for the same month rather than sequentially."
+      },
+      {
+        "cause": "COGS denominator understated due to missing cost data",
+        "how_it_inflates": "If some order_items have NULL or zero unit_cost, COGS per day is understated. Since DIO = avg_inventory / daily_COGS, a smaller denominator produces a larger DIO. Products with missing cost data still sit in inventory but do not contribute to the COGS that should be eating through that inventory value.",
+        "detection_sql": "SELECT COUNT(DISTINCT oi.order_item_id) AS total_items, COUNT(DISTINCT CASE WHEN oi.unit_cost IS NULL OR oi.unit_cost = 0 THEN oi.order_item_id END) AS missing_cost, SUM(CASE WHEN oi.unit_cost IS NULL OR oi.unit_cost = 0 THEN oi.quantity * COALESCE(p.standard_cost, 0) ELSE 0 END) AS estimated_missing_cogs FROM order_items oi JOIN products p ON oi.product_id = p.product_id JOIN orders o ON oi.order_id = o.order_id WHERE o.status NOT IN ('cancelled', 'test', 'fraud')",
+        "fix": "Backfill unit_cost from the products table's standard_cost. If no cost is available, flag these items and report the percentage of COGS that is estimated."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Inventory snapshot taken after a stockout or clearance event",
+        "how_it_deflates": "If the inventory snapshot captures a period right after a large clearance sale or stockout event, average inventory is artificially low. DIO drops because the numerator (average inventory) is at a trough, not because operational efficiency improved.",
+        "detection_sql": "SELECT snapshot_date, SUM(quantity_on_hand * unit_cost) AS total_value, SUM(quantity_on_hand) AS total_units, COUNT(DISTINCT CASE WHEN quantity_on_hand = 0 THEN product_id END) AS out_of_stock_skus FROM inventory WHERE snapshot_date >= CURRENT_DATE - INTERVAL '90 days' GROUP BY snapshot_date ORDER BY total_value ASC LIMIT 10",
+        "fix": "Use the average of multiple snapshots (weekly or monthly) across the full period rather than a single point-in-time snapshot."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the DIO calculation using cost basis or retail price for both inventory and COGS?",
+      "Are discontinued or dead stock products still included in the average inventory?",
+      "How many inventory snapshots are being averaged \u2014 one, two, or continuous?",
+      "Is the DIO shift concentrated in a specific category, or across all products?",
+      "Did a large purchase order arrive or a clearance event happen in the measurement period?",
+      "Are there products with missing unit_cost that understate the COGS denominator?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "DIO up, ec_inventory_turnover down",
+        "then": "these are mathematical inverses \u2014 they are describing the same phenomenon. Look for the underlying cause in purchasing, demand, or dead stock."
+      },
+      {
+        "if": "DIO up, ec_stockout_rate flat",
+        "then": "the business is building excess inventory without demand to match \u2014 over-purchasing rather than a demand problem"
+      },
+      {
+        "if": "DIO down, ec_stockout_rate up",
+        "then": "inventory is depleting faster than it is replenished \u2014 the business is selling through but running out of stock on popular items"
+      },
+      {
+        "if": "DIO up in one category, ec_revenue_by_category for that category declining",
+        "then": "demand is shifting away from that category but purchasing has not adjusted \u2014 reduce reorder quantities for that category"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "DIO increases >30% QoQ",
+        "and_also": "ec_inventory_turnover drops correspondingly",
+        "shared_root_cause": "These metrics are mathematical inverses (DIO = 365 / turnover), so they always move in opposite directions by the same magnitude. The shared upstream cause is either a demand shortfall (COGS dropped), over-purchasing (inventory built up), or a catalog expansion that added slow-moving SKUs. Diagnose by decomposing into category-level changes to find which products drove the shift.",
+        "diagnostic_sql": "SELECT p.category, SUM(oi.quantity * oi.unit_cost) AS trailing_90d_cogs, AVG(i.quantity_on_hand * i.unit_cost) AS avg_inventory, ROUND(AVG(i.quantity_on_hand * i.unit_cost) / NULLIF(SUM(oi.quantity * oi.unit_cost) / 90.0, 0), 1) AS dio_days, ROUND(SUM(oi.quantity * oi.unit_cost) / NULLIF(AVG(i.quantity_on_hand * i.unit_cost), 0) * 4, 2) AS annualized_turns FROM order_items oi JOIN orders o ON oi.order_id = o.order_id JOIN products p ON oi.product_id = p.product_id LEFT JOIN inventory i ON oi.product_id = i.product_id AND i.snapshot_date = (SELECT MAX(snapshot_date) FROM inventory) WHERE o.status NOT IN ('cancelled', 'test', 'fraud') AND o.order_date >= CURRENT_DATE - INTERVAL '90 days' GROUP BY p.category ORDER BY dio_days DESC"
+      },
+      {
+        "if_this_metric": "DIO increases while ec_gmv is growing",
+        "and_also": "ec_revenue_by_category shows growth concentrated in high-DIO categories",
+        "shared_root_cause": "Revenue mix is shifting toward categories that naturally hold inventory longer (e.g., from consumables to durable goods, or from fashion to electronics). GMV grows because the new categories contribute revenue, but their inherent longer selling cycles push overall DIO up. This is a mix effect, not an operational problem.",
+        "diagnostic_sql": "SELECT p.category, DATE_TRUNC('quarter', o.order_date) AS quarter, SUM(oi.quantity * oi.unit_price) AS revenue, SUM(oi.quantity * oi.unit_price) * 100.0 / NULLIF(SUM(SUM(oi.quantity * oi.unit_price)) OVER (PARTITION BY DATE_TRUNC('quarter', o.order_date)), 0) AS revenue_share_pct FROM order_items oi JOIN orders o ON oi.order_id = o.order_id JOIN products p ON oi.product_id = p.product_id WHERE o.status NOT IN ('cancelled', 'test', 'fraud') GROUP BY 1, 2 ORDER BY 2 DESC, revenue_share_pct DESC"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Confusing DIO with lead time or delivery days",
+        "why_wrong": "DIO measures how long inventory sits before being sold. Lead time measures how long it takes a supplier to deliver after ordering. They are related (both affect stock levels) but are different metrics. Using supplier lead time as DIO ignores the actual sell-through rate of the inventory.",
+        "bad_sql": "SELECT AVG(received_date - order_date) AS dio_days FROM purchase_orders",
+        "good_sql": "WITH daily_cogs AS (\n  SELECT SUM(oi.quantity * oi.unit_cost) / NULLIF(COUNT(DISTINCT o.order_date), 0) AS cogs_per_day\n  FROM order_items oi JOIN orders o ON oi.order_id = o.order_id\n  WHERE o.status NOT IN ('cancelled', 'test', 'fraud') AND o.order_date >= CURRENT_DATE - INTERVAL '90 days'\n)\nSELECT ROUND(SUM(i.quantity_on_hand * i.unit_cost) / NULLIF((SELECT cogs_per_day FROM daily_cogs), 0), 1) AS dio_days\nFROM inventory i\nWHERE i.snapshot_date = (SELECT MAX(snapshot_date) FROM inventory)"
+      },
+      {
+        "pattern": "Computing DIO at the aggregate level only, missing category-level problems",
+        "why_wrong": "An overall DIO of 45 days can mask that electronics turn in 15 days while seasonal apparel sits for 120 days. Category-level DIO reveals which product lines need inventory intervention \u2014 the aggregate number hides this completely.",
+        "bad_sql": "SELECT ROUND(SUM(i.quantity_on_hand * i.unit_cost) / NULLIF(SUM(oi.quantity * oi.unit_cost) / 365.0, 0), 1) AS overall_dio FROM inventory i CROSS JOIN (SELECT SUM(quantity * unit_cost) AS total FROM order_items oi JOIN orders o ON oi.order_id = o.order_id WHERE o.status NOT IN ('cancelled','test','fraud') AND o.order_date >= CURRENT_DATE - INTERVAL '365 days') oi",
+        "good_sql": "WITH category_cogs AS (\n  SELECT p.category, SUM(oi.quantity * oi.unit_cost) / 365.0 AS daily_cogs\n  FROM order_items oi\n  JOIN orders o ON oi.order_id = o.order_id\n  JOIN products p ON oi.product_id = p.product_id\n  WHERE o.status NOT IN ('cancelled','test','fraud') AND o.order_date >= CURRENT_DATE - INTERVAL '365 days'\n  GROUP BY p.category\n),\ncategory_inv AS (\n  SELECT p.category, SUM(i.quantity_on_hand * i.unit_cost) AS inv_value\n  FROM inventory i JOIN products p ON i.product_id = p.product_id\n  WHERE i.snapshot_date = (SELECT MAX(snapshot_date) FROM inventory)\n  GROUP BY p.category\n)\nSELECT ci.category, ci.inv_value, cc.daily_cogs, ROUND(ci.inv_value / NULLIF(cc.daily_cogs, 0), 1) AS dio_days\nFROM category_inv ci JOIN category_cogs cc ON ci.category = cc.category\nORDER BY dio_days DESC"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT ROUND(SUM(i.quantity_on_hand * i.unit_cost) / NULLIF(SUM(oi.quantity * oi.unit_cost) / 365.0, 0), 1) AS dio_days FROM inventory i CROSS JOIN (SELECT SUM(oi.quantity * oi.unit_cost) AS cogs FROM order_items oi JOIN orders o ON oi.order_id = o.order_id WHERE o.status NOT IN ('cancelled', 'test', 'fraud') AND o.order_date BETWEEN '2024-01-01' AND '2024-12-31') oi WHERE i.snapshot_date = '2024-12-31'",
+      "intermediate_sql": "WITH category_cogs AS (\n  SELECT p.category, SUM(oi.quantity * oi.unit_cost) AS annual_cogs\n  FROM order_items oi\n  JOIN orders o ON oi.order_id = o.order_id\n  JOIN products p ON oi.product_id = p.product_id\n  WHERE o.status NOT IN ('cancelled', 'test', 'fraud')\n    AND o.order_date BETWEEN '2024-01-01' AND '2024-12-31'\n  GROUP BY p.category\n),\ncategory_inventory AS (\n  SELECT p.category, AVG(i.quantity_on_hand * i.unit_cost) AS avg_inventory\n  FROM inventory i\n  JOIN products p ON i.product_id = p.product_id\n  WHERE i.snapshot_date BETWEEN '2024-01-01' AND '2024-12-31'\n  GROUP BY p.category\n)\nSELECT c.category, c.annual_cogs, ci.avg_inventory,\n  ROUND(ci.avg_inventory / NULLIF(c.annual_cogs / 365.0, 0), 1) AS dio_days,\n  ROUND(c.annual_cogs / NULLIF(ci.avg_inventory, 0), 2) AS turnover\nFROM category_cogs c\nJOIN category_inventory ci ON c.category = ci.category\nORDER BY dio_days DESC",
+      "advanced_sql": "WITH monthly_cogs AS (\n  -- Grain: one row per category per month\n  SELECT\n    DATE_TRUNC('month', o.order_date) AS month,\n    p.category,\n    SUM(oi.quantity * oi.unit_cost) AS cogs\n  FROM order_items oi\n  JOIN orders o ON oi.order_id = o.order_id\n  JOIN products p ON oi.product_id = p.product_id\n  WHERE o.status NOT IN ('cancelled', 'test', 'fraud')\n  GROUP BY 1, 2\n),\nmonthly_inventory AS (\n  -- Grain: one row per category per month\n  SELECT\n    DATE_TRUNC('month', i.snapshot_date) AS month,\n    p.category,\n    AVG(i.quantity_on_hand * i.unit_cost) AS avg_inventory\n  FROM inventory i\n  JOIN products p ON i.product_id = p.product_id\n  GROUP BY 1, 2\n),\ndio_trend AS (\n  SELECT\n    mc.month,\n    mc.category,\n    mc.cogs AS monthly_cogs,\n    COALESCE(mi.avg_inventory, 0) AS avg_inventory,\n    ROUND(COALESCE(mi.avg_inventory, 0) / NULLIF(mc.cogs / 30.0, 0), 1) AS dio_days\n  FROM monthly_cogs mc\n  LEFT JOIN monthly_inventory mi ON mc.month = mi.month AND mc.category = mi.category\n)\nSELECT\n  month,\n  category,\n  monthly_cogs,\n  avg_inventory,\n  dio_days,\n  LAG(dio_days) OVER (PARTITION BY category ORDER BY month) AS prev_month_dio,\n  ROUND(dio_days - COALESCE(LAG(dio_days) OVER (PARTITION BY category ORDER BY month), 0), 1) AS dio_change_days\nFROM dio_trend\nORDER BY month DESC, dio_days DESC"
+    }
+  },
+  {
+    "id": "ec_product_affinity",
+    "title": "Product Affinity (Co-Purchase Rate)",
+    "intent_tags": [
+      "product affinity",
+      "co-purchase",
+      "frequently bought together",
+      "market basket analysis",
+      "cross sell",
+      "product pairs",
+      "what products are bought together",
+      "bundle analysis",
+      "product recommendations",
+      "association rules",
+      "affinity analysis",
+      "complementary products"
+    ],
+    "sql_features": [
+      "aggregation",
+      "cte",
+      "self_join",
+      "nullif",
+      "conditional_count",
+      "window_function"
+    ],
+    "difficulty": "advanced",
+    "pattern_type": "analytical",
+    "when_to_use": [
+      "identifying product pairs that are frequently purchased together",
+      "building data-driven product recommendation or bundling strategies",
+      "optimizing cross-sell placement on product pages and in cart",
+      "understanding whether category adjacencies exist in buyer behavior",
+      "evaluating the effectiveness of bundle pricing or cross-sell campaigns"
+    ],
+    "related_patterns": [
+      "ec_aov",
+      "ec_revenue_by_category",
+      "ec_conversion_rate"
+    ],
+    "business_definition": "The frequency with which two products (or categories) appear in the same order, expressed as a co-purchase rate: orders containing both Product A and Product B / orders containing Product A. Also known as confidence in association rule mining. Only counts completed orders with 2+ distinct products. Excludes cancelled, test, and fraud orders.",
+    "metric_nature": {
+      "what_it_measures": "How strongly the purchase of one product predicts the purchase of another in the same order. Answers: if a customer buys a laptop, how likely are they to also buy a laptop case?",
+      "what_it_does_not_measure": "Causality. A high co-purchase rate between coffee and sugar does not mean buying coffee causes people to buy sugar \u2014 both may be driven by the same shopping trip intent. Also does not measure cross-session affinity (buying product B in a future order because of product A in a past order).",
+      "common_misconception": "Co-purchase rate is directional: P(B|A) != P(A|B). If 80% of laptop-case buyers also buy a laptop, but only 15% of laptop buyers also buy a case, the affinity is asymmetric. Reporting only one direction gives an incomplete picture and leads to misguided recommendation strategies."
+    },
+    "template": "WITH order_products AS (\n  SELECT\n    o.order_id,\n    oi.product_id\n  FROM orders o\n  JOIN order_items oi ON o.order_id = oi.order_id\n  WHERE o.status NOT IN ('cancelled', 'test', 'fraud')\n    AND o.order_date BETWEEN {start_date} AND {end_date}\n  GROUP BY o.order_id, oi.product_id\n),\nproduct_pairs AS (\n  SELECT\n    a.product_id AS product_a,\n    b.product_id AS product_b,\n    COUNT(DISTINCT a.order_id) AS co_purchase_count\n  FROM order_products a\n  JOIN order_products b ON a.order_id = b.order_id AND a.product_id < b.product_id\n  GROUP BY a.product_id, b.product_id\n),\nproduct_counts AS (\n  SELECT product_id, COUNT(DISTINCT order_id) AS order_count\n  FROM order_products\n  GROUP BY product_id\n)\nSELECT\n  pp.product_a,\n  pp.product_b,\n  pp.co_purchase_count,\n  pa.order_count AS product_a_orders,\n  pb.order_count AS product_b_orders,\n  ROUND(pp.co_purchase_count * 100.0 / NULLIF(pa.order_count, 0), 2) AS confidence_a_to_b,\n  ROUND(pp.co_purchase_count * 100.0 / NULLIF(pb.order_count, 0), 2) AS confidence_b_to_a\nFROM product_pairs pp\nJOIN product_counts pa ON pp.product_a = pa.product_id\nJOIN product_counts pb ON pp.product_b = pb.product_id\nWHERE pp.co_purchase_count >= 5\nORDER BY pp.co_purchase_count DESC",
+    "inflation_causes": [
+      {
+        "cause": "Order splitting inflating co-purchase counts",
+        "how_it_inflates": "If a single customer purchase is split into multiple order_ids (split shipments, subscription + one-time combo), the self-join creates pairs across what the customer intended as a single basket. This can inflate affinity between products that happen to be ordered by the same customer in the same session but are not truly co-purchased in the basket sense.",
+        "detection_sql": "SELECT o.customer_id, o.order_date, COUNT(DISTINCT o.order_id) AS orders_same_day, COUNT(DISTINCT oi.product_id) AS distinct_products FROM orders o JOIN order_items oi ON o.order_id = oi.order_id WHERE o.status NOT IN ('cancelled', 'test', 'fraud') GROUP BY o.customer_id, o.order_date HAVING COUNT(DISTINCT o.order_id) > 1 ORDER BY orders_same_day DESC LIMIT 20",
+        "fix": "Use cart_id or checkout_session_id instead of order_id to group items into logical baskets. If unavailable, consolidate same-customer same-day orders into a single basket for affinity analysis."
+      },
+      {
+        "cause": "Bundle SKUs creating artificial affinity",
+        "how_it_inflates": "If a bundle product (e.g., 'starter kit') is represented as multiple line items in order_items, every component product appears co-purchased with every other component. A bundle of 5 items creates 10 product pairs with 100% co-purchase rate, dominating the affinity results with pre-packaged combinations rather than organic buyer behavior.",
+        "detection_sql": "SELECT oi.bundle_id, COUNT(DISTINCT oi.product_id) AS products_in_bundle, COUNT(DISTINCT oi.order_id) AS orders_with_bundle FROM order_items oi WHERE oi.bundle_id IS NOT NULL GROUP BY oi.bundle_id ORDER BY orders_with_bundle DESC LIMIT 20",
+        "fix": "Exclude bundle items from affinity analysis (WHERE bundle_id IS NULL), or treat the entire bundle as a single product_id. Organic cross-sell opportunities exist between non-bundle products."
+      },
+      {
+        "cause": "High-volume accessory products appearing with everything",
+        "how_it_inflates": "If a low-cost accessory (gift wrap, batteries, screen protector) is added to many orders, it will show high co-purchase rates with nearly every product. These trivial affinities flood the results and obscure meaningful product relationships that could drive cross-sell strategy.",
+        "detection_sql": "SELECT oi.product_id, p.product_name, COUNT(DISTINCT oi.order_id) AS total_orders, COUNT(DISTINCT oi.order_id) * 100.0 / NULLIF((SELECT COUNT(DISTINCT order_id) FROM orders WHERE status NOT IN ('cancelled', 'test', 'fraud')), 0) AS pct_of_all_orders FROM order_items oi JOIN products p ON oi.product_id = p.product_id JOIN orders o ON oi.order_id = o.order_id WHERE o.status NOT IN ('cancelled', 'test', 'fraud') GROUP BY oi.product_id, p.product_name ORDER BY total_orders DESC LIMIT 20",
+        "fix": "Apply a lift filter: co_purchase_count / (product_a_rate * product_b_rate * total_orders). Lift > 1 means the pair appears together more than random chance. This filters out universally popular items that pair with everything."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Single-item orders excluded from analysis",
+        "how_it_deflates": "If you only analyze orders with 2+ items, you systematically exclude customers who buy one product at a time. This undercounts the denominator for individual product frequencies, which inflates confidence rates. But if you include single-item orders, those orders contribute to individual product counts without contributing any pairs, deflating co-purchase rates for products commonly bought alone.",
+        "detection_sql": "SELECT CASE WHEN item_count = 1 THEN 'single_item' WHEN item_count = 2 THEN 'two_items' ELSE '3+_items' END AS basket_size, COUNT(DISTINCT order_id) AS orders, COUNT(DISTINCT order_id) * 100.0 / NULLIF(SUM(COUNT(DISTINCT order_id)) OVER (), 0) AS pct FROM (SELECT o.order_id, COUNT(DISTINCT oi.product_id) AS item_count FROM orders o JOIN order_items oi ON o.order_id = oi.order_id WHERE o.status NOT IN ('cancelled', 'test', 'fraud') GROUP BY o.order_id) sub GROUP BY 1 ORDER BY 1",
+        "fix": "Document whether single-item orders are included or excluded. For recommendation engines, include them (you want to suggest additions to single-item carts). For pure affinity analysis, excluding them is acceptable but must be noted."
+      }
+    ],
+    "diagnostic_questions": [
+      "Are bundle products decomposed into individual line items, creating artificial pairs?",
+      "Is the analysis using order_id or a logical basket identifier (cart_id, session_id)?",
+      "Are universally popular accessories (gift wrap, warranties) flooding the top pairs?",
+      "Is the minimum co-purchase threshold set high enough to filter noise (e.g., at least 5 co-occurrences)?",
+      "Are the affinity results being reported in both directions (A\u2192B and B\u2192A confidence)?",
+      "Is the analysis at the product level or category level \u2014 and which is more actionable?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "product_affinity between two items increases after a cross-sell promotion",
+        "then": "the promotion is working \u2014 verify by checking if the lift also increased, not just raw co-purchase count (which could increase from overall volume growth)"
+      },
+      {
+        "if": "product_affinity drops for a historically strong pair",
+        "then": "one of the products may be out of stock (ec_stockout_rate), discontinued, or replaced by a competitor product"
+      },
+      {
+        "if": "high-affinity pairs have very different ec_aov contributions",
+        "then": "the lower-value item is an accessory or complement \u2014 it may not drive margin but increases basket size and reduces shipping cost per item"
+      },
+      {
+        "if": "category-level affinity increases but product-level is flat",
+        "then": "customers are buying from the same categories together but substituting between specific products \u2014 useful for category page cross-sell but not product page recommendations"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Top co-purchase pairs change significantly quarter over quarter",
+        "and_also": "ec_revenue_by_category shows category share shifts in the same period",
+        "shared_root_cause": "Product catalog or merchandising changes are reshaping buying patterns. New product launches, discontinuations, or seasonal rotations change which products are available to be co-purchased. If a high-affinity product is discontinued, its former pair partners need new cross-sell recommendations. The category share shift and affinity changes stem from the same catalog change.",
+        "diagnostic_sql": "SELECT p.category, COUNT(DISTINCT oi.product_id) AS active_products, COUNT(DISTINCT CASE WHEN p.created_at >= CURRENT_DATE - INTERVAL '90 days' THEN p.product_id END) AS new_products_90d, COUNT(DISTINCT CASE WHEN p.status = 'discontinued' THEN p.product_id END) AS discontinued FROM products p LEFT JOIN order_items oi ON p.product_id = oi.product_id LEFT JOIN orders o ON oi.order_id = o.order_id AND o.status NOT IN ('cancelled', 'test', 'fraud') AND o.order_date >= CURRENT_DATE - INTERVAL '90 days' GROUP BY p.category ORDER BY new_products_90d DESC"
+      },
+      {
+        "if_this_metric": "Co-purchase rate for a key pair drops >20%",
+        "and_also": "ec_stockout_rate shows one of the paired products has been out of stock",
+        "shared_root_cause": "Stockout of one product in a high-affinity pair. When Product B is out of stock, customers buying Product A can no longer co-purchase B, so the affinity score drops. Meanwhile, the stockout is directly recorded in ec_stockout_rate. Restocking Product B should restore the affinity. This also represents lost cross-sell revenue during the stockout.",
+        "diagnostic_sql": "SELECT i.product_id, p.product_name, i.snapshot_date, i.quantity_on_hand, CASE WHEN i.quantity_on_hand = 0 THEN 'out_of_stock' ELSE 'in_stock' END AS stock_status FROM inventory i JOIN products p ON i.product_id = p.product_id WHERE i.product_id IN ({product_a_id}, {product_b_id}) AND i.snapshot_date >= CURRENT_DATE - INTERVAL '90 days' ORDER BY i.product_id, i.snapshot_date"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Using Cartesian product of all products instead of only within-order pairs",
+        "why_wrong": "If you CROSS JOIN the product table to itself and then check for co-occurrence, you create O(n\u00b2) pairs for every possible product combination. Most pairs have zero co-purchases but consume massive compute. The correct approach is to self-join within orders, which only produces pairs that actually occurred.",
+        "bad_sql": "SELECT a.product_id AS prod_a, b.product_id AS prod_b, COUNT(DISTINCT o.order_id) AS co_orders FROM products a CROSS JOIN products b LEFT JOIN order_items oi_a ON a.product_id = oi_a.product_id LEFT JOIN order_items oi_b ON b.product_id = oi_b.product_id AND oi_a.order_id = oi_b.order_id LEFT JOIN orders o ON oi_a.order_id = o.order_id WHERE a.product_id < b.product_id GROUP BY 1, 2",
+        "good_sql": "WITH order_products AS (\n  SELECT DISTINCT o.order_id, oi.product_id\n  FROM orders o JOIN order_items oi ON o.order_id = oi.order_id\n  WHERE o.status NOT IN ('cancelled', 'test', 'fraud')\n)\nSELECT a.product_id AS prod_a, b.product_id AS prod_b, COUNT(DISTINCT a.order_id) AS co_orders\nFROM order_products a\nJOIN order_products b ON a.order_id = b.order_id AND a.product_id < b.product_id\nGROUP BY 1, 2\nHAVING COUNT(DISTINCT a.order_id) >= 5\nORDER BY co_orders DESC"
+      },
+      {
+        "pattern": "Reporting co-purchase count without lift or confidence metrics",
+        "why_wrong": "Raw co-purchase count is dominated by high-volume products. If Product A appears in 50% of orders and Product B appears in 40%, they will co-occur frequently by random chance alone (~20% of orders). Without lift (observed / expected), you cannot distinguish genuine affinity from coincidental co-occurrence driven by individual popularity.",
+        "bad_sql": "SELECT a.product_id, b.product_id, COUNT(*) AS times_bought_together FROM order_items a JOIN order_items b ON a.order_id = b.order_id AND a.product_id < b.product_id GROUP BY 1, 2 ORDER BY times_bought_together DESC LIMIT 20",
+        "good_sql": "WITH order_products AS (\n  SELECT DISTINCT order_id, product_id FROM order_items oi\n  JOIN orders o ON oi.order_id = o.order_id\n  WHERE o.status NOT IN ('cancelled','test','fraud')\n),\ntotal AS (SELECT COUNT(DISTINCT order_id) AS n FROM order_products),\nprod_freq AS (SELECT product_id, COUNT(DISTINCT order_id) * 1.0 / (SELECT n FROM total) AS freq FROM order_products GROUP BY product_id),\npairs AS (\n  SELECT a.product_id AS pa, b.product_id AS pb, COUNT(DISTINCT a.order_id) AS co_count\n  FROM order_products a JOIN order_products b ON a.order_id = b.order_id AND a.product_id < b.product_id\n  GROUP BY 1, 2 HAVING COUNT(DISTINCT a.order_id) >= 5\n)\nSELECT p.pa, p.pb, p.co_count,\n  ROUND(p.co_count * 1.0 / NULLIF(fa.freq * fb.freq * (SELECT n FROM total), 0), 2) AS lift\nFROM pairs p\nJOIN prod_freq fa ON p.pa = fa.product_id\nJOIN prod_freq fb ON p.pb = fb.product_id\nORDER BY lift DESC LIMIT 20"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "WITH order_products AS (\n  SELECT DISTINCT o.order_id, oi.product_id\n  FROM orders o JOIN order_items oi ON o.order_id = oi.order_id\n  WHERE o.status NOT IN ('cancelled', 'test', 'fraud')\n    AND o.order_date BETWEEN '2024-01-01' AND '2024-12-31'\n)\nSELECT a.product_id AS product_a, b.product_id AS product_b, COUNT(DISTINCT a.order_id) AS co_purchase_count\nFROM order_products a\nJOIN order_products b ON a.order_id = b.order_id AND a.product_id < b.product_id\nGROUP BY 1, 2\nHAVING COUNT(DISTINCT a.order_id) >= 5\nORDER BY co_purchase_count DESC\nLIMIT 50",
+      "intermediate_sql": "WITH order_products AS (\n  SELECT DISTINCT o.order_id, oi.product_id\n  FROM orders o JOIN order_items oi ON o.order_id = oi.order_id\n  WHERE o.status NOT IN ('cancelled', 'test', 'fraud')\n),\nprod_counts AS (\n  SELECT product_id, COUNT(DISTINCT order_id) AS orders\n  FROM order_products GROUP BY product_id\n),\npairs AS (\n  SELECT a.product_id AS pa, b.product_id AS pb, COUNT(DISTINCT a.order_id) AS co_count\n  FROM order_products a\n  JOIN order_products b ON a.order_id = b.order_id AND a.product_id < b.product_id\n  GROUP BY 1, 2 HAVING COUNT(DISTINCT a.order_id) >= 5\n)\nSELECT\n  pa.product_name AS product_a_name, pb_p.product_name AS product_b_name,\n  p.co_count,\n  ROUND(p.co_count * 100.0 / NULLIF(pca.orders, 0), 2) AS confidence_a_to_b_pct,\n  ROUND(p.co_count * 100.0 / NULLIF(pcb.orders, 0), 2) AS confidence_b_to_a_pct\nFROM pairs p\nJOIN products pa ON p.pa = pa.product_id\nJOIN products pb_p ON p.pb = pb_p.product_id\nJOIN prod_counts pca ON p.pa = pca.product_id\nJOIN prod_counts pcb ON p.pb = pcb.product_id\nORDER BY p.co_count DESC\nLIMIT 50",
+      "advanced_sql": "WITH order_products AS (\n  -- Grain: one row per order-product combination\n  SELECT DISTINCT o.order_id, oi.product_id\n  FROM orders o\n  JOIN order_items oi ON o.order_id = oi.order_id\n  WHERE o.status NOT IN ('cancelled', 'test', 'fraud')\n),\ntotal_orders AS (\n  SELECT COUNT(DISTINCT order_id) AS n FROM order_products\n),\nproduct_frequency AS (\n  SELECT product_id, COUNT(DISTINCT order_id) AS order_count,\n    COUNT(DISTINCT order_id) * 1.0 / (SELECT n FROM total_orders) AS frequency\n  FROM order_products GROUP BY product_id\n),\npairs AS (\n  SELECT\n    a.product_id AS product_a,\n    b.product_id AS product_b,\n    COUNT(DISTINCT a.order_id) AS co_purchase_count\n  FROM order_products a\n  JOIN order_products b ON a.order_id = b.order_id AND a.product_id < b.product_id\n  GROUP BY 1, 2\n  HAVING COUNT(DISTINCT a.order_id) >= 5\n),\naffinity_scored AS (\n  SELECT\n    p.product_a,\n    pa.product_name AS product_a_name,\n    p.product_b,\n    pb.product_name AS product_b_name,\n    p.co_purchase_count,\n    pfa.order_count AS product_a_orders,\n    pfb.order_count AS product_b_orders,\n    ROUND(p.co_purchase_count * 100.0 / NULLIF(pfa.order_count, 0), 2) AS confidence_a_to_b,\n    ROUND(p.co_purchase_count * 100.0 / NULLIF(pfb.order_count, 0), 2) AS confidence_b_to_a,\n    ROUND(p.co_purchase_count * 1.0 / NULLIF(pfa.frequency * pfb.frequency * (SELECT n FROM total_orders), 0), 2) AS lift\n  FROM pairs p\n  JOIN products pa ON p.product_a = pa.product_id\n  JOIN products pb ON p.product_b = pb.product_id\n  JOIN product_frequency pfa ON p.product_a = pfa.product_id\n  JOIN product_frequency pfb ON p.product_b = pfb.product_id\n)\nSELECT *,\n  RANK() OVER (ORDER BY lift DESC) AS lift_rank,\n  RANK() OVER (ORDER BY co_purchase_count DESC) AS volume_rank\nFROM affinity_scored\nWHERE lift > 1.0\nORDER BY lift DESC\nLIMIT 100"
+    }
+  },
+  {
+    "id": "ec_revenue_by_category",
+    "title": "Revenue by Category",
+    "intent_tags": [
+      "revenue by category",
+      "category revenue",
+      "sales by category",
+      "product category performance",
+      "which categories sell most",
+      "category breakdown",
+      "category mix",
+      "revenue split by category",
+      "top selling categories",
+      "category contribution",
+      "category share of revenue",
+      "category performance"
+    ],
+    "sql_features": [
+      "aggregation",
+      "cte",
+      "window_function",
+      "nullif",
+      "coalesce",
+      "lead_lag"
+    ],
+    "difficulty": "beginner",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "understanding which product categories drive the most revenue",
+      "tracking how revenue mix shifts across categories over time",
+      "identifying growing and declining categories for investment decisions",
+      "comparing category performance across channels or geographies",
+      "supporting assortment planning and inventory allocation decisions"
+    ],
+    "related_patterns": [
+      "ec_gmv",
+      "ec_aov",
+      "ec_inventory_turnover",
+      "ec_product_affinity"
+    ],
+    "business_definition": "Total revenue (quantity \u00d7 unit_price) per product category for a given period, with each category's share of total revenue. Excludes cancelled, test, and fraud-flagged orders. Uses the product's primary category from the products table.",
+    "metric_nature": {
+      "what_it_measures": "How revenue distributes across product categories. Answers: which parts of the catalog generate the most sales, and is the mix shifting?",
+      "what_it_does_not_measure": "Category profitability. A category with $1M in revenue but 5% margin contributes less profit than a category with $500K in revenue and 40% margin. Use contribution margin by category for profitability analysis.",
+      "common_misconception": "Revenue share shifts can be caused by one category growing (good) or another category shrinking (bad) \u2014 the same percentage change can have very different implications. Always look at absolute revenue alongside share percentages to distinguish growth from decline."
+    },
+    "template": "SELECT\n  p.category,\n  SUM(oi.quantity * oi.unit_price) AS revenue,\n  COUNT(DISTINCT o.order_id) AS orders,\n  SUM(oi.quantity) AS units_sold,\n  ROUND(SUM(oi.quantity * oi.unit_price) * 100.0 / NULLIF(SUM(SUM(oi.quantity * oi.unit_price)) OVER (), 0), 2) AS revenue_share_pct\nFROM order_items oi\nJOIN orders o ON oi.order_id = o.order_id\nJOIN products p ON oi.product_id = p.product_id\nWHERE o.status NOT IN ('cancelled', 'test', 'fraud')\n  AND o.order_date BETWEEN {start_date} AND {end_date}\nGROUP BY p.category\nORDER BY revenue DESC",
+    "inflation_causes": [
+      {
+        "cause": "Products assigned to wrong category",
+        "how_it_inflates": "If a high-revenue product is miscategorized (e.g., a $500 electronics accessory classified under 'accessories' instead of 'electronics'), the wrong category gets credit for its revenue. The receiving category appears inflated while the correct category is deflated.",
+        "detection_sql": "SELECT p.category, p.product_id, p.product_name, SUM(oi.quantity * oi.unit_price) AS revenue FROM order_items oi JOIN orders o ON oi.order_id = o.order_id JOIN products p ON oi.product_id = p.product_id WHERE o.status NOT IN ('cancelled', 'test', 'fraud') GROUP BY p.category, p.product_id, p.product_name ORDER BY revenue DESC LIMIT 50",
+        "fix": "Audit the top 100 revenue-generating products for correct category assignment. Implement category validation rules in the product catalog system."
+      },
+      {
+        "cause": "Duplicate order items from ETL replay",
+        "how_it_inflates": "If a pipeline replay duplicates order_item rows for a specific category's products, that category's revenue is inflated while others remain correct. This is particularly insidious because the inflation looks like organic category growth.",
+        "detection_sql": "SELECT oi.order_item_id, oi.product_id, p.category, COUNT(*) AS row_count FROM order_items oi JOIN products p ON oi.product_id = p.product_id GROUP BY oi.order_item_id, oi.product_id, p.category HAVING COUNT(*) > 1 ORDER BY row_count DESC LIMIT 20",
+        "fix": "Deduplicate order_items using ROW_NUMBER() OVER (PARTITION BY order_item_id ORDER BY loaded_at DESC) = 1 in the base model."
+      },
+      {
+        "cause": "Multi-category products double-counted across categories",
+        "how_it_inflates": "If a product belongs to multiple categories (a laptop bag that is both 'electronics accessories' and 'bags') and the join produces one row per category, the product's revenue is counted in both categories. Total revenue across categories exceeds actual GMV.",
+        "detection_sql": "SELECT SUM(category_revenue) AS sum_of_categories, (SELECT SUM(oi.quantity * oi.unit_price) FROM order_items oi JOIN orders o ON oi.order_id = o.order_id WHERE o.status NOT IN ('cancelled', 'test', 'fraud')) AS total_gmv FROM (SELECT p.category, SUM(oi.quantity * oi.unit_price) AS category_revenue FROM order_items oi JOIN orders o ON oi.order_id = o.order_id JOIN products p ON oi.product_id = p.product_id WHERE o.status NOT IN ('cancelled', 'test', 'fraud') GROUP BY p.category) sub",
+        "fix": "Assign each product a single primary_category. If multi-category is required, use a product_categories bridge table and allocate revenue proportionally or to the primary category only."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Products with NULL category excluded from results",
+        "how_it_deflates": "If some products have no category assigned in the products table, their revenue is excluded from all category groups. Total category revenue is less than total GMV, and the uncategorized products' contribution is invisible.",
+        "detection_sql": "SELECT CASE WHEN p.category IS NULL THEN 'uncategorized' ELSE 'categorized' END AS status, COUNT(DISTINCT p.product_id) AS products, SUM(oi.quantity * oi.unit_price) AS revenue FROM order_items oi JOIN orders o ON oi.order_id = o.order_id LEFT JOIN products p ON oi.product_id = p.product_id WHERE o.status NOT IN ('cancelled', 'test', 'fraud') GROUP BY 1",
+        "fix": "Add COALESCE(p.category, 'Uncategorized') to surface missing-category revenue. Fix the root cause by assigning categories to all products in the catalog."
+      }
+    ],
+    "diagnostic_questions": [
+      "Does the sum of all category revenues equal total GMV, or is there a gap from uncategorized products?",
+      "Is the category shift driven by one category growing or another declining?",
+      "Are there products assigned to the wrong category that inflate one category's numbers?",
+      "Did a major product launch or discontinuation in a specific category drive the change?",
+      "Is the category taxonomy consistent over time, or were categories renamed/restructured recently?",
+      "Are multi-category products being double-counted across category groups?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "one category's revenue share grows while absolute revenue is flat",
+        "then": "other categories are declining \u2014 the growing share is relative, not from actual growth in that category"
+      },
+      {
+        "if": "ec_revenue_by_category shifts toward higher-AOV categories, ec_aov rises",
+        "then": "the AOV increase is a mix effect \u2014 customers are not buying more per order, they are buying from pricier categories"
+      },
+      {
+        "if": "a category's revenue drops while ec_stockout_rate for that category rises",
+        "then": "the category is losing revenue to stockouts \u2014 demand exists but cannot be fulfilled due to inventory shortages"
+      },
+      {
+        "if": "category revenue grows but ec_product_affinity pairs involving that category weaken",
+        "then": "the category may be cannibalizing adjacent categories rather than generating incremental cross-sell revenue"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "A category's revenue share drops >5pp in a quarter",
+        "and_also": "ec_inventory_turnover for that category also drops",
+        "shared_root_cause": "Demand shifted away from that category. Revenue drops because fewer customers are buying those products, and inventory turnover drops because the same (or more) inventory is sitting unsold. The upstream cause is typically a seasonal cycle end, a competitor launch in that category, or a pricing/quality issue with the category's products.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', o.order_date) AS month, p.category, SUM(oi.quantity * oi.unit_price) AS revenue, COUNT(DISTINCT o.order_id) AS orders, COUNT(DISTINCT o.customer_id) AS unique_customers FROM order_items oi JOIN orders o ON oi.order_id = o.order_id JOIN products p ON oi.product_id = p.product_id WHERE o.status NOT IN ('cancelled', 'test', 'fraud') GROUP BY 1, 2 ORDER BY 1 DESC, revenue DESC"
+      },
+      {
+        "if_this_metric": "Revenue concentrates into fewer categories (top 2 categories grow from 60% to 80% share)",
+        "and_also": "ec_aov variance increases in the same period",
+        "shared_root_cause": "The product catalog is consolidating around core categories. As niche categories decline, the remaining high-volume categories dominate. AOV variance increases because orders are increasingly either in the expensive core category or the cheap secondary one, with less middle ground. This can happen naturally through product-market fit refinement or be a warning sign of catalog neglect.",
+        "diagnostic_sql": "SELECT p.category, DATE_TRUNC('quarter', o.order_date) AS quarter, SUM(oi.quantity * oi.unit_price) AS revenue, SUM(oi.quantity * oi.unit_price) * 100.0 / NULLIF(SUM(SUM(oi.quantity * oi.unit_price)) OVER (PARTITION BY DATE_TRUNC('quarter', o.order_date)), 0) AS share_pct, COUNT(DISTINCT p.product_id) AS active_products FROM order_items oi JOIN orders o ON oi.order_id = o.order_id JOIN products p ON oi.product_id = p.product_id WHERE o.status NOT IN ('cancelled', 'test', 'fraud') GROUP BY 1, 2 ORDER BY 2 DESC, share_pct DESC"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Comparing category revenue without controlling for seasonality",
+        "why_wrong": "Comparing Q4 (holiday) to Q1 for a gifting category will always show a dramatic decline that is not a real business problem. Without year-over-year comparison, seasonal categories appear to grow and decline cyclically, generating false alarms every quarter.",
+        "bad_sql": "SELECT p.category, DATE_TRUNC('quarter', o.order_date) AS quarter, SUM(oi.quantity * oi.unit_price) AS revenue FROM order_items oi JOIN orders o ON oi.order_id = o.order_id JOIN products p ON oi.product_id = p.product_id WHERE o.status NOT IN ('cancelled','test','fraud') GROUP BY 1, 2 ORDER BY 1, 2",
+        "good_sql": "WITH quarterly_rev AS (\n  SELECT p.category, DATE_TRUNC('quarter', o.order_date) AS quarter,\n    SUM(oi.quantity * oi.unit_price) AS revenue\n  FROM order_items oi\n  JOIN orders o ON oi.order_id = o.order_id\n  JOIN products p ON oi.product_id = p.product_id\n  WHERE o.status NOT IN ('cancelled','test','fraud')\n  GROUP BY 1, 2\n)\nSELECT category, quarter, revenue,\n  LAG(revenue, 4) OVER (PARTITION BY category ORDER BY quarter) AS same_quarter_last_year,\n  ROUND((revenue - LAG(revenue, 4) OVER (PARTITION BY category ORDER BY quarter)) * 100.0 / NULLIF(LAG(revenue, 4) OVER (PARTITION BY category ORDER BY quarter), 0), 2) AS yoy_growth_pct\nFROM quarterly_rev\nORDER BY quarter DESC, revenue DESC"
+      },
+      {
+        "pattern": "Reporting only revenue share without absolute numbers",
+        "why_wrong": "If total revenue doubles and a category's share drops from 30% to 25%, that category still grew in absolute terms (from 30% of $1M = $300K to 25% of $2M = $500K). Share alone is misleading \u2014 always pair with absolute revenue to avoid false negatives.",
+        "bad_sql": "SELECT p.category, SUM(oi.quantity * oi.unit_price) * 100.0 / NULLIF(SUM(SUM(oi.quantity * oi.unit_price)) OVER (), 0) AS share_pct FROM order_items oi JOIN orders o ON oi.order_id = o.order_id JOIN products p ON oi.product_id = p.product_id WHERE o.status NOT IN ('cancelled','test','fraud') GROUP BY p.category ORDER BY share_pct DESC",
+        "good_sql": "SELECT p.category, SUM(oi.quantity * oi.unit_price) AS revenue, COUNT(DISTINCT o.order_id) AS orders, ROUND(SUM(oi.quantity * oi.unit_price) * 100.0 / NULLIF(SUM(SUM(oi.quantity * oi.unit_price)) OVER (), 0), 2) AS share_pct FROM order_items oi JOIN orders o ON oi.order_id = o.order_id JOIN products p ON oi.product_id = p.product_id WHERE o.status NOT IN ('cancelled','test','fraud') GROUP BY p.category ORDER BY revenue DESC"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT p.category, SUM(oi.quantity * oi.unit_price) AS revenue, COUNT(DISTINCT o.order_id) AS orders FROM order_items oi JOIN orders o ON oi.order_id = o.order_id JOIN products p ON oi.product_id = p.product_id WHERE o.status NOT IN ('cancelled', 'test', 'fraud') AND o.order_date BETWEEN '2024-01-01' AND '2024-03-31' GROUP BY p.category ORDER BY revenue DESC",
+      "intermediate_sql": "SELECT p.category, DATE_TRUNC('month', o.order_date) AS month, SUM(oi.quantity * oi.unit_price) AS revenue, COUNT(DISTINCT o.order_id) AS orders, SUM(oi.quantity) AS units, ROUND(SUM(oi.quantity * oi.unit_price) * 100.0 / NULLIF(SUM(SUM(oi.quantity * oi.unit_price)) OVER (PARTITION BY DATE_TRUNC('month', o.order_date)), 0), 2) AS share_pct FROM order_items oi JOIN orders o ON oi.order_id = o.order_id JOIN products p ON oi.product_id = p.product_id WHERE o.status NOT IN ('cancelled', 'test', 'fraud') GROUP BY 1, 2 ORDER BY 2 DESC, revenue DESC",
+      "advanced_sql": "WITH monthly_category AS (\n  -- Grain: one row per category per month\n  SELECT\n    p.category,\n    DATE_TRUNC('month', o.order_date) AS month,\n    SUM(oi.quantity * oi.unit_price) AS revenue,\n    COUNT(DISTINCT o.order_id) AS orders,\n    COUNT(DISTINCT o.customer_id) AS unique_customers,\n    SUM(oi.quantity * oi.unit_price) / NULLIF(COUNT(DISTINCT o.order_id), 0) AS category_aov\n  FROM order_items oi\n  JOIN orders o ON oi.order_id = o.order_id\n  JOIN products p ON oi.product_id = p.product_id\n  WHERE o.status NOT IN ('cancelled', 'test', 'fraud')\n  GROUP BY 1, 2\n),\nwith_share_and_trend AS (\n  SELECT\n    category,\n    month,\n    revenue,\n    orders,\n    unique_customers,\n    ROUND(category_aov, 2) AS category_aov,\n    ROUND(revenue * 100.0 / NULLIF(SUM(revenue) OVER (PARTITION BY month), 0), 2) AS share_pct,\n    LAG(revenue) OVER (PARTITION BY category ORDER BY month) AS prev_month_revenue,\n    LAG(revenue, 12) OVER (PARTITION BY category ORDER BY month) AS same_month_last_year\n  FROM monthly_category\n)\nSELECT\n  category,\n  month,\n  revenue,\n  orders,\n  unique_customers,\n  category_aov,\n  share_pct,\n  ROUND((revenue - COALESCE(prev_month_revenue, 0)) * 100.0 / NULLIF(prev_month_revenue, 0), 2) AS mom_growth_pct,\n  ROUND((revenue - COALESCE(same_month_last_year, 0)) * 100.0 / NULLIF(same_month_last_year, 0), 2) AS yoy_growth_pct\nFROM with_share_and_trend\nORDER BY month DESC, revenue DESC"
+    }
+  },
+  {
+    "id": "ec_stockout_rate",
+    "title": "Stockout Rate",
+    "intent_tags": [
+      "stockout rate",
+      "out of stock",
+      "oos rate",
+      "how often are products out of stock",
+      "stockout percentage",
+      "stock availability",
+      "product availability rate",
+      "inventory availability",
+      "zero inventory",
+      "out of stock rate",
+      "how many skus are out of stock"
+    ],
+    "sql_features": [
+      "aggregation",
+      "cte",
+      "conditional_count",
+      "nullif",
+      "coalesce",
+      "window_function"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "ratio",
+    "when_to_use": [
+      "measuring how often products are unavailable for purchase",
+      "estimating lost revenue from inventory gaps",
+      "monitoring supplier reliability and reorder effectiveness",
+      "evaluating whether inventory reduction initiatives caused stockouts",
+      "triggering reorder alerts for critical SKUs"
+    ],
+    "related_patterns": [
+      "ec_inventory_turnover",
+      "ec_dio",
+      "ec_revenue_by_category",
+      "ec_gmv"
+    ],
+    "business_definition": "Percentage of active SKUs with zero inventory (quantity_on_hand = 0) at a given point in time or averaged over a period. Can be measured as SKU-level (what percentage of products are out of stock) or weighted by revenue contribution (what percentage of revenue-generating capacity is out of stock). Excludes discontinued, seasonal-inactive, and pre-order products.",
+    "metric_nature": {
+      "what_it_measures": "The breadth of inventory gaps across the product catalog. Answers: how much of our sellable catalog is currently unavailable for customers to buy?",
+      "what_it_does_not_measure": "The duration of stockouts or their revenue impact. A 5% stockout rate could mean 5% of SKUs were out for 1 hour (trivial) or 5% were out for 30 days (severe). Use stockout-days or lost revenue estimation for impact sizing.",
+      "common_misconception": "A 5% unweighted stockout rate sounds low, but if those 5% of SKUs generate 30% of revenue, the business impact is severe. Always weight stockout rate by revenue contribution to understand the actual business exposure."
+    },
+    "template": "WITH product_stock AS (\n  SELECT\n    i.product_id,\n    p.category,\n    i.quantity_on_hand,\n    p.status AS product_status\n  FROM inventory i\n  JOIN products p ON i.product_id = p.product_id\n  WHERE p.status = 'active'\n    AND i.snapshot_date = {end_date}\n)\nSELECT\n  COUNT(DISTINCT product_id) AS total_active_skus,\n  COUNT(DISTINCT CASE WHEN quantity_on_hand = 0 THEN product_id END) AS out_of_stock_skus,\n  ROUND(COUNT(DISTINCT CASE WHEN quantity_on_hand = 0 THEN product_id END) * 100.0 / NULLIF(COUNT(DISTINCT product_id), 0), 2) AS stockout_rate_pct\nFROM product_stock",
+    "inflation_causes": [
+      {
+        "cause": "Including discontinued or seasonal products as 'active'",
+        "how_it_inflates": "If the products table does not properly flag discontinued or seasonally inactive products, they appear as active SKUs with zero stock. A catalog with 100 active products and 50 discontinued-but-unflagged products shows 50 stockouts (50%) when the real stockout rate among truly active products is much lower.",
+        "detection_sql": "SELECT p.status, COUNT(DISTINCT p.product_id) AS products, COUNT(DISTINCT CASE WHEN i.quantity_on_hand = 0 THEN p.product_id END) AS out_of_stock FROM products p LEFT JOIN inventory i ON p.product_id = i.product_id AND i.snapshot_date = (SELECT MAX(snapshot_date) FROM inventory) GROUP BY p.status ORDER BY products DESC",
+        "fix": "Filter to p.status = 'active' and ensure the product lifecycle process properly marks discontinued and seasonal products. Review any product with zero sales in 180+ days for correct status."
+      },
+      {
+        "cause": "Warehouse-level vs aggregate inventory confusion",
+        "how_it_inflates": "If inventory is tracked per warehouse and a product is out of stock in Warehouse A but in stock in Warehouse B, a warehouse-level stockout rate counts this as one stockout. An aggregate view (summing across warehouses) would show it as in-stock. Reporting at the wrong level inflates or deflates the rate.",
+        "detection_sql": "SELECT i.product_id, p.product_name, i.warehouse_id, i.quantity_on_hand, SUM(i.quantity_on_hand) OVER (PARTITION BY i.product_id) AS total_across_warehouses FROM inventory i JOIN products p ON i.product_id = p.product_id WHERE p.status = 'active' AND i.snapshot_date = (SELECT MAX(snapshot_date) FROM inventory) AND i.quantity_on_hand = 0 ORDER BY total_across_warehouses DESC LIMIT 20",
+        "fix": "Define stockout at the level that matters for the customer: if any warehouse can fulfill, use aggregate inventory. If warehouses serve different regions, use regional stockout rates."
+      },
+      {
+        "cause": "Pre-order or backorder products counted as out of stock",
+        "how_it_inflates": "Products in pre-order status have zero on-hand inventory by design \u2014 they have not been manufactured or shipped yet. If these are included in the active product count, they inflate the stockout rate with items that are intentionally at zero inventory.",
+        "detection_sql": "SELECT p.product_id, p.product_name, p.status, p.availability_type, i.quantity_on_hand FROM products p LEFT JOIN inventory i ON p.product_id = i.product_id AND i.snapshot_date = (SELECT MAX(snapshot_date) FROM inventory) WHERE i.quantity_on_hand = 0 AND p.availability_type IN ('pre_order', 'backorder', 'made_to_order') LIMIT 20",
+        "fix": "Exclude products with availability_type IN ('pre_order', 'backorder', 'made_to_order') from stockout calculations, or create a separate 'available-to-ship stockout rate' that only includes products expected to ship from existing inventory."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Inventory data lag hiding real-time stockouts",
+        "how_it_deflates": "If inventory snapshots are taken daily but sales happen continuously, a product that sold out at 2pm appears in-stock until the next day's snapshot. Fast-selling products can be out of stock for hours without being captured in the stockout metric.",
+        "detection_sql": "SELECT i.snapshot_date, MAX(i.snapshot_date) AS latest_snapshot, CURRENT_TIMESTAMP - MAX(i.snapshot_date) AS data_lag FROM inventory i GROUP BY i.snapshot_date ORDER BY i.snapshot_date DESC LIMIT 5",
+        "fix": "Use real-time or near-real-time inventory feeds for stockout monitoring. If only daily snapshots are available, supplement with order velocity alerts that predict stockouts before the next snapshot."
+      },
+      {
+        "cause": "Negative or reserved inventory not counted as stockout",
+        "how_it_deflates": "If quantity_on_hand is -5 (oversold) or reserved_quantity equals on_hand (all units committed to pending orders), the product is effectively unavailable but technically has a non-zero quantity_on_hand. The stockout rate misses these products.",
+        "detection_sql": "SELECT i.product_id, p.product_name, i.quantity_on_hand, COALESCE(i.reserved_quantity, 0) AS reserved, i.quantity_on_hand - COALESCE(i.reserved_quantity, 0) AS available FROM inventory i JOIN products p ON i.product_id = p.product_id WHERE p.status = 'active' AND (i.quantity_on_hand <= 0 OR i.quantity_on_hand - COALESCE(i.reserved_quantity, 0) <= 0) AND i.snapshot_date = (SELECT MAX(snapshot_date) FROM inventory) ORDER BY i.quantity_on_hand ASC LIMIT 20",
+        "fix": "Define stockout as available_quantity <= 0, where available_quantity = quantity_on_hand - COALESCE(reserved_quantity, 0). This captures products that are technically in-stock but fully committed."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the stockout rate unweighted (by SKU count) or weighted by revenue contribution?",
+      "Are discontinued, seasonal, and pre-order products excluded from the active SKU denominator?",
+      "Is inventory measured at the aggregate level or per-warehouse \u2014 and which is relevant for fulfillment?",
+      "How frequently are inventory snapshots taken, and could stockouts be happening between snapshots?",
+      "Are reserved or committed quantities being subtracted from available inventory?",
+      "Is the stockout concentrated in a specific category, supplier, or warehouse?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "stockout_rate up, ec_gmv down",
+        "then": "lost sales from unavailable products \u2014 estimate the impact by multiplying stockout SKU revenue velocity by the duration of stockout"
+      },
+      {
+        "if": "stockout_rate up, ec_inventory_turnover up",
+        "then": "inventory is depleting faster than replenishment \u2014 either demand spiked or reorder process failed"
+      },
+      {
+        "if": "stockout_rate up in one category, ec_revenue_by_category for that category declining",
+        "then": "the category revenue decline may be supply-driven rather than demand-driven \u2014 check if demand signals (search, page views) for that category are still strong"
+      },
+      {
+        "if": "stockout_rate flat, ec_dio increasing",
+        "then": "inventory is building up across non-stockout products \u2014 the business may be over-ordering slow movers while under-ordering fast movers"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Stockout rate spikes >5pp in a single week",
+        "and_also": "ec_gmv drops in the same week despite stable session traffic",
+        "shared_root_cause": "Supply chain disruption or replenishment failure. Customers are visiting (traffic stable) but cannot buy (GMV drops) because key products are out of stock. The upstream cause is typically a supplier shipment delay, a warehouse receiving bottleneck, or a purchasing team failure to reorder. Both metrics are downstream symptoms of the same inventory availability problem.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('day', i.snapshot_date) AS day, COUNT(DISTINCT CASE WHEN i.quantity_on_hand = 0 AND p.status = 'active' THEN i.product_id END) AS oos_skus, COUNT(DISTINCT CASE WHEN p.status = 'active' THEN i.product_id END) AS total_active_skus, ROUND(COUNT(DISTINCT CASE WHEN i.quantity_on_hand = 0 AND p.status = 'active' THEN i.product_id END) * 100.0 / NULLIF(COUNT(DISTINCT CASE WHEN p.status = 'active' THEN i.product_id END), 0), 2) AS oos_rate FROM inventory i JOIN products p ON i.product_id = p.product_id WHERE i.snapshot_date >= CURRENT_DATE - INTERVAL '14 days' GROUP BY 1 ORDER BY 1"
+      },
+      {
+        "if_this_metric": "Stockout rate for top-20 revenue SKUs exceeds 10%",
+        "and_also": "ec_product_affinity pairs involving those SKUs show declining co-purchase rates",
+        "shared_root_cause": "High-revenue products being out of stock breaks not just their direct sales but also their cross-sell halo. When a popular product is unavailable, customers who would have bought it (and its frequent co-purchase partners) buy neither. Affinity rates drop because one half of the pair is missing from the catalog. The revenue impact is larger than the stockout SKU alone \u2014 it includes lost basket expansion.",
+        "diagnostic_sql": "SELECT p.product_id, p.product_name, i.quantity_on_hand, trailing.trailing_30d_revenue, trailing.trailing_30d_orders, CASE WHEN i.quantity_on_hand = 0 THEN 'OUT_OF_STOCK' ELSE 'IN_STOCK' END AS current_status FROM products p JOIN inventory i ON p.product_id = i.product_id AND i.snapshot_date = (SELECT MAX(snapshot_date) FROM inventory) LEFT JOIN (SELECT oi.product_id, SUM(oi.quantity * oi.unit_price) AS trailing_30d_revenue, COUNT(DISTINCT o.order_id) AS trailing_30d_orders FROM order_items oi JOIN orders o ON oi.order_id = o.order_id WHERE o.status NOT IN ('cancelled', 'test', 'fraud') AND o.order_date >= CURRENT_DATE - INTERVAL '30 days' GROUP BY oi.product_id) trailing ON p.product_id = trailing.product_id WHERE p.status = 'active' ORDER BY trailing_30d_revenue DESC NULLS LAST LIMIT 20"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Using unweighted SKU stockout rate as the headline metric",
+        "why_wrong": "If 10% of SKUs are out of stock but those SKUs generate only 1% of revenue (niche, low-demand products), the business impact is minimal. Conversely, if 2% of SKUs are out of stock but they represent 25% of revenue, the impact is severe. Unweighted stockout rate treats a discontinued flavor of a niche product the same as the best-selling item.",
+        "bad_sql": "SELECT COUNT(DISTINCT CASE WHEN quantity_on_hand = 0 THEN product_id END) * 100.0 / NULLIF(COUNT(DISTINCT product_id), 0) AS stockout_rate FROM inventory WHERE snapshot_date = CURRENT_DATE",
+        "good_sql": "WITH product_revenue AS (\n  SELECT oi.product_id, SUM(oi.quantity * oi.unit_price) AS trailing_revenue\n  FROM order_items oi JOIN orders o ON oi.order_id = o.order_id\n  WHERE o.status NOT IN ('cancelled','test','fraud') AND o.order_date >= CURRENT_DATE - INTERVAL '90 days'\n  GROUP BY oi.product_id\n)\nSELECT\n  ROUND(SUM(CASE WHEN i.quantity_on_hand = 0 THEN COALESCE(pr.trailing_revenue, 0) ELSE 0 END) * 100.0 / NULLIF(SUM(COALESCE(pr.trailing_revenue, 0)), 0), 2) AS revenue_weighted_stockout_pct\nFROM inventory i\nJOIN products p ON i.product_id = p.product_id\nLEFT JOIN product_revenue pr ON i.product_id = pr.product_id\nWHERE p.status = 'active' AND i.snapshot_date = (SELECT MAX(snapshot_date) FROM inventory)"
+      },
+      {
+        "pattern": "Checking stockout only at one point in time instead of over a period",
+        "why_wrong": "A single-day stockout check misses products that were out of stock for 29 of the last 30 days but happened to be restocked on the check date. Point-in-time measurement is noisy and understates the true frequency and duration of stockouts.",
+        "bad_sql": "SELECT product_id, quantity_on_hand FROM inventory WHERE snapshot_date = CURRENT_DATE AND quantity_on_hand = 0",
+        "good_sql": "WITH daily_stock AS (\n  SELECT i.product_id, i.snapshot_date,\n    CASE WHEN i.quantity_on_hand = 0 THEN 1 ELSE 0 END AS is_oos\n  FROM inventory i\n  JOIN products p ON i.product_id = p.product_id\n  WHERE p.status = 'active'\n    AND i.snapshot_date >= CURRENT_DATE - INTERVAL '30 days'\n)\nSELECT product_id, COUNT(*) AS days_observed, SUM(is_oos) AS days_out_of_stock,\n  ROUND(SUM(is_oos) * 100.0 / NULLIF(COUNT(*), 0), 2) AS oos_pct_of_period\nFROM daily_stock\nGROUP BY product_id\nHAVING SUM(is_oos) > 0\nORDER BY days_out_of_stock DESC"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT COUNT(DISTINCT CASE WHEN i.quantity_on_hand = 0 THEN i.product_id END) AS out_of_stock_skus, COUNT(DISTINCT i.product_id) AS total_active_skus, ROUND(COUNT(DISTINCT CASE WHEN i.quantity_on_hand = 0 THEN i.product_id END) * 100.0 / NULLIF(COUNT(DISTINCT i.product_id), 0), 2) AS stockout_rate_pct FROM inventory i JOIN products p ON i.product_id = p.product_id WHERE p.status = 'active' AND i.snapshot_date = (SELECT MAX(snapshot_date) FROM inventory)",
+      "intermediate_sql": "SELECT p.category, COUNT(DISTINCT i.product_id) AS active_skus, COUNT(DISTINCT CASE WHEN i.quantity_on_hand = 0 THEN i.product_id END) AS oos_skus, ROUND(COUNT(DISTINCT CASE WHEN i.quantity_on_hand = 0 THEN i.product_id END) * 100.0 / NULLIF(COUNT(DISTINCT i.product_id), 0), 2) AS stockout_rate_pct FROM inventory i JOIN products p ON i.product_id = p.product_id WHERE p.status = 'active' AND i.snapshot_date = (SELECT MAX(snapshot_date) FROM inventory) GROUP BY p.category ORDER BY stockout_rate_pct DESC",
+      "advanced_sql": "WITH daily_stock AS (\n  -- Grain: one row per product per day\n  SELECT\n    i.product_id,\n    p.category,\n    i.snapshot_date,\n    i.quantity_on_hand,\n    i.quantity_on_hand - COALESCE(i.reserved_quantity, 0) AS available_quantity,\n    CASE WHEN i.quantity_on_hand - COALESCE(i.reserved_quantity, 0) <= 0 THEN 1 ELSE 0 END AS is_effectively_oos\n  FROM inventory i\n  JOIN products p ON i.product_id = p.product_id\n  WHERE p.status = 'active'\n    AND i.snapshot_date >= CURRENT_DATE - INTERVAL '30 days'\n),\nproduct_revenue AS (\n  SELECT oi.product_id, SUM(oi.quantity * oi.unit_price) AS trailing_90d_revenue\n  FROM order_items oi\n  JOIN orders o ON oi.order_id = o.order_id\n  WHERE o.status NOT IN ('cancelled', 'test', 'fraud')\n    AND o.order_date >= CURRENT_DATE - INTERVAL '90 days'\n  GROUP BY oi.product_id\n),\nstockout_summary AS (\n  SELECT\n    ds.product_id,\n    ds.category,\n    COUNT(DISTINCT ds.snapshot_date) AS days_observed,\n    SUM(ds.is_effectively_oos) AS days_oos,\n    ROUND(SUM(ds.is_effectively_oos) * 100.0 / NULLIF(COUNT(DISTINCT ds.snapshot_date), 0), 2) AS oos_pct_of_period,\n    COALESCE(pr.trailing_90d_revenue, 0) AS trailing_revenue\n  FROM daily_stock ds\n  LEFT JOIN product_revenue pr ON ds.product_id = pr.product_id\n  GROUP BY ds.product_id, ds.category, pr.trailing_90d_revenue\n)\nSELECT\n  category,\n  COUNT(DISTINCT product_id) AS total_skus,\n  COUNT(DISTINCT CASE WHEN days_oos > 0 THEN product_id END) AS ever_oos_skus,\n  ROUND(AVG(oos_pct_of_period), 2) AS avg_oos_pct,\n  SUM(trailing_revenue) AS total_trailing_revenue,\n  SUM(CASE WHEN days_oos > 0 THEN trailing_revenue ELSE 0 END) AS at_risk_revenue,\n  ROUND(SUM(CASE WHEN days_oos > 0 THEN trailing_revenue ELSE 0 END) * 100.0 / NULLIF(SUM(trailing_revenue), 0), 2) AS revenue_weighted_oos_pct\nFROM stockout_summary\nGROUP BY category\nORDER BY revenue_weighted_oos_pct DESC"
+    }
+  }
+]

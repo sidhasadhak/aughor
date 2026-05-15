@@ -1,0 +1,48 @@
+[
+  {
+    "id": "product_activation",
+    "title": "Product Activation & Time-to-Value",
+    "business_definition": "Activation is the moment a new user experiences the core value of the product for the first time. Activation rate = users who hit the activation event / total signups. Low activation is the leading cause of early churn.",
+    "intent_tags": ["activation", "onboarding", "time to value", "user activation", "first value", "feature adoption"],
+    "when_to_use": ["activation rate dropped", "users not activating", "onboarding funnel analysis", "feature adoption low"],
+    "diagnostic_questions": [
+      "What is the activation event — has its definition changed recently?",
+      "How long does it take users to activate — is median time-to-activation increasing?",
+      "Which step in onboarding has the highest drop-off?",
+      "Do activated users retain significantly better than non-activated users?",
+      "Is low activation a volume problem (fewer users attempting) or a conversion problem (more attempts failing)?"
+    ],
+    "causal_relationships": [
+      {
+        "symptom": "activation rate declined",
+        "check_in_order": ["onboarding_step_completion", "time_to_first_key_action", "signup_to_activation_funnel"],
+        "detection_sql": "SELECT DATE_TRUNC('week', signup_date) AS week, COUNT(*) AS signups, COUNT(CASE WHEN activated_at IS NOT NULL THEN 1 END) AS activated, COUNT(CASE WHEN activated_at IS NOT NULL THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0) AS activation_rate FROM users GROUP BY 1 ORDER BY 1"
+      },
+      {
+        "symptom": "time-to-activation increasing",
+        "check_in_order": ["onboarding_completion_rate", "support_ticket_rate_in_first_week", "product_performance"],
+        "detection_sql": "SELECT DATE_TRUNC('week', signup_date) AS week, AVG(EXTRACT(EPOCH FROM (activated_at - signup_date)) / 3600) AS avg_hours_to_activation FROM users WHERE activated_at IS NOT NULL GROUP BY 1 ORDER BY 1"
+      }
+    ],
+    "inflation_causes": [
+      {
+        "cause": "Activation event set too low — users 'activate' without finding real value",
+        "detection_sql": "SELECT activated, AVG(day_30_retained) AS retention_at_30d FROM (SELECT u.user_id, u.activated_at IS NOT NULL AS activated, MAX(CASE WHEN activity_date <= signup_date + INTERVAL '30 days' THEN 1 ELSE 0 END) AS day_30_retained FROM users u LEFT JOIN user_activity a USING (user_id) GROUP BY 1, 2) t GROUP BY 1"
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Activation event requires a backend job that is delayed — false low count",
+        "detection_sql": "SELECT COUNT(*) FROM users WHERE signup_date >= CURRENT_DATE - INTERVAL '2 days' AND activated_at IS NULL"
+      }
+    ],
+    "related_patterns": ["customer_churn", "conversion_funnel", "new_customer_acquisition"],
+    "anti_patterns": [
+      "Do not use page views or logins as the activation event — they have no correlation with retention",
+      "Do not aggregate activation rate across very different user cohorts (e.g. enterprise vs SMB trials)"
+    ],
+    "sql_assets": {
+      "activation_funnel": "SELECT step_name, COUNT(DISTINCT user_id) AS users, COUNT(DISTINCT user_id) * 100.0 / FIRST_VALUE(COUNT(DISTINCT user_id)) OVER (ORDER BY step_order) AS pct_of_top FROM onboarding_events GROUP BY step_name, step_order ORDER BY step_order"
+    }
+  }
+]

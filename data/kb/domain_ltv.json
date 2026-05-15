@@ -1,0 +1,47 @@
+[
+  {
+    "id": "customer_lifetime_value",
+    "title": "Customer Lifetime Value (LTV / CLV)",
+    "business_definition": "LTV is the total revenue expected from a customer over their entire relationship. Simple LTV = ARPU / churn_rate. Predictive LTV uses cohort survival curves. A healthy business has LTV > 3x CAC.",
+    "intent_tags": ["LTV", "CLV", "customer lifetime value", "customer value", "lifetime revenue"],
+    "when_to_use": ["understanding customer value", "LTV:CAC ratio analysis", "which customer segments are most valuable"],
+    "diagnostic_questions": [
+      "Which customer segment has the highest LTV — by plan tier, region, acquisition channel?",
+      "Is LTV increasing or decreasing for newer cohorts vs older ones?",
+      "What drives LTV — tenure, expansion revenue, or referrals?",
+      "What is the payback period relative to LTV?"
+    ],
+    "causal_relationships": [
+      {
+        "symptom": "LTV declining for recent cohorts",
+        "check_in_order": ["cohort_retention_curve", "expansion_revenue_rate", "average_contract_value_trend"],
+        "detection_sql": "SELECT cohort_month, months_since_start, COUNT(DISTINCT customer_id) AS retained, SUM(revenue) AS cohort_revenue FROM cohort_activity GROUP BY 1, 2 ORDER BY 1, 2"
+      },
+      {
+        "symptom": "LTV:CAC ratio deteriorating",
+        "check_in_order": ["cac_by_channel", "retention_by_channel", "arpu_trend"],
+        "detection_sql": "SELECT acquisition_channel, AVG(total_revenue) AS avg_ltv, AVG(cac) AS avg_cac, AVG(total_revenue) / NULLIF(AVG(cac), 0) AS ltv_cac_ratio FROM customer_summary GROUP BY 1 ORDER BY 4 DESC"
+      }
+    ],
+    "inflation_causes": [
+      {
+        "cause": "LTV projected using average churn ignores high early-churn — overstates expected tenure",
+        "detection_sql": "SELECT DATEDIFF('month', signup_date, COALESCE(cancelled_at, CURRENT_DATE)) AS tenure_months, COUNT(*) FROM customers GROUP BY 1 ORDER BY 1"
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Expansion revenue (upsells, add-ons) excluded from LTV calculation",
+        "detection_sql": "SELECT order_type, SUM(amount) FROM orders GROUP BY 1"
+      }
+    ],
+    "related_patterns": ["customer_churn", "new_customer_acquisition", "monthly_recurring_revenue", "retention_cohorts"],
+    "anti_patterns": [
+      "Do not use simple ARPU / churn for high-growth companies — early cohorts are too small to represent steady state",
+      "Do not forget to discount future cash flows when computing LTV for long-horizon projections"
+    ],
+    "sql_assets": {
+      "simple_ltv": "SELECT AVG(total_revenue) AS avg_ltv FROM (SELECT customer_id, SUM(amount) AS total_revenue FROM orders WHERE status = 'completed' GROUP BY 1) t"
+    }
+  }
+]

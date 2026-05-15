@@ -1,0 +1,47 @@
+[
+  {
+    "id": "new_customer_acquisition",
+    "title": "New Customer Acquisition & CAC",
+    "business_definition": "New customer acquisition measures how many net-new customers are added per period. CAC (Customer Acquisition Cost) = total sales and marketing spend / new customers acquired. Healthy CAC < LTV/3.",
+    "intent_tags": ["new customers", "customer acquisition", "CAC", "acquisition cost", "new signups", "growth", "leads"],
+    "when_to_use": ["new customer growth slowed", "CAC increased", "acquisition channel analysis", "where are customers coming from"],
+    "diagnostic_questions": [
+      "Which acquisition channel is driving the most new customers and how is conversion rate by channel?",
+      "How does CAC vary by channel, region, or product tier?",
+      "What is the payback period — how many months to recover CAC?",
+      "Is the quality of acquired customers changing — do newer cohorts retain as well as older ones?"
+    ],
+    "causal_relationships": [
+      {
+        "symptom": "new customer count dropped month-over-month",
+        "check_in_order": ["channel_traffic_volume", "channel_conversion_rate", "trial_to_paid_rate", "sales_capacity"],
+        "detection_sql": "SELECT DATE_TRUNC('month', first_order_date) AS month, acquisition_channel, COUNT(DISTINCT customer_id) AS new_customers FROM (SELECT customer_id, MIN(order_date) AS first_order_date, acquisition_channel FROM orders GROUP BY 1, 3) t GROUP BY 1, 2 ORDER BY 1, 2"
+      },
+      {
+        "symptom": "CAC increased without volume drop",
+        "check_in_order": ["marketing_spend_by_channel", "conversion_rate_by_channel", "sales_team_productivity"],
+        "detection_sql": "SELECT channel, SUM(spend) AS total_spend, COUNT(DISTINCT new_customer_id) AS customers, SUM(spend) / NULLIF(COUNT(DISTINCT new_customer_id), 0) AS cac FROM marketing_spend LEFT JOIN acquired_customers USING (channel, month) GROUP BY 1"
+      }
+    ],
+    "inflation_causes": [
+      {
+        "cause": "Reactivated customers counted as new acquisitions",
+        "detection_sql": "SELECT customer_id, COUNT(*) AS order_count, MIN(order_date) AS first_order, MAX(order_date) AS last_order FROM orders GROUP BY 1 HAVING COUNT(*) > 1 AND MIN(order_date) != MAX(order_date)"
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Customers acquired via non-tracked channels missing from attribution",
+        "detection_sql": "SELECT acquisition_channel, COUNT(*) FROM customers GROUP BY 1 ORDER BY 2 DESC"
+      }
+    ],
+    "related_patterns": ["customer_lifetime_value", "customer_churn", "conversion_funnel"],
+    "anti_patterns": [
+      "Do not include returning or reactivated customers in new customer count",
+      "Do not calculate CAC using only media spend — include salaries and tools in the denominator"
+    ],
+    "sql_assets": {
+      "new_customers_by_month": "SELECT DATE_TRUNC('month', first_order) AS month, COUNT(*) AS new_customers FROM (SELECT customer_id, MIN(order_date) AS first_order FROM orders GROUP BY 1) t GROUP BY 1 ORDER BY 1"
+    }
+  }
+]

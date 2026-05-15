@@ -1,0 +1,100 @@
+[
+  {
+    "id": "join_inner",
+    "title": "Inner join",
+    "intent_tags": [
+      "join"
+    ],
+    "sql_features": [
+      "join"
+    ],
+    "difficulty": "beginner",
+    "pattern_type": "relational",
+    "template": "A JOIN B ON ...",
+    "when_to_use": [
+      "matching rows"
+    ],
+    "anti_patterns": [
+      "missing ON"
+    ],
+    "related_patterns": []
+  },
+  {
+    "id": "join_left",
+    "title": "Left join",
+    "intent_tags": [
+      "join",
+      "nulls"
+    ],
+    "sql_features": [
+      "join"
+    ],
+    "difficulty": "beginner",
+    "pattern_type": "relational",
+    "template": "A LEFT JOIN B",
+    "when_to_use": [
+      "retain left"
+    ],
+    "anti_patterns": [
+      "filtering after join"
+    ],
+    "related_patterns": []
+  },
+  {
+    "id": "join_anti",
+    "title": "Anti join",
+    "intent_tags": [
+      "exclusion"
+    ],
+    "sql_features": [
+      "join"
+    ],
+    "difficulty": "advanced",
+    "pattern_type": "relational",
+    "template": "LEFT JOIN ... WHERE B.id IS NULL",
+    "when_to_use": [
+      "find missing"
+    ],
+    "anti_patterns": [],
+    "related_patterns": []
+  },
+  {
+    "id": "join_semi",
+    "title": "Semi join",
+    "intent_tags": [
+      "exists"
+    ],
+    "sql_features": [
+      "subquery"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "relational",
+    "template": "WHERE EXISTS (...)",
+    "when_to_use": [
+      "existence check"
+    ],
+    "anti_patterns": [],
+    "related_patterns": []
+  },
+  {
+    "id": "join_qualify_columns",
+    "title": "Always qualify column names in JOINs",
+    "intent_tags": [
+      "join", "ambiguous column", "column is ambiguous", "qualify columns", "table prefix", "order_id ambiguous"
+    ],
+    "sql_features": ["join"],
+    "difficulty": "beginner",
+    "pattern_type": "correctness",
+    "template": "SELECT orders.order_id, orders.customer_id, order_items.product_id FROM orders JOIN order_items ON orders.order_id = order_items.order_id",
+    "when_to_use": [
+      "any query with a JOIN — always prefix every column with its table name or alias",
+      "when the same column name (e.g. order_id, customer_id, created_at) exists in two or more joined tables"
+    ],
+    "anti_patterns": [
+      "writing COUNT(DISTINCT order_id) when both orders and order_items have order_id — causes 'column reference is ambiguous' runtime error",
+      "relying on the database to guess which table a column belongs to — always be explicit",
+      "using SELECT * across a JOIN without aliasing — makes column origin impossible to trace"
+    ],
+    "related_patterns": ["join_inner", "join_left"]
+  }
+]

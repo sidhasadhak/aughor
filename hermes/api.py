@@ -37,6 +37,7 @@ from hermes.db.registry import (
     list_connections,
 )
 from hermes.semantic.glossary import load_glossary, update_column, update_table
+from hermes.semantic.metrics import MetricDefinition, delete_metric, get_metric, list_metrics, save_metric
 from hermes.tools.schema import build_schema_context
 
 app = FastAPI(title="Aughor API")
@@ -456,6 +457,38 @@ def connection_schema(conn_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/connections/{conn_id}/schema/rich")
+def connection_schema_rich(conn_id: str):
+    try:
+        conn_type, dsn = get_dsn(conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    try:
+        from hermes.tools.schema import build_rich_schema
+        db = open_connection(conn_type, dsn)
+        schema = db.get_schema()
+        db.close()
+        return build_rich_schema(schema)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/connections/{conn_id}/schema/mermaid")
+def connection_schema_mermaid(conn_id: str):
+    try:
+        conn_type, dsn = get_dsn(conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    try:
+        from hermes.tools.schema import build_mermaid_er
+        db = open_connection(conn_type, dsn)
+        schema = db.get_schema()
+        db.close()
+        return {"diagram": build_mermaid_er(schema)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.delete("/connections/{conn_id}", status_code=204)
 def remove_connection(conn_id: str):
     try:
@@ -493,6 +526,47 @@ def put_table_glossary(table: str, req: UpdateTableRequest):
 def put_column_glossary(table: str, column: str, req: UpdateColumnRequest):
     update_column(table, column, description=req.description, values=req.values, caveats=req.caveats)
     return {"ok": True, "table": table, "column": column}
+
+
+# ── Metrics Catalog ───────────────────────────────────────────────────────────
+
+class MetricRequest(BaseModel):
+    name: str
+    label: str
+    sql: str
+    tables: list[str] = []
+    dimensions: list[str] = []
+    filters: list[str] = []
+    unit: Optional[str] = None
+    caveats: Optional[str] = None
+
+
+@app.get("/metrics")
+def get_metrics():
+    return [m.model_dump() for m in list_metrics()]
+
+
+@app.post("/metrics", status_code=201)
+def create_metric(req: MetricRequest):
+    if get_metric(req.name):
+        raise HTTPException(status_code=409, detail=f"Metric '{req.name}' already exists. Use PUT to update.")
+    m = MetricDefinition(**req.model_dump())
+    save_metric(m)
+    return m.model_dump()
+
+
+@app.put("/metrics/{name}")
+def update_metric(name: str, req: MetricRequest):
+    m = MetricDefinition(**{**req.model_dump(), "name": name})
+    save_metric(m)
+    return m.model_dump()
+
+
+@app.delete("/metrics/{name}")
+def remove_metric(name: str):
+    if not delete_metric(name):
+        raise HTTPException(status_code=404, detail=f"Metric '{name}' not found.")
+    return {"ok": True, "name": name}
 
 
 @app.get("/investigations/indexed-ids")

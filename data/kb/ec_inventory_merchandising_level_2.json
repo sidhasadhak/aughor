@@ -1,0 +1,634 @@
+[
+  {
+    "id": "ec_sell_through_rate",
+    "title": "Sell-through Rate",
+    "intent_tags": [
+      "sell-through rate",
+      "inventory turnover",
+      "sellthrough",
+      "stock sell-through",
+      "inventory sell-through",
+      "sell rate",
+      "what is my sell-through",
+      "inventory efficiency",
+      "stock velocity",
+      " sellthrough %",
+      "stock conversion"
+    ],
+    "sql_features": [
+      "aggregation",
+      "left_join",
+      "nullif"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "assess inventory health and markdown timing",
+      "identify slow-moving stock requiring promotion",
+      "benchmark category or SKU sell-through efficiency",
+      "optimize purchase planning and reorder points",
+      "evaluate merchandising impact on inventory velocity"
+    ],
+    "related_patterns": [
+      "ec_dead_stock_rate",
+      "ec_overstock_index",
+      "ec_inventory_turnover",
+      "ec_gross_profit_per_order"
+    ],
+    "business_definition": "Ratio of units sold to units available at the start of the period, expressed as a percentage. Units available at period start are calculated as (beginning_inventory - reserved_inventory + incoming_inventory) and units sold are completed sales in the period. Excludes cancelled, returned, or reserved units.",
+    "metric_nature": {
+      "what_it_measures": "How quickly inventory is converted to sales \u2014 a measure of demand vs. supply alignment and stock efficiency.",
+      "what_it_does_not_measure": "Revenue or profit from sold units. High sell-through may occur with low-margin items; this metric tracks quantity, not value.",
+      "common_misconception": "Sell-through rate is not the same as inventory turnover. Turnover = cost of goods sold \u00f7 average inventory; sell-through = units sold \u00f7 beginning inventory \u2014 the latter focuses on volume velocity, not financial value."
+    },
+    "template": "WITH inventory_start AS (\n  SELECT sku_id, SUM(quantity) AS beginning_inventory FROM inventory_snapshots WHERE snapshot_date = {start_date} GROUP BY sku_id\n),\nunits_sold AS (\n  SELECT oi.product_id AS sku_id, SUM(oi.quantity) AS units_sold FROM order_items oi JOIN orders o ON oi.order_id = o.order_id WHERE o.status = 'completed' AND o.order_date BETWEEN {start_date} AND {end_date} GROUP BY oi.product_id\n),\ninventory_end AS (\n  SELECT oi.product_id AS sku_id, SUM(oi.quantity) AS ending_inventory FROM inventory_snapshots WHERE snapshot_date = {end_date} GROUP BY oi.product_id\n)\nSELECT s.sku_id, COALESCE(s.beginning_inventory, 0) AS beginning, COALESCE(u.units_sold, 0) AS sold, COALESCE(e.ending_inventory, 0) AS ending, COALESCE(u.units_sold, 0) * 100.0 / NULLIF(s.beginning_inventory, 0) AS sell_through_rate FROM inventory_start s LEFT JOIN units_sold u ON s.sku_id = u.sku_id LEFT JOIN inventory_end e ON s.sku_id = e.sku_id",
+    "inflation_causes": [
+      {
+        "cause": "Using ending inventory instead of beginning inventory as denominator",
+        "how_it_inflates": "If inventory sold is divided by ending inventory (instead of beginning), and inventory levels are declining, the denominator shrinks \u2014 artificially inflating the rate (e.g., sell 100 of 50 ending = 200%).",
+        "detection_sql": "SELECT inventory_date, SUM(quantity) AS ending_inventory, LAG(SUM(quantity)) OVER (ORDER BY inventory_date) AS prev_inventory FROM inventory_snapshots WHERE inventory_date >= '2024-01-01' GROUP BY 1 ORDER BY inventory_date DESC",
+        "fix": "Always use beginning inventory as the denominator: `units_sold / beginning_inventory`. End inventory can be used for *current* stock health, but not sell-through."
+      },
+      {
+        "cause": "Including reserved or allocated inventory in beginning quantity",
+        "how_it_inflates": "If beginning inventory includes reserved units (e.g., pending orders, QTY held for holdouts), but those reserved units are not subtracted before sell-through, the denominator is inflated \u2014 deflating rate. However, if reserved units are later *sold*, the numerator inflates *more* \u2014 net effect: erratic spikes.",
+        "detection_sql": "SELECT sku_id, SUM(quantity) AS total_inventory, SUM(CASE WHEN allocation_type = 'reserved' THEN quantity END) AS reserved FROM inventory_snapshots WHERE snapshot_date = '2024-01-01' GROUP BY sku_id HAVING SUM(CASE WHEN allocation_type = 'reserved' THEN quantity END) > 0 ORDER BY reserved DESC LIMIT 10",
+        "fix": "Subtract reserved and allocated quantities before computing beginning inventory: `beginning = SUM(quantity) - SUM(CASE WHEN allocation_type IN ('reserved','allocated') THEN quantity END)`."
+      },
+      {
+        "cause": "Counting units sold from cancelled orders",
+        "how_it_inflates": "If cancelled orders are included in units_sold (e.g., via order_item status not filtered), units sold inflates \u2014 artificially increasing sell-through rate.",
+        "detection_sql": "SELECT order_id, status, SUM(oi.quantity) AS items FROM order_items oi JOIN orders o ON oi.order_id = o.order_id WHERE o.status = 'cancelled' GROUP BY 1, 2 HAVING SUM(oi.quantity) > 0 ORDER BY items DESC LIMIT 10",
+        "fix": "Filter units_sold to only include orders with status = 'completed' and exclude refunds/reversals."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Excluding units from pre-period arrivals",
+        "how_it_deflates": "If inventory snapshots only capture beginning-of-day inventory, and new stock arrives *during* the period, those units are not included in beginning inventory \u2014 but their sell-through is included in units_sold \u2014 deflating sell-through rate.",
+        "detection_sql": "SELECT sku_id, SUM(CASE WHEN snapshot_date = '2024-01-01' THEN quantity END) AS beginning, SUM(CASE WHEN transaction_type = 'receipt' AND transaction_date BETWEEN '2024-01-01' AND '2024-01-31' THEN quantity END) AS incoming FROM inventory_transactions WHERE sku_id IN (SELECT sku_id FROM inventory_snapshots WHERE snapshot_date = '2024-01-01') GROUP BY 1 ORDER BY incoming DESC LIMIT 10",
+        "fix": "Include incoming inventory received *before or during* the period in beginning inventory: `beginning = beginning_snap + SUM(received_qty WHERE received_date <= end_date)`."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the sell-through anomaly concentrated in specific SKUs, categories, or vendors?",
+      "Has a markdown promotion or clearance event been launched recently?",
+      "Are sell-through rates higher for new vs. established products?",
+      "Did inventory accuracy issues (e.g., shrinkage, system sync errors) affect beginning/ending counts?",
+      "Are units sold being double-counted (e.g., split shipments, partial fulfillment)?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "Sell-through rate up, sell-through_rate_prev_period up",
+        "then": "sustained demand \u2014 likely consistent popularity or effective merchandising"
+      },
+      {
+        "if": "Sell-through rate up, dead_stock_rate down",
+        "then": "inventory optimization \u2014 likely better forecasting or earlier markdowns clearing slow-movers"
+      },
+      {
+        "if": "Sell-through rate down, return_rate up",
+        "then": "inventory mismatch \u2014 likely sizing, quality, or demand forecasting issues causing returns and stalled velocity"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Sell-through rate drops >10% MoM with stable purchase orders",
+        "and_also": "ec_dead_stock_rate increases same period",
+        "shared_root_cause": "A shift in demand (e.g., changing trends, competitor\u65b0\u54c1) has made older inventory less desirable \u2014 both sell-through slows and dead stock accumulates.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', i.snapshot_date) AS month, SUM(i.quantity) FILTER (WHERE i.quantity > 0) AS begin_qty, SUM(oi.quantity) FILTER (WHERE o.status = 'completed') AS sold, SUM(oi.quantity) FILTER (WHERE o.status = 'completed') * 100.0 / NULLIF(SUM(i.quantity), 0) AS sell_through FROM inventory_snapshots i LEFT JOIN order_items oi ON i.sku_id = oi.product_id LEFT JOIN orders o ON oi.order_id = o.order_id WHERE i.snapshot_date BETWEEN '2024-01-01' AND '2024-02-28' GROUP BY 1 ORDER BY month"
+      },
+      {
+        "if_this_metric": "Sell-through rate spikes during a flash sale",
+        "and_also": "ec_gross_profit_per_order decreases",
+        "shared_root_cause": "A deep discount promotion is clearing inventory quickly (high sell-through) but eroding margins \u2014 likely a trade-off between velocity and profitability.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', o.order_date) AS week, p.promotion_code, COUNT(DISTINCT oi.order_id) AS orders, SUM(oi.quantity) AS units, SUM(oi.quantity) * 100.0 / NULLIF(SUM(CASE WHEN oi.order_date = '2024-01-01' THEN oi.quantity END) OVER (PARTITION BY p.promotion_code), 0) AS sell_through, AVG(nr.net_revenue) AS avg_nrv FROM orders o JOIN order_items oi ON o.order_id = oi.order_id JOIN products p ON oi.product_id = p.product_id JOIN promotions pr ON p.promotion_id = pr.promotion_id JOIN net_revenue_daily nr ON oi.order_id = nr.order_id WHERE p.promotion_code IS NOT NULL AND o.order_date >= '2024-01-01' GROUP BY 1, p.promotion_code ORDER BY week"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Calculating sell-through as units_sold / (beginning + ending) / 2",
+        "why_wrong": "Averaging beginning and ending inventory is correct for *turnover ratio* (COGS \u00f7 avg inventory), but sell-through is a *flow-to-stock* metric and must use *beginning* stock only \u2014 averaging deflates the denominator and inflates rate.",
+        "bad_sql": "SELECT units_sold / NULLIF((beginning_inventory + ending_inventory) / 2, 0) AS rate FROM inventory_metrics",
+        "good_sql": "SELECT units_sold * 100.0 / NULLIF(beginning_inventory, 0) AS rate FROM inventory_metrics"
+      },
+      {
+        "pattern": "Counting units sold from partial shipments as full sell-through",
+        "why_wrong": "If a 100-unit order ships in 3 batches (40, 30, 30), and each shipment triggers a sell-through count, units_sold is double-counted \u2014 inflating rate and distorting inventory forecasting.",
+        "bad_sql": "SELECT COUNT(DISTINCT shipment_id) AS shipments, SUM(oi.quantity) AS units_sold FROM shipments s JOIN order_items oi ON s.shipment_id = oi.shipment_id",
+        "good_sql": "SELECT COUNT(DISTINCT order_id) AS orders, SUM(oi.quantity) AS units_sold FROM order_items oi JOIN orders o ON oi.order_id = o.order_id WHERE o.status = 'completed'"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "WITH inventory_start AS (SELECT sku_id, SUM(quantity) AS beginning_inventory FROM inventory_snapshots WHERE snapshot_date = '2024-01-01' GROUP BY sku_id), units_sold AS (SELECT oi.product_id AS sku_id, SUM(oi.quantity) AS units_sold FROM order_items oi JOIN orders o ON oi.order_id = o.order_id WHERE o.status = 'completed' AND o.order_date BETWEEN '2024-01-01' AND '2024-01-31' GROUP BY oi.product_id) SELECT s.sku_id, COALESCE(s.beginning_inventory, 0) AS beginning, COALESCE(u.units_sold, 0) AS sold, COALESCE(u.units_sold, 0) * 100.0 / NULLIF(s.beginning_inventory, 0) AS sell_through_rate FROM inventory_start s LEFT JOIN units_sold u ON s.sku_id = u.sku_id",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', i.snapshot_date) AS month, p.category, SUM(i.quantity) FILTER (WHERE i.snapshot_date = '2024-01-01') AS beginning, SUM(oi.quantity) FILTER (WHERE o.status = 'completed' AND o.order_date BETWEEN '2024-01-01' AND '2024-01-31') AS sold, SUM(oi.quantity) FILTER (WHERE o.status = 'completed' AND o.order_date BETWEEN '2024-01-01' AND '2024-01-31') * 100.0 / NULLIF(SUM(i.quantity) FILTER (WHERE i.snapshot_date = '2024-01-01'), 0) AS sell_through_rate FROM inventory_snapshots i LEFT JOIN order_items oi ON i.sku_id = oi.product_id LEFT JOIN orders o ON oi.order_id = o.order_id LEFT JOIN products p ON oi.product_id = p.product_id WHERE i.snapshot_date IN ('2024-01-01', '2024-01-31') GROUP BY 1, p.category ORDER BY 1, 5 DESC",
+      "advanced_sql": "WITH inventory_start AS (\n  -- Beginning inventory: snapshot + incoming received before period end\n  SELECT\n    i.sku_id,\n    COALESCE(SUM(i.quantity), 0) + COALESCE(SUM(CASE WHEN t.transaction_type = 'receipt' AND t.transaction_date <= '2024-01-31' THEN t.quantity END), 0) AS beginning_inventory\n  FROM inventory_snapshots i\n  LEFT JOIN inventory_transactions t ON i.sku_id = t.sku_id\n  WHERE i.snapshot_date = '2024-01-01'\n  GROUP BY i.sku_id\n),\nunits_sold AS (\n  -- Units sold: completed orders only\n  SELECT\n    oi.product_id AS sku_id,\n    SUM(oi.quantity) AS units_sold\n  FROM order_items oi\n  JOIN orders o ON oi.order_id = o.order_id\n  WHERE o.status = 'completed' AND o.order_date BETWEEN '2024-01-01' AND '2024-01-31'\n  GROUP BY oi.product_id\n),\nsell_through AS (\n  SELECT\n    s.sku_id,\n    s.beginning_inventory,\n    COALESCE(u.units_sold, 0) AS sold,\n    ROUND(COALESCE(u.units_sold, 0) * 100.0 / NULLIF(s.beginning_inventory, 0), 2) AS sell_through_rate\n  FROM inventory_start s\n  LEFT JOIN units_sold u ON s.sku_id = u.sku_id\n)\nSELECT\n  sku_id,\n  beginning_inventory,\n  sold,\n  sell_through_rate,\n  CASE WHEN sell_through_rate >= 80 THEN 'fast' WHEN sell_through_rate >= 40 THEN 'moderate' ELSE 'slow' END AS velocity_tier\nFROM sell_through\nORDER BY sell_through_rate DESC"
+    }
+  },
+  {
+    "id": "ec_dead_stock_rate",
+    "title": "Dead Stock Rate",
+    "intent_tags": [
+      "dead stock rate",
+      "dead inventory",
+      "obsolete stock",
+      "zero sales inventory",
+      "dead stock %",
+      "inactive inventory",
+      "what % inventory is dead",
+      "dead stock percentage",
+      "inventory at risk",
+      "non-selling stock",
+      "dead stock %"
+    ],
+    "sql_features": [
+      "aggregation",
+      "conditional_count",
+      "date_spine",
+      "nullif"
+    ],
+    "difficulty": "beginner",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "monitor inventory obsolescence and risk",
+      "identify candidates for markdowns, donations, or disposal",
+      "benchmark SKU or category inventory health over time",
+      "evaluate purchase planning accuracy",
+      "trigger auto-markdown or liquidation workflows"
+    ],
+    "related_patterns": [
+      "ec_sell_through_rate",
+      "ec_overstock_index",
+      "ec_inventory_turnover",
+      "ec_returns_rate"
+    ],
+    "business_definition": "Percentage of active SKUs (SKUs with inventory on hand) that have sold zero units in the last 90 days. Active SKUs are defined as having positive inventory on hand at period end.",
+    "metric_nature": {
+      "what_it_measures": "The proportion of inventory that is not moving \u2014 a direct indicator of forecast error, demand shifts, or merchandising issues.",
+      "what_it_does_not_measure": "Value or age of dead stock. A SKU with $100 inventory is treated equally as one with $10,000 \u2014 this is a count metric, not a value metric.",
+      "common_misconception": "Dead stock rate is not the same as obsolete inventory. Obsolescence is a value-based classification; dead stock is activity-based \u2014 some dead stock may be future classics or seasonal items held for reuse."
+    },
+    "template": "WITH active_skus AS (\n  SELECT DISTINCT sku_id FROM inventory_snapshots WHERE snapshot_date = {end_date} AND quantity > 0\n),\nrecent_sales AS (\n  SELECT DISTINCT oi.product_id AS sku_id FROM order_items oi JOIN orders o ON oi.order_id = o.order_id WHERE o.status = 'completed' AND o.order_date >= DATEADD(day, -90, {end_date})\n),\ninventory_counts AS (\n  SELECT COUNT(DISTINCT a.sku_id) AS active_count FROM active_skus a\n),\ndead_counts AS (\n  SELECT COUNT(DISTINCT a.sku_id) AS dead_count FROM active_skus a LEFT JOIN recent_sales r ON a.sku_id = r.sku_id WHERE r.sku_id IS NULL\n)\nSELECT dc.dead_count, ic.active_count, dc.dead_count * 100.0 / NULLIF(ic.active_count, 0) AS dead_stock_rate FROM dead_counts dc, inventory_counts ic",
+    "inflation_causes": [
+      {
+        "cause": "Using SKU count instead of inventory quantity count",
+        "how_it_inflates": "If the numerator counts SKUs with zero sales but denominator is *total* SKUs (including those with no inventory), the denominator inflates disproportionately \u2014 deflating rate. However, if zero-inventory SKUs are included in both, the *relative* effect may inflate rate. Net effect: inconsistent volatility.",
+        "detection_sql": "SELECT COUNT(DISTINCT sku_id) AS total_skus, COUNT(DISTINCT CASE WHEN on_hand > 0 THEN sku_id END) AS active_skus, COUNT(DISTINCT CASE WHEN last_sale_date < '2024-01-01' THEN sku_id END) AS dead_skus FROM (SELECT sku_id, SUM(quantity) AS on_hand, MAX(o.order_date) AS last_sale_date FROM inventory_snapshots i LEFT JOIN order_items oi ON i.sku_id = oi.product_id LEFT JOIN orders o ON oi.order_id = o.order_id WHERE i.snapshot_date = '2024-01-31' GROUP BY sku_id) sub",
+        "fix": "Define active_skus strictly as SKUs with *positive inventory on hand* at period end, not just SKUs in system."
+      },
+      {
+        "cause": "Including test or fraud orders in recent sales",
+        "how_it_inflates": "If a test order with many items is included in recent_sales, those SKUs are incorrectly marked as 'sold' \u2014 reducing the dead stock numerator and deflating rate.",
+        "detection_sql": "SELECT o.order_id, o.status, COUNT(DISTINCT oi.product_id) AS items FROM orders o JOIN order_items oi ON o.order_id = oi.order_id WHERE o.status = 'test' GROUP BY 1, 2 HAVING COUNT(DISTINCT oi.product_id) > 1 ORDER BY items DESC LIMIT 10",
+        "fix": "Filter to completed orders only and exclude test, fraud, and cancelled statuses."
+      },
+      {
+        "cause": "Not filtering to current inventory on hand",
+        "how_it_inflates": "If inventory_snapshot uses historical snapshots (e.g., beginning of month), and SKUs have since sold out, they appear as active but are actually depleted \u2014 inflating dead_stock_rate artificially.",
+        "detection_sql": "SELECT sku_id, MAX(snapshot_date) AS last_snapshot, MAX(quantity) AS max_on_hand FROM inventory_snapshots WHERE snapshot_date >= '2024-01-01' GROUP BY sku_id HAVING MAX(quantity) = 0 ORDER BY last_snapshot DESC LIMIT 10",
+        "fix": "Always use the *most recent* snapshot or real-time on-hand quantity (e.g., inventory_snapshots WHERE snapshot_date = {end_date})."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Excluding SKUs with negative inventory corrections",
+        "how_it_deflates": "If negative inventory adjustments (e.g., shrinkage write-offs) result in zero or negative on-hand, and such SKUs are excluded from active_skus, their dead stock is missed \u2014 deflating rate.",
+        "detection_sql": "SELECT sku_id, SUM(quantity) AS net_on_hand FROM inventory_snapshots WHERE snapshot_date = '2024-01-31' GROUP BY sku_id HAVING SUM(quantity) <= 0 ORDER BY net_on_hand ASC LIMIT 10",
+        "fix": "Include SKUs with net_on_hand \u2264 0 as dead stock only if they have zero sales in 90 days; otherwise, treat negative as zero for calculation."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the dead stock rate anomaly concentrated in specific categories, vendors, or SKUs?",
+      "Has a new product launch or category expansion increased SKU count without demand validation?",
+      "Are dead SKUs concentrated in older seasons or outdated styles?",
+      "Did inventory accuracy issues (e.g., cycle count discrepancies) affect on-hand counts?",
+      "Are dead stock rates higher in high-purchase categories or low-margin items?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "Dead stock rate up, sell_through_rate down",
+        "then": "inventory is sitting unsold \u2014 likely over-ordering, demand miscalculation, or merchandising misalignment"
+      },
+      {
+        "if": "Dead stock rate up, return_rate up",
+        "then": "inventory mismatches \u2014 likely sizing, quality, or description issues causing returns and stalled velocity"
+      },
+      {
+        "if": "Dead stock rate down, markdown_spend up",
+        "then": "markdown campaigns are clearing dead stock \u2014 likely effective promotion but margin-eroding"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Dead stock rate increases >8% MoM with stable purchase orders",
+        "and_also": "ec_sell_through_rate decreases",
+        "shared_root_cause": "A demand shift or competitive threat is reducing sell-through across categories \u2014 inventory is not moving, dead stock accumulates, and sell-through drops simultaneously.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', i.snapshot_date) AS month, COUNT(DISTINCT i.sku_id) AS active_skus, COUNT(DISTINCT CASE WHEN o.order_date >= DATEADD(day, -90, i.snapshot_date) THEN o.order_id END) AS recent_orders, COUNT(DISTINCT i.sku_id) FILTER (WHERE o.order_id IS NULL) AS dead_skus FROM inventory_snapshots i LEFT JOIN order_items oi ON i.sku_id = oi.product_id LEFT JOIN orders o ON oi.order_id = o.order_id WHERE i.snapshot_date BETWEEN '2024-01-01' AND '2024-01-31' GROUP BY 1 ORDER BY month"
+      },
+      {
+        "if_this_metric": "Dead stock rate drops MoM",
+        "and_also": "ec_overstock_index increases",
+        "shared_root_cause": "Markdown promotions or clearance events are clearing older dead stock, reducing dead stock count, but new overstock is accumulating \u2014 likely short-term inventory optimization at the cost of long-term balance.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', o.order_date) AS month, COUNT(DISTINCT oi.product_id) AS skus_sold, SUM(oi.quantity) AS units, SUM(CASE WHEN oi.order_date >= DATEADD(day, -90, '2024-01-31') THEN oi.quantity END) AS units_90d, SUM(CASE WHEN oi.order_date < DATEADD(day, -90, '2024-01-31') THEN oi.quantity END) AS units_old FROM order_items oi JOIN orders o ON oi.order_id = o.order_id WHERE o.status = 'completed' AND o.order_date >= '2024-01-01' GROUP BY 1 ORDER BY month"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Defining dead stock as 'no sales ever' instead of 'no sales in 90 days'",
+        "why_wrong": "If dead stock excludes all SKUs with zero lifetime sales, healthy seasonal or infrequent items (e.g., holiday decor) are misclassified \u2014 inflating rate and masking true obsolescence.",
+        "bad_sql": "SELECT COUNT(DISTINCT CASE WHEN last_sale_date IS NULL THEN sku_id END) * 100.0 / NULLIF(COUNT(DISTINCT sku_id), 0) AS rate FROM (SELECT sku_id, MAX(order_date) AS last_sale_date FROM order_items oi JOIN orders o ON oi.order_id = o.order_id GROUP BY sku_id) sub",
+        "good_sql": "SELECT COUNT(DISTINCT CASE WHEN last_sale_date < DATEADD(day, -90, '2024-01-31') THEN sku_id END) * 100.0 / NULLIF(COUNT(DISTINCT CASE WHEN quantity > 0 THEN sku_id END), 0) AS rate FROM inventory_snapshots i LEFT JOIN (SELECT product_id AS sku_id, MAX(order_date) AS last_sale_date FROM order_items oi JOIN orders o ON oi.order_id = o.order_id GROUP BY product_id) r ON i.sku_id = r.sku_id WHERE i.snapshot_date = '2024-01-31'"
+      },
+      {
+        "pattern": "Counting dead stock as a percentage of *total* SKUs",
+        "why_wrong": "If denominator includes SKUs with zero inventory, dead stock appears higher \u2014 because non-active SKUs (e.g., discontinued) are incorrectly counted as dead stock.",
+        "bad_sql": "SELECT COUNT(DISTINCT CASE WHEN last_sale_date < DATEADD(day, -90, '2024-01-31') THEN sku_id END) * 100.0 / NULLIF(COUNT(DISTINCT sku_id), 0) AS rate FROM inventory_snapshots i LEFT JOIN (SELECT product_id AS sku_id, MAX(order_date) AS last_sale_date FROM order_items oi JOIN orders o ON oi.order_id = o.order_id GROUP BY product_id) r ON i.sku_id = r.sku_id GROUP BY 1",
+        "good_sql": "SELECT COUNT(DISTINCT CASE WHEN last_sale_date < DATEADD(day, -90, '2024-01-31') THEN sku_id END) * 100.0 / NULLIF(COUNT(DISTINCT CASE WHEN quantity > 0 THEN sku_id END), 0) AS rate FROM inventory_snapshots i LEFT JOIN (SELECT product_id AS sku_id, MAX(order_date) AS last_sale_date FROM order_items oi JOIN orders o ON oi.order_id = o.order_id GROUP BY product_id) r ON i.sku_id = r.sku_id WHERE i.snapshot_date = '2024-01-31'"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "WITH active_skus AS (SELECT DISTINCT sku_id FROM inventory_snapshots WHERE snapshot_date = '2024-01-31' AND quantity > 0), recent_sales AS (SELECT DISTINCT oi.product_id AS sku_id FROM order_items oi JOIN orders o ON oi.order_id = o.order_id WHERE o.status = 'completed' AND o.order_date >= DATEADD(day, -90, '2024-01-31')), inventory_counts AS (SELECT COUNT(DISTINCT a.sku_id) AS active_count FROM active_skus a), dead_counts AS (SELECT COUNT(DISTINCT a.sku_id) AS dead_count FROM active_skus a LEFT JOIN recent_sales r ON a.sku_id = r.sku_id WHERE r.sku_id IS NULL) SELECT dc.dead_count, ic.active_count, dc.dead_count * 100.0 / NULLIF(ic.active_count, 0) AS dead_stock_rate FROM dead_counts dc, inventory_counts ic",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', i.snapshot_date) AS month, p.category, COUNT(DISTINCT i.sku_id) FILTER (WHERE i.quantity > 0) AS active_skus, COUNT(DISTINCT CASE WHEN r.last_sale_date < DATEADD(day, -90, i.snapshot_date) THEN i.sku_id END) AS dead_skus, COUNT(DISTINCT CASE WHEN r.last_sale_date < DATEADD(day, -90, i.snapshot_date) THEN i.sku_id END) * 100.0 / NULLIF(COUNT(DISTINCT CASE WHEN i.quantity > 0 THEN i.sku_id END), 0) AS dead_stock_rate FROM inventory_snapshots i LEFT JOIN (SELECT product_id AS sku_id, MAX(order_date) AS last_sale_date FROM order_items oi JOIN orders o ON oi.order_id = o.order_id GROUP BY product_id) r ON i.sku_id = r.sku_id JOIN products p ON i.sku_id = p.sku_id WHERE i.snapshot_date >= '2024-01-01' GROUP BY 1, p.category ORDER BY 1, 5 DESC",
+      "advanced_sql": "WITH active_skus AS (\n  -- Active SKUs: on-hand > 0 at period end\n  SELECT sku_id\n  FROM inventory_snapshots\n  WHERE snapshot_date = '2024-01-31' AND quantity > 0\n),\nrecent_sales AS (\n  -- Recent sales: completed orders in last 90 days\n  SELECT DISTINCT oi.product_id AS sku_id\n  FROM order_items oi\n  JOIN orders o ON oi.order_id = o.order_id\n  WHERE o.status = 'completed' AND o.order_date >= DATEADD(day, -90, '2024-01-31')\n),\ndead_stock AS (\n  -- Dead stock: active SKUs with no recent sales\n  SELECT COUNT(DISTINCT a.sku_id) AS dead_count\n  FROM active_skus a\n  LEFT JOIN recent_sales r ON a.sku_id = r.sku_id\n  WHERE r.sku_id IS NULL\n),\ntotal_active AS (\n  SELECT COUNT(DISTINCT sku_id) AS active_count FROM active_skus\n),\ncategory_breakdown AS (\n  SELECT p.category, COUNT(DISTINCT a.sku_id) AS active_skus, COUNT(DISTINCT CASE WHEN r.sku_id IS NULL THEN a.sku_id END) AS dead_skus\n  FROM active_skus a\n  LEFT JOIN products p ON a.sku_id = p.sku_id\n  LEFT JOIN recent_sales r ON a.sku_id = r.sku_id\n  GROUP BY p.category\n)\nSELECT\n  ds.dead_count,\n  ta.active_count,\n  ROUND(ds.dead_count * 100.0 / NULLIF(ta.active_count, 0), 2) AS dead_stock_rate,\n  cb.category,\n  cb.active_skus,\n  cb.dead_skus,\n  ROUND(cb.dead_skus * 100.0 / NULLIF(cb.active_skus, 0), 2) AS category_dead_stock_rate\nFROM dead_stock ds\nCROSS JOIN total_active ta\nCROSS JOIN category_breakdown cb\nORDER BY cb.dead_skus DESC"
+    }
+  },
+  {
+    "id": "ec_overstock_index",
+    "title": "Overstock Index",
+    "intent_tags": [
+      "overstock index",
+      "overstock level",
+      "excess inventory",
+      "inventory surplus",
+      "stock surplus",
+      "overstock %",
+      "what % inventory is overstock",
+      "excess stock",
+      "inventory risk",
+      "overstock ratio",
+      "stock ahead of demand"
+    ],
+    "sql_features": [
+      "aggregation",
+      "conditional_count",
+      "date_spine",
+      "nullif"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "assess inventory excess and planning accuracy",
+      "trigger markdown or liquidation workflows",
+      "benchmark inventory balance across categories or vendors",
+      "optimize reorder points and purchase planning",
+      "evaluate impact of demand forecast changes"
+    ],
+    "related_patterns": [
+      "ec_sell_through_rate",
+      "ec_dead_stock_rate",
+      "ec_inventory_turnover",
+      "ec_demand_forecast_accuracy"
+    ],
+    "business_definition": "Ratio of current inventory on hand to forward demand forecast for the next 90 days, expressed as a multiplier. A value >1 indicates overstock; <1 indicates understock. Forward demand is forecast using 30-day trailing sell-through * 3 (assuming linear demand).",
+    "metric_nature": {
+      "what_it_measures": "The balance between current stock and projected demand \u2014 a forward-looking indicator of inventory surplus or shortage.",
+      "what_it_does_not_measure": "Revenue or profit impact of overstock. High overstock may be strategic (e.g., seasonal build) and profitable.",
+      "common_misconception": "Overstock index is not the same as inventory turnover. Turnover measures sales velocity; overstock index compares stock to *future* demand \u2014 it\u2019s a stock-to-demand ratio, not a flow ratio."
+    },
+    "template": "WITH inventory_on_hand AS (\n  SELECT sku_id, SUM(quantity) AS on_hand FROM inventory_snapshots WHERE snapshot_date = {end_date} GROUP BY sku_id\n),\nforward_demand AS (\n  SELECT oi.product_id AS sku_id, SUM(oi.quantity) * 3 AS demand_90d FROM order_items oi JOIN orders o ON oi.order_id = o.order_id WHERE o.status = 'completed' AND o.order_date >= DATEADD(day, -30, {end_date}) GROUP BY oi.product_id\n),\noverstock AS (\n  SELECT i.sku_id, COALESCE(i.on_hand, 0) AS on_hand, COALESCE(d.demand_90d, 0) AS demand, COALESCE(i.on_hand, 0) / NULLIF(d.demand_90d, 0) AS overstock_index FROM inventory_on_hand i LEFT JOIN forward_demand d ON i.sku_id = d.sku_id\n)\nSELECT COUNT(DISTINCT CASE WHEN overstock_index > 1 THEN sku_id END) AS overstock_skus, COUNT(DISTINCT sku_id) AS total_skus, COUNT(DISTINCT CASE WHEN overstock_index > 1 THEN sku_id END) * 100.0 / NULLIF(COUNT(DISTINCT sku_id), 0) AS overstock_index_pct, AVG(overstock_index) AS avg_overstock_index FROM overstock",
+    "inflation_causes": [
+      {
+        "cause": "Using trailing demand instead of forward demand forecast",
+        "how_it_inflates": "If forward demand is defined as *past* 90-day sales (not forecast), and recent demand is declining, the denominator remains high while stock is reduced \u2014 artificially inflating overstock index.",
+        "detection_sql": "SELECT DATE_TRUNC('month', o.order_date) AS month, SUM(oi.quantity) AS units_sold FROM order_items oi JOIN orders o ON oi.order_id = o.order_id WHERE o.status = 'completed' GROUP BY 1 ORDER BY month DESC LIMIT 3",
+        "fix": "Use a *forecast* for forward demand (e.g., trailing 30 days * 3) instead of actual trailing 90 days \u2014 or adjust forecast for known trends."
+      },
+      {
+        "cause": "Not excluding reserved or allocated inventory from on-hand",
+        "how_it_inflates": "If reserved inventory (e.g., pending orders, QC holds) is included in on-hand, but not subtracted, the numerator is inflated \u2014 artificially increasing overstock index.",
+        "detection_sql": "SELECT sku_id, SUM(quantity) AS total, SUM(CASE WHEN allocation_type = 'reserved' THEN quantity END) AS reserved FROM inventory_snapshots WHERE snapshot_date = '2024-01-31' GROUP BY sku_id HAVING SUM(CASE WHEN allocation_type = 'reserved' THEN quantity END) > 0 ORDER BY reserved DESC LIMIT 10",
+        "fix": "Subtract reserved and allocated quantities before computing on_hand: `on_hand = SUM(quantity) - SUM(CASE WHEN allocation_type IN ('reserved','allocated') THEN quantity END)`."
+      },
+      {
+        "cause": "Including SKUs with zero demand in forward_demand",
+        "how_it_inflates": "If SKUs with zero sales in the trailing period are included in forward_demand with demand_90d = 0, and on_hand > 0, the overstock_index = INFINITY \u2014 distorting averages and inflating overall index.",
+        "detection_sql": "SELECT sku_id, SUM(oi.quantity) AS sales_30d FROM order_items oi JOIN orders o ON oi.order_id = o.order_id WHERE o.status = 'completed' AND o.order_date >= DATEADD(day, -30, '2024-01-31') GROUP BY sku_id HAVING SUM(oi.quantity) = 0 ORDER BY sku_id LIMIT 10",
+        "fix": "Exclude SKUs with zero demand from overstock calculation or replace zero demand with a minimum forecast (e.g., demand_90d = 1)."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Excluding SKUs with negative inventory",
+        "how_it_deflates": "If negative inventory (e.g., adjustments, errors) is excluded from on_hand, but those SKUs have demand, their overstock is understated \u2014 deflating index.",
+        "detection_sql": "SELECT sku_id, SUM(quantity) AS net_on_hand FROM inventory_snapshots WHERE snapshot_date = '2024-01-31' GROUP BY sku_id HAVING SUM(quantity) < 0 ORDER BY net_on_hand ASC LIMIT 10",
+        "fix": "Treat negative inventory as zero for on_hand calculation, but include in overstock logic only if demand > 0 (to flag stockout risk)."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the overstock anomaly concentrated in specific categories, vendors, or SKUs?",
+      "Has a recent demand forecast revision changed forward demand estimates?",
+      "Are overstock items concentrated in seasonal or promotional SKUs?",
+      "Did inventory accuracy issues (e.g., cycle count discrepancies) affect on-hand counts?",
+      "Are overstock levels higher in low-turnover or slow-selling categories?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "Overstock index up, sell_through_rate down",
+        "then": "inventory accumulation without demand \u2014 likely over-ordering or demand miscalculation"
+      },
+      {
+        "if": "Overstock index up, dead_stock_rate up",
+        "then": "inventory not only overstocked but also unsold \u2014 likely poor demand forecasting or product-market fit"
+      },
+      {
+        "if": "Overstock index down, sell_through_rate up",
+        "then": "inventory reduction matched by demand \u2014 likely successful clearance or improved planning"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Overstock index increases >20% WoW with stable sell-through rate",
+        "and_also": "ec_purchase_orders_next_quarter increases",
+        "shared_root_cause": "A planned inventory build (e.g., for holiday season, bulk purchase) is increasing on-hand without immediate demand change \u2014 likely proactive supply chain optimization.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', i.snapshot_date) AS week, SUM(i.quantity) AS on_hand, COUNT(DISTINCT oi.order_id) AS orders_30d, COUNT(DISTINCT po.order_id) AS purchase_orders_next_90d FROM inventory_snapshots i LEFT JOIN order_items oi ON i.sku_id = oi.product_id LEFT JOIN orders o ON oi.order_id = o.order_id LEFT JOIN purchase_orders po ON i.sku_id = po.sku_id WHERE i.snapshot_date >= '2024-01-01' GROUP BY 1 ORDER BY week"
+      },
+      {
+        "if_this_metric": "Overstock index drops MoM",
+        "and_also": "ec_dead_stock_rate increases",
+        "shared_root_cause": "Markdown campaigns are clearing overstock faster than new dead stock accumulates \u2014 likely short-term optimization at the cost of long-term balance.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', o.order_date) AS month, COUNT(DISTINCT oi.product_id) AS skus_sold, SUM(oi.quantity) AS units, COUNT(DISTINCT CASE WHEN o.order_date >= DATEADD(day, -90, '2024-01-31') THEN oi.product_id END) AS units_90d, COUNT(DISTINCT CASE WHEN o.order_date < DATEADD(day, -90, '2024-01-31') THEN oi.product_id END) AS units_old FROM order_items oi JOIN orders o ON oi.order_id = o.order_id WHERE o.status = 'completed' AND o.order_date >= '2024-01-01' GROUP BY 1 ORDER BY month"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Defining overstock as current inventory / past 90-day sales",
+        "why_wrong": "If forward demand is not *forecast*, but past 90-day sales, and demand is declining, overstock index appears inflated \u2014 because denominator shrinks faster than stock.",
+        "bad_sql": "SELECT on_hand / NULLIF((SELECT SUM(oi.quantity) FROM order_items oi JOIN orders o ON oi.order_id = o.order_id WHERE o.status = 'completed' AND o.order_date >= DATEADD(day, -90, '2024-01-31')), 0) AS index FROM inventory_snapshots WHERE snapshot_date = '2024-01-31'",
+        "good_sql": "SELECT on_hand / NULLIF((SELECT SUM(oi.quantity) * 3 FROM order_items oi JOIN orders o ON oi.order_id = o.order_id WHERE o.status = 'completed' AND o.order_date >= DATEADD(day, -30, '2024-01-31')), 0) AS index FROM inventory_snapshots WHERE snapshot_date = '2024-01-31'"
+      },
+      {
+        "pattern": "Using average inventory instead of period-end on-hand",
+        "why_wrong": "If overstock uses average inventory (beginning + ending)/2, and stock fluctuates, the index averages out volatility \u2014 masking short-term overstock spikes.",
+        "bad_sql": "SELECT (SUM(oi.quantity) FILTER (WHERE i.snapshot_date = '2024-01-01') + SUM(oi.quantity) FILTER (WHERE i.snapshot_date = '2024-01-31')) / 2 / NULLIF(d.demand_90d, 0) AS index FROM inventory_snapshots i CROSS JOIN forward_demand d",
+        "good_sql": "SELECT SUM(oi.quantity) FILTER (WHERE i.snapshot_date = '2024-01-31') / NULLIF(d.demand_90d, 0) AS index FROM inventory_snapshots i CROSS JOIN forward_demand d"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "WITH inventory_on_hand AS (SELECT sku_id, SUM(quantity) AS on_hand FROM inventory_snapshots WHERE snapshot_date = '2024-01-31' GROUP BY sku_id), forward_demand AS (SELECT oi.product_id AS sku_id, SUM(oi.quantity) * 3 AS demand_90d FROM order_items oi JOIN orders o ON oi.order_id = o.order_id WHERE o.status = 'completed' AND o.order_date >= DATEADD(day, -30, '2024-01-31') GROUP BY oi.product_id), overstock AS (SELECT i.sku_id, COALESCE(i.on_hand, 0) AS on_hand, COALESCE(d.demand_90d, 1) AS demand, COALESCE(i.on_hand, 0) / NULLIF(d.demand_90d, 1) AS overstock_index FROM inventory_on_hand i LEFT JOIN forward_demand d ON i.sku_id = d.sku_id) SELECT COUNT(DISTINCT CASE WHEN overstock_index > 1 THEN sku_id END) * 100.0 / NULLIF(COUNT(DISTINCT sku_id), 0) AS overstock_index_pct, AVG(overstock_index) AS avg_overstock_index FROM overstock",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', i.snapshot_date) AS month, p.category, SUM(i.quantity) AS on_hand, COUNT(DISTINCT oi.product_id) FILTER (WHERE o.order_date >= DATEADD(day, -30, i.snapshot_date)) * 3 AS demand_90d, SUM(i.quantity) / NULLIF(COUNT(DISTINCT oi.product_id) FILTER (WHERE o.order_date >= DATEADD(day, -30, i.snapshot_date)) * 3, 1) AS overstock_index FROM inventory_snapshots i LEFT JOIN order_items oi ON i.sku_id = oi.product_id LEFT JOIN orders o ON oi.order_id = o.order_id JOIN products p ON i.sku_id = p.product_id WHERE i.snapshot_date >= '2024-01-01' GROUP BY 1, p.category ORDER BY 1, 5 DESC",
+      "advanced_sql": "WITH inventory_on_hand AS (\n  -- Current inventory: on-hand at period end, excluding reserved\n  SELECT\n    sku_id,\n    SUM(quantity) - COALESCE(SUM(CASE WHEN allocation_type IN ('reserved','allocated') THEN quantity END), 0) AS on_hand\n  FROM inventory_snapshots\n  WHERE snapshot_date = '2024-01-31'\n  GROUP BY sku_id\n),\nforward_demand AS (\n  -- Forward demand: trailing 30 days * 3 (linear forecast)\n  SELECT\n    oi.product_id AS sku_id,\n    SUM(oi.quantity) * 3 AS demand_90d\n  FROM order_items oi\n  JOIN orders o ON oi.order_id = o.order_id\n  WHERE o.status = 'completed' AND o.order_date >= DATEADD(day, -30, '2024-01-31')\n  GROUP BY oi.product_id\n),\noverstock AS (\n  SELECT\n    i.sku_id,\n    COALESCE(i.on_hand, 0) AS on_hand,\n    COALESCE(d.demand_90d, 1) AS demand_90d,\n    ROUND(COALESCE(i.on_hand, 0) / NULLIF(d.demand_90d, 1), 2) AS overstock_index\n  FROM inventory_on_hand i\n  LEFT JOIN forward_demand d ON i.sku_id = d.sku_id\n)\nSELECT\n  COUNT(DISTINCT CASE WHEN overstock_index > 1 THEN sku_id END) * 100.0 / NULLIF(COUNT(DISTINCT sku_id), 0) AS overstock_index_pct,\n  ROUND(AVG(overstock_index), 2) AS avg_overstock_index,\n  COUNT(DISTINCT CASE WHEN overstock_index > 1 THEN sku_id END) AS overstock_skus,\n  COUNT(DISTINCT CASE WHEN overstock_index < 0.5 THEN sku_id END) AS understock_skus\nFROM overstock"
+    }
+  },
+  {
+    "id": "ec_markdown_depth",
+    "title": "Markdown Depth",
+    "intent_tags": [
+      "markdown depth",
+      "discount depth",
+      "price reduction",
+      "markdown %",
+      "discount %",
+      "price cut",
+      "what % prices reduced",
+      "markdown intensity",
+      "price markdown",
+      "discount depth",
+      "price reduction %"
+    ],
+    "sql_features": [
+      "aggregation",
+      "conditional_count",
+      "nullif"
+    ],
+    "difficulty": "beginner",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "assess promotional intensity and margin impact",
+      "benchmark markdown depth across categories or vendors",
+      "optimize markdown timing and depth for inventory clearance",
+      "evaluate impact of markdowns on revenue and margin",
+      "trigger automated markdown workflows based on inventory age"
+    ],
+    "related_patterns": [
+      "ec_gross_profit_per_order",
+      "ec_discount_rate",
+      "ec_sell_through_rate",
+      "ec_dead_stock_rate"
+    ],
+    "business_definition": "Average percentage reduction from original listed price applied to marked-down items, calculated as (original_price - sale_price) / original_price * 100. Only includes items with a markdown applied (sale_price < original_price).",
+    "metric_nature": {
+      "what_it_measures": "How aggressively prices are reduced \u2014 a proxy for promotional intensity and inventory clearance urgency.",
+      "what_it_does_not_measure": "Revenue or margin impact of markdowns. A deep markdown may clear inventory quickly but erode margins significantly.",
+      "common_misconception": "Markdown depth is not the same as discount rate. Discount rate includes all discounts (including full-price promotions); markdown depth focuses on *reduced-price items* relative to original MSRP."
+    },
+    "template": "SELECT COUNT(DISTINCT CASE WHEN m.markdown_price < m.original_price THEN oi.order_id END) AS markdown_orders, COUNT(DISTINCT oi.order_id) AS total_orders, COUNT(DISTINCT CASE WHEN m.markdown_price < m.original_price THEN oi.order_id END) * 100.0 / NULLIF(COUNT(DISTINCT oi.order_id), 0) AS markdown_rate, AVG(CASE WHEN m.markdown_price < m.original_price THEN (m.original_price - m.markdown_price) * 100.0 / NULLIF(m.original_price, 0) END) AS avg_markdown_depth FROM order_items oi JOIN markdown_events m ON oi.order_item_id = m.order_item_id JOIN orders o ON oi.order_id = o.order_id WHERE o.status = 'completed' AND o.order_date BETWEEN {start_date} AND {end_date}",
+    "inflation_causes": [
+      {
+        "cause": "Using listed_price instead of original_price",
+        "how_it_inflates": "If listed_price is already discounted (e.g., net price after promo), and original_price is not tracked separately, markdown depth is calculated against a lower baseline \u2014 inflating depth.",
+        "detection_sql": "SELECT AVG(listed_price) AS avg_listed, AVG(original_price) AS avg_original FROM markdown_events WHERE markdown_date >= '2024-01-01'",
+        "fix": "Ensure original_price reflects MSRP or *true* pre-markdown price before calculating depth."
+      },
+      {
+        "cause": "Including non-markdown items (e.g., clearance with no original price)",
+        "how_it_inflates": "If original_price = 0 or NULL for clearance items, and depth is calculated as (original_price - sale_price) / original_price, those items are excluded. But if they\u2019re counted as full markdowns, average depth inflates.",
+        "detection_sql": "SELECT COUNT(DISTINCT CASE WHEN original_price <= 0 THEN order_item_id END) AS zero_price_markdowns, COUNT(DISTINCT order_item_id) AS total_markdowns FROM markdown_events WHERE markdown_date >= '2024-01-01'",
+        "fix": "Filter to items with original_price > 0 and sale_price < original_price before calculating depth."
+      },
+      {
+        "cause": "Counting markdowns per item instead of per order",
+        "how_it_inflates": "If multiple items in one order are markdowns, and markdown_rate is calculated as `COUNT(markdown_items) / COUNT(items)`, the rate exceeds 100% \u2014 but if average depth is calculated per item, it remains valid. Net effect: rate inflation only if rate uses *items*, not *orders*.",
+        "detection_sql": "SELECT order_id, COUNT(DISTINCT order_item_id) AS items, COUNT(DISTINCT CASE WHEN m.markdown_price < m.original_price THEN order_item_id END) AS markdown_items FROM order_items oi LEFT JOIN markdown_events m ON oi.order_item_id = m.order_item_id JOIN orders o ON oi.order_id = o.order_id WHERE o.status = 'completed' GROUP BY 1 HAVING COUNT(DISTINCT CASE WHEN m.markdown_price < m.original_price THEN order_item_id END) > 0 ORDER BY markdown_items DESC LIMIT 10",
+        "fix": "Calculate markdown_rate at order level: `COUNT(DISTINCT CASE WHEN markdown_applied = true THEN order_id END) / COUNT(DISTINCT order_id)`."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Excluding items with original_price > sale_price but sale_price = original_price",
+        "how_it_deflates": "If markdown_depth only includes items where sale_price < original_price, but original_price = sale_price due to a *negative* markdown (e.g., price increase before markdown), depth is deflated.",
+        "detection_sql": "SELECT COUNT(DISTINCT CASE WHEN original_price > sale_price AND sale_price >= original_price THEN order_item_id END) AS zero_net_markdowns FROM markdown_events WHERE markdown_date >= '2024-01-01'",
+        "fix": "Include only items where a markdown *event* occurred (e.g., m.markdown_type IS NOT NULL), not just price differential."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the markdown depth anomaly concentrated in specific categories, vendors, or SKUs?",
+      "Has a new markdown automation rule (e.g., X days since last markdown) been introduced?",
+      "Are deeper markdowns correlated with slower sell-through or higher dead stock?",
+      "Did markdown timing or depth change seasonally or after inventory events?",
+      "Are markdowns driving additional volume or just margin erosion?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "Markdown depth up, sell_through_rate up",
+        "then": "deeper discounts driving faster sell-through \u2014 likely effective clearance or inventory optimization"
+      },
+      {
+        "if": "Markdown depth up, gross_profit_per_order down",
+        "then": "deeper discounts eroding margins \u2014 likely trade-off between velocity and profitability"
+      },
+      {
+        "if": "Markdown depth down, dead_stock_rate up",
+        "then": "shallower discounts failing to clear inventory \u2014 likely markdown timing or pricing misalignment"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Markdown depth increases >10pp MoM with stable sell-through rate",
+        "and_also": "ec_discount_rate decreases same period",
+        "shared_root_cause": "A shift toward deeper, less frequent markdowns (e.g., later-stage clearance vs early promotional discounts) is increasing average depth but reducing overall discount rate.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', m.markdown_date) AS month, COUNT(DISTINCT m.order_item_id) AS markdown_items, COUNT(DISTINCT CASE WHEN m.markdown_price < m.original_price THEN m.order_item_id END) AS active_markdowns, AVG(CASE WHEN m.markdown_price < m.original_price THEN (m.original_price - m.markdown_price) * 100.0 / NULLIF(m.original_price, 0) END) AS avg_depth, COUNT(DISTINCT CASE WHEN m.markdown_price < m.original_price THEN m.order_id END) * 100.0 / NULLIF(COUNT(DISTINCT m.order_id), 0) AS discount_rate FROM markdown_events m JOIN orders o ON m.order_id = o.order_id WHERE m.markdown_date >= '2024-01-01' GROUP BY 1 ORDER BY month"
+      },
+      {
+        "if_this_metric": "Markdown depth drops MoM",
+        "and_also": "ec_dead_stock_rate increases",
+        "shared_root_cause": "Shallower discounts are failing to clear slow-moving inventory \u2014 likely markdown timing, depth thresholds, or promotion strategy issues.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', m.markdown_date) AS month, COUNT(DISTINCT CASE WHEN m.markdown_price < m.original_price THEN m.order_item_id END) AS active_markdowns, AVG(CASE WHEN m.markdown_price < m.original_price THEN (m.original_price - m.markdown_price) * 100.0 / NULLIF(m.original_price, 0) END) AS avg_depth FROM markdown_events m JOIN orders o ON m.order_id = o.order_id WHERE m.markdown_date >= '2024-01-01' GROUP BY 1 ORDER BY month"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Using listed_price instead of original_price in denominator",
+        "why_wrong": "If listed_price already reflects a prior discount, markdown depth is inflated \u2014 because the baseline is artificially low.",
+        "bad_sql": "SELECT AVG((listed_price - net_price) * 100.0 / NULLIF(listed_price, 0)) AS depth FROM order_items WHERE net_price < listed_price",
+        "good_sql": "SELECT AVG((original_price - markdown_price) * 100.0 / NULLIF(original_price, 0)) AS depth FROM markdown_events WHERE markdown_price < original_price"
+      },
+      {
+        "pattern": "Calculating average depth per *order* instead of per *markdown event*",
+        "why_wrong": "If one order has one deep discount and nine full-price items, averaging by order deflates depth \u2014 because the denominator includes non-markdown items.",
+        "bad_sql": "SELECT AVG((original_price - markdown_price) * 100.0 / NULLIF(original_price, 0)) AS depth FROM (SELECT order_id, MAX(original_price) AS original, MAX(markdown_price) AS markdown FROM markdown_events GROUP BY order_id) sub",
+        "good_sql": "SELECT AVG((original_price - markdown_price) * 100.0 / NULLIF(original_price, 0)) AS depth FROM markdown_events WHERE markdown_price < original_price"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT AVG(CASE WHEN m.markdown_price < m.original_price THEN (m.original_price - m.markdown_price) * 100.0 / NULLIF(m.original_price, 0) END) AS avg_markdown_depth FROM markdown_events m JOIN orders o ON m.order_id = o.order_id WHERE o.status = 'completed' AND o.order_date BETWEEN '2024-01-01' AND '2024-01-31'",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', m.markdown_date) AS month, p.category, COUNT(DISTINCT CASE WHEN m.markdown_price < m.original_price THEN m.order_item_id END) AS markdown_items, AVG(CASE WHEN m.markdown_price < m.original_price THEN (m.original_price - m.markdown_price) * 100.0 / NULLIF(m.original_price, 0) END) AS avg_depth, COUNT(DISTINCT CASE WHEN m.markdown_price < m.original_price THEN m.order_id END) * 100.0 / NULLIF(COUNT(DISTINCT m.order_id), 0) AS markdown_rate FROM markdown_events m JOIN order_items oi ON m.order_item_id = oi.order_item_id JOIN products p ON oi.product_id = p.product_id JOIN orders o ON m.order_id = o.order_id WHERE o.status = 'completed' AND m.markdown_date >= '2024-01-01' GROUP BY 1, p.category ORDER BY 1, 4 DESC",
+      "advanced_sql": "WITH markdown_events_filtered AS (\n  -- Grain: markdown events with valid original_price\n  SELECT\n    m.order_id,\n    m.order_item_id,\n    m.original_price,\n    m.markdown_price,\n    m.markdown_date,\n    p.category\n  FROM markdown_events m\n  JOIN order_items oi ON m.order_item_id = oi.order_item_id\n  JOIN products p ON oi.product_id = p.product_id\n  JOIN orders o ON m.order_id = o.order_id\n  WHERE o.status = 'completed'\n    AND m.markdown_date BETWEEN '2024-01-01' AND '2024-01-31'\n    AND m.original_price > 0\n    AND m.markdown_price < m.original_price\n),\nmarkdown_metrics AS (\n  SELECT\n    COUNT(DISTINCT order_item_id) AS markdown_items,\n    COUNT(DISTINCT order_id) AS markdown_orders,\n    ROUND(AVG((original_price - markdown_price) * 100.0 / NULLIF(original_price, 0)), 2) AS avg_markdown_depth_pct,\n    ROUND(AVG(original_price - markdown_price), 2) AS avg_markdown_dollar\n  FROM markdown_events_filtered\n)\nSELECT\n  markdown_items,\n  markdown_orders,\n  avg_markdown_depth_pct,\n  avg_markdown_dollar,\n  CASE\n    WHEN avg_markdown_depth_pct >= 40 THEN 'deep'\n    WHEN avg_markdown_depth_pct >= 20 THEN 'moderate'\n    ELSE 'light'\n  END AS depth_tier\nFROM markdown_metrics"
+    }
+  },
+  {
+    "id": "ec_new_product_revenue_share",
+    "title": "New Product Revenue Share",
+    "intent_tags": [
+      "new product revenue share",
+      "new item revenue",
+      "new sku revenue",
+      "new launch revenue",
+      "new product share",
+      "new item %",
+      "what % revenue from new products",
+      "new product contribution",
+      "new sku revenue %",
+      "new launch %"
+    ],
+    "sql_features": [
+      "aggregation",
+      "conditional_count",
+      "date_spine",
+      "nullif"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "assess innovation pipeline impact on revenue",
+      "benchmark new product performance against historical launches",
+      "evaluate new product ROI and launch effectiveness",
+      "optimize new product investment and marketing spend",
+      "identify high-performing or underperforming new SKUs"
+    ],
+    "related_patterns": [
+      "ec_net_revenue",
+      "ec_gross_profit_per_order",
+      "ec_aov",
+      "ec_customer_acquisition_cost"
+    ],
+    "business_definition": "Percentage of net revenue in the period derived from products launched in the last 90 days. A new product is defined as one with first order_date >= {start_date} - 90 days. Net revenue is GMV minus refunds and discounts.",
+    "metric_nature": {
+      "what_it_measures": "The contribution of new products to overall revenue \u2014 a measure of innovation-driven growth and launch effectiveness.",
+      "what_it_does_not_measure": "Profitability or customer acquisition from new products. New products may drive revenue but erode margins or fail to acquire customers.",
+      "common_misconception": "New product revenue share is not the same as new customer revenue. It tracks *product novelty*, not *customer novelty* \u2014 repeat customers may purchase new products."
+    },
+    "template": "WITH new_products AS (\n  SELECT product_id, MIN(order_date) AS launch_date FROM order_items oi JOIN orders o ON oi.order_id = o.order_id GROUP BY product_id HAVING MIN(order_date) >= DATEADD(day, -90, {end_date})\n),\nnew_product_revenue AS (\n  SELECT SUM(nr.net_revenue) AS new_product_revenue FROM order_items oi JOIN new_products np ON oi.product_id = np.product_id JOIN net_revenue_daily nr ON oi.order_id = nr.order_id\n),\ntotal_revenue AS (\n  SELECT SUM(net_revenue) AS total_revenue FROM net_revenue_daily nr WHERE order_date BETWEEN {start_date} AND {end_date}\n)\nSELECT COALESCE(npr.new_product_revenue, 0) AS new_product_revenue, tr.total_revenue, COALESCE(npr.new_product_revenue, 0) * 100.0 / NULLIF(tr.total_revenue, 0) AS new_product_revenue_share FROM new_product_revenue npr, total_revenue tr",
+    "inflation_causes": [
+      {
+        "cause": "Using first order_date from *all* orders instead of first *completed* order",
+        "how_it_inflates": "If cancelled or test orders are included in first order_date, a product\u2019s launch date appears earlier \u2014 but if those orders are excluded from revenue, new product revenue is understated \u2014 net effect: inconsistent volatility depending on timing.",
+        "detection_sql": "SELECT product_id, MIN(order_date) AS first_order, COUNT(DISTINCT CASE WHEN status = 'cancelled' THEN order_id END) AS cancelled_orders, COUNT(DISTINCT CASE WHEN status = 'completed' THEN order_id END) AS completed_orders FROM orders o JOIN order_items oi ON o.order_id = oi.order_id GROUP BY 1 HAVING MIN(order_date) >= DATEADD(day, -90, '2024-01-31') ORDER BY first_order DESC LIMIT 10",
+        "fix": "Filter to completed orders only when defining new products: `MIN(order_date) WHERE status = 'completed'`."
+      },
+      {
+        "cause": "Counting revenue from *all* time for new products instead of period-only",
+        "how_it_inflates": "If new_product_revenue aggregates lifetime sales, and period revenue is only this quarter, new product share appears inflated \u2014 because new products contribute sales from prior periods too.",
+        "detection_sql": "SELECT product_id, SUM(CASE WHEN order_date >= '2024-01-01' THEN nr.net_revenue END) AS period_revenue, SUM(nr.net_revenue) AS lifetime_revenue FROM order_items oi JOIN net_revenue_daily nr ON oi.order_id = nr.order_id JOIN new_products np ON oi.product_id = np.product_id WHERE np.launch_date >= DATEADD(day, -90, '2024-01-31') GROUP BY 1 ORDER BY lifetime_revenue DESC LIMIT 10",
+        "fix": "Restrict new_product_revenue to period only: `SUM(nr.net_revenue) WHERE nr.order_date BETWEEN {start_date} AND {end_date}`."
+      },
+      {
+        "cause": "Including pre-orders or\u9884\u552e as new products",
+        "how_it_inflates": "If pre-order revenue is attributed to launch_date = first order_date (not first shipment), new product revenue includes non-fulfilled revenue \u2014 inflating share if pre-orders are not recognized.",
+        "detection_sql": "SELECT COUNT(DISTINCT CASE WHEN o.status = 'pre_order' THEN oi.order_id END) AS pre_orders, SUM(nr.net_revenue) FILTER (WHERE o.status = 'pre_order') AS pre_order_revenue FROM orders o JOIN order_items oi ON o.order_id = oi.order_id JOIN net_revenue_daily nr ON oi.order_id = nr.order_id JOIN new_products np ON oi.product_id = np.product_id",
+        "fix": "Attribute new product revenue to shipment_date or fulfillment_date, not order_date \u2014 only count completed or shipped revenue."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Excluding new products with zero sales in period",
+        "how_it_deflates": "If new_product_revenue only includes products with sales in period, but launch_date is set at period start, products launched at period end are excluded \u2014 deflating share.",
+        "detection_sql": "SELECT product_id, launch_date, COUNT(DISTINCT order_id) FILTER (WHERE order_date >= launch_date) AS orders, SUM(net_revenue) FILTER (WHERE order_date >= launch_date) AS revenue FROM new_products np LEFT JOIN order_items oi ON np.product_id = oi.product_id LEFT JOIN net_revenue_daily nr ON oi.order_id = nr.order_id GROUP BY 1, 2 ORDER BY launch_date DESC LIMIT 10",
+        "fix": "Include all new products defined by launch_date (e.g., within 90 days of period end) regardless of period sales \u2014 use period revenue only."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the new product revenue share anomaly concentrated in specific categories, vendors, or SKUs?",
+      "Has a new product launch or cohort gone live recently?",
+      "Are new products performing better or worse than historical launches?",
+      "Did product development or marketing spend change affecting new product success?",
+      "Are new product margins higher or lower than legacy products?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "New product revenue share up, net_revenue up",
+        "then": "successful new product launches driving top-line growth \u2014 likely innovative or well-marketed items"
+      },
+      {
+        "if": "New product revenue share up, gross_profit_per_order down",
+        "then": "new products have lower margins \u2014 likely competitive pricing or higher acquisition costs"
+      },
+      {
+        "if": "New product revenue share down, new_product_count up",
+        "then": "more new products but lower performance \u2014 likely launch quality issues or marketing misalignment"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "New product revenue share increases >15pp WoW with flat total revenue",
+        "and_also": "ec_gross_profit_per_order increases",
+        "shared_root_cause": "High-margin new products (e.g., premium SKUs, bundled items) are driving revenue and margin \u2014 likely successful innovation or strategic product mix shift.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', o.order_date) AS month, COUNT(DISTINCT CASE WHEN np.launch_date >= DATEADD(day, -90, '2024-01-31') THEN oi.product_id END) AS new_products, COUNT(DISTINCT CASE WHEN np.launch_date >= DATEADD(day, -90, '2024-01-31') THEN oi.order_id END) AS new_orders, SUM(nr.net_revenue) FILTER (WHERE np.launch_date >= DATEADD(day, -90, '2024-01-31')) AS new_product_revenue, SUM(nr.net_revenue) AS total_revenue FROM orders o JOIN order_items oi ON o.order_id = oi.order_id JOIN net_revenue_daily nr ON oi.order_id = nr.order_id LEFT JOIN (SELECT product_id, MIN(order_date) AS launch_date FROM order_items oi JOIN orders o ON oi.order_id = o.order_id WHERE o.status = 'completed' GROUP BY product_id HAVING MIN(order_date) >= DATEADD(day, -90, '2024-01-31')) np ON oi.product_id = np.product_id WHERE o.order_date >= '2024-01-01' GROUP BY 1 ORDER BY month"
+      },
+      {
+        "if_this_metric": "New product revenue share drops MoM with stable new_product_count",
+        "and_also": "ec_new_product_return_rate increases",
+        "shared_root_cause": "Lower-quality new products are returning at higher rates \u2014 likely sizing, quality, or description issues undermining new product success despite volume.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', o.order_date) AS month, COUNT(DISTINCT CASE WHEN np.launch_date >= DATEADD(day, -90, '2024-01-31') THEN oi.product_id END) AS new_products, COUNT(DISTINCT CASE WHEN r.order_id IS NOT NULL AND np.launch_date >= DATEADD(day, -90, '2024-01-31') THEN r.order_id END) * 100.0 / NULLIF(COUNT(DISTINCT CASE WHEN np.launch_date >= DATEADD(day, -90, '2024-01-31') THEN oi.order_id END), 0) AS new_product_return_rate FROM orders o JOIN order_items oi ON o.order_id = oi.order_id LEFT JOIN returns r ON oi.order_id = r.order_id LEFT JOIN (SELECT product_id, MIN(order_date) AS launch_date FROM order_items oi JOIN orders o ON oi.order_id = o.order_id WHERE o.status = 'completed' GROUP BY product_id HAVING MIN(order_date) >= DATEADD(day, -90, '2024-01-31')) np ON oi.product_id = np.product_id WHERE o.order_date >= '2024-01-01' GROUP BY 1 ORDER BY month"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Using first *order_item* creation date instead of first *order_completion* date",
+        "why_wrong": "If new product is defined by order_item creation but launch_date uses first order_date *before* completion, new products are misidentified \u2014 including cancelled or pre-order items.",
+        "bad_sql": "SELECT product_id, MIN(order_date) AS launch_date FROM order_items oi JOIN orders o ON oi.order_id = o.order_id GROUP BY 1 HAVING MIN(order_date) >= DATEADD(day, -90, '2024-01-31')",
+        "good_sql": "SELECT product_id, MIN(order_date) AS launch_date FROM order_items oi JOIN orders o ON oi.order_id = o.order_id WHERE o.status = 'completed' GROUP BY 1 HAVING MIN(order_date) >= DATEADD(day, -90, '2024-01-31')"
+      },
+      {
+        "pattern": "Counting revenue from *all* SKUs launched in last 90 days, regardless of period sales",
+        "why_wrong": "If new_product_revenue uses *total* lifetime revenue, and period revenue is only this quarter, new product share appears inflated \u2014 because legacy products\u2019 lifetime sales are included.",
+        "bad_sql": "SELECT SUM(nr.net_revenue) AS new_product_revenue FROM order_items oi JOIN new_products np ON oi.product_id = np.product_id JOIN net_revenue_daily nr ON oi.order_id = nr.order_id",
+        "good_sql": "SELECT SUM(nr.net_revenue) AS new_product_revenue FROM order_items oi JOIN new_products np ON oi.product_id = np.product_id JOIN net_revenue_daily nr ON oi.order_id = nr.order_id WHERE nr.order_date BETWEEN '2024-01-01' AND '2024-01-31'"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "WITH new_products AS (SELECT product_id, MIN(order_date) AS launch_date FROM order_items oi JOIN orders o ON oi.order_id = o.order_id WHERE o.status = 'completed' GROUP BY product_id HAVING MIN(order_date) >= DATEADD(day, -90, '2024-01-31')), new_product_revenue AS (SELECT SUM(nr.net_revenue) AS new_product_revenue FROM order_items oi JOIN new_products np ON oi.product_id = np.product_id JOIN net_revenue_daily nr ON oi.order_id = nr.order_id WHERE nr.order_date BETWEEN '2024-01-01' AND '2024-01-31'), total_revenue AS (SELECT SUM(net_revenue) AS total_revenue FROM net_revenue_daily WHERE order_date BETWEEN '2024-01-01' AND '2024-01-31') SELECT COALESCE(npr.new_product_revenue, 0) AS new_product_revenue, tr.total_revenue, COALESCE(npr.new_product_revenue, 0) * 100.0 / NULLIF(tr.total_revenue, 0) AS new_product_revenue_share FROM new_product_revenue npr, total_revenue tr",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', o.order_date) AS month, p.category, COUNT(DISTINCT CASE WHEN np.launch_date >= DATEADD(day, -90, '2024-01-31') THEN oi.product_id END) AS new_products, SUM(nr.net_revenue) FILTER (WHERE np.launch_date >= DATEADD(day, -90, '2024-01-31')) AS new_product_revenue, SUM(nr.net_revenue) AS total_revenue, SUM(nr.net_revenue) FILTER (WHERE np.launch_date >= DATEADD(day, -90, '2024-01-31')) * 100.0 / NULLIF(SUM(nr.net_revenue), 0) AS share FROM orders o JOIN order_items oi ON o.order_id = oi.order_id JOIN net_revenue_daily nr ON oi.order_id = nr.order_id JOIN products p ON oi.product_id = p.product_id LEFT JOIN (SELECT product_id, MIN(order_date) AS launch_date FROM order_items oi JOIN orders o ON oi.order_id = o.order_id WHERE o.status = 'completed' GROUP BY product_id HAVING MIN(order_date) >= DATEADD(day, -90, '2024-01-31')) np ON oi.product_id = np.product_id WHERE o.order_date >= '2024-01-01' GROUP BY 1, p.category ORDER BY 1, 6 DESC",
+      "advanced_sql": "WITH new_products AS (\n  -- Grain: products launched in last 90 days (based on first completed order)\n  SELECT\n    product_id,\n    MIN(order_date) AS launch_date\n  FROM order_items oi\n  JOIN orders o ON oi.order_id = o.order_id\n  WHERE o.status = 'completed'\n  GROUP BY product_id\n  HAVING MIN(order_date) >= DATEADD(day, -90, '2024-01-31')\n),\nnew_product_revenue AS (\n  -- Period revenue only from new products\n  SELECT\n    SUM(nr.net_revenue) AS new_product_revenue\n  FROM order_items oi\n  JOIN new_products np ON oi.product_id = np.product_id\n  JOIN net_revenue_daily nr ON oi.order_id = nr.order_id\n  WHERE nr.order_date BETWEEN '2024-01-01' AND '2024-01-31'\n),\ntotal_revenue AS (\n  SELECT SUM(net_revenue) AS total_revenue FROM net_revenue_daily WHERE order_date BETWEEN '2024-01-01' AND '2024-01-31'\n),\nproduct_category AS (\n  SELECT\n    p.category,\n    COUNT(DISTINCT np.product_id) AS new_product_count,\n    SUM(nr.net_revenue) AS new_product_revenue\n  FROM new_products np\n  JOIN order_items oi ON np.product_id = oi.product_id\n  JOIN net_revenue_daily nr ON oi.order_id = nr.order_id\n  JOIN products p ON np.product_id = p.product_id\n  WHERE nr.order_date BETWEEN '2024-01-01' AND '2024-01-31'\n  GROUP BY p.category\n)\nSELECT\n  COALESCE(npr.new_product_revenue, 0) AS total_new_product_revenue,\n  tr.total_revenue,\n  ROUND(COALESCE(npr.new_product_revenue, 0) * 100.0 / NULLIF(tr.total_revenue, 0), 2) AS new_product_revenue_share,\n  pc.category,\n  pc.new_product_count,\n  pc.new_product_revenue,\n  ROUND(pc.new_product_revenue * 100.0 / NULLIF(tr.total_revenue, 0), 2) AS category_share\nFROM new_product_revenue npr\nCROSS JOIN total_revenue tr\nCROSS JOIN product_category pc\nORDER BY pc.new_product_revenue DESC"
+    }
+  }
+]

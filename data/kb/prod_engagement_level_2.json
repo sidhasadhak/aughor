@@ -1,0 +1,633 @@
+[
+  {
+    "id": "prod_feature_adoption_rate",
+    "title": "Feature Adoption Rate",
+    "intent_tags": [
+      "feature adoption rate",
+      "feature adoption %",
+      "feature usage rate",
+      "what % users adopt feature",
+      "new feature adoption",
+      "feature uptake",
+      "product feature adoption",
+      "adoption rate",
+      "feature adoption",
+      "new feature adoption rate",
+      "feature adoption %"
+    ],
+    "sql_features": [
+      "aggregation",
+      "conditional_count",
+      "nullif",
+      "cte"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "assess new feature adoption success",
+      "benchmark feature adoption across cohorts or segments",
+      "identify underperforming features for improvement or deprecation",
+      "evaluate onboarding impact on feature discovery",
+      "model feature stickiness and long-term usage trends"
+    ],
+    "related_patterns": [
+      "prod_retention",
+      "prod_engagement",
+      "prod_activation_rate",
+      "prod_feature_breadth"
+    ],
+    "business_definition": "Percentage of active users who used a specific feature at least once in the last 30 days, out of total active users in the period. An active user is defined as a user with \u22651 session or interaction in the period.",
+    "metric_nature": {
+      "what_it_measures": "How broadly a feature is adopted by active users \u2014 a proxy for feature relevance and successful onboarding.",
+      "what_it_does_not_measure": "Feature depth or engagement intensity. A high adoption rate may reflect superficial usage (e.g., one-time click) rather than habitual use.",
+      "common_misconception": "Feature adoption rate is not the same as feature usage frequency. Adoption tracks *who* uses the feature; frequency tracks *how often* each user uses it."
+    },
+    "template": "WITH active_users AS (\n  SELECT DISTINCT user_id FROM sessions WHERE session_date BETWEEN {start_date} AND {end_date}\n),\nfeature_users AS (\n  SELECT DISTINCT user_id FROM feature_usage WHERE feature_name = {feature_name} AND event_date BETWEEN {start_date} AND {end_date}\n),\nmetrics AS (\n  SELECT COUNT(DISTINCT au.user_id) AS total_active, COUNT(DISTINCT fu.user_id) AS feature_users FROM active_users au LEFT JOIN feature_users fu ON au.user_id = fu.user_id\n)\nSELECT total_active, feature_users, feature_users * 100.0 / NULLIF(total_active, 0) AS adoption_rate FROM metrics",
+    "inflation_causes": [
+      {
+        "cause": "Counting feature events instead of unique users",
+        "how_it_inflates": "If adoption rate is computed as *feature events* / *total events*, a power user who uses the feature 100 times inflates the numerator \u2014 causing rate to exceed 100% and masking true adoption breadth.",
+        "detection_sql": "SELECT user_id, COUNT(*) AS events, COUNT(DISTINCT feature_name) AS features FROM feature_usage WHERE event_date >= '2024-01-01' GROUP BY 1 HAVING COUNT(*) > 100 ORDER BY events DESC LIMIT 10",
+        "fix": "Use `COUNT(DISTINCT user_id)` for both numerator and denominator to measure adoption *breadth*, not *intensity*."
+      },
+      {
+        "cause": "Including inactive or test users in denominator",
+        "how_it_inflates": "If inactive users (e.g., dormant accounts, bot users) are included in active_users, the denominator inflates \u2014 deflating adoption rate for the same feature users.",
+        "detection_sql": "SELECT user_id, MAX(session_date) AS last_session, MAX(feature_usage_date) AS last_feature FROM (SELECT user_id, session_date FROM sessions UNION SELECT user_id, event_date FROM feature_usage) u WHERE event_date >= '2024-01-01' GROUP BY 1 HAVING MAX(session_date) < '2024-01-01' ORDER BY last_session LIMIT 10",
+        "fix": "Filter active_users to only users with *recent activity* (e.g., session or feature usage within 30 days) before computing adoption rate."
+      },
+      {
+        "cause": "Using feature_name as exact string instead of normalized name",
+        "how_it_inflates": "If feature_name has variations (e.g., 'Dark Mode', 'dark_mode', 'dark-mode'), and adoption is computed with a single string match, only one variant is counted \u2014 deflating adoption rate for the feature as a whole.",
+        "detection_sql": "SELECT feature_name, COUNT(DISTINCT user_id) AS users FROM feature_usage WHERE event_date >= '2024-01-01' GROUP BY 1 ORDER BY users DESC LIMIT 20",
+        "fix": "Normalize feature_name (e.g., LOWER, REPLACE) before matching: `WHERE LOWER(feature_name) = LOWER({feature_name})`."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Excluding feature usage from logged-out or anonymous users",
+        "how_it_deflates": "If feature usage is only tracked after login, and anonymous users use the feature pre-login, their usage is missed \u2014 deflating adoption rate, especially for onboarding features.",
+        "detection_sql": "SELECT COUNT(DISTINCT CASE WHEN user_id IS NOT NULL THEN user_id END) AS logged_in_users, COUNT(DISTINCT CASE WHEN user_id IS NULL THEN session_id END) AS anonymous_sessions FROM sessions WHERE session_date >= '2024-01-01'",
+        "fix": "Include anonymous feature usage (e.g., via device_id or session_id) if feature is accessible pre-login, and merge with login data using identity stitching."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the adoption anomaly isolated to one feature, cohort, or segment?",
+      "Has a new onboarding flow, feature announcement, or UI change been deployed?",
+      "Are adoption rates higher for new users or existing users?",
+      "Did feature visibility or accessibility change recently?",
+      "Is feature usage tracked consistently across platforms (web, mobile, tablet)?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "Feature adoption up, retention up",
+        "then": "feature is stickiness driver \u2014 likely increasing engagement or solving a key user need"
+      },
+      {
+        "if": "Feature adoption up, feature_breadth down",
+        "then": "users focus on this feature \u2014 likely feature maturity or reduced exploratory usage"
+      },
+      {
+        "if": "Feature adoption down, feature_breadth up",
+        "then": "users explore more features \u2014 likely onboarding success or reduced feature fatigue"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Feature adoption rate increases >20% WoW with stable active user count",
+        "and_also": "prod_stickiness_ratio decreases",
+        "shared_root_cause": "A new feature drives initial adoption (e.g., viral or novelty effect), but users do not return \u2014 increasing adoption rate while daily/weekly engagement (stickiness) drops.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', s.session_date) AS week, COUNT(DISTINCT s.user_id) AS active_users, COUNT(DISTINCT CASE WHEN s.session_duration_seconds >= 30 THEN s.user_id END) AS sticky_users, COUNT(DISTINCT CASE WHEN f.feature_name = 'new_feature' THEN f.user_id END) AS new_feature_users FROM sessions s LEFT JOIN feature_usage f ON s.user_id = f.user_id WHERE s.session_date >= '2024-01-01' GROUP BY 1 ORDER BY week"
+      },
+      {
+        "if_this_metric": "Feature adoption rate drops MoM",
+        "and_also": "prod_feature_breadth increases same period",
+        "shared_root_cause": "Users are exploring more features but abandoning the target feature \u2014 likely due to poor feature performance, UI redesign, or better alternatives within the product.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', f.event_date) AS month, COUNT(DISTINCT f.user_id) AS users, COUNT(DISTINCT CASE WHEN f.feature_name = 'target_feature' THEN f.user_id END) AS target_feature_users, COUNT(DISTINCT CASE WHEN f.feature_name IS NOT NULL THEN f.user_id END) AS total_feature_users FROM feature_usage f WHERE f.event_date >= '2024-01-01' GROUP BY 1 ORDER BY month"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Counting feature events instead of unique users",
+        "why_wrong": "If adoption rate is computed as *feature events* / *total events*, a power user who uses the feature 100 times inflates the numerator \u2014 causing rate to exceed 100% and masking true adoption breadth.",
+        "bad_sql": "SELECT COUNT(*) FILTER (WHERE feature_name = 'feature') * 100.0 / NULLIF(COUNT(*), 0) AS adoption_rate FROM feature_usage",
+        "good_sql": "SELECT COUNT(DISTINCT CASE WHEN feature_name = 'feature' THEN user_id END) * 100.0 / NULLIF(COUNT(DISTINCT user_id), 0) AS adoption_rate FROM (SELECT DISTINCT user_id FROM sessions WHERE session_date BETWEEN '2024-01-01' AND '2024-01-31') s LEFT JOIN feature_usage f ON s.user_id = f.user_id"
+      },
+      {
+        "pattern": "Using feature_name as exact string instead of normalized name",
+        "why_wrong": "If feature_name has variations (e.g., 'Dark Mode', 'dark_mode', 'dark-mode'), and adoption is computed with a single string match, only one variant is counted \u2014 deflating adoption rate for the feature as a whole.",
+        "bad_sql": "SELECT COUNT(DISTINCT CASE WHEN feature_name = 'Dark Mode' THEN user_id END) * 100.0 / NULLIF(COUNT(DISTINCT user_id), 0) AS adoption_rate FROM feature_usage",
+        "good_sql": "SELECT COUNT(DISTINCT CASE WHEN LOWER(REPLACE(feature_name, ' ', '_')) = 'dark_mode' THEN user_id END) * 100.0 / NULLIF(COUNT(DISTINCT user_id), 0) AS adoption_rate FROM feature_usage"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "WITH active_users AS (SELECT DISTINCT user_id FROM sessions WHERE session_date BETWEEN '2024-01-01' AND '2024-01-31'), feature_users AS (SELECT DISTINCT user_id FROM feature_usage WHERE LOWER(feature_name) = 'dark_mode' AND event_date BETWEEN '2024-01-01' AND '2024-01-31'), metrics AS (SELECT COUNT(DISTINCT au.user_id) AS total_active, COUNT(DISTINCT fu.user_id) AS feature_users FROM active_users au LEFT JOIN feature_users fu ON au.user_id = fu.user_id) SELECT total_active, feature_users, feature_users * 100.0 / NULLIF(total_active, 0) AS adoption_rate FROM metrics",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', s.session_date) AS month, COUNT(DISTINCT s.user_id) AS active_users, COUNT(DISTINCT CASE WHEN LOWER(f.feature_name) = 'dark_mode' THEN f.user_id END) AS feature_users, COUNT(DISTINCT CASE WHEN LOWER(f.feature_name) = 'dark_mode' THEN f.user_id END) * 100.0 / NULLIF(COUNT(DISTINCT s.user_id), 0) AS adoption_rate FROM sessions s LEFT JOIN feature_usage f ON s.user_id = f.user_id WHERE s.session_date >= '2024-01-01' GROUP BY 1 ORDER BY 1, 4 DESC",
+      "advanced_sql": "WITH active_users AS (\n  -- Grain: users with activity in the last 30 days\n  SELECT DISTINCT user_id, MIN(session_date) AS first_activity\n  FROM sessions\n  WHERE session_date BETWEEN '2024-01-01' AND '2024-01-31'\n  GROUP BY user_id\n),\nfeature_users AS (\n  -- Grain: users who used feature in period\n  SELECT DISTINCT user_id\n  FROM feature_usage\n  WHERE LOWER(feature_name) = 'dark_mode'\n    AND event_date BETWEEN '2024-01-01' AND '2024-01-31'\n),\nadoption_metrics AS (\n  SELECT\n    COUNT(DISTINCT au.user_id) AS total_active,\n    COUNT(DISTINCT CASE WHEN fu.user_id IS NOT NULL THEN au.user_id END) AS feature_users\n  FROM active_users au\n  LEFT JOIN feature_users fu ON au.user_id = fu.user_id\n)\nSELECT\n  total_active,\n  feature_users,\n  ROUND(feature_users * 100.0 / NULLIF(total_active, 0), 2) AS adoption_rate,\n  ROUND(feature_users / NULLIF(total_active, 0) * 10000, 2) AS per_10k_active\nFROM adoption_metrics"
+    }
+  },
+  {
+    "id": "prod_breadth_of_use",
+    "title": "Breadth of Use",
+    "intent_tags": [
+      "breadth of use",
+      "feature breadth",
+      "feature diversity",
+      "product usage diversity",
+      "feature count",
+      "what is my feature usage breadth",
+      "how many features do users use",
+      "breadth metric",
+      "feature coverage",
+      "product depth",
+      "feature utilization"
+    ],
+    "sql_features": [
+      "aggregation",
+      "conditional_count",
+      "window_function",
+      "nullif"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "assess overall product engagement depth",
+      "benchmark feature coverage across user segments or cohorts",
+      "identify product stickiness or feature fatigue",
+      "evaluate feature discovery and onboarding success",
+      "model long-term product retention and usage trends"
+    ],
+    "related_patterns": [
+      "prod_feature_adoption_rate",
+      "prod_stickiness_ratio",
+      "prod_activation_rate",
+      "prod_retention"
+    ],
+    "business_definition": "Average number of distinct features used by active users in the period. An active user is defined as a user with \u22651 session or interaction in the period.",
+    "metric_nature": {
+      "what_it_measures": "How broadly users engage with the product \u2014 a proxy for product stickiness and feature ecosystem completeness.",
+      "what_it_does_not_measure": "Feature depth or intensity. A high breadth may reflect superficial usage (e.g., one click per feature) rather than habitual use.",
+      "common_misconception": "Breadth of use is not the same as frequency. Breadth measures *how many* features; frequency measures *how often* users engage with the product."
+    },
+    "template": "WITH active_users AS (\n  SELECT DISTINCT user_id FROM sessions WHERE session_date BETWEEN {start_date} AND {end_date}\n),\nfeature_usage_per_user AS (\n  SELECT user_id, COUNT(DISTINCT feature_name) AS features_used FROM feature_usage WHERE event_date BETWEEN {start_date} AND {end_date} GROUP BY user_id\n),\nmetrics AS (\n  SELECT AVG(COALESCE(fup.features_used, 0)) AS avg_breadth FROM active_users au LEFT JOIN feature_usage_per_user fup ON au.user_id = fup.user_id\n)\nSELECT avg_breadth FROM metrics",
+    "inflation_causes": [
+      {
+        "cause": "Counting feature usage per event instead of per user",
+        "how_it_inflates": "If breadth is computed as *total feature events* / *sessions*, a power user who clicks 100 times across features inflates the numerator \u2014 causing breadth to exceed possible (e.g., 10 features with 100 events = 100 breadth).",
+        "detection_sql": "SELECT user_id, COUNT(*) AS events, COUNT(DISTINCT feature_name) AS features FROM feature_usage WHERE event_date >= '2024-01-01' GROUP BY 1 HAVING COUNT(*) > 100 ORDER BY events DESC LIMIT 10",
+        "fix": "Use `COUNT(DISTINCT feature_name)` per user before averaging \u2014 not `COUNT(*)` per event."
+      },
+      {
+        "cause": "Including inactive or test users in denominator",
+        "how_it_inflates": "If inactive users (e.g., dormant accounts, bot users) are included in active_users, the denominator inflates \u2014 deflating average breadth for the same feature users.",
+        "detection_sql": "SELECT user_id, MAX(session_date) AS last_session, MAX(feature_usage_date) AS last_feature FROM (SELECT user_id, session_date FROM sessions UNION SELECT user_id, event_date FROM feature_usage) u WHERE event_date >= '2024-01-01' GROUP BY 1 HAVING MAX(session_date) < '2024-01-01' ORDER BY last_session LIMIT 10",
+        "fix": "Filter active_users to only users with *recent activity* (e.g., session or feature usage within 30 days) before computing breadth."
+      },
+      {
+        "cause": "Not normalizing feature_name before counting",
+        "how_it_inflates": "If feature_name has variations (e.g., 'Dark Mode', 'dark_mode', 'dark-mode'), and breadth counts distinct names, a single feature appears as multiple \u2014 inflating breadth.",
+        "detection_sql": "SELECT feature_name, COUNT(DISTINCT user_id) AS users FROM feature_usage WHERE event_date >= '2024-01-01' GROUP BY 1 ORDER BY users DESC LIMIT 20",
+        "fix": "Normalize feature_name (e.g., LOWER, REPLACE) before counting distinct features: `COUNT(DISTINCT LOWER(REPLACE(feature_name, ' ', '_')))`."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Excluding anonymous feature usage",
+        "how_it_deflates": "If feature usage is only tracked after login, and anonymous users use features pre-login, their usage is missed \u2014 deflating breadth, especially for onboarding flows.",
+        "detection_sql": "SELECT COUNT(DISTINCT CASE WHEN user_id IS NOT NULL THEN user_id END) AS logged_in_users, COUNT(DISTINCT CASE WHEN user_id IS NULL THEN session_id END) AS anonymous_sessions FROM sessions WHERE session_date >= '2024-01-01'",
+        "fix": "Include anonymous feature usage (e.g., via device_id or session_id) if features are accessible pre-login, and merge with login data using identity stitching."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the breadth anomaly isolated to one segment, cohort, or user type?",
+      "Has a new feature launch or product simplification been deployed?",
+      "Are breadth patterns higher for new users or existing users?",
+      "Did feature discovery or onboarding change recently?",
+      "Is feature usage tracked consistently across platforms (web, mobile, tablet)?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "Breadth of use up, retention up",
+        "then": "users engaging with more features stay longer \u2014 likely feature ecosystem strength or stickiness"
+      },
+      {
+        "if": "Breadth of use down, feature_adoption_rate up",
+        "then": "users focus on specific features \u2014 likely feature maturity or reduced exploratory usage"
+      },
+      {
+        "if": "Breadth of use down, retention down",
+        "then": "product simplification or reduced engagement \u2014 likely feature fatigue or declining interest"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Breadth of use drops >10% MoM with stable active user count",
+        "and_also": "prod_feature_adoption_rate increases same period",
+        "shared_root_cause": "Users are focusing on fewer features but adopting new ones \u2014 likely a product simplification (e.g., core features emphasized) or onboarding success (new users discovering features) with reduced exploration of legacy features.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', f.event_date) AS month, COUNT(DISTINCT f.user_id) AS active_users, COUNT(DISTINCT f.feature_name) / NULLIF(COUNT(DISTINCT f.user_id), 0) AS avg_breadth, COUNT(DISTINCT CASE WHEN LOWER(f.feature_name) = 'new_feature' THEN f.user_id END) * 100.0 / NULLIF(COUNT(DISTINCT f.user_id), 0) AS new_feature_adoption FROM feature_usage f WHERE f.event_date >= '2024-01-01' GROUP BY 1 ORDER BY month"
+      },
+      {
+        "if_this_metric": "Breadth of use increases MoM",
+        "and_also": "prod_stickiness_ratio decreases same period",
+        "shared_root_cause": "Users are exploring more features but not returning consistently \u2014 likely novelty-driven exploration (e.g., new feature launch) without habitual usage or retention improvements.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', s.session_date) AS week, COUNT(DISTINCT s.user_id) AS active_users, COUNT(DISTINCT f.feature_name) / NULLIF(COUNT(DISTINCT s.user_id), 0) AS avg_breadth, COUNT(DISTINCT CASE WHEN s.session_duration_seconds >= 30 THEN s.user_id END) * 100.0 / NULLIF(COUNT(DISTINCT s.user_id), 0) AS stickiness FROM sessions s LEFT JOIN feature_usage f ON s.user_id = f.user_id WHERE s.session_date >= '2024-01-01' GROUP BY 1 ORDER BY week"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Counting feature usage per event instead of per user",
+        "why_wrong": "If breadth is computed as *total feature events* / *sessions*, a power user who clicks 100 times across features inflates the numerator \u2014 causing breadth to exceed possible (e.g., 10 features with 100 events = 100 breadth).",
+        "bad_sql": "SELECT COUNT(*) / NULLIF(COUNT(DISTINCT session_id), 0) AS breadth FROM feature_usage",
+        "good_sql": "SELECT AVG(COALESCE(features_used, 0)) AS avg_breadth FROM (SELECT user_id, COUNT(DISTINCT feature_name) AS features_used FROM feature_usage WHERE event_date BETWEEN '2024-01-01' AND '2024-01-31' GROUP BY user_id) sub"
+      },
+      {
+        "pattern": "Not normalizing feature_name before counting",
+        "why_wrong": "If feature_name has variations (e.g., 'Dark Mode', 'dark_mode', 'dark-mode'), and breadth counts distinct names, a single feature appears as multiple \u2014 inflating breadth.",
+        "bad_sql": "SELECT COUNT(DISTINCT feature_name) / NULLIF(COUNT(DISTINCT user_id), 0) AS breadth FROM feature_usage",
+        "good_sql": "SELECT COUNT(DISTINCT LOWER(REPLACE(feature_name, ' ', '_'))) / NULLIF(COUNT(DISTINCT user_id), 0) AS breadth FROM feature_usage"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "WITH feature_usage_per_user AS (SELECT user_id, COUNT(DISTINCT LOWER(REPLACE(feature_name, ' ', '_'))) AS features_used FROM feature_usage WHERE event_date BETWEEN '2024-01-01' AND '2024-01-31' GROUP BY user_id), active_users AS (SELECT DISTINCT user_id FROM sessions WHERE session_date BETWEEN '2024-01-01' AND '2024-01-31'), metrics AS (SELECT AVG(COALESCE(fup.features_used, 0)) AS avg_breadth FROM active_users au LEFT JOIN feature_usage_per_user fup ON au.user_id = fup.user_id) SELECT avg_breadth FROM metrics",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', s.session_date) AS month, COUNT(DISTINCT s.user_id) AS active_users, COUNT(DISTINCT f.feature_name) FILTER (WHERE LOWER(f.feature_name) IS NOT NULL) / NULLIF(COUNT(DISTINCT s.user_id), 0) AS avg_breadth FROM sessions s LEFT JOIN feature_usage f ON s.user_id = f.user_id WHERE s.session_date >= '2024-01-01' GROUP BY 1 ORDER BY 1, 3 DESC",
+      "advanced_sql": "WITH active_users AS (\n  -- Grain: users with activity in the last 30 days\n  SELECT DISTINCT user_id\n  FROM sessions\n  WHERE session_date BETWEEN '2024-01-01' AND '2024-01-31'\n),\nfeature_breadth AS (\n  -- Grain: distinct features per user\n  SELECT user_id, COUNT(DISTINCT LOWER(REPLACE(feature_name, ' ', '_'))) AS features_used\n  FROM feature_usage\n  WHERE event_date BETWEEN '2024-01-01' AND '2024-01-31'\n  GROUP BY user_id\n),\nbreadth_metrics AS (\n  SELECT\n    COUNT(DISTINCT au.user_id) AS active_users,\n    ROUND(AVG(COALESCE(fb.features_used, 0)), 2) AS avg_breadth,\n    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY fb.features_used) AS median_breadth\n  FROM active_users au\n  LEFT JOIN feature_breadth fb ON au.user_id = fb.user_id\n)\nSELECT\n  active_users,\n  avg_breadth,\n  median_breadth,\n  ROUND(avg_breadth / NULLIF(median_breadth, 0), 2) AS avg_to_median_ratio\nFROM breadth_metrics"
+    }
+  },
+  {
+    "id": "prod_stickiness_ratio",
+    "title": "Stickiness Ratio",
+    "intent_tags": [
+      "stickiness ratio",
+      "DAU/MAU",
+      "DAU to MAU",
+      "daily engagement ratio",
+      "what is my stickiness",
+      "engagement ratio",
+      "retention ratio",
+      "DAU MAU ratio",
+      "stickiness %",
+      "user engagement stickiness"
+    ],
+    "sql_features": [
+      "aggregation",
+      "conditional_count",
+      "nullif"
+    ],
+    "difficulty": "beginner",
+    "pattern_type": "ratio",
+    "when_to_use": [
+      "assess user engagement frequency and habit formation",
+      "benchmark stickiness across user segments or cohorts",
+      "diagnose engagement trends (e.g., seasonal, product impact)",
+      "evaluate impact of onboarding or feature updates on retention",
+      "model product stickiness and churn risk"
+    ],
+    "related_patterns": [
+      "prod_retention",
+      "prod_feature_adoption_rate",
+      "prod_activation_rate",
+      "prod_retention_curve"
+    ],
+    "business_definition": "Ratio of daily active users (DAU) to monthly active users (MAU), expressed as a percentage. DAU are users with \u22651 session on a given day; MAU are users with \u22651 session in the last 30 days.",
+    "metric_nature": {
+      "what_it_measures": "How frequently users engage with the product \u2014 a high ratio indicates habitual usage, while a low ratio suggests sporadic or one-off engagement.",
+      "what_it_does_not_measure": "Depth or quality of engagement. A high stickiness ratio may reflect superficial usage (e.g., quick logins) rather than meaningful interaction.",
+      "common_misconception": "Stickiness ratio is not the same as retention. Retention measures *re-engagement over time* (e.g., D7 retention); stickiness measures *engagement frequency within a period*."
+    },
+    "template": "WITH daily_active AS (\n  SELECT DATE_TRUNC('day', session_date) AS day, COUNT(DISTINCT user_id) AS dau FROM sessions WHERE session_date BETWEEN {start_date} AND {end_date} GROUP BY 1\n),\nmonthly_active AS (\n  SELECT DATE_TRUNC('month', session_date) AS month, COUNT(DISTINCT user_id) AS mau FROM sessions WHERE session_date BETWEEN DATEADD(day, -30, {end_date}) AND {end_date} GROUP BY 1\n),\nmetrics AS (\n  SELECT AVG(d.dau) AS avg_dau, AVG(m.mau) AS avg_mau FROM daily_active d CROSS JOIN monthly_active m\n)\nSELECT avg_dau, avg_mau, avg_dau * 100.0 / NULLIF(avg_mau, 0) AS stickiness_ratio FROM metrics",
+    "inflation_causes": [
+      {
+        "cause": "Using MAU over rolling window instead of fixed period",
+        "how_it_inflates": "If MAU is computed as a *rolling* 30-day window (e.g., for each day in period), MAU inflates because users active on any day in the window are counted \u2014 causing stickiness ratio to deflate, not inflate. However, if MAU is computed as *single-day* users (e.g., first day of period), MAU shrinks \u2014 inflating ratio.",
+        "detection_sql": "SELECT DATE_TRUNC('month', session_date) AS month, COUNT(DISTINCT user_id) AS dau, COUNT(DISTINCT user_id) AS mau_rolling_30 FROM sessions WHERE session_date >= '2024-01-01' GROUP BY 1 ORDER BY month",
+        "fix": "Use a *fixed* period for MAU (e.g., sessions in period *start_date* to *end_date*) and compute DAU as daily users within that fixed window."
+      },
+      {
+        "cause": "Counting sessions instead of unique users",
+        "how_it_inflates": "If DAU or MAU counts *sessions* instead of *unique users*, heavy users inflate the count \u2014 causing stickiness ratio to deflate (DAU/MAU) if heavy users have fewer days of activity but more sessions.",
+        "detection_sql": "SELECT user_id, COUNT(*) AS sessions, COUNT(DISTINCT session_date) AS active_days FROM sessions WHERE session_date >= '2024-01-01' GROUP BY 1 HAVING COUNT(*) > 100 ORDER BY sessions DESC LIMIT 10",
+        "fix": "Always use `COUNT(DISTINCT user_id)` for both DAU and MAU to measure *active users*, not *sessions*."
+      },
+      {
+        "cause": "Excluding inactive or dormant users from denominator",
+        "how_it_inflates": "If MAU only includes users active on \u22651 day in the period, and dormant users are excluded, the denominator shrinks \u2014 causing stickiness ratio to inflate artificially.",
+        "detection_sql": "SELECT COUNT(DISTINCT user_id) AS total_users, COUNT(DISTINCT CASE WHEN active_days >= 1 THEN user_id END) AS active_users FROM (SELECT user_id, COUNT(DISTINCT session_date) AS active_days FROM sessions WHERE session_date >= '2024-01-01' GROUP BY 1) sub",
+        "fix": "Include all users who were active *at any point* in the period (e.g., have \u22651 session in period) in MAU, and compute stickiness for that cohort only."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Excluding users with single-session activity",
+        "how_it_deflates": "If MAU only includes users with \u22652 sessions, single-session users are excluded \u2014 deflating stickiness ratio and masking one-time engagement.",
+        "detection_sql": "SELECT COUNT(DISTINCT user_id) AS total_users, COUNT(DISTINCT CASE WHEN session_count >= 2 THEN user_id END) AS multi_session_users FROM (SELECT user_id, COUNT(DISTINCT session_id) AS session_count FROM sessions WHERE session_date >= '2024-01-01' GROUP BY 1) sub",
+        "fix": "Define MAU as users with \u22651 session in period, not \u22652, unless business explicitly defines *engaged* users as multi-session."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the stickiness anomaly isolated to one segment, cohort, or user type?",
+      "Has a new feature, onboarding flow, or UI change been deployed?",
+      "Are stickiness patterns higher for new users or existing users?",
+      "Did external factors (e.g., seasonality, competition) affect engagement?",
+      "Are stickiness metrics based on sessions or *unique user activity*?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "Stickiness ratio up, retention up",
+        "then": "users engaging more frequently are staying longer \u2014 likely stickiness and retention aligned"
+      },
+      {
+        "if": "Stickiness ratio down, retention down",
+        "then": "users engage less frequently and churn \u2014 likely declining product relevance or engagement"
+      },
+      {
+        "if": "Stickiness ratio up, retention flat",
+        "then": "users engage more but don't stay longer \u2014 likely superficial usage (e.g., one-off visits) without habit formation"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Stickiness ratio drops >15% WoW with stable active user count",
+        "and_also": "prod_feature_adoption_rate decreases same period",
+        "shared_root_cause": "Users are less engaged and using fewer features \u2014 likely a product regression (e.g., broken features, poor UX) or declining interest.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', s.session_date) AS week, COUNT(DISTINCT s.user_id) AS active_users, COUNT(DISTINCT CASE WHEN s.session_date = DATE_TRUNC('day', s.session_date) THEN s.user_id END) AS dau, COUNT(DISTINCT CASE WHEN s.session_date >= DATEADD(day, -29, s.session_date) THEN s.user_id END) AS mau, COUNT(DISTINCT CASE WHEN f.feature_name IS NOT NULL THEN s.user_id END) / NULLIF(COUNT(DISTINCT s.user_id), 0) AS feature_adoption FROM sessions s LEFT JOIN feature_usage f ON s.user_id = f.user_id WHERE s.session_date >= '2024-01-01' GROUP BY 1 ORDER BY week"
+      },
+      {
+        "if_this_metric": "Stickiness ratio increases MoM",
+        "and_also": "prod_retention_curve flattens same period",
+        "shared_root_cause": "Users engaging more frequently but not returning consistently \u2014 likely spike in one-time or low-value engagement (e.g., viral event, temporary trend) without stickiness to retention improvement.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', s.session_date) AS month, COUNT(DISTINCT s.user_id) AS active_users, COUNT(DISTINCT CASE WHEN s.session_date = DATE_TRUNC('day', s.session_date) THEN s.user_id END) AS dau, COUNT(DISTINCT CASE WHEN s.session_date >= DATEADD(day, -29, s.session_date) THEN s.user_id END) AS mau, COUNT(DISTINCT CASE WHEN s.session_date = DATEADD(day, 7, DATE_TRUNC('month', s.session_date)) THEN s.user_id END) * 100.0 / NULLIF(COUNT(DISTINCT CASE WHEN s.session_date = DATE_TRUNC('month', s.session_date) THEN s.user_id END), 0) AS d7_retention FROM sessions s WHERE s.session_date >= '2024-01-01' GROUP BY 1 ORDER BY month"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Counting sessions instead of unique users in DAU or MAU",
+        "why_wrong": "If DAU or MAU counts *sessions* instead of *unique users*, heavy users inflate the count \u2014 causing stickiness ratio to deflate (DAU/MAU) if heavy users have fewer days of activity but more sessions.",
+        "bad_sql": "SELECT COUNT(*) / NULLIF(COUNT(DISTINCT user_id), 0) AS stickiness FROM sessions WHERE session_date >= '2024-01-01'",
+        "good_sql": "SELECT COUNT(DISTINCT user_id) FILTER (WHERE session_date = DATE_TRUNC('day', session_date)) * 100.0 / NULLIF(COUNT(DISTINCT user_id) FILTER (WHERE session_date BETWEEN '2024-01-01' AND '2024-01-31'), 0) AS stickiness FROM sessions"
+      },
+      {
+        "pattern": "Using rolling 30-day window for MAU in stickiness calculation",
+        "why_wrong": "If MAU is computed as a *rolling* 30-day window, MAU inflates because users active on any day in the window are counted \u2014 causing stickiness ratio to deflate, not inflate.",
+        "bad_sql": "SELECT COUNT(DISTINCT user_id) FILTER (WHERE session_date = DATE_TRUNC('day', session_date)) * 100.0 / NULLIF(COUNT(DISTINCT user_id) FILTER (WHERE session_date >= DATEADD(day, -29, session_date)), 0) AS stickiness FROM sessions",
+        "good_sql": "SELECT COUNT(DISTINCT user_id) FILTER (WHERE session_date = DATE_TRUNC('day', session_date)) * 100.0 / NULLIF(COUNT(DISTINCT user_id) FILTER (WHERE session_date BETWEEN '2024-01-01' AND '2024-01-31'), 0) AS stickiness FROM sessions"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "WITH daily_active AS (SELECT DATE_TRUNC('day', session_date) AS day, COUNT(DISTINCT user_id) AS dau FROM sessions WHERE session_date BETWEEN '2024-01-01' AND '2024-01-31' GROUP BY 1), monthly_active AS (SELECT COUNT(DISTINCT user_id) AS mau FROM sessions WHERE session_date BETWEEN '2024-01-01' AND '2024-01-31'), metrics AS (SELECT AVG(d.dau) AS avg_dau, AVG(m.mau) AS avg_mau FROM daily_active d CROSS JOIN monthly_active m) SELECT avg_dau, avg_mau, avg_dau * 100.0 / NULLIF(avg_mau, 0) AS stickiness_ratio FROM metrics",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', s.session_date) AS month, COUNT(DISTINCT CASE WHEN s.session_date = DATE_TRUNC('day', s.session_date) THEN s.user_id END) AS dau, COUNT(DISTINCT s.user_id) AS mau, COUNT(DISTINCT CASE WHEN s.session_date = DATE_TRUNC('day', s.session_date) THEN s.user_id END) * 100.0 / NULLIF(COUNT(DISTINCT s.user_id), 0) AS stickiness_ratio FROM sessions s WHERE s.session_date >= '2024-01-01' GROUP BY 1 ORDER BY 1, 4 DESC",
+      "advanced_sql": "WITH daily_active AS (\n  -- Grain: daily active users in period\n  SELECT DATE_TRUNC('day', session_date) AS day, COUNT(DISTINCT user_id) AS dau\n  FROM sessions\n  WHERE session_date BETWEEN '2024-01-01' AND '2024-01-31'\n  GROUP BY 1\n),\nmonthly_active AS (\n  -- Grain: monthly active users in period\n  SELECT COUNT(DISTINCT user_id) AS mau FROM sessions WHERE session_date BETWEEN '2024-01-01' AND '2024-01-31'\n),\nstickiness_calc AS (\n  SELECT\n    AVG(d.dau) AS avg_dau,\n    AVG(m.mau) AS avg_mau,\n    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY d.dau) AS median_dau\n  FROM daily_active d\n  CROSS JOIN monthly_active m\n)\nSELECT\n  avg_dau,\n  avg_mau,\n  ROUND(avg_dau * 100.0 / NULLIF(avg_mau, 0), 2) AS stickiness_ratio,\n  median_dau,\n  ROUND(avg_dau / NULLIF(median_dau, 0), 2) AS avg_to_median_ratio\nFROM stickiness_calc"
+    }
+  },
+  {
+    "id": "prod_session_depth",
+    "title": "Session Depth",
+    "intent_tags": [
+      "session depth",
+      "sessions per user",
+      "engagement depth",
+      "what is my session depth",
+      "how long do users engage",
+      "session duration",
+      "engagement duration",
+      "user engagement time",
+      "session activity",
+      "session complexity"
+    ],
+    "sql_features": [
+      "aggregation",
+      "conditional_count",
+      "window_function",
+      "nullif"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "assess user engagement depth and task completion",
+      "benchmark session depth across user segments or cohorts",
+      "diagnose funnel friction or engagement bottlenecks",
+      "evaluate impact of feature updates on engagement duration",
+      "model session quality and task completion success"
+    ],
+    "related_patterns": [
+      "prod_stickiness_ratio",
+      "prod_retention",
+      "prod_feature_adoption_rate",
+      "prod_session_duration"
+    ],
+    "business_definition": "Average number of distinct pages or actions completed per session. A session is defined as a sequence of events with \u226430 minutes of inactivity.",
+    "metric_nature": {
+      "what_it_measures": "How deeply users engage within a session \u2014 a proxy for task completion, interest, and content consumption.",
+      "what_it_does_not_measure": "Session *duration* or *quality*. A deep session may be low-value (e.g., repeated clicks) rather than meaningful engagement.",
+      "common_misconception": "Session depth is not the same as session duration. Depth measures *breadth* (pages/actions); duration measures *time* (minutes). A short session can have high depth if actions are rapid."
+    },
+    "template": "WITH sessions AS (\n  SELECT session_id, user_id, MIN(event_time) AS session_start, MAX(event_time) AS session_end FROM event_logs WHERE event_date BETWEEN {start_date} AND {end_date} GROUP BY session_id, user_id\n),\npage_depth AS (\n  SELECT session_id, COUNT(DISTINCT page_path) AS pages FROM event_logs WHERE event_type = 'page_view' AND event_date BETWEEN {start_date} AND {end_date} GROUP BY session_id\n),\naction_depth AS (\n  SELECT session_id, COUNT(DISTINCT action_name) AS actions FROM event_logs WHERE event_type = 'action' AND event_date BETWEEN {start_date} AND {end_date} GROUP BY session_id\n),\nmetrics AS (\n  SELECT AVG(COALESCE(pd.pages, 0) + COALESCE(ad.actions, 0)) AS avg_depth FROM sessions s LEFT JOIN page_depth pd ON s.session_id = pd.session_id LEFT JOIN action_depth ad ON s.session_id = ad.session_id\n)\nSELECT avg_depth FROM metrics",
+    "inflation_causes": [
+      {
+        "cause": "Counting duplicate events instead of unique pages/actions",
+        "how_it_inflates": "If session depth counts *total events* (e.g., page views, button clicks) instead of *unique* pages or actions, repeated actions inflate depth \u2014 causing average depth to exceed possible (e.g., 10 page views on same page = 10 depth).",
+        "detection_sql": "SELECT session_id, COUNT(*) AS events, COUNT(DISTINCT page_path) AS unique_pages FROM event_logs WHERE event_type = 'page_view' AND event_date >= '2024-01-01' GROUP BY 1 HAVING COUNT(*) > 50 ORDER BY events DESC LIMIT 10",
+        "fix": "Use `COUNT(DISTINCT page_path)` for pages and `COUNT(DISTINCT action_name)` for actions before summing."
+      },
+      {
+        "cause": "Excluding non-interactive events (e.g., auto-scrolls, background loads)",
+        "how_it_inflates": "If non-interactive events are included, session depth inflates \u2014 causing average depth to be higher than meaningful engagement.",
+        "detection_sql": "SELECT COUNT(DISTINCT CASE WHEN event_type = 'auto_scroll' THEN event_id END) AS non_interactive FROM event_logs WHERE event_date >= '2024-01-01'",
+        "fix": "Filter event_logs to interactive events only (e.g., page_view, click, form_submit) before computing depth."
+      },
+      {
+        "cause": "Counting sessions with zero depth (e.g., bounce sessions) as depth=0",
+        "how_it_inflates": "If bounce sessions (e.g., 1-page sessions) are excluded, depth appears higher \u2014 masking low-engagement sessions.",
+        "detection_sql": "SELECT COUNT(DISTINCT session_id) AS total_sessions, COUNT(DISTINCT CASE WHEN page_count = 1 THEN session_id END) AS bounce_sessions FROM (SELECT session_id, COUNT(DISTINCT page_path) AS page_count FROM event_logs WHERE event_type = 'page_view' AND event_date >= '2024-01-01' GROUP BY 1) sub",
+        "fix": "Include bounce sessions with depth=1 (or \u22651), not zero, to reflect minimum engagement."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Excluding mobile sessions with delayed event logging",
+        "how_it_deflates": "If mobile sessions have events logged late (e.g., offline caching), and session boundaries are based on event time, mobile sessions are fragmented \u2014 deflating average depth.",
+        "detection_sql": "SELECT COUNT(DISTINCT session_id) AS total_sessions, COUNT(DISTINCT CASE WHEN event_count > 1 THEN session_id END) AS multi_event_sessions FROM (SELECT session_id, COUNT(*) AS event_count FROM event_logs WHERE event_date >= '2024-01-01' GROUP BY 1) sub",
+        "fix": "Allow a grace period for session boundary (e.g., 5 minutes after last event) to accommodate delayed logging."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the session depth anomaly isolated to one segment, cohort, or user type?",
+      "Has a new feature, onboarding flow, or UI change been deployed?",
+      "Are session depth patterns higher for new users or existing users?",
+      "Did external factors (e.g., seasonality, competition) affect engagement?",
+      "Are session depth metrics based on pages, actions, or *combined* depth?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "Session depth up, retention up",
+        "then": "users engaging more deeply are staying longer \u2014 likely meaningful engagement driving retention"
+      },
+      {
+        "if": "Session depth up, conversion_rate up",
+        "then": "deeper engagement leading to more conversions \u2014 likely task completion or content consumption driving action"
+      },
+      {
+        "if": "Session depth down, bounce_rate up",
+        "then": "users less engaged \u2014 likely UI issues, slow load time, or irrelevant content"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Session depth drops >10% MoM with stable active user count",
+        "and_also": "prod_bounce_rate increases same period",
+        "shared_root_cause": "Users are leaving sessions earlier \u2014 likely UI/UX degradation (e.g., broken navigation, slow load) or content misalignment causing early exits.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', s.session_start) AS month, COUNT(DISTINCT s.session_id) AS sessions, COUNT(DISTINCT CASE WHEN pd.pages = 1 THEN s.session_id END) * 100.0 / NULLIF(COUNT(DISTINCT s.session_id), 0) AS bounce_rate, AVG(COALESCE(pd.pages, 0) + COALESCE(ad.actions, 0)) AS avg_depth FROM sessions s LEFT JOIN page_depth pd ON s.session_id = pd.session_id LEFT JOIN action_depth ad ON s.session_id = ad.session_id WHERE s.session_start >= '2024-01-01' GROUP BY 1 ORDER BY month"
+      },
+      {
+        "if_this_metric": "Session depth increases MoM",
+        "and_also": "prod_conversion_rate decreases same period",
+        "shared_root_cause": "Users engaging more deeply but not converting \u2014 likely deeper exploration without clear conversion path (e.g., more content consumption but no CTAs).",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', s.session_start) AS week, COUNT(DISTINCT s.session_id) AS sessions, AVG(COALESCE(pd.pages, 0) + COALESCE(ad.actions, 0)) AS avg_depth, COUNT(DISTINCT CASE WHEN o.order_id IS NOT NULL THEN s.session_id END) * 100.0 / NULLIF(COUNT(DISTINCT s.session_id), 0) AS conversion_rate FROM sessions s LEFT JOIN page_depth pd ON s.session_id = pd.session_id LEFT JOIN action_depth ad ON s.session_id = ad.session_id LEFT JOIN orders o ON s.session_id = o.session_id WHERE s.session_start >= '2024-01-01' GROUP BY 1 ORDER BY week"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Counting total events instead of unique pages/actions",
+        "why_wrong": "If session depth counts *total events* (e.g., page views, button clicks) instead of *unique* pages or actions, repeated actions inflate depth \u2014 causing average depth to exceed possible.",
+        "bad_sql": "SELECT COUNT(*) / NULLIF(COUNT(DISTINCT session_id), 0) AS depth FROM event_logs",
+        "good_sql": "SELECT AVG(COALESCE(pd.pages, 0) + COALESCE(ad.actions, 0)) AS avg_depth FROM sessions s LEFT JOIN page_depth pd ON s.session_id = pd.session_id LEFT JOIN action_depth ad ON s.session_id = ad.session_id"
+      },
+      {
+        "pattern": "Counting bounce sessions as depth=0",
+        "why_wrong": "If bounce sessions (e.g., 1-page sessions) are excluded, depth appears higher \u2014 masking low-engagement sessions.",
+        "bad_sql": "SELECT COUNT(DISTINCT session_id) / NULLIF(COUNT(DISTINCT CASE WHEN page_count > 1 THEN session_id END), 0) AS depth FROM (SELECT session_id, COUNT(DISTINCT page_path) AS page_count FROM event_logs WHERE event_type = 'page_view' GROUP BY 1) sub",
+        "good_sql": "SELECT AVG(COALESCE(pd.pages, 0) + COALESCE(ad.actions, 0)) AS avg_depth FROM sessions s LEFT JOIN page_depth pd ON s.session_id = pd.session_id LEFT JOIN action_depth ad ON s.session_id = ad.session_id"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "WITH sessions AS (SELECT session_id, MIN(event_time) AS session_start, MAX(event_time) AS session_end FROM event_logs WHERE event_date BETWEEN '2024-01-01' AND '2024-01-31' GROUP BY session_id), page_depth AS (SELECT session_id, COUNT(DISTINCT page_path) AS pages FROM event_logs WHERE event_type = 'page_view' AND event_date BETWEEN '2024-01-01' AND '2024-01-31' GROUP BY session_id), action_depth AS (SELECT session_id, COUNT(DISTINCT action_name) AS actions FROM event_logs WHERE event_type = 'action' AND event_date BETWEEN '2024-01-01' AND '2024-01-31' GROUP BY session_id), metrics AS (SELECT AVG(COALESCE(pd.pages, 0) + COALESCE(ad.actions, 0)) AS avg_depth FROM sessions s LEFT JOIN page_depth pd ON s.session_id = pd.session_id LEFT JOIN action_depth ad ON s.session_id = ad.session_id) SELECT avg_depth FROM metrics",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', s.session_start) AS month, COUNT(DISTINCT s.session_id) AS sessions, AVG(COALESCE(pd.pages, 0) + COALESCE(ad.actions, 0)) AS avg_depth, COUNT(DISTINCT CASE WHEN pd.pages = 1 THEN s.session_id END) * 100.0 / NULLIF(COUNT(DISTINCT s.session_id), 0) AS bounce_rate FROM sessions s LEFT JOIN page_depth pd ON s.session_id = pd.session_id LEFT JOIN action_depth ad ON s.session_id = ad.session_id WHERE s.session_start >= '2024-01-01' GROUP BY 1 ORDER BY 1, 3 DESC",
+      "advanced_sql": "WITH sessions AS (\n  -- Grain: session boundaries with \u226430-minute inactivity\n  SELECT session_id, user_id, MIN(event_time) AS session_start, MAX(event_time) AS session_end\n  FROM event_logs\n  WHERE event_date BETWEEN '2024-01-01' AND '2024-01-31'\n  GROUP BY session_id, user_id\n),\npage_depth AS (\n  -- Grain: unique pages per session\n  SELECT session_id, COUNT(DISTINCT page_path) AS pages\n  FROM event_logs\n  WHERE event_type = 'page_view' AND event_date BETWEEN '2024-01-01' AND '2024-01-31'\n  GROUP BY session_id\n),\naction_depth AS (\n  -- Grain: unique actions per session\n  SELECT session_id, COUNT(DISTINCT action_name) AS actions\n  FROM event_logs\n  WHERE event_type = 'action' AND event_date BETWEEN '2024-01-01' AND '2024-01-31'\n  GROUP BY session_id\n),\nsession_depth AS (\n  SELECT\n    s.session_id,\n    COALESCE(pd.pages, 0) + COALESCE(ad.actions, 0) AS depth\n  FROM sessions s\n  LEFT JOIN page_depth pd ON s.session_id = pd.session_id\n  LEFT JOIN action_depth ad ON s.session_id = ad.session_id\n),\ndepth_metrics AS (\n  SELECT\n    COUNT(DISTINCT session_id) AS sessions,\n    ROUND(AVG(depth), 2) AS avg_depth,\n    PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY depth) AS median_depth\n  FROM session_depth\n)\nSELECT\n  sessions,\n  avg_depth,\n  median_depth,\n  ROUND(avg_depth / NULLIF(median_depth, 0), 2) AS avg_to_median_ratio\nFROM depth_metrics"
+    }
+  },
+  {
+    "id": "prod_notification_opt_out_rate",
+    "title": "Notification Opt-out Rate",
+    "intent_tags": [
+      "notification opt-out rate",
+      "push opt-out",
+      "email unsub rate",
+      "notification decline",
+      "what % users opt out",
+      "notification fatigue",
+      "opt-out rate",
+      "notification rejection",
+      "push notification opt-out",
+      "email unsubscribe",
+      "notification engagement"
+    ],
+    "sql_features": [
+      "aggregation",
+      "conditional_count",
+      "nullif"
+    ],
+    "difficulty": "beginner",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "assess notification program health and user tolerance",
+      "benchmark opt-out rates across channels (push, email, SMS)",
+      "diagnose notification fatigue or content relevance issues",
+      "optimize notification frequency and timing",
+      "evaluate impact of notification content or targeting"
+    ],
+    "related_patterns": [
+      "prod_retention",
+      "prod_engagement",
+      "prod_feature_adoption_rate",
+      "prod_stickiness_ratio"
+    ],
+    "business_definition": "Percentage of users who disabled or unsubscribed from notifications (push or email) in the period out of total users sent to in the period. An opt-out is defined as a user explicitly declining notifications via settings or unsubscribe link.",
+    "metric_nature": {
+      "what_it_measures": "User tolerance for notifications \u2014 a proxy for notification relevance and frequency management.",
+      "what_it_does_not_measure": "Notification impact or effectiveness. A high opt-out rate may indicate poor targeting, not unengaged users.",
+      "common_misconception": "Notification opt-out rate is not the same as notification open rate. Open rate measures engagement; opt-out rate measures disengagement."
+    },
+    "template": "WITH users_sent AS (\n  SELECT DISTINCT user_id FROM notification_events WHERE event_date BETWEEN {start_date} AND {end_date}\n),\nusers_opted_out AS (\n  SELECT DISTINCT user_id FROM notification_events WHERE event_type = 'opt_out' AND event_date BETWEEN {start_date} AND {end_date}\n),\nmetrics AS (\n  SELECT COUNT(DISTINCT us.user_id) AS total_sent, COUNT(DISTINCT uo.user_id) AS opted_out FROM users_sent us LEFT JOIN users_opted_out uo ON us.user_id = uo.user_id\n)\nSELECT total_sent, opted_out, opted_out * 100.0 / NULLIF(total_sent, 0) AS opt_out_rate FROM metrics",
+    "inflation_causes": [
+      {
+        "cause": "Counting all opt-out events instead of unique users",
+        "how_it_inflates": "If opt-out rate is computed as *opt-out events* / *notifications sent*, a user who opts out repeatedly inflates the numerator \u2014 causing rate to exceed 100% and masking true opt-out breadth.",
+        "detection_sql": "SELECT user_id, COUNT(*) AS opt_out_events, COUNT(DISTINCT notification_id) AS notifications FROM notification_events WHERE event_type = 'opt_out' AND event_date >= '2024-01-01' GROUP BY 1 HAVING COUNT(*) > 1 ORDER BY opt_out_events DESC LIMIT 10",
+        "fix": "Use `COUNT(DISTINCT user_id)` for both numerator and denominator to measure opt-out *breadth*, not *frequency*."
+      },
+      {
+        "cause": "Excluding users with zero notifications sent",
+        "how_it_inflates": "If users_sent only includes users who received notifications, and some users are excluded due to preference settings, the denominator shrinks \u2014 causing opt-out rate to inflate artificially.",
+        "detection_sql": "SELECT COUNT(DISTINCT user_id) AS total_users, COUNT(DISTINCT CASE WHEN notification_count > 0 THEN user_id END) AS users_sent FROM (SELECT user_id, COUNT(DISTINCT notification_id) AS notification_count FROM notification_events WHERE event_date >= '2024-01-01' GROUP BY 1) sub",
+        "fix": "Include all users who were *eligible* to receive notifications (e.g., opted-in or unsubscribed) in denominator, not just those who received them."
+      },
+      {
+        "cause": "Including opt-in and opt-out in same query",
+        "how_it_inflates": "If opt-in events are counted as opt-outs, opt-out rate inflates \u2014 because opt-in is the opposite of opt-out.",
+        "detection_sql": "SELECT event_type, COUNT(*) AS events, COUNT(DISTINCT user_id) AS users FROM notification_events WHERE event_date >= '2024-01-01' GROUP BY 1 ORDER BY events DESC",
+        "fix": "Filter opt_out_rate to only `event_type = 'opt_out'`, not all notification events."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Excluding users with notifications sent but no opt-out recorded",
+        "how_it_deflates": "If opt_out_rate excludes users who did not interact with the opt-out option, and opt-out is only tracked when explicitly clicked, opt-out rate appears lower \u2014 masking true disengagement.",
+        "detection_sql": "SELECT COUNT(DISTINCT user_id) AS total_users, COUNT(DISTINCT CASE WHEN opt_out_event IS NOT NULL THEN user_id END) AS opted_out_users FROM (SELECT user_id, MAX(CASE WHEN event_type = 'opt_out' THEN event_date END) AS opt_out_event FROM notification_events WHERE event_date >= '2024-01-01' GROUP BY 1) sub",
+        "fix": "Include all users who were sent notifications and compute opt-out rate as opt-outs / all sent users, not just opt-out-takers."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the opt-out rate anomaly isolated to one channel, segment, or user type?",
+      "Has a new notification frequency, content, or targeting been deployed?",
+      "Are opt-out rates higher for new users or existing users?",
+      "Did external factors (e.g., seasonality, competition) affect opt-out behavior?",
+      "Are opt-out metrics based on *explicit* opt-outs or *implicit* inactivity?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "Opt-out rate up, engagement down",
+        "then": "users disengaging from notifications \u2014 likely irrelevant or excessive notifications"
+      },
+      {
+        "if": "Opt-out rate up, retention down",
+        "then": "notification fatigue driving churn \u2014 likely notification over-saturation or poor targeting"
+      },
+      {
+        "if": "Opt-out rate down, engagement up",
+        "then": "notifications becoming more relevant \u2014 likely improved targeting or content alignment"
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Notification opt-out rate increases >20% WoW with stable send volume",
+        "and_also": "prod_notification_open_rate decreases same period",
+        "shared_root_cause": "Notification content or timing is becoming less relevant \u2014 likely a sudden increase in irrelevant or low-value notifications causing users to opt-out and stop opening remaining messages.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', ne.event_date) AS week, COUNT(DISTINCT ne.user_id) AS users_sent, COUNT(DISTINCT CASE WHEN ne.event_type = 'opt_out' THEN ne.user_id END) AS users_opted_out, COUNT(DISTINCT CASE WHEN ne.event_type = 'open' THEN ne.user_id END) * 100.0 / NULLIF(COUNT(DISTINCT ne.user_id), 0) AS open_rate FROM notification_events ne WHERE ne.event_date >= '2024-01-01' GROUP BY 1 ORDER BY week"
+      },
+      {
+        "if_this_metric": "Notification opt-out rate drops MoM",
+        "and_also": "prod_retention increases same period",
+        "shared_root_cause": "A notification strategy optimization \u2014 likely reduced frequency or improved content relevance \u2014 reducing opt-out fatigue and retaining users who would otherwise churn.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', ne.event_date) AS month, COUNT(DISTINCT ne.user_id) AS users_sent, COUNT(DISTINCT CASE WHEN ne.event_type = 'opt_out' THEN ne.user_id END) * 100.0 / NULLIF(COUNT(DISTINCT ne.user_id), 0) AS opt_out_rate, COUNT(DISTINCT CASE WHEN ne.event_type = 'open' THEN ne.user_id END) * 100.0 / NULLIF(COUNT(DISTINCT ne.user_id), 0) AS open_rate, COUNT(DISTINCT CASE WHEN o.order_id IS NOT NULL THEN ne.user_id END) * 100.0 / NULLIF(COUNT(DISTINCT ne.user_id), 0) AS conversion_rate FROM notification_events ne LEFT JOIN orders o ON ne.user_id = o.user_id WHERE ne.event_date >= '2024-01-01' GROUP BY 1 ORDER BY month"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Counting all opt-out events instead of unique users",
+        "why_wrong": "If opt-out rate is computed as *opt-out events* / *notifications sent*, a user who opts out repeatedly inflates the numerator \u2014 causing rate to exceed 100% and masking true opt-out breadth.",
+        "bad_sql": "SELECT COUNT(*) FILTER (WHERE event_type = 'opt_out') * 100.0 / NULLIF(COUNT(*), 0) AS opt_out_rate FROM notification_events",
+        "good_sql": "SELECT COUNT(DISTINCT CASE WHEN event_type = 'opt_out' THEN user_id END) * 100.0 / NULLIF(COUNT(DISTINCT user_id), 0) AS opt_out_rate FROM notification_events WHERE event_date BETWEEN '2024-01-01' AND '2024-01-31'"
+      },
+      {
+        "pattern": "Excluding users with zero notifications sent",
+        "why_wrong": "If opt_out_rate excludes users who did not receive notifications, and opt-out is only tracked when explicitly clicked, opt-out rate appears lower \u2014 masking true disengagement.",
+        "bad_sql": "SELECT COUNT(DISTINCT CASE WHEN event_type = 'opt_out' THEN user_id END) * 100.0 / NULLIF(COUNT(DISTINCT CASE WHEN event_type = 'send' THEN user_id END), 0) AS opt_out_rate FROM notification_events",
+        "good_sql": "SELECT COUNT(DISTINCT CASE WHEN event_type = 'opt_out' THEN user_id END) * 100.0 / NULLIF(COUNT(DISTINCT user_id), 0) AS opt_out_rate FROM notification_events WHERE event_date BETWEEN '2024-01-01' AND '2024-01-31'"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "WITH users_sent AS (SELECT DISTINCT user_id FROM notification_events WHERE event_date BETWEEN '2024-01-01' AND '2024-01-31'), users_opted_out AS (SELECT DISTINCT user_id FROM notification_events WHERE event_type = 'opt_out' AND event_date BETWEEN '2024-01-01' AND '2024-01-31'), metrics AS (SELECT COUNT(DISTINCT us.user_id) AS total_sent, COUNT(DISTINCT uo.user_id) AS opted_out FROM users_sent us LEFT JOIN users_opted_out uo ON us.user_id = uo.user_id) SELECT total_sent, opted_out, opted_out * 100.0 / NULLIF(total_sent, 0) AS opt_out_rate FROM metrics",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', ne.event_date) AS month, ne.channel, COUNT(DISTINCT ne.user_id) AS users_sent, COUNT(DISTINCT CASE WHEN ne.event_type = 'opt_out' THEN ne.user_id END) AS users_opted_out, COUNT(DISTINCT CASE WHEN ne.event_type = 'opt_out' THEN ne.user_id END) * 100.0 / NULLIF(COUNT(DISTINCT ne.user_id), 0) AS opt_out_rate FROM notification_events ne WHERE ne.event_date >= '2024-01-01' GROUP BY 1, ne.channel ORDER BY 1, 4 DESC",
+      "advanced_sql": "WITH users_sent AS (\n  -- Grain: users eligible for notifications in period\n  SELECT DISTINCT user_id, MIN(event_date) AS first_sent, MAX(event_date) AS last_sent\n  FROM notification_events\n  WHERE event_date BETWEEN '2024-01-01' AND '2024-01-31'\n  GROUP BY user_id\n),\nusers_opted_out AS (\n  -- Grain: users who opted out in period\n  SELECT DISTINCT user_id\n  FROM notification_events\n  WHERE event_type = 'opt_out' AND event_date BETWEEN '2024-01-01' AND '2024-01-31'\n),\nopt_out_metrics AS (\n  SELECT\n    COUNT(DISTINCT us.user_id) AS total_sent,\n    COUNT(DISTINCT CASE WHEN uo.user_id IS NOT NULL THEN us.user_id END) AS opted_out\n  FROM users_sent us\n  LEFT JOIN users_opted_out uo ON us.user_id = uo.user_id\n)\nSELECT\n  total_sent,\n  opted_out,\n  ROUND(opted_out * 100.0 / NULLIF(total_sent, 0), 2) AS opt_out_rate,\n  ROUND(total_sent / NULLIF(opted_out, 0), 2) AS sent_per_opt_out\nFROM opt_out_metrics"
+    }
+  }
+]

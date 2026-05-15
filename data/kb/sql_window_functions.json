@@ -1,0 +1,89 @@
+[
+  {
+    "id": "window_lag_lead",
+    "title": "LAG / LEAD for Period-over-Period Comparison",
+    "intent_tags": ["period over period", "month over month", "week over week", "previous period", "growth rate", "delta"],
+    "when_to_use": ["comparing current period to previous period", "calculating growth rate", "detecting trend changes"],
+    "dialect_traps": [
+      {
+        "construct": "LAG / LEAD with nullable columns",
+        "postgres_behavior": "LAG returns NULL for the first row — division by LAG(...) will return NULL not error",
+        "safe_alternative": "Use NULLIF to guard: (current - LAG(current)) / NULLIF(LAG(current), 0) for growth rate"
+      }
+    ],
+    "mistake_patterns": [
+      {
+        "mistake": "Forgetting ORDER BY in OVER() clause",
+        "symptom": "LAG returns wrong values or error 'window function requires ORDER BY'",
+        "bad_sql": "SELECT amount, LAG(amount) OVER () AS prev FROM orders",
+        "good_sql": "SELECT amount, order_date, LAG(amount) OVER (ORDER BY order_date) AS prev_amount FROM orders"
+      },
+      {
+        "mistake": "Mixing aggregation and window functions without subquery",
+        "symptom": "ERROR: aggregate functions are not allowed in window function arguments",
+        "bad_sql": "SELECT SUM(amount), LAG(SUM(amount)) OVER (ORDER BY month) FROM orders GROUP BY month",
+        "good_sql": "SELECT month, revenue, LAG(revenue) OVER (ORDER BY month) AS prev_revenue FROM (SELECT DATE_TRUNC('month', order_date) AS month, SUM(amount) AS revenue FROM orders GROUP BY 1) t"
+      }
+    ],
+    "concept_explanation": {
+      "what_it_does": "LAG(col, n) returns the value of col from n rows before the current row in the defined window. LEAD looks forward. Essential for period-over-period comparisons without self-joins.",
+      "mental_model": "Think of a spreadsheet where you reference the cell one row above — LAG(col) is that reference, with ORDER BY defining what 'above' means."
+    },
+    "template": "SELECT period, metric, LAG(metric) OVER (ORDER BY period) AS prev_metric, (metric - LAG(metric) OVER (ORDER BY period)) / NULLIF(LAG(metric) OVER (ORDER BY period), 0) AS growth_rate FROM (SELECT DATE_TRUNC('month', date_col) AS period, SUM(value_col) AS metric FROM your_table GROUP BY 1) t ORDER BY period",
+    "anti_patterns": ["Never use LAG without ORDER BY in OVER()", "Avoid LAG across PARTITION boundaries without PARTITION BY"]
+  },
+  {
+    "id": "window_running_total",
+    "title": "Running Totals and Cumulative Sums",
+    "intent_tags": ["running total", "cumulative sum", "cumulative revenue", "running count", "year to date", "YTD"],
+    "when_to_use": ["year-to-date metrics", "cumulative revenue", "running customer count"],
+    "dialect_traps": [
+      {
+        "construct": "ROWS vs RANGE in window frame",
+        "postgres_behavior": "Default frame is RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW — safe for running totals but slow on large tables",
+        "safe_alternative": "Use ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW for deterministic performance"
+      }
+    ],
+    "mistake_patterns": [
+      {
+        "mistake": "Using SUM without window frame — gets total not running total",
+        "symptom": "All rows return the same grand total value",
+        "bad_sql": "SELECT order_date, amount, SUM(amount) OVER () AS running_total FROM orders",
+        "good_sql": "SELECT order_date, amount, SUM(amount) OVER (ORDER BY order_date ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS running_total FROM orders"
+      }
+    ],
+    "concept_explanation": {
+      "what_it_does": "SUM() OVER (ORDER BY ...) computes a cumulative sum up to and including the current row, ordered by the specified column.",
+      "mental_model": "Each row's running total = its own value + the running total of all previous rows."
+    },
+    "template": "SELECT period, revenue, SUM(revenue) OVER (ORDER BY period ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS cumulative_revenue FROM (SELECT DATE_TRUNC('month', order_date) AS period, SUM(amount) AS revenue FROM orders GROUP BY 1) t",
+    "anti_patterns": ["Do not use running totals across multiple partitions without PARTITION BY"]
+  },
+  {
+    "id": "window_rank_dense_rank",
+    "title": "RANK / DENSE_RANK / ROW_NUMBER for Top-N Queries",
+    "intent_tags": ["top N", "ranking", "top customers", "highest revenue", "leaderboard", "rank within group"],
+    "when_to_use": ["top 10 customers", "rank products by revenue", "rank within category", "deduplicate keeping latest"],
+    "dialect_traps": [
+      {
+        "construct": "RANK vs DENSE_RANK",
+        "postgres_behavior": "RANK skips numbers after ties (1,1,3). DENSE_RANK does not (1,1,2). ROW_NUMBER always unique.",
+        "safe_alternative": "Use ROW_NUMBER for deduplication. Use DENSE_RANK when you want contiguous ranks despite ties."
+      }
+    ],
+    "mistake_patterns": [
+      {
+        "mistake": "Filtering on window function result in WHERE instead of subquery",
+        "symptom": "ERROR: window functions are not allowed in WHERE",
+        "bad_sql": "SELECT customer_id, SUM(amount) AS revenue, RANK() OVER (ORDER BY SUM(amount) DESC) AS rnk FROM orders WHERE rnk <= 10 GROUP BY 1",
+        "good_sql": "SELECT customer_id, revenue FROM (SELECT customer_id, SUM(amount) AS revenue, RANK() OVER (ORDER BY SUM(amount) DESC) AS rnk FROM orders GROUP BY 1) t WHERE rnk <= 10"
+      }
+    ],
+    "concept_explanation": {
+      "what_it_does": "RANK/DENSE_RANK/ROW_NUMBER assign ordinal position within a window. Filtering on rank in a subquery is the standard pattern for top-N queries.",
+      "mental_model": "Think of it as adding a position column to your result, then filtering that position column — which requires a subquery since WHERE runs before window functions."
+    },
+    "template": "SELECT * FROM (SELECT customer_id, SUM(amount) AS revenue, RANK() OVER (ORDER BY SUM(amount) DESC) AS rnk FROM orders GROUP BY 1) t WHERE rnk <= 10 ORDER BY rnk",
+    "anti_patterns": ["Never filter on a window function alias in WHERE", "Avoid RANK for deduplication — use ROW_NUMBER which guarantees unique ranks"]
+  }
+]

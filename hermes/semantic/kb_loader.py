@@ -53,10 +53,38 @@ def _build_embed_text(entry: dict, tier: int) -> str:
 
     elif tier == 2:
         parts.append(entry.get("business_definition", ""))
+        mn = entry.get("metric_nature", {})
+        if isinstance(mn, dict):
+            parts.append(mn.get("what_it_measures", ""))
+            parts.append(mn.get("common_misconception", ""))
         parts.append(_join(entry.get("diagnostic_questions", [])))
-        parts.append(_join(entry.get("causal_relationships", [])))
-        parts.append(_join(entry.get("inflation_causes", [])))
-        parts.append(_join(entry.get("deflation_causes", [])))
+        # causal_relationships: two shapes supported
+        #   {symptom, check_in_order, detection_sql}  — Aughor native
+        #   {if, then}                                 — talonsight shape
+        for cr in entry.get("causal_relationships", []):
+            if isinstance(cr, dict):
+                parts.append(cr.get("symptom", "") or cr.get("if", ""))
+                parts.append(_join(cr.get("check_in_order", [])) or cr.get("then", ""))
+            else:
+                parts.append(str(cr))
+        for ic in entry.get("inflation_causes", []):
+            if isinstance(ic, dict):
+                parts.append(ic.get("cause", ""))
+                parts.append(ic.get("how_it_inflates", ""))
+            else:
+                parts.append(str(ic))
+        for dc in entry.get("deflation_causes", []):
+            if isinstance(dc, dict):
+                parts.append(dc.get("cause", ""))
+                parts.append(dc.get("how_it_deflates", ""))
+            else:
+                parts.append(str(dc))
+        for cs in entry.get("cross_metric_signals", []):
+            if isinstance(cs, dict):
+                parts.append(cs.get("if", "") + " " + cs.get("then", ""))
+            else:
+                parts.append(str(cs))
+        parts.append(_join(entry.get("related_patterns", [])))
 
     else:
         notes = entry.get("notes", "") or entry.get("dialect_notes", "")
@@ -103,10 +131,14 @@ def _build_payload(entry: dict, tier: int, source_file: str) -> dict:
 
     elif tier == 2:
         payload["business_definition"] = entry.get("business_definition", "")
+        payload["metric_nature"] = entry.get("metric_nature", {})
         payload["diagnostic_questions"] = entry.get("diagnostic_questions", [])
         payload["causal_relationships"] = entry.get("causal_relationships", [])
+        payload["inflation_causes"] = entry.get("inflation_causes", [])
+        payload["deflation_causes"] = entry.get("deflation_causes", [])
+        payload["cross_metric_signals"] = entry.get("cross_metric_signals", [])
+        payload["related_patterns"] = entry.get("related_patterns", [])
         payload["anti_patterns"] = entry.get("anti_patterns", [])
-        # sql_assets may contain query examples
         sql_assets = entry.get("sql_assets", {})
         if isinstance(sql_assets, dict):
             payload["sql_example"] = next(iter(sql_assets.values()), "")

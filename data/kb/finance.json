@@ -1,0 +1,340 @@
+[
+  {
+    "id": "fin_running_balance",
+    "title": "Running / ledger balance",
+    "intent_tags": [
+      "running balance",
+      "ledger balance",
+      "cumulative balance",
+      "account balance",
+      "running total"
+    ],
+    "sql_features": [
+      "window"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "analytical",
+    "template": "SUM(CASE WHEN txn_type = 'credit' THEN amount ELSE -amount END) OVER (PARTITION BY account_id ORDER BY txn_date ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) as running_balance",
+    "when_to_use": [
+      "account running balance",
+      "ledger entries",
+      "cumulative cash position"
+    ],
+    "anti_patterns": [
+      "using RANGE instead of ROWS \u2014 causes ties on same date to produce same balance mid-day",
+      "not handling debit/credit sign convention consistently"
+    ],
+    "related_patterns": [
+      "fin_cash_flow",
+      "fin_pl_summary"
+    ]
+  },
+  {
+    "id": "fin_mom_growth",
+    "title": "Month-over-month and year-over-year growth",
+    "intent_tags": [
+      "mom",
+      "yoy",
+      "month over month",
+      "year over year",
+      "growth rate",
+      "period comparison"
+    ],
+    "sql_features": [
+      "window",
+      "cte"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "metric",
+    "template": "SELECT period, revenue, LAG(revenue) OVER (ORDER BY period) as prev_period, (revenue - LAG(revenue) OVER (ORDER BY period)) * 1.0 / NULLIF(LAG(revenue) OVER (ORDER BY period), 0) as mom_growth, LAG(revenue, 12) OVER (ORDER BY period) as same_period_last_year, (revenue - LAG(revenue, 12) OVER (ORDER BY period)) * 1.0 / NULLIF(LAG(revenue, 12) OVER (ORDER BY period), 0) as yoy_growth FROM monthly_revenue",
+    "when_to_use": [
+      "MoM growth",
+      "YoY growth",
+      "revenue trend",
+      "period-over-period comparison"
+    ],
+    "anti_patterns": [
+      "using LAG without explicit ORDER BY \u2014 result is non-deterministic",
+      "comparing unequal-length periods (28-day Feb vs 31-day March)"
+    ],
+    "related_patterns": [
+      "fin_budget_variance",
+      "fin_pl_summary"
+    ]
+  },
+  {
+    "id": "fin_budget_variance",
+    "title": "Budget vs actual variance",
+    "intent_tags": [
+      "budget variance",
+      "actuals vs budget",
+      "forecast vs actual",
+      "variance analysis"
+    ],
+    "sql_features": [
+      "join",
+      "aggregation"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "analytical",
+    "template": "SELECT a.period, a.department, a.actual_amount, b.budget_amount, a.actual_amount - b.budget_amount as variance, (a.actual_amount - b.budget_amount) * 1.0 / NULLIF(b.budget_amount, 0) as variance_pct FROM actuals a LEFT JOIN budget b ON a.period = b.period AND a.department = b.department",
+    "when_to_use": [
+      "budget vs actual",
+      "variance analysis",
+      "over/under budget"
+    ],
+    "anti_patterns": [
+      "INNER JOIN drops departments with budget but no actuals \u2014 use LEFT JOIN",
+      "not normalising currency when budgets are in different currencies"
+    ],
+    "related_patterns": [
+      "fin_mom_growth",
+      "fin_pl_summary"
+    ]
+  },
+  {
+    "id": "fin_pl_summary",
+    "title": "Profit and loss summary",
+    "intent_tags": [
+      "profit and loss",
+      "p&l",
+      "income statement",
+      "net income",
+      "ebitda"
+    ],
+    "sql_features": [
+      "cte",
+      "aggregation"
+    ],
+    "difficulty": "advanced",
+    "pattern_type": "analytical",
+    "template": "WITH pl AS (SELECT account_category, SUM(amount) as total FROM journal_entries WHERE period = :period GROUP BY 1) SELECT SUM(CASE WHEN account_category = 'revenue' THEN total ELSE 0 END) as revenue, SUM(CASE WHEN account_category = 'cogs' THEN total ELSE 0 END) as cogs, SUM(CASE WHEN account_category = 'revenue' THEN total ELSE 0 END) - SUM(CASE WHEN account_category = 'cogs' THEN total ELSE 0 END) as gross_profit, SUM(CASE WHEN account_category = 'opex' THEN total ELSE 0 END) as opex FROM pl",
+    "when_to_use": [
+      "P&L report",
+      "gross profit",
+      "EBITDA",
+      "income statement"
+    ],
+    "anti_patterns": [
+      "mixing accrual and cash basis entries without filtering by accounting_basis"
+    ],
+    "related_patterns": [
+      "fin_mom_growth",
+      "fin_budget_variance",
+      "fin_gross_margin"
+    ]
+  },
+  {
+    "id": "fin_ar_aging",
+    "title": "Accounts receivable aging",
+    "intent_tags": [
+      "accounts receivable",
+      "ar aging",
+      "overdue invoices",
+      "aging report",
+      "days outstanding"
+    ],
+    "sql_features": [
+      "aggregation",
+      "case"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "analytical",
+    "template": "SELECT customer_id, invoice_id, invoice_amount, due_date, CURRENT_DATE - due_date as days_overdue, CASE WHEN CURRENT_DATE <= due_date THEN 'current' WHEN CURRENT_DATE - due_date <= 30 THEN '1-30 days' WHEN CURRENT_DATE - due_date <= 60 THEN '31-60 days' WHEN CURRENT_DATE - due_date <= 90 THEN '61-90 days' ELSE '90+ days' END as aging_bucket FROM invoices WHERE status != 'paid'",
+    "when_to_use": [
+      "AR aging report",
+      "overdue invoices",
+      "collections prioritisation"
+    ],
+    "anti_patterns": [
+      "using invoice_date instead of due_date for aging \u2014 overstates overdue amounts"
+    ],
+    "related_patterns": [
+      "fin_running_balance",
+      "fin_cash_flow"
+    ]
+  },
+  {
+    "id": "fin_cash_flow",
+    "title": "Cash flow summary (operating / investing / financing)",
+    "intent_tags": [
+      "cash flow",
+      "operating cash flow",
+      "free cash flow",
+      "cash position"
+    ],
+    "sql_features": [
+      "cte",
+      "aggregation"
+    ],
+    "difficulty": "advanced",
+    "pattern_type": "analytical",
+    "template": "SELECT period, SUM(CASE WHEN flow_type = 'operating' THEN amount ELSE 0 END) as operating, SUM(CASE WHEN flow_type = 'investing' THEN amount ELSE 0 END) as investing, SUM(CASE WHEN flow_type = 'financing' THEN amount ELSE 0 END) as financing, SUM(amount) as net_cash_flow FROM cash_transactions GROUP BY 1 ORDER BY 1",
+    "when_to_use": [
+      "cash flow statement",
+      "operating vs investing cash",
+      "burn rate",
+      "cash runway"
+    ],
+    "anti_patterns": [
+      "mixing payment_date and accrual_date \u2014 always use cash settlement date for cash flow"
+    ],
+    "related_patterns": [
+      "fin_running_balance",
+      "fin_pl_summary"
+    ]
+  },
+  {
+    "id": "fin_currency_conversion",
+    "title": "Multi-currency conversion to base currency",
+    "intent_tags": [
+      "currency conversion",
+      "fx",
+      "foreign exchange",
+      "multi-currency",
+      "exchange rate"
+    ],
+    "sql_features": [
+      "join",
+      "aggregation"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "transformation",
+    "template": "SELECT t.transaction_id, t.amount, t.currency, t.amount * r.rate as amount_usd FROM transactions t LEFT JOIN fx_rates r ON t.currency = r.from_currency AND r.rate_date = DATE_TRUNC('day', t.transaction_date)",
+    "when_to_use": [
+      "multi-currency reporting",
+      "FX conversion",
+      "base currency normalisation"
+    ],
+    "anti_patterns": [
+      "using a single average rate for the period \u2014 use transaction-date rate for accuracy",
+      "LEFT JOIN without checking for NULL rate \u2014 missing FX rate silently produces NULL revenue"
+    ],
+    "related_patterns": [
+      "fin_pl_summary",
+      "fin_budget_variance"
+    ]
+  },
+  {
+    "id": "fin_days_sales_outstanding",
+    "title": "Days sales outstanding (DSO)",
+    "intent_tags": [
+      "dso",
+      "days sales outstanding",
+      "collection efficiency",
+      "receivables turnover"
+    ],
+    "sql_features": [
+      "aggregation"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "metric",
+    "template": "SELECT period, SUM(ending_ar) / NULLIF(SUM(revenue) / 30.0, 0) as dso FROM ar_summary GROUP BY 1",
+    "when_to_use": [
+      "DSO",
+      "collection efficiency",
+      "how long to collect payment"
+    ],
+    "anti_patterns": [
+      "using beginning AR instead of ending AR",
+      "dividing by daily revenue of the same period without annualising"
+    ],
+    "related_patterns": [
+      "fin_ar_aging",
+      "fin_cash_flow"
+    ]
+  },
+  {
+    "id": "fin_period_close",
+    "title": "Period-end close balance (opening + activity + closing)",
+    "intent_tags": [
+      "period close",
+      "opening balance",
+      "closing balance",
+      "month end",
+      "reconciliation"
+    ],
+    "sql_features": [
+      "window",
+      "cte"
+    ],
+    "difficulty": "advanced",
+    "pattern_type": "analytical",
+    "template": "WITH period_activity AS (SELECT account_id, SUM(CASE WHEN txn_date < :period_start THEN amount ELSE 0 END) as opening_balance, SUM(CASE WHEN txn_date BETWEEN :period_start AND :period_end THEN amount ELSE 0 END) as period_activity FROM transactions GROUP BY 1) SELECT account_id, opening_balance, period_activity, opening_balance + period_activity as closing_balance FROM period_activity",
+    "when_to_use": [
+      "period close",
+      "account reconciliation",
+      "opening and closing balance"
+    ],
+    "anti_patterns": [
+      "using two separate queries for opening and closing \u2014 risk of inconsistent filters"
+    ],
+    "related_patterns": [
+      "fin_running_balance",
+      "fin_pl_summary"
+    ]
+  },
+  {
+    "id": "fin_revenue_recognition",
+    "title": "Revenue recognition (ratable / straight-line)",
+    "intent_tags": [
+      "revenue recognition",
+      "deferred revenue",
+      "straight line",
+      "ratable revenue",
+      "arr",
+      "mrr"
+    ],
+    "sql_features": [
+      "cte",
+      "join"
+    ],
+    "difficulty": "advanced",
+    "pattern_type": "analytical",
+    "template": "WITH months AS (SELECT DISTINCT DATE_TRUNC('month', d) as month FROM generate_series(:start, :end, INTERVAL '1 month') d) SELECT m.month, s.contract_id, s.contract_value / (EXTRACT(MONTH FROM AGE(s.end_date, s.start_date)) + 1) as recognised_revenue FROM months m JOIN subscriptions s ON m.month BETWEEN DATE_TRUNC('month', s.start_date) AND DATE_TRUNC('month', s.end_date)",
+    "when_to_use": [
+      "MRR",
+      "ARR",
+      "deferred revenue",
+      "straight-line revenue recognition",
+      "subscription revenue"
+    ],
+    "anti_patterns": [
+      "booking full contract value in month of signing instead of spreading across contract term"
+    ],
+    "related_patterns": [
+      "fin_pl_summary",
+      "fin_mom_growth"
+    ]
+  },
+  {
+    "id": "fin_expense_ratio",
+    "title": "Expense ratio and cost breakdown",
+    "intent_tags": [
+      "expense ratio",
+      "cost breakdown",
+      "opex",
+      "cost analysis",
+      "spending by category"
+    ],
+    "sql_features": [
+      "aggregation",
+      "window"
+    ],
+    "difficulty": "beginner",
+    "pattern_type": "metric",
+    "template": "SELECT category, SUM(amount) as total_expense, SUM(amount) * 1.0 / SUM(SUM(amount)) OVER () as expense_share, SUM(amount) * 1.0 / NULLIF(SUM(CASE WHEN type='revenue' THEN amount END) OVER (), 0) as expense_to_revenue FROM expenses GROUP BY 1 ORDER BY 2 DESC",
+    "when_to_use": [
+      "cost breakdown",
+      "expense as % of revenue",
+      "opex analysis"
+    ],
+    "anti_patterns": [
+      "mixing capex and opex in the same expense_to_revenue ratio"
+    ],
+    "related_patterns": [
+      "fin_pl_summary",
+      "fin_gross_margin"
+    ]
+  }
+]

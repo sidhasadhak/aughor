@@ -1,0 +1,47 @@
+[
+  {
+    "id": "retention_cohorts",
+    "title": "Cohort Retention Analysis",
+    "business_definition": "Cohort retention tracks what percentage of users acquired in a given period are still active N periods later. It isolates product quality from acquisition volume. Healthy retention curves flatten at a non-zero level.",
+    "intent_tags": ["retention", "cohort retention", "cohort analysis", "day 30 retention", "weekly retention", "user retention"],
+    "when_to_use": ["retention dropped", "cohort analysis", "are newer users retaining as well as older users", "product stickiness"],
+    "diagnostic_questions": [
+      "Are newer cohorts retaining worse than older cohorts — indicating a product regression?",
+      "Does retention flatten out or go to zero — indicating whether there is a loyal core user base?",
+      "At which interval does the biggest retention drop occur — day 1, week 1, month 1?",
+      "Do specific segments (e.g. activated vs non-activated users) show very different retention curves?"
+    ],
+    "causal_relationships": [
+      {
+        "symptom": "retention at day 30 declining across cohorts",
+        "check_in_order": ["activation_rate_by_cohort", "engagement_depth_week1", "feature_adoption_rate"],
+        "detection_sql": "SELECT cohort_month, interval_month, COUNT(DISTINCT user_id) AS retained, COUNT(DISTINCT user_id) * 100.0 / FIRST_VALUE(COUNT(DISTINCT user_id)) OVER (PARTITION BY cohort_month ORDER BY interval_month) AS retention_rate FROM (SELECT u.user_id, DATE_TRUNC('month', u.created_at) AS cohort_month, DATEDIFF('month', u.created_at, a.activity_date) AS interval_month FROM users u JOIN user_activity a USING (user_id)) t GROUP BY 1, 2 ORDER BY 1, 2"
+      },
+      {
+        "symptom": "steep drop-off at day 1 or week 1",
+        "check_in_order": ["onboarding_completion_rate", "time_to_first_key_action", "email_activation_rate"],
+        "detection_sql": "SELECT DATE_TRUNC('week', signup_date) AS cohort, COUNT(*) AS signups, COUNT(CASE WHEN last_active >= signup_date + INTERVAL '7 days' THEN 1 END) AS retained_7d, COUNT(CASE WHEN last_active >= signup_date + INTERVAL '30 days' THEN 1 END) AS retained_30d FROM users GROUP BY 1 ORDER BY 1"
+      }
+    ],
+    "inflation_causes": [
+      {
+        "cause": "Passive sessions (e.g. background API calls) counted as activity — overstates true retention",
+        "detection_sql": "SELECT activity_type, COUNT(*) FROM user_activity GROUP BY 1 ORDER BY 2 DESC"
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Users who changed email/account not linked to original cohort",
+        "detection_sql": "SELECT COUNT(DISTINCT user_id) FROM users WHERE merged_into_user_id IS NOT NULL"
+      }
+    ],
+    "related_patterns": ["customer_churn", "product_activation", "customer_lifetime_value"],
+    "anti_patterns": [
+      "Do not use rolling averages for cohort analysis — each cohort must be tracked independently",
+      "Do not define 'active' as any login — use meaningful engagement events"
+    ],
+    "sql_assets": {
+      "cohort_retention_grid": "SELECT cohort_month, interval_month, COUNT(DISTINCT user_id) AS users FROM (SELECT u.user_id, DATE_TRUNC('month', u.created_at) AS cohort_month, DATEDIFF('month', u.created_at, a.activity_date) AS interval_month FROM users u JOIN user_activity a USING (user_id) WHERE a.activity_date >= u.created_at) t GROUP BY 1, 2 ORDER BY 1, 2"
+    }
+  }
+]
