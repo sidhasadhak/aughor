@@ -18,6 +18,7 @@ const initial: InvestigationState = {
   fromCache: false,
   cachedQuestion: null,
   humanFeedback: null,
+  queryMode: null,
 };
 
 type HistoricalInvestigation = {
@@ -50,6 +51,7 @@ function reducer(state: InvestigationState, action: Action): InvestigationState 
 
   if (action.type === "LOAD_HISTORICAL") {
     const { inv } = action;
+    const hasManyHypotheses = (inv.hypotheses?.length ?? 0) > 1;
     return {
       ...initial,
       status: "done",
@@ -59,6 +61,7 @@ function reducer(state: InvestigationState, action: Action): InvestigationState 
       queriesExecuted: inv.query_count ?? 0,
       report: inv.report,
       queryHistory: inv.query_history ?? [],
+      queryMode: hasManyHypotheses ? "investigate" : "direct",
       log: ["Loaded from history"],
     };
   }
@@ -68,6 +71,13 @@ function reducer(state: InvestigationState, action: Action): InvestigationState 
   switch (event.type) {
     case "start":
       return { ...initial, status: "running", question: event.question, investigationId: event.investigation_id ?? null, log: ["Decomposing question…"] };
+
+    case "mode":
+      return {
+        ...state,
+        queryMode: event.query_mode,
+        log: [...state.log, event.query_mode === "direct" ? "Direct query — fetching data…" : "Investigating — decomposing into hypotheses…"],
+      };
 
     case "hypotheses":
       return {
@@ -133,6 +143,7 @@ function reducer(state: InvestigationState, action: Action): InvestigationState 
         investigationId: event.investigation_id ?? state.investigationId,
         fromCache: event.from_cache ?? false,
         cachedQuestion: event.cached_question ?? null,
+        queryMode: event.query_mode ?? state.queryMode,
         log: [...state.log, event.from_cache ? "Matched prior investigation — returning cached result" : "Investigation complete"],
       };
 

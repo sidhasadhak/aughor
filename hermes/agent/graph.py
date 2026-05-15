@@ -11,6 +11,8 @@ from langgraph.graph import END, StateGraph
 from hermes.agent.nodes import (
     decompose_question,
     plan_and_execute,
+    route_after_classify,
+    route_question,
     score_evidence,
     should_continue,
     synthesize_report,
@@ -30,11 +32,17 @@ def _checkpointer():
 
 def _compile(execute_node, hitl: bool = False):
     graph = StateGraph(AgentState)
+    graph.add_node("route_question", route_question)
     graph.add_node("decompose", decompose_question)
     graph.add_node("plan_and_execute", execute_node)
     graph.add_node("score_evidence", score_evidence)
     graph.add_node("synthesize", synthesize_report)
-    graph.set_entry_point("decompose")
+    graph.set_entry_point("route_question")
+    graph.add_conditional_edges(
+        "route_question",
+        route_after_classify,
+        {"decompose": "decompose", "plan_and_execute": "plan_and_execute"},
+    )
     graph.add_edge("decompose", "plan_and_execute")
     graph.add_edge("plan_and_execute", "score_evidence")
     graph.add_conditional_edges(
@@ -82,9 +90,13 @@ def run_investigation(
         "query_history": [],
         "evidence_scores": [],
         "pitfalls": [],
+        "prior_analyses": [],
         "iteration": 0,
         "max_iterations": int(__import__("os").getenv("HERMES_MAX_ITER", "6")),
         "report": None,
+        "hitl_enabled": False,
+        "human_feedback": None,
+        "query_mode": None,
     }
 
     final_state = initial_state.copy()

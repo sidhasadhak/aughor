@@ -1,3 +1,26 @@
+ROUTE_QUESTION_PROMPT = """\
+Classify this business question as either "direct" or "investigate".
+
+QUESTION: {question}
+
+Rules:
+- "direct": The answer can be obtained with 1-2 SQL queries and a clear summary. Examples:
+  - "What is our MRR this month?"
+  - "Show me the top 10 customers by revenue"
+  - "What's the conversion rate by channel last quarter?"
+  - "How many active subscriptions do we have?"
+  - "List churned customers in March"
+
+- "investigate": The question asks WHY something happened, requires comparing multiple hypotheses,
+  or involves diagnosing a problem. Examples:
+  - "Why did revenue drop 8% last week?"
+  - "What's causing the spike in churn?"
+  - "Investigate why APAC sales are underperforming"
+  - "What's behind the increase in support tickets?"
+
+Return mode and a one-sentence reasoning.
+"""
+
 DECOMPOSE_PROMPT = """\
 You are a senior data analyst. A business stakeholder has asked you the following question:
 

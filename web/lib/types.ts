@@ -53,6 +53,8 @@ export interface QueryCitation {
   sql: string;
   row_count: number;
   error: string | null;
+  columns?: string[];
+  rows?: unknown[][];
 }
 
 export interface EvidenceScore {
@@ -66,10 +68,11 @@ export interface EvidenceScore {
 // SSE event shapes
 export type InvestigationEvent =
   | { type: "start"; question: string; investigation_id?: string }
+  | { type: "mode"; query_mode: "direct" | "investigate" }
   | { type: "hypotheses"; hypotheses: Hypothesis[] }
   | { type: "queries_executed"; iteration: number; hypothesis_idx: number; queries: QuerySummary[]; corrections: { fix_explanation: string; data_quality_issue: string | null }[]; stats: StatResult[] }
   | { type: "score"; iteration: number; score: { hypothesis_id: string; confidence: number; verdict: Verdict; key_finding: string }; hypotheses: Hypothesis[] }
-  | { type: "report"; report: Report; hypotheses: Hypothesis[]; query_count: number; query_history: QueryCitation[]; investigation_id: string; from_cache?: boolean; cached_question?: string; cache_score?: number }
+  | { type: "report"; report: Report; hypotheses: Hypothesis[]; query_count: number; query_history: QueryCitation[]; investigation_id: string; from_cache?: boolean; cached_question?: string; cache_score?: number; query_mode?: "direct" | "investigate" | null }
   | { type: "paused"; investigation_id: string; hypotheses: Hypothesis[]; scores: EvidenceScore[] }
   | { type: "error"; message: string }
   | { type: "done" };
@@ -101,4 +104,5 @@ export interface InvestigationState {
   fromCache: boolean;
   cachedQuestion: string | null;
   humanFeedback: string | null;
+  queryMode: "direct" | "investigate" | null;
 }

@@ -14,7 +14,9 @@ import { useInvestigation } from "@/lib/useInvestigation";
 
 const EXAMPLE_QUESTIONS = [
   "Why did revenue drop 8% last week?",
+  "What is our MRR this month?",
   "Which customer segment has the highest payment failure rate?",
+  "Show me the top 10 customers by revenue",
   "Is the APAC revenue decline a trend or a one-time event?",
 ];
 
@@ -58,7 +60,7 @@ export default function Home() {
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-400" />
               </span>
-              Investigating…
+              {state.queryMode === "direct" ? "Fetching data…" : "Investigating…"}
             </div>
           )}
           {state.status === "paused" && (
@@ -148,7 +150,10 @@ export default function Home() {
                   disabled={!input.trim() || state.status === "running" || state.status === "paused"}
                   className="w-full rounded-lg bg-zinc-100 text-zinc-900 text-sm font-medium py-2 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition"
                 >
-                  {state.status === "running" ? "Investigating…" : "Investigate →"}
+                  {state.status === "running"
+                    ? (state.queryMode === "direct" ? "Fetching…" : "Investigating…")
+                    : "Ask →"
+                  }
                 </button>
                 <label className="flex items-center gap-2 cursor-pointer select-none">
                   <div
@@ -195,15 +200,17 @@ export default function Home() {
 
               {/* Stats */}
               {state.status !== "idle" && (
-                <div className="p-4 border-t border-zinc-800 grid grid-cols-2 gap-3 shrink-0">
+                <div className={`p-4 border-t border-zinc-800 grid gap-3 shrink-0 ${state.queryMode === "direct" ? "grid-cols-1" : "grid-cols-2"}`}>
                   <div className="rounded-md bg-zinc-900 p-3 text-center">
                     <p className="text-xl font-mono font-semibold text-zinc-200">{state.queriesExecuted}</p>
                     <p className="text-xs text-zinc-600 mt-0.5">SQL queries</p>
                   </div>
-                  <div className="rounded-md bg-zinc-900 p-3 text-center">
-                    <p className="text-xl font-mono font-semibold text-zinc-200">{state.hypotheses.length}</p>
-                    <p className="text-xs text-zinc-600 mt-0.5">Hypotheses</p>
-                  </div>
+                  {state.queryMode !== "direct" && (
+                    <div className="rounded-md bg-zinc-900 p-3 text-center">
+                      <p className="text-xl font-mono font-semibold text-zinc-200">{state.hypotheses.length}</p>
+                      <p className="text-xs text-zinc-600 mt-0.5">Hypotheses</p>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -232,7 +239,18 @@ export default function Home() {
                       <p className="text-base font-medium text-zinc-200">{state.question}</p>
                     </div>
 
-                    {state.hypotheses.length > 0 && (
+                    {/* Mode badge */}
+                    {state.queryMode === "direct" && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-sky-400 border border-sky-500/30 bg-sky-500/10 rounded px-2 py-0.5 font-medium">
+                          Direct Query
+                        </span>
+                        <span className="text-xs text-zinc-600">Fetching data directly</span>
+                      </div>
+                    )}
+
+                    {/* Hypothesis cards — only for investigate mode */}
+                    {state.queryMode !== "direct" && state.hypotheses.length > 0 && (
                       <div className="space-y-3">
                         <p className="text-xs text-zinc-600 uppercase tracking-wide">
                           Hypotheses — {state.hypotheses.filter(h => h.verdict !== "untested").length} of {state.hypotheses.length} tested
@@ -330,8 +348,15 @@ export default function Home() {
                           </div>
                         )}
 
-                        <p className="text-xs text-zinc-600 uppercase tracking-wide">Investigation Report</p>
-                        <ReportView report={state.report} queryCount={state.queriesExecuted} queryHistory={state.queryHistory} />
+                        <p className="text-xs text-zinc-600 uppercase tracking-wide">
+                          {state.queryMode === "direct" ? "Query Report" : "Investigation Report"}
+                        </p>
+                        <ReportView
+                          report={state.report}
+                          queryCount={state.queriesExecuted}
+                          queryHistory={state.queryHistory}
+                          queryMode={state.queryMode}
+                        />
                       </div>
                     )}
 

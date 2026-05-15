@@ -73,19 +73,28 @@ export function HistoryDetailPanel({ invId }: Props) {
 
   const hypotheses = inv.hypotheses ?? [];
   const queryHistory = inv.query_history ?? [];
+  const isDirect = hypotheses.length === 1 && hypotheses[0]?.id === "direct";
+  const queryMode = isDirect ? "direct" : "investigate";
 
   return (
     <ScrollArea className="flex-1">
       <div className="p-6 space-y-8 max-w-3xl mx-auto">
         {/* Question */}
         <div>
-          <p className="text-xs text-zinc-600 uppercase tracking-wide mb-2">Question</p>
+          <div className="flex items-center gap-2 mb-2">
+            <p className="text-xs text-zinc-600 uppercase tracking-wide">Question</p>
+            {isDirect && (
+              <span className="text-xs text-sky-400 border border-sky-500/30 bg-sky-500/10 rounded px-2 py-0.5 font-medium">
+                Direct Query
+              </span>
+            )}
+          </div>
           <p className="text-base font-medium text-zinc-200">{inv.question}</p>
           <p className="mt-1 text-xs text-zinc-600 font-mono">{inv.connection_id}</p>
         </div>
 
-        {/* Hypotheses */}
-        {hypotheses.length > 0 && (
+        {/* Hypotheses — hidden for direct mode */}
+        {!isDirect && hypotheses.length > 0 && (
           <div className="space-y-3">
             <p className="text-xs text-zinc-600 uppercase tracking-wide">
               Hypotheses — {hypotheses.filter(h => h.verdict !== "untested").length} of {hypotheses.length} tested
@@ -100,11 +109,14 @@ export function HistoryDetailPanel({ invId }: Props) {
         {inv.report && (
           <div className="space-y-3">
             <Separator className="bg-zinc-800" />
-            <p className="text-xs text-zinc-600 uppercase tracking-wide">Investigation Report</p>
+            <p className="text-xs text-zinc-600 uppercase tracking-wide">
+              {isDirect ? "Query Report" : "Investigation Report"}
+            </p>
             <ReportView
               report={inv.report}
               queryCount={queryHistory.length}
               queryHistory={queryHistory}
+              queryMode={queryMode}
             />
           </div>
         )}

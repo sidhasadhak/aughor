@@ -17,6 +17,11 @@ class Hypothesis(BaseModel):
     key_finding: str = ""
 
 
+class RouteDecision(BaseModel):
+    mode: Literal["direct", "investigate"]
+    reasoning: str = Field(description="One sentence explaining the classification")
+
+
 class DecomposeOutput(BaseModel):
     question_understanding: str = Field(
         description="Restate the question in analytical terms — what metric, what time window, what comparison"
@@ -145,3 +150,6 @@ class AgentState(TypedDict):
     # Human-in-the-Loop (optional — only present when hitl_enabled=True)
     hitl_enabled: bool
     human_feedback: Optional[str]
+
+    # Routing: set by route_question node; None until classified
+    query_mode: Optional[Literal["direct", "investigate"]]

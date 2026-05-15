@@ -10,6 +10,7 @@ from hermes.agent.prompts import (
     DECOMPOSE_PROMPT,
     FIX_SQL_PROMPT,
     PLAN_QUERIES_PROMPT,
+    ROUTE_QUESTION_PROMPT,
     SCORE_EVIDENCE_PROMPT,
     SYNTHESIZE_PROMPT,
     format_pitfall_section,
@@ -23,6 +24,7 @@ from hermes.agent.state import (
     Pitfall,
     QueryPlan,
     QueryResult,
+    RouteDecision,
     SQLFix,
 )
 from hermes.llm.provider import get_provider
@@ -30,6 +32,31 @@ from hermes.tools.executor import format_result_for_llm
 from hermes.tools.stats import analyze_query_result, StatResult as _StatResult
 
 MAX_ITER = int(__import__("os").getenv("HERMES_MAX_ITER", "6"))
+
+
+# ── Node: route_question ─────────────────────────────────────────────────────
+
+def route_question(state: AgentState) -> dict[str, Any]:
+    llm = get_provider("coder")
+    decision: RouteDecision = llm.complete(
+        system="You are a routing classifier for a business intelligence agent. Classify questions precisely.",
+        user=ROUTE_QUESTION_PROMPT.format(question=state["question"]),
+        response_model=RouteDecision,
+    )
+    if decision.mode == "direct":
+        return {
+            "query_mode": "direct",
+            "hypotheses": [Hypothesis(id="direct", description=state["question"], confidence=0.0, verdict="untested")],
+            "current_hypothesis_idx": 0,
+            "iteration": 0,
+            "pitfalls": [],
+            "prior_analyses": [],
+        }
+    return {"query_mode": "investigate"}
+
+
+def route_after_classify(state: AgentState) -> str:
+    return "plan_and_execute" if state.get("query_mode") == "direct" else "decompose"
 
 
 # ── Node: decompose_question ─────────────────────────────────────────────────

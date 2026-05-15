@@ -141,6 +141,7 @@ async def _stream_investigation(question: str, connection_id: str, request: Requ
             "report": None,
             "hitl_enabled": hitl,
             "human_feedback": None,
+            "query_mode": None,
         }
 
         import time
@@ -174,7 +175,12 @@ async def _stream_investigation(question: str, connection_id: str, request: Requ
             partial = event[node_name]
             merged = {**merged, **partial}
 
-            if node_name == "decompose" and merged.get("hypotheses"):
+            if node_name == "route_question":
+                yield _sse("mode", {
+                    "query_mode": merged.get("query_mode"),
+                })
+
+            elif node_name == "decompose" and merged.get("hypotheses"):
                 yield _sse("hypotheses", {
                     "hypotheses": [h.model_dump() for h in merged["hypotheses"]],
                 })
@@ -209,10 +215,18 @@ async def _stream_investigation(question: str, connection_id: str, request: Requ
                     "hypotheses": [h.model_dump() for h in merged.get("hypotheses", [])],
                     "query_count": len(query_history),
                     "query_history": [
-                        {"hypothesis_id": r.hypothesis_id, "sql": r.sql, "row_count": r.row_count, "error": r.error}
+                        {
+                            "hypothesis_id": r.hypothesis_id,
+                            "sql": r.sql,
+                            "row_count": r.row_count,
+                            "error": r.error,
+                            "columns": r.columns,
+                            "rows": r.rows[:50],
+                        }
                         for r in query_history
                     ],
                     "investigation_id": inv_id,
+                    "query_mode": merged.get("query_mode"),
                 })
                 # Persist + index (only on clean completion)
                 complete_investigation(
@@ -313,7 +327,14 @@ async def _stream_resume(inv_id: str, feedback: str, request: Request) -> AsyncG
                     "hypotheses": [h.model_dump() for h in merged.get("hypotheses", [])],
                     "query_count": len(query_history),
                     "query_history": [
-                        {"hypothesis_id": r.hypothesis_id, "sql": r.sql, "row_count": r.row_count, "error": r.error}
+                        {
+                            "hypothesis_id": r.hypothesis_id,
+                            "sql": r.sql,
+                            "row_count": r.row_count,
+                            "error": r.error,
+                            "columns": r.columns,
+                            "rows": r.rows[:50],
+                        }
                         for r in query_history
                     ],
                     "investigation_id": inv_id,

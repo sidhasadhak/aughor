@@ -23,6 +23,7 @@
 14. [Human-in-the-Loop Interrupt](#14-human-in-the-loop-interrupt)
 15. [Frontend — Streaming Investigation UI](#15-frontend--streaming-investigation-ui)
 16. [Connection Manager](#16-connection-manager)
+17. [Direct Query Mode](#17-direct-query-mode)
 
 ---
 
@@ -35,23 +36,25 @@ Aughor answers a business question by autonomously forming hypotheses, writing a
 Traditional analytics requires an analyst to know what to look for before they start. Aughor inverts this: it generates the hypotheses itself, pursues the most promising ones, and eliminates dead ends. A question like *"Why did revenue drop 8% last week?"* produces a full root-cause investigation in minutes, not hours.
 
 ### How
-The investigative loop is a cyclic LangGraph `StateGraph` with four nodes:
+The investigative loop is a cyclic LangGraph `StateGraph` with five nodes:
 
 | Node | Role |
 |---|---|
-| `decompose` | Reads the question + schema and produces 3–5 mutually exclusive, testable hypotheses |
+| `route_question` | Classifies the question as `direct` or `investigate`; seeds a synthetic hypothesis for direct mode |
+| `decompose` | (investigate mode only) Reads the question + schema and produces 3–5 mutually exclusive, testable hypotheses |
 | `plan_and_execute` | For the current hypothesis, writes 1–3 SQL queries, executes them, attaches statistical analysis |
 | `score_evidence` | Reads query results and scores the hypothesis (confirmed / refuted / inconclusive, 0–1 confidence) |
 | `synthesize` | Reads all scored hypotheses and evidence and writes the final narrative report |
 
-The loop continues until all hypotheses are tested or the iteration cap (`HERMES_MAX_ITER`, default 6) is hit. A `should_continue` router decides after each score whether to test the next hypothesis or synthesise.
+`route_question` is the graph entry point. A conditional edge routes to `decompose` (investigate) or directly to `plan_and_execute` (direct), bypassing hypothesis decomposition entirely for simple factual queries. The loop continues until all hypotheses are tested or the iteration cap (`HERMES_MAX_ITER`, default 6) is hit. A `should_continue` router decides after each score whether to test the next hypothesis or synthesise.
 
 ### Component interactions
+- `route_question` → LLM classifier; sets `query_mode` in `AgentState`; for direct mode seeds `hypotheses` with one synthetic entry (id `"direct"`) and skips `decompose`
 - `decompose` → reads `schema_context` (built by `hermes/tools/schema.py`) and calls the coder LLM
 - `plan_and_execute` → calls `DatabaseConnection.execute()` and attaches stats via `hermes/tools/stats.py`
 - `score_evidence` → calls the coder LLM with formatted query results
 - `synthesize` → calls the narrator LLM with the full evidence log
-- All four nodes read/write the shared `AgentState` TypedDict
+- All five nodes read/write the shared `AgentState` TypedDict
 - Loop is checkpointed after every node via SqliteSaver (see [Resumable Investigations](#13-resumable-investigations))
 
 ### Tech / libraries
@@ -482,13 +485,16 @@ The quality of the underlying analysis is only valuable if users can read, trust
 - Cache hits show a `⚡ Matched a prior investigation` banner with the original question
 
 **Report view (`ReportView.tsx`):**
-- Headline + verdict paragraph
+- Headline (Verdict card)
+- **Direct mode only:** Raw query results table immediately below the Verdict — scrollable, shows up to 50 rows, SQL collapsible below
+- Short Summary (direct) / Diagnosis (investigate) paragraph
 - Key findings with expandable SQL footnotes (`QueryCitation` — click to see the SQL that produced the claim)
-- What was ruled out (refuted hypotheses)
-- Risks + recommended actions
-- `DataQualityCard` — structural data issues found during the investigation
+- Data Quality Issues (if any)
+- Watch — forward-looking risks (before Recommended Actions)
+- Recommended Actions
+- Ruled Out — refuted hypotheses at the bottom (de-emphasised)
 
-**History tab:** Two-column layout — list with status badges + Qdrant index indicator on the left; full investigation detail on the right. Click any past investigation to reload it.
+**History tab:** Two-column layout — list with status badges + Qdrant index indicator on the left; full investigation detail on the right. Click any past investigation to reload it. Direct query investigations show a "Direct Query" badge and suppress the hypothesis section entirely — only the results table and report are shown.
 
 **Connections tab:** Two-column layout — connection list with test/delete on the left; full-height schema viewer on the right.
 
@@ -532,6 +538,45 @@ The right column shows a full schema viewer (`SchemaPanel.tsx`) — select any c
 
 ---
 
+## 17. Direct Query Mode
+
+### What
+Aughor automatically detects whether a question needs a full multi-hypothesis investigation or can be answered directly with one or two SQL queries. Factual lookups ("Show me the top 10 customers by revenue") are answered instantly, without decomposition overhead. Diagnostic questions ("Why did revenue drop 8%?") still go through the full investigative loop.
+
+### Why
+Not every business question is a mystery to investigate — many are data lookups. Forcing a "What is our MRR this month?" question through 3–5 hypothesis branches, multiple SQL rounds, and evidence scoring is wasteful and produces an unnaturally complex response. Direct mode gives the right answer in the right format: a clean data table + a short summary, without the overhead of an investigation.
+
+### How
+`route_question` is a new LangGraph node that runs first on every question — it is now the graph entry point. It calls the coder LLM with a `ROUTE_QUESTION_PROMPT` that classifies the question into one of two modes:
+
+| Mode | Condition | Example |
+|---|---|---|
+| `direct` | Single SQL pass can answer; factual, lookup, or aggregation | "Show top 10 customers by revenue", "What is our MRR?" |
+| `investigate` | Requires root-cause reasoning; asks why, diagnoses a problem | "Why did revenue drop 8%?", "What's causing churn to spike?" |
+
+For `direct` mode:
+1. `route_question` seeds `AgentState.hypotheses` with a single synthetic hypothesis (`id="direct"`, `description=question`) and short-circuits `decompose`
+2. A conditional edge routes directly to `plan_and_execute`
+3. After one SQL pass + scoring, the graph moves to `synthesize` — one full loop iteration
+4. The `synthesize_report` node produces a report with a short-form verdict and summary
+
+The classifier result is emitted as a `{ type: "mode", query_mode }` SSE event immediately after `route_question` runs, so the frontend can adapt its UI before any queries execute.
+
+### Component interactions
+- `hermes/agent/state.py` — `RouteDecision` Pydantic model (`mode`, `reasoning`); `query_mode: Optional[Literal["direct", "investigate"]]` added to `AgentState`
+- `hermes/agent/prompts.py` — `ROUTE_QUESTION_PROMPT` with concrete direct/investigate examples
+- `hermes/agent/nodes.py` — `route_question()` node; `route_after_classify()` router function
+- `hermes/agent/graph.py` — `route_question` set as entry point; `add_conditional_edges` to `decompose` or `plan_and_execute`
+- `hermes/api.py` — emits `mode` SSE event; includes `query_mode` in the `report` event; passes `columns`/`rows` (up to 50) in `query_history` so the frontend can render the results table
+- **Frontend:** `mode` event sets `queryMode` in state; `ReportView` shows raw data table + "Short Summary" label; hypothesis cards and "Hypotheses" counter hidden in direct mode; `HistoryDetailPanel` detects direct mode via `hypothesis.id === "direct"` and suppresses the hypothesis section
+
+### Tech / libraries
+- **LangGraph conditional edges** — `route_question` → `decompose` | `plan_and_execute`
+- **instructor + Pydantic** — `RouteDecision` structured output
+- No new infrastructure — same LLM providers, same graph compilation path
+
+---
+
 ## How features connect — end-to-end data flow
 
 ```
@@ -544,43 +589,54 @@ Cache check (Prior Investigations RAG)
     └─ miss ──► create_investigation(history.db)
                     │
                     ▼
-              decompose_question
-                ├─ builds schema_context
-                │     ├─ raw DDL (DatabaseConnection.get_schema)
-                │     ├─ Auto-Seed Glossary (unannotated tables)
-                │     ├─ merge Glossary YAML + dbt + auto-seed
-                │     └─ build_schema_index → Qdrant (schema_index)
-                └─ fetches prior_analyses (Qdrant investigations)
-                    │
-                    ▼ (×N hypotheses)
-              plan_and_execute
-                ├─ retrieve_relevant_schema (Qdrant schema_index, if >12 tables)
-                ├─ LLM → QueryPlan (coder model)
-                ├─ DatabaseConnection.execute → QueryResult
-                ├─ SQL self-correction on error → Pitfall logged
-                └─ attach_stats → STL / z-score / Mann-Whitney
-                    │
-                    ▼
-              score_evidence
-                └─ LLM → EvidenceScore (coder model)
-                    │
-                    ▼ (HITL enabled?)
-              ┌─────┴──────┐
-           paused        continue
-              │              │
-         FeedbackPrompt    synthesize_report
-         (user input)       └─ LLM → AnalysisReport (narrator model)
-              │                        │
-              └────────────────────────┘
-                                       │
-                              complete_investigation
-                                ├─ history.db ✓
-                                └─ Qdrant index ✓
-                                       │
-                                       ▼
-                                SSE: report
+              route_question                           SSE: mode
+                ├─ LLM classifier → "direct" | "investigate"
+                │
+                ├─ direct ──────────────────────────────────────────────┐
+                │   (seeds synthetic hypothesis, skips decompose)        │
+                │                                                        │
+                └─ investigate                                           │
+                        │                                                │
+                        ▼                                                │
+                  decompose_question                                     │
+                    ├─ builds schema_context                             │
+                    │     ├─ raw DDL (DatabaseConnection.get_schema)     │
+                    │     ├─ Auto-Seed Glossary (unannotated tables)     │
+                    │     ├─ merge Glossary YAML + dbt + auto-seed       │
+                    │     └─ build_schema_index → Qdrant (schema_index)  │
+                    └─ fetches prior_analyses (Qdrant investigations)    │
+                            │                                            │
+                            ▼ (×N hypotheses)  ◄─────────────────────── ┘
+                      plan_and_execute
+                        ├─ retrieve_relevant_schema (Qdrant, if >12 tables)
+                        ├─ LLM → QueryPlan (coder model)
+                        ├─ DatabaseConnection.execute → QueryResult
+                        ├─ SQL self-correction on error → Pitfall logged
+                        └─ attach_stats → STL / z-score / Mann-Whitney
+                            │
+                            ▼
+                      score_evidence
+                        └─ LLM → EvidenceScore (coder model)
+                            │
+                            ▼ (HITL enabled?)
+                      ┌─────┴──────┐
+                   paused        continue
+                      │              │
+                 FeedbackPrompt    synthesize_report
+                 (user input)       └─ LLM → AnalysisReport (narrator model)
+                      │                        │
+                      └────────────────────────┘
+                                               │
+                                      complete_investigation
+                                        ├─ history.db ✓
+                                        └─ Qdrant index ✓
+                                               │
+                                               ▼
+                                        SSE: report
+                                  (includes columns + rows
+                                   for direct query table)
 ```
 
 ---
 
-*Last updated: 2026-05-15. See `ROADMAP.md` for upcoming features.*
+*Last updated: 2026-05-15 · 17 features. See `ROADMAP.md` for upcoming features.*

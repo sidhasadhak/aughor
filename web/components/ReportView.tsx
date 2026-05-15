@@ -17,10 +17,17 @@ interface Props {
   report: Report;
   queryCount: number;
   queryHistory?: QueryCitation[];
+  queryMode?: "direct" | "investigate" | null;
 }
 
-export function ReportView({ report, queryCount, queryHistory = [] }: Props) {
+export function ReportView({ report, queryCount, queryHistory = [], queryMode }: Props) {
   const dqNotes = report.data_quality_notes ?? [];
+  const isDirect = queryMode === "direct";
+
+  // For direct mode: find the first successful query that has row data
+  const directTable = isDirect
+    ? queryHistory.find(q => !q.error && q.columns?.length && q.rows?.length)
+    : undefined;
 
   return (
     <div className="space-y-6">
@@ -30,9 +37,16 @@ export function ReportView({ report, queryCount, queryHistory = [] }: Props) {
         <p className="text-lg font-semibold text-white leading-snug">{report.headline}</p>
       </div>
 
-      {/* Diagnosis */}
+      {/* Direct query result table — shown immediately after Verdict */}
+      {isDirect && directTable && (
+        <DirectResultTable table={directTable} />
+      )}
+
+      {/* Short Summary (direct) or Diagnosis (investigate) */}
       <div className="space-y-2">
-        <h3 className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Diagnosis</h3>
+        <h3 className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">
+          {isDirect ? "Short Summary" : "Diagnosis"}
+        </h3>
         <p className="text-sm text-zinc-300 leading-relaxed">{report.verdict}</p>
       </div>
 
@@ -53,21 +67,6 @@ export function ReportView({ report, queryCount, queryHistory = [] }: Props) {
               );
             })}
           </div>
-        </div>
-      )}
-
-      {/* Ruled out */}
-      {report.what_is_not_the_cause.length > 0 && (
-        <div className="space-y-2">
-          <h3 className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Ruled Out</h3>
-          <ul className="space-y-1">
-            {report.what_is_not_the_cause.map((item, i) => (
-              <li key={i} className="flex items-start gap-2 text-sm text-zinc-500">
-                <span className="mt-0.5 text-red-500/60">✕</span>
-                {item}
-              </li>
-            ))}
-          </ul>
         </div>
       )}
 
@@ -98,6 +97,20 @@ export function ReportView({ report, queryCount, queryHistory = [] }: Props) {
 
       <Separator className="bg-zinc-800" />
 
+      {/* Watch — before Recommended Actions */}
+      {report.risks.length > 0 && (
+        <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4 space-y-2">
+          <h3 className="text-xs font-semibold text-amber-400 uppercase tracking-wide">Watch</h3>
+          <ul className="space-y-1">
+            {report.risks.map((risk, i) => (
+              <li key={i} className="text-xs text-amber-300/80 flex gap-2">
+                <span>⚠</span>{risk}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* Recommended actions */}
       {report.recommended_actions.length > 0 && (
         <div className="space-y-2">
@@ -115,14 +128,15 @@ export function ReportView({ report, queryCount, queryHistory = [] }: Props) {
         </div>
       )}
 
-      {/* Risks */}
-      {report.risks.length > 0 && (
-        <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4 space-y-2">
-          <h3 className="text-xs font-semibold text-amber-400 uppercase tracking-wide">Watch</h3>
+      {/* Ruled Out — at the bottom */}
+      {report.what_is_not_the_cause.length > 0 && (
+        <div className="space-y-2">
+          <h3 className="text-sm font-semibold text-zinc-500 uppercase tracking-wide">Ruled Out</h3>
           <ul className="space-y-1">
-            {report.risks.map((risk, i) => (
-              <li key={i} className="text-xs text-amber-300/80 flex gap-2">
-                <span>⚠</span>{risk}
+            {report.what_is_not_the_cause.map((item, i) => (
+              <li key={i} className="flex items-start gap-2 text-sm text-zinc-500">
+                <span className="mt-0.5 text-red-500/60">✕</span>
+                {item}
               </li>
             ))}
           </ul>
@@ -194,6 +208,65 @@ function FindingRow({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function DirectResultTable({ table }: { table: QueryCitation }) {
+  const columns = table.columns ?? [];
+  const rows = table.rows ?? [];
+  const VISIBLE_ROWS = 20;
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Query Results</h3>
+        <span className="text-xs text-zinc-600 font-mono">
+          {table.row_count} row{table.row_count !== 1 ? "s" : ""}
+          {rows.length > VISIBLE_ROWS ? ` · scroll to see all` : ""}
+        </span>
+      </div>
+      <div className="rounded-lg border border-zinc-800 overflow-hidden">
+        {/* max-h shows ~20 rows; inner scroll reveals the rest */}
+        <div className="overflow-x-auto overflow-y-auto max-h-[400px]">
+          <Table>
+            <TableHeader>
+              <TableRow className="border-zinc-800 hover:bg-transparent">
+                {columns.map(col => (
+                  <TableHead key={col} className="text-xs text-zinc-500 font-mono whitespace-nowrap bg-zinc-900/80 h-8">
+                    {col}
+                  </TableHead>
+                ))}
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((row, ri) => (
+                <TableRow key={ri} className="border-zinc-800/50 hover:bg-zinc-800/30">
+                  {(row as unknown[]).map((cell, ci) => (
+                    <TableCell key={ci} className="text-xs text-zinc-300 font-mono py-1.5 whitespace-nowrap">
+                      {cell === null || cell === undefined ? (
+                        <span className="text-zinc-600 italic">null</span>
+                      ) : (
+                        String(cell)
+                      )}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </div>
+      <details className="group">
+        <summary className="text-xs text-zinc-600 cursor-pointer hover:text-zinc-400 transition list-none flex items-center gap-1">
+          <span className="group-open:hidden">▶</span>
+          <span className="hidden group-open:inline">▼</span>
+          SQL
+        </summary>
+        <pre className="mt-1 text-xs text-zinc-400 bg-zinc-950 rounded p-3 overflow-x-auto whitespace-pre-wrap font-mono leading-relaxed">
+          {table.sql}
+        </pre>
+      </details>
     </div>
   );
 }
