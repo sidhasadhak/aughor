@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { ConnectionsPanel } from "@/components/ConnectionsPanel";
 import { HistoryPanel } from "@/components/HistoryPanel";
 import { HistoryDetailPanel } from "@/components/HistoryDetailPanel";
@@ -8,6 +8,7 @@ import { SchemaPanel } from "@/components/SchemaPanel";
 import { FeedbackPrompt } from "@/components/FeedbackPrompt";
 import { HypothesisCard } from "@/components/HypothesisCard";
 import { ReportView } from "@/components/ReportView";
+import { ThinkingTrace } from "@/components/ThinkingTrace";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { useInvestigation } from "@/lib/useInvestigation";
@@ -30,11 +31,6 @@ export default function Home() {
   const [selectedConn, setSelectedConn] = useState("mydb");
   const [schemaConnId, setSchemaConnId] = useState<string | null>(null);
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
-  const logEndRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [state.log]);
 
   const handleSubmit = (q?: string) => {
     const question = q ?? input.trim();
@@ -182,19 +178,10 @@ export default function Home() {
                 </div>
               )}
 
-              {/* Activity log */}
-              {state.log.length > 0 && (
-                <ScrollArea className="flex-1 p-4">
-                  <p className="text-xs text-zinc-600 uppercase tracking-wide mb-2">Activity</p>
-                  <div className="space-y-1">
-                    {state.log.map((entry, i) => (
-                      <p key={i} className="text-xs text-zinc-500 leading-relaxed">
-                        <span className="text-zinc-700 font-mono mr-1">{String(i + 1).padStart(2, "0")}</span>
-                        {entry}
-                      </p>
-                    ))}
-                    <div ref={logEndRef} />
-                  </div>
+              {/* Thinking trace */}
+              {state.status !== "idle" && (
+                <ScrollArea className="flex-1">
+                  <ThinkingTrace state={state} />
                 </ScrollArea>
               )}
 

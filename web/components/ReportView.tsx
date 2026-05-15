@@ -12,6 +12,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { DataQualityNote, QueryCitation, Report } from "@/lib/types";
+import { InvestigationChart } from "@/components/InvestigationChart";
 
 interface Props {
   report: Report;
@@ -37,9 +38,20 @@ export function ReportView({ report, queryCount, queryHistory = [], queryMode }:
         <p className="text-lg font-semibold text-white leading-snug">{report.headline}</p>
       </div>
 
+      {/* Direct query: KPI highlight for single-row scalar results */}
+      {isDirect && directTable && <KPIHighlight table={directTable} />}
+
       {/* Direct query result table — shown immediately after Verdict */}
       {isDirect && directTable && (
         <DirectResultTable table={directTable} />
+      )}
+
+      {/* Chart — auto-renders if data has time or categorical + numeric columns */}
+      {isDirect && directTable?.columns && directTable?.rows && (
+        <InvestigationChart
+          columns={directTable.columns}
+          rows={directTable.rows}
+        />
       )}
 
       {/* Short Summary (direct) or Diagnosis (investigate) */}
@@ -208,6 +220,40 @@ function FindingRow({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function KPIHighlight({ table }: { table: QueryCitation }) {
+  const columns = table.columns ?? [];
+  const rows = table.rows ?? [];
+
+  // Only show for single-row results — these are scalar answers
+  if (rows.length !== 1 || columns.length === 0) return null;
+
+  const row = rows[0] as unknown[];
+  const metrics = columns
+    .map((col, i) => ({ col, val: row[i] }))
+    .filter(({ val }) => val !== null && !isNaN(Number(val)) && Number(val) !== 0);
+
+  if (!metrics.length) return null;
+
+  const fmt = (v: unknown) => {
+    const n = Number(v);
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+    if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+    if (n % 1 !== 0) return n.toFixed(2);
+    return n.toLocaleString();
+  };
+
+  return (
+    <div className={`grid gap-3 ${metrics.length > 2 ? "grid-cols-3" : metrics.length === 2 ? "grid-cols-2" : "grid-cols-1"}`}>
+      {metrics.slice(0, 3).map(({ col, val }) => (
+        <div key={col} className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-4 text-center space-y-1">
+          <p className="text-2xl font-mono font-semibold text-emerald-400 tracking-tight">{fmt(val)}</p>
+          <p className="text-xs text-zinc-500 uppercase tracking-wide">{col.replace(/_/g, " ")}</p>
+        </div>
+      ))}
     </div>
   );
 }
