@@ -149,6 +149,42 @@ TABLE: orders (99,441 rows)
 
 ---
 
+### Phase 1e — Metrics Catalog
+**What:** Named business KPI formulas stored persistently and injected into every schema context — so the LLM uses the *same approved SQL* for MRR, CAC, and LTV that the data team has already validated, rather than re-deriving them from scratch every time.
+
+**Why:** Even with a rich glossary, the agent re-derives metric logic on every run. "MRR" might be computed differently across three investigations, creating inconsistent numbers. The Metrics Catalog is the formula layer above the glossary: tables/columns describe what data exists; metrics describe what to compute from it.
+
+**How this differs from the Business Glossary:**
+- Glossary = what things ARE (table/column semantics, grain, caveats)
+- Metrics Catalog = what to COMPUTE (KPI formulas, approved SQL, result dimensions)
+- Both inject into schema context but in separate blocks
+
+**Integration note (no clash):** If a metric overlaps with a glossary column annotation, the Metrics Catalog takes precedence for formula definitions. Glossary handles column-level semantics; Metrics handles aggregate computation.
+
+**Files to create/modify:**
+- `hermes/semantic/metrics.py` — `MetricDefinition` Pydantic model (`name`, `sql`, `dimensions: list[str]`, `filters: list[str]`, `tables: list[str]`, `caveats: str`); `load_metrics()`, `save_metric()`, `list_metrics()`, `delete_metric()`
+- `data/metrics.json` — persistent metric definitions (JSON array, append-only)
+- `hermes/tools/schema.py` — `build_schema_context()` appends a `METRICS CATALOG` block: "Use these exact SQL expressions: MRR = SUM(amount) WHERE status='active'"
+- `hermes/api.py` — `GET /metrics`, `POST /metrics`, `PUT /metrics/{name}`, `DELETE /metrics/{name}`
+- `web/components/MetricsPanel.tsx` — browse saved metrics, one-click re-run, edit/delete; accessible from the connection sidebar
+
+**Metric JSON shape:**
+```json
+{
+  "name": "revenue",
+  "sql": "SUM(order_amount) - SUM(COALESCE(refund_amount, 0))",
+  "dimensions": ["order_date", "country", "category"],
+  "tables": ["orders", "refunds"],
+  "caveats": "Finance-approved. Excludes test_user_id IS NOT NULL rows."
+}
+```
+
+**New deps:** none
+
+**Dependency on:** Phase 1a (glossary defines table/column semantics that metrics reference)
+
+---
+
 ## Milestone 2 — Agent Infrastructure Hardening
 **Goal:** Make the investigative loop production-grade — resumable, human-validated, and capable of routing to the right model for each job.
 
@@ -242,6 +278,127 @@ events:
 ```
 
 **New deps:** none
+
+---
+
+### Phase 2h — Error Classification & SQL Hardening
+**What:** Three complementary improvements to how Aughor handles SQL errors and generates correct SQL in the first place — eliminating the most common failure classes before they reach the retry loop.
+
+**Why:** FIX_SQL currently receives raw database error strings (e.g. `"function round(double precision, integer) does not exist"`) and asks the LLM to fix them. LLMs fix raw errors inconsistently. Pre-classifying errors into structured diagnostic hints — "PostgreSQL ROUND requires ::numeric cast; AVG() returns double precision" — dramatically increases first-fix success rate. Proactive dialect transforms catch the predictable error classes before execution entirely.
+
+**Integration note (no clash with 2f SQL KB):** Error classification provides structural, rule-based hints (fast, deterministic). The SQL KB provides semantic pattern examples (embedding lookup). Both inject into FIX_SQL_PROMPT — classification runs first, KB retrieval appends examples. Complementary layers, not competing.
+
+**Phase 2h-i — Error Classification (30+ patterns):**
+Extend `plan_and_execute` with a pre-LLM `_classify_sql_error(error, sql, dialect)` function that maps error strings to targeted diagnostic hints before calling FIX_SQL_PROMPT:
+
+| Error pattern | Injected hint |
+|---|---|
+| `"round" + "does not exist" + "double precision"` | "ROUND() needs ::numeric cast: `ROUND(AVG(col)::numeric, 2)`" |
+| `"not in group by"` | "Add to GROUP BY or wrap in aggregate function" |
+| `"cannot cast interval to numeric"` | "Use `EXTRACT(EPOCH FROM interval)/86400` for day conversion" |
+| `"division by zero"` | "Wrap denominator: `NULLIF(col, 0)`" |
+| `"column does not exist" + alias pattern` | "Alias used as schema name; qualify as `schema.table`" |
+
+- `hermes/agent/nodes.py` — `_classify_sql_error(error, sql, dialect) → str` function; called in `plan_and_execute` before FIX_SQL LLM call; result prepended to fix prompt as `DIAGNOSIS:` block
+- `hermes/agent/prompts.py` — `FIX_SQL_PROMPT` gains `{error_diagnosis}` placeholder
+
+**Phase 2h-ii — Proactive Dialect Post-Processing:**
+Apply three sequential transforms to every PostgreSQL query *before* execution — catch the predictable error classes without a round-trip:
+
+1. **Timestamp safety:** `col::TIMESTAMP` → `NULLIF(col, '')::TIMESTAMP` (handles CSV-loaded empty strings)
+2. **ROUND precision:** `ROUND(expr, N)` → `ROUND((expr)::numeric, N)` when expr is AVG/SUM
+3. **Interval arithmetic:** `(ts - ts)::numeric` → `EXTRACT(EPOCH FROM (ts - ts))/86400`
+
+Each uses balanced-parenthesis matching to avoid breaking nested expressions.
+
+- `hermes/db/connection.py` — `PostgresConnection._apply_dialect_fixes(sql) → str`; called inside `execute()` before query hits the wire; DuckDB connection has a no-op stub
+- Only applied for `dialect="postgres"` — DuckDB and others unaffected
+
+**Phase 2h-iii — Column Ambiguity Pre-flight:**
+Scan generated SQL before execution for unqualified column references that exist in multiple joined tables. Zero LLM cost — pure string matching against the schema.
+
+- `hermes/tools/ambiguity.py` — `detect_ambiguous_columns(sql, schema_tables) → list[AmbiguityWarning]`; parses column names from SELECT/WHERE/GROUP BY; cross-references against schema to find multi-table matches
+- `hermes/agent/nodes.py` — called in `plan_and_execute` after LLM generates SQL; ambiguity warnings injected into `data_quality_notes` and back into the next FIX_SQL prompt: "Column 'status' exists in orders AND payments — qualify as orders.status"
+
+**New deps:** none
+
+---
+
+### Phase 2i — Schema Intelligence
+**What:** Make the schema context injected into every prompt significantly richer — by detecting likely foreign-key relationships via column name analysis, and caching schema metadata to avoid redundant LLM calls when nothing has changed.
+
+**Why:** Aughor currently passes raw DDL to the LLM and relies on it to infer joins. For databases where column naming isn't perfectly consistent (`customer_id` in orders, `cust_id` in customers), the LLM hallucinates JOIN columns or misses the relationship entirely. Explicit join hints prevent this. Schema fingerprinting makes auto-seed and glossary injection idempotent and instant on reconnect.
+
+**Phase 2i-i — Fuzzy Join Inference:**
+Detect foreign-key relationships by normalising column names to their "root" — stripping ID suffixes — and matching across tables:
+
+- `_ROOT_SUFFIXES = ["_identifier", "_number", "_pseudonym", "_code", "_num", "_key", "_id"]` (longest first)
+- Phase 1 (exact): columns sharing identical normalized name → high-confidence join
+- Phase 2 (fuzzy): root within edit distance 1 → inferred join (marked as such)
+- Explicit `NO DIRECT JOIN` warnings for table pairs that *look* related but share no column root
+
+- `hermes/tools/schema.py` — `infer_joins(schema_tables) → list[JoinHint]`; returns `(table_a, col_a, table_b, col_b, confidence: "exact"|"inferred")`
+- `hermes/tools/schema.py` — `build_schema_context()` appends join hints and no-join warnings to the schema block
+
+Prompt output:
+```
+DETECTED JOINS:
+  orders.customer_id → customers.cust_id  [inferred — verify]
+  order_items.order_id → orders.order_id  [exact]
+NO DIRECT JOIN DETECTED: payments ↔ products (do not hallucinate a JOIN path)
+```
+
+**Integration note (no clash with 1c schema vector search):** Join inference enriches the schema string that then gets embedded into Qdrant. Inference runs inside `build_schema_context()` which already runs before `build_schema_index()`. Ordering is preserved.
+
+**Phase 2i-ii — Schema Fingerprinting:**
+Cache schema metadata to avoid redundant auto-seed LLM calls and accelerate connection reuse:
+
+- `Fingerprint = MD5(sorted_table_names + column_counts + row_counts_sampled)` — stable across reconnects if schema unchanged
+- `hermes/db/schema_cache.py` — 50-entry LRU JSON cache at `data/schema_cache.json`; maps fingerprint → schema metadata (glossary status, join hints, table profiles)
+- `hermes/semantic/autoseed.py` — checks fingerprint before running seed LLM calls; skips tables whose fingerprint matches the cache
+- `hermes/tools/schema.py` — writes fingerprint to cache after every `build_schema_context()` call
+
+Benefit: On reconnect to an unchanged database, all schema enrichment loads from cache — zero LLM calls, instant.
+
+**New deps:** none
+
+---
+
+### Phase 2j — KB Pattern Enrichment
+**What:** Upgrade the existing 235 SQL KB patterns with richer semantic structure — causal chains, metric inflation/deflation detection SQL, and related-pattern cross-links. The KB becomes a domain encyclopedia, not just a code example library.
+
+**Why:** Current patterns help the LLM avoid SQL syntax mistakes. Enriched patterns help the LLM generate better *hypotheses* — understanding that "if monthly revenue drops, check order frequency, then AOV, then refund rate" as a causal chain. This directly improves `decompose_question` output quality.
+
+**Integration note (additive, no clash):** Enrichment changes the JSON structure of existing files in the KB directory. The `kb_loader.py` `_build_embed_text()` function will be updated to include the new fields in the embed text. The Qdrant index will be rebuilt once. No changes to the retrieval API.
+
+**New JSON fields per pattern:**
+```json
+{
+  "causal_relationships": [
+    {
+      "symptom": "monthly revenue drops",
+      "check_in_order": ["order_frequency", "average_order_value", "refund_rate"],
+      "detection_sql": "SELECT DATE_TRUNC('month', order_date), COUNT(*), AVG(amount), SUM(refund_amount)/SUM(amount) FROM orders GROUP BY 1"
+    }
+  ],
+  "inflation_causes": [
+    {
+      "cause": "Cancelled orders included in revenue",
+      "detection_sql": "SELECT order_status, SUM(amount) FROM orders GROUP BY 1"
+    }
+  ],
+  "deflation_causes": [...],
+  "related_patterns": ["customer_lifetime_value", "refund_rate", "cohort_retention"]
+}
+```
+
+**Files to modify:**
+- `hermes/semantic/kb_loader.py` — extend `_build_embed_text()` to include `causal_relationships` symptoms + check_in_order; extend `_build_payload()` with new fields
+- `hermes/agent/prompts.py` — `DECOMPOSE_PROMPT` gains `{kb_causal_chains}` block; agent sees symptom→check sequences before forming hypotheses
+- All 235 KB JSON files — enriched with new fields (data work, not code work)
+
+**New deps:** none  
+**Dependency on:** Phase 2f (existing KB infrastructure)
 
 ---
 
@@ -402,6 +559,28 @@ presidio-anonymizer>=2.2.0
 
 ---
 
+### Phase 6e — Gradient Safety Verdict
+**What:** Add a `SUSPICIOUS` middle tier between `SAFE` and `BLOCKED` — queries that pass the SELECT-only structural check but show heuristic warning signs get a yellow flag rather than hard-failing or silently executing.
+
+**Why:** Binary SAFE/BLOCKED is too coarse. A query that scans 500M rows, crosses multiple schemas, or references an unexpected combination of sensitive tables deserves a warning to the user — but shouldn't be blocked. The analyst can override with context ("yes, this cross-schema join is intentional"). This is especially useful as a trust signal for new connections.
+
+**Integration note (no clash with SQLGlot allowlist):** SQLGlot enforces the structural SELECT-only rule (layer 1). Gradient safety is a semantic heuristic layer on top (layer 2). They run in sequence: structural block first, then semantic rating.
+
+**Suspicious signals (heuristic):**
+- Query scans >3 tables (complex join graph, high blast radius)
+- References columns matching PII name patterns (`email`, `ssn`, `phone`, `dob`) without explicit masking
+- Full-table scan with no WHERE clause on a large table (>1M rows)
+- CROSS JOIN detected
+
+**Files to create/modify:**
+- `hermes/security/safety.py` — `SafetyVerdict` enum gains `SUSPICIOUS`; `_score_suspicious(sql, schema) → list[str]` returns human-readable warning reasons
+- `hermes/agent/nodes.py` — on SUSPICIOUS verdict: continue execution but inject warnings into `data_quality_notes` and surface in report
+- `web/components/ReportView.tsx` — amber "⚠ Flagged Query" badge when `safety_verdict == "suspicious"`
+
+**New deps:** none
+
+---
+
 ### Phase 6d — Credential Management Upgrade
 **What:** Replace the current Fernet-encrypted SQLite credential store with **HashiCorp Vault** (self-hosted) or **Doppler** for production deployments. Current Fernet store is fine for local dev; enterprise deployments need centralized secret management with rotation and access policies.
 
@@ -473,32 +652,46 @@ opentelemetry-exporter-otlp>=1.24.0
 ---
 
 ## Milestone 9 — Quick Chat Mode
-**Goal:** A conversational, no-frills mode for fast data retrieval. Ask in plain English, get a number or chart immediately — no verdict, no executive summary, no recommendations. Designed for power users who know what they want and need speed over narrative.
+**Goal:** A conversational, no-frills mode for fast data retrieval with multi-turn memory. Ask in plain English, get a number or chart immediately — no verdict, no executive summary. Follow-up naturally: "filter by last 90 days", "also show revenue", "compare to last quarter" just works. Designed for power users who need speed over narrative.
 
-**Why separate from Direct Query:** Direct Query mode still wraps results in the full report shell (Top Insight, Executive Summary, etc.). Quick Chat is stripped entirely — just the raw answer presented conversationally.
+**Why separate from Direct Query:** Direct Query is single-shot and wraps every result in the full report shell. Quick Chat is stripped entirely — bare answer in a bubble — and crucially, it carries *conversation history* across turns so each question can reference the previous one.
 
 **How it differs from Direct Query:**
 | | Direct Query | Quick Chat |
 |---|---|---|
-| Result format | Full report shell | Bare number / table / chart |
+| Result format | Full report shell | Bare number / table / chart bubble |
 | Narrative | Executive Summary + bullets | None |
+| Follow-ups / multi-turn | No (stateless) | Yes — last 3 turns in context |
 | Recommended actions | Yes | No |
 | Risks | Yes | No |
-| Turn-based | Single shot | Conversational (multi-turn) |
-| Entry point | `route_question` classifies | User explicitly selects chat mode |
+| Entry point | `route_question` classifies | User explicitly selects chat tab |
 
-**Proposed UX:** A chat-style input panel (bottom text field, bubbles above) rather than the current left-panel + right-panel layout. Results appear inline as chat messages — a KPI card, a chart, or a mini table — without any surrounding report chrome.
+**Core mechanism — Conversation History:**
+Each chat session maintains a `conversation_history: list[ChatTurn]` at the session layer (outside `AgentState` — this is session-level state, not investigation-level state). Each `ChatTurn = (question: str, sql: str, headline: str)`. The last 3 turns are injected into every `POST /chat` planning prompt:
+
+```
+CONVERSATION HISTORY:
+[Turn 1] Q: "Show top 10 customers by revenue"
+         SQL: SELECT customer_id, SUM(amount) ... ORDER BY 2 DESC LIMIT 10
+[Turn 2] Q: "Filter by last 90 days"
+         SQL: SELECT customer_id, SUM(amount) ... WHERE order_date >= NOW() - INTERVAL '90 days' ...
+[Current] Q: "Also show their country"
+```
+
+This makes "also show X", "filter by Y", "compare to last month" resolve correctly without re-stating the full context.
+
+**Integration note (no clash with AgentState):** `conversation_history` is a session-level list managed in the `POST /chat` endpoint, not stored in `AgentState`. Each chat turn still creates a fresh `plan_and_execute` run with a new `AgentState` — but the history is prepended to its planning prompt. Clean separation of session state (chat) and investigation state (agent).
 
 **Files to create/modify:**
-- `web/app/page.tsx` — Add "chat" as a third tab (or a mode toggle); render `<ChatPanel>` instead of the investigation layout
-- `web/components/ChatPanel.tsx` — Conversational turn list; renders `ChatMessage` per turn
-- `web/components/ChatMessage.tsx` — Renders a single answer: number, chart, or table depending on result shape; no report wrapper
-- `hermes/api.py` — New `POST /chat` endpoint; calls `plan_and_execute` directly (skips `route_question` and `decompose`); SSE streams a minimal result event with `columns`, `rows`, `sql`
-- `web/lib/useChat.ts` — Separate reducer from `useInvestigation`; maintains `turns: ChatTurn[]`; each turn has `question + result`
+- `hermes/api.py` — `POST /chat` endpoint; accepts `{ question, connection_id, history: ChatTurn[] }`; builds `conversation_history_section` prompt block from last 3 turns; calls `plan_and_execute` directly; SSE streams `columns`, `rows`, `sql`, `headline`
+- `web/app/page.tsx` — "Chat" tab renders `<ChatPanel>`
+- `web/components/ChatPanel.tsx` — Conversational turn list; scrollable bubbles; bottom input; clears on connection change
+- `web/components/ChatMessage.tsx` — Renders one turn: question bubble + answer bubble (KPI card / chart / mini table depending on result shape); no report wrapper
+- `web/lib/useChat.ts` — Reducer maintaining `turns: ChatTurn[]`; `ask()` appends to history and streams; `clear()` resets session
 
 **New deps:** none
 
-**Dependency on:** Direct Query Mode (2e) — reuses `plan_and_execute` node and result streaming
+**Dependency on:** Direct Query Mode (2e, shipped) — reuses `plan_and_execute` node and result streaming
 
 ---
 
@@ -527,35 +720,94 @@ autoevals>=0.0.70
 
 ---
 
-## Dependency graph
+## Milestone 11 — Visual Query Builder
+**Goal:** A point-and-click query builder that generates correct SQL without any LLM involvement — for users who know exactly what they want and need deterministic, instant results. Complements the agent rather than replacing it.
+
+**Why separate from Direct Query / Quick Chat:** Both of those use LLMs to interpret intent. The Visual Builder is a no-LLM path: the SQL it produces is exactly what the user specified. No hallucination risk, zero latency. Covers the 20% of queries that are simple enough to click together but currently get routed through expensive LLM inference.
+
+**Integration note (no clash with agent pipeline):** The builder is a parallel path that bypasses the entire agent loop. It calls `execute_sql()` directly, bypasses `route_question`, `decompose`, `plan_and_execute`, and `synthesize`. The result renders in the same `DirectResultTable` + `InvestigationChart` components as a successful Direct Query — reusing the existing display layer.
+
+**How:**
+
+*Step 1 — Table Selection:* Pick a connection + table from a dropdown (populated from `GET /connections/{id}/schema`).
+
+*Step 2 — Field Configuration:*
+- **Dimensions** (GROUP BY): non-numeric columns from the selected table; drag to add
+- **Measures**: numeric columns + aggregation (SUM / AVG / COUNT / COUNT DISTINCT / MIN / MAX)
+- **Filters**: column + operator (= / ≠ / > / < / ≥ / ≤ / LIKE / IN / IS NULL) + value
+- **Sort**: column + ASC/DESC + LIMIT (default 500)
+
+*Step 3 — SQL Preview:* As fields are added, the generated SQL is shown live (read-only, but copyable).
+
+*Step 4 — Run:* Executes via `POST /query/run` → same result rendering as Direct Query (table + chart + KPI cards).
+
+**Metrics Catalog integration:** If a Metric is defined that uses the selected table, it appears as a pre-built measure option ("Add MRR as a measure"). One click adds the approved formula.
+
+**Files to create/modify:**
+- `web/components/QueryBuilder.tsx` — Field palette, dimension/measure/filter configuration; live SQL preview
+- `hermes/api.py` — `POST /query/run { sql, connection_id }` — safety-validates and executes; returns `columns`, `rows`, `row_count`, `sql`; reuses existing `execute_sql()` + `_validate_sql()` path
+- `web/app/page.tsx` — "Build" tab renders `<QueryBuilder>`
+
+**New deps:** none  
+**Dependency on:** M1e (Metrics Catalog — to show metrics as measure options), Phase 2h-iii (ambiguity detection on builder-generated SQL as a free safety check)
+
+---
+
+## Build Sequence & Dependency Graph
+
+**Recommended sprint order — each sprint compounds on the last:**
+
+| Sprint | Milestone(s) | Key unlock |
+|---|---|---|
+| **1 — SQL Hardening** | 2h (Error Classification + Dialect Transforms + Column Ambiguity) + 2i (Join Inference + Fingerprinting) | Every query gets smarter; no new infra needed |
+| **2 — Semantic Depth** | 1e (Metrics Catalog) + 2j (KB Pattern Enrichment) | Agent understands business KPIs and causal chains |
+| **3 — Provider Flexibility** | M5 (Anthropic backend) | Cloud deployment; prompt caching cuts costs |
+| **4 — Conversational** | M9 (Quick Chat + multi-turn history) | Analyst-feel experience; session memory |
+| **5 — Production Safety** | M6 (Security: Gradient Safety + PII + Audit + Budget) + M7 (Observability) | Enterprise-ready; Langfuse traces |
+| **6 — Analytical Depth** | M4 (Prophet forecasting) + M2d (Events Calendar) | "Is this drop unusual *given the trend*?" |
+| **7 — LLM-free Path** | M11 (Visual Query Builder) | Deterministic queries; power user UX |
+| **8 — Infra Evolution** | M3 (ibis + Connector-X + SQLMesh) | Multi-warehouse; BigQuery/Snowflake |
+| **9 — Quality Gates** | M10 (Evals — Braintrust) | CI regression testing on verdict quality |
 
 ```
 History ✅
-    └── Prior Analyses RAG (1d)
-    └── Evals (9)
+    └── Prior Analyses RAG (1d) ✅
+    └── Evals (M10)
 
-Glossary (1a)
-    └── dbt Integration (1b)
-            └── Vector Search (1c)
-                    └── Prior Analyses RAG (1d)
+Glossary (1a) ✅
+    └── dbt Integration (1b) ✅
+            └── Vector Search (1c) ✅
+                    └── Prior Analyses RAG (1d) ✅
+    └── Metrics Catalog (1e)  ←  parallel; uses glossary table context
+            └── Visual Query Builder (M11)
 
-Two-Model Arch (2a)
-    └── Checkpointing (2b)
-            └── HITL (2c)
-    └── Provider Switcher (5)  ←  independent but builds on 2a
+SQL KB (2f) ✅
+    └── KB Pattern Enrichment (2j)  ←  enriches existing patterns
+
+Schema Context (1a–1c) ✅
+    └── Join Inference + Fingerprinting (2i)  ←  enriches schema string before indexing
+
+plan_and_execute ✅
+    └── Error Classification (2h-i)  ←  pre-LLM error hint injection
+    └── Dialect Post-processing (2h-ii)  ←  runs before execution (Postgres only)
+    └── Column Ambiguity Pre-flight (2h-iii)  ←  post-generation, pre-execution scan
+
+Two-Model Arch (2a) ✅
+    └── Checkpointing (2b) ✅
+            └── HITL (2c) ✅
+    └── Provider Switcher (M5)  ←  builds on 2a abstraction
+            └── Observability (M7)  ←  most valuable with real cloud token costs
+
+Direct Query (2e) ✅
+    └── Quick Chat (M9)  ←  reuses plan_and_execute; adds session-layer history
 
 Query Engine (3a ibis)
     └── SQLMesh (3c)
 
-Monitoring (2)  ←  benefits from Semantic Layer (1a–1d) + Stats Upgrade (4)
+Security (M6)  ←  independent; land before any multi-tenant deployment
+    Gradient Safety (6e) → no clash with SQLGlot structural check; runs as second layer
 
-Security (6)  ←  independent; should land before any multi-tenant deployment
-
-Observability (7)  ←  most valuable after Provider Switcher (5)
-
-Frontend Charts (8)  ←  independent; can ship incrementally
-
-Evals (9)  ←  needs History ✅ + Two-Model Arch (2a)
+Evals (M10)  ←  needs History ✅ + stable Two-Model Arch (2a) ✅
 ```
 
 ---
@@ -593,7 +845,19 @@ Evals (9)  ←  needs History ✅ + Two-Model Arch (2a)
 
 ## Current focus
 
-**Shipped:** M1 (Semantic Layer), M2a–2c + 2e–2g (Agent hardening, HITL, Direct Query, Routing v2, SQL KB), M8 (Frontend Charts, Chart Intelligence, Report UX)  
-**Next:** Milestone 2d — Events Calendar Tool · or · Milestone 5 — LLM Provider Switcher (Anthropic/Claude backend)  
-**Planned:** Milestone 9 — Quick Chat Mode (conversational, number/chart only, no report shell)  
-**Deferred:** Security (M6) before any multi-tenant deployment
+**Shipped:** M1 (Semantic Layer), M2a–2c + 2e–2g (Agent hardening, HITL, Direct Query, Routing v2, SQL KB), M8 (Frontend Charts, Chart Intelligence, Report UX)
+
+**Sprint 1 — Next up (SQL Hardening):**
+- **2h-i** Error Classification — map 30+ error patterns to targeted diagnostic hints before FIX_SQL LLM call
+- **2h-ii** Proactive Dialect Post-processing — 3 PostgreSQL transforms applied before execution
+- **2h-iii** Column Ambiguity Pre-flight — unqualified multi-table column detection, zero LLM cost
+- **2i-i** Fuzzy Join Inference — root-normalized column matching; join hints + no-join warnings in schema context
+- **2i-ii** Schema Fingerprinting — MD5-based cache invalidation for auto-seed; instant reconnect
+
+**Sprint 2 — Semantic Depth:**
+- **1e** Metrics Catalog — named KPI formulas as first-class schema objects
+- **2j** KB Pattern Enrichment — add causal_relationships + detection_sql + inflation/deflation causes to 235 patterns
+
+**Sprint 3 onward:** M5 (Anthropic backend) → M9 (Quick Chat) → M6 + M7 (Security + Observability) → M4 (Prophet) → M11 (Visual Builder) → M3 (Query Engine) → M10 (Evals)
+
+**Deferred:** M6 Security must land before any multi-tenant or enterprise deployment
