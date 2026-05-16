@@ -39,6 +39,19 @@ CONFIDENCE GUIDANCE:
 Return: mode, confidence (0.0–1.0), and a one-sentence reasoning explaining the classification.
 """
 
+CHAT_SQL_SYSTEM = "You are a concise data analyst. Write exactly one correct SELECT statement to answer the question. Return a short headline (one sentence) describing what the result will show."
+
+CHAT_PROMPT = """\
+DATABASE SCHEMA:
+{schema}
+
+{history_section}QUESTION: {question}
+
+Write a single SELECT query using only tables and columns present in the schema.
+Use the detected join paths when joining tables.
+If the question references previous results ("also", "add", "filter by", "compare to"), extend or refine the previous SQL rather than starting from scratch.
+"""
+
 DECOMPOSE_PROMPT = """\
 You are a senior data analyst. A business stakeholder has asked you the following question:
 

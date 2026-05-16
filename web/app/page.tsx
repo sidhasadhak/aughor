@@ -13,6 +13,7 @@ import { ThinkingTrace } from "@/components/ThinkingTrace";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { useInvestigation } from "@/lib/useInvestigation";
+import { ChatPanel } from "@/components/ChatPanel";
 
 const EXAMPLE_QUESTIONS = [
   "Why did revenue drop 8% last week?",
@@ -22,7 +23,7 @@ const EXAMPLE_QUESTIONS = [
   "Is the APAC revenue decline a trend or a one-time event?",
 ];
 
-type Tab = "investigate" | "connections" | "history";
+type Tab = "investigate" | "chat" | "history" | "connections";
 
 export default function Home() {
   const { state, investigate, submitFeedback, loadHistorical } = useInvestigation();
@@ -71,7 +72,7 @@ export default function Home() {
           )}
           {/* Tab switcher */}
           <div className="flex rounded-md border border-zinc-800 overflow-hidden">
-            {(["investigate", "history", "connections"] as Tab[]).map(t => (
+            {(["investigate", "chat", "history", "connections"] as Tab[]).map(t => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
@@ -134,6 +135,31 @@ export default function Home() {
                 </div>
               )}
             </div>
+          </div>
+        ) : tab === "chat" ? (
+          /* ── Chat tab ── */
+          <div className="flex-1 flex overflow-hidden">
+            {/* Connection selector sidebar */}
+            <div className="w-52 shrink-0 border-r border-zinc-800 flex flex-col">
+              <div className="px-4 py-2 border-b border-zinc-800">
+                <p className="text-xs text-zinc-600 mb-1">Connection</p>
+                <button
+                  onClick={() => setTab("connections")}
+                  className="text-xs text-zinc-400 hover:text-zinc-200 font-mono truncate max-w-full transition"
+                >
+                  {selectedConn === "fixture" ? "Fixture DB (demo)" : selectedConn} ↗
+                </button>
+              </div>
+              <div className="p-3 flex-1">
+                <p className="text-[10px] text-zinc-600 uppercase tracking-wider mb-2">Tips</p>
+                <ul className="space-y-2 text-[11px] text-zinc-600">
+                  <li>↵ to send, Shift+↵ for newline</li>
+                  <li>Follow up naturally — context carries</li>
+                  <li>✕ clears the session</li>
+                </ul>
+              </div>
+            </div>
+            <ChatPanel connectionId={selectedConn} />
           </div>
         ) : (
           /* ── Investigation tab ── */

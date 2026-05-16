@@ -102,6 +102,134 @@ def _looks_direct(question: str) -> bool:
     return has_direct
 
 
+# ── Chat endpoint ─────────────────────────────────────────────────────────────
+
+class ChatHistoryTurn(BaseModel):
+    question: str
+    sql: str
+    columns: list[str] = []
+    headline: str = ""
+
+class ChatRequest(BaseModel):
+    question: str
+    connection_id: str
+    history: list[ChatHistoryTurn] = []
+
+class _ChatAnswer(BaseModel):
+    sql: str
+    headline: str
+
+async def _stream_chat(
+    question: str,
+    connection_id: str,
+    history: list[ChatHistoryTurn],
+    request: Request,
+) -> AsyncGenerator[str, None]:
+    try:
+        conn_type, dsn = get_dsn(connection_id)
+    except KeyError as e:
+        yield _sse("error", {"message": str(e)})
+        return
+    try:
+        db = open_connection(conn_type, dsn)
+    except Exception as e:
+        yield _sse("error", {"message": f"Could not connect: {e}"})
+        return
+
+    try:
+        from hermes.agent.prompts import CHAT_PROMPT, CHAT_SQL_SYSTEM
+        from hermes.llm.provider import get_provider
+
+        schema = db.get_schema()
+
+        # Build history section from last 3 turns
+        history_section = ""
+        if history:
+            recent = history[-3:]
+            lines = [
+                "CONVERSATION HISTORY (use to resolve 'also', 'add', 'filter by', 'compare to'):"
+            ]
+            for i, t in enumerate(recent, 1):
+                cols_str = ", ".join(t.columns[:6]) if t.columns else "—"
+                lines.append(f"[Turn {i}] Q: {t.question!r}")
+                lines.append(f"         SQL: {t.sql}")
+                lines.append(f"         Columns: {cols_str}")
+                if t.headline:
+                    lines.append(f"         Headline: {t.headline}")
+            history_section = "\n".join(lines) + "\n"
+
+        prompt = CHAT_PROMPT.format(
+            schema=schema,
+            history_section=history_section,
+            question=question,
+        )
+
+        answer: _ChatAnswer = get_provider("coder").complete(
+            system=CHAT_SQL_SYSTEM,
+            user=prompt,
+            response_model=_ChatAnswer,
+        )
+
+        yield _sse("sql", {"sql": answer.sql})
+
+        result = db.execute("chat", answer.sql)
+
+        # One self-correction attempt on error
+        if result.error:
+            from hermes.agent.prompts import FIX_SQL_PROMPT
+
+            class _Fix(BaseModel):
+                corrected_sql: str
+                explanation: str
+                data_quality_note: str = ""
+
+            fix_prompt = FIX_SQL_PROMPT.format(
+                schema=schema,
+                dialect=db.dialect,
+                sql=answer.sql,
+                error=result.error,
+                kb_patterns_section="",
+                error_diagnosis="",
+            )
+            try:
+                fix: _Fix = get_provider("coder").complete(
+                    system="Fix the SQL error. Return corrected_sql and a one-line explanation.",
+                    user=fix_prompt,
+                    response_model=_Fix,
+                )
+                result = db.execute("chat", fix.corrected_sql)
+                if not result.error:
+                    yield _sse("sql", {"sql": fix.corrected_sql})
+            except Exception:
+                pass
+
+        if result.error:
+            yield _sse("error", {"message": result.error})
+            return
+
+        yield _sse("columns", {"columns": result.columns})
+        yield _sse("rows", {"rows": result.rows[:100]})
+        yield _sse("headline", {"headline": answer.headline})
+        yield _sse("done", {})
+
+    except Exception as e:
+        yield _sse("error", {"message": str(e)})
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
+
+
+@app.post("/chat")
+async def chat_endpoint(req: ChatRequest, request: Request):
+    return StreamingResponse(
+        _stream_chat(req.question, req.connection_id, req.history, request),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 # ── Investigation endpoint ────────────────────────────────────────────────────
 
 async def _stream_investigation(question: str, connection_id: str, request: Request, hitl: bool = False) -> AsyncGenerator[str, None]:
