@@ -36,6 +36,7 @@
 27. [KB Pattern Enrichment](#27-kb-pattern-enrichment)
 28. [ER Diagram](#28-er-diagram)
 29. [Rich Schema Card UI](#29-rich-schema-card-ui)
+30. [Quick Chat Mode](#30-quick-chat-mode)
 
 ---
 
@@ -939,6 +940,42 @@ A wall of monospace DDL text requires mental effort to parse. The card view make
 
 ---
 
+## 30. Quick Chat Mode
+
+### What
+A conversational, no-frills mode for fast data retrieval with multi-turn memory. Ask in plain English, get a number or chart immediately — no verdict, no executive summary. Follow up naturally ("filter by last 90 days", "also show revenue") and context carries across turns.
+
+### Why
+Direct Query is single-shot and wraps every result in the full report shell. Quick Chat is stripped entirely — bare answer bubbles — and crucially carries *conversation history* across turns so each question can reference the previous one. Designed for power users who need speed over narrative.
+
+### How
+`POST /chat` is a lean SSE endpoint that bypasses the full LangGraph investigative loop entirely. On each request:
+1. Schema context is built from the active connection
+2. The last 3 completed turns are formatted as a `CONVERSATION HISTORY` block (question, SQL, columns, headline per turn)
+3. The coder LLM generates a `ChatAnswer` (sql + headline) via `CHAT_PROMPT` + `CHAT_SQL_SYSTEM`
+4. SQL is executed; one self-correction attempt on error using `FIX_SQL_PROMPT`
+5. Results stream back: `sql → columns → rows → headline → done`
+
+`useChat.ts` manages a `ChatTurn[]` reducer — each turn tracks `status` (loading / done / error), `sql`, `columns`, `rows`, `headline`, `error`. The `ask()` function auto-builds history from completed turns before sending.
+
+`ChatMessage.tsx` renders each turn as two bubbles: question (right, zinc-800) and answer (left). The answer bubble adapts to result shape: KPI cards for single-row numeric results, inline Observable Plot chart for time series or categorical data (≥3 rows), or a scrollable mini table otherwise. SQL is always accessible via a collapsible below the result.
+
+`ChatPanel.tsx` shows starter prompts on empty state, scrolls to the latest turn, and supports ✕ to clear the session. The session clears automatically when the connection changes.
+
+### Component interactions
+- Completely separate from the LangGraph graph — `POST /chat` calls `get_provider("coder").complete()` and `db.execute()` directly; no `AgentState`, no history DB writes
+- Reuses `CHAT_PROMPT`, `FIX_SQL_PROMPT`, `get_provider()`, `open_connection()`, `get_dsn()`, `_sse()`
+- Chat tab added to the main nav alongside Investigate / History / Connections
+- Connection selector sidebar in the Chat tab links to the Connections tab for management
+
+### Tech / libraries
+- **FastAPI SSE** — same `StreamingResponse` + `_sse()` pattern as investigate endpoint
+- **instructor + Pydantic** — `_ChatAnswer(sql, headline)` structured output
+- **@observablehq/plot** — inline charts in answer bubbles (same detection logic as `InvestigationChart`)
+- No new dependencies
+
+---
+
 ## How features connect — end-to-end data flow
 
 ```
@@ -1006,4 +1043,4 @@ Cache check (Prior Investigations RAG)          [skipped for direct-signal quest
 
 ---
 
-*Last updated: 2026-05-16 · 29 features. See `ROADMAP.md` for upcoming features.*
+*Last updated: 2026-05-16 · 30 features. See `ROADMAP.md` for upcoming features.*

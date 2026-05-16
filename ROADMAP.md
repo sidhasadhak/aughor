@@ -35,6 +35,7 @@
 | KB Pattern Enrichment (2j) | `hermes/semantic/kb_loader.py`, `hermes/semantic/kb_retriever.py`, `data/kb/` | 252 entries indexed (47 Tier 1 SQL patterns, 84 Tier 2 domain knowledge, 121 stubs); talonsight KB (43 files) merged with 15 custom files; two causal_relationship shapes ({symptom, check_in_order, detection_sql} native + {if, then} talonsight); inflation_causes, deflation_causes, cross_metric_signals surfaces in DECOMPOSE and PLAN prompts |
 | ER Diagram (Mermaid) | `hermes/tools/schema.py`, `web/components/SchemaPanel.tsx`, `hermes/api.py` | `build_mermaid_er()` generates erDiagram source from schema string; solid lines (exact FK match), dashed lines (fuzzy root match); FK column markers; lazy-loaded via dynamic import; Schema \| ER Diagram sub-tabs in Connections panel |
 | Rich Schema Card UI | `hermes/tools/schema.py`, `hermes/api.py`, `web/components/SchemaCards.tsx`, `web/components/SchemaPanel.tsx`, `web/lib/api.ts` | `/schema/rich` endpoint returns structured tables + joins + warnings; gradient table cards with 8-colour cycling palette; column type chips (blue=numeric, green=text, amber=date, violet=bool); FK badges; row counts; join paths grid with exact/inferred badges; SQL Warnings & Modeling Notes section with empty state |
+| Quick Chat Mode (M9) | `hermes/api.py`, `hermes/agent/prompts.py`, `web/lib/useChat.ts`, `web/components/ChatPanel.tsx`, `web/components/ChatMessage.tsx`, `web/app/page.tsx` | `POST /chat` SSE endpoint; last-3-turn conversation history injected as context; coder LLM generates SQL + headline; one self-correction attempt on error; streams sql → columns → rows → headline → done; Chat tab with starter prompts, KPI/chart/table answer bubbles, ✕ to clear |
 
 ---
 
@@ -767,7 +768,7 @@ autoevals>=0.0.70
 |---|---|---|
 | **1 — SQL Hardening** ✅ | 2h (Error Classification + Dialect Transforms + Column Ambiguity) + 2i (Join Inference + Fingerprinting) | Every query gets smarter; no new infra needed |
 | **2 — Semantic Depth** ✅ | 1e (Metrics Catalog) + 2j (KB Pattern Enrichment) | Agent understands business KPIs and causal chains |
-| **3 — Conversational** | M9 (Quick Chat + multi-turn history) | Analyst-feel experience; session memory |
+| **3 — Conversational** ✅ | M9 (Quick Chat + multi-turn history) | Analyst-feel experience; session memory |
 | **4 — Provider Flexibility** | M5 (Anthropic backend) | Cloud deployment; prompt caching cuts costs |
 | **5 — Production Safety** | M6 (Security: Gradient Safety + PII + Audit + Budget) + M7 (Observability) | Enterprise-ready; Langfuse traces |
 | **6 — Analytical Depth** | M4 (Prophet forecasting) + M2d (Events Calendar) | "Is this drop unusual *given the trend*?" |
@@ -851,11 +852,11 @@ Evals (M10)  ←  needs History ✅ + stable Two-Model Arch (2a) ✅
 
 ## Current focus
 
-**Shipped:** M1 (Semantic Layer), M2a–2c + 2e–2j (Agent hardening, HITL, Direct Query, Routing v2, SQL KB, Error Classification, Schema Intelligence, KB Enrichment), M8 (Frontend Charts, Chart Intelligence, Report UX), 1e (Metrics Catalog), ER Diagram, Rich Schema Card UI
+**Shipped:** M1 (Semantic Layer), M2a–2c + 2e–2j (Agent hardening, HITL, Direct Query, Routing v2, SQL KB, Error Classification, Schema Intelligence, KB Enrichment), M8 (Frontend Charts, Chart Intelligence, Report UX), M9 (Quick Chat), 1e (Metrics Catalog), ER Diagram, Rich Schema Card UI
 
-**Next — Sprint 3 — Conversational:**
-- **M9** Quick Chat Mode — multi-turn conversational data retrieval; bare answer bubbles; last-3-turn history in context
+**Next — Sprint 4 — Provider Flexibility:**
+- **M5** Anthropic backend — Claude Sonnet 4.6 as cloud fallback; prompt caching on schema context
 
-**Sprint 4 onward:** M5 (Anthropic backend) → M6 + M7 (Security + Observability) → M4 (Prophet) → M11 (Visual Builder) → M3 (Query Engine) → M10 (Evals)
+**Sprint 5 onward:** M6 + M7 (Security + Observability) → M4 (Prophet) → M11 (Visual Builder) → M3 (Query Engine) → M10 (Evals)
 
 **Deferred:** M6 Security must land before any multi-tenant or enterprise deployment
