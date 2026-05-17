@@ -38,6 +38,8 @@
 29. [Rich Schema Card UI](#29-rich-schema-card-ui)
 30. [Quick Chat Mode](#30-quick-chat-mode)
 31. [Chat Chart Engine](#31-chat-chart-engine)
+32. [Global Analytics Rules](#32-global-analytics-rules)
+33. [Hypothesis Expanded Accordion](#33-hypothesis-expanded-accordion)
 
 ---
 
@@ -379,6 +381,7 @@ Backfill endpoint: `POST /investigations/reindex` re-indexes all completed histo
 - `plan_and_execute` reads `prior_analyses` and prepends them to the planning prompt
 - Shares the Qdrant instance with [Vector Search over Schema](#10-vector-search-over-schema), in a separate `investigations` collection
 - `◉` dot in `HistoryPanel.tsx` reflects Qdrant index status via `GET /investigations/indexed-ids`
+- **Connection-scoped cache:** every Qdrant payload stores `connection_id`; both `find_similar_investigation()` and `search_prior_investigations()` accept `connection_id` and apply a `FieldCondition` filter — the same question on a different database always starts a fresh investigation. `connection_id` is added to `AgentState` and forwarded through `complete_investigation()` so all new entries are correctly scoped. Backfill via `POST /investigations/reindex`.
 
 ### Tech / libraries
 - **Qdrant** — same instance as schema search, separate collection
@@ -440,7 +443,7 @@ Only `complete_investigation()` indexes in Qdrant — partial results from `time
 - Checkpoint store is shared with the HITL feature (the pause/resume cycle depends on it)
 - `status` column in `history.db` reflects the lifecycle: `running → complete | timed_out | failed | paused`
 - `HistoryPanel.tsx` renders status badges: `⏱ timed out`, `✕ failed`, `● running`
-- Timeout is configurable: `HERMES_TIMEOUT_SECONDS` (default 300)
+- Timeout is configurable: `HERMES_TIMEOUT_SECONDS` (default 600)
 
 ### Tech / libraries
 - **langgraph-checkpoint-sqlite 3.1** — `SqliteSaver(conn)` with `check_same_thread=False`
@@ -832,7 +835,7 @@ FIX_SQL previously received raw error strings and asked the LLM to interpret the
 ### How
 **2h-i Error Classification:** `hermes/tools/error_classifier.py` maps 30+ Postgres error patterns to targeted diagnostic hints. Called in `plan_and_execute` before the FIX_SQL LLM call — result prepended to the fix prompt as a `DIAGNOSIS:` block.
 
-**2h-ii Dialect Post-processing:** `PostgresConnection._apply_dialect_fixes(sql)` applies three sequential transforms to every Postgres query before execution: `ROUND(expr, N)` → `ROUND((expr)::numeric, N)` for AVG/SUM args; empty-string-safe timestamp cast; interval → epoch conversion. DuckDB has a no-op stub.
+**2h-ii Dialect Post-processing:** `PostgresConnection._apply_dialect_fixes(sql)` applies three sequential transforms to every Postgres query before execution: `ROUND(expr, N)` → `ROUND((expr)::numeric, N)` (paren-aware character walk handles arbitrary nesting — `ROUND(100.0 * SUM(a) / NULLIF(SUM(b), 0), 2)` is correctly rewritten); empty-string-safe timestamp cast; interval → epoch conversion. The ROUND rewriter uses `_ROUND_OPEN` regex to locate each `ROUND(` token, then walks characters tracking paren depth to find the top-level comma — unconditionally casting the first arg to `::numeric` because PostgreSQL has no `ROUND(double precision, integer)` overload at all. DuckDB has a no-op stub.
 
 **2h-iii Column Ambiguity Pre-flight:** `hermes/tools/ambiguity.py` scans generated SQL for unqualified column references that exist in multiple joined tables. Warnings injected into `data_quality_notes` and the next FIX_SQL prompt: `"Column 'status' exists in orders AND payments — qualify as orders.status"`.
 
@@ -934,6 +937,7 @@ A wall of monospace DDL text requires mental effort to parse. The card view make
 - `SchemaPanel.tsx` fetches `/schema/rich` on connection select; renders `<SchemaCards>` in the Schema sub-tab
 - Column type chip colours: blue = numeric, green = text, amber = date/time, violet = boolean, zinc = other
 - `build_rich_schema()` stops parsing at section headers (DETECTED JOIN, NO DIRECT JOIN, METRICS CATALOG) to avoid join-hint lines being misread as table columns
+- **Schema parser dedup:** if the same `TABLE:` header appears more than once in the schema string (e.g. re-emitted by glossary or hints sections), only the first occurrence's columns are registered — prevents duplicate column entries that cause React key collisions in `SchemaCards.tsx`
 
 ### Tech / libraries
 - Pure Tailwind CSS — no charting library; gradient palette via utility classes
@@ -1033,6 +1037,69 @@ Chart type selection cascade: explicit LLM `chartType` → heuristic auto-detect
 
 ---
 
+## 32. Global Analytics Rules
+
+### What
+A human-editable Markdown file (`data/global_rules.md`) containing 102 rules across 14 sections — covering operating posture, time intelligence, metric definitions, statistical rigour, business context, and privacy. Rules are injected into every LLM prompt at call time so they take effect immediately without a restart.
+
+### Why
+Even a capable coder model makes systematic analytics mistakes: including cancelled orders in revenue, summing monthly percentages, treating NULLs as zeros, or showing raw timestamps instead of clean date labels. Encoding these rules once and injecting them universally means corrections apply everywhere — not just in sessions where the agent happened to learn from a pitfall.
+
+### How
+`hermes/rules.py` re-reads and parses `global_rules.md` on every call (no caching — edits take immediate effect). `_parse(text)` returns `dict[int, tuple[str, list[str]]]` — section number → (title, rules). Lines starting with `#` are comments and ignored.
+
+Two export functions:
+- `get_rules_block()` — all 14 sections (~3,360 words) → injected into `decompose_question`, `plan_and_execute`, and `synthesize_report` nodes
+- `get_chat_rules_block()` — sections 0, 7, 8 only (~713 words: operating posture, formatting, null handling) → injected into `POST /chat` to keep overhead proportional for simple queries
+
+The block is prepended to each prompt before the schema and question context.
+
+### Rule sections
+§0 Operating Posture · §1 Time & Date Intelligence · §2 Metric Definitions · §3 Aggregation & Grouping · §4 Filtering Discipline · §5 Comparative Analysis · §6 Statistical Rigour · §7 Output Formatting · §8 NULL & Missing Data · §9 Causal Language · §10 Scope & Exclusions · §11 Business Context · §12 Performance · §13 Privacy
+
+### Component interactions
+- `hermes/rules.py` — `_parse()`, `_format_block()`, `get_rules_block()`, `get_chat_rules_block()`
+- `hermes/agent/nodes.py` — `decompose_question`, `plan_and_execute`, `synthesize_report` each call `get_rules_block()` and prepend the result
+- `hermes/api.py` — `_stream_chat` calls `get_chat_rules_block()` and prepends to `CHAT_PROMPT`
+- `data/global_rules.md` — user-editable; sections delimited by `## §N`; `#` lines are comments
+
+### Tech / libraries
+- Pure Python file I/O + regex — no new dependencies
+- Re-read on every call — no cache invalidation needed
+
+---
+
+## 33. Hypothesis Expanded Accordion
+
+### What
+Each hypothesis card in the Investigation Report has an expandable accordion that shows exactly how that hypothesis was tested — per-query chart, result table (up to 15 rows), statistical callouts, SQL toggle, and a key finding summary — giving business users transparent, traceable evidence for every conclusion.
+
+### Why
+The report previously showed only the verdict badge and one-line key finding per hypothesis. Users had no way to see what SQL ran, what the data looked like, or why the agent concluded "confirmed" vs "refuted" without going to the full query history. The accordion surfaces all of that inline, making the report self-contained and auditable.
+
+### How
+`HypothesisAccordion` in `ReportView.tsx` renders per hypothesis on click:
+- **Key finding card** — claim, confidence dot + bar + %, linked H-chip
+- **Query evidence** (`QueryEvidence`) — one block per query: auto-chart (`InvestigationChart`), compact table (`QueryMiniTable`, max 15 rows, violet-tinted headers), statistical callouts (`StatCallout` with type-coloured border: anomaly/trend/comparison/distribution), and a collapsible SQL block
+- **Synthesis link** — text note linking the hypothesis result to the overall diagnosis
+
+Report section order in investigate mode: Verdict → Diagnosis + Key Findings → Hypotheses Tested accordion → [separator] → Data Quality / Risks / Actions / Excluded.
+
+`HypothesisPanel` wraps all accordions with a section header showing confirmed/refuted/inconclusive counts. Hypothesis descriptions are no longer line-clamped (`line-clamp-2` removed).
+
+### Component interactions
+- `ReportView.tsx` — `HypothesisAccordion`, `HypothesisPanel`, `QueryEvidence`, `QueryMiniTable`, `StatCallout`, `KeyFindingCard` (new components in this file)
+- `H_PALETTES` constant — 5-colour palette (violet/blue/emerald/amber/rose) cycled per hypothesis
+- `HistoryDetailPanel.tsx` — passes `hypotheses={hypotheses}` to `ReportView`; removed old `HypothesisCard` separate section
+- `web/lib/types.ts` — `QueryCitation.stats?: StatResult[]` added
+- `hermes/api.py` — `stats` field added to both `report` SSE events (main stream and HITL resume) so accordion can render stat callouts from history
+
+### Tech / libraries
+- Pure React `useState` + Tailwind — no new dependencies
+- Reuses `InvestigationChart` for per-query charts
+
+---
+
 ## Navigation structure
 
 ```
@@ -1110,4 +1177,4 @@ Cache check (Prior Investigations RAG)          [skipped for direct-signal quest
 
 ---
 
-*Last updated: 2026-05-16 · 31 features. See `ROADMAP.md` for upcoming features.*
+*Last updated: 2026-05-17 · 33 features. See `ROADMAP.md` for upcoming features.*
