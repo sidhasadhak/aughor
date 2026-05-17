@@ -79,14 +79,24 @@ AVAILABLE DATA (schema):
 
 {kb_domain_section}
 
-Your job is to decompose this question into 3-5 concrete, independently-testable hypotheses.
-Each hypothesis must be specific enough that a SQL query can confirm or refute it.
+STEP 1 — EXTRACT USER CONSTRAINTS (mandatory before writing any hypothesis):
+Scan the question for explicit scope restrictions, exclusions, and level-of-analysis specifications.
+Examples:
+  "not subcategory"         → analysis must stay at category level; sub-category breakdowns are forbidden
+  "by month only"           → time granularity must be monthly
+  "exclude returns"         → filter out return transactions
+  "at region level"         → aggregate to region; finer breakdowns are out of scope
+List every constraint you find. Every hypothesis MUST comply. A hypothesis that violates a stated constraint is invalid and must not be included.
 
-Think like an analyst: what are the most likely explanations? Cover different angles:
-- Time-based patterns (seasonality, day-of-week effects)
-- Segment breakdowns (by region, product, customer type)
-- External events (outages, promotions, seasonality)
-- Funnel/pipeline changes (conversion, churn, acquisition)
+STEP 2 — DECOMPOSE into 3–5 concrete, independently-testable hypotheses.
+Each hypothesis must be specific enough that a SQL query can confirm or refute it.
+Each hypothesis must respect every constraint extracted in Step 1.
+
+Think like an analyst examining the data fresh. Cover different angles:
+- Baseline metrics (what do the core numbers look like before segmenting?)
+- Segment breakdowns (by region, product, customer type — only at the level the user specified)
+- Distribution and outliers (are there extreme values driving the aggregate?)
+- Interaction effects (does one variable change the relationship between two others?)
 - Data quality issues (missing data, duplicate records)
 
 Be precise. Bad hypothesis: "Something changed in APAC."
@@ -103,7 +113,7 @@ Description: {hypothesis_description}
 SCHEMA:
 {schema}
 
-INVESTIGATION CONTEXT (queries already run this session):
+INVESTIGATION CONTEXT (queries run for other hypotheses this session):
 {prior_context}
 
 {prior_analyses_section}
@@ -116,8 +126,8 @@ Rules:
 - Include relevant GROUP BY, ORDER BY, and LIMIT clauses
 - For time comparisons: compare the anomaly period against a 30-day baseline
 - Prefer queries that produce small, interpretable result sets (< 50 rows)
-- Do not re-run queries that are already in the investigation context
-- If a past investigation already answered this hypothesis conclusively, note it and skip redundant queries
+- Do NOT skip queries because another hypothesis ran something related. Each hypothesis requires its own SQL evidence. Scoring a hypothesis without executing any queries is not allowed.
+- Only skip a specific query if an identical query (same SQL, same filters) already ran for THIS hypothesis in a prior iteration.
 
 THRESHOLD CLAIM RULE — mandatory when you observe a sign-flip or critical transition across bands:
 If any previous query in this investigation shows a metric changing sign (positive→negative or
@@ -204,6 +214,13 @@ FULL EVIDENCE LOG:
 {evidence_log}
 
 {pitfall_section}{human_feedback_section}
+CRITICAL — EVIDENCE ATTRIBUTION:
+The evidence log below is partitioned by hypothesis. Each section is labelled with a hypothesis ID.
+Key findings attributed to a hypothesis MUST be grounded ONLY in that hypothesis's own evidence section.
+You may NOT use evidence from H3's section to write H1's key finding.
+If a hypothesis section says "No queries were executed", its key finding must state "could not be tested" — do not infer or borrow findings from other hypotheses' data.
+This is the single most important rule: cross-hypothesis attribution is fabrication.
+
 CRITICAL — NUMERIC TRACEABILITY:
 Every numeric value you write (percentage, dollar amount, row count, ratio, threshold) must trace
 to a specific row, aggregate, or stat in the query results above. Before writing any number, ask:

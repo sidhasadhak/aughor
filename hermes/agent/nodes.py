@@ -118,7 +118,7 @@ def plan_and_execute(state: AgentState, conn: "DatabaseConnection") -> dict[str,
         return {}
 
     h = hypotheses[idx]
-    prior_context = _format_prior_context(state.get("query_history", []))
+    prior_context = _format_prior_context(state.get("query_history", []), h.id)
     known_pitfalls = state.get("pitfalls", [])
 
     # Retrieve only schema tables relevant to this hypothesis (no-op for small schemas)
@@ -387,7 +387,7 @@ def synthesize_report(state: AgentState) -> dict[str, Any]:
         user=rules_block + SYNTHESIZE_PROMPT.format(
             question=state["question"],
             hypothesis_summary=_format_hypothesis_summary(hypotheses),
-            evidence_log=_format_full_evidence(state.get("query_history", [])),
+            evidence_log=_format_full_evidence(state.get("query_history", []), hypotheses),
             pitfall_section=_format_pitfalls_for_synthesis(pitfalls),
             human_feedback_section=feedback_section,
         ) + tensions_section,
@@ -436,13 +436,17 @@ def should_continue(state: AgentState) -> str:
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _format_prior_context(history: list[QueryResult]) -> str:
+def _format_prior_context(history: list[QueryResult], current_hypothesis_id: str = "") -> str:
+    """Format recent query history for injection into the planner.
+    Labels each entry with its hypothesis so the planner knows which evidence belongs to which hypothesis.
+    """
     if not history:
         return ""
     parts = []
     for r in history[-6:]:
         status = f"ERROR: {r.error}" if r.error else f"{r.row_count} rows"
-        parts.append(f"[{r.hypothesis_id}] {r.sql[:120]}  → {status}")
+        label = f"[{r.hypothesis_id}]" if r.hypothesis_id != current_hypothesis_id else f"[{r.hypothesis_id} — THIS hypothesis, prior iteration]"
+        parts.append(f"{label} {r.sql[:120]}  → {status}")
     return "\n".join(parts)
 
 
@@ -458,10 +462,37 @@ def _format_hypothesis_summary(hypotheses: list[Hypothesis]) -> str:
     return "\n\n".join(lines)
 
 
-def _format_full_evidence(history: list[QueryResult]) -> str:
+def _format_full_evidence(history: list[QueryResult], hypotheses: list | None = None) -> str:
+    """Format query history partitioned by hypothesis so the narrator cannot cross-attribute evidence."""
     if not history:
         return "No queries were executed."
-    return "\n\n---\n\n".join(format_result_for_llm(r) for r in history)
+    if not hypotheses:
+        return "\n\n---\n\n".join(format_result_for_llm(r) for r in history)
+
+    by_hyp: dict[str, list[QueryResult]] = {}
+    for r in history:
+        by_hyp.setdefault(r.hypothesis_id, []).append(r)
+
+    parts = []
+    for h in hypotheses:
+        section_header = f"=== {h.id} EVIDENCE (for hypothesis: {h.description[:100]}) ==="
+        hyp_results = by_hyp.get(h.id, [])
+        if hyp_results:
+            body = "\n\n".join(format_result_for_llm(r) for r in hyp_results)
+        else:
+            body = "No queries were executed for this hypothesis. Findings must state 'could not be tested'."
+        parts.append(f"{section_header}\n{body}")
+
+    # Any results not associated with a known hypothesis
+    known_ids = {h.id for h in hypotheses}
+    orphans = [r for r in history if r.hypothesis_id not in known_ids]
+    if orphans:
+        parts.append(
+            "=== UNATTRIBUTED QUERIES ===\n"
+            + "\n\n".join(format_result_for_llm(r) for r in orphans)
+        )
+
+    return "\n\n---\n\n".join(parts)
 
 
 def _attach_stats(result: QueryResult) -> QueryResult:
