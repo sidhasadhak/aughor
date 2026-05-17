@@ -209,6 +209,33 @@ If the evidence is strong, be definitive. If it's inconclusive, say so clearly.
 """
 
 
+CONSISTENCY_CHECK_PROMPT = """\
+You are a senior data analyst reviewing scored hypothesis findings for internal contradictions
+before synthesis. Your job is to catch contradictions — not to rewrite findings.
+
+SCORED HYPOTHESES AND KEY FINDINGS:
+{hypothesis_summary}
+
+Check every pair of findings for contradictions. A contradiction is when:
+- Two findings state opposite directional claims about the same metric or threshold
+- A headline claim contradicts the supporting evidence within the same finding
+- A number or threshold in one finding is inconsistent with a number in another finding
+  (e.g. "optimal ≤5% discount" vs "peak profitability at 20% discount")
+- The verdict says X but the query data shows not-X
+
+For each contradiction found, specify:
+- claim_a: the first conflicting claim (quote it)
+- claim_b: the second conflicting claim (quote it)
+- dimension: what they disagree about (e.g. "optimal discount threshold", "profit direction")
+- proposed_resolution: how synthesis should handle this (e.g. "downgrade both", "flag as unresolved",
+  "use the claim backed by more queries")
+
+If no contradictions exist, return an empty list and passed=true.
+Be specific — vague contradictions are not useful. Only flag genuine logical conflicts, not
+differences in emphasis or level of detail.
+"""
+
+
 def format_pitfall_section(pitfalls: list) -> str:
     """Render pitfalls as a warning block to inject into planning prompts."""
     if not pitfalls:

@@ -161,3 +161,6 @@ class AgentState(TypedDict):
     query_mode: Optional[Literal["direct", "investigate"]]
     route_reasoning: Optional[str]
     route_confidence: Optional[float]
+
+    # Consistency check: contradictions found before synthesis (investigate mode only)
+    unresolved_tensions: list[str]

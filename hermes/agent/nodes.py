@@ -7,6 +7,7 @@ if TYPE_CHECKING:
     from hermes.db.connection import DatabaseConnection
 
 from hermes.agent.prompts import (
+    CONSISTENCY_CHECK_PROMPT,
     DECOMPOSE_PROMPT,
     FIX_SQL_PROMPT,
     PLAN_QUERIES_PROMPT,
@@ -29,6 +30,19 @@ from hermes.agent.state import (
     RouteDecision,
     SQLFix,
 )
+from pydantic import BaseModel as _BaseModel
+
+class _Contradiction(_BaseModel):
+    claim_a: str
+    claim_b: str
+    dimension: str
+    proposed_resolution: str
+
+class _ConsistencyReport(_BaseModel):
+    contradictions: list[_Contradiction]
+    passed: bool
+
+_CONSISTENCY_ENABLED = __import__("os").getenv("HERMES_CONSISTENCY_CHECK", "true").lower() != "false"
 from hermes.llm.provider import get_provider
 from hermes.tools.executor import format_result_for_llm
 from hermes.tools.stats import analyze_query_result, StatResult as _StatResult
@@ -307,6 +321,52 @@ def synthesize_report(state: AgentState) -> dict[str, Any]:
             recommended_actions=["Try rephrasing the question, or check that the referenced tables and columns exist in the schema."],
         )}
 
+    # ── Consistency check (investigate mode only) ─────────────────────────────
+    hypotheses = state.get("hypotheses", [])
+    unresolved_tensions: list[str] = list(state.get("unresolved_tensions") or [])
+    if _CONSISTENCY_ENABLED and state.get("query_mode") == "investigate" and hypotheses:
+        try:
+            check: _ConsistencyReport = get_provider("coder").complete(
+                system="You are a senior analyst reviewing findings for logical contradictions.",
+                user=CONSISTENCY_CHECK_PROMPT.format(
+                    hypothesis_summary=_format_hypothesis_summary(hypotheses),
+                ),
+                response_model=_ConsistencyReport,
+            )
+            if not check.passed and check.contradictions:
+                # Collect human-readable tension descriptions
+                for c in check.contradictions:
+                    tension = (
+                        f"Contradiction on '{c.dimension}': {c.claim_a!r} vs {c.claim_b!r}. "
+                        f"Resolution: {c.proposed_resolution}"
+                    )
+                    unresolved_tensions.append(tension)
+                # Downgrade affected hypothesis confidences by 0.30 (floor 0.20)
+                affected_ids: set[str] = set()
+                for c in check.contradictions:
+                    # Find hypotheses whose key_finding contains either claim
+                    for h in hypotheses:
+                        if (
+                            h.key_finding and (
+                                c.claim_a[:40].lower() in h.key_finding.lower()
+                                or c.claim_b[:40].lower() in h.key_finding.lower()
+                            )
+                        ):
+                            affected_ids.add(h.id)
+                if affected_ids:
+                    hypotheses = [
+                        Hypothesis(
+                            id=h.id,
+                            description=h.description,
+                            confidence=max(h.confidence - 0.30, 0.20) if h.id in affected_ids else h.confidence,
+                            verdict=h.verdict,
+                            key_finding=h.key_finding,
+                        )
+                        for h in hypotheses
+                    ]
+        except Exception:
+            pass  # consistency check is best-effort
+
     human_feedback = state.get("human_feedback") or ""
     feedback_section = (
         f"\nANALYST FEEDBACK (incorporate this before finalising the report):\n{human_feedback}\n"
@@ -314,18 +374,26 @@ def synthesize_report(state: AgentState) -> dict[str, Any]:
     )
     rules_block = get_rules_block()
     llm = get_provider("narrator")
+    tensions_section = ""
+    if unresolved_tensions:
+        tensions_section = (
+            "\nUNRESOLVED CONTRADICTIONS DETECTED (surface these in risks, do not paper over them):\n"
+            + "\n".join(f"- {t}" for t in unresolved_tensions)
+            + "\n"
+        )
+
     report: AnalysisReport = llm.complete(
         system="You are a senior data analyst writing an executive-level investigation report.",
         user=rules_block + SYNTHESIZE_PROMPT.format(
             question=state["question"],
-            hypothesis_summary=_format_hypothesis_summary(state["hypotheses"]),
+            hypothesis_summary=_format_hypothesis_summary(hypotheses),
             evidence_log=_format_full_evidence(state.get("query_history", [])),
             pitfall_section=_format_pitfalls_for_synthesis(pitfalls),
             human_feedback_section=feedback_section,
-        ),
+        ) + tensions_section,
         response_model=AnalysisReport,
     )
-    return {"report": report}
+    return {"report": report, "unresolved_tensions": unresolved_tensions}
 
 
 # ── Routing ───────────────────────────────────────────────────────────────────
