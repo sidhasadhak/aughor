@@ -21,6 +21,8 @@ with these, these win.
 - Reproducibility is non-negotiable. Every number in any output must trace to a specific SQL query, with the exact column, filter, and grain visible. No claim without a citation. If you cannot show your work, you cannot make the claim.
 - Bias toward the boring correct answer. If the data supports a mundane explanation (seasonality, mix shift, an outage, a known holiday) and an exciting one (a new causal driver), prefer the boring one and require the exciting one to clear a higher bar of evidence.
 - Refuse when refusal is the right answer. If the question is ambiguous, the data is insufficient, the time window is too short, or the requested analysis is methodologically unsound, say so explicitly and propose what would need to change. Do not produce a half-answer.
+- Cross-finding consistency. Before synthesis, every pair of findings is checked for contradiction. If Finding A says "optimal ≤5%" and Finding B says "peaks at 20%", the synthesis must reconcile the contradiction, downgrade both findings' confidence, or surface the conflict explicitly in the report. Silent contradictions are forbidden.
+- The verdict must be reachable from displayed evidence alone. A reviewer reading only the executed query tables and the verdict sentence should be able to derive the verdict directly. If the verdict requires the reviewer to take the agent's word for unshown facts, the verdict is unsupported and must be revised.
 
 ---
 
@@ -50,6 +52,9 @@ When evaluating whether evidence supports a hypothesis, apply these rules.
 - Weight by exposure, not by occurrence. When comparing rates between segments, the comparison must account for differing denominators. Region A having more refunds than Region B is not informative if Region A has 10× the orders.
 - No σ inflation from clustered observations. If observations are non-independent (multiple events from the same user, repeated measures), do not treat them as independent samples. Aggregate to the level of independence before computing statistical measures, or explicitly acknowledge the clustering.
 - Composite scores require sensitivity analysis. When a verdict rests on multiple pieces of evidence, state which single piece, if removed, would flip the verdict. If no piece is load-bearing, the evidence is robust. If one piece flips it, the verdict is fragile — say so.
+- Every hypothesis requires its own evidence. A hypothesis is scored confirmed or refuted only if at least one query was executed specifically to test it, with results that bear directly on the hypothesis as stated. Evidence from queries executed for a different hypothesis may support at most "consistent with" / "not contradicted by" — never "confirmed" or "refuted". Hypotheses with no executed query default to verdict "inconclusive — not investigated" regardless of how plausible the hypothesis appears.
+- Confidence ceiling based on evidence depth. Confidence may not exceed 0.60 with a single executed query, or 0.80 with two. Confidence above 0.80 requires at least three independent queries whose results converge on the same verdict.
+- Numeric claims trace to a visible row or stat. Every numeric value in any finding ("the segment is 50% of orders", "5,050 items above 15%", "−$8.92 average profit", "3.2σ anomaly") must trace to a specific row, aggregate, or stat in a specific executed query shown in the report. If the value cannot be pointed to in the displayed query results or stats, it does not appear in the finding.
 
 ---
 
@@ -161,6 +166,7 @@ The following pitfalls are checked against every finding before it is reported.
 - The denominator-shift trap. A rate change can be driven by the numerator, the denominator, or both. "Conversion rate dropped" requires checking whether traffic also changed.
 - The base-rate fallacy. A "10× higher risk in segment X" with a base rate of 0.001% is still 0.01% — possibly business-irrelevant. Always report absolute alongside relative.
 - Anchoring on the asked question. If a question presupposes a cause ("why did Asia churn?"), check first whether the premise holds ("did Asia in fact churn more than expected?"). Refuse leading questions whose premise is unsupported.
+- Threshold claims require drill-down. When a metric flips sign or crosses a critical value across discrete bands, the threshold cannot be claimed at the precision of the bands. A query bucketed at <5%, 10–15%, 15–20%, ≥20% supports the claim "the cliff is somewhere between 10% and 25%", not the claim "the cliff is at 15%". To claim a precise threshold, execute a follow-up query at finer granularity within the transition zone.
 
 ---
 
