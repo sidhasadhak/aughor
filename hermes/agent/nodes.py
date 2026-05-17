@@ -212,7 +212,7 @@ def score_evidence(state: AgentState) -> dict[str, Any]:
     if not hyp_results:
         score = EvidenceScore(
             hypothesis_id=h.id,
-            confidence=0.5,
+            confidence=0.0,
             verdict="inconclusive",
             key_finding="No queries were executed for this hypothesis.",
             should_continue=False,
@@ -222,7 +222,7 @@ def score_evidence(state: AgentState) -> dict[str, Any]:
         errors = "; ".join(dict.fromkeys(r.error for r in hyp_results if r.error))
         score = EvidenceScore(
             hypothesis_id=h.id,
-            confidence=0.5,
+            confidence=0.1,
             verdict="inconclusive",
             key_finding=f"All queries failed technically — could not test this hypothesis. Errors: {errors[:200]}",
             should_continue=True,
@@ -239,6 +239,13 @@ def score_evidence(state: AgentState) -> dict[str, Any]:
             ),
             response_model=EvidenceScore,
         )
+        # Apply evidence-depth confidence ceiling (deterministic, post-LLM)
+        successful = [r for r in hyp_results if not r.error]
+        n_success = len(successful)
+        if n_success == 1:
+            score = EvidenceScore(**{**score.model_dump(), "confidence": min(score.confidence, 0.60)})
+        elif n_success == 2:
+            score = EvidenceScore(**{**score.model_dump(), "confidence": min(score.confidence, 0.80)})
 
     updated = [
         Hypothesis(

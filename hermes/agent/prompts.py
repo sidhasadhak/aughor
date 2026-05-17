@@ -156,21 +156,25 @@ HYPOTHESIS:
 ID: {hypothesis_id}
 Description: {hypothesis_description}
 
-QUERY RESULTS:
+QUERY RESULTS (executed specifically for this hypothesis):
 {query_results}
 
-IMPORTANT DISTINCTION:
-- If queries returned DATA that contradicts the hypothesis → verdict: "refuted", low confidence
-- If queries returned DATA that supports the hypothesis → verdict: "confirmed", high confidence
-- If queries ERRORED or returned no rows due to SQL failures → verdict: "inconclusive", confidence: 0.5,
-  should_continue: true, key_finding: explain that queries failed technically, NOT that the hypothesis
-  was disproven. A SQL error is not evidence against a hypothesis.
+EVIDENCE STRENGTH RULES — apply these before setting confidence:
+- Confidence reflects evidence strength, not narrative plausibility. Anchor your confidence to the
+  number, quality, and convergence of the executed queries — not how compelling the hypothesis sounds.
+- 1 successful query: your confidence may not exceed 0.60, regardless of how clear the result appears.
+- 2 successful queries: your confidence may not exceed 0.80.
+- 3+ successful queries that converge: confidence above 0.80 is allowed.
+- If queries ERRORED or returned no rows due to SQL failures → verdict: "inconclusive", confidence: 0.1,
+  should_continue: true. A SQL error is not evidence against a hypothesis — it means we couldn't test it.
+- Do NOT infer evidence from other hypotheses' context. Score only what these specific query results show.
 
 Based on the data above, score this hypothesis.
-- Confidence 0.0 = the data clearly refutes this hypothesis
-- Confidence 0.5 = inconclusive — data is mixed, or queries failed to execute
-- Confidence 0.8+ = the data strongly supports this hypothesis
-- Confidence 1.0 = fully confirmed, no doubt
+- Confidence 0.0 = the data clearly refutes this hypothesis (or: no queries were run)
+- Confidence 0.1–0.3 = weak refutation or technical failure
+- Confidence 0.4–0.6 = inconclusive — evidence is mixed, ambiguous, or a single directional signal
+- Confidence 0.7–0.8 = strong support from 2 converging queries (max 0.80 with 2 queries)
+- Confidence 0.9–1.0 = 3+ independent queries all support the hypothesis, effect is large and clear
 
 If the results suggest a new angle worth investigating, describe it in new_hypothesis. Otherwise null.
 Be honest: a failed query means "couldn't test this yet", not "hypothesis is wrong".
