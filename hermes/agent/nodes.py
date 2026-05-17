@@ -77,7 +77,112 @@ def route_question(state: AgentState) -> dict[str, Any]:
 
 
 def route_after_classify(state: AgentState) -> str:
-    return "plan_and_execute" if state.get("query_mode") == "direct" else "decompose"
+    return "plan_and_execute" if state.get("query_mode") == "direct" else "exploratory_scan"
+
+
+# ── Node: exploratory_scan ────────────────────────────────────────────────────
+
+def exploratory_scan(state: AgentState, conn: "DatabaseConnection") -> dict[str, Any]:
+    """
+    Run a small set of heuristic orientation queries before hypothesis formation.
+
+    Produces a DATA PORTRAIT — row counts, date ranges, metric totals, and
+    categorical distributions — that is injected into decompose_question so
+    hypotheses are grounded in actual data, not schema column names alone.
+
+    Results are NOT added to query_history; they exist only as formatted text.
+    Every query is best-effort: failures are silently skipped.
+    """
+    import re
+    from hermes.tools.schema import _SECTION_STOP
+
+    schema_str = state["schema_context"]
+
+    # Parse column types from the schema context string
+    table_col_types: dict[str, list[tuple[str, str]]] = {}
+    current: str | None = None
+    for line in schema_str.splitlines():
+        if _SECTION_STOP.match(line):
+            current = None
+            continue
+        m = re.match(r"^TABLE:\s+(\w+)", line)
+        if m:
+            current = m.group(1)
+            table_col_types[current] = []
+        elif current:
+            col_m = re.match(r"^\s{2}(.+?)\s{2,}(\S+)", line)
+            if col_m and not line.strip().startswith("--"):
+                table_col_types[current].append((col_m.group(1), col_m.group(2)))
+
+    def _is_numeric(t: str) -> bool:
+        return bool(re.search(r"INT|FLOAT|DOUBLE|DECIMAL|NUMERIC|REAL|HUGEINT", t.upper()))
+
+    def _is_date(t: str) -> bool:
+        return bool(re.search(r"DATE|TIMESTAMP|DATETIME", t.upper()))
+
+    def _is_text(t: str) -> bool:
+        return bool(re.search(r"VARCHAR|TEXT|STRING|CHAR", t.upper()))
+
+    def _q(name: str) -> str:
+        return f'"{name}"'
+
+    portrait_parts: list[str] = []
+
+    for table, col_type_pairs in list(table_col_types.items())[:4]:
+        date_cols = [c for c, t in col_type_pairs if _is_date(t)]
+        num_cols  = [c for c, t in col_type_pairs if _is_numeric(t)]
+        # Skip _id columns — too high cardinality to be meaningful categoricals
+        cat_cols  = [c for c, t in col_type_pairs if _is_text(t) and not c.lower().endswith("_id")]
+
+        lines: list[str] = [f"TABLE: {table}"]
+
+        # Row count + date range
+        if date_cols:
+            dc = _q(date_cols[0])
+            r = conn.execute("scan", f'SELECT COUNT(*) AS n, MIN({dc})::VARCHAR, MAX({dc})::VARCHAR FROM {_q(table)}')
+            if not r.error and r.rows:
+                n, min_d, max_d = r.rows[0]
+                lines.append(f"  {int(n):,} rows | {date_cols[0]}: {min_d} → {max_d}")
+        else:
+            r = conn.execute("scan", f'SELECT COUNT(*) AS n FROM {_q(table)}')
+            if not r.error and r.rows:
+                lines.append(f"  {int(r.rows[0][0]):,} rows")
+
+        # Key metric aggregates (sum + avg for up to 3 numeric columns)
+        if num_cols:
+            agg = ", ".join(
+                f'ROUND(SUM({_q(c)}), 1) AS "sum_{c}", ROUND(AVG({_q(c)}), 2) AS "avg_{c}"'
+                for c in num_cols[:3]
+            )
+            r = conn.execute("scan", f'SELECT {agg} FROM {_q(table)}')
+            if not r.error and r.rows and r.columns:
+                pairs = [
+                    f"{col}={val}"
+                    for col, val in zip(r.columns, r.rows[0])
+                    if val is not None and val != "NULL"
+                ]
+                if pairs:
+                    lines.append(f"  Metrics: {', '.join(pairs)}")
+
+        # Categorical distributions (top 8 values with counts, up to 2 columns)
+        for cc in cat_cols[:2]:
+            r = conn.execute("scan", f'SELECT {_q(cc)}, COUNT(*) AS n FROM {_q(table)} GROUP BY 1 ORDER BY 2 DESC LIMIT 8')
+            if not r.error and r.rows:
+                vals = ", ".join(f"{row[0]}({row[1]})" for row in r.rows)
+                lines.append(f"  {cc}: {vals}")
+
+        portrait_parts.append("\n".join(lines))
+
+    if not portrait_parts:
+        return {"scan_context": ""}
+
+    portrait = (
+        "DATA PORTRAIT — run this before forming any hypothesis:\n"
+        "These are actual counts and distributions from the database. "
+        "Hypotheses must be grounded in what the data can plausibly show.\n\n"
+        + "\n\n".join(portrait_parts)
+    )
+    return {"scan_context": portrait}
 
 
 # ── Node: decompose_question ─────────────────────────────────────────────────
@@ -88,6 +193,12 @@ def decompose_question(state: AgentState) -> dict[str, Any]:
     prior_analyses = search_prior_investigations(state["question"], connection_id=state.get("connection_id", ""))
     kb_domain = retrieve_for_decompose(state["question"])
 
+    scan_context = state.get("scan_context") or ""
+    scan_section = (
+        f"STEP 1.5 — STUDY THE DATA PORTRAIT before forming hypotheses:\n{scan_context}\n"
+        if scan_context else ""
+    )
+
     rules_block = get_rules_block()
     llm = get_provider("coder")
     output: DecomposeOutput = llm.complete(
@@ -96,6 +207,7 @@ def decompose_question(state: AgentState) -> dict[str, Any]:
             question=state["question"],
             schema=state["schema_context"],
             kb_domain_section=kb_domain,
+            scan_section=scan_section,
         ),
         response_model=DecomposeOutput,
     )

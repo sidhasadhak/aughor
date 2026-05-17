@@ -10,6 +10,7 @@ from langgraph.graph import END, StateGraph
 
 from hermes.agent.nodes import (
     decompose_question,
+    exploratory_scan,
     plan_and_execute,
     route_after_classify,
     route_question,
@@ -30,9 +31,10 @@ def _checkpointer():
     return SqliteSaver(conn)
 
 
-def _compile(execute_node, hitl: bool = False):
+def _compile(execute_node, scan_node, hitl: bool = False):
     graph = StateGraph(AgentState)
     graph.add_node("route_question", route_question)
+    graph.add_node("exploratory_scan", scan_node)
     graph.add_node("decompose", decompose_question)
     graph.add_node("plan_and_execute", execute_node)
     graph.add_node("score_evidence", score_evidence)
@@ -41,8 +43,9 @@ def _compile(execute_node, hitl: bool = False):
     graph.add_conditional_edges(
         "route_question",
         route_after_classify,
-        {"decompose": "decompose", "plan_and_execute": "plan_and_execute"},
+        {"exploratory_scan": "exploratory_scan", "plan_and_execute": "plan_and_execute"},
     )
+    graph.add_edge("exploratory_scan", "decompose")
     graph.add_edge("decompose", "plan_and_execute")
     graph.add_edge("plan_and_execute", "score_evidence")
     graph.add_conditional_edges(
@@ -61,12 +64,12 @@ def build_graph(conn: duckdb.DuckDBPyConnection):
     db = DuckDBConnection.__new__(DuckDBConnection)
     db._conn = conn
     db._path = None
-    return _compile(partial(plan_and_execute, conn=db))
+    return _compile(partial(plan_and_execute, conn=db), partial(exploratory_scan, conn=db))
 
 
 def build_graph_generic(db, hitl: bool = False):
     """Build the graph bound to any DatabaseConnection instance."""
-    return _compile(partial(plan_and_execute, conn=db), hitl=hitl)
+    return _compile(partial(plan_and_execute, conn=db), partial(exploratory_scan, conn=db), hitl=hitl)
 
 
 def run_investigation(
@@ -91,12 +94,17 @@ def run_investigation(
         "evidence_scores": [],
         "pitfalls": [],
         "prior_analyses": [],
+        "scan_context": "",
         "iteration": 0,
         "max_iterations": int(__import__("os").getenv("HERMES_MAX_ITER", "6")),
         "report": None,
         "hitl_enabled": False,
         "human_feedback": None,
         "query_mode": None,
+        "unresolved_tensions": [],
+        "connection_id": "",
+        "route_reasoning": None,
+        "route_confidence": None,
     }
 
     final_state = initial_state.copy()

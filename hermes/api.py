@@ -299,6 +299,7 @@ async def _stream_investigation(question: str, connection_id: str, request: Requ
             "connection_id": connection_id,
             "schema_context": schema,
             "unresolved_tensions": [],
+            "scan_context": "",
             "hypotheses": [],
             "current_hypothesis_idx": 0,
             "query_history": [],

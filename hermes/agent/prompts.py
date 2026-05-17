@@ -88,9 +88,14 @@ Examples:
   "at region level"         → aggregate to region; finer breakdowns are out of scope
 List every constraint you find. Every hypothesis MUST comply. A hypothesis that violates a stated constraint is invalid and must not be included.
 
+{scan_section}
+
 STEP 2 — DECOMPOSE into 3–5 concrete, independently-testable hypotheses.
 Each hypothesis must be specific enough that a SQL query can confirm or refute it.
 Each hypothesis must respect every constraint extracted in Step 1.
+If a DATA PORTRAIT was provided above, every hypothesis must be grounded in those actual
+distributions — do not propose hypotheses about segments or metrics that the portrait shows
+are negligible or absent.
 
 Think like an analyst examining the data fresh. Cover different angles:
 - Baseline metrics (what do the core numbers look like before segmenting?)

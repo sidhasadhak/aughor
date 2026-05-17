@@ -164,3 +164,6 @@ class AgentState(TypedDict):
 
     # Consistency check: contradictions found before synthesis (investigate mode only)
     unresolved_tensions: list[str]
+
+    # Data portrait produced by exploratory_scan before decompose (investigate mode only)
+    scan_context: str
