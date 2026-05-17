@@ -12,6 +12,7 @@ export interface ChatTurn {
   columns: string[];
   rows: unknown[][];
   headline: string | null;
+  chartType: string | null;
   error: string | null;
 }
 
@@ -33,6 +34,7 @@ type ChatAction =
   | { type: "COLUMNS"; columns: string[] }
   | { type: "ROWS"; rows: unknown[][] }
   | { type: "HEADLINE"; headline: string }
+  | { type: "CHART_TYPE"; chartType: string }
   | { type: "ERROR"; message: string }
   | { type: "DONE" }
   | { type: "CLEAR" };
@@ -51,7 +53,7 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
         streaming: true,
         turns: [
           ...state.turns,
-          { id: action.id, question: action.question, status: "loading", sql: null, columns: [], rows: [], headline: null, error: null },
+          { id: action.id, question: action.question, status: "loading", sql: null, columns: [], rows: [], headline: null, chartType: null, error: null },
         ],
       };
     case "SQL":
@@ -62,6 +64,8 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
       return updateLast(state, (t) => ({ ...t, rows: action.rows }));
     case "HEADLINE":
       return updateLast(state, (t) => ({ ...t, headline: action.headline }));
+    case "CHART_TYPE":
+      return updateLast(state, (t) => ({ ...t, chartType: action.chartType }));
     case "ERROR":
       return { ...updateLast(state, (t) => ({ ...t, status: "error", error: action.message })), streaming: false };
     case "DONE":
@@ -122,12 +126,13 @@ export function useChat() {
         if (!chunk.startsWith("data: ")) continue;
         try {
           const payload = JSON.parse(chunk.slice(6)) as { type: string } & Record<string, unknown>;
-          if (payload.type === "sql")       dispatch({ type: "SQL",     sql:     payload.sql as string });
-          if (payload.type === "columns")   dispatch({ type: "COLUMNS", columns: payload.columns as string[] });
-          if (payload.type === "rows")      dispatch({ type: "ROWS",    rows:    payload.rows as unknown[][] });
-          if (payload.type === "headline")  dispatch({ type: "HEADLINE",headline:payload.headline as string });
-          if (payload.type === "error")     dispatch({ type: "ERROR",   message: payload.message as string });
-          if (payload.type === "done")      dispatch({ type: "DONE" });
+          if (payload.type === "sql")        dispatch({ type: "SQL",        sql:       payload.sql as string });
+          if (payload.type === "columns")    dispatch({ type: "COLUMNS",    columns:   payload.columns as string[] });
+          if (payload.type === "rows")       dispatch({ type: "ROWS",       rows:      payload.rows as unknown[][] });
+          if (payload.type === "headline")   dispatch({ type: "HEADLINE",   headline:  payload.headline as string });
+          if (payload.type === "chart_type") dispatch({ type: "CHART_TYPE", chartType: payload.chart_type as string });
+          if (payload.type === "error")      dispatch({ type: "ERROR",      message:   payload.message as string });
+          if (payload.type === "done")       dispatch({ type: "DONE" });
         } catch {
           // malformed chunk — skip
         }

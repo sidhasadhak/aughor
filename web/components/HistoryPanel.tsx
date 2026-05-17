@@ -70,7 +70,7 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
                 className={cn(
                   "w-full text-left px-4 py-3 transition group border-l-2",
                   isSelected
-                    ? "bg-zinc-900 border-zinc-400"
+                    ? "bg-violet-500/5 border-violet-500"
                     : "border-transparent hover:bg-zinc-900/50 hover:border-zinc-700"
                 )}
               >
@@ -84,7 +84,7 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
                   <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
                     <span
                       title={isIndexed ? "Indexed in Qdrant — eligible for cache" : "Not yet indexed"}
-                      className={cn("text-[10px]", isIndexed ? "text-sky-400" : "text-zinc-700")}
+                      className={cn("text-[10px]", isIndexed ? "text-emerald-400" : "text-zinc-700")}
                     >
                       ◉
                     </span>
@@ -103,19 +103,19 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
                   {inv.status === "timed_out" && (
                     <>
                       <span>·</span>
-                      <span className="text-amber-500" title="Investigation exceeded the time limit">⏱ timed out</span>
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-amber-500/20 bg-amber-500/10 text-amber-400 text-[10px] font-medium" title="Investigation exceeded the time limit">⏱ timed out</span>
                     </>
                   )}
                   {inv.status === "failed" && (
                     <>
                       <span>·</span>
-                      <span className="text-red-500">✕ failed</span>
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-red-500/20 bg-red-500/10 text-red-400 text-[10px] font-medium">✕ failed</span>
                     </>
                   )}
                   {inv.status === "running" && (
                     <>
                       <span>·</span>
-                      <span className="text-amber-400">● running</span>
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-emerald-500/20 bg-emerald-500/10 text-emerald-400 text-[10px] font-medium">● running</span>
                     </>
                   )}
                 </div>

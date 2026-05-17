@@ -55,6 +55,7 @@ export interface QueryCitation {
   error: string | null;
   columns?: string[];
   rows?: unknown[][];
+  stats?: StatResult[];
 }
 
 export interface EvidenceScore {

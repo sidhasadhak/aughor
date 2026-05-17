@@ -79,6 +79,7 @@ def complete_investigation(
     hypotheses: list,
     query_history: list,
     question: str = "",
+    connection_id: str = "",
     skip_index: bool = False,
 ) -> None:
     """Persist the final state and optionally index in Qdrant. Only called on clean completion."""
@@ -116,7 +117,7 @@ def complete_investigation(
     if report_dict and not skip_index:
         key_findings = [f.get("claim", "") for f in (report_dict.get("key_findings") or [])]
         from hermes.tools.prior_analyses import index_investigation
-        index_investigation(inv_id, question=question, headline=headline, key_findings=key_findings)
+        index_investigation(inv_id, question=question, headline=headline, key_findings=key_findings, connection_id=connection_id)
 
 
 def pause_investigation(inv_id: str) -> None:

@@ -15,6 +15,7 @@ from hermes.agent.prompts import (
     SYNTHESIZE_PROMPT,
     format_pitfall_section,
 )
+from hermes.rules import get_rules_block
 from hermes.agent.state import (
     AgentState,
     AnalysisReport,
@@ -70,13 +71,14 @@ def route_after_classify(state: AgentState) -> str:
 def decompose_question(state: AgentState) -> dict[str, Any]:
     from hermes.tools.prior_analyses import search_prior_investigations
     from hermes.semantic.kb_retriever import retrieve_for_decompose
-    prior_analyses = search_prior_investigations(state["question"])
+    prior_analyses = search_prior_investigations(state["question"], connection_id=state.get("connection_id", ""))
     kb_domain = retrieve_for_decompose(state["question"])
 
+    rules_block = get_rules_block()
     llm = get_provider("coder")
     output: DecomposeOutput = llm.complete(
         system="You are a senior data analyst. Decompose the question into testable hypotheses.",
-        user=DECOMPOSE_PROMPT.format(
+        user=rules_block + DECOMPOSE_PROMPT.format(
             question=state["question"],
             schema=state["schema_context"],
             kb_domain_section=kb_domain,
@@ -118,10 +120,11 @@ def plan_and_execute(state: AgentState, conn: "DatabaseConnection") -> dict[str,
         if prior_analyses else ""
     )
 
+    rules_block = get_rules_block()
     llm = get_provider("coder")
     plan: QueryPlan = llm.complete(
         system="You are a senior data analyst writing SQL to test a hypothesis.",
-        user=PLAN_QUERIES_PROMPT.format(
+        user=rules_block + PLAN_QUERIES_PROMPT.format(
             hypothesis_id=h.id,
             hypothesis_description=h.description,
             schema=schema_for_hypothesis,
@@ -302,10 +305,11 @@ def synthesize_report(state: AgentState) -> dict[str, Any]:
         f"\nANALYST FEEDBACK (incorporate this before finalising the report):\n{human_feedback}\n"
         if human_feedback else ""
     )
+    rules_block = get_rules_block()
     llm = get_provider("narrator")
     report: AnalysisReport = llm.complete(
         system="You are a senior data analyst writing an executive-level investigation report.",
-        user=SYNTHESIZE_PROMPT.format(
+        user=rules_block + SYNTHESIZE_PROMPT.format(
             question=state["question"],
             hypothesis_summary=_format_hypothesis_summary(state["hypotheses"]),
             evidence_log=_format_full_evidence(state.get("query_history", [])),

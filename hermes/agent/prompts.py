@@ -39,7 +39,19 @@ CONFIDENCE GUIDANCE:
 Return: mode, confidence (0.0–1.0), and a one-sentence reasoning explaining the classification.
 """
 
-CHAT_SQL_SYSTEM = "You are a concise data analyst. Write exactly one correct SELECT statement to answer the question. Return a short headline (one sentence) describing what the result will show."
+CHAT_SQL_SYSTEM = (
+    "You are a concise data analyst. "
+    "Write exactly one correct SELECT statement to answer the question. "
+    "Return a short headline (one sentence) describing what the result will show. "
+    "Also return chart_type — one of: 'auto', 'bar', 'bar_horizontal', 'line', 'pie', 'stacked_bar', 'scatter'. "
+    "Chart orientation: by default, categorical fields go on the X axis and measures go on the Y axis (vertical bars). "
+    "Only use 'bar_horizontal' when the user explicitly says 'pivot', 'flip', 'horizontal', or 'rotate'. "
+    "Use 'pie' only when the user explicitly asks for a pie or donut chart. "
+    "Use 'stacked_bar' when comparing a measure across two categorical dimensions simultaneously. "
+    "Use 'line' for time-series trends. "
+    "Use 'bar' for all other categorical comparisons. "
+    "Default to 'auto' when unsure."
+)
 
 CHAT_PROMPT = """\
 DATABASE SCHEMA:
@@ -50,6 +62,11 @@ DATABASE SCHEMA:
 Write a single SELECT query using only tables and columns present in the schema.
 Use the detected join paths when joining tables.
 If the question references previous results ("also", "add", "filter by", "compare to"), extend or refine the previous SQL rather than starting from scratch.
+Chart orientation rules:
+- Default: category/dimension columns on X axis, measure/metric on Y axis (vertical bars).
+- Return chart_type 'bar_horizontal' only if the user says "pivot", "flip", "horizontal", or "rotate".
+- For stacked_bar: SELECT one group column (X axis), one segment/category column (stack fill), one numeric column (Y axis).
+- For pie: SELECT one label column and one numeric column. Do NOT add a LIMIT clause.
 """
 
 DECOMPOSE_PROMPT = """\

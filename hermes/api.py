@@ -118,6 +118,7 @@ class ChatRequest(BaseModel):
 class _ChatAnswer(BaseModel):
     sql: str
     headline: str
+    chart_type: str = "auto"
 
 async def _stream_chat(
     question: str,
@@ -139,8 +140,10 @@ async def _stream_chat(
     try:
         from hermes.agent.prompts import CHAT_PROMPT, CHAT_SQL_SYSTEM
         from hermes.llm.provider import get_provider
+        from hermes.rules import get_chat_rules_block
 
         schema = db.get_schema()
+        rules_block = get_chat_rules_block()
 
         # Build history section from last 3 turns
         history_section = ""
@@ -163,6 +166,8 @@ async def _stream_chat(
             history_section=history_section,
             question=question,
         )
+        if rules_block:
+            prompt = rules_block + prompt
 
         answer: _ChatAnswer = get_provider("coder").complete(
             system=CHAT_SQL_SYSTEM,
@@ -208,8 +213,9 @@ async def _stream_chat(
             return
 
         yield _sse("columns", {"columns": result.columns})
-        yield _sse("rows", {"rows": result.rows[:100]})
+        yield _sse("rows", {"rows": result.rows[:10000]})
         yield _sse("headline", {"headline": answer.headline})
+        yield _sse("chart_type", {"chart_type": answer.chart_type})
         yield _sse("done", {})
 
     except Exception as e:
@@ -233,7 +239,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
 # ── Investigation endpoint ────────────────────────────────────────────────────
 
 async def _stream_investigation(question: str, connection_id: str, request: Request, hitl: bool = False) -> AsyncGenerator[str, None]:
-    _TIMEOUT = int(os.getenv("HERMES_TIMEOUT_SECONDS", "300"))
+    _TIMEOUT = int(os.getenv("HERMES_TIMEOUT_SECONDS", "600"))
     try:
         conn_type, dsn = get_dsn(connection_id)
     except KeyError as e:
@@ -253,7 +259,7 @@ async def _stream_investigation(question: str, connection_id: str, request: Requ
     # false-positives (caching a direct query result) are not.
     from hermes.tools.prior_analyses import find_similar_investigation
     from hermes.db.history import get_investigation
-    cache_hit = None if _looks_direct(question) else find_similar_investigation(question)
+    cache_hit = None if _looks_direct(question) else find_similar_investigation(question, connection_id)
     if cache_hit:
         cached_id, score = cache_hit
         cached = get_investigation(cached_id)
@@ -290,6 +296,7 @@ async def _stream_investigation(question: str, connection_id: str, request: Requ
 
         initial_state: AgentState = {
             "question": question,
+            "connection_id": connection_id,
             "schema_context": schema,
             "hypotheses": [],
             "current_hypothesis_idx": 0,
@@ -387,6 +394,7 @@ async def _stream_investigation(question: str, connection_id: str, request: Requ
                             "error": r.error,
                             "columns": r.columns,
                             "rows": r.rows[:50],
+                            "stats": [s.model_dump() for s in (r.stats or [])],
                         }
                         for r in query_history
                     ],
@@ -401,6 +409,7 @@ async def _stream_investigation(question: str, connection_id: str, request: Requ
                     hypotheses=merged.get("hypotheses", []),
                     query_history=query_history,
                     question=question,
+                    connection_id=connection_id,
                     skip_index=merged.get("query_mode") == "direct",
                 )
 
@@ -467,7 +476,7 @@ async def _stream_resume(inv_id: str, feedback: str, request: Request) -> AsyncG
         agent.update_state(config, {"human_feedback": feedback})
 
         import time
-        _TIMEOUT = int(os.getenv("HERMES_TIMEOUT_SECONDS", "300"))
+        _TIMEOUT = int(os.getenv("HERMES_TIMEOUT_SECONDS", "600"))
         deadline = time.monotonic() + _TIMEOUT
 
         for event in agent.stream(None, config=config):
@@ -501,6 +510,7 @@ async def _stream_resume(inv_id: str, feedback: str, request: Request) -> AsyncG
                             "error": r.error,
                             "columns": r.columns,
                             "rows": r.rows[:50],
+                            "stats": [s.model_dump() for s in (r.stats or [])],
                         }
                         for r in query_history
                     ],
@@ -512,6 +522,7 @@ async def _stream_resume(inv_id: str, feedback: str, request: Request) -> AsyncG
                     hypotheses=merged.get("hypotheses", []),
                     query_history=query_history,
                     question=inv["question"],
+                    connection_id=inv.get("connection_id", ""),
                 )
 
     except Exception as e:
@@ -739,6 +750,7 @@ def reindex_investigations():
             question=row["question"],
             headline=row["headline"],
             key_findings=key_findings,
+            connection_id=row.get("connection_id", ""),
         )
         indexed += 1
     return {"indexed": indexed, "skipped": skipped}

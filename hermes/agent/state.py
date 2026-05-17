@@ -131,6 +131,7 @@ class AnalysisReport(BaseModel):
 
 class AgentState(TypedDict):
     question: str
+    connection_id: str
     schema_context: str
 
     # Investigation state

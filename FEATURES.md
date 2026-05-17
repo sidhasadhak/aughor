@@ -37,6 +37,7 @@
 28. [ER Diagram](#28-er-diagram)
 29. [Rich Schema Card UI](#29-rich-schema-card-ui)
 30. [Quick Chat Mode](#30-quick-chat-mode)
+31. [Chat Chart Engine](#31-chat-chart-engine)
 
 ---
 
@@ -952,27 +953,93 @@ Direct Query is single-shot and wraps every result in the full report shell. Qui
 `POST /chat` is a lean SSE endpoint that bypasses the full LangGraph investigative loop entirely. On each request:
 1. Schema context is built from the active connection
 2. The last 3 completed turns are formatted as a `CONVERSATION HISTORY` block (question, SQL, columns, headline per turn)
-3. The coder LLM generates a `ChatAnswer` (sql + headline) via `CHAT_PROMPT` + `CHAT_SQL_SYSTEM`
+3. The coder LLM generates a `ChatAnswer` (sql, headline, chart_type) via `CHAT_PROMPT` + `CHAT_SQL_SYSTEM`
 4. SQL is executed; one self-correction attempt on error using `FIX_SQL_PROMPT`
-5. Results stream back: `sql → columns → rows → headline → done`
+5. Results stream back: `sql → columns → rows → headline → chart_type → done`
 
-`useChat.ts` manages a `ChatTurn[]` reducer — each turn tracks `status` (loading / done / error), `sql`, `columns`, `rows`, `headline`, `error`. The `ask()` function auto-builds history from completed turns before sending.
+`useChat.ts` manages a `ChatTurn[]` reducer — each turn tracks `status` (loading / done / error), `sql`, `columns`, `rows`, `headline`, `chartType`, `error`. The `ask()` function auto-builds history from completed turns before sending.
 
-`ChatMessage.tsx` renders each turn as two bubbles: question (right, zinc-800) and answer (left). The answer bubble adapts to result shape: KPI cards for single-row numeric results, inline Observable Plot chart for time series or categorical data (≥3 rows), or a scrollable mini table otherwise. SQL is always accessible via a collapsible below the result.
+`ChatMessage.tsx` renders each turn as two bubbles: question (right, zinc-800) and answer (left, transparent). The answer bubble adapts to result shape: KPI cards for single-row numeric results, an `InlineChart` for chartable data (≥3 rows or explicit chart type), or a scrollable mini table otherwise. SQL is accessible via a collapsible below the result.
 
 `ChatPanel.tsx` shows starter prompts on empty state, scrolls to the latest turn, and supports ✕ to clear the session. The session clears automatically when the connection changes.
 
 ### Component interactions
 - Completely separate from the LangGraph graph — `POST /chat` calls `get_provider("coder").complete()` and `db.execute()` directly; no `AgentState`, no history DB writes
 - Reuses `CHAT_PROMPT`, `FIX_SQL_PROMPT`, `get_provider()`, `open_connection()`, `get_dsn()`, `_sse()`
-- Chat tab added to the main nav alongside Investigate / History / Connections
+- Chat is the default landing tab; Deep Analysis (combined Investigate + History) is the second tab
 - Connection selector sidebar in the Chat tab links to the Connections tab for management
 
 ### Tech / libraries
 - **FastAPI SSE** — same `StreamingResponse` + `_sse()` pattern as investigate endpoint
-- **instructor + Pydantic** — `_ChatAnswer(sql, headline)` structured output
-- **@observablehq/plot** — inline charts in answer bubbles (same detection logic as `InvestigationChart`)
+- **instructor + Pydantic** — `_ChatAnswer(sql, headline, chart_type)` structured output
+- **@observablehq/plot** + **d3-shape** — inline charts in answer bubbles (see Feature 31)
 - No new dependencies
+
+---
+
+## 31. Chat Chart Engine
+
+### What
+A rich, multi-type inline charting system inside Quick Chat answer bubbles. Supports vertical bar, horizontal bar, line/area, stacked bar, and pie/donut charts. Chart type is selected by the LLM based on the question context, with explicit user control via natural language ("pivot", "flip", "pie chart"). Charts are resizable via a drag handle.
+
+### Why
+Quick Chat answers span a wide range of result shapes — time series trends, category breakdowns, part-of-whole distributions, dual-dimension comparisons. A single chart type produces misleading or hard-to-read results for most of these. The LLM selecting chart type and the user being able to resize ensures every answer is presented in the most readable form.
+
+### How
+**Backend — `chart_type` from LLM:**
+`_ChatAnswer` Pydantic model gains `chart_type: str = "auto"` (one of `auto`, `bar`, `bar_horizontal`, `line`, `pie`, `stacked_bar`, `scatter`). After the headline SSE event, the API emits a `chart_type` event. `CHAT_SQL_SYSTEM` and `CHAT_PROMPT` contain explicit orientation rules for the LLM:
+- Default: categorical columns on the X axis, measures on the Y axis (vertical bars)
+- `bar_horizontal` only when the user says "pivot", "flip", "horizontal", or "rotate"
+- `pie` only when the user explicitly asks for a pie or donut chart
+- `stacked_bar` when comparing a measure across two categorical dimensions simultaneously
+- `line` for time-series trends
+
+**Frontend — `InlineChart` component (`ChatMessage.tsx`):**
+
+Chart type selection cascade: explicit LLM `chartType` → heuristic auto-detect from column names and value types.
+
+| Chart type | Render | Height default |
+|---|---|---|
+| `pie` | `d3-shape` `pie()` + `arc()` generators; raw SVG donut (innerRadius 44, outerRadius 100); `buildHtmlLegend()` | fixed SVG |
+| `stacked_bar` | `Plot.barY` + `Plot.stackY` (vertical stacks, groups on X axis) | `userH ?? 280` |
+| `line` | `Plot.lineY` + `Plot.areaY` (8% opacity fill) | `userH ?? 200` |
+| `bar` (default) | `Plot.barY`; chartW = `barData.length × 36`; value labels above bars; tickRotate −40° when >10 categories | `userH ?? 260` |
+| `bar_horizontal` | `Plot.barX`; value labels right of bars | `userH ?? max(100, n × 26)` |
+
+**Timestamp formatting:** `fmtTimestampLabel(v)` converts ISO timestamp strings ("2024-01-01 00:00:00") to "Jan 2024" for month/week/quarter columns. Time-label columns (`TIME_LABEL_COL = /(month|quarter|week|half|period)/i`) preserve SQL ordering instead of re-sorting.
+
+**Color palette:** Tableau-10 (`T10`) for bar/line charts; 8-color `PIE_COLORS` array for pie/donut segments.
+
+**Legend:** `buildHtmlLegend(items)` renders an imperative HTML legend injected into the chart container. Switches to a 2-column layout when >12 items.
+
+**Resizable charts:** Each chart has a `userH` state (null = natural default). A drag handle below the chart (a thin pill bar) listens for `onMouseDown`. During drag, the container height is updated via `outerRef.current.style.height` (CSS-only, no re-render). On `mouseup`, `setUserH(newH)` triggers a single chart re-render at the new size. `userH` is included in the `useEffect` deps array so charts re-plot at the correct size.
+
+**No data caps:** All slice limits removed — pie, bar, table, and KPI cards render the full dataset returned by the query (up to the 10,000-row backend limit).
+
+**Deduplication:** Async `import()` race condition (chart appended twice on fast connections) eliminated via a `cancelled` flag checked inside the `.then()` callback and a `innerHTML` clear before each append.
+
+**Two-ref pattern:** `outerRef` = scrollable shell (overflow + resize target); `innerRef` = Observable Plot / SVG mount point.
+
+### Component interactions
+- `hermes/hermes/agent/prompts.py` — `CHAT_SQL_SYSTEM` and `CHAT_PROMPT` contain `chart_type` instructions and orientation rules
+- `hermes/hermes/api.py` — `_ChatAnswer.chart_type` field; `chart_type` SSE event emitted after `headline`; `result.rows[:10000]` row cap
+- `web/lib/useChat.ts` — `ChatTurn.chartType`; `CHART_TYPE` reducer action; SSE handler dispatches it
+- `web/components/ChatMessage.tsx` — `InlineChart` component; all chart branches; `fmtTimestampLabel`; `buildHtmlLegend`; `startDrag` + `userH` resize
+
+### Tech / libraries
+- **@observablehq/plot 0.6.17** — bar, line, stacked bar marks
+- **d3-shape** — `pie()` + `arc()` generators for donut chart (Observable Plot has no arc mark in 0.6.x)
+- **d3-shape** is already installed as a transitive dependency of Observable Plot — no new install needed
+
+---
+
+## Navigation structure
+
+```
+Default tab → Chat  (Quick Chat Mode + Chart Engine)
+Second tab  → Deep Analysis  (Investigate left panel + History panel)
+Third tab   → Connections  (Schema cards, ER Diagram, Metrics Catalog)
+```
 
 ---
 
@@ -1043,4 +1110,4 @@ Cache check (Prior Investigations RAG)          [skipped for direct-signal quest
 
 ---
 
-*Last updated: 2026-05-16 · 30 features. See `ROADMAP.md` for upcoming features.*
+*Last updated: 2026-05-16 · 31 features. See `ROADMAP.md` for upcoming features.*

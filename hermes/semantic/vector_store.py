@@ -39,13 +39,14 @@ def upsert(collection: str, points: list[dict]) -> None:
     client.upsert(collection_name=collection, points=structs)
 
 
-def search(collection: str, vector: list[float], top_k: int = 10) -> list[dict]:
+def search(collection: str, vector: list[float], top_k: int = 10, query_filter=None) -> list[dict]:
     """Returns [{score, payload}] sorted by descending relevance."""
     client = _client()
     response = client.query_points(
         collection_name=collection,
         query=vector,
         limit=top_k,
+        query_filter=query_filter,
     )
     return [{"score": p.score, "payload": p.payload} for p in response.points]
 

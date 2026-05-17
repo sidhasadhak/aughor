@@ -21,12 +21,8 @@ from hermes.agent.state import QueryResult
 # Applied to every Postgres query *before* execution to prevent the most
 # common class of type errors without needing a retry round-trip.
 
-# ROUND(AVG/SUM/MIN/MAX(col), N) → ROUND((agg)::numeric, N)
-# Handles the one-argument aggregate case; doesn't touch nested expressions.
-_ROUND_AGG = re.compile(
-    r"\bROUND\s*\(\s*((?:AVG|SUM|MIN|MAX)\s*\([^)]+\))\s*,\s*(\d+)\s*\)",
-    re.IGNORECASE,
-)
+# Locates each ROUND( token so the paren-aware rewriter can take over.
+_ROUND_OPEN = re.compile(r"\bROUND\s*\(", re.IGNORECASE)
 
 # (col1 - col2)::numeric  where operands look like timestamp columns
 # → EXTRACT(EPOCH FROM (col1 - col2)) / 86400.0
@@ -40,9 +36,62 @@ _TS_HINT = re.compile(
 )
 
 
+def _find_top_level_comma(s: str) -> int | None:
+    """Return the index of the last comma at paren-depth 0, or None."""
+    depth = 0
+    last = None
+    for i, ch in enumerate(s):
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+        elif ch == "," and depth == 0:
+            last = i
+    return last
+
+
 def _pg_fix_round(sql: str) -> str:
-    """ROUND(AVG/SUM/MIN/MAX(col), N) → ROUND((agg)::numeric, N)."""
-    return _ROUND_AGG.sub(lambda m: f"ROUND(({m.group(1)})::numeric, {m.group(2)})", sql)
+    """
+    Rewrite every two-argument ROUND(expr, N) → ROUND((expr)::numeric, N).
+
+    PostgreSQL's ROUND(double precision, integer) does not exist — only the
+    numeric overload accepts a precision argument.  Arithmetic expressions
+    (100.0 * x / y, SUM(a)/COUNT(*), etc.) silently return double precision,
+    so we unconditionally cast the first argument to numeric.  The cast is a
+    no-op when the expression is already numeric, so this is always safe.
+    """
+    parts: list[str] = []
+    pos = 0
+    for m in _ROUND_OPEN.finditer(sql):
+        parts.append(sql[pos:m.end()])   # everything up to and including "ROUND("
+        # Walk forward tracking paren depth to find the matching ")"
+        depth = 1
+        j = m.end()
+        while j < len(sql) and depth > 0:
+            if sql[j] == "(":
+                depth += 1
+            elif sql[j] == ")":
+                depth -= 1
+            j += 1
+        # sql[m.end() : j-1] is the raw content inside ROUND(...)
+        inner = sql[m.end(): j - 1]
+        pos = j  # character after the closing ")"
+
+        comma = _find_top_level_comma(inner)
+        if comma is not None:
+            precision = inner[comma + 1:].strip()
+            if re.match(r"^\d+$", precision):          # second arg is a plain integer
+                first_arg = inner[:comma].strip()
+                # Don't double-cast if already ::numeric
+                if not re.search(r"::numeric\s*$", first_arg, re.IGNORECASE):
+                    first_arg = f"({first_arg})::numeric"
+                parts.append(f"{first_arg}, {precision})")
+                continue
+        # Not a two-arg ROUND, or precision isn't a plain literal — leave untouched
+        parts.append(inner + ")")
+
+    parts.append(sql[pos:])
+    return "".join(parts)
 
 
 def _pg_fix_nullif_timestamps(sql: str, varchar_ts_cols: list[tuple[str, str]]) -> str:

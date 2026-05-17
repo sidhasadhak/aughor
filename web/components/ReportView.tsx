@@ -11,7 +11,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import type { DataQualityNote, QueryCitation, Report } from "@/lib/types";
+import type { DataQualityNote, Finding, Hypothesis, QueryCitation, Report, StatResult, Verdict } from "@/lib/types";
 import { InvestigationChart } from "@/components/InvestigationChart";
 
 interface Props {
@@ -19,26 +19,47 @@ interface Props {
   queryCount: number;
   queryHistory?: QueryCitation[];
   queryMode?: "direct" | "investigate" | null;
+  hypotheses?: Hypothesis[];
 }
 
 const SHARE_COL_PATTERN = /share|pct|percent|rate|ratio|proportion/i;
-// Columns that are ordinal integers (year, month, day, rank, id) — never locale-format these
 const ORDINAL_COL_PATTERN = /year|month|day|week|rank|_id$|^id$/i;
 
 function formatCell(col: string, val: unknown): string {
   if (val === null || val === undefined) return "";
   const n = Number(val);
   if (isNaN(n)) return String(val);
-  // Percentage columns stored as 0-1 fractions
-  if (SHARE_COL_PATTERN.test(col) && n >= 0 && n <= 1) {
-    return `${(n * 100).toFixed(2)}%`;
-  }
-  // Long decimals — cap at 2 dp
+  if (SHARE_COL_PATTERN.test(col) && n >= 0 && n <= 1) return `${(n * 100).toFixed(2)}%`;
   if (n % 1 !== 0) return n.toFixed(2);
-  // Ordinal/ID integers: render bare, never add thousands comma
   if (ORDINAL_COL_PATTERN.test(col)) return String(n);
   return n.toLocaleString();
 }
+
+// ── Palette definitions ──────────────────────────────────────────────────────
+
+const H_PALETTES = [
+  { ring: "border-violet-500/40", dimBg: "bg-violet-500/5",  badge: "bg-violet-500/20 text-violet-300 border-violet-500/30",  divider: "divide-violet-500/10"  },
+  { ring: "border-blue-500/40",   dimBg: "bg-blue-500/5",    badge: "bg-blue-500/20 text-blue-300 border-blue-500/30",        divider: "divide-blue-500/10"    },
+  { ring: "border-emerald-500/40",dimBg: "bg-emerald-500/5", badge: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",divider: "divide-emerald-500/10" },
+  { ring: "border-amber-500/40",  dimBg: "bg-amber-500/5",   badge: "bg-amber-500/20 text-amber-300 border-amber-500/30",     divider: "divide-amber-500/10"   },
+  { ring: "border-rose-500/40",   dimBg: "bg-rose-500/5",    badge: "bg-rose-500/20 text-rose-300 border-rose-500/30",        divider: "divide-rose-500/10"    },
+];
+
+const VERDICT_STYLE: Record<Verdict, { label: string; chip: string; bar: string }> = {
+  confirmed:    { label: "Confirmed",    chip: "border-emerald-500/30 bg-emerald-500/10 text-emerald-400", bar: "bg-emerald-500" },
+  refuted:      { label: "Refuted",      chip: "border-red-500/30 bg-red-500/10 text-red-400",             bar: "bg-red-500"     },
+  inconclusive: { label: "Inconclusive", chip: "border-amber-500/30 bg-amber-500/10 text-amber-400",       bar: "bg-amber-500"   },
+  untested:     { label: "Untested",     chip: "border-zinc-700 bg-zinc-800/50 text-zinc-500",              bar: "bg-zinc-700"    },
+};
+
+const STAT_STYLE: Record<StatResult["type"], { icon: string; chip: string }> = {
+  anomaly:      { icon: "⚡", chip: "border-amber-500/20 bg-amber-500/5 text-amber-300"   },
+  trend:        { icon: "↗",  chip: "border-blue-500/20 bg-blue-500/5 text-blue-300"      },
+  comparison:   { icon: "⟺", chip: "border-violet-500/20 bg-violet-500/5 text-violet-300" },
+  distribution: { icon: "≈",  chip: "border-zinc-700 bg-zinc-800/50 text-zinc-400"         },
+};
+
+// ── Collapsible section (used in bottom report sections) ─────────────────────
 
 function CollapsibleSection({
   title,
@@ -69,7 +90,399 @@ function CollapsibleSection({
   );
 }
 
-export function ReportView({ report, queryCount, queryHistory = [], queryMode }: Props) {
+// ── Statistical signal callout ────────────────────────────────────────────────
+
+function StatCallout({ stat }: { stat: StatResult }) {
+  const s = STAT_STYLE[stat.type];
+  return (
+    <div className={`rounded border p-2.5 flex items-start gap-2.5 ${s.chip}`}>
+      <span className="text-xs shrink-0 mt-0.5 font-mono">{s.icon}</span>
+      <div className="min-w-0 space-y-0.5">
+        <p className="text-xs leading-snug">{stat.interpretation}</p>
+        {stat.sigma != null && (
+          <p className="text-[10px] text-zinc-600 font-mono">
+            {stat.sigma.toFixed(1)}σ{stat.p_value != null ? ` · p=${stat.p_value.toFixed(3)}` : ""}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Query result mini-table ───────────────────────────────────────────────────
+
+function QueryMiniTable({ columns, rows }: { columns: string[]; rows: unknown[][] }) {
+  const MAX_ROWS = 15;
+  const visible = rows.slice(0, MAX_ROWS);
+  return (
+    <div className="rounded border border-violet-500/20 overflow-hidden">
+      <div className="overflow-x-auto overflow-y-auto max-h-[280px]">
+        <table className="w-full text-xs">
+          <thead className="sticky top-0 bg-zinc-900 border-b border-violet-500/20">
+            <tr>
+              {columns.map(col => (
+                <th key={col} className="px-3 py-1.5 text-left text-[10px] text-violet-300/70 uppercase tracking-wide font-mono whitespace-nowrap">
+                  {col.replace(/_/g, " ")}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-zinc-800/40">
+            {visible.map((row, ri) => (
+              <tr key={ri} className="hover:bg-zinc-800/20 transition">
+                {(row as unknown[]).map((cell, ci) => (
+                  <td key={ci} className="px-3 py-1.5 text-zinc-300 font-mono whitespace-nowrap">
+                    {cell === null || cell === undefined
+                      ? <span className="text-zinc-600 italic">null</span>
+                      : formatCell(columns[ci], cell)
+                    }
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {rows.length > MAX_ROWS && (
+        <div className="px-3 py-1.5 border-t border-zinc-800/60 text-[10px] text-zinc-600 font-mono">
+          +{rows.length - MAX_ROWS} more rows
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Single query evidence block ───────────────────────────────────────────────
+
+function QueryEvidence({
+  query,
+  index,
+  total,
+}: {
+  query: QueryCitation;
+  index: number;
+  total: number;
+}) {
+  const [sqlOpen, setSqlOpen] = useState(false);
+  const hasData = !query.error && (query.columns?.length ?? 0) > 0 && (query.rows?.length ?? 0) > 0;
+  const significantStats = (query.stats ?? []).filter(s => s.is_significant);
+
+  return (
+    <div className="p-4 space-y-3">
+      {/* Query header */}
+      <div className="flex items-center gap-2.5">
+        <span className="text-[10px] text-zinc-600 font-mono uppercase tracking-wide">
+          Query {index + 1}/{total}
+        </span>
+        {query.error
+          ? <span className="text-xs text-red-400 border border-red-500/20 bg-red-500/5 rounded px-1.5 py-0.5">✕ failed</span>
+          : <span className="text-[10px] text-zinc-600 font-mono">{query.row_count} row{query.row_count !== 1 ? "s" : ""}</span>
+        }
+      </div>
+
+      {/* Chart — InvestigationChart returns null when data isn't chartable */}
+      {hasData && (
+        <InvestigationChart columns={query.columns!} rows={query.rows!} />
+      )}
+
+      {/* Table — always show when data fits; complements the chart */}
+      {hasData && (
+        <QueryMiniTable columns={query.columns!} rows={query.rows!} />
+      )}
+
+      {/* Error detail */}
+      {query.error && (
+        <pre className="text-xs text-red-400 bg-red-500/5 rounded border border-red-500/20 p-2.5 overflow-x-auto whitespace-pre-wrap font-mono leading-relaxed">
+          {query.error}
+        </pre>
+      )}
+
+      {/* Statistical signals */}
+      {significantStats.length > 0 && (
+        <div className="space-y-1.5">
+          {significantStats.map((s, i) => <StatCallout key={i} stat={s} />)}
+        </div>
+      )}
+
+      {/* SQL toggle */}
+      <div>
+        <button
+          onClick={() => setSqlOpen(o => !o)}
+          className="flex items-center gap-1.5 text-[10px] text-zinc-600 hover:text-zinc-400 transition font-mono uppercase tracking-wide"
+        >
+          <span className="text-[8px]">{sqlOpen ? "▼" : "▶"}</span> SQL
+        </button>
+        {sqlOpen && (
+          <pre className="mt-1.5 text-xs text-zinc-400 bg-zinc-950 rounded border border-zinc-800/60 p-2.5 overflow-x-auto whitespace-pre-wrap font-mono leading-relaxed">
+            {query.sql}
+          </pre>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Hypothesis accordion row ──────────────────────────────────────────────────
+
+function HypothesisAccordion({
+  index,
+  hypothesis,
+  queries,
+  linkedFinding,
+}: {
+  index: number;
+  hypothesis: Hypothesis;
+  queries: QueryCitation[];
+  linkedFinding: Finding | null;
+}) {
+  const [open, setOpen] = useState(false);
+  const palette = H_PALETTES[index % H_PALETTES.length];
+  const vc = VERDICT_STYLE[hypothesis.verdict];
+
+  return (
+    <div className={`rounded-lg border ${palette.ring} overflow-hidden`}>
+      {/* ── Header ── */}
+      <button
+        onClick={() => setOpen(o => !o)}
+        className={`w-full text-left px-4 py-3 transition group ${open ? palette.dimBg : "hover:bg-zinc-900/40"}`}
+      >
+        <div className="flex items-start gap-3">
+          {/* H-label badge */}
+          <span className={`mt-0.5 shrink-0 text-xs font-mono font-semibold px-1.5 py-0.5 rounded border ${palette.badge}`}>
+            H{index + 1}
+          </span>
+
+          {/* Description */}
+          <p className="text-sm text-zinc-200 flex-1 leading-snug text-left">
+            {hypothesis.description}
+          </p>
+
+          {/* Verdict + confidence + toggle */}
+          <div className="flex items-center gap-2 shrink-0 ml-2">
+            <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded border ${vc.chip}`}>
+              {vc.label}
+            </span>
+            <span className="text-[10px] font-mono text-zinc-500 w-8 text-right">
+              {Math.round(hypothesis.confidence * 100)}%
+            </span>
+            <span className="text-zinc-600 text-[10px] group-hover:text-zinc-400 transition">
+              {open ? "▲" : "▼"}
+            </span>
+          </div>
+        </div>
+
+        {/* Confidence bar */}
+        <div className="mt-2.5 ml-10 h-[3px] rounded-full bg-zinc-800 overflow-hidden">
+          <div
+            className={`h-full rounded-full ${vc.bar} transition-all duration-300`}
+            style={{ width: `${hypothesis.confidence * 100}%` }}
+          />
+        </div>
+      </button>
+
+      {/* ── Expanded detail ── */}
+      {open && (
+        <div className={`border-t ${palette.ring} divide-y divide-zinc-800/50`}>
+
+          {/* 1. Key finding */}
+          <div className="px-4 py-3 space-y-1.5">
+            <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-mono">Key Finding</p>
+            <p className="text-sm text-zinc-200 leading-relaxed">
+              {hypothesis.key_finding || "No finding recorded for this hypothesis."}
+            </p>
+          </div>
+
+          {/* 2. Queries — each with chart + table + stats + SQL */}
+          {queries.length === 0 ? (
+            <div className="px-4 py-3">
+              <p className="text-xs text-zinc-600 italic">No queries were executed for this hypothesis.</p>
+            </div>
+          ) : (
+            <div className={`divide-y divide-zinc-800/50`}>
+              {queries.map((q, i) => (
+                <QueryEvidence key={i} query={q} index={i} total={queries.length} />
+              ))}
+            </div>
+          )}
+
+          {/* 3. Synthesis link — if the final report references this hypothesis */}
+          {linkedFinding && (
+            <div className="px-4 py-3 space-y-2">
+              <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-mono">Report Synthesis</p>
+              <blockquote className="border-l-2 border-emerald-500/40 pl-3 space-y-1">
+                <p className="text-sm text-zinc-200 leading-relaxed italic">"{linkedFinding.claim}"</p>
+                {linkedFinding.evidence && (
+                  <p className="text-xs text-zinc-500 leading-relaxed">{linkedFinding.evidence}</p>
+                )}
+              </blockquote>
+              <Badge
+                variant="outline"
+                className={linkedFinding.confidence >= 0.7
+                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+                  : "border-amber-500/30 bg-amber-500/10 text-amber-400"
+                }
+              >
+                {Math.round(linkedFinding.confidence * 100)}% confidence
+              </Badge>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Hypothesis panel ──────────────────────────────────────────────────────────
+
+function HypothesisPanel({
+  hypotheses,
+  queryHistory,
+  reportFindings,
+}: {
+  hypotheses: Hypothesis[];
+  queryHistory: QueryCitation[];
+  reportFindings: Finding[];
+}) {
+  const tested = hypotheses.filter(h => h.verdict !== "untested");
+  const confirmed = tested.filter(h => h.verdict === "confirmed").length;
+  const refuted = tested.filter(h => h.verdict === "refuted").length;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">
+          Hypotheses Tested
+        </h3>
+        <div className="flex items-center gap-2 text-[10px] font-mono">
+          {confirmed > 0 && <span className="text-emerald-400">{confirmed} confirmed</span>}
+          {confirmed > 0 && refuted > 0 && <span className="text-zinc-700">·</span>}
+          {refuted > 0 && <span className="text-red-400">{refuted} refuted</span>}
+          {(confirmed > 0 || refuted > 0) && tested.length - confirmed - refuted > 0 && <span className="text-zinc-700">·</span>}
+          {tested.length - confirmed - refuted > 0 && <span className="text-amber-400">{tested.length - confirmed - refuted} inconclusive</span>}
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        {hypotheses.map((h, i) => (
+          <HypothesisAccordion
+            key={h.id}
+            index={i}
+            hypothesis={h}
+            queries={queryHistory.filter(
+              q => q.hypothesis_id?.toUpperCase() === h.id?.toUpperCase()
+            )}
+            linkedFinding={
+              reportFindings.find(
+                f => f.hypothesis_id?.toUpperCase() === h.id?.toUpperCase()
+              ) ?? null
+            }
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Key Finding card ─────────────────────────────────────────────────────────
+
+function KeyFindingCard({
+  finding,
+  index,
+  hypotheses,
+}: {
+  finding: Finding;
+  index: number;
+  hypotheses: Hypothesis[];
+}) {
+  const [open, setOpen] = useState(false);
+  const linkedHypothesis = finding.hypothesis_id
+    ? hypotheses.find(h => h.id.toUpperCase() === finding.hypothesis_id!.toUpperCase())
+    : null;
+  const hypothesisIndex = linkedHypothesis
+    ? hypotheses.indexOf(linkedHypothesis)
+    : -1;
+  const palette = hypothesisIndex >= 0 ? H_PALETTES[hypothesisIndex % H_PALETTES.length] : null;
+
+  const confidenceLabel =
+    finding.confidence >= 0.8 ? { text: "High confidence", color: "text-emerald-400", dot: "bg-emerald-400" } :
+    finding.confidence >= 0.5 ? { text: "Moderate confidence", color: "text-amber-400", dot: "bg-amber-400" } :
+                                 { text: "Low confidence", color: "text-red-400", dot: "bg-red-400" };
+
+  return (
+    <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 overflow-hidden">
+      {/* Header row */}
+      <div className="flex items-start gap-3 p-4">
+        {/* Index circle */}
+        <span className="shrink-0 flex h-6 w-6 items-center justify-center rounded-full bg-zinc-800 border border-zinc-700 text-xs font-mono text-zinc-400 mt-0.5">
+          {index + 1}
+        </span>
+
+        <div className="flex-1 min-w-0 space-y-2">
+          {/* Claim */}
+          <p className="text-sm font-medium text-zinc-100 leading-snug">{finding.claim}</p>
+
+          {/* Meta row: confidence + hypothesis link */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-1.5">
+              <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${confidenceLabel.dot}`} />
+              <span className={`text-xs ${confidenceLabel.color}`}>{confidenceLabel.text}</span>
+            </div>
+            {/* Confidence bar */}
+            <div className="flex items-center gap-1.5">
+              <div className="w-20 h-1 rounded-full bg-zinc-800 overflow-hidden">
+                <div
+                  className={`h-full rounded-full ${
+                    finding.confidence >= 0.8 ? "bg-emerald-500" :
+                    finding.confidence >= 0.5 ? "bg-amber-500" : "bg-red-500"
+                  }`}
+                  style={{ width: `${finding.confidence * 100}%` }}
+                />
+              </div>
+              <span className="text-[10px] font-mono text-zinc-600">
+                {Math.round(finding.confidence * 100)}%
+              </span>
+            </div>
+            {/* Hypothesis chip */}
+            {palette && hypothesisIndex >= 0 && (
+              <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${palette.badge}`}>
+                H{hypothesisIndex + 1}
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Expand toggle for evidence */}
+        {finding.evidence && (
+          <button
+            onClick={() => setOpen(o => !o)}
+            className="shrink-0 text-[10px] text-zinc-600 hover:text-zinc-400 border border-zinc-700 hover:border-zinc-600 rounded px-2 py-1 transition mt-0.5"
+          >
+            {open ? "Less" : "Evidence"}
+          </button>
+        )}
+      </div>
+
+      {/* Expandable evidence */}
+      {open && finding.evidence && (
+        <div className="px-4 pb-4 pt-0">
+          <div className="rounded border border-zinc-700/60 bg-zinc-950/50 p-3 space-y-1.5">
+            <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-mono">Supporting Evidence</p>
+            <p className="text-sm text-zinc-300 leading-relaxed">{finding.evidence}</p>
+            {linkedHypothesis && (
+              <p className="text-xs text-zinc-600 mt-1 pt-1.5 border-t border-zinc-800">
+                From hypothesis: <span className="text-zinc-400 italic">"{linkedHypothesis.description}"</span>
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Main ReportView ───────────────────────────────────────────────────────────
+
+export function ReportView({ report, queryCount, queryHistory = [], queryMode, hypotheses = [] }: Props) {
   const dqNotes = report.data_quality_notes ?? [];
   const isDirect = queryMode === "direct";
   const isQueryFailure = isDirect && !report.verdict && report.headline === "Query execution failed";
@@ -80,7 +493,7 @@ export function ReportView({ report, queryCount, queryHistory = [], queryMode }:
 
   return (
     <div className="space-y-6">
-      {/* 1. Headline */}
+      {/* 1. Verdict / Headline */}
       <div className={`rounded-lg border p-5 ${isQueryFailure ? "border-red-500/30 bg-red-500/5" : "border-emerald-500/30 bg-emerald-500/5"}`}>
         <p className={`text-xs font-medium uppercase tracking-widest mb-2 ${isQueryFailure ? "text-red-400" : "text-emerald-400"}`}>
           {isQueryFailure ? "Query Failed" : isDirect ? "Top Insight" : "Verdict"}
@@ -88,61 +501,51 @@ export function ReportView({ report, queryCount, queryHistory = [], queryMode }:
         <p className="text-lg font-semibold text-white leading-snug">{report.headline}</p>
       </div>
 
-      {/* 2. Executive Summary / Diagnosis — immediately after headline */}
+      {/* 2. Diagnosis / Executive Summary */}
       {!isQueryFailure && (
-        <div className="space-y-3">
+        <div className="space-y-4">
           <h3 className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">
             {isDirect ? "Executive Summary" : "Diagnosis"}
           </h3>
           <p className="text-sm text-zinc-300 leading-relaxed">{report.verdict}</p>
-          {isDirect && report.key_findings.length > 0 && (
-            <ul className="space-y-2 mt-1">
+
+          {/* Key findings — rich cards for both modes */}
+          {report.key_findings.length > 0 && (
+            <div className="space-y-2 pt-1">
+              <p className="text-xs text-zinc-500 uppercase tracking-widest font-mono">Key Findings</p>
               {report.key_findings.map((f, i) => (
-                <li key={i} className="flex items-start gap-2 text-sm text-zinc-400 leading-relaxed">
-                  <span className="shrink-0 mt-1.5 h-1.5 w-1.5 rounded-full bg-zinc-600" />
-                  <span>{f.claim}</span>
-                </li>
+                <KeyFindingCard key={i} finding={f} index={i} hypotheses={hypotheses} />
               ))}
-            </ul>
+            </div>
           )}
         </div>
       )}
 
-      {/* 3. Chart */}
-      {isDirect && !isQueryFailure && directTable?.columns && directTable?.rows && (
-        <InvestigationChart
-          columns={directTable.columns}
-          rows={directTable.rows}
+      {/* 3. Hypothesis accordion — investigate mode (before separator) */}
+      {!isDirect && hypotheses.length > 0 && (
+        <HypothesisPanel
+          hypotheses={hypotheses}
+          queryHistory={queryHistory}
+          reportFindings={report.key_findings}
         />
       )}
 
-      {/* 4. KPI highlight — single-row scalar results */}
+      {/* 4. Chart — direct mode */}
+      {isDirect && !isQueryFailure && directTable?.columns && directTable?.rows && (
+        <InvestigationChart columns={directTable.columns} rows={directTable.rows} />
+      )}
+
+      {/* 5. KPI highlight — single-row scalar */}
       {isDirect && !isQueryFailure && directTable && <KPIHighlight table={directTable} />}
 
-      {/* 5. Query Results table */}
+      {/* 6. Query results table — direct mode */}
       {isDirect && !isQueryFailure && directTable && (
         <DirectResultTable table={directTable} />
       )}
 
       <Separator className="bg-zinc-800" />
 
-      {/* 6. Supportive Evidences — investigate mode only */}
-      {!isDirect && report.key_findings.length > 0 && (
-        <div className="space-y-3">
-          <h3 className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Supportive Evidences</h3>
-          <div className="space-y-2">
-            {report.key_findings.map((f, i) => {
-              const citations = queryHistory.filter(
-                q => q.hypothesis_id && f.hypothesis_id &&
-                     q.hypothesis_id.toUpperCase() === f.hypothesis_id.toUpperCase()
-              );
-              return <FindingRow key={i} index={i} finding={f} citations={citations} />;
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* 7. Data Quality Issues — collapsible, collapsed by default */}
+      {/* 7. Data Quality Issues */}
       {dqNotes.length > 0 && (
         <CollapsibleSection
           title={isQueryFailure ? "Execution Error" : "Data Quality Issues"}
@@ -164,12 +567,12 @@ export function ReportView({ report, queryCount, queryHistory = [], queryMode }:
         </CollapsibleSection>
       )}
 
-      {/* 8. Risks & Considerations — collapsible */}
+      {/* 8. Risks */}
       {report.risks.length > 0 && (
         <CollapsibleSection title="Risks & Considerations">
           <div className="space-y-2">
             {report.risks.map((risk, i) => (
-              <div key={i} className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3 flex items-start gap-3">
+              <div key={i} className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 flex items-start gap-3 border-l-2 border-l-amber-500/50">
                 <span className="shrink-0 mt-0.5 text-amber-400 text-xs">⚠</span>
                 <p className="text-sm text-zinc-300 leading-relaxed">{risk}</p>
               </div>
@@ -178,13 +581,13 @@ export function ReportView({ report, queryCount, queryHistory = [], queryMode }:
         </CollapsibleSection>
       )}
 
-      {/* 9. Recommended Actions — collapsible */}
+      {/* 9. Recommended Actions */}
       {report.recommended_actions.length > 0 && (
         <CollapsibleSection title="Recommended Actions">
           <div className="space-y-2">
             {report.recommended_actions.map((action, i) => (
-              <div key={i} className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3 flex items-start gap-3">
-                <span className="shrink-0 flex h-5 w-5 items-center justify-center rounded-full bg-zinc-800 text-xs font-mono text-zinc-400 mt-0.5">
+              <div key={i} className="rounded-lg border border-violet-500/20 bg-violet-500/5 p-3 flex items-start gap-3">
+                <span className="shrink-0 flex h-5 w-5 items-center justify-center rounded-full bg-violet-500/20 border border-violet-500/30 text-xs font-mono text-violet-300 mt-0.5">
                   {i + 1}
                 </span>
                 <p className="text-sm text-zinc-300 leading-relaxed">{action}</p>
@@ -194,7 +597,7 @@ export function ReportView({ report, queryCount, queryHistory = [], queryMode }:
         </CollapsibleSection>
       )}
 
-      {/* 10. Excluded Causes — collapsible */}
+      {/* 10. Excluded Causes */}
       {report.what_is_not_the_cause.length > 0 && (
         <CollapsibleSection title="Excluded Causes" titleClass="text-zinc-500">
           <ul className="space-y-1">
@@ -208,79 +611,18 @@ export function ReportView({ report, queryCount, queryHistory = [], queryMode }:
         </CollapsibleSection>
       )}
 
-      <p className="text-xs text-zinc-600 text-center">{queryCount} SQL queries executed</p>
+      <p className="text-xs text-zinc-700 text-center font-mono">
+        {queryCount} SQL quer{queryCount === 1 ? "y" : "ies"} executed
+      </p>
     </div>
   );
 }
 
-function FindingRow({
-  index,
-  finding,
-  citations,
-}: {
-  index: number;
-  finding: { claim: string; evidence: string; confidence: number; hypothesis_id: string | null };
-  citations: QueryCitation[];
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 overflow-hidden">
-      <div className="flex items-start gap-3 p-3">
-        <span className="shrink-0 mt-0.5 text-xs font-mono text-zinc-600 w-5 text-right">
-          {index + 1}
-        </span>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm text-zinc-300 leading-snug">{finding.claim}</p>
-          <p className="mt-0.5 text-sm text-zinc-500 leading-relaxed line-clamp-2">{finding.evidence}</p>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Badge
-            variant="outline"
-            className={
-              finding.confidence >= 0.7
-                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-                : "border-amber-500/30 bg-amber-500/10 text-amber-400"
-            }
-          >
-            {Math.round(finding.confidence * 100)}%
-          </Badge>
-          {citations.length > 0 && (
-            <button
-              onClick={() => setOpen(o => !o)}
-              className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-300 border border-zinc-700 rounded px-1.5 py-0.5 transition"
-              title="Show source queries"
-            >
-              <span className="font-mono">{finding.hypothesis_id}</span>
-              <span className="text-zinc-700">{open ? "▲" : "▼"}</span>
-            </button>
-          )}
-        </div>
-      </div>
-      {open && citations.length > 0 && (
-        <div className="border-t border-zinc-800 divide-y divide-zinc-800/60">
-          {citations.map((c, i) => (
-            <div key={i} className="px-4 py-2 space-y-1">
-              <pre className="text-xs text-zinc-400 bg-zinc-950 rounded p-2 overflow-x-auto whitespace-pre-wrap font-mono leading-relaxed">
-                {c.sql}
-              </pre>
-              <p className="text-xs text-zinc-600">
-                {c.error
-                  ? <span className="text-red-400">{c.error}</span>
-                  : <span>{c.row_count} row{c.row_count !== 1 ? "s" : ""}</span>
-                }
-              </p>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
+// ── Direct mode helpers ───────────────────────────────────────────────────────
 
 function KPIHighlight({ table }: { table: QueryCitation }) {
   const columns = table.columns ?? [];
   const rows = table.rows ?? [];
-
   if (rows.length !== 1 || columns.length === 0) return null;
 
   const row = rows[0] as unknown[];
@@ -322,7 +664,6 @@ function DirectResultTable({ table }: { table: QueryCitation }) {
         <h3 className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Query Results</h3>
         <span className="text-xs text-zinc-600 font-mono">
           {table.row_count} row{table.row_count !== 1 ? "s" : ""}
-          {rows.length > VISIBLE_ROWS ? ` · scroll to see all` : ""}
         </span>
       </div>
       <div className="rounded-lg border border-zinc-800 overflow-hidden">

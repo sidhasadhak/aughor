@@ -127,10 +127,9 @@ export function ThinkingTrace({ state }: Props) {
 
   return (
     <div className="px-4 py-3 space-y-0.5">
-      <p className="text-xs text-zinc-600 uppercase tracking-wide mb-3">Progress</p>
+      <p className="text-xs text-violet-400/60 uppercase tracking-wide mb-3 font-mono">Progress</p>
       <div className="relative">
-        {/* Vertical connecting line */}
-        <div className="absolute left-[4px] top-3 bottom-3 w-px bg-zinc-800" />
+        <div className="absolute left-[4px] top-3 bottom-3 w-px bg-violet-500/20" />
 
         <div className="space-y-3">
           {steps.map(step => (
@@ -139,7 +138,7 @@ export function ThinkingTrace({ state }: Props) {
               <div className="min-w-0">
                 <p className={`text-xs leading-snug ${
                   step.status === "pending" ? "text-zinc-600" :
-                  step.status === "running" ? "text-amber-300" :
+                  step.status === "running" ? "text-amber-300 bg-amber-500/10 rounded px-1 -mx-1" :
                   "text-zinc-300"
                 }`}>
                   {step.label}

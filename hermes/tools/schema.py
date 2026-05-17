@@ -200,9 +200,10 @@ def build_rich_schema(schema_str: str) -> dict:
         m = re.match(r"^TABLE:\s+(\w+)\s*\(?([\d,?]+)?\s*rows?\)?", line)
         if m:
             current = m.group(1)
-            table_col_types[current] = []
-            if m.group(2):
-                table_row_counts[current] = m.group(2).replace(",", "")
+            if current not in table_col_types:
+                table_col_types[current] = []
+                if m.group(2):
+                    table_row_counts[current] = m.group(2).replace(",", "")
         elif current:
             col_m = re.match(r"^\s{2}(\w+)\s+(\S+)", line)
             if col_m and not line.strip().startswith("--"):

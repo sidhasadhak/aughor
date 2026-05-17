@@ -1,9 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { HypothesisCard } from "@/components/HypothesisCard";
 import { ReportView } from "@/components/ReportView";
 import type { Hypothesis, QueryCitation, Report } from "@/lib/types";
 
@@ -77,7 +75,7 @@ export function HistoryDetailPanel({ invId }: Props) {
   const queryMode = isDirect ? "direct" : "investigate";
 
   return (
-    <ScrollArea className="flex-1">
+    <div className="flex-1 overflow-y-auto min-h-0">
       <div className="p-6 space-y-8 max-w-3xl mx-auto">
         {/* Question */}
         <div>
@@ -93,18 +91,6 @@ export function HistoryDetailPanel({ invId }: Props) {
           <p className="mt-1 text-xs text-zinc-600 font-mono">{inv.connection_id}</p>
         </div>
 
-        {/* Hypotheses — hidden for direct mode */}
-        {!isDirect && hypotheses.length > 0 && (
-          <div className="space-y-3">
-            <p className="text-xs text-zinc-600 uppercase tracking-wide">
-              Hypotheses — {hypotheses.filter(h => h.verdict !== "untested").length} of {hypotheses.length} tested
-            </p>
-            {hypotheses.map((h, i) => (
-              <HypothesisCard key={h.id} hypothesis={h} index={i} />
-            ))}
-          </div>
-        )}
-
         {/* Report */}
         {inv.report && (
           <div className="space-y-3">
@@ -117,6 +103,7 @@ export function HistoryDetailPanel({ invId }: Props) {
               queryCount={queryHistory.length}
               queryHistory={queryHistory}
               queryMode={queryMode}
+              hypotheses={hypotheses}
             />
           </div>
         )}
@@ -127,6 +114,6 @@ export function HistoryDetailPanel({ invId }: Props) {
           </div>
         )}
       </div>
-    </ScrollArea>
+    </div>
   );
 }
