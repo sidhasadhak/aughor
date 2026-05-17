@@ -33,8 +33,8 @@ def _parse_schema_tables(schema_str: str) -> dict[str, list[str]]:
         if m:
             current = m.group(1)
             table_cols[current] = []
-        elif current and re.match(r"^\s{2}(\w+)\s+\S", line):
-            col_m = re.match(r"^\s{2}(\w+)", line)
+        elif current:
+            col_m = re.match(r"^\s{2}(.+?)\s{2,}(\S+)", line)
             if col_m and not line.strip().startswith("--"):
                 table_cols[current].append(col_m.group(1))
     return table_cols
@@ -139,7 +139,7 @@ def build_mermaid_er(schema_str: str) -> str:
             current = m.group(1)
             table_col_types[current] = []
         elif current:
-            col_m = re.match(r"^\s{2}(\w+)\s+(\S+)", line)
+            col_m = re.match(r"^\s{2}(.+?)\s{2,}(\S+)", line)
             if col_m and not line.strip().startswith("--"):
                 table_col_types[current].append((col_m.group(1), col_m.group(2)))
 
@@ -205,7 +205,7 @@ def build_rich_schema(schema_str: str) -> dict:
                 if m.group(2):
                     table_row_counts[current] = m.group(2).replace(",", "")
         elif current:
-            col_m = re.match(r"^\s{2}(\w+)\s+(\S+)", line)
+            col_m = re.match(r"^\s{2}(.+?)\s{2,}(\S+)", line)
             if col_m and not line.strip().startswith("--"):
                 table_col_types[current].append((col_m.group(1), col_m.group(2)))
 
