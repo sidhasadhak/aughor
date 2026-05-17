@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/table";
 import type { DataQualityNote, Finding, Hypothesis, QueryCitation, Report, StatResult, Verdict } from "@/lib/types";
 import { InvestigationChart } from "@/components/InvestigationChart";
+import { SHARE_COL_PATTERN, buildColumnFormatter } from "@/lib/formatCell";
 
 interface Props {
   report: Report;
@@ -20,19 +21,6 @@ interface Props {
   queryHistory?: QueryCitation[];
   queryMode?: "direct" | "investigate" | null;
   hypotheses?: Hypothesis[];
-}
-
-const SHARE_COL_PATTERN = /share|pct|percent|rate|ratio|proportion/i;
-const ORDINAL_COL_PATTERN = /year|month|day|week|rank|_id$|^id$/i;
-
-function formatCell(col: string, val: unknown): string {
-  if (val === null || val === undefined) return "";
-  const n = Number(val);
-  if (isNaN(n)) return String(val);
-  if (SHARE_COL_PATTERN.test(col) && n >= 0 && n <= 1) return `${(n * 100).toFixed(2)}%`;
-  if (n % 1 !== 0) return n.toFixed(2);
-  if (ORDINAL_COL_PATTERN.test(col)) return String(n);
-  return n.toLocaleString();
 }
 
 // ── Palette definitions ──────────────────────────────────────────────────────
@@ -114,6 +102,7 @@ function StatCallout({ stat }: { stat: StatResult }) {
 function QueryMiniTable({ columns, rows }: { columns: string[]; rows: unknown[][] }) {
   const MAX_ROWS = 15;
   const visible = rows.slice(0, MAX_ROWS);
+  const fmt = buildColumnFormatter(columns, rows);
   return (
     <div className="rounded border border-violet-500/20 overflow-hidden">
       <div className="overflow-x-auto overflow-y-auto max-h-[280px]">
@@ -134,7 +123,7 @@ function QueryMiniTable({ columns, rows }: { columns: string[]; rows: unknown[][
                   <td key={ci} className="px-3 py-1.5 text-zinc-300 font-mono whitespace-nowrap">
                     {cell === null || cell === undefined
                       ? <span className="text-zinc-600 italic">null</span>
-                      : formatCell(columns[ci], cell)
+                      : fmt(ci, cell)
                     }
                   </td>
                 ))}
@@ -656,6 +645,7 @@ function KPIHighlight({ table }: { table: QueryCitation }) {
 function DirectResultTable({ table }: { table: QueryCitation }) {
   const columns = table.columns ?? [];
   const rows = table.rows ?? [];
+  const fmt = buildColumnFormatter(columns, rows as unknown[][]);
   const VISIBLE_ROWS = 20;
 
   return (
@@ -686,7 +676,7 @@ function DirectResultTable({ table }: { table: QueryCitation }) {
                       {cell === null || cell === undefined ? (
                         <span className="text-zinc-600 italic">null</span>
                       ) : (
-                        formatCell(columns[ci], cell)
+                        fmt(ci, cell)
                       )}
                     </TableCell>
                   ))}
