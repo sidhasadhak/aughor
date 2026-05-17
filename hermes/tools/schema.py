@@ -24,11 +24,18 @@ def _col_root(col: str) -> str:
     return col
 
 
+_SECTION_STOP = re.compile(
+    r"^(DETECTED JOIN|NO DIRECT JOIN|METRICS CATALOG|Date range|GLOSSARY|JOIN HINTS|RELEVANT|--)"
+)
+
 def _parse_schema_tables(schema_str: str) -> dict[str, list[str]]:
     """Parse TABLE: blocks from a schema string → {table: [col_name, ...]}."""
     table_cols: dict[str, list[str]] = {}
     current: str | None = None
     for line in schema_str.splitlines():
+        if _SECTION_STOP.match(line):
+            current = None
+            continue
         m = re.match(r"^TABLE:\s+(\w+)", line)
         if m:
             current = m.group(1)
@@ -134,6 +141,9 @@ def build_mermaid_er(schema_str: str) -> str:
     table_col_types: dict[str, list[tuple[str, str]]] = {}
     current: str | None = None
     for line in schema_str.splitlines():
+        if _SECTION_STOP.match(line):
+            current = None
+            continue
         m = re.match(r"^TABLE:\s+(\w+)", line)
         if m:
             current = m.group(1)
@@ -190,8 +200,6 @@ def build_rich_schema(schema_str: str) -> dict:
     table_col_types: dict[str, list[tuple[str, str]]] = {}
     table_row_counts: dict[str, str] = {}
     current: str | None = None
-
-    _SECTION_STOP = re.compile(r"^(DETECTED JOIN|NO DIRECT JOIN|METRICS CATALOG|Date range|GLOSSARY|JOIN HINTS)")
 
     for line in schema_str.splitlines():
         if _SECTION_STOP.match(line):
