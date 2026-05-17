@@ -393,6 +393,28 @@ def synthesize_report(state: AgentState) -> dict[str, Any]:
         ) + tensions_section,
         response_model=AnalysisReport,
     )
+    # ── Post-synthesis numeric verifier ──────────────────────────────────────
+    try:
+        from hermes.agent.verify import verify_numeric_claims
+        unverified = verify_numeric_claims(report, state.get("query_history", []))
+        if unverified:
+            note = DataQualityNote(
+                table="Report Narrative",
+                column=None,
+                issue=(
+                    f"The following numbers in the report could not be verified against "
+                    f"executed queries or stats: {', '.join(unverified)}. "
+                    f"Treat these claims with caution."
+                ),
+                impact="Numeric claims without traceable sources reduce report reliability.",
+                recommended_fix="Re-run the investigation or verify the numbers manually against the raw data.",
+            )
+            report = AnalysisReport(
+                **{**report.model_dump(), "data_quality_notes": list(report.data_quality_notes) + [note]}
+            )
+    except Exception:
+        pass  # verifier is best-effort — never block the report
+
     return {"report": report, "unresolved_tensions": unresolved_tensions}
 
 

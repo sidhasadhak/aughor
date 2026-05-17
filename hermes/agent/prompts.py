@@ -192,6 +192,15 @@ FULL EVIDENCE LOG:
 {evidence_log}
 
 {pitfall_section}{human_feedback_section}
+CRITICAL — NUMERIC TRACEABILITY:
+Every numeric value you write (percentage, dollar amount, row count, ratio, threshold) must trace
+to a specific row, aggregate, or stat in the query results above. Before writing any number, ask:
+"Can the reader find this number in the evidence log shown here?" If the answer is no, do not write
+the number. Use qualitative language ("a substantial share", "most items", "a small minority")
+rather than fabricating precision. Numbers without traceable sources are the single worst failure
+mode of this system. If a hypothesis claimed a number that no query measured, do not repeat the
+number; instead state that the claim was not measured.
+
 Write a clear, honest report. Lead with the most important finding.
 - The headline should be a single sentence a CFO could read in 5 seconds
 - The verdict should explain what happened, why, and which segments are affected
