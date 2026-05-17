@@ -118,6 +118,18 @@ Rules:
 - Prefer queries that produce small, interpretable result sets (< 50 rows)
 - Do not re-run queries that are already in the investigation context
 - If a past investigation already answered this hypothesis conclusively, note it and skip redundant queries
+
+THRESHOLD CLAIM RULE — mandatory when you observe a sign-flip or critical transition across bands:
+If any previous query in this investigation shows a metric changing sign (positive→negative or
+vice versa) or crossing a meaningful threshold across coarse buckets (e.g. <5%, 10-15%, 15-20%,
+≥20%), you MUST plan a follow-up query at finer granularity within the transition zone before
+any hypothesis can be confirmed about the threshold location.
+- Coarse bands do not justify a precise threshold claim. They only support "the transition is
+  somewhere between X and Y".
+- A follow-up query using 1-2 percentage-point increments (or equivalent fine buckets) within
+  the transition zone is required before stating a precise cliff or optimal point.
+- If you do not run the fine-grained follow-up, the hypothesis verdict must remain inconclusive
+  on the specific threshold, even if the directional finding is clear.
 """
 
 FIX_SQL_PROMPT = """\
