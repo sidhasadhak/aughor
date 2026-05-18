@@ -265,7 +265,24 @@ def plan_and_execute(state: AgentState, conn: "DatabaseConnection") -> dict[str,
     results: list[QueryResult] = []
     new_pitfalls: list[Pitfall] = []
 
-    for sql in plan.queries:
+    # Guard: planner must return at least one query. If the model slips through
+    # the Pydantic min_length=1 constraint (e.g. via a provider that strips
+    # validation), inject a single-row diagnostic so score_evidence always has
+    # evidence to work with and never silently produces a no-query hypothesis.
+    queries = [q for q in plan.queries if q and q.strip()]
+    if not queries:
+        # Build the least-assumption diagnostic: count rows for the first table
+        # visible in the schema. This can never refute a hypothesis but it forces
+        # the evidence pipeline to run and flags the gap in the scored output.
+        import re as _re
+        _tm = _re.search(r"^TABLE:\s+(\w+)", state["schema_context"], _re.MULTILINE)
+        fallback_table = _tm.group(1) if _tm else "unknown"
+        queries = [
+            f'SELECT COUNT(*) AS row_count, \'{h.id} — planner returned no queries; '
+            f'this is a diagnostic fallback\' AS _note FROM "{fallback_table}"'
+        ]
+
+    for sql in queries:
         # ── Pre-flight: detect unqualified columns that exist in 2+ tables ──
         from hermes.tools.ambiguity import detect_ambiguous_columns
         ambiguity_warnings = detect_ambiguous_columns(sql, state["schema_context"])
@@ -505,6 +522,22 @@ def synthesize_report(state: AgentState) -> dict[str, Any]:
         ) + tensions_section,
         response_model=AnalysisReport,
     )
+    # ── Override narrator confidence with score_evidence values (deterministic) ─
+    # The narrator cannot be trusted to honour evidence-depth ceilings when it
+    # writes key findings. Overwrite Finding.confidence with the authoritative
+    # score already computed by score_evidence for the same hypothesis.
+    scored_conf = {h.id: h.confidence for h in hypotheses}
+    if scored_conf:
+        corrected_findings = []
+        for f in report.key_findings:
+            if f.hypothesis_id and f.hypothesis_id in scored_conf:
+                corrected_findings.append(
+                    Finding(**{**f.model_dump(), "confidence": scored_conf[f.hypothesis_id]})
+                )
+            else:
+                corrected_findings.append(f)
+        report = AnalysisReport(**{**report.model_dump(), "key_findings": corrected_findings})
+
     # ── Post-synthesis numeric verifier ──────────────────────────────────────
     try:
         from hermes.agent.verify import verify_numeric_claims

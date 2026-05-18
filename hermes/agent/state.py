@@ -35,7 +35,8 @@ class DecomposeOutput(BaseModel):
 class QueryPlan(BaseModel):
     hypothesis_id: str
     queries: list[str] = Field(
-        description="1-3 SQL SELECT queries that together confirm or refute this hypothesis. Use only tables and columns from the provided schema."
+        min_length=1,
+        description="1-3 SQL SELECT queries that together confirm or refute this hypothesis. Use only tables and columns from the provided schema. You MUST supply at least one query — an empty list is never valid.",
     )
     reasoning: str = Field(
         description="Why these specific queries test this hypothesis"

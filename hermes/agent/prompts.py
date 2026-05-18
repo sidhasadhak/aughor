@@ -220,11 +220,18 @@ FULL EVIDENCE LOG:
 
 {pitfall_section}{human_feedback_section}
 CRITICAL — EVIDENCE ATTRIBUTION:
-The evidence log below is partitioned by hypothesis. Each section is labelled with a hypothesis ID.
+The evidence log is partitioned by hypothesis. Each section is labelled with a hypothesis ID.
 Key findings attributed to a hypothesis MUST be grounded ONLY in that hypothesis's own evidence section.
 You may NOT use evidence from H3's section to write H1's key finding.
-If a hypothesis section says "No queries were executed", its key finding must state "could not be tested" — do not infer or borrow findings from other hypotheses' data.
-This is the single most important rule: cross-hypothesis attribution is fabrication.
+
+HARD RULE — NO-QUERY HYPOTHESES:
+If a hypothesis evidence section says "No queries were executed", you MUST:
+  1. NOT include that hypothesis as a key finding in the report.
+  2. NOT write "H{n} evidence: ..." text for it anywhere in the report.
+  3. NOT assign it a confidence above 0.0 — write only "could not be tested".
+  4. Mention it only in what_is_not_the_cause if it was the absence of evidence that rules it out,
+     OR omit it entirely.
+Writing "H1 evidence: <number>" when H1's evidence section is empty is fabrication. Do not do it.
 
 CRITICAL — NUMERIC TRACEABILITY:
 Every numeric value you write (percentage, dollar amount, row count, ratio, threshold) must trace
