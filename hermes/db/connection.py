@@ -171,9 +171,16 @@ class DatabaseConnection(ABC):
 class DuckDBConnection(DatabaseConnection):
     dialect = "duckdb"
 
-    def __init__(self, path: str | Path):
+    def __init__(self, path: str | Path, schema_name: str | None = None):
         self._path = Path(path)
         self._conn = duckdb.connect(str(self._path), read_only=True)
+        if schema_name:
+            # Point the execution context at the requested schema so queries
+            # land in the right namespace without requiring fully-qualified names.
+            try:
+                self._conn.execute(f"SET search_path = '{schema_name}'")
+            except Exception:
+                pass  # best-effort — don't fail the connection over schema routing
 
     def execute(self, hypothesis_id: str, sql: str) -> QueryResult:
         sql = sql.strip().rstrip(";")
@@ -219,8 +226,9 @@ class DuckDBConnection(DatabaseConnection):
 class PostgresConnection(DatabaseConnection):
     dialect = "postgres"
 
-    def __init__(self, dsn: str):
+    def __init__(self, dsn: str, schema_name: str | None = None):
         self._dsn = dsn
+        self._schema_name = schema_name or "public"
         self._conn = None
         # Populated by get_schema() — used by proactive dialect transforms
         self._varchar_ts_cols: list[tuple[str, str]] = []
@@ -230,6 +238,10 @@ class PostgresConnection(DatabaseConnection):
         import psycopg2
         self._conn = psycopg2.connect(self._dsn)
         self._conn.autocommit = True
+        # Set search_path so unqualified table names resolve to the right schema
+        if self._schema_name != "public":
+            with self._conn.cursor() as cur:
+                cur.execute(f"SET search_path = {self._schema_name}")
 
     def _apply_dialect_fixes(self, sql: str) -> str:
         """
@@ -281,15 +293,15 @@ class PostgresConnection(DatabaseConnection):
                 cur.execute("""
                     SELECT table_name, column_name, data_type
                     FROM information_schema.columns
-                    WHERE table_schema = 'public'
+                    WHERE table_schema = %s
                     ORDER BY table_name, ordinal_position
-                """)
+                """, (self._schema_name,))
                 rows = cur.fetchall()
         except Exception as e:
             return f"Schema unavailable: {e}"
 
         if not rows:
-            return "No tables found in public schema."
+            return f"No tables found in schema '{self._schema_name}'."
 
         parts: list[str] = []
         current_table = None
@@ -398,10 +410,18 @@ class PostgresConnection(DatabaseConnection):
 
 # ── Factory ───────────────────────────────────────────────────────────────────
 
-def open_connection(conn_type: str, dsn: str) -> DatabaseConnection:
+def open_connection(conn_type: str, dsn: str, schema_name: str | None = None) -> DatabaseConnection:
     if conn_type == "duckdb":
-        return DuckDBConnection(dsn)
+        return DuckDBConnection(dsn, schema_name=schema_name)
     elif conn_type == "postgres":
-        return PostgresConnection(dsn)
+        return PostgresConnection(dsn, schema_name=schema_name)
     else:
         raise ValueError(f"Unsupported connection type: {conn_type!r}. Supported: duckdb, postgres")
+
+
+def open_connection_for(conn_id: str) -> DatabaseConnection:
+    """Open a registered connection with all stored metadata applied (schema_name etc.)."""
+    from hermes.db.registry import get_dsn, get_meta
+    conn_type, dsn = get_dsn(conn_id)
+    meta = get_meta(conn_id)
+    return open_connection(conn_type, dsn, schema_name=meta.get("schema_name"))

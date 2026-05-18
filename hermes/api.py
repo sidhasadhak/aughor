@@ -20,7 +20,7 @@ from pydantic import BaseModel
 
 from hermes.agent.graph import build_graph
 from hermes.agent.state import AgentState
-from hermes.db.connection import open_connection
+from hermes.db.connection import open_connection, open_connection_for
 from hermes.db.history import (
     complete_investigation,
     create_investigation,
@@ -64,8 +64,9 @@ class FeedbackRequest(BaseModel):
 
 class AddConnectionRequest(BaseModel):
     name: str
-    conn_type: str       # "duckdb" | "postgres"
-    dsn: str             # e.g. "postgresql://user:pass@host:5432/db" or path to .duckdb
+    conn_type: str            # "duckdb" | "postgres"
+    dsn: str                  # e.g. "postgresql://user:pass@host:5432/db" or path to .duckdb
+    schema_name: Optional[str] = None  # restrict introspection + queries to this schema
 
 
 # ── SSE helpers ───────────────────────────────────────────────────────────────
@@ -127,12 +128,10 @@ async def _stream_chat(
     request: Request,
 ) -> AsyncGenerator[str, None]:
     try:
-        conn_type, dsn = get_dsn(connection_id)
+        db = open_connection_for(connection_id)
     except KeyError as e:
         yield _sse("error", {"message": str(e)})
         return
-    try:
-        db = open_connection(conn_type, dsn)
     except Exception as e:
         yield _sse("error", {"message": f"Could not connect: {e}"})
         return
@@ -241,13 +240,10 @@ async def chat_endpoint(req: ChatRequest, request: Request):
 async def _stream_investigation(question: str, connection_id: str, request: Request, hitl: bool = False) -> AsyncGenerator[str, None]:
     _TIMEOUT = int(os.getenv("HERMES_TIMEOUT_SECONDS", "600"))
     try:
-        conn_type, dsn = get_dsn(connection_id)
+        db = open_connection_for(connection_id)
     except KeyError as e:
         yield _sse("error", {"message": str(e)})
         return
-
-    try:
-        db = open_connection(conn_type, dsn)
     except Exception as e:
         yield _sse("error", {"message": f"Could not connect: {e}"})
         return
@@ -451,14 +447,11 @@ async def _stream_resume(inv_id: str, feedback: str, request: Request) -> AsyncG
         return
 
     try:
-        conn_type, dsn = get_dsn(inv["connection_id"])
+        db = open_connection_for(inv["connection_id"])
     except KeyError as e:
         yield _sse("error", {"message": str(e)})
         yield _sse("done", {})
         return
-
-    try:
-        db = open_connection(conn_type, dsn)
     except Exception as e:
         yield _sse("error", {"message": f"Could not reconnect: {e}"})
         yield _sse("done", {})
@@ -553,9 +546,9 @@ def get_connections():
 
 @app.post("/connections", status_code=201)
 def create_connection(req: AddConnectionRequest):
-    # Validate the connection before saving
+    # Validate the connection before saving (with schema filter applied)
     try:
-        db = open_connection(req.conn_type, req.dsn)
+        db = open_connection(req.conn_type, req.dsn, schema_name=req.schema_name)
         ok, msg = db.test()
         db.close()
     except Exception as e:
@@ -564,21 +557,20 @@ def create_connection(req: AddConnectionRequest):
     if not ok:
         raise HTTPException(status_code=400, detail=f"Connection test failed: {msg}")
 
-    conn_id = add_connection(name=req.name, conn_type=req.conn_type, dsn=req.dsn)
+    meta = {"schema_name": req.schema_name} if req.schema_name else {}
+    conn_id = add_connection(name=req.name, conn_type=req.conn_type, dsn=req.dsn, meta=meta)
     return {"id": conn_id, "message": "Connection added", "test_result": msg}
 
 
 @app.post("/connections/{conn_id}/test")
 def test_connection(conn_id: str):
     try:
-        conn_type, dsn = get_dsn(conn_id)
-    except KeyError:
-        raise HTTPException(status_code=404, detail="Connection not found")
-    try:
-        db = open_connection(conn_type, dsn)
+        db = open_connection_for(conn_id)
         ok, msg = db.test()
         db.close()
         return {"ok": ok, "message": msg}
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
     except Exception as e:
         return {"ok": False, "message": str(e)}
 
@@ -586,11 +578,10 @@ def test_connection(conn_id: str):
 @app.get("/connections/{conn_id}/schema")
 def connection_schema(conn_id: str):
     try:
-        conn_type, dsn = get_dsn(conn_id)
+        db = open_connection_for(conn_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Connection not found")
     try:
-        db = open_connection(conn_type, dsn)
         schema = db.get_schema()
         db.close()
         return {"schema": schema}
@@ -601,12 +592,11 @@ def connection_schema(conn_id: str):
 @app.get("/connections/{conn_id}/schema/rich")
 def connection_schema_rich(conn_id: str):
     try:
-        conn_type, dsn = get_dsn(conn_id)
+        db = open_connection_for(conn_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Connection not found")
     try:
         from hermes.tools.schema import build_rich_schema
-        db = open_connection(conn_type, dsn)
         schema = db.get_schema()
         db.close()
         return build_rich_schema(schema)
@@ -617,12 +607,11 @@ def connection_schema_rich(conn_id: str):
 @app.get("/connections/{conn_id}/schema/mermaid")
 def connection_schema_mermaid(conn_id: str):
     try:
-        conn_type, dsn = get_dsn(conn_id)
+        db = open_connection_for(conn_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Connection not found")
     try:
         from hermes.tools.schema import build_mermaid_er
-        db = open_connection(conn_type, dsn)
         schema = db.get_schema()
         db.close()
         return {"diagram": build_mermaid_er(schema)}

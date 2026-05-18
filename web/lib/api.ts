@@ -5,6 +5,7 @@ export interface Connection {
   name: string;
   conn_type: string;
   dsn_preview: string;
+  schema_name: string | null;
   builtin: boolean;
 }
 
@@ -22,12 +23,13 @@ export async function getConnections(): Promise<Connection[]> {
 export async function addConnection(
   name: string,
   conn_type: string,
-  dsn: string
+  dsn: string,
+  schema_name?: string,
 ): Promise<{ id: string; message: string; test_result: string }> {
   const res = await fetch(`${BASE}/connections`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, conn_type, dsn }),
+    body: JSON.stringify({ name, conn_type, dsn, schema_name: schema_name || null }),
   });
   if (!res.ok) {
     const err = await res.json();

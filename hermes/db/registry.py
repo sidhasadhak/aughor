@@ -97,12 +97,14 @@ def list_connections() -> list[dict]:
 
     with _db() as conn:
         for row in conn.execute("SELECT id, name, conn_type, meta FROM connections ORDER BY rowid"):
+            meta = json.loads(row["meta"] or "{}")
             rows.append({
                 "id": row["id"],
                 "name": row["name"],
                 "conn_type": row["conn_type"],
                 "dsn_preview": _dsn_preview(row["conn_type"]),
-                "meta": json.loads(row["meta"] or "{}"),
+                "schema_name": meta.get("schema_name") or None,
+                "meta": meta,
                 "builtin": False,
             })
     return rows
@@ -117,6 +119,19 @@ def add_connection(name: str, conn_type: str, dsn: str, meta: dict | None = None
         )
         conn.commit()
     return conn_id
+
+
+def get_meta(conn_id: str) -> dict:
+    """Return the metadata dict stored for a connection (e.g. schema_name)."""
+    if conn_id in (BUILTIN_ID, POSTGRES_BUILTIN_ID):
+        return {}
+    with _db() as conn:
+        row = conn.execute(
+            "SELECT meta FROM connections WHERE id = ?", [conn_id]
+        ).fetchone()
+    if not row:
+        return {}
+    return json.loads(row["meta"] or "{}")
 
 
 def get_dsn(conn_id: str) -> tuple[str, str]:
