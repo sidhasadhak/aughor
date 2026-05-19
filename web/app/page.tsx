@@ -9,6 +9,7 @@ import { SchemaPanel } from "@/components/SchemaPanel";
 import { FeedbackPrompt } from "@/components/FeedbackPrompt";
 import { HypothesisCard } from "@/components/HypothesisCard";
 import { ReportView } from "@/components/ReportView";
+import { ExplorationReportView } from "@/components/ExplorationReport";
 import { ThinkingTrace } from "@/components/ThinkingTrace";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -60,7 +61,7 @@ export default function Home() {
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-400" />
               </span>
-              {state.queryMode === "direct" ? "Fetching data…" : "Investigating…"}
+              {state.queryMode === "direct" ? "Fetching data…" : state.queryMode === "explore" ? "Exploring…" : "Investigating…"}
             </div>
           )}
           {state.status === "paused" && (
@@ -212,7 +213,7 @@ export default function Home() {
                     className="flex-1 rounded-lg bg-zinc-100 text-zinc-900 text-sm font-medium py-2 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition"
                   >
                     {state.status === "running"
-                      ? (state.queryMode === "direct" ? "Fetching…" : "Investigating…")
+                      ? (state.queryMode === "direct" ? "Fetching…" : state.queryMode === "explore" ? "Exploring…" : "Investigating…")
                       : "Ask →"
                     }
                   </button>
@@ -271,7 +272,13 @@ export default function Home() {
                         <p className="text-xl font-mono font-semibold text-zinc-200">{state.queriesExecuted}</p>
                         <p className="text-xs text-zinc-600 mt-0.5">SQL queries</p>
                       </div>
-                      {state.queryMode !== "direct" && (
+                      {state.queryMode === "explore" && (
+                        <div className="rounded-md bg-zinc-900 p-3 text-center">
+                          <p className="text-xl font-mono font-semibold text-zinc-200">{state.subQuestions.length}</p>
+                          <p className="text-xs text-zinc-600 mt-0.5">Sub-questions</p>
+                        </div>
+                      )}
+                      {state.queryMode !== "direct" && state.queryMode !== "explore" && (
                         <div className="rounded-md bg-zinc-900 p-3 text-center">
                           <p className="text-xl font-mono font-semibold text-zinc-200">{state.hypotheses.length}</p>
                           <p className="text-xs text-zinc-600 mt-0.5">Hypotheses</p>
@@ -295,6 +302,14 @@ export default function Home() {
                             Direct Query
                           </span>
                           <span className="text-xs text-zinc-600">Fetching data directly</span>
+                        </div>
+                      )}
+                      {state.queryMode === "explore" && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-teal-400 border border-teal-500/30 bg-teal-500/10 rounded px-2 py-0.5 font-medium">
+                            Exploration
+                          </span>
+                          <span className="text-xs text-zinc-600">Building an investigative chain</span>
                         </div>
                       )}
 
@@ -338,6 +353,21 @@ export default function Home() {
                         </div>
                       )}
 
+                      {/* Explore report */}
+                      {state.queryMode === "explore" && state.exploreReport && (
+                        <div className="space-y-4">
+                          <Separator className="bg-zinc-800" />
+                          <p className="text-xs text-zinc-600 uppercase tracking-wide">Exploration Report</p>
+                          <ExplorationReportView
+                            report={state.exploreReport}
+                            subQuestions={state.subQuestions}
+                            subqAnswers={state.subqAnswers}
+                            queryCount={state.queriesExecuted}
+                          />
+                        </div>
+                      )}
+
+                      {/* Investigation / direct report */}
                       {state.report && (
                         <div className="space-y-4">
                           <Separator className="bg-zinc-800" />

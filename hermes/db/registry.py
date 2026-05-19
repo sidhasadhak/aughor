@@ -158,6 +158,12 @@ def delete_connection(conn_id: str) -> None:
     with _db() as conn:
         conn.execute("DELETE FROM connections WHERE id = ?", [conn_id])
         conn.commit()
+    # Evict any cached profiles for this connection
+    try:
+        from hermes.tools.profile_cache import invalidate
+        invalidate(conn_id)
+    except Exception:
+        pass
 
 
 def _dsn_preview(conn_type: str) -> str:

@@ -21,6 +21,9 @@ const initial: InvestigationState = {
   queryMode: null,
   routeReasoning: null,
   routeConfidence: null,
+  subQuestions: [],
+  subqAnswers: [],
+  exploreReport: null,
 };
 
 type HistoricalInvestigation = {
@@ -80,7 +83,11 @@ function reducer(state: InvestigationState, action: Action): InvestigationState 
         queryMode: event.query_mode,
         routeReasoning: event.route_reasoning ?? null,
         routeConfidence: event.route_confidence ?? null,
-        log: [...state.log, event.query_mode === "direct" ? "Direct query — fetching data…" : "Investigating — decomposing into hypotheses…"],
+        log: [...state.log,
+          event.query_mode === "direct" ? "Direct query — fetching data…" :
+          event.query_mode === "explore" ? "Exploration mode — designing investigative chain…" :
+          "Investigating — decomposing into hypotheses…"
+        ],
       };
 
     case "hypotheses":
@@ -149,6 +156,52 @@ function reducer(state: InvestigationState, action: Action): InvestigationState 
         cachedQuestion: event.cached_question ?? null,
         queryMode: event.query_mode ?? state.queryMode,
         log: [...state.log, event.from_cache ? "Matched prior investigation — returning cached result" : "Investigation complete"],
+      };
+
+    case "explore_plan":
+      return {
+        ...state,
+        subQuestions: event.sub_questions,
+        log: [...state.log, `Exploration plan: ${event.sub_questions.length} sub-questions`],
+      };
+
+    case "subq_answer": {
+      const updatedSubqs = state.subQuestions.map(sq =>
+        sq.id === event.subq_id ? { ...sq, done: true, answer: event.answer } : sq
+      );
+      const newAnswer = {
+        subq_id: event.subq_id,
+        question: event.question,
+        purpose: event.purpose,
+        sql: event.sql,
+        columns: event.columns,
+        rows: event.rows,
+        row_count: event.row_count,
+        error: event.error,
+        answer: event.answer,
+        insight: event.insight,
+        refinement: event.refinement,
+      };
+      return {
+        ...state,
+        subQuestions: updatedSubqs,
+        subqAnswers: [...state.subqAnswers, newAnswer],
+        queriesExecuted: state.queriesExecuted + 1,
+        log: [...state.log, `${event.subq_id}: ${event.answer.slice(0, 80)}${event.answer.length > 80 ? "…" : ""}`],
+      };
+    }
+
+    case "explore_report":
+      return {
+        ...state,
+        status: "done",
+        exploreReport: event.explore_report,
+        subQuestions: event.sub_questions,
+        subqAnswers: event.subq_answers,
+        queriesExecuted: event.query_count,
+        investigationId: event.investigation_id,
+        queryMode: "explore",
+        log: [...state.log, "Exploration complete"],
       };
 
     case "error":

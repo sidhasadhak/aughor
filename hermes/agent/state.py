@@ -13,12 +13,12 @@ class Hypothesis(BaseModel):
     id: str
     description: str
     confidence: float = 0.0
-    verdict: Literal["confirmed", "refuted", "inconclusive", "untested"] = "untested"
+    verdict: Literal["confirmed", "refuted", "inconclusive", "untested", "skipped"] = "untested"
     key_finding: str = ""
 
 
 class RouteDecision(BaseModel):
-    mode: Literal["direct", "investigate"]
+    mode: Literal["direct", "investigate", "explore"]
     confidence: float = Field(ge=0.0, le=1.0, description="Classification confidence (0–1)")
     reasoning: str = Field(description="One sentence explaining the classification")
 
@@ -34,6 +34,14 @@ class DecomposeOutput(BaseModel):
 
 class QueryPlan(BaseModel):
     hypothesis_id: str
+    expected_if_true: str = Field(
+        default="",
+        description="Concrete prediction: what pattern/numbers would you expect to see in the query results IF this hypothesis is correct? Be specific (e.g. 'APAC revenue share > 40% and declining month-over-month').",
+    )
+    expected_if_false: str = Field(
+        default="",
+        description="Concrete prediction: what pattern/numbers would you expect to see in the query results IF this hypothesis is WRONG? Be specific (e.g. 'Revenue decline is uniform across all regions, not concentrated in APAC').",
+    )
     queries: list[str] = Field(
         min_length=1,
         description="1-3 SQL SELECT queries that together confirm or refute this hypothesis. Use only tables and columns from the provided schema. You MUST supply at least one query — an empty list is never valid.",
@@ -59,6 +67,9 @@ class QueryResult(BaseModel):
     row_count: int
     error: Optional[str] = None
     stats: list[StatResult] = Field(default_factory=list)
+    # Predictions set at plan time; carried through for comparison at score time
+    expected_if_true: Optional[str] = None
+    expected_if_false: Optional[str] = None
 
 
 class EvidenceScore(BaseModel):
@@ -105,6 +116,67 @@ class SQLFix(BaseModel):
         default=None,
         description="If the error reveals a data quality problem in the underlying data, describe it concisely. Otherwise null."
     )
+
+
+class SubQuestion(BaseModel):
+    id: str = Field(description="Q1, Q2, … in execution order")
+    question: str
+    depends_on: list[str] = Field(default_factory=list, description="IDs of sub-questions that must complete first")
+    purpose: Literal["landscape", "relationship", "threshold", "drill_down", "confounder", "synthesis"]
+    expected_output: str = Field(description="What shape of data this query should return")
+    done: bool = False
+    answer: Optional[str] = None      # populated by reason_over_result
+    refinement: Optional[str] = None  # downstream hint produced by reason_over_result
+
+
+class SubQuestionAnswer(BaseModel):
+    subq_id: str
+    question: str
+    purpose: str
+    sql: str
+    columns: list[str]
+    rows: list[list]
+    row_count: int
+    error: Optional[str] = None
+    answer: str    # natural-language answer produced by reason_over_result
+    insight: str   # the most actionable single insight
+    refinement: Optional[str] = None  # hint injected into downstream sub-questions
+
+
+class ReasoningOutput(BaseModel):
+    answer: str = Field(description="Direct answer to the sub-question, one sentence.")
+    insight: str = Field(description="The single most actionable or surprising finding from the data.")
+    refinement: Optional[str] = Field(
+        default=None,
+        description="Concrete hint to update a downstream sub-question's SQL approach. "
+                    "E.g. 'Q3 should use 1pp bands between 10% and 30% instead of coarse buckets'. "
+                    "Null if no refinement is needed.",
+    )
+    new_sub_question: Optional["SubQuestion"] = Field(
+        default=None,
+        description="If the data revealed an unexpected angle worth exploring, define a new sub-question to insert. Otherwise null.",
+    )
+
+
+class ExplorationReport(BaseModel):
+    headline: str = Field(description="One sentence direct answer to the original question. Board-ready.")
+    conclusion: str = Field(description="2-3 sentence explanation of the answer with supporting numbers.")
+    narrative: str = Field(description="Flowing paragraph connecting all sub-questions into a coherent story.")
+    recommended_actions: list[str] = Field(description="Concrete next steps based on the findings.")
+    data_quality_notes: list["DataQualityNote"] = Field(default_factory=list)
+
+
+class ReplanDecision(BaseModel):
+    next_action: Literal["test_next", "deepen_current", "promote_new", "skip_to", "synthesize"]
+    target_hypothesis_id: Optional[str] = Field(
+        default=None,
+        description="For skip_to: the hypothesis ID to jump to next. For deepen_current: same as current hypothesis.",
+    )
+    promoted_hypothesis: Optional["Hypothesis"] = Field(
+        default=None,
+        description="For promote_new: a brand-new hypothesis the data revealed that wasn't in the original decomposition.",
+    )
+    reasoning: str = Field(description="One sentence explaining the routing decision.")
 
 
 class DataQualityNote(BaseModel):
@@ -168,3 +240,15 @@ class AgentState(TypedDict):
 
     # Data portrait produced by exploratory_scan before decompose (investigate mode only)
     scan_context: str
+
+    # Business calendar events relevant to the investigation window (set by exploratory_scan)
+    events_context: str
+
+    # Adaptive replan decision produced after each score_evidence (investigate mode only)
+    replan_decision: Optional[ReplanDecision]
+
+    # Explore mode state (only when query_mode == "explore")
+    sub_questions: list[SubQuestion]
+    current_subq_idx: int
+    subq_answers: Annotated[list[SubQuestionAnswer], operator.add]
+    explore_report: Optional[ExplorationReport]

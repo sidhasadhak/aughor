@@ -168,15 +168,20 @@ function InlineChart({
 
     function onMove(ev: MouseEvent) {
       const newH = Math.max(80, startH + (ev.clientY - startY));
-      // CSS-only during drag — no React re-render, stays smooth
+      // Grow the container to follow the handle
       if (outerRef.current) {
-        outerRef.current.style.height = `${newH}px`;
         outerRef.current.style.maxHeight = "none";
+        outerRef.current.style.height = `${newH}px`;
       }
+      // Grow the SVG in lock-step so there is no gap between chart and container.
+      // viewBox stays fixed so content is pinned to the top; empty space appears
+      // below — on mouseup the chart re-renders at the final height to fill it.
+      const svg = innerRef.current?.querySelector("svg");
+      if (svg) svg.setAttribute("height", String(newH));
     }
     function onUp(ev: MouseEvent) {
       const newH = Math.max(80, startH + (ev.clientY - startY));
-      setUserH(newH); // single re-render at final size
+      setUserH(newH); // triggers effect → chart re-renders at final height
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     }
@@ -296,8 +301,14 @@ function InlineChart({
           stack: fmtTimestampLabel(String(d[catCol2])),
           val: Number(d[numCol]),
         }));
-        const groups = [...new Set(stackData.map((d) => d.group))];
         const stacks = [...new Set(stackData.map((d) => d.stack))];
+
+        // Aggregate totals per group and sort descending (unless time labels keep SQL order)
+        const groupTotalsMap = new Map<string, number>();
+        stackData.forEach((d) => groupTotalsMap.set(d.group, (groupTotalsMap.get(d.group) ?? 0) + d.val));
+        const groups = isTimeLabel
+          ? [...new Set(stackData.map((d) => d.group))]
+          : [...groupTotalsMap.entries()].sort((a, b) => b[1] - a[1]).map(([g]) => g);
 
         const legendW = stacks.length > 12 ? 280 : 150;
         const chartW = Math.max(availW - legendW - 24, Math.max(300, groups.length * 40));
@@ -310,7 +321,7 @@ function InlineChart({
           marginRight: 8,
           marginTop: 16,
           style: { background: "transparent", color: "#a1a1aa", fontSize: "11px" },
-          x: { label: catCol, tickRotate: groups.length > 8 ? -40 : 0 },
+          x: { label: catCol, domain: groups, tickRotate: groups.length > 8 ? -40 : 0 },
           y: { grid: true, tickFormat: NUM_FMT, label: numCol },
           color: { scheme: "tableau10" },
           marks: [
@@ -459,18 +470,17 @@ function InlineChart({
     });
 
     return () => { cancelled = true; };
+  // userH is safe to include: setUserH only fires on mouseup (not during drag),
+  // so the effect re-runs at most once after a resize, rebuilding the chart at the new height.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  // userH intentionally omitted: drag-resize only changes the CSS container height.
-  // Re-running the effect on every resize created a duplicate chart flash.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [columns, rows, chartType]);
+  }, [columns, rows, chartType, userH]);
 
   return (
     <div className="mt-2 w-full">
       <div
         ref={outerRef}
-        className="overflow-x-auto overflow-y-auto"
-        style={{ maxHeight: userH ? "none" : "380px", height: userH ? `${userH}px` : undefined }}
+        className="overflow-x-auto overflow-y-hidden"
+        style={{ maxHeight: userH ? "none" : "380px" }}
       >
         <div ref={innerRef} />
       </div>
@@ -485,18 +495,20 @@ function InlineChart({
 }
 
 // ── Data summary ──────────────────────────────────────────────────────────────
-// Computes a 1-2 sentence natural-language summary from the result rows.
+// Computes a 1-2 sentence actionable insight from the result rows.
 // Pure computation — no LLM call, zero latency.
 function computeSummary(columns: string[], rows: unknown[][]): string | null {
   if (!rows.length || !columns.length) return null;
   const n = rows.length;
 
-  // Identify numeric and categorical column indices
   const numIdx = columns.findIndex(
     (c, i) => !ORDINAL_COL.test(c) && rows.slice(0, 5).every((r) => isNumeric((r as unknown[])[i]))
   );
   const catIdx = columns.findIndex(
     (c, i) => i !== numIdx && !isNumeric(rows[0]?.[i as number]) && !ORDINAL_COL.test(c)
+  );
+  const cat2Idx = columns.findIndex(
+    (c, i) => i !== numIdx && i !== catIdx && !isNumeric(rows[0]?.[i as number]) && !ORDINAL_COL.test(c)
   );
 
   if (numIdx === -1) {
@@ -504,29 +516,68 @@ function computeSummary(columns: string[], rows: unknown[][]): string | null {
   }
 
   const numCol = columns[numIdx];
-  const nums = rows.map((r) => Number((r as unknown[])[numIdx])).filter((v) => !isNaN(v));
-  const total = nums.reduce((a, b) => a + b, 0);
-  const maxVal = Math.max(...nums);
-  const isShare = SHARE_COL.test(numCol) && maxVal <= 1;
-
+  const isShare = SHARE_COL.test(numCol) &&
+    rows.slice(0, 5).every((r) => { const v = Number((r as unknown[])[numIdx]); return !isNaN(v) && v <= 1; });
   const fmtVal = (v: number) => fmt(numCol, v);
 
   if (n === 1) {
     const label = catIdx >= 0 ? String((rows[0] as unknown[])[catIdx]) : numCol;
-    return `${label}: ${fmtVal(nums[0])}`;
+    return `${label}: ${fmtVal(Number((rows[0] as unknown[])[numIdx]))}`;
   }
 
-  if (catIdx >= 0) {
-    const topCat = String((rows[0] as unknown[])[catIdx]);
-    const topVal = fmtVal(maxVal);
-    const tail = isShare
-      ? `avg ${fmtVal(total / nums.length)}`
-      : `${fmtVal(total)} total`;
-    return `${n.toLocaleString()} rows · top: ${topCat} at ${topVal} · ${tail}`;
+  // No category — just a numeric summary
+  if (catIdx < 0) {
+    const nums = rows.map((r) => Number((r as unknown[])[numIdx])).filter((v) => !isNaN(v));
+    const total = nums.reduce((a, b) => a + b, 0);
+    return isShare ? `avg ${fmtVal(total / nums.length)}` : `${fmtVal(total)} total across ${n} rows.`;
   }
 
-  const tail = isShare ? `avg ${fmtVal(total / nums.length)}` : `total ${fmtVal(total)}`;
-  return `${n.toLocaleString()} rows · ${numCol} ${tail}`;
+  // Aggregate by primary category
+  const aggMap = new Map<string, number>();
+  rows.forEach((r) => {
+    const k = String((r as unknown[])[catIdx]);
+    const v = Number((r as unknown[])[numIdx]);
+    if (!isNaN(v)) aggMap.set(k, (aggMap.get(k) ?? 0) + v);
+  });
+  const sorted = [...aggMap.entries()].sort((a, b) => b[1] - a[1]);
+  if (!sorted.length) return null;
+
+  const aggTotal = sorted.reduce((s, [, v]) => s + v, 0);
+  const [topName, topVal] = sorted[0];
+  const topPct = aggTotal > 0 ? Math.round((topVal / aggTotal) * 100) : 0;
+
+  const parts: string[] = [];
+
+  if (isShare) {
+    parts.push(`${topName} leads at ${fmtVal(topVal)}.`);
+  } else {
+    const concLabel = topPct >= 30 ? "highly concentrated" : topPct >= 18 ? "concentrated" : "spread";
+    parts.push(`${numCol} is ${concLabel} — ${topName} alone accounts for ${topPct}% of ${fmtVal(aggTotal)}.`);
+  }
+
+  // Top-3 tier sentence
+  if (sorted.length >= 4) {
+    const top3Sum = sorted.slice(0, 3).reduce((s, [, v]) => s + v, 0);
+    const top3Pct = aggTotal > 0 ? Math.round((top3Sum / aggTotal) * 100) : 0;
+    const top3Names = sorted.slice(0, 3).map(([k]) => k).join(", ");
+    parts.push(`${top3Names} together make up ${top3Pct}%.`);
+  }
+
+  // Stack dimension: which segment dominates overall
+  if (cat2Idx >= 0 && parts.length < 2) {
+    const stackAgg = new Map<string, number>();
+    rows.forEach((r) => {
+      const sk = String((r as unknown[])[cat2Idx]);
+      const v = Number((r as unknown[])[numIdx]);
+      if (!isNaN(v)) stackAgg.set(sk, (stackAgg.get(sk) ?? 0) + v);
+    });
+    if (stackAgg.size > 0) {
+      const [topStack] = [...stackAgg.entries()].sort((a, b) => b[1] - a[1])[0];
+      parts.push(`${topStack} is the dominant ${columns[cat2Idx]} across all ${columns[catIdx]}s.`);
+    }
+  }
+
+  return parts.slice(0, 2).join(" ") || null;
 }
 
 // ── Result body ───────────────────────────────────────────────────────────────

@@ -286,8 +286,16 @@ def build_rich_schema(schema_str: str) -> dict:
     }
 
 
-def build_schema_context(conn: duckdb.DuckDBPyConnection) -> str:
-    """Return a rich schema description for the LLM, including row counts and glossary annotations."""
+def build_schema_context(
+    conn: duckdb.DuckDBPyConnection,
+    profile_annotation: str = "",
+) -> str:
+    """Return a rich schema description for the LLM, including row counts and glossary annotations.
+
+    profile_annotation: pre-rendered DATA PROFILES block from the profiler.
+    When supplied (non-empty), it is appended after join hints so every prompt
+    receives grain, null-rate, and value-interpretation information.
+    """
     tables = [row[0] for row in conn.execute("SHOW TABLES").fetchall()]
     parts: list[str] = []
 
@@ -342,4 +350,6 @@ def build_schema_context(conn: duckdb.DuckDBPyConnection) -> str:
     metrics_block = build_metrics_block()
     if metrics_block:
         enriched += "\n\n" + metrics_block
+    if profile_annotation:
+        enriched += "\n\n" + profile_annotation
     return enriched

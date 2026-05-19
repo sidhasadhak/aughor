@@ -296,6 +296,7 @@ async def _stream_investigation(question: str, connection_id: str, request: Requ
             "schema_context": schema,
             "unresolved_tensions": [],
             "scan_context": "",
+            "events_context": "",
             "hypotheses": [],
             "current_hypothesis_idx": 0,
             "query_history": [],
@@ -310,6 +311,11 @@ async def _stream_investigation(question: str, connection_id: str, request: Requ
             "query_mode": None,
             "route_reasoning": None,
             "route_confidence": None,
+            "replan_decision": None,
+            "sub_questions": [],
+            "current_subq_idx": 0,
+            "subq_answers": [],
+            "explore_report": None,
         }
 
         import time
@@ -377,6 +383,60 @@ async def _stream_investigation(question: str, connection_id: str, request: Requ
                         "score": scores[-1].model_dump(),
                         "hypotheses": [h.model_dump() for h in merged.get("hypotheses", [])],
                     })
+
+            elif node_name == "decompose_exploration":
+                subqs = merged.get("sub_questions", [])
+                yield _sse("explore_plan", {
+                    "sub_questions": [sq.model_dump() for sq in subqs],
+                })
+
+            elif node_name == "plan_and_execute_subq":
+                # Reuse queries_executed event shape — subq_id in hypothesis_idx slot
+                history = merged.get("query_history", [])
+                idx = merged.get("current_subq_idx", 0)
+                subqs = merged.get("sub_questions", [])
+                current_subq = subqs[idx] if idx < len(subqs) else None
+                recent = [r for r in history if r.hypothesis_id == (current_subq.id if current_subq else "")][-3:]
+                pitfalls = merged.get("pitfalls", [])
+                yield _sse("queries_executed", {
+                    "iteration": merged.get("iteration", 0),
+                    "hypothesis_idx": idx,
+                    "subq_id": current_subq.id if current_subq else "",
+                    "queries": [{"sql": r.sql, "row_count": r.row_count, "error": r.error, "stats": [s.model_dump() for s in (r.stats or [])]} for r in recent],
+                    "corrections": [p.model_dump() for p in pitfalls[-2:]],
+                    "stats": [s.model_dump() for r in recent for s in (r.stats or [])],
+                })
+
+            elif node_name == "reason_over_result":
+                answers = merged.get("subq_answers", [])
+                if answers:
+                    latest = answers[-1]
+                    yield _sse("subq_answer", {
+                        "subq_id": latest.subq_id,
+                        "question": latest.question,
+                        "purpose": latest.purpose,
+                        "answer": latest.answer,
+                        "insight": latest.insight,
+                        "refinement": latest.refinement,
+                        "sql": latest.sql,
+                        "columns": latest.columns,
+                        "rows": latest.rows[:30],
+                        "row_count": latest.row_count,
+                        "error": latest.error,
+                    })
+
+            elif node_name == "synthesize_exploration" and merged.get("explore_report"):
+                er = merged["explore_report"]
+                answers = merged.get("subq_answers", [])
+                query_history = merged.get("query_history", [])
+                yield _sse("explore_report", {
+                    "explore_report": er.model_dump(),
+                    "sub_questions": [sq.model_dump() for sq in merged.get("sub_questions", [])],
+                    "subq_answers": [a.model_dump() for a in answers],
+                    "query_count": len(query_history),
+                    "investigation_id": inv_id,
+                    "query_mode": "explore",
+                })
 
             elif node_name == "synthesize" and merged.get("report"):
                 query_history = merged.get("query_history", [])

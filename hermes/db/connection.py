@@ -171,9 +171,10 @@ class DatabaseConnection(ABC):
 class DuckDBConnection(DatabaseConnection):
     dialect = "duckdb"
 
-    def __init__(self, path: str | Path, schema_name: str | None = None):
+    def __init__(self, path: str | Path, schema_name: str | None = None, connection_id: str = ""):
         self._path = Path(path)
         self._conn = duckdb.connect(str(self._path), read_only=True)
+        self._connection_id = connection_id
         if schema_name:
             # Point the execution context at the requested schema so queries
             # land in the right namespace without requiring fully-qualified names.
@@ -202,8 +203,32 @@ class DuckDBConnection(DatabaseConnection):
             return QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[], row_count=0, error=str(e))
 
     def get_schema(self) -> str:
-        from hermes.tools.schema import build_schema_context
-        return build_schema_context(self._conn)
+        from hermes.tools.schema import build_schema_context, _compute_join_map, _parse_schema_tables
+        from hermes.tools.profile_cache import get_or_build_profiles
+        from hermes.tools.profiler import render_profile_annotations
+
+        # Build base schema string first (needed for join inference + fk_hints)
+        base = build_schema_context(self._conn)
+
+        # Extract table list and fk hints from the join map
+        tables = [row[0] for row in self._conn.execute("SHOW TABLES").fetchall()]
+        table_cols = _parse_schema_tables(base)
+        from hermes.tools.schema import _compute_join_map
+        jmap = _compute_join_map(table_cols)
+        fk_hints: dict[str, set[str]] = {t: set() for t in tables}
+        for j in jmap.get("joins", []):
+            fk_hints.setdefault(j["t1"], set()).add(j["c1"])
+            fk_hints.setdefault(j["t2"], set()).add(j["c2"])
+
+        try:
+            tp, cp = get_or_build_profiles(self, self._connection_id or "fixture", tables, fk_hints)
+            annotation = render_profile_annotations(tp, cp)
+            if annotation:
+                base += "\n\n" + annotation
+        except Exception:
+            pass  # profiler is best-effort — never block schema loading
+
+        return base
 
     def test(self) -> tuple[bool, str]:
         if not self._path.exists():
@@ -226,9 +251,10 @@ class DuckDBConnection(DatabaseConnection):
 class PostgresConnection(DatabaseConnection):
     dialect = "postgres"
 
-    def __init__(self, dsn: str, schema_name: str | None = None):
+    def __init__(self, dsn: str, schema_name: str | None = None, connection_id: str = ""):
         self._dsn = dsn
         self._schema_name = schema_name or "public"
+        self._connection_id = connection_id
         self._conn = None
         # Populated by get_schema() — used by proactive dialect transforms
         self._varchar_ts_cols: list[tuple[str, str]] = []
@@ -327,11 +353,32 @@ class PostgresConnection(DatabaseConnection):
         from hermes.semantic.autoseed import seed_missing_tables
         from hermes.semantic.glossary import apply_glossary
         from hermes.tools.schema import infer_joins
+        from hermes.tools.profile_cache import get_or_build_profiles
+        from hermes.tools.profiler import render_profile_annotations
         seed_missing_tables(schema_str)
         enriched = apply_glossary(schema_str)
         join_hints = infer_joins(enriched)
         if join_hints:
             enriched += "\n\n" + join_hints
+
+        # Build fk_hints from the join map
+        tables = list({table for table, _, _ in rows})
+        from hermes.tools.schema import _parse_schema_tables, _compute_join_map
+        table_cols_map = _parse_schema_tables(enriched)
+        jmap = _compute_join_map(table_cols_map)
+        fk_hints: dict[str, set[str]] = {t: set() for t in tables}
+        for j in jmap.get("joins", []):
+            fk_hints.setdefault(j["t1"], set()).add(j["c1"])
+            fk_hints.setdefault(j["t2"], set()).add(j["c2"])
+
+        try:
+            tp, cp = get_or_build_profiles(self, self._connection_id or "postgres", tables, fk_hints)
+            annotation = render_profile_annotations(tp, cp)
+            if annotation:
+                enriched += "\n\n" + annotation
+        except Exception:
+            pass  # profiler is best-effort — never block schema loading
+
         return enriched
 
     def _detect_sql_hints(self, columns: list) -> str:
@@ -410,18 +457,23 @@ class PostgresConnection(DatabaseConnection):
 
 # ── Factory ───────────────────────────────────────────────────────────────────
 
-def open_connection(conn_type: str, dsn: str, schema_name: str | None = None) -> DatabaseConnection:
+def open_connection(
+    conn_type: str,
+    dsn: str,
+    schema_name: str | None = None,
+    connection_id: str = "",
+) -> DatabaseConnection:
     if conn_type == "duckdb":
-        return DuckDBConnection(dsn, schema_name=schema_name)
+        return DuckDBConnection(dsn, schema_name=schema_name, connection_id=connection_id)
     elif conn_type == "postgres":
-        return PostgresConnection(dsn, schema_name=schema_name)
+        return PostgresConnection(dsn, schema_name=schema_name, connection_id=connection_id)
     else:
         raise ValueError(f"Unsupported connection type: {conn_type!r}. Supported: duckdb, postgres")
 
 
 def open_connection_for(conn_id: str) -> DatabaseConnection:
-    """Open a registered connection with all stored metadata applied (schema_name etc.)."""
+    """Open a registered connection with all stored metadata applied (schema_name, connection_id etc.)."""
     from hermes.db.registry import get_dsn, get_meta
     conn_type, dsn = get_dsn(conn_id)
     meta = get_meta(conn_id)
-    return open_connection(conn_type, dsn, schema_name=meta.get("schema_name"))
+    return open_connection(conn_type, dsn, schema_name=meta.get("schema_name"), connection_id=conn_id)

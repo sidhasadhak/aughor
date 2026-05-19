@@ -1,6 +1,6 @@
 ROUTE_QUESTION_PROMPT = """\
 You are a routing classifier for an analytics agent.
-Classify the user's business question into one of two modes based on the TYPE OF REASONING required — not on how many SQL queries it might take.
+Classify the user's business question into one of three modes based on the TYPE OF REASONING required.
 
 QUESTION: {question}
 
@@ -9,32 +9,42 @@ MODES:
 1. "direct"
    Use when the user primarily wants: facts, metrics, aggregations, rankings, comparisons, summaries, or filtered/sliced data.
    The answer mainly involves RETRIEVING and PRESENTING information.
-   A question can require 5+ SQL queries and complex joins and still be "direct" — complexity does not determine the mode, intent does.
+   A question can require 5+ SQL queries and still be "direct" — complexity does not determine the mode, intent does.
 
 2. "investigate"
-   Use when the user wants: explanations, root-cause analysis, diagnosis, hypothesis testing, anomaly investigation, or causal reasoning.
-   Use when the task requires interpreting WHY something happened, evaluating competing explanations, or identifying drivers behind an outcome.
+   Use when the user wants: root-cause analysis, diagnosis, anomaly investigation, or causal reasoning.
+   The question asks WHY something happened, and the answer requires evaluating competing explanations.
+
+3. "explore"
+   Use when the question asks about: characterisation, optimisation, relationship-mapping, or "what is a good/optimal X?"
+   The answer requires building understanding SEQUENTIALLY — each finding informs the next question.
+   Key signals: "what is the relationship between", "what is a good/moderate/optimal", "how does X vary with Y",
+   "what are the characteristics of", "what drives", "where is the threshold/cliff/break-even".
+   Explore questions are NOT about WHY something went wrong — they're about UNDERSTANDING a structure.
 
 KEYWORD GUIDANCE (semantic hints, not strict rules):
-   Lean direct:      "what", "how much", "how many", "show", "list", "top", "compare", "breakdown", "summary", "trend"
-   Lean investigate: "why", "cause", "driver", "reason", "explain", "diagnose", "investigate", "what changed", "what's behind", "what's causing"
+   direct:      "what", "how much", "how many", "show", "list", "top", "compare", "breakdown", "summary", "trend"
+   investigate: "why", "cause", "reason", "diagnose", "what changed", "what's behind", "what's causing"
+   explore:     "relationship", "optimal", "moderate", "good rate", "characteristics", "how does X vary", "threshold",
+                "what drives", "break-even", "what is a [adjective] X", "explore", "understand"
 
-BORDERLINE EXAMPLES:
-   Q: "Compare churn across pricing tiers"            → direct      (comparison/reporting, not causal)
-   Q: "Why is churn higher in enterprise?"            → investigate  (asks for explanation of cause)
-   Q: "Activation funnel by week"                     → direct      (aggregation/slice)
-   Q: "What changed in activation after the redesign?"→ investigate  (causal, implies anomaly)
-   Q: "Revenue by region this quarter"                → direct      (aggregation/slice)
-   Q: "What's behind the APAC revenue decline?"       → investigate  (diagnosis required)
-   Q: "How are renewals doing this quarter?"          → direct      (retrieval/reporting)
-   Q: "What's causing the renewal drop?"              → investigate  (root-cause)
-   Q: "Which segment is underperforming?"             → investigate  (implies diagnosis, not just ranking)
-   Q: "Top 10 customers by revenue"                   → direct      (ranking/retrieval)
+CLASSIFICATION EXAMPLES:
+   Q: "Why did revenue drop 8% last week?"                                    → investigate
+   Q: "What is our MRR this month?"                                           → direct
+   Q: "Top 10 customers by revenue"                                           → direct
+   Q: "What is a moderate discount rate to balance sales and profitability?"  → explore
+   Q: "How does churn vary with pricing tier?"                                → explore
+   Q: "What are the characteristics of our highest-LTV customers?"           → explore
+   Q: "What's behind the APAC revenue decline?"                              → investigate
+   Q: "Which discount level maximises profit per order?"                     → explore
+   Q: "Revenue by region this quarter"                                        → direct
+   Q: "Is the APAC decline a trend or a one-time event?"                    → investigate
 
 CONFIDENCE GUIDANCE:
    Return confidence >= 0.75 only when the mode is unambiguous.
-   For gray-zone questions, set confidence < 0.65 — the system will default to "investigate" when confidence is low.
-   False-direct is worse than false-investigate: a missed hypothesis is recoverable, a shallow direct answer is not.
+   For gray-zone questions, prefer explore over investigate when the question is about STRUCTURE/RELATIONSHIP
+   rather than DIAGNOSIS/CAUSATION. False-direct is the worst failure — never classify an explore/investigate
+   question as direct.
 
 Return: mode, confidence (0.0–1.0), and a one-sentence reasoning explaining the classification.
 """
@@ -124,7 +134,21 @@ INVESTIGATION CONTEXT (queries run for other hypotheses this session):
 {prior_analyses_section}
 {pitfall_section}
 {kb_patterns_section}
-Write 1-3 SQL SELECT queries that together confirm or refute this hypothesis.
+{events_section}
+STEP 1 — WRITE PREDICTIONS BEFORE WRITING SQL (mandatory):
+Before writing a single query, commit to two explicit predictions:
+
+expected_if_true:  What specific pattern or numbers would you expect to see in the results
+  IF this hypothesis is correct? Be concrete — name the metric, direction, and approximate
+  magnitude (e.g. "APAC revenue share > 40% and month-over-month decline ≥ 15%").
+
+expected_if_false: What specific pattern or numbers would you expect if this hypothesis is
+  WRONG? (e.g. "Revenue decline is uniform across all regions, ≤ 5% variance between them").
+
+These are your scientific predictions. They lock in your expectations BEFORE seeing the data.
+The scorer will compare your predictions against actual results to reduce confirmation bias.
+
+STEP 2 — Write 1-3 SQL SELECT queries that together confirm or refute this hypothesis.
 Rules:
 - Only SELECT statements — no DDL, no DML
 - Use only tables and columns from the schema above
@@ -183,8 +207,18 @@ HYPOTHESIS:
 ID: {hypothesis_id}
 Description: {hypothesis_description}
 
+PREDICTIONS MADE BEFORE RUNNING QUERIES:
+{predictions_section}
+
 QUERY RESULTS (executed specifically for this hypothesis):
 {query_results}
+
+PREDICTION MATCH INSTRUCTIONS:
+Before scoring, explicitly check whether the actual results match the predictions above.
+- If results match expected_if_true  → this is confirmatory evidence; raise confidence accordingly.
+- If results match expected_if_false → this is refuting evidence; lower confidence accordingly.
+- If results match neither prediction → evidence is ambiguous; cap confidence at 0.55.
+This check guards against post-hoc rationalisation — you committed to predictions before seeing the data.
 
 EVIDENCE STRENGTH RULES — apply these before setting confidence:
 - Confidence reflects evidence strength, not narrative plausibility. Anchor your confidence to the
@@ -218,7 +252,7 @@ HYPOTHESIS RESULTS:
 FULL EVIDENCE LOG:
 {evidence_log}
 
-{pitfall_section}{human_feedback_section}
+{pitfall_section}{human_feedback_section}{events_section}
 CRITICAL — EVIDENCE ATTRIBUTION:
 The evidence log is partitioned by hypothesis. Each section is labelled with a hypothesis ID.
 Key findings attributed to a hypothesis MUST be grounded ONLY in that hypothesis's own evidence section.
@@ -283,6 +317,44 @@ For each contradiction found, specify:
 If no contradictions exist, return an empty list and passed=true.
 Be specific — vague contradictions are not useful. Only flag genuine logical conflicts, not
 differences in emphasis or level of detail.
+"""
+
+
+REPLAN_PROMPT = """\
+You are the investigation controller for an autonomous data analyst.
+After each hypothesis is scored, you decide what to do next.
+
+ORIGINAL QUESTION: {question}
+
+HYPOTHESES AND THEIR CURRENT STATUS:
+{hypothesis_summary}
+
+LATEST SCORED HYPOTHESIS: {latest_hypothesis_id}
+Verdict: {latest_verdict}  |  Confidence: {latest_confidence:.2f}
+Key finding: {latest_key_finding}
+New hypothesis suggested by data: {new_hypothesis_suggestion}
+
+ACTIONS AVAILABLE:
+1. test_next        — Proceed to the next untested hypothesis in the original list.
+2. deepen_current   — Run more queries on the same hypothesis (only if should_continue=True and you
+                      believe 1-2 more focused queries would flip an "inconclusive" verdict).
+3. promote_new      — Inject a brand-new hypothesis revealed by the data into the plan and test it
+                      immediately (only when new_hypothesis_suggestion is concrete and non-null).
+4. skip_to          — Jump directly to a specific hypothesis ID, skipping intermediate ones that
+                      are now moot given what was just learned.
+5. synthesize       — Stop testing and write the final report now (use when: all high-value
+                      hypotheses are resolved, or diminishing returns, or evidence already clear).
+
+DECISION RULES:
+- Default to test_next unless you have a specific reason to deviate.
+- Use synthesize early only if 2+ high-confidence hypotheses are already confirmed/refuted AND
+  remaining ones are unlikely to change the conclusion.
+- Use promote_new only when the data pointed at a concrete untested angle (not just vague curiosity).
+- Use skip_to when a confirmed finding logically rules out another hypothesis without testing it.
+- Use deepen_current sparingly — only when one more focused query would decisively resolve an
+  inconclusive result. Do not use it to keep retrying failed SQL queries (that's handled automatically).
+
+Return your decision with clear reasoning.
 """
 
 

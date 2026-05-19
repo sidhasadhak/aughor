@@ -20,8 +20,17 @@ const VERDICT_COLOR: Record<Verdict, string> = {
   untested: "text-zinc-500",
 };
 
+const PURPOSE_ICON: Record<string, string> = {
+  landscape:    "◎",
+  relationship: "⟺",
+  threshold:    "↯",
+  drill_down:   "⇣",
+  confounder:   "⊕",
+  synthesis:    "✦",
+};
+
 function deriveSteps(state: InvestigationState): Step[] {
-  const { queryMode, hypotheses, status, queriesExecuted, routeReasoning, routeConfidence } = state;
+  const { queryMode, hypotheses, status, queriesExecuted, routeReasoning, routeConfidence, subQuestions, subqAnswers, exploreReport } = state;
   const isRunning = status === "running";
   const isDone = status === "done" || status === "paused";
   const steps: Step[] = [];
@@ -32,10 +41,14 @@ function deriveSteps(state: InvestigationState): Step[] {
   steps.push({
     id: "route",
     label: routeDone
-      ? queryMode === "direct" ? "Direct Query" : "Investigation"
+      ? queryMode === "direct" ? "Direct Query" : queryMode === "explore" ? "Exploration" : "Investigation"
       : "Classifying question…",
     sublabel: routeDone
-      ? (routeReasoning ?? (queryMode === "direct" ? "Single-pass answer" : "Multi-hypothesis analysis")) + confidenceLabel
+      ? (routeReasoning ?? (
+          queryMode === "direct" ? "Single-pass answer" :
+          queryMode === "explore" ? "Characterisation / open-ended analysis" :
+          "Multi-hypothesis analysis"
+        )) + confidenceLabel
       : undefined,
     status: routeDone ? "done" : "running",
   });
@@ -55,6 +68,47 @@ function deriveSteps(state: InvestigationState): Step[] {
       label: "Summarizing results",
       status: isDone ? "done" : isRunning && queriesExecuted > 0 ? "running" : "pending",
     });
+    return steps;
+  }
+
+  if (queryMode === "explore") {
+    const hasSubqs = subQuestions.length > 0;
+    steps.push({
+      id: "explore-plan",
+      label: hasSubqs
+        ? `${subQuestions.length} sub-question${subQuestions.length !== 1 ? "s" : ""} planned`
+        : "Designing investigative chain…",
+      status: hasSubqs ? "done" : "running",
+    });
+
+    if (!hasSubqs) return steps;
+
+    const answeredIds = new Set(subqAnswers.map(a => a.subq_id));
+
+    for (let i = 0; i < subQuestions.length; i++) {
+      const sq = subQuestions[i];
+      const answered = sq.done || answeredIds.has(sq.id);
+      const icon = PURPOSE_ICON[sq.purpose] ?? "·";
+      const label = `${icon} ${sq.question.length > 44 ? sq.question.slice(0, 44) + "…" : sq.question}`;
+      const answer = subqAnswers.find(a => a.subq_id === sq.id);
+      // Current = running and this is the first unanswered
+      const isCurrentlyRunning = isRunning && !answered && subQuestions.slice(0, i).every(s => s.done || answeredIds.has(s.id));
+      steps.push({
+        id: `sq-${sq.id}`,
+        label,
+        sublabel: answered && answer
+          ? answer.answer.length > 56 ? answer.answer.slice(0, 56) + "…" : answer.answer
+          : isCurrentlyRunning ? "running…" : undefined,
+        status: answered ? "done" : isCurrentlyRunning ? "running" : "pending",
+      });
+    }
+
+    steps.push({
+      id: "synthesize-explore",
+      label: "Synthesizing exploration",
+      status: exploreReport ? "done" : isRunning && subQuestions.every(sq => sq.done || answeredIds.has(sq.id)) ? "running" : "pending",
+    });
+
     return steps;
   }
 

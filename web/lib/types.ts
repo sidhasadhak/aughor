@@ -66,14 +66,54 @@ export interface EvidenceScore {
   should_continue: boolean;
 }
 
+// ── Explore mode types ───────────────────────────────────────────────────────
+
+export type SubQuestionPurpose = "landscape" | "relationship" | "threshold" | "drill_down" | "confounder" | "synthesis";
+
+export interface SubQuestion {
+  id: string;
+  question: string;
+  depends_on: string[];
+  purpose: SubQuestionPurpose;
+  expected_output: string;
+  done: boolean;
+  answer: string | null;
+  refinement: string | null;
+}
+
+export interface SubQuestionAnswer {
+  subq_id: string;
+  question: string;
+  purpose: SubQuestionPurpose;
+  sql: string;
+  columns: string[];
+  rows: unknown[][];
+  row_count: number;
+  error: string | null;
+  answer: string;
+  insight: string;
+  refinement: string | null;
+}
+
+export interface ExplorationReport {
+  headline: string;
+  conclusion: string;
+  narrative: string;
+  recommended_actions: string[];
+  data_quality_notes: DataQualityNote[];
+}
+
 // SSE event shapes
 export type InvestigationEvent =
   | { type: "start"; question: string; investigation_id?: string }
-  | { type: "mode"; query_mode: "direct" | "investigate"; route_reasoning?: string; route_confidence?: number }
+  | { type: "mode"; query_mode: "direct" | "investigate" | "explore"; route_reasoning?: string; route_confidence?: number }
   | { type: "hypotheses"; hypotheses: Hypothesis[] }
-  | { type: "queries_executed"; iteration: number; hypothesis_idx: number; queries: QuerySummary[]; corrections: { fix_explanation: string; data_quality_issue: string | null }[]; stats: StatResult[] }
+  | { type: "queries_executed"; iteration: number; hypothesis_idx: number; subq_id?: string; queries: QuerySummary[]; corrections: { fix_explanation: string; data_quality_issue: string | null }[]; stats: StatResult[] }
   | { type: "score"; iteration: number; score: { hypothesis_id: string; confidence: number; verdict: Verdict; key_finding: string }; hypotheses: Hypothesis[] }
   | { type: "report"; report: Report; hypotheses: Hypothesis[]; query_count: number; query_history: QueryCitation[]; investigation_id: string; from_cache?: boolean; cached_question?: string; cache_score?: number; query_mode?: "direct" | "investigate" | null }
+  | { type: "explore_plan"; sub_questions: SubQuestion[] }
+  | { type: "subq_answer"; subq_id: string; question: string; purpose: SubQuestionPurpose; answer: string; insight: string; refinement: string | null; sql: string; columns: string[]; rows: unknown[][]; row_count: number; error: string | null }
+  | { type: "explore_report"; explore_report: ExplorationReport; sub_questions: SubQuestion[]; subq_answers: SubQuestionAnswer[]; query_count: number; investigation_id: string; query_mode: "explore" }
   | { type: "paused"; investigation_id: string; hypotheses: Hypothesis[]; scores: EvidenceScore[] }
   | { type: "error"; message: string }
   | { type: "done" };
@@ -105,7 +145,11 @@ export interface InvestigationState {
   fromCache: boolean;
   cachedQuestion: string | null;
   humanFeedback: string | null;
-  queryMode: "direct" | "investigate" | null;
+  queryMode: "direct" | "investigate" | "explore" | null;
   routeReasoning: string | null;
   routeConfidence: number | null;
+  // Explore mode
+  subQuestions: SubQuestion[];
+  subqAnswers: SubQuestionAnswer[];
+  exploreReport: ExplorationReport | null;
 }

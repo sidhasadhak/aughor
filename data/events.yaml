@@ -1,0 +1,233 @@
+# Business Calendar Events
+# ─────────────────────────────────────────────────────────────────────────────
+# Used by Aughor's Events Calendar Tool to provide business context to the
+# analyst agent. These supplement events stored in the database itself.
+#
+# When the agent investigates anomalies that coincide with these events, it
+# can surface the calendar event as a potential explanation rather than
+# attributing the anomaly to an unknown root cause.
+#
+# Fields:
+#   date:            YYYY-MM-DD (start date, required)
+#   end_date:        YYYY-MM-DD (optional; defaults to date for single-day events)
+#   type:            promotion | holiday | outage | release | campaign | external
+#   name:            Short unique label
+#   description:     What happened / what this event is
+#   expected_impact: How this typically affects revenue/traffic/engagement metrics
+#   tags:            Optional list of affected regions (NA, EMEA, APAC) or segments (SMB, Enterprise)
+
+events:
+
+  # ── 2024 ──────────────────────────────────────────────────────────────────
+
+  - date: "2024-11-28"
+    type: holiday
+    name: "Thanksgiving 2024 (US)"
+    description: "US public holiday. NA business activity minimal."
+    expected_impact: "NA transaction volume -50 to -70%; APAC and EMEA unaffected"
+    tags: [NA]
+
+  - date: "2024-11-29"
+    type: promotion
+    name: "Black Friday 2024"
+    description: "Annual peak commercial day. B2B SaaS sees elevated trial sign-ups and upgrade requests."
+    expected_impact: "Trial conversions +20 to +40%; upgrade requests +30%; support volume spike"
+
+  - date: "2024-12-02"
+    type: promotion
+    name: "Cyber Monday 2024"
+    description: "Online shopping peak. Strongest day for digital-first promotions and SMB plan conversions."
+    expected_impact: "SMB digital conversions +25 to +50% vs baseline week"
+    tags: [NA, EMEA]
+
+  - date: "2024-12-20"
+    end_date: "2025-01-05"
+    type: holiday
+    name: "Year-End Holiday Season 2024–2025"
+    description: "Christmas through New Year. Enterprise deals stall; finance teams not approving purchases."
+    expected_impact: "Enterprise deal closure -70%; SMB renewals deferred; support volume low"
+    tags: [NA, EMEA]
+
+  - date: "2024-12-25"
+    type: holiday
+    name: "Christmas Day 2024"
+    description: "Public holiday across NA and EMEA. Minimal business activity."
+    expected_impact: "Near-zero transaction activity in NA/EMEA; APAC reduced"
+    tags: [NA, EMEA]
+
+  - date: "2024-12-31"
+    type: campaign
+    name: "Year-End Enterprise Renewals 2024"
+    description: "End-of-fiscal push for calendar-year Enterprise customers. Elevated upgrade and multi-year deal closures."
+    expected_impact: "Enterprise revenue spike Dec 28–31; above-average deal size; front-loaded Q1 revenue"
+    tags: [Enterprise]
+
+  # ── Q1 2025 ───────────────────────────────────────────────────────────────
+
+  - date: "2025-01-01"
+    type: holiday
+    name: "New Year's Day 2025"
+    description: "Public holiday globally. Deferred December decisions typically activate Jan 2–5."
+    expected_impact: "Transaction volume near-zero Jan 1; catch-up spike Jan 2–5"
+
+  - date: "2025-01-13"
+    end_date: "2025-01-17"
+    type: release
+    name: "Platform v3.2 Launch"
+    description: "Major platform release with new API and updated billing engine. Caused payment method re-verification flows for ~8% of accounts."
+    expected_impact: "Payment failure rate +5 to +8pp for 3–5 days post-launch; support volume +40%"
+
+  - date: "2025-02-14"
+    type: promotion
+    name: "Valentine's Day SMB Campaign 2025"
+    description: "20% discount on annual plans for SMB segment, valid Feb 10–14."
+    expected_impact: "SMB annual plan upgrades +15 to +25% during campaign window"
+    tags: [SMB]
+
+  - date: "2025-03-28"
+    end_date: "2025-03-31"
+    type: campaign
+    name: "Q1 End-of-Quarter Push 2025"
+    description: "Sales team incentives peak at quarter-end. Enterprise deals accelerated; discount approvals above normal."
+    expected_impact: "Enterprise revenue +15 to +30% vs prior weeks; discount rate elevated; deal size larger"
+    tags: [Enterprise]
+
+  # ── Q2 2025 ───────────────────────────────────────────────────────────────
+
+  - date: "2025-04-18"
+    end_date: "2025-04-21"
+    type: holiday
+    name: "Easter Weekend 2025"
+    description: "Public holiday in EMEA and parts of NA. APAC largely unaffected."
+    expected_impact: "EMEA transaction volume -30 to -50% Fri–Mon; NA reduced Friday"
+    tags: [EMEA, NA]
+
+  - date: "2025-05-01"
+    type: holiday
+    name: "International Labour Day 2025"
+    description: "Public holiday across most of Europe and parts of Asia-Pacific."
+    expected_impact: "EMEA and APAC activity -40 to -60%"
+    tags: [EMEA, APAC]
+
+  - date: "2025-06-27"
+    end_date: "2025-06-30"
+    type: campaign
+    name: "Q2 End-of-Quarter Push 2025"
+    description: "Quarter-end Enterprise deals closing. Elevated discount approvals and bundled plan upgrades."
+    expected_impact: "Enterprise deal closures +20 to +35% in final 4 days of Q2"
+    tags: [Enterprise]
+
+  # ── Q3 2025 ───────────────────────────────────────────────────────────────
+
+  - date: "2025-07-04"
+    type: holiday
+    name: "Independence Day 2025 (US)"
+    description: "US public holiday. NA business activity minimal on this day."
+    expected_impact: "NA transaction volume -50 to -70% on Jul 4; recovery Jul 7"
+    tags: [NA]
+
+  - date: "2025-08-01"
+    end_date: "2025-08-31"
+    type: campaign
+    name: "Back-to-Business August Campaign 2025"
+    description: "Annual SMB and mid-market push targeting Q4 budget cycles. 10% discount on annual plan upgrades."
+    expected_impact: "SMB annual plan sign-ups +20 to +30%; MRR expansion +8 to +12%"
+    tags: [SMB]
+
+  - date: "2025-09-01"
+    type: external
+    name: "Q4 Fiscal Year Start (Majority of Enterprise Accounts)"
+    description: "Start of Q4 for most NA and EMEA Enterprise customers. New budgets released; purchasing decisions accelerate."
+    expected_impact: "Enterprise upgrade requests +25 to +40% in September vs August"
+    tags: [Enterprise, NA, EMEA]
+
+  - date: "2025-09-12"
+    end_date: "2025-09-14"
+    type: outage
+    name: "EU Data Centre Planned Maintenance"
+    description: "Scheduled 48-hour maintenance window for EMEA data centre migration. Service degraded for EMEA customers on Pro and Enterprise plans."
+    expected_impact: "EMEA payment processing -20 to -30% during window; elevated churn risk for affected SMB"
+    tags: [EMEA]
+
+  - date: "2025-09-26"
+    end_date: "2025-09-30"
+    type: campaign
+    name: "Q3 End-of-Quarter Push 2025"
+    description: "Quarter-close: Enterprise deal urgency peaks. Sales discounts above standard thresholds common."
+    expected_impact: "Enterprise revenue +20 to +35% in final 5 days of Q3; above-average deal sizes"
+    tags: [Enterprise]
+
+  # ── Q4 2025 ───────────────────────────────────────────────────────────────
+
+  - date: "2025-10-01"
+    end_date: "2025-10-15"
+    type: campaign
+    name: "Q4 Kickoff Promotion 2025"
+    description: "Annual Q4 push across all segments. 10% discount on upgrades to annual billing, valid Oct 1–15."
+    expected_impact: "Monthly-to-annual conversions +30 to +50%; upfront revenue spike; MRR slightly diluted"
+
+  - date: "2025-10-26"
+    end_date: "2025-10-31"
+    type: holiday
+    name: "Golden Week Japan/South Korea 2025"
+    description: "Public holidays across Japan and South Korea. APAC SMB business activity drops substantially."
+    expected_impact: "APAC transaction volume -30 to -50%; APAC SMB especially affected"
+    tags: [APAC]
+
+  - date: "2025-10-31"
+    type: promotion
+    name: "Halloween Flash Promo 2025"
+    description: "24-hour 25% discount for SMB segment. Email blast sent Oct 30 evening NA time."
+    expected_impact: "SMB sign-ups spike Oct 31; revenue concentrated on single day"
+    tags: [SMB]
+
+  - date: "2025-11-11"
+    type: external
+    name: "Singles Day (11.11) 2025"
+    description: "Major commercial event in China expanding across APAC. B2B SaaS less affected than ecommerce, but APAC SMB shows elevated activity."
+    expected_impact: "APAC SMB transaction volume +10 to +20%"
+    tags: [APAC, SMB]
+
+  - date: "2025-11-20"
+    end_date: "2025-11-23"
+    type: promotion
+    name: "NA Back-to-Business Promo 2025"
+    description: "15% discount offered to NA SMB customers renewing in this period."
+    expected_impact: "NA SMB renewal rate +15 to +25% during window; payment volume elevated"
+    tags: [NA, SMB]
+
+  - date: "2025-11-23"
+    end_date: "2025-11-24"
+    type: outage
+    name: "APAC Payment Gateway Degradation 2025"
+    description: "Stripe APAC payment gateway experienced intermittent failures for ~4 hours on the morning of Nov 23. SMB plans on shared infrastructure disproportionately affected."
+    expected_impact: "APAC payment failure rate +20 to +40pp during window; SMB affected more than Enterprise"
+    tags: [APAC, SMB]
+
+  - date: "2025-11-27"
+    type: holiday
+    name: "Thanksgiving 2025 (US)"
+    description: "US public holiday. NA business activity minimal."
+    expected_impact: "NA transaction volume -50 to -70%; APAC and EMEA unaffected"
+    tags: [NA]
+
+  - date: "2025-11-28"
+    type: promotion
+    name: "Black Friday 2025"
+    description: "Annual peak commercial day. B2B SaaS sees elevated trial conversions and upgrade requests."
+    expected_impact: "Trial sign-ups +30 to +50%; upgrade requests +25 to +40%; support volume spike"
+
+  - date: "2025-12-01"
+    type: promotion
+    name: "Cyber Monday 2025"
+    description: "Digital promotion peak. SMB digital conversions typically highest of the year."
+    expected_impact: "SMB conversions +30 to +60% vs baseline; digital channel dominant"
+    tags: [SMB]
+
+  - date: "2025-12-19"
+    end_date: "2026-01-04"
+    type: holiday
+    name: "Year-End Holiday Season 2025–2026"
+    description: "Christmas through New Year. Enterprise purchasing stalls; SMB activity low; support minimal."
+    expected_impact: "Enterprise deal closure -70%; transaction volume -40 to -60% Dec 24 – Jan 2"
+    tags: [NA, EMEA]

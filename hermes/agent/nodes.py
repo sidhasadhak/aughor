@@ -11,6 +11,7 @@ from hermes.agent.prompts import (
     DECOMPOSE_PROMPT,
     FIX_SQL_PROMPT,
     PLAN_QUERIES_PROMPT,
+    REPLAN_PROMPT,
     ROUTE_QUESTION_PROMPT,
     SCORE_EVIDENCE_PROMPT,
     SYNTHESIZE_PROMPT,
@@ -27,6 +28,7 @@ from hermes.agent.state import (
     Pitfall,
     QueryPlan,
     QueryResult,
+    ReplanDecision,
     RouteDecision,
     SQLFix,
 )
@@ -73,32 +75,85 @@ def route_question(state: AgentState) -> dict[str, Any]:
             "pitfalls": [],
             "prior_analyses": [],
         }
+    if effective_mode == "explore":
+        return {
+            **base,
+            "query_mode": "explore",
+            "sub_questions": [],
+            "current_subq_idx": 0,
+            "subq_answers": [],
+            "explore_report": None,
+            "pitfalls": [],
+            "prior_analyses": [],
+        }
     return {**base, "query_mode": "investigate"}
 
 
 def route_after_classify(state: AgentState) -> str:
-    return "plan_and_execute" if state.get("query_mode") == "direct" else "exploratory_scan"
+    mode = state.get("query_mode")
+    if mode == "direct":
+        return "plan_and_execute"
+    if mode == "explore":
+        return "exploratory_scan_explore"
+    return "exploratory_scan"
 
 
 # ── Node: exploratory_scan ────────────────────────────────────────────────────
 
 def exploratory_scan(state: AgentState, conn: "DatabaseConnection") -> dict[str, Any]:
     """
-    Run a small set of heuristic orientation queries before hypothesis formation.
+    Produce a DATA PORTRAIT for the decomposer.
 
-    Produces a DATA PORTRAIT — row counts, date ranges, metric totals, and
-    categorical distributions — that is injected into decompose_question so
-    hypotheses are grounded in actual data, not schema column names alone.
+    Fast path (Sprint 1+): if profiles are already cached (built at connection time),
+    render the portrait directly from the profile cache — zero SQL queries.
 
-    Results are NOT added to query_history; they exist only as formatted text.
-    Every query is best-effort: failures are silently skipped.
+    Fallback: if profiles are not available (cold start, profiler disabled, etc.),
+    fall back to the original ad-hoc SQL approach.
+
+    Results are NOT added to query_history — they exist only as formatted text.
     """
+    # ── Fast path: read from profile cache ────────────────────────────────────
+    try:
+        from hermes.tools.profile_cache import get_or_build_profiles
+        from hermes.tools.profiler import render_profile_annotations
+        from hermes.tools.schema import _parse_schema_tables, _compute_join_map
+
+        schema_str = state["schema_context"]
+        table_cols_map = _parse_schema_tables(schema_str)
+        tables = list(table_cols_map.keys())
+
+        if tables:
+            jmap = _compute_join_map(table_cols_map)
+            fk_hints: dict[str, set[str]] = {t: set() for t in tables}
+            for j in jmap.get("joins", []):
+                fk_hints.setdefault(j["t1"], set()).add(j["c1"])
+                fk_hints.setdefault(j["t2"], set()).add(j["c2"])
+
+            conn_id = state.get("connection_id") or getattr(conn, "_connection_id", "") or "fixture"
+            tp, cp = get_or_build_profiles(conn, conn_id, tables, fk_hints)
+
+            if tp:
+                portrait = (
+                    "DATA PORTRAIT — actual counts and distributions (from profile cache):\n"
+                    "Hypotheses must be grounded in what the data can plausibly show.\n\n"
+                    + render_profile_annotations(tp, cp)
+                )
+                # Compute overall data date range from table profiles
+                all_date_ranges = [p.date_range for p in tp.values() if p.date_range]
+                data_range = (
+                    (min(d[0] for d in all_date_ranges), max(d[1] for d in all_date_ranges))
+                    if all_date_ranges else None
+                )
+                events_ctx = _get_events_context(state["question"], conn, data_range)
+                return {"scan_context": portrait, "events_context": events_ctx}
+    except Exception:
+        pass  # fall through to ad-hoc SQL
+
+    # ── Fallback: ad-hoc SQL recon ────────────────────────────────────────────
     import re
     from hermes.tools.schema import _SECTION_STOP
 
     schema_str = state["schema_context"]
-
-    # Parse column types from the schema context string
     table_col_types: dict[str, list[tuple[str, str]]] = {}
     current: str | None = None
     for line in schema_str.splitlines():
@@ -127,28 +182,33 @@ def exploratory_scan(state: AgentState, conn: "DatabaseConnection") -> dict[str,
         return f'"{name}"'
 
     portrait_parts: list[str] = []
+    # Track the overall data date range found across all tables (for events scoping)
+    _all_min_dates: list[str] = []
+    _all_max_dates: list[str] = []
 
     for table, col_type_pairs in list(table_col_types.items())[:4]:
         date_cols = [c for c, t in col_type_pairs if _is_date(t)]
         num_cols  = [c for c, t in col_type_pairs if _is_numeric(t)]
-        # Skip _id columns — too high cardinality to be meaningful categoricals
         cat_cols  = [c for c, t in col_type_pairs if _is_text(t) and not c.lower().endswith("_id")]
 
         lines: list[str] = [f"TABLE: {table}"]
 
-        # Row count + date range
         if date_cols:
             dc = _q(date_cols[0])
             r = conn.execute("scan", f'SELECT COUNT(*) AS n, MIN({dc})::VARCHAR, MAX({dc})::VARCHAR FROM {_q(table)}')
             if not r.error and r.rows:
                 n, min_d, max_d = r.rows[0]
                 lines.append(f"  {int(n):,} rows | {date_cols[0]}: {min_d} → {max_d}")
+                # Capture for events window
+                if min_d:
+                    _all_min_dates.append(str(min_d))
+                if max_d:
+                    _all_max_dates.append(str(max_d))
         else:
             r = conn.execute("scan", f'SELECT COUNT(*) AS n FROM {_q(table)}')
             if not r.error and r.rows:
                 lines.append(f"  {int(r.rows[0][0]):,} rows")
 
-        # Key metric aggregates (sum + avg for up to 3 numeric columns)
         if num_cols:
             agg = ", ".join(
                 f'ROUND(SUM({_q(c)}), 1) AS "sum_{c}", ROUND(AVG({_q(c)}), 2) AS "avg_{c}"'
@@ -164,7 +224,6 @@ def exploratory_scan(state: AgentState, conn: "DatabaseConnection") -> dict[str,
                 if pairs:
                     lines.append(f"  Metrics: {', '.join(pairs)}")
 
-        # Categorical distributions (top 8 values with counts, up to 2 columns)
         for cc in cat_cols[:2]:
             r = conn.execute("scan", f'SELECT {_q(cc)}, COUNT(*) AS n FROM {_q(table)} GROUP BY 1 ORDER BY 2 DESC LIMIT 8')
             if not r.error and r.rows:
@@ -173,8 +232,15 @@ def exploratory_scan(state: AgentState, conn: "DatabaseConnection") -> dict[str,
 
         portrait_parts.append("\n".join(lines))
 
+    # Build data date range from what we found in the portrait queries
+    fallback_data_range = (
+        (min(_all_min_dates), max(_all_max_dates))
+        if _all_min_dates and _all_max_dates else None
+    )
+
     if not portrait_parts:
-        return {"scan_context": ""}
+        events_ctx = _get_events_context(state["question"], conn, fallback_data_range)
+        return {"scan_context": "", "events_context": events_ctx}
 
     portrait = (
         "DATA PORTRAIT — run this before forming any hypothesis:\n"
@@ -182,7 +248,8 @@ def exploratory_scan(state: AgentState, conn: "DatabaseConnection") -> dict[str,
         "Hypotheses must be grounded in what the data can plausibly show.\n\n"
         + "\n\n".join(portrait_parts)
     )
-    return {"scan_context": portrait}
+    events_ctx = _get_events_context(state["question"], conn, fallback_data_range)
+    return {"scan_context": portrait, "events_context": events_ctx}
 
 
 # ── Node: decompose_question ─────────────────────────────────────────────────
@@ -246,6 +313,10 @@ def plan_and_execute(state: AgentState, conn: "DatabaseConnection") -> dict[str,
         if prior_analyses else ""
     )
 
+    # Build events section (may be empty if no calendar events are relevant)
+    raw_events = state.get("events_context") or ""
+    events_section = f"{raw_events}\n" if raw_events else ""
+
     rules_block = get_rules_block()
     llm = get_provider("coder")
     plan: QueryPlan = llm.complete(
@@ -258,6 +329,7 @@ def plan_and_execute(state: AgentState, conn: "DatabaseConnection") -> dict[str,
             prior_analyses_section=prior_analyses_text,
             pitfall_section=format_pitfall_section(known_pitfalls),
             kb_patterns_section=kb_patterns,
+            events_section=events_section,
         ),
         response_model=QueryPlan,
     )
@@ -288,6 +360,11 @@ def plan_and_execute(state: AgentState, conn: "DatabaseConnection") -> dict[str,
         ambiguity_warnings = detect_ambiguous_columns(sql, state["schema_context"])
 
         result = conn.execute(h.id, sql)
+        # Attach plan-time predictions so the scorer can compare prediction vs reality
+        _d = result.model_dump()
+        _d["expected_if_true"] = plan.expected_if_true or None
+        _d["expected_if_false"] = plan.expected_if_false or None
+        result = QueryResult(**_d)
 
         # ── Self-correction: retry failed queries once ────────────────────
         if result.error:
@@ -372,12 +449,24 @@ def score_evidence(state: AgentState) -> dict[str, Any]:
         )
     else:
         formatted = "\n\n".join(format_result_for_llm(r) for r in hyp_results)
+
+        # Build predictions section from plan-time annotations (first result carries them)
+        _first = hyp_results[0]
+        if _first.expected_if_true or _first.expected_if_false:
+            predictions_section = (
+                f"IF TRUE:  {_first.expected_if_true or '(not specified)'}\n"
+                f"IF FALSE: {_first.expected_if_false or '(not specified)'}"
+            )
+        else:
+            predictions_section = "(No predictions were recorded for this hypothesis — score on evidence alone.)"
+
         llm = get_provider("coder")
         score: EvidenceScore = llm.complete(
             system="You are a senior data analyst evaluating evidence for a hypothesis.",
             user=SCORE_EVIDENCE_PROMPT.format(
                 hypothesis_id=h.id,
                 hypothesis_description=h.description,
+                predictions_section=predictions_section,
                 query_results=formatted,
             ),
             response_model=EvidenceScore,
@@ -511,6 +600,9 @@ def synthesize_report(state: AgentState) -> dict[str, Any]:
             + "\n"
         )
 
+    raw_events = state.get("events_context") or ""
+    events_section_synth = f"\nBUSINESS CALENDAR CONTEXT (use to attribute anomalies to known events):\n{raw_events}\n" if raw_events else ""
+
     report: AnalysisReport = llm.complete(
         system="You are a senior data analyst writing an executive-level investigation report.",
         user=rules_block + SYNTHESIZE_PROMPT.format(
@@ -519,6 +611,7 @@ def synthesize_report(state: AgentState) -> dict[str, Any]:
             evidence_log=_format_full_evidence(state.get("query_history", []), hypotheses),
             pitfall_section=_format_pitfalls_for_synthesis(pitfalls),
             human_feedback_section=feedback_section,
+            events_section=events_section_synth,
         ) + tensions_section,
         response_model=AnalysisReport,
     )
@@ -577,6 +670,121 @@ def should_continue(state: AgentState) -> str:
         return "plan_and_execute"
 
     return "synthesize"
+
+
+# ── Node: replan ─────────────────────────────────────────────────────────────
+
+def replan(state: AgentState) -> dict[str, Any]:
+    """
+    Adaptive routing node that runs after each score_evidence.
+
+    Makes one LLM call to decide between:
+      test_next       — proceed linearly
+      deepen_current  — run more queries on same hypothesis
+      promote_new     — inject a data-revealed hypothesis
+      skip_to         — jump over moot hypotheses
+      synthesize      — stop early with high confidence
+
+    Fast-path: if we're in direct mode, or if all hypotheses are tested,
+    skip the LLM call and go straight to synthesize / test_next.
+    """
+    # Direct mode never replans
+    if state.get("query_mode") != "investigate":
+        return {"replan_decision": ReplanDecision(next_action="test_next", reasoning="Direct mode — no replan.")}
+
+    hypotheses = state.get("hypotheses", [])
+    idx = state.get("current_hypothesis_idx", 0)
+    iteration = state.get("iteration", 0)
+
+    # All hypotheses tested — synthesize
+    if idx >= len(hypotheses):
+        return {"replan_decision": ReplanDecision(next_action="synthesize", reasoning="All hypotheses tested.")}
+
+    # Hit iteration ceiling — synthesize
+    if iteration >= MAX_ITER:
+        return {"replan_decision": ReplanDecision(next_action="synthesize", reasoning="Iteration ceiling reached.")}
+
+    # Find the most recently scored hypothesis (idx was already incremented by score_evidence)
+    latest_idx = idx - 1
+    if latest_idx < 0 or latest_idx >= len(hypotheses):
+        return {"replan_decision": ReplanDecision(next_action="test_next", reasoning="No scored hypothesis yet.")}
+
+    latest_h = hypotheses[latest_idx]
+
+    # Retrieve the EvidenceScore for the latest hypothesis to get should_continue + new_hypothesis
+    evidence_scores = state.get("evidence_scores", [])
+    latest_score = next((s for s in reversed(evidence_scores) if s.hypothesis_id == latest_h.id), None)
+
+    new_hyp_suggestion = (latest_score.new_hypothesis or "") if latest_score else ""
+    should_cont = latest_score.should_continue if latest_score else False
+
+    # Fast-path: if there's nothing interesting, proceed linearly
+    if not new_hyp_suggestion and not should_cont:
+        return {"replan_decision": ReplanDecision(next_action="test_next", reasoning="No new signals — proceeding linearly.")}
+
+    # Full LLM replan call
+    llm = get_provider("coder")
+    decision: ReplanDecision = llm.complete(
+        system="You are the investigation controller for an autonomous data analyst. Route the investigation efficiently.",
+        user=REPLAN_PROMPT.format(
+            question=state["question"],
+            hypothesis_summary=_format_hypothesis_summary(hypotheses),
+            latest_hypothesis_id=latest_h.id,
+            latest_verdict=latest_h.verdict,
+            latest_confidence=latest_h.confidence,
+            latest_key_finding=latest_h.key_finding or "(none)",
+            new_hypothesis_suggestion=new_hyp_suggestion or "null",
+        ),
+        response_model=ReplanDecision,
+    )
+
+    # Apply mutations to state
+    updated_hypotheses = list(hypotheses)
+    updated_idx = idx
+
+    if decision.next_action == "skip_to" and decision.target_hypothesis_id:
+        # Find the target hypothesis and jump to it, marking skipped ones
+        target_id = decision.target_hypothesis_id
+        for i, h in enumerate(updated_hypotheses):
+            if h.id == target_id:
+                updated_idx = i
+                break
+        # Mark all untested hypotheses between current idx and target as skipped
+        for i in range(idx, updated_idx):
+            h = updated_hypotheses[i]
+            if h.verdict == "untested":
+                updated_hypotheses[i] = Hypothesis(
+                    id=h.id, description=h.description,
+                    confidence=0.0, verdict="skipped",
+                    key_finding=f"Skipped: {decision.reasoning}",
+                )
+
+    elif decision.next_action == "promote_new" and decision.promoted_hypothesis:
+        # Insert the new hypothesis right after the current position
+        new_h = decision.promoted_hypothesis
+        updated_hypotheses.insert(updated_idx, new_h)
+        # updated_idx stays — the new hypothesis is at position updated_idx
+
+    elif decision.next_action == "deepen_current":
+        # Step back so plan_and_execute re-runs for the same hypothesis
+        updated_idx = max(0, idx - 1)
+
+    return {
+        "replan_decision": decision,
+        "hypotheses": updated_hypotheses,
+        "current_hypothesis_idx": updated_idx,
+    }
+
+
+def route_after_replan(state: AgentState) -> str:
+    decision = state.get("replan_decision")
+    if decision and decision.next_action == "synthesize":
+        return "synthesize"
+    idx = state.get("current_hypothesis_idx", 0)
+    hypotheses = state.get("hypotheses", [])
+    if idx >= len(hypotheses):
+        return "synthesize"
+    return "plan_and_execute"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -659,6 +867,15 @@ def _attach_stats(result: QueryResult) -> QueryResult:
     except Exception:
         pass  # stats are best-effort — never block the investigation
     return result
+
+
+def _get_events_context(question: str, conn, data_range) -> str:
+    """Wrapper around events.get_events_context — best-effort, never raises."""
+    try:
+        from hermes.tools.events import get_events_context
+        return get_events_context(question, conn=conn, data_date_range=data_range) or ""
+    except Exception:
+        return ""
 
 
 def _format_pitfalls_for_synthesis(pitfalls: list[Pitfall]) -> str:
