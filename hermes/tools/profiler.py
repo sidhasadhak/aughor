@@ -21,12 +21,135 @@ Design principles:
 """
 from __future__ import annotations
 
+import glob
+import json
 import re
+from collections import Counter
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from hermes.db.connection import DatabaseConnection
+
+
+# ── Fact-table signal regex (auto-derived from KB SQL templates) ──────────────
+
+_KB_DIR = Path(__file__).parent.parent.parent / "data" / "kb"
+
+_FALLBACK_FACT_TERMS = (
+    "order", "sale", "transaction", "revenue", "invoice", "payment",
+    "purchase", "session", "event", "conversion", "return", "refund",
+    "shipment", "delivery", "cart", "item", "line",
+)
+
+_FROM_JOIN = re.compile(r"\b(?:FROM|JOIN)\s+(\w+)\b", re.IGNORECASE)
+_CTE_DEF   = re.compile(r"\b(\w+)\s+AS\s*\(", re.IGNORECASE)
+
+# Table names whose leading stem is misleading — derived/aggregated views, not entities.
+# e.g. "net_revenue_daily" → stem "net" would match "net_promoter_score" tables, etc.
+_DERIVED_SUFFIXES = re.compile(
+    r"_(daily|weekly|monthly|quarterly|annual|summary|metrics|stats|"
+    r"report|view|agg|aggregated|snapshot|staging|stg|raw|temp|tmp|cte)$",
+    re.IGNORECASE,
+)
+_STEM_BLOCKLIST = frozenset({
+    "with", "net", "fin", "main", "daily", "base", "raw",
+    "temp", "tmp", "stg", "ranked", "cohort", "final",
+})
+
+
+def _extract_sql_strings(obj) -> list[str]:
+    """Recursively collect all string values from a nested JSON object."""
+    if isinstance(obj, str):
+        return [obj]
+    if isinstance(obj, dict):
+        out = []
+        for v in obj.values():
+            out.extend(_extract_sql_strings(v))
+        return out
+    if isinstance(obj, list):
+        out = []
+        for item in obj:
+            out.extend(_extract_sql_strings(item))
+        return out
+    return []
+
+
+def _build_fact_signals() -> re.Pattern:
+    """
+    Scan every KB JSON file once and derive a set of real fact-table name stems:
+      1. Collect table names after FROM / JOIN keywords across all KB SQL
+      2. Subtract CTE aliases (defined via `<name> AS (`)
+      3. Drop derived/aggregated table names (ending in _daily, _summary, etc.)
+      4. Keep only names with 3+ references (noise filter)
+      5. Extract the leading word-stem (up to first _ or digit); skip blocklisted stems
+      6. Weight stems by reference count; keep those above a minimum share threshold
+
+    Falls back to _FALLBACK_FACT_TERMS if the KB directory is missing or empty.
+    """
+    if not _KB_DIR.exists():
+        stems = _FALLBACK_FACT_TERMS
+    else:
+        table_refs: Counter = Counter()
+        cte_names: set[str] = set()
+
+        for path in glob.glob(str(_KB_DIR / "*.json")):
+            try:
+                with open(path) as f:
+                    entries = json.load(f)
+            except Exception:
+                continue
+            if not isinstance(entries, list):
+                continue
+            for entry in entries:
+                sql_strings = _extract_sql_strings(entry.get("sql_assets", []))
+                sql_strings += _extract_sql_strings(entry.get("template", ""))
+                for sql in sql_strings:
+                    for name in _FROM_JOIN.findall(sql):
+                        table_refs[name.lower()] += 1
+                    for name in _CTE_DEF.findall(sql):
+                        cte_names.add(name.lower())
+
+        # Remove CTE aliases and derived/aggregated table names
+        real_tables = {
+            name: count
+            for name, count in table_refs.items()
+            if name not in cte_names
+            and count >= 3
+            and not _DERIVED_SUFFIXES.search(name)
+        }
+
+        if not real_tables:
+            stems = _FALLBACK_FACT_TERMS
+        else:
+            # Extract leading word-stem (split on first _ or digit).
+            # e.g. "order_items" → "order", "event_logs" → "event"
+            stem_counts: Counter = Counter()
+            for name, count in real_tables.items():
+                stem = re.split(r"[_\d]", name)[0]
+                if len(stem) >= 3 and stem not in _STEM_BLOCKLIST:
+                    stem_counts[stem] += count
+
+            # Keep stems that account for ≥ 0.3% of total reference weight
+            total = sum(stem_counts.values())
+            threshold = max(3, total * 0.003)
+            candidates = [s for s, c in stem_counts.items() if c >= threshold]
+
+            # Deduplicate: if both singular and plural form exist, keep the shorter one
+            # e.g. "order" and "orders" → keep "order" (it's already a prefix of "orders")
+            deduped: list[str] = []
+            for s in sorted(candidates, key=len):
+                if not any(s.startswith(kept) for kept in deduped):
+                    deduped.append(s)
+            stems = tuple(deduped) if deduped else _FALLBACK_FACT_TERMS
+
+    pattern = r"^(" + "|".join(re.escape(s) for s in stems) + r")"
+    return re.compile(pattern, re.IGNORECASE)
+
+
+# Built once at module load — zero cost at runtime
+_FACT_SIGNALS: re.Pattern = _build_fact_signals()
 
 
 # ── Regex helpers ─────────────────────────────────────────────────────────────
@@ -583,12 +706,19 @@ def profile_connection(
       column_profiles: {"table.column": ColumnProfile}
 
     Designed to run once at connection time. Typically < 2 s for schemas
-    under 10 tables; capped at 4 tables for very wide schemas.
+    under 10 tables; capped at 20 tables with fact-table prioritisation.
     """
     table_profiles: dict[str, TableProfile] = {}
     column_profiles: dict[str, ColumnProfile] = {}
 
-    for table in tables[:12]:  # safety cap — profiler is best-effort
+    # Prioritise likely fact tables so they're profiled even in large schemas.
+    # _FACT_SIGNALS is derived from KB SQL templates at module load time.
+    prioritised = sorted(
+        tables,
+        key=lambda t: (0 if _FACT_SIGNALS.match(t) else 1, t),
+    )
+
+    for table in prioritised[:20]:  # raised cap; fact tables always come first
         fk_cols = fk_hints.get(table, set())
 
         cols = _parse_columns(conn, table)

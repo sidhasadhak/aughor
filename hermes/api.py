@@ -316,6 +316,9 @@ async def _stream_investigation(question: str, connection_id: str, request: Requ
             "current_subq_idx": 0,
             "subq_answers": [],
             "explore_report": None,
+            "investigation_phases": [],
+            "ada_report": None,
+            "_ada_intake": None,
         }
 
         import time
@@ -383,6 +386,25 @@ async def _stream_investigation(question: str, connection_id: str, request: Requ
                         "score": scores[-1].model_dump(),
                         "hypotheses": [h.model_dump() for h in merged.get("hypotheses", [])],
                     })
+
+            # ── ADA investigate phase events ──────────────────────────────────
+            elif node_name in ("ada_intake", "ada_baseline", "ada_decompose",
+                               "ada_dimensional", "ada_behavioral"):
+                phases = merged.get("investigation_phases", [])
+                if phases:
+                    latest_phase = phases[-1]
+                    yield _sse("phase_complete", {
+                        "phase": latest_phase,
+                        "all_phases": phases,
+                    })
+
+            elif node_name == "ada_synthesize" and merged.get("ada_report"):
+                ada = merged["ada_report"]
+                yield _sse("ada_report", {
+                    "ada_report": ada,
+                    "investigation_id": inv_id,
+                    "query_mode": "investigate",
+                })
 
             elif node_name == "decompose_exploration":
                 subqs = merged.get("sub_questions", [])

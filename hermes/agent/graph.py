@@ -20,6 +20,14 @@ from hermes.agent.nodes import (
     should_continue,
     synthesize_report,
 )
+from hermes.agent.investigate import (
+    ada_intake,
+    ada_baseline,
+    ada_decompose,
+    ada_dimensional,
+    ada_behavioral,
+    ada_synthesize,
+)
 from hermes.agent.explore import (
     decompose_exploration,
     plan_and_execute_subq,
@@ -40,23 +48,37 @@ def _checkpointer():
     return SqliteSaver(conn)
 
 
-def _compile(execute_node, scan_node, explore_execute_node, hitl: bool = False):
+def _compile(execute_node, scan_node, explore_execute_node, ada_nodes: dict = None, hitl: bool = False):
     graph = StateGraph(AgentState)
 
     # ── Shared entry ──────────────────────────────────────────────────────────
     graph.add_node("route_question", route_question)
     graph.set_entry_point("route_question")
 
-    # ── Investigate branch ────────────────────────────────────────────────────
+    # ── ADA Investigate branch (new) ──────────────────────────────────────────
+    ada = ada_nodes or {}
     graph.add_node("exploratory_scan", scan_node)
-    graph.add_node("decompose", decompose_question)
+    graph.add_node("ada_intake",      ada.get("intake",      ada_intake))
+    graph.add_node("ada_baseline",    ada.get("baseline",    lambda s: {"investigation_phases": s.get("investigation_phases", [])}))
+    graph.add_node("ada_decompose",   ada.get("decompose",   lambda s: {"investigation_phases": s.get("investigation_phases", [])}))
+    graph.add_node("ada_dimensional", ada.get("dimensional", lambda s: {"investigation_phases": s.get("investigation_phases", [])}))
+    graph.add_node("ada_behavioral",  ada.get("behavioral",  lambda s: {"investigation_phases": s.get("investigation_phases", [])}))
+    graph.add_node("ada_synthesize",  ada_synthesize)
+
+    graph.add_edge("exploratory_scan",  "ada_intake")
+    graph.add_edge("ada_intake",        "ada_baseline")
+    graph.add_edge("ada_baseline",      "ada_decompose")
+    graph.add_edge("ada_decompose",     "ada_dimensional")
+    graph.add_edge("ada_dimensional",   "ada_behavioral")
+    graph.add_edge("ada_behavioral",    "ada_synthesize")
+    graph.add_edge("ada_synthesize",    END)
+
+    # ── Direct query branch (unchanged) ──────────────────────────────────────
     graph.add_node("plan_and_execute", execute_node)
     graph.add_node("score_evidence", score_evidence)
     graph.add_node("replan", replan)
     graph.add_node("synthesize", synthesize_report)
 
-    graph.add_edge("exploratory_scan", "decompose")
-    graph.add_edge("decompose", "plan_and_execute")
     graph.add_edge("plan_and_execute", "score_evidence")
     graph.add_edge("score_evidence", "replan")
     graph.add_conditional_edges(
@@ -96,7 +118,7 @@ def _compile(execute_node, scan_node, explore_execute_node, hitl: bool = False):
         },
     )
 
-    interrupt_before = ["synthesize"] if hitl else []
+    interrupt_before = ["ada_synthesize"] if hitl else []
     return graph.compile(checkpointer=_checkpointer(), interrupt_before=interrupt_before)
 
 
@@ -107,19 +129,33 @@ def build_graph(conn: duckdb.DuckDBPyConnection):
     db._conn = conn
     db._path = None
     db._connection_id = "cli"
+    ada_nodes = {
+        "baseline":   partial(ada_baseline,   conn=db),
+        "decompose":  partial(ada_decompose,  conn=db),
+        "dimensional": partial(ada_dimensional, conn=db),
+        "behavioral": partial(ada_behavioral,  conn=db),
+    }
     return _compile(
         partial(plan_and_execute, conn=db),
         partial(exploratory_scan, conn=db),
         partial(plan_and_execute_subq, conn=db),
+        ada_nodes=ada_nodes,
     )
 
 
 def build_graph_generic(db, hitl: bool = False):
     """Build the graph bound to any DatabaseConnection instance."""
+    ada_nodes = {
+        "baseline":    partial(ada_baseline,    conn=db),
+        "decompose":   partial(ada_decompose,   conn=db),
+        "dimensional": partial(ada_dimensional, conn=db),
+        "behavioral":  partial(ada_behavioral,  conn=db),
+    }
     return _compile(
         partial(plan_and_execute, conn=db),
         partial(exploratory_scan, conn=db),
         partial(plan_and_execute_subq, conn=db),
+        ada_nodes=ada_nodes,
         hitl=hitl,
     )
 
@@ -164,6 +200,9 @@ def run_investigation(
         "current_subq_idx": 0,
         "subq_answers": [],
         "explore_report": None,
+        "investigation_phases": [],
+        "ada_report": None,
+        "_ada_intake": None,
     }
 
     final_state = initial_state.copy()

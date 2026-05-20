@@ -21,8 +21,22 @@ _FORBIDDEN = re.compile(
 )
 
 
+_READ_ONLY_TYPES = (
+    sqlglot.exp.Select,   # plain SELECT
+    sqlglot.exp.Union,    # SELECT ... UNION [ALL] SELECT ...
+    sqlglot.exp.Intersect,
+    sqlglot.exp.Except,
+    sqlglot.exp.Subquery, # shouldn't appear at top level, but harmless to allow
+)
+
+
 def validate_sql(sql: str) -> tuple[bool, str]:
-    """Parse with sqlglot and block any non-SELECT statement."""
+    """Parse with sqlglot and block any non-SELECT statement.
+
+    UNION / INTERSECT / EXCEPT are all read-only set operations composed of
+    SELECT statements and must be allowed — they parse as sqlglot.exp.Union
+    (not Select), so a bare isinstance(…, Select) check incorrectly rejects them.
+    """
     sql = sql.strip().rstrip(";")
     if _FORBIDDEN.search(sql):
         return False, "Query contains a forbidden keyword (only SELECT is allowed)"
@@ -30,7 +44,7 @@ def validate_sql(sql: str) -> tuple[bool, str]:
         parsed = sqlglot.parse_one(sql, error_level=sqlglot.ErrorLevel.RAISE)
     except Exception as e:
         return False, f"SQL parse error: {e}"
-    if not isinstance(parsed, sqlglot.exp.Select):
+    if not isinstance(parsed, _READ_ONLY_TYPES):
         return False, f"Only SELECT statements are allowed, got {type(parsed).__name__}"
     return True, "ok"
 

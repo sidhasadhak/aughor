@@ -15,10 +15,15 @@ function isNumeric(v: unknown): boolean {
 
 // "2024-01-01 00:00:00" or "2024-01-01T00:00:00Z" → "Jan 2024"
 // Returns the original string unchanged if it doesn't look like a timestamp
+function normDateStr(v: string): string {
+  // DuckDB returns "2024-01-01 00:00:00" — normalize space separator to T for Date parsing
+  return v.replace(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})/, "$1T$2");
+}
+
 function fmtTimestampLabel(v: string): string {
   if (!/^\d{4}-\d{2}-\d{2}/.test(v)) return v;
   try {
-    const d = new Date(v);
+    const d = new Date(normDateStr(v));
     if (isNaN(d.getTime())) return v;
     return d.toLocaleString("default", { month: "short", year: "numeric" });
   } catch {
@@ -201,8 +206,20 @@ function InlineChart({
     });
 
     // Column classification
-    const dateCol = columns.find((c) => DATE_COL.test(c));
-    const catCols = columns.filter((c, i) => !DATE_COL.test(c) && !isNumeric(rows[0]?.[i]));
+    // Value-based date detection: if NAME doesn't match DATE_COL but value looks like
+    // an ISO date string (e.g. "order_month" → "2025-01-01 00:00:00"), treat as date.
+    const DATE_VALUE_RE = /^\d{4}-\d{2}-\d{2}/;
+    const looksLikeDate = (colIdx: number) => {
+      const v = rows[0]?.[colIdx];
+      return typeof v === "string" && DATE_VALUE_RE.test(v);
+    };
+    const dateCol =
+      columns.find((c) => DATE_COL.test(c)) ||
+      columns.find((c, i) => !isNumeric(rows[0]?.[i]) && looksLikeDate(i));
+
+    const catCols = columns.filter(
+      (c, i) => c !== dateCol && !DATE_COL.test(c) && !isNumeric(rows[0]?.[i])
+    );
     const numCol = columns.find((c, i) => !DATE_COL.test(c) && isNumeric(rows[0]?.[i]));
     const catCol = catCols[0];   // primary grouping / y-axis
     const catCol2 = catCols[1];  // secondary grouping / stack fill
@@ -345,11 +362,37 @@ function InlineChart({
         return;
       }
 
+      // ── DATE BAR — explicit bar request on date+numeric data (no categories) ─
+      // Fires when hint is "bar"/"bar_horizontal" but there's a date col and no
+      // categorical col to place on the axis.
+      else if (dateCol && !catCol && (hint === "bar" || hint === "bar_horizontal")) {
+        const barData = data.map((d) => ({
+          date: new Date(normDateStr(String(d[dateCol]))),
+          val: Number(d[numCol]),
+        }));
+        chart = Plot.plot({
+          width: availW,
+          height: userH ?? 240,
+          marginLeft: 60,
+          marginRight: 16,
+          marginBottom: 40,
+          style: { background: "transparent", color: "#a1a1aa", fontSize: "11px" },
+          x: { type: "time", label: dateCol },
+          y: { grid: true, tickFormat: NUM_FMT, label: numCol },
+          marks: [
+            Plot.barY(barData, { x: "date", y: "val", fill: "#818cf8", interval: "month" }),
+            Plot.ruleY([0]),
+          ],
+        });
+      }
+
       // ── LINE / AREA (time-series) — time on X, measure on Y ───────────────
-      else if (dateCol && (hint === "line" || hint === "area" || hint === "auto")) {
+      // Also fires when dateCol exists but no catCol and hint is not an explicit bar
+      // (smaller models may return an unexpected hint for monthly data)
+      else if (dateCol && (hint === "line" || hint === "area" || hint === "auto" || !catCol)) {
         const parsed = data.map((d) => ({
           ...d,
-          [dateCol]: new Date(d[dateCol] as string),
+          [dateCol]: new Date(normDateStr(String(d[dateCol]))),
           [numCol]: Number(d[numCol]),
         }));
         chart = Plot.plot({

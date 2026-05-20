@@ -282,3 +282,561 @@ tables:
           is located
         values: SP, RJ, MG, RS, PR, SC, BA, ES, GO, AM, CE, PA, PB, PE, PI, RN, SE,
           AL, DF, MT, MS, MA, TO, AP, RR, AC, RO, AC
+  superstore:
+    description: This table contains detailed transaction-level records from a retail
+      superstore, capturing order, customer, product, and financial information for
+      each sale.
+    grain: One row represents one line item in a customer order (i.e., one product
+      purchased in one order)
+    auto_generated: true
+    columns:
+      Row ID:
+        description: Unique identifier for each row/line item in the dataset
+      Order ID:
+        description: Unique identifier for the order (may span multiple line items)
+      Order Date:
+        description: Date the order was placed by the customer
+      Ship Date:
+        description: Date the order was shipped to the customer
+      Ship Mode:
+        description: Shipping method selected by the customer
+        values: First Class, Second Class, Standard Class, Same Day
+      Customer ID:
+        description: Unique identifier for the customer
+      Customer Name:
+        description: Full name of the customer
+      Segment:
+        description: Customer segment classification
+        values: Consumer, Corporate, Home Office
+      Country:
+        description: Country of the customer's shipping address
+      City:
+        description: City of the customer's shipping address
+      State:
+        description: State or province of the customer's shipping address
+      Postal Code:
+        description: Postal or ZIP code of the customer's shipping address
+      Region:
+        description: Geographic region of the customer
+        values: East, Central, West, South
+      Product ID:
+        description: Unique identifier for the product
+      Category:
+        description: High-level product category
+        values: Furniture, Office Supplies, Technology
+      Sub-Category:
+        description: Specific sub-category within the product category
+      Product Name:
+        description: Full name/title of the product
+      Sales:
+        description: Total sales revenue for this line item (Quantity × Unit Price)
+      Quantity:
+        description: Number of units sold in this line item
+      Discount:
+        description: Discount applied to the line item (as a decimal fraction, e.g.,
+          0.2 = 20% discount)
+      Profit:
+        description: Profit earned on this line item (Sales − Cost)
+  attribution:
+    description: This table stores marketing attribution data, assigning credit weights
+      to different touchpoints (e.g., ads, email) for each order to understand marketing
+      channel effectiveness.
+    grain: One row per touchpoint contributing to an order, with the assigned weight
+      of that touchpoint’s contribution to the order.
+    auto_generated: true
+    columns:
+      order_id:
+        description: Unique identifier for the order being attributed.
+      touchpoint_type:
+        description: Type of marketing touchpoint that contributed to the order (e.g.,
+          ad impression, email click).
+        values: ad_impression, organic, ad_click, email, influencer
+      weight:
+        description: Numerical weight representing the contribution of this touchpoint
+          to the order (e.g., share of credit in a multi-touch model).
+        caveats: Weights for a given order should sum to 1.0 across all touchpoints
+          if using a normalized attribution model.
+  campaigns:
+    description: This table stores metadata for marketing campaigns, including their
+      channel, objective, timing, budget, and targeting details.
+    grain: One row per unique campaign_id
+    auto_generated: true
+    columns:
+      campaign_id:
+        description: Unique identifier for the campaign
+      channel:
+        description: Marketing channel through which the campaign is run
+        values: Google, Affiliate, Meta, YouTube, Email, TikTok
+      objective:
+        description: Primary marketing goal of the campaign
+        values: RETARGETING, CONVERSIONS, AWARENESS
+      start_date:
+        description: Date the campaign began
+      end_date:
+        description: Date the campaign ended or is scheduled to end
+      daily_budget_usd:
+        description: Allocated daily budget for the campaign in US dollars
+      target_region:
+        description: Geographic region targeted by the campaign
+      creative_type:
+        description: Format or type of creative assets used in the campaign (e.g.,
+          image, video, text)
+  cart_items:
+    description: Tracks individual items added to shopping carts, linking carts to
+      specific products (SKUs) with quantities and timestamps.
+    grain: One row represents one SKU added to one cart (i.e., a single line item
+      in a cart)
+    auto_generated: true
+    columns:
+      cart_item_id:
+        description: Unique identifier for the cart item record
+      cart_id:
+        description: Identifier of the cart to which this item belongs
+      sku_id:
+        description: Identifier of the product (SKU) added to the cart
+      quantity:
+        description: Number of units of the SKU added to the cart in this item
+      added_ts:
+        description: Timestamp when the item was added to the cart
+  carts:
+    description: This table captures individual shopping cart events, representing
+      the state of a user's cart at the time of creation, including session and user
+      identifiers, technical context, and abandonment status.
+    grain: One row per cart event, uniquely identified by cart_id
+    auto_generated: true
+    columns:
+      cart_id:
+        description: Unique identifier for a specific cart instance
+      session_id:
+        description: Identifier for the browsing session during which the cart was
+          created
+      anon_id:
+        description: Anonymous user identifier, used to track behavior across sessions
+          before login
+      created_ts:
+        description: Timestamp when the cart was created
+      currency:
+        description: Currency code (e.g., USD, EUR) used for the cart
+      traffic_source:
+        description: Source channel through which the user arrived at the site (e.g.,
+          organic, paid, direct)
+      device_type:
+        description: Type of device used to create the cart (e.g., mobile, desktop,
+          tablet)
+      abandoned:
+        description: Flag indicating whether the cart was abandoned (1) or converted
+          (0); stored as BIGINT instead of BOOLEAN
+        values: 0, 1
+        caveats: Stored as BIGINT (0/1) rather than boolean; may require casting in
+          queries
+  clicks:
+    description: This table records individual click events that occurred after an
+      impression, linking them to specific campaigns, anonymous users, and advertising
+      platforms.
+    grain: One row represents a single click event on an advertisement impression.
+    auto_generated: true
+    columns:
+      impression_id:
+        description: Unique identifier for the impression that preceded the click.
+      campaign_id:
+        description: Identifier for the advertising campaign associated with the click.
+        values: CMP-<hex_string>
+      anon_id:
+        description: Anonymous user identifier, used to track user behavior without
+          personally identifiable information.
+        values: ANON-<hex_string>
+      platform:
+        description: Advertising platform where the impression and click occurred.
+        values: Google, Affiliate, Email, Meta, TikTok
+      ts:
+        description: Unix timestamp (in milliseconds) when the impression occurred.
+      viewable:
+        description: Whether the impression was viewable (i.e., met viewability criteria
+          such as being in-view for a minimum duration).
+        values: true, false
+      click_ts:
+        description: Unix timestamp (in milliseconds) when the click occurred.
+  experiment_assignments:
+    description: Records which users were assigned to which experiment variants and
+      when, used to track exposure for A/B testing analysis.
+    grain: one row per user-experiment assignment
+    auto_generated: true
+    columns:
+      anon_id:
+        description: Anonymous user identifier, used to link assignments to user behavior
+      experiment_id:
+        description: Unique identifier for the experiment
+      variant:
+        description: Variant assigned to the user (control or treatment)
+        values: control, treatment
+      assignment_ts:
+        description: Unix timestamp (milliseconds) when the user was assigned to the
+          variant
+      is_experiment_user:
+        description: Flag indicating whether the user qualifies as an experiment user
+          (1 = yes, 0 = no)
+        values: 0, 1
+  experiments:
+    description: This table stores metadata for A/B testing experiments, including
+      timing, traffic allocation, and hypothesis details.
+    grain: One row per experiment, uniquely identified by experiment_id
+    auto_generated: true
+    columns:
+      experiment_id:
+        description: Unique identifier for the experiment
+        values: EXP-0026, EXP-0034, EXP-0047, EXP-0070, EXP-0104, EXP-0115, EXP-0162,
+          EXP-0163
+      start_ts:
+        description: Unix timestamp (milliseconds) when the experiment started
+        caveats: May be NULL for experiments not yet launched
+      end_ts:
+        description: Unix timestamp (milliseconds) when the experiment ended or will
+          end
+        caveats: NULL for experiments still running
+      traffic_allocation:
+        description: Percentage of total traffic allocated to the experiment (e.g.,
+          0.1 = 10%)
+        caveats: Should be between 0 and 1; may be 0 for paused experiments
+      variant_ratio:
+        description: Proportional split between control and variant groups (e.g.,
+          0.5 = 50/50 split)
+        caveats: Assumes two-armed test; may not reflect actual traffic distribution
+          if multi-armed
+      hypothesis:
+        description: Brief description of the hypothesis being tested
+        values: homepage layout, recommendation ranking, free shipping threshold,
+          discount threshold test, checkout UX change
+  impressions:
+    description: Records of ad impressions served across various digital advertising
+      platforms, capturing which anonymous user saw which campaign on which platform
+      at what time, and whether the impression was viewable.
+    grain: One row per ad impression event
+    auto_generated: true
+    columns:
+      impression_id:
+        description: Unique identifier for each impression event
+      campaign_id:
+        description: Identifier for the advertising campaign that served the impression
+        values: CMP-21585f68ef, CMP-5b4660f550, CMP-87422509cf, CMP-2ecb3b4388, CMP-ece4e4ff2b,
+          CMP-ff8edaaf61, CMP-6c06d576f8, CMP-bef7c9dead
+      anon_id:
+        description: Anonymous user identifier, used to track behavior without personally
+          identifiable information
+        values: ANON-C9D450ADBA824598, ANON-ED6B7A7E9DA44CC7, ANON-155DBF9C47BC42A5,
+          ANON-8E2D7FE1730B4121, ANON-B28E49245597402E, ANON-F7772ED6E3264758, ANON-48615C2E94414B9A,
+          ANON-08BB768211C2463C
+      platform:
+        description: Digital advertising platform where the impression was served
+        values: Google, TikTok, Affiliate, Email, Meta
+      ts:
+        description: Unix timestamp (in milliseconds) when the impression occurred
+        caveats: Stored as BIGINT; ensure proper conversion to timestamp type in analysis
+      viewable:
+        description: Whether the impression met viewability criteria (e.g., 50% of
+          ad in view for 1+ second)
+        values: true, false
+  inventory_movements:
+    description: Tracks individual inventory movements (changes in stock levels) across
+      warehouses, recording the type of movement, quantity, timestamp, and associated
+      SKU and warehouse identifiers.
+    grain: One row represents a single inventory movement event for a specific SKU
+      at a specific warehouse.
+    auto_generated: true
+    columns:
+      movement_id:
+        description: Unique identifier for each inventory movement record.
+      sku_id:
+        description: Identifier for the stock-keeping unit involved in the movement.
+      movement_type:
+        description: Category of the inventory movement, indicating how stock was
+          added or removed.
+        values: WAREHOUSE_TRANSFER, RETURN_INBOUND, DAMAGE_WRITE_OFF, CUSTOMER_ORDER,
+          PURCHASE_INBOUND
+      quantity:
+        description: Number of units moved (positive for additions, negative for reductions,
+          depending on business convention).
+      timestamp:
+        description: Exact time when the movement occurred, stored with nanosecond
+          precision.
+        caveats: Nanosecond precision may cause compatibility issues with systems
+          expecting standard timestamp formats.
+      warehouse_id:
+        description: Identifier for the warehouse where the movement took place.
+  inventory_snapshots:
+    description: A point-in-time inventory snapshot table capturing stock levels for
+      SKUs across warehouses at specific moments.
+    grain: One row per SKU-warehouse combination at a specific snapshot timestamp
+    auto_generated: true
+    columns:
+      snapshot_id:
+        description: Unique identifier for each inventory snapshot event
+        values: SNAP-<hexadecimal>
+      snapshot_date:
+        description: Timestamp when the inventory snapshot was taken
+      sku_id:
+        description: Unique identifier for the product SKU
+        values: SKU-<hexadecimal>
+      warehouse_id:
+        description: Identifier for the warehouse where inventory is held
+        values: WH-DE, WH-UK, WH-US-WEST, WH-US-EAST
+      stock_level:
+        description: Quantity of units available in stock at the time of snapshot
+  invoices:
+    description: This table contains invoice-level financial and status information
+      linked to orders, including gross and net revenue, tax, discount, and invoice
+      delay metrics.
+    grain: One row per invoice, uniquely identified by order_id (each order has at
+      most one invoice in this table)
+    auto_generated: true
+    columns:
+      order_id:
+        description: Unique identifier linking the invoice to its originating order
+      invoice_delay_days:
+        description: Number of days between the order creation date and the invoice
+          issue date
+      revenue_gross:
+        description: Total revenue before tax and discounts
+      tax:
+        description: Tax amount applied to the invoice
+      discount:
+        description: Total discount amount applied to the invoice
+      revenue_net:
+        description: Final revenue after applying tax and discount (typically = revenue_gross
+          + tax - discount)
+      status:
+        description: Current status of the invoice
+        values: VOID, PAID, ISSUED
+  journal_entries:
+    description: This table stores individual journal entries used for financial accounting,
+      capturing debits and credits associated with orders and general ledger accounts.
+    grain: One row per journal entry, representing a single debit or credit transaction
+      linked to an order and a general ledger account.
+    auto_generated: true
+    columns:
+      entry_id:
+        description: Unique identifier for each journal entry
+      order_id:
+        description: Reference to the order that triggered this journal entry
+      account:
+        description: General ledger account name involved in the entry (e.g., Revenue,
+          Accounts Receivable)
+        values: Revenue, Accounts Receivable
+      amount:
+        description: Absolute value of the transaction amount
+      entry_type:
+        description: Indicates whether the entry is a debit or credit (e.g., 'debit',
+          'credit')
+        caveats: Value not visible in sample; likely 'debit' or 'credit'
+      signed_amount:
+        description: Amount adjusted for debit/credit direction (positive for debits,
+          negative for credits, or vice versa depending on convention)
+  kpi_definitions:
+    description: A reference table defining key performance indicators (KPIs) used
+      across marketing and finance, with distinct business definitions for each function.
+    grain: One row per unique KPI (e.g., CAC, Revenue, ROAS)
+    auto_generated: true
+    columns:
+      kpi:
+        description: The name of the key performance indicator
+      marketing_definition:
+        description: How marketing defines and calculates this KPI
+      finance_definition:
+        description: How finance defines and calculates this KPI
+  marketing_ledger:
+    description: Tracks marketing campaign spending in USD, indicating whether the
+      cost has been recognized for accounting purposes and linking it to a cost center.
+    grain: one row per campaign's spend record
+    auto_generated: true
+    columns:
+      campaign_id:
+        description: Unique identifier for a marketing campaign
+      spend_usd:
+        description: Total marketing spend for the campaign in US dollars
+      recognized:
+        description: Whether the spend has been recognized (e.g., booked) in financial
+          records
+        values: true, false
+      cost_center:
+        description: The organizational cost center responsible for the marketing
+          spend
+        values: CC-MARKETING-US, CC-MARKETING-EU
+  payments:
+    description: This table records individual payment attempts made by customers,
+      including details about the payment method, device, traffic source, and outcome
+      (success, fraud review, etc.).
+    grain: One row represents one payment attempt for a specific order, identified
+      by payment_id and attempt_number.
+    auto_generated: true
+    columns:
+      payment_id:
+        description: Unique identifier for each payment attempt.
+      order_id:
+        description: Identifier linking the payment attempt to its associated order.
+      attempt_number:
+        description: Sequential number indicating the order of payment attempts for
+          a given order (e.g., 1 for first attempt, 2 for retry, etc.).
+      payment_ts:
+        description: Timestamp of when the payment attempt was made, with nanosecond
+          precision.
+        caveats: High-precision timestamp (nanoseconds); ensure downstream tools handle
+          this format correctly.
+      payment_method:
+        description: Method used by the customer to attempt the payment.
+        values: Credit Card, Google Pay, Klarna, Apple Pay, PayPal
+      traffic_source:
+        description: Source through which the customer arrived at the checkout (e.g.,
+          marketing channel or referral source).
+      currency:
+        description: ISO currency code for the transaction (e.g., USD, EUR).
+      device_type:
+        description: Type of device used for the payment attempt (e.g., mobile, desktop).
+      success:
+        description: Whether the payment attempt was successful.
+        values: true, false
+      fraud_review:
+        description: Whether the payment was flagged for fraud review.
+        values: true, false
+      required_retry:
+        description: Whether the payment required a retry (e.g., due to temporary
+          failure).
+        values: true, false
+      fraud_blocked:
+        description: Whether the payment was ultimately blocked due to fraud detection.
+        values: true, false
+  pnl_daily:
+    description: Daily profit and loss metrics, aggregating revenue, costs, and net
+      profit for business performance analysis.
+    grain: One row per calendar day with aggregated financial metrics for that day
+    auto_generated: true
+    columns:
+      date:
+        description: The calendar day for which the financial metrics are reported
+      revenue:
+        description: Total revenue generated on this day
+      cogs:
+        description: Cost of goods sold incurred on this day
+      marketing:
+        description: Marketing expenses incurred on this day
+      logistics:
+        description: Logistics (e.g., shipping, delivery) expenses incurred on this
+          day
+      support:
+        description: Customer support expenses incurred on this day
+      net_profit:
+        description: Net profit for the day, calculated as revenue minus all listed
+          costs
+  purchase_orders:
+    description: This table records purchase order details, including the items ordered,
+      quantities, suppliers, and delivery timelines (expected vs actual).
+    grain: One row represents one line item in a purchase order, uniquely identified
+      by the combination of po_id and sku_id.
+    auto_generated: true
+    columns:
+      po_id:
+        description: Unique identifier for a purchase order
+      sku_id:
+        description: Unique identifier for the product (SKU) being ordered
+      supplier_id:
+        description: Unique identifier for the supplier providing the item
+      quantity:
+        description: Number of units of the SKU ordered in this line item
+      order_date:
+        description: Timestamp when the purchase order line item was created (nanosecond
+          precision)
+      expected_delivery_date:
+        description: Planned or promised delivery date for the order line item (nanosecond
+          precision)
+      actual_delivery_date:
+        description: Actual date the item was delivered (second precision)
+        caveats: Precision differs from order_date and expected_delivery_date (seconds
+          vs nanoseconds); may indicate data source differences or legacy system integration.
+  refunds:
+    description: This table records individual refund transactions, including timing,
+      reason, and contextual details such as payment method, device type, and whether
+      the refund was logistics- or customer-related.
+    grain: One row per refund_id, representing a single refund transaction
+    auto_generated: true
+    columns:
+      refund_id:
+        description: Unique identifier for the refund transaction
+      order_id:
+        description: Identifier of the original order associated with this refund
+      refund_ts:
+        description: Timestamp when the refund was initiated
+      refund_completed_ts:
+        description: Timestamp when the refund was fully processed and completed
+      refund_reason:
+        description: Customer-provided or system-assigned reason for the refund
+        values: NOT_AS_DESCRIBED, DAMAGED_PRODUCT, CHANGED_MIND, MISSING_ITEMS, WRONG_SHADE,
+          ALLERGIC_REACTION, QUALITY_ISSUE, LATE_DELIVERY
+      partial_refund:
+        description: Indicates whether the refund was partial (true) or full (false)
+        values: true, false
+      traffic_source:
+        description: Channel or source through which the customer accessed the platform
+          (e.g., organic, paid, social)
+      payment_method:
+        description: Method used to pay for the original order (e.g., credit card,
+          PayPal)
+      currency:
+        description: Currency in which the refund amount is denominated
+      device_type:
+        description: Type of device used during the purchase (e.g., mobile, desktop,
+          tablet)
+      refund_processing_days:
+        description: Number of days between refund initiation and completion
+      slow_refund:
+        description: Flag indicating whether the refund took longer than expected
+          to process (e.g., >3 days)
+        values: true, false
+      logistics_related_refund:
+        description: Flag indicating whether the refund was triggered by logistics
+          issues (e.g., shipping, delivery)
+        values: true, false
+      customer_preference_refund:
+        description: Flag indicating whether the refund was due to customer preference
+          or subjective reasons (e.g., size, color)
+        values: true, false
+  shipments:
+    description: This table tracks individual shipment records, linking them to orders
+      and capturing carrier, timing, and delivery performance metrics.
+    grain: One row per unique shipment, identified by shipment_id
+    auto_generated: true
+    columns:
+      shipment_id:
+        description: Unique identifier for each shipment
+      order_id:
+        description: Identifier of the order associated with this shipment
+      carrier:
+        description: Name of the shipping carrier used for this shipment
+        values: FedEx, RoyalMail, DHL, UPS
+      ship_date:
+        description: Date and time when the shipment was dispatched
+      delivery_days:
+        description: Number of days between ship_date and actual delivery date
+        caveats: May be NULL for shipments not yet delivered
+      delivered_late:
+        description: Whether the shipment was delivered after the promised delivery
+          date
+        values: true, false
+  stockouts:
+    description: Records of stockout events, capturing when and for how long a specific
+      SKU was unavailable in a specific warehouse.
+    grain: One row per stockout event, identified by a unique stockout_id, representing
+      a single instance of a SKU being out of stock in a specific warehouse.
+    auto_generated: true
+    columns:
+      stockout_id:
+        description: Unique identifier for each stockout event.
+      sku_id:
+        description: Identifier for the product (SKU) that went out of stock.
+      warehouse_id:
+        description: Identifier for the warehouse where the stockout occurred.
+        values: WH-DE, WH-UK, WH-US-EAST, WH-US-WEST
+      stockout_date:
+        description: Timestamp when the stockout event started (i.e., when inventory
+          dropped to zero).
+      duration_hours:
+        description: Duration of the stockout event in hours, from start until stock
+          was restored.
+        caveats: May be NULL if the stockout is still ongoing (not yet resolved).

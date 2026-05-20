@@ -132,7 +132,7 @@ def _validate(sql: str) -> tuple[bool, str]:
         parsed = sqlglot.parse_one(sql, error_level=sqlglot.ErrorLevel.RAISE)
     except Exception as e:
         return False, f"SQL parse error: {e}"
-    if not isinstance(parsed, sqlglot.exp.Select):
+    if not isinstance(parsed, (sqlglot.exp.Select, sqlglot.exp.Union)):
         return False, f"Only SELECT is allowed, got {type(parsed).__name__}"
     return True, "ok"
 

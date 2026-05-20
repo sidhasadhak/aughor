@@ -261,7 +261,7 @@ You may NOT use evidence from H3's section to write H1's key finding.
 HARD RULE — NO-QUERY HYPOTHESES:
 If a hypothesis evidence section says "No queries were executed", you MUST:
   1. NOT include that hypothesis as a key finding in the report.
-  2. NOT write "H{n} evidence: ..." text for it anywhere in the report.
+  2. NOT write "H{{n}} evidence: ..." text for it anywhere in the report.
   3. NOT assign it a confidence above 0.0 — write only "could not be tested".
   4. Mention it only in what_is_not_the_cause if it was the absence of evidence that rules it out,
      OR omit it entirely.

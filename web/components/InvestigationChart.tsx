@@ -11,8 +11,10 @@ interface Props {
 
 type ChartType = "timeseries" | "bar" | null;
 
-// Only match columns that are genuinely date/time typed — not integer year/month columns
-const DATE_PATTERN = /_date$|_at$|_time$|created_at|updated_at|timestamp/i;
+// Match date/time column names broadly
+const DATE_PATTERN = /_date$|_at$|_time$|created_at|updated_at|timestamp|^date$|^month$|^week$|^period$|^quarter$|^day$|^year$/i;
+// Value-level date detection: YYYY-MM-DD, YYYY-MM, or ISO timestamp
+const DATE_VALUE_RE = /^\d{4}-\d{2}/;
 // Prefer these as the value axis in bar charts
 const SHARE_PATTERN = /share|pct|percent|rate|ratio|proportion/i;
 const SKIP_NUMERIC_NAMES = /id$/i;
@@ -30,7 +32,9 @@ function detectChart(columns: string[], rows: unknown[][]): {
     !SKIP_NUMERIC_NAMES.test(columns[idx]) &&
     sample.every(r => r[idx] !== null && r[idx] !== "" && !isNaN(Number(r[idx])));
 
-  const isDate = (idx: number) => DATE_PATTERN.test(columns[idx]);
+  const isDate = (idx: number) =>
+    DATE_PATTERN.test(columns[idx]) ||
+    (sample.length > 0 && typeof sample[0]?.[idx] === "string" && DATE_VALUE_RE.test(sample[0][idx] as string));
 
   const isCategory = (idx: number) =>
     !isNumeric(idx) && !isDate(idx) && typeof sample[0]?.[idx] === "string";
@@ -79,7 +83,10 @@ export function InvestigationChart({ columns, rows, title }: Props) {
     const yKey = columns[detected.yCol];
 
     const parseDate = (v: unknown) => {
-      const d = new Date(v as string);
+      let s = typeof v === "string" ? v : String(v);
+      // Normalise DuckDB timestamp "2025-05-01 00:00:00" → ISO "2025-05-01T00:00:00"
+      s = s.replace(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})/, "$1T$2");
+      const d = new Date(s);
       return isNaN(d.getTime()) ? v : d;
     };
 
@@ -87,13 +94,21 @@ export function InvestigationChart({ columns, rows, title }: Props) {
 
     if (detected.type === "timeseries") {
       const parsed = data.map(d => ({ ...d, [xKey]: parseDate(d[xKey]), [yKey]: Number(d[yKey]) }));
+
+      // Detect monthly cadence: all dates land on 1st of month
+      const dates = parsed.map(d => d[xKey]).filter(d => d instanceof Date) as Date[];
+      const isMonthly = dates.length > 1 && dates.every(d => d.getDate() === 1);
+      const xTickFmt = isMonthly
+        ? (d: Date) => d instanceof Date ? d.toLocaleDateString("en-US", { month: "short", year: "2-digit" }) : String(d)
+        : (d: Date) => d instanceof Date ? d.toLocaleDateString("en-US", { month: "short", day: "numeric" }) : String(d);
+
       plot = Plot.plot({
         style: { background: "transparent", color: "#71717a", fontSize: "11px" },
         width: containerRef.current.offsetWidth || 480,
         height: 180,
         marginLeft: 55,
         marginBottom: 32,
-        x: { label: xKey, tickFormat: (d: Date) => d instanceof Date ? d.toLocaleDateString("en-US", { month: "short", day: "numeric" }) : String(d) },
+        x: { label: null, tickFormat: xTickFmt },
         y: { label: yKey, grid: true, tickFormat: (v: number) => v >= 1_000_000 ? `${(v / 1_000_000).toFixed(1)}M` : v >= 1_000 ? `${(v / 1_000).toFixed(0)}k` : String(v) },
         marks: [
           Plot.areaY(parsed, { x: xKey, y: yKey, fill: "#34d399", fillOpacity: 0.08 }),

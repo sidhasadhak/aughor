@@ -202,6 +202,70 @@ class AnalysisReport(BaseModel):
 
 # ── LangGraph state ──────────────────────────────────────────────────────────
 
+# ── ADA Investigation types (new structured investigate mode) ─────────────────
+
+class PhaseKeyNumber(TypedDict):
+    label: str
+    value: str        # formatted: "$1.4M", "-18.4%", "2.6σ"
+    delta: Optional[str]   # "+5pp vs prior period"
+    context: Optional[str] # "February 2026 vs January 2026"
+
+
+class InvestigationFinding(TypedDict):
+    finding_id: str
+    title: str
+    sql: str
+    columns: list[str]
+    rows: list[list]
+    row_count: int
+    error: Optional[str]
+    interpretation: str   # 2-3 sentences citing real numbers
+    key_numbers: list[PhaseKeyNumber]
+    chart_type: str       # "bar"|"line"|"stacked_bar"|"auto"|"none"
+    stat_note: Optional[str]  # "z-score = -2.4, significant at α=0.05"
+    is_significant: bool
+
+
+class InvestigationPhaseResult(TypedDict):
+    phase_id: str       # "baseline"|"decomposition"|"dimensional"|"behavioral"|"operational"
+    phase_name: str
+    phase_icon: str     # emoji for UI
+    status: str         # "complete"|"partial"|"skipped"|"error"
+    summary: str        # one-sentence headline finding for this phase
+    findings: list[InvestigationFinding]
+    skipped_reason: Optional[str]
+
+
+class WaterfallEntry(TypedDict):
+    cause: str
+    amount_label: str   # "$287K" or "~18% of gap"
+    pct_of_total: float # 0–100 (signed: positive = contributor to decline)
+    controllable: bool
+    structural: bool    # vs transient
+
+
+class ADARecommendation(TypedDict):
+    action: str
+    expected_impact: str
+    owner: str
+    timeline: str
+
+
+class ADAReport(TypedDict):
+    headline: str
+    executive_summary: str
+    metric: str
+    observation_period: str
+    comparison_basis: str
+    total_change_label: str    # "-$330K (-18.4% MoM)"
+    phases: list[InvestigationPhaseResult]
+    attribution_waterfall: list[WaterfallEntry]
+    confidence: str            # "HIGH"|"MEDIUM"|"LOW"
+    confidence_justification: str
+    recommendations: list[ADARecommendation]
+    data_gaps: list[str]
+
+
 class AgentState(TypedDict):
     question: str
     connection_id: str
@@ -252,3 +316,8 @@ class AgentState(TypedDict):
     current_subq_idx: int
     subq_answers: Annotated[list[SubQuestionAnswer], operator.add]
     explore_report: Optional[ExplorationReport]
+
+    # ADA investigate mode state (only when query_mode == "investigate")
+    investigation_phases: list[InvestigationPhaseResult]
+    ada_report: Optional[ADAReport]
+    _ada_intake: Optional[dict]  # intake spec passed between ADA phase nodes

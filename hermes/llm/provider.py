@@ -1,14 +1,18 @@
-"""LLM provider abstraction — Ollama (local) or Anthropic (cloud), both via instructor.
+"""LLM provider abstraction — Ollama, LM Studio, Groq, Together, or Anthropic.
 
 Two roles, two model slots:
   coder   — SQL generation, hypothesis scoring, decomposition (structured reasoning)
   narrator — report synthesis (long-form prose)
 
 Env vars:
-  HERMES_CODER_MODEL     default: qwen2.5-coder:32b
-  HERMES_NARRATOR_MODEL  default: llama3.3:70b
+  HERMES_BACKEND         ollama (default) | lmstudio | groq | together | anthropic
+  HERMES_CODER_MODEL     default per backend (see _DEFAULT_MODELS)
+  HERMES_NARRATOR_MODEL  default per backend
   HERMES_MODEL           fallback for both if role-specific var is unset
-  HERMES_BACKEND         ollama (default) | anthropic
+  LMSTUDIO_BASE_URL      default http://localhost:1234/v1
+  GROQ_API_KEY           required when HERMES_BACKEND=groq
+  TOGETHER_API_KEY       required when HERMES_BACKEND=together
+  ANTHROPIC_API_KEY      required when HERMES_BACKEND=anthropic
 """
 from __future__ import annotations
 
@@ -23,17 +27,49 @@ T = TypeVar("T", bound=BaseModel)
 
 Role = Literal["coder", "narrator"]
 
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+OLLAMA_BASE_URL    = os.getenv("OLLAMA_BASE_URL",    "http://localhost:11434/v1")
+LMSTUDIO_BASE_URL  = os.getenv("LMSTUDIO_BASE_URL",  "http://localhost:1234/v1")
+GROQ_BASE_URL      = "https://api.groq.com/openai/v1"
+TOGETHER_BASE_URL  = "https://api.together.xyz/v1"
 
-_FALLBACK = os.getenv("HERMES_MODEL", "qwen2.5-coder:32b")
-_MODEL_FOR_ROLE: dict[Role, str] = {
-    "coder":   os.getenv("HERMES_CODER_MODEL",   _FALLBACK),
-    "narrator": os.getenv("HERMES_NARRATOR_MODEL", os.getenv("HERMES_MODEL", "llama3.3:70b")),
+_DEFAULT_MODELS: dict[str, dict[Role, str]] = {
+    "ollama":    {"coder": "qwen2.5-coder:32b",                       "narrator": "llama3.3:70b"},
+    "lmstudio":  {"coder": "local-model",                             "narrator": "local-model"},
+    "groq":      {"coder": "llama-3.3-70b-versatile",                 "narrator": "llama-3.3-70b-versatile"},
+    "together":  {"coder": "Qwen/Qwen2.5-Coder-32B-Instruct",         "narrator": "meta-llama/Llama-3.3-70B-Instruct-Turbo"},
+    "anthropic": {"coder": "claude-sonnet-4-6",                       "narrator": "claude-sonnet-4-6"},
 }
 
+def _model_for_role(backend: str, role: Role) -> str:
+    defaults = _DEFAULT_MODELS.get(backend, _DEFAULT_MODELS["ollama"])
+    fallback = os.getenv("HERMES_MODEL", defaults[role])
+    if role == "coder":
+        return os.getenv("HERMES_CODER_MODEL", fallback)
+    return os.getenv("HERMES_NARRATOR_MODEL", fallback)
 
-def _build_ollama_client() -> instructor.Instructor:
+
+def _build_ollama_client(model: str = "") -> instructor.Instructor:
     raw = OpenAI(base_url=OLLAMA_BASE_URL, api_key="ollama")
+    # Qwen3 models support native tool calling; use TOOLS mode so that
+    # <think>…</think> reasoning tokens never pollute the structured output.
+    mode = instructor.Mode.TOOLS if "qwen3" in model.lower() else instructor.Mode.JSON
+    return instructor.from_openai(raw, mode=mode)
+
+
+def _build_lmstudio_client() -> instructor.Instructor:
+    # LM Studio only accepts response_format.type = "json_schema" or "text",
+    # not "json_object" — use JSON_SCHEMA mode which sends the full Pydantic schema.
+    raw = OpenAI(base_url=LMSTUDIO_BASE_URL, api_key="lm-studio")
+    return instructor.from_openai(raw, mode=instructor.Mode.JSON_SCHEMA)
+
+
+def _build_groq_client() -> instructor.Instructor:
+    raw = OpenAI(base_url=GROQ_BASE_URL, api_key=os.environ["GROQ_API_KEY"])
+    return instructor.from_openai(raw, mode=instructor.Mode.JSON)
+
+
+def _build_together_client() -> instructor.Instructor:
+    raw = OpenAI(base_url=TOGETHER_BASE_URL, api_key=os.environ["TOGETHER_API_KEY"])
     return instructor.from_openai(raw, mode=instructor.Mode.JSON)
 
 
@@ -49,15 +85,19 @@ class LLMProvider:
     def __init__(self, backend: str, role: Role):
         self.backend = backend
         self.role = role
+        self._model = _model_for_role(backend, role)
         if backend == "ollama":
-            self._client = _build_ollama_client()
-            self._model = _MODEL_FOR_ROLE[role]
+            self._client = _build_ollama_client(self._model)
+        elif backend == "lmstudio":
+            self._client = _build_lmstudio_client()
+        elif backend == "groq":
+            self._client = _build_groq_client()
+        elif backend == "together":
+            self._client = _build_together_client()
         elif backend == "anthropic":
             self._client = _build_anthropic_client()
-            # Anthropic: one capable model handles both roles
-            self._model = os.getenv("HERMES_MODEL", "claude-sonnet-4-6")
         else:
-            raise ValueError(f"Unknown backend: {backend!r}. Use 'ollama' or 'anthropic'.")
+            raise ValueError(f"Unknown backend: {backend!r}. Use 'ollama', 'lmstudio', 'groq', 'together', or 'anthropic'.")
 
     def complete(
         self,
@@ -74,24 +114,37 @@ class LLMProvider:
                 messages=[{"role": "user", "content": user}],
                 response_model=response_model,
             )
-        else:
-            return self._client.chat.completions.create(
-                model=self._model,
-                temperature=temperature,
-                response_model=response_model,
-                messages=[
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": user},
-                ],
-            )
+
+        return self._client.chat.completions.create(
+            model=self._model,
+            temperature=temperature,
+            response_model=response_model,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+        )
 
 
 # Per-role provider cache — one client per role per process
 _providers: dict[Role, LLMProvider] = {}
+_cached_backend: str | None = None
 
 
 def get_provider(role: Role = "coder") -> LLMProvider:
+    global _cached_backend
+    backend = os.getenv("HERMES_BACKEND", "ollama")
+    if backend != _cached_backend:
+        # Backend changed (e.g. env var updated at runtime) — flush cache
+        _providers.clear()
+        _cached_backend = backend
     if role not in _providers:
-        backend = os.getenv("HERMES_BACKEND", "ollama")
         _providers[role] = LLMProvider(backend=backend, role=role)
     return _providers[role]
+
+
+def reset_providers() -> None:
+    """Force-clear the provider cache (useful in tests or after env changes)."""
+    global _cached_backend
+    _providers.clear()
+    _cached_backend = None

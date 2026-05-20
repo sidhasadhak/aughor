@@ -10,6 +10,7 @@ import { FeedbackPrompt } from "@/components/FeedbackPrompt";
 import { HypothesisCard } from "@/components/HypothesisCard";
 import { ReportView } from "@/components/ReportView";
 import { ExplorationReportView } from "@/components/ExplorationReport";
+import { InvestigationReportView } from "@/components/InvestigationReport";
 import { ThinkingTrace } from "@/components/ThinkingTrace";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
@@ -278,10 +279,10 @@ export default function Home() {
                           <p className="text-xs text-zinc-600 mt-0.5">Sub-questions</p>
                         </div>
                       )}
-                      {state.queryMode !== "direct" && state.queryMode !== "explore" && (
+                      {state.queryMode === "investigate" && (
                         <div className="rounded-md bg-zinc-900 p-3 text-center">
-                          <p className="text-xl font-mono font-semibold text-zinc-200">{state.hypotheses.length}</p>
-                          <p className="text-xs text-zinc-600 mt-0.5">Hypotheses</p>
+                          <p className="text-xl font-mono font-semibold text-zinc-200">{state.investigationPhases.length}</p>
+                          <p className="text-xs text-zinc-600 mt-0.5">Phases done</p>
                         </div>
                       )}
                     </div>
@@ -312,22 +313,18 @@ export default function Home() {
                           <span className="text-xs text-zinc-600">Building an investigative chain</span>
                         </div>
                       )}
-
-                      {/* Hypothesis cards */}
-                      {state.queryMode !== "direct" && state.hypotheses.length > 0 && (
-                        <div className="space-y-3">
-                          <p className="text-xs text-zinc-600 uppercase tracking-wide">
-                            Supportive Evidences — {state.hypotheses.filter(h => h.verdict !== "untested").length} of {state.hypotheses.length} tested
-                          </p>
-                          {state.hypotheses.map((h, i) => (
-                            <HypothesisCard
-                              key={h.id}
-                              hypothesis={h}
-                              index={i}
-                              stats={state.statsPerHypothesis[i]}
-                            />
-                          ))}
+                      {state.queryMode === "investigate" && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-violet-400 border border-violet-500/30 bg-violet-500/10 rounded px-2 py-0.5 font-medium">
+                            Deep Investigation
+                          </span>
+                          <span className="text-xs text-zinc-600">ADA — structured root-cause analysis</span>
                         </div>
+                      )}
+
+                      {/* ADA investigate: streaming phases (progressive reveal before report) */}
+                      {state.queryMode === "investigate" && !state.adaReport && state.investigationPhases.length > 0 && (
+                        <InvestigationReportView streamingPhases={state.investigationPhases} />
                       )}
 
                       {state.status === "paused" && state.investigationId && (
@@ -367,12 +364,19 @@ export default function Home() {
                         </div>
                       )}
 
-                      {/* Investigation / direct report */}
-                      {state.report && (
+                      {/* ADA Investigation report (investigate mode — final) */}
+                      {state.queryMode === "investigate" && state.adaReport && (
+                        <div className="space-y-4">
+                          <Separator className="bg-zinc-800" />
+                          <InvestigationReportView report={state.adaReport} />
+                        </div>
+                      )}
+
+                      {/* Direct query report */}
+                      {state.queryMode === "direct" && state.report && (
                         <div className="space-y-4">
                           <Separator className="bg-zinc-800" />
 
-                          {/* Cache hit banner */}
                           {state.fromCache && state.cachedQuestion && (
                             <div className="rounded-md border border-sky-500/25 bg-sky-500/10 px-3 py-2 flex items-start gap-2">
                               <span className="text-sky-400 shrink-0 text-xs mt-0.5">⚡</span>
@@ -383,53 +387,7 @@ export default function Home() {
                             </div>
                           )}
 
-                          {/* Hypotheses tested — shown only after HITL review */}
-                          {state.humanFeedback !== null && state.hypotheses.length > 0 && (
-                            <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4 space-y-3">
-                              <p className="text-xs text-zinc-500 uppercase tracking-wide">Hypotheses tested</p>
-                              <div className="space-y-2">
-                                {state.hypotheses.map((h, i) => {
-                                  const colors: Record<string, string> = {
-                                    confirmed: "text-emerald-400 bg-emerald-500/10 border-emerald-500/25",
-                                    refuted: "text-red-400 bg-red-500/10 border-red-500/25",
-                                    inconclusive: "text-amber-400 bg-amber-500/10 border-amber-500/25",
-                                    untested: "text-zinc-500 bg-zinc-800 border-zinc-700",
-                                  };
-                                  const cls = colors[h.verdict] ?? colors.untested;
-                                  return (
-                                    <div key={h.id} className={`rounded-lg border px-3 py-2 flex items-start gap-3 ${cls}`}>
-                                      <span className="text-xs font-mono shrink-0 mt-0.5 opacity-60">H{i + 1}</span>
-                                      <div className="flex-1 min-w-0">
-                                        <p className="text-xs text-zinc-300 leading-snug">{h.description}</p>
-                                        {h.key_finding && (
-                                          <p className="text-xs mt-1 opacity-70 leading-snug">{h.key_finding}</p>
-                                        )}
-                                      </div>
-                                      <div className="shrink-0 flex flex-col items-end gap-1">
-                                        <span className="text-xs font-medium capitalize">{h.verdict}</span>
-                                        <span className="text-xs opacity-60">{Math.round(h.confidence * 100)}%</span>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* Analyst feedback card */}
-                          {state.humanFeedback && (
-                            <div className="rounded-xl border border-violet-500/25 bg-violet-500/5 px-4 py-3 flex items-start gap-3">
-                              <span className="text-violet-400 text-xs mt-0.5 shrink-0">✎</span>
-                              <div>
-                                <p className="text-xs text-violet-300 font-medium mb-1">Analyst feedback applied</p>
-                                <p className="text-xs text-zinc-400 leading-relaxed">{state.humanFeedback}</p>
-                              </div>
-                            </div>
-                          )}
-
-                          <p className="text-xs text-zinc-600 uppercase tracking-wide">
-                            {state.queryMode === "direct" ? "Query Report" : "Investigation Report"}
-                          </p>
+                          <p className="text-xs text-zinc-600 uppercase tracking-wide">Query Report</p>
                           <ReportView
                             report={state.report}
                             queryCount={state.queriesExecuted}

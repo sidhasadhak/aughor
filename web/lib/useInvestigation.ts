@@ -24,6 +24,8 @@ const initial: InvestigationState = {
   subQuestions: [],
   subqAnswers: [],
   exploreReport: null,
+  investigationPhases: [],
+  adaReport: null,
 };
 
 type HistoricalInvestigation = {
@@ -83,10 +85,12 @@ function reducer(state: InvestigationState, action: Action): InvestigationState 
         queryMode: event.query_mode,
         routeReasoning: event.route_reasoning ?? null,
         routeConfidence: event.route_confidence ?? null,
+        investigationPhases: [],
+        adaReport: null,
         log: [...state.log,
           event.query_mode === "direct" ? "Direct query — fetching data…" :
           event.query_mode === "explore" ? "Exploration mode — designing investigative chain…" :
-          "Investigating — decomposing into hypotheses…"
+          "Deep investigation — parsing question…"
         ],
       };
 
@@ -202,6 +206,25 @@ function reducer(state: InvestigationState, action: Action): InvestigationState 
         investigationId: event.investigation_id,
         queryMode: "explore",
         log: [...state.log, "Exploration complete"],
+      };
+
+    case "phase_complete":
+      return {
+        ...state,
+        investigationPhases: event.all_phases,
+        queriesExecuted: state.queriesExecuted + event.phase.findings.filter(f => f.sql).length,
+        log: [...state.log, `${event.phase.phase_icon} ${event.phase.phase_name}: ${event.phase.summary.slice(0, 80)}${event.phase.summary.length > 80 ? "…" : ""}`],
+      };
+
+    case "ada_report":
+      return {
+        ...state,
+        status: "done",
+        adaReport: event.ada_report,
+        investigationPhases: event.ada_report.phases,
+        investigationId: event.investigation_id ?? state.investigationId,
+        queryMode: "investigate",
+        log: [...state.log, "Investigation complete"],
       };
 
     case "error":

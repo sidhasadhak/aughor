@@ -103,6 +103,70 @@ export interface ExplorationReport {
   data_quality_notes: DataQualityNote[];
 }
 
+// ── ADA types ────────────────────────────────────────────────────────────────
+
+export interface PhaseKeyNumber {
+  label: string;
+  value: string;
+  delta?: string;
+  context?: string;
+}
+
+export interface InvestigationFinding {
+  finding_id: string;
+  title: string;
+  sql: string;
+  columns: string[];
+  rows: (string | number | null)[][];
+  row_count: number;
+  error?: string;
+  interpretation: string;
+  key_numbers: PhaseKeyNumber[];
+  chart_type: string;
+  stat_note?: string;
+  is_significant: boolean;
+}
+
+export interface InvestigationPhase {
+  phase_id: string;
+  phase_name: string;
+  phase_icon: string;
+  status: "complete" | "partial" | "running" | "skipped" | "error";
+  summary: string;
+  findings: InvestigationFinding[];
+  skipped_reason?: string;
+}
+
+export interface WaterfallEntry {
+  cause: string;
+  amount_label: string;
+  pct_of_total: number;
+  controllable: boolean;
+  structural: boolean;
+}
+
+export interface ADARecommendation {
+  action: string;
+  expected_impact: string;
+  owner: string;
+  timeline: string;
+}
+
+export interface ADAReport {
+  headline: string;
+  executive_summary: string;
+  metric: string;
+  observation_period: string;
+  comparison_basis: string;
+  total_change_label: string;
+  phases: InvestigationPhase[];
+  attribution_waterfall: WaterfallEntry[];
+  confidence: "HIGH" | "MEDIUM" | "LOW";
+  confidence_justification: string;
+  recommendations: ADARecommendation[];
+  data_gaps: string[];
+}
+
 // SSE event shapes
 export type InvestigationEvent =
   | { type: "start"; question: string; investigation_id?: string }
@@ -115,6 +179,8 @@ export type InvestigationEvent =
   | { type: "subq_answer"; subq_id: string; question: string; purpose: SubQuestionPurpose; answer: string; insight: string; refinement: string | null; sql: string; columns: string[]; rows: unknown[][]; row_count: number; error: string | null }
   | { type: "explore_report"; explore_report: ExplorationReport; sub_questions: SubQuestion[]; subq_answers: SubQuestionAnswer[]; query_count: number; investigation_id: string; query_mode: "explore" }
   | { type: "paused"; investigation_id: string; hypotheses: Hypothesis[]; scores: EvidenceScore[] }
+  | { type: "phase_complete"; phase: InvestigationPhase; all_phases: InvestigationPhase[] }
+  | { type: "ada_report"; ada_report: ADAReport; investigation_id: string; query_mode: "investigate" }
   | { type: "error"; message: string }
   | { type: "done" };
 
@@ -152,4 +218,7 @@ export interface InvestigationState {
   subQuestions: SubQuestion[];
   subqAnswers: SubQuestionAnswer[];
   exploreReport: ExplorationReport | null;
+  // ADA investigate mode
+  investigationPhases: InvestigationPhase[];
+  adaReport: ADAReport | null;
 }
