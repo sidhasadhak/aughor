@@ -23,9 +23,80 @@ from hermes.agent.state import (
     WaterfallEntry,
 )
 from hermes.tools.executor import format_result_for_llm
+from hermes.tools.stats import analyze_query_result
 
 if TYPE_CHECKING:
     from hermes.db.connection import DatabaseConnection
+
+
+# ── Dimension priority ordering (Spec §2, Tier 2V) ───────────────────────────
+# Run customer-type first (new vs returning splits the cause tree), then
+# channel, category, geography, everything else last.
+
+_DIMENSION_PRIORITY_KEYWORDS: list[list[str]] = [
+    ["customer_type", "customer_segment", "is_new", "new_customer", "returning", "customer_class"],
+    ["channel", "source", "medium", "acquisition", "referrer", "utm"],
+    ["category", "product_category", "product_type", "business_line", "vertical", "department"],
+    ["region", "country", "geography", "geo", "city", "state", "market"],
+    ["device", "platform", "browser", "os"],
+    ["payment", "payment_method", "payment_type"],
+]
+
+
+def _prioritize_dimensions(dimensions: list[str]) -> list[str]:
+    """Sort dimensions by spec-mandated priority: customer → channel → category → geo → other."""
+    def _rank(dim: str) -> int:
+        dl = dim.lower()
+        for i, keywords in enumerate(_DIMENSION_PRIORITY_KEYWORDS):
+            if any(kw in dl for kw in keywords):
+                return i
+        return len(_DIMENSION_PRIORITY_KEYWORDS)
+
+    return sorted(dimensions, key=_rank)
+
+
+# ── Router functions (read by graph.py conditional edges) ────────────────────
+
+def route_after_baseline(state: AgentState) -> str:
+    """
+    Tier 0 gate: if the decline is within normal variance, skip straight to
+    synthesis so we don't run 4 more expensive phases on non-anomalies.
+
+    Decision hierarchy:
+      1. stats.py code-level sigma (authoritative, deterministic)
+      2. LLM interpretation's is_significant flags (fallback)
+      3. Unknown → proceed (don't block on uncertainty)
+    """
+    sigma = state.get("_baseline_sigma")
+    code_sig = state.get("_baseline_significant")
+
+    # Code-level signal: stats.py ran and says "not significant"
+    if code_sig is False and (sigma is None or sigma < 1.5):
+        return "ada_synthesize"  # early stop → "within normal variance" report
+
+    # LLM interpretation signal
+    phases = state.get("investigation_phases") or []
+    for phase in phases:
+        if phase.get("phase_id") == "baseline":
+            for f in phase.get("findings", []):
+                if f.get("is_significant"):
+                    return "ada_decompose"
+            # Baseline phase found, but no finding flagged significant
+            if code_sig is False:
+                return "ada_synthesize"
+
+    # No definitive signal → proceed (conservative: don't block)
+    return "ada_decompose"
+
+
+def route_after_decompose(state: AgentState) -> str:
+    """Currently always proceeds to dimensional. Reserved for future pause-point logic."""
+    return "ada_dimensional"
+
+
+def route_after_dimensional(state: AgentState) -> str:
+    """Currently always proceeds to behavioral (with dominant finding injected)."""
+    return "ada_behavioral"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -403,6 +474,24 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
     except Exception as e:
         interpretation = None
 
+    # ── Stats.py: code-level significance check (runs before LLM interpretation) ──
+    # Compute z-score on the baseline time series. The LLM is asked to compute
+    # the same thing in SQL, but this gives us a deterministic Python-level gate
+    # that the router can trust unconditionally.
+    code_sigma: Optional[float] = None
+    code_significant: Optional[bool] = None
+    for _, r in results:
+        if r.error or not r.rows or not r.columns:
+            continue
+        stat_results = analyze_query_result(r.columns, r.rows)
+        for sr in stat_results:
+            if sr.sigma is not None:
+                if code_sigma is None or sr.sigma > code_sigma:
+                    code_sigma = sr.sigma
+        if code_sigma is not None:
+            code_significant = code_sigma >= 2.0
+            break  # first successful result is enough
+
     if interpretation and interpretation.findings:
         findings = [
             _finding_from_result_and_model(
@@ -413,6 +502,9 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
         ]
         summary = interpretation.phase_summary
         passes_to_next = interpretation.passes_to_next
+        # If stats.py couldn't compute sigma, fall back to LLM's is_significant flags
+        if code_significant is None:
+            code_significant = any(f["is_significant"] for f in findings)
     else:
         findings = [
             InvestigationFinding(
@@ -433,6 +525,13 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
         ]
         summary = f"Baseline computed for {obs_label}."
         passes_to_next = summary
+        if code_significant is None:
+            code_significant = True  # unknown → assume significant, don't block
+
+    # Append sigma note to summary if available
+    if code_sigma is not None:
+        sig_label = "significant anomaly" if code_significant else "within normal variance"
+        summary = f"{summary} [stats.py: σ={code_sigma:.2f} — {sig_label}]"
 
     phase = _phase_result(
         "baseline", "Baseline & Anomaly Assessment", "📊",
@@ -443,6 +542,8 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
         "investigation_phases": phases + [phase],
         "_baseline_summary": summary,
         "_baseline_passes": passes_to_next,
+        "_baseline_significant": code_significant,
+        "_baseline_sigma": code_sigma,
     }
 
 
@@ -595,7 +696,12 @@ def ada_dimensional(state: AgentState, conn: "DatabaseConnection") -> dict:
     decomp_summary = state.get("_decomp_summary", "")
     prior_summary = f"Baseline: {baseline_summary}\nDecomposition: {decomp_summary}"
 
-    dimensions_list = "\n".join(f"  - {d}" for d in dimensions[:8]) if dimensions else "  (none identified)"
+    # Sort dimensions by spec-mandated priority: customer → channel → category → geo
+    # This ensures the LLM picks the analytically highest-value dimensions first.
+    prioritized_dims = _prioritize_dimensions(dimensions)
+    dimensions_list = "\n".join(
+        f"  - {d}" for d in prioritized_dims[:8]
+    ) if prioritized_dims else "  (none identified)"
 
     plan_prompt = DIMENSIONAL_PLAN_PROMPT.format(
         question=question,
@@ -727,9 +833,20 @@ def ada_behavioral(state: AgentState, conn: "DatabaseConnection") -> dict:
         state.get("_dimensional_summary", ""),
     ]))
 
+    # Dominant finding from Tier 2: the `passes_to_next` string from dimensional
+    # interpretation carries the most concentrated finding (e.g. "channel=mobile
+    # accounts for 68% of the order drop"). Injecting this makes Tier-3 queries
+    # targeted instead of running the same generic checklist every time.
+    dominant_finding = (
+        state.get("_dimensional_passes")
+        or state.get("_dimensional_summary")
+        or "No specific segment concentration identified — run broad diagnostics."
+    )
+
     plan_prompt = BEHAVIORAL_PLAN_PROMPT.format(
         question=question,
         prior_summary=prior_summary,
+        dominant_finding=dominant_finding,
         metric_label=metric_label,
         metric_sql=metric_sql,
         observation_period=obs_label,
@@ -834,6 +951,23 @@ def ada_synthesize(state: AgentState) -> dict:
     events_section = f"BUSINESS CALENDAR:\n{events}\n" if events else ""
     intake_data = state.get("_ada_intake") or {}
 
+    # Detect early-stop: if only baseline (and intake) phases exist, the Tier-0
+    # gate fired and we should label this as a "no anomaly" report.
+    phase_ids = {p["phase_id"] for p in phases}
+    early_stop = phase_ids <= {"intake", "baseline"}
+    sigma = state.get("_baseline_sigma")
+    early_stop_note = ""
+    if early_stop:
+        sigma_str = f" (z={sigma:.2f})" if sigma is not None else ""
+        early_stop_note = (
+            f"\n\nNOTE: The investigation stopped at Tier 0{sigma_str}. "
+            "The observed change is within normal historical variance — no anomaly was detected. "
+            "Your headline, executive_summary, and waterfall should reflect this: "
+            "explain that the decline is consistent with typical fluctuation, not a new problem. "
+            "confidence should be HIGH (we're confident there is no anomaly). "
+            "recommendations should be empty or advisory only."
+        )
+
     phases_summary = _phases_summary(phases)
     evidence_log = _phases_evidence(phases)
 
@@ -842,7 +976,7 @@ def ada_synthesize(state: AgentState) -> dict:
         phases_summary=phases_summary,
         evidence_log=evidence_log[:6000],
         events_section=events_section,
-    )
+    ) + early_stop_note
     try:
         synth: ADASynthesisModel = _provider("narrator").complete(
             system=(

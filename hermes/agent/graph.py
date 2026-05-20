@@ -27,6 +27,9 @@ from hermes.agent.investigate import (
     ada_dimensional,
     ada_behavioral,
     ada_synthesize,
+    route_after_baseline,
+    route_after_decompose,
+    route_after_dimensional,
 )
 from hermes.agent.explore import (
     decompose_exploration,
@@ -67,9 +70,28 @@ def _compile(execute_node, scan_node, explore_execute_node, ada_nodes: dict = No
 
     graph.add_edge("exploratory_scan",  "ada_intake")
     graph.add_edge("ada_intake",        "ada_baseline")
-    graph.add_edge("ada_baseline",      "ada_decompose")
-    graph.add_edge("ada_decompose",     "ada_dimensional")
-    graph.add_edge("ada_dimensional",   "ada_behavioral")
+
+    # Tier 0 gate: skip to synthesis if decline is within normal variance (z < 1.5)
+    graph.add_conditional_edges(
+        "ada_baseline",
+        route_after_baseline,
+        {"ada_decompose": "ada_decompose", "ada_synthesize": "ada_synthesize"},
+    )
+
+    # Tier 1 → 2: currently always proceeds; reserved for future pause-point
+    graph.add_conditional_edges(
+        "ada_decompose",
+        route_after_decompose,
+        {"ada_dimensional": "ada_dimensional"},
+    )
+
+    # Tier 2 → 3: always proceeds but dominant finding is injected into behavioral
+    graph.add_conditional_edges(
+        "ada_dimensional",
+        route_after_dimensional,
+        {"ada_behavioral": "ada_behavioral"},
+    )
+
     graph.add_edge("ada_behavioral",    "ada_synthesize")
     graph.add_edge("ada_synthesize",    END)
 

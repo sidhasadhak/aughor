@@ -320,4 +320,15 @@ class AgentState(TypedDict):
     # ADA investigate mode state (only when query_mode == "investigate")
     investigation_phases: list[InvestigationPhaseResult]
     ada_report: Optional[ADAReport]
-    _ada_intake: Optional[dict]  # intake spec passed between ADA phase nodes
+    _ada_intake: Optional[dict]      # intake spec passed between ADA phase nodes
+
+    # ADA inter-phase signals (set by each phase node, read by routers + next phases)
+    _baseline_summary: Optional[str]
+    _baseline_passes: Optional[str]
+    _baseline_significant: Optional[bool]  # code-level (stats.py) significance flag
+    _baseline_sigma: Optional[float]       # z-score magnitude from stats.py
+    _decomp_summary: Optional[str]
+    _decomp_passes: Optional[str]
+    _dimensional_summary: Optional[str]
+    _dimensional_passes: Optional[str]     # dominant finding → seeds Tier-3 targeting
+    _behavioral_summary: Optional[str]

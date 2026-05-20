@@ -197,8 +197,14 @@ Write 1 SQL query per dimension (up to 4 dimensions). Each query must:
 CONTRIBUTION FORMULA (use window function):
   ROUND(100.0 * (obs - comp) / NULLIF(SUM(obs - comp) OVER (), 0), 1) AS contribution_pct
 
-Pick the 4 most analytically valuable dimensions given the question context.
-Prioritise: product category, customer segment, geography/region, channel.
+DIMENSION PRIORITY — analyse in this order (the list above is already sorted):
+  1st: Customer type / segment (new vs returning — splits the entire cause tree)
+  2nd: Channel / acquisition source (points to a team or budget)
+  3rd: Product category / business line (assortment or pricing issue)
+  4th: Geography / region (logistics, local competition, macro)
+  Lower priority: device, payment method, price band
+
+If fewer than 4 dimensions are available, analyse what exists in priority order.
 
 SQL RULES: DuckDB, NULLIF, compact output (≤ 15 rows per query).
 """
@@ -228,6 +234,9 @@ INVESTIGATION: "{question}"
 PRIOR FINDINGS SUMMARY:
 {prior_summary}
 
+DOMINANT FINDING FROM DIMENSIONAL ANALYSIS (Tier-2 output — focus your Tier-3 queries here):
+{dominant_finding}
+
 INVESTIGATION SPEC:
   Metric:        {metric_label} → {metric_sql}
   Observation:   {observation_period}  ({obs_start} to {obs_end})
@@ -240,24 +249,30 @@ SCHEMA:
 
 {events_section}
 
-PHASE: Behavioral & Operational Diagnostics
+PHASE: Behavioral & Operational Diagnostics (Tier 3 — Second-Order Diagnosis)
 
-Part A — Behavioral (WHO changed?):
-Write 1–2 SQL queries to compare customer behaviour across periods:
-  - New vs. returning customer revenue/orders (use MIN(order_date) per customer to classify)
-  - If available: average order frequency, days-between-orders, or cohort retention
+YOUR JOB: Explain WHY the dominant finding above occurred.
+Generate queries targeted at the specific segment, channel, or dimension identified
+in the dominant finding — NOT generic checks. Examples:
+  - If dominant = "mobile channel declined 65%" → query mobile-specific conversion,
+    session quality, or mobile product coverage — NOT generic new vs. returning split.
+  - If dominant = "Category X drove 72% of drop" → check stockout/pricing/promotion
+    history for Category X specifically.
+  - If dominant = "returning customers declined 40%" → run cohort retention analysis
+    to find which acquisition cohort stopped buying.
 
-Part B — Operational (WHAT changed operationally?):
-Write 1–2 SQL queries to check operational factors:
-  - Refund/return rate: did it spike in the observation period?
-  - Discount depth: did average discount % change?
-  - Product availability: any stockout signals if inventory table exists?
-  - If none of these tables exist, skip and note as "untestable"
+Part A — Targeted behavioral queries (1–2):
+  Directly test the most likely mechanisms behind the dominant finding.
 
-Return max 4 queries total. If a table is needed but missing from schema, set sql to null
-and explain why in the rationale.
+Part B — Operational checks (1–2):
+  - Refund/return rate change in the observation period?
+  - Discount depth change?
+  - Stockout signals for the affected segment/category (if inventory table exists)?
+  - If required tables don't exist, set sql to null and explain in rationale.
 
-SQL RULES: DuckDB, NULLIF, compact output.
+Return max 4 queries total. Prioritise TARGETED queries over generic ones.
+
+SQL RULES: DuckDB, NULLIF, compact output (≤ 15 rows per query).
 """
 
 BEHAVIORAL_INTERPRET_PROMPT = """\
