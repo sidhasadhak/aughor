@@ -37,14 +37,14 @@ const VERDICT_STYLE: Record<Verdict, { label: string; chip: string; bar: string 
   confirmed:    { label: "Confirmed",    chip: "border-emerald-500/30 bg-emerald-500/10 text-emerald-400", bar: "bg-emerald-500" },
   refuted:      { label: "Refuted",      chip: "border-red-500/30 bg-red-500/10 text-red-400",             bar: "bg-red-500"     },
   inconclusive: { label: "Inconclusive", chip: "border-amber-500/30 bg-amber-500/10 text-amber-400",       bar: "bg-amber-500"   },
-  untested:     { label: "Untested",     chip: "border-zinc-700 bg-zinc-800/50 text-zinc-500",              bar: "bg-zinc-700"    },
+  untested:     { label: "Untested",     chip: "border-zinc-600 bg-zinc-800/50 text-zinc-500",              bar: "bg-zinc-700"    },
 };
 
 const STAT_STYLE: Record<StatResult["type"], { icon: string; chip: string }> = {
   anomaly:      { icon: "⚡", chip: "border-amber-500/20 bg-amber-500/5 text-amber-300"   },
   trend:        { icon: "↗",  chip: "border-blue-500/20 bg-blue-500/5 text-blue-300"      },
   comparison:   { icon: "⟺", chip: "border-violet-500/20 bg-violet-500/5 text-violet-300" },
-  distribution: { icon: "≈",  chip: "border-zinc-700 bg-zinc-800/50 text-zinc-400"         },
+  distribution: { icon: "≈",  chip: "border-zinc-600 bg-zinc-800/50 text-zinc-400"         },
 };
 
 // ── Collapsible section (used in bottom report sections) ─────────────────────
@@ -107,7 +107,7 @@ function QueryMiniTable({ columns, rows }: { columns: string[]; rows: unknown[][
     <div className="rounded border border-violet-500/20 overflow-hidden">
       <div className="overflow-x-auto overflow-y-auto max-h-[280px]">
         <table className="w-full text-xs">
-          <thead className="sticky top-0 bg-zinc-900 border-b border-violet-500/20">
+          <thead className="sticky top-0 bg-zinc-800 border-b border-violet-500/20">
             <tr>
               {columns.map(col => (
                 <th key={col} className="px-3 py-1.5 text-left text-[10px] text-violet-300/70 uppercase tracking-wide font-mono whitespace-nowrap">
@@ -116,9 +116,9 @@ function QueryMiniTable({ columns, rows }: { columns: string[]; rows: unknown[][
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-zinc-800/40">
+          <tbody className="divide-y divide-zinc-600/40">
             {visible.map((row, ri) => (
-              <tr key={ri} className="hover:bg-zinc-800/20 transition">
+              <tr key={ri} className="hover:bg-zinc-700/70/20 transition">
                 {(row as unknown[]).map((cell, ci) => (
                   <td key={ci} className="px-3 py-1.5 text-zinc-300 font-mono whitespace-nowrap">
                     {cell === null || cell === undefined
@@ -133,7 +133,7 @@ function QueryMiniTable({ columns, rows }: { columns: string[]; rows: unknown[][
         </table>
       </div>
       {rows.length > MAX_ROWS && (
-        <div className="px-3 py-1.5 border-t border-zinc-800/60 text-[10px] text-zinc-600 font-mono">
+        <div className="px-3 py-1.5 border-t border-zinc-600/60 text-[10px] text-zinc-600 font-mono">
           +{rows.length - MAX_ROWS} more rows
         </div>
       )}
@@ -202,7 +202,7 @@ function QueryEvidence({
           <span className="text-[8px]">{sqlOpen ? "▼" : "▶"}</span> SQL
         </button>
         {sqlOpen && (
-          <pre className="mt-1.5 text-xs text-zinc-400 bg-zinc-950 rounded border border-zinc-800/60 p-2.5 overflow-x-auto whitespace-pre-wrap font-mono leading-relaxed">
+          <pre className="mt-1.5 text-xs text-zinc-400 bg-zinc-800 rounded border border-zinc-600/60 p-2.5 overflow-x-auto whitespace-pre-wrap font-mono leading-relaxed">
             {query.sql}
           </pre>
         )}
@@ -233,7 +233,7 @@ function HypothesisAccordion({
       {/* ── Header ── */}
       <button
         onClick={() => setOpen(o => !o)}
-        className={`w-full text-left px-4 py-3 transition group ${open ? palette.dimBg : "hover:bg-zinc-900/40"}`}
+        className={`w-full text-left px-4 py-3 transition group ${open ? palette.dimBg : "hover:bg-zinc-700/40"}`}
       >
         <div className="flex items-start gap-3">
           {/* H-label badge */}
@@ -271,7 +271,7 @@ function HypothesisAccordion({
 
       {/* ── Expanded detail ── */}
       {open && (
-        <div className={`border-t ${palette.ring} divide-y divide-zinc-800/50`}>
+        <div className={`border-t ${palette.ring} divide-y divide-zinc-600/50`}>
 
           {/* 1. Key finding */}
           <div className="px-4 py-3 space-y-1.5">
@@ -287,7 +287,7 @@ function HypothesisAccordion({
               <p className="text-xs text-zinc-600 italic">No queries were executed for this hypothesis.</p>
             </div>
           ) : (
-            <div className={`divide-y divide-zinc-800/50`}>
+            <div className={`divide-y divide-zinc-600/50`}>
               {queries.map((q, i) => (
                 <QueryEvidence key={i} query={q} index={i} total={queries.length} />
               ))}
@@ -398,11 +398,11 @@ function KeyFindingCard({
                                  { text: "Low confidence", color: "text-red-400", dot: "bg-red-400" };
 
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900/50 overflow-hidden">
+    <div className="rounded-lg border border-zinc-600 bg-zinc-800/50 overflow-hidden">
       {/* Header row */}
       <div className="flex items-start gap-3 p-4">
         {/* Index circle */}
-        <span className="shrink-0 flex h-6 w-6 items-center justify-center rounded-full bg-zinc-800 border border-zinc-700 text-xs font-mono text-zinc-400 mt-0.5">
+        <span className="shrink-0 flex h-6 w-6 items-center justify-center rounded-full bg-zinc-800 border border-zinc-600 text-xs font-mono text-zinc-400 mt-0.5">
           {index + 1}
         </span>
 
@@ -444,7 +444,7 @@ function KeyFindingCard({
         {finding.evidence && (
           <button
             onClick={() => setOpen(o => !o)}
-            className="shrink-0 text-[10px] text-zinc-600 hover:text-zinc-400 border border-zinc-700 hover:border-zinc-600 rounded px-2 py-1 transition mt-0.5"
+            className="shrink-0 text-[10px] text-zinc-600 hover:text-zinc-400 border border-zinc-600 hover:border-zinc-600 rounded px-2 py-1 transition mt-0.5"
           >
             {open ? "Less" : "Evidence"}
           </button>
@@ -454,11 +454,11 @@ function KeyFindingCard({
       {/* Expandable evidence */}
       {open && finding.evidence && (
         <div className="px-4 pb-4 pt-0">
-          <div className="rounded border border-zinc-700/60 bg-zinc-950/50 p-3 space-y-1.5">
+          <div className="rounded border border-zinc-600/60 bg-zinc-800/50 p-3 space-y-1.5">
             <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-mono">Supporting Evidence</p>
             <p className="text-sm text-zinc-300 leading-relaxed">{finding.evidence}</p>
             {linkedHypothesis && (
-              <p className="text-xs text-zinc-600 mt-1 pt-1.5 border-t border-zinc-800">
+              <p className="text-xs text-zinc-600 mt-1 pt-1.5 border-t border-zinc-600">
                 From hypothesis: <span className="text-zinc-400 italic">"{linkedHypothesis.description}"</span>
               </p>
             )}
@@ -633,7 +633,7 @@ function KPIHighlight({ table }: { table: QueryCitation }) {
   return (
     <div className={`grid gap-3 ${metrics.length > 2 ? "grid-cols-3" : metrics.length === 2 ? "grid-cols-2" : "grid-cols-1"}`}>
       {metrics.slice(0, 3).map(({ col, val }) => (
-        <div key={col} className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-4 text-center space-y-1">
+        <div key={col} className="rounded-lg border border-zinc-600 bg-zinc-800/60 p-4 text-center space-y-1">
           <p className="text-2xl font-mono font-semibold text-emerald-400 tracking-tight">{fmt(col, val)}</p>
           <p className="text-xs text-zinc-500 uppercase tracking-wide">{col.replace(/_/g, " ")}</p>
         </div>
@@ -656,13 +656,13 @@ function DirectResultTable({ table }: { table: QueryCitation }) {
           {table.row_count} row{table.row_count !== 1 ? "s" : ""}
         </span>
       </div>
-      <div className="rounded-lg border border-zinc-800 overflow-hidden">
+      <div className="rounded-lg border border-zinc-600 overflow-hidden">
         <div className="overflow-x-auto overflow-y-auto max-h-[400px]">
           <Table>
             <TableHeader>
-              <TableRow className="border-zinc-800 hover:bg-transparent">
+              <TableRow className="border-zinc-600 hover:bg-transparent">
                 {columns.map(col => (
-                  <TableHead key={col} className="text-xs text-zinc-500 font-mono whitespace-nowrap bg-zinc-900/80 h-8">
+                  <TableHead key={col} className="text-xs text-zinc-500 font-mono whitespace-nowrap bg-zinc-800/80 h-8">
                     {col}
                   </TableHead>
                 ))}
@@ -670,7 +670,7 @@ function DirectResultTable({ table }: { table: QueryCitation }) {
             </TableHeader>
             <TableBody>
               {rows.map((row, ri) => (
-                <TableRow key={ri} className="border-zinc-800/50 hover:bg-zinc-800/30">
+                <TableRow key={ri} className="border-zinc-600/50 hover:bg-zinc-700/30">
                   {(row as unknown[]).map((cell, ci) => (
                     <TableCell key={ci} className="text-xs text-zinc-300 font-mono py-1.5 whitespace-nowrap">
                       {cell === null || cell === undefined ? (
@@ -692,7 +692,7 @@ function DirectResultTable({ table }: { table: QueryCitation }) {
           <span className="hidden group-open:inline">▼</span>
           SQL
         </summary>
-        <pre className="mt-1 text-xs text-zinc-400 bg-zinc-950 rounded p-3 overflow-x-auto whitespace-pre-wrap font-mono leading-relaxed">
+        <pre className="mt-1 text-xs text-zinc-400 bg-zinc-800 rounded p-3 overflow-x-auto whitespace-pre-wrap font-mono leading-relaxed">
           {table.sql}
         </pre>
       </details>

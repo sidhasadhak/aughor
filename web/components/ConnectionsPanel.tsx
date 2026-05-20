@@ -92,23 +92,23 @@ export function ConnectionsPanel({ selectedId, onSelect, activeSchemaId, onSchem
   };
 
   return (
-    <div className="flex flex-col h-full w-72 shrink-0 border-r border-zinc-800">
-      <div className="p-4 border-b border-zinc-800 flex items-center justify-between">
+    <div className="flex flex-col h-full w-72 shrink-0 border-r border-zinc-600">
+      <div className="p-4 border-b border-zinc-600 flex items-center justify-between">
         <p className="text-xs font-semibold text-zinc-300 uppercase tracking-wide">Connections</p>
         <button
           onClick={() => setAdding(!adding)}
-          className="text-xs text-zinc-400 hover:text-zinc-200 border border-zinc-700 hover:border-zinc-500 rounded px-2 py-1 transition"
+          className="text-xs text-zinc-400 hover:text-zinc-200 border border-zinc-600 hover:border-zinc-500 rounded px-2 py-1 transition"
         >
           {adding ? "Cancel" : "+ Add"}
         </button>
       </div>
 
       {adding && (
-        <form onSubmit={handleAdd} className="p-4 border-b border-zinc-800 space-y-3 bg-zinc-900/40">
+        <form onSubmit={handleAdd} className="p-4 border-b border-zinc-600 space-y-3 bg-zinc-800/40">
           <div className="space-y-1">
             <label className="text-xs text-zinc-500">Name</label>
             <input
-              className="w-full rounded bg-zinc-900 border border-zinc-700 text-sm text-zinc-100 px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+              className="w-full rounded bg-zinc-800 border border-zinc-600 text-sm text-zinc-100 px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-zinc-500"
               placeholder="Production DB"
               value={formName}
               onChange={e => setFormName(e.target.value)}
@@ -118,7 +118,7 @@ export function ConnectionsPanel({ selectedId, onSelect, activeSchemaId, onSchem
           <div className="space-y-1">
             <label className="text-xs text-zinc-500">Type</label>
             <select
-              className="w-full rounded bg-zinc-900 border border-zinc-700 text-sm text-zinc-100 px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+              className="w-full rounded bg-zinc-800 border border-zinc-600 text-sm text-zinc-100 px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-zinc-500"
               value={formType}
               onChange={e => setFormType(e.target.value)}
             >
@@ -131,7 +131,7 @@ export function ConnectionsPanel({ selectedId, onSelect, activeSchemaId, onSchem
               {formType === "postgres" ? "Connection string" : "File path"}
             </label>
             <input
-              className="w-full rounded bg-zinc-900 border border-zinc-700 text-sm text-zinc-300 font-mono px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+              className="w-full rounded bg-zinc-800 border border-zinc-600 text-sm text-zinc-300 font-mono px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-zinc-500"
               placeholder={formType === "postgres" ? "postgresql://user:pass@host:5432/db" : "/path/to/file.duckdb"}
               value={formDsn}
               onChange={e => setFormDsn(e.target.value)}
@@ -143,7 +143,7 @@ export function ConnectionsPanel({ selectedId, onSelect, activeSchemaId, onSchem
               Schema <span className="text-zinc-600">(optional)</span>
             </label>
             <input
-              className="w-full rounded bg-zinc-900 border border-zinc-700 text-sm text-zinc-300 font-mono px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+              className="w-full rounded bg-zinc-800 border border-zinc-600 text-sm text-zinc-300 font-mono px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-zinc-500"
               placeholder={formType === "postgres" ? "public" : "main"}
               value={formSchema}
               onChange={e => setFormSchema(e.target.value)}
@@ -169,29 +169,42 @@ export function ConnectionsPanel({ selectedId, onSelect, activeSchemaId, onSchem
           const isSelected = conn.id === selectedId;
           const isSchemaActive = conn.id === activeSchemaId;
           const result = testResults[conn.id];
+          const dotColor = result
+            ? result.ok ? "bg-emerald-500" : "bg-red-500"
+            : isSelected ? "bg-emerald-500" : "bg-zinc-700";
           return (
-            <div key={conn.id} className={cn("border-b border-zinc-800/60", isSelected && "bg-zinc-900/60")}>
+            <div
+              key={conn.id}
+              className={cn(
+                "border-b border-zinc-600/60 transition-colors",
+                isSelected ? "bg-zinc-800/60 border-l-2 border-l-violet-500" : "border-l-2 border-l-transparent"
+              )}
+            >
               <button
                 onClick={() => onSelect(conn.id)}
-                className="w-full text-left px-4 py-3 hover:bg-zinc-900/40 transition"
+                className="w-full text-left px-4 py-3 hover:bg-zinc-700/40 transition"
               >
-                <div className="flex items-center justify-between gap-2">
-                  <span className={cn("text-sm font-medium truncate", isSelected ? "text-white" : "text-zinc-300")}>
+                <div className="flex items-center gap-2.5">
+                  <span
+                    title={result ? (result.ok ? "Connected" : "Connection failed") : "Untested"}
+                    className={cn("w-2 h-2 rounded-full shrink-0 transition-colors", dotColor)}
+                  />
+                  <span className={cn("text-sm font-medium truncate flex-1", isSelected ? "text-white" : "text-zinc-300")}>
                     {conn.name}
                   </span>
                   <Badge variant="outline" className={cn("text-xs shrink-0", TYPE_COLORS[conn.conn_type] ?? "")}>
                     {TYPE_LABELS[conn.conn_type] ?? conn.conn_type}
                   </Badge>
                 </div>
-                <p className="text-xs font-mono text-zinc-600 mt-0.5 truncate">{conn.dsn_preview}</p>
+                <p className="text-xs font-mono text-zinc-600 mt-1 truncate pl-4">{conn.dsn_preview}</p>
                 {conn.schema_name && (
-                  <p className="text-[10px] text-zinc-500 mt-0.5">
+                  <p className="text-[10px] text-zinc-500 mt-0.5 pl-4">
                     schema: <span className="font-mono text-zinc-400">{conn.schema_name}</span>
                   </p>
                 )}
               </button>
 
-              <div className="px-4 pb-2 flex items-center gap-3">
+              <div className="px-4 pb-2.5 flex items-center gap-3">
                 <button
                   onClick={() => handleTest(conn.id)}
                   disabled={testing === conn.id}
@@ -199,11 +212,16 @@ export function ConnectionsPanel({ selectedId, onSelect, activeSchemaId, onSchem
                 >
                   {testing === conn.id ? "Testing…" : "Test"}
                 </button>
+                {result && (
+                  <span className={cn("text-xs", result.ok ? "text-emerald-400" : "text-red-400")}>
+                    {result.ok ? "✓" : "✕"} {result.msg}
+                  </span>
+                )}
                 <button
                   onClick={() => onSchemaSelect(isSchemaActive ? null : conn.id)}
                   className={cn(
                     "text-xs transition",
-                    isSchemaActive ? "text-zinc-200" : "text-zinc-500 hover:text-zinc-300"
+                    isSchemaActive ? "text-violet-400" : "text-zinc-600 hover:text-zinc-300"
                   )}
                 >
                   {isSchemaActive ? "Schema ●" : "Schema"}
@@ -237,11 +255,6 @@ export function ConnectionsPanel({ selectedId, onSelect, activeSchemaId, onSchem
                 )}
               </div>
 
-              {result && (
-                <p className={cn("px-4 pb-2 text-xs", result.ok ? "text-emerald-400" : "text-red-400")}>
-                  {result.ok ? "✓" : "✕"} {result.msg}
-                </p>
-              )}
             </div>
           );
         })}

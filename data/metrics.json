@@ -1,1 +1,17 @@
-[]
+[
+  {
+    "name": "Sales",
+    "label": "sales, revenue",
+    "sql": "SUM(final_price_usd) * SUM(quantity)",
+    "tables": [
+      "order_items"
+    ],
+    "dimensions": [
+      "final_price_usd",
+      "quantity"
+    ],
+    "filters": [],
+    "unit": "$",
+    "caveats": "Business Logics"
+  }
+]

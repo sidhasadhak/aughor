@@ -18,6 +18,7 @@ export function SchemaPanel({ connId, connName }: Props) {
   const [loading, setLoading] = useState(false);
   const [diagramLoading, setDiagramLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
   const diagramRef = useRef<HTMLDivElement>(null);
   const mermaidLoaded = useRef(false);
 
@@ -73,36 +74,45 @@ export function SchemaPanel({ connId, connName }: Props) {
 
   if (!connId) {
     return (
-      <div className="flex-1 flex items-center justify-center border-l border-zinc-800">
+      <div className="flex-1 flex items-center justify-center border-l border-zinc-600">
         <p className="text-xs text-zinc-600">Select a connection to view its schema</p>
       </div>
     );
   }
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 border-l border-zinc-800">
+    <div className="flex-1 flex flex-col min-w-0 border-l border-zinc-600">
       {/* Header with sub-tabs */}
-      <div className="px-4 border-b border-zinc-800 flex items-center shrink-0">
-        <div className="flex items-center gap-0 flex-1">
+      <div className="border-b border-zinc-600 shrink-0">
+        <div className="px-4 flex items-center gap-0">
           {(["schema", "diagram"] as PanelTab[]).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={`px-4 py-2.5 text-xs font-medium capitalize transition-colors border-b-2 -mb-px ${
+              className={`px-3 py-2.5 text-xs font-medium transition-colors border-b-2 -mb-px ${
                 tab === t
                   ? "border-violet-500 text-violet-400"
                   : "border-transparent text-zinc-500 hover:text-zinc-300"
               }`}
             >
-              {t === "schema" ? "Schema" : "ER Diagram"}
+              {t === "schema" ? "Tables" : "ER Diagram"}
             </button>
           ))}
+          {(loading || diagramLoading) && (
+            <span className="text-xs text-zinc-700 ml-auto">Loading…</span>
+          )}
         </div>
-        {connName && (
-          <span className="text-xs text-zinc-600 font-mono pr-1">— {connName}</span>
-        )}
-        {(loading || diagramLoading) && (
-          <span className="text-xs text-zinc-600 ml-2">Loading…</span>
+        {/* Search — schema tab only */}
+        {tab === "schema" && richSchema && (
+          <div className="px-3 pb-2">
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search tables or columns…"
+              className="w-full rounded-lg bg-zinc-800 border border-zinc-600 text-xs text-zinc-300 placeholder:text-zinc-600 px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-zinc-600 transition"
+            />
+          </div>
         )}
       </div>
 
@@ -120,7 +130,7 @@ export function SchemaPanel({ connId, connName }: Props) {
               ))}
             </div>
           ) : richSchema ? (
-            <SchemaCards schema={richSchema} />
+            <SchemaCards schema={richSchema} search={search} />
           ) : null
         ) : (
           <div className="p-4 min-h-full">
@@ -142,7 +152,7 @@ export function SchemaPanel({ connId, connName }: Props) {
                   <summary className="text-xs text-zinc-600 cursor-pointer hover:text-zinc-400 transition-colors">
                     Mermaid source
                   </summary>
-                  <pre className="mt-2 text-xs text-zinc-500 font-mono whitespace-pre-wrap bg-zinc-900 rounded p-3">
+                  <pre className="mt-2 text-xs text-zinc-500 font-mono whitespace-pre-wrap bg-zinc-800 rounded p-3">
                     {diagram}
                   </pre>
                 </details>

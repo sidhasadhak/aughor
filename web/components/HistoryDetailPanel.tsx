@@ -109,7 +109,7 @@ export function HistoryDetailPanel({ invId }: Props) {
         )}
 
         {!inv.report && (
-          <div className="rounded-lg border border-zinc-800 p-4 text-sm text-zinc-600">
+          <div className="rounded-lg border border-zinc-600 p-4 text-sm text-zinc-600">
             This investigation did not complete — no report available.
           </div>
         )}

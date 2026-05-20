@@ -169,7 +169,7 @@ function Dot({ status, verdict }: { status: StepStatus; verdict?: Verdict }) {
     }[verdict] : "bg-emerald-500";
     return <span className={`h-2.5 w-2.5 rounded-full shrink-0 mt-0.5 ${color}`} />;
   }
-  return <span className="h-2.5 w-2.5 rounded-full shrink-0 mt-0.5 border border-zinc-700 bg-zinc-900" />;
+  return <span className="h-2.5 w-2.5 rounded-full shrink-0 mt-0.5 border border-zinc-600 bg-zinc-800" />;
 }
 
 interface Props {

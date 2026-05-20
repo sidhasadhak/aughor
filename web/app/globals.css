@@ -46,6 +46,22 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* ── Databricks-inspired warm charcoal palette ──────────────────────────────
+     Replaces Tailwind's blue-tinted zinc with pure warm grays matching
+     Databricks UI: #2a2a2a sidebar / #383838 canvas / #464644 elevated.
+     Borders at zinc-600 (#5a5a5a) become clearly visible — Databricks uses
+     #7D7D7D, we land at a slightly darker but still prominent equivalent.    */
+  --color-zinc-950: #161616;
+  --color-zinc-900: #242424;  /* nav rail / sidebar frame             */
+  --color-zinc-800: #333333;  /* main canvas, topbar, panel bg        */
+  --color-zinc-700: #3f3f3d;  /* elevated cards, hover targets        */
+  --color-zinc-600: #575755;  /* borders — visible like Databricks    */
+  --color-zinc-500: #898a81;  /* secondary text — Databricks exact    */
+  --color-zinc-400: #b2b2ae;  /* tertiary / placeholder text          */
+  --color-zinc-300: #d4d4d4;  /* primary text — Databricks exact      */
+  --color-zinc-200: #e6e6e6;
+  --color-zinc-100: #f0f0f0;
 }
 
 :root {

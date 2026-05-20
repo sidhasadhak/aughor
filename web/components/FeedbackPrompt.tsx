@@ -13,7 +13,7 @@ const VERDICT_COLOR: Record<string, string> = {
   confirmed: "text-emerald-400 border-emerald-500/30 bg-emerald-500/10",
   refuted: "text-red-400 border-red-500/30 bg-red-500/10",
   inconclusive: "text-amber-400 border-amber-500/30 bg-amber-500/10",
-  untested: "text-zinc-500 border-zinc-700 bg-zinc-800/50",
+  untested: "text-zinc-500 border-zinc-600 bg-zinc-800/50",
 };
 
 export function FeedbackPrompt({ investigationId, hypotheses, onSubmit }: Props) {
@@ -68,7 +68,7 @@ export function FeedbackPrompt({ investigationId, hypotheses, onSubmit }: Props)
           Optional: add context, correct an interpretation, or redirect the report focus
         </label>
         <textarea
-          className="w-full rounded-lg bg-zinc-900 border border-zinc-700 text-sm text-zinc-100 placeholder:text-zinc-600 p-3 resize-none focus:outline-none focus:ring-1 focus:ring-violet-500 transition"
+          className="w-full rounded-lg bg-zinc-800 border border-zinc-600 text-sm text-zinc-100 placeholder:text-zinc-600 p-3 resize-none focus:outline-none focus:ring-1 focus:ring-violet-500 transition"
           rows={3}
           placeholder="e.g. Focus on APAC segment, the EU numbers are expected due to the Nov promotion. Ignore H3."
           value={feedback}

@@ -23,6 +23,7 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
   const [items, setItems] = useState<InvestigationSummary[]>([]);
   const [indexedIds, setIndexedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     Promise.all([
@@ -49,18 +50,39 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-2 text-center px-6">
         <p className="text-sm text-zinc-600">No investigations yet.</p>
-        <p className="text-xs text-zinc-700">Run your first investigation to see it here.</p>
+        <p className="text-xs text-zinc-700">Run your first to see it here.</p>
       </div>
     );
   }
 
+  const q = search.toLowerCase().trim();
+  const filtered = q
+    ? items.filter(inv =>
+        inv.question.toLowerCase().includes(q) ||
+        inv.headline?.toLowerCase().includes(q)
+      )
+    : items;
+
   return (
     <div className="flex flex-col h-full">
-      <div className="px-4 py-3 border-b border-zinc-800 shrink-0">
-        <p className="text-xs text-zinc-500 uppercase tracking-wide">Investigation history</p>
+      <div className="px-3 py-2.5 border-b border-zinc-600 shrink-0 space-y-2">
+        <div className="flex items-center justify-between">
+          <p className="text-[10px] text-zinc-600 uppercase tracking-widest font-medium">History</p>
+          <span className="text-[10px] text-zinc-700">{items.length}</span>
+        </div>
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search…"
+          className="w-full rounded-lg bg-zinc-800 border border-zinc-600 text-xs text-zinc-300 placeholder:text-zinc-600 px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-zinc-600 transition"
+        />
       </div>
-      <ul className="flex-1 overflow-y-auto divide-y divide-zinc-800/60">
-        {items.map(inv => {
+      <ul className="flex-1 overflow-y-auto divide-y divide-zinc-600/40">
+        {filtered.length === 0 && (
+          <li className="px-4 py-6 text-center text-xs text-zinc-600">No matches</li>
+        )}
+        {filtered.map(inv => {
           const isSelected = inv.id === selectedId;
           const isIndexed = indexedIds.has(inv.id);
           return (
@@ -71,7 +93,7 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
                   "w-full text-left px-4 py-3 transition group border-l-2",
                   isSelected
                     ? "bg-violet-500/5 border-violet-500"
-                    : "border-transparent hover:bg-zinc-900/50 hover:border-zinc-700"
+                    : "border-transparent hover:bg-zinc-700/50 hover:border-zinc-600"
                 )}
               >
                 <div className="flex items-start justify-between gap-2">

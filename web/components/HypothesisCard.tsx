@@ -28,7 +28,7 @@ export function HypothesisCard({ hypothesis, index, stats = [] }: Props) {
     .sort((a, b) => (b.sigma ?? 0) - (a.sigma ?? 0))[0];
 
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-4 space-y-3 transition-all duration-500">
+    <div className="rounded-lg border border-zinc-600 bg-zinc-800/60 p-4 space-y-3 transition-all duration-500">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-2 min-w-0">
           <span className="mt-0.5 shrink-0 text-xs font-mono text-zinc-500">H{index + 1}</span>
@@ -68,7 +68,7 @@ export function HypothesisCard({ hypothesis, index, stats = [] }: Props) {
             </div>
           </div>
           {hypothesis.key_finding && (
-            <p className="text-xs text-zinc-400 leading-relaxed border-l-2 border-zinc-700 pl-3">
+            <p className="text-xs text-zinc-400 leading-relaxed border-l-2 border-zinc-600 pl-3">
               {hypothesis.key_finding}
             </p>
           )}

@@ -171,7 +171,7 @@ export function MetricsPanel() {
               className={`group flex items-start justify-between rounded-md px-3 py-2 cursor-pointer transition-colors ${
                 selected === m.name
                   ? "bg-violet-500/15 border border-violet-500/30"
-                  : "hover:bg-zinc-800/60 border border-transparent"
+                  : "hover:bg-zinc-700/60 border border-transparent"
               }`}
             >
               <div className="min-w-0">
@@ -180,7 +180,7 @@ export function MetricsPanel() {
               </div>
               <div className="flex items-center gap-1 ml-2 flex-shrink-0">
                 {m.unit && (
-                  <Badge className="text-[10px] px-1 py-0 border-zinc-700 bg-zinc-800 text-zinc-400">
+                  <Badge className="text-[10px] px-1 py-0 border-zinc-600 bg-zinc-800 text-zinc-400">
                     {m.unit}
                   </Badge>
                 )}
@@ -310,7 +310,7 @@ export function MetricsPanel() {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const inputCls =
-  "w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-violet-500 transition-colors";
+  "w-full rounded-md border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-violet-500 transition-colors";
 
 function Field({
   label,

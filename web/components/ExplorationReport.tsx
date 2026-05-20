@@ -45,7 +45,7 @@ function SubQuestionCard({
       <div className="flex gap-3">
         {/* Step indicator */}
         <div className="shrink-0 flex flex-col items-center z-10">
-          <div className="h-9 w-9 rounded-full border border-zinc-700 bg-zinc-900 flex items-center justify-center text-xs font-mono text-zinc-400">
+          <div className="h-9 w-9 rounded-full border border-zinc-600 bg-zinc-800 flex items-center justify-center text-xs font-mono text-zinc-400">
             {index + 1}
           </div>
         </div>
@@ -61,16 +61,16 @@ function SubQuestionCard({
           </div>
 
           {/* Answer bubble */}
-          <div className="rounded-lg border border-zinc-800 bg-zinc-900/60 p-3 space-y-2">
+          <div className="rounded-lg border border-zinc-600 bg-zinc-800/60 p-3 space-y-2">
             <p className="text-sm text-zinc-100 leading-relaxed font-medium">{answer.answer}</p>
             {answer.insight && answer.insight !== answer.answer && (
-              <p className="text-xs text-zinc-400 leading-relaxed border-t border-zinc-800/60 pt-2">
+              <p className="text-xs text-zinc-400 leading-relaxed border-t border-zinc-600/60 pt-2">
                 <span className="text-zinc-600 uppercase tracking-widest font-mono text-[10px]">Insight </span>
                 {answer.insight}
               </p>
             )}
             {answer.refinement && (
-              <p className="text-[11px] text-violet-400/70 border-t border-zinc-800/60 pt-2 leading-relaxed italic">
+              <p className="text-[11px] text-violet-400/70 border-t border-zinc-600/60 pt-2 leading-relaxed italic">
                 → {answer.refinement}
               </p>
             )}
@@ -107,7 +107,7 @@ function SubQuestionCard({
                     <span>{sqlOpen ? "▼" : "▶"}</span> SQL
                   </button>
                   {sqlOpen && (
-                    <pre className="text-xs text-zinc-400 bg-zinc-950 rounded border border-zinc-800/60 p-2.5 overflow-x-auto whitespace-pre-wrap font-mono leading-relaxed">
+                    <pre className="text-xs text-zinc-400 bg-zinc-800 rounded border border-zinc-600/60 p-2.5 overflow-x-auto whitespace-pre-wrap font-mono leading-relaxed">
                       {answer.sql}
                     </pre>
                   )}
@@ -126,10 +126,10 @@ function SubqMiniTable({ columns, rows, rowCount }: { columns: string[]; rows: u
   const visible = rows.slice(0, MAX);
   const fmt = buildColumnFormatter(columns, rows);
   return (
-    <div className="rounded border border-zinc-800 overflow-hidden">
+    <div className="rounded border border-zinc-600 overflow-hidden">
       <div className="overflow-x-auto overflow-y-auto max-h-[220px]">
         <table className="w-full text-xs">
-          <thead className="sticky top-0 bg-zinc-900 border-b border-zinc-800">
+          <thead className="sticky top-0 bg-zinc-800 border-b border-zinc-600">
             <tr>
               {columns.map(col => (
                 <th key={col} className="px-3 py-1.5 text-left text-[10px] text-zinc-500 uppercase tracking-wide font-mono whitespace-nowrap">
@@ -138,9 +138,9 @@ function SubqMiniTable({ columns, rows, rowCount }: { columns: string[]; rows: u
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-zinc-800/40">
+          <tbody className="divide-y divide-zinc-600/40">
             {visible.map((row, ri) => (
-              <tr key={ri} className="hover:bg-zinc-800/20">
+              <tr key={ri} className="hover:bg-zinc-700/70/20">
                 {(row as unknown[]).map((cell, ci) => (
                   <td key={ci} className="px-3 py-1.5 text-zinc-300 font-mono whitespace-nowrap">
                     {cell == null ? <span className="text-zinc-600 italic">null</span> : fmt(ci, cell)}
@@ -152,7 +152,7 @@ function SubqMiniTable({ columns, rows, rowCount }: { columns: string[]; rows: u
         </table>
       </div>
       {rowCount > MAX && (
-        <div className="px-3 py-1 border-t border-zinc-800/60 text-[10px] text-zinc-600 font-mono">
+        <div className="px-3 py-1 border-t border-zinc-600/60 text-[10px] text-zinc-600 font-mono">
           +{rowCount - MAX} more rows
         </div>
       )}
@@ -180,7 +180,7 @@ export function ExplorationReportView({ report, subQuestions, subqAnswers, query
       </div>
 
       {/* 3. Narrative */}
-      <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4 space-y-1.5">
+      <div className="rounded-lg border border-zinc-600 bg-zinc-800/40 p-4 space-y-1.5">
         <p className="text-xs text-zinc-500 uppercase tracking-widest font-mono">How we got here</p>
         <p className="text-sm text-zinc-300 leading-relaxed italic">{report.narrative}</p>
       </div>

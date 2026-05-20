@@ -33,7 +33,7 @@ function TableCard({ table, palette }: { table: SchemaTable; palette: typeof TAB
   const totalCols = table.columns.length;
 
   return (
-    <div className={`rounded-lg border ${palette.border} bg-zinc-900 overflow-hidden flex flex-col`}>
+    <div className={`rounded-lg border ${palette.border} bg-zinc-800 overflow-hidden flex flex-col`}>
       {/* Card header */}
       <div className={`${palette.header} px-3 py-2 flex items-center justify-between gap-2`}>
         <div className="flex items-center gap-2 min-w-0">
@@ -53,14 +53,14 @@ function TableCard({ table, palette }: { table: SchemaTable; palette: typeof TAB
       </div>
 
       {/* Column list */}
-      <div className="divide-y divide-zinc-800/60 flex-1">
+      <div className="divide-y divide-zinc-600/50 flex-1">
         {table.columns.map((col) => {
           const chip = typeChip(col.type);
           return (
-            <div key={col.name} className="px-3 py-1.5 flex items-center justify-between gap-2 hover:bg-zinc-800/40 transition-colors">
+            <div key={col.name} className="px-3 py-1.5 flex items-center justify-between gap-2 hover:bg-zinc-700/40 transition-colors">
               <div className="flex items-center gap-1.5 min-w-0">
                 {col.is_fk && (
-                  <span title="Join key" className="text-[9px] text-zinc-500 font-mono border border-zinc-700 rounded px-0.5 leading-tight shrink-0">FK</span>
+                  <span title="Join key" className="text-[9px] text-zinc-500 font-mono border border-zinc-600 rounded px-0.5 leading-tight shrink-0">FK</span>
                 )}
                 <span className="text-xs font-mono text-zinc-300 truncate">{col.name}</span>
               </div>
@@ -85,7 +85,7 @@ function JoinPaths({ joins }: { joins: SchemaJoin[] }) {
         {joins.map((j, i) => (
           <div
             key={i}
-            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-900 border border-zinc-800 text-xs font-mono"
+            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-600 text-xs font-mono"
           >
             <span className="text-zinc-300">{j.t1}</span>
             <span className="text-zinc-600">.</span>
@@ -116,7 +116,7 @@ function Warnings({ warnings }: { warnings: SchemaWarning[] }) {
         SQL Warnings &amp; Modeling Notes
       </h3>
       {warnings.length === 0 ? (
-        <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-zinc-900 border border-zinc-800 text-xs text-zinc-500">
+        <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-zinc-800 border border-zinc-600 text-xs text-zinc-500">
           <span className="text-emerald-500">✓</span>
           No type mismatches or modeling issues detected
         </div>
@@ -128,7 +128,7 @@ function Warnings({ warnings }: { warnings: SchemaWarning[] }) {
               className={`flex items-start gap-2 px-3 py-2 rounded-lg text-xs border ${
                 w.level === "warn"
                   ? "bg-amber-500/5 border-amber-500/20 text-amber-300"
-                  : "bg-zinc-900 border-zinc-800 text-zinc-400"
+                  : "bg-zinc-800 border-zinc-600 text-zinc-400"
               }`}
             >
               <span className="shrink-0 mt-px">{w.level === "warn" ? "⚠" : "ℹ"}</span>
@@ -144,7 +144,7 @@ function Warnings({ warnings }: { warnings: SchemaWarning[] }) {
 // ── Stats bar ─────────────────────────────────────────────────────────────────
 function StatChip({ value, label, accent }: { value: string | number; label: string; accent?: string }) {
   return (
-    <div className="flex items-baseline gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800">
+    <div className="flex items-baseline gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 border border-zinc-600">
       <span className={`text-sm font-semibold tabular-nums ${accent ?? "text-zinc-100"}`}>{value}</span>
       <span className="text-[11px] text-zinc-500">{label}</span>
     </div>
@@ -167,21 +167,36 @@ function StatsBar({ schema }: { schema: RichSchema }) {
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────
-export function SchemaCards({ schema }: { schema: RichSchema }) {
+export function SchemaCards({ schema, search }: { schema: RichSchema; search?: string }) {
+  const q = (search ?? "").toLowerCase().trim();
+  const filtered = q
+    ? schema.tables.filter(
+        (t) =>
+          t.name.toLowerCase().includes(q) ||
+          t.columns.some((c) => c.name.toLowerCase().includes(q))
+      )
+    : schema.tables;
+
   return (
     <div className="p-4 space-y-6">
       <StatsBar schema={schema} />
 
-      {/* Table cards grid */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
-        {schema.tables.map((table, i) => (
-          <TableCard
-            key={table.name}
-            table={table}
-            palette={TABLE_PALETTES[i % TABLE_PALETTES.length]}
-          />
-        ))}
-      </div>
+      {filtered.length === 0 && q ? (
+        <p className="text-xs text-zinc-600 py-4 text-center">No tables match "{q}"</p>
+      ) : (
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+          {filtered.map((table, i) => {
+            const origIndex = schema.tables.indexOf(table);
+            return (
+              <TableCard
+                key={table.name}
+                table={table}
+                palette={TABLE_PALETTES[origIndex % TABLE_PALETTES.length]}
+              />
+            );
+          })}
+        </div>
+      )}
 
       <JoinPaths joins={schema.joins} />
       <Warnings warnings={schema.warnings} />

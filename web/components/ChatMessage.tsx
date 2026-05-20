@@ -81,7 +81,7 @@ function KPICards({ columns, rows }: { columns: string[]; rows: unknown[][] }) {
 // ── Mini table ───────────────────────────────────────────────────────────────
 function MiniTable({ columns, rows }: { columns: string[]; rows: unknown[][] }) {
   return (
-    <div className="mt-2 overflow-x-auto rounded-lg border border-zinc-800">
+    <div className="mt-2 overflow-x-auto rounded-lg border border-zinc-600">
       <table className="text-xs w-full">
         <thead>
           <tr className="border-b border-violet-500/20 bg-violet-500/8">
@@ -94,7 +94,7 @@ function MiniTable({ columns, rows }: { columns: string[]; rows: unknown[][] }) 
         </thead>
         <tbody>
           {rows.map((row, i) => (
-            <tr key={i} className="border-b border-zinc-800/50 last:border-0 hover:bg-zinc-800/30 transition-colors">
+            <tr key={i} className="border-b border-zinc-600/50 last:border-0 hover:bg-zinc-700/30 transition-colors">
               {columns.map((col, j) => (
                 <td key={j} className="px-3 py-1.5 text-zinc-300 font-mono whitespace-nowrap">
                   {fmt(col, (row as unknown[])[j])}
@@ -669,7 +669,7 @@ function SQLCollapsible({ sql }: { sql: string }) {
         <span>{open ? "▲" : "▼"}</span> SQL
       </button>
       {open && (
-        <pre className="mt-1 text-[10px] font-mono text-zinc-500 bg-zinc-900 rounded p-2 overflow-x-auto whitespace-pre-wrap">
+        <pre className="mt-1 text-[10px] font-mono text-zinc-500 bg-zinc-800 rounded p-2 overflow-x-auto whitespace-pre-wrap">
           {sql}
         </pre>
       )}
@@ -692,7 +692,7 @@ export function ChatMessage({ turn }: { turn: ChatTurn }) {
       <div className="flex justify-start">
         <div className="w-full min-w-[200px]">
           {turn.status === "loading" && (
-            <div className="flex items-center gap-2 px-4 py-3 bg-zinc-900 border border-zinc-800 rounded-2xl rounded-tl-sm">
+            <div className="flex items-center gap-2 px-4 py-3 bg-zinc-800 border border-zinc-600 rounded-2xl rounded-tl-sm">
               <span className="flex gap-1">
                 {[0, 150, 300].map((d) => (
                   <span

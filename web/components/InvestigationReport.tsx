@@ -134,7 +134,7 @@ function FindingTable({ columns, rows }: { columns: string[]; rows: (string | nu
     <div className="overflow-x-auto">
       <table className="w-full text-xs">
         <thead>
-          <tr className="border-b border-zinc-800">
+          <tr className="border-b border-zinc-600">
             {columns.map((col, i) => (
               <th key={i} className="text-left py-1.5 px-2 text-zinc-500 font-medium whitespace-nowrap">
                 {col}
@@ -144,7 +144,7 @@ function FindingTable({ columns, rows }: { columns: string[]; rows: (string | nu
         </thead>
         <tbody>
           {rows.slice(0, 15).map((row, ri) => (
-            <tr key={ri} className="border-b border-zinc-900 hover:bg-zinc-900/50">
+            <tr key={ri} className="border-b border-zinc-900 hover:bg-zinc-700/70/50">
               {row.map((cell, ci) => {
                 const str = cell === null ? "NULL" : String(cell);
                 // Colour negative/positive values
@@ -189,19 +189,19 @@ function FindingChart({ columns, rows, chartType }: { columns: string[]; rows: (
 function KeyNumbers({ numbers }: { numbers: PhaseKeyNumber[] }) {
   if (!numbers.length) return null;
   return (
-    <div className="flex gap-4 flex-wrap">
+    <div className="flex gap-3 flex-wrap">
       {numbers.map((n, i) => (
-        <div key={i} className="flex flex-col">
-          <span className="text-xs text-zinc-500">{n.label}</span>
+        <div key={i} className="flex flex-col gap-0.5 rounded-xl border border-zinc-600 bg-zinc-800/60 px-4 py-3 min-w-[100px]">
+          <span className="text-[10px] uppercase tracking-wide text-zinc-500">{n.label}</span>
           <div className="flex items-baseline gap-1.5">
-            <span className="text-lg font-semibold text-white">{n.value}</span>
+            <span className="text-2xl font-semibold tabular-nums text-white">{n.value}</span>
             {n.delta && (
               <span className={`text-xs font-medium ${n.delta.startsWith("-") ? "text-red-400" : "text-emerald-400"}`}>
                 {n.delta}
               </span>
             )}
           </div>
-          {n.context && <span className="text-[10px] text-zinc-600">{n.context}</span>}
+          {n.context && <span className="text-[10px] text-zinc-600 leading-tight">{n.context}</span>}
         </div>
       ))}
     </div>
@@ -217,78 +217,77 @@ function FindingCard({ finding, defaultOpen }: { finding: InvestigationFinding; 
   const hasChart = hasData && finding.chart_type !== "none";
 
   return (
-    <div className="border border-zinc-800 rounded-lg overflow-hidden">
+    <div className={`rounded-xl border overflow-hidden transition-colors ${
+      finding.is_significant
+        ? "border-orange-500/30 bg-orange-500/5"
+        : "border-zinc-600 bg-zinc-800/40"
+    }`}>
       <button
         onClick={() => setOpen(v => !v)}
-        className="w-full flex items-center justify-between px-3 py-2.5 bg-zinc-900/40 hover:bg-zinc-900/70 transition-colors text-left"
+        className="w-full flex items-center justify-between px-4 py-3 hover:bg-zinc-700/30 transition-colors text-left"
       >
-        <div className="flex items-center gap-2">
-          {open ? (
-            <ChevronDown className="h-3 w-3 text-zinc-500 flex-shrink-0" />
-          ) : (
-            <ChevronRight className="h-3 w-3 text-zinc-500 flex-shrink-0" />
-          )}
-          <span className="text-sm text-zinc-200">{finding.title}</span>
+        <div className="flex items-center gap-2.5">
+          {open
+            ? <ChevronDown className="h-3.5 w-3.5 text-zinc-500 shrink-0" />
+            : <ChevronRight className="h-3.5 w-3.5 text-zinc-500 shrink-0" />}
+          <span className="text-sm font-medium text-zinc-200">{finding.title}</span>
           {finding.is_significant && (
-            <span className="text-[10px] bg-orange-900/50 text-orange-300 px-1.5 py-0.5 rounded">significant</span>
+            <span className="text-[10px] bg-orange-500/15 text-orange-300 border border-orange-500/20 px-1.5 py-0.5 rounded-full">significant</span>
           )}
           {finding.error && (
-            <span className="text-[10px] bg-red-900/40 text-red-400 px-1.5 py-0.5 rounded">error</span>
+            <span className="text-[10px] bg-red-500/10 text-red-400 border border-red-500/20 px-1.5 py-0.5 rounded-full">error</span>
           )}
         </div>
-        <span className="text-xs text-zinc-600">{finding.row_count > 0 ? `${finding.row_count} rows` : ""}</span>
+        {finding.row_count > 0 && (
+          <span className="text-[11px] text-zinc-600 shrink-0 ml-2">{finding.row_count} rows</span>
+        )}
       </button>
 
       {open && (
-        <div className="px-4 py-3 space-y-3">
-          {/* Interpretation */}
-          <p className="text-sm text-zinc-300 leading-relaxed">{finding.interpretation}</p>
+        <div className="px-4 pb-4 space-y-4 border-t border-zinc-600/50">
+          <div className="pt-3">
+            <p className="text-sm text-zinc-300 leading-relaxed">{finding.interpretation}</p>
+          </div>
 
-          {/* Key numbers */}
           {finding.key_numbers.length > 0 && (
             <KeyNumbers numbers={finding.key_numbers} />
           )}
 
-          {/* Stat note */}
           {finding.stat_note && (
-            <div className="text-xs text-zinc-500 bg-zinc-900/50 px-3 py-1.5 rounded font-mono">
+            <div className="text-xs text-zinc-500 bg-zinc-800/60 border border-zinc-600 px-3 py-2 rounded-lg font-mono">
               {finding.stat_note}
             </div>
           )}
 
-          {/* Chart */}
           {hasChart && (
             <FindingChart columns={finding.columns} rows={finding.rows} chartType={finding.chart_type} />
           )}
 
-          {/* Table */}
           {hasData && (
-            <div className="bg-zinc-950/50 rounded-lg p-2">
+            <div className="rounded-lg border border-zinc-600 overflow-hidden">
               <FindingTable columns={finding.columns} rows={finding.rows} />
             </div>
           )}
 
-          {/* SQL toggle */}
           {finding.sql && (
             <div>
               <button
                 onClick={() => setSqlOpen(v => !v)}
-                className="flex items-center gap-1 text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors"
+                className="flex items-center gap-1.5 text-[11px] text-zinc-600 hover:text-zinc-400 transition-colors"
               >
                 {sqlOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
                 SQL
               </button>
               {sqlOpen && (
-                <pre className="mt-1 text-[11px] text-zinc-400 bg-zinc-950 border border-zinc-800 rounded p-3 overflow-x-auto whitespace-pre-wrap leading-relaxed">
+                <pre className="mt-1.5 text-[11px] text-zinc-400 bg-zinc-800 border border-zinc-600 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap leading-relaxed">
                   {finding.sql}
                 </pre>
               )}
             </div>
           )}
 
-          {/* Error */}
           {finding.error && (
-            <div className="text-xs text-red-400 bg-red-950/30 px-3 py-2 rounded font-mono">
+            <div className="text-xs text-red-400 bg-red-950/20 border border-red-500/20 px-3 py-2 rounded-lg font-mono">
               {finding.error}
             </div>
           )}
@@ -298,10 +297,21 @@ function FindingCard({ finding, defaultOpen }: { finding: InvestigationFinding; 
   );
 }
 
+// ── Phase color palette (left-border accent by phase index) ───────────────────
+
+const PHASE_ACCENT = [
+  "border-l-violet-500",
+  "border-l-sky-500",
+  "border-l-teal-500",
+  "border-l-amber-500",
+  "border-l-emerald-500",
+];
+
 // ── Phase section ──────────────────────────────────────────────────────────────
 
 function PhaseSection({ phase, phaseIndex }: { phase: InvestigationPhase; phaseIndex: number }) {
   const [expanded, setExpanded] = useState(true);
+  const accent = PHASE_ACCENT[phaseIndex % PHASE_ACCENT.length];
 
   const statusIcon = {
     complete: <CheckCircle2 className="h-4 w-4 text-emerald-500" />,
@@ -314,11 +324,11 @@ function PhaseSection({ phase, phaseIndex }: { phase: InvestigationPhase; phaseI
   const nonTrivialFindings = phase.findings.filter(f => f.chart_type !== "none" || f.columns.length > 0);
 
   return (
-    <div className="space-y-3">
+    <div className={`pl-4 border-l-2 ${accent} space-y-3`}>
       {/* Phase header */}
       <div className="flex items-start gap-3">
-        <div className="flex items-center gap-2 mt-0.5">
-          <span className="text-base">{phase.phase_icon}</span>
+        <div className="flex items-center gap-1.5 mt-0.5 shrink-0">
+          <span className="text-base leading-none">{phase.phase_icon}</span>
           {statusIcon}
         </div>
         <div className="flex-1 min-w-0">
@@ -326,16 +336,13 @@ function PhaseSection({ phase, phaseIndex }: { phase: InvestigationPhase; phaseI
             onClick={() => setExpanded(v => !v)}
             className="flex items-center gap-2 text-left w-full group"
           >
-            <span className="text-sm font-semibold text-zinc-200 group-hover:text-white">
+            <span className="text-sm font-semibold text-zinc-200 group-hover:text-white transition-colors">
               {phase.phase_name}
             </span>
-            {expanded ? (
-              <ChevronDown className="h-3.5 w-3.5 text-zinc-600" />
-            ) : (
-              <ChevronRight className="h-3.5 w-3.5 text-zinc-600" />
-            )}
+            {expanded
+              ? <ChevronDown className="h-3.5 w-3.5 text-zinc-600" />
+              : <ChevronRight className="h-3.5 w-3.5 text-zinc-600" />}
           </button>
-          {/* Phase summary — always visible */}
           <p className="text-sm text-zinc-400 mt-0.5 leading-snug">{phase.summary}</p>
           {phase.skipped_reason && (
             <p className="text-xs text-zinc-600 italic mt-0.5">{phase.skipped_reason}</p>
@@ -343,9 +350,8 @@ function PhaseSection({ phase, phaseIndex }: { phase: InvestigationPhase; phaseI
         </div>
       </div>
 
-      {/* Phase findings (expandable) */}
       {expanded && nonTrivialFindings.length > 0 && (
-        <div className="ml-9 space-y-2">
+        <div className="space-y-2.5">
           {nonTrivialFindings.map((finding, i) => (
             <FindingCard
               key={finding.finding_id}
@@ -381,12 +387,21 @@ function Recommendations({ recs }: { recs: ADARecommendation[] }) {
   return (
     <div className="space-y-2">
       {recs.map((rec, i) => (
-        <div key={i} className="bg-zinc-900/40 border border-zinc-800 rounded-lg px-4 py-3 space-y-1">
-          <p className="text-sm text-zinc-200 font-medium">{rec.action}</p>
-          <div className="flex gap-3 flex-wrap text-xs text-zinc-500">
-            {rec.expected_impact && <span>Impact: <span className="text-zinc-300">{rec.expected_impact}</span></span>}
-            {rec.owner && <span>Owner: <span className="text-zinc-300">{rec.owner}</span></span>}
-            {rec.timeline && <span>Timeline: <span className="text-zinc-300">{rec.timeline}</span></span>}
+        <div key={i} className="rounded-xl border border-zinc-600 bg-zinc-800/50 px-4 py-3 space-y-1.5">
+          <div className="flex items-start gap-2">
+            <span className="text-emerald-500 text-xs mt-0.5 shrink-0">→</span>
+            <p className="text-sm text-zinc-200 font-medium leading-snug">{rec.action}</p>
+          </div>
+          <div className="flex gap-4 flex-wrap text-xs text-zinc-600 pl-4">
+            {rec.expected_impact && (
+              <span>Impact: <span className="text-zinc-400">{rec.expected_impact}</span></span>
+            )}
+            {rec.owner && (
+              <span>Owner: <span className="text-zinc-400">{rec.owner}</span></span>
+            )}
+            {rec.timeline && (
+              <span>Timeline: <span className="text-zinc-400">{rec.timeline}</span></span>
+            )}
           </div>
         </div>
       ))}
@@ -447,7 +462,7 @@ export function InvestigationReportView({
         <>
           <Separator className="bg-zinc-800" />
           <div className="space-y-3">
-            <p className="text-xs text-zinc-600 uppercase tracking-wide">Attribution Waterfall</p>
+            <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-medium">Attribution Waterfall</p>
             <AttributionWaterfall
               entries={report.attribution_waterfall}
               totalLabel={report.total_change_label}
@@ -461,7 +476,7 @@ export function InvestigationReportView({
         <>
           <Separator className="bg-zinc-800" />
           <div className="space-y-3">
-            <p className="text-xs text-zinc-600 uppercase tracking-wide">Recommended Actions</p>
+            <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-medium">Recommended Actions</p>
             <Recommendations recs={report.recommendations} />
           </div>
         </>
@@ -472,7 +487,7 @@ export function InvestigationReportView({
         <>
           <Separator className="bg-zinc-800" />
           <div className="space-y-2">
-            <p className="text-xs text-zinc-600 uppercase tracking-wide">Data Gaps</p>
+            <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-medium">Data Gaps</p>
             <ul className="space-y-1">
               {report.data_gaps.map((gap, i) => (
                 <li key={i} className="text-xs text-zinc-500 flex items-start gap-2">
