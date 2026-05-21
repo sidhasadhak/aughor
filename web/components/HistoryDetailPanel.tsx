@@ -37,8 +37,8 @@ export function HistoryDetailPanel({ invId }: Props) {
   if (!invId) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center px-8">
-        <p className="text-2xl font-semibold text-zinc-700">Select an investigation</p>
-        <p className="text-sm text-zinc-600 max-w-xs">
+        <p className="text-2xl font-semibold text-zinc-500">Select an investigation</p>
+        <p className="text-sm text-zinc-500 max-w-xs">
           Click any item on the left to view its full results.
         </p>
       </div>
@@ -63,7 +63,7 @@ export function HistoryDetailPanel({ invId }: Props) {
 
   if (!inv) {
     return (
-      <div className="flex-1 flex items-center justify-center text-sm text-zinc-600">
+      <div className="flex-1 flex items-center justify-center text-sm text-zinc-500">
         Failed to load investigation.
       </div>
     );
@@ -80,7 +80,7 @@ export function HistoryDetailPanel({ invId }: Props) {
         {/* Question */}
         <div>
           <div className="flex items-center gap-2 mb-2">
-            <p className="text-xs text-zinc-600 uppercase tracking-wide">Question</p>
+            <p className="text-xs text-zinc-500 uppercase tracking-wide">Question</p>
             {isDirect && (
               <span className="text-xs text-sky-400 border border-sky-500/30 bg-sky-500/10 rounded px-2 py-0.5 font-medium">
                 Direct Query
@@ -88,14 +88,14 @@ export function HistoryDetailPanel({ invId }: Props) {
             )}
           </div>
           <p className="text-base font-medium text-zinc-200">{inv.question}</p>
-          <p className="mt-1 text-xs text-zinc-600 font-mono">{inv.connection_id}</p>
+          <p className="mt-1 text-xs text-zinc-500 font-mono">{inv.connection_id}</p>
         </div>
 
         {/* Report */}
         {inv.report && (
           <div className="space-y-3">
             <Separator className="bg-zinc-800" />
-            <p className="text-xs text-zinc-600 uppercase tracking-wide">
+            <p className="text-xs text-zinc-500 uppercase tracking-wide">
               {isDirect ? "Query Report" : "Investigation Report"}
             </p>
             <ReportView
@@ -109,7 +109,7 @@ export function HistoryDetailPanel({ invId }: Props) {
         )}
 
         {!inv.report && (
-          <div className="rounded-lg border border-zinc-600 p-4 text-sm text-zinc-600">
+          <div className="rounded-lg border border-zinc-600 p-4 text-sm text-zinc-500">
             This investigation did not complete — no report available.
           </div>
         )}

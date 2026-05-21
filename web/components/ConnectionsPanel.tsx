@@ -140,7 +140,7 @@ export function ConnectionsPanel({ selectedId, onSelect, activeSchemaId, onSchem
           </div>
           <div className="space-y-1">
             <label className="text-xs text-zinc-500">
-              Schema <span className="text-zinc-600">(optional)</span>
+              Schema <span className="text-zinc-500">(optional)</span>
             </label>
             <input
               className="w-full rounded bg-zinc-800 border border-zinc-600 text-sm text-zinc-300 font-mono px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-zinc-500"
@@ -148,7 +148,7 @@ export function ConnectionsPanel({ selectedId, onSelect, activeSchemaId, onSchem
               value={formSchema}
               onChange={e => setFormSchema(e.target.value)}
             />
-            <p className="text-[10px] text-zinc-600 leading-relaxed">
+            <p className="text-[10px] text-zinc-500 leading-relaxed">
               Restricts table discovery and queries to this schema only.
               Leave blank to use the default.
             </p>
@@ -196,7 +196,7 @@ export function ConnectionsPanel({ selectedId, onSelect, activeSchemaId, onSchem
                     {TYPE_LABELS[conn.conn_type] ?? conn.conn_type}
                   </Badge>
                 </div>
-                <p className="text-xs font-mono text-zinc-600 mt-1 truncate pl-4">{conn.dsn_preview}</p>
+                <p className="text-xs font-mono text-zinc-500 mt-1 truncate pl-4">{conn.dsn_preview}</p>
                 {conn.schema_name && (
                   <p className="text-[10px] text-zinc-500 mt-0.5 pl-4">
                     schema: <span className="font-mono text-zinc-400">{conn.schema_name}</span>
@@ -221,7 +221,7 @@ export function ConnectionsPanel({ selectedId, onSelect, activeSchemaId, onSchem
                   onClick={() => onSchemaSelect(isSchemaActive ? null : conn.id)}
                   className={cn(
                     "text-xs transition",
-                    isSchemaActive ? "text-violet-400" : "text-zinc-600 hover:text-zinc-300"
+                    isSchemaActive ? "text-violet-400" : "text-zinc-500 hover:text-zinc-300"
                   )}
                 >
                   {isSchemaActive ? "Schema ●" : "Schema"}
@@ -233,7 +233,7 @@ export function ConnectionsPanel({ selectedId, onSelect, activeSchemaId, onSchem
                       "text-xs transition ml-auto flex items-center gap-1",
                       pendingDelete === conn.id
                         ? "text-red-400 font-medium"
-                        : "text-zinc-600 hover:text-red-400"
+                        : "text-zinc-500 hover:text-red-400"
                     )}
                   >
                     {pendingDelete === conn.id ? (

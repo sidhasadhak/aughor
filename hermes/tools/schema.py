@@ -15,6 +15,21 @@ _ROOT_SUFFIXES = sorted(
     key=len, reverse=True,
 )
 
+# Roots that are generic attribute names, NOT foreign-key roots.
+# Columns whose root matches one of these will be skipped during join inference
+# to avoid false positives like currency↔currency or status↔status across tables.
+_NON_KEY_ROOTS = frozenset({
+    "currency", "status", "type", "name", "date", "year", "month", "day",
+    "time", "timestamp", "created", "updated", "deleted", "modified",
+    "code", "description", "category", "country", "region", "city", "state",
+    "amount", "price", "cost", "total", "count", "rate", "ratio", "percent",
+    "flag", "label", "title", "note", "comment", "address", "phone",
+    "email", "url", "path", "size", "weight", "color", "colour",
+    "gender", "age", "score", "rank", "level", "priority", "sequence",
+    "value", "text", "number", "active", "enabled", "visible", "public",
+    "source", "target", "action", "event", "message", "error", "result",
+})
+
 
 def _col_root(col: str) -> str:
     col = col.lower()
@@ -66,6 +81,8 @@ def _compute_join_map(table_cols: dict[str, list[str]]) -> dict:
     for root, entries in root_map.items():
         if len(entries) < 2:
             continue
+        if root in _NON_KEY_ROOTS:
+            continue  # skip generic attribute columns — not join keys
         for i in range(len(entries)):
             for j in range(i + 1, len(entries)):
                 t1, c1 = entries[i]
@@ -220,10 +237,11 @@ def build_rich_schema(schema_str: str) -> dict:
     table_cols = {t: [c for c, _ in cols] for t, cols in table_col_types.items()}
     jmap = _compute_join_map(table_cols)
 
+    # Only the FK side (t1.c1) gets is_fk=True.
+    # The PK target side (t2.c2) is a primary/unique key — marking it as FK would be wrong.
     fk_hints: dict[str, set[str]] = {t: set() for t in table_cols}
     for j in jmap["joins"]:
         fk_hints[j["t1"]].add(j["c1"])
-        fk_hints[j["t2"]].add(j["c2"])
 
     tables = []
     for table, col_type_pairs in table_col_types.items():
@@ -289,25 +307,44 @@ def build_rich_schema(schema_str: str) -> dict:
 def build_schema_context(
     conn: duckdb.DuckDBPyConnection,
     profile_annotation: str = "",
+    schema_name: str | None = None,
 ) -> str:
     """Return a rich schema description for the LLM, including row counts and glossary annotations.
 
     profile_annotation: pre-rendered DATA PROFILES block from the profiler.
     When supplied (non-empty), it is appended after join hints so every prompt
     receives grain, null-rate, and value-interpretation information.
+
+    schema_name: when set, filters to only tables in that DuckDB schema so that
+    multi-schema files don't bleed tables from other schemas into this context.
     """
-    tables = [row[0] for row in conn.execute("SHOW TABLES").fetchall()]
+    if schema_name:
+        tables = [
+            row[0] for row in conn.execute(
+                "SELECT table_name FROM information_schema.tables "
+                "WHERE table_schema = ? AND table_type = 'BASE TABLE' ORDER BY table_name",
+                [schema_name],
+            ).fetchall()
+        ]
+    else:
+        tables = [row[0] for row in conn.execute("SHOW TABLES").fetchall()]
     parts: list[str] = []
 
+    # Use fully-qualified names when schema is known so queries work even if
+    # SET search_path silently failed (DuckDB version differences).
+    def _fqn(t: str) -> str:
+        return f"{schema_name}.{t}" if schema_name else t
+
     for table in sorted(tables):
+        fqn = _fqn(table)
         try:
-            count = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+            count = conn.execute(f"SELECT COUNT(*) FROM {fqn}").fetchone()[0]
         except Exception:
             count = "?"
 
         parts.append(f"TABLE: {table}  ({count:,} rows)")
 
-        cols = conn.execute(f"DESCRIBE {table}").fetchall()
+        cols = conn.execute(f"DESCRIBE {fqn}").fetchall()
         for col in cols:
             col_name, col_type = col[0], col[1]
             parts.append(f"  {col_name}  {col_type}")
@@ -317,7 +354,7 @@ def build_schema_context(
         for col_name in categorical[:3]:
             try:
                 vals = conn.execute(
-                    f"SELECT DISTINCT {col_name} FROM {table} LIMIT 8"
+                    f"SELECT DISTINCT {col_name} FROM {fqn} LIMIT 8"
                 ).fetchall()
                 sample = ", ".join(str(v[0]) for v in vals if v[0] is not None)
                 if sample:

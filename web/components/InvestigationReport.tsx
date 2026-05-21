@@ -167,7 +167,7 @@ function FindingTable({ columns, rows }: { columns: string[]; rows: (string | nu
         </tbody>
       </table>
       {rows.length > 15 && (
-        <p className="text-xs text-zinc-600 mt-1 px-2">… {rows.length - 15} more rows</p>
+        <p className="text-xs text-zinc-500 mt-1 px-2">… {rows.length - 15} more rows</p>
       )}
     </div>
   );
@@ -201,7 +201,7 @@ function KeyNumbers({ numbers }: { numbers: PhaseKeyNumber[] }) {
               </span>
             )}
           </div>
-          {n.context && <span className="text-[10px] text-zinc-600 leading-tight">{n.context}</span>}
+          {n.context && <span className="text-[10px] text-zinc-500 leading-tight">{n.context}</span>}
         </div>
       ))}
     </div>
@@ -239,7 +239,7 @@ function FindingCard({ finding, defaultOpen }: { finding: InvestigationFinding; 
           )}
         </div>
         {finding.row_count > 0 && (
-          <span className="text-[11px] text-zinc-600 shrink-0 ml-2">{finding.row_count} rows</span>
+          <span className="text-[11px] text-zinc-500 shrink-0 ml-2">{finding.row_count} rows</span>
         )}
       </button>
 
@@ -273,7 +273,7 @@ function FindingCard({ finding, defaultOpen }: { finding: InvestigationFinding; 
             <div>
               <button
                 onClick={() => setSqlOpen(v => !v)}
-                className="flex items-center gap-1.5 text-[11px] text-zinc-600 hover:text-zinc-400 transition-colors"
+                className="flex items-center gap-1.5 text-[11px] text-zinc-500 hover:text-zinc-400 transition-colors"
               >
                 {sqlOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
                 SQL
@@ -317,7 +317,7 @@ function PhaseSection({ phase, phaseIndex }: { phase: InvestigationPhase; phaseI
     complete: <CheckCircle2 className="h-4 w-4 text-emerald-500" />,
     partial:  <CheckCircle2 className="h-4 w-4 text-amber-500" />,
     running:  <Loader2 className="h-4 w-4 text-sky-400 animate-spin" />,
-    skipped:  <SkipForward className="h-4 w-4 text-zinc-600" />,
+    skipped:  <SkipForward className="h-4 w-4 text-zinc-500" />,
     error:    <AlertCircle className="h-4 w-4 text-red-500" />,
   }[phase.status] ?? <Loader2 className="h-4 w-4 text-zinc-500 animate-spin" />;
 
@@ -340,12 +340,12 @@ function PhaseSection({ phase, phaseIndex }: { phase: InvestigationPhase; phaseI
               {phase.phase_name}
             </span>
             {expanded
-              ? <ChevronDown className="h-3.5 w-3.5 text-zinc-600" />
-              : <ChevronRight className="h-3.5 w-3.5 text-zinc-600" />}
+              ? <ChevronDown className="h-3.5 w-3.5 text-zinc-500" />
+              : <ChevronRight className="h-3.5 w-3.5 text-zinc-500" />}
           </button>
           <p className="text-sm text-zinc-400 mt-0.5 leading-snug">{phase.summary}</p>
           {phase.skipped_reason && (
-            <p className="text-xs text-zinc-600 italic mt-0.5">{phase.skipped_reason}</p>
+            <p className="text-xs text-zinc-500 italic mt-0.5">{phase.skipped_reason}</p>
           )}
         </div>
       </div>
@@ -392,7 +392,7 @@ function Recommendations({ recs }: { recs: ADARecommendation[] }) {
             <span className="text-emerald-500 text-xs mt-0.5 shrink-0">→</span>
             <p className="text-sm text-zinc-200 font-medium leading-snug">{rec.action}</p>
           </div>
-          <div className="flex gap-4 flex-wrap text-xs text-zinc-600 pl-4">
+          <div className="flex gap-4 flex-wrap text-xs text-zinc-500 pl-4">
             {rec.expected_impact && (
               <span>Impact: <span className="text-zinc-400">{rec.expected_impact}</span></span>
             )}
@@ -435,12 +435,12 @@ export function InvestigationReportView({
               <span className="text-sm font-mono font-semibold text-red-400">{report.total_change_label}</span>
             )}
             {report.comparison_basis && (
-              <span className="text-xs text-zinc-600">vs {report.comparison_basis}</span>
+              <span className="text-xs text-zinc-500">vs {report.comparison_basis}</span>
             )}
           </div>
 
           {report.confidence_justification && (
-            <p className="text-xs text-zinc-600 italic">{report.confidence_justification}</p>
+            <p className="text-xs text-zinc-500 italic">{report.confidence_justification}</p>
           )}
         </div>
       )}
@@ -491,7 +491,7 @@ export function InvestigationReportView({
             <ul className="space-y-1">
               {report.data_gaps.map((gap, i) => (
                 <li key={i} className="text-xs text-zinc-500 flex items-start gap-2">
-                  <span className="text-zinc-700 mt-0.5">—</span>
+                  <span className="text-zinc-500 mt-0.5">—</span>
                   {gap}
                 </li>
               ))}

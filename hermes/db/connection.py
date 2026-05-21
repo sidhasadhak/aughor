@@ -175,6 +175,7 @@ class DuckDBConnection(DatabaseConnection):
         self._path = Path(path)
         self._conn = duckdb.connect(str(self._path), read_only=True)
         self._connection_id = connection_id
+        self._schema_name = schema_name or None
         if schema_name:
             # Point the execution context at the requested schema so queries
             # land in the right namespace without requiring fully-qualified names.
@@ -208,17 +209,26 @@ class DuckDBConnection(DatabaseConnection):
         from hermes.tools.profiler import render_profile_annotations
 
         # Build base schema string first (needed for join inference + fk_hints)
-        base = build_schema_context(self._conn)
+        base = build_schema_context(self._conn, schema_name=self._schema_name)
 
-        # Extract table list and fk hints from the join map
-        tables = [row[0] for row in self._conn.execute("SHOW TABLES").fetchall()]
+        # Extract table list and fk hints from the join map — filter by schema if known
+        if self._schema_name:
+            tables = [
+                row[0] for row in self._conn.execute(
+                    "SELECT table_name FROM information_schema.tables "
+                    "WHERE table_schema = ? AND table_type = 'BASE TABLE' ORDER BY table_name",
+                    [self._schema_name],
+                ).fetchall()
+            ]
+        else:
+            tables = [row[0] for row in self._conn.execute("SHOW TABLES").fetchall()]
         table_cols = _parse_schema_tables(base)
         from hermes.tools.schema import _compute_join_map
         jmap = _compute_join_map(table_cols)
         fk_hints: dict[str, set[str]] = {t: set() for t in tables}
         for j in jmap.get("joins", []):
             fk_hints.setdefault(j["t1"], set()).add(j["c1"])
-            fk_hints.setdefault(j["t2"], set()).add(j["c2"])
+            # t2.c2 is the PK target — do NOT mark it as FK
 
         try:
             tp, cp = get_or_build_profiles(self, self._connection_id or "fixture", tables, fk_hints)
@@ -369,7 +379,7 @@ class PostgresConnection(DatabaseConnection):
         fk_hints: dict[str, set[str]] = {t: set() for t in tables}
         for j in jmap.get("joins", []):
             fk_hints.setdefault(j["t1"], set()).add(j["c1"])
-            fk_hints.setdefault(j["t2"], set()).add(j["c2"])
+            # t2.c2 is the PK target — do NOT mark it as FK
 
         try:
             tp, cp = get_or_build_profiles(self, self._connection_id or "postgres", tables, fk_hints)

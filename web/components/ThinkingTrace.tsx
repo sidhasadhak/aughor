@@ -191,7 +191,7 @@ export function ThinkingTrace({ state }: Props) {
               <Dot status={step.status} verdict={step.verdict} />
               <div className="min-w-0">
                 <p className={`text-xs leading-snug ${
-                  step.status === "pending" ? "text-zinc-600" :
+                  step.status === "pending" ? "text-zinc-500" :
                   step.status === "running" ? "text-amber-300 bg-amber-500/10 rounded px-1 -mx-1" :
                   "text-zinc-300"
                 }`}>

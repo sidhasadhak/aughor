@@ -200,7 +200,7 @@ export function MetricsPanel() {
       {/* Right: detail / form */}
       <div className="flex-1 min-w-0">
         {!isEditing && !selectedMetric && (
-          <div className="h-full flex items-center justify-center text-zinc-600 text-sm">
+          <div className="h-full flex items-center justify-center text-zinc-500 text-sm">
             Select a metric to edit, or add a new one
           </div>
         )}
@@ -310,7 +310,7 @@ export function MetricsPanel() {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const inputCls =
-  "w-full rounded-md border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-600 focus:outline-none focus:border-violet-500 transition-colors";
+  "w-full rounded-md border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-sm text-zinc-200 placeholder:text-zinc-400 focus:outline-none focus:border-violet-500 transition-colors";
 
 function Field({
   label,
@@ -328,7 +328,7 @@ function Field({
       <label className="text-xs text-zinc-400">
         {label}
         {required && <span className="text-violet-400 ml-0.5">*</span>}
-        {hint && <span className="text-zinc-600 ml-1">— {hint}</span>}
+        {hint && <span className="text-zinc-500 ml-1">— {hint}</span>}
       </label>
       {children}
     </div>

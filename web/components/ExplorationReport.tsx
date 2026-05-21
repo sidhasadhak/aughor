@@ -65,7 +65,7 @@ function SubQuestionCard({
             <p className="text-sm text-zinc-100 leading-relaxed font-medium">{answer.answer}</p>
             {answer.insight && answer.insight !== answer.answer && (
               <p className="text-xs text-zinc-400 leading-relaxed border-t border-zinc-600/60 pt-2">
-                <span className="text-zinc-600 uppercase tracking-widest font-mono text-[10px]">Insight </span>
+                <span className="text-zinc-500 uppercase tracking-widest font-mono text-[10px]">Insight </span>
                 {answer.insight}
               </p>
             )}
@@ -81,7 +81,7 @@ function SubQuestionCard({
             <div className="mt-2">
               <button
                 onClick={() => setOpen(o => !o)}
-                className="text-[10px] text-zinc-600 hover:text-zinc-400 transition font-mono uppercase tracking-wide flex items-center gap-1"
+                className="text-[10px] text-zinc-500 hover:text-zinc-400 transition font-mono uppercase tracking-wide flex items-center gap-1"
               >
                 <span>{open ? "▼" : "▶"}</span> Data
               </button>
@@ -102,7 +102,7 @@ function SubQuestionCard({
                   )}
                   <button
                     onClick={() => setSqlOpen(o => !o)}
-                    className="text-[10px] text-zinc-600 hover:text-zinc-400 transition font-mono uppercase tracking-wide flex items-center gap-1"
+                    className="text-[10px] text-zinc-500 hover:text-zinc-400 transition font-mono uppercase tracking-wide flex items-center gap-1"
                   >
                     <span>{sqlOpen ? "▼" : "▶"}</span> SQL
                   </button>
@@ -143,7 +143,7 @@ function SubqMiniTable({ columns, rows, rowCount }: { columns: string[]; rows: u
               <tr key={ri} className="hover:bg-zinc-700/70/20">
                 {(row as unknown[]).map((cell, ci) => (
                   <td key={ci} className="px-3 py-1.5 text-zinc-300 font-mono whitespace-nowrap">
-                    {cell == null ? <span className="text-zinc-600 italic">null</span> : fmt(ci, cell)}
+                    {cell == null ? <span className="text-zinc-500 italic">null</span> : fmt(ci, cell)}
                   </td>
                 ))}
               </tr>
@@ -152,7 +152,7 @@ function SubqMiniTable({ columns, rows, rowCount }: { columns: string[]; rows: u
         </table>
       </div>
       {rowCount > MAX && (
-        <div className="px-3 py-1 border-t border-zinc-600/60 text-[10px] text-zinc-600 font-mono">
+        <div className="px-3 py-1 border-t border-zinc-600/60 text-[10px] text-zinc-500 font-mono">
           +{rowCount - MAX} more rows
         </div>
       )}
@@ -232,7 +232,7 @@ export function ExplorationReportView({ report, subQuestions, subqAnswers, query
         </div>
       )}
 
-      <p className="text-xs text-zinc-700 text-center font-mono">
+      <p className="text-xs text-zinc-500 text-center font-mono">
         {queryCount} SQL quer{queryCount === 1 ? "y" : "ies"} · {subqAnswers.length} sub-question{subqAnswers.length !== 1 ? "s" : ""} explored
       </p>
     </div>
