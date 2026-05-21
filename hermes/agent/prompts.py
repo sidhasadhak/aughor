@@ -67,12 +67,13 @@ CHAT_PROMPT = """\
 DATABASE SCHEMA:
 {schema}
 
-{history_section}QUESTION: {question}
+{kb_patterns_section}{history_section}QUESTION: {question}
 
 Write a single SELECT query using only tables and columns present in the schema.
 IMPORTANT: Always qualify every table name with its schema prefix: {schema_qualifier}.table_name (e.g. {schema_qualifier}.orders, not just orders). This is required for correct resolution.
 Use the detected join paths when joining tables.
 If the question references previous results ("also", "add", "filter by", "compare to"), extend or refine the previous SQL rather than starting from scratch.
+If a BUSINESS DEFINITION is provided above, use it exactly — do NOT substitute your own interpretation of the metric.
 Chart orientation rules:
 - Default: category/dimension columns on X axis, measure/metric on Y axis (vertical bars).
 - Return chart_type 'bar_horizontal' only if the user says "pivot", "flip", "horizontal", or "rotate".

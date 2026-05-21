@@ -189,11 +189,21 @@ async def _stream_chat(
         else:
             schema_qualifier = _schema_name or "public"
 
+        # Retrieve relevant KB patterns (business definitions, SQL patterns) for this question
+        try:
+            from hermes.semantic.kb_retriever import retrieve_for_planning
+            kb_patterns_section = retrieve_for_planning(question, top_k=2)
+            if kb_patterns_section:
+                kb_patterns_section += "\n\n"
+        except Exception:
+            kb_patterns_section = ""
+
         prompt = CHAT_PROMPT.format(
             schema=schema,
             history_section=history_section,
             question=question,
             schema_qualifier=schema_qualifier,
+            kb_patterns_section=kb_patterns_section,
         )
         if rules_block:
             prompt = rules_block + prompt
@@ -808,6 +818,55 @@ def remove_connection(conn_id: str):
         raise HTTPException(status_code=400, detail=str(e))
     except KeyError:
         raise HTTPException(status_code=404, detail="Connection not found")
+
+
+_INSTRUCTIONS_FILE = Path(__file__).parent.parent / "data" / "instructions.json"
+
+
+def _load_instructions() -> dict:
+    if _INSTRUCTIONS_FILE.exists():
+        return json.loads(_INSTRUCTIONS_FILE.read_text())
+    return {}
+
+
+@app.get("/connections/{conn_id}/tables/{table}/sample")
+def table_sample(conn_id: str, table: str, limit: int = 100):
+    try:
+        db = open_connection_for(conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    try:
+        # Use parameterised table name to prevent injection via identifier quoting
+        safe_table = table.replace('"', '')
+        result = db.execute(f'SELECT * FROM "{safe_table}" LIMIT {int(limit)}')
+        columns = [str(d[0]) for d in result.description]
+        rows = [[str(v) if v is not None else None for v in row] for row in result.fetchall()]
+        db.close()
+        return {"columns": columns, "rows": rows}
+    except Exception as e:
+        try:
+            db.close()
+        except Exception:
+            pass
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class InstructionsRequest(BaseModel):
+    text: str
+
+
+@app.get("/connections/{conn_id}/instructions")
+def get_instructions(conn_id: str):
+    data = _load_instructions()
+    return {"text": data.get(conn_id, {}).get("text", "")}
+
+
+@app.put("/connections/{conn_id}/instructions")
+def put_instructions(conn_id: str, req: InstructionsRequest):
+    data = _load_instructions()
+    data.setdefault(conn_id, {})["text"] = req.text
+    _INSTRUCTIONS_FILE.write_text(json.dumps(data, indent=2))
+    return {"ok": True}
 
 
 @app.get("/glossary")

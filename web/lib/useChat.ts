@@ -163,6 +163,10 @@ async function consumeStream(
             case "report":
               dispatch({ type: "REPORT", report: p.report as Record<string, unknown>, queryMode: p.query_mode as string ?? "investigate" });
               break;
+            case "explore_report":
+              // Explore-mode investigation result — map to the same REPORT slot so ChatMessage can render it
+              dispatch({ type: "REPORT", report: p.explore_report as Record<string, unknown>, queryMode: "explore" });
+              break;
             case "error":        dispatch({ type: "ERROR", message: p.message as string }); break;
             case "done":         dispatch({ type: "DONE" }); break;
           }

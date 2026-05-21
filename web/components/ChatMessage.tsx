@@ -51,30 +51,30 @@ function fmt(col: string, val: unknown): string {
 }
 
 // ── KPI cards (single-row numeric result) ────────────────────────────────────
-const KPI_PALETTES = [
-  { border: "border-violet-500/30", bg: "bg-violet-500/10", value: "text-violet-300", label: "text-violet-400/60" },
-  { border: "border-blue-500/30",   bg: "bg-blue-500/10",   value: "text-blue-300",   label: "text-blue-400/60"   },
-  { border: "border-emerald-500/30",bg: "bg-emerald-500/10",value: "text-emerald-300",label: "text-emerald-400/60"},
-  { border: "border-amber-500/30",  bg: "bg-amber-500/10",  value: "text-amber-300",  label: "text-amber-400/60"  },
-];
-
+// KPI values — inline typography, no box, no border.
+// Single metric: just the value (headline already names it).
+// Multi-metric: compact label + value pairs side by side.
 function KPICards({ columns, rows }: { columns: string[]; rows: unknown[][] }) {
   const row = rows[0];
   const numericCols = columns.filter(
     (c, i) => isNumeric(row[i]) && !ORDINAL_COL.test(c)
   );
   if (!numericCols.length) return null;
+  const isSingle = numericCols.length === 1;
   return (
-    <div className="flex flex-wrap gap-3 mt-2">
-      {numericCols.map((col, ki) => {
+    <div className={`flex flex-wrap mt-1.5 ${isSingle ? "" : "gap-6"}`}>
+      {numericCols.map((col) => {
         const idx = columns.indexOf(col);
-        const p = KPI_PALETTES[ki % KPI_PALETTES.length];
         return (
-          <div key={col} className={`${p.bg} border ${p.border} rounded-lg px-4 py-3 min-w-[110px]`}>
-            <p className={`text-[10px] uppercase tracking-wide font-medium mb-1 ${p.label}`}>
-              {col.replace(/_/g, " ")}
+          <div key={col}>
+            {!isSingle && (
+              <p className="text-[12px] text-zinc-500 mb-0.5">
+                {col.replace(/_/g, " ")}
+              </p>
+            )}
+            <p className="text-[12px] font-bold tabular-nums text-zinc-100">
+              {fmt(col, row[idx])}
             </p>
-            <p className={`text-xl font-semibold tabular-nums ${p.value}`}>{fmt(col, row[idx])}</p>
           </div>
         );
       })}
@@ -85,20 +85,20 @@ function KPICards({ columns, rows }: { columns: string[]; rows: unknown[][] }) {
 // ── Mini table ───────────────────────────────────────────────────────────────
 function MiniTable({ columns, rows }: { columns: string[]; rows: unknown[][] }) {
   return (
-    <div className="mt-2 overflow-x-auto rounded-lg border border-zinc-600">
-      <table className="text-xs w-full">
+    <div className="mt-2 overflow-x-auto rounded-lg border border-zinc-700/50" style={{ background: "#131c27" }}>
+      <table className="text-[12px] w-full">
         <thead>
-          <tr className="border-b border-violet-500/20 bg-violet-500/8">
+          <tr className="border-b border-zinc-700/60" style={{ background: "#1a2535" }}>
             {columns.map((c) => (
-              <th key={c} className="px-3 py-2 text-left font-medium text-violet-300/70 whitespace-nowrap font-mono uppercase tracking-wide text-[10px]">
-                {c}
+              <th key={c} className="px-3 py-1.5 text-left font-semibold text-zinc-400 whitespace-nowrap">
+                {c.replace(/_/g, " ")}
               </th>
             ))}
           </tr>
         </thead>
         <tbody>
           {rows.map((row, i) => (
-            <tr key={i} className="border-b border-zinc-600/50 last:border-0 hover:bg-zinc-700/30 transition-colors">
+            <tr key={i} className="border-b border-zinc-700/30 last:border-0 hover:bg-white/[0.02] transition-colors">
               {columns.map((col, j) => (
                 <td key={j} className="px-3 py-1.5 text-zinc-300 font-mono whitespace-nowrap">
                   {fmt(col, (row as unknown[])[j])}
@@ -145,7 +145,7 @@ function buildHtmlLegend(items: { label: string; color: string }[]): HTMLDivElem
     const swatch = document.createElement("span");
     swatch.style.cssText = `display:inline-block;width:9px;height:9px;border-radius:2px;background:${color};flex-shrink:0`;
     const text = document.createElement("span");
-    text.style.cssText = "font-size:10px;color:#a1a1aa;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:130px";
+    text.style.cssText = "font-size:12px;color:#a1a1aa;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:130px";
     text.title = label;
     text.textContent = label;
     row.appendChild(swatch);
@@ -341,7 +341,7 @@ function InlineChart({
           marginLeft: 60,
           marginRight: 8,
           marginTop: 16,
-          style: { background: "transparent", color: "#a1a1aa", fontSize: "11px" },
+          style: { background: "transparent", color: "#a1a1aa", fontSize: "12px" },
           x: { label: catCol, domain: groups, tickRotate: groups.length > 8 ? -40 : 0 },
           y: { grid: true, tickFormat: NUM_FMT, label: numCol },
           color: { scheme: "tableau10" },
@@ -367,8 +367,8 @@ function InlineChart({
       }
 
       // ── DATE BAR — explicit bar request on date+numeric data (no categories) ─
-      // Fires when hint is "bar"/"bar_horizontal" but there's a date col and no
-      // categorical col to place on the axis.
+      // Uses rectY (continuous/time scale) instead of barY (band scale) to avoid
+      // the "scale incompatible with channel: time !== band" error.
       else if (dateCol && !catCol && (hint === "bar" || hint === "bar_horizontal")) {
         const barData = data.map((d) => ({
           date: new Date(normDateStr(String(d[dateCol]))),
@@ -380,11 +380,12 @@ function InlineChart({
           marginLeft: 60,
           marginRight: 16,
           marginBottom: 40,
-          style: { background: "transparent", color: "#a1a1aa", fontSize: "11px" },
+          style: { background: "transparent", color: "#a1a1aa", fontSize: "12px" },
           x: { type: "time", label: dateCol },
           y: { grid: true, tickFormat: NUM_FMT, label: numCol },
           marks: [
-            Plot.barY(barData, { x: "date", y: "val", fill: "#818cf8", interval: "month" }),
+            // rectY is compatible with a time (continuous) x scale + interval binning
+            Plot.rectY(barData, { x: "date", y: "val", fill: "#818cf8", interval: "month", inset: 0.5 }),
             Plot.ruleY([0]),
           ],
         });
@@ -404,7 +405,7 @@ function InlineChart({
           height: userH ?? 200,
           marginLeft: 60,
           marginRight: 16,
-          style: { background: "transparent", color: "#a1a1aa", fontSize: "11px" },
+          style: { background: "transparent", color: "#a1a1aa", fontSize: "12px" },
           x: { type: "time", label: dateCol },
           y: { grid: true, tickFormat: NUM_FMT, label: numCol },
           marks: [
@@ -436,7 +437,7 @@ function InlineChart({
           marginBottom: barData.length > 10 ? 70 : 48,
           marginLeft: 60,
           marginRight: 16,
-          style: { background: "transparent", color: "#a1a1aa", fontSize: "11px" },
+          style: { background: "transparent", color: "#a1a1aa", fontSize: "12px" },
           x: {
             label: catCol,
             tickRotate: barData.length > 10 ? -40 : 0,
@@ -459,7 +460,7 @@ function InlineChart({
                 dy: -6,
                 textAnchor: "middle",
                 fill: "#a1a1aa",
-                fontSize: 10,
+                fontSize: 12,
               }
             ),
             Plot.ruleY([0]),
@@ -486,7 +487,7 @@ function InlineChart({
           height: userH ?? Math.max(100, barData.length * 26),
           marginLeft: labelMargin,
           marginRight: 72,
-          style: { background: "transparent", color: "#a1a1aa", fontSize: "11px" },
+          style: { background: "transparent", color: "#a1a1aa", fontSize: "12px" },
           x: { grid: true, tickFormat: NUM_FMT, label: numCol },
           y: { label: catCol },
           marks: [
@@ -505,7 +506,7 @@ function InlineChart({
                 dx: 6,
                 textAnchor: "start",
                 fill: "#a1a1aa",
-                fontSize: 10,
+                fontSize: 12,
               }
             ),
             Plot.ruleX([0]),
@@ -648,15 +649,21 @@ function ResultBody({ turn }: { turn: ChatTurn }) {
   return (
     <>
       {isSingleRow && hasNum ? (
-        // Single-row numeric result is always a KPI card — ignore chart_type hint
         <KPICards columns={columns} rows={rows} />
       ) : showChart ? (
-        <InlineChart columns={columns} rows={rows} chartType={chartType} />
+        <div className="mt-2 rounded-xl border border-zinc-700/50 overflow-hidden p-3" style={{ background: "#131c27" }}>
+          <InlineChart columns={columns} rows={rows} chartType={chartType} />
+          {summary && (
+            <p className="text-[12px] italic text-zinc-500 mt-2 leading-relaxed">{summary}</p>
+          )}
+        </div>
       ) : (
-        <MiniTable columns={columns} rows={rows} />
-      )}
-      {summary && !isSingleRow && (
-        <p className="text-[11px] text-zinc-500 mt-2 leading-relaxed">{summary}</p>
+        <>
+          <MiniTable columns={columns} rows={rows} />
+          {summary && (
+            <p className="text-[12px] italic text-zinc-500 mt-2 leading-relaxed">{summary}</p>
+          )}
+        </>
       )}
     </>
   );
@@ -675,7 +682,7 @@ function SqlBlock({ sql }: { sql: string }) {
 
   return (
     <div className="relative group/sql">
-      <pre className="text-[10px] font-mono text-zinc-400 bg-zinc-900/60 rounded p-2.5 pr-10 overflow-x-auto whitespace-pre-wrap leading-relaxed">
+      <pre className="text-[12px] font-mono text-zinc-400 rounded p-2.5 pr-10 overflow-x-auto whitespace-pre-wrap leading-relaxed" style={{ background: "#0d131a" }}>
         {sql}
       </pre>
       <button
@@ -695,15 +702,15 @@ function Section({
 }: { label: string; defaultOpen?: boolean; children: React.ReactNode }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="border-t border-zinc-700/50">
+    <div className="mt-2">
       <button
         onClick={() => setOpen(v => !v)}
-        className="w-full flex items-center gap-2 px-4 py-2 text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors text-left"
+        className="flex items-center gap-1 text-[12px] text-zinc-600 hover:text-zinc-400 transition-colors py-1"
       >
-        <span className={`transition-transform duration-150 ${open ? "rotate-90" : ""}`}>›</span>
+        <span className={`transition-transform duration-150 inline-block ${open ? "rotate-90" : ""}`}>›</span>
         {label}
       </button>
-      {open && <div className="px-4 pb-3">{children}</div>}
+      {open && <div className="mt-1.5">{children}</div>}
     </div>
   );
 }
@@ -711,8 +718,8 @@ function Section({
 // ── Table icon chip ───────────────────────────────────────────────────────────
 function TableChip({ name }: { name: string }) {
   return (
-    <span className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded bg-zinc-700/70 border border-zinc-600 text-zinc-300">
-      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="shrink-0 text-zinc-500">
+    <span className="inline-flex items-center gap-1 text-[12px] font-mono px-2 py-0.5 rounded-md border border-zinc-700/60 text-zinc-400" style={{ background: "#1e2d3d" }}>
+      <svg width="9" height="9" viewBox="0 0 10 10" fill="none" className="shrink-0 text-zinc-500">
         <rect x="0.5" y="0.5" width="9" height="9" rx="1.5" stroke="currentColor" strokeWidth="1"/>
         <line x1="0.5" y1="3.5" x2="9.5" y2="3.5" stroke="currentColor" strokeWidth="1"/>
         <line x1="3.5" y1="3.5" x2="3.5" y2="9.5" stroke="currentColor" strokeWidth="1"/>
@@ -734,17 +741,17 @@ function InvestigateAnswer({ turn }: { turn: ChatTurn }) {
   return (
     <div className="space-y-3">
       {headline && (
-        <p className="text-sm text-zinc-200 leading-relaxed">{headline}</p>
+        <p className="text-[12px] text-zinc-300 leading-relaxed">{headline}</p>
       )}
       {findings.length > 0 && (
-        <ul className="space-y-1.5">
+        <ul className="space-y-1">
           {findings.slice(0, 6).map((f, i) => (
-            <li key={i} className="flex items-start gap-2 text-xs text-zinc-400">
-              <span className={`mt-0.5 shrink-0 ${f.is_significant ? "text-amber-400" : "text-zinc-500"}`}>
+            <li key={i} className="flex items-start gap-2 text-[12px] text-zinc-400">
+              <span className={`mt-0.5 shrink-0 ${f.is_significant ? "text-amber-400" : "text-zinc-600"}`}>
                 {f.is_significant ? "●" : "○"}
               </span>
               <span>
-                {f.title && <span className="text-zinc-300 font-medium">{f.title}: </span>}
+                {f.title && <span className="text-zinc-200 font-bold">{f.title}: </span>}
                 {f.description}
               </span>
             </li>
@@ -752,13 +759,13 @@ function InvestigateAnswer({ turn }: { turn: ChatTurn }) {
         </ul>
       )}
       {waterfall.length > 0 && (
-        <div className="space-y-1">
+        <div className="space-y-0.5">
           {waterfall.map((w, i) => {
             const delta = Number(w.delta ?? 0);
             const pos = delta >= 0;
             return (
-              <div key={i} className="flex items-center gap-2 text-xs">
-                <span className={`font-mono font-medium w-14 text-right shrink-0 ${pos ? "text-emerald-400" : "text-red-400"}`}>
+              <div key={i} className="flex items-center gap-2 text-[12px]">
+                <span className={`font-mono font-bold w-14 text-right shrink-0 ${pos ? "text-emerald-400" : "text-red-400"}`}>
                   {pos ? "+" : ""}{delta}
                 </span>
                 <span className="text-zinc-400">{w.label}</span>
@@ -786,14 +793,26 @@ function PhaseSteps({ phases }: { phases: ChatTurn["phases"] }) {
             {i + 1}
           </span>
           <div>
-            <span className="text-[11px] font-medium text-zinc-300">
+            <span className="text-[12px] font-bold text-zinc-300">
               {PHASE_LABELS[ph.phase_id] ?? ph.phase_id}
             </span>
-            {ph.summary && <p className="text-[11px] text-zinc-500 mt-0.5">{ph.summary}</p>}
+            {ph.summary && <p className="text-[12px] text-zinc-500 mt-0.5">{ph.summary}</p>}
           </div>
         </li>
       ))}
     </ol>
+  );
+}
+
+// ── Collapsible chevron ───────────────────────────────────────────────────────
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg
+      width="14" height="14" viewBox="0 0 14 14" fill="none"
+      className={`text-zinc-500 transition-transform duration-150 ${open ? "rotate-180" : ""}`}
+    >
+      <path d="M3 5l4 4 4-4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
   );
 }
 
@@ -809,107 +828,107 @@ export function ChatMessage({
   const isInvestigate = turn.mode === "investigate";
   const hasData = turn.columns.length > 0;
   const hasResult = isInvestigate ? !!(turn.adaReport ?? turn.report) : turn.status === "done";
+  const isDone = turn.status === "done" || hasResult;
 
   return (
-    <div className="rounded-xl border border-zinc-600/80 bg-zinc-800/60 overflow-hidden">
+    /* No card — content flows directly on the page background */
+    <div className="group">
 
-      {/* ── Header: question + mode badge + collapse ── */}
-      <div className="flex items-start gap-3 px-4 py-3">
-        <p className="flex-1 text-sm text-zinc-200 leading-snug">{turn.question}</p>
-        <div className="flex items-center gap-2 shrink-0 mt-0.5">
-          <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${
-            isInvestigate
-              ? "bg-violet-500/10 text-violet-400 border-violet-500/25"
-              : "bg-zinc-700/60 text-zinc-500 border-zinc-600/50"
-          }`}>
-            {isInvestigate ? "Investigate" : "Ask"}
-          </span>
-          {turn.status !== "loading" && (
+      {/* ── Question (right-aligned bubble) ── */}
+      <div className="flex justify-end mb-4">
+        <div className="flex items-start gap-2 max-w-[75%]">
+          {isDone && (
             <button
               onClick={() => setCollapsed(v => !v)}
-              className="text-zinc-500 hover:text-zinc-400 transition-colors text-xs"
+              className="text-zinc-700 hover:text-zinc-500 transition-colors p-0.5 mt-2 opacity-0 group-hover:opacity-100 shrink-0"
               title={collapsed ? "Expand" : "Collapse"}
             >
-              {collapsed ? "▼" : "▲"}
+              <Chevron open={!collapsed} />
             </button>
           )}
+          <div
+            className="px-3 py-2 rounded-xl text-[12px] font-semibold text-white leading-snug"
+            style={{ background: isInvestigate ? "#633D96" : "#05355D" }}
+          >
+            {turn.question}
+          </div>
         </div>
       </div>
 
       {/* ── Loading state ── */}
       {turn.status === "loading" && (
-        <div className="px-4 pb-3 flex items-center gap-2.5">
+        <div className="flex items-center gap-3 py-2">
           <span className="flex gap-1">
             {[0, 150, 300].map(d => (
-              <span key={d} className="w-1.5 h-1.5 rounded-full bg-zinc-600 animate-bounce" style={{ animationDelay: `${d}ms` }} />
+              <span key={d} className="w-1.5 h-1.5 rounded-full bg-zinc-700 animate-bounce" style={{ animationDelay: `${d}ms` }} />
             ))}
           </span>
-          {turn.statusText && (
-            <span className="text-[11px] text-zinc-500 italic">{turn.statusText}</span>
-          )}
+          <span className="text-[12px] text-zinc-600">
+            {turn.statusText || (isInvestigate ? "Investigating…" : "Thinking…")}
+          </span>
         </div>
       )}
 
       {/* ── Error state ── */}
       {turn.status === "error" && (
-        <div className="px-4 pb-3">
-          <p className="text-xs text-red-400">{turn.error}</p>
-        </div>
+        <p className="text-[12px] text-red-400 py-1">{turn.error}</p>
       )}
 
-      {/* ── Body (collapsed = hidden) ── */}
-      {!collapsed && (turn.status === "done" || hasResult) && (
+      {/* ── Body ── */}
+      {!collapsed && isDone && (
         <>
-          {/* Found relevant data */}
+          {/* Tables used */}
           {turn.tablesUsed.length > 0 && (
-            <div className="px-4 py-2 border-t border-zinc-700/50 flex items-center gap-2 flex-wrap">
-              <span className="text-[10px] text-zinc-500 shrink-0">Found relevant data</span>
+            <div className="flex items-center gap-2 flex-wrap mb-3">
+              <span className="text-[12px] text-zinc-600">Found relevant data</span>
               {turn.tablesUsed.map(t => <TableChip key={t} name={t} />)}
             </div>
           )}
 
-          {/* Answer */}
-          <div className="px-4 py-3 border-t border-zinc-700/50">
+          {/* Main answer */}
+          <div className="mb-1">
             {isInvestigate ? (
               <InvestigateAnswer turn={turn} />
             ) : (
               <>
                 {turn.headline && (
-                  <p className="text-sm text-zinc-200 leading-relaxed mb-2">{turn.headline}</p>
+                  <p className="text-[12px] text-zinc-300 leading-relaxed mb-2">{turn.headline}</p>
                 )}
                 <ResultBody turn={turn} />
               </>
             )}
           </div>
 
-          {/* Steps — SQL for ask, phases for investigate */}
+          {/* SQL / Steps */}
           {(turn.sql || turn.phases.length > 0) && (
-            <Section label={isInvestigate ? `Steps (${turn.phases.length} phases)` : "SQL"}>
-              {isInvestigate ? (
-                <PhaseSteps phases={turn.phases} />
-              ) : turn.sql ? (
-                <SqlBlock sql={turn.sql} />
-              ) : null}
+            <Section label={isInvestigate ? `Steps · ${turn.phases.length} phases` : "SQL"}>
+              {isInvestigate
+                ? <PhaseSteps phases={turn.phases} />
+                : turn.sql ? <SqlBlock sql={turn.sql} /> : null
+              }
             </Section>
           )}
 
-          {/* Result table — ask mode only (investigate already shows rich findings) */}
+          {/* Result table */}
           {!isInvestigate && hasData && turn.rows.length > 1 && (
-            <Section label={`Result table (${turn.rows.length} rows)`} defaultOpen={false}>
+            <Section label={`Result table · ${turn.rows.length} rows`}>
               <MiniTable columns={turn.columns} rows={turn.rows} />
             </Section>
           )}
 
-          {/* Follow-up suggestions */}
+          {/* Follow-up chips */}
           {turn.followups.length > 0 && (
-            <div className="px-4 py-3 border-t border-zinc-700/50 flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap gap-1.5 mt-4">
               {turn.followups.map((q, i) => (
                 <button
                   key={i}
                   onClick={() => onFollowUp?.(q)}
-                  className="flex items-center gap-1 text-[11px] text-zinc-500 hover:text-zinc-200 bg-zinc-700/40 hover:bg-zinc-700/70 border border-zinc-600/50 hover:border-zinc-500 rounded-full px-3 py-1 transition-all"
+                  className="flex items-center gap-1 text-[12px] text-zinc-500 hover:text-zinc-200 border border-zinc-700/50 hover:border-zinc-600 rounded-full px-2.5 py-[3px] transition-all"
                 >
-                  <span className="text-zinc-500">↩</span> {q}
+                  <svg width="9" height="9" viewBox="0 0 10 10" fill="none" className="text-zinc-600 shrink-0">
+                    <path d="M8 2H4a2 2 0 00-2 2v1m0 0l2-2M2 5l2 2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                  {q}
                 </button>
               ))}
             </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   MessageSquare,
   BarChart2,
@@ -10,8 +10,12 @@ import {
   Home as HomeIcon,
   BookOpen,
   Clock,
+  Search,
+  Plus,
+  X,
 } from "lucide-react";
 
+import { ConfigurePanel } from "@/components/ConfigurePanel";
 import { ConnectionsPanel } from "@/components/ConnectionsPanel";
 import { HistoryPanel } from "@/components/HistoryPanel";
 import { HistoryDetailPanel } from "@/components/HistoryDetailPanel";
@@ -71,17 +75,17 @@ function NavItem({
     <button
       onClick={onClick}
       className={`
-        relative w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-all
+        relative w-full flex items-center gap-2.5 px-3 py-[7px] text-sm font-medium transition-all rounded-md
         ${active
-          ? "bg-zinc-700/80 text-zinc-100"
-          : "text-zinc-500 hover:text-zinc-200 hover:bg-zinc-700/40"}
+          ? "bg-zinc-700/70 text-zinc-100"
+          : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/30"}
       `}
     >
       {active && (
-        <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-6 bg-violet-500 rounded-r-full" />
+        <span className="absolute left-0 top-1/2 -translate-y-1/2 w-[2.5px] h-4 bg-violet-500 rounded-r-full" />
       )}
-      <span className={`shrink-0 ${active ? "text-violet-400" : ""}`}>{icon}</span>
-      <span className="truncate text-[13px]">{label}</span>
+      <span className={`shrink-0 ${active ? "text-violet-400" : "text-zinc-500"}`}>{icon}</span>
+      <span className="truncate text-[12px] font-medium">{label}</span>
     </button>
   );
 }
@@ -106,7 +110,7 @@ function ConnectionSelector({
     <div className="relative">
       <button
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-md border border-zinc-600 bg-zinc-700/50 hover:bg-zinc-700 transition text-xs text-zinc-300 font-mono"
+        className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-zinc-600/70 bg-zinc-800 hover:bg-zinc-700/60 transition text-xs text-zinc-300 font-mono"
       >
         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
         <span className="max-w-[160px] truncate">{current?.name ?? selectedId}</span>
@@ -116,18 +120,18 @@ function ConnectionSelector({
       {open && (
         <>
           <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-          <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 w-60 bg-zinc-800 border border-zinc-600 rounded-lg shadow-2xl z-40 overflow-hidden">
-            <div className="px-3 pt-2.5 pb-1">
+          <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1.5 w-64 bg-zinc-900 border border-zinc-600 rounded-xl shadow-2xl z-40 overflow-hidden">
+            <div className="px-3 pt-3 pb-1.5">
               <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-medium mb-1.5">
                 Connections
               </p>
             </div>
-            <div className="pb-1">
+            <div className="pb-1.5">
               {connections.map((c) => (
                 <button
                   key={c.id}
                   onClick={() => { onSelect(c.id); setOpen(false); }}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 text-xs transition hover:bg-zinc-700/60 ${
+                  className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-xs transition hover:bg-zinc-700/60 ${
                     c.id === selectedId ? "text-zinc-100" : "text-zinc-400"
                   }`}
                 >
@@ -141,7 +145,7 @@ function ConnectionSelector({
                 </button>
               ))}
             </div>
-            <div className="border-t border-zinc-600 px-3 py-2">
+            <div className="border-t border-zinc-700 px-3 py-2.5">
               <button
                 onClick={() => { onManage(); setOpen(false); }}
                 className="text-xs text-zinc-500 hover:text-zinc-300 transition"
@@ -156,6 +160,81 @@ function ConnectionSelector({
   );
 }
 
+// ── Global search palette ─────────────────────────────────────────────────────
+
+function SearchPalette({
+  onClose,
+  onGoToChat,
+  onGoToInvestigate,
+}: {
+  onClose: () => void;
+  onGoToChat: (q?: string) => void;
+  onGoToInvestigate: (q?: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  const suggestions = [
+    { label: "New Chat",              icon: <MessageSquare size={13} />, action: () => { onGoToChat(); onClose(); } },
+    { label: "New Deep Analysis",     icon: <BarChart2 size={13} />,     action: () => { onGoToInvestigate(); onClose(); } },
+    ...EXAMPLE_QUESTIONS.map(q => ({
+      label: q,
+      icon: <Search size={13} className="text-zinc-500" />,
+      action: () => { onGoToChat(q); onClose(); },
+    })),
+  ].filter(s => !query || s.label.toLowerCase().includes(query.toLowerCase()));
+
+  return (
+    <>
+      <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm" onClick={onClose} />
+      <div className="fixed top-[18%] left-1/2 -translate-x-1/2 z-50 w-full max-w-xl bg-zinc-900 border border-zinc-600 rounded-2xl shadow-2xl overflow-hidden">
+        {/* Input row */}
+        <div className="flex items-center gap-3 px-4 py-3.5 border-b border-zinc-700/80">
+          <Search size={15} className="text-zinc-500 shrink-0" />
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            onKeyDown={e => { if (e.key === "Escape") onClose(); }}
+            placeholder="Search data, analyses, and more…"
+            className="flex-1 bg-transparent text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none"
+          />
+          <kbd
+            onClick={onClose}
+            className="text-[10px] text-zinc-500 border border-zinc-600 rounded px-1.5 py-0.5 cursor-pointer hover:text-zinc-400 transition"
+          >
+            esc
+          </kbd>
+        </div>
+        {/* Results */}
+        <div className="py-2 max-h-80 overflow-y-auto">
+          {suggestions.length === 0 ? (
+            <p className="px-4 py-3 text-xs text-zinc-500">No results for "{query}"</p>
+          ) : (
+            suggestions.map((s, i) => (
+              <button
+                key={i}
+                onClick={s.action}
+                className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-zinc-300 hover:bg-zinc-700/60 hover:text-zinc-100 transition text-left"
+              >
+                <span className="text-zinc-500 shrink-0">{s.icon}</span>
+                {s.label}
+              </button>
+            ))
+          )}
+        </div>
+        <div className="px-4 py-2 border-t border-zinc-700/80 flex items-center gap-3">
+          <span className="text-[10px] text-zinc-600">Navigate with ↑↓ · Enter to select · Esc to close</span>
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ── Investigation progress panel (left, only while running) ───────────────────
 
 function InvestigateProgressPanel({
@@ -164,8 +243,8 @@ function InvestigateProgressPanel({
   state: ReturnType<typeof useInvestigation>["state"];
 }) {
   return (
-    <div className="w-56 shrink-0 border-r border-zinc-600 flex flex-col overflow-hidden bg-zinc-800/60">
-      <div className="px-4 py-3 border-b border-zinc-600 shrink-0">
+    <div className="w-60 shrink-0 border-r border-zinc-700 flex flex-col overflow-hidden bg-zinc-900/40">
+      <div className="px-4 py-3.5 border-b border-zinc-700 shrink-0">
         <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-medium">
           Analysis Progress
         </p>
@@ -173,21 +252,21 @@ function InvestigateProgressPanel({
       <div className="flex-1 overflow-y-auto min-h-0">
         <ThinkingTrace state={state} />
       </div>
-      <div className={`p-3 border-t border-zinc-600 grid gap-2 shrink-0 ${
+      <div className={`p-3 border-t border-zinc-700 grid gap-2 shrink-0 ${
         state.queryMode === "direct" ? "grid-cols-1" : "grid-cols-2"
       }`}>
-        <div className="rounded-md bg-zinc-800 border border-zinc-600 p-2.5 text-center">
+        <div className="rounded-lg bg-zinc-800 border border-zinc-700 p-2.5 text-center">
           <p className="text-lg font-mono font-semibold text-zinc-200">{state.queriesExecuted}</p>
           <p className="text-[10px] text-zinc-500 mt-0.5">SQL queries</p>
         </div>
         {state.queryMode === "explore" && (
-          <div className="rounded-md bg-zinc-800 border border-zinc-600 p-2.5 text-center">
+          <div className="rounded-lg bg-zinc-800 border border-zinc-700 p-2.5 text-center">
             <p className="text-lg font-mono font-semibold text-zinc-200">{state.subQuestions.length}</p>
             <p className="text-[10px] text-zinc-500 mt-0.5">sub-questions</p>
           </div>
         )}
         {state.queryMode === "investigate" && (
-          <div className="rounded-md bg-zinc-800 border border-zinc-600 p-2.5 text-center">
+          <div className="rounded-lg bg-zinc-800 border border-zinc-700 p-2.5 text-center">
             <p className="text-lg font-mono font-semibold text-zinc-200">{state.investigationPhases.length}</p>
             <p className="text-[10px] text-zinc-500 mt-0.5">phases done</p>
           </div>
@@ -230,66 +309,64 @@ function HomePage({
   ];
 
   return (
-    <div className="flex-1 overflow-y-auto min-h-0 bg-zinc-800">
-      <div className="max-w-5xl mx-auto px-8 py-10 space-y-10">
+    <div className="flex-1 overflow-y-auto min-h-0 bg-zinc-850">
+      <div className="max-w-5xl mx-auto px-10 py-12 space-y-10">
 
         {/* ── Welcome banner ── */}
         <div>
-          <h1 className="text-2xl font-semibold text-zinc-100 tracking-tight">
+          <h1 className="text-3xl font-semibold text-zinc-100 tracking-tight">
             Welcome to Aughor
           </h1>
-          <p className="text-sm text-zinc-500 mt-1.5">
+          <p className="text-sm text-zinc-500 mt-2">
             Your autonomous data analyst — ask questions, investigate root causes, explore your data.
           </p>
         </div>
 
         {/* ── Active connection card ── */}
-        <div className="rounded-xl border border-zinc-700 bg-zinc-900/60 px-5 py-4 flex items-center gap-4">
-          <div className="w-9 h-9 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center shrink-0">
+        <div className="rounded-2xl border border-zinc-700/70 bg-zinc-900/60 px-6 py-5 flex items-center gap-4">
+          <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center shrink-0">
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
           </div>
           <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold text-zinc-200 font-mono truncate">{conn?.name ?? selectedConn}</p>
             <p className="text-xs text-zinc-500 mt-0.5 uppercase tracking-wider">{conn?.conn_type ?? "database"}</p>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <span className="text-[10px] font-medium text-emerald-400 border border-emerald-500/20 bg-emerald-500/10 rounded-full px-2 py-0.5">Connected</span>
-          </div>
+          <span className="text-[11px] font-medium text-emerald-400 border border-emerald-500/20 bg-emerald-500/10 rounded-full px-2.5 py-1 shrink-0">Connected</span>
         </div>
 
         {/* ── Quick start ── */}
         <div>
-          <p className="text-[11px] text-zinc-500 uppercase tracking-widest font-medium mb-3">Quick start</p>
-          <div className="grid grid-cols-3 gap-3">
+          <p className="text-[11px] text-zinc-500 uppercase tracking-widest font-medium mb-4">Quick start</p>
+          <div className="grid grid-cols-3 gap-4">
             <button
               onClick={() => onGoToChat()}
-              className="group rounded-xl border border-zinc-700 bg-zinc-900/40 hover:bg-zinc-700/40 hover:border-zinc-600 p-5 text-left transition-all"
+              className="group rounded-2xl border border-zinc-700/70 bg-zinc-900/40 hover:bg-zinc-700/30 hover:border-zinc-600 p-6 text-left transition-all"
             >
-              <div className="w-9 h-9 rounded-lg bg-zinc-700/60 border border-zinc-600 flex items-center justify-center mb-3 group-hover:border-zinc-500 transition">
-                <MessageSquare size={16} className="text-zinc-400 group-hover:text-zinc-200 transition" />
+              <div className="w-10 h-10 rounded-xl bg-zinc-700/60 border border-zinc-600 flex items-center justify-center mb-4 group-hover:border-zinc-500 transition">
+                <MessageSquare size={17} className="text-zinc-400 group-hover:text-zinc-200 transition" />
               </div>
               <p className="text-sm font-semibold text-zinc-200 group-hover:text-white transition">Chat</p>
-              <p className="text-xs text-zinc-500 mt-1 leading-relaxed">Ask natural-language questions and get instant SQL answers.</p>
+              <p className="text-xs text-zinc-500 mt-1.5 leading-relaxed">Ask natural-language questions and get instant SQL answers.</p>
             </button>
             <button
               onClick={() => onGoToInvestigate()}
-              className="group rounded-xl border border-zinc-700 bg-zinc-900/40 hover:bg-violet-500/5 hover:border-violet-500/30 p-5 text-left transition-all"
+              className="group rounded-2xl border border-zinc-700/70 bg-zinc-900/40 hover:bg-violet-500/5 hover:border-violet-500/30 p-6 text-left transition-all"
             >
-              <div className="w-9 h-9 rounded-lg bg-zinc-700/60 border border-zinc-600 flex items-center justify-center mb-3 group-hover:border-violet-500/30 transition">
-                <BarChart2 size={16} className="text-zinc-400 group-hover:text-violet-400 transition" />
+              <div className="w-10 h-10 rounded-xl bg-zinc-700/60 border border-zinc-600 flex items-center justify-center mb-4 group-hover:border-violet-500/30 transition">
+                <BarChart2 size={17} className="text-zinc-400 group-hover:text-violet-400 transition" />
               </div>
               <p className="text-sm font-semibold text-zinc-200 group-hover:text-white transition">Deep Analysis</p>
-              <p className="text-xs text-zinc-500 mt-1 leading-relaxed">Autonomous root-cause investigations across your data.</p>
+              <p className="text-xs text-zinc-500 mt-1.5 leading-relaxed">Autonomous root-cause investigations across your data.</p>
             </button>
             <button
               onClick={onGoToCatalog}
-              className="group rounded-xl border border-zinc-700 bg-zinc-900/40 hover:bg-sky-500/5 hover:border-sky-500/30 p-5 text-left transition-all"
+              className="group rounded-2xl border border-zinc-700/70 bg-zinc-900/40 hover:bg-sky-500/5 hover:border-sky-500/30 p-6 text-left transition-all"
             >
-              <div className="w-9 h-9 rounded-lg bg-zinc-700/60 border border-zinc-600 flex items-center justify-center mb-3 group-hover:border-sky-500/30 transition">
-                <BookOpen size={16} className="text-zinc-400 group-hover:text-sky-400 transition" />
+              <div className="w-10 h-10 rounded-xl bg-zinc-700/60 border border-zinc-600 flex items-center justify-center mb-4 group-hover:border-sky-500/30 transition">
+                <BookOpen size={17} className="text-zinc-400 group-hover:text-sky-400 transition" />
               </div>
               <p className="text-sm font-semibold text-zinc-200 group-hover:text-white transition">Catalog</p>
-              <p className="text-xs text-zinc-500 mt-1 leading-relaxed">Browse tables, columns, and row counts in your database.</p>
+              <p className="text-xs text-zinc-500 mt-1.5 leading-relaxed">Browse tables, columns, and row counts in your database.</p>
             </button>
           </div>
         </div>
@@ -297,12 +374,12 @@ function HomePage({
         {/* ── Starter questions ── */}
         <div>
           <p className="text-[11px] text-zinc-500 uppercase tracking-widest font-medium mb-3">Try asking</p>
-          <div className="space-y-1.5">
+          <div className="space-y-1">
             {quickStarters.map(q => (
               <button
                 key={q}
                 onClick={() => onGoToChat(q)}
-                className="w-full text-left text-sm text-zinc-400 hover:text-zinc-200 flex items-center gap-3 group py-1.5 transition"
+                className="w-full text-left text-sm text-zinc-400 hover:text-zinc-200 flex items-center gap-3 group py-2 transition"
               >
                 <span className="w-1 h-1 rounded-full bg-zinc-600 group-hover:bg-violet-400 transition shrink-0" />
                 <span className="group-hover:underline underline-offset-2">{q}</span>
@@ -315,9 +392,9 @@ function HomePage({
         {recentInvs.length > 0 && (
           <div>
             <p className="text-[11px] text-zinc-500 uppercase tracking-widest font-medium mb-3">Recent investigations</p>
-            <div className="space-y-1.5">
+            <div className="space-y-1">
               {recentInvs.map(inv => (
-                <div key={inv.id} className="flex items-center gap-3 py-2 border-b border-zinc-700/40 last:border-0">
+                <div key={inv.id} className="flex items-center gap-3 py-2.5 border-b border-zinc-700/40 last:border-0">
                   <Clock size={12} className="text-zinc-600 shrink-0" />
                   <p className="flex-1 text-sm text-zinc-400 truncate">{inv.question}</p>
                   <span className="text-xs text-zinc-600 shrink-0">{timeAgo(inv.started_at)}</span>
@@ -353,15 +430,17 @@ export default function Home() {
   const [schemaConnId, setSchemaConnId] = useState<string | null>(null);
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
   const [selectedChatSessionId, setSelectedChatSessionId] = useState<string | null>(null);
+  const [chatKey, setChatKey] = useState(0);
   const [connRightTab, setConnRightTab] = useState<"schema" | "metrics">("schema");
   const [showHistory, setShowHistory] = useState(false);
+  const [showConfigure, setShowConfigure] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
   const [connections, setConnections] = useState<Connection[]>([]);
 
   useEffect(() => {
     getConnections()
       .then((conns) => {
         setConnections(conns);
-        // Keep beautycommerce as default if it's in the list
         if (!conns.find(c => c.id === BEAUTYCOMMERCE_ID) && conns.length > 0) {
           setSelectedConn(conns[0].id);
         }
@@ -369,6 +448,19 @@ export default function Home() {
       .catch(() => {
         setConnections([{ id: BEAUTYCOMMERCE_ID, name: "beautycommerece", conn_type: "duckdb", dsn_preview: "", schema_name: "analytics", builtin: false }]);
       });
+  }, []);
+
+  // Global ⌘K / Ctrl+K shortcut
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setShowSearch(v => !v);
+      }
+      if (e.key === "Escape") setShowSearch(false);
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
   }, []);
 
   const handleSubmit = (q?: string) => {
@@ -381,377 +473,478 @@ export default function Home() {
   const isRunning = state.status === "running";
   const isPaused = state.status === "paused";
 
+  const goToChat = (q?: string) => {
+    setSelectedChatSessionId(null);
+    setTab("chat");
+    // If a starter question is passed, it's handled by ChatPanel starters
+    if (q) {
+      // Brief hack: pass via a URL search param or just open chat — starter sends automatically
+    }
+  };
+
   return (
-    <div className="h-screen overflow-hidden bg-zinc-800 text-zinc-100 flex">
+    <div className="h-screen overflow-hidden bg-zinc-900 text-zinc-100 flex flex-col">
 
-      {/* ── Left navigation sidebar ── */}
-      <nav className="w-52 shrink-0 bg-zinc-900 border-r border-zinc-600 flex flex-col overflow-hidden">
+      {/* ══════════════════════════════════════════════════════════════
+          GLOBAL TOP BAR — full width, above sidebar and content
+      ══════════════════════════════════════════════════════════════ */}
+      <div className="h-12 bg-zinc-950 border-b border-zinc-700/80 flex items-center px-4 gap-4 shrink-0 z-20">
 
-        {/* Brand */}
-        <div className="px-4 py-4 border-b border-zinc-600 shrink-0">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded bg-violet-600 flex items-center justify-center shrink-0">
-              <BarChart2 size={13} className="text-white" />
-            </div>
+        {/* Brand — same width as sidebar */}
+        <div className="w-56 shrink-0 flex items-center gap-2.5">
+          <div className="w-6 h-6 rounded-md bg-violet-600 flex items-center justify-center shrink-0">
+            <BarChart2 size={13} className="text-white" />
+          </div>
+          <div className="leading-tight">
             <span className="text-sm font-semibold tracking-tight text-zinc-100">Aughor</span>
+            <span className="text-[9px] text-zinc-500 block -mt-0.5">Autonomous Analyst</span>
           </div>
-          <p className="text-[10px] text-zinc-500 mt-1 ml-8">Autonomous Analyst</p>
         </div>
 
-        {/* Primary nav */}
-        <div className="flex-1 flex flex-col py-2 overflow-y-auto">
-          <NavItem icon={<HomeIcon size={15} />} label="Home" active={tab === "home"} onClick={() => setTab("home")} />
+        {/* Search bar — centred, takes up available space */}
+        <button
+          onClick={() => setShowSearch(true)}
+          className="flex-1 max-w-2xl mx-auto flex items-center gap-3 px-4 py-2 rounded-lg bg-zinc-800/80 border border-zinc-700/60 text-zinc-500 text-sm hover:bg-zinc-800 hover:border-zinc-600 hover:text-zinc-400 transition group"
+        >
+          <Search size={13} className="shrink-0" />
+          <span className="flex-1 text-left text-[13px]">Search data, tables, analyses, and more…</span>
+          <span className="hidden sm:flex items-center gap-0.5 text-[10px] text-zinc-600 group-hover:text-zinc-500 transition">
+            <kbd className="px-1.5 py-0.5 rounded border border-zinc-700 bg-zinc-800/60 font-mono">⌘</kbd>
+            <kbd className="px-1.5 py-0.5 rounded border border-zinc-700 bg-zinc-800/60 font-mono">K</kbd>
+          </span>
+        </button>
 
-          <p className="px-4 pt-4 pb-1 text-[10px] text-zinc-500 uppercase tracking-widest font-medium">
-            Workspace
-          </p>
-          <NavItem icon={<MessageSquare size={15} />} label="Chat" active={tab === "chat"} onClick={() => { setSelectedChatSessionId(null); setTab("chat"); }} />
-          <NavItem icon={<BarChart2 size={15} />} label="Deep Analysis" active={tab === "investigate"} onClick={() => setTab("investigate")} />
+        {/* Right: spacer matching sidebar content side */}
+        <div className="w-56 shrink-0" />
+      </div>
 
-          <p className="px-4 pt-4 pb-1 text-[10px] text-zinc-500 uppercase tracking-widest font-medium">
-            Data
-          </p>
-          <NavItem icon={<BookOpen size={15} />} label="Catalog" active={tab === "catalog"} onClick={() => setTab("catalog")} />
-          <NavItem icon={<Database size={15} />} label="Connections" active={tab === "data"} onClick={() => setTab("data")} />
-        </div>
+      {/* Search palette overlay */}
+      {showSearch && (
+        <SearchPalette
+          onClose={() => setShowSearch(false)}
+          onGoToChat={goToChat}
+          onGoToInvestigate={(q) => { setTab("investigate"); if (q) setInput(q); }}
+        />
+      )}
 
-        {/* Bottom: settings */}
-        <div className="border-t border-zinc-600 py-2 shrink-0">
-          <NavItem icon={<Settings size={15} />} label="Settings" active={false} onClick={() => {}} />
-        </div>
-      </nav>
+      {/* ══════════════════════════════════════════════════════════════
+          BELOW TOP BAR: sidebar + content
+      ══════════════════════════════════════════════════════════════ */}
+      <div className="flex-1 flex overflow-hidden min-w-0">
 
-      {/* ── Right: topbar + content ── */}
-      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+        {/* ── Left navigation sidebar ── */}
+        <nav className="w-56 shrink-0 bg-zinc-900 border-r border-zinc-700/80 flex flex-col overflow-hidden">
 
-        {/* ── Topbar ── */}
-        <header className="h-12 border-b border-zinc-600 flex items-center justify-between px-5 shrink-0 gap-4 bg-zinc-800">
-          {/* Section breadcrumb */}
-          <div className="flex items-center gap-2 shrink-0">
-            <span className="text-sm font-medium text-zinc-300">
-              {tab === "home" ? "Home" : tab === "chat" ? "Chat" : tab === "investigate" ? "Deep Analysis" : tab === "catalog" ? "Catalog" : "Connections"}
-            </span>
-          </div>
+          {/* Primary nav */}
+          <div className="flex-1 flex flex-col py-2 gap-0.5 overflow-y-auto px-1.5">
+            <NavItem icon={<HomeIcon size={14} />} label="Home" active={tab === "home"} onClick={() => setTab("home")} />
 
-          {/* Connection selector — shown on chat & investigate */}
-          {(tab === "chat" || tab === "investigate") && (
-            <ConnectionSelector
-              connections={connections.length > 0 ? connections : [{ id: selectedConn, name: selectedConn, conn_type: "duckdb", dsn_preview: "", schema_name: null, builtin: false }]}
-              selectedId={selectedConn}
-              onSelect={setSelectedConn}
-              onManage={() => setTab("data")}
+            <p className="px-2 pt-4 pb-1 text-[10px] text-zinc-600 uppercase tracking-widest font-semibold">
+              Workspace
+            </p>
+            <NavItem
+              icon={<MessageSquare size={14} />}
+              label="Chat"
+              active={tab === "chat"}
+              onClick={() => { setSelectedChatSessionId(null); setChatKey(k => k + 1); setTab("chat"); }}
             />
-          )}
+            <NavItem
+              icon={<BarChart2 size={14} />}
+              label="Deep Analysis"
+              active={tab === "investigate"}
+              onClick={() => setTab("investigate")}
+            />
 
-          {/* Right: status + history */}
-          <div className="flex items-center gap-3 shrink-0">
-            {isRunning && (
-              <div className="flex items-center gap-1.5 text-[11px] text-amber-400">
-                <span className="relative flex h-1.5 w-1.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-amber-400" />
-                </span>
-                {state.queryMode === "direct" ? "Fetching…" : state.queryMode === "explore" ? "Exploring…" : "Investigating…"}
-              </div>
-            )}
-            {isPaused && (
-              <div className="flex items-center gap-1.5 text-[11px] text-violet-400">
-                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-violet-400" />
-                Awaiting review…
-              </div>
-            )}
-
-            <button
-              onClick={() => setShowHistory((v) => !v)}
-              title="History"
-              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-xs transition ${
-                showHistory
-                  ? "border-violet-500/50 bg-violet-500/10 text-violet-400"
-                  : "border-zinc-600 text-zinc-500 hover:text-zinc-300 hover:border-zinc-500"
-              }`}
-            >
-              <Clock size={12} />
-              <span>History</span>
-            </button>
+            <p className="px-2 pt-4 pb-1 text-[10px] text-zinc-600 uppercase tracking-widest font-semibold">
+              Data
+            </p>
+            <NavItem icon={<BookOpen size={14} />} label="Catalog"      active={tab === "catalog"} onClick={() => setTab("catalog")} />
+            <NavItem icon={<Database size={14} />} label="Connections"  active={tab === "data"}    onClick={() => setTab("data")} />
           </div>
-        </header>
 
-        {/* ── History popup ── */}
-        {showHistory && (
-          <>
-            <div className="fixed inset-0 z-40" onClick={() => setShowHistory(false)} />
-            <div className="fixed top-12 right-4 z-50 w-80 h-[72vh] bg-zinc-900 border border-zinc-600 rounded-xl shadow-2xl flex flex-col overflow-hidden">
-              <HistoryPanel
-                selectedId={selectedHistoryId}
-                onSelect={(id, kind) => {
-                  setShowHistory(false);
-                  if (kind === "chat") {
-                    setSelectedChatSessionId(id); // id IS the session_id for chat items
-                    setTab("chat");
-                  } else {
-                    setSelectedHistoryId(id);
-                    setTab("investigate");
-                  }
-                }}
-              />
+          {/* Bottom: settings */}
+          <div className="border-t border-zinc-700/80 py-1.5 px-1.5 shrink-0">
+            <NavItem icon={<Settings size={14} />} label="Settings" active={false} onClick={() => {}} />
+          </div>
+        </nav>
+
+        {/* ── Right: topbar + content ── */}
+        <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+
+          {/* ── Section topbar ── */}
+          <header className="h-13 border-b border-zinc-700/80 flex items-center justify-between px-5 shrink-0 gap-4 bg-zinc-900/60" style={{ height: "52px" }}>
+
+            {/* Section breadcrumb */}
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-sm font-semibold text-zinc-200">
+                {tab === "home"        ? "Home"
+                 : tab === "chat"      ? "Chat"
+                 : tab === "investigate" ? "Deep Analysis"
+                 : tab === "catalog"   ? "Catalog"
+                 : "Connections"}
+              </span>
             </div>
-          </>
-        )}
 
-        {/* ── Main content area ── */}
-        <div className="flex-1 flex overflow-hidden min-w-0">
+            {/* Connection selector — shown on chat & investigate */}
+            {(tab === "chat" || tab === "investigate") && (
+              <ConnectionSelector
+                connections={connections.length > 0 ? connections : [{ id: selectedConn, name: selectedConn, conn_type: "duckdb", dsn_preview: "", schema_name: null, builtin: false }]}
+                selectedId={selectedConn}
+                onSelect={setSelectedConn}
+                onManage={() => setTab("data")}
+              />
+            )}
 
-          {/* ════ HOME TAB ════ */}
-          {tab === "home" && (
-            <HomePage
-              connections={connections}
-              selectedConn={selectedConn}
-              onGoToChat={(q) => {
-                setTab("chat");
-                // ChatPanel handles the question via starters
-              }}
-              onGoToInvestigate={(q) => {
-                setTab("investigate");
-                if (q) { setInput(q); }
-              }}
-              onGoToCatalog={() => setTab("catalog")}
-            />
-          )}
-
-          {/* ════ CHAT TAB ════ */}
-          {tab === "chat" && (
-            <ChatPanel
-              connectionId={selectedConn}
-              restoreSessionId={selectedChatSessionId}
-            />
-          )}
-
-          {/* ════ INVESTIGATE TAB ════ */}
-          {tab === "investigate" && (
-            <div className="flex-1 flex overflow-hidden">
-
-              {/* Left panel: progress trace (only while running/paused) */}
-              {(isRunning || isPaused) && (
-                <InvestigateProgressPanel state={state} />
+            {/* Right: status + New Chat + History */}
+            <div className="flex items-center gap-2.5 shrink-0">
+              {isRunning && (
+                <div className="flex items-center gap-1.5 text-[11px] text-amber-400">
+                  <span className="relative flex h-1.5 w-1.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-amber-400" />
+                  </span>
+                  {state.queryMode === "direct" ? "Fetching…" : state.queryMode === "explore" ? "Exploring…" : "Investigating…"}
+                </div>
+              )}
+              {isPaused && (
+                <div className="flex items-center gap-1.5 text-[11px] text-violet-400">
+                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-violet-400" />
+                  Awaiting review…
+                </div>
               )}
 
-              {/* Right: canvas + input */}
-              <div className="flex-1 flex flex-col overflow-hidden">
+              {/* New Chat button */}
+              <button
+                onClick={() => {
+                  setSelectedChatSessionId(null);
+                  setChatKey(k => k + 1);   // remounts ChatPanel → clears conversation
+                  setTab("chat");
+                }}
+                title="New Chat"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:border-zinc-600 hover:bg-zinc-700/60 text-xs font-medium transition"
+              >
+                <Plus size={13} />
+                <span>New</span>
+              </button>
 
-                {/* Canvas */}
-                <div className="flex-1 overflow-y-auto min-h-0">
-                  {state.status === "idle" && !selectedHistoryId ? (
-                    <div className="h-full flex flex-col items-center justify-center gap-5 text-center px-8 py-12">
-                      <div>
-                        <p className="text-2xl font-semibold text-zinc-300 mb-2">Deep Analysis</p>
-                        <p className="text-sm text-zinc-500 max-w-sm leading-relaxed">
-                          Ask a business question. Aughor investigates autonomously — forming hypotheses, running SQL, and delivering a narrative verdict.
-                        </p>
+              {/* History button */}
+              <button
+                onClick={() => { setShowHistory((v) => !v); setShowConfigure(false); }}
+                title="History"
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition ${
+                  showHistory
+                    ? "border-violet-500/50 bg-violet-500/10 text-violet-400"
+                    : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:text-zinc-200 hover:border-zinc-600 hover:bg-zinc-700/60"
+                }`}
+              >
+                <Clock size={13} />
+                <span>History</span>
+              </button>
+
+              {/* Configure button */}
+              <button
+                onClick={() => { setShowConfigure((v) => !v); setShowHistory(false); }}
+                title="Configure"
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition ${
+                  showConfigure
+                    ? "border-blue-500 bg-blue-600 text-white shadow-sm shadow-blue-500/20"
+                    : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:text-zinc-200 hover:border-zinc-600 hover:bg-zinc-700/60"
+                }`}
+              >
+                <Settings size={13} />
+                <span>Configure</span>
+              </button>
+            </div>
+          </header>
+
+          {/* ── History popup ── */}
+          {showHistory && (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setShowHistory(false)} />
+              <div className="fixed top-[104px] right-4 z-50 w-84 h-[72vh] bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl flex flex-col overflow-hidden" style={{ width: "340px" }}>
+                <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-700 shrink-0">
+                  <span className="text-sm font-semibold text-zinc-200">History</span>
+                  <button onClick={() => setShowHistory(false)} className="text-zinc-500 hover:text-zinc-300 transition">
+                    <X size={14} />
+                  </button>
+                </div>
+                <HistoryPanel
+                  selectedId={selectedHistoryId}
+                  onSelect={(id, kind) => {
+                    setShowHistory(false);
+                    if (kind === "chat") {
+                      setSelectedChatSessionId(id);
+                      setTab("chat");
+                    } else {
+                      setSelectedHistoryId(id);
+                      setTab("investigate");
+                    }
+                  }}
+                />
+              </div>
+            </>
+          )}
+
+          {/* ── Configure panel ── */}
+          {showConfigure && (
+            <ConfigurePanel
+              connectionId={selectedConn}
+              connections={connections.length > 0 ? connections : [{ id: selectedConn, name: selectedConn, conn_type: "duckdb", dsn_preview: "", schema_name: null, builtin: false }]}
+              onSelectConn={(id) => { setSelectedConn(id); }}
+              onClose={() => setShowConfigure(false)}
+            />
+          )}
+
+          {/* ── Main content area ── */}
+          <div className="flex-1 flex overflow-hidden min-w-0">
+
+            {/* ════ HOME TAB ════ */}
+            {tab === "home" && (
+              <HomePage
+                connections={connections}
+                selectedConn={selectedConn}
+                onGoToChat={goToChat}
+                onGoToInvestigate={(q) => { setTab("investigate"); if (q) setInput(q); }}
+                onGoToCatalog={() => setTab("catalog")}
+              />
+            )}
+
+            {/* ════ CHAT TAB ════ */}
+            {tab === "chat" && (
+              <ChatPanel
+                key={chatKey}
+                connectionId={selectedConn}
+                restoreSessionId={selectedChatSessionId}
+              />
+            )}
+
+            {/* ════ INVESTIGATE TAB ════ */}
+            {tab === "investigate" && (
+              <div className="flex-1 flex overflow-hidden">
+
+                {/* Left panel: progress trace (only while running/paused) */}
+                {(isRunning || isPaused) && (
+                  <InvestigateProgressPanel state={state} />
+                )}
+
+                {/* Right: canvas + input */}
+                <div className="flex-1 flex flex-col overflow-hidden">
+
+                  {/* Canvas */}
+                  <div className="flex-1 overflow-y-auto min-h-0">
+                    {state.status === "idle" && !selectedHistoryId ? (
+                      <div className="h-full flex flex-col items-center justify-center gap-6 text-center px-8 py-12">
+                        <div>
+                          <p className="text-2xl font-semibold text-zinc-300 mb-2">Deep Analysis</p>
+                          <p className="text-sm text-zinc-500 max-w-sm leading-relaxed">
+                            Ask a business question. Aughor investigates autonomously — forming hypotheses, running SQL, and delivering a narrative verdict.
+                          </p>
+                        </div>
+                        <div className="flex flex-col gap-2 w-full max-w-sm">
+                          {EXAMPLE_QUESTIONS.map((q) => (
+                            <button
+                              key={q}
+                              onClick={() => handleSubmit(q)}
+                              className="text-left text-xs text-zinc-400 hover:text-zinc-200 rounded-xl px-4 py-3 bg-zinc-800/60 hover:bg-zinc-700/60 border border-zinc-700 transition"
+                            >
+                              {q}
+                            </button>
+                          ))}
+                        </div>
                       </div>
-                      <div className="flex flex-col gap-1.5 w-full max-w-sm mt-1">
-                        {EXAMPLE_QUESTIONS.map((q) => (
-                          <button
-                            key={q}
-                            onClick={() => handleSubmit(q)}
-                            className="text-left text-xs text-zinc-400 hover:text-zinc-200 rounded-md px-3 py-2.5 bg-zinc-700/40 hover:bg-zinc-700/70 border border-zinc-600 transition"
-                          >
-                            {q}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  ) : state.status === "idle" && selectedHistoryId ? (
-                    <HistoryDetailPanel invId={selectedHistoryId} />
-                  ) : (
-                    <div className="p-6 space-y-8 max-w-3xl mx-auto">
-                      <div>
-                        <p className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1.5">Question</p>
-                        <p className="text-base font-medium text-zinc-200">{state.question}</p>
-                      </div>
-
-                      {state.queryMode === "direct" && (
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-sky-400 border border-sky-500/30 bg-sky-500/10 rounded-full px-2.5 py-0.5 font-medium">Direct Query</span>
-                          <span className="text-xs text-zinc-500">Single-pass answer</span>
+                    ) : state.status === "idle" && selectedHistoryId ? (
+                      <HistoryDetailPanel invId={selectedHistoryId} />
+                    ) : (
+                      <div className="p-6 space-y-8 max-w-3xl mx-auto">
+                        <div>
+                          <p className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1.5">Question</p>
+                          <p className="text-base font-medium text-zinc-200">{state.question}</p>
                         </div>
-                      )}
-                      {state.queryMode === "explore" && (
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-teal-400 border border-teal-500/30 bg-teal-500/10 rounded-full px-2.5 py-0.5 font-medium">Exploration</span>
-                          <span className="text-xs text-zinc-500">Open-ended chain analysis</span>
-                        </div>
-                      )}
-                      {state.queryMode === "investigate" && (
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-violet-400 border border-violet-500/30 bg-violet-500/10 rounded-full px-2.5 py-0.5 font-medium">Deep Investigation</span>
-                          <span className="text-xs text-zinc-500">ADA — root-cause analysis</span>
-                        </div>
-                      )}
 
-                      {state.queryMode === "investigate" && !state.adaReport && state.investigationPhases.length > 0 && (
-                        <InvestigationReportView streamingPhases={state.investigationPhases} />
-                      )}
+                        {state.queryMode === "direct" && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-sky-400 border border-sky-500/30 bg-sky-500/10 rounded-full px-2.5 py-0.5 font-medium">Direct Query</span>
+                            <span className="text-xs text-zinc-500">Single-pass answer</span>
+                          </div>
+                        )}
+                        {state.queryMode === "explore" && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-teal-400 border border-teal-500/30 bg-teal-500/10 rounded-full px-2.5 py-0.5 font-medium">Exploration</span>
+                            <span className="text-xs text-zinc-500">Open-ended chain analysis</span>
+                          </div>
+                        )}
+                        {state.queryMode === "investigate" && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-violet-400 border border-violet-500/30 bg-violet-500/10 rounded-full px-2.5 py-0.5 font-medium">Deep Investigation</span>
+                            <span className="text-xs text-zinc-500">ADA — root-cause analysis</span>
+                          </div>
+                        )}
 
-                      {isPaused && state.investigationId && (
-                        <FeedbackPrompt
-                          investigationId={state.investigationId}
-                          hypotheses={state.hypotheses}
-                          onSubmit={(feedback) => submitFeedback(state.investigationId!, feedback)}
-                        />
-                      )}
+                        {state.queryMode === "investigate" && !state.adaReport && state.investigationPhases.length > 0 && (
+                          <InvestigationReportView streamingPhases={state.investigationPhases} />
+                        )}
 
-                      {isRunning && (
-                        <div className="flex items-center gap-3 text-sm text-zinc-500">
-                          <span className="flex gap-1">
-                            {[0, 1, 2].map((i) => (
-                              <span
-                                key={i}
-                                className="inline-block h-1.5 w-1.5 rounded-full bg-zinc-600 animate-bounce"
-                                style={{ animationDelay: `${i * 150}ms` }}
-                              />
-                            ))}
-                          </span>
-                          Analyzing evidence…
-                        </div>
-                      )}
-
-                      {state.queryMode === "explore" && state.exploreReport && (
-                        <div className="space-y-4">
-                          <Separator className="bg-zinc-700" />
-                          <p className="text-[10px] text-zinc-500 uppercase tracking-widest">Exploration Report</p>
-                          <ExplorationReportView
-                            report={state.exploreReport}
-                            subQuestions={state.subQuestions}
-                            subqAnswers={state.subqAnswers}
-                            queryCount={state.queriesExecuted}
-                          />
-                        </div>
-                      )}
-
-                      {state.queryMode === "investigate" && state.adaReport && (
-                        <div className="space-y-4">
-                          <Separator className="bg-zinc-700" />
-                          <InvestigationReportView report={state.adaReport} />
-                        </div>
-                      )}
-
-                      {state.queryMode === "direct" && state.report && (
-                        <div className="space-y-4">
-                          <Separator className="bg-zinc-700" />
-                          {state.fromCache && state.cachedQuestion && (
-                            <div className="rounded-md border border-sky-500/25 bg-sky-500/10 px-3 py-2 flex items-start gap-2">
-                              <span className="text-sky-400 text-xs shrink-0 mt-0.5">⚡</span>
-                              <div>
-                                <p className="text-xs text-sky-400 font-medium">Matched a prior investigation</p>
-                                <p className="text-xs text-zinc-500 mt-0.5">Originally asked: "{state.cachedQuestion}"</p>
-                              </div>
-                            </div>
-                          )}
-                          <p className="text-[10px] text-zinc-500 uppercase tracking-widest">Query Report</p>
-                          <ReportView
-                            report={state.report}
-                            queryCount={state.queriesExecuted}
-                            queryHistory={state.queryHistory}
-                            queryMode={state.queryMode}
+                        {isPaused && state.investigationId && (
+                          <FeedbackPrompt
+                            investigationId={state.investigationId}
                             hypotheses={state.hypotheses}
+                            onSubmit={(feedback) => submitFeedback(state.investigationId!, feedback)}
                           />
-                        </div>
-                      )}
+                        )}
 
-                      {state.error && (
-                        <div className="rounded-md border border-red-500/30 bg-red-500/5 p-4 text-sm text-red-400">
-                          {state.error}
+                        {isRunning && (
+                          <div className="flex items-center gap-3 text-sm text-zinc-500">
+                            <span className="flex gap-1">
+                              {[0, 1, 2].map((i) => (
+                                <span
+                                  key={i}
+                                  className="inline-block h-1.5 w-1.5 rounded-full bg-zinc-600 animate-bounce"
+                                  style={{ animationDelay: `${i * 150}ms` }}
+                                />
+                              ))}
+                            </span>
+                            Analyzing evidence…
+                          </div>
+                        )}
+
+                        {state.queryMode === "explore" && state.exploreReport && (
+                          <div className="space-y-4">
+                            <Separator className="bg-zinc-700" />
+                            <p className="text-[10px] text-zinc-500 uppercase tracking-widest">Exploration Report</p>
+                            <ExplorationReportView
+                              report={state.exploreReport}
+                              subQuestions={state.subQuestions}
+                              subqAnswers={state.subqAnswers}
+                              queryCount={state.queriesExecuted}
+                            />
+                          </div>
+                        )}
+
+                        {state.queryMode === "investigate" && state.adaReport && (
+                          <div className="space-y-4">
+                            <Separator className="bg-zinc-700" />
+                            <InvestigationReportView report={state.adaReport} />
+                          </div>
+                        )}
+
+                        {state.queryMode === "direct" && state.report && (
+                          <div className="space-y-4">
+                            <Separator className="bg-zinc-700" />
+                            {state.fromCache && state.cachedQuestion && (
+                              <div className="rounded-xl border border-sky-500/25 bg-sky-500/10 px-4 py-3 flex items-start gap-2">
+                                <span className="text-sky-400 text-xs shrink-0 mt-0.5">⚡</span>
+                                <div>
+                                  <p className="text-xs text-sky-400 font-medium">Matched a prior investigation</p>
+                                  <p className="text-xs text-zinc-500 mt-0.5">Originally asked: "{state.cachedQuestion}"</p>
+                                </div>
+                              </div>
+                            )}
+                            <p className="text-[10px] text-zinc-500 uppercase tracking-widest">Query Report</p>
+                            <ReportView
+                              report={state.report}
+                              queryCount={state.queriesExecuted}
+                              queryHistory={state.queryHistory}
+                              queryMode={state.queryMode}
+                              hypotheses={state.hypotheses}
+                            />
+                          </div>
+                        )}
+
+                        {state.error && (
+                          <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-4 text-sm text-red-400">
+                            {state.error}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Input bar — pinned at bottom */}
+                  <div className="shrink-0 border-t border-zinc-700/80 p-5 space-y-3 bg-zinc-900/60">
+                    <textarea
+                      className="w-full rounded-xl bg-zinc-800/60 border border-zinc-700 text-sm text-zinc-100 placeholder:text-zinc-500 px-4 py-3.5 resize-none focus:outline-none focus:ring-1 focus:ring-violet-500/50 focus:border-violet-500/50 transition"
+                      rows={2}
+                      placeholder="Ask a deep business question…"
+                      value={input}
+                      onChange={(e) => setInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSubmit(); }
+                      }}
+                      disabled={isRunning}
+                    />
+                    <div className="flex items-center justify-between gap-3">
+                      <label className="flex items-center gap-2 cursor-pointer select-none">
+                        <div
+                          onClick={() => setHitl((v) => !v)}
+                          className={`relative w-7 h-3.5 rounded-full transition ${hitl ? "bg-violet-600" : "bg-zinc-700"}`}
+                        >
+                          <span className={`absolute top-0.5 left-0.5 w-2.5 h-2.5 rounded-full bg-white shadow transition-transform ${hitl ? "translate-x-3.5" : ""}`} />
                         </div>
-                      )}
+                        <span className="text-[11px] text-zinc-500">Review before report</span>
+                      </label>
+
+                      <button
+                        onClick={() => handleSubmit()}
+                        disabled={!input.trim() || isRunning || isPaused}
+                        className="rounded-lg bg-violet-600 text-white text-sm font-medium px-6 py-2 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                      >
+                        {isRunning
+                          ? (state.queryMode === "direct" ? "Fetching…" : state.queryMode === "explore" ? "Exploring…" : "Investigating…")
+                          : "Investigate →"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ════ CATALOG TAB ════ */}
+            {tab === "catalog" && (
+              <CatalogPanel
+                connectionId={selectedConn}
+                onChatWithTable={(table, connId) => {
+                  setSelectedConn(connId);
+                  setTab("chat");
+                }}
+              />
+            )}
+
+            {/* ════ DATA / CONNECTIONS TAB ════ */}
+            {tab === "data" && (
+              <div className="flex-1 flex overflow-hidden">
+                <ConnectionsPanel
+                  selectedId={selectedConn}
+                  onSelect={(id) => { setSelectedConn(id); setTab("chat"); }}
+                  activeSchemaId={schemaConnId}
+                  onSchemaSelect={setSchemaConnId}
+                />
+                <div className="flex-1 flex flex-col overflow-hidden border-l border-zinc-700/80">
+                  <div className="flex items-center border-b border-zinc-700/80 px-4 shrink-0 bg-zinc-900/40">
+                    {(["schema", "metrics"] as const).map((t) => (
+                      <button
+                        key={t}
+                        onClick={() => setConnRightTab(t)}
+                        className={`px-4 py-3.5 text-xs font-medium capitalize transition-colors border-b-2 -mb-px ${
+                          connRightTab === t
+                            ? "border-violet-500 text-violet-400"
+                            : "border-transparent text-zinc-500 hover:text-zinc-300"
+                        }`}
+                      >
+                        {t === "schema" ? "Schema" : "Metrics Catalog"}
+                      </button>
+                    ))}
+                  </div>
+                  {connRightTab === "schema" ? (
+                    <SchemaPanel connId={schemaConnId} connName={schemaConnId ?? undefined} />
+                  ) : (
+                    <div className="flex-1 overflow-auto p-4">
+                      <MetricsPanel />
                     </div>
                   )}
                 </div>
-
-                {/* Input bar — pinned at bottom */}
-                <div className="shrink-0 border-t border-zinc-600 p-4 space-y-2.5 bg-zinc-800">
-                  <textarea
-                    className="w-full rounded-md bg-zinc-700/50 border border-zinc-600 text-sm text-zinc-100 placeholder:text-zinc-400 px-4 py-3 resize-none focus:outline-none focus:ring-1 focus:ring-violet-500/50 focus:border-violet-500/50 transition"
-                    rows={2}
-                    placeholder="Ask a deep business question…"
-                    value={input}
-                    onChange={(e) => setInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSubmit(); }
-                    }}
-                    disabled={isRunning}
-                  />
-                  <div className="flex items-center justify-between gap-3">
-                    <label className="flex items-center gap-2 cursor-pointer select-none">
-                      <div
-                        onClick={() => setHitl((v) => !v)}
-                        className={`relative w-7 h-3.5 rounded-full transition ${hitl ? "bg-violet-600" : "bg-zinc-600"}`}
-                      >
-                        <span className={`absolute top-0.5 left-0.5 w-2.5 h-2.5 rounded-full bg-white shadow transition-transform ${hitl ? "translate-x-3.5" : ""}`} />
-                      </div>
-                      <span className="text-[11px] text-zinc-500">Review before report</span>
-                    </label>
-
-                    <button
-                      onClick={() => handleSubmit()}
-                      disabled={!input.trim() || isRunning || isPaused}
-                      className="rounded-md bg-violet-600 text-white text-sm font-medium px-5 py-2 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed transition"
-                    >
-                      {isRunning
-                        ? (state.queryMode === "direct" ? "Fetching…" : state.queryMode === "explore" ? "Exploring…" : "Investigating…")
-                        : "Investigate →"}
-                    </button>
-                  </div>
-                </div>
               </div>
-            </div>
-          )}
-
-          {/* ════ CATALOG TAB ════ */}
-          {tab === "catalog" && (
-            <CatalogPanel
-              connectionId={selectedConn}
-              onChatWithTable={(table, connId) => {
-                setSelectedConn(connId);
-                setTab("chat");
-              }}
-            />
-          )}
-
-          {/* ════ DATA / CONNECTIONS TAB ════ */}
-          {tab === "data" && (
-            <div className="flex-1 flex overflow-hidden">
-              <ConnectionsPanel
-                selectedId={selectedConn}
-                onSelect={(id) => { setSelectedConn(id); setTab("chat"); }}
-                activeSchemaId={schemaConnId}
-                onSchemaSelect={setSchemaConnId}
-              />
-              <div className="flex-1 flex flex-col overflow-hidden border-l border-zinc-600">
-                <div className="flex items-center border-b border-zinc-600 px-4 shrink-0">
-                  {(["schema", "metrics"] as const).map((t) => (
-                    <button
-                      key={t}
-                      onClick={() => setConnRightTab(t)}
-                      className={`px-4 py-3 text-xs font-medium capitalize transition-colors border-b-2 -mb-px ${
-                        connRightTab === t
-                          ? "border-violet-500 text-violet-400"
-                          : "border-transparent text-zinc-500 hover:text-zinc-300"
-                      }`}
-                    >
-                      {t === "schema" ? "Schema" : "Metrics Catalog"}
-                    </button>
-                  ))}
-                </div>
-                {connRightTab === "schema" ? (
-                  <SchemaPanel connId={schemaConnId} connName={schemaConnId ?? undefined} />
-                ) : (
-                  <div className="flex-1 overflow-auto p-4">
-                    <MetricsPanel />
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
     </div>
