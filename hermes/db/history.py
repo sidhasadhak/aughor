@@ -42,20 +42,24 @@ def _ensure_schema(c: sqlite3.Connection) -> None:
             headline TEXT,
             report_json TEXT,
             hypotheses_json TEXT,
-            query_history_json TEXT
+            query_history_json TEXT,
+            kind TEXT DEFAULT 'investigation'
         )
     """)
-    # Safe migration — adds status column to existing DBs
-    try:
-        c.execute("ALTER TABLE investigations ADD COLUMN status TEXT DEFAULT 'running'")
-        # Backfill: rows with completed_at set were completed before this column existed
-        c.execute("""
-            UPDATE investigations
-            SET status = 'complete'
-            WHERE status = 'running' AND completed_at IS NOT NULL
-        """)
-    except Exception:
-        pass  # column already exists
+    # Safe migrations
+    for col, default in [
+        ("status TEXT DEFAULT 'running'", "status"),
+        ("kind TEXT DEFAULT 'investigation'", "kind"),
+    ]:
+        try:
+            c.execute(f"ALTER TABLE investigations ADD COLUMN {col}")
+        except Exception:
+            pass  # already exists
+    # Backfill status for pre-status rows
+    c.execute("""
+        UPDATE investigations SET status = 'complete'
+        WHERE status = 'running' AND completed_at IS NOT NULL
+    """)
     c.commit()
 
 
@@ -147,13 +151,52 @@ def fail_investigation(inv_id: str, status: InvStatus = "timed_out") -> None:
     c.close()
 
 
+def save_chat_turn(
+    question: str,
+    connection_id: str,
+    headline: str,
+    sql: str,
+) -> str:
+    """Persist a completed chat (Ask/Investigate-via-chat) turn as a history row."""
+    inv_id = uuid.uuid4().hex[:8]
+    now = _now()
+    c = _conn()
+    _ensure_schema(c)
+    c.execute(
+        """INSERT INTO investigations
+           (id, question, connection_id, started_at, completed_at,
+            status, hypothesis_count, query_count, headline,
+            report_json, kind)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+        (inv_id, question, connection_id, now, now,
+         "complete", 0, 1, headline,
+         json.dumps({"headline": headline, "sql": sql}),
+         "chat"),
+    )
+    c.commit()
+    c.close()
+    return inv_id
+
+
+def delete_investigation(inv_id: str) -> bool:
+    """Delete a history row by ID. Returns True if a row was deleted."""
+    c = _conn()
+    _ensure_schema(c)
+    cursor = c.execute("DELETE FROM investigations WHERE id = ?", (inv_id,))
+    deleted = cursor.rowcount > 0
+    c.commit()
+    c.close()
+    return deleted
+
+
 def list_investigations(limit: int = 50) -> list[dict]:
     """Return summary rows, newest first."""
     c = _conn()
     _ensure_schema(c)
     rows = c.execute(
         """SELECT id, question, connection_id, started_at, completed_at,
-                  status, hypothesis_count, query_count, headline
+                  status, hypothesis_count, query_count, headline,
+                  COALESCE(kind, 'investigation') as kind
            FROM investigations
            ORDER BY started_at DESC
            LIMIT ?""",

@@ -41,6 +41,13 @@
 32. [Global Analytics Rules](#32-global-analytics-rules)
 33. [Hypothesis Expanded Accordion](#33-hypothesis-expanded-accordion)
 34. [Investigation Quality Hardening](#34-investigation-quality-hardening)
+35. [Databricks-Brand UI](#35-databricks-brand-ui)
+36. [Genie-Style Chat UI](#36-genie-style-chat-ui)
+37. [History Popup](#37-history-popup)
+38. [Home Page](#38-home-page)
+39. [Catalog Tab](#39-catalog-tab)
+40. [Schema-Aware Suggestions](#40-schema-aware-suggestions)
+41. [Suggestions Cache — Qdrant Semantic Store](#41-suggestions-cache--qdrant-semantic-store)
 
 ---
 
@@ -1216,4 +1223,191 @@ Cache check (Prior Investigations RAG)          [skipped for direct-signal quest
 
 ---
 
-*Last updated: 2026-05-17 · 34 features. See `ROADMAP.md` for upcoming features.*
+---
+
+## 35. Databricks-Brand UI
+
+### What
+Complete visual redesign of the frontend using the exact Databricks brand palette, replacing generic Tailwind zinc defaults with a navy-tinted dark theme.
+
+### Why
+Aughor targets data teams who live in Databricks. A UI that feels native to that ecosystem — same surface colors, same text hierarchy, same accent language — reduces cognitive friction and signals product maturity.
+
+### How
+All color overrides live in a plain `:root {}` block in `globals.css` (unlayered CSS, always wins over Tailwind's `@layer theme`). Key values:
+
+| Token | Value | Role |
+|---|---|---|
+| `--color-zinc-900` | `#1F272E` | Left nav / sidebar |
+| `--color-zinc-800` | `#11171D` | Main canvas |
+| `--color-zinc-500` | `#8A9BA6` | Sub-text, metadata |
+| `--color-zinc-300` | `#EBEFF2` | Primary text |
+| `--color-violet-600` | `#3B8DBF` | Accent (steel blue replaces purple) |
+
+A bulk sed pass across all TSX files replaced `text-zinc-600` and `text-zinc-700` (which mapped to dark surface colors, rendering text invisible) with `text-zinc-500`.
+
+### Key files
+- `web/app/globals.css` — palette override block
+- All `web/components/*.tsx`, `web/app/page.tsx` — text color normalization
+
+---
+
+## 36. Genie-Style Chat UI
+
+### What
+Redesign of the Chat empty state and input bar, inspired by Databricks Genie Spaces — centered input, embedded arrow button, mode toggle below the textarea, plain-text suggestions, and an accuracy disclaimer.
+
+### Why
+The previous layout had the input pinned at the bottom with a card grid of suggestions above. For new users, this felt like a form rather than a conversation. The Genie layout puts the input front and center — the first thing you interact with — and surfaces suggestions as clickable prose beneath it.
+
+### How
+**Empty state (no messages):**
+1. Full-height flex column centered vertically
+2. Title + subtitle
+3. Textarea with `rows=3` and an absolute-positioned `ArrowUp` button (bottom-right corner)
+4. Ask / Investigate mode toggle pills immediately below the textarea
+5. `"Always review the accuracy of responses."` disclaimer
+6. Suggestion list — plain `<button>` elements with a small ASK/INVESTIGATE badge prefix; hover underline
+
+**Active chat (messages present):**
+- Conversation scrolls above
+- Bottom bar: single-row textarea (`rows=1`) + arrow button + mode toggle + Clear link
+
+The Send button is removed entirely. Enter sends; Shift+Enter inserts a newline.
+
+### Key files
+- `web/components/ChatPanel.tsx`
+
+---
+
+## 37. History Popup
+
+### What
+The investigation history panel moved from a persistent left sidebar (consuming ~224px at all times) to a floating popup triggered by a History clock icon in the topbar.
+
+### Why
+The left panel was always visible even when irrelevant, consuming screen real estate on every tab. The popup pattern matches modern productivity tools (Linear, Notion) — history is one click away but zero cost when not needed.
+
+### How
+- `showHistory` boolean state in `page.tsx`
+- Clock icon button in the topbar right section (visible on all tabs)
+- Popup: `fixed top-12 right-4 z-50 w-80 h-[72vh]` with a full-screen transparent backdrop (`fixed inset-0 z-40`) to capture outside clicks
+- Selecting a history item sets `selectedHistoryId`, closes the popup, and navigates to the Investigate tab
+- `InvestigateLeftPanel` now only shows during active analysis (running/paused) — idle state shows the full canvas width
+
+### Key files
+- `web/app/page.tsx` — `showHistory` state, popup render
+- `web/components/HistoryPanel.tsx` — unchanged (reused in popup)
+
+---
+
+## 38. Home Page
+
+### What
+A Databricks-style welcome screen that serves as the default landing tab, showing the active connection, quick-start actions, sample questions, and recent investigation history.
+
+### Why
+Previously the app cold-started on the Chat tab with an empty input. New users had no orientation — no sense of what Aughor can do or where to start. The Home page provides immediate context and one-click entry points to every core workflow.
+
+### How
+The page is structured in vertical sections:
+
+1. **Welcome banner** — "Welcome to Aughor" + one-line description
+2. **Active connection card** — shows name, type (DuckDB/Postgres), and connected badge
+3. **Quick start** — three cards: Chat, Deep Analysis, Catalog; clicking navigates to the respective tab
+4. **Try asking** — four domain-specific starter questions as clickable prose links; clicking navigates to Chat
+5. **Recent investigations** — last 5 investigations from `GET /investigations`; shows question, relative timestamp ("9h ago"), and status badge (timed out / failed / running)
+
+Data fetched client-side on mount; no SSR needed.
+
+### Key files
+- `web/app/page.tsx` — `HomePage` component, `home` NavTab
+
+---
+
+## 39. Catalog Tab
+
+### What
+A dedicated browser for the tables and columns in the connected database, accessible from the left nav under Data → Catalog.
+
+### Why
+Before running a query or analysis, users need to know what data exists. The Catalog gives a Databricks-style table explorer: row counts, column types, FK relationships — without writing any SQL.
+
+### How
+- Fetches `GET /connections/{conn_id}/schema/rich` → returns `{tables: [{name, row_count, columns: [{name, type, is_fk}]}]}`
+- Renders as an expandable card list: collapsed = table name + row count + first 4 column name chips; expanded = full column grid (name | type | FK)
+- Column types are color-coded: VARCHAR → sky, numeric → violet, DATE/TIME → amber, BOOL → emerald
+- Row counts formatted: `6,996,999 → 7.0M`
+- **Ask →** button per table: sets `selectedConn` to the table's connection and navigates to Chat
+- Connection picker and table name filter in the panel header
+- Stats bar shows total tables, total columns, total rows across all tables
+
+### Key files
+- `web/components/CatalogPanel.tsx` — new component
+- `web/app/page.tsx` — `catalog` NavTab, `onChatWithTable` handler
+
+---
+
+## 40. Schema-Aware Suggestions
+
+### What
+The Chat empty state suggestions are generated by an LLM based on the actual schema of the selected connection, not hardcoded. Switching connections triggers a fresh fetch.
+
+### Why
+Generic starters ("Show me the top 10 rows") work for demos but feel hollow for real databases. A beautycommerce database should show questions about orders, campaigns, and inventory — not customers and MRR. Schema-aware suggestions immediately signal that Aughor understands your data.
+
+### How
+1. `ChatPanel` calls `GET /suggestions?connection_id=X` on mount and whenever `connectionId` changes
+2. Backend fetches `db.get_schema()`, sends it to the coder LLM with a structured output prompt asking for exactly 6 questions — 4 `ask` mode, 2 `investigate` mode — specific to the actual table/column names
+3. Frontend maps the response into the suggestion list; falls back to `FALLBACK_STARTERS` on any error
+4. While loading, 6 pulse shimmer placeholders are shown
+
+### Key files
+- `hermes/api.py` — `GET /suggestions` endpoint
+- `web/components/ChatPanel.tsx` — `starters` state, fetch on connection change
+
+---
+
+## 41. Suggestions Cache — Qdrant Semantic Store
+
+### What
+Suggestions are embedded and cached in Qdrant so subsequent loads return instantly (~3s) instead of triggering a full LLM generation cycle (~90s).
+
+### Why
+The suggestions endpoint is called every time a user opens the Chat tab or switches connections. An uncached LLM call on every page load would make the app feel slow and burn local GPU time unnecessarily. By caching in Qdrant — the same vector store already used for schema search and investigation indexing — we get instant reads and a foundation for future semantic features (suggestion autocomplete).
+
+### How
+
+**Cache key:** `(connection_id, structural_schema_fingerprint)`
+
+The fingerprint is computed from sorted table + column names only (not row counts or descriptions), so it's stable across sessions and only invalidates when the actual schema structure changes.
+
+**Write path (cache miss):**
+1. LLM generates 6 suggestions
+2. `embed(texts)` sends all 6 to `nomic-embed-text` in one batch call
+3. Each suggestion upserted as a Qdrant point with payload `{connection_id, fingerprint, text, mode, created_at}` and a deterministic ID `{connection_id}:{fingerprint}:{index}`
+
+**Read path (cache hit):**
+1. `collection_count()` fast-path: if collection is empty, skip Qdrant entirely
+2. `client.scroll()` with filter `{connection_id: X, fingerprint: Y}` — returns all matching points
+3. If ≥ 6 points found: return immediately, no LLM call
+
+**Semantic search (future):**
+`search_similar(query, connection_id)` is implemented and ready — embed the user's partial input, search the `schema_suggestions` collection filtered to the active connection, surface the top-3 closest suggestions for autocomplete.
+
+**Graceful degradation:** Both read and write errors are caught silently. If Qdrant is down, the endpoint falls through to LLM generation and returns suggestions without caching.
+
+| Metric | Value |
+|---|---|
+| Cold (LLM + embed + store) | ~90s (local qwen2.5-coder:14b) |
+| Warm (Qdrant scroll) | ~3s |
+| Collection | `schema_suggestions` |
+| Vector model | `nomic-embed-text` (768 dim) |
+
+### Key files
+- `hermes/semantic/suggestions_cache.py` — `schema_fingerprint()`, `get_cached()`, `store()`, `search_similar()`
+- `hermes/api.py` — updated `GET /suggestions` with cache-first flow
+
+---
+
+*Last updated: 2026-05-21 · 41 features. See `ROADMAP.md` for upcoming features.*

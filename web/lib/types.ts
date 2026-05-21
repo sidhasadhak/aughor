@@ -194,6 +194,7 @@ export interface InvestigationSummary {
   hypothesis_count: number;
   query_count: number;
   headline: string | null;
+  kind: "investigation" | "chat";
 }
 
 export interface InvestigationState {

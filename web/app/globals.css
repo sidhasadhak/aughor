@@ -7,9 +7,9 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
-  --font-mono: var(--font-geist-mono);
-  --font-heading: var(--font-sans);
+  --font-sans: var(--font-dm-sans);
+  --font-mono: var(--font-dm-mono);
+  --font-heading: var(--font-dm-sans);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -46,23 +46,8 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
-
-  /* ── Databricks-inspired warm charcoal palette ──────────────────────────────
-     Replaces Tailwind's blue-tinted zinc with pure warm grays matching
-     Databricks UI: #2a2a2a sidebar / #383838 canvas / #464644 elevated.
-     Borders at zinc-600 (#5a5a5a) become clearly visible — Databricks uses
-     #7D7D7D, we land at a slightly darker but still prominent equivalent.    */
-  --color-zinc-950: #161616;
-  --color-zinc-900: #242424;  /* nav rail / sidebar frame             */
-  --color-zinc-800: #333333;  /* main canvas, topbar, panel bg        */
-  --color-zinc-700: #3f3f3d;  /* elevated cards, hover targets        */
-  --color-zinc-600: #575755;  /* borders — visible like Databricks    */
-  --color-zinc-500: #898a81;  /* secondary text — Databricks exact    */
-  --color-zinc-400: #b2b2ae;  /* tertiary / placeholder text          */
-  --color-zinc-300: #d4d4d4;  /* primary text — Databricks exact      */
-  --color-zinc-200: #e6e6e6;
-  --color-zinc-100: #f0f0f0;
 }
+
 
 :root {
   --background: oklch(1 0 0);
@@ -143,4 +128,52 @@
   html {
     @apply font-sans;
   }
+}
+
+/* ── Databricks brand palette ────────────────────────────────────────────────
+   Exact colours from the Databricks palette swatch:
+     #8265BF  primary purple accent
+     #171F26  near-black navy canvas
+     #3B8DBF  steel-blue secondary accent
+     #295773  dark-teal sidebar/surfaces
+     #BF2A2A  destructive / error red
+   ─────────────────────────────────────────────────────────────────────────── */
+
+/* ── Exact values from user spec ────────────────────────────────────────────
+   Main text:   #EBEFF2   Sub text:  #5C6A73
+   Left panel:  #1F272E   Right panel (canvas): #11171D
+   Hyperlink:   #3B8DBF
+   ─────────────────────────────────────────────────────────────────────────── */
+:root {
+  /* surfaces */
+  --color-zinc-950: #0b1016;   /* deepest shadow / dropdown overlay        */
+  --color-zinc-900: #1F272E;   /* left panel / sidebar  ← spec exact       */
+  --color-zinc-800: #11171D;   /* right panel / main canvas  ← spec exact  */
+  --color-zinc-700: #252F39;   /* cards / elevated panels                  */
+  --color-zinc-600: #2e3c47;   /* borders                                  */
+  /* text */
+  --color-zinc-500: #8A9BA6;   /* sub text  ← spec exact                  */
+  --color-zinc-400: #a8b8c2;   /* placeholder / muted                      */
+  --color-zinc-300: #EBEFF2;   /* main text  ← spec exact                  */
+  --color-zinc-200: #f0f4f7;
+  --color-zinc-100: #f7f9fb;
+
+  /* Primary accent — #3B8DBF tonal scale (replaces purple) */
+  --color-violet-700: #295773;
+  --color-violet-600: #3B8DBF;
+  --color-violet-500: #4e9dcc;
+  --color-violet-400: #6ab2d9;
+  --color-violet-300: #8ac4e5;
+
+  /* Steel blue / hyperlink — #3B8DBF tonal scale */
+  --color-sky-700:  #295773;
+  --color-sky-600:  #2e6f9e;
+  --color-sky-500:  #3B8DBF;   /* hyperlink  ← spec exact                  */
+  --color-sky-400:  #5da8d4;
+  --color-sky-300:  #84c0e0;
+
+  /* Destructive */
+  --color-red-600:  #BF2A2A;
+  --color-red-500:  #d43535;
+  --color-red-400:  #e05555;
 }

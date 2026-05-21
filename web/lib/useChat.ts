@@ -4,15 +4,37 @@ import { useReducer, useRef } from "react";
 
 const BASE = "http://localhost:8000";
 
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+export interface InvPhase {
+  phase_id: string;
+  summary?: string;
+  findings?: { is_significant: boolean; description: string; metric?: string }[];
+}
+
 export interface ChatTurn {
   id: string;
   question: string;
+  mode: "ask" | "investigate";
   status: "loading" | "done" | "error";
+
+  // Ask mode
   sql: string | null;
   columns: string[];
   rows: unknown[][];
   headline: string | null;
   chartType: string | null;
+
+  // Investigate mode
+  statusText: string | null;      // "Analyzing baseline…" live phase indicator
+  phases: InvPhase[];
+  adaReport: Record<string, unknown> | null;
+  report: Record<string, unknown> | null;
+  queryMode: string | null;
+
+  // Shared
+  tablesUsed: string[];
+  followups: string[];
   error: string | null;
 }
 
@@ -28,16 +50,27 @@ interface ChatState {
   streaming: boolean;
 }
 
+// ── Actions ───────────────────────────────────────────────────────────────────
+
 type ChatAction =
-  | { type: "ASK"; id: string; question: string }
-  | { type: "SQL"; sql: string }
-  | { type: "COLUMNS"; columns: string[] }
-  | { type: "ROWS"; rows: unknown[][] }
-  | { type: "HEADLINE"; headline: string }
+  | { type: "ASK";        id: string; question: string; mode: "ask" | "investigate" }
+  | { type: "SQL";        sql: string }
+  | { type: "COLUMNS";    columns: string[] }
+  | { type: "ROWS";       rows: unknown[][] }
+  | { type: "HEADLINE";   headline: string }
   | { type: "CHART_TYPE"; chartType: string }
-  | { type: "ERROR"; message: string }
+  | { type: "STATUS_TEXT";text: string }
+  | { type: "PHASE";      phase: InvPhase }
+  | { type: "ADA_REPORT"; report: Record<string, unknown>; queryMode: string }
+  | { type: "REPORT";     report: Record<string, unknown>; queryMode: string }
+  | { type: "QUERY_MODE"; queryMode: string }
+  | { type: "TABLES_USED";tables: string[] }
+  | { type: "FOLLOWUPS";  questions: string[] }
+  | { type: "ERROR";      message: string }
   | { type: "DONE" }
   | { type: "CLEAR" };
+
+// ── Reducer ───────────────────────────────────────────────────────────────────
 
 function updateLast(state: ChatState, fn: (t: ChatTurn) => ChatTurn): ChatState {
   const turns = [...state.turns];
@@ -45,104 +78,165 @@ function updateLast(state: ChatState, fn: (t: ChatTurn) => ChatTurn): ChatState 
   return { ...state, turns };
 }
 
+const EMPTY_TURN: Omit<ChatTurn, "id" | "question" | "mode"> = {
+  status: "loading",
+  sql: null, columns: [], rows: [], headline: null, chartType: null,
+  statusText: null, phases: [], adaReport: null, report: null, queryMode: null,
+  tablesUsed: [], followups: [], error: null,
+};
+
 function chatReducer(state: ChatState, action: ChatAction): ChatState {
   switch (action.type) {
     case "ASK":
       return {
-        ...state,
-        streaming: true,
-        turns: [
-          ...state.turns,
-          { id: action.id, question: action.question, status: "loading", sql: null, columns: [], rows: [], headline: null, chartType: null, error: null },
-        ],
+        ...state, streaming: true,
+        turns: [...state.turns, { ...EMPTY_TURN, id: action.id, question: action.question, mode: action.mode }],
       };
-    case "SQL":
-      return updateLast(state, (t) => ({ ...t, sql: action.sql }));
-    case "COLUMNS":
-      return updateLast(state, (t) => ({ ...t, columns: action.columns }));
-    case "ROWS":
-      return updateLast(state, (t) => ({ ...t, rows: action.rows }));
-    case "HEADLINE":
-      return updateLast(state, (t) => ({ ...t, headline: action.headline }));
-    case "CHART_TYPE":
-      return updateLast(state, (t) => ({ ...t, chartType: action.chartType }));
+    case "SQL":        return updateLast(state, t => ({ ...t, sql: action.sql }));
+    case "COLUMNS":    return updateLast(state, t => ({ ...t, columns: action.columns }));
+    case "ROWS":       return updateLast(state, t => ({ ...t, rows: action.rows }));
+    case "HEADLINE":   return updateLast(state, t => ({ ...t, headline: action.headline }));
+    case "CHART_TYPE": return updateLast(state, t => ({ ...t, chartType: action.chartType }));
+    case "STATUS_TEXT":return updateLast(state, t => ({ ...t, statusText: action.text }));
+    case "TABLES_USED":return updateLast(state, t => ({ ...t, tablesUsed: action.tables }));
+    case "FOLLOWUPS":  return updateLast(state, t => ({ ...t, followups: action.questions }));
+    case "QUERY_MODE": return updateLast(state, t => ({ ...t, queryMode: action.queryMode }));
+    case "PHASE":
+      return updateLast(state, t => ({ ...t, phases: [...t.phases, action.phase], statusText: `Analyzing ${action.phase.phase_id}…` }));
+    case "ADA_REPORT":
+      return updateLast(state, t => ({ ...t, adaReport: action.report, queryMode: action.queryMode, statusText: null }));
+    case "REPORT":
+      return updateLast(state, t => ({ ...t, report: action.report, queryMode: action.queryMode, statusText: null }));
     case "ERROR":
-      return { ...updateLast(state, (t) => ({ ...t, status: "error", error: action.message })), streaming: false };
+      return { ...updateLast(state, t => ({ ...t, status: "error", error: action.message })), streaming: false };
     case "DONE":
-      return { ...updateLast(state, (t) => ({ ...t, status: "done" })), streaming: false };
+      return { ...updateLast(state, t => ({ ...t, status: "done" })), streaming: false };
     case "CLEAR":
       return { turns: [], streaming: false };
   }
 }
 
+// ── SSE stream consumer ───────────────────────────────────────────────────────
+
+async function consumeStream(
+  res: Response,
+  dispatch: (a: ChatAction) => void,
+  signal: AbortSignal,
+) {
+  if (!res.body) { dispatch({ type: "ERROR", message: "No response body" }); return; }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (signal.aborted) { reader.cancel(); break; }
+      buffer += decoder.decode(value, { stream: true });
+      const chunks = buffer.split("\n\n");
+      buffer = chunks.pop()!;
+
+      for (const chunk of chunks) {
+        if (!chunk.startsWith("data: ")) continue;
+        try {
+          const p = JSON.parse(chunk.slice(6)) as { type: string } & Record<string, unknown>;
+          switch (p.type) {
+            case "sql":          dispatch({ type: "SQL",        sql:       p.sql as string }); break;
+            case "columns":      dispatch({ type: "COLUMNS",    columns:   p.columns as string[] }); break;
+            case "rows":         dispatch({ type: "ROWS",       rows:      p.rows as unknown[][] }); break;
+            case "headline":     dispatch({ type: "HEADLINE",   headline:  p.headline as string }); break;
+            case "chart_type":   dispatch({ type: "CHART_TYPE", chartType: p.chart_type as string }); break;
+            case "tables_used":  dispatch({ type: "TABLES_USED",tables:    p.tables as string[] }); break;
+            case "followups":    dispatch({ type: "FOLLOWUPS",  questions: p.questions as string[] }); break;
+            case "mode":         dispatch({ type: "QUERY_MODE", queryMode: p.query_mode as string }); break;
+            case "phase_complete":
+              dispatch({ type: "PHASE", phase: (p.phase as InvPhase) });
+              break;
+            case "ada_report":
+              dispatch({ type: "ADA_REPORT", report: p.ada_report as Record<string, unknown>, queryMode: p.query_mode as string ?? "investigate" });
+              break;
+            case "report":
+              dispatch({ type: "REPORT", report: p.report as Record<string, unknown>, queryMode: p.query_mode as string ?? "investigate" });
+              break;
+            case "error":        dispatch({ type: "ERROR", message: p.message as string }); break;
+            case "done":         dispatch({ type: "DONE" }); break;
+          }
+        } catch { /* malformed chunk — skip */ }
+      }
+    }
+  } catch (err) {
+    if ((err as Error)?.name === "AbortError" || signal.aborted) {
+      // User stopped — treat as done rather than error
+      dispatch({ type: "DONE" });
+    } else {
+      dispatch({ type: "ERROR", message: "Stream interrupted" });
+    }
+  }
+}
+
+// ── Hook ──────────────────────────────────────────────────────────────────────
+
 export function useChat() {
   const [state, dispatch] = useReducer(chatReducer, { turns: [], streaming: false });
   const stateRef = useRef(state);
   stateRef.current = state;
+  const abortRef = useRef<AbortController | null>(null);
 
-  async function ask(question: string, connectionId: string) {
+  async function ask(question: string, connectionId: string, mode: "ask" | "investigate" = "ask") {
     const id = Math.random().toString(36).slice(2);
-    dispatch({ type: "ASK", id, question });
+    dispatch({ type: "ASK", id, question, mode });
 
-    // Build history from the last 3 completed turns
-    const history: ChatHistoryTurn[] = stateRef.current.turns
-      .filter((t) => t.status === "done" && t.sql)
-      .slice(-3)
-      .map((t) => ({
-        question: t.question,
-        sql: t.sql!,
-        columns: t.columns,
-        headline: t.headline ?? "",
-      }));
+    // Cancel any in-flight request
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const { signal } = controller;
 
     let res: Response;
     try {
-      res = await fetch(`${BASE}/chat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question, connection_id: connectionId, history }),
-      });
-    } catch (e) {
-      dispatch({ type: "ERROR", message: "Network error — is the server running?" });
-      return;
-    }
+      if (mode === "investigate") {
+        res = await fetch(`${BASE}/investigate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ question, connection_id: connectionId }),
+          signal,
+        });
+      } else {
+        // Build history from last 3 completed ask-mode turns
+        const history: ChatHistoryTurn[] = stateRef.current.turns
+          .filter(t => t.status === "done" && t.sql && t.mode === "ask")
+          .slice(-3)
+          .map(t => ({ question: t.question, sql: t.sql!, columns: t.columns, headline: t.headline ?? "" }));
 
-    if (!res.body) {
-      dispatch({ type: "ERROR", message: "No response body" });
-      return;
-    }
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const chunks = buffer.split("\n\n");
-      buffer = chunks.pop()!;
-      for (const chunk of chunks) {
-        if (!chunk.startsWith("data: ")) continue;
-        try {
-          const payload = JSON.parse(chunk.slice(6)) as { type: string } & Record<string, unknown>;
-          if (payload.type === "sql")        dispatch({ type: "SQL",        sql:       payload.sql as string });
-          if (payload.type === "columns")    dispatch({ type: "COLUMNS",    columns:   payload.columns as string[] });
-          if (payload.type === "rows")       dispatch({ type: "ROWS",       rows:      payload.rows as unknown[][] });
-          if (payload.type === "headline")   dispatch({ type: "HEADLINE",   headline:  payload.headline as string });
-          if (payload.type === "chart_type") dispatch({ type: "CHART_TYPE", chartType: payload.chart_type as string });
-          if (payload.type === "error")      dispatch({ type: "ERROR",      message:   payload.message as string });
-          if (payload.type === "done")       dispatch({ type: "DONE" });
-        } catch {
-          // malformed chunk — skip
-        }
+        res = await fetch(`${BASE}/chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ question, connection_id: connectionId, history }),
+          signal,
+        });
       }
+    } catch (err) {
+      if ((err as Error)?.name === "AbortError") {
+        dispatch({ type: "DONE" });
+      } else {
+        dispatch({ type: "ERROR", message: "Network error — is the server running?" });
+      }
+      return;
     }
+
+    await consumeStream(res, dispatch, signal);
+    abortRef.current = null;
   }
 
-  function clear() {
-    dispatch({ type: "CLEAR" });
+  function stop() {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    dispatch({ type: "DONE" });
   }
 
-  return { state, ask, clear };
+  function clear() { dispatch({ type: "CLEAR" }); }
+
+  return { state, ask, stop, clear };
 }

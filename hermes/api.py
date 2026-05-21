@@ -22,6 +22,8 @@ from hermes.agent.graph import build_graph
 from hermes.agent.state import AgentState
 from hermes.db.connection import open_connection, open_connection_for
 from hermes.db.history import (
+    delete_investigation,
+    save_chat_turn,
     complete_investigation,
     create_investigation,
     fail_investigation,
@@ -76,6 +78,23 @@ def _sse(event_type: str, data: dict) -> str:
 
 
 import re as _re
+
+# ── SQL table extractor ───────────────────────────────────────────────────────
+_TABLE_RE = _re.compile(
+    r'\b(?:FROM|JOIN)\s+(?:\w+\.)?(\w+)',
+    _re.IGNORECASE,
+)
+
+def _extract_tables(sql: str) -> list[str]:
+    """Return deduplicated table names referenced in FROM/JOIN clauses."""
+    seen: dict[str, None] = {}
+    for m in _TABLE_RE.finditer(sql):
+        t = m.group(1)
+        if t.lower() not in seen:
+            seen[t.lower()] = None
+    return list(seen.keys())
+
+
 _DIRECT_SIGNALS = _re.compile(
     r'\b(show|list|what is|what are|what was|what were|how many|how much|'
     r'top \d|top\d|give me|fetch|get me|display|count|sum|total|average|avg|'
@@ -160,10 +179,18 @@ async def _stream_chat(
                     lines.append(f"         Headline: {t.headline}")
             history_section = "\n".join(lines) + "\n"
 
+        # Compute schema qualifier for fully-qualified table names
+        _schema_name = getattr(db, "_schema_name", None)
+        if db.dialect == "duckdb":
+            schema_qualifier = _schema_name or "main"
+        else:
+            schema_qualifier = _schema_name or "public"
+
         prompt = CHAT_PROMPT.format(
             schema=schema,
             history_section=history_section,
             question=question,
+            schema_qualifier=schema_qualifier,
         )
         if rules_block:
             prompt = rules_block + prompt
@@ -174,9 +201,10 @@ async def _stream_chat(
             response_model=_ChatAnswer,
         )
 
-        yield _sse("sql", {"sql": answer.sql})
+        final_sql = answer.sql
+        yield _sse("sql", {"sql": final_sql})
 
-        result = db.execute("chat", answer.sql)
+        result = db.execute("chat", final_sql)
 
         # One self-correction attempt on error
         if result.error:
@@ -190,7 +218,7 @@ async def _stream_chat(
             fix_prompt = FIX_SQL_PROMPT.format(
                 schema=schema,
                 dialect=db.dialect,
-                sql=answer.sql,
+                sql=final_sql,
                 error=result.error,
                 kb_patterns_section="",
                 error_diagnosis="",
@@ -203,7 +231,8 @@ async def _stream_chat(
                 )
                 result = db.execute("chat", fix.corrected_sql)
                 if not result.error:
-                    yield _sse("sql", {"sql": fix.corrected_sql})
+                    final_sql = fix.corrected_sql
+                    yield _sse("sql", {"sql": final_sql})
             except Exception:
                 pass
 
@@ -215,6 +244,36 @@ async def _stream_chat(
         yield _sse("rows", {"rows": result.rows[:10000]})
         yield _sse("headline", {"headline": answer.headline})
         yield _sse("chart_type", {"chart_type": answer.chart_type})
+
+        # Tables used + follow-up question suggestions
+        yield _sse("tables_used", {"tables": _extract_tables(final_sql)})
+        try:
+            class _FollowUps(BaseModel):
+                questions: list[str]
+            fq: _FollowUps = get_provider("narrator").complete(
+                system="Suggest exactly 3 concise follow-up data questions (max 12 words each).",
+                user=(
+                    f"Question: {question}\n"
+                    f"Answer: {answer.headline}\n"
+                    f"Columns: {', '.join(result.columns[:8])}"
+                ),
+                response_model=_FollowUps,
+            )
+            yield _sse("followups", {"questions": fq.questions[:3]})
+        except Exception:
+            pass  # follow-ups are best-effort
+
+        # Persist to chat history (best-effort)
+        try:
+            save_chat_turn(
+                question=question,
+                connection_id=connection_id,
+                headline=answer.headline or question,
+                sql=final_sql or "",
+            )
+        except Exception:
+            pass
+
         yield _sse("done", {})
 
     except Exception as e:
@@ -400,11 +459,27 @@ async def _stream_investigation(question: str, connection_id: str, request: Requ
 
             elif node_name == "ada_synthesize" and merged.get("ada_report"):
                 ada = merged["ada_report"]
+                qh = merged.get("query_history", [])
+                all_sql = " ".join(r.sql for r in qh if r.sql)
+                yield _sse("tables_used", {"tables": _extract_tables(all_sql)})
                 yield _sse("ada_report", {
                     "ada_report": ada,
                     "investigation_id": inv_id,
                     "query_mode": "investigate",
                 })
+                try:
+                    from hermes.llm.provider import get_provider as _gp
+                    class _FQ(BaseModel):
+                        questions: list[str]
+                    headline = ada.get("headline", "") if isinstance(ada, dict) else str(ada)[:200]
+                    fq: _FQ = _gp("narrator").complete(
+                        system="Suggest exactly 3 concise follow-up investigation questions (max 15 words each).",
+                        user=f"Original question: {question}\nFindings: {headline}",
+                        response_model=_FQ,
+                    )
+                    yield _sse("followups", {"questions": fq.questions[:3]})
+                except Exception:
+                    pass
 
             elif node_name == "decompose_exploration":
                 subqs = merged.get("sub_questions", [])
@@ -462,6 +537,8 @@ async def _stream_investigation(question: str, connection_id: str, request: Requ
 
             elif node_name == "synthesize" and merged.get("report"):
                 query_history = merged.get("query_history", [])
+                all_sql = " ".join(r.sql for r in query_history if r.sql)
+                yield _sse("tables_used", {"tables": _extract_tables(all_sql)})
                 yield _sse("report", {
                     "report": merged["report"].model_dump(),
                     "hypotheses": [h.model_dump() for h in merged.get("hypotheses", [])],
@@ -481,6 +558,21 @@ async def _stream_investigation(question: str, connection_id: str, request: Requ
                     "investigation_id": inv_id,
                     "query_mode": merged.get("query_mode"),
                 })
+                try:
+                    from hermes.llm.provider import get_provider as _gp
+                    class _FQR(BaseModel):
+                        questions: list[str]
+                    rep = merged["report"]
+                    summary = getattr(rep, "summary", "") or getattr(rep, "headline", "")
+                    fqr: _FQR = _gp("narrator").complete(
+                        system="Suggest exactly 3 concise follow-up investigation questions (max 15 words each).",
+                        user=f"Original question: {question}\nFindings: {str(summary)[:300]}",
+                        response_model=_FQR,
+                    )
+                    yield _sse("followups", {"questions": fqr.questions[:3]})
+                except Exception:
+                    pass
+
                 # Persist to history; skip Qdrant indexing for direct queries
                 # (live data changes — cached direct results would be stale)
                 complete_investigation(
@@ -803,6 +895,13 @@ def get_investigation_detail(inv_id: str):
     return inv
 
 
+@app.delete("/investigations/{inv_id}", status_code=204)
+def delete_investigation_endpoint(inv_id: str):
+    deleted = delete_investigation(inv_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Investigation not found")
+
+
 @app.post("/investigations/reindex")
 def reindex_investigations():
     """Backfill Qdrant with all completed investigations from history.db."""
@@ -833,3 +932,77 @@ def reindex_investigations():
 def health():
     fixture = Path(__file__).parent.parent / "data" / "hermes.duckdb"
     return {"status": "ok", "fixture_db": fixture.exists()}
+
+
+# ── Schema-aware starter suggestions ─────────────────────────────────────────
+
+class _Suggestion(BaseModel):
+    text: str
+    mode: str   # "ask" | "investigate"
+
+class _Suggestions(BaseModel):
+    suggestions: list[_Suggestion]
+
+@app.get("/suggestions")
+def get_suggestions(connection_id: str = BUILTIN_ID):
+    """Return 6 starter questions tailored to the schema of the given connection.
+
+    Flow:
+      1. Fetch schema summary from the DB connection.
+      2. Compute a fingerprint of the summary.
+      3. Check Qdrant for cached suggestions matching (connection_id, fingerprint).
+         → Cache hit:  return instantly, zero LLM calls.
+         → Cache miss: call LLM, embed results, store in Qdrant, return.
+    """
+    from hermes.semantic.suggestions_cache import (
+        schema_fingerprint, get_cached, store as cache_store,
+    )
+
+    try:
+        db = open_connection_for(connection_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+
+    try:
+        schema_summary: str = db.get_schema()
+        db.close()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    fingerprint = schema_fingerprint(schema_summary)
+
+    # ── Cache hit ─────────────────────────────────────────────────────────────
+    try:
+        cached = get_cached(connection_id, fingerprint)
+        if cached:
+            return {"suggestions": cached, "cached": True}
+    except Exception:
+        pass  # Qdrant unavailable — fall through to LLM
+
+    # ── Cache miss: generate via LLM ─────────────────────────────────────────
+    system = (
+        "You are a data analyst assistant. Given a database schema, produce exactly 6 "
+        "starter questions a business user might ask. "
+        "Mix question types: 4 should be simple analytical questions (mode='ask') and "
+        "2 should be deeper diagnostic questions (mode='investigate'). "
+        "Make every question specific to the actual table and column names provided — "
+        "no generic placeholders. Keep each question concise (under 12 words)."
+    )
+    user = f"Database schema:\n{schema_summary}\n\nReturn 6 starter questions."
+
+    from hermes.llm.provider import get_provider
+    result: _Suggestions = get_provider("coder").complete(
+        system=system,
+        user=user,
+        response_model=_Suggestions,
+        temperature=0.4,
+    )
+    suggestions = [s.model_dump() for s in result.suggestions]
+
+    # ── Store in Qdrant asynchronously (best-effort) ──────────────────────────
+    try:
+        cache_store(connection_id, fingerprint, suggestions)
+    except Exception:
+        pass  # embedding or Qdrant failure — still return the suggestions
+
+    return {"suggestions": suggestions, "cached": False}

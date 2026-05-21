@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Trash2 } from "lucide-react";
 import type { InvestigationSummary } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -24,6 +25,7 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
   const [indexedIds, setIndexedIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     Promise.all([
@@ -38,9 +40,22 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
       .finally(() => setLoading(false));
   }, []);
 
+  async function handleDelete(e: React.MouseEvent, invId: string) {
+    e.stopPropagation();
+    setDeletingId(invId);
+    try {
+      const res = await fetch(`http://localhost:8000/investigations/${invId}`, { method: "DELETE" });
+      if (res.ok || res.status === 204) {
+        setItems(prev => prev.filter(i => i.id !== invId));
+      }
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   if (loading) {
     return (
-      <div className="flex-1 flex items-center justify-center text-xs text-zinc-600">
+      <div className="flex-1 flex items-center justify-center text-xs text-zinc-500">
         Loading history…
       </div>
     );
@@ -49,8 +64,8 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
   if (items.length === 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-2 text-center px-6">
-        <p className="text-sm text-zinc-600">No investigations yet.</p>
-        <p className="text-xs text-zinc-700">Run your first to see it here.</p>
+        <p className="text-sm text-zinc-500">No investigations yet.</p>
+        <p className="text-xs text-zinc-500">Run your first to see it here.</p>
       </div>
     );
   }
@@ -67,59 +82,74 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
     <div className="flex flex-col h-full">
       <div className="px-3 py-2.5 border-b border-zinc-600 shrink-0 space-y-2">
         <div className="flex items-center justify-between">
-          <p className="text-[10px] text-zinc-600 uppercase tracking-widest font-medium">History</p>
-          <span className="text-[10px] text-zinc-700">{items.length}</span>
+          <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-medium">History</p>
+          <span className="text-[10px] text-zinc-500">{items.length}</span>
         </div>
         <input
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search…"
-          className="w-full rounded-lg bg-zinc-800 border border-zinc-600 text-xs text-zinc-300 placeholder:text-zinc-600 px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-zinc-600 transition"
+          className="w-full rounded-lg bg-zinc-800 border border-zinc-600 text-xs text-zinc-300 placeholder:text-zinc-400 px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-zinc-600 transition"
         />
       </div>
       <ul className="flex-1 overflow-y-auto divide-y divide-zinc-600/40">
         {filtered.length === 0 && (
-          <li className="px-4 py-6 text-center text-xs text-zinc-600">No matches</li>
+          <li className="px-4 py-6 text-center text-xs text-zinc-500">No matches</li>
         )}
         {filtered.map(inv => {
           const isSelected = inv.id === selectedId;
           const isIndexed = indexedIds.has(inv.id);
+          const isChat = inv.kind === "chat";
+          const isDeleting = deletingId === inv.id;
           return (
-            <li key={inv.id}>
+            <li key={inv.id} className="relative group/item">
               <button
                 onClick={() => onSelect(inv.id)}
                 className={cn(
-                  "w-full text-left px-4 py-3 transition group border-l-2",
+                  "w-full text-left px-4 py-3 transition group border-l-2 pr-10",
                   isSelected
                     ? "bg-violet-500/5 border-violet-500"
                     : "border-transparent hover:bg-zinc-700/50 hover:border-zinc-600"
                 )}
               >
                 <div className="flex items-start justify-between gap-2">
-                  <p className={cn(
-                    "text-sm leading-snug line-clamp-2 flex-1",
-                    isSelected ? "text-white" : "text-zinc-200 group-hover:text-white"
-                  )}>
-                    {inv.question}
-                  </p>
-                  <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
-                    <span
-                      title={isIndexed ? "Indexed in Qdrant — eligible for cache" : "Not yet indexed"}
-                      className={cn("text-[10px]", isIndexed ? "text-emerald-400" : "text-zinc-700")}
-                    >
-                      ◉
+                  <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                    {/* Kind badge */}
+                    <span className={cn(
+                      "inline-flex shrink-0 items-center px-1 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider",
+                      isChat
+                        ? "bg-sky-500/10 text-sky-400 border border-sky-500/20"
+                        : "bg-violet-500/10 text-violet-400 border border-violet-500/20"
+                    )}>
+                      {isChat ? "Ask" : "Inv"}
                     </span>
-                    <span className="text-xs text-zinc-600">{timeAgo(inv.started_at)}</span>
+                    <p className={cn(
+                      "text-sm leading-snug line-clamp-2 flex-1",
+                      isSelected ? "text-white" : "text-zinc-200 group-hover:text-white"
+                    )}>
+                      {inv.question}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0 mt-0.5">
+                    {!isChat && (
+                      <span
+                        title={isIndexed ? "Indexed in Qdrant — eligible for cache" : "Not yet indexed"}
+                        className={cn("text-[10px]", isIndexed ? "text-emerald-400" : "text-zinc-500")}
+                      >
+                        ◉
+                      </span>
+                    )}
+                    <span className="text-xs text-zinc-500">{timeAgo(inv.started_at)}</span>
                   </div>
                 </div>
                 {inv.headline && (
                   <p className="mt-1 text-xs text-zinc-500 line-clamp-1">{inv.headline}</p>
                 )}
-                <div className="mt-1.5 flex items-center gap-3 text-xs text-zinc-700">
-                  <span>{inv.hypothesis_count} hypotheses</span>
-                  <span>·</span>
-                  <span>{inv.query_count} queries</span>
+                <div className="mt-1.5 flex items-center gap-3 text-xs text-zinc-500 flex-wrap">
+                  {!isChat && <span>{inv.hypothesis_count} hypotheses</span>}
+                  {!isChat && <span>·</span>}
+                  <span>{inv.query_count} {isChat ? "query" : "queries"}</span>
                   <span>·</span>
                   <span className="font-mono">{inv.connection_id}</span>
                   {inv.status === "timed_out" && (
@@ -141,6 +171,21 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
                     </>
                   )}
                 </div>
+              </button>
+
+              {/* Delete button — appears on row hover */}
+              <button
+                onClick={(e) => handleDelete(e, inv.id)}
+                disabled={isDeleting}
+                title="Delete"
+                className={cn(
+                  "absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 rounded flex items-center justify-center transition",
+                  "opacity-0 group-hover/item:opacity-100",
+                  "text-zinc-500 hover:text-red-400 hover:bg-red-400/10",
+                  isDeleting && "opacity-50 pointer-events-none"
+                )}
+              >
+                <Trash2 size={12} />
               </button>
             </li>
           );

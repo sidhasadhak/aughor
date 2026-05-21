@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { ChatTurn } from "@/lib/useChat";
+import React, { useEffect, useRef, useState } from "react";
+import { Check, Copy } from "lucide-react";
+import { ChatTurn, InvPhase } from "@/lib/useChat";
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
@@ -37,7 +38,10 @@ function fmt(col: string, val: unknown): string {
   if (ORDINAL_COL.test(col)) return s;
   const n = Number(val);
   if (!isNaN(n)) {
-    if (SHARE_COL.test(col) && n >= 0 && n <= 1) return `${(n * 100).toFixed(2)}%`;
+    if (SHARE_COL.test(col)) {
+      if (n >= 0 && n <= 1)   return `${(n * 100).toFixed(2)}%`; // decimal fraction
+      if (n >= 0 && n <= 100) return `${n.toFixed(2)}%`;          // already a percentage
+    }
     if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
     if (Math.abs(n) >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
     if (!Number.isInteger(n)) return n.toFixed(2);
@@ -643,7 +647,8 @@ function ResultBody({ turn }: { turn: ChatTurn }) {
 
   return (
     <>
-      {isSingleRow && hasNum && !explicitChart ? (
+      {isSingleRow && hasNum ? (
+        // Single-row numeric result is always a KPI card — ignore chart_type hint
         <KPICards columns={columns} rows={rows} />
       ) : showChart ? (
         <InlineChart columns={columns} rows={rows} chartType={chartType} />
@@ -657,72 +662,260 @@ function ResultBody({ turn }: { turn: ChatTurn }) {
   );
 }
 
-// ── SQL collapsible ───────────────────────────────────────────────────────────
-function SQLCollapsible({ sql }: { sql: string }) {
-  const [open, setOpen] = useState(false);
+// ── SQL block with copy button ────────────────────────────────────────────────
+function SqlBlock({ sql }: { sql: string }) {
+  const [copied, setCopied] = useState(false);
+
+  function handleCopy() {
+    navigator.clipboard.writeText(sql).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
   return (
-    <div className="mt-2">
+    <div className="relative group/sql">
+      <pre className="text-[10px] font-mono text-zinc-400 bg-zinc-900/60 rounded p-2.5 pr-10 overflow-x-auto whitespace-pre-wrap leading-relaxed">
+        {sql}
+      </pre>
       <button
-        onClick={() => setOpen((v) => !v)}
-        className="text-[10px] text-zinc-600 hover:text-zinc-400 transition-colors flex items-center gap-1"
+        onClick={handleCopy}
+        title={copied ? "Copied!" : "Copy SQL"}
+        className="absolute top-2 right-2 w-6 h-6 rounded flex items-center justify-center text-zinc-600 hover:text-zinc-300 hover:bg-zinc-700/60 transition opacity-0 group-hover/sql:opacity-100"
       >
-        <span>{open ? "▲" : "▼"}</span> SQL
+        {copied ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
       </button>
-      {open && (
-        <pre className="mt-1 text-[10px] font-mono text-zinc-500 bg-zinc-800 rounded p-2 overflow-x-auto whitespace-pre-wrap">
-          {sql}
-        </pre>
+    </div>
+  );
+}
+
+// ── Collapsible section ───────────────────────────────────────────────────────
+function Section({
+  label, defaultOpen = false, children,
+}: { label: string; defaultOpen?: boolean; children: React.ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="border-t border-zinc-700/50">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="w-full flex items-center gap-2 px-4 py-2 text-[11px] text-zinc-500 hover:text-zinc-300 transition-colors text-left"
+      >
+        <span className={`transition-transform duration-150 ${open ? "rotate-90" : ""}`}>›</span>
+        {label}
+      </button>
+      {open && <div className="px-4 pb-3">{children}</div>}
+    </div>
+  );
+}
+
+// ── Table icon chip ───────────────────────────────────────────────────────────
+function TableChip({ name }: { name: string }) {
+  return (
+    <span className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded bg-zinc-700/70 border border-zinc-600 text-zinc-300">
+      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="shrink-0 text-zinc-500">
+        <rect x="0.5" y="0.5" width="9" height="9" rx="1.5" stroke="currentColor" strokeWidth="1"/>
+        <line x1="0.5" y1="3.5" x2="9.5" y2="3.5" stroke="currentColor" strokeWidth="1"/>
+        <line x1="3.5" y1="3.5" x2="3.5" y2="9.5" stroke="currentColor" strokeWidth="1"/>
+      </svg>
+      {name}
+    </span>
+  );
+}
+
+// ── Investigate report renderer ───────────────────────────────────────────────
+function InvestigateAnswer({ turn }: { turn: ChatTurn }) {
+  const rep = turn.adaReport ?? turn.report;
+  if (!rep) return null;
+
+  const headline = (rep.headline ?? rep.summary ?? rep.conclusion ?? "") as string;
+  const findings = (rep.findings ?? rep.key_findings ?? []) as { title?: string; description?: string; is_significant?: boolean }[];
+  const waterfall = (rep.waterfall ?? []) as { label?: string; delta?: string | number; explanation?: string }[];
+
+  return (
+    <div className="space-y-3">
+      {headline && (
+        <p className="text-sm text-zinc-200 leading-relaxed">{headline}</p>
+      )}
+      {findings.length > 0 && (
+        <ul className="space-y-1.5">
+          {findings.slice(0, 6).map((f, i) => (
+            <li key={i} className="flex items-start gap-2 text-xs text-zinc-400">
+              <span className={`mt-0.5 shrink-0 ${f.is_significant ? "text-amber-400" : "text-zinc-500"}`}>
+                {f.is_significant ? "●" : "○"}
+              </span>
+              <span>
+                {f.title && <span className="text-zinc-300 font-medium">{f.title}: </span>}
+                {f.description}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {waterfall.length > 0 && (
+        <div className="space-y-1">
+          {waterfall.map((w, i) => {
+            const delta = Number(w.delta ?? 0);
+            const pos = delta >= 0;
+            return (
+              <div key={i} className="flex items-center gap-2 text-xs">
+                <span className={`font-mono font-medium w-14 text-right shrink-0 ${pos ? "text-emerald-400" : "text-red-400"}`}>
+                  {pos ? "+" : ""}{delta}
+                </span>
+                <span className="text-zinc-400">{w.label}</span>
+              </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );
 }
 
-// ── Main component ────────────────────────────────────────────────────────────
-export function ChatMessage({ turn }: { turn: ChatTurn }) {
+// ── Phase steps renderer ──────────────────────────────────────────────────────
+function PhaseSteps({ phases }: { phases: ChatTurn["phases"] }) {
+  if (!phases.length) return null;
+  const PHASE_LABELS: Record<string, string> = {
+    intake: "Intake", baseline: "Baseline check", decompose: "Decompose",
+    dimensional: "Dimensional breakdown", behavioral: "Behavioral analysis",
+  };
   return (
-    <div className="space-y-2">
-      {/* Question bubble — right */}
-      <div className="flex justify-end">
-        <div className="max-w-[80%] bg-zinc-800 rounded-2xl rounded-tr-sm px-4 py-2.5 text-sm text-zinc-100">
-          {turn.question}
+    <ol className="space-y-2">
+      {phases.map((ph, i) => (
+        <li key={i} className="flex items-start gap-2">
+          <span className="w-4 h-4 rounded-full bg-violet-500/20 border border-violet-500/30 text-[9px] text-violet-400 flex items-center justify-center shrink-0 mt-0.5 font-mono">
+            {i + 1}
+          </span>
+          <div>
+            <span className="text-[11px] font-medium text-zinc-300">
+              {PHASE_LABELS[ph.phase_id] ?? ph.phase_id}
+            </span>
+            {ph.summary && <p className="text-[11px] text-zinc-500 mt-0.5">{ph.summary}</p>}
+          </div>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
+export function ChatMessage({
+  turn,
+  onFollowUp,
+}: {
+  turn: ChatTurn;
+  onFollowUp?: (q: string) => void;
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+  const isInvestigate = turn.mode === "investigate";
+  const hasData = turn.columns.length > 0;
+  const hasResult = isInvestigate ? !!(turn.adaReport ?? turn.report) : turn.status === "done";
+
+  return (
+    <div className="rounded-xl border border-zinc-600/80 bg-zinc-800/60 overflow-hidden">
+
+      {/* ── Header: question + mode badge + collapse ── */}
+      <div className="flex items-start gap-3 px-4 py-3">
+        <p className="flex-1 text-sm text-zinc-200 leading-snug">{turn.question}</p>
+        <div className="flex items-center gap-2 shrink-0 mt-0.5">
+          <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${
+            isInvestigate
+              ? "bg-violet-500/10 text-violet-400 border-violet-500/25"
+              : "bg-zinc-700/60 text-zinc-500 border-zinc-600/50"
+          }`}>
+            {isInvestigate ? "Investigate" : "Ask"}
+          </span>
+          {turn.status !== "loading" && (
+            <button
+              onClick={() => setCollapsed(v => !v)}
+              className="text-zinc-500 hover:text-zinc-400 transition-colors text-xs"
+              title={collapsed ? "Expand" : "Collapse"}
+            >
+              {collapsed ? "▼" : "▲"}
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Answer bubble — left */}
-      <div className="flex justify-start">
-        <div className="w-full min-w-[200px]">
-          {turn.status === "loading" && (
-            <div className="flex items-center gap-2 px-4 py-3 bg-zinc-800 border border-zinc-600 rounded-2xl rounded-tl-sm">
-              <span className="flex gap-1">
-                {[0, 150, 300].map((d) => (
-                  <span
-                    key={d}
-                    className="w-1.5 h-1.5 rounded-full bg-zinc-600 animate-bounce"
-                    style={{ animationDelay: `${d}ms` }}
-                  />
-                ))}
-              </span>
-            </div>
-          )}
-
-          {turn.status === "error" && (
-            <div className="px-4 py-3 bg-red-500/5 border border-red-500/20 rounded-2xl rounded-tl-sm">
-              <p className="text-xs text-red-400">{turn.error}</p>
-              {turn.sql && <SQLCollapsible sql={turn.sql} />}
-            </div>
-          )}
-
-          {turn.status === "done" && (
-            <div className="px-2 py-2">
-              {turn.headline && (
-                <p className="text-sm text-zinc-300 mb-2">{turn.headline}</p>
-              )}
-              <ResultBody turn={turn} />
-              {turn.sql && <SQLCollapsible sql={turn.sql} />}
-            </div>
+      {/* ── Loading state ── */}
+      {turn.status === "loading" && (
+        <div className="px-4 pb-3 flex items-center gap-2.5">
+          <span className="flex gap-1">
+            {[0, 150, 300].map(d => (
+              <span key={d} className="w-1.5 h-1.5 rounded-full bg-zinc-600 animate-bounce" style={{ animationDelay: `${d}ms` }} />
+            ))}
+          </span>
+          {turn.statusText && (
+            <span className="text-[11px] text-zinc-500 italic">{turn.statusText}</span>
           )}
         </div>
-      </div>
+      )}
+
+      {/* ── Error state ── */}
+      {turn.status === "error" && (
+        <div className="px-4 pb-3">
+          <p className="text-xs text-red-400">{turn.error}</p>
+        </div>
+      )}
+
+      {/* ── Body (collapsed = hidden) ── */}
+      {!collapsed && (turn.status === "done" || hasResult) && (
+        <>
+          {/* Found relevant data */}
+          {turn.tablesUsed.length > 0 && (
+            <div className="px-4 py-2 border-t border-zinc-700/50 flex items-center gap-2 flex-wrap">
+              <span className="text-[10px] text-zinc-500 shrink-0">Found relevant data</span>
+              {turn.tablesUsed.map(t => <TableChip key={t} name={t} />)}
+            </div>
+          )}
+
+          {/* Answer */}
+          <div className="px-4 py-3 border-t border-zinc-700/50">
+            {isInvestigate ? (
+              <InvestigateAnswer turn={turn} />
+            ) : (
+              <>
+                {turn.headline && (
+                  <p className="text-sm text-zinc-200 leading-relaxed mb-2">{turn.headline}</p>
+                )}
+                <ResultBody turn={turn} />
+              </>
+            )}
+          </div>
+
+          {/* Steps — SQL for ask, phases for investigate */}
+          {(turn.sql || turn.phases.length > 0) && (
+            <Section label={isInvestigate ? `Steps (${turn.phases.length} phases)` : "SQL"}>
+              {isInvestigate ? (
+                <PhaseSteps phases={turn.phases} />
+              ) : turn.sql ? (
+                <SqlBlock sql={turn.sql} />
+              ) : null}
+            </Section>
+          )}
+
+          {/* Result table — ask mode only (investigate already shows rich findings) */}
+          {!isInvestigate && hasData && turn.rows.length > 1 && (
+            <Section label={`Result table (${turn.rows.length} rows)`} defaultOpen={false}>
+              <MiniTable columns={turn.columns} rows={turn.rows} />
+            </Section>
+          )}
+
+          {/* Follow-up suggestions */}
+          {turn.followups.length > 0 && (
+            <div className="px-4 py-3 border-t border-zinc-700/50 flex flex-wrap gap-1.5">
+              {turn.followups.map((q, i) => (
+                <button
+                  key={i}
+                  onClick={() => onFollowUp?.(q)}
+                  className="flex items-center gap-1 text-[11px] text-zinc-500 hover:text-zinc-200 bg-zinc-700/40 hover:bg-zinc-700/70 border border-zinc-600/50 hover:border-zinc-500 rounded-full px-3 py-1 transition-all"
+                >
+                  <span className="text-zinc-500">↩</span> {q}
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }

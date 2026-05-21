@@ -2,7 +2,7 @@
 
 **Product:** Aughor — Autonomous Analyst  
 **Repo:** https://github.com/sidhasadhak/hypothesis-engine  
-**Stack snapshot:** LangGraph · Ollama (qwen3-coder-next:cloud) · FastAPI SSE · Next.js (App Router) · DuckDB + PostgreSQL · SQLGlot · scipy/statsmodels · uv
+**Stack snapshot:** LangGraph · Ollama (qwen2.5-coder:14b + nomic-embed-text) · FastAPI SSE · Next.js (App Router) · DuckDB + PostgreSQL · SQLGlot · scipy/statsmodels · Qdrant · uv
 
 ---
 
@@ -47,6 +47,13 @@
 | History panel scroll fix | `web/components/HistoryDetailPanel.tsx`, `web/app/page.tsx` | `ScrollArea` replaced with `div className="flex-1 overflow-y-auto min-h-0"` throughout; `h-screen overflow-hidden` on root; history panel no longer drives page height |
 | UI color pass | `web/components/HistoryPanel.tsx`, `web/components/ThinkingTrace.tsx` | Violet/blue/emerald/amber palette applied; selected item `border-violet-500 bg-violet-500/5`; indexed dot `text-emerald-400`; status chips; ThinkingTrace header `text-violet-400/60 font-mono`, connector `bg-violet-500/20`, running step `bg-amber-500/10` |
 | Investigation Quality Hardening (34) | `hermes/agent/nodes.py`, `hermes/agent/prompts.py`, `hermes/agent/verify.py`, `hermes/agent/state.py`, `web/lib/formatCell.ts`, `web/components/ReportView.tsx`, `data/global_rules.md` | Six fixes: (1) evidence-scoped confidence defaults (0.0 no-queries, 0.1 all-errored); (2) post-LLM ceiling caps (1 query→0.60, 2→0.80, 3+→uncapped); (3) pre-synthesis consistency check via coder LLM with confidence downgrade on contradictions; (4) numeric traceability verifier appending unverifiable numbers as DataQualityNotes; (5) threshold drill-down rule in PLAN_QUERIES_PROMPT + global_rules.md §9; (6) column-typed share formatter (buildColumnFormatter scans all column values once, eliminates "21.00% for count=11" defect) |
+| Databricks-brand UI (35) | `web/app/globals.css`, `web/app/layout.tsx`, `web/components/*.tsx` | Full palette rewrite: `#1F272E` left panel, `#11171D` canvas, `#EBEFF2` main text, `#8A9BA6` sub-text, `#3B8DBF` accent (replaces purple); Tailwind v4 `:root {}` override (unlayered, always wins); bulk sed pass replacing `text-zinc-600/700` with `text-zinc-500` across all TSX |
+| Genie-style Chat UI (36) | `web/components/ChatPanel.tsx` | Empty state centered on page with textarea first; arrow (↑) button embedded inside textarea; Ask/Investigate mode toggle below textarea; plain left-aligned suggestion sentences with ASK/INVESTIGATE badges; "Always review the accuracy of responses." disclaimer; active-chat bottom bar uses arrow button instead of separate Send |
+| History popup (37) | `web/app/page.tsx`, `web/components/HistoryPanel.tsx` | History panel removed from persistent left sidebar; floating popup (fixed top-12 right-4, 72vh, click-outside-to-close) triggered by History clock icon in topbar; available across all tabs; selecting a history item navigates to Investigate tab |
+| Home page (38) | `web/app/page.tsx` | Databricks-style welcome screen: "Welcome to Aughor" header; active connection card; 3 quick-start cards (Chat, Deep Analysis, Catalog); "Try asking" starter questions; Recent investigations with status badges and relative timestamps; default landing tab |
+| Catalog tab (39) | `web/components/CatalogPanel.tsx`, `web/app/page.tsx` | Browse all tables from the connected database; expand/collapse per table to see columns, types, FK flags; row count formatted (1M/500K); connection picker inside panel; filter by table name; "Ask →" button per table jumps to Chat with that connection; nav restructured: Home → Workspace (Chat, Deep Analysis) → Data (Catalog, Connections) |
+| Schema-aware suggestions (40) | `hermes/api.py`, `web/components/ChatPanel.tsx` | `GET /suggestions?connection_id=X` fetches schema, calls LLM for 6 schema-specific starter questions tagged ask/investigate; loading shimmer while fetching; falls back to hardcoded starters on error; clears and re-fetches on connection change |
+| Suggestions cache in Qdrant (41) | `hermes/semantic/suggestions_cache.py`, `hermes/api.py` | Each suggestion embedded (nomic-embed-text) and stored as a Qdrant point in `schema_suggestions` collection; cache key = (connection_id, structural schema fingerprint); cache hit returns in ~3s vs ~90s LLM generation; `search_similar()` ready for future autocomplete; fingerprint derived from sorted table+column names only (strips row counts/descriptions for stability); graceful fallback if Qdrant unavailable |
 
 ---
 
