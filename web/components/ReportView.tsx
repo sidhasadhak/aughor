@@ -69,7 +69,7 @@ function CollapsibleSection({
       >
         <h3 className={`text-sm font-semibold uppercase tracking-wide ${titleClass}`}>{title}</h3>
         {badge}
-        <span className="ml-auto text-zinc-600 group-hover:text-zinc-400 text-xs transition">
+        <span className="ml-auto text-zinc-500 group-hover:text-zinc-400 text-xs transition">
           {open ? "▲" : "▼"}
         </span>
       </button>
@@ -88,7 +88,7 @@ function StatCallout({ stat }: { stat: StatResult }) {
       <div className="min-w-0 space-y-0.5">
         <p className="text-xs leading-snug">{stat.interpretation}</p>
         {stat.sigma != null && (
-          <p className="text-[10px] text-zinc-600 font-mono">
+          <p className="text-[10px] text-zinc-500 font-mono">
             {stat.sigma.toFixed(1)}σ{stat.p_value != null ? ` · p=${stat.p_value.toFixed(3)}` : ""}
           </p>
         )}
@@ -122,7 +122,7 @@ function QueryMiniTable({ columns, rows }: { columns: string[]; rows: unknown[][
                 {(row as unknown[]).map((cell, ci) => (
                   <td key={ci} className="px-3 py-1.5 text-zinc-300 font-mono whitespace-nowrap">
                     {cell === null || cell === undefined
-                      ? <span className="text-zinc-600 italic">null</span>
+                      ? <span className="text-zinc-500 italic">null</span>
                       : fmt(ci, cell)
                     }
                   </td>
@@ -133,7 +133,7 @@ function QueryMiniTable({ columns, rows }: { columns: string[]; rows: unknown[][
         </table>
       </div>
       {rows.length > MAX_ROWS && (
-        <div className="px-3 py-1.5 border-t border-zinc-600/60 text-[10px] text-zinc-600 font-mono">
+        <div className="px-3 py-1.5 border-t border-zinc-600/60 text-[10px] text-zinc-500 font-mono">
           +{rows.length - MAX_ROWS} more rows
         </div>
       )}
@@ -160,12 +160,12 @@ function QueryEvidence({
     <div className="p-4 space-y-3">
       {/* Query header */}
       <div className="flex items-center gap-2.5">
-        <span className="text-[10px] text-zinc-600 font-mono uppercase tracking-wide">
+        <span className="text-[10px] text-zinc-500 font-mono uppercase tracking-wide">
           Query {index + 1}/{total}
         </span>
         {query.error
           ? <span className="text-xs text-red-400 border border-red-500/20 bg-red-500/5 rounded px-1.5 py-0.5">✕ failed</span>
-          : <span className="text-[10px] text-zinc-600 font-mono">{query.row_count} row{query.row_count !== 1 ? "s" : ""}</span>
+          : <span className="text-[10px] text-zinc-500 font-mono">{query.row_count} row{query.row_count !== 1 ? "s" : ""}</span>
         }
       </div>
 
@@ -197,7 +197,7 @@ function QueryEvidence({
       <div>
         <button
           onClick={() => setSqlOpen(o => !o)}
-          className="flex items-center gap-1.5 text-[10px] text-zinc-600 hover:text-zinc-400 transition font-mono uppercase tracking-wide"
+          className="flex items-center gap-1.5 text-[10px] text-zinc-500 hover:text-zinc-400 transition font-mono uppercase tracking-wide"
         >
           <span className="text-[8px]">{sqlOpen ? "▼" : "▶"}</span> SQL
         </button>
@@ -254,7 +254,7 @@ function HypothesisAccordion({
             <span className="text-[10px] font-mono text-zinc-500 w-8 text-right">
               {Math.round(hypothesis.confidence * 100)}%
             </span>
-            <span className="text-zinc-600 text-[10px] group-hover:text-zinc-400 transition">
+            <span className="text-zinc-500 text-[10px] group-hover:text-zinc-400 transition">
               {open ? "▲" : "▼"}
             </span>
           </div>
@@ -284,7 +284,7 @@ function HypothesisAccordion({
           {/* 2. Queries — each with chart + table + stats + SQL */}
           {queries.length === 0 ? (
             <div className="px-4 py-3">
-              <p className="text-xs text-zinc-600 italic">No queries were executed for this hypothesis.</p>
+              <p className="text-xs text-zinc-500 italic">No queries were executed for this hypothesis.</p>
             </div>
           ) : (
             <div className={`divide-y divide-zinc-600/50`}>
@@ -344,9 +344,9 @@ function HypothesisPanel({
         </h3>
         <div className="flex items-center gap-2 text-[10px] font-mono">
           {confirmed > 0 && <span className="text-emerald-400">{confirmed} confirmed</span>}
-          {confirmed > 0 && refuted > 0 && <span className="text-zinc-700">·</span>}
+          {confirmed > 0 && refuted > 0 && <span className="text-zinc-500">·</span>}
           {refuted > 0 && <span className="text-red-400">{refuted} refuted</span>}
-          {(confirmed > 0 || refuted > 0) && tested.length - confirmed - refuted > 0 && <span className="text-zinc-700">·</span>}
+          {(confirmed > 0 || refuted > 0) && tested.length - confirmed - refuted > 0 && <span className="text-zinc-500">·</span>}
           {tested.length - confirmed - refuted > 0 && <span className="text-amber-400">{tested.length - confirmed - refuted} inconclusive</span>}
         </div>
       </div>
@@ -427,7 +427,7 @@ function KeyFindingCard({
                   style={{ width: `${finding.confidence * 100}%` }}
                 />
               </div>
-              <span className="text-[10px] font-mono text-zinc-600">
+              <span className="text-[10px] font-mono text-zinc-500">
                 {Math.round(finding.confidence * 100)}%
               </span>
             </div>
@@ -444,7 +444,7 @@ function KeyFindingCard({
         {finding.evidence && (
           <button
             onClick={() => setOpen(o => !o)}
-            className="shrink-0 text-[10px] text-zinc-600 hover:text-zinc-400 border border-zinc-600 hover:border-zinc-600 rounded px-2 py-1 transition mt-0.5"
+            className="shrink-0 text-[10px] text-zinc-500 hover:text-zinc-400 border border-zinc-600 hover:border-zinc-600 rounded px-2 py-1 transition mt-0.5"
           >
             {open ? "Less" : "Evidence"}
           </button>
@@ -458,7 +458,7 @@ function KeyFindingCard({
             <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-mono">Supporting Evidence</p>
             <p className="text-sm text-zinc-300 leading-relaxed">{finding.evidence}</p>
             {linkedHypothesis && (
-              <p className="text-xs text-zinc-600 mt-1 pt-1.5 border-t border-zinc-600">
+              <p className="text-xs text-zinc-500 mt-1 pt-1.5 border-t border-zinc-600">
                 From hypothesis: <span className="text-zinc-400 italic">"{linkedHypothesis.description}"</span>
               </p>
             )}
@@ -499,10 +499,10 @@ export function ReportView({ report, queryCount, queryHistory = [], queryMode, h
           <p className="text-sm text-zinc-300 leading-relaxed">{report.verdict}</p>
 
           {/* Key findings — rich cards for both modes */}
-          {report.key_findings.length > 0 && (
+          {(report.key_findings ?? []).length > 0 && (
             <div className="space-y-2 pt-1">
               <p className="text-xs text-zinc-500 uppercase tracking-widest font-mono">Key Findings</p>
-              {report.key_findings.map((f, i) => (
+              {(report.key_findings ?? []).map((f, i) => (
                 <KeyFindingCard key={i} finding={f} index={i} hypotheses={hypotheses} />
               ))}
             </div>
@@ -557,10 +557,10 @@ export function ReportView({ report, queryCount, queryHistory = [], queryMode, h
       )}
 
       {/* 8. Risks */}
-      {report.risks.length > 0 && (
+      {(report.risks ?? []).length > 0 && (
         <CollapsibleSection title="Risks & Considerations">
           <div className="space-y-2">
-            {report.risks.map((risk, i) => (
+            {(report.risks ?? []).map((risk, i) => (
               <div key={i} className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 flex items-start gap-3 border-l-2 border-l-amber-500/50">
                 <span className="shrink-0 mt-0.5 text-amber-400 text-xs">⚠</span>
                 <p className="text-sm text-zinc-300 leading-relaxed">{risk}</p>
@@ -571,10 +571,10 @@ export function ReportView({ report, queryCount, queryHistory = [], queryMode, h
       )}
 
       {/* 9. Recommended Actions */}
-      {report.recommended_actions.length > 0 && (
+      {(report.recommended_actions ?? []).length > 0 && (
         <CollapsibleSection title="Recommended Actions">
           <div className="space-y-2">
-            {report.recommended_actions.map((action, i) => (
+            {(report.recommended_actions ?? []).map((action, i) => (
               <div key={i} className="rounded-lg border border-violet-500/20 bg-violet-500/5 p-3 flex items-start gap-3">
                 <span className="shrink-0 flex h-5 w-5 items-center justify-center rounded-full bg-violet-500/20 border border-violet-500/30 text-xs font-mono text-violet-300 mt-0.5">
                   {i + 1}
@@ -587,10 +587,10 @@ export function ReportView({ report, queryCount, queryHistory = [], queryMode, h
       )}
 
       {/* 10. Excluded Causes */}
-      {report.what_is_not_the_cause.length > 0 && (
+      {(report.what_is_not_the_cause ?? []).length > 0 && (
         <CollapsibleSection title="Excluded Causes" titleClass="text-zinc-500">
           <ul className="space-y-1">
-            {report.what_is_not_the_cause.map((item, i) => (
+            {(report.what_is_not_the_cause ?? []).map((item, i) => (
               <li key={i} className="flex items-start gap-2 text-sm text-zinc-500 leading-relaxed">
                 <span className="mt-0.5 text-red-500/60 shrink-0">✕</span>
                 {item}
@@ -600,7 +600,7 @@ export function ReportView({ report, queryCount, queryHistory = [], queryMode, h
         </CollapsibleSection>
       )}
 
-      <p className="text-xs text-zinc-700 text-center font-mono">
+      <p className="text-xs text-zinc-500 text-center font-mono">
         {queryCount} SQL quer{queryCount === 1 ? "y" : "ies"} executed
       </p>
     </div>
@@ -652,7 +652,7 @@ function DirectResultTable({ table }: { table: QueryCitation }) {
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">Query Results</h3>
-        <span className="text-xs text-zinc-600 font-mono">
+        <span className="text-xs text-zinc-500 font-mono">
           {table.row_count} row{table.row_count !== 1 ? "s" : ""}
         </span>
       </div>
@@ -674,7 +674,7 @@ function DirectResultTable({ table }: { table: QueryCitation }) {
                   {(row as unknown[]).map((cell, ci) => (
                     <TableCell key={ci} className="text-xs text-zinc-300 font-mono py-1.5 whitespace-nowrap">
                       {cell === null || cell === undefined ? (
-                        <span className="text-zinc-600 italic">null</span>
+                        <span className="text-zinc-500 italic">null</span>
                       ) : (
                         fmt(ci, cell)
                       )}
@@ -687,7 +687,7 @@ function DirectResultTable({ table }: { table: QueryCitation }) {
         </div>
       </div>
       <details className="group">
-        <summary className="text-xs text-zinc-600 cursor-pointer hover:text-zinc-400 transition list-none flex items-center gap-1">
+        <summary className="text-xs text-zinc-500 cursor-pointer hover:text-zinc-400 transition list-none flex items-center gap-1">
           <span className="group-open:hidden">▶</span>
           <span className="hidden group-open:inline">▼</span>
           SQL
