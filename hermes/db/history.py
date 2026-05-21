@@ -164,6 +164,9 @@ def save_chat_turn(
     headline: str,
     sql: str,
     session_id: str = "",
+    columns: list | None = None,
+    rows: list | None = None,
+    chart_type: str = "auto",
 ) -> str:
     """Persist a completed chat turn as a history row, linked to a session."""
     inv_id = uuid.uuid4().hex[:8]
@@ -171,6 +174,13 @@ def save_chat_turn(
     now = _now()
     c = _conn()
     _ensure_schema(c)
+    report = {
+        "headline": headline,
+        "sql": sql,
+        "columns": columns or [],
+        "rows": (rows or [])[:1000],   # cap stored rows at 1 000
+        "chart_type": chart_type,
+    }
     c.execute(
         """INSERT INTO investigations
            (id, question, connection_id, started_at, completed_at,
@@ -179,7 +189,7 @@ def save_chat_turn(
            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
         (inv_id, question, connection_id, now, now,
          "complete", 0, 1, headline,
-         json.dumps({"headline": headline, "sql": sql}),
+         json.dumps(report),
          "chat", sid),
     )
     c.commit()
@@ -212,7 +222,10 @@ def get_session_turns(session_id: str) -> list[dict]:
     for r in rows:
         d = dict(r)
         report = json.loads(d.pop("report_json") or "{}")
-        d["sql"] = report.get("sql", "")
+        d["sql"]        = report.get("sql", "")
+        d["columns"]    = report.get("columns", [])
+        d["rows"]       = report.get("rows", [])
+        d["chart_type"] = report.get("chart_type", "auto")
         result.append(d)
     return result
 

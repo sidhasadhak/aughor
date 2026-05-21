@@ -274,6 +274,9 @@ async def _stream_chat(
                 headline=answer.headline or question,
                 sql=final_sql or "",
                 session_id=session_id,
+                columns=result.columns,
+                rows=result.rows,
+                chart_type=answer.chart_type,
             )
         except Exception:
             pass

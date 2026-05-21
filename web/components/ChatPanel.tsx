@@ -55,7 +55,7 @@ export function ChatPanel({ connectionId, restoreSessionId }: Props) {
     if (!restoreSessionId) return;
     fetch(`${BASE}/chat-sessions/${restoreSessionId}/turns`)
       .then(r => r.ok ? r.json() : [])
-      .then((turns: { id: string; question: string; headline: string; sql: string }[]) => {
+      .then((turns: { id: string; question: string; headline: string; sql: string; columns: string[]; rows: unknown[][]; chart_type: string }[]) => {
         if (!turns.length) return;
         restore(turns.map(t => ({
           id: t.id,
@@ -63,10 +63,10 @@ export function ChatPanel({ connectionId, restoreSessionId }: Props) {
           mode: "ask" as const,
           status: "done" as const,
           sql: t.sql || null,
-          columns: [],
-          rows: [],
+          columns: t.columns || [],
+          rows: t.rows || [],
           headline: t.headline || null,
-          chartType: null,
+          chartType: t.chart_type || null,
           statusText: null,
           phases: [],
           adaReport: null,
