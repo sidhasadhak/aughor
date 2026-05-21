@@ -24,6 +24,7 @@ from hermes.db.connection import open_connection, open_connection_for
 from hermes.db.history import (
     delete_investigation,
     save_chat_turn,
+    get_session_turns,
     complete_investigation,
     create_investigation,
     fail_investigation,
@@ -134,6 +135,7 @@ class ChatRequest(BaseModel):
     question: str
     connection_id: str
     history: list[ChatHistoryTurn] = []
+    session_id: str = ""
 
 class _ChatAnswer(BaseModel):
     sql: str
@@ -145,6 +147,7 @@ async def _stream_chat(
     connection_id: str,
     history: list[ChatHistoryTurn],
     request: Request,
+    session_id: str = "",
 ) -> AsyncGenerator[str, None]:
     try:
         db = open_connection_for(connection_id)
@@ -270,6 +273,7 @@ async def _stream_chat(
                 connection_id=connection_id,
                 headline=answer.headline or question,
                 sql=final_sql or "",
+                session_id=session_id,
             )
         except Exception:
             pass
@@ -288,7 +292,7 @@ async def _stream_chat(
 @app.post("/chat")
 async def chat_endpoint(req: ChatRequest, request: Request):
     return StreamingResponse(
-        _stream_chat(req.question, req.connection_id, req.history, request),
+        _stream_chat(req.question, req.connection_id, req.history, request, session_id=req.session_id),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
@@ -885,6 +889,14 @@ def get_indexed_ids():
 @app.get("/investigations")
 def get_investigations(limit: int = 50):
     return list_investigations(limit=limit)
+
+
+@app.get("/chat-sessions/{session_id}/turns")
+def get_chat_session_turns(session_id: str):
+    turns = get_session_turns(session_id)
+    if not turns:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return turns
 
 
 @app.get("/investigations/{inv_id}")

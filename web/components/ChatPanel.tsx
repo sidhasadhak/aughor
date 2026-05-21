@@ -20,10 +20,11 @@ type Starter = { text: string; mode: "ask" | "investigate" };
 
 interface Props {
   connectionId: string;
+  restoreSessionId?: string | null;
 }
 
-export function ChatPanel({ connectionId }: Props) {
-  const { state, ask, stop, clear } = useChat();
+export function ChatPanel({ connectionId, restoreSessionId }: Props) {
+  const { state, ask, stop, clear, restore } = useChat();
   const [input, setInput]       = useState("");
   const [mode, setMode]         = useState<"ask" | "investigate">("ask");
   const [starters, setStarters] = useState<Starter[]>(FALLBACK_STARTERS);
@@ -47,6 +48,37 @@ export function ChatPanel({ connectionId }: Props) {
       .catch(() => { /* keep fallback */ })
       .finally(() => setLoadingStarters(false));
   }, [connectionId]);
+
+  // Restore a prior session when session ID is provided
+  useEffect(() => {
+    if (!restoreSessionId) return;
+    fetch(`${BASE}/chat-sessions/${restoreSessionId}/turns`)
+      .then(r => r.ok ? r.json() : [])
+      .then((turns: { id: string; question: string; headline: string; sql: string }[]) => {
+        if (!turns.length) return;
+        restore(turns.map(t => ({
+          id: t.id,
+          question: t.question,
+          mode: "ask" as const,
+          status: "done" as const,
+          sql: t.sql || null,
+          columns: [],
+          rows: [],
+          headline: t.headline || null,
+          chartType: null,
+          statusText: null,
+          phases: [],
+          adaReport: null,
+          report: null,
+          queryMode: null,
+          tablesUsed: [],
+          followups: [],
+          error: null,
+        })));
+      })
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [restoreSessionId]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });

@@ -43,13 +43,15 @@ def _ensure_schema(c: sqlite3.Connection) -> None:
             report_json TEXT,
             hypotheses_json TEXT,
             query_history_json TEXT,
-            kind TEXT DEFAULT 'investigation'
+            kind TEXT DEFAULT 'investigation',
+            session_id TEXT
         )
     """)
-    # Safe migrations
-    for col, default in [
-        ("status TEXT DEFAULT 'running'", "status"),
-        ("kind TEXT DEFAULT 'investigation'", "kind"),
+    # Safe migrations — order matters: add columns before backfilling
+    for col in [
+        "status TEXT DEFAULT 'running'",
+        "kind TEXT DEFAULT 'investigation'",
+        "session_id TEXT",
     ]:
         try:
             c.execute(f"ALTER TABLE investigations ADD COLUMN {col}")
@@ -156,9 +158,11 @@ def save_chat_turn(
     connection_id: str,
     headline: str,
     sql: str,
+    session_id: str = "",
 ) -> str:
-    """Persist a completed chat (Ask/Investigate-via-chat) turn as a history row."""
+    """Persist a completed chat turn as a history row, linked to a session."""
     inv_id = uuid.uuid4().hex[:8]
+    sid = session_id or uuid.uuid4().hex[:12]
     now = _now()
     c = _conn()
     _ensure_schema(c)
@@ -166,16 +170,37 @@ def save_chat_turn(
         """INSERT INTO investigations
            (id, question, connection_id, started_at, completed_at,
             status, hypothesis_count, query_count, headline,
-            report_json, kind)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            report_json, kind, session_id)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
         (inv_id, question, connection_id, now, now,
          "complete", 0, 1, headline,
          json.dumps({"headline": headline, "sql": sql}),
-         "chat"),
+         "chat", sid),
     )
     c.commit()
     c.close()
     return inv_id
+
+
+def get_session_turns(session_id: str) -> list[dict]:
+    """Return all chat turns for a session, oldest first."""
+    c = _conn()
+    _ensure_schema(c)
+    rows = c.execute(
+        """SELECT id, question, headline, report_json, started_at
+           FROM investigations
+           WHERE session_id = ? AND kind = 'chat'
+           ORDER BY started_at ASC""",
+        (session_id,),
+    ).fetchall()
+    c.close()
+    result = []
+    for r in rows:
+        d = dict(r)
+        report = json.loads(d.pop("report_json") or "{}")
+        d["sql"] = report.get("sql", "")
+        result.append(d)
+    return result
 
 
 def delete_investigation(inv_id: str) -> bool:
@@ -190,20 +215,58 @@ def delete_investigation(inv_id: str) -> bool:
 
 
 def list_investigations(limit: int = 50) -> list[dict]:
-    """Return summary rows, newest first."""
+    """Return summary rows newest-first, collapsing chat turns into one item per session."""
     c = _conn()
     _ensure_schema(c)
-    rows = c.execute(
+
+    # Non-chat rows (investigations)
+    inv_rows = c.execute(
         """SELECT id, question, connection_id, started_at, completed_at,
                   status, hypothesis_count, query_count, headline,
-                  COALESCE(kind, 'investigation') as kind
+                  COALESCE(kind, 'investigation') as kind,
+                  NULL as session_id
            FROM investigations
+           WHERE kind IS NULL OR kind = 'investigation'
            ORDER BY started_at DESC
            LIMIT ?""",
         (limit,),
     ).fetchall()
+
+    # Chat turns grouped by session_id
+    session_rows = c.execute(
+        """SELECT
+               session_id as id,
+               MIN(question) as question,
+               connection_id,
+               MIN(started_at) as started_at,
+               MAX(completed_at) as completed_at,
+               'complete' as status,
+               0 as hypothesis_count,
+               COUNT(*) as query_count,
+               MAX(headline) as headline,
+               'chat' as kind,
+               session_id
+           FROM investigations
+           WHERE kind = 'chat' AND session_id IS NOT NULL AND session_id != ''
+           GROUP BY session_id, connection_id
+           ORDER BY started_at DESC""",
+    ).fetchall()
+
+    # Also pick up legacy chat rows without a session_id (treat each as own session)
+    legacy_rows = c.execute(
+        """SELECT id, question, connection_id, started_at, completed_at,
+                  'complete' as status, 0 as hypothesis_count, 1 as query_count,
+                  headline, 'chat' as kind, id as session_id
+           FROM investigations
+           WHERE kind = 'chat' AND (session_id IS NULL OR session_id = '')
+           ORDER BY started_at DESC""",
+    ).fetchall()
+
     c.close()
-    return [dict(r) for r in rows]
+
+    combined = [dict(r) for r in list(inv_rows) + list(session_rows) + list(legacy_rows)]
+    combined.sort(key=lambda r: r.get("started_at", ""), reverse=True)
+    return combined[:limit]
 
 
 def get_investigation(inv_id: str) -> Optional[dict]:

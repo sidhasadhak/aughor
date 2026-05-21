@@ -352,6 +352,7 @@ export default function Home() {
   const [selectedConn, setSelectedConn] = useState(BEAUTYCOMMERCE_ID);
   const [schemaConnId, setSchemaConnId] = useState<string | null>(null);
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
+  const [selectedChatSessionId, setSelectedChatSessionId] = useState<string | null>(null);
   const [connRightTab, setConnRightTab] = useState<"schema" | "metrics">("schema");
   const [showHistory, setShowHistory] = useState(false);
   const [connections, setConnections] = useState<Connection[]>([]);
@@ -404,7 +405,7 @@ export default function Home() {
           <p className="px-4 pt-4 pb-1 text-[10px] text-zinc-500 uppercase tracking-widest font-medium">
             Workspace
           </p>
-          <NavItem icon={<MessageSquare size={15} />} label="Chat" active={tab === "chat"} onClick={() => setTab("chat")} />
+          <NavItem icon={<MessageSquare size={15} />} label="Chat" active={tab === "chat"} onClick={() => { setSelectedChatSessionId(null); setTab("chat"); }} />
           <NavItem icon={<BarChart2 size={15} />} label="Deep Analysis" active={tab === "investigate"} onClick={() => setTab("investigate")} />
 
           <p className="px-4 pt-4 pb-1 text-[10px] text-zinc-500 uppercase tracking-widest font-medium">
@@ -484,9 +485,13 @@ export default function Home() {
                 selectedId={selectedHistoryId}
                 onSelect={(id, kind) => {
                   setShowHistory(false);
-                  if (kind === "chat") return; // chat turns live in Chat tab, not Deep Analysis
-                  setSelectedHistoryId(id);
-                  setTab("investigate");
+                  if (kind === "chat") {
+                    setSelectedChatSessionId(id); // id IS the session_id for chat items
+                    setTab("chat");
+                  } else {
+                    setSelectedHistoryId(id);
+                    setTab("investigate");
+                  }
                 }}
               />
             </div>
@@ -515,7 +520,10 @@ export default function Home() {
 
           {/* ════ CHAT TAB ════ */}
           {tab === "chat" && (
-            <ChatPanel connectionId={selectedConn} />
+            <ChatPanel
+              connectionId={selectedConn}
+              restoreSessionId={selectedChatSessionId}
+            />
           )}
 
           {/* ════ INVESTIGATE TAB ════ */}

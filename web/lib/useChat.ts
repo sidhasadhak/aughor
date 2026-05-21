@@ -68,7 +68,8 @@ type ChatAction =
   | { type: "FOLLOWUPS";  questions: string[] }
   | { type: "ERROR";      message: string }
   | { type: "DONE" }
-  | { type: "CLEAR" };
+  | { type: "CLEAR" }
+  | { type: "RESTORE";    turns: ChatTurn[] };
 
 // ── Reducer ───────────────────────────────────────────────────────────────────
 
@@ -113,6 +114,8 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
       return { ...updateLast(state, t => ({ ...t, status: "done" })), streaming: false };
     case "CLEAR":
       return { turns: [], streaming: false };
+    case "RESTORE":
+      return { turns: action.turns, streaming: false };
   }
 }
 
@@ -178,11 +181,18 @@ async function consumeStream(
 
 // ── Hook ──────────────────────────────────────────────────────────────────────
 
+// Tiny session ID generator — no external deps
+function newSessionId() {
+  return Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
+}
+
 export function useChat() {
   const [state, dispatch] = useReducer(chatReducer, { turns: [], streaming: false });
   const stateRef = useRef(state);
   stateRef.current = state;
   const abortRef = useRef<AbortController | null>(null);
+  // Stable session ID for the lifetime of this chat tab mount
+  const sessionIdRef = useRef(newSessionId());
 
   async function ask(question: string, connectionId: string, mode: "ask" | "investigate" = "ask") {
     const id = Math.random().toString(36).slice(2);
@@ -213,7 +223,12 @@ export function useChat() {
         res = await fetch(`${BASE}/chat`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ question, connection_id: connectionId, history }),
+          body: JSON.stringify({
+            question,
+            connection_id: connectionId,
+            history,
+            session_id: sessionIdRef.current,
+          }),
           signal,
         });
       }
@@ -230,13 +245,21 @@ export function useChat() {
     abortRef.current = null;
   }
 
+  function restore(turns: ChatTurn[]) {
+    // Assign a stable session ID that matches the restored session
+    dispatch({ type: "RESTORE", turns });
+  }
+
   function stop() {
     abortRef.current?.abort();
     abortRef.current = null;
     dispatch({ type: "DONE" });
   }
 
-  function clear() { dispatch({ type: "CLEAR" }); }
+  function clear() {
+    sessionIdRef.current = newSessionId(); // new session on clear
+    dispatch({ type: "CLEAR" });
+  }
 
-  return { state, ask, stop, clear };
+  return { state, ask, stop, clear, restore, sessionId: sessionIdRef.current };
 }
