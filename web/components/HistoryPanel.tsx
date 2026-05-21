@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 
 interface Props {
   selectedId: string | null;
-  onSelect: (id: string) => void;
+  onSelect: (id: string, kind: "investigation" | "chat") => void;
 }
 
 function timeAgo(iso: string): string {
@@ -105,7 +105,7 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
           return (
             <li key={inv.id} className="relative group/item">
               <button
-                onClick={() => onSelect(inv.id)}
+                onClick={() => onSelect(inv.id, inv.kind ?? "investigation")}
                 className={cn(
                   "w-full text-left px-4 py-3 transition group border-l-2 pr-10",
                   isSelected

@@ -482,9 +482,10 @@ export default function Home() {
             <div className="fixed top-12 right-4 z-50 w-80 h-[72vh] bg-zinc-900 border border-zinc-600 rounded-xl shadow-2xl flex flex-col overflow-hidden">
               <HistoryPanel
                 selectedId={selectedHistoryId}
-                onSelect={(id) => {
-                  setSelectedHistoryId(id);
+                onSelect={(id, kind) => {
                   setShowHistory(false);
+                  if (kind === "chat") return; // chat turns live in Chat tab, not Deep Analysis
+                  setSelectedHistoryId(id);
                   setTab("investigate");
                 }}
               />
