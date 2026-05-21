@@ -62,6 +62,11 @@ def _ensure_schema(c: sqlite3.Connection) -> None:
         UPDATE investigations SET status = 'complete'
         WHERE status = 'running' AND completed_at IS NOT NULL
     """)
+    # Backfill session_id for existing chat rows (use their own id as session)
+    c.execute("""
+        UPDATE investigations SET session_id = id
+        WHERE kind = 'chat' AND (session_id IS NULL OR session_id = '')
+    """)
     c.commit()
 
 
@@ -183,7 +188,8 @@ def save_chat_turn(
 
 
 def get_session_turns(session_id: str) -> list[dict]:
-    """Return all chat turns for a session, oldest first."""
+    """Return all chat turns for a session, oldest first.
+    Falls back to looking up by row id for single-turn legacy sessions."""
     c = _conn()
     _ensure_schema(c)
     rows = c.execute(
@@ -193,6 +199,14 @@ def get_session_turns(session_id: str) -> list[dict]:
            ORDER BY started_at ASC""",
         (session_id,),
     ).fetchall()
+    # Fallback: maybe the caller passed a row id directly (old single-turn items)
+    if not rows:
+        rows = c.execute(
+            """SELECT id, question, headline, report_json, started_at
+               FROM investigations
+               WHERE id = ? AND kind = 'chat'""",
+            (session_id,),
+        ).fetchall()
     c.close()
     result = []
     for r in rows:

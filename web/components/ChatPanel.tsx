@@ -33,7 +33,8 @@ export function ChatPanel({ connectionId, restoreSessionId }: Props) {
   const textareaRef             = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    clear();
+    // Don't clear if we're about to restore a session — restore effect handles state
+    if (!restoreSessionId) clear();
     setStarters(FALLBACK_STARTERS);
     setLoadingStarters(true);
     fetch(`${BASE}/suggestions?connection_id=${encodeURIComponent(connectionId)}`)
@@ -47,7 +48,7 @@ export function ChatPanel({ connectionId, restoreSessionId }: Props) {
       })
       .catch(() => { /* keep fallback */ })
       .finally(() => setLoadingStarters(false));
-  }, [connectionId]);
+  }, [connectionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Restore a prior session when session ID is provided
   useEffect(() => {
