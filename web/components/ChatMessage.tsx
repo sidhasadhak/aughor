@@ -1,8 +1,19 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { Check, Copy } from "lucide-react";
-import { ChatTurn, InvPhase } from "@/lib/useChat";
+import { Check, Copy, X, Download } from "lucide-react";
+import { ChatTurn } from "@/lib/useChat";
+import type { ADAReport } from "@/lib/types";
+import { InvestigationReportView } from "@/components/InvestigationReport";
+import { ExplorationReportView } from "@/components/ExplorationReport";
+
+// ── Public types (re-imported by ChatPanel) ───────────────────────────────────
+export interface SourcePanelData {
+  columns: string[];
+  rows: unknown[][];        // already sorted for display
+  sql: string | null;
+  title: string;
+}
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
@@ -32,9 +43,83 @@ function fmtTimestampLabel(v: string): string {
   }
 }
 
+// ── Human-readable label: "revenue_usd" → "Revenue USD", "payment_method" → "Payment Method" ──
+const ABBREVS = /^(usd|id|uk|us|eu|vat|sku|url|api|crm|gmv|mrr|arr|ltv|cac|ctr|aov|roi|pnl|gp|kpi)$/i;
+function cleanLabel(s: string): string {
+  return s
+    .replace(/_/g, " ")
+    .replace(/\b\w+/g, w => ABBREVS.test(w) ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+}
+
+// ── Smart source-panel title derived from column semantics ────────────────────
+const DATE_VALUE_RE = /^\d{4}-\d{2}-\d{2}/;
+function inferSourceTitle(columns: string[], rows: unknown[][]): string {
+  if (!columns.length) return "Query result";
+
+  const dateColIdx = columns.findIndex((c, i) => {
+    const v = rows[0]?.[i];
+    return DATE_COL.test(c) || (typeof v === "string" && DATE_VALUE_RE.test(v as string));
+  });
+  const numColNames = columns.filter((c, i) =>  isNumeric(rows[0]?.[i]) && !ORDINAL_COL.test(c));
+  const catColNames = columns.filter((c, i) => !isNumeric(rows[0]?.[i]) && i !== dateColIdx && !DATE_COL.test(c));
+
+  const measure = numColNames[0] ? cleanLabel(numColNames[0]) : "";
+  const dim     = catColNames[0] ? cleanLabel(catColNames[0]) : "";
+  const hasDate = dateColIdx >= 0;
+
+  if (measure && dim && hasDate) return `Monthly ${measure} by ${dim}`;
+  if (measure && dim)            return `${measure} by ${dim}`;
+  if (measure && hasDate)        return `Monthly ${measure}`;
+  if (measure)                   return measure;
+  if (dim)                       return dim;
+  return "Query result";
+}
+
+// ── Sort rows: date dims first (ISO-sort = chronological), then text dims A→Z ─
+function sortRowsForDisplay(columns: string[], rows: unknown[][]): unknown[][] {
+  const dimIdxs = columns
+    .map((_, i) => i)
+    .filter(i => !isNumeric(rows[0]?.[i]));
+  if (!dimIdxs.length) return rows;
+
+  return [...rows].sort((a, b) => {
+    for (const i of dimIdxs) {
+      const va = String((a as unknown[])[i] ?? "");
+      const vb = String((b as unknown[])[i] ?? "");
+      const cmp = va < vb ? -1 : va > vb ? 1 : 0;
+      if (cmp !== 0) return cmp;
+    }
+    return 0;
+  });
+}
+
+// ── CSV download helper ───────────────────────────────────────────────────────
+function downloadCsv(columns: string[], rows: unknown[][], title: string) {
+  const esc = (v: unknown) => {
+    const s = String(v ?? "");
+    return /[,"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const csv = [
+    columns.map(esc).join(","),
+    ...rows.map(r => (r as unknown[]).map(esc).join(",")),
+  ].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url  = URL.createObjectURL(blob);
+  const a    = Object.assign(document.createElement("a"), {
+    href: url,
+    download: `${title.replace(/[^a-z0-9]+/gi, "_").toLowerCase()}.csv`,
+  });
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 function fmt(col: string, val: unknown): string {
   if (val === null || val === "NULL") return "—";
   const s = String(val);
+  // Format ISO timestamps as readable month labels (e.g. "2025-05-01 00:00:00" → "May 2025")
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return fmtTimestampLabel(s);
   if (ORDINAL_COL.test(col)) return s;
   const n = Number(val);
   if (!isNaN(n)) {
@@ -69,7 +154,7 @@ function KPICards({ columns, rows }: { columns: string[]; rows: unknown[][] }) {
           <div key={col}>
             {!isSingle && (
               <p className="text-[12px] text-zinc-500 mb-0.5">
-                {col.replace(/_/g, " ")}
+                {cleanLabel(col)}
               </p>
             )}
             <p className="text-[12px] font-bold tabular-nums text-zinc-100">
@@ -85,36 +170,58 @@ function KPICards({ columns, rows }: { columns: string[]; rows: unknown[][] }) {
 // ── Mini table ───────────────────────────────────────────────────────────────
 function MiniTable({ columns, rows }: { columns: string[]; rows: unknown[][] }) {
   return (
-    <div className="mt-2 overflow-x-auto rounded-lg border border-zinc-700/50" style={{ background: "#131c27" }}>
-      <table className="text-[12px] w-full">
-        <thead>
-          <tr className="border-b border-zinc-700/60" style={{ background: "#1a2535" }}>
-            {columns.map((c) => (
-              <th key={c} className="px-3 py-1.5 text-left font-semibold text-zinc-400 whitespace-nowrap">
-                {c.replace(/_/g, " ")}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, i) => (
-            <tr key={i} className="border-b border-zinc-700/30 last:border-0 hover:bg-white/[0.02] transition-colors">
-              {columns.map((col, j) => (
-                <td key={j} className="px-3 py-1.5 text-zinc-300 font-mono whitespace-nowrap">
-                  {fmt(col, (row as unknown[])[j])}
-                </td>
+    <div className="mt-2 rounded-lg border border-zinc-700/50 overflow-hidden" style={{ background: "#131c27" }}>
+      <div className="overflow-x-auto overflow-y-auto" style={{ maxHeight: "320px" }}>
+        <table className="text-[12px] w-full">
+          <thead className="sticky top-0 z-10">
+            <tr className="border-b border-zinc-700/60" style={{ background: "#1a2535" }}>
+              {columns.map((c) => (
+                <th key={c} className="px-3 py-1.5 text-left font-semibold text-zinc-400 whitespace-nowrap">
+                  {cleanLabel(c)}
+                </th>
               ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((row, i) => (
+              <tr key={i} className="border-b border-zinc-700/30 last:border-0 hover:bg-white/[0.02] transition-colors">
+                {columns.map((col, j) => (
+                  <td key={j} className="px-3 py-1.5 text-zinc-300 font-mono whitespace-nowrap">
+                    {fmt(col, (row as unknown[])[j])}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
 
 // ── Inline chart (Observable Plot + d3-shape for pie) ────────────────────────
+/** Generic axis/label formatter — never shows raw floats */
 const NUM_FMT = (v: number) =>
-  Math.abs(v) >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : Math.abs(v) >= 1e3 ? `${(v / 1e3).toFixed(0)}k` : String(v);
+  Math.abs(v) >= 1e6 ? `${(v / 1e6).toFixed(1)}M`
+  : Math.abs(v) >= 1e3 ? `${(v / 1e3).toFixed(0)}k`
+  : Number.isInteger(v) ? String(v)
+  : v.toFixed(2);
+
+/**
+ * Column-aware formatter for chart labels.
+ * If the column looks like a rate/pct and the values are > 1 (already ×100),
+ * append "%" and round to 1 dp.  If values are ≤ 1, treat as fraction → ×100.
+ * Delegates to NUM_FMT for everything else.
+ */
+function makeColFmt(colName: string, sampleValues: number[]) {
+  const isShareCol = SHARE_COL.test(colName);
+  if (isShareCol) {
+    const maxV = Math.max(...sampleValues.map(Math.abs));
+    const isAlready100 = maxV > 1; // already multiplied ×100
+    return (v: number) => isAlready100 ? `${v.toFixed(1)}%` : `${(v * 100).toFixed(1)}%`;
+  }
+  return NUM_FMT;
+}
 
 // Columns whose values are already human-formatted time labels (Month - Year, Q1 2024, etc.)
 // → preserve SQL ordering, don't parse as dates, don't re-sort
@@ -159,16 +266,32 @@ function InlineChart({
   columns,
   rows,
   chartType = "auto",
+  title = "chart",
 }: {
   columns: string[];
   rows: unknown[][];
   chartType?: string | null;
+  title?: string;
 }) {
   // outerRef = scrollable shell; innerRef = Observable Plot / SVG mount point
   const outerRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
   // userH = null means "use natural height". Set by drag handle.
   const [userH, setUserH] = useState<number | null>(null);
+  // containerW tracks the live pixel width of outerRef so the chart re-draws
+  // correctly whenever the container narrows/widens (e.g. source panel opens).
+  const [containerW, setContainerW] = useState(0);
+  useEffect(() => {
+    const el = outerRef.current;
+    if (!el) return;
+    setContainerW(el.clientWidth);
+    const ro = new ResizeObserver(([entry]) => {
+      const w = Math.round(entry.contentRect.width);
+      if (w > 0) setContainerW(w);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   function startDrag(e: React.MouseEvent) {
     e.preventDefault();
@@ -224,7 +347,10 @@ function InlineChart({
     const catCols = columns.filter(
       (c, i) => c !== dateCol && !DATE_COL.test(c) && !isNumeric(rows[0]?.[i])
     );
-    const numCol = columns.find((c, i) => !DATE_COL.test(c) && isNumeric(rows[0]?.[i]));
+    // Prefer percentage/share/rate columns over raw counts when multiple numeric columns exist
+    const PREFER_COL = /(pct|percent|share|rate|ratio|proportion)/i;
+    const numericCols = columns.filter((c, i) => !DATE_COL.test(c) && isNumeric(rows[0]?.[i]));
+    const numCol = numericCols.find(c => PREFER_COL.test(c)) ?? numericCols[0];
     const catCol = catCols[0];   // primary grouping / y-axis
     const catCol2 = catCols[1];  // secondary grouping / stack fill
 
@@ -234,8 +360,9 @@ function InlineChart({
     // Preserve SQL order when the group column represents a time label (month, quarter …)
     const isTimeLabel = catCol ? TIME_LABEL_COL.test(catCol) : false;
 
-    // Available width (use outer scroll shell width if mounted, fallback 640)
-    const availW = outerRef.current?.clientWidth || 640;
+    // Available width — use the live ResizeObserver value so the chart re-draws
+    // at the correct width whenever the source panel opens or closes.
+    const availW = containerW > 0 ? containerW : (outerRef.current?.clientWidth || 640);
 
     // ── PIE / DONUT ─────────────────────────────────────────────────────────
     if (hint === "pie" && catCol) {
@@ -313,22 +440,34 @@ function InlineChart({
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let chart: any = null;
-      const isStacked = hint === "stacked_bar" || (hint === "auto" && catCol && catCol2 && !dateCol);
 
-      // ── STACKED BAR — vertical by default (groups on X, measure on Y) ────
-      if (isStacked && catCol && catCol2) {
-        const stackData = data.map((d) => ({
-          group: fmtTimestampLabel(String(d[catCol])),
-          stack: fmtTimestampLabel(String(d[catCol2])),
-          val: Number(d[numCol]),
-        }));
+      // Temporal stack: date + one category + one measure → stacked bar over time
+      // e.g. "monthly revenue by source" → month on X, source as stack colour
+      const isTemporalStack = catCol && dateCol && (hint === "stacked_bar" || hint === "auto");
+      // Category stack: two category columns + one measure, no date
+      const isCatStack = catCol && catCol2 && !dateCol && (hint === "stacked_bar" || hint === "auto");
+      const isStacked = isTemporalStack || isCatStack || hint === "stacked_bar";
+
+      // ── STACKED BAR — groups on X (date or primary cat), stack fill = secondary ──
+      if (isStacked && catCol) {
+        const stackData = isTemporalStack && dateCol
+          ? data.map((d) => ({
+              group: fmtTimestampLabel(String(d[dateCol])),
+              stack: String(d[catCol]),
+              val: Number(d[numCol]),
+            }))
+          : data.map((d) => ({
+              group: fmtTimestampLabel(String(d[catCol])),
+              stack: catCol2 ? fmtTimestampLabel(String(d[catCol2])) : "",
+              val: Number(d[numCol]),
+            }));
         const stacks = [...new Set(stackData.map((d) => d.stack))];
 
-        // Aggregate totals per group and sort descending (unless time labels keep SQL order)
+        // Keep date order for temporal stacks; sort by total descending for categorical
         const groupTotalsMap = new Map<string, number>();
         stackData.forEach((d) => groupTotalsMap.set(d.group, (groupTotalsMap.get(d.group) ?? 0) + d.val));
-        const groups = isTimeLabel
-          ? [...new Set(stackData.map((d) => d.group))]
+        const groups = (isTemporalStack || isTimeLabel)
+          ? [...new Set(stackData.map((d) => d.group))]   // preserve chronological order
           : [...groupTotalsMap.entries()].sort((a, b) => b[1] - a[1]).map(([g]) => g);
 
         const legendW = stacks.length > 12 ? 280 : 150;
@@ -342,8 +481,8 @@ function InlineChart({
           marginRight: 8,
           marginTop: 16,
           style: { background: "transparent", color: "#a1a1aa", fontSize: "12px" },
-          x: { label: catCol, domain: groups, tickRotate: groups.length > 8 ? -40 : 0 },
-          y: { grid: true, tickFormat: NUM_FMT, label: numCol },
+          x: { label: cleanLabel(catCol), domain: groups, tickRotate: groups.length > 8 ? -40 : 0 },
+          y: { grid: true, tickFormat: makeColFmt(numCol, stackData.map(d => d.val)), label: cleanLabel(numCol) },
           color: { scheme: "tableau10" },
           marks: [
             Plot.barY(stackData, Plot.stackY({
@@ -351,13 +490,19 @@ function InlineChart({
               y: "val",
               fill: "stack",
               title: (d: { group: string; stack: string; val: number }) =>
-                `${d.stack}: ${NUM_FMT(d.val)}`,
+                `${d.stack}: ${makeColFmt(numCol, stackData.map(s => s.val))(d.val)}`,
             })),
             Plot.ruleY([0]),
           ],
         });
 
         const legendItems = stacks.map((s, i) => ({ label: s, color: T10[i % T10.length] }));
+        // Pin height only — width is handled by re-rendering at the new containerW.
+        // Prevents Observable Plot's height:auto from proportionally shrinking the chart
+        // on any residual CSS scaling edge-cases.
+        const stackH = chart.getAttribute("height");
+        if (stackH) chart.style.height = `${stackH}px`;
+
         const wrapper = document.createElement("div");
         wrapper.style.cssText = "display:flex;gap:16px;align-items:flex-start;width:100%";
         wrapper.appendChild(chart);
@@ -381,10 +526,9 @@ function InlineChart({
           marginRight: 16,
           marginBottom: 40,
           style: { background: "transparent", color: "#a1a1aa", fontSize: "12px" },
-          x: { type: "time", label: dateCol },
-          y: { grid: true, tickFormat: NUM_FMT, label: numCol },
+          x: { type: "time", label: cleanLabel(dateCol) },
+          y: { grid: true, tickFormat: NUM_FMT, label: cleanLabel(numCol) },
           marks: [
-            // rectY is compatible with a time (continuous) x scale + interval binning
             Plot.rectY(barData, { x: "date", y: "val", fill: "#818cf8", interval: "month", inset: 0.5 }),
             Plot.ruleY([0]),
           ],
@@ -392,9 +536,9 @@ function InlineChart({
       }
 
       // ── LINE / AREA (time-series) — time on X, measure on Y ───────────────
-      // Also fires when dateCol exists but no catCol and hint is not an explicit bar
-      // (smaller models may return an unexpected hint for monthly data)
-      else if (dateCol && (hint === "line" || hint === "area" || hint === "auto" || !catCol)) {
+      // Only fires when there is no category column alongside the date.
+      // date + category + measure is handled above as a temporal stacked bar.
+      else if (dateCol && !catCol && (hint === "line" || hint === "area" || hint === "auto")) {
         const parsed = data.map((d) => ({
           ...d,
           [dateCol]: new Date(normDateStr(String(d[dateCol]))),
@@ -406,8 +550,8 @@ function InlineChart({
           marginLeft: 60,
           marginRight: 16,
           style: { background: "transparent", color: "#a1a1aa", fontSize: "12px" },
-          x: { type: "time", label: dateCol },
-          y: { grid: true, tickFormat: NUM_FMT, label: numCol },
+          x: { type: "time", label: cleanLabel(dateCol) },
+          y: { grid: true, tickFormat: makeColFmt(numCol, parsed.map((d: Record<string, unknown>) => Number(d[numCol]))), label: cleanLabel(numCol) },
           marks: [
             Plot.areaY(parsed, { x: dateCol, y: numCol, fill: "#10b981", fillOpacity: 0.08 }),
             Plot.lineY(parsed, { x: dateCol, y: numCol, stroke: "#10b981", strokeWidth: 1.5 }),
@@ -416,8 +560,8 @@ function InlineChart({
         });
       }
 
-      // ── VERTICAL BAR — only when explicitly requested ─────────────────────
-      else if (catCol && hint === "bar") {
+      // ── VERTICAL BAR — only when user explicitly says "vertical bar" ────────
+      else if (catCol && hint === "bar_vertical") {
         const agg = new Map<string, number>();
         data.forEach((d) => {
           const k = String(d[catCol]);
@@ -430,6 +574,7 @@ function InlineChart({
         const barData = sorted.map(([cat, val]) => ({ cat, val }));
         // Expand width so each bar has at least 36px; scrolls horizontally when needed
         const chartW = Math.max(availW, barData.length * 36);
+        const colFmt = makeColFmt(numCol, barData.map(d => d.val));
 
         chart = Plot.plot({
           width: chartW,
@@ -439,11 +584,11 @@ function InlineChart({
           marginRight: 16,
           style: { background: "transparent", color: "#a1a1aa", fontSize: "12px" },
           x: {
-            label: catCol,
+            label: cleanLabel(catCol),
             tickRotate: barData.length > 10 ? -40 : 0,
             ...(isTimeLabel ? {} : { sort: null }),
           },
-          y: { grid: true, tickFormat: NUM_FMT, label: numCol },
+          y: { grid: true, tickFormat: colFmt, label: cleanLabel(numCol) },
           marks: [
             Plot.barY(barData, {
               x: "cat",
@@ -456,7 +601,7 @@ function InlineChart({
               {
                 x: "cat",
                 y: "val",
-                text: (d: { cat: string; val: number }) => NUM_FMT(d.val),
+                text: (d: { cat: string; val: number }) => colFmt(d.val),
                 dy: -6,
                 textAnchor: "middle",
                 fill: "#a1a1aa",
@@ -468,8 +613,8 @@ function InlineChart({
         });
       }
 
-      // ── HORIZONTAL BAR — default for categorical data ────────────────────
-      else if (catCol && (hint === "bar_horizontal" || hint === "auto")) {
+      // ── HORIZONTAL BAR — default for ALL categorical data (bar / bar_horizontal / auto) ─
+      else if (catCol && (hint === "bar" || hint === "bar_horizontal" || hint === "auto")) {
         const agg = new Map<string, number>();
         data.forEach((d) => {
           const k = String(d[catCol]);
@@ -480,16 +625,20 @@ function InlineChart({
           : [...agg.entries()].sort((a, b) => b[1] - a[1]);
         const maxVal = Math.max(...sorted.map(([, v]) => v), 1);
         const barData = sorted.map(([cat, val]) => ({ cat, val }));
-        const labelMargin = Math.min(140, Math.max(60, Math.max(...barData.map((d) => d.cat.length)) * 7));
+        // Left margin: space for category labels only — no rotated Y-axis label
+        const labelMargin = Math.min(160, Math.max(70, Math.max(...barData.map((d) => d.cat.length)) * 7));
+        const colFmt = makeColFmt(numCol, barData.map(d => d.val));
 
         chart = Plot.plot({
           width: availW,
-          height: userH ?? Math.max(100, barData.length * 26),
+          height: userH ?? Math.max(100, barData.length * 28),
           marginLeft: labelMargin,
           marginRight: 72,
+          marginBottom: 44,
           style: { background: "transparent", color: "#a1a1aa", fontSize: "12px" },
-          x: { grid: true, tickFormat: NUM_FMT, label: numCol },
-          y: { label: catCol },
+          // X: centered label, no rotated Y label (categories already visible as tick labels)
+          x: { grid: true, tickFormat: colFmt, label: cleanLabel(numCol), labelAnchor: "center" },
+          y: { label: null },
           marks: [
             Plot.barX(barData, {
               x: "val",
@@ -502,7 +651,7 @@ function InlineChart({
               {
                 x: "val",
                 y: "cat",
-                text: (d: { cat: string; val: number }) => NUM_FMT(d.val),
+                text: (d: { cat: string; val: number }) => colFmt(d.val),
                 dx: 6,
                 textAnchor: "start",
                 fill: "#a1a1aa",
@@ -514,17 +663,75 @@ function InlineChart({
         });
       }
 
-      if (chart && innerRef.current) innerRef.current.appendChild(chart);
+      if (chart && innerRef.current) {
+        // Pin height — chart re-draws at the correct containerW so no CSS width-scaling
+        // occurs; the height pin prevents height:auto edge-cases.
+        const ch = (chart as SVGElement).getAttribute?.("height");
+        if (ch) (chart as SVGElement).style.height = `${ch}px`;
+        innerRef.current.appendChild(chart);
+      }
     });
 
     return () => { cancelled = true; };
-  // userH is safe to include: setUserH only fires on mouseup (not during drag),
-  // so the effect re-runs at most once after a resize, rebuilding the chart at the new height.
+  // containerW triggers a re-draw when the source panel opens/closes (container width changes).
+  // userH triggers a re-draw only on mouseup (end of drag), not during the drag itself.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [columns, rows, chartType, userH]);
+  }, [columns, rows, chartType, userH, containerW]);
+
+  // ── PNG download ─────────────────────────────────────────────────────────────
+  function handleDownloadPng() {
+    const svg = innerRef.current?.querySelector("svg");
+    if (!svg) return;
+    const w = svg.clientWidth  || 640;
+    const h = svg.clientHeight || 320;
+    const clone = svg.cloneNode(true) as SVGElement;
+    clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    clone.setAttribute("width",  String(w));
+    clone.setAttribute("height", String(h));
+    const bg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    bg.setAttribute("width",  String(w));
+    bg.setAttribute("height", String(h));
+    bg.setAttribute("fill", "#131c27");
+    clone.insertBefore(bg, clone.firstChild);
+    const svgStr = new XMLSerializer().serializeToString(clone);
+    const url    = URL.createObjectURL(new Blob([svgStr], { type: "image/svg+xml;charset=utf-8" }));
+    const img    = new Image();
+    img.onload = () => {
+      const scale  = 2;
+      const canvas = Object.assign(document.createElement("canvas"), { width: w * scale, height: h * scale });
+      const ctx    = canvas.getContext("2d")!;
+      ctx.scale(scale, scale);
+      ctx.fillStyle = "#131c27";
+      ctx.fillRect(0, 0, w, h);
+      ctx.drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      canvas.toBlob(blob => {
+        if (!blob) return;
+        const pngUrl = URL.createObjectURL(blob);
+        const fname = title.replace(/[^a-z0-9]+/gi, "_").toLowerCase() + ".png";
+        const a = Object.assign(document.createElement("a"), { href: pngUrl, download: fname });
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        URL.revokeObjectURL(pngUrl);
+      }, "image/png");
+    };
+    img.src = url;
+  }
 
   return (
-    <div className="mt-2 w-full">
+    <div className="mt-2 w-full relative group/chart">
+      {/* PNG download — top-right, appears on hover */}
+      <button
+        onClick={handleDownloadPng}
+        title="Download chart as PNG"
+        className="absolute top-0 right-0 z-10 opacity-0 group-hover/chart:opacity-100 transition-opacity w-7 h-7 flex items-center justify-center rounded-md bg-zinc-800/90 hover:bg-zinc-700 text-zinc-500 hover:text-zinc-200"
+      >
+        {/* Atlaskit-style image-download icon */}
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+          <rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" strokeWidth="1.6"/>
+          <path d="M3 16l5-5 4 4 3-3 6 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+          <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor"/>
+        </svg>
+      </button>
       <div
         ref={outerRef}
         className="overflow-x-auto overflow-y-hidden"
@@ -534,9 +741,9 @@ function InlineChart({
       </div>
       <div
         onMouseDown={startDrag}
-        className="flex items-center justify-center h-3 cursor-ns-resize group"
+        className="flex items-center justify-center h-3 cursor-ns-resize group/drag"
       >
-        <div className="w-10 h-0.5 rounded-full bg-zinc-800 group-hover:bg-zinc-600 transition-colors" />
+        <div className="w-10 h-0.5 rounded-full bg-zinc-800 group-hover/drag:bg-zinc-600 transition-colors" />
       </div>
     </div>
   );
@@ -569,7 +776,7 @@ function computeSummary(columns: string[], rows: unknown[][]): string | null {
   const fmtVal = (v: number) => fmt(numCol, v);
 
   if (n === 1) {
-    const label = catIdx >= 0 ? String((rows[0] as unknown[])[catIdx]) : numCol;
+    const label = catIdx >= 0 ? String((rows[0] as unknown[])[catIdx]) : cleanLabel(numCol);
     return `${label}: ${fmtVal(Number((rows[0] as unknown[])[numIdx]))}`;
   }
 
@@ -600,7 +807,7 @@ function computeSummary(columns: string[], rows: unknown[][]): string | null {
     parts.push(`${topName} leads at ${fmtVal(topVal)}.`);
   } else {
     const concLabel = topPct >= 30 ? "highly concentrated" : topPct >= 18 ? "concentrated" : "spread";
-    parts.push(`${numCol} is ${concLabel} — ${topName} alone accounts for ${topPct}% of ${fmtVal(aggTotal)}.`);
+    parts.push(`${cleanLabel(numCol)} is ${concLabel} — ${topName} alone accounts for ${topPct}% of ${fmtVal(aggTotal)}.`);
   }
 
   // Top-3 tier sentence
@@ -621,7 +828,7 @@ function computeSummary(columns: string[], rows: unknown[][]): string | null {
     });
     if (stackAgg.size > 0) {
       const [topStack] = [...stackAgg.entries()].sort((a, b) => b[1] - a[1])[0];
-      parts.push(`${topStack} is the dominant ${columns[cat2Idx]} across all ${columns[catIdx]}s.`);
+      parts.push(`${topStack} is the dominant ${cleanLabel(columns[cat2Idx])} across all ${cleanLabel(columns[catIdx])}s.`);
     }
   }
 
@@ -629,33 +836,69 @@ function computeSummary(columns: string[], rows: unknown[][]): string | null {
 }
 
 // ── Result body ───────────────────────────────────────────────────────────────
-function ResultBody({ turn }: { turn: ChatTurn }) {
+function ResultBody({
+  turn, onShowSource,
+}: {
+  turn: ChatTurn;
+  onShowSource?: (data: SourcePanelData) => void;
+}) {
   const { columns, rows, chartType } = turn;
   if (!columns.length) return null;
 
   const isSingleRow = rows.length === 1;
   const hasDate = columns.some((c) => DATE_COL.test(c));
-  const hasCat = columns.some((c, i) => !isNumeric(rows[0]?.[i]));
-  const hasNum = columns.some((c, i) => isNumeric(rows[0]?.[i]) && !ORDINAL_COL.test(c));
+  const hasCat  = columns.some((c, i) => !isNumeric(rows[0]?.[i]));
+  const hasNum  = columns.some((c, i) => isNumeric(rows[0]?.[i]) && !ORDINAL_COL.test(c));
 
-  // Explicit chart type overrides auto-detect; pie/stacked can chart even with 1-2 rows
   const explicitChart = chartType && chartType !== "auto";
   const showChart = explicitChart
     ? hasNum
     : rows.length >= 3 && hasNum && (hasDate || hasCat);
 
-  const summary = computeSummary(columns, rows);
+  const summary     = computeSummary(columns, rows);
+  const sourceTitle = inferSourceTitle(columns, rows);
+
+  function handleSourceClick() {
+    onShowSource?.({
+      columns,
+      rows: sortRowsForDisplay(columns, rows),
+      sql: turn.sql,
+      title: sourceTitle,
+    });
+  }
+
+  // Atlaskit-style table icon reused in the source chip
+  const TableIcon = () => (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" className="shrink-0">
+      <rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" strokeWidth="1.8"/>
+      <line x1="3" y1="9"  x2="21" y2="9"  stroke="currentColor" strokeWidth="1.4"/>
+      <line x1="3" y1="15" x2="21" y2="15" stroke="currentColor" strokeWidth="1.4"/>
+      <line x1="9" y1="9"  x2="9"  y2="21" stroke="currentColor" strokeWidth="1.4"/>
+    </svg>
+  );
 
   return (
     <>
       {isSingleRow && hasNum ? (
         <KPICards columns={columns} rows={rows} />
       ) : showChart ? (
+        /* Chart card — source panel is a top-level drawer in ChatPanel, not inlined here */
         <div className="mt-2 rounded-xl border border-zinc-700/50 overflow-hidden p-3" style={{ background: "#131c27" }}>
-          <InlineChart columns={columns} rows={rows} chartType={chartType} />
+          {/* Summary above the chart so it's seen first */}
           {summary && (
-            <p className="text-[12px] italic text-zinc-500 mt-2 leading-relaxed">{summary}</p>
+            <p className="text-[12px] italic text-zinc-400 mb-2 leading-relaxed">{summary}</p>
           )}
+          <InlineChart columns={columns} rows={rows} chartType={chartType} title={sourceTitle} />
+          {/* Source chip — bottom-right, opens the global source drawer */}
+          <div className="flex justify-end mt-2">
+            <button
+              onClick={handleSourceClick}
+              className="flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-md border border-zinc-700/40 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600 transition-colors"
+            >
+              <TableIcon />
+              Source: {sourceTitle}
+            </button>
+          </div>
         </div>
       ) : (
         <>
@@ -696,6 +939,147 @@ function SqlBlock({ sql }: { sql: string }) {
   );
 }
 
+// ── SQL syntax highlighter ───────────────────────────────────────────────────
+function FormattedSql({ sql }: { sql: string }) {
+  // Multi-word keywords must come first in the alternation
+  const TOKEN_RE = /(`[^`]*`|'[^']*'|\b(?:GROUP\s+BY|ORDER\s+BY|IS\s+NOT\s+NULL|IS\s+NOT|IS\s+NULL|NOT\s+IN|NOT\s+LIKE|SELECT|FROM|WHERE|JOIN|LEFT|INNER|RIGHT|OUTER|CROSS|ON|AS|IS|NOT|NULL|AND|OR|IN|LIKE|BETWEEN|DISTINCT|COUNT|SUM|AVG|MIN|MAX|CASE|WHEN|THEN|ELSE|END|WITH|UNION|ALL|HAVING|LIMIT|OFFSET|ROUND|DATE_TRUNC|STRFTIME|COALESCE|NULLIF|CAST|ILIKE|LOWER|UPPER|TRIM|LENGTH|REPLACE|SUBSTR|EXTRACT|IF|IIF|ASC|DESC)\b)/gi;
+
+  const parts: React.ReactNode[] = [];
+  let lastIdx = 0;
+  TOKEN_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = TOKEN_RE.exec(sql)) !== null) {
+    if (match.index > lastIdx)
+      parts.push(<span key={`p${lastIdx}`}>{sql.slice(lastIdx, match.index)}</span>);
+    const tok = match[0];
+    if (tok.startsWith("`") || tok.startsWith('"'))
+      parts.push(<span key={`p${match.index}`} style={{ color: "#93c5fd" }}>{tok}</span>);
+    else if (tok.startsWith("'"))
+      parts.push(<span key={`p${match.index}`} style={{ color: "#fbbf24" }}>{tok}</span>);
+    else
+      parts.push(<span key={`p${match.index}`} style={{ color: "#60a5fa", fontWeight: 500 }}>{tok}</span>);
+    lastIdx = match.index + tok.length;
+  }
+  if (lastIdx < sql.length) parts.push(<span key="tail">{sql.slice(lastIdx)}</span>);
+
+  return (
+    <pre className="text-[12px] font-mono text-zinc-300 p-3 overflow-x-auto whitespace-pre leading-[1.65]" style={{ background: "transparent" }}>
+      {parts}
+    </pre>
+  );
+}
+
+// ── Source panel (Databricks-style: table + expandable SQL) — exported so ────
+// ChatPanel can render it as a top-level right-side drawer.             ────────
+export function SourcePanel({
+  columns, rows, sql, title, onClose,
+}: {
+  columns: string[]; rows: unknown[][]; sql: string | null; title: string; onClose: () => void;
+}) {
+  const [showCode, setShowCode] = useState(false);
+  const [copied,   setCopied]   = useState(false);
+
+  function handleCopySql() {
+    if (!sql) return;
+    navigator.clipboard.writeText(sql).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
+  }
+
+  return (
+    <div className="flex flex-col h-full" style={{ background: "#0f1923" }}>
+      {/* ── Header ── */}
+      <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-700/60 flex-shrink-0">
+        <div className="flex items-center gap-1.5 min-w-0">
+          {/* Atlaskit table icon */}
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="shrink-0 text-zinc-400">
+            <rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" strokeWidth="1.6"/>
+            <line x1="3" y1="9"  x2="21" y2="9"  stroke="currentColor" strokeWidth="1.4"/>
+            <line x1="3" y1="15" x2="21" y2="15" stroke="currentColor" strokeWidth="1.4"/>
+            <line x1="9" y1="9"  x2="9"  y2="21" stroke="currentColor" strokeWidth="1.4"/>
+          </svg>
+          <span className="text-[12px] font-medium text-zinc-200 truncate">{title}</span>
+        </div>
+        <div className="flex items-center gap-0.5 flex-shrink-0 ml-2">
+          {/* Download CSV */}
+          <button
+            onClick={() => downloadCsv(columns, rows, title)}
+            title="Download as CSV"
+            className="w-6 h-6 flex items-center justify-center rounded hover:bg-zinc-700/60 text-zinc-500 hover:text-zinc-300 transition-colors"
+          >
+            <Download size={11} />
+          </button>
+          {/* Copy SQL */}
+          {sql && (
+            <button onClick={handleCopySql} title={copied ? "Copied!" : "Copy SQL"}
+              className="w-6 h-6 flex items-center justify-center rounded hover:bg-zinc-700/60 text-zinc-500 hover:text-zinc-300 transition-colors">
+              {copied ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
+            </button>
+          )}
+          {/* Close */}
+          <button onClick={onClose} title="Close"
+            className="w-6 h-6 flex items-center justify-center rounded hover:bg-zinc-700/60 text-zinc-500 hover:text-zinc-300 transition-colors">
+            <X size={12} />
+          </button>
+        </div>
+      </div>
+
+      {/* Data table — scrollable */}
+      <div className="flex-1 overflow-auto min-h-0">
+        <table className="text-[12px] w-full">
+          <thead className="sticky top-0 z-10" style={{ background: "#0f1923" }}>
+            <tr className="border-b border-zinc-700/60">
+              {columns.map((c, ci) => (
+                <th key={ci} className="px-3 py-1.5 text-left text-zinc-400 whitespace-nowrap font-medium">
+                  <div className="flex items-center gap-1">
+                    <span className="text-zinc-600 font-mono text-[10px] select-none">
+                      {isNumeric(rows[0]?.[ci]) ? "1.2" : "Ac"}
+                    </span>
+                    {cleanLabel(c)}
+                  </div>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, ri) => (
+              <tr key={ri} className="border-b border-zinc-700/20 last:border-0 hover:bg-white/[0.02]">
+                {columns.map((col, ci) => (
+                  <td key={ci} className="px-3 py-1.5 text-zinc-300 font-mono whitespace-nowrap">
+                    {fmt(col, (row as unknown[])[ci])}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* SQL toggle — pinned to bottom */}
+      {sql && (
+        <div className="flex-shrink-0 border-t border-zinc-700/60">
+          <button
+            onClick={() => setShowCode(v => !v)}
+            className="flex items-center gap-1.5 w-full px-3 py-1.5 text-[12px] text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/20 transition-colors"
+          >
+            {/* Atlaskit-style code icon */}
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" className="shrink-0">
+              <path d="M16 18l6-6-6-6M8 6l-6 6 6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            {showCode ? "Hide code" : "Show code"}
+            <span className={`ml-auto transition-transform duration-150 inline-block ${showCode ? "rotate-180" : ""}`}>
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            </span>
+          </button>
+          {showCode && (
+            <div className="border-t border-zinc-700/40 overflow-x-auto" style={{ background: "#0a1018" }}>
+              <FormattedSql sql={sql} />
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Collapsible section ───────────────────────────────────────────────────────
 function Section({
   label, defaultOpen = false, children,
@@ -729,79 +1113,48 @@ function TableChip({ name }: { name: string }) {
   );
 }
 
-// ── Investigate report renderer ───────────────────────────────────────────────
-function InvestigateAnswer({ turn }: { turn: ChatTurn }) {
-  const rep = turn.adaReport ?? turn.report;
-  if (!rep) return null;
+// ── Investigate body — delegates to the appropriate rich report view ──────────
+function InvestigateBody({
+  turn, onShowSource,
+}: {
+  turn: ChatTurn;
+  onShowSource?: (data: SourcePanelData) => void;
+}) {
+  const qm = turn.queryMode;
 
-  const headline = (rep.headline ?? rep.summary ?? rep.conclusion ?? "") as string;
-  const findings = (rep.findings ?? rep.key_findings ?? []) as { title?: string; description?: string; is_significant?: boolean }[];
-  const waterfall = (rep.waterfall ?? []) as { label?: string; delta?: string | number; explanation?: string }[];
+  if (qm === "investigate" || turn.adaReport) {
+    return (
+      <InvestigationReportView
+        report={turn.adaReport ?? undefined}
+        streamingPhases={turn.adaReport ? undefined : turn.phases}
+      />
+    );
+  }
 
-  return (
-    <div className="space-y-3">
-      {headline && (
-        <p className="text-[12px] text-zinc-300 leading-relaxed">{headline}</p>
-      )}
-      {findings.length > 0 && (
-        <ul className="space-y-1">
-          {findings.slice(0, 6).map((f, i) => (
-            <li key={i} className="flex items-start gap-2 text-[12px] text-zinc-400">
-              <span className={`mt-0.5 shrink-0 ${f.is_significant ? "text-amber-400" : "text-zinc-600"}`}>
-                {f.is_significant ? "●" : "○"}
-              </span>
-              <span>
-                {f.title && <span className="text-zinc-200 font-bold">{f.title}: </span>}
-                {f.description}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-      {waterfall.length > 0 && (
-        <div className="space-y-0.5">
-          {waterfall.map((w, i) => {
-            const delta = Number(w.delta ?? 0);
-            const pos = delta >= 0;
-            return (
-              <div key={i} className="flex items-center gap-2 text-[12px]">
-                <span className={`font-mono font-bold w-14 text-right shrink-0 ${pos ? "text-emerald-400" : "text-red-400"}`}>
-                  {pos ? "+" : ""}{delta}
-                </span>
-                <span className="text-zinc-400">{w.label}</span>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
+  if (qm === "explore" && turn.exploreReport) {
+    return (
+      <ExplorationReportView
+        report={turn.exploreReport}
+        subQuestions={turn.subQuestions}
+        subqAnswers={turn.subqAnswers}
+        queryCount={turn.subqAnswers.length}
+      />
+    );
+  }
 
-// ── Phase steps renderer ──────────────────────────────────────────────────────
-function PhaseSteps({ phases }: { phases: ChatTurn["phases"] }) {
-  if (!phases.length) return null;
-  const PHASE_LABELS: Record<string, string> = {
-    intake: "Intake", baseline: "Baseline check", decompose: "Decompose",
-    dimensional: "Dimensional breakdown", behavioral: "Behavioral analysis",
-  };
-  return (
-    <ol className="space-y-2">
-      {phases.map((ph, i) => (
-        <li key={i} className="flex items-start gap-2">
-          <span className="w-4 h-4 rounded-full bg-violet-500/20 border border-violet-500/30 text-[9px] text-violet-400 flex items-center justify-center shrink-0 mt-0.5 font-mono">
-            {i + 1}
-          </span>
-          <div>
-            <span className="text-[12px] font-bold text-zinc-300">
-              {PHASE_LABELS[ph.phase_id] ?? ph.phase_id}
-            </span>
-            {ph.summary && <p className="text-[12px] text-zinc-500 mt-0.5">{ph.summary}</p>}
-          </div>
-        </li>
-      ))}
-    </ol>
-  );
+  // Direct route — renders like Quick mode, source chip available
+  if (qm === "direct") {
+    const rep = turn.report as Record<string, unknown> | null;
+    const headline = rep ? ((rep.headline ?? rep.summary ?? "") as string) : null;
+    return (
+      <>
+        {headline && <p className="text-[12px] text-zinc-300 leading-relaxed mb-2">{headline}</p>}
+        <ResultBody turn={turn} onShowSource={onShowSource} />
+      </>
+    );
+  }
+
+  return null;
 }
 
 // ── Collapsible chevron ───────────────────────────────────────────────────────
@@ -820,15 +1173,22 @@ function Chevron({ open }: { open: boolean }) {
 export function ChatMessage({
   turn,
   onFollowUp,
+  onRunFresh,
+  onShowSource,
 }: {
   turn: ChatTurn;
   onFollowUp?: (q: string) => void;
+  onRunFresh?: (q: string) => void;
+  onShowSource?: (data: SourcePanelData) => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const isInvestigate = turn.mode === "investigate";
-  const hasData = turn.columns.length > 0;
-  const hasResult = isInvestigate ? !!(turn.adaReport ?? turn.report) : turn.status === "done";
+  const hasResult = isInvestigate
+    ? !!(turn.adaReport ?? turn.report ?? turn.exploreReport)
+    : turn.status === "done";
   const isDone = turn.status === "done" || hasResult;
+  // Show streaming ADA phases even while still loading
+  const showStreamingBody = isInvestigate && turn.status === "loading" && turn.phases.length > 0;
 
   return (
     /* No card — content flows directly on the page background */
@@ -857,15 +1217,19 @@ export function ChatMessage({
 
       {/* ── Loading state ── */}
       {turn.status === "loading" && (
-        <div className="flex items-center gap-3 py-2">
-          <span className="flex gap-1">
-            {[0, 150, 300].map(d => (
-              <span key={d} className="w-1.5 h-1.5 rounded-full bg-zinc-700 animate-bounce" style={{ animationDelay: `${d}ms` }} />
-            ))}
-          </span>
-          <span className="text-[12px] text-zinc-600">
-            {turn.statusText || (isInvestigate ? "Investigating…" : "Thinking…")}
-          </span>
+        <div>
+          <div className="flex items-center gap-3 py-2">
+            <span className="flex gap-1">
+              {[0, 150, 300].map(d => (
+                <span key={d} className="w-1.5 h-1.5 rounded-full bg-zinc-700 animate-bounce" style={{ animationDelay: `${d}ms` }} />
+              ))}
+            </span>
+            <span className="text-[12px] text-zinc-600">
+              {turn.statusText || (isInvestigate ? "Investigating…" : "Thinking…")}
+            </span>
+          </div>
+          {/* Live ADA phase stream — show completed phases as they arrive */}
+          {showStreamingBody && <InvestigateBody turn={turn} />}
         </div>
       )}
 
@@ -877,6 +1241,29 @@ export function ChatMessage({
       {/* ── Body ── */}
       {!collapsed && isDone && (
         <>
+          {/* Cache provenance banner — shown when result came from a semantically similar past investigation */}
+          {turn.fromCache && (
+            <div className="flex items-start gap-2 mb-4 px-3 py-2 rounded-lg bg-amber-950/30 border border-amber-800/40 text-[11px] text-amber-400 leading-snug">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className="shrink-0 mt-0.5 text-amber-500">
+                <path d="M8 2a6 6 0 100 12A6 6 0 008 2zm0 3.5v3m0 2h.01" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              <span className="flex-1">
+                <span className="text-amber-300 font-medium">From a similar past investigation</span>
+                {turn.cachedQuestion && turn.cachedQuestion !== turn.question && (
+                  <span className="text-amber-400/70"> — originally asked: &ldquo;{turn.cachedQuestion}&rdquo;</span>
+                )}
+              </span>
+              {onRunFresh && (
+                <button
+                  onClick={() => onRunFresh(turn.question)}
+                  className="shrink-0 px-2 py-0.5 rounded bg-amber-800/50 hover:bg-amber-700/60 text-amber-200 hover:text-white transition-colors whitespace-nowrap"
+                >
+                  Run fresh ↺
+                </button>
+              )}
+            </div>
+          )}
+
           {/* Tables used */}
           {turn.tablesUsed.length > 0 && (
             <div className="flex items-center gap-2 flex-wrap mb-3">
@@ -888,33 +1275,16 @@ export function ChatMessage({
           {/* Main answer */}
           <div className="mb-1">
             {isInvestigate ? (
-              <InvestigateAnswer turn={turn} />
+              <InvestigateBody turn={turn} onShowSource={onShowSource} />
             ) : (
               <>
                 {turn.headline && (
                   <p className="text-[12px] text-zinc-300 leading-relaxed mb-2">{turn.headline}</p>
                 )}
-                <ResultBody turn={turn} />
+                <ResultBody turn={turn} onShowSource={onShowSource} />
               </>
             )}
           </div>
-
-          {/* SQL / Steps */}
-          {(turn.sql || turn.phases.length > 0) && (
-            <Section label={isInvestigate ? `Steps · ${turn.phases.length} phases` : "SQL"}>
-              {isInvestigate
-                ? <PhaseSteps phases={turn.phases} />
-                : turn.sql ? <SqlBlock sql={turn.sql} /> : null
-              }
-            </Section>
-          )}
-
-          {/* Result table */}
-          {!isInvestigate && hasData && turn.rows.length > 1 && (
-            <Section label={`Result table · ${turn.rows.length} rows`}>
-              <MiniTable columns={turn.columns} rows={turn.rows} />
-            </Section>
-          )}
 
           {/* Follow-up chips */}
           {turn.followups.length > 0 && (

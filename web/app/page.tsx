@@ -13,6 +13,7 @@ import {
   Search,
   Plus,
   X,
+  ArrowLeft,
 } from "lucide-react";
 
 import { ConfigurePanel } from "@/components/ConfigurePanel";
@@ -22,19 +23,12 @@ import { HistoryDetailPanel } from "@/components/HistoryDetailPanel";
 import { MetricsPanel } from "@/components/MetricsPanel";
 import { SchemaPanel } from "@/components/SchemaPanel";
 import { CatalogPanel } from "@/components/CatalogPanel";
-import { FeedbackPrompt } from "@/components/FeedbackPrompt";
-import { ReportView } from "@/components/ReportView";
-import { ExplorationReportView } from "@/components/ExplorationReport";
-import { InvestigationReportView } from "@/components/InvestigationReport";
-import { ThinkingTrace } from "@/components/ThinkingTrace";
-import { Separator } from "@/components/ui/separator";
-import { useInvestigation } from "@/lib/useInvestigation";
 import { ChatPanel } from "@/components/ChatPanel";
 import { getConnections, type Connection } from "@/lib/api";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type NavTab = "home" | "chat" | "investigate" | "catalog" | "data";
+type NavTab = "home" | "chat" | "catalog" | "data";
 
 // ── Example questions ─────────────────────────────────────────────────────────
 
@@ -165,11 +159,9 @@ function ConnectionSelector({
 function SearchPalette({
   onClose,
   onGoToChat,
-  onGoToInvestigate,
 }: {
   onClose: () => void;
   onGoToChat: (q?: string) => void;
-  onGoToInvestigate: (q?: string) => void;
 }) {
   const [query, setQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -179,8 +171,7 @@ function SearchPalette({
   }, []);
 
   const suggestions = [
-    { label: "New Chat",              icon: <MessageSquare size={13} />, action: () => { onGoToChat(); onClose(); } },
-    { label: "New Deep Analysis",     icon: <BarChart2 size={13} />,     action: () => { onGoToInvestigate(); onClose(); } },
+    { label: "New Chat",  icon: <MessageSquare size={13} />, action: () => { onGoToChat(); onClose(); } },
     ...EXAMPLE_QUESTIONS.map(q => ({
       label: q,
       icon: <Search size={13} className="text-zinc-500" />,
@@ -235,60 +226,17 @@ function SearchPalette({
   );
 }
 
-// ── Investigation progress panel (left, only while running) ───────────────────
-
-function InvestigateProgressPanel({
-  state,
-}: {
-  state: ReturnType<typeof useInvestigation>["state"];
-}) {
-  return (
-    <div className="w-60 shrink-0 border-r border-zinc-700 flex flex-col overflow-hidden bg-zinc-900/40">
-      <div className="px-4 py-3.5 border-b border-zinc-700 shrink-0">
-        <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-medium">
-          Analysis Progress
-        </p>
-      </div>
-      <div className="flex-1 overflow-y-auto min-h-0">
-        <ThinkingTrace state={state} />
-      </div>
-      <div className={`p-3 border-t border-zinc-700 grid gap-2 shrink-0 ${
-        state.queryMode === "direct" ? "grid-cols-1" : "grid-cols-2"
-      }`}>
-        <div className="rounded-lg bg-zinc-800 border border-zinc-700 p-2.5 text-center">
-          <p className="text-lg font-mono font-semibold text-zinc-200">{state.queriesExecuted}</p>
-          <p className="text-[10px] text-zinc-500 mt-0.5">SQL queries</p>
-        </div>
-        {state.queryMode === "explore" && (
-          <div className="rounded-lg bg-zinc-800 border border-zinc-700 p-2.5 text-center">
-            <p className="text-lg font-mono font-semibold text-zinc-200">{state.subQuestions.length}</p>
-            <p className="text-[10px] text-zinc-500 mt-0.5">sub-questions</p>
-          </div>
-        )}
-        {state.queryMode === "investigate" && (
-          <div className="rounded-lg bg-zinc-800 border border-zinc-700 p-2.5 text-center">
-            <p className="text-lg font-mono font-semibold text-zinc-200">{state.investigationPhases.length}</p>
-            <p className="text-[10px] text-zinc-500 mt-0.5">phases done</p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 // ── Home page ──────────────────────────────────────────────────────────────────
 
 function HomePage({
   connections,
   selectedConn,
   onGoToChat,
-  onGoToInvestigate,
   onGoToCatalog,
 }: {
   connections: Connection[];
   selectedConn: string;
   onGoToChat: (q?: string) => void;
-  onGoToInvestigate: (q?: string) => void;
   onGoToCatalog: () => void;
 }) {
   const [recentInvs, setRecentInvs] = useState<{ id: string; question: string; started_at: string; status: string; headline: string | null }[]>([]);
@@ -304,7 +252,7 @@ function HomePage({
   const quickStarters = [
     "What are the top-selling products this month?",
     "Which marketing channels drive the most revenue?",
-    "Show me customer retention trends",
+    "Why did order count drop last month?",
     "What is our average order value?",
   ];
 
@@ -337,26 +285,16 @@ function HomePage({
         {/* ── Quick start ── */}
         <div>
           <p className="text-[11px] text-zinc-500 uppercase tracking-widest font-medium mb-4">Quick start</p>
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 gap-4">
             <button
               onClick={() => onGoToChat()}
-              className="group rounded-2xl border border-zinc-700/70 bg-zinc-900/40 hover:bg-zinc-700/30 hover:border-zinc-600 p-6 text-left transition-all"
-            >
-              <div className="w-10 h-10 rounded-xl bg-zinc-700/60 border border-zinc-600 flex items-center justify-center mb-4 group-hover:border-zinc-500 transition">
-                <MessageSquare size={17} className="text-zinc-400 group-hover:text-zinc-200 transition" />
-              </div>
-              <p className="text-sm font-semibold text-zinc-200 group-hover:text-white transition">Chat</p>
-              <p className="text-xs text-zinc-500 mt-1.5 leading-relaxed">Ask natural-language questions and get instant SQL answers.</p>
-            </button>
-            <button
-              onClick={() => onGoToInvestigate()}
               className="group rounded-2xl border border-zinc-700/70 bg-zinc-900/40 hover:bg-violet-500/5 hover:border-violet-500/30 p-6 text-left transition-all"
             >
               <div className="w-10 h-10 rounded-xl bg-zinc-700/60 border border-zinc-600 flex items-center justify-center mb-4 group-hover:border-violet-500/30 transition">
-                <BarChart2 size={17} className="text-zinc-400 group-hover:text-violet-400 transition" />
+                <MessageSquare size={17} className="text-zinc-400 group-hover:text-violet-400 transition" />
               </div>
-              <p className="text-sm font-semibold text-zinc-200 group-hover:text-white transition">Deep Analysis</p>
-              <p className="text-xs text-zinc-500 mt-1.5 leading-relaxed">Autonomous root-cause investigations across your data.</p>
+              <p className="text-sm font-semibold text-zinc-200 group-hover:text-white transition">Chat</p>
+              <p className="text-xs text-zinc-500 mt-1.5 leading-relaxed">Ask questions, investigate root causes, and explore your data — all in one place.</p>
             </button>
             <button
               onClick={onGoToCatalog}
@@ -378,8 +316,8 @@ function HomePage({
             {quickStarters.map(q => (
               <button
                 key={q}
-                onClick={() => onGoToChat(q)}
-                className="w-full text-left text-sm text-zinc-400 hover:text-zinc-200 flex items-center gap-3 group py-2 transition"
+                onClick={() => { onGoToChat(q); }}
+                className="w-full text-left text-[12px] text-zinc-400 hover:text-zinc-200 flex items-center gap-3 group py-2 transition"
               >
                 <span className="w-1 h-1 rounded-full bg-zinc-600 group-hover:bg-violet-400 transition shrink-0" />
                 <span className="group-hover:underline underline-offset-2">{q}</span>
@@ -422,13 +360,10 @@ function HomePage({
 const BEAUTYCOMMERCE_ID = "96f8857f";
 
 export default function Home() {
-  const { state, investigate, submitFeedback } = useInvestigation();
-  const [input, setInput] = useState("");
-  const [hitl, setHitl] = useState(false);
   const [tab, setTab] = useState<NavTab>("home");
   const [selectedConn, setSelectedConn] = useState(BEAUTYCOMMERCE_ID);
   const [schemaConnId, setSchemaConnId] = useState<string | null>(null);
-  const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
+  const [selectedHistoryInvId, setSelectedHistoryInvId] = useState<string | null>(null); // modal
   const [selectedChatSessionId, setSelectedChatSessionId] = useState<string | null>(null);
   const [chatKey, setChatKey] = useState(0);
   const [connRightTab, setConnRightTab] = useState<"schema" | "metrics">("schema");
@@ -463,23 +398,10 @@ export default function Home() {
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  const handleSubmit = (q?: string) => {
-    const question = q ?? input.trim();
-    if (!question || state.status === "running") return;
-    setInput("");
-    investigate(question, selectedConn, hitl);
-  };
-
-  const isRunning = state.status === "running";
-  const isPaused = state.status === "paused";
-
   const goToChat = (q?: string) => {
     setSelectedChatSessionId(null);
     setTab("chat");
-    // If a starter question is passed, it's handled by ChatPanel starters
-    if (q) {
-      // Brief hack: pass via a URL search param or just open chat — starter sends automatically
-    }
+    void q; // starter question is handled by ChatPanel via suggestions
   };
 
   return (
@@ -523,7 +445,6 @@ export default function Home() {
         <SearchPalette
           onClose={() => setShowSearch(false)}
           onGoToChat={goToChat}
-          onGoToInvestigate={(q) => { setTab("investigate"); if (q) setInput(q); }}
         />
       )}
 
@@ -548,12 +469,6 @@ export default function Home() {
               active={tab === "chat"}
               onClick={() => { setSelectedChatSessionId(null); setChatKey(k => k + 1); setTab("chat"); }}
             />
-            <NavItem
-              icon={<BarChart2 size={14} />}
-              label="Deep Analysis"
-              active={tab === "investigate"}
-              onClick={() => setTab("investigate")}
-            />
 
             <p className="px-2 pt-4 pb-1 text-[10px] text-zinc-600 uppercase tracking-widest font-semibold">
               Data
@@ -577,16 +492,15 @@ export default function Home() {
             {/* Section breadcrumb */}
             <div className="flex items-center gap-2 shrink-0">
               <span className="text-sm font-semibold text-zinc-200">
-                {tab === "home"        ? "Home"
-                 : tab === "chat"      ? "Chat"
-                 : tab === "investigate" ? "Deep Analysis"
-                 : tab === "catalog"   ? "Catalog"
+                {tab === "home"    ? "Home"
+                 : tab === "chat"  ? "Chat"
+                 : tab === "catalog" ? "Catalog"
                  : "Connections"}
               </span>
             </div>
 
-            {/* Connection selector — shown on chat & investigate */}
-            {(tab === "chat" || tab === "investigate") && (
+            {/* Connection selector — shown on chat */}
+            {tab === "chat" && (
               <ConnectionSelector
                 connections={connections.length > 0 ? connections : [{ id: selectedConn, name: selectedConn, conn_type: "duckdb", dsn_preview: "", schema_name: null, builtin: false }]}
                 selectedId={selectedConn}
@@ -595,23 +509,8 @@ export default function Home() {
               />
             )}
 
-            {/* Right: status + New Chat + History */}
+            {/* Right: New Chat + History + Configure */}
             <div className="flex items-center gap-2.5 shrink-0">
-              {isRunning && (
-                <div className="flex items-center gap-1.5 text-[11px] text-amber-400">
-                  <span className="relative flex h-1.5 w-1.5">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
-                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-amber-400" />
-                  </span>
-                  {state.queryMode === "direct" ? "Fetching…" : state.queryMode === "explore" ? "Exploring…" : "Investigating…"}
-                </div>
-              )}
-              {isPaused && (
-                <div className="flex items-center gap-1.5 text-[11px] text-violet-400">
-                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-violet-400" />
-                  Awaiting review…
-                </div>
-              )}
 
               {/* New Chat button */}
               <button
@@ -661,7 +560,7 @@ export default function Home() {
           {showHistory && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setShowHistory(false)} />
-              <div className="fixed top-[104px] right-4 z-50 w-84 h-[72vh] bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl flex flex-col overflow-hidden" style={{ width: "340px" }}>
+              <div className="fixed top-[104px] right-4 z-50 h-[72vh] bg-zinc-900 border border-zinc-700 rounded-2xl shadow-2xl flex flex-col overflow-hidden" style={{ width: "min(420px, 90vw)" }}>
                 <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-700 shrink-0">
                   <span className="text-sm font-semibold text-zinc-200">History</span>
                   <button onClick={() => setShowHistory(false)} className="text-zinc-500 hover:text-zinc-300 transition">
@@ -669,15 +568,14 @@ export default function Home() {
                   </button>
                 </div>
                 <HistoryPanel
-                  selectedId={selectedHistoryId}
+                  selectedId={selectedHistoryInvId}
                   onSelect={(id, kind) => {
                     setShowHistory(false);
                     if (kind === "chat") {
                       setSelectedChatSessionId(id);
                       setTab("chat");
                     } else {
-                      setSelectedHistoryId(id);
-                      setTab("investigate");
+                      setSelectedHistoryInvId(id); // opens full-screen modal overlay
                     }
                   }}
                 />
@@ -695,6 +593,35 @@ export default function Home() {
             />
           )}
 
+          {/* ── Investigation history detail — full-screen slide-over ── */}
+          {selectedHistoryInvId && (
+            <>
+              <div
+                className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
+                onClick={() => setSelectedHistoryInvId(null)}
+              />
+              <div
+                className="fixed top-0 right-0 bottom-0 z-50 flex flex-col bg-zinc-900 border-l border-zinc-700/80 shadow-2xl overflow-hidden"
+                style={{ width: "90%" }}
+              >
+                <div className="h-12 border-b border-zinc-700/80 flex items-center px-4 gap-3 shrink-0 bg-zinc-900">
+                  <button
+                    onClick={() => setSelectedHistoryInvId(null)}
+                    className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition"
+                  >
+                    <ArrowLeft size={14} />
+                    Back
+                  </button>
+                  <span className="text-xs text-zinc-600">·</span>
+                  <span className="text-xs text-zinc-500">Investigation Detail</span>
+                </div>
+                <div className="flex-1 overflow-auto">
+                  <HistoryDetailPanel invId={selectedHistoryInvId} />
+                </div>
+              </div>
+            </>
+          )}
+
           {/* ── Main content area ── */}
           <div className="flex-1 flex overflow-hidden min-w-0">
 
@@ -704,7 +631,6 @@ export default function Home() {
                 connections={connections}
                 selectedConn={selectedConn}
                 onGoToChat={goToChat}
-                onGoToInvestigate={(q) => { setTab("investigate"); if (q) setInput(q); }}
                 onGoToCatalog={() => setTab("catalog")}
               />
             )}
@@ -716,186 +642,6 @@ export default function Home() {
                 connectionId={selectedConn}
                 restoreSessionId={selectedChatSessionId}
               />
-            )}
-
-            {/* ════ INVESTIGATE TAB ════ */}
-            {tab === "investigate" && (
-              <div className="flex-1 flex overflow-hidden">
-
-                {/* Left panel: progress trace (only while running/paused) */}
-                {(isRunning || isPaused) && (
-                  <InvestigateProgressPanel state={state} />
-                )}
-
-                {/* Right: canvas + input */}
-                <div className="flex-1 flex flex-col overflow-hidden">
-
-                  {/* Canvas */}
-                  <div className="flex-1 overflow-y-auto min-h-0">
-                    {state.status === "idle" && !selectedHistoryId ? (
-                      <div className="h-full flex flex-col items-center justify-center gap-6 text-center px-8 py-12">
-                        <div>
-                          <p className="text-2xl font-semibold text-zinc-300 mb-2">Deep Analysis</p>
-                          <p className="text-sm text-zinc-500 max-w-sm leading-relaxed">
-                            Ask a business question. Aughor investigates autonomously — forming hypotheses, running SQL, and delivering a narrative verdict.
-                          </p>
-                        </div>
-                        <div className="flex flex-col gap-2 w-full max-w-sm">
-                          {EXAMPLE_QUESTIONS.map((q) => (
-                            <button
-                              key={q}
-                              onClick={() => handleSubmit(q)}
-                              className="text-left text-xs text-zinc-400 hover:text-zinc-200 rounded-xl px-4 py-3 bg-zinc-800/60 hover:bg-zinc-700/60 border border-zinc-700 transition"
-                            >
-                              {q}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    ) : state.status === "idle" && selectedHistoryId ? (
-                      <HistoryDetailPanel invId={selectedHistoryId} />
-                    ) : (
-                      <div className="p-6 space-y-8 max-w-3xl mx-auto">
-                        <div>
-                          <p className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1.5">Question</p>
-                          <p className="text-base font-medium text-zinc-200">{state.question}</p>
-                        </div>
-
-                        {state.queryMode === "direct" && (
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-sky-400 border border-sky-500/30 bg-sky-500/10 rounded-full px-2.5 py-0.5 font-medium">Direct Query</span>
-                            <span className="text-xs text-zinc-500">Single-pass answer</span>
-                          </div>
-                        )}
-                        {state.queryMode === "explore" && (
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-teal-400 border border-teal-500/30 bg-teal-500/10 rounded-full px-2.5 py-0.5 font-medium">Exploration</span>
-                            <span className="text-xs text-zinc-500">Open-ended chain analysis</span>
-                          </div>
-                        )}
-                        {state.queryMode === "investigate" && (
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-violet-400 border border-violet-500/30 bg-violet-500/10 rounded-full px-2.5 py-0.5 font-medium">Deep Investigation</span>
-                            <span className="text-xs text-zinc-500">ADA — root-cause analysis</span>
-                          </div>
-                        )}
-
-                        {state.queryMode === "investigate" && !state.adaReport && state.investigationPhases.length > 0 && (
-                          <InvestigationReportView streamingPhases={state.investigationPhases} />
-                        )}
-
-                        {isPaused && state.investigationId && (
-                          <FeedbackPrompt
-                            investigationId={state.investigationId}
-                            hypotheses={state.hypotheses}
-                            onSubmit={(feedback) => submitFeedback(state.investigationId!, feedback)}
-                          />
-                        )}
-
-                        {isRunning && (
-                          <div className="flex items-center gap-3 text-sm text-zinc-500">
-                            <span className="flex gap-1">
-                              {[0, 1, 2].map((i) => (
-                                <span
-                                  key={i}
-                                  className="inline-block h-1.5 w-1.5 rounded-full bg-zinc-600 animate-bounce"
-                                  style={{ animationDelay: `${i * 150}ms` }}
-                                />
-                              ))}
-                            </span>
-                            Analyzing evidence…
-                          </div>
-                        )}
-
-                        {state.queryMode === "explore" && state.exploreReport && (
-                          <div className="space-y-4">
-                            <Separator className="bg-zinc-700" />
-                            <p className="text-[10px] text-zinc-500 uppercase tracking-widest">Exploration Report</p>
-                            <ExplorationReportView
-                              report={state.exploreReport}
-                              subQuestions={state.subQuestions}
-                              subqAnswers={state.subqAnswers}
-                              queryCount={state.queriesExecuted}
-                            />
-                          </div>
-                        )}
-
-                        {state.queryMode === "investigate" && state.adaReport && (
-                          <div className="space-y-4">
-                            <Separator className="bg-zinc-700" />
-                            <InvestigationReportView report={state.adaReport} />
-                          </div>
-                        )}
-
-                        {state.queryMode === "direct" && state.report && (
-                          <div className="space-y-4">
-                            <Separator className="bg-zinc-700" />
-                            {state.fromCache && state.cachedQuestion && (
-                              <div className="rounded-xl border border-sky-500/25 bg-sky-500/10 px-4 py-3 flex items-start gap-2">
-                                <span className="text-sky-400 text-xs shrink-0 mt-0.5">⚡</span>
-                                <div>
-                                  <p className="text-xs text-sky-400 font-medium">Matched a prior investigation</p>
-                                  <p className="text-xs text-zinc-500 mt-0.5">Originally asked: "{state.cachedQuestion}"</p>
-                                </div>
-                              </div>
-                            )}
-                            <p className="text-[10px] text-zinc-500 uppercase tracking-widest">Query Report</p>
-                            <ReportView
-                              report={state.report}
-                              queryCount={state.queriesExecuted}
-                              queryHistory={state.queryHistory}
-                              queryMode={state.queryMode}
-                              hypotheses={state.hypotheses}
-                            />
-                          </div>
-                        )}
-
-                        {state.error && (
-                          <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-4 text-sm text-red-400">
-                            {state.error}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Input bar — pinned at bottom */}
-                  <div className="shrink-0 border-t border-zinc-700/80 p-5 space-y-3 bg-zinc-900/60">
-                    <textarea
-                      className="w-full rounded-xl bg-zinc-800/60 border border-zinc-700 text-sm text-zinc-100 placeholder:text-zinc-500 px-4 py-3.5 resize-none focus:outline-none focus:ring-1 focus:ring-violet-500/50 focus:border-violet-500/50 transition"
-                      rows={2}
-                      placeholder="Ask a deep business question…"
-                      value={input}
-                      onChange={(e) => setInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSubmit(); }
-                      }}
-                      disabled={isRunning}
-                    />
-                    <div className="flex items-center justify-between gap-3">
-                      <label className="flex items-center gap-2 cursor-pointer select-none">
-                        <div
-                          onClick={() => setHitl((v) => !v)}
-                          className={`relative w-7 h-3.5 rounded-full transition ${hitl ? "bg-violet-600" : "bg-zinc-700"}`}
-                        >
-                          <span className={`absolute top-0.5 left-0.5 w-2.5 h-2.5 rounded-full bg-white shadow transition-transform ${hitl ? "translate-x-3.5" : ""}`} />
-                        </div>
-                        <span className="text-[11px] text-zinc-500">Review before report</span>
-                      </label>
-
-                      <button
-                        onClick={() => handleSubmit()}
-                        disabled={!input.trim() || isRunning || isPaused}
-                        className="rounded-lg bg-violet-600 text-white text-sm font-medium px-6 py-2 hover:bg-violet-500 disabled:opacity-40 disabled:cursor-not-allowed transition"
-                      >
-                        {isRunning
-                          ? (state.queryMode === "direct" ? "Fetching…" : state.queryMode === "explore" ? "Exploring…" : "Investigating…")
-                          : "Investigate →"}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
             )}
 
             {/* ════ CATALOG TAB ════ */}

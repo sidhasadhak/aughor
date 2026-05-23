@@ -1,16 +1,23 @@
 "use client";
 
-import { useReducer, useRef } from "react";
+import { useReducer, useRef, useCallback } from "react";
+import type { ADAReport, ExplorationReport, InvestigationPhase, SubQuestion, SubQuestionAnswer } from "@/lib/types";
+
+// ── Debug event log — ring buffer of raw SSE events ───────────────────────────
+export interface DebugEvent {
+  ts: number;            // Date.now()
+  type: string;          // SSE event type
+  summary: string;       // brief human-readable summary
+  payload: unknown;      // full payload (shown on expand)
+}
+const MAX_LOG = 300;
 
 const BASE = "http://localhost:8000";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-export interface InvPhase {
-  phase_id: string;
-  summary?: string;
-  findings?: { is_significant: boolean; description: string; metric?: string }[];
-}
+// Re-export so existing imports from useChat still work
+export type { InvestigationPhase as InvPhase };
 
 export interface ChatTurn {
   id: string;
@@ -25,17 +32,26 @@ export interface ChatTurn {
   headline: string | null;
   chartType: string | null;
 
-  // Investigate mode
-  statusText: string | null;      // "Analyzing baseline…" live phase indicator
-  phases: InvPhase[];
-  adaReport: Record<string, unknown> | null;
+  // Investigate mode — ADA phases stream in progressively
+  statusText: string | null;
+  phases: InvestigationPhase[];
+  adaReport: ADAReport | null;
   report: Record<string, unknown> | null;
   queryMode: string | null;
+
+  // Explore mode — captured from the final explore_report SSE event
+  subQuestions: SubQuestion[];
+  subqAnswers: SubQuestionAnswer[];
+  exploreReport: ExplorationReport | null;
 
   // Shared
   tablesUsed: string[];
   followups: string[];
   error: string | null;
+
+  // Cache metadata
+  fromCache: boolean;
+  cachedQuestion: string | null;
 }
 
 interface ChatHistoryTurn {
@@ -53,23 +69,25 @@ interface ChatState {
 // ── Actions ───────────────────────────────────────────────────────────────────
 
 type ChatAction =
-  | { type: "ASK";        id: string; question: string; mode: "ask" | "investigate" }
-  | { type: "SQL";        sql: string }
-  | { type: "COLUMNS";    columns: string[] }
-  | { type: "ROWS";       rows: unknown[][] }
-  | { type: "HEADLINE";   headline: string }
-  | { type: "CHART_TYPE"; chartType: string }
-  | { type: "STATUS_TEXT";text: string }
-  | { type: "PHASE";      phase: InvPhase }
-  | { type: "ADA_REPORT"; report: Record<string, unknown>; queryMode: string }
-  | { type: "REPORT";     report: Record<string, unknown>; queryMode: string }
-  | { type: "QUERY_MODE"; queryMode: string }
-  | { type: "TABLES_USED";tables: string[] }
-  | { type: "FOLLOWUPS";  questions: string[] }
-  | { type: "ERROR";      message: string }
+  | { type: "ASK";          id: string; question: string; mode: "ask" | "investigate" }
+  | { type: "SQL";          sql: string }
+  | { type: "COLUMNS";      columns: string[] }
+  | { type: "ROWS";         rows: unknown[][] }
+  | { type: "HEADLINE";     headline: string }
+  | { type: "CHART_TYPE";   chartType: string }
+  | { type: "STATUS_TEXT";  text: string }
+  | { type: "PHASE";        phase: InvestigationPhase }
+  | { type: "ADA_REPORT";   report: ADAReport; queryMode: string }
+  | { type: "EXPLORE_REPORT"; report: ExplorationReport; subQuestions: SubQuestion[]; subqAnswers: SubQuestionAnswer[] }
+  | { type: "REPORT";       report: Record<string, unknown>; queryMode: string }
+  | { type: "QUERY_MODE";   queryMode: string }
+  | { type: "TABLES_USED";  tables: string[] }
+  | { type: "FOLLOWUPS";    questions: string[] }
+  | { type: "CACHE_META";   fromCache: boolean; cachedQuestion: string | null }
+  | { type: "ERROR";        message: string }
   | { type: "DONE" }
   | { type: "CLEAR" }
-  | { type: "RESTORE";    turns: ChatTurn[] };
+  | { type: "RESTORE";      turns: ChatTurn[] };
 
 // ── Reducer ───────────────────────────────────────────────────────────────────
 
@@ -83,7 +101,9 @@ const EMPTY_TURN: Omit<ChatTurn, "id" | "question" | "mode"> = {
   status: "loading",
   sql: null, columns: [], rows: [], headline: null, chartType: null,
   statusText: null, phases: [], adaReport: null, report: null, queryMode: null,
+  subQuestions: [], subqAnswers: [], exploreReport: null,
   tablesUsed: [], followups: [], error: null,
+  fromCache: false, cachedQuestion: null,
 };
 
 function chatReducer(state: ChatState, action: ChatAction): ChatState {
@@ -102,10 +122,14 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case "TABLES_USED":return updateLast(state, t => ({ ...t, tablesUsed: action.tables }));
     case "FOLLOWUPS":  return updateLast(state, t => ({ ...t, followups: action.questions }));
     case "QUERY_MODE": return updateLast(state, t => ({ ...t, queryMode: action.queryMode }));
+    case "CACHE_META":
+      return updateLast(state, t => ({ ...t, fromCache: action.fromCache, cachedQuestion: action.cachedQuestion }));
     case "PHASE":
       return updateLast(state, t => ({ ...t, phases: [...t.phases, action.phase], statusText: `Analyzing ${action.phase.phase_id}…` }));
     case "ADA_REPORT":
       return updateLast(state, t => ({ ...t, adaReport: action.report, queryMode: action.queryMode, statusText: null }));
+    case "EXPLORE_REPORT":
+      return updateLast(state, t => ({ ...t, exploreReport: action.report, subQuestions: action.subQuestions, subqAnswers: action.subqAnswers, queryMode: "explore", statusText: null }));
     case "REPORT":
       return updateLast(state, t => ({ ...t, report: action.report, queryMode: action.queryMode, statusText: null }));
     case "ERROR":
@@ -121,10 +145,23 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
 
 // ── SSE stream consumer ───────────────────────────────────────────────────────
 
+function summarisePayload(type: string, p: Record<string, unknown>): string {
+  switch (type) {
+    case "phase_complete": return `phase: ${(p.phase as { phase_id?: string })?.phase_id ?? "?"}`;
+    case "ada_report":     return `headline: ${String((p.ada_report as { headline?: string })?.headline ?? "").slice(0, 60)}`;
+    case "explore_report": return `narrative: ${String((p.explore_report as { narrative?: string })?.narrative ?? "").slice(0, 60)}`;
+    case "report":         return `mode: ${p.query_mode ?? "?"}`;
+    case "error":          return `message: ${p.message}`;
+    case "start":          return `inv: ${p.investigation_id ?? "new"}`;
+    default:               return Object.keys(p).slice(0, 3).join(", ");
+  }
+}
+
 async function consumeStream(
   res: Response,
   dispatch: (a: ChatAction) => void,
   signal: AbortSignal,
+  logEvent: (e: DebugEvent) => void,
 ) {
   if (!res.body) { dispatch({ type: "ERROR", message: "No response body" }); return; }
 
@@ -145,6 +182,7 @@ async function consumeStream(
         if (!chunk.startsWith("data: ")) continue;
         try {
           const p = JSON.parse(chunk.slice(6)) as { type: string } & Record<string, unknown>;
+          logEvent({ ts: Date.now(), type: p.type, summary: summarisePayload(p.type, p), payload: p });
           switch (p.type) {
             case "sql":          dispatch({ type: "SQL",        sql:       p.sql as string }); break;
             case "columns":      dispatch({ type: "COLUMNS",    columns:   p.columns as string[] }); break;
@@ -155,17 +193,34 @@ async function consumeStream(
             case "followups":    dispatch({ type: "FOLLOWUPS",  questions: p.questions as string[] }); break;
             case "mode":         dispatch({ type: "QUERY_MODE", queryMode: p.query_mode as string }); break;
             case "phase_complete":
-              dispatch({ type: "PHASE", phase: (p.phase as InvPhase) });
+              dispatch({ type: "PHASE", phase: p.phase as InvestigationPhase });
               break;
             case "ada_report":
-              dispatch({ type: "ADA_REPORT", report: p.ada_report as Record<string, unknown>, queryMode: p.query_mode as string ?? "investigate" });
+              if (p.from_cache) dispatch({ type: "CACHE_META", fromCache: true, cachedQuestion: (p.cached_question as string) ?? null });
+              dispatch({ type: "ADA_REPORT", report: p.ada_report as ADAReport, queryMode: (p.query_mode as string) ?? "investigate" });
               break;
-            case "report":
-              dispatch({ type: "REPORT", report: p.report as Record<string, unknown>, queryMode: p.query_mode as string ?? "investigate" });
+            case "report": {
+              const qMode = (p.query_mode as string) ?? "investigate";
+              if (p.from_cache) dispatch({ type: "CACHE_META", fromCache: true, cachedQuestion: (p.cached_question as string) ?? null });
+              dispatch({ type: "REPORT", report: p.report as Record<string, unknown>, queryMode: qMode });
+              // For direct-routed agentic queries, surface the first query's SQL + results
+              // so the turn renders like Quick mode (chart/table + SQL) rather than just a headline
+              if (qMode === "direct" && Array.isArray(p.query_history) && (p.query_history as unknown[]).length > 0) {
+                const q = (p.query_history as { sql: string; columns: string[]; rows: unknown[][] }[])[0];
+                if (q.sql)                dispatch({ type: "SQL",     sql:     q.sql });
+                if (q.columns?.length)    dispatch({ type: "COLUMNS", columns: q.columns });
+                if (q.rows?.length)       dispatch({ type: "ROWS",    rows:    q.rows });
+              }
               break;
+            }
             case "explore_report":
-              // Explore-mode investigation result — map to the same REPORT slot so ChatMessage can render it
-              dispatch({ type: "REPORT", report: p.explore_report as Record<string, unknown>, queryMode: "explore" });
+              if (p.from_cache) dispatch({ type: "CACHE_META", fromCache: true, cachedQuestion: (p.cached_question as string) ?? null });
+              dispatch({
+                type: "EXPLORE_REPORT",
+                report: p.explore_report as ExplorationReport,
+                subQuestions: (p.sub_questions ?? []) as SubQuestion[],
+                subqAnswers: (p.subq_answers ?? []) as SubQuestionAnswer[],
+              });
               break;
             case "error":        dispatch({ type: "ERROR", message: p.message as string }); break;
             case "done":         dispatch({ type: "DONE" }); break;
@@ -197,8 +252,13 @@ export function useChat() {
   const abortRef = useRef<AbortController | null>(null);
   // Stable session ID for the lifetime of this chat tab mount
   const sessionIdRef = useRef(newSessionId());
+  // Debug event log — ring buffer, never triggers re-render; callers read on demand
+  const eventLogRef = useRef<DebugEvent[]>([]);
+  const logEvent = useCallback((e: DebugEvent) => {
+    eventLogRef.current = [...eventLogRef.current.slice(-(MAX_LOG - 1)), e];
+  }, []);
 
-  async function ask(question: string, connectionId: string, mode: "ask" | "investigate" = "ask") {
+  async function ask(question: string, connectionId: string, mode: "ask" | "investigate" = "ask", opts: { skipCache?: boolean } = {}) {
     const id = Math.random().toString(36).slice(2);
     dispatch({ type: "ASK", id, question, mode });
 
@@ -214,7 +274,7 @@ export function useChat() {
         res = await fetch(`${BASE}/investigate`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ question, connection_id: connectionId }),
+          body: JSON.stringify({ question, connection_id: connectionId, skip_cache: opts.skipCache ?? false }),
           signal,
         });
       } else {
@@ -245,7 +305,7 @@ export function useChat() {
       return;
     }
 
-    await consumeStream(res, dispatch, signal);
+    await consumeStream(res, dispatch, signal, logEvent);
     abortRef.current = null;
   }
 
@@ -265,5 +325,5 @@ export function useChat() {
     dispatch({ type: "CLEAR" });
   }
 
-  return { state, ask, stop, clear, restore, sessionId: sessionIdRef.current };
+  return { state, ask, stop, clear, restore, sessionId: sessionIdRef.current, eventLogRef };
 }

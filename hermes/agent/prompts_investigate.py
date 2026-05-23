@@ -312,6 +312,15 @@ FULL EVIDENCE (query results by phase):
 
 Write a complete, honest investigation report.
 
+IMPORTANT — ANSWER THE QUESTION ASKED:
+  If the user asked "which channel/region/product/segment had most influence", answer that question
+  directly in the headline and executive summary — even if the overall metric change is within
+  normal statistical variance. Do NOT let "no anomaly detected" prevent you from reporting the
+  dimensional breakdown the user requested. When the baseline is statistically normal:
+  • Lead with the key dimensional finding (e.g. "Channel X accounts for 42% of February orders")
+  • Then contextualise the baseline (e.g. "the MoM volume decline is calendar-driven, not a signal")
+  • Still populate the attribution waterfall with dimensional contributors
+
 ATTRIBUTION WATERFALL:
   Build a waterfall that accounts for the total observed change.
   Each entry: a root cause, its estimated contribution ($ or % of gap), controllability, structural vs. transient.

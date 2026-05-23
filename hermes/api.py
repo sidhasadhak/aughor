@@ -59,6 +59,7 @@ class InvestigateRequest(BaseModel):
     question: str
     connection_id: str = BUILTIN_ID
     hitl: bool = False
+    skip_cache: bool = False  # when True, bypass semantic cache and run fresh
 
 
 class FeedbackRequest(BaseModel):
@@ -313,7 +314,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
 
 # ── Investigation endpoint ────────────────────────────────────────────────────
 
-async def _stream_investigation(question: str, connection_id: str, request: Request, hitl: bool = False) -> AsyncGenerator[str, None]:
+async def _stream_investigation(question: str, connection_id: str, request: Request, hitl: bool = False, skip_cache: bool = False) -> AsyncGenerator[str, None]:
     _TIMEOUT = int(os.getenv("HERMES_TIMEOUT_SECONDS", "600"))
     try:
         db = open_connection_for(connection_id)
@@ -331,11 +332,13 @@ async def _stream_investigation(question: str, connection_id: str, request: Requ
     # false-positives (caching a direct query result) are not.
     from hermes.tools.prior_analyses import find_similar_investigation
     from hermes.db.history import get_investigation
-    cache_hit = None if _looks_direct(question) else find_similar_investigation(question, connection_id)
+    cache_hit = None if (skip_cache or _looks_direct(question)) else find_similar_investigation(question, connection_id)
     if cache_hit:
         cached_id, score = cache_hit
         cached = get_investigation(cached_id)
         if cached and cached.get("report"):
+            cached_report = cached["report"]
+            report_type = cached_report.get("_report_type") if isinstance(cached_report, dict) else None
             yield _sse("start", {
                 "question": question,
                 "connection_id": connection_id,
@@ -344,16 +347,38 @@ async def _stream_investigation(question: str, connection_id: str, request: Requ
             if cached.get("hypotheses"):
                 yield _sse("hypotheses", {"hypotheses": cached["hypotheses"]})
             qh = cached.get("query_history") or []
-            yield _sse("report", {
-                "report": cached["report"],
-                "hypotheses": cached.get("hypotheses") or [],
-                "query_count": cached.get("query_count", len(qh)),
-                "query_history": qh,
-                "investigation_id": cached_id,
-                "from_cache": True,
-                "cached_question": cached["question"],
-                "cache_score": round(score, 3),
-            })
+            if report_type == "investigate":
+                yield _sse("ada_report", {
+                    "ada_report": cached_report,
+                    "investigation_id": cached_id,
+                    "query_mode": "investigate",
+                    "from_cache": True,
+                    "cached_question": cached["question"],
+                    "cache_score": round(score, 3),
+                })
+            elif report_type == "explore":
+                yield _sse("explore_report", {
+                    "explore_report": cached_report,
+                    "sub_questions": cached_report.get("sub_questions", []),
+                    "subq_answers": cached_report.get("subq_answers", []),
+                    "query_count": cached.get("query_count", len(qh)),
+                    "investigation_id": cached_id,
+                    "query_mode": "explore",
+                    "from_cache": True,
+                    "cached_question": cached["question"],
+                    "cache_score": round(score, 3),
+                })
+            else:
+                yield _sse("report", {
+                    "report": cached_report,
+                    "hypotheses": cached.get("hypotheses") or [],
+                    "query_count": cached.get("query_count", len(qh)),
+                    "query_history": qh,
+                    "investigation_id": cached_id,
+                    "from_cache": True,
+                    "cached_question": cached["question"],
+                    "cache_score": round(score, 3),
+                })
             yield _sse("done", {})
             return
 
@@ -497,6 +522,18 @@ async def _stream_investigation(question: str, connection_id: str, request: Requ
                     yield _sse("followups", {"questions": fq.questions[:3]})
                 except Exception:
                     pass
+                # Persist ADA investigation to history
+                ada_save = dict(ada) if isinstance(ada, dict) else ada
+                ada_save["_report_type"] = "investigate"
+                complete_investigation(
+                    inv_id,
+                    report=ada_save,
+                    hypotheses=merged.get("hypotheses", []),
+                    query_history=qh,
+                    question=question,
+                    connection_id=connection_id,
+                    skip_index=False,
+                )
 
             elif node_name == "decompose_exploration":
                 subqs = merged.get("sub_questions", [])
@@ -543,14 +580,47 @@ async def _stream_investigation(question: str, connection_id: str, request: Requ
                 er = merged["explore_report"]
                 answers = merged.get("subq_answers", [])
                 query_history = merged.get("query_history", [])
+                sub_questions_raw = [sq.model_dump() for sq in merged.get("sub_questions", [])]
+                subq_answers_raw = [a.model_dump() for a in answers]
+                all_sql_e = " ".join(r.sql for r in query_history if r.sql)
+                yield _sse("tables_used", {"tables": _extract_tables(all_sql_e)})
                 yield _sse("explore_report", {
                     "explore_report": er.model_dump(),
-                    "sub_questions": [sq.model_dump() for sq in merged.get("sub_questions", [])],
-                    "subq_answers": [a.model_dump() for a in answers],
+                    "sub_questions": sub_questions_raw,
+                    "subq_answers": subq_answers_raw,
                     "query_count": len(query_history),
                     "investigation_id": inv_id,
                     "query_mode": "explore",
                 })
+                # Follow-up suggestions for explore mode
+                try:
+                    from hermes.llm.provider import get_provider as _gp
+                    class _FQX(BaseModel):
+                        questions: list[str]
+                    fqx: _FQX = _gp("narrator").complete(
+                        system="Suggest exactly 3 concise follow-up questions (max 15 words each).",
+                        user=f"Original question: {question}\nFindings: {er.headline}",
+                        response_model=_FQX,
+                    )
+                    yield _sse("followups", {"questions": fqx.questions[:3]})
+                except Exception:
+                    pass
+                # Persist explore investigation to history (store subq data inside report_json)
+                explore_save = {
+                    "_report_type": "explore",
+                    **er.model_dump(),
+                    "sub_questions": sub_questions_raw,
+                    "subq_answers": subq_answers_raw,
+                }
+                complete_investigation(
+                    inv_id,
+                    report=explore_save,
+                    hypotheses=[],
+                    query_history=query_history,
+                    question=question,
+                    connection_id=connection_id,
+                    skip_index=False,
+                )
 
             elif node_name == "synthesize" and merged.get("report"):
                 query_history = merged.get("query_history", [])
@@ -618,7 +688,7 @@ async def _stream_investigation(question: str, connection_id: str, request: Requ
 @app.post("/investigate")
 async def investigate(req: InvestigateRequest, request: Request):
     return StreamingResponse(
-        _stream_investigation(req.question, req.connection_id, request, hitl=req.hitl),
+        _stream_investigation(req.question, req.connection_id, request, hitl=req.hitl, skip_cache=req.skip_cache),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
@@ -838,9 +908,9 @@ def table_sample(conn_id: str, table: str, limit: int = 100):
     try:
         # Use parameterised table name to prevent injection via identifier quoting
         safe_table = table.replace('"', '')
-        result = db.execute(f'SELECT * FROM "{safe_table}" LIMIT {int(limit)}')
-        columns = [str(d[0]) for d in result.description]
-        rows = [[str(v) if v is not None else None for v in row] for row in result.fetchall()]
+        result = db.execute("sample", f'SELECT * FROM "{safe_table}" LIMIT {int(limit)}')
+        columns = result.columns
+        rows = [[str(v) if v is not None else None for v in row] for row in result.rows]
         db.close()
         return {"columns": columns, "rows": rows}
     except Exception as e:

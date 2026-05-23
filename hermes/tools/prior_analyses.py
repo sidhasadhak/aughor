@@ -9,11 +9,54 @@ Disable via: HERMES_PRIOR_ANALYSES=false
 from __future__ import annotations
 
 import os
+import re
 
 INVESTIGATIONS_COLLECTION = "hermes_investigations"
 _ENABLED = os.getenv("HERMES_PRIOR_ANALYSES", "true").lower() != "false"
 _MIN_SCORE = 0.65       # minimum score for context injection
-_CACHE_SCORE = 0.80     # minimum score to short-circuit and return prior result directly
+_CACHE_SCORE = 0.88     # minimum score to short-circuit and return prior result directly
+
+
+# ── Temporal entity guard ─────────────────────────────────────────────────────
+# Prevents returning a cached investigation about January when the user asked
+# about February, or a Q3 investigation when the question concerns Q1.
+
+_MONTH_RE = re.compile(
+    r'\b(january|february|march|april|may|june|july|august|september|october|november|december'
+    r'|jan|feb|mar|apr|jun|jul|aug|sep|oct|nov|dec)\b'
+    r'[\s\-]?(\d{4})?',
+    re.IGNORECASE,
+)
+_QUARTER_RE = re.compile(r'\b(q[1-4])\s*(\d{4})?\b', re.IGNORECASE)
+_YEAR_RE    = re.compile(r'\b(20\d{2})\b')
+
+
+def _temporal_tokens(text: str) -> set[str]:
+    """Extract normalised temporal tokens (month abbreviations, quarters, years)."""
+    tokens: set[str] = set()
+    for m in _MONTH_RE.finditer(text):
+        tokens.add(m.group(1).lower()[:3])          # "feb", "jan", …
+        if m.group(2):
+            tokens.add(m.group(2))                   # year alongside month
+    for m in _QUARTER_RE.finditer(text):
+        tokens.add(m.group(1).lower())               # "q1", "q3", …
+        if m.group(2):
+            tokens.add(m.group(2))
+    for m in _YEAR_RE.finditer(text):
+        tokens.add(m.group(1))
+    return tokens
+
+
+def _temporal_compatible(q_new: str, q_cached: str) -> bool:
+    """
+    Return False when both questions reference specific time periods that don't overlap.
+    If either question has no temporal tokens, we assume compatible (conservative).
+    """
+    t_new    = _temporal_tokens(q_new)
+    t_cached = _temporal_tokens(q_cached)
+    if not t_new or not t_cached:
+        return True
+    return bool(t_new & t_cached)
 
 
 # ── Indexing ──────────────────────────────────────────────────────────────────
@@ -78,13 +121,18 @@ def _find_similar(question: str, connection_id: str) -> tuple[str, float] | None
 
     vector = embed_one(question)
     query_filter = _connection_filter(connection_id)
-    hits = search(INVESTIGATIONS_COLLECTION, vector, top_k=1, query_filter=query_filter)
+    # Fetch a few candidates so we can apply the temporal guard and still find a hit
+    hits = search(INVESTIGATIONS_COLLECTION, vector, top_k=3, query_filter=query_filter)
     if not hits:
         return None
-    best = hits[0]
-    if best["score"] < _CACHE_SCORE:
-        return None
-    return best["payload"]["inv_id"], best["score"]
+    for hit in hits:
+        if hit["score"] < _CACHE_SCORE:
+            break  # sorted descending — no point checking further
+        cached_q = hit["payload"].get("question", "")
+        if not _temporal_compatible(question, cached_q):
+            continue  # period mismatch — skip this candidate
+        return hit["payload"]["inv_id"], hit["score"]
+    return None
 
 
 # ── Search ────────────────────────────────────────────────────────────────────

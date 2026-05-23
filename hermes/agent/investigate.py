@@ -57,16 +57,53 @@ def _prioritize_dimensions(dimensions: list[str]) -> list[str]:
 
 # ── Router functions (read by graph.py conditional edges) ────────────────────
 
+_DIMENSION_QUESTION_RE = re.compile(
+    r'\b(which|what|top|breakdown|by|per|across|segment|split|attribution|influence|'
+    r'channel|source|medium|region|country|geo|product|category|device|platform|'
+    r'customer|segment|cohort|campaign|referrer|utm)\b',
+    re.IGNORECASE,
+)
+
+
+def _question_asks_for_dimension(question: str) -> bool:
+    """
+    Return True when the user explicitly asked about a specific dimension
+    (e.g. "which channel", "by region", "top product category").
+    When True, Tier 0 termination is suppressed — we must run dimensional analysis
+    even if the overall metric change is within normal variance.
+    """
+    q = question.lower()
+    # "which X" or "what X" followed by a dimension keyword
+    if re.search(r'\b(which|what)\b.{0,40}\b(channel|source|region|product|category|device|segment|campaign)\b', q):
+        return True
+    # Explicit attribution phrasing
+    if re.search(r'\b(influence|attribution|drove|driving|caused|responsible|contributed|contribution)\b', q):
+        return True
+    # "breakdown by" / "split by" / "per channel" patterns
+    if re.search(r'\b(breakdown|split|breakdown|segment)\s+(by|across|per)\b', q):
+        return True
+    return False
+
+
 def route_after_baseline(state: AgentState) -> str:
     """
     Tier 0 gate: if the decline is within normal variance, skip straight to
     synthesis so we don't run 4 more expensive phases on non-anomalies.
 
+    EXCEPTION: when the user explicitly asked about a specific dimension
+    (e.g. "which channel had most influence"), always proceed to dimensional
+    analysis — the user wants the breakdown regardless of anomaly status.
+
     Decision hierarchy:
-      1. stats.py code-level sigma (authoritative, deterministic)
-      2. LLM interpretation's is_significant flags (fallback)
-      3. Unknown → proceed (don't block on uncertainty)
+      1. User asked about a dimension → always proceed to ada_decompose
+      2. stats.py code-level sigma (authoritative, deterministic)
+      3. LLM interpretation's is_significant flags (fallback)
+      4. Unknown → proceed (don't block on uncertainty)
     """
+    question = state.get("question", "")
+    if _question_asks_for_dimension(question):
+        return "ada_decompose"  # never skip when user wants dimensional breakdown
+
     sigma = state.get("_baseline_sigma")
     code_sig = state.get("_baseline_significant")
 

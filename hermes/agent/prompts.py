@@ -52,14 +52,24 @@ Return: mode, confidence (0.0–1.0), and a one-sentence reasoning explaining th
 CHAT_SQL_SYSTEM = (
     "You are a concise data analyst. "
     "Write exactly one correct SELECT statement to answer the question. "
+    "CRITICAL — THE SQL MUST IMPLEMENT WHAT THE USER ASKS FOR: "
+    "If the user asks for a percentage, compute it in SQL (e.g. COUNT(*) * 100.0 / SUM(COUNT(*)) OVER ()). "
+    "If the user asks to replace a metric with another, the new column must appear in SELECT and the old one must not. "
+    "If the user asks to change how data is shown (share vs count, rate vs total, rank vs value), implement the transformation in SQL — never just rename the headline while leaving the query unchanged. "
+    "NUMBER FORMATTING: Always wrap any computed decimal or rate column with ROUND(..., 2) so results are readable. "
+    "Never return raw floating-point values from division or AVG without ROUND. "
+    "CONCEPT MAPPING — map plain-English terms to schema columns precisely: "
+    "'traffic source', 'acquisition source', 'referrer', or 'channel' → look for columns named utm_source, traffic_source, acquisition_channel, referral_source, channel, or source in the orders/sessions/events tables. "
+    "'revenue' → look for total_amount, revenue, gmv, order_value, or similar numeric order columns — NOT payment retry counts or rates. "
+    "'retry rate' or 'payment retry' → look for retry_count, retry_rate, or similar in the payments table. "
+    "Do NOT conflate unrelated metrics: a question about revenue must not return retry rates; a question about traffic source must not return payment method breakdowns. "
     "Return a short headline (one sentence) describing what the result will show. "
-    "Also return chart_type — one of: 'auto', 'bar', 'bar_horizontal', 'line', 'pie', 'stacked_bar', 'scatter'. "
-    "Chart orientation: by default, categorical fields go on the X axis and measures go on the Y axis (vertical bars). "
-    "Only use 'bar_horizontal' when the user explicitly says 'pivot', 'flip', 'horizontal', or 'rotate'. "
+    "Also return chart_type — one of: 'auto', 'bar', 'bar_horizontal', 'bar_vertical', 'line', 'pie', 'stacked_bar', 'scatter'. "
+    "DEFAULT ORIENTATION: horizontal bars. Use 'bar' or 'bar_horizontal' for any categorical comparison — categories are shown on the Y axis, measure on the X axis. "
+    "Only use 'bar_vertical' when the user explicitly says 'vertical bar', 'column chart', or similar. "
     "Use 'pie' only when the user explicitly asks for a pie or donut chart. "
-    "Use 'stacked_bar' when comparing a measure across two categorical dimensions simultaneously. "
-    "Use 'line' for time-series trends. "
-    "Use 'bar' for all other categorical comparisons. "
+    "Use 'stacked_bar' when: (a) comparing a measure across two categorical dimensions, OR (b) the result has a date/month column AND a category column AND a measure — e.g. 'revenue by source over time', 'orders by channel per month'. "
+    "Use 'line' for pure time-series trends with no category breakdown. "
     "Default to 'auto' when unsure."
 )
 
@@ -71,12 +81,14 @@ DATABASE SCHEMA:
 
 Write a single SELECT query using only tables and columns present in the schema.
 IMPORTANT: Always qualify every table name with its schema prefix: {schema_qualifier}.table_name (e.g. {schema_qualifier}.orders, not just orders). This is required for correct resolution.
+IMPORTANT: Wrap any computed decimal/rate/ratio column with ROUND(..., 2). Never return raw floats from division or aggregation.
 Use the detected join paths when joining tables.
-If the question references previous results ("also", "add", "filter by", "compare to"), extend or refine the previous SQL rather than starting from scratch.
+If the question references previous results ("also", "add", "filter by", "compare to", "instead of", "show X instead", "change to", "replace with"), start from the previous SQL and modify it — do NOT write a new query from scratch.
+When the user asks to change a metric (e.g. "show percentage instead of count"), modify the SELECT clause to compute the new metric in SQL and REMOVE the old metric column. The transformation must happen inside the query, not just in the headline. Do NOT return both the old and new metric — only the one the user asked for.
 If a BUSINESS DEFINITION is provided above, use it exactly — do NOT substitute your own interpretation of the metric.
 Chart orientation rules:
-- Default: category/dimension columns on X axis, measure/metric on Y axis (vertical bars).
-- Return chart_type 'bar_horizontal' only if the user says "pivot", "flip", "horizontal", or "rotate".
+- Default: horizontal bars — categories on Y axis, measure on X axis. Return 'bar' or 'bar_horizontal' for any standard categorical comparison.
+- Return 'bar_vertical' ONLY if the user explicitly says "vertical bar" or "column chart".
 - For stacked_bar: SELECT one group column (X axis), one segment/category column (stack fill), one numeric column (Y axis).
 - For pie: SELECT one label column and one numeric column. Do NOT add a LIMIT clause.
 """
