@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Trash2 } from "lucide-react";
+import DeleteIcon from "@atlaskit/icon/core/delete";
 import type { InvestigationSummary } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -185,7 +185,7 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
                   isDeleting && "opacity-50 pointer-events-none"
                 )}
               >
-                <Trash2 size={12} />
+                <DeleteIcon label="Delete" size="small" />
               </button>
             </li>
           );

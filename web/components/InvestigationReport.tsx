@@ -2,7 +2,9 @@
 
 import React, { useState } from "react";
 import { InvestigationChart } from "@/components/InvestigationChart";
-import { Loader2, ChevronDown, ChevronRight } from "lucide-react";
+import ChevronDownIcon  from "@atlaskit/icon/core/chevron-down";
+import ChevronRightIcon from "@atlaskit/icon/core/chevron-right";
+import RetryIcon        from "@atlaskit/icon/core/retry";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -104,7 +106,7 @@ function SqlToggle({ sql }: { sql: string }) {
         onClick={() => setOpen(v => !v)}
         className="flex items-center gap-1 text-[11px] text-zinc-600 hover:text-zinc-400 transition-colors"
       >
-        {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+        {open ? <ChevronDownIcon label="" size="small" /> : <ChevronRightIcon label="" size="small" />}
         SQL
       </button>
       {open && (
@@ -127,7 +129,7 @@ function DataTable({ columns, rows, label }: { columns: string[]; rows: (string 
         onClick={() => setOpen(v => !v)}
         className="flex items-center gap-1 text-[11px] text-zinc-600 hover:text-zinc-400 transition-colors"
       >
-        {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+        {open ? <ChevronDownIcon label="" size="small" /> : <ChevronRightIcon label="" size="small" />}
         {label} · {rows.length} rows
       </button>
       {open && (
@@ -377,7 +379,7 @@ function StreamingPhaseCard({ phase }: { phase: InvestigationPhase }) {
     <div className="space-y-3 pl-3 border-l border-zinc-800">
       <div className="flex items-center gap-2">
         <span className="text-base leading-none">{phase.phase_icon}</span>
-        {isRunning && <Loader2 className="h-3.5 w-3.5 text-sky-400 animate-spin" />}
+        {isRunning && <span className="text-sky-400 animate-spin inline-block"><RetryIcon label="Loading" size="small" /></span>}
         <span className={`text-[12px] font-medium ${isSkipped ? "text-zinc-600" : "text-zinc-300"}`}>
           {phase.phase_name}
         </span>

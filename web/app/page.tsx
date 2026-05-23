@@ -1,20 +1,18 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import {
-  MessageSquare,
-  BarChart2,
-  Database,
-  Settings,
-  ChevronDown,
-  Home as HomeIcon,
-  BookOpen,
-  Clock,
-  Search,
-  Plus,
-  X,
-  ArrowLeft,
-} from "lucide-react";
+import HomeIcon        from "@atlaskit/icon/core/home";
+import CommentIcon     from "@atlaskit/icon/core/comment";
+import ChartBarIcon    from "@atlaskit/icon/core/chart-bar";
+import DatabaseIcon    from "@atlaskit/icon/core/database";
+import SettingsIcon    from "@atlaskit/icon/core/settings";
+import ChevronDownIcon from "@atlaskit/icon/core/chevron-down";
+import ArchiveBoxIcon  from "@atlaskit/icon/core/archive-box";
+import ClockIcon       from "@atlaskit/icon/core/clock";
+import SearchIcon      from "@atlaskit/icon/core/search";
+import AddIcon         from "@atlaskit/icon/core/add";
+import CloseIcon       from "@atlaskit/icon/core/close";
+import ArrowLeftIcon   from "@atlaskit/icon/core/arrow-left";
 
 import { ConfigurePanel } from "@/components/ConfigurePanel";
 import { ConnectionsPanel } from "@/components/ConnectionsPanel";
@@ -108,7 +106,7 @@ function ConnectionSelector({
       >
         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
         <span className="max-w-[160px] truncate">{current?.name ?? selectedId}</span>
-        <ChevronDown size={11} className="text-zinc-500 shrink-0" />
+        <span className="text-zinc-500 shrink-0"><ChevronDownIcon label="" size="small" /></span>
       </button>
 
       {open && (
@@ -171,10 +169,10 @@ function SearchPalette({
   }, []);
 
   const suggestions = [
-    { label: "New Chat",  icon: <MessageSquare size={13} />, action: () => { onGoToChat(); onClose(); } },
+    { label: "New Chat",  icon: <CommentIcon label="" size="small" />, action: () => { onGoToChat(); onClose(); } },
     ...EXAMPLE_QUESTIONS.map(q => ({
       label: q,
-      icon: <Search size={13} className="text-zinc-500" />,
+      icon: <SearchIcon label="" size="small" />,
       action: () => { onGoToChat(q); onClose(); },
     })),
   ].filter(s => !query || s.label.toLowerCase().includes(query.toLowerCase()));
@@ -185,7 +183,7 @@ function SearchPalette({
       <div className="fixed top-[18%] left-1/2 -translate-x-1/2 z-50 w-full max-w-xl bg-zinc-900 border border-zinc-600 rounded-2xl shadow-2xl overflow-hidden">
         {/* Input row */}
         <div className="flex items-center gap-3 px-4 py-3.5 border-b border-zinc-700/80">
-          <Search size={15} className="text-zinc-500 shrink-0" />
+          <span className="text-zinc-500 shrink-0"><SearchIcon label="Search" size="small" /></span>
           <input
             ref={inputRef}
             value={query}
@@ -291,7 +289,7 @@ function HomePage({
               className="group rounded-2xl border border-zinc-700/70 bg-zinc-900/40 hover:bg-violet-500/5 hover:border-violet-500/30 p-6 text-left transition-all"
             >
               <div className="w-10 h-10 rounded-xl bg-zinc-700/60 border border-zinc-600 flex items-center justify-center mb-4 group-hover:border-violet-500/30 transition">
-                <MessageSquare size={17} className="text-zinc-400 group-hover:text-violet-400 transition" />
+                <span className="text-zinc-400 group-hover:text-violet-400 transition"><CommentIcon label="Chat" size="medium" /></span>
               </div>
               <p className="text-sm font-semibold text-zinc-200 group-hover:text-white transition">Chat</p>
               <p className="text-xs text-zinc-500 mt-1.5 leading-relaxed">Ask questions, investigate root causes, and explore your data — all in one place.</p>
@@ -301,7 +299,7 @@ function HomePage({
               className="group rounded-2xl border border-zinc-700/70 bg-zinc-900/40 hover:bg-sky-500/5 hover:border-sky-500/30 p-6 text-left transition-all"
             >
               <div className="w-10 h-10 rounded-xl bg-zinc-700/60 border border-zinc-600 flex items-center justify-center mb-4 group-hover:border-sky-500/30 transition">
-                <BookOpen size={17} className="text-zinc-400 group-hover:text-sky-400 transition" />
+                <span className="text-zinc-400 group-hover:text-sky-400 transition"><ArchiveBoxIcon label="Catalog" size="medium" /></span>
               </div>
               <p className="text-sm font-semibold text-zinc-200 group-hover:text-white transition">Catalog</p>
               <p className="text-xs text-zinc-500 mt-1.5 leading-relaxed">Browse tables, columns, and row counts in your database.</p>
@@ -333,7 +331,7 @@ function HomePage({
             <div className="space-y-1">
               {recentInvs.map(inv => (
                 <div key={inv.id} className="flex items-center gap-3 py-2.5 border-b border-zinc-700/40 last:border-0">
-                  <Clock size={12} className="text-zinc-600 shrink-0" />
+                  <span className="text-zinc-600 shrink-0"><ClockIcon label="" size="small" /></span>
                   <p className="flex-1 text-sm text-zinc-400 truncate">{inv.question}</p>
                   <span className="text-xs text-zinc-600 shrink-0">{timeAgo(inv.started_at)}</span>
                   {inv.status === "timed_out" && (
@@ -415,7 +413,7 @@ export default function Home() {
         {/* Brand — same width as sidebar */}
         <div className="w-56 shrink-0 flex items-center gap-2.5">
           <div className="w-6 h-6 rounded-md bg-violet-600 flex items-center justify-center shrink-0">
-            <BarChart2 size={13} className="text-white" />
+            <ChartBarIcon label="Aughor" size="small" color="var(--ds-icon-inverse)" />
           </div>
           <div className="leading-tight">
             <span className="text-sm font-semibold tracking-tight text-zinc-100">Aughor</span>
@@ -428,7 +426,7 @@ export default function Home() {
           onClick={() => setShowSearch(true)}
           className="flex-1 max-w-2xl mx-auto flex items-center gap-3 px-4 py-2 rounded-lg bg-zinc-800/80 border border-zinc-700/60 text-zinc-500 text-sm hover:bg-zinc-800 hover:border-zinc-600 hover:text-zinc-400 transition group"
         >
-          <Search size={13} className="shrink-0" />
+          <span className="shrink-0"><SearchIcon label="Search" size="small" /></span>
           <span className="flex-1 text-left text-[13px]">Search data, tables, analyses, and more…</span>
           <span className="hidden sm:flex items-center gap-0.5 text-[10px] text-zinc-600 group-hover:text-zinc-500 transition">
             <kbd className="px-1.5 py-0.5 rounded border border-zinc-700 bg-zinc-800/60 font-mono">⌘</kbd>
@@ -458,13 +456,13 @@ export default function Home() {
 
           {/* Primary nav */}
           <div className="flex-1 flex flex-col py-2 gap-0.5 overflow-y-auto px-1.5">
-            <NavItem icon={<HomeIcon size={14} />} label="Home" active={tab === "home"} onClick={() => setTab("home")} />
+            <NavItem icon={<HomeIcon label="Home" size="small" />} label="Home" active={tab === "home"} onClick={() => setTab("home")} />
 
             <p className="px-2 pt-4 pb-1 text-[10px] text-zinc-600 uppercase tracking-widest font-semibold">
               Workspace
             </p>
             <NavItem
-              icon={<MessageSquare size={14} />}
+              icon={<CommentIcon label="Chat" size="small" />}
               label="Chat"
               active={tab === "chat"}
               onClick={() => { setSelectedChatSessionId(null); setChatKey(k => k + 1); setTab("chat"); }}
@@ -473,13 +471,13 @@ export default function Home() {
             <p className="px-2 pt-4 pb-1 text-[10px] text-zinc-600 uppercase tracking-widest font-semibold">
               Data
             </p>
-            <NavItem icon={<BookOpen size={14} />} label="Catalog"      active={tab === "catalog"} onClick={() => setTab("catalog")} />
-            <NavItem icon={<Database size={14} />} label="Connections"  active={tab === "data"}    onClick={() => setTab("data")} />
+            <NavItem icon={<ArchiveBoxIcon label="Catalog" size="small" />} label="Catalog"     active={tab === "catalog"} onClick={() => setTab("catalog")} />
+            <NavItem icon={<DatabaseIcon label="Connections" size="small" />} label="Connections" active={tab === "data"}    onClick={() => setTab("data")} />
           </div>
 
           {/* Bottom: settings */}
           <div className="border-t border-zinc-700/80 py-1.5 px-1.5 shrink-0">
-            <NavItem icon={<Settings size={14} />} label="Settings" active={false} onClick={() => {}} />
+            <NavItem icon={<SettingsIcon label="Settings" size="small" />} label="Settings" active={false} onClick={() => {}} />
           </div>
         </nav>
 
@@ -522,7 +520,7 @@ export default function Home() {
                 title="New Chat"
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:border-zinc-600 hover:bg-zinc-700/60 text-xs font-medium transition"
               >
-                <Plus size={13} />
+                <AddIcon label="New" size="small" />
                 <span>New</span>
               </button>
 
@@ -536,7 +534,7 @@ export default function Home() {
                     : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:text-zinc-200 hover:border-zinc-600 hover:bg-zinc-700/60"
                 }`}
               >
-                <Clock size={13} />
+                <ClockIcon label="History" size="small" />
                 <span>History</span>
               </button>
 
@@ -550,7 +548,7 @@ export default function Home() {
                     : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:text-zinc-200 hover:border-zinc-600 hover:bg-zinc-700/60"
                 }`}
               >
-                <Settings size={13} />
+                <SettingsIcon label="Configure" size="small" />
                 <span>Configure</span>
               </button>
             </div>
@@ -564,7 +562,7 @@ export default function Home() {
                 <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-700 shrink-0">
                   <span className="text-sm font-semibold text-zinc-200">History</span>
                   <button onClick={() => setShowHistory(false)} className="text-zinc-500 hover:text-zinc-300 transition">
-                    <X size={14} />
+                    <CloseIcon label="Close" size="small" />
                   </button>
                 </div>
                 <HistoryPanel
@@ -609,7 +607,7 @@ export default function Home() {
                     onClick={() => setSelectedHistoryInvId(null)}
                     className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition"
                   >
-                    <ArrowLeft size={14} />
+                    <ArrowLeftIcon label="Back" size="small" />
                     Back
                   </button>
                   <span className="text-xs text-zinc-600">·</span>

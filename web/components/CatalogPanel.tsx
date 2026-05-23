@@ -1,6 +1,8 @@
 "use client";
 
 import { Fragment, useEffect, useState } from "react";
+import TableIcon       from "@atlaskit/icon/core/table";
+import ChevronDownIcon from "@atlaskit/icon/core/chevron-down";
 import { getSchemaRich, RichSchema, getConnections, Connection } from "@/lib/api";
 
 function fmtRows(n: string | number | null | undefined): string {
@@ -141,13 +143,8 @@ export function CatalogPanel({ connectionId, onChatWithTable }: Props) {
                     onKeyDown={e => { if (e.key === "Enter" || e.key === " ") setExpandedTable(expanded ? null : table.name); }}
                   >
                     {/* Table icon */}
-                    <div className="w-8 h-8 rounded-lg bg-zinc-700/60 border border-zinc-600 flex items-center justify-center shrink-0">
-                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-                        <rect x="1" y="1" width="12" height="12" rx="1.5" stroke="currentColor" strokeWidth="1.2" className="text-zinc-400"/>
-                        <line x1="1" y1="5" x2="13" y2="5" stroke="currentColor" strokeWidth="1" className="text-zinc-600"/>
-                        <line x1="1" y1="9" x2="13" y2="9" stroke="currentColor" strokeWidth="1" className="text-zinc-600"/>
-                        <line x1="5" y1="1" x2="5" y2="13" stroke="currentColor" strokeWidth="1" className="text-zinc-600"/>
-                      </svg>
+                    <div className="w-8 h-8 rounded-lg bg-zinc-700/60 border border-zinc-600 flex items-center justify-center shrink-0 text-zinc-400">
+                      <TableIcon label="Table" size="small" />
                     </div>
 
                     <div className="flex-1 min-w-0">
@@ -185,12 +182,9 @@ export function CatalogPanel({ connectionId, onChatWithTable }: Props) {
                     )}
 
                     {/* Chevron */}
-                    <svg
-                      width="14" height="14" viewBox="0 0 14 14" fill="none"
-                      className={`shrink-0 text-zinc-500 transition-transform ml-1 ${expanded ? "rotate-180" : ""}`}
-                    >
-                      <path d="M3 5l4 4 4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                    </svg>
+                    <span className={`shrink-0 text-zinc-500 transition-transform ml-1 inline-block ${expanded ? "rotate-180" : ""}`}>
+                      <ChevronDownIcon label="" size="small" />
+                    </span>
                   </div>
 
                   {/* Expanded columns */}

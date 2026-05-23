@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import DeleteIcon from "@atlaskit/icon/core/delete";
 import { Badge } from "@/components/ui/badge";
 import {
   addConnection,
@@ -238,16 +239,12 @@ export function ConnectionsPanel({ selectedId, onSelect, activeSchemaId, onSchem
                   >
                     {pendingDelete === conn.id ? (
                       <>
-                        <svg className="w-3 h-3" viewBox="0 0 16 16" fill="currentColor">
-                          <path d="M6 2a1 1 0 0 0-1 1v.5H2.5a.5.5 0 0 0 0 1H3v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-8h.5a.5.5 0 0 0 0-1H11V3a1 1 0 0 0-1-1H6zm1 1h2v.5H7V3zm-3 2h8v8H4V5zm2 1a.5.5 0 0 0-.5.5v5a.5.5 0 0 0 1 0v-5A.5.5 0 0 0 6 6zm4 0a.5.5 0 0 0-.5.5v5a.5.5 0 0 0 1 0v-5A.5.5 0 0 0 10 6z"/>
-                        </svg>
+                        <DeleteIcon label="Delete" size="small" />
                         Confirm delete
                       </>
                     ) : (
                       <>
-                        <svg className="w-3 h-3" viewBox="0 0 16 16" fill="currentColor">
-                          <path d="M6 2a1 1 0 0 0-1 1v.5H2.5a.5.5 0 0 0 0 1H3v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-8h.5a.5.5 0 0 0 0-1H11V3a1 1 0 0 0-1-1H6zm1 1h2v.5H7V3zm-3 2h8v8H4V5zm2 1a.5.5 0 0 0-.5.5v5a.5.5 0 0 0 1 0v-5A.5.5 0 0 0 6 6zm4 0a.5.5 0 0 0-.5.5v5a.5.5 0 0 0 1 0v-5A.5.5 0 0 0 10 6z"/>
-                        </svg>
+                        <DeleteIcon label="Delete" size="small" />
                         Delete
                       </>
                     )}

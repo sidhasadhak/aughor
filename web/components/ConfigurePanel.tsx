@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { X, ChevronRight, ChevronDown } from "lucide-react";
+import CloseIcon         from "@atlaskit/icon/core/close";
+import ChevronRightIcon  from "@atlaskit/icon/core/chevron-right";
+import TableIcon         from "@atlaskit/icon/core/table";
+import InformationIcon   from "@atlaskit/icon/core/information";
 import { MetricsPanel } from "./MetricsPanel";
 import type { Connection } from "@/lib/api";
 
@@ -156,7 +159,7 @@ function TableDetail({
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-zinc-700/60 shrink-0">
         <div className="flex items-center gap-2">
           <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300 transition">
-            <ChevronRight size={14} className="rotate-180" />
+            <span className="rotate-180 inline-block"><ChevronRightIcon label="Back" size="small" /></span>
           </button>
           <span className="text-[12px] font-semibold text-zinc-200 font-mono">{table.name}</span>
           <span className="text-[10px] text-zinc-500">
@@ -287,12 +290,7 @@ function DataTab({ connId }: { connId: string }) {
                 onClick={() => setSelected(t)}
                 className="w-full flex items-center px-3 py-2.5 text-[12px] border-b border-zinc-700/30 hover:bg-zinc-700/20 transition group text-left"
               >
-                {/* Table icon */}
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="text-zinc-500 shrink-0 mr-2">
-                  <rect x="1" y="1" width="12" height="12" rx="1.5" stroke="currentColor" strokeWidth="1.1"/>
-                  <line x1="1" y1="4.5" x2="13" y2="4.5" stroke="currentColor" strokeWidth="1.1"/>
-                  <line x1="5" y1="4.5" x2="5" y2="13" stroke="currentColor" strokeWidth="1.1"/>
-                </svg>
+                <span className="text-zinc-500 shrink-0 mr-2"><TableIcon label="Table" size="small" /></span>
                 <span className="flex-1 font-mono text-zinc-200 truncate">{t.name}</span>
                 <span className="w-12 text-right text-zinc-500 shrink-0">{t.columns.length}</span>
                 <span className="w-20 text-right text-zinc-500 shrink-0 font-mono">
@@ -302,7 +300,7 @@ function DataTab({ connId }: { connId: string }) {
                     ? `${(Number(t.row_count) / 1_000).toFixed(0)}k`
                     : t.row_count}
                 </span>
-                <ChevronRight size={12} className="text-zinc-600 group-hover:text-zinc-400 transition ml-1 shrink-0" />
+                <span className="text-zinc-600 group-hover:text-zinc-400 transition ml-1 shrink-0"><ChevronRightIcon label="" size="small" /></span>
               </button>
             ))}
             {filtered.length === 0 && (
@@ -424,17 +422,14 @@ export function ConfigurePanel({ connectionId, connections, onSelectConn, onClos
         {/* Panel header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-700/60 shrink-0">
           <div className="flex items-center gap-2">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="text-zinc-400">
-              <path d="M7 1.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM7 0a7 7 0 110 14A7 7 0 017 0z" fill="currentColor" fillRule="evenodd" fillOpacity=".3"/>
-              <path d="M6 4h2v2H6V4zM6 7h2v3H6V7z" fill="currentColor"/>
-            </svg>
+            <span className="text-zinc-400"><InformationIcon label="Configure" size="small" /></span>
             <span className="text-[12px] font-semibold text-zinc-200">Configure</span>
             {connection && (
               <span className="text-[11px] text-zinc-500 font-mono truncate max-w-[140px]">{connection.name}</span>
             )}
           </div>
           <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300 transition">
-            <X size={14} />
+            <CloseIcon label="Close" size="small" />
           </button>
         </div>
 

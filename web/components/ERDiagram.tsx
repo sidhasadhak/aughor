@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useLayoutEffect, useState } from "react";
+import TableIcon from "@atlaskit/icon/core/table";
 import { RichSchema, SchemaTable, SchemaJoin } from "@/lib/api";
 
 // ── Layout constants ──────────────────────────────────────────────────────────
@@ -129,18 +130,6 @@ function sortCols(table: SchemaTable, pkSet: Set<string>) {
   });
 }
 
-// ── Table icon ────────────────────────────────────────────────────────────────
-
-function TableIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-      <rect x="1" y="1" width="12" height="12" rx="2" stroke="currentColor" strokeWidth="1.4" />
-      <line x1="1" y1="5" x2="13" y2="5" stroke="currentColor" strokeWidth="1.4" />
-      <line x1="5" y1="5" x2="5" y2="13" stroke="currentColor" strokeWidth="1.4" />
-    </svg>
-  );
-}
-
 // ── Table card ────────────────────────────────────────────────────────────────
 
 interface TableCardProps {
@@ -176,7 +165,7 @@ function TableCard({ layout, pkSet, expanded, onExpand, registerRow }: TableCard
           style={{ height: HEADER_H }}
         >
           <div className="w-7 h-7 rounded bg-indigo-950/80 border border-indigo-800/50 flex items-center justify-center text-indigo-300 shrink-0">
-            <TableIcon />
+            <TableIcon label="Table" size="small" />
           </div>
           <div className="min-w-0 flex-1">
             <div className="text-[12px] font-semibold font-mono text-zinc-100 truncate leading-snug">
