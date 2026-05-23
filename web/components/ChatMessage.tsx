@@ -1,7 +1,15 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { Check, Copy, X, Download } from "lucide-react";
+import TableIcon         from "@atlaskit/icon/core/table";
+import DownloadIcon      from "@atlaskit/icon/core/download";
+import CloseIcon         from "@atlaskit/icon/core/close";
+import CopyIcon          from "@atlaskit/icon/core/copy";
+import CheckMarkIcon     from "@atlaskit/icon/core/check-mark";
+import ChevronDownIcon   from "@atlaskit/icon/core/chevron-down";
+import AngleBracketsIcon from "@atlaskit/icon/core/angle-brackets";
+import InformationIcon   from "@atlaskit/icon/core/information";
+import ArrowRightIcon    from "@atlaskit/icon/core/arrow-right";
 import { ChatTurn } from "@/lib/useChat";
 import type { ADAReport } from "@/lib/types";
 import { InvestigationReportView } from "@/components/InvestigationReport";
@@ -725,12 +733,7 @@ function InlineChart({
         title="Download chart as PNG"
         className="absolute top-0 right-0 z-10 opacity-0 group-hover/chart:opacity-100 transition-opacity w-7 h-7 flex items-center justify-center rounded-md bg-zinc-800/90 hover:bg-zinc-700 text-zinc-500 hover:text-zinc-200"
       >
-        {/* Atlaskit-style image-download icon */}
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-          <rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" strokeWidth="1.6"/>
-          <path d="M3 16l5-5 4 4 3-3 6 5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-          <circle cx="8.5" cy="8.5" r="1.5" fill="currentColor"/>
-        </svg>
+        <DownloadIcon label="Download chart as PNG" size="small" />
       </button>
       <div
         ref={outerRef}
@@ -867,16 +870,6 @@ function ResultBody({
     });
   }
 
-  // Atlaskit-style table icon reused in the source chip
-  const TableIcon = () => (
-    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" className="shrink-0">
-      <rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" strokeWidth="1.8"/>
-      <line x1="3" y1="9"  x2="21" y2="9"  stroke="currentColor" strokeWidth="1.4"/>
-      <line x1="3" y1="15" x2="21" y2="15" stroke="currentColor" strokeWidth="1.4"/>
-      <line x1="9" y1="9"  x2="9"  y2="21" stroke="currentColor" strokeWidth="1.4"/>
-    </svg>
-  );
-
   return (
     <>
       {isSingleRow && hasNum ? (
@@ -895,7 +888,7 @@ function ResultBody({
               onClick={handleSourceClick}
               className="flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-md border border-zinc-700/40 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600 transition-colors"
             >
-              <TableIcon />
+              <TableIcon label="Table" size="small" />
               Source: {sourceTitle}
             </button>
           </div>
@@ -933,7 +926,9 @@ function SqlBlock({ sql }: { sql: string }) {
         title={copied ? "Copied!" : "Copy SQL"}
         className="absolute top-2 right-2 w-6 h-6 rounded flex items-center justify-center text-zinc-600 hover:text-zinc-300 hover:bg-zinc-700/60 transition opacity-0 group-hover/sql:opacity-100"
       >
-        {copied ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
+        {copied
+          ? <span className="text-emerald-400"><CheckMarkIcon label="Copied" size="small" /></span>
+          : <CopyIcon label="Copy SQL" size="small" />}
       </button>
     </div>
   );
@@ -989,13 +984,9 @@ export function SourcePanel({
       {/* ── Header ── */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-700/60 flex-shrink-0">
         <div className="flex items-center gap-1.5 min-w-0">
-          {/* Atlaskit table icon */}
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" className="shrink-0 text-zinc-400">
-            <rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" strokeWidth="1.6"/>
-            <line x1="3" y1="9"  x2="21" y2="9"  stroke="currentColor" strokeWidth="1.4"/>
-            <line x1="3" y1="15" x2="21" y2="15" stroke="currentColor" strokeWidth="1.4"/>
-            <line x1="9" y1="9"  x2="9"  y2="21" stroke="currentColor" strokeWidth="1.4"/>
-          </svg>
+          <span className="shrink-0 text-zinc-400">
+            <TableIcon label="Table" size="small" />
+          </span>
           <span className="text-[12px] font-medium text-zinc-200 truncate">{title}</span>
         </div>
         <div className="flex items-center gap-0.5 flex-shrink-0 ml-2">
@@ -1005,19 +996,21 @@ export function SourcePanel({
             title="Download as CSV"
             className="w-6 h-6 flex items-center justify-center rounded hover:bg-zinc-700/60 text-zinc-500 hover:text-zinc-300 transition-colors"
           >
-            <Download size={11} />
+            <DownloadIcon label="Download CSV" size="small" />
           </button>
           {/* Copy SQL */}
           {sql && (
             <button onClick={handleCopySql} title={copied ? "Copied!" : "Copy SQL"}
               className="w-6 h-6 flex items-center justify-center rounded hover:bg-zinc-700/60 text-zinc-500 hover:text-zinc-300 transition-colors">
-              {copied ? <Check size={11} className="text-emerald-400" /> : <Copy size={11} />}
+              {copied
+                ? <span className="text-emerald-400"><CheckMarkIcon label="Copied" size="small" /></span>
+                : <CopyIcon label="Copy SQL" size="small" />}
             </button>
           )}
           {/* Close */}
           <button onClick={onClose} title="Close"
             className="w-6 h-6 flex items-center justify-center rounded hover:bg-zinc-700/60 text-zinc-500 hover:text-zinc-300 transition-colors">
-            <X size={12} />
+            <CloseIcon label="Close" size="small" />
           </button>
         </div>
       </div>
@@ -1060,13 +1053,10 @@ export function SourcePanel({
             onClick={() => setShowCode(v => !v)}
             className="flex items-center gap-1.5 w-full px-3 py-1.5 text-[12px] text-zinc-400 hover:text-zinc-200 hover:bg-zinc-700/20 transition-colors"
           >
-            {/* Atlaskit-style code icon */}
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" className="shrink-0">
-              <path d="M16 18l6-6-6-6M8 6l-6 6 6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
-            </svg>
+            <AngleBracketsIcon label="Code" size="small" />
             {showCode ? "Hide code" : "Show code"}
             <span className={`ml-auto transition-transform duration-150 inline-block ${showCode ? "rotate-180" : ""}`}>
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              <ChevronDownIcon label="" size="small" />
             </span>
           </button>
           {showCode && (
@@ -1103,11 +1093,9 @@ function Section({
 function TableChip({ name }: { name: string }) {
   return (
     <span className="inline-flex items-center gap-1 text-[12px] font-mono px-2 py-0.5 rounded-md border border-zinc-700/60 text-zinc-400" style={{ background: "#1e2d3d" }}>
-      <svg width="9" height="9" viewBox="0 0 10 10" fill="none" className="shrink-0 text-zinc-500">
-        <rect x="0.5" y="0.5" width="9" height="9" rx="1.5" stroke="currentColor" strokeWidth="1"/>
-        <line x1="0.5" y1="3.5" x2="9.5" y2="3.5" stroke="currentColor" strokeWidth="1"/>
-        <line x1="3.5" y1="3.5" x2="3.5" y2="9.5" stroke="currentColor" strokeWidth="1"/>
-      </svg>
+      <span className="shrink-0 text-zinc-500">
+        <TableIcon label="Table" size="small" />
+      </span>
       {name}
     </span>
   );
@@ -1160,12 +1148,9 @@ function InvestigateBody({
 // ── Collapsible chevron ───────────────────────────────────────────────────────
 function Chevron({ open }: { open: boolean }) {
   return (
-    <svg
-      width="14" height="14" viewBox="0 0 14 14" fill="none"
-      className={`text-zinc-500 transition-transform duration-150 ${open ? "rotate-180" : ""}`}
-    >
-      <path d="M3 5l4 4 4-4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg>
+    <span className={`text-zinc-500 transition-transform duration-150 inline-block ${open ? "rotate-180" : ""}`}>
+      <ChevronDownIcon label="" size="small" />
+    </span>
   );
 }
 
@@ -1244,9 +1229,9 @@ export function ChatMessage({
           {/* Cache provenance banner — shown when result came from a semantically similar past investigation */}
           {turn.fromCache && (
             <div className="flex items-start gap-2 mb-4 px-3 py-2 rounded-lg bg-amber-950/30 border border-amber-800/40 text-[11px] text-amber-400 leading-snug">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" className="shrink-0 mt-0.5 text-amber-500">
-                <path d="M8 2a6 6 0 100 12A6 6 0 008 2zm0 3.5v3m0 2h.01" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
+              <span className="shrink-0 mt-0.5 text-amber-500">
+                <InformationIcon label="Info" size="small" />
+              </span>
               <span className="flex-1">
                 <span className="text-amber-300 font-medium">From a similar past investigation</span>
                 {turn.cachedQuestion && turn.cachedQuestion !== turn.question && (
@@ -1295,9 +1280,9 @@ export function ChatMessage({
                   onClick={() => onFollowUp?.(q)}
                   className="flex items-center gap-1 text-[12px] text-zinc-500 hover:text-zinc-200 border border-zinc-700/50 hover:border-zinc-600 rounded-full px-2.5 py-[3px] transition-all"
                 >
-                  <svg width="9" height="9" viewBox="0 0 10 10" fill="none" className="text-zinc-600 shrink-0">
-                    <path d="M8 2H4a2 2 0 00-2 2v1m0 0l2-2M2 5l2 2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
+                  <span className="text-zinc-600 shrink-0">
+                    <ArrowRightIcon label="" size="small" />
+                  </span>
                   {q}
                 </button>
               ))}

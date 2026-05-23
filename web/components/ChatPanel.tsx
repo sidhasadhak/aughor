@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Square, Terminal, X, ChevronDown, ChevronRight } from "lucide-react";
+import AtlasSendIcon      from "@atlaskit/icon/core/send";
+import VideoStopIcon      from "@atlaskit/icon/core/video-stop";
+import AngleBracketsIcon  from "@atlaskit/icon/core/angle-brackets";
+import CloseIcon          from "@atlaskit/icon/core/close";
+import ChevronDownIcon    from "@atlaskit/icon/core/chevron-down";
+import ChevronRightIcon   from "@atlaskit/icon/core/chevron-right";
+import CommentIcon        from "@atlaskit/icon/core/comment";
+import AiSparkleIcon      from "@atlaskit/icon/core/ai-sparkle";
 import { useChat, type DebugEvent } from "@/lib/useChat";
 import { ChatMessage, SourcePanel, type SourcePanelData } from "./ChatMessage";
 
@@ -21,16 +28,6 @@ type Starter = { text: string; mode: "ask" | "investigate" };
 interface Props {
   connectionId: string;
   restoreSessionId?: string | null;
-}
-
-/* ── Paper-airplane send icon (45° clockwise) ── */
-function SendIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" style={{ transform: "rotate(45deg)" }}>
-      <path d="M22 2L11 13" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M22 2L15 22L11 13L2 9L22 2Z" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
 }
 
 /* ── Input box — module-level so React never remounts it on parent re-render ── */
@@ -83,10 +80,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
                 : "text-zinc-500 hover:text-zinc-400"
             }`}
           >
-            <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
-              <path d="M10 1H2a1 1 0 00-1 1v6a1 1 0 001 1h1.5L5 11l1.5-2H10a1 1 0 001-1V2a1 1 0 00-1-1z"
-                stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
-            </svg>
+            <CommentIcon label="Quick" size="small" />
             Quick
           </button>
           <button
@@ -97,11 +91,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
                 : "text-zinc-500 hover:text-zinc-400"
             }`}
           >
-            <svg width="11" height="11" viewBox="0 0 12 12" fill="none">
-              <path d="M6 1v2M6 9v2M1 6h2M9 6h2M2.5 2.5l1.5 1.5M8 8l1.5 1.5M9.5 2.5L8 4M4 8l-1.5 1.5"
-                stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-              <circle cx="6" cy="6" r="1.5" stroke="currentColor" strokeWidth="1.2" />
-            </svg>
+            <AiSparkleIcon label="Agentic" size="small" />
             Agentic
           </button>
         </div>
@@ -124,7 +114,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
               title="Stop"
               className="w-7 h-7 rounded-lg bg-red-500/15 border border-red-500/30 text-red-400 flex items-center justify-center hover:bg-red-500/25 transition"
             >
-              <Square size={11} strokeWidth={2} fill="currentColor" />
+              <VideoStopIcon label="Stop" size="small" />
             </button>
           ) : (
             <button
@@ -133,7 +123,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
               title="Send"
               className="w-7 h-7 rounded-lg text-zinc-500 flex items-center justify-center hover:text-zinc-100 disabled:opacity-25 disabled:cursor-not-allowed transition"
             >
-              <SendIcon />
+              <AtlasSendIcon label="Send" size="small" />
             </button>
           )}
         </div>
@@ -170,10 +160,10 @@ function DebugLogDrawer({ eventLogRef, onClose }: { eventLogRef: React.RefObject
   return (
     <div className="fixed bottom-0 right-0 z-50 flex flex-col bg-zinc-950 border border-zinc-700/80 rounded-tl-xl shadow-2xl" style={{ width: 520, height: 380 }}>
       <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-800 shrink-0">
-        <Terminal size={13} className="text-emerald-400" />
+        <span className="text-emerald-400"><AngleBracketsIcon label="Debug log" size="small" /></span>
         <span className="text-[11px] font-mono text-zinc-300 flex-1">SSE Event Log · {events.length} events</span>
         <span className="text-[10px] text-zinc-600 mr-2">⌘⇧L to close</span>
-        <button onClick={onClose} className="text-zinc-600 hover:text-zinc-300 transition"><X size={13} /></button>
+        <button onClick={onClose} className="text-zinc-600 hover:text-zinc-300 transition"><CloseIcon label="Close" size="small" /></button>
       </div>
       <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0 font-mono text-[11px]">
         {events.length === 0 ? (
@@ -184,7 +174,9 @@ function DebugLogDrawer({ eventLogRef, onClose }: { eventLogRef: React.RefObject
               className="w-full flex items-center gap-2 px-3 py-1.5 text-left"
               onClick={() => setExpanded(expanded === i ? null : i)}
             >
-              {expanded === i ? <ChevronDown size={10} className="text-zinc-600 shrink-0" /> : <ChevronRight size={10} className="text-zinc-600 shrink-0" />}
+              {expanded === i
+                ? <span className="text-zinc-600 shrink-0"><ChevronDownIcon label="" size="small" /></span>
+                : <span className="text-zinc-600 shrink-0"><ChevronRightIcon label="" size="small" /></span>}
               <span className="text-zinc-600 shrink-0">{new Date(ev.ts).toLocaleTimeString()}</span>
               <span className={`shrink-0 w-28 truncate ${TYPE_COLOR[ev.type] ?? "text-zinc-300"}`}>{ev.type}</span>
               <span className="text-zinc-500 truncate flex-1">{ev.summary}</span>
@@ -360,12 +352,11 @@ export function ChatPanel({ connectionId, restoreSessionId }: Props) {
                           : "border-zinc-700 bg-zinc-800/60 text-zinc-400 hover:bg-zinc-700/60 hover:border-zinc-600"
                       }`}
                     >
-                      <svg width="10" height="10" viewBox="0 0 10 10" className="shrink-0 opacity-60">
+                      <span className="shrink-0 opacity-60">
                         {s.mode === "investigate"
-                          ? <><path d="M5 1v1.5M5 7.5V9M1 5h1.5M7.5 5H9M2.1 2.1l1.1 1.1M6.8 6.8l1.1 1.1M7.9 2.1L6.8 3.2M3.2 6.8l-1.1 1.1" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round"/><circle cx="5" cy="5" r="1.2" stroke="currentColor" strokeWidth="1.1"/></>
-                          : <path d="M8.5 1H1.5a.5.5 0 00-.5.5v5a.5.5 0 00.5.5H3L4.5 9 6 7h2.5a.5.5 0 00.5-.5v-5a.5.5 0 00-.5-.5z" stroke="currentColor" strokeWidth="1" strokeLinejoin="round"/>
-                        }
-                      </svg>
+                          ? <AiSparkleIcon label="" size="small" />
+                          : <CommentIcon label="" size="small" />}
+                      </span>
                       {s.text}
                     </button>
                   ))}
