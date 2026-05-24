@@ -36,7 +36,15 @@ TASK: Parse this question into a precise investigation specification.
    If the schema date range is less than 13 months, use PoP only.
 
 4. DATE COLUMN — Which table.column holds the primary transaction timestamp?
-   Use the profile context to identify the correct timestamp column.
+   Rules (all mandatory):
+   - NEVER use an _id, _key, _code, or _num column as the date column. These are identifiers, not dates.
+   - NEVER use a column of type INTEGER, BIGINT, VARCHAR, or TEXT as the date column.
+   - Only use columns whose schema type contains DATE, TIMESTAMP, or TIME.
+   - If the primary metric table has a "⚠ No date/timestamp columns" annotation (check schema),
+     look in directly joinable tables (via foreign key) for a DATE/TIMESTAMP column.
+   - Set date_column to the ACTUAL date column found (e.g. order_items.order_ts, NOT invoices.order_id).
+   - If a join is required to reach the date column, document the join path in intake_notes.
+   - If NO date column exists anywhere reachable by join, set date_column to "NONE" and explain in intake_notes.
 
 5. METRIC TABLE — Which table contains the metric?
    Prefer fact tables (orders, order_items, transactions, sessions, events…).
@@ -83,6 +91,11 @@ SQL RULES:
   - Compact result sets (≤ 20 rows)
   - Use only tables and columns present in the schema above
   - Alias every computed column with a human-readable name
+  - NEVER cast an identifier column (_id, _key, _code, _num) as DATE or TIMESTAMP.
+    If `date_column` is "invoices.order_id" or similar integer/string ID, it is WRONG — look for
+    the real DATE/TIMESTAMP column in a joined table and JOIN to reach it instead.
+  - If `date_column` belongs to a different table than the primary metric table, you MUST
+    write an explicit JOIN to reach it. Never filter on a date column without joining its table.
 
 Return the queries with a short title and chart_type for each.
 """
@@ -146,6 +159,7 @@ Use the CASE WHEN date pattern to compare periods in a single query where possib
   SUM(CASE WHEN period = 'comp' THEN metric ELSE 0 END) AS comp_value
 
 SQL RULES: DuckDB, NULLIF, DATE_TRUNC, compact output.
+  Never CAST an _id/_key/_code column as DATE. If the date_column is in a joined table, JOIN to reach it.
 """
 
 DECOMPOSE_INTERPRET_PROMPT = """\
@@ -207,6 +221,7 @@ DIMENSION PRIORITY — analyse in this order (the list above is already sorted):
 If fewer than 4 dimensions are available, analyse what exists in priority order.
 
 SQL RULES: DuckDB, NULLIF, compact output (≤ 15 rows per query).
+  Never CAST an _id/_key/_code column as DATE. If the date_column is in a joined table, JOIN to reach it.
 """
 
 DIMENSIONAL_INTERPRET_PROMPT = """\
@@ -273,6 +288,7 @@ Part B — Operational checks (1–2):
 Return max 4 queries total. Prioritise TARGETED queries over generic ones.
 
 SQL RULES: DuckDB, NULLIF, compact output (≤ 15 rows per query).
+  Never CAST an _id/_key/_code column as DATE. If the date_column is in a joined table, JOIN to reach it.
 """
 
 BEHAVIORAL_INTERPRET_PROMPT = """\

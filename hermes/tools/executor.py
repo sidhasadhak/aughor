@@ -111,6 +111,26 @@ def format_result_for_llm(result: QueryResult, max_rows: int = 30) -> str:
         return f"SQL: {result.sql}\nERROR: {result.error}"
 
     lines = [f"SQL: {result.sql}", f"Rows returned: {result.row_count}"]
+
+    # Diagnose zero-row results so the interpret LLM knows this is likely a bad query,
+    # not an absence of data.  Common causes: wrong date column, failed CAST, bad join.
+    if result.row_count == 0:
+        sql_lower = (result.sql or "").lower()
+        hints: list[str] = []
+        if "cast(" in sql_lower and "as date" in sql_lower:
+            hints.append(
+                "⚠ Query contains CAST(... AS DATE) which may be casting an integer/string "
+                "identifier — this usually returns zero rows. Use the real DATE/TIMESTAMP column instead."
+            )
+        if not hints:
+            hints.append(
+                "⚠ Zero rows returned. Possible causes: (1) incorrect date column — "
+                "check whether a CAST of a non-date column is filtering out all rows; "
+                "(2) wrong table — the metric or date may live in a joined table; "
+                "(3) date range has no data. Re-examine the SQL before concluding data is absent."
+            )
+        lines.extend(hints)
+
     if result.columns:
         col_str = " | ".join(result.columns)
         lines.append(col_str)
