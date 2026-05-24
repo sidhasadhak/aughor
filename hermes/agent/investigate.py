@@ -195,21 +195,56 @@ def _provider(role="coder"):
     return get_provider(role)
 
 
+def _zero_row_suspicious(sql: str) -> str | None:
+    """Return a diagnosis string if a zero-row result is likely a bad query, else None."""
+    s = sql.lower()
+    # Casting an identifier column as a date is the #1 cause of silent zero-row failures
+    if "cast(" in s and ("as date" in s or "as timestamp" in s):
+        return (
+            "Query returned 0 rows. LIKELY CAUSE: CAST(... AS DATE/TIMESTAMP) is being used on "
+            "an identifier column (e.g. order_id, invoice_id) which is NOT a date. "
+            "Find the real DATE/TIMESTAMP column in the schema (or a joinable table) and use that instead."
+        )
+    # Filtering on a column that sounds like an ID but treating it as a date range
+    import re as _re
+    if _re.search(r"where\s+\w*(?:_id|_key|_num|_code)\b.*>=\s*'[0-9]{4}", s):
+        return (
+            "Query returned 0 rows. LIKELY CAUSE: a WHERE clause is comparing an _id/_key column "
+            "to a date string — identifiers are not dates. "
+            "Use a proper DATE/TIMESTAMP column for date range filtering."
+        )
+    return None
+
+
 def _execute_safe(conn: "DatabaseConnection", phase_id: str, sql: str):
-    """Execute SQL with one self-correction retry. Returns QueryResult."""
+    """Execute SQL with one self-correction retry. Returns QueryResult.
+
+    Retries on:
+    - Hard SQL errors (syntax, missing column/table)
+    - Suspicious zero-row results (e.g. CAST of identifier column as DATE)
+    """
     from hermes.agent.prompts import FIX_SQL_PROMPT
     from hermes.agent.prompts_investigate import PhasePlan
     from pydantic import BaseModel
 
     result = conn.execute(phase_id, sql)
-    if result.error:
+
+    # Determine whether to retry: hard error OR suspicious zero-row result
+    _zero_diag = None
+    if not result.error and result.row_count == 0:
+        _zero_diag = _zero_row_suspicious(sql)
+
+    if result.error or _zero_diag:
         class _Fix(BaseModel):
             fixed_sql: str
             explanation: str
 
         try:
             _err = result.error or ""
-            if "does not have a column named" in _err or ("column" in _err.lower() and "not" in _err.lower()):
+            # Build targeted diagnosis for the fix LLM
+            if _zero_diag:
+                _diag = f"DIAGNOSIS: {_zero_diag}\n"
+            elif "does not have a column named" in _err or ("column" in _err.lower() and "not" in _err.lower()):
                 _diag = (
                     "DIAGNOSIS: A column name in the query does not exist. "
                     "Use ONLY the exact column names listed in the SCHEMA. "
@@ -222,22 +257,29 @@ def _execute_safe(conn: "DatabaseConnection", phase_id: str, sql: str):
                 )
             else:
                 _diag = ""
+
+            # For zero-row retries, synthesise a fake "error" message so FIX_SQL_PROMPT
+            # has something useful in the ERROR MESSAGE field
+            fix_error = _err if _err else "Query returned 0 rows — the SQL logic is likely wrong (see DIAGNOSIS)."
+
             fix_prompt = FIX_SQL_PROMPT.format(
                 dialect=conn.dialect,
                 sql=sql,
-                error=result.error,
+                error=fix_error,
                 schema=conn.get_schema(),
                 kb_patterns_section="",
                 error_diagnosis=_diag,
             )
             fix = _provider("coder").complete(
-                system="Fix this SQL error. Return fixed_sql and a one-line explanation.",
+                system="Fix this SQL query. Return fixed_sql and a one-line explanation.",
                 user=fix_prompt,
                 response_model=_Fix,
             )
-            result = conn.execute(phase_id, fix.fixed_sql)
-            if not result.error:
-                result.sql = fix.fixed_sql
+            retry = conn.execute(phase_id, fix.fixed_sql)
+            # Accept the fix if: hard error resolved, OR zero-row and fix got rows
+            if not retry.error and (retry.row_count > 0 or not _zero_diag):
+                retry.sql = fix.fixed_sql
+                result = retry
         except Exception:
             pass
     return result

@@ -220,8 +220,13 @@ async def _stream_chat(
 
         result = db.execute("chat", final_sql)
 
-        # One self-correction attempt on error
-        if result.error:
+        # One self-correction attempt on error OR suspicious zero-row result
+        from hermes.agent.investigate import _zero_row_suspicious
+        _chat_zero_diag = None
+        if not result.error and result.row_count == 0:
+            _chat_zero_diag = _zero_row_suspicious(final_sql)
+
+        if result.error or _chat_zero_diag:
             from hermes.agent.prompts import FIX_SQL_PROMPT
 
             class _Fix(BaseModel):
@@ -231,7 +236,9 @@ async def _stream_chat(
 
             # Produce a targeted diagnosis hint so the fix LLM knows what to focus on
             _err = result.error or ""
-            if "does not have a column named" in _err or "column" in _err.lower() and "not" in _err.lower():
+            if _chat_zero_diag:
+                _error_diagnosis = f"DIAGNOSIS: {_chat_zero_diag}\n"
+            elif "does not have a column named" in _err or ("column" in _err.lower() and "not" in _err.lower()):
                 _error_diagnosis = (
                     "DIAGNOSIS: A column name in the query does not exist in the table. "
                     "Look at the SCHEMA above and use ONLY the exact column names listed there. "
@@ -245,23 +252,26 @@ async def _stream_chat(
             else:
                 _error_diagnosis = ""
 
+            fix_error = _err if _err else "Query returned 0 rows — the SQL logic is likely wrong (see DIAGNOSIS)."
+
             fix_prompt = FIX_SQL_PROMPT.format(
                 schema=schema,
                 dialect=db.dialect,
                 sql=final_sql,
-                error=result.error,
+                error=fix_error,
                 kb_patterns_section="",
                 error_diagnosis=_error_diagnosis,
             )
             try:
                 fix: _Fix = get_provider("coder").complete(
-                    system="Fix the SQL error. Return corrected_sql and a one-line explanation.",
+                    system="Fix the SQL query. Return corrected_sql and a one-line explanation.",
                     user=fix_prompt,
                     response_model=_Fix,
                 )
-                result = db.execute("chat", fix.corrected_sql)
-                if not result.error:
+                retry = db.execute("chat", fix.corrected_sql)
+                if not retry.error and (retry.row_count > 0 or not _chat_zero_diag):
                     final_sql = fix.corrected_sql
+                    result = retry
                     yield _sse("sql", {"sql": final_sql})
             except Exception:
                 pass
