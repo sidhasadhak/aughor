@@ -52,6 +52,11 @@ Return: mode, confidence (0.0–1.0), and a one-sentence reasoning explaining th
 CHAT_SQL_SYSTEM = (
     "You are a concise data analyst. "
     "Write exactly one correct SELECT statement to answer the question. "
+    "SCHEMA FIDELITY — NON-NEGOTIABLE: "
+    "Only use table names and column names that are EXPLICITLY listed in the DATABASE SCHEMA. "
+    "NEVER invent, guess, or assume column names. "
+    "If a table has a schema comment '⚠ No date/timestamp columns', do NOT add any date column to queries on that table — join to another table that has a date column instead. "
+    "If you cannot answer the question using columns that actually exist, say so in the headline and return a query on available columns that is as close as possible. "
     "CRITICAL — THE SQL MUST IMPLEMENT WHAT THE USER ASKS FOR: "
     "If the user asks for a percentage, compute it in SQL (e.g. COUNT(*) * 100.0 / SUM(COUNT(*)) OVER ()). "
     "If the user asks to replace a metric with another, the new column must appear in SELECT and the old one must not. "
@@ -79,7 +84,9 @@ DATABASE SCHEMA:
 
 {kb_patterns_section}{history_section}QUESTION: {question}
 
-Write a single SELECT query using only tables and columns present in the schema.
+Write a single SELECT query using ONLY tables and columns that are explicitly listed in the schema above.
+NEVER invent column names — if a column is not in the schema, it does not exist.
+If a table is annotated "⚠ No date/timestamp columns", do NOT reference any date column on it — join to a table that has one.
 IMPORTANT: Always qualify every table name with its schema prefix: {schema_qualifier}.table_name (e.g. {schema_qualifier}.orders, not just orders). This is required for correct resolution.
 IMPORTANT: Wrap any computed decimal/rate/ratio column with ROUND(..., 2). Never return raw floats from division or aggregation.
 Use the detected join paths when joining tables.
@@ -201,7 +208,17 @@ SCHEMA:
 {schema}
 
 {kb_patterns_section}
+CRITICAL RULES (violating these causes repeated failures):
+1. NEVER invent column names. Every column in your fixed query MUST appear verbatim in the SCHEMA above.
+   If the original query used a column like `invoice_date` that is NOT in the schema, do NOT keep it —
+   find the correct column from the schema, or join to another table that has it.
+2. If the error is "does not have a column named X", look up X in the SCHEMA and use the real name.
+   If no equivalent column exists anywhere, rewrite the query to avoid needing it.
+3. If a table has "⚠ No date/timestamp columns" in its schema comment, do NOT add a date filter on
+   that table directly — join to another table that has a date column instead.
+
 Fix the query for the target dialect. Common issues to watch for:
+- Column names: copy exact column names from the SCHEMA — never guess or invent
 - Date/time arithmetic: in Postgres use EXTRACT(EPOCH FROM (a - b))/86400 for day differences, not direct subtraction
 - NULL handling: wrap nullable columns with COALESCE or add IS NOT NULL filters
 - Type casting: Postgres requires explicit CAST() for type coercion

@@ -229,13 +229,29 @@ async def _stream_chat(
                 explanation: str
                 data_quality_note: str = ""
 
+            # Produce a targeted diagnosis hint so the fix LLM knows what to focus on
+            _err = result.error or ""
+            if "does not have a column named" in _err or "column" in _err.lower() and "not" in _err.lower():
+                _error_diagnosis = (
+                    "DIAGNOSIS: A column name in the query does not exist in the table. "
+                    "Look at the SCHEMA above and use ONLY the exact column names listed there. "
+                    "Do NOT rename or invent columns — find the right column or join to one that has it.\n"
+                )
+            elif "does not exist" in _err and "table" in _err.lower():
+                _error_diagnosis = (
+                    "DIAGNOSIS: A table name in the query does not exist. "
+                    "Use ONLY the table names listed in the SCHEMA above.\n"
+                )
+            else:
+                _error_diagnosis = ""
+
             fix_prompt = FIX_SQL_PROMPT.format(
                 schema=schema,
                 dialect=db.dialect,
                 sql=final_sql,
                 error=result.error,
                 kb_patterns_section="",
-                error_diagnosis="",
+                error_diagnosis=_error_diagnosis,
             )
             try:
                 fix: _Fix = get_provider("coder").complete(

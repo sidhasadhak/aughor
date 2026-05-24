@@ -349,6 +349,18 @@ def build_schema_context(
             col_name, col_type = col[0], col[1]
             parts.append(f"  {col_name}  {col_type}")
 
+        # Explicitly flag tables with no date/timestamp columns so the LLM never
+        # invents a date column name when building time-series queries on this table.
+        _date_types = ("DATE", "TIMESTAMP", "TIME", "INTERVAL")
+        has_date_col = any(
+            any(dt in col[1].upper() for dt in _date_types) for col in cols
+        )
+        if not has_date_col:
+            parts.append(
+                f"  -- ⚠ No date/timestamp columns in {table}. "
+                "Do NOT fabricate a date column. Join a table that has one if a time range is needed."
+            )
+
         # Sample distinct values for categorical columns (quick orientation for the LLM)
         categorical = [c[0] for c in cols if "VARCHAR" in c[1] or "TEXT" in c[1]]
         for col_name in categorical[:3]:

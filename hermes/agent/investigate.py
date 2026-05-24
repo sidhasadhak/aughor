@@ -208,13 +208,27 @@ def _execute_safe(conn: "DatabaseConnection", phase_id: str, sql: str):
             explanation: str
 
         try:
+            _err = result.error or ""
+            if "does not have a column named" in _err or ("column" in _err.lower() and "not" in _err.lower()):
+                _diag = (
+                    "DIAGNOSIS: A column name in the query does not exist. "
+                    "Use ONLY the exact column names listed in the SCHEMA. "
+                    "Do NOT invent or rename columns — find the correct column or join to a table that has it.\n"
+                )
+            elif "does not exist" in _err and "table" in _err.lower():
+                _diag = (
+                    "DIAGNOSIS: A table name in the query does not exist. "
+                    "Use ONLY the table names listed in the SCHEMA above.\n"
+                )
+            else:
+                _diag = ""
             fix_prompt = FIX_SQL_PROMPT.format(
                 dialect=conn.dialect,
                 sql=sql,
                 error=result.error,
                 schema=conn.get_schema(),
                 kb_patterns_section="",
-                error_diagnosis="",
+                error_diagnosis=_diag,
             )
             fix = _provider("coder").complete(
                 system="Fix this SQL error. Return fixed_sql and a one-line explanation.",
