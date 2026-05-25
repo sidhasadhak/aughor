@@ -1172,8 +1172,19 @@ export function ChatMessage({
     ? !!(turn.adaReport ?? turn.report ?? turn.exploreReport)
     : turn.status === "done";
   const isDone = turn.status === "done" || hasResult;
-  // Show streaming ADA phases even while still loading
-  const showStreamingBody = isInvestigate && turn.status === "loading" && turn.phases.length > 0;
+  // Show streaming ADA phases even while still loading (not for direct/explore routes)
+  const showStreamingBody = isInvestigate && turn.status === "loading" && turn.phases.length > 0
+    && turn.queryMode !== "direct";
+
+  // Context-aware loading text: once the backend tells us the route, use a specific label
+  function defaultStatusText(): string {
+    if (!isInvestigate) return "Thinking…";
+    switch (turn.queryMode) {
+      case "direct":  return "Running query…";
+      case "explore": return "Exploring…";
+      default:        return "Investigating…";
+    }
+  }
 
   return (
     /* No card — content flows directly on the page background */
@@ -1210,7 +1221,7 @@ export function ChatMessage({
               ))}
             </span>
             <span className="text-[12px] text-zinc-600">
-              {turn.statusText || (isInvestigate ? "Investigating…" : "Thinking…")}
+              {turn.statusText || defaultStatusText()}
             </span>
           </div>
           {/* Live ADA phase stream — show completed phases as they arrive */}

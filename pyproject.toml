@@ -1,5 +1,5 @@
 [project]
-name = "hermes"
+name = "aughor"
 version = "0.1.0"
 description = "Autonomous Data Analyst — investigative agent over your warehouse"
 requires-python = ">=3.11"
@@ -27,12 +27,18 @@ dependencies = [
     "langgraph-checkpoint-sqlite>=3.1.0",
 ]
 
+[project.optional-dependencies]
+warehouse = [
+    "ibis-framework[duckdb,postgres]>=9.0.0",
+    "connectorx>=0.3.3",
+]
+
 [project.scripts]
-hermes = "hermes.cli:cli"
+aughor = "aughor.cli:cli"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["hermes"]
+packages = ["aughor"]

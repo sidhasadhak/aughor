@@ -48,6 +48,13 @@
 39. [Catalog Tab](#39-catalog-tab)
 40. [Schema-Aware Suggestions](#40-schema-aware-suggestions)
 41. [Suggestions Cache — Qdrant Semantic Store](#41-suggestions-cache--qdrant-semantic-store)
+42. [Background Schema Explorer](#42-background-schema-explorer)
+43. [Business Ontology — Auto-Built](#43-business-ontology--auto-built)
+44. [Domain Intelligence Loop](#44-domain-intelligence-loop)
+45. [SqlWriter — Centralised SQL Writer & Self-Corrector](#45-sqlwriter--centralised-sql-writer--self-corrector)
+46. [Activity Log UI](#46-activity-log-ui)
+47. [Exploration State Persistence](#47-exploration-state-persistence)
+48. [Per-Phase Rate Limiting](#48-per-phase-rate-limiting)
 
 ---
 
@@ -1410,4 +1417,210 @@ The fingerprint is computed from sorted table + column names only (not row count
 
 ---
 
-*Last updated: 2026-05-21 · 41 features. See `ROADMAP.md` for upcoming features.*
+---
+
+## 42. Background Schema Explorer
+
+### What
+A background asyncio agent (`SchemaExplorer`) that runs continuously against a connected database, working through a structured sequence of eight exploration phases without any user prompts. Each phase fires queries and records `(think, sql, observation)` episodes to a per-connection JSONL log.
+
+### Why
+Schema documentation is always out of date. The only authoritative source of truth about what a column actually means, which joins hold, and what states an entity passes through is the data itself. By running these queries autonomously in the background — not on demand — Aughor builds up this knowledge before the user asks their first question.
+
+### How
+Eight phases, each building on the previous:
+
+| Phase | Name | What it learns |
+|---|---|---|
+| 3 | Null meaning resolution | Distinguishes "event not yet occurred" from data quality gaps for nullable columns |
+| 4 | Join verification | Tests inferred FK joins, measures referential integrity |
+| 5 | Lifecycle mapping | Extracts state machines from status columns (pending → shipped → delivered) |
+| 6 | Distribution profiling | Detects shape, skew, outliers for numeric columns |
+| 7 | Cross-table pattern discovery | Finds correlated columns and structural anomalies across tables |
+| 8 | Domain intelligence | Adaptive curiosity loop — business questions per domain |
+
+**Rate limiting:** Phases 3–7 run as fast as the DB allows (`_RATE_SECONDS_SCHEMA = 0.0`). Phase 8 self-throttles to one query per 5 seconds (`_RATE_SECONDS_INTEL = 5.0`).
+
+**Stop / Resume / Restart:** The explorer honours a `_stopped` flag checked on every iteration. Stop state is persisted to `status.paused` so it survives frontend tab switches.
+
+**Auto-resume on startup:** Only connections with an existing exploration state file are resumed on server startup. New connections are not auto-started — the user triggers them explicitly.
+
+### Key files
+- `aughor/explorer/agent.py` — `SchemaExplorer`, all eight phases
+- `aughor/explorer/store.py` — JSON state persistence, `extend_domain_budget()`
+- `aughor/explorer/episodes.py` — `EpisodeCollector`, JSONL append writer
+- `aughor/explorer/models.py` — `ExplorationPhase`, `ExplorationStatus`
+
+---
+
+## 43. Business Ontology — Auto-Built
+
+### What
+Aughor automatically extracts a business ontology from the database schema and exploration findings: entities (Customer, Order, Product), relationships (Customer places Order), metrics (revenue, AOV), lifecycle state machines, computed properties, and deterministic SQL actions.
+
+### Why
+A schema tells you tables and columns. An ontology tells you what the business actually is — what entities exist, how they relate, what their lifecycle looks like, and what questions are answerable. This ontology is the context that makes chat and investigation answers domain-aware rather than schema-mechanical.
+
+### How
+
+**Structural extraction (`ontology/builder.py`):**
+- Tables → entities via name pattern matching and type inference (transaction, event, dimension, …)
+- FK edges and join hints → relationships with inferred cardinality
+- Lifecycle columns → state machine extraction with terminal-state detection
+- Metrics catalog → `OntologyMetric` nodes with formulas
+
+**LLM enrichment (`ontology/enricher.py`):**
+- Entity descriptions, domain assignments (Commerce / Finance / Operations / Marketing)
+- Action definitions — natural-language descriptions of what you can ask about each entity
+- Computed properties — virtual fields derived from raw columns
+
+**Actions (`ontology/actions.py`):**
+- Deterministic SQL templates generated from entity relationships
+- Expanded at query time: `@get_orders_for_customer` → full SQL with real table/column names
+
+**Divergence detection (`ontology/divergence.py`):**
+- Checks generated SQL against the Metrics Catalog for formula consistency
+
+**Display:** OntologyCanvas (interactive graph), EntityCard (detail panel), OntologyPanel (list view with edit).
+
+### Key files
+- `aughor/ontology/builder.py` — `extract_structural_ontology()`
+- `aughor/ontology/enricher.py` — `enrich_ontology_semantics()`
+- `aughor/ontology/models.py` — `OntologyEntity`, `OntologyRelationship`, `OntologyMetric`, `OntologyAction`, `OntologyGraph`
+- `aughor/ontology/store.py` — fingerprint-keyed cache, `get_or_build_ontology()`
+- `web/components/OntologyCanvas.tsx`, `EntityCard.tsx`, `OntologyPanel.tsx`
+
+---
+
+## 44. Domain Intelligence Loop
+
+### What
+Phase 8 of the background explorer: an adaptive curiosity loop that fires business intelligence queries per domain. It tracks coverage angles, stores findings as structured insights, detects novelty decay, and respects per-domain query budgets that the user can extend from the UI.
+
+### Why
+Schema exploration tells you what exists. Domain intelligence tells you what the data means for the business — how many orders are placed per day, which products drive the most revenue, what the retention rate looks like. These are the facts that make the ontology come alive and the chat answers feel grounded in real data.
+
+### How
+
+1. Load ontology → group entities by domain (Commerce, Finance, Operations, Marketing)
+2. Per domain, track coverage angles (e.g., Commerce: volume, value, retention, basket_composition, seasonality)
+3. Ask LLM for the most valuable next question — schema-grounded (exact column names injected into prompt)
+4. Execute SQL — repair loop: run → get real error → fix with SqlWriter → run again (up to 3 attempts)
+5. LLM interprets result as a business insight (1–2 sentences, specific numbers, novelty score 1–5)
+6. Store insight, mark angle as covered, increment budget counter
+7. Stop when: budget exhausted OR novelty decay (avg novelty of last 3 < 2.0)
+8. After all named angles covered, continue with open-ended exploration (deeper_analysis, anomalies, cross_domain_patterns, trends)
+
+**Budget extension:** User can click "+5 queries" per domain in the DomainIntelPanel. If the explorer is still running, the in-memory cap is patched live. If it has finished, a fresh explorer restarts with `domain_intel_only=True`.
+
+### Key files
+- `aughor/explorer/agent.py` — `_phase8_domain_intelligence()`
+- `aughor/explorer/store.py` — `extend_domain_budget()`
+- `aughor/api.py` — `POST /exploration/{conn_id}/domains/{domain}/extend`
+- `web/components/DomainIntelPanel.tsx` — findings, budget bar, angle chips, "+5 queries" button
+
+---
+
+## 45. SqlWriter — Centralised SQL Writer & Self-Corrector
+
+### What
+A single class (`SqlWriter`) that is the one place in the codebase where SQL is generated and corrected — used by the chat pipeline, the Phase 8 domain intelligence loop, and the manual retry endpoint.
+
+### Why
+Before this, each caller had its own inline fix logic — slightly different prompts, different error handling, different alias resolution. When DuckDB errors mentioned `Table "im" does not have column "id"`, one path would inject the right column list, another would let the LLM guess and produce `SUM(0)`. Centralising means every fix attempt gets the same quality of diagnosis everywhere.
+
+### How
+
+**`SqlWriter.write(question, extra_context)`** — natural language → SQL
+- Schema context injected at construction time (never re-fetched)
+- Dialect-aware (`DuckDB` / `postgres`)
+- Extra context (domain schema block, ontology entities) prepended per caller
+
+**`SqlWriter.fix(sql, error, hint, max_retries)`** → `FixResult`
+1. `_make_diagnosis(error, sql, table_cols)` — classifies the error:
+   - DuckDB Binder (`Table "im" does not have a column named "id"`) → resolve alias to real table → look up exact columns
+   - Prioritises DuckDB's own "Candidate bindings" (always authoritative) over schema lookup
+   - Injects `DIAGNOSIS:` block with exact column list and explicit "NEVER substitute SUM(0)"
+2. Format with `FIX_SQL_PROMPT` (shared across all callers)
+3. Return `FixResult(ok, sql, explanation, attempts, final_error)`
+
+**`_resolve_aliases(sql)`** — regex over `FROM`/`JOIN` clauses → `{alias_lower: real_table}`
+
+**`_extract_candidate_bindings(error)`** — parses DuckDB's `Candidate bindings: "col1", "col2"` from error text
+
+### Key files
+- `aughor/sql/writer.py` — `SqlWriter`, `FixResult`, `_resolve_aliases`, `_make_diagnosis`, `_extract_candidate_bindings`
+- `aughor/sql/__init__.py` — re-exports `SqlWriter`, `FixResult`
+- `aughor/agent/prompts.py` — `FIX_SQL_PROMPT` (shared prompt used by all fix paths)
+
+---
+
+## 46. Activity Log UI
+
+### What
+A real-time feed in the Activity tab showing every exploration query as it fires — thinking trace, SQL, result observation — with stop/resume/restart controls that survive tab switches.
+
+### Why
+Exploration runs in the background. Without visibility, users have no way to understand what Aughor is learning, spot a bad query, or trust the resulting insights. The activity log makes the autonomous process transparent and controllable.
+
+### How
+
+- Polls `GET /exploration/{conn_id}/episodes` on a 3-second interval
+- Each episode shows: phase badge, think label, SQL block (collapsible), observation preview
+- `StatusBar` shows current phase + query count; `stopped` badge when paused
+- **Stop:** calls `POST /exploration/{conn_id}/stop`; backend sets `explorer._status.paused = True` (persisted)
+- **Resume:** calls `POST /exploration/{conn_id}/resume`; clears `_stopped`, continues from where it left off
+- **Restart:** calls `POST /exploration/{conn_id}/restart`; deletes both the state JSON and episodes JSONL; starts fresh
+
+Stop state is synced from `status.paused` on every fetch — survives component remounts (tab switches).
+
+### Key files
+- `web/components/ActivityLog.tsx`
+- `aughor/api.py` — `POST /exploration/{id}/stop`, `/resume`, `/restart`, `GET /exploration/{id}/episodes`
+
+---
+
+## 47. Exploration State Persistence
+
+### What
+Full exploration state is persisted to a per-connection JSON file (`data/exploration_{conn_id}.json`) and episodes to a JSONL file (`data/episodes_{conn_id}.jsonl`). The explorer resumes from its last position after a server restart.
+
+### Why
+Schema exploration can take minutes to hours for large databases. If the server restarts mid-run, all findings would be lost without persistence. With persistence, the explorer picks up exactly where it left off — skipping already-explored tables, resuming the domain intelligence loop mid-domain.
+
+### How
+- `_store.load()` / `_store.save()` wrap JSON read/write with parent-directory creation
+- `self._state` is the in-memory copy; every phase writes back after each finding
+- `EpisodeCollector.add()` appends to JSONL atomically (newline-delimited JSON)
+- On restart: `self._state` is loaded, completed keys are skipped at the start of each phase
+- On `restart` (user-triggered): both files are deleted; fresh state is built from profiler data
+
+**Auto-resume policy:** Only connections with an existing `exploration_{conn_id}.json` are resumed on server startup. Connections that have never been explored are not touched.
+
+### Key files
+- `aughor/explorer/store.py` — `load()`, `save()`, state schema
+- `aughor/explorer/episodes.py` — `EpisodeCollector`
+- `aughor/api.py` — `_start_explorers()` startup hook
+
+---
+
+## 48. Per-Phase Rate Limiting
+
+### What
+Schema exploration phases (3–7) run at full DB speed. The domain intelligence phase (8) throttles to one query per 5 seconds.
+
+### Why
+Schema phases produce structural knowledge (join maps, lifecycle states, null meanings) that every chat and investigation relies on — they should complete as fast as possible. Domain intelligence queries are expensive LLM-driven operations that stress the DB and could run for a long time. Slowing them down keeps the DB comfortable, allows the user to stop between queries, and gives time to review findings as they come in.
+
+### How
+- `_RATE_SECONDS_SCHEMA = 0.0` and `_RATE_SECONDS_INTEL = 5.0` — module-level constants
+- `self._rate_seconds` — instance variable set by `explore()` before each phase group
+- `_gate()` — async method called before every query: skips sleep if `self._rate_seconds == 0`, otherwise waits for the remaining window
+- `explore()` sets `self._rate_seconds = _RATE_SECONDS_SCHEMA` before phases 3–7, then `_RATE_SECONDS_INTEL` before phase 8
+
+### Key files
+- `aughor/explorer/agent.py` — `_RATE_SECONDS_SCHEMA`, `_RATE_SECONDS_INTEL`, `_gate()`, `explore()`
+
+---
+
+*Last updated: 2026-05-26 · 48 features. See `ROADMAP.md` for upcoming features.*

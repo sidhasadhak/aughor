@@ -11,6 +11,7 @@ import {
   type Connection,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { ExplorationBadge } from "@/components/ExplorationBadge";
 
 interface Props {
   selectedId: string;
@@ -203,6 +204,7 @@ export function ConnectionsPanel({ selectedId, onSelect, activeSchemaId, onSchem
                     schema: <span className="font-mono text-zinc-400">{conn.schema_name}</span>
                   </p>
                 )}
+                <ExplorationBadge connectionId={conn.id} />
               </button>
 
               <div className="px-4 pb-2.5 flex items-center gap-3">

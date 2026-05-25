@@ -1,501 +1,4 @@
 {
-  "fixture:70e0773b064c4133": {
-    "tables": {
-      "customers": {
-        "table": "customers",
-        "row_count": 800,
-        "grain_column": "customer_id",
-        "grain_verified": true,
-        "primary_timestamp": "acquired_at",
-        "date_range": [
-          "2023-09-12",
-          "2025-08-01"
-        ],
-        "freshness_lag_hours": 6994.8,
-        "computed_at": "2026-05-19T08:47:10.922897+00:00"
-      },
-      "daily_revenue": {
-        "table": "daily_revenue",
-        "row_count": 72000,
-        "grain_column": "customer_id",
-        "grain_verified": false,
-        "primary_timestamp": "date",
-        "date_range": [
-          "2025-09-01",
-          "2025-11-29"
-        ],
-        "freshness_lag_hours": 4114.8,
-        "computed_at": "2026-05-19T08:47:10.930432+00:00"
-      },
-      "events": {
-        "table": "events",
-        "row_count": 3,
-        "grain_column": "event_id",
-        "grain_verified": true,
-        "primary_timestamp": "start_date",
-        "date_range": [
-          "2025-10-26",
-          "2025-11-23"
-        ],
-        "freshness_lag_hours": 4258.8,
-        "computed_at": "2026-05-19T08:47:10.935334+00:00"
-      },
-      "kpi_daily": {
-        "table": "kpi_daily",
-        "row_count": 540,
-        "grain_column": "date",
-        "grain_verified": false,
-        "primary_timestamp": "date",
-        "date_range": [
-          "2025-09-01",
-          "2025-11-29"
-        ],
-        "freshness_lag_hours": 4114.8,
-        "computed_at": "2026-05-19T08:47:10.940361+00:00"
-      }
-    },
-    "columns": {
-      "customers.customer_id": {
-        "table": "customers",
-        "column": "customer_id",
-        "dtype": "VARCHAR",
-        "semantic_type": "key",
-        "null_rate": 0.0,
-        "distinct_count": 800,
-        "is_low_cardinality": false,
-        "value_range": null,
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": null,
-        "is_fk": true
-      },
-      "customers.name": {
-        "table": "customers",
-        "column": "name",
-        "dtype": "VARCHAR",
-        "semantic_type": "text",
-        "null_rate": 0.0,
-        "distinct_count": 800,
-        "is_low_cardinality": false,
-        "value_range": null,
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": null,
-        "is_fk": false
-      },
-      "customers.segment": {
-        "table": "customers",
-        "column": "segment",
-        "dtype": "VARCHAR",
-        "semantic_type": "key",
-        "null_rate": 0.0,
-        "distinct_count": 2,
-        "is_low_cardinality": true,
-        "value_range": null,
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": [
-          "SMB",
-          "Enterprise"
-        ],
-        "is_fk": true
-      },
-      "customers.region": {
-        "table": "customers",
-        "column": "region",
-        "dtype": "VARCHAR",
-        "semantic_type": "dimension",
-        "null_rate": 0.0,
-        "distinct_count": 3,
-        "is_low_cardinality": true,
-        "value_range": null,
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": [
-          "NA",
-          "APAC",
-          "EMEA"
-        ],
-        "is_fk": false
-      },
-      "customers.plan": {
-        "table": "customers",
-        "column": "plan",
-        "dtype": "VARCHAR",
-        "semantic_type": "dimension",
-        "null_rate": 0.0,
-        "distinct_count": 5,
-        "is_low_cardinality": true,
-        "value_range": null,
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": [
-          "starter",
-          "scale",
-          "growth",
-          "business",
-          "enterprise"
-        ],
-        "is_fk": false
-      },
-      "customers.mrr": {
-        "table": "customers",
-        "column": "mrr",
-        "dtype": "DOUBLE",
-        "semantic_type": "measure",
-        "null_rate": 0.0,
-        "distinct_count": 800,
-        "is_low_cardinality": false,
-        "value_range": [
-          103.63,
-          14963.23
-        ],
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": null,
-        "is_fk": false
-      },
-      "customers.acquired_at": {
-        "table": "customers",
-        "column": "acquired_at",
-        "dtype": "DATE",
-        "semantic_type": "timestamp",
-        "null_rate": 0.0,
-        "distinct_count": 475,
-        "is_low_cardinality": false,
-        "value_range": null,
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": null,
-        "is_fk": false
-      },
-      "daily_revenue.date": {
-        "table": "daily_revenue",
-        "column": "date",
-        "dtype": "DATE",
-        "semantic_type": "key",
-        "null_rate": 0.0,
-        "distinct_count": 90,
-        "is_low_cardinality": false,
-        "value_range": null,
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": null,
-        "is_fk": true
-      },
-      "daily_revenue.customer_id": {
-        "table": "daily_revenue",
-        "column": "customer_id",
-        "dtype": "VARCHAR",
-        "semantic_type": "key",
-        "null_rate": 0.0,
-        "distinct_count": 800,
-        "is_low_cardinality": false,
-        "value_range": null,
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": null,
-        "is_fk": true
-      },
-      "daily_revenue.amount": {
-        "table": "daily_revenue",
-        "column": "amount",
-        "dtype": "DOUBLE",
-        "semantic_type": "measure",
-        "null_rate": 0.0,
-        "distinct_count": 67924,
-        "is_low_cardinality": false,
-        "value_range": [
-          2.638,
-          597.5723
-        ],
-        "value_interpretation": "currency amount",
-        "unit": "USD",
-        "top_values": null,
-        "is_fk": false
-      },
-      "daily_revenue.status": {
-        "table": "daily_revenue",
-        "column": "status",
-        "dtype": "VARCHAR",
-        "semantic_type": "dimension",
-        "null_rate": 0.0,
-        "distinct_count": 2,
-        "is_low_cardinality": true,
-        "value_range": null,
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": [
-          "success",
-          "failed"
-        ],
-        "is_fk": false
-      },
-      "events.event_id": {
-        "table": "events",
-        "column": "event_id",
-        "dtype": "VARCHAR",
-        "semantic_type": "key",
-        "null_rate": 0.0,
-        "distinct_count": 3,
-        "is_low_cardinality": true,
-        "value_range": null,
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": null,
-        "is_fk": true
-      },
-      "events.event_type": {
-        "table": "events",
-        "column": "event_type",
-        "dtype": "VARCHAR",
-        "semantic_type": "dimension",
-        "null_rate": 0.0,
-        "distinct_count": 3,
-        "is_low_cardinality": true,
-        "value_range": null,
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": [
-          "outage",
-          "holiday",
-          "promotion"
-        ],
-        "is_fk": false
-      },
-      "events.title": {
-        "table": "events",
-        "column": "title",
-        "dtype": "VARCHAR",
-        "semantic_type": "dimension",
-        "null_rate": 0.0,
-        "distinct_count": 3,
-        "is_low_cardinality": true,
-        "value_range": null,
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": [
-          "Golden Week (Japan/South Korea)",
-          "APAC Payment Gateway Degradation",
-          "NA Back-to-Business Promo"
-        ],
-        "is_fk": false
-      },
-      "events.description": {
-        "table": "events",
-        "column": "description",
-        "dtype": "VARCHAR",
-        "semantic_type": "dimension",
-        "null_rate": 0.0,
-        "distinct_count": 3,
-        "is_low_cardinality": true,
-        "value_range": null,
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": [
-          "15% discount offered to NA SMB customers renewing in this period.",
-          "Public holidays across Japan and South Korea reducing business activity.",
-          "Stripe APAC payment gateway experienced intermittent failures for 4 hours on the morning of this date. SMB plans on shared infrastructure were disproportionately affected."
-        ],
-        "is_fk": false
-      },
-      "events.start_date": {
-        "table": "events",
-        "column": "start_date",
-        "dtype": "DATE",
-        "semantic_type": "timestamp",
-        "null_rate": 0.0,
-        "distinct_count": 3,
-        "is_low_cardinality": true,
-        "value_range": null,
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": null,
-        "is_fk": false
-      },
-      "events.end_date": {
-        "table": "events",
-        "column": "end_date",
-        "dtype": "DATE",
-        "semantic_type": "timestamp",
-        "null_rate": 0.0,
-        "distinct_count": 3,
-        "is_low_cardinality": true,
-        "value_range": null,
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": null,
-        "is_fk": false
-      },
-      "events.affected_region": {
-        "table": "events",
-        "column": "affected_region",
-        "dtype": "VARCHAR",
-        "semantic_type": "dimension",
-        "null_rate": 0.0,
-        "distinct_count": 2,
-        "is_low_cardinality": true,
-        "value_range": null,
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": [
-          "APAC",
-          "NA"
-        ],
-        "is_fk": false
-      },
-      "events.affected_segment": {
-        "table": "events",
-        "column": "affected_segment",
-        "dtype": "VARCHAR",
-        "semantic_type": "dimension",
-        "null_rate": 0.0,
-        "distinct_count": 2,
-        "is_low_cardinality": true,
-        "value_range": null,
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": [
-          "SMB",
-          "ALL"
-        ],
-        "is_fk": false
-      },
-      "kpi_daily.date": {
-        "table": "kpi_daily",
-        "column": "date",
-        "dtype": "DATE",
-        "semantic_type": "key",
-        "null_rate": 0.0,
-        "distinct_count": 90,
-        "is_low_cardinality": false,
-        "value_range": null,
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": null,
-        "is_fk": true
-      },
-      "kpi_daily.region": {
-        "table": "kpi_daily",
-        "column": "region",
-        "dtype": "VARCHAR",
-        "semantic_type": "dimension",
-        "null_rate": 0.0,
-        "distinct_count": 3,
-        "is_low_cardinality": true,
-        "value_range": null,
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": [
-          "NA",
-          "APAC",
-          "EMEA"
-        ],
-        "is_fk": false
-      },
-      "kpi_daily.segment": {
-        "table": "kpi_daily",
-        "column": "segment",
-        "dtype": "VARCHAR",
-        "semantic_type": "key",
-        "null_rate": 0.0,
-        "distinct_count": 2,
-        "is_low_cardinality": true,
-        "value_range": null,
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": [
-          "SMB",
-          "Enterprise"
-        ],
-        "is_fk": true
-      },
-      "kpi_daily.metric": {
-        "table": "kpi_daily",
-        "column": "metric",
-        "dtype": "VARCHAR",
-        "semantic_type": "dimension",
-        "null_rate": 0.0,
-        "distinct_count": 1,
-        "is_low_cardinality": true,
-        "value_range": null,
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": [
-          "revenue"
-        ],
-        "is_fk": false
-      },
-      "kpi_daily.value": {
-        "table": "kpi_daily",
-        "column": "value",
-        "dtype": "DOUBLE",
-        "semantic_type": "measure",
-        "null_rate": 0.0,
-        "distinct_count": 540,
-        "is_low_cardinality": false,
-        "value_range": [
-          1532.582599999999,
-          38599.20700000002
-        ],
-        "value_interpretation": "currency amount",
-        "unit": "USD",
-        "top_values": null,
-        "is_fk": false
-      },
-      "kpi_daily.transaction_count": {
-        "table": "kpi_daily",
-        "column": "transaction_count",
-        "dtype": "BIGINT",
-        "semantic_type": "measure",
-        "null_rate": 0.0,
-        "distinct_count": 6,
-        "is_low_cardinality": true,
-        "value_range": [
-          87.0,
-          182.0
-        ],
-        "value_interpretation": "count",
-        "unit": "count",
-        "top_values": null,
-        "is_fk": false
-      },
-      "kpi_daily.failure_count": {
-        "table": "kpi_daily",
-        "column": "failure_count",
-        "dtype": "HUGEINT",
-        "semantic_type": "measure",
-        "null_rate": 0.0,
-        "distinct_count": 10,
-        "is_low_cardinality": true,
-        "value_range": [
-          0.0,
-          57.0
-        ],
-        "value_interpretation": "count",
-        "unit": "count",
-        "top_values": null,
-        "is_fk": false
-      },
-      "kpi_daily.failure_rate_pct": {
-        "table": "kpi_daily",
-        "column": "failure_rate_pct",
-        "dtype": "DOUBLE",
-        "semantic_type": "measure",
-        "null_rate": 0.0,
-        "distinct_count": 37,
-        "is_low_cardinality": false,
-        "value_range": [
-          0.0,
-          36.08
-        ],
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": null,
-        "is_fk": false
-      }
-    }
-  },
   "96f8857f:53af961e3e7e63b4": {
     "tables": {
       "cart_items": {
@@ -3047,106 +2550,244 @@
       }
     }
   },
-  "mydb:84c88d2a62da3f28": {
+  "96f8857f:5692d52e0ac43e5f": {
     "tables": {
-      "order_items": {
-        "table": "order_items",
-        "row_count": 112650,
-        "grain_column": "order_item_id",
-        "grain_verified": false,
-        "primary_timestamp": "shipping_limit_date",
-        "date_range": [
-          "2016-09-19 00:15:34",
-          "2020-04-09 22:35:08"
-        ],
-        "freshness_lag_hours": 53545.3,
-        "computed_at": "2026-05-19T21:53:42.373540+00:00"
-      },
-      "order_payments": {
-        "table": "order_payments",
-        "row_count": 103886,
+      "attribution": {
+        "table": "attribution",
+        "row_count": 6996999,
         "grain_column": "order_id",
         "grain_verified": false,
         "primary_timestamp": null,
         "date_range": null,
         "freshness_lag_hours": null,
-        "computed_at": "2026-05-19T21:53:42.672943+00:00"
+        "computed_at": "2026-05-20T17:00:36.142731+00:00"
       },
-      "order_reviews": {
-        "table": "order_reviews",
-        "row_count": 70000,
-        "grain_column": "review_id",
-        "grain_verified": false,
-        "primary_timestamp": "review_creation_date",
+      "campaigns": {
+        "table": "campaigns",
+        "row_count": 5000,
+        "grain_column": "campaign_id",
+        "grain_verified": true,
+        "primary_timestamp": "start_date",
         "date_range": [
-          "2016-10-06 00:00:00",
-          "2018-08-31 00:00:00"
+          "2025-11-19",
+          "2026-05-17"
         ],
-        "freshness_lag_hours": 67655.9,
-        "computed_at": "2026-05-19T21:53:42.846380+00:00"
+        "freshness_lag_hours": 91.0,
+        "computed_at": "2026-05-20T17:00:36.234640+00:00"
+      },
+      "cart_items": {
+        "table": "cart_items",
+        "row_count": 3000968,
+        "grain_column": "cart_item_id",
+        "grain_verified": true,
+        "primary_timestamp": "added_ts",
+        "date_range": [
+          "2025-05-17 20:34:09.458476",
+          "2026-05-17 21:02:56.324353"
+        ],
+        "freshness_lag_hours": 70.0,
+        "computed_at": "2026-05-20T17:00:36.277255+00:00"
+      },
+      "carts": {
+        "table": "carts",
+        "row_count": 10000000,
+        "grain_column": "cart_id",
+        "grain_verified": true,
+        "primary_timestamp": "created_ts",
+        "date_range": [
+          "2025-05-17 20:20:22.185819",
+          "2026-05-17 20:44:25.61742"
+        ],
+        "freshness_lag_hours": 70.3,
+        "computed_at": "2026-05-20T17:00:36.529665+00:00"
+      },
+      "impressions": {
+        "table": "impressions",
+        "row_count": 3000000,
+        "grain_column": "impression_id",
+        "grain_verified": true,
+        "primary_timestamp": null,
+        "date_range": null,
+        "freshness_lag_hours": null,
+        "computed_at": "2026-05-20T17:00:37.242278+00:00"
+      },
+      "inventory_movements": {
+        "table": "inventory_movements",
+        "row_count": 2000000,
+        "grain_column": "movement_id",
+        "grain_verified": true,
+        "primary_timestamp": "timestamp",
+        "date_range": [
+          "2025-01-01 00:00:05",
+          "2025-12-31 23:59:33"
+        ],
+        "freshness_lag_hours": 3355.0,
+        "computed_at": "2026-05-20T17:00:37.329665+00:00"
+      },
+      "inventory_snapshots": {
+        "table": "inventory_snapshots",
+        "row_count": 900000,
+        "grain_column": "snapshot_id",
+        "grain_verified": true,
+        "primary_timestamp": "snapshot_date",
+        "date_range": [
+          "2025-01-01 00:00:00",
+          "2025-06-29 00:00:00"
+        ],
+        "freshness_lag_hours": 7819.0,
+        "computed_at": "2026-05-20T17:00:37.394467+00:00"
+      },
+      "journal_entries": {
+        "table": "journal_entries",
+        "row_count": 5597708,
+        "grain_column": "entry_id",
+        "grain_verified": false,
+        "primary_timestamp": null,
+        "date_range": null,
+        "freshness_lag_hours": null,
+        "computed_at": "2026-05-20T17:00:37.488099+00:00"
+      },
+      "marketing_ledger": {
+        "table": "marketing_ledger",
+        "row_count": 5000,
+        "grain_column": "campaign_id",
+        "grain_verified": true,
+        "primary_timestamp": null,
+        "date_range": null,
+        "freshness_lag_hours": null,
+        "computed_at": "2026-05-20T17:00:37.622940+00:00"
+      },
+      "order_items": {
+        "table": "order_items",
+        "row_count": 6437071,
+        "grain_column": "order_item_id",
+        "grain_verified": true,
+        "primary_timestamp": "order_ts",
+        "date_range": [
+          "2025-05-17 20:37:33.371637",
+          "2026-05-17 22:36:57.173745"
+        ],
+        "freshness_lag_hours": 68.4,
+        "computed_at": "2026-05-20T17:00:37.684769+00:00"
       },
       "orders": {
         "table": "orders",
-        "row_count": 99441,
+        "row_count": 2798854,
         "grain_column": "order_id",
         "grain_verified": true,
-        "primary_timestamp": "order_approved_at",
+        "primary_timestamp": "order_ts",
         "date_range": [
-          "",
-          "2018-09-03 17:40:06"
+          "2025-05-17 20:37:33.371637",
+          "2026-05-17 22:36:57.173745"
         ],
-        "freshness_lag_hours": 67566.2,
-        "computed_at": "2026-05-19T21:53:43.158765+00:00"
+        "freshness_lag_hours": 68.4,
+        "computed_at": "2026-05-20T17:00:38.269210+00:00"
       },
-      "products": {
-        "table": "products",
-        "row_count": 32951,
-        "grain_column": "product_id",
+      "payments": {
+        "table": "payments",
+        "row_count": 3134389,
+        "grain_column": "payment_id",
         "grain_verified": true,
         "primary_timestamp": null,
         "date_range": null,
         "freshness_lag_hours": null,
-        "computed_at": "2026-05-19T21:53:43.836245+00:00"
+        "computed_at": "2026-05-20T17:00:38.448855+00:00"
       },
-      "customer": {
-        "table": "customer",
-        "row_count": 99441,
-        "grain_column": "customer_id",
+      "purchase_orders": {
+        "table": "purchase_orders",
+        "row_count": 300000,
+        "grain_column": "po_id",
+        "grain_verified": true,
+        "primary_timestamp": "actual_delivery_date",
+        "date_range": [
+          "2025-01-05 11:18:22",
+          "2025-08-23 14:49:51"
+        ],
+        "freshness_lag_hours": 6484.2,
+        "computed_at": "2026-05-20T17:00:38.554841+00:00"
+      },
+      "refunds": {
+        "table": "refunds",
+        "row_count": 279908,
+        "grain_column": "refund_id",
         "grain_verified": true,
         "primary_timestamp": null,
         "date_range": null,
         "freshness_lag_hours": null,
-        "computed_at": "2026-05-19T21:53:43.933313+00:00"
+        "computed_at": "2026-05-20T17:00:38.578839+00:00"
       },
-      "product_category_name_translation": {
-        "table": "product_category_name_translation",
-        "row_count": 71,
-        "grain_column": "product_category_name",
+      "clicks": {
+        "table": "clicks",
+        "row_count": 220632,
+        "grain_column": "impression_id",
         "grain_verified": true,
         "primary_timestamp": null,
         "date_range": null,
         "freshness_lag_hours": null,
-        "computed_at": "2026-05-19T21:53:44.093599+00:00"
+        "computed_at": "2026-05-20T17:00:38.605569+00:00"
       },
-      "sellers": {
-        "table": "sellers",
-        "row_count": 3095,
-        "grain_column": "seller_id",
+      "experiment_assignments": {
+        "table": "experiment_assignments",
+        "row_count": 5000000,
+        "grain_column": "anon_id",
         "grain_verified": true,
         "primary_timestamp": null,
         "date_range": null,
         "freshness_lag_hours": null,
-        "computed_at": "2026-05-19T21:53:44.097950+00:00"
+        "computed_at": "2026-05-20T17:00:38.666337+00:00"
+      },
+      "experiments": {
+        "table": "experiments",
+        "row_count": 300,
+        "grain_column": "experiment_id",
+        "grain_verified": true,
+        "primary_timestamp": null,
+        "date_range": null,
+        "freshness_lag_hours": null,
+        "computed_at": "2026-05-20T17:00:38.745137+00:00"
+      },
+      "invoices": {
+        "table": "invoices",
+        "row_count": 2798854,
+        "grain_column": "order_id",
+        "grain_verified": true,
+        "primary_timestamp": null,
+        "date_range": null,
+        "freshness_lag_hours": null,
+        "computed_at": "2026-05-20T17:00:38.777908+00:00"
+      },
+      "kpi_definitions": {
+        "table": "kpi_definitions",
+        "row_count": 3,
+        "grain_column": "kpi",
+        "grain_verified": true,
+        "primary_timestamp": null,
+        "date_range": null,
+        "freshness_lag_hours": null,
+        "computed_at": "2026-05-20T17:00:38.888808+00:00"
+      },
+      "pnl_daily": {
+        "table": "pnl_daily",
+        "row_count": 180,
+        "grain_column": "date",
+        "grain_verified": true,
+        "primary_timestamp": "date",
+        "date_range": [
+          "2025-01-01 00:00:00",
+          "2025-06-29 00:00:00"
+        ],
+        "freshness_lag_hours": 7819.0,
+        "computed_at": "2026-05-20T17:00:38.891681+00:00"
       }
     },
     "columns": {
-      "order_items.order_id": {
-        "table": "order_items",
+      "attribution.order_id": {
+        "table": "attribution",
         "column": "order_id",
-        "dtype": "character varying",
+        "dtype": "VARCHAR",
         "semantic_type": "key",
         "null_rate": 0.0,
-        "distinct_count": 98666,
+        "distinct_count": 2798854,
         "is_low_cardinality": false,
         "value_range": null,
         "value_interpretation": null,
@@ -3154,14 +2795,925 @@
         "top_values": null,
         "is_fk": true
       },
+      "attribution.touchpoint_type": {
+        "table": "attribution",
+        "column": "touchpoint_type",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 5,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "ad_impression",
+          "ad_click",
+          "organic",
+          "email",
+          "influencer"
+        ],
+        "is_fk": false
+      },
+      "attribution.weight": {
+        "table": "attribution",
+        "column": "weight",
+        "dtype": "DOUBLE",
+        "semantic_type": "measure",
+        "null_rate": 0.0,
+        "distinct_count": 699700,
+        "is_low_cardinality": false,
+        "value_range": [
+          1.1300567550169133e-12,
+          2.0023178853858574e-05
+        ],
+        "value_interpretation": "fraction 0\u20131 (likely percentage)",
+        "unit": "percent_fraction",
+        "top_values": null,
+        "is_fk": false
+      },
+      "campaigns.campaign_id": {
+        "table": "campaigns",
+        "column": "campaign_id",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 5000,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "campaigns.channel": {
+        "table": "campaigns",
+        "column": "channel",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 6,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "YouTube",
+          "Email",
+          "Google",
+          "Meta",
+          "Affiliate",
+          "TikTok"
+        ],
+        "is_fk": false
+      },
+      "campaigns.objective": {
+        "table": "campaigns",
+        "column": "objective",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 3,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "RETARGETING",
+          "AWARENESS",
+          "CONVERSIONS"
+        ],
+        "is_fk": false
+      },
+      "campaigns.start_date": {
+        "table": "campaigns",
+        "column": "start_date",
+        "dtype": "DATE",
+        "semantic_type": "timestamp",
+        "null_rate": 0.0,
+        "distinct_count": 180,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "campaigns.end_date": {
+        "table": "campaigns",
+        "column": "end_date",
+        "dtype": "DATE",
+        "semantic_type": "timestamp",
+        "null_rate": 0.0,
+        "distinct_count": 230,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "campaigns.daily_budget_usd": {
+        "table": "campaigns",
+        "column": "daily_budget_usd",
+        "dtype": "DOUBLE",
+        "semantic_type": "measure",
+        "null_rate": 0.0,
+        "distinct_count": 5000,
+        "is_low_cardinality": false,
+        "value_range": [
+          516.49,
+          49988.74
+        ],
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "campaigns.target_region": {
+        "table": "campaigns",
+        "column": "target_region",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 4,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "US",
+          "FR",
+          "UK",
+          "DE"
+        ],
+        "is_fk": false
+      },
+      "campaigns.creative_type": {
+        "table": "campaigns",
+        "column": "creative_type",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 5,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "Studio",
+          "Influencer",
+          "UGC",
+          "Static",
+          "Video"
+        ],
+        "is_fk": false
+      },
+      "cart_items.cart_item_id": {
+        "table": "cart_items",
+        "column": "cart_item_id",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 3000968,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "cart_items.cart_id": {
+        "table": "cart_items",
+        "column": "cart_id",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 1000000,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "cart_items.sku_id": {
+        "table": "cart_items",
+        "column": "sku_id",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 399272,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "cart_items.quantity": {
+        "table": "cart_items",
+        "column": "quantity",
+        "dtype": "BIGINT",
+        "semantic_type": "ordinal",
+        "null_rate": 0.0,
+        "distinct_count": 3,
+        "is_low_cardinality": true,
+        "value_range": [
+          1.0,
+          3.0
+        ],
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "cart_items.added_ts": {
+        "table": "cart_items",
+        "column": "added_ts",
+        "dtype": "TIMESTAMP",
+        "semantic_type": "timestamp",
+        "null_rate": 0.0,
+        "distinct_count": 2998580,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "carts.cart_id": {
+        "table": "carts",
+        "column": "cart_id",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 10000000,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "carts.session_id": {
+        "table": "carts",
+        "column": "session_id",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 10000000,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "carts.anon_id": {
+        "table": "carts",
+        "column": "anon_id",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 4323277,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "carts.created_ts": {
+        "table": "carts",
+        "column": "created_ts",
+        "dtype": "TIMESTAMP",
+        "semantic_type": "timestamp",
+        "null_rate": 0.0,
+        "distinct_count": 10000000,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "carts.currency": {
+        "table": "carts",
+        "column": "currency",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 4,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "EUR",
+          "USD",
+          "CAD",
+          "GBP"
+        ],
+        "is_fk": true
+      },
+      "carts.traffic_source": {
+        "table": "carts",
+        "column": "traffic_source",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 7,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "Organic",
+          "Affiliate",
+          "Influencer",
+          "Email",
+          "Google",
+          "Meta",
+          "TikTok"
+        ],
+        "is_fk": false
+      },
+      "carts.device_type": {
+        "table": "carts",
+        "column": "device_type",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 3,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "Mobile",
+          "Desktop",
+          "Tablet"
+        ],
+        "is_fk": false
+      },
+      "carts.abandoned": {
+        "table": "carts",
+        "column": "abandoned",
+        "dtype": "BIGINT",
+        "semantic_type": "flag",
+        "null_rate": 0.0,
+        "distinct_count": 2,
+        "is_low_cardinality": true,
+        "value_range": [
+          0.0,
+          1.0
+        ],
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "impressions.impression_id": {
+        "table": "impressions",
+        "column": "impression_id",
+        "dtype": "BIGINT",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 3000000,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "impressions.campaign_id": {
+        "table": "impressions",
+        "column": "campaign_id",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 5000,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "impressions.anon_id": {
+        "table": "impressions",
+        "column": "anon_id",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 2256342,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "impressions.platform": {
+        "table": "impressions",
+        "column": "platform",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 5,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "Meta",
+          "Google",
+          "TikTok",
+          "Email",
+          "Affiliate"
+        ],
+        "is_fk": false
+      },
+      "impressions.ts": {
+        "table": "impressions",
+        "column": "ts",
+        "dtype": "BIGINT",
+        "semantic_type": "measure",
+        "null_rate": 0.0,
+        "distinct_count": 2995544,
+        "is_low_cardinality": false,
+        "value_range": [
+          6.0,
+          999999918.0
+        ],
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "impressions.viewable": {
+        "table": "impressions",
+        "column": "viewable",
+        "dtype": "BOOLEAN",
+        "semantic_type": "flag",
+        "null_rate": 0.0,
+        "distinct_count": 2,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "inventory_movements.movement_id": {
+        "table": "inventory_movements",
+        "column": "movement_id",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 2000000,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "inventory_movements.sku_id": {
+        "table": "inventory_movements",
+        "column": "sku_id",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 396867,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "inventory_movements.movement_type": {
+        "table": "inventory_movements",
+        "column": "movement_type",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 5,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "CUSTOMER_ORDER",
+          "PURCHASE_INBOUND",
+          "RETURN_INBOUND",
+          "WAREHOUSE_TRANSFER",
+          "DAMAGE_WRITE_OFF"
+        ],
+        "is_fk": false
+      },
+      "inventory_movements.quantity": {
+        "table": "inventory_movements",
+        "column": "quantity",
+        "dtype": "DOUBLE",
+        "semantic_type": "measure",
+        "null_rate": 0.0,
+        "distinct_count": 15,
+        "is_low_cardinality": true,
+        "value_range": [
+          1.0,
+          13.5
+        ],
+        "value_interpretation": "count",
+        "unit": "count",
+        "top_values": null,
+        "is_fk": false
+      },
+      "inventory_movements.timestamp": {
+        "table": "inventory_movements",
+        "column": "timestamp",
+        "dtype": "TIMESTAMP_NS",
+        "semantic_type": "unknown",
+        "null_rate": 0.0,
+        "distinct_count": 1938201,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "inventory_movements.warehouse_id": {
+        "table": "inventory_movements",
+        "column": "warehouse_id",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 4,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "inventory_snapshots.snapshot_id": {
+        "table": "inventory_snapshots",
+        "column": "snapshot_id",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 900000,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "inventory_snapshots.snapshot_date": {
+        "table": "inventory_snapshots",
+        "column": "snapshot_date",
+        "dtype": "TIMESTAMP_NS",
+        "semantic_type": "unknown",
+        "null_rate": 0.0,
+        "distinct_count": 180,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "inventory_snapshots.sku_id": {
+        "table": "inventory_snapshots",
+        "column": "sku_id",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 357692,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "inventory_snapshots.warehouse_id": {
+        "table": "inventory_snapshots",
+        "column": "warehouse_id",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 4,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "inventory_snapshots.stock_level": {
+        "table": "inventory_snapshots",
+        "column": "stock_level",
+        "dtype": "BIGINT",
+        "semantic_type": "measure",
+        "null_rate": 0.0,
+        "distinct_count": 690,
+        "is_low_cardinality": false,
+        "value_range": [
+          10.0,
+          699.0
+        ],
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "journal_entries.entry_id": {
+        "table": "journal_entries",
+        "column": "entry_id",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 2798854,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "journal_entries.order_id": {
+        "table": "journal_entries",
+        "column": "order_id",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 2798854,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "journal_entries.account": {
+        "table": "journal_entries",
+        "column": "account",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 2,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "Revenue",
+          "Accounts Receivable"
+        ],
+        "is_fk": false
+      },
+      "journal_entries.amount": {
+        "table": "journal_entries",
+        "column": "amount",
+        "dtype": "DOUBLE",
+        "semantic_type": "measure",
+        "null_rate": 0.0,
+        "distinct_count": 2798854,
+        "is_low_cardinality": false,
+        "value_range": [
+          -27.636505796562187,
+          378.93706855172775
+        ],
+        "value_interpretation": "currency amount",
+        "unit": "USD",
+        "top_values": null,
+        "is_fk": false
+      },
+      "journal_entries.entry_type": {
+        "table": "journal_entries",
+        "column": "entry_type",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 2,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "debit",
+          "credit"
+        ],
+        "is_fk": false
+      },
+      "journal_entries.signed_amount": {
+        "table": "journal_entries",
+        "column": "signed_amount",
+        "dtype": "DOUBLE",
+        "semantic_type": "measure",
+        "null_rate": 0.0,
+        "distinct_count": 5597708,
+        "is_low_cardinality": false,
+        "value_range": [
+          -378.93706855172775,
+          378.93706855172775
+        ],
+        "value_interpretation": "currency amount",
+        "unit": "USD",
+        "top_values": null,
+        "is_fk": false
+      },
+      "marketing_ledger.campaign_id": {
+        "table": "marketing_ledger",
+        "column": "campaign_id",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 5000,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "marketing_ledger.spend_usd": {
+        "table": "marketing_ledger",
+        "column": "spend_usd",
+        "dtype": "DOUBLE",
+        "semantic_type": "measure",
+        "null_rate": 0.0,
+        "distinct_count": 5000,
+        "is_low_cardinality": false,
+        "value_range": [
+          516.4555929011401,
+          49973.01782218861
+        ],
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "marketing_ledger.recognized": {
+        "table": "marketing_ledger",
+        "column": "recognized",
+        "dtype": "BOOLEAN",
+        "semantic_type": "flag",
+        "null_rate": 0.0,
+        "distinct_count": 2,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "marketing_ledger.cost_center": {
+        "table": "marketing_ledger",
+        "column": "cost_center",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 2,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "CC-MARKETING-US",
+          "CC-MARKETING-EU"
+        ],
+        "is_fk": false
+      },
       "order_items.order_item_id": {
         "table": "order_items",
         "column": "order_item_id",
-        "dtype": "integer",
+        "dtype": "VARCHAR",
         "semantic_type": "key",
         "null_rate": 0.0,
-        "distinct_count": 21,
+        "distinct_count": 6437071,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "order_items.order_id": {
+        "table": "order_items",
+        "column": "order_id",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 2798854,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "order_items.order_ts": {
+        "table": "order_items",
+        "column": "order_ts",
+        "dtype": "TIMESTAMP",
+        "semantic_type": "timestamp",
+        "null_rate": 0.0,
+        "distinct_count": 2798854,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "order_items.item_added_ts": {
+        "table": "order_items",
+        "column": "item_added_ts",
+        "dtype": "TIMESTAMP_NS",
+        "semantic_type": "unknown",
+        "null_rate": 0.0,
+        "distinct_count": 6435485,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "order_items.traffic_source": {
+        "table": "order_items",
+        "column": "traffic_source",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 7,
         "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "Organic",
+          "Email",
+          "Influencer",
+          "TikTok",
+          "Google",
+          "Affiliate",
+          "Meta"
+        ],
+        "is_fk": false
+      },
+      "order_items.currency": {
+        "table": "order_items",
+        "column": "currency",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 4,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "EUR",
+          "USD",
+          "CAD",
+          "GBP"
+        ],
+        "is_fk": true
+      },
+      "order_items.device_type": {
+        "table": "order_items",
+        "column": "device_type",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 3,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "Desktop",
+          "Tablet",
+          "Mobile"
+        ],
+        "is_fk": false
+      },
+      "order_items.sku_id": {
+        "table": "order_items",
+        "column": "sku_id",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 399462,
+        "is_low_cardinality": false,
         "value_range": null,
         "value_interpretation": null,
         "unit": null,
@@ -3171,10 +3723,10 @@
       "order_items.product_id": {
         "table": "order_items",
         "column": "product_id",
-        "dtype": "character varying",
+        "dtype": "VARCHAR",
         "semantic_type": "key",
         "null_rate": 0.0,
-        "distinct_count": 32951,
+        "distinct_count": 100000,
         "is_low_cardinality": false,
         "value_range": null,
         "value_interpretation": null,
@@ -3182,243 +3734,103 @@
         "top_values": null,
         "is_fk": true
       },
-      "order_items.seller_id": {
+      "order_items.quantity": {
         "table": "order_items",
-        "column": "seller_id",
-        "dtype": "character varying",
-        "semantic_type": "key",
-        "null_rate": 0.0,
-        "distinct_count": 3095,
-        "is_low_cardinality": false,
-        "value_range": null,
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": null,
-        "is_fk": true
-      },
-      "order_items.shipping_limit_date": {
-        "table": "order_items",
-        "column": "shipping_limit_date",
-        "dtype": "character varying",
-        "semantic_type": "unknown",
-        "null_rate": 0.0,
-        "distinct_count": 93318,
-        "is_low_cardinality": false,
-        "value_range": null,
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": null,
-        "is_fk": false
-      },
-      "order_items.price": {
-        "table": "order_items",
-        "column": "price",
-        "dtype": "real",
-        "semantic_type": "measure",
-        "null_rate": 0.0,
-        "distinct_count": 5968,
-        "is_low_cardinality": false,
-        "value_range": [
-          0.8500000238418579,
-          6735.0
-        ],
-        "value_interpretation": "currency amount",
-        "unit": "USD",
-        "top_values": null,
-        "is_fk": false
-      },
-      "order_items.freight_value": {
-        "table": "order_items",
-        "column": "freight_value",
-        "dtype": "real",
-        "semantic_type": "measure",
-        "null_rate": 0.0,
-        "distinct_count": 6999,
-        "is_low_cardinality": false,
-        "value_range": [
-          0.0,
-          409.67999267578125
-        ],
-        "value_interpretation": "currency amount",
-        "unit": "USD",
-        "top_values": null,
-        "is_fk": false
-      },
-      "order_payments.order_id": {
-        "table": "order_payments",
-        "column": "order_id",
-        "dtype": "character varying",
-        "semantic_type": "key",
-        "null_rate": 0.0,
-        "distinct_count": 99440,
-        "is_low_cardinality": false,
-        "value_range": null,
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": null,
-        "is_fk": true
-      },
-      "order_payments.payment_sequential": {
-        "table": "order_payments",
-        "column": "payment_sequential",
-        "dtype": "integer",
-        "semantic_type": "measure",
-        "null_rate": 0.0,
-        "distinct_count": 29,
-        "is_low_cardinality": true,
-        "value_range": [
-          1.0,
-          29.0
-        ],
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": null,
-        "is_fk": false
-      },
-      "order_payments.payment_type": {
-        "table": "order_payments",
-        "column": "payment_type",
-        "dtype": "character varying",
-        "semantic_type": "unknown",
-        "null_rate": 0.0,
-        "distinct_count": 5,
-        "is_low_cardinality": true,
-        "value_range": null,
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": null,
-        "is_fk": false
-      },
-      "order_payments.payment_installments": {
-        "table": "order_payments",
-        "column": "payment_installments",
-        "dtype": "integer",
-        "semantic_type": "measure",
-        "null_rate": 0.0,
-        "distinct_count": 24,
-        "is_low_cardinality": true,
-        "value_range": [
-          0.0,
-          24.0
-        ],
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": null,
-        "is_fk": false
-      },
-      "order_payments.payment_value": {
-        "table": "order_payments",
-        "column": "payment_value",
-        "dtype": "real",
-        "semantic_type": "measure",
-        "null_rate": 0.0,
-        "distinct_count": 29077,
-        "is_low_cardinality": false,
-        "value_range": [
-          0.0,
-          13664.080078125
-        ],
-        "value_interpretation": "currency amount",
-        "unit": "USD",
-        "top_values": null,
-        "is_fk": false
-      },
-      "order_reviews.review_id": {
-        "table": "order_reviews",
-        "column": "review_id",
-        "dtype": "character varying",
-        "semantic_type": "key",
-        "null_rate": 0.0,
-        "distinct_count": 69610,
-        "is_low_cardinality": false,
-        "value_range": null,
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": null,
-        "is_fk": true
-      },
-      "order_reviews.order_id": {
-        "table": "order_reviews",
-        "column": "order_id",
-        "dtype": "character varying",
-        "semantic_type": "key",
-        "null_rate": 0.0,
-        "distinct_count": 69743,
-        "is_low_cardinality": false,
-        "value_range": null,
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": null,
-        "is_fk": true
-      },
-      "order_reviews.review_score": {
-        "table": "order_reviews",
-        "column": "review_score",
-        "dtype": "integer",
+        "column": "quantity",
+        "dtype": "BIGINT",
         "semantic_type": "ordinal",
         "null_rate": 0.0,
-        "distinct_count": 5,
+        "distinct_count": 3,
         "is_low_cardinality": true,
         "value_range": [
           1.0,
-          5.0
+          3.0
         ],
         "value_interpretation": null,
         "unit": null,
         "top_values": null,
         "is_fk": false
       },
-      "order_reviews.review_comment_title": {
-        "table": "order_reviews",
-        "column": "review_comment_title",
-        "dtype": "character varying",
-        "semantic_type": "unknown",
+      "order_items.unit_price_usd": {
+        "table": "order_items",
+        "column": "unit_price_usd",
+        "dtype": "DOUBLE",
+        "semantic_type": "measure",
         "null_rate": 0.0,
-        "distinct_count": 3466,
+        "distinct_count": 13970,
         "is_low_cardinality": false,
-        "value_range": null,
+        "value_range": [
+          3.24,
+          325.1
+        ],
         "value_interpretation": null,
         "unit": null,
         "top_values": null,
         "is_fk": false
       },
-      "order_reviews.review_comment_message": {
-        "table": "order_reviews",
-        "column": "review_comment_message",
-        "dtype": "character varying",
-        "semantic_type": "unknown",
+      "order_items.discount_pct": {
+        "table": "order_items",
+        "column": "discount_pct",
+        "dtype": "DOUBLE",
+        "semantic_type": "measure",
         "null_rate": 0.0,
-        "distinct_count": 25762,
+        "distinct_count": 7,
+        "is_low_cardinality": true,
+        "value_range": [
+          0.0,
+          0.25
+        ],
+        "value_interpretation": "fraction 0\u20131 (likely percentage)",
+        "unit": "percent_fraction",
+        "top_values": null,
+        "is_fk": false
+      },
+      "order_items.final_price_usd": {
+        "table": "order_items",
+        "column": "final_price_usd",
+        "dtype": "DOUBLE",
+        "semantic_type": "measure",
+        "null_rate": 0.0,
+        "distinct_count": 15715,
         "is_low_cardinality": false,
-        "value_range": null,
+        "value_range": [
+          2.59,
+          325.1
+        ],
         "value_interpretation": null,
         "unit": null,
         "top_values": null,
         "is_fk": false
       },
-      "order_reviews.review_creation_date": {
-        "table": "order_reviews",
-        "column": "review_creation_date",
-        "dtype": "character varying",
-        "semantic_type": "unknown",
+      "order_items.cogs_usd": {
+        "table": "order_items",
+        "column": "cogs_usd",
+        "dtype": "DOUBLE",
+        "semantic_type": "measure",
         "null_rate": 0.0,
-        "distinct_count": 628,
+        "distinct_count": 3397,
         "is_low_cardinality": false,
-        "value_range": null,
+        "value_range": [
+          2.12,
+          73.09
+        ],
         "value_interpretation": null,
         "unit": null,
         "top_values": null,
         "is_fk": false
       },
-      "order_reviews.review_answer_timestamp": {
-        "table": "order_reviews",
-        "column": "review_answer_timestamp",
-        "dtype": "character varying",
-        "semantic_type": "unknown",
+      "order_items.gross_margin_usd": {
+        "table": "order_items",
+        "column": "gross_margin_usd",
+        "dtype": "DOUBLE",
+        "semantic_type": "measure",
         "null_rate": 0.0,
-        "distinct_count": 69526,
+        "distinct_count": 55001,
         "is_low_cardinality": false,
-        "value_range": null,
+        "value_range": [
+          -165.92,
+          1141.056
+        ],
         "value_interpretation": null,
         "unit": null,
         "top_values": null,
@@ -3427,10 +3839,10 @@
       "orders.order_id": {
         "table": "orders",
         "column": "order_id",
-        "dtype": "character varying",
+        "dtype": "VARCHAR",
         "semantic_type": "key",
         "null_rate": 0.0,
-        "distinct_count": 99441,
+        "distinct_count": 2798854,
         "is_low_cardinality": false,
         "value_range": null,
         "value_interpretation": null,
@@ -3438,27 +3850,169 @@
         "top_values": null,
         "is_fk": true
       },
-      "orders.customer_id": {
+      "orders.cart_id": {
         "table": "orders",
-        "column": "customer_id",
-        "dtype": "character varying",
+        "column": "cart_id",
+        "dtype": "VARCHAR",
         "semantic_type": "key",
         "null_rate": 0.0,
-        "distinct_count": 99441,
+        "distinct_count": 2798854,
         "is_low_cardinality": false,
         "value_range": null,
         "value_interpretation": null,
         "unit": null,
         "top_values": null,
         "is_fk": true
+      },
+      "orders.anon_id": {
+        "table": "orders",
+        "column": "anon_id",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 2143904,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "orders.order_ts": {
+        "table": "orders",
+        "column": "order_ts",
+        "dtype": "TIMESTAMP",
+        "semantic_type": "timestamp",
+        "null_rate": 0.0,
+        "distinct_count": 2798854,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "orders.currency": {
+        "table": "orders",
+        "column": "currency",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 4,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "EUR",
+          "USD",
+          "CAD",
+          "GBP"
+        ],
+        "is_fk": false
+      },
+      "orders.traffic_source": {
+        "table": "orders",
+        "column": "traffic_source",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 7,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "Organic",
+          "Email",
+          "Influencer",
+          "Affiliate",
+          "Meta",
+          "Google",
+          "TikTok"
+        ],
+        "is_fk": false
+      },
+      "orders.device_type": {
+        "table": "orders",
+        "column": "device_type",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 3,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "Tablet",
+          "Mobile",
+          "Desktop"
+        ],
+        "is_fk": false
+      },
+      "orders.payment_method": {
+        "table": "orders",
+        "column": "payment_method",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 5,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "Google Pay",
+          "PayPal",
+          "Apple Pay",
+          "Klarna",
+          "Credit Card"
+        ],
+        "is_fk": false
       },
       "orders.order_status": {
         "table": "orders",
         "column": "order_status",
-        "dtype": "character varying",
-        "semantic_type": "unknown",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
         "null_rate": 0.0,
-        "distinct_count": 8,
+        "distinct_count": 6,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "DELIVERED",
+          "RETURNED",
+          "FULFILLED",
+          "PAID",
+          "CANCELLED",
+          "PLACED"
+        ],
+        "is_fk": false
+      },
+      "orders.coupon_code": {
+        "table": "orders",
+        "column": "coupon_code",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.7701,
+        "distinct_count": 4,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "orders.coupon_abuse": {
+        "table": "orders",
+        "column": "coupon_abuse",
+        "dtype": "BOOLEAN",
+        "semantic_type": "flag",
+        "null_rate": 0.0,
+        "distinct_count": 2,
         "is_low_cardinality": true,
         "value_range": null,
         "value_interpretation": null,
@@ -3466,83 +4020,13 @@
         "top_values": null,
         "is_fk": false
       },
-      "orders.order_purchase_timestamp": {
-        "table": "orders",
-        "column": "order_purchase_timestamp",
-        "dtype": "character varying",
-        "semantic_type": "unknown",
-        "null_rate": 0.0,
-        "distinct_count": 98875,
-        "is_low_cardinality": false,
-        "value_range": null,
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": null,
-        "is_fk": false
-      },
-      "orders.order_approved_at": {
-        "table": "orders",
-        "column": "order_approved_at",
-        "dtype": "character varying",
-        "semantic_type": "unknown",
-        "null_rate": 0.0,
-        "distinct_count": 90734,
-        "is_low_cardinality": false,
-        "value_range": null,
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": null,
-        "is_fk": false
-      },
-      "orders.order_delivered_carrier_date": {
-        "table": "orders",
-        "column": "order_delivered_carrier_date",
-        "dtype": "character varying",
-        "semantic_type": "unknown",
-        "null_rate": 0.0,
-        "distinct_count": 81019,
-        "is_low_cardinality": false,
-        "value_range": null,
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": null,
-        "is_fk": false
-      },
-      "orders.order_delivered_customer_date": {
-        "table": "orders",
-        "column": "order_delivered_customer_date",
-        "dtype": "character varying",
-        "semantic_type": "unknown",
-        "null_rate": 0.0,
-        "distinct_count": 95665,
-        "is_low_cardinality": false,
-        "value_range": null,
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": null,
-        "is_fk": false
-      },
-      "orders.order_estimated_delivery_date": {
-        "table": "orders",
-        "column": "order_estimated_delivery_date",
-        "dtype": "character varying",
-        "semantic_type": "unknown",
-        "null_rate": 0.0,
-        "distinct_count": 459,
-        "is_low_cardinality": false,
-        "value_range": null,
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": null,
-        "is_fk": false
-      },
-      "products.product_id": {
-        "table": "products",
-        "column": "product_id",
-        "dtype": "character varying",
+      "payments.payment_id": {
+        "table": "payments",
+        "column": "payment_id",
+        "dtype": "VARCHAR",
         "semantic_type": "key",
         "null_rate": 0.0,
-        "distinct_count": 32951,
+        "distinct_count": 3134389,
         "is_low_cardinality": false,
         "value_range": null,
         "value_interpretation": null,
@@ -3550,13 +4034,13 @@
         "top_values": null,
         "is_fk": true
       },
-      "products.product_category_name": {
-        "table": "products",
-        "column": "product_category_name",
-        "dtype": "character varying",
+      "payments.order_id": {
+        "table": "payments",
+        "column": "order_id",
+        "dtype": "VARCHAR",
         "semantic_type": "key",
         "null_rate": 0.0,
-        "distinct_count": 74,
+        "distinct_count": 2798854,
         "is_low_cardinality": false,
         "value_range": null,
         "value_interpretation": null,
@@ -3564,191 +4048,589 @@
         "top_values": null,
         "is_fk": true
       },
-      "products.product_name_lenght": {
-        "table": "products",
-        "column": "product_name_lenght",
-        "dtype": "integer",
-        "semantic_type": "measure",
-        "null_rate": 0.0185,
-        "distinct_count": 66,
-        "is_low_cardinality": false,
-        "value_range": [
-          5.0,
-          76.0
-        ],
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": null,
-        "is_fk": false
-      },
-      "products.product_description_lenght": {
-        "table": "products",
-        "column": "product_description_lenght",
-        "dtype": "integer",
-        "semantic_type": "measure",
-        "null_rate": 0.0185,
-        "distinct_count": 2960,
-        "is_low_cardinality": false,
-        "value_range": [
-          4.0,
-          3992.0
-        ],
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": null,
-        "is_fk": false
-      },
-      "products.product_photos_qty": {
-        "table": "products",
-        "column": "product_photos_qty",
-        "dtype": "integer",
-        "semantic_type": "measure",
-        "null_rate": 0.0185,
-        "distinct_count": 19,
+      "payments.attempt_number": {
+        "table": "payments",
+        "column": "attempt_number",
+        "dtype": "BIGINT",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 3,
         "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "payments.payment_ts": {
+        "table": "payments",
+        "column": "payment_ts",
+        "dtype": "TIMESTAMP_NS",
+        "semantic_type": "unknown",
+        "null_rate": 0.0,
+        "distinct_count": 3134389,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "payments.payment_method": {
+        "table": "payments",
+        "column": "payment_method",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 5,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "PayPal",
+          "Google Pay",
+          "Apple Pay",
+          "Klarna",
+          "Credit Card"
+        ],
+        "is_fk": false
+      },
+      "payments.traffic_source": {
+        "table": "payments",
+        "column": "traffic_source",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 7,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "Email",
+          "Organic",
+          "Influencer",
+          "Google",
+          "Affiliate",
+          "Meta",
+          "TikTok"
+        ],
+        "is_fk": false
+      },
+      "payments.currency": {
+        "table": "payments",
+        "column": "currency",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 4,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "EUR",
+          "USD",
+          "CAD",
+          "GBP"
+        ],
+        "is_fk": true
+      },
+      "payments.device_type": {
+        "table": "payments",
+        "column": "device_type",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 3,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "Tablet",
+          "Mobile",
+          "Desktop"
+        ],
+        "is_fk": false
+      },
+      "payments.success": {
+        "table": "payments",
+        "column": "success",
+        "dtype": "BOOLEAN",
+        "semantic_type": "flag",
+        "null_rate": 0.0,
+        "distinct_count": 2,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "payments.fraud_review": {
+        "table": "payments",
+        "column": "fraud_review",
+        "dtype": "BOOLEAN",
+        "semantic_type": "flag",
+        "null_rate": 0.0,
+        "distinct_count": 2,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "payments.required_retry": {
+        "table": "payments",
+        "column": "required_retry",
+        "dtype": "BOOLEAN",
+        "semantic_type": "flag",
+        "null_rate": 0.0,
+        "distinct_count": 2,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "payments.fraud_blocked": {
+        "table": "payments",
+        "column": "fraud_blocked",
+        "dtype": "BOOLEAN",
+        "semantic_type": "flag",
+        "null_rate": 0.0,
+        "distinct_count": 2,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "purchase_orders.po_id": {
+        "table": "purchase_orders",
+        "column": "po_id",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 300000,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "purchase_orders.sku_id": {
+        "table": "purchase_orders",
+        "column": "sku_id",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 210868,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "purchase_orders.supplier_id": {
+        "table": "purchase_orders",
+        "column": "supplier_id",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 2000,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "purchase_orders.quantity": {
+        "table": "purchase_orders",
+        "column": "quantity",
+        "dtype": "BIGINT",
+        "semantic_type": "measure",
+        "null_rate": 0.0,
+        "distinct_count": 950,
+        "is_low_cardinality": false,
         "value_range": [
-          1.0,
-          20.0
+          50.0,
+          999.0
         ],
         "value_interpretation": "count",
         "unit": "count",
         "top_values": null,
         "is_fk": false
       },
-      "products.product_weight_g": {
-        "table": "products",
-        "column": "product_weight_g",
-        "dtype": "integer",
-        "semantic_type": "measure",
-        "null_rate": 0.0001,
-        "distinct_count": 2204,
+      "purchase_orders.order_date": {
+        "table": "purchase_orders",
+        "column": "order_date",
+        "dtype": "TIMESTAMP_NS",
+        "semantic_type": "unknown",
+        "null_rate": 0.0,
+        "distinct_count": 297058,
         "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "purchase_orders.expected_delivery_date": {
+        "table": "purchase_orders",
+        "column": "expected_delivery_date",
+        "dtype": "TIMESTAMP_NS",
+        "semantic_type": "unknown",
+        "null_rate": 0.0,
+        "distinct_count": 297320,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "purchase_orders.actual_delivery_date": {
+        "table": "purchase_orders",
+        "column": "actual_delivery_date",
+        "dtype": "TIMESTAMP",
+        "semantic_type": "timestamp",
+        "null_rate": 0.0,
+        "distinct_count": 297385,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "refunds.refund_id": {
+        "table": "refunds",
+        "column": "refund_id",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 279908,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "refunds.order_id": {
+        "table": "refunds",
+        "column": "order_id",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 279908,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "refunds.refund_ts": {
+        "table": "refunds",
+        "column": "refund_ts",
+        "dtype": "TIMESTAMP_NS",
+        "semantic_type": "unknown",
+        "null_rate": 0.0,
+        "distinct_count": 279908,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "refunds.refund_completed_ts": {
+        "table": "refunds",
+        "column": "refund_completed_ts",
+        "dtype": "TIMESTAMP_NS",
+        "semantic_type": "unknown",
+        "null_rate": 0.0,
+        "distinct_count": 279908,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "refunds.refund_reason": {
+        "table": "refunds",
+        "column": "refund_reason",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 10,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "WRONG_SHADE",
+          "CHANGED_MIND",
+          "DAMAGED_PRODUCT",
+          "NOT_AS_DESCRIBED",
+          "QUALITY_ISSUE",
+          "LATE_DELIVERY",
+          "LEAKAGE_DURING_SHIPPING",
+          "MISSING_ITEMS",
+          "ALLERGIC_REACTION",
+          "DUPLICATE_ORDER"
+        ],
+        "is_fk": false
+      },
+      "refunds.partial_refund": {
+        "table": "refunds",
+        "column": "partial_refund",
+        "dtype": "BOOLEAN",
+        "semantic_type": "flag",
+        "null_rate": 0.0,
+        "distinct_count": 2,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "refunds.traffic_source": {
+        "table": "refunds",
+        "column": "traffic_source",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 7,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "Meta",
+          "Influencer",
+          "Google",
+          "TikTok",
+          "Email",
+          "Organic",
+          "Affiliate"
+        ],
+        "is_fk": false
+      },
+      "refunds.payment_method": {
+        "table": "refunds",
+        "column": "payment_method",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 5,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "Klarna",
+          "Google Pay",
+          "Apple Pay",
+          "Credit Card",
+          "PayPal"
+        ],
+        "is_fk": false
+      },
+      "refunds.currency": {
+        "table": "refunds",
+        "column": "currency",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 4,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "EUR",
+          "USD",
+          "CAD",
+          "GBP"
+        ],
+        "is_fk": true
+      },
+      "refunds.device_type": {
+        "table": "refunds",
+        "column": "device_type",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 3,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "Desktop",
+          "Mobile",
+          "Tablet"
+        ],
+        "is_fk": false
+      },
+      "refunds.refund_processing_days": {
+        "table": "refunds",
+        "column": "refund_processing_days",
+        "dtype": "BIGINT",
+        "semantic_type": "ordinal",
+        "null_rate": 0.0,
+        "distinct_count": 9,
+        "is_low_cardinality": true,
         "value_range": [
-          0.0,
-          40425.0
+          1.0,
+          9.0
         ],
         "value_interpretation": null,
         "unit": null,
         "top_values": null,
         "is_fk": false
       },
-      "products.product_length_cm": {
-        "table": "products",
-        "column": "product_length_cm",
-        "dtype": "integer",
-        "semantic_type": "measure",
-        "null_rate": 0.0001,
-        "distinct_count": 99,
-        "is_low_cardinality": false,
-        "value_range": [
-          7.0,
-          105.0
-        ],
+      "refunds.slow_refund": {
+        "table": "refunds",
+        "column": "slow_refund",
+        "dtype": "BOOLEAN",
+        "semantic_type": "flag",
+        "null_rate": 0.0,
+        "distinct_count": 2,
+        "is_low_cardinality": true,
+        "value_range": null,
         "value_interpretation": null,
         "unit": null,
         "top_values": null,
         "is_fk": false
       },
-      "products.product_height_cm": {
-        "table": "products",
-        "column": "product_height_cm",
-        "dtype": "integer",
-        "semantic_type": "measure",
-        "null_rate": 0.0001,
-        "distinct_count": 102,
-        "is_low_cardinality": false,
-        "value_range": [
-          2.0,
-          105.0
-        ],
+      "refunds.logistics_related_refund": {
+        "table": "refunds",
+        "column": "logistics_related_refund",
+        "dtype": "BOOLEAN",
+        "semantic_type": "flag",
+        "null_rate": 0.0,
+        "distinct_count": 2,
+        "is_low_cardinality": true,
+        "value_range": null,
         "value_interpretation": null,
         "unit": null,
         "top_values": null,
         "is_fk": false
       },
-      "products.product_width_cm": {
-        "table": "products",
-        "column": "product_width_cm",
-        "dtype": "integer",
+      "refunds.customer_preference_refund": {
+        "table": "refunds",
+        "column": "customer_preference_refund",
+        "dtype": "BOOLEAN",
+        "semantic_type": "flag",
+        "null_rate": 0.0,
+        "distinct_count": 2,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "clicks.impression_id": {
+        "table": "clicks",
+        "column": "impression_id",
+        "dtype": "BIGINT",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 220632,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "clicks.campaign_id": {
+        "table": "clicks",
+        "column": "campaign_id",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 5000,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "clicks.anon_id": {
+        "table": "clicks",
+        "column": "anon_id",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 215728,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "clicks.platform": {
+        "table": "clicks",
+        "column": "platform",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 5,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "Meta",
+          "TikTok",
+          "Google",
+          "Affiliate",
+          "Email"
+        ],
+        "is_fk": false
+      },
+      "clicks.ts": {
+        "table": "clicks",
+        "column": "ts",
+        "dtype": "BIGINT",
         "semantic_type": "measure",
-        "null_rate": 0.0001,
-        "distinct_count": 95,
+        "null_rate": 0.0,
+        "distinct_count": 220603,
         "is_low_cardinality": false,
         "value_range": [
           6.0,
-          118.0
+          999998435.0
         ],
         "value_interpretation": null,
         "unit": null,
         "top_values": null,
         "is_fk": false
       },
-      "customer.customer_id": {
-        "table": "customer",
-        "column": "customer_id",
-        "dtype": "character varying",
-        "semantic_type": "key",
+      "clicks.viewable": {
+        "table": "clicks",
+        "column": "viewable",
+        "dtype": "BOOLEAN",
+        "semantic_type": "flag",
         "null_rate": 0.0,
-        "distinct_count": 99441,
-        "is_low_cardinality": false,
-        "value_range": null,
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": null,
-        "is_fk": true
-      },
-      "customer.customer_unique_id": {
-        "table": "customer",
-        "column": "customer_unique_id",
-        "dtype": "character varying",
-        "semantic_type": "key",
-        "null_rate": 0.0,
-        "distinct_count": 96096,
-        "is_low_cardinality": false,
-        "value_range": null,
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": null,
-        "is_fk": true
-      },
-      "customer.customer_zip_code_prefix": {
-        "table": "customer",
-        "column": "customer_zip_code_prefix",
-        "dtype": "integer",
-        "semantic_type": "measure",
-        "null_rate": 0.0,
-        "distinct_count": 14994,
-        "is_low_cardinality": false,
-        "value_range": [
-          1003.0,
-          99990.0
-        ],
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": null,
-        "is_fk": false
-      },
-      "customer.customer_city": {
-        "table": "customer",
-        "column": "customer_city",
-        "dtype": "character varying",
-        "semantic_type": "unknown",
-        "null_rate": 0.0,
-        "distinct_count": 4119,
-        "is_low_cardinality": false,
-        "value_range": null,
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": null,
-        "is_fk": false
-      },
-      "customer.customer_state": {
-        "table": "customer",
-        "column": "customer_state",
-        "dtype": "character varying",
-        "semantic_type": "unknown",
-        "null_rate": 0.0,
-        "distinct_count": 27,
+        "distinct_count": 2,
         "is_low_cardinality": true,
         "value_range": null,
         "value_interpretation": null,
@@ -3756,72 +4638,382 @@
         "top_values": null,
         "is_fk": false
       },
-      "product_category_name_translation.product_category_name": {
-        "table": "product_category_name_translation",
-        "column": "product_category_name",
-        "dtype": "character varying",
-        "semantic_type": "key",
-        "null_rate": 0.0,
-        "distinct_count": 71,
-        "is_low_cardinality": false,
-        "value_range": null,
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": null,
-        "is_fk": true
-      },
-      "product_category_name_translation.product_category_name_english": {
-        "table": "product_category_name_translation",
-        "column": "product_category_name_english",
-        "dtype": "character varying",
-        "semantic_type": "unknown",
-        "null_rate": 0.0,
-        "distinct_count": 71,
-        "is_low_cardinality": false,
-        "value_range": null,
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": null,
-        "is_fk": false
-      },
-      "sellers.seller_id": {
-        "table": "sellers",
-        "column": "seller_id",
-        "dtype": "character varying",
-        "semantic_type": "key",
-        "null_rate": 0.0,
-        "distinct_count": 3095,
-        "is_low_cardinality": false,
-        "value_range": null,
-        "value_interpretation": null,
-        "unit": null,
-        "top_values": null,
-        "is_fk": true
-      },
-      "sellers.seller_zip_code_prefix": {
-        "table": "sellers",
-        "column": "seller_zip_code_prefix",
-        "dtype": "integer",
+      "clicks.click_ts": {
+        "table": "clicks",
+        "column": "click_ts",
+        "dtype": "BIGINT",
         "semantic_type": "measure",
         "null_rate": 0.0,
-        "distinct_count": 2246,
+        "distinct_count": 220590,
         "is_low_cardinality": false,
         "value_range": [
-          1001.0,
-          99730.0
+          23.0,
+          999998444.0
         ],
         "value_interpretation": null,
         "unit": null,
         "top_values": null,
         "is_fk": false
       },
-      "sellers.seller_city": {
-        "table": "sellers",
-        "column": "seller_city",
-        "dtype": "character varying",
+      "experiment_assignments.anon_id": {
+        "table": "experiment_assignments",
+        "column": "anon_id",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 5000000,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "experiment_assignments.experiment_id": {
+        "table": "experiment_assignments",
+        "column": "experiment_id",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 300,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "experiment_assignments.variant": {
+        "table": "experiment_assignments",
+        "column": "variant",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 2,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "control",
+          "treatment"
+        ],
+        "is_fk": false
+      },
+      "experiment_assignments.assignment_ts": {
+        "table": "experiment_assignments",
+        "column": "assignment_ts",
+        "dtype": "BIGINT",
+        "semantic_type": "measure",
+        "null_rate": 0.0,
+        "distinct_count": 4876841,
+        "is_low_cardinality": false,
+        "value_range": [
+          1600000008.0,
+          1699999987.0
+        ],
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "experiment_assignments.is_experiment_user": {
+        "table": "experiment_assignments",
+        "column": "is_experiment_user",
+        "dtype": "INTEGER",
+        "semantic_type": "flag",
+        "null_rate": 0.0,
+        "distinct_count": 1,
+        "is_low_cardinality": true,
+        "value_range": [
+          1.0,
+          1.0
+        ],
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "experiments.experiment_id": {
+        "table": "experiments",
+        "column": "experiment_id",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 300,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "experiments.start_ts": {
+        "table": "experiments",
+        "column": "start_ts",
+        "dtype": "BIGINT",
+        "semantic_type": "measure",
+        "null_rate": 0.0,
+        "distinct_count": 300,
+        "is_low_cardinality": false,
+        "value_range": [
+          1600006749.0,
+          1699123301.0
+        ],
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "experiments.end_ts": {
+        "table": "experiments",
+        "column": "end_ts",
+        "dtype": "BIGINT",
+        "semantic_type": "measure",
+        "null_rate": 0.0,
+        "distinct_count": 300,
+        "is_low_cardinality": false,
+        "value_range": [
+          1700113615.0,
+          1749757246.0
+        ],
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "experiments.traffic_allocation": {
+        "table": "experiments",
+        "column": "traffic_allocation",
+        "dtype": "DOUBLE",
+        "semantic_type": "measure",
+        "null_rate": 0.0,
+        "distinct_count": 300,
+        "is_low_cardinality": false,
+        "value_range": [
+          0.10013197264022011,
+          0.4990403822591626
+        ],
+        "value_interpretation": "fraction 0\u20131 (likely percentage)",
+        "unit": "percent_fraction",
+        "top_values": null,
+        "is_fk": false
+      },
+      "experiments.variant_ratio": {
+        "table": "experiments",
+        "column": "variant_ratio",
+        "dtype": "DOUBLE",
+        "semantic_type": "measure",
+        "null_rate": 0.0,
+        "distinct_count": 300,
+        "is_low_cardinality": false,
+        "value_range": [
+          0.40027508261124467,
+          0.5997187495301591
+        ],
+        "value_interpretation": "fraction 0\u20131 (likely percentage)",
+        "unit": "percent_fraction",
+        "top_values": null,
+        "is_fk": false
+      },
+      "experiments.hypothesis": {
+        "table": "experiments",
+        "column": "hypothesis",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 5,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "checkout UX change",
+          "free shipping threshold",
+          "discount threshold test",
+          "recommendation ranking",
+          "homepage layout"
+        ],
+        "is_fk": false
+      },
+      "invoices.order_id": {
+        "table": "invoices",
+        "column": "order_id",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 2798854,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "invoices.invoice_delay_days": {
+        "table": "invoices",
+        "column": "invoice_delay_days",
+        "dtype": "BIGINT",
+        "semantic_type": "ordinal",
+        "null_rate": 0.0,
+        "distinct_count": 5,
+        "is_low_cardinality": true,
+        "value_range": [
+          0.0,
+          4.0
+        ],
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "invoices.revenue_gross": {
+        "table": "invoices",
+        "column": "revenue_gross",
+        "dtype": "DOUBLE",
+        "semantic_type": "measure",
+        "null_rate": 0.0,
+        "distinct_count": 2798854,
+        "is_low_cardinality": false,
+        "value_range": [
+          20.00013945243757,
+          349.9999311897511
+        ],
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "invoices.tax": {
+        "table": "invoices",
+        "column": "tax",
+        "dtype": "DOUBLE",
+        "semantic_type": "measure",
+        "null_rate": 0.0,
+        "distinct_count": 2798854,
+        "is_low_cardinality": false,
+        "value_range": [
+          1.0000063839325248,
+          29.99999251898882
+        ],
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "invoices.discount": {
+        "table": "invoices",
+        "column": "discount",
+        "dtype": "DOUBLE",
+        "semantic_type": "measure",
+        "null_rate": 0.0,
+        "distinct_count": 2798854,
+        "is_low_cardinality": false,
+        "value_range": [
+          4.610665182980256e-07,
+          49.99996212690577
+        ],
+        "value_interpretation": "count",
+        "unit": "count",
+        "top_values": null,
+        "is_fk": false
+      },
+      "invoices.revenue_net": {
+        "table": "invoices",
+        "column": "revenue_net",
+        "dtype": "DOUBLE",
+        "semantic_type": "measure",
+        "null_rate": 0.0,
+        "distinct_count": 2798854,
+        "is_low_cardinality": false,
+        "value_range": [
+          -27.636505796562187,
+          378.93706855172775
+        ],
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "invoices.status": {
+        "table": "invoices",
+        "column": "status",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 3,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "ISSUED",
+          "PAID",
+          "VOID"
+        ],
+        "is_fk": false
+      },
+      "kpi_definitions.kpi": {
+        "table": "kpi_definitions",
+        "column": "kpi",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 3,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "CAC",
+          "Revenue",
+          "ROAS"
+        ],
+        "is_fk": false
+      },
+      "kpi_definitions.marketing_definition": {
+        "table": "kpi_definitions",
+        "column": "marketing_definition",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 3,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "Gross checkout value",
+          "Spend / New Users",
+          "Revenue / Ad Spend"
+        ],
+        "is_fk": false
+      },
+      "kpi_definitions.finance_definition": {
+        "table": "kpi_definitions",
+        "column": "finance_definition",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 3,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "Invoice recognized revenue",
+          "Contribution margin / Ad Spend",
+          "Spend / Paying customers"
+        ],
+        "is_fk": false
+      },
+      "pnl_daily.date": {
+        "table": "pnl_daily",
+        "column": "date",
+        "dtype": "TIMESTAMP_NS",
         "semantic_type": "unknown",
         "null_rate": 0.0,
-        "distinct_count": 611,
+        "distinct_count": 180,
         "is_low_cardinality": false,
         "value_range": null,
         "value_interpretation": null,
@@ -3829,17 +5021,105 @@
         "top_values": null,
         "is_fk": false
       },
-      "sellers.seller_state": {
-        "table": "sellers",
-        "column": "seller_state",
-        "dtype": "character varying",
-        "semantic_type": "unknown",
+      "pnl_daily.revenue": {
+        "table": "pnl_daily",
+        "column": "revenue",
+        "dtype": "DOUBLE",
+        "semantic_type": "measure",
         "null_rate": 0.0,
-        "distinct_count": 23,
-        "is_low_cardinality": true,
-        "value_range": null,
+        "distinct_count": 180,
+        "is_low_cardinality": false,
+        "value_range": [
+          50061.54019634436,
+          493833.6359495972
+        ],
+        "value_interpretation": "currency amount",
+        "unit": "USD",
+        "top_values": null,
+        "is_fk": false
+      },
+      "pnl_daily.cogs": {
+        "table": "pnl_daily",
+        "column": "cogs",
+        "dtype": "DOUBLE",
+        "semantic_type": "measure",
+        "null_rate": 0.0,
+        "distinct_count": 180,
+        "is_low_cardinality": false,
+        "value_range": [
+          26519.428649866186,
+          341261.2565472451
+        ],
         "value_interpretation": null,
         "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "pnl_daily.marketing": {
+        "table": "pnl_daily",
+        "column": "marketing",
+        "dtype": "DOUBLE",
+        "semantic_type": "measure",
+        "null_rate": 0.0,
+        "distinct_count": 180,
+        "is_low_cardinality": false,
+        "value_range": [
+          5404.816918159608,
+          49581.595341078006
+        ],
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "pnl_daily.logistics": {
+        "table": "pnl_daily",
+        "column": "logistics",
+        "dtype": "DOUBLE",
+        "semantic_type": "measure",
+        "null_rate": 0.0,
+        "distinct_count": 180,
+        "is_low_cardinality": false,
+        "value_range": [
+          3081.8985122312342,
+          19811.45604152877
+        ],
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "pnl_daily.support": {
+        "table": "pnl_daily",
+        "column": "support",
+        "dtype": "DOUBLE",
+        "semantic_type": "measure",
+        "null_rate": 0.0,
+        "distinct_count": 180,
+        "is_low_cardinality": false,
+        "value_range": [
+          1015.7620081521288,
+          7925.700044287071
+        ],
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "pnl_daily.net_profit": {
+        "table": "pnl_daily",
+        "column": "net_profit",
+        "dtype": "DOUBLE",
+        "semantic_type": "measure",
+        "null_rate": 0.0,
+        "distinct_count": 180,
+        "is_low_cardinality": false,
+        "value_range": [
+          -43063.82862285001,
+          243205.45083430418
+        ],
+        "value_interpretation": "currency amount",
+        "unit": "USD",
         "top_values": null,
         "is_fk": false
       }

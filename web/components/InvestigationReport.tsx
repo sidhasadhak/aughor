@@ -70,9 +70,7 @@ export interface ADAReport {
   data_gaps: string[];
 }
 
-// ── Number-coloured rich text — no bold, just tint ───────────────────────────
-// Positive deltas (+X, +X%) → emerald · Negative (−X, −X%) → red
-// Neutral big numbers / dollar amounts → zinc-200 · **marked** → zinc-200
+// ── Number-coloured rich text ─────────────────────────────────────────────────
 
 function RichText({ text, className = "" }: { text: string; className?: string }) {
   const parts = text.split(
@@ -104,7 +102,7 @@ function SqlToggle({ sql }: { sql: string }) {
     <div className="mt-2">
       <button
         onClick={() => setOpen(v => !v)}
-        className="flex items-center gap-1 text-[11px] text-zinc-600 hover:text-zinc-400 transition-colors"
+        className="flex items-center gap-1 text-[11px] text-zinc-700 hover:text-zinc-500 transition-colors"
       >
         {open ? <ChevronDownIcon label="" size="small" /> : <ChevronRightIcon label="" size="small" />}
         SQL
@@ -118,7 +116,7 @@ function SqlToggle({ sql }: { sql: string }) {
   );
 }
 
-// ── Data table (collapsed by default) ─────────────────────────────────────────
+// ── Data table ─────────────────────────────────────────────────────────────────
 
 function DataTable({ columns, rows, label }: { columns: string[]; rows: (string | number | null)[][]; label: string }) {
   const [open, setOpen] = useState(false);
@@ -127,7 +125,7 @@ function DataTable({ columns, rows, label }: { columns: string[]; rows: (string 
     <div className="mt-2">
       <button
         onClick={() => setOpen(v => !v)}
-        className="flex items-center gap-1 text-[11px] text-zinc-600 hover:text-zinc-400 transition-colors"
+        className="flex items-center gap-1 text-[11px] text-zinc-700 hover:text-zinc-500 transition-colors"
       >
         {open ? <ChevronDownIcon label="" size="small" /> : <ChevronRightIcon label="" size="small" />}
         {label} · {rows.length} rows
@@ -167,38 +165,25 @@ function DataTable({ columns, rows, label }: { columns: string[]; rows: (string 
   );
 }
 
-// ── Finding section — narrative block with chart + source citation ─────────────
+// ── Single finding — evidence block (no title, flows inside phase) ─────────────
 
-function FindingSection({
-  finding,
-  phaseLabel,
-  index,
-}: {
-  finding: InvestigationFinding;
-  phaseLabel: string;
-  index: number;
-}) {
+function EvidenceBlock({ finding }: { finding: InvestigationFinding }) {
   const hasData = finding.columns.length > 0 && finding.rows.length > 0;
   const hasChart = hasData && finding.chart_type !== "none" && finding.rows.length >= 2;
 
   return (
-    <div className="space-y-2">
-      {/* Phase label — subtle, no caps */}
-      <p className="text-[11px] text-zinc-500">{phaseLabel}</p>
-
-      {/* Finding title — same size as body, medium weight */}
-      <h3 className="text-[12px] font-medium text-zinc-300 leading-snug">{finding.title}</h3>
-
-      {/* Interpretation */}
-      {finding.interpretation && (
-        <p className="text-[12px] text-zinc-300 leading-relaxed">
-          <RichText text={finding.interpretation} />
-        </p>
+    <div className="space-y-2.5">
+      {/* Chart — first, most prominent */}
+      {hasChart && (
+        <div className="rounded-xl border border-zinc-800/60 overflow-hidden p-3" style={{ background: "#0f1923" }}>
+          <p className="text-[11px] text-zinc-500 mb-2">{finding.title}</p>
+          <InvestigationChart columns={finding.columns} rows={finding.rows as unknown[][]} />
+        </div>
       )}
 
-      {/* Key numbers — inline pills */}
+      {/* Key numbers — inline stats */}
       {finding.key_numbers.length > 0 && (
-        <div className="flex flex-wrap gap-3 pt-1">
+        <div className="flex flex-wrap gap-x-5 gap-y-2 pt-0.5">
           {finding.key_numbers.map((n, i) => (
             <div key={i} className="space-y-0.5">
               <p className="text-[11px] text-zinc-500">{n.label}</p>
@@ -210,23 +195,22 @@ function FindingSection({
                   </span>
                 )}
               </p>
-              {n.context && <p className="text-[11px] text-zinc-500">{n.context}</p>}
+              {n.context && <p className="text-[11px] text-zinc-600">{n.context}</p>}
             </div>
           ))}
         </div>
       )}
 
-      {/* Stat note */}
-      {finding.stat_note && (
-        <p className="text-[11px] text-zinc-600 font-mono bg-zinc-900/60 px-2 py-1 rounded">{finding.stat_note}</p>
+      {/* Interpretation narrative */}
+      {finding.interpretation && (
+        <p className="text-[12px] text-zinc-400 leading-relaxed">
+          <RichText text={finding.interpretation} />
+        </p>
       )}
 
-      {/* Chart */}
-      {hasChart && (
-        <div className="mt-2 rounded-xl border border-zinc-800/60 overflow-hidden p-3" style={{ background: "#0f1923" }}>
-          <InvestigationChart columns={finding.columns} rows={finding.rows as unknown[][]} />
-          <p className="text-[11px] text-zinc-600 mt-2 text-right">Source: {finding.title}</p>
-        </div>
+      {/* Stat note — z-score etc */}
+      {finding.stat_note && (
+        <p className="text-[11px] text-zinc-600 font-mono bg-zinc-900/50 px-2 py-1 rounded inline-block">{finding.stat_note}</p>
       )}
 
       {/* Error */}
@@ -234,65 +218,106 @@ function FindingSection({
         <p className="text-[11px] text-red-400 font-mono bg-red-950/20 border border-red-500/20 px-2 py-1.5 rounded">{finding.error}</p>
       )}
 
-      {/* Data table + SQL toggles */}
+      {/* Data table (collapsed) — only when no chart */}
       {hasData && !hasChart && (
         <DataTable columns={finding.columns} rows={finding.rows} label="Data" />
       )}
+
+      {/* SQL toggle */}
       <SqlToggle sql={finding.sql} />
     </div>
   );
 }
 
-// ── Summary table ─────────────────────────────────────────────────────────────
-// Mirrors the "Key Problem Areas Summary" table in Databricks Genie.
+// ── Phase section — collapsible, groups all findings under one header ───────────
 
-function SummaryTable({
-  phases,
-  recommendations,
+function PhaseSection({
+  phase,
+  defaultOpen = true,
 }: {
-  phases: InvestigationPhase[];
-  recommendations: ADARecommendation[];
+  phase: InvestigationPhase;
+  defaultOpen?: boolean;
 }) {
-  // Gather significant findings across all phases
-  const rows: { category: string; finding: string; details: string; action: string }[] = [];
-  let recIdx = 0;
+  const [open, setOpen] = useState(defaultOpen);
+  const isSkipped = phase.status === "skipped";
+  const isError   = phase.status === "error";
 
-  for (const phase of phases) {
-    for (const f of phase.findings) {
-      if (!f.interpretation || f.chart_type === "none" && !f.key_numbers.length && !f.is_significant) continue;
-      const firstSentence = f.interpretation.split(/(?<=[.!?])\s/)[0] ?? f.interpretation;
-      const details = f.key_numbers.slice(0, 2).map(n => `${n.label}: ${n.value}`).join("  ·  ");
-      const action = recommendations[recIdx]?.action ?? "—";
-      if (f.is_significant) recIdx++;
-      rows.push({ category: f.title, finding: firstSentence, details, action });
-    }
-  }
+  // Filter out intake spec rows — shown in the phase but in a simpler way
+  const isIntake = phase.phase_id === "intake";
 
-  if (!rows.length) return null;
+  // Only show findings that have actual content
+  const findings = phase.findings.filter(f =>
+    f.interpretation || f.columns.length > 0 || f.error
+  );
+
+  const statusColor = isSkipped ? "text-zinc-700" : isError ? "text-red-500/70" : "text-zinc-400";
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-zinc-800" style={{ background: "#0f1923" }}>
-      <table className="w-full text-[11px]">
-        <thead>
-          <tr className="border-b border-zinc-800">
-            {["Issue Category", "Finding", "Details", "Recommended Action"].map(h => (
-              <th key={h} className="text-left px-3 py-2 text-zinc-500 font-medium whitespace-nowrap">{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, i) => (
-            <tr key={i} className="border-b border-zinc-800/50 last:border-0 hover:bg-white/[0.02]">
-              <td className="px-3 py-2 text-zinc-300 font-medium whitespace-nowrap max-w-[140px] truncate">{row.category}</td>
-              <td className="px-3 py-2 text-zinc-400 max-w-[240px]">
-                <RichText text={row.finding} />
-              </td>
-              <td className="px-3 py-2 text-zinc-500 whitespace-nowrap font-mono">{row.details || "—"}</td>
-              <td className="px-3 py-2 text-zinc-400 max-w-[200px]">{row.action}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="space-y-0">
+      {/* Phase header row */}
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="w-full flex items-start gap-2.5 py-2 group"
+      >
+        <span className="mt-0.5 shrink-0">
+          {open
+            ? <ChevronDownIcon label="" size="small" />
+            : <ChevronRightIcon label="" size="small" />}
+        </span>
+        <div className="flex-1 text-left space-y-0.5">
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-medium text-zinc-300 uppercase tracking-wide">
+              {phase.phase_name}
+            </span>
+            {isSkipped && (
+              <span className="text-[10px] text-zinc-600 border border-zinc-800 px-1.5 py-0.5 rounded-full">skipped</span>
+            )}
+          </div>
+          {/* Phase summary — the one-sentence takeaway */}
+          {phase.summary && !isSkipped && (
+            <p className={`text-[12px] leading-relaxed ${statusColor}`}>
+              <RichText text={phase.summary} />
+            </p>
+          )}
+          {isSkipped && phase.skipped_reason && (
+            <p className="text-[11px] text-zinc-700 leading-relaxed">{phase.skipped_reason}</p>
+          )}
+        </div>
+      </button>
+
+      {/* Findings body */}
+      {open && !isSkipped && findings.length > 0 && (
+        <div className={`ml-6 mt-1 space-y-5 pb-2 ${isIntake ? "opacity-70" : ""}`}>
+          {isIntake ? (
+            // Intake: render as a compact key-value block
+            <div className="rounded-lg border border-zinc-800/50 overflow-hidden" style={{ background: "#0d131a" }}>
+              <table className="w-full text-[11px]">
+                <tbody>
+                  {findings[0]?.rows?.map((row, i) => (
+                    <tr key={i} className="border-b border-zinc-900/50 last:border-0">
+                      <td className="py-1.5 px-3 text-zinc-500 whitespace-nowrap w-28">{String(row[0])}</td>
+                      <td className="py-1.5 px-3 text-zinc-300 font-mono text-[11px] leading-relaxed">{String(row[1])}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {findings[0]?.interpretation && (
+                <p className="text-[11px] text-zinc-500 px-3 py-2 border-t border-zinc-900/50 leading-relaxed">
+                  {findings[0].interpretation}
+                </p>
+              )}
+            </div>
+          ) : (
+            // Analysis phases: render findings as sequential evidence blocks
+            findings.map((finding, i) => (
+              <React.Fragment key={finding.finding_id}>
+                {i > 0 && <div className="border-t border-zinc-800/40" />}
+                <EvidenceBlock finding={finding} />
+              </React.Fragment>
+            ))
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -305,9 +330,12 @@ function WaterfallSection({ entries, totalLabel }: { entries: WaterfallEntry[]; 
 
   return (
     <div className="space-y-3">
-      <p className="text-[11px] text-zinc-500">Attribution</p>
-      <div className="flex items-center gap-3 mb-1">
-        <span className="text-[12px] font-mono text-red-400">{totalLabel}</span>
+      <div className="flex items-center gap-2">
+        {totalLabel && (
+          <span className="text-[12px] font-mono text-red-400 bg-red-950/20 border border-red-900/30 px-2 py-0.5 rounded-full">
+            {totalLabel}
+          </span>
+        )}
       </div>
       <div className="space-y-2.5">
         {entries.map((entry, i) => {
@@ -317,12 +345,16 @@ function WaterfallSection({ entries, totalLabel }: { entries: WaterfallEntry[]; 
             <div key={i} className="space-y-1">
               <div className="flex items-center justify-between text-[11px]">
                 <div className="flex items-center gap-2 min-w-0">
-                  <span className="text-zinc-300 truncate max-w-[200px]">{entry.cause}</span>
-                  {entry.controllable && <span className="text-[9px] bg-amber-900/40 text-amber-400 border border-amber-800/40 px-1.5 py-0.5 rounded-full shrink-0">controllable</span>}
-                  {!entry.structural && <span className="text-[9px] bg-sky-900/40 text-sky-400 border border-sky-800/40 px-1.5 py-0.5 rounded-full shrink-0">transient</span>}
+                  <span className="text-zinc-300 truncate max-w-[220px]">{entry.cause}</span>
+                  {entry.controllable && (
+                    <span className="text-[9px] bg-amber-900/40 text-amber-400 border border-amber-800/40 px-1.5 py-0.5 rounded-full shrink-0">controllable</span>
+                  )}
+                  {!entry.structural && (
+                    <span className="text-[9px] bg-sky-900/40 text-sky-400 border border-sky-800/40 px-1.5 py-0.5 rounded-full shrink-0">transient</span>
+                  )}
                 </div>
                 <div className="flex items-center gap-3 shrink-0 ml-2">
-                  <span className="text-zinc-500 font-mono">{entry.amount_label}</span>
+                  <span className="text-zinc-600 font-mono">{entry.amount_label}</span>
                   <span className={`font-mono w-10 text-right ${isNeg ? "text-red-400" : "text-emerald-400"}`}>
                     {entry.pct_of_total > 0 ? "+" : ""}{entry.pct_of_total.toFixed(0)}%
                   </span>
@@ -342,60 +374,23 @@ function WaterfallSection({ entries, totalLabel }: { entries: WaterfallEntry[]; 
   );
 }
 
-// ── Recommendations table ──────────────────────────────────────────────────────
+// ── Recommendations ────────────────────────────────────────────────────────────
 
-function RecommendationsTable({ recs }: { recs: ADARecommendation[] }) {
+function RecommendationsSection({ recs }: { recs: ADARecommendation[] }) {
   if (!recs.length) return null;
   return (
     <div className="space-y-3">
-      <p className="text-[11px] text-zinc-500">Recommended Actions</p>
-      <div className="space-y-3">
-        {recs.map((rec, i) => (
-          <div key={i} className="flex items-start gap-3">
-            <span className="shrink-0 mt-0.5 w-5 h-5 rounded-full border border-emerald-700/50 bg-emerald-900/20 flex items-center justify-center text-[10px] text-emerald-400 font-mono">{i + 1}</span>
-            <div className="space-y-0.5 min-w-0">
-              <p className="text-[12px] text-zinc-300 font-medium leading-snug">{rec.action}</p>
-              <div className="flex flex-wrap gap-3 text-[11px] text-zinc-600">
-                {rec.expected_impact && <span>Impact: <span className="text-zinc-500">{rec.expected_impact}</span></span>}
-                {rec.owner && <span>Owner: <span className="text-zinc-500">{rec.owner}</span></span>}
-                {rec.timeline && <span>Timeline: <span className="text-zinc-500">{rec.timeline}</span></span>}
-              </div>
+      {recs.map((rec, i) => (
+        <div key={i} className="flex items-start gap-3">
+          <span className="shrink-0 mt-0.5 w-5 h-5 rounded-full border border-emerald-700/50 bg-emerald-900/20 flex items-center justify-center text-[10px] text-emerald-400 font-mono">{i + 1}</span>
+          <div className="space-y-0.5 min-w-0">
+            <p className="text-[12px] text-zinc-300 leading-snug">{rec.action}</p>
+            <div className="flex flex-wrap gap-3 text-[11px] text-zinc-600">
+              {rec.expected_impact && <span>Impact: <span className="text-zinc-500">{rec.expected_impact}</span></span>}
+              {rec.owner && <span>Owner: <span className="text-zinc-500">{rec.owner}</span></span>}
+              {rec.timeline && <span>Timeline: <span className="text-zinc-500">{rec.timeline}</span></span>}
             </div>
           </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ── Streaming phase card (shown while investigation is running) ────────────────
-
-function StreamingPhaseCard({ phase }: { phase: InvestigationPhase }) {
-  const isRunning = phase.status === "running";
-  const isSkipped = phase.status === "skipped";
-  const findings = phase.findings.filter(f => f.columns.length > 0 || f.is_significant);
-
-  return (
-    <div className="space-y-3 pl-3 border-l border-zinc-800">
-      <div className="flex items-center gap-2">
-        <span className="text-base leading-none">{phase.phase_icon}</span>
-        {isRunning && <span className="text-sky-400 animate-spin inline-block"><RetryIcon label="Loading" size="small" /></span>}
-        <span className={`text-[12px] font-medium ${isSkipped ? "text-zinc-600" : "text-zinc-300"}`}>
-          {phase.phase_name}
-        </span>
-        {isSkipped && <span className="text-[10px] text-zinc-600 italic">{phase.skipped_reason}</span>}
-      </div>
-      {phase.summary && !isSkipped && (
-        <p className="text-[11px] text-zinc-500 leading-relaxed"><RichText text={phase.summary} /></p>
-      )}
-      {findings.map(f => (
-        <div key={f.finding_id} className="space-y-1.5 pl-2">
-          <p className="text-[11px] font-medium text-zinc-400">{f.title}</p>
-          {f.columns.length > 0 && f.rows.length >= 2 && (
-            <div className="rounded-lg border border-zinc-800/60 overflow-hidden p-2" style={{ background: "#0f1923" }}>
-              <InvestigationChart columns={f.columns} rows={f.rows as unknown[][]} />
-            </div>
-          )}
         </div>
       ))}
     </div>
@@ -417,6 +412,43 @@ function ConfidencePill({ confidence }: { confidence: "HIGH" | "MEDIUM" | "LOW" 
   );
 }
 
+// ── Streaming phase card (shown while investigation is running) ────────────────
+
+function StreamingPhaseCard({ phase }: { phase: InvestigationPhase }) {
+  const isRunning = phase.status === "running";
+  const isSkipped = phase.status === "skipped";
+  const findings = phase.findings.filter(f => f.columns.length > 0 || f.is_significant);
+
+  return (
+    <div className="space-y-2 pl-3 border-l border-zinc-800">
+      <div className="flex items-center gap-2">
+        <span className="text-base leading-none">{phase.phase_icon}</span>
+        {isRunning && (
+          <span className="text-sky-400 animate-spin inline-block">
+            <RetryIcon label="Loading" size="small" />
+          </span>
+        )}
+        <span className={`text-[11px] font-medium uppercase tracking-wide ${isSkipped ? "text-zinc-700" : "text-zinc-400"}`}>
+          {phase.phase_name}
+        </span>
+        {isSkipped && <span className="text-[10px] text-zinc-600 italic">{phase.skipped_reason}</span>}
+      </div>
+      {phase.summary && !isSkipped && (
+        <p className="text-[11px] text-zinc-500 leading-relaxed"><RichText text={phase.summary} /></p>
+      )}
+      {findings.map(f => (
+        <div key={f.finding_id} className="space-y-1.5 pl-2">
+          {f.columns.length > 0 && f.rows.length >= 2 && f.chart_type !== "none" && (
+            <div className="rounded-lg border border-zinc-800/60 overflow-hidden p-2" style={{ background: "#0f1923" }}>
+              <InvestigationChart columns={f.columns} rows={f.rows as unknown[][]} />
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── Main component ─────────────────────────────────────────────────────────────
 
 export function InvestigationReportView({
@@ -431,7 +463,7 @@ export function InvestigationReportView({
     const phases = streamingPhases ?? [];
     if (!phases.length) return null;
     return (
-      <div className="space-y-5 pt-1">
+      <div className="space-y-4 pt-1">
         {phases.map(phase => (
           <StreamingPhaseCard key={phase.phase_id} phase={phase} />
         ))}
@@ -439,31 +471,23 @@ export function InvestigationReportView({
     );
   }
 
-  // Complete report: narrative document layout
-  const allFindings: { finding: InvestigationFinding; phaseLabel: string }[] = report.phases.flatMap(phase =>
-    phase.findings
-      .filter(f => f.chart_type !== "none" || f.interpretation || f.is_significant)
-      .map(finding => ({
-        finding,
-        phaseLabel: phase.phase_name.toUpperCase(),
-      }))
-  );
-
   const hasWaterfall = (report.attribution_waterfall?.length ?? 0) > 0;
   const hasRecs = (report.recommendations?.length ?? 0) > 0;
   const hasGaps = (report.data_gaps?.length ?? 0) > 0;
 
-  return (
-    <div className="space-y-8 text-sm">
+  // Separate intake from analysis phases
+  const intakePhase = report.phases.find(p => p.phase_id === "intake");
+  const analysisPhases = report.phases.filter(p => p.phase_id !== "intake");
 
-      {/* ── Headline + summary ── */}
+  return (
+    <div className="space-y-6 text-sm">
+
+      {/* ── Headline ── */}
       <div className="space-y-2">
         <h2 className="text-[14px] font-medium text-zinc-200 leading-snug">{report.headline}</h2>
-        <p className="text-[12px] text-zinc-300 leading-relaxed">
+        <p className="text-[12px] text-zinc-400 leading-relaxed">
           <RichText text={report.executive_summary} />
         </p>
-
-        {/* Stat strip */}
         <div className="flex items-center flex-wrap gap-2 pt-1">
           <ConfidencePill confidence={report.confidence} />
           {report.total_change_label && (
@@ -472,29 +496,26 @@ export function InvestigationReportView({
             </span>
           )}
           {report.comparison_basis && (
-            <span className="text-[11px] text-zinc-500">vs {report.comparison_basis}</span>
+            <span className="text-[11px] text-zinc-600">vs {report.comparison_basis}</span>
           )}
         </div>
         {report.confidence_justification && (
-          <p className="text-[11px] text-zinc-500 leading-relaxed">{report.confidence_justification}</p>
+          <p className="text-[11px] text-zinc-600 leading-relaxed">{report.confidence_justification}</p>
         )}
       </div>
 
-      {/* ── Key Problem Areas Summary table ── */}
-      {report.phases.length > 0 && (
-        <div className="space-y-2">
-          <p className="text-[11px] text-zinc-500">Key Problem Areas</p>
-          <SummaryTable phases={report.phases} recommendations={report.recommendations ?? []} />
-        </div>
-      )}
-
-      {/* ── Finding sections — flat narrative ── */}
-      {allFindings.length > 0 && (
-        <div className="space-y-8">
-          {allFindings.map(({ finding, phaseLabel }, i) => (
-            <React.Fragment key={finding.finding_id}>
-              {i > 0 && <div className="border-t border-zinc-800/60" />}
-              <FindingSection finding={finding} phaseLabel={phaseLabel} index={i} />
+      {/* ── Investigation phases — chronological narrative ── */}
+      {(intakePhase || analysisPhases.length > 0) && (
+        <div className="border-t border-zinc-800/60 pt-4 space-y-1">
+          {/* Intake collapsed by default (it's metadata) */}
+          {intakePhase && (
+            <PhaseSection phase={intakePhase} defaultOpen={false} />
+          )}
+          {/* Analysis phases open by default */}
+          {analysisPhases.map(phase => (
+            <React.Fragment key={phase.phase_id}>
+              <div className="border-t border-zinc-800/30" />
+              <PhaseSection phase={phase} defaultOpen={true} />
             </React.Fragment>
           ))}
         </div>
@@ -504,7 +525,10 @@ export function InvestigationReportView({
       {hasWaterfall && (
         <>
           <div className="border-t border-zinc-800/60" />
-          <WaterfallSection entries={report.attribution_waterfall} totalLabel={report.total_change_label} />
+          <div className="space-y-2">
+            <p className="text-[11px] text-zinc-500 uppercase tracking-wide">Attribution</p>
+            <WaterfallSection entries={report.attribution_waterfall} totalLabel={report.total_change_label} />
+          </div>
         </>
       )}
 
@@ -512,7 +536,10 @@ export function InvestigationReportView({
       {hasRecs && (
         <>
           <div className="border-t border-zinc-800/60" />
-          <RecommendationsTable recs={report.recommendations} />
+          <div className="space-y-3">
+            <p className="text-[11px] text-zinc-500 uppercase tracking-wide">Recommended Actions</p>
+            <RecommendationsSection recs={report.recommendations} />
+          </div>
         </>
       )}
 
@@ -521,7 +548,7 @@ export function InvestigationReportView({
         <>
           <div className="border-t border-zinc-800/60" />
           <div className="space-y-2">
-            <p className="text-[11px] text-zinc-500">Data Gaps</p>
+            <p className="text-[11px] text-zinc-500 uppercase tracking-wide">Data Gaps</p>
             <ul className="space-y-1.5">
               {report.data_gaps.map((gap, i) => (
                 <li key={i} className="text-[11px] text-zinc-600 flex items-start gap-2 leading-relaxed">

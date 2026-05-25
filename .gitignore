@@ -17,6 +17,18 @@ data/history.db
 data/checkpoints.db
 data/checkpoints.db-shm
 data/checkpoints.db-wal
+data/connection_settings.json
+data/exploration_*.json
+data/episodes_*.jsonl
+data/ontology_cache.json
+data/schema_cache.json
+data/schema_profiles.json
+
+# Claude Code internal state
+.claude/
+
+# Duplicate runtime data under web/
+web/data/
 
 # macOS
 .DS_Store

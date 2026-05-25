@@ -54,6 +54,13 @@
 | Catalog tab (39) | `web/components/CatalogPanel.tsx`, `web/app/page.tsx` | Browse all tables from the connected database; expand/collapse per table to see columns, types, FK flags; row count formatted (1M/500K); connection picker inside panel; filter by table name; "Ask →" button per table jumps to Chat with that connection; nav restructured: Home → Workspace (Chat, Deep Analysis) → Data (Catalog, Connections) |
 | Schema-aware suggestions (40) | `hermes/api.py`, `web/components/ChatPanel.tsx` | `GET /suggestions?connection_id=X` fetches schema, calls LLM for 6 schema-specific starter questions tagged ask/investigate; loading shimmer while fetching; falls back to hardcoded starters on error; clears and re-fetches on connection change |
 | Suggestions cache in Qdrant (41) | `hermes/semantic/suggestions_cache.py`, `hermes/api.py` | Each suggestion embedded (nomic-embed-text) and stored as a Qdrant point in `schema_suggestions` collection; cache key = (connection_id, structural schema fingerprint); cache hit returns in ~3s vs ~90s LLM generation; `search_similar()` ready for future autocomplete; fingerprint derived from sorted table+column names only (strips row counts/descriptions for stability); graceful fallback if Qdrant unavailable |
+| Background Schema Explorer (42) | `aughor/explorer/agent.py`, `store.py`, `episodes.py`, `models.py` | `SchemaExplorer` — 8-phase autonomous background agent; phases 3–7 (structural) run at full DB speed; phase 8 (domain intel) throttles to 1 query / 5 s; persists state to JSON + JSONL; stop/resume/restart; only auto-resumes connections with prior state on server startup |
+| Business Ontology auto-build (43) | `aughor/ontology/builder.py`, `enricher.py`, `models.py`, `store.py` | Structural extraction → LLM enrichment → `OntologyGraph` with entities, relationships, metrics, lifecycle states, computed properties, and SQL actions; fingerprint-keyed cache; `OntologyCanvas` interactive graph UI |
+| Domain Intelligence Loop (44) | `aughor/explorer/agent.py` `_phase8_*`, `aughor/explorer/store.py` | Adaptive curiosity loop per domain; coverage angles (volume/value/retention/…); novelty decay stopping; open-ended continuation after angles covered; per-domain budget control; live in-memory cap patch on extend; DomainIntelPanel UI with "+5 queries" |
+| SqlWriter — centralised SQL (45) | `aughor/sql/writer.py`, `aughor/agent/prompts.py` | Single class for all SQL generation and self-correction; alias resolution; DuckDB candidate bindings extraction; targeted DIAGNOSIS block; "NEVER substitute SUM(0)"; used by chat pipeline, domain intel, and retry endpoint |
+| Activity Log UI (46) | `web/components/ActivityLog.tsx`, `aughor/api.py` | Real-time episode feed; stop/resume/restart surviving tab switches; `status.paused` synced from backend on every fetch |
+| Exploration State Persistence (47) | `aughor/explorer/store.py`, `episodes.py`, `aughor/api.py` | Per-connection `exploration_{id}.json` + `episodes_{id}.jsonl`; explorer resumes from last position after restart; restart clears both files |
+| Per-Phase Rate Limiting (48) | `aughor/explorer/agent.py` | `_RATE_SECONDS_SCHEMA = 0.0`, `_RATE_SECONDS_INTEL = 5.0`; `_gate()` skips sleep for schema phases; `self._rate_seconds` set by `explore()` per phase group |
 
 ---
 
@@ -721,6 +728,167 @@ This makes "also show X", "filter by Y", "compare to last month" resolve correct
 
 ---
 
+## Milestone 12 — Aughor Ontology Layer
+**Goal:** Elevate Aughor's semantic layer from schema-plus-glossary to a full ontology — typed business entities, verified relationships, cardinality-correct joins, lifecycle state machines, and actionable SQL templates that enforce business rules automatically. The planner calls `ACTION: get_active_orders()` instead of re-deriving the correct exclusion filter from scratch on every investigation. Every investigation from Sprint 1 onward writes less buggy SQL.
+
+**Relationship to existing Milestone 1 (Semantic Layer):** The glossary, auto-seed, dbt, and metrics catalog give descriptions and formulas. The ontology adds three things none of those provide: typed entities (a `Customer` object with an identity key and lifecycle), typed relationships (`Customer PLACES Order — cardinality 1:N, verified`), and actions (parameterized SQL templates with business rules baked in). The two layers are complementary; the ontology is built *from* the glossary and schema intelligence already in place.
+
+**Key architectural principle:** The agent should never write raw SQL against raw tables when an ontology action exists. Actions are the verified, rule-enforcing interface. Raw SQL is the escape hatch for things the ontology doesn't cover yet.
+
+---
+
+### Phase 12a — Structural Ontology (Sprint 1 — no LLM, pure extraction)
+**What:** Extract typed entities, verified grains, lifecycle states, cardinality-correct relationships, and preliminary default filters from the existing schema + column profiles + glossary — entirely deterministically, no LLM calls.
+
+**Prerequisite:** Column profiles (`build_column_profile()`) must exist before this sprint. Column profiles are not yet built — this is the gating dependency. They need: `grain_verified` (COUNT(*) == COUNT(DISTINCT pk)), `null_rate`, `distinct_count`, `is_low_cardinality`, `semantic_type`, and `row_count` per table/column.
+
+**Files to create:**
+- `hermes/ontology/__init__.py`
+- `hermes/ontology/models.py` — four Pydantic models: `OntologyEntity`, `OntologyRelationship`, `OntologyMetric`, `OntologyAction`, plus `OntologyGraph` container
+- `hermes/ontology/builder.py` — `extract_structural_ontology(schema, join_map, column_profiles, glossary) → OntologyGraph`; entity identification from grain-verified tables; cardinality inference from distinct counts; lifecycle state extraction (one `SELECT DISTINCT status` per entity); default filter extraction from glossary caveats
+- `hermes/ontology/store.py` — persist to `data/ontology_cache.json` keyed by schema fingerprint (extends existing `schema_cache.json` pattern)
+
+**Files to modify:**
+- `hermes/db/connection.py` — call `build_structural_ontology()` after schema build when fingerprint differs from cached ontology
+- `hermes/tools/schema.py` — `build_schema_context()` injects entity grain hints and default filters from ontology (falls back to glossary if ontology not built)
+
+**Core models (abbreviated):**
+```python
+class OntologyEntity(BaseModel):
+    id: str                        # "Customer", "Order", "Product"
+    source_tables: list[str]
+    identity_key: str              # canonical PK column
+    grain_verified: bool           # COUNT(*) == COUNT(DISTINCT identity_key)
+    lifecycle_states: list[str]    # from DISTINCT status query
+    active_filter: Optional[str]   # SQL fragment for non-terminal rows
+    default_filters: list[str]     # auto-applied WHERE clauses
+
+class OntologyRelationship(BaseModel):
+    id: str                        # "Customer_PLACES_Order"
+    from_entity: str
+    to_entity: str
+    verb: str                      # "PLACES" — placeholder until Phase 12b
+    cardinality: Literal["1:1","1:N","N:1","N:N"]
+    join_sql: str
+    join_confidence: Literal["exact","inferred","verified"]
+    nullable: bool
+
+class OntologyMetric(BaseModel):
+    id: str                        # "customer_ltv", "gross_margin"
+    entity: str
+    formula_sql: str
+    grain: str
+    known_divergent_calculations: list[str]
+    unit: str
+
+class OntologyAction(BaseModel):
+    id: str                        # "get_active_orders", "compute_customer_revenue"
+    entity: str
+    action_type: Literal["filter","compute","traverse","aggregate","validate"]
+    sql_template: str              # parameterized SQL
+    parameters: dict[str, Any]
+    business_rules_enforced: list[str]
+    returns: str
+```
+
+**Cardinality inference (deterministic, no LLM):**
+```python
+def _infer_cardinality(join, column_profiles) -> str:
+    from_unique = profiles[from_table].columns[from_col].distinct_count == profiles[from_table].row_count
+    to_unique   = profiles[to_table].columns[to_col].distinct_count   == profiles[to_table].row_count
+    if from_unique and to_unique: return "1:1"
+    if to_unique:                 return "N:1"
+    if from_unique:               return "1:N"
+    return "N:N"
+```
+
+**New deps:** none  
+**Acceptance:** `GET /ontology/entities` returns Customer, Order, Product, Category with verified grains and lifecycle states against the Superstore fixture. `get_active_orders()` action is present with the correct exclusion filter derived from the glossary caveat on `order_status`.
+
+---
+
+### Phase 12b — Semantic Enrichment + Actions (Sprint 2 — one LLM batch pass)
+**What:** Add meaning to the structural ontology — relationship verbs, entity descriptions, action definitions, and canonical metric SQL. Runs **once on initial connection**, cached by schema fingerprint. Zero LLM calls on reconnect to an unchanged database.
+
+**Files to create:**
+- `hermes/ontology/enricher.py` — `enrich_ontology_semantics(graph, coder_llm, glossary) → OntologyGraph`; single structured LLM call returning `EnrichmentOutput`; applies verbs, descriptions, actions, and metric formulas back to the graph
+- `hermes/ontology/actions.py` — `expand_action(action_id, parameters, ontology) → str`; expands `ACTION: get_active_orders()` tokens to executable SQL before hitting the wire
+- `hermes/agent/prompts_ontology.py` — `ENRICH_ONTOLOGY_PROMPT`, `ONTOLOGY_ACTIONS_SECTION` (injected into `PLAN_QUERIES_PROMPT`), `ONTOLOGY_CONTEXT_SECTION` (injected into `DECOMPOSE_PROMPT`)
+
+**Files to modify:**
+- `hermes/agent/prompts.py` — `DECOMPOSE_PROMPT` gains `{entity_summary}` + `{relationship_summary}` injection; `PLAN_QUERIES_PROMPT` gains `{ontology_actions_section}`; planner prefers `ACTION:` calls over raw SQL for standard entity operations
+- `hermes/agent/nodes.py` — `plan_and_execute` scans generated query strings for `ACTION:` tokens and expands them via `actions.expand_action()` before `execute_query()`
+- `hermes/api.py` — `GET /ontology`, `GET /ontology/entities`, `GET /ontology/actions`, `GET /ontology/metrics`, `PUT /ontology/entities/{id}` (human override)
+
+**Enrichment prompt shape:**
+```
+You are building an ontology for a data warehouse. The structural facts below were
+derived automatically from the schema and data. Your job is to add semantic meaning.
+
+STRUCTURAL FACTS: {structural_summary}
+GLOSSARY: {glossary_excerpt}
+
+For each relationship, assign a business verb (Customer PLACES Order,
+Order CONTAINS LineItem, Product BELONGS_TO Category).
+For each entity, write a one-sentence business description.
+Define actionable SQL templates that enforce the exclusion rules from the glossary.
+For each metric, provide the canonical SQL formula and list divergent calculations.
+```
+
+**Entity-aware decomposition (injected into DECOMPOSE_PROMPT):**
+The decomposer reasons in terms of entities and relationships — "Revenue drop" maps to the Order entity's `compute_revenue` metric, not the raw `amount` column. Entity-based hypotheses are more testable because they map directly to available actions.
+
+**New deps:** none  
+**Acceptance:** Re-running the discount investigation uses `ACTION: get_active_orders()` in at least one query. No canceled orders appear in revenue findings. Enrichment cached — reconnect does not re-run the LLM call.
+
+---
+
+### Phase 12c — Ontology UI + Metric Divergence Detection (Sprint 3)
+**What:** A browsable, editable ontology panel in the UI. Metric consistency check catches divergent SQL before synthesis. The user can inspect what the agent knows about their data, override it, and trust it.
+
+**Files to create:**
+- `web/components/OntologyPanel.tsx` — entity browser (list + detail), relationship graph (reuse Mermaid ER infra but make nodes clickable), actions list, metrics definitions
+- `web/components/EntityCard.tsx` — per-entity detail: identity key, grain badge, lifecycle state machine visualization, default filters, related metrics
+- `hermes/ontology/divergence.py` — `check_metric_consistency(report, ontology, query_history) → list[str]`; flags findings whose backing SQL doesn't match the canonical metric formula stored in the ontology
+
+**Files to modify:**
+- `hermes/agent/nodes.py` — `check_consistency` calls `check_metric_consistency()` alongside existing LLM-based contradiction detection
+- `web/app/page.tsx` — add Ontology tab to nav
+- `hermes/api.py` — `PUT /ontology/entities/{id}` + `PUT /ontology/actions/{id}` for user overrides; human corrections applied immediately (no re-generation)
+
+**UI hierarchy:**
+```
+OntologyPanel (new tab)
+├── Entities
+│   ├── Customer — identity: customer_id (verified) · lifecycle: created → active → churned
+│   ├── Order    — identity: order_id (verified) · lifecycle: created → shipped → delivered / canceled
+│   └── ...
+├── Relationships (interactive graph)
+│   ├── Customer PLACES Order  (1:N, verified)
+│   ├── Order CONTAINS LineItem (1:N, exact)
+│   └── ...
+├── Actions (callable, copyable)
+│   ├── get_active_orders() — excludes canceled, deleted
+│   └── compute_customer_revenue(start, end)
+└── Metrics (canonical SQL definitions)
+    ├── gross_margin = (revenue - cost) / revenue
+    └── ...
+```
+
+**New deps:** none  
+**Acceptance:** Metric divergence is flagged in the synthesis step when a finding references revenue using a non-canonical formula. OntologyPanel renders entities, relationships, and actions for the Superstore fixture.
+
+---
+
+### Ontology dependency notes
+- Phase 12a requires **column profiles** (not yet built) as a prerequisite — this is the gating piece
+- Phase 12a builds on: Schema Intelligence (2i) join map + schema fingerprint; Glossary (1a) caveats and filters
+- Phase 12b builds on: Phase 12a structural graph + Glossary (1a) + Two-Model arch (2a) for enrichment LLM call
+- Phase 12c builds on: Phase 12b + ER Diagram infrastructure (Mermaid reuse)
+- Actions in Phase 12b are the prerequisite for entity-aware routing (Phase 3.3 in the design doc) — deferred to future sprint
+
+---
+
 ## Milestone 10 — LLM Evals
 **Goal:** Braintrust golden dataset; regression testing on agent verdict quality so model upgrades can be validated before deploying.
 
@@ -788,12 +956,15 @@ autoevals>=0.0.70
 | **1 — SQL Hardening** ✅ | 2h (Error Classification + Dialect Transforms + Column Ambiguity) + 2i (Join Inference + Fingerprinting) | Every query gets smarter; no new infra needed |
 | **2 — Semantic Depth** ✅ | 1e (Metrics Catalog) + 2j (KB Pattern Enrichment) | Agent understands business KPIs and causal chains |
 | **3 — Conversational** ✅ | M9 (Quick Chat + multi-turn history + Chart Engine + Deep Analysis tab) | Analyst-feel experience; session memory; rich inline charts; resizable |
-| **4 — Provider Flexibility** | M5 (Anthropic backend) | Cloud deployment; prompt caching cuts costs |
-| **5 — Production Safety** | M6 (Security: Gradient Safety + PII + Audit + Budget) + M7 (Observability) | Enterprise-ready; Langfuse traces |
-| **6 — Analytical Depth** | M4 (Prophet forecasting) + M2d (Events Calendar) | "Is this drop unusual *given the trend*?" |
-| **7 — LLM-free Path** | M11 (Visual Query Builder) | Deterministic queries; power user UX |
-| **8 — Infra Evolution** | M3 (ibis + Connector-X + SQLMesh) | Multi-warehouse; BigQuery/Snowflake |
-| **9 — Quality Gates** | M10 (Evals — Braintrust) | CI regression testing on verdict quality |
+| **5 — Ontology (structural)** ✅ | M12a (entity/relationship extraction — no LLM) | Grain-verified entities, lifecycle states, cardinality joins; ENTITY MODEL in every prompt |
+| **6 — Ontology (semantic)** | M12b (LLM enrichment + ACTION: tokens) | Planner calls actions; business rules enforced automatically |
+| **7 — Production Safety** | M6 (Security: Gradient Safety + PII + Audit + Budget) + M7 (Observability) | Enterprise-ready; Langfuse traces |
+| **8 — Analytical Depth** | M4 (Prophet forecasting) + M2d (Events Calendar) | "Is this drop unusual *given the trend*?" |
+| **9 — LLM-free Path** | M11 (Visual Query Builder) | Deterministic queries; power user UX |
+| **10 — Ontology UI** | M12c (OntologyPanel + metric divergence detection) | Browsable semantic layer; divergent metric flagging |
+| **11 — Infra Evolution** ✅ | M3 (ibis + Connector-X + Materializer) | ibis optional backend; connectorx bulk_read; sidecar DuckDB query cache |
+| **12 — Provider Flexibility** | M5 (Anthropic backend + prompt caching) | Cloud deployment fallback when Ollama unavailable |
+| **13 — Quality Gates** | M10 (Evals — Braintrust) | CI regression testing on verdict quality |
 
 ```
 History ✅
@@ -839,6 +1010,18 @@ Query Engine (3a ibis)
 Security (M6)  ←  independent; land before any multi-tenant deployment
     Gradient Safety (6e) → no clash with SQLGlot structural check; runs as second layer
 
+Column Profiles (prerequisite for M12)  ←  grain_verified, null_rate, distinct_count, is_low_cardinality per column
+    └── Ontology Structural (M12a)  ←  entities + relationships + lifecycle states; no LLM
+            └── Ontology Semantic (M12b)  ←  LLM enrichment (one batch, cached by fingerprint); action templates
+                    └── plan_and_execute ACTION: expansion  ←  business rules auto-enforced
+                    └── Ontology UI (M12c)  ←  OntologyPanel + metric divergence detection
+                            └── check_consistency  ←  adds formula-level consistency check alongside existing LLM check
+
+Schema Intelligence (2i) ✅  ←  join map + fingerprint feed directly into M12a builder
+Glossary (1a) ✅             ←  caveats + filters feed into entity.default_filters in M12a
+ER Diagram ✅                ←  Mermaid infra reused (made interactive) in M12c
+Metrics Catalog (1e) ✅      ←  metric formulas become OntologyMetric.formula_sql in M12a/12b
+
 Evals (M10)  ←  needs History ✅ + stable Two-Model Arch (2a) ✅
 ```
 
@@ -857,8 +1040,9 @@ Evals (M10)  ←  needs History ✅ + stable Two-Model Arch (2a) ✅
 | Query abstraction | **ibis** (roadmap) | Backend-agnostic; same code → DuckDB/BigQuery/Snowflake |
 | Query engine | **DuckDB** | In-process OLAP, Arrow-native, zero-latency |
 | Bulk reads | **Connector-X** (roadmap) | Fast Arrow reads from Postgres/Snowflake |
-| Materialization | **SQLMesh** (roadmap) | Incremental cache of expensive joins |
+| Materialization | **QueryMaterializer** (sidecar DuckDB) | 24-hour soft TTL; upsert cache; `hermes_mat.duckdb`; SQLMesh deferred |
 | Semantic layer | **dbt** | Single source of truth for metric definitions |
+| Ontology layer | **Aughor Ontology (M12)** | Typed entities, verified relationships, actionable SQL templates with business-rule enforcement; built from schema + glossary + column profiles |
 | Schema search | **Qdrant + nomic-embed-text** | Self-hosted, fast vector search |
 | DataFrames | **Polars** | 10–100x faster than pandas on aggregations |
 | Stats | **scipy + statsmodels + Prophet** | Anomaly detection, STL decomp, forecasting |
@@ -877,11 +1061,59 @@ Evals (M10)  ←  needs History ✅ + stable Two-Model Arch (2a) ✅
 
 ## Current focus
 
-**Shipped:** M1 (Semantic Layer), M2a–2c + 2e–2j (Agent hardening, HITL, Direct Query, Routing v2, SQL KB, Error Classification, Schema Intelligence, KB Enrichment), M8 (Frontend Charts, Chart Intelligence, Report UX), M9 (Quick Chat + Chart Engine + Deep Analysis tab), 1e (Metrics Catalog), ER Diagram, Rich Schema Card UI, Global Analytics Rules (32), Hypothesis Expanded Accordion (33), Connection-scoped semantic cache, Paren-aware ROUND rewriter, Schema parser dedup, Timeout 600 s, UI color pass
+**Shipped:** M1 (Semantic Layer), M2a–2c + 2e–2j (Agent hardening, HITL, Direct Query, Routing v2, SQL KB, Error Classification, Schema Intelligence, KB Enrichment), M8 (Frontend Charts, Chart Intelligence, Report UX), M9 (Quick Chat + Chart Engine + Deep Analysis tab), 1e (Metrics Catalog), ER Diagram, Rich Schema Card UI, Global Analytics Rules (32), Hypothesis Expanded Accordion (33), Connection-scoped semantic cache, Paren-aware ROUND rewriter, Schema parser dedup, Timeout 600 s, UI color pass, **M12 Background Schema Explorer + Business Ontology + Domain Intelligence + SqlWriter (48 features total)**
 
-**Next — Sprint 4 — Provider Flexibility:**
-- **M5** Anthropic backend — Claude Sonnet 4.6 as cloud fallback; prompt caching on schema context
+**Sprint 12 — Background Explorer + Domain Intelligence ✅ SHIPPED:**
+- `aughor/explorer/agent.py` — `SchemaExplorer` with 8 phases: null meanings (3), join verification (4), lifecycle mapping (5), distribution profiling (6), cross-table patterns (7), domain intel loop (8)
+- `aughor/explorer/episodes.py` — `EpisodeCollector` JSONL append writer; `(think, sql, observation)` training tuples
+- `aughor/explorer/store.py` — JSON state persistence; `extend_domain_budget()` returns new cap
+- `aughor/explorer/models.py` — `ExplorationPhase` enum, `ExplorationStatus`
+- `aughor/sql/writer.py` — `SqlWriter` + `FixResult`; centralised SQL generation and self-correction for all callers (chat, domain intel, retry endpoint); alias resolution + DuckDB candidate bindings extraction; "NEVER substitute SUM(0)" hardening
+- `aughor/sql/__init__.py` — re-exports
+- Per-phase rate limiting: schema phases at full speed, intel phase at 1 query / 5 s
+- Domain intelligence: adaptive curiosity loop per domain, coverage angles, novelty decay stop, open-ended continuation after all angles covered, budget extension patched live into running explorer
+- `web/components/ActivityLog.tsx` — real-time episode feed; stop/resume/restart surviving tab switches
+- `web/components/DomainIntelPanel.tsx` — per-domain findings, budget bar, angle chips, "+5 queries"
+- `web/components/ExplorationBadge.tsx` — live phase badge in sidebar
+- `web/components/OntologyCanvas.tsx` — interactive ontology graph
+- `aughor/api.py` — full REST surface: stop/resume/restart/episodes/domains/extend; `_start_explorers()` only resumes connections with existing state
 
-**Sprint 5 onward:** M6 + M7 (Security + Observability) → M4 (Prophet) → M11 (Visual Builder) → M3 (Query Engine) → M10 (Evals)
+**Current — Sprint 5 — Ontology Structural (M12a) ✅ SHIPPED:**
+- Column profiles already fully built (`hermes/tools/profiler.py`, `profile_cache.py`) — prerequisite was done
+- `hermes/ontology/models.py` — `OntologyEntity`, `OntologyRelationship`, `OntologyMetric`, `OntologyAction`, `OntologyGraph`
+- `hermes/ontology/builder.py` — `extract_structural_ontology()` + `render_ontology_annotations()` — no LLM
+- `hermes/ontology/store.py` — JSON cache at `data/ontology_cache.json`, keyed by `{connection_id}:{fingerprint}`
+- `hermes/db/connection.py` — both DuckDB + Postgres connections build ontology during `get_schema()`; `get_ontology()` method on base class
+- `hermes/api.py` — `GET /ontology`, `/ontology/entities`, `/ontology/relationships`, `/ontology/actions`, `/ontology/metrics`, `PUT /ontology/entities/{id}`
+- Schema context now includes `ENTITY MODEL` block: grain verification, lifecycle states, terminal states, active_filter rules, ACTION names
 
-**Deferred:** M6 Security must land before any multi-tenant or enterprise deployment
+**Sprint 6 — Ontology Semantic (M12b ✅ SHIPPED):**
+- `hermes/ontology/enricher.py` — `enrich_ontology_semantics()`: one LLM batch call populating relationship verbs, entity descriptions, compute/traverse actions, canonical metric SQL; cached via `graph.enriched = True`; triggered lazily in `get_schema()`, best-effort
+- `hermes/ontology/actions.py` — `expand_actions()`: substitutes `ACTION:name()` tokens with full SQL templates before execution; `build_actions_prompt_section()`: injects available actions into `PLAN_QUERIES_PROMPT`
+- `hermes/agent/prompts_ontology.py` — `ENRICH_ONTOLOGY_PROMPT` for the enrichment LLM call
+- `hermes/agent/prompts.py` — `{ontology_actions_section}` placeholder added to `PLAN_QUERIES_PROMPT`
+- `hermes/agent/nodes.py` — `plan_and_execute` now builds the actions section, passes it to the planner, and expands `ACTION:` tokens before SQL execution
+- `hermes/db/connection.py` — both DuckDB and Postgres `get_schema()` trigger enrichment after structural build when `graph.enriched == False`
+
+**Sprint 7 — M12c ✅ SHIPPED (Ontology UI + Metric Divergence):**
+- `hermes/ontology/divergence.py` — `check_metric_consistency()`: deterministic heuristic check comparing hypothesis SQL against canonical metric formulas; returns warning strings injected into unresolved_tensions
+- `hermes/ontology/store.py` — `load_latest_ontology()` + `patch_action()` added
+- `hermes/agent/nodes.py` — metric divergence wired into `synthesize_report` after LLM consistency check
+- `hermes/api.py` — `PUT /ontology/actions/{action_id}` override endpoint
+- `web/components/EntityCard.tsx` — per-entity detail: grain badge, inline-editable description, lifecycle state chain, active filter rule, related actions + metrics
+- `web/components/OntologyPanel.tsx` — four-tab panel (Entities/Relationships/Actions/Metrics); entity list + detail split; inline action description editing; enrichment status badge
+- `web/app/page.tsx` — Ontology nav tab with NodeIcon; breadcrumb + tab content wired
+- `web/lib/api.ts` — full ontology TypeScript types + `getOntology()`, `patchOntologyEntity()`, `patchOntologyAction()` added
+
+**Sprint 11 — M3 Query Engine Evolution ✅ SHIPPED:**
+- `pyproject.toml` — optional `warehouse` dep group: `ibis-framework[duckdb,postgres]>=9.0.0`, `connectorx>=0.3.3`; install with `uv pip install -e ".[warehouse]"`
+- `hermes/db/connection.py` — `DatabaseConnection.ibis_connection()` base stub (returns None); `DuckDBConnection.ibis_connection()` → `ibis.duckdb.connect(path, read_only=True)`; `PostgresConnection.ibis_connection()` → `ibis.connect(dsn)`; `PostgresConnection.bulk_read(hypothesis_id, sql)` — connectorx Arrow path, graceful fallback to `execute()` when connectorx not installed
+- `hermes/tools/materializer.py` — NEW: `QueryMaterializer` backed by sidecar `data/hermes_mat.duckdb`; `get(connection_id, sql, hypothesis_id) → Optional[QueryResult]`; `put(connection_id, result)`; `invalidate_connection(connection_id)`; `purge_expired()`; 24-hour soft TTL; upsert via `ON CONFLICT`; errors never cached
+- `hermes/tools/executor.py` — `ibis_execute(ibis_backend, hypothesis_id, sql) → QueryResult`; uses `backend.sql(sql).limit(MAX_ROWS).execute()`; pandas NaT → "NULL"; graceful error `QueryResult` on any exception
+
+**M2e Direct Query Mode UX ✅ SHIPPED (polish pass):**
+- `web/components/ChatMessage.tsx` — `defaultStatusText()` helper: once `queryMode === "direct"` arrives via SSE the loading text switches from "Investigating…" to "Running query…"; "Exploring…" for explore mode; `showStreamingBody` gate now also excludes `queryMode === "direct"` so ADA phase stream never appears for direct-routed queries
+
+**Sprint 8 onward:** M6 + M7 (Security + Observability) → M4 (Prophet) + M2d (Events Calendar) → M11 (Visual Builder) → M10 (Evals)
+
+**Deferred:** M5 Provider Switcher (Anthropic backend) — moved to near-end; M6 Security must land before any multi-tenant or enterprise deployment

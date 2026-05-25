@@ -28,6 +28,8 @@ type Starter = { text: string; mode: "ask" | "investigate" };
 interface Props {
   connectionId: string;
   restoreSessionId?: string | null;
+  initialQuestion?: string;
+  initialMode?: "ask" | "investigate";
 }
 
 /* ── Input box — module-level so React never remounts it on parent re-render ── */
@@ -193,7 +195,7 @@ function DebugLogDrawer({ eventLogRef, onClose }: { eventLogRef: React.RefObject
   );
 }
 
-export function ChatPanel({ connectionId, restoreSessionId }: Props) {
+export function ChatPanel({ connectionId, restoreSessionId, initialQuestion, initialMode }: Props) {
   const { state, ask, stop, clear, restore, eventLogRef } = useChat();
   const [input, setInput]           = useState("");
   const [mode, setMode]             = useState<"ask" | "investigate">("ask");
@@ -289,6 +291,20 @@ export function ChatPanel({ connectionId, restoreSessionId }: Props) {
     wasStreamingRef.current = state.streaming;
   }, [state.streaming]); // eslint-disable-line
 
+  // Auto-submit a question injected from outside (e.g. "Investigate" from the Ontology canvas)
+  const initialFiredRef = useRef(false);
+  useEffect(() => {
+    if (!initialQuestion || initialFiredRef.current || state.streaming) return;
+    initialFiredRef.current = true;
+    if (initialMode) setMode(initialMode);
+    // Small delay so the component is fully mounted and mode is set
+    const t = setTimeout(() => {
+      ask(initialQuestion, connectionId, initialMode ?? "investigate", undefined);
+    }, 80);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialQuestion]);
+
   const handleSend = useCallback((q?: string, m?: "ask" | "investigate", opts?: { skipCache?: boolean }) => {
     const question = (q ?? input).trim();
     if (!question || state.streaming) return;
@@ -333,26 +349,49 @@ export function ChatPanel({ connectionId, restoreSessionId }: Props) {
 
             {/* Suggestions */}
             <div className="pt-1">
-              <p className="text-[12px] text-zinc-600 uppercase tracking-widest mb-3">Suggested questions</p>
+              <p className="text-[9.5px] uppercase tracking-[0.08em] mb-2" style={{ color: "#3e3f47" }}>Suggested questions</p>
               {loadingStarters ? (
-                <div className="flex flex-wrap gap-2">
+                <div className="grid grid-cols-2 gap-1.5">
                   {Array.from({ length: 6 }).map((_, i) => (
-                    <div key={i} className="h-7 w-48 rounded-full bg-zinc-800/60 animate-pulse" />
+                    <div key={i} className="h-14 rounded-lg animate-pulse" style={{ background: "#13141a" }} />
                   ))}
                 </div>
               ) : (
-                <div className="flex flex-wrap gap-2">
+                <div className="grid grid-cols-2 gap-1.5">
                   {starters.map((s) => (
                     <button
                       key={s.text}
                       onClick={() => handleSend(s.text, s.mode)}
-                      className={`flex items-center gap-1.5 pl-3 pr-4 py-1.5 rounded-full border text-[12px] font-medium transition hover:text-zinc-100 ${
-                        s.mode === "investigate"
-                          ? "border-violet-500/30 bg-violet-500/8 text-violet-300/80 hover:bg-violet-500/15 hover:border-violet-400/40"
-                          : "border-zinc-700 bg-zinc-800/60 text-zinc-400 hover:bg-zinc-700/60 hover:border-zinc-600"
-                      }`}
+                      className="flex items-start gap-1.5 px-3 py-2 rounded-lg text-[11.5px] text-left leading-snug transition-all"
+                      style={s.mode === "investigate" ? {
+                        background: "#13141a",
+                        border: "0.5px solid #1e2a1e",
+                        color: "#4a7a55",
+                      } : {
+                        background: "#13141a",
+                        border: "0.5px solid #1e1f24",
+                        color: "#6e6f78",
+                      }}
+                      onMouseEnter={e => {
+                        if (s.mode === "investigate") {
+                          (e.currentTarget as HTMLElement).style.borderColor = "#2a4a2a";
+                          (e.currentTarget as HTMLElement).style.color = "#4ade80";
+                        } else {
+                          (e.currentTarget as HTMLElement).style.borderColor = "#2a2b30";
+                          (e.currentTarget as HTMLElement).style.color = "#c0bfbc";
+                        }
+                      }}
+                      onMouseLeave={e => {
+                        if (s.mode === "investigate") {
+                          (e.currentTarget as HTMLElement).style.borderColor = "#1e2a1e";
+                          (e.currentTarget as HTMLElement).style.color = "#4a7a55";
+                        } else {
+                          (e.currentTarget as HTMLElement).style.borderColor = "#1e1f24";
+                          (e.currentTarget as HTMLElement).style.color = "#6e6f78";
+                        }
+                      }}
                     >
-                      <span className="shrink-0 opacity-60">
+                      <span className="shrink-0 mt-0.5 opacity-70 text-[13px]">
                         {s.mode === "investigate"
                           ? <AiSparkleIcon label="" size="small" />
                           : <CommentIcon label="" size="small" />}

@@ -130,6 +130,19 @@
   }
 }
 
+/* ── Ontology canvas edge flow animations ────────────────────────────────────
+   stroke-dasharray cycle lengths:
+     inferred  : "5 7"   → 12 px  (animation moves -12 per cycle)
+     exact     : "4 8"   → 12 px
+     verified  : "3 30"  → 33 px  (tiny dot on solid base; shimmer effect)
+   ─────────────────────────────────────────────────────────────────────────── */
+@keyframes edge-flow {
+  to { stroke-dashoffset: -12; }
+}
+@keyframes edge-flow-verified {
+  to { stroke-dashoffset: -33; }
+}
+
 /* ── Databricks brand palette ────────────────────────────────────────────────
    Exact colours from the Databricks palette swatch:
      #8265BF  primary purple accent
