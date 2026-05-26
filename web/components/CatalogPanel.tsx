@@ -5,6 +5,7 @@ import TableIcon       from "@atlaskit/icon/core/table";
 import ChevronDownIcon from "@atlaskit/icon/core/chevron-down";
 import ChevronUpIcon   from "@atlaskit/icon/core/chevron-up";
 import { getSchemaRich, RichSchema, getConnections, Connection } from "@/lib/api";
+import { useSchema } from "@/lib/schema-context";
 
 function fmtRows(n: string | number | null | undefined): string {
   if (n == null) return "—";
@@ -72,13 +73,19 @@ interface Props {
 }
 
 export function CatalogPanel({ connectionId, onChatWithTable }: Props) {
-  const [schema, setSchema] = useState<RichSchema | null>(null);
+  const ctx = useSchema();
+  const [ownSchema, setOwnSchema] = useState<RichSchema | null>(null);
   const [connections, setConnections] = useState<Connection[]>([]);
   const [selectedConn, setSelectedConn] = useState(connectionId);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedTable, setExpandedTable] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+
+  // Use context schema when the selected conn matches the context's conn;
+  // otherwise fall back to a dedicated fetch (user switched to a different connection).
+  const usingContext = selectedConn === ctx.connId;
+  const schema = usingContext ? ctx.schema : ownSchema;
 
   useEffect(() => {
     getConnections().then(setConnections).catch(() => {});
@@ -89,15 +96,15 @@ export function CatalogPanel({ connectionId, onChatWithTable }: Props) {
   }, [connectionId]);
 
   useEffect(() => {
-    if (!selectedConn) return;
+    if (!selectedConn || usingContext) return;
     setLoading(true);
     setError(null);
-    setSchema(null);
+    setOwnSchema(null);
     getSchemaRich(selectedConn)
-      .then(setSchema)
+      .then(setOwnSchema)
       .catch(() => setError("Failed to load catalog."))
       .finally(() => setLoading(false));
-  }, [selectedConn]);
+  }, [selectedConn, usingContext]);
 
   const tables = schema?.tables ?? [];
   const q = search.toLowerCase().trim();

@@ -127,8 +127,11 @@ def complete_investigation(
     # Index in Qdrant — only for investigate-mode completions (not direct queries)
     if report_dict and not skip_index:
         key_findings = [f.get("claim", "") for f in (report_dict.get("key_findings") or [])]
-        from aughor.tools.prior_analyses import index_investigation
+        from aughor.tools.prior_analyses import index_investigation, index_sql_examples
         index_investigation(inv_id, question=question, headline=headline, key_findings=key_findings, connection_id=connection_id)
+        # Index only successful SQL executions as few-shot examples for future queries
+        if question and query_history:
+            index_sql_examples(inv_id, question=question, query_history=query_history, connection_id=connection_id)
 
 
 def pause_investigation(inv_id: str) -> None:

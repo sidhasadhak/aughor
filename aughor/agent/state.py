@@ -34,6 +34,10 @@ class DecomposeOutput(BaseModel):
 
 class QueryPlan(BaseModel):
     hypothesis_id: str
+    tables: list[str] = Field(
+        default_factory=list,
+        description="All table names this plan will touch. List every table before writing any SQL — this forces you to verify they exist in the schema.",
+    )
     expected_if_true: str = Field(
         default="",
         description="Concrete prediction: what pattern/numbers would you expect to see in the query results IF this hypothesis is correct? Be specific (e.g. 'APAC revenue share > 40% and declining month-over-month').",
@@ -49,6 +53,53 @@ class QueryPlan(BaseModel):
     reasoning: str = Field(
         description="Why these specific queries test this hypothesis"
     )
+
+
+class QueryIntent(BaseModel):
+    """Describes WHAT a single query should measure — no SQL."""
+    description: str = Field(
+        description="One sentence: what this query should measure and what pattern to look for."
+    )
+    tables: list[str] = Field(
+        default_factory=list,
+        description="Subset of the plan's tables this query touches.",
+    )
+    filters: list[str] = Field(
+        default_factory=list,
+        description="WHERE conditions in plain English (e.g. 'region = APAC', 'last 30 days', 'active users only').",
+    )
+    aggregation: str = Field(
+        default="",
+        description="GROUP BY columns and aggregate metric in plain English (e.g. 'GROUP BY region and month, SUM(revenue)').",
+    )
+
+
+class QueryPlanV2(BaseModel):
+    """Planning-only output — no SQL. SQL is generated separately by execute_planned_queries."""
+    hypothesis_id: str
+    tables: list[str] = Field(
+        default_factory=list,
+        description="All tables this plan will touch. Every table must exist verbatim in the schema.",
+    )
+    expected_if_true: str = Field(
+        default="",
+        description="Concrete prediction if the hypothesis is correct.",
+    )
+    expected_if_false: str = Field(
+        default="",
+        description="Concrete prediction if the hypothesis is wrong.",
+    )
+    reasoning: str = Field(default="", description="Why these queries test this hypothesis.")
+    query_intents: list[QueryIntent] = Field(
+        min_length=1,
+        description="1-3 query intents describing what to measure. Each will be translated to SQL separately.",
+    )
+
+
+class SQLOutput(BaseModel):
+    """Single SQL query produced from a QueryIntent."""
+    sql: str = Field(description="A valid SQL SELECT query for the target dialect.")
+    reasoning: str = Field(default="", description="One sentence: what this query measures.")
 
 
 class StatResult(BaseModel):
@@ -321,6 +372,9 @@ class AgentState(TypedDict):
     investigation_phases: list[InvestigationPhaseResult]
     ada_report: Optional[ADAReport]
     _ada_intake: Optional[dict]      # intake spec passed between ADA phase nodes
+
+    # Plan-then-SQL: set by plan_queries, consumed by execute_planned_queries
+    current_plan: Optional[dict]
 
     # ADA inter-phase signals (set by each phase node, read by routers + next phases)
     _baseline_summary: Optional[str]

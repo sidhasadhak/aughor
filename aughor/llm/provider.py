@@ -5,14 +5,14 @@ Two roles, two model slots:
   narrator — report synthesis (long-form prose)
 
 Env vars:
-  HERMES_BACKEND         ollama (default) | lmstudio | groq | together | anthropic
-  HERMES_CODER_MODEL     default per backend (see _DEFAULT_MODELS)
-  HERMES_NARRATOR_MODEL  default per backend
-  HERMES_MODEL           fallback for both if role-specific var is unset
+  AUGHOR_BACKEND         ollama (default) | lmstudio | groq | together | anthropic
+  AUGHOR_CODER_MODEL     default per backend (see _DEFAULT_MODELS)
+  AUGHOR_NARRATOR_MODEL  default per backend
+  AUGHOR_MODEL           fallback for both if role-specific var is unset
   LMSTUDIO_BASE_URL      default http://localhost:1234/v1
-  GROQ_API_KEY           required when HERMES_BACKEND=groq
-  TOGETHER_API_KEY       required when HERMES_BACKEND=together
-  ANTHROPIC_API_KEY      required when HERMES_BACKEND=anthropic
+  GROQ_API_KEY           required when AUGHOR_BACKEND=groq
+  TOGETHER_API_KEY       required when AUGHOR_BACKEND=together
+  ANTHROPIC_API_KEY      required when AUGHOR_BACKEND=anthropic
 """
 from __future__ import annotations
 
@@ -42,10 +42,10 @@ _DEFAULT_MODELS: dict[str, dict[Role, str]] = {
 
 def _model_for_role(backend: str, role: Role) -> str:
     defaults = _DEFAULT_MODELS.get(backend, _DEFAULT_MODELS["ollama"])
-    fallback = os.getenv("HERMES_MODEL", defaults[role])
+    fallback = os.getenv("AUGHOR_MODEL", defaults[role])
     if role == "coder":
-        return os.getenv("HERMES_CODER_MODEL", fallback)
-    return os.getenv("HERMES_NARRATOR_MODEL", fallback)
+        return os.getenv("AUGHOR_CODER_MODEL", fallback)
+    return os.getenv("AUGHOR_NARRATOR_MODEL", fallback)
 
 
 def _build_ollama_client(model: str = "") -> instructor.Instructor:
@@ -136,7 +136,7 @@ _cached_backend: str | None = None
 
 def get_provider(role: Role = "coder") -> LLMProvider:
     global _cached_backend
-    backend = os.getenv("HERMES_BACKEND", "ollama")
+    backend = os.getenv("AUGHOR_BACKEND", "ollama")
     if backend != _cached_backend:
         # Backend changed (e.g. env var updated at runtime) — flush cache
         _providers.clear()
@@ -146,8 +146,3 @@ def get_provider(role: Role = "coder") -> LLMProvider:
     return _providers[role]
 
 
-def reset_providers() -> None:
-    """Force-clear the provider cache (useful in tests or after env changes)."""
-    global _cached_backend
-    _providers.clear()
-    _cached_backend = None

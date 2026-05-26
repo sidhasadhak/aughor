@@ -2,9 +2,9 @@
 Aughor CLI — run autonomous investigations from the terminal.
 
 Usage:
-  hermes investigate "Why did revenue drop 8% last week?"
-  hermes investigate "Why did revenue drop 8% last week?" --db data/hermes.duckdb
-  hermes seed        # create the fixture database
+  aughor investigate "Why did revenue drop 8% last week?"
+  aughor investigate "Why did revenue drop 8% last week?" --db data/aughor.duckdb
+  aughor seed        # create the fixture database
 """
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ from rich.text import Text
 
 console = Console()
 
-DEFAULT_DB = Path(__file__).parent.parent / "data" / "hermes.duckdb"
+DEFAULT_DB = Path(__file__).parent.parent / "data" / "aughor.duckdb"
 
 
 # ── CLI group ────────────────────────────────────────────────────────────────
@@ -58,13 +58,13 @@ def investigate(question: str, db: str, model: Optional[str], backend: str):
     """Run an autonomous investigation on a business question."""
     import os
     if model:
-        os.environ["HERMES_MODEL"] = model
-    os.environ["HERMES_BACKEND"] = backend
+        os.environ["AUGHOR_MODEL"] = model
+    os.environ["AUGHOR_BACKEND"] = backend
 
     db_path = Path(db)
     if not db_path.exists():
         console.print(f"[red]Database not found:[/red] {db_path}")
-        console.print("Run [bold]hermes seed[/bold] first to create the fixture database.")
+        console.print("Run [bold]aughor seed[/bold] first to create the fixture database.")
         sys.exit(1)
 
     try:

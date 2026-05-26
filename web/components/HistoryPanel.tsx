@@ -23,21 +23,22 @@ function timeAgo(iso: string): string {
 export function HistoryPanel({ selectedId, onSelect }: Props) {
   const [items, setItems] = useState<InvestigationSummary[]>([]);
   const [indexedIds, setIndexedIds] = useState<Set<string>>(new Set());
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8_000);
     Promise.all([
-      fetch("http://localhost:8000/investigations").then(r => r.json()),
-      fetch("http://localhost:8000/investigations/indexed-ids").then(r => r.json()).catch(() => ({ ids: [] })),
+      fetch("http://localhost:8000/investigations", { signal: controller.signal }).then(r => r.json()),
+      fetch("http://localhost:8000/investigations/indexed-ids", { signal: controller.signal }).then(r => r.json()).catch(() => ({ ids: [] })),
     ])
       .then(([invs, indexed]) => {
         setItems(invs);
         setIndexedIds(new Set(indexed.ids ?? []));
       })
-      .catch(() => setItems([]))
-      .finally(() => setLoading(false));
+      .catch(() => {})
+      .finally(() => clearTimeout(timeout));
   }, []);
 
   async function handleDelete(e: React.MouseEvent, invId: string) {
@@ -51,14 +52,6 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
     } finally {
       setDeletingId(null);
     }
-  }
-
-  if (loading) {
-    return (
-      <div className="flex-1 flex items-center justify-center text-xs text-zinc-500">
-        Loading history…
-      </div>
-    );
   }
 
   if (items.length === 0) {

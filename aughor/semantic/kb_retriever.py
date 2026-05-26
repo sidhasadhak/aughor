@@ -10,15 +10,15 @@ Graceful degradation: all failures (Qdrant down, KB path unset, embedding error)
 silently return empty strings so agent nodes are never blocked.
 
 Configure via:
-  HERMES_KB_PATH  — absolute path to the SQL KB JSONs folder (required to activate)
-  HERMES_KB_ENABLED — set to "false" to disable entirely (default: "true")
+  AUGHOR_KB_PATH  — absolute path to the SQL KB JSONs folder (required to activate)
+  AUGHOR_KB_ENABLED — set to "false" to disable entirely (default: "true")
 """
 from __future__ import annotations
 
 import os
 from pathlib import Path
 
-# Load .env so HERMES_KB_PATH is available when running standalone scripts
+# Load .env so AUGHOR_KB_PATH is available when running standalone scripts
 try:
     from dotenv import load_dotenv
     load_dotenv(Path(__file__).parent.parent.parent / ".env")
@@ -26,8 +26,8 @@ except ImportError:
     pass
 
 KB_COLLECTION = "sql_knowledge_base"
-KB_PATH = os.getenv("HERMES_KB_PATH", "")
-KB_ENABLED = os.getenv("HERMES_KB_ENABLED", "true").lower() != "false"
+KB_PATH = os.getenv("AUGHOR_KB_PATH", "")
+KB_ENABLED = os.getenv("AUGHOR_KB_ENABLED", "true").lower() != "false"
 
 
 # ── Index building ────────────────────────────────────────────────────────────

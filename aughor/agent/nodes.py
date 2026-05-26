@@ -15,6 +15,7 @@ from aughor.agent.prompts import (
     ROUTE_QUESTION_PROMPT,
     SCORE_EVIDENCE_PROMPT,
     SYNTHESIZE_PROMPT,
+    WRITE_SQL_PROMPT,
     format_pitfall_section,
 )
 from aughor.rules import get_rules_block
@@ -27,10 +28,12 @@ from aughor.agent.state import (
     Hypothesis,
     Pitfall,
     QueryPlan,
+    QueryPlanV2,
     QueryResult,
     ReplanDecision,
     RouteDecision,
     SQLFix,
+    SQLOutput,
 )
 from pydantic import BaseModel as _BaseModel
 
@@ -44,12 +47,12 @@ class _ConsistencyReport(_BaseModel):
     contradictions: list[_Contradiction]
     passed: bool
 
-_CONSISTENCY_ENABLED = __import__("os").getenv("HERMES_CONSISTENCY_CHECK", "true").lower() != "false"
+_CONSISTENCY_ENABLED = __import__("os").getenv("AUGHOR_CONSISTENCY_CHECK", "true").lower() != "false"
 from aughor.llm.provider import get_provider
 from aughor.tools.executor import format_result_for_llm
 from aughor.tools.stats import analyze_query_result, StatResult as _StatResult
 
-MAX_ITER = int(__import__("os").getenv("HERMES_MAX_ITER", "6"))
+MAX_ITER = int(__import__("os").getenv("AUGHOR_MAX_ITER", "6"))
 
 
 # ── Node: route_question ─────────────────────────────────────────────────────
@@ -92,7 +95,7 @@ def route_question(state: AgentState) -> dict[str, Any]:
 def route_after_classify(state: AgentState) -> str:
     mode = state.get("query_mode")
     if mode == "direct":
-        return "plan_and_execute"
+        return "plan_queries"
     if mode == "explore":
         return "exploratory_scan_explore"
     return "exploratory_scan"
@@ -292,9 +295,10 @@ def decompose_question(state: AgentState) -> dict[str, Any]:
     }
 
 
-# ── Node: plan_and_execute ────────────────────────────────────────────────────
+# ── Node: plan_queries ────────────────────────────────────────────────────────
 
-def plan_and_execute(state: AgentState, conn: "DatabaseConnection") -> dict[str, Any]:
+def plan_queries(state: AgentState) -> dict[str, Any]:
+    """LLM planning call — decides WHAT to measure, produces QueryPlanV2 (no SQL)."""
     hypotheses = state["hypotheses"]
     idx = state["current_hypothesis_idx"]
 
@@ -305,32 +309,24 @@ def plan_and_execute(state: AgentState, conn: "DatabaseConnection") -> dict[str,
     prior_context = _format_prior_context(state.get("query_history", []), h.id)
     known_pitfalls = state.get("pitfalls", [])
 
-    # Retrieve only schema tables relevant to this hypothesis (no-op for small schemas)
     from aughor.semantic.retriever import retrieve_relevant_schema
     from aughor.semantic.kb_retriever import retrieve_for_planning
     schema_for_hypothesis = retrieve_relevant_schema(h.description, state["schema_context"])
     kb_patterns = retrieve_for_planning(h.description)
 
-    # Prepend any relevant prior investigation summaries
     prior_analyses = state.get("prior_analyses", [])
     prior_analyses_text = (
         "RELEVANT PAST INVESTIGATIONS:\n" + "\n\n".join(prior_analyses)
         if prior_analyses else ""
     )
 
-    # Build events section (may be empty if no calendar events are relevant)
     raw_events = state.get("events_context") or ""
     events_section = f"{raw_events}\n" if raw_events else ""
 
-    # Build ontology actions section (empty string when no actions exist)
-    from aughor.ontology.actions import build_actions_prompt_section
-    ontology_graph = conn.get_ontology()
-    ontology_actions_section = build_actions_prompt_section(ontology_graph)
-
     rules_block = get_rules_block()
     llm = get_provider("coder")
-    plan: QueryPlan = llm.complete(
-        system="You are a senior data analyst writing SQL to test a hypothesis.",
+    plan: QueryPlanV2 = llm.complete(
+        system="You are a senior data analyst planning how to test a hypothesis. Do NOT write SQL.",
         user=rules_block + PLAN_QUERIES_PROMPT.format(
             hypothesis_id=h.id,
             hypothesis_description=h.description,
@@ -340,49 +336,108 @@ def plan_and_execute(state: AgentState, conn: "DatabaseConnection") -> dict[str,
             pitfall_section=format_pitfall_section(known_pitfalls),
             kb_patterns_section=kb_patterns,
             events_section=events_section,
-            ontology_actions_section=ontology_actions_section,
         ),
-        response_model=QueryPlan,
+        response_model=QueryPlanV2,
     )
 
-    results: list[QueryResult] = []
-    new_pitfalls: list[Pitfall] = []
+    return {"current_plan": plan.model_dump()}
 
-    # Guard: planner must return at least one query. If the model slips through
-    # the Pydantic min_length=1 constraint (e.g. via a provider that strips
-    # validation), inject a single-row diagnostic so score_evidence always has
-    # evidence to work with and never silently produces a no-query hypothesis.
-    queries = [q for q in plan.queries if q and q.strip()]
 
-    # Expand any ACTION:name() tokens before execution
-    from aughor.ontology.actions import expand_actions
+# ── Node: execute_planned_queries ─────────────────────────────────────────────
+
+def execute_planned_queries(state: AgentState, conn: "DatabaseConnection") -> dict[str, Any]:
+    """Translates each QueryIntent from current_plan into SQL, then executes with self-correction."""
+    hypotheses = state["hypotheses"]
+    idx = state["current_hypothesis_idx"]
+
+    if idx >= len(hypotheses):
+        return {}
+
+    h = hypotheses[idx]
+    plan_dict = state.get("current_plan") or {}
+
+    # Retrieve validated SQL examples for the SQL-writing step
+    from aughor.tools.prior_analyses import search_sql_examples
+    connection_id = state.get("connection_id", "")
+    sql_examples_section = search_sql_examples(h.description, connection_id)
+
+    # Build ontology context for SQL generation + action expansion
+    from aughor.ontology.actions import build_actions_prompt_section, expand_actions
     from aughor.stats import stats as _stats
+    ontology_graph = conn.get_ontology()
+    ontology_actions_section = build_actions_prompt_section(ontology_graph)
+
+    known_pitfalls = state.get("pitfalls", [])
+    pitfall_section = format_pitfall_section(known_pitfalls)
+
+    intents = plan_dict.get("query_intents") or []
+    expected_if_true = plan_dict.get("expected_if_true") or None
+    expected_if_false = plan_dict.get("expected_if_false") or None
+
+    # Generate SQL for each query intent
+    queries: list[str] = []
+    llm = get_provider("coder")
+    for intent in intents:
+        intent_tables = ", ".join(intent.get("tables") or []) or "(all plan tables)"
+        intent_filters = "; ".join(intent.get("filters") or []) or "none"
+        intent_aggregation = intent.get("aggregation") or "none"
+
+        sql_out: SQLOutput = llm.complete(
+            system="You are a SQL expert. Translate the query intent into one SQL SELECT statement.",
+            user=WRITE_SQL_PROMPT.format(
+                dialect=conn.dialect,
+                hypothesis_description=h.description,
+                intent_description=intent.get("description", ""),
+                intent_tables=intent_tables,
+                intent_filters=intent_filters,
+                intent_aggregation=intent_aggregation,
+                schema=state["schema_context"],
+                pitfall_section=pitfall_section,
+                sql_examples_section=sql_examples_section,
+                ontology_actions_section=ontology_actions_section,
+            ),
+            response_model=SQLOutput,
+        )
+        if sql_out.sql and sql_out.sql.strip():
+            queries.append(sql_out.sql.strip())
+
+    # Expand ACTION:name() tokens before execution
     queries, _action_notes = expand_actions(queries, ontology_graph)
     if _action_notes:
         _stats.inc("action_expansions", len(_action_notes))
 
+    # Fallback: if no queries were generated, run a diagnostic count
     if not queries:
-        # Build the least-assumption diagnostic: count rows for the first table
-        # visible in the schema. This can never refute a hypothesis but it forces
-        # the evidence pipeline to run and flags the gap in the scored output.
         import re as _re
         _tm = _re.search(r"^TABLE:\s+(\w+)", state["schema_context"], _re.MULTILINE)
         fallback_table = _tm.group(1) if _tm else "unknown"
         queries = [
-            f'SELECT COUNT(*) AS row_count, \'{h.id} — planner returned no queries; '
+            f'SELECT COUNT(*) AS row_count, \'{h.id} — planner returned no query intents; '
             f'this is a diagnostic fallback\' AS _note FROM "{fallback_table}"'
         ]
 
+    results: list[QueryResult] = []
+    new_pitfalls: list[Pitfall] = []
+
     for sql in queries:
-        # ── Pre-flight: detect unqualified columns that exist in 2+ tables ──
-        from aughor.tools.ambiguity import detect_ambiguous_columns
+        # ── Pre-flight: detect unqualified columns and invalid join paths ──
+        from aughor.tools.ambiguity import detect_ambiguous_columns, detect_invalid_joins
         ambiguity_warnings = detect_ambiguous_columns(sql, state["schema_context"])
+        join_warnings = detect_invalid_joins(sql, state["schema_context"])
+
+        for jw in join_warnings:
+            new_pitfalls.append(Pitfall(
+                original_sql=sql,
+                error=jw.to_prompt_text(),
+                fixed_sql=sql,
+                fix_explanation=jw.to_prompt_text(),
+            ))
 
         result = conn.execute(h.id, sql)
         # Attach plan-time predictions so the scorer can compare prediction vs reality
         _d = result.model_dump()
-        _d["expected_if_true"] = plan.expected_if_true or None
-        _d["expected_if_false"] = plan.expected_if_false or None
+        _d["expected_if_true"] = expected_if_true
+        _d["expected_if_false"] = expected_if_false
         result = QueryResult(**_d)
 
         # ── Self-correction: retry failed queries once ────────────────────
@@ -392,11 +447,10 @@ def plan_and_execute(state: AgentState, conn: "DatabaseConnection") -> dict[str,
             from aughor.semantic.kb_retriever import retrieve_for_fix_sql
             from aughor.tools.error_classifier import classify_sql_error
             kb_fix_patterns = retrieve_for_fix_sql(original_error, sql)
-            # Structured diagnosis from known error patterns
             diagnosis = classify_sql_error(original_error, sql, conn.dialect)
-            # Append any ambiguity warnings detected before execution
-            if ambiguity_warnings:
-                warn_text = "\n".join(w.to_prompt_text() for w in ambiguity_warnings)
+            pre_flight = ambiguity_warnings + join_warnings
+            if pre_flight:
+                warn_text = "\n".join(w.to_prompt_text() for w in pre_flight)
                 diagnosis = f"{diagnosis}\n{warn_text}".strip()
             error_diagnosis_block = f"DIAGNOSIS:\n{diagnosis}\n" if diagnosis else ""
 
@@ -435,6 +489,13 @@ def plan_and_execute(state: AgentState, conn: "DatabaseConnection") -> dict[str,
         "query_history": results,   # operator.add appends
         "pitfalls": new_pitfalls,   # operator.add appends
     }
+
+
+# kept for backward-compatibility with any external callers; delegates to plan_queries + execute_planned_queries
+def plan_and_execute(state: AgentState, conn: "DatabaseConnection") -> dict[str, Any]:
+    plan_state = plan_queries(state)
+    merged = {**state, **plan_state}
+    return execute_planned_queries(merged, conn)
 
 
 # ── Node: score_evidence ──────────────────────────────────────────────────────
@@ -703,7 +764,7 @@ def should_continue(state: AgentState) -> str:
         return "synthesize"
 
     if idx < len(hypotheses):
-        return "plan_and_execute"
+        return "plan_queries"
 
     return "synthesize"
 
@@ -820,7 +881,7 @@ def route_after_replan(state: AgentState) -> str:
     hypotheses = state.get("hypotheses", [])
     if idx >= len(hypotheses):
         return "synthesize"
-    return "plan_and_execute"
+    return "plan_queries"
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

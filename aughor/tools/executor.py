@@ -1,19 +1,13 @@
-"""Safe SQL execution against DuckDB with query validation and audit logging."""
+"""SQL validation and result formatting utilities."""
 from __future__ import annotations
 
 import re
-import time
-from pathlib import Path
-from typing import Optional
 
-import duckdb
 import sqlglot
 
 from aughor.agent.state import QueryResult
 
-# Hard limits per query
 MAX_ROWS = 500
-MAX_EXECUTION_MS = 30_000
 
 _FORBIDDEN = re.compile(
     r"\b(DROP|DELETE|INSERT|UPDATE|CREATE|ALTER|TRUNCATE|EXEC|EXECUTE|COPY|ATTACH|DETACH|PRAGMA)\b",
@@ -47,64 +41,6 @@ def validate_sql(sql: str) -> tuple[bool, str]:
     if not isinstance(parsed, _READ_ONLY_TYPES):
         return False, f"Only SELECT statements are allowed, got {type(parsed).__name__}"
     return True, "ok"
-
-
-def execute_query(
-    conn: duckdb.DuckDBPyConnection,
-    hypothesis_id: str,
-    sql: str,
-) -> QueryResult:
-    sql = sql.strip().rstrip(";")
-
-    ok, reason = validate_sql(sql)
-    if not ok:
-        return QueryResult(
-            hypothesis_id=hypothesis_id,
-            sql=sql,
-            columns=[],
-            rows=[],
-            row_count=0,
-            error=reason,
-        )
-
-    try:
-        from aughor.stats import stats
-        stats.inc("raw_sql_executions")
-        start = time.monotonic()
-        conn.execute(sql)
-        elapsed_ms = (time.monotonic() - start) * 1000
-
-        if elapsed_ms > MAX_EXECUTION_MS:
-            return QueryResult(
-                hypothesis_id=hypothesis_id,
-                sql=sql,
-                columns=[],
-                rows=[],
-                row_count=0,
-                error=f"Query exceeded {MAX_EXECUTION_MS}ms time limit",
-            )
-
-        all_rows = conn.fetchall()
-        columns = [desc[0] for desc in conn.description] if conn.description else []
-        row_count = len(all_rows)
-        rows = all_rows[:MAX_ROWS]
-
-        return QueryResult(
-            hypothesis_id=hypothesis_id,
-            sql=sql,
-            columns=columns,
-            rows=[[str(v) if v is not None else "NULL" for v in row] for row in rows],
-            row_count=row_count,
-        )
-    except Exception as e:
-        return QueryResult(
-            hypothesis_id=hypothesis_id,
-            sql=sql,
-            columns=[],
-            rows=[],
-            row_count=0,
-            error=str(e),
-        )
 
 
 def format_result_for_llm(result: QueryResult, max_rows: int = 30) -> str:
@@ -152,85 +88,3 @@ def format_result_for_llm(result: QueryResult, max_rows: int = 30) -> str:
             lines.append(f"  {sig_marker}{sigma_str} {s.interpretation}")
 
     return "\n".join(lines)
-
-
-def ibis_execute(
-    ibis_backend,
-    hypothesis_id: str,
-    sql: str,
-) -> QueryResult:
-    """Execute SQL through an ibis backend and return a QueryResult.
-
-    ``ibis_backend`` is the result of ``connection.ibis_connection()`` — the
-    caller is responsible for ensuring it is non-None before calling this.
-    Falls back gracefully: any ibis/pandas error becomes an error QueryResult.
-    """
-    sql = sql.strip().rstrip(";")
-
-    ok, reason = validate_sql(sql)
-    if not ok:
-        return QueryResult(
-            hypothesis_id=hypothesis_id,
-            sql=sql,
-            columns=[],
-            rows=[],
-            row_count=0,
-            error=reason,
-        )
-
-    try:
-        from aughor.stats import stats
-        stats.inc("ibis_executions")
-        start = time.monotonic()
-        df = ibis_backend.sql(sql).limit(MAX_ROWS).execute()
-        elapsed_ms = (time.monotonic() - start) * 1000
-        stats.timing("ibis_execution_ms", elapsed_ms)
-
-        if elapsed_ms > MAX_EXECUTION_MS:
-            return QueryResult(
-                hypothesis_id=hypothesis_id,
-                sql=sql,
-                columns=[],
-                rows=[],
-                row_count=0,
-                error=f"Query exceeded {MAX_EXECUTION_MS}ms time limit",
-            )
-
-        columns = list(df.columns)
-        rows: list[list[str]] = []
-        for tup in df.itertuples(index=False, name=None):
-            cells = []
-            for v in tup:
-                if v is None:
-                    cells.append("NULL")
-                else:
-                    try:
-                        import pandas as pd
-                        if pd.isna(v):
-                            cells.append("NULL")
-                            continue
-                    except (TypeError, ValueError):
-                        pass
-                    cells.append(str(v))
-            rows.append(cells)
-
-        return QueryResult(
-            hypothesis_id=hypothesis_id,
-            sql=sql,
-            columns=columns,
-            rows=rows,
-            row_count=len(rows),
-        )
-    except Exception as e:
-        return QueryResult(
-            hypothesis_id=hypothesis_id,
-            sql=sql,
-            columns=[],
-            rows=[],
-            row_count=0,
-            error=str(e),
-        )
-
-
-def open_db(db_path: str | Path) -> duckdb.DuckDBPyConnection:
-    return duckdb.connect(str(db_path), read_only=True)

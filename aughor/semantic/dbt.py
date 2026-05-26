@@ -7,8 +7,8 @@ same shape as data/glossary.yaml so they flow through apply_glossary()
 transparently.
 
 Configuration (optional — dbt layer is skipped if unset):
-    HERMES_DBT_MANIFEST=/path/to/dbt/project/target/manifest.json
-    HERMES_DBT_CATALOG=/path/to/dbt/project/target/catalog.json   # optional
+    AUGHOR_DBT_MANIFEST=/path/to/dbt/project/target/manifest.json
+    AUGHOR_DBT_CATALOG=/path/to/dbt/project/target/catalog.json   # optional
 
 Precedence (enforced in load_merged_glossary, not here):
     manual YAML  >  dbt manifest  >  auto-seed  >  raw DDL
@@ -22,7 +22,7 @@ from typing import Any
 
 
 def _manifest_path() -> Path | None:
-    v = os.getenv("HERMES_DBT_MANIFEST")
+    v = os.getenv("AUGHOR_DBT_MANIFEST")
     if not v:
         return None
     p = Path(v)
@@ -30,7 +30,7 @@ def _manifest_path() -> Path | None:
 
 
 def _catalog_path() -> Path | None:
-    v = os.getenv("HERMES_DBT_CATALOG")
+    v = os.getenv("AUGHOR_DBT_CATALOG")
     if not v:
         return None
     p = Path(v)

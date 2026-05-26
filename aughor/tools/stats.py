@@ -99,40 +99,6 @@ def detect_trend(values: list[float]) -> TrendResult:
     return TrendResult(slope=float(slope), r_squared=float(r_sq), direction=direction, interpretation=interp)
 
 
-# ── Core: period comparison (Mann-Whitney U) ──────────────────────────────────
-
-def compare_periods(group_a: list[float], group_b: list[float]) -> StatResult:
-    """
-    Non-parametric test: are two distributions significantly different?
-    Use for before/after comparisons (e.g. pre-anomaly vs anomaly window).
-    """
-    if len(group_a) < 3 or len(group_b) < 3:
-        return StatResult(
-            type="comparison",
-            interpretation="Insufficient data for period comparison (need ≥ 3 values per group).",
-            is_significant=False,
-        )
-
-    stat, p = scipy_stats.mannwhitneyu(group_a, group_b, alternative="two-sided")
-    mean_a = float(np.mean(group_a))
-    mean_b = float(np.mean(group_b))
-    pct_change = ((mean_b - mean_a) / mean_a * 100) if mean_a != 0 else 0.0
-    direction = "higher" if pct_change > 0 else "lower"
-    significant = p < 0.05
-
-    interp = (
-        f"Period B is {abs(pct_change):.1f}% {direction} than Period A "
-        f"(means: {mean_a:,.1f} → {mean_b:,.1f}). "
-        f"Mann-Whitney p={p:.4f} — {'statistically significant' if significant else 'not significant'} at α=0.05."
-    )
-    return StatResult(
-        type="comparison",
-        interpretation=interp,
-        is_significant=significant,
-        p_value=float(p),
-    )
-
-
 # ── Auto-analysis: called on every successful QueryResult ────────────────────
 
 def analyze_query_result(columns: list[str], rows: list[list]) -> list[StatResult]:

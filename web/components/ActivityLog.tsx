@@ -330,7 +330,7 @@ interface Props {
 export function ActivityLog({ connectionId, isActive }: Props) {
   const [episodes, setEpisodes] = useState<ExplorationEpisode[]>([]);
   const [status, setStatus] = useState<ExplorationStatus | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [following, setFollowing] = useState(true);
   const [stopped, setStopped] = useState(false);
   const [stopping, setStopping] = useState(false);
@@ -344,20 +344,22 @@ export function ActivityLog({ connectionId, isActive }: Props) {
     let cancelled = false;
 
     const load = async () => {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8_000);
       try {
         const [eps, st] = await Promise.all([
           getExplorationEpisodes(connectionId, "", 300),
           getExplorationStatus(connectionId).catch(() => null),
         ]);
+        clearTimeout(timeout);
         if (!cancelled) {
           setEpisodes(eps);
           setStatus(st);
-          setLoading(false);
-          // Sync stopped state from backend — survives tab switches and page remounts
           if (st?.paused) setStopped(true);
         }
       } catch {
-        if (!cancelled) setLoading(false);
+        clearTimeout(timeout);
+        // silently ignore — stale data stays visible, next poll will retry
       }
     };
 

@@ -490,8 +490,6 @@ export interface DevStats {
   counters: Record<string, number>;
   timings: Record<string, { total_ms: number; count: number; avg_ms: number }>;
   derived: {
-    materializer_hit_rate: number | null;
-    ibis_usage_rate: number | null;
     rag_hit_rate: number | null;
     sql_correction_success_rate: number | null;
   };
@@ -505,6 +503,12 @@ export async function getDevStats(): Promise<DevStats> {
 
 export async function resetDevStats(): Promise<void> {
   await fetch(`${BASE}/dev/stats/reset`, { method: "POST" });
+}
+
+export async function getConnectionFreshness(connId: string): Promise<{ freshness: string | null; source: string | null }> {
+  const res = await fetch(`${BASE}/connections/${encodeURIComponent(connId)}/freshness`);
+  if (!res.ok) return { freshness: null, source: null };
+  return res.json();
 }
 
 // ── Entity lifecycle counts ───────────────────────────────────────────────────

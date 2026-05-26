@@ -12,6 +12,8 @@ from aughor.agent.nodes import (
     decompose_question,
     exploratory_scan,
     plan_and_execute,
+    plan_queries,
+    execute_planned_queries,
     replan,
     route_after_classify,
     route_after_replan,
@@ -58,7 +60,7 @@ def _compile(execute_node, scan_node, explore_execute_node, ada_nodes: dict = No
     graph.add_node("route_question", route_question)
     graph.set_entry_point("route_question")
 
-    # ── ADA Investigate branch (new) ──────────────────────────────────────────
+    # ── ADA Investigate branch ────────────────────────────────────────────────
     ada = ada_nodes or {}
     graph.add_node("exploratory_scan", scan_node)
     graph.add_node("ada_intake",      ada.get("intake",      ada_intake))
@@ -71,21 +73,16 @@ def _compile(execute_node, scan_node, explore_execute_node, ada_nodes: dict = No
     graph.add_edge("exploratory_scan",  "ada_intake")
     graph.add_edge("ada_intake",        "ada_baseline")
 
-    # Tier 0 gate: skip to synthesis if decline is within normal variance (z < 1.5)
     graph.add_conditional_edges(
         "ada_baseline",
         route_after_baseline,
         {"ada_decompose": "ada_decompose", "ada_synthesize": "ada_synthesize"},
     )
-
-    # Tier 1 gate: skip dimensional if question is simple and decompose answered it
     graph.add_conditional_edges(
         "ada_decompose",
         route_after_decompose,
         {"ada_dimensional": "ada_dimensional", "ada_synthesize": "ada_synthesize"},
     )
-
-    # Tier 2 gate: skip behavioral unless question asks about behavioral patterns
     graph.add_conditional_edges(
         "ada_dimensional",
         route_after_dimensional,
@@ -95,24 +92,24 @@ def _compile(execute_node, scan_node, explore_execute_node, ada_nodes: dict = No
     graph.add_edge("ada_behavioral",    "ada_synthesize")
     graph.add_edge("ada_synthesize",    END)
 
-    # ── Direct query branch (unchanged) ──────────────────────────────────────
-    graph.add_node("plan_and_execute", execute_node)
+    # ── Direct query branch (plan-then-SQL) ───────────────────────────────────
+    graph.add_node("plan_queries", plan_queries)          # no conn — pure LLM planning
+    graph.add_node("execute_planned_queries", execute_node)  # conn via partial
     graph.add_node("score_evidence", score_evidence)
     graph.add_node("replan", replan)
     graph.add_node("synthesize", synthesize_report)
 
-    graph.add_edge("plan_and_execute", "score_evidence")
+    graph.add_edge("plan_queries", "execute_planned_queries")
+    graph.add_edge("execute_planned_queries", "score_evidence")
     graph.add_edge("score_evidence", "replan")
     graph.add_conditional_edges(
         "replan",
         route_after_replan,
-        {"plan_and_execute": "plan_and_execute", "synthesize": "synthesize"},
+        {"plan_queries": "plan_queries", "synthesize": "synthesize"},
     )
     graph.add_edge("synthesize", END)
 
     # ── Explore branch ────────────────────────────────────────────────────────
-    # Uses a separate scan node alias so the explore branch can route to it
-    # independently of the investigate branch's "exploratory_scan".
     graph.add_node("exploratory_scan_explore", scan_node)
     graph.add_node("decompose_exploration", decompose_exploration)
     graph.add_node("plan_and_execute_subq", explore_execute_node)
@@ -136,7 +133,7 @@ def _compile(execute_node, scan_node, explore_execute_node, ada_nodes: dict = No
         {
             "exploratory_scan": "exploratory_scan",
             "exploratory_scan_explore": "exploratory_scan_explore",
-            "plan_and_execute": "plan_and_execute",
+            "plan_queries": "plan_queries",
         },
     )
 
@@ -158,7 +155,7 @@ def build_graph(conn: duckdb.DuckDBPyConnection):
         "behavioral": partial(ada_behavioral,  conn=db),
     }
     return _compile(
-        partial(plan_and_execute, conn=db),
+        partial(execute_planned_queries, conn=db),
         partial(exploratory_scan, conn=db),
         partial(plan_and_execute_subq, conn=db),
         ada_nodes=ada_nodes,
@@ -174,7 +171,7 @@ def build_graph_generic(db, hitl: bool = False):
         "behavioral":  partial(ada_behavioral,  conn=db),
     }
     return _compile(
-        partial(plan_and_execute, conn=db),
+        partial(execute_planned_queries, conn=db),
         partial(exploratory_scan, conn=db),
         partial(plan_and_execute_subq, conn=db),
         ada_nodes=ada_nodes,
@@ -208,7 +205,7 @@ def run_investigation(
         "scan_context": "",
         "events_context": "",
         "iteration": 0,
-        "max_iterations": int(__import__("os").getenv("HERMES_MAX_ITER", "6")),
+        "max_iterations": int(__import__("os").getenv("AUGHOR_MAX_ITER", "6")),
         "report": None,
         "hitl_enabled": False,
         "human_feedback": None,
@@ -225,6 +222,7 @@ def run_investigation(
         "investigation_phases": [],
         "ada_report": None,
         "_ada_intake": None,
+        "current_plan": None,
     }
 
     final_state = initial_state.copy()

@@ -7,6 +7,12 @@ import duckdb
 
 from aughor.semantic.glossary import apply_glossary
 
+# Columns whose names indicate they are IDs/keys — skip value sampling for these.
+_KEY_COL = re.compile(
+    r"(_id|_key|_code|_num|_number|_identifier|_pk|_uuid|_guid)$",
+    re.IGNORECASE,
+)
+
 # ── Fuzzy join inference ──────────────────────────────────────────────────────
 # Strips these suffixes (longest first) to get the semantic "root" of a column.
 # customer_id → customer,  order_key → order,  cust_num → cust
@@ -304,6 +310,100 @@ def build_rich_schema(schema_str: str) -> dict:
     }
 
 
+def validate_join_path(from_table: str, to_table: str, schema_str: str) -> tuple[bool, str]:
+    """
+    Check whether two tables have a detectable join path in the schema.
+
+    Returns (True, "") when a shared key column was found (exact or fuzzy root match).
+    Returns (False, reason) when both tables exist but share no detected key.
+    Returns (False, reason) when either table is not in the schema at all.
+    """
+    table_cols = _parse_schema_tables(schema_str)
+    known = {t.lower(): t for t in table_cols}
+
+    ft, tt = from_table.lower(), to_table.lower()
+
+    if ft not in known:
+        return False, f"Table '{from_table}' is not in the schema"
+    if tt not in known:
+        return False, f"Table '{to_table}' is not in the schema"
+
+    jmap = _compute_join_map(table_cols)
+    for j in jmap["joins"]:
+        if {j["t1"].lower(), j["t2"].lower()} == {ft, tt}:
+            confidence = "verified" if j["match"] == "exact" else "inferred"
+            return True, confidence
+
+    return (
+        False,
+        f"No shared key detected between '{known[ft]}' and '{known[tt]}' — "
+        "they may not be directly joinable. Use only join paths listed in the schema.",
+    )
+
+
+def inject_value_annotations(schema_str: str, column_profiles: dict) -> str:
+    """
+    Enrich TABLE: column lines with actual enumerated values from profiler cache.
+
+    For every column that has low-cardinality top_values in its ColumnProfile,
+    appends the values inline:
+      `  status  VARCHAR` → `  status  VARCHAR  -- [Shipped, Pending, Canceled, Returned]`
+
+    Skips lines that already carry a `-- [` annotation (from build_schema_context's
+    first-run sampling) to avoid duplication.  Profile-backed values are richer
+    (frequency-ordered, complete) so they overwrite the first-run annotation when present.
+    """
+    if not column_profiles:
+        return schema_str
+
+    lines = schema_str.splitlines()
+    result: list[str] = []
+    current_table: str | None = None
+
+    for line in lines:
+        tm = re.match(r'^TABLE:\s+(\w+)', line)
+        if tm:
+            current_table = tm.group(1)
+            result.append(line)
+            continue
+
+        if _SECTION_STOP.match(line):
+            current_table = None
+            result.append(line)
+            continue
+
+        if (
+            current_table
+            and re.match(r'^\s{2}\S', line)
+            and not line.strip().startswith('--')
+            and 'Values:' not in line   # glossary already annotated this column
+        ):
+            col_m = re.match(r'^\s{2}(\w+)\s+', line)
+            if col_m:
+                col_name = col_m.group(1)
+                cp = column_profiles.get(f"{current_table}.{col_name}")
+                if cp is not None:
+                    top_values = getattr(cp, 'top_values', None)
+                    is_low_card = getattr(cp, 'is_low_cardinality', False)
+                    is_fk = getattr(cp, 'is_fk', False)
+                    sem_type = getattr(cp, 'semantic_type', '')
+                    # Only annotate true categorical dimensions; skip free-text and keys.
+                    # Also skip if any value is long (> 60 chars) — these are description fields.
+                    if (
+                        top_values and is_low_card and not is_fk
+                        and sem_type in ('dimension', 'flag', 'ordinal')
+                        and all(len(str(v)) <= 60 for v in top_values)
+                    ):
+                        vals = ", ".join(str(v) for v in top_values[:15])
+                        # Replace any first-run sampling annotation with richer profile data
+                        base_line = re.sub(r'\s+--\s+\[.*\]$', '', line)
+                        line = f"{base_line}  -- [{vals}]"
+
+        result.append(line)
+
+    return "\n".join(result)
+
+
 def build_schema_context(
     conn: duckdb.DuckDBPyConnection,
     profile_annotation: str = "",
@@ -361,16 +461,21 @@ def build_schema_context(
                 "Do NOT fabricate a date column. Join a table that has one if a time range is needed."
             )
 
-        # Sample distinct values for categorical columns (quick orientation for the LLM)
-        categorical = [c[0] for c in cols if "VARCHAR" in c[1] or "TEXT" in c[1]]
-        for col_name in categorical[:3]:
+        # Enumerate values for ALL low-cardinality categorical columns (frequency-ordered).
+        # Using LIMIT 51: if ≤ 50 rows come back we know cardinality is low enough to list.
+        for col_name, col_type in [(c[0], c[1]) for c in cols]:
+            if not any(t in col_type.upper() for t in ("VARCHAR", "TEXT", "CHAR", "BOOLEAN")):
+                continue
+            if _KEY_COL.search(col_name.lower()):
+                continue
             try:
-                vals = conn.execute(
-                    f"SELECT DISTINCT {col_name} FROM {fqn} LIMIT 8"
+                rows = conn.execute(
+                    f'SELECT "{col_name}", COUNT(*) AS n FROM {fqn} '
+                    f'WHERE "{col_name}" IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 51'
                 ).fetchall()
-                sample = ", ".join(str(v[0]) for v in vals if v[0] is not None)
-                if sample:
-                    parts.append(f"  -- {col_name} sample values: {sample}")
+                if rows and 1 <= len(rows) <= 50:
+                    vals = ", ".join(str(r[0]) for r in rows)
+                    parts.append(f"  -- {col_name}  [{vals}]")
             except Exception:
                 pass
 

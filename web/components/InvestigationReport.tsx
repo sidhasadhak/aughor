@@ -397,18 +397,93 @@ function RecommendationsSection({ recs }: { recs: ADARecommendation[] }) {
   );
 }
 
-// ── Confidence badge ───────────────────────────────────────────────────────────
+// ── Confidence badge with expandable breakdown ────────────────────────────────
 
-function ConfidencePill({ confidence }: { confidence: "HIGH" | "MEDIUM" | "LOW" }) {
+function ConfidencePill({ report }: { report: ADAReport }) {
+  const [open, setOpen] = useState(false);
+  const { confidence, confidence_justification, phases, attribution_waterfall, data_gaps } = report;
+
   const styles = {
-    HIGH:   "bg-emerald-900/30 text-emerald-400 border-emerald-800/40",
-    MEDIUM: "bg-amber-900/30 text-amber-400 border-amber-800/40",
-    LOW:    "bg-red-900/30 text-red-400 border-red-800/40",
+    HIGH:   { pill: "bg-emerald-900/30 text-emerald-400 border-emerald-800/40", dot: "bg-emerald-400" },
+    MEDIUM: { pill: "bg-amber-900/30 text-amber-400 border-amber-800/40",       dot: "bg-amber-400"   },
+    LOW:    { pill: "bg-red-900/30 text-red-400 border-red-800/40",             dot: "bg-red-400"     },
   };
+
+  // Compute structured factors from the report
+  const completedPhases = phases.filter(p => p.status === "complete" || p.status === "partial");
+  const skippedPhases   = phases.filter(p => p.status === "skipped");
+  const allFindings     = phases.flatMap(p => p.findings);
+  const queriesWithData = allFindings.filter(f => !f.error && f.columns.length > 0);
+  const queriesErrored  = allFindings.filter(f => !!f.error);
+  const sigFindings     = allFindings.filter(f => f.is_significant);
+  const waterfallPct    = attribution_waterfall.reduce((s, e) => s + (e.pct_of_total ?? 0), 0);
+
+  type Tone = "good" | "warn" | "neutral";
+  const factors: { label: string; value: string; tone: Tone }[] = [
+    {
+      label: "Phases run",
+      value: skippedPhases.length > 0
+        ? `${completedPhases.length} of ${phases.length} (${skippedPhases.length} skipped as unnecessary)`
+        : `${completedPhases.length} of ${phases.length}`,
+      tone: completedPhases.length >= phases.length * 0.6 ? "good" : "warn",
+    },
+    {
+      label: "Queries with data",
+      value: queriesErrored.length > 0
+        ? `${queriesWithData.length} succeeded, ${queriesErrored.length} errored`
+        : `${queriesWithData.length}`,
+      tone: queriesErrored.length === 0 ? "good" : queriesWithData.length > queriesErrored.length ? "warn" : "warn",
+    },
+    ...(sigFindings.length > 0 ? [{
+      label: "Significant findings",
+      value: `${sigFindings.length} statistically significant`,
+      tone: "good" as Tone,
+    }] : []),
+    ...(attribution_waterfall.length > 0 ? [{
+      label: "Attribution explained",
+      value: `${Math.round(waterfallPct)}% of change accounted for`,
+      tone: (waterfallPct >= 80 ? "good" : waterfallPct >= 50 ? "warn" : "warn") as Tone,
+    }] : []),
+    ...(data_gaps.length > 0 ? [{
+      label: "Data gaps",
+      value: `${data_gaps.length} gap${data_gaps.length > 1 ? "s" : ""} noted`,
+      tone: "warn" as Tone,
+    }] : []),
+  ];
+
+  const dotColor = { good: "bg-emerald-400", warn: "bg-amber-400", neutral: "bg-zinc-500" };
+
   return (
-    <span className={`text-[11px] font-medium px-2.5 py-1 rounded-full border ${styles[confidence]}`}>
-      {confidence} CONFIDENCE
-    </span>
+    <div>
+      <button
+        onClick={() => setOpen(v => !v)}
+        className={`flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-full border transition-opacity hover:opacity-80 ${styles[confidence].pill}`}
+      >
+        {confidence} CONFIDENCE
+        <span className={`transition-transform duration-150 ${open ? "rotate-180" : ""}`}>
+          <ChevronDownIcon label="" size="small" />
+        </span>
+      </button>
+
+      {open && (
+        <div className="mt-2 rounded-lg border border-zinc-800 bg-zinc-900/60 p-3 space-y-2.5 text-[11px]">
+          {confidence_justification && (
+            <p className="text-zinc-400 leading-relaxed border-b border-zinc-800 pb-2.5">
+              {confidence_justification}
+            </p>
+          )}
+          <div className="space-y-1.5">
+            {factors.map(f => (
+              <div key={f.label} className="flex items-start gap-2">
+                <span className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${dotColor[f.tone]}`} />
+                <span className="text-zinc-500 shrink-0 w-36">{f.label}</span>
+                <span className="text-zinc-300">{f.value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -489,7 +564,7 @@ export function InvestigationReportView({
           <RichText text={report.executive_summary} />
         </p>
         <div className="flex items-center flex-wrap gap-2 pt-1">
-          <ConfidencePill confidence={report.confidence} />
+          <ConfidencePill report={report} />
           {report.total_change_label && (
             <span className="text-[12px] font-mono text-red-400 bg-red-950/20 border border-red-900/30 px-2.5 py-1 rounded-full">
               {report.total_change_label}
@@ -499,9 +574,6 @@ export function InvestigationReportView({
             <span className="text-[11px] text-zinc-600">vs {report.comparison_basis}</span>
           )}
         </div>
-        {report.confidence_justification && (
-          <p className="text-[11px] text-zinc-600 leading-relaxed">{report.confidence_justification}</p>
-        )}
       </div>
 
       {/* ── Investigation phases — chronological narrative ── */}

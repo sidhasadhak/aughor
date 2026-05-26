@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 
-EMBED_MODEL = os.getenv("HERMES_EMBED_MODEL", "nomic-embed-text")
+EMBED_MODEL = os.getenv("AUGHOR_EMBED_MODEL", "nomic-embed-text")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434/v1")
 
 _BATCH_SIZE = 64

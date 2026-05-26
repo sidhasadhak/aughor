@@ -5,6 +5,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 from pathlib import Path
 from typing import AsyncGenerator, Optional
 
@@ -58,6 +59,30 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── Schema string cache ───────────────────────────────────────────────────────
+# Eliminates repeated COUNT(*) + profiling + ontology rebuild on every HTTP request.
+# Each entry: conn_id → (timestamp_float, schema_str)
+# TTL: 5 minutes. Invalidated on connection delete or explicit ontology rebuild.
+
+import time as _time
+
+_schema_cache: dict[str, tuple[float, str]] = {}
+_SCHEMA_CACHE_TTL = 300.0  # seconds
+
+
+def _get_schema_cached(conn_id: str, db) -> str:
+    cached = _schema_cache.get(conn_id)
+    if cached and (_time.monotonic() - cached[0]) < _SCHEMA_CACHE_TTL:
+        return cached[1]
+    schema = db.get_schema()
+    _schema_cache[conn_id] = (_time.monotonic(), schema)
+    return schema
+
+
+def _invalidate_schema_cache(conn_id: str) -> None:
+    _schema_cache.pop(conn_id, None)
+
 
 # ── Background explorer registry ──────────────────────────────────────────────
 
@@ -233,6 +258,24 @@ class _ChatAnswer(BaseModel):
     headline: str
     chart_type: str = "auto"
 
+
+async def _aiter_sync(sync_iter):
+    """
+    Wrap a synchronous iterator so each next() call runs in the default
+    thread-pool executor.  This prevents LangGraph node executions (LLM calls,
+    SQL queries) from blocking FastAPI's asyncio event loop — allowing other
+    HTTP requests (history, exploration status, etc.) to be served concurrently
+    while an investigation is running.
+    """
+    loop = asyncio.get_event_loop()
+    it = iter(sync_iter)
+    while True:
+        try:
+            item = await loop.run_in_executor(None, next, it)
+        except StopIteration:
+            break
+        yield item
+
 async def _stream_chat(
     question: str,
     connection_id: str,
@@ -289,12 +332,20 @@ async def _stream_chat(
         except Exception:
             kb_patterns_section = ""
 
+        # Retrieve validated SQL examples from past investigations on this connection
+        try:
+            from aughor.tools.prior_analyses import search_sql_examples
+            sql_examples_section = search_sql_examples(question, connection_id)
+        except Exception:
+            sql_examples_section = ""
+
         prompt = CHAT_PROMPT.format(
             schema=schema,
             history_section=history_section,
             question=question,
             schema_qualifier=schema_qualifier,
             kb_patterns_section=kb_patterns_section,
+            sql_examples_section=sql_examples_section,
         )
         if rules_block:
             prompt = rules_block + prompt
@@ -397,7 +448,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
 # ── Investigation endpoint ────────────────────────────────────────────────────
 
 async def _stream_investigation(question: str, connection_id: str, request: Request, hitl: bool = False, skip_cache: bool = False) -> AsyncGenerator[str, None]:
-    _TIMEOUT = int(os.getenv("HERMES_TIMEOUT_SECONDS", "600"))
+    _TIMEOUT = int(os.getenv("AUGHOR_TIMEOUT_SECONDS", "600"))
     try:
         db = open_connection_for(connection_id)
     except KeyError as e:
@@ -491,7 +542,7 @@ async def _stream_investigation(question: str, connection_id: str, request: Requ
             "pitfalls": [],
             "prior_analyses": [],
             "iteration": 0,
-            "max_iterations": int(os.getenv("HERMES_MAX_ITER", "6")),
+            "max_iterations": int(os.getenv("AUGHOR_MAX_ITER", "6")),
             "report": None,
             "hitl_enabled": hitl,
             "human_feedback": None,
@@ -513,7 +564,7 @@ async def _stream_investigation(question: str, connection_id: str, request: Requ
         deadline = time.monotonic() + _TIMEOUT
         timed_out = False
 
-        for event in agent.stream(initial_state, config={"configurable": {"thread_id": inv_id}}):
+        async for event in _aiter_sync(agent.stream(initial_state, config={"configurable": {"thread_id": inv_id}})):
             # ── Disconnect check ──────────────────────────────────────────────
             if await request.is_disconnected():
                 fail_investigation(inv_id, status="timed_out")
@@ -820,10 +871,10 @@ async def _stream_resume(inv_id: str, feedback: str, request: Request) -> AsyncG
         agent.update_state(config, {"human_feedback": feedback})
 
         import time
-        _TIMEOUT = int(os.getenv("HERMES_TIMEOUT_SECONDS", "600"))
+        _TIMEOUT = int(os.getenv("AUGHOR_TIMEOUT_SECONDS", "600"))
         deadline = time.monotonic() + _TIMEOUT
 
-        for event in agent.stream(None, config=config):
+        async for event in _aiter_sync(agent.stream(None, config=config)):
             if await request.is_disconnected():
                 fail_investigation(inv_id, status="timed_out")
                 return
@@ -943,7 +994,7 @@ def connection_schema(conn_id: str):
     except KeyError:
         raise HTTPException(status_code=404, detail="Connection not found")
     try:
-        schema = db.get_schema()
+        schema = _get_schema_cached(conn_id, db)
         db.close()
         return {"schema": schema}
     except Exception as e:
@@ -958,7 +1009,7 @@ def connection_schema_rich(conn_id: str):
         raise HTTPException(status_code=404, detail="Connection not found")
     try:
         from aughor.tools.schema import build_rich_schema
-        schema = db.get_schema()
+        schema = _get_schema_cached(conn_id, db)
         db.close()
         return build_rich_schema(schema)
     except Exception as e:
@@ -973,7 +1024,7 @@ def connection_schema_mermaid(conn_id: str):
         raise HTTPException(status_code=404, detail="Connection not found")
     try:
         from aughor.tools.schema import build_mermaid_er
-        schema = db.get_schema()
+        schema = _get_schema_cached(conn_id, db)
         db.close()
         return {"diagram": build_mermaid_er(schema)}
     except Exception as e:
@@ -989,6 +1040,7 @@ def remove_connection(conn_id: str):
         explorer.stop()
     if task and not task.done():
         task.cancel()
+    _invalidate_schema_cache(conn_id)
 
     try:
         delete_connection(conn_id)
@@ -1248,7 +1300,7 @@ async def retry_query(conn_id: str, body: RetryQueryRequest):
 
 @app.get("/dev/stats")
 def get_dev_stats():
-    """Return in-process stats counters — materializer, ibis, corrections, tier gates, RAG, enrichment."""
+    """Return in-process stats counters — corrections, tier gates, RAG, enrichment."""
     from aughor.stats import stats
     return stats.snapshot()
 
@@ -1268,6 +1320,45 @@ def _load_instructions() -> dict:
     if _INSTRUCTIONS_FILE.exists():
         return json.loads(_INSTRUCTIONS_FILE.read_text())
     return {}
+
+
+@app.get("/connections/{conn_id}/freshness")
+def connection_freshness(conn_id: str):
+    """Return the most recent data timestamp found across date columns in the connection."""
+    try:
+        db = open_connection_for(conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    try:
+        from aughor.tools.schema import _parse_schema_tables
+        schema_str = db.get_schema()
+        table_cols = _parse_schema_tables(schema_str)
+    except Exception:
+        db.close()
+        return {"freshness": None, "source": None}
+
+    _DATE_PAT = re.compile(
+        r"(_at|_date|_time|_ts|timestamp|created|updated|modified|inserted)$",
+        re.IGNORECASE,
+    )
+    max_ts: str | None = None
+    max_source: str | None = None
+
+    for table, cols in list(table_cols.items())[:12]:
+        date_cols = [c for c in cols if _DATE_PAT.search(c)][:1]
+        for col in date_cols:
+            try:
+                result = db.execute("freshness", f'SELECT MAX("{col}") AS max_ts FROM "{table}"')
+                if not result.error and result.rows and result.rows[0][0] not in (None, "NULL"):
+                    val = str(result.rows[0][0])
+                    if max_ts is None or val > max_ts:
+                        max_ts = val
+                        max_source = f"{table}.{col}"
+            except Exception:
+                continue
+
+    db.close()
+    return {"freshness": max_ts, "source": max_source}
 
 
 @app.get("/connections/{conn_id}/tables/{table}/sample")
@@ -1445,7 +1536,7 @@ def reindex_investigations():
 
 @app.get("/health")
 def health():
-    fixture = Path(__file__).parent.parent / "data" / "hermes.duckdb"
+    fixture = Path(__file__).parent.parent / "data" / "aughor.duckdb"
     return {"status": "ok", "fixture_db": fixture.exists()}
 
 
@@ -1651,6 +1742,7 @@ def rebuild_ontology(connection_id: str = BUILTIN_ID):
     """Force-invalidate the ontology cache and rebuild from scratch."""
     from aughor.ontology.store import invalidate as invalidate_ontology
     invalidate_ontology(connection_id)
+    _invalidate_schema_cache(connection_id)
     graph = _get_ontology_graph(connection_id)
     if graph is None:
         raise HTTPException(status_code=500, detail="Ontology rebuild failed")

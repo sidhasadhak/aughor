@@ -87,7 +87,7 @@ CHAT_PROMPT = """\
 DATABASE SCHEMA:
 {schema}
 
-{kb_patterns_section}{history_section}QUESTION: {question}
+{sql_examples_section}{kb_patterns_section}{history_section}QUESTION: {question}
 
 Write a single SELECT query using ONLY tables and columns that are explicitly listed in the schema above.
 NEVER invent column names — if a column is not in the schema, it does not exist.
@@ -145,7 +145,8 @@ Good hypothesis: "The revenue drop is concentrated in APAC SMB customers, not En
 """
 
 PLAN_QUERIES_PROMPT = """\
-You are a senior data analyst writing SQL to test a specific hypothesis.
+You are a senior data analyst planning an investigation. Your job is to decide WHAT to measure —
+not to write SQL. A separate step will translate your intents into executable queries.
 
 HYPOTHESIS TO TEST:
 ID: {hypothesis_id}
@@ -161,41 +162,75 @@ INVESTIGATION CONTEXT (queries run for other hypotheses this session):
 {pitfall_section}
 {kb_patterns_section}
 {events_section}
-{ontology_actions_section}
-STEP 1 — WRITE PREDICTIONS BEFORE WRITING SQL (mandatory):
-Before writing a single query, commit to two explicit predictions:
+STEP 1 — DECLARE TABLES (mandatory):
+List every table you plan to touch in the `tables` field.
+- Every table must appear verbatim in the SCHEMA above — do NOT invent table names.
+- If you need to join two tables, verify a join path exists in DETECTED JOIN PATHS.
+- If no direct join path exists between two tables, find an intermediate table or revise the approach.
 
-expected_if_true:  What specific pattern or numbers would you expect to see in the results
-  IF this hypothesis is correct? Be concrete — name the metric, direction, and approximate
-  magnitude (e.g. "APAC revenue share > 40% and month-over-month decline ≥ 15%").
+STEP 2 — WRITE PREDICTIONS (mandatory before designing queries):
+Commit to two explicit predictions before designing any query:
 
-expected_if_false: What specific pattern or numbers would you expect if this hypothesis is
-  WRONG? (e.g. "Revenue decline is uniform across all regions, ≤ 5% variance between them").
+expected_if_true:  What specific pattern or numbers would you expect IF this hypothesis is correct?
+  Be concrete — name the metric, direction, and approximate magnitude
+  (e.g. "APAC revenue share > 40% and month-over-month decline ≥ 15%").
 
-These are your scientific predictions. They lock in your expectations BEFORE seeing the data.
-The scorer will compare your predictions against actual results to reduce confirmation bias.
+expected_if_false: What specific pattern would you expect if this hypothesis is WRONG?
+  (e.g. "Revenue decline is uniform across all regions, ≤ 5% variance between them").
 
-STEP 2 — Write 1-3 SQL SELECT queries that together confirm or refute this hypothesis.
+These predictions are compared against results to reduce confirmation bias.
+
+STEP 3 — Describe 1–3 query intents. Each intent says WHAT to measure in plain English.
+Do NOT write SQL — a separate step will translate each intent into an executable query.
+
+For each intent, specify:
+- description: one sentence — what to measure and what pattern to look for
+- tables: which subset of the declared tables this intent touches
+- filters: WHERE conditions in plain English (e.g. "only APAC region", "last 30 days", "exclude cancelled orders")
+- aggregation: GROUP BY columns and aggregate metric (e.g. "GROUP BY region and month, SUM(revenue)")
+
 Rules:
-- Only SELECT statements — no DDL, no DML
-- Use only tables and columns from the schema above
-- Include relevant GROUP BY, ORDER BY, and LIMIT clauses
-- For time comparisons: compare the anomaly period against a 30-day baseline
-- Prefer queries that produce small, interpretable result sets (< 50 rows)
-- Do NOT skip queries because another hypothesis ran something related. Each hypothesis requires its own SQL evidence. Scoring a hypothesis without executing any queries is not allowed.
-- Only skip a specific query if an identical query (same SQL, same filters) already ran for THIS hypothesis in a prior iteration.
+- Only reference tables and concepts that exist in the SCHEMA above
+- Include at least one intent that establishes a baseline or overview
+- Include at least one intent that drills into the specific claim of the hypothesis
+- Do NOT skip writing intents — at least one is always required
+- For time comparisons: compare the anomaly period against a reference baseline window
 
-THRESHOLD CLAIM RULE — mandatory when you observe a sign-flip or critical transition across bands:
-If any previous query in this investigation shows a metric changing sign (positive→negative or
-vice versa) or crossing a meaningful threshold across coarse buckets (e.g. <5%, 10-15%, 15-20%,
-≥20%), you MUST plan a follow-up query at finer granularity within the transition zone before
-any hypothesis can be confirmed about the threshold location.
-- Coarse bands do not justify a precise threshold claim. They only support "the transition is
-  somewhere between X and Y".
-- A follow-up query using 1-2 percentage-point increments (or equivalent fine buckets) within
-  the transition zone is required before stating a precise cliff or optimal point.
-- If you do not run the fine-grained follow-up, the hypothesis verdict must remain inconclusive
-  on the specific threshold, even if the directional finding is clear.
+THRESHOLD CLAIM RULE — mandatory when investigating sign-flips or critical transitions:
+If any previous query shows a metric changing sign or crossing a meaningful threshold across coarse
+buckets, you MUST describe a fine-grained follow-up intent within the transition zone. Coarse bands
+do not justify a precise threshold claim — fine-grained follow-up is required first.
+"""
+
+
+WRITE_SQL_PROMPT = """\
+You are a SQL expert. Translate a query intent into a single SQL SELECT statement.
+
+TARGET DIALECT: {dialect}
+
+HYPOTHESIS: {hypothesis_description}
+
+QUERY INTENT:
+{intent_description}
+
+Tables to use: {intent_tables}
+Filters (WHERE conditions): {intent_filters}
+Aggregation (GROUP BY + metric): {intent_aggregation}
+
+SCHEMA:
+{schema}
+
+{pitfall_section}{sql_examples_section}{ontology_actions_section}RULES:
+1. Write exactly ONE SELECT statement. No DDL, no DML.
+2. Use ONLY tables and columns listed in the SCHEMA above. NEVER invent column names.
+3. Qualify every column with a table alias when joining multiple tables.
+4. Use the target dialect's date/time functions. Common differences:
+   - DuckDB: DATE_DIFF('day', a, b), DATE_TRUNC('month', col), CURRENT_DATE, strftime('%Y-%m', col)
+   - PostgreSQL: EXTRACT(EPOCH FROM (a - b))/86400, DATE_TRUNC('month', col), CURRENT_DATE, TO_CHAR(col, 'YYYY-MM')
+5. Wrap decimal/ratio columns with ROUND(..., 2).
+6. Prefer result sets under 50 rows — add ORDER BY and LIMIT as appropriate.
+7. If a table is marked "⚠ No date/timestamp columns", join to a table that has one instead of adding a date filter directly.
+8. If an ACTION:name() token is listed in the ontology section, you may use it in the query — it will be expanded before execution.
 """
 
 FIX_SQL_PROMPT = """\

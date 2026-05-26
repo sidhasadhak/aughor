@@ -45,7 +45,7 @@ from aughor.tools.stats import analyze_query_result
 from pydantic import BaseModel, Field
 from typing import Literal, Optional
 
-MAX_SUBQ = int(__import__("os").getenv("HERMES_MAX_SUBQ", "8"))
+MAX_SUBQ = int(__import__("os").getenv("AUGHOR_MAX_SUBQ", "8"))
 
 
 # ── Pydantic schema for decompose output ─────────────────────────────────────

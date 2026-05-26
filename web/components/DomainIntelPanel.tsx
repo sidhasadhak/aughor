@@ -335,7 +335,7 @@ interface Props {
 export function DomainIntelPanel({ connectionId, isActive }: Props) {
   const [data, setData] = useState<Record<string, DomainInsights>>({});
   const [episodes, setEpisodes] = useState<ExplorationEpisode[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
@@ -343,18 +343,20 @@ export function DomainIntelPanel({ connectionId, isActive }: Props) {
     let cancelled = false;
 
     const load = async () => {
+      const timeout = setTimeout(() => { /* backend busy — next poll will retry */ }, 8_000);
       try {
         const [d, eps] = await Promise.all([
           getDomainInsights(connectionId),
           getExplorationEpisodes(connectionId),
         ]);
+        clearTimeout(timeout);
         if (!cancelled) {
           setData(d);
           setEpisodes(eps);
-          setLoading(false);
         }
       } catch {
-        if (!cancelled) setLoading(false);
+        clearTimeout(timeout);
+        // silently ignore — existing data stays visible, next poll will retry
       }
     };
 

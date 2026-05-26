@@ -10,7 +10,7 @@ User-provided entries always take precedence — autoseed never overwrites
 an existing entry. The operation is idempotent: once a table is seeded
 (even auto-generated), it is never re-seeded unless manually deleted.
 
-Disable via env var: HERMES_AUTOSEED=false
+Disable via env var: AUGHOR_AUTOSEED=false
 """
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field
 
 from aughor.semantic.glossary import _DEFAULT_PATH, load_glossary, save_glossary
 
-_ENABLED = os.getenv("HERMES_AUTOSEED", "true").lower() != "false"
+_ENABLED = os.getenv("AUGHOR_AUTOSEED", "true").lower() != "false"
 
 
 # ── LLM output schema ─────────────────────────────────────────────────────────

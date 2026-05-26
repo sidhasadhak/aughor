@@ -42,6 +42,51 @@ class AmbiguityWarning:
         )
 
 
+@dataclass
+class JoinWarning:
+    from_table: str
+    to_table: str
+    reason: str
+
+    def to_prompt_text(self) -> str:
+        return (
+            f"WARNING: {self.reason} — do NOT JOIN '{self.from_table}' and "
+            f"'{self.to_table}' without a valid shared key column."
+        )
+
+
+_FROM_JOIN_TABLE = re.compile(r'\b(?:FROM|JOIN)\s+(\w+)', re.IGNORECASE)
+
+
+def detect_invalid_joins(sql: str, schema_context: str) -> list[JoinWarning]:
+    """
+    Scan *sql* for table pairs that appear in the same query but have no
+    detected join path in the schema.
+
+    Uses the `no_join` list from _compute_join_map — if both tables from a
+    known-unconnected pair appear in the SQL, that is almost certainly a
+    hallucinated join.  Returns an empty list for single-table queries or
+    when all pairs are joinable.
+    """
+    sql_tables = {m.group(1).lower() for m in _FROM_JOIN_TABLE.finditer(sql)}
+    if len(sql_tables) < 2:
+        return []
+
+    from aughor.tools.schema import _parse_schema_tables, _compute_join_map
+    table_cols = _parse_schema_tables(schema_context)
+    jmap = _compute_join_map(table_cols)
+
+    warnings: list[JoinWarning] = []
+    for t1, t2 in jmap.get("no_join", []):
+        if t1.lower() in sql_tables and t2.lower() in sql_tables:
+            warnings.append(JoinWarning(
+                from_table=t1,
+                to_table=t2,
+                reason=f"No shared key detected between '{t1}' and '{t2}'",
+            ))
+    return warnings
+
+
 def detect_ambiguous_columns(sql: str, schema_context: str) -> list[AmbiguityWarning]:
     """
     Parse *schema_context* for table→column mappings, then scan *sql* for

@@ -1,18 +1,20 @@
 """Index and search past investigations via Qdrant semantic search.
 
 Called in two places:
-  - hermes.db.history.complete_investigation() — indexes each finished investigation
-  - hermes.agent.nodes.decompose_question() — retrieves relevant past findings
+  - aughor.db.history.complete_investigation() — indexes each finished investigation
+  - aughor.agent.nodes.decompose_question() — retrieves relevant past findings
 
-Disable via: HERMES_PRIOR_ANALYSES=false
+Disable via: AUGHOR_PRIOR_ANALYSES=false
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 
-INVESTIGATIONS_COLLECTION = "hermes_investigations"
-_ENABLED = os.getenv("HERMES_PRIOR_ANALYSES", "true").lower() != "false"
+INVESTIGATIONS_COLLECTION = "aughor_investigations"
+SQL_EXAMPLES_COLLECTION   = "aughor_sql_examples"
+_ENABLED = os.getenv("AUGHOR_PRIOR_ANALYSES", "true").lower() != "false"
 _MIN_SCORE = 0.65       # minimum score for context injection
 _CACHE_SCORE = 0.88     # minimum score to short-circuit and return prior result directly
 
@@ -171,6 +173,125 @@ def _search(question: str, connection_id: str, top_k: int) -> list[str]:
         results.append(summary)
 
     return results
+
+
+# ── SQL examples — (question, SQL) pairs from successful past executions ──────
+
+_SQL_EXAMPLES_MIN_SCORE = 0.70
+_SQL_EXAMPLES_MIN_ROWS  = 1   # must have returned at least one row to be useful
+
+
+def index_sql_examples(
+    inv_id: str,
+    question: str,
+    query_history: list,
+    connection_id: str = "",
+) -> None:
+    """Index every successful QueryResult from an investigation as a few-shot SQL example.
+
+    Only rows where error is None/empty AND row_count >= 1 are indexed — the
+    caller's guarantee that these executed cleanly and returned real data.
+    """
+    if not _ENABLED:
+        return
+    try:
+        _index_sql_examples(inv_id, question, query_history, connection_id)
+    except Exception:
+        pass
+
+
+def _index_sql_examples(inv_id: str, question: str, query_history: list, connection_id: str) -> None:
+    from aughor.semantic.embedder import embed_one
+    from aughor.semantic.vector_store import ensure_collection, upsert
+
+    ensure_collection(SQL_EXAMPLES_COLLECTION)
+
+    points: list[dict] = []
+    for qr in query_history:
+        # Support both QueryResult objects and plain dicts (from JSON-deserialised history)
+        if hasattr(qr, "error"):
+            error    = qr.error
+            sql      = qr.sql
+            row_count = qr.row_count
+            columns  = qr.columns
+        else:
+            error    = qr.get("error")
+            sql      = qr.get("sql", "")
+            row_count = qr.get("row_count", 0)
+            columns  = qr.get("columns", [])
+
+        # Only index clean, non-empty results
+        if error or not sql or (row_count or 0) < _SQL_EXAMPLES_MIN_ROWS:
+            continue
+
+        # Stable ID — same question+sql on the same connection always overwrites
+        uid = hashlib.sha1(
+            f"{connection_id}:{question}:{sql}".encode()
+        ).hexdigest()
+
+        # Embed question + sql together so retrieval is sensitive to both intent and pattern
+        vector = embed_one(f"{question}\n{sql}")
+
+        points.append({
+            "id": uid,
+            "vector": vector,
+            "payload": {
+                "inv_id": inv_id,
+                "question": question,
+                "sql": sql,
+                "columns": columns,
+                "row_count": row_count,
+                "connection_id": connection_id,
+            },
+        })
+
+    if points:
+        upsert(SQL_EXAMPLES_COLLECTION, points)
+
+
+def search_sql_examples(
+    question: str,
+    connection_id: str = "",
+    top_k: int = 3,
+) -> str:
+    """Return a formatted few-shot block of validated SQL examples for this question.
+
+    Returns an empty string when Qdrant is unavailable, disabled, or no match
+    above the score threshold — safe to inject directly into any prompt.
+    """
+    if not _ENABLED:
+        return ""
+    try:
+        return _search_sql_examples(question, connection_id, top_k)
+    except Exception:
+        return ""
+
+
+def _search_sql_examples(question: str, connection_id: str, top_k: int) -> str:
+    from aughor.semantic.embedder import embed_one
+    from aughor.semantic.vector_store import search
+
+    vector = embed_one(question)
+    query_filter = _connection_filter(connection_id)
+    hits = search(SQL_EXAMPLES_COLLECTION, vector, top_k=top_k, query_filter=query_filter)
+
+    examples: list[str] = []
+    for hit in hits:
+        if hit["score"] < _SQL_EXAMPLES_MIN_SCORE:
+            continue
+        p = hit["payload"]
+        examples.append(
+            f"Q: {p['question']}\nSQL:\n{p['sql']}"
+        )
+
+    if not examples:
+        return ""
+
+    lines = ["SCHEMA-SPECIFIC SQL EXAMPLES (previously validated on this database — follow their table/column naming and join style):"]
+    for i, ex in enumerate(examples, 1):
+        lines.append(f"\n-- Example {i}\n{ex}")
+    lines.append("")
+    return "\n".join(lines)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

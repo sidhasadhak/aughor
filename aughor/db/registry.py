@@ -2,8 +2,8 @@
 ConnectionRegistry — persists named DB connections to SQLite.
 
 Credentials (DSN strings) are encrypted at rest with Fernet symmetric
-encryption. The key is derived from a secret stored in .hermes_key next
-to the database, or from HERMES_SECRET_KEY env var.
+encryption. The key is derived from a secret stored in .aughor_key next
+to the database, or from AUGHOR_SECRET_KEY env var.
 """
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from typing import Optional
 from cryptography.fernet import Fernet
 
 REGISTRY_DB = Path(__file__).parent.parent.parent / "data" / "connections.db"
-KEY_FILE    = Path(__file__).parent.parent.parent / "data" / ".hermes_key"
+KEY_FILE    = Path(__file__).parent.parent.parent / "data" / ".aughor_key"
 
 BUILTIN_ID = "fixture"
 POSTGRES_BUILTIN_ID = "mydb"
@@ -25,11 +25,11 @@ POSTGRES_BUILTIN_ID = "mydb"
 
 def _postgres_builtin_dsn() -> str:
     """Read at call time so .env loaded by the API startup is picked up."""
-    return os.getenv("HERMES_DEFAULT_POSTGRES_DSN", "")
+    return os.getenv("AUGHOR_DEFAULT_POSTGRES_DSN", "")
 
 
 def _get_fernet() -> Fernet:
-    key_env = os.getenv("HERMES_SECRET_KEY")
+    key_env = os.getenv("AUGHOR_SECRET_KEY")
     if key_env:
         return Fernet(key_env.encode())
     if KEY_FILE.exists():
@@ -80,7 +80,7 @@ def list_connections() -> list[dict]:
 
     # Include built-in fixture unless user has removed it
     if BUILTIN_ID not in hidden:
-        fixture_path = Path(__file__).parent.parent.parent / "data" / "hermes.duckdb"
+        fixture_path = Path(__file__).parent.parent.parent / "data" / "aughor.duckdb"
         rows.append({
             "id": BUILTIN_ID,
             "name": "Fixture DB (demo)",
@@ -179,11 +179,11 @@ def update_connection_settings(conn_id: str, updates: dict) -> dict:
 def get_dsn(conn_id: str) -> tuple[str, str]:
     """Return (conn_type, plain_dsn) for the given connection ID."""
     if conn_id == BUILTIN_ID:
-        fixture_path = Path(__file__).parent.parent.parent / "data" / "hermes.duckdb"
+        fixture_path = Path(__file__).parent.parent.parent / "data" / "aughor.duckdb"
         return "duckdb", str(fixture_path)
     if conn_id == POSTGRES_BUILTIN_ID:
         if not _postgres_builtin_dsn():
-            raise KeyError("Default Postgres connection is not configured (set HERMES_DEFAULT_POSTGRES_DSN)")
+            raise KeyError("Default Postgres connection is not configured (set AUGHOR_DEFAULT_POSTGRES_DSN)")
         return "postgres", _postgres_builtin_dsn()
     with _db() as conn:
         row = conn.execute(

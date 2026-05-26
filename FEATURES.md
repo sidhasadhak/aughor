@@ -55,6 +55,11 @@
 46. [Activity Log UI](#46-activity-log-ui)
 47. [Exploration State Persistence](#47-exploration-state-persistence)
 48. [Per-Phase Rate Limiting](#48-per-phase-rate-limiting)
+49. [Plan-then-SQL Separation](#49-plan-then-sql-separation)
+50. [Non-blocking FastAPI Event Loop](#50-non-blocking-fastapi-event-loop)
+51. [Loading State Hardening](#51-loading-state-hardening)
+52. [Home Stat Card Navigation](#52-home-stat-card-navigation)
+53. [Schema Cache — Backend + Frontend Context](#53-schema-cache--backend--frontend-context)
 
 ---
 
@@ -1623,4 +1628,140 @@ Schema phases produce structural knowledge (join maps, lifecycle states, null me
 
 ---
 
-*Last updated: 2026-05-26 · 48 features. See `ROADMAP.md` for upcoming features.*
+---
+
+## 49. Plan-then-SQL Separation
+
+### What
+The SQL generation stage is split into two distinct LangGraph nodes: `plan_queries` (pure reasoning — what to measure) and `execute_planned_queries` (SQL writing + execution — how to measure it).
+
+### Why
+The previous `plan_and_execute` node asked the LLM to simultaneously reason about which business questions to ask AND write correct dialect-specific SQL in one pass. These are different cognitive tasks — the planner thinks in business terms, the SQL writer thinks in database mechanics. Separating them improves both quality (the planner isn't distracted by SQL syntax) and debuggability (you can see the plan before SQL runs).
+
+### How
+**`plan_queries`** — pure LLM call with `PLAN_QUERIES_PROMPT`. Returns a `QueryPlanV2` containing a list of `QueryIntent` objects. Each intent describes WHAT to measure in plain English: which tables, what filters, what aggregation — no SQL. The ontology actions section and SQL examples are not injected here (they're not needed for planning).
+
+**`execute_planned_queries`** — reads `current_plan` from state, iterates over each `QueryIntent`, calls `WRITE_SQL_PROMPT`/`SQLOutput` to translate each intent to SQL, runs the pre-flight ambiguity + join checks, executes with self-correction loop. Ontology actions and SQL examples are injected here at the SQL-writing stage.
+
+New Pydantic models in `aughor/agent/state.py`:
+- `QueryIntent` — `description`, `tables`, `filters`, `aggregation` (all plain English)
+- `QueryPlanV2` — `hypothesis_id`, `tables`, `expected_if_true`, `expected_if_false`, `reasoning`, `query_intents: list[QueryIntent]`
+- `SQLOutput` — `sql`, `reasoning`
+
+`plan_and_execute` is kept as a thin shim for backward compatibility.
+
+### Component interactions
+- `aughor/agent/graph.py` — routes `plan_queries → execute_planned_queries → score_evidence`; routing edges updated
+- `aughor/agent/nodes.py` — `plan_queries(state)` no conn; `execute_planned_queries(state, conn)` reads `current_plan`
+- `aughor/agent/prompts.py` — `PLAN_QUERIES_PROMPT` (planning only, no SQL); `WRITE_SQL_PROMPT` (new, SQL per intent)
+
+### Key files
+- `aughor/agent/state.py` — `QueryIntent`, `QueryPlanV2`, `SQLOutput`, `current_plan` in `AgentState`
+- `aughor/agent/nodes.py` — `plan_queries`, `execute_planned_queries`
+- `aughor/agent/prompts.py` — `PLAN_QUERIES_PROMPT`, `WRITE_SQL_PROMPT`
+- `aughor/agent/graph.py` — graph wiring
+
+---
+
+## 50. Non-blocking FastAPI Event Loop
+
+### What
+The backend event loop no longer blocks during active investigations. History, Ontology, Exploration, and Schema API calls all return normally while an investigation is running.
+
+### Why
+LangGraph's `agent.stream()` returns a synchronous iterator. Iterating it directly inside a FastAPI async generator was executing each node on the asyncio event loop thread — preventing all other requests from being handled until the node completed. A 30-second LLM call would freeze every other endpoint for 30 seconds.
+
+### How
+`_aiter_sync(sync_iter)` — a new async generator in `aughor/api.py` that wraps any synchronous iterator. Each `next()` call is dispatched to the default `ThreadPoolExecutor` via `loop.run_in_executor(None, next, it)`, returning control to the event loop between nodes. `StopIteration` is caught to end the async iteration cleanly.
+
+Applied to both `_stream_investigation` and `_stream_resume` — every `async for event in agent.stream(...)` is replaced with `async for event in _aiter_sync(agent.stream(...))`.
+
+### Key files
+- `aughor/api.py` — `_aiter_sync`, updated `_stream_investigation`, updated `_stream_resume`
+
+---
+
+## 51. Loading State Hardening
+
+### What
+All data-panel components render immediately with empty/stale content and populate when the fetch completes — rather than showing a "Loading…" gate that blocks rendering while the server is busy.
+
+### Why
+Any in-progress investigation was saturating FastAPI's (then synchronous) event loop, making every other API call hang. Components initialised with `useState(true)` for loading would show a loading state indefinitely. Even after fixing the event loop, the anti-pattern of blocking UI on loading state remained in several components.
+
+### How
+Three changes per component:
+1. `useState(false)` initial loading state (never blocks initial render)
+2. `AbortController` with 8-second timeout on every fetch — calls abort after deadline so the UI never hangs
+3. Silent `catch` — existing data stays visible, next poll will retry
+
+Components updated: `ActivityLog`, `DomainIntelPanel`, `HistoryPanel`, `ConfigurePanel.DataTab`.
+
+### Key files
+- `web/components/ActivityLog.tsx`
+- `web/components/DomainIntelPanel.tsx`
+- `web/components/HistoryPanel.tsx`
+- `web/components/ConfigurePanel.tsx`
+
+---
+
+## 52. Home Stat Card Navigation
+
+### What
+Each stat card on the home page is now a navigation shortcut that deep-links into the relevant tab or sub-section of the Data Sources panel.
+
+### Why
+The four stats on the home screen (Tables, Entities, Insights, Queries) correspond directly to tabs already in the app. Clicking through to the right place is a natural expectation — the stat cards were static and didn't act on that signal.
+
+### How
+`StatCard` gained an `onClick` prop, hover state (border lightens to the accent color), and pointer cursor. `HomePage` receives an `onGoToData(subTab?, section?)` handler from `page.tsx`.
+
+| Card | Navigates to |
+|---|---|
+| Tables in Schema | Data Sources → Schema tab |
+| Entities Mapped | Data Sources → Ontology tab |
+| Insights discovered | Data Sources → Exploration → Intelligence sub-section |
+| Queries executed | Data Sources → Activity tab |
+
+**Insights count fix:** The "Insights discovered" count was reading `exploration?.insights_found` from the status endpoint (which returned 0 from persisted state). It now calls `getDomainInsights()` and sums `Object.values(d).reduce((sum, v) => sum + v.insights.length, 0)` — matching the count shown in the Intelligence sub-tab.
+
+### Key files
+- `web/app/page.tsx` — `StatCard` onClick, `explorationSection` state, `domainInsightCount`, `onGoToData`
+- `web/components/ExplorationPanel.tsx` — `initialSection` prop + `useEffect` to navigate on mount
+
+---
+
+## 53. Schema Cache — Backend + Frontend Context
+
+### What
+A two-layer caching system that eliminates repeated schema fetches. The backend caches the schema string per connection for 5 minutes. The frontend shares one fetched `RichSchema` across all three data-panel components via React Context.
+
+### Why
+`get_schema()` on a real database runs COUNT(*) per table, cardinality sampling, profile cache lookup, profile build, glossary merge, ontology build, and exploration annotation — a pipeline that takes several seconds per call. Without caching, opening the Schema tab, Data tab, and Catalog tab for the same connection each independently triggered this full pipeline.
+
+### How
+
+**Backend (`aughor/api.py`):**
+- `_schema_cache: dict[str, tuple[float, str]]` — maps `conn_id → (monotonic_timestamp, schema_str)`
+- `_SCHEMA_CACHE_TTL = 300.0` (5 minutes)
+- `_get_schema_cached(conn_id, db)` — returns cached string if fresh; otherwise calls `db.get_schema()`, stores result
+- `_invalidate_schema_cache(conn_id)` — called on connection delete and ontology rebuild
+- Three schema endpoints (`/schema`, `/schema/rich`, `/schema/mermaid`) all go through the cache
+
+**Frontend (`web/lib/schema-context.tsx`):**
+- `SchemaProvider` — React Context provider wrapping the right panel in `page.tsx`; fetches `schema/rich` once per `connId` change with 15s `AbortController` timeout
+- `useSchema()` — hook that returns `{ connId, schema, loading, error, refresh }`
+- `SchemaPanel` — replaced local `useEffect`/fetch with `useSchema()`
+- `ConfigurePanel.DataTab` — replaced local `useEffect`/fetch with `useSchema()`
+- `CatalogPanel` — uses context when `selectedConn === ctx.connId` (the common case); falls back to own fetch only when the user switches to a different connection in the catalog dropdown
+
+### Key files
+- `aughor/api.py` — `_schema_cache`, `_get_schema_cached`, `_invalidate_schema_cache`
+- `web/lib/schema-context.tsx` — `SchemaProvider`, `useSchema`
+- `web/components/SchemaPanel.tsx` — consumes context
+- `web/components/CatalogPanel.tsx` — consumes context (with own-fetch fallback)
+- `web/components/ConfigurePanel.tsx` — `DataTab` consumes context
+
+---
+
+*Last updated: 2026-05-26 · 53 features. See `ROADMAP.md` for upcoming features.*

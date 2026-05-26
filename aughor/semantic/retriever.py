@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 
-SCHEMA_COLLECTION = "hermes_schema"
+SCHEMA_COLLECTION = "aughor_schema"
 TABLE_THRESHOLD = 12  # below this, skip retrieval and pass the full schema
 
 

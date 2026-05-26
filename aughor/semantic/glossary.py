@@ -60,7 +60,7 @@ def load_merged_glossary(path: Path | None = None) -> dict:
 
         manual YAML  >  dbt manifest  >  auto-seed (auto_generated: true in YAML)
 
-    The dbt layer is skipped if HERMES_DBT_MANIFEST is not configured.
+    The dbt layer is skipped if AUGHOR_DBT_MANIFEST is not configured.
     Entries written by autoseed (auto_generated: true) are treated as the
     weakest layer — dbt and manual YAML both override them.
     """

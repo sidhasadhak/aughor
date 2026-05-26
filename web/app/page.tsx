@@ -26,7 +26,8 @@ import { OntologyPanel } from "@/components/OntologyPanel";
 import { ExplorationPanel } from "@/components/ExplorationPanel";
 import { SystemPanel } from "@/components/SystemPanel";
 import { ActivityLog } from "@/components/ActivityLog";
-import { getConnections, addConnection as apiAddConnection, deleteConnection as apiDeleteConnection, getExplorationStatus, getOntology, type Connection, type ExplorationStatus, type OntologyGraph } from "@/lib/api";
+import { SchemaProvider } from "@/lib/schema-context";
+import { getConnections, addConnection as apiAddConnection, deleteConnection as apiDeleteConnection, getExplorationStatus, getOntology, getConnectionFreshness, getDomainInsights, type Connection, type ExplorationStatus, type OntologyGraph } from "@/lib/api";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -88,6 +89,21 @@ function NavItem({
 
 // ── Connection selector (topbar) ──────────────────────────────────────────────
 
+function freshnessLabel(ts: string | null): string | null {
+  if (!ts) return null;
+  // Handle numeric Unix timestamps returned as strings (seconds or ms)
+  const num = Number(ts);
+  const d = !isNaN(num) ? new Date(num > 1e10 ? num : num * 1000) : new Date(ts);
+  if (isNaN(d.getTime())) return null;
+  const diffMs = Date.now() - d.getTime();
+  const diffH = diffMs / 3_600_000;
+  if (diffH < 1) return "data < 1h ago";
+  if (diffH < 24) return `data ${Math.round(diffH)}h ago`;
+  const diffD = diffMs / 86_400_000;
+  if (diffD < 7) return `data ${Math.round(diffD)}d ago`;
+  return `data ${d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: diffD > 365 ? "numeric" : undefined })}`;
+}
+
 function ConnectionSelector({
   connections,
   selectedId,
@@ -100,7 +116,16 @@ function ConnectionSelector({
   onManage: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [freshness, setFreshness] = useState<string | null>(null);
   const current = connections.find((c) => c.id === selectedId);
+
+  useEffect(() => {
+    if (!selectedId) return;
+    setFreshness(null);
+    getConnectionFreshness(selectedId)
+      .then(r => setFreshness(freshnessLabel(r.freshness)))
+      .catch(() => {});
+  }, [selectedId]);
 
   return (
     <div className="relative">
@@ -110,6 +135,9 @@ function ConnectionSelector({
       >
         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
         <span className="max-w-[160px] truncate">{current?.name ?? selectedId}</span>
+        {freshness && (
+          <span className="text-[10px] text-zinc-500 shrink-0 font-sans">{freshness}</span>
+        )}
         <span className="text-zinc-500 shrink-0"><ChevronDownIcon label="" size="small" /></span>
       </button>
 
@@ -242,12 +270,12 @@ type Activity = { id: string; question: string; started_at: string; status: stri
 
 function RecentsPanel({ onGoToChat, onGoToData }: { onGoToChat: (q?: string) => void; onGoToData: () => void }) {
   const [activities, setActivities] = useState<Activity[]>([]);
-  const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<ActivityType | "all">("all");
 
   useEffect(() => {
-    setLoading(true);
-    fetch("http://localhost:8000/investigations")
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8_000);
+    fetch("http://localhost:8000/investigations", { signal: controller.signal })
       .then(r => r.json())
       .then((data: Array<{ id: string; question: string; started_at: string; status: string; headline: string | null; mode?: string }>) => {
         const mapped: Activity[] = (Array.isArray(data) ? data : []).map(inv => ({
@@ -260,8 +288,8 @@ function RecentsPanel({ onGoToChat, onGoToData }: { onGoToChat: (q?: string) => 
         }));
         setActivities(mapped);
       })
-      .catch(() => setActivities([]))
-      .finally(() => setLoading(false));
+      .catch(() => {})
+      .finally(() => clearTimeout(timeout));
   }, []);
 
   const shown = filter === "all" ? activities : activities.filter(a => a.type === filter);
@@ -305,11 +333,7 @@ function RecentsPanel({ onGoToChat, onGoToData }: { onGoToChat: (q?: string) => 
         </div>
 
         {/* Rows */}
-        {loading ? (
-          <div style={{ padding: "40px 0", textAlign: "center" }}>
-            <p style={{ fontSize: "12.5px", color: "#3e3f47" }}>Loading…</p>
-          </div>
-        ) : shown.length === 0 ? (
+        {shown.length === 0 ? (
           <div style={{ padding: "40px 0", textAlign: "center" }}>
             <p style={{ fontSize: "12.5px", color: "#3e3f47" }}>No activity yet — start by asking a question in Chat.</p>
           </div>
@@ -371,9 +395,22 @@ function RecentsPanel({ onGoToChat, onGoToData }: { onGoToChat: (q?: string) => 
 type RecentInv = { id: string; question: string; started_at: string; status: string; headline: string | null };
 type RecentTab = "recents" | "investigations";
 
-function StatCard({ value, label, accent }: { value: string | number; label: string; accent: string }) {
+function StatCard({ value, label, accent, onClick }: { value: string | number; label: string; accent: string; onClick?: () => void }) {
+  const [hov, setHov] = useState(false);
   return (
-    <div style={{ flex: 1, padding: "16px 18px", background: "#13141a", border: "0.5px solid #1e1f24", borderRadius: "8px", minWidth: 0 }}>
+    <div
+      onClick={onClick}
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
+      style={{
+        flex: 1, padding: "16px 18px",
+        background: hov && onClick ? "#161720" : "#13141a",
+        border: `0.5px solid ${hov && onClick ? accent + "40" : "#1e1f24"}`,
+        borderRadius: "8px", minWidth: 0,
+        cursor: onClick ? "pointer" : "default",
+        transition: "all 0.12s",
+      }}
+    >
       <p style={{ fontSize: "22px", fontWeight: 600, color: "#e8e6e1", letterSpacing: "-0.02em", lineHeight: 1 }}>{value}</p>
       <p style={{ fontSize: "11px", color: "#5a5b62", marginTop: "5px", lineHeight: 1.3 }}>{label}</p>
       <div style={{ width: "18px", height: "2px", background: accent, borderRadius: "2px", marginTop: "10px" }} />
@@ -423,11 +460,12 @@ function HomePage({
   selectedConn: string;
   onGoToChat: (q?: string) => void;
   onGoToCatalog: () => void;
-  onGoToData: () => void;
+  onGoToData: (subTab?: "ontology" | "schema" | "exploration" | "activity", section?: "nulls" | "joins" | "lifecycles" | "distributions" | "insights" | "intelligence") => void;
 }) {
   const [recentInvs, setRecentInvs] = useState<RecentInv[]>([]);
   const [exploration, setExploration] = useState<ExplorationStatus | null>(null);
   const [ontology, setOntology] = useState<OntologyGraph | null>(null);
+  const [domainInsightCount, setDomainInsightCount] = useState<number | null>(null);
   const [recentTab, setRecentTab] = useState<RecentTab>("recents");
   const conn = connections.find(c => c.id === selectedConn);
 
@@ -438,10 +476,13 @@ function HomePage({
       .catch(() => {});
     getExplorationStatus(selectedConn).then(setExploration).catch(() => {});
     getOntology(selectedConn).then(setOntology).catch(() => {});
+    getDomainInsights(selectedConn)
+      .then(d => setDomainInsightCount(Object.values(d).reduce((sum, v) => sum + v.insights.length, 0)))
+      .catch(() => {});
   }, [selectedConn]);
 
   const tables   = exploration?.tables_total    ?? "—";
-  const insights = exploration?.insights_found  ?? "—";
+  const insights = domainInsightCount ?? "—";
   const entities = ontology ? Object.keys(ontology.entities).length : "—";
   const queries  = exploration?.queries_executed ?? "—";
 
@@ -481,10 +522,10 @@ function HomePage({
 
         {/* ── Stats row ── */}
         <div style={{ display: "flex", gap: "8px" }}>
-          <StatCard value={tables}   label="Tables in schema"    accent="#3d6bff" />
-          <StatCard value={entities} label="Entities mapped"     accent="#a78bfa" />
-          <StatCard value={insights} label="Insights discovered" accent="#4ade80" />
-          <StatCard value={queries}  label="Queries executed"    accent="#f97316" />
+          <StatCard value={tables}   label="Tables in schema"    accent="#3d6bff" onClick={() => onGoToData("schema")} />
+          <StatCard value={entities} label="Entities mapped"     accent="#a78bfa" onClick={() => onGoToData("ontology")} />
+          <StatCard value={insights} label="Insights discovered" accent="#4ade80" onClick={() => onGoToData("exploration", "intelligence")} />
+          <StatCard value={queries}  label="Queries executed"    accent="#f97316" onClick={() => onGoToData("activity")} />
         </div>
 
         {/* ── Quick actions ── */}
@@ -622,16 +663,17 @@ function HomePage({
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 
-const BEAUTYCOMMERCE_ID = "96f8857f";
+const LAST_CONN_KEY = "aughor_last_conn";
 
 export default function Home() {
   const [tab, setTab] = useState<NavTab>("home");
-  const [selectedConn, setSelectedConn] = useState(BEAUTYCOMMERCE_ID);
+  const [selectedConn, setSelectedConn] = useState("");
   const [selectedHistoryInvId, setSelectedHistoryInvId] = useState<string | null>(null); // modal
   const [selectedChatSessionId, setSelectedChatSessionId] = useState<string | null>(null);
   const [chatKey, setChatKey] = useState(0);
   const [chatInitialQuestion, setChatInitialQuestion] = useState<string | undefined>(undefined);
   const [connRightTab, setConnRightTab] = useState<"ontology" | "schema" | "exploration" | "activity" | "system">("ontology");
+  const [explorationSection, setExplorationSection] = useState<"nulls" | "joins" | "lifecycles" | "distributions" | "insights" | "intelligence" | undefined>(undefined);
   const [showHistory, setShowHistory] = useState(false);
   const [showConfigure, setShowConfigure] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
@@ -652,14 +694,18 @@ export default function Home() {
     getConnections()
       .then((conns) => {
         setConnections(conns);
-        if (!conns.find(c => c.id === BEAUTYCOMMERCE_ID) && conns.length > 0) {
-          setSelectedConn(conns[0].id);
-        }
+        const saved = typeof window !== "undefined" ? localStorage.getItem(LAST_CONN_KEY) : null;
+        const valid = saved && conns.find(c => c.id === saved);
+        setSelectedConn(valid ? saved : (conns[0]?.id ?? ""));
       })
-      .catch(() => {
-        setConnections([{ id: BEAUTYCOMMERCE_ID, name: "beautycommerece", conn_type: "duckdb", dsn_preview: "", schema_name: "analytics", builtin: false }]);
-      });
+      .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (selectedConn && typeof window !== "undefined") {
+      localStorage.setItem(LAST_CONN_KEY, selectedConn);
+    }
+  }, [selectedConn]);
 
   // Global ⌘K / Ctrl+K shortcut
   useEffect(() => {
@@ -702,7 +748,7 @@ export default function Home() {
       setDeleteConfirmText("");
       if (selectedConn === pendingDeleteConn.id) {
         const remaining = connections.filter(c => c.id !== pendingDeleteConn.id);
-        setSelectedConn(remaining[0]?.id ?? BEAUTYCOMMERCE_ID);
+        setSelectedConn(remaining[0]?.id ?? "");
       }
       reloadConnections();
     } finally {
@@ -898,13 +944,10 @@ export default function Home() {
           {/* Fill remaining space when not on data tab */}
           {tab !== "data" && <div className="flex-1" />}
 
-          {/* Bottom: settings */}
-          <div className="border-t border-zinc-700/80 py-1.5 px-1.5 shrink-0">
-            <NavItem icon={<SettingsIcon label="Settings" size="small" />} label="Settings" active={false} onClick={() => {}} />
-          </div>
         </nav>
 
         {/* ── Right: topbar + content ── */}
+        <SchemaProvider connId={selectedConn}>
         <div className="flex-1 flex flex-col overflow-hidden min-w-0">
 
           {/* ── Section topbar ── */}
@@ -1061,7 +1104,7 @@ export default function Home() {
                 selectedConn={selectedConn}
                 onGoToChat={goToChat}
                 onGoToCatalog={() => setTab("catalog")}
-                onGoToData={() => setTab("data")}
+                onGoToData={(subTab, section) => { setTab("data"); if (subTab) setConnRightTab(subTab); setExplorationSection(section); }}
               />
             )}
 
@@ -1127,7 +1170,7 @@ export default function Home() {
                   ) : connRightTab === "schema" ? (
                     <SchemaPanel connId={selectedConn} connName={selectedConn} />
                   ) : connRightTab === "exploration" ? (
-                    <ExplorationPanel connectionId={selectedConn} />
+                    <ExplorationPanel connectionId={selectedConn} initialSection={explorationSection} />
                   ) : connRightTab === "activity" ? (
                     <ActivityLog connectionId={selectedConn} isActive={connRightTab === "activity"} />
                   ) : (
@@ -1138,6 +1181,7 @@ export default function Home() {
             )}
           </div>
         </div>
+        </SchemaProvider>
       </div>
 
       {/* ── Delete connection modal ─────────────────────────────────────────── */}

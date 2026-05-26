@@ -104,14 +104,6 @@ export function SystemPanel() {
   const t = stats.timings;
   const d = stats.derived;
 
-  const matHits = c.materializer_hits ?? 0;
-  const matMisses = c.materializer_misses ?? 0;
-  const matTotal = matHits + matMisses;
-
-  const ibisExecs = c.ibis_executions ?? 0;
-  const rawExecs = c.raw_sql_executions ?? 0;
-  const totalExecs = ibisExecs + rawExecs;
-
   const ragHits = c.rag_hits ?? 0;
   const ragMisses = c.rag_misses ?? 0;
   const ragTotal = ragHits + ragMisses;
@@ -140,47 +132,6 @@ export function SystemPanel() {
           {resetting ? "Resetting…" : "Reset counters"}
         </button>
       </div>
-
-      {/* Query Materializer */}
-      <Section title="Query Materializer (M3)">
-        <StatRow
-          label="Cache hits"
-          value={fmt(matHits)}
-          sub={matTotal > 0 ? `of ${fmt(matTotal)} lookups` : undefined}
-          highlight={d.materializer_hit_rate != null && d.materializer_hit_rate > 0.5 ? "good" : "neutral"}
-        />
-        <StatRow label="Cache misses" value={fmt(matMisses)} />
-        <StatRow
-          label="Hit rate"
-          value={pct(d.materializer_hit_rate)}
-          highlight={d.materializer_hit_rate != null ? (d.materializer_hit_rate > 0.3 ? "good" : "warn") : "neutral"}
-        />
-        {t.materializer_time_saved_ms && (
-          <StatRow
-            label="Time saved (est.)"
-            value={ms(t.materializer_time_saved_ms.total_ms)}
-            sub={`${fmt(t.materializer_time_saved_ms.count)} hits`}
-          />
-        )}
-      </Section>
-
-      {/* Query Engine */}
-      <Section title="Query Engine (M3)">
-        <StatRow
-          label="ibis executions"
-          value={fmt(ibisExecs)}
-          sub={totalExecs > 0 ? `${pct(d.ibis_usage_rate)} of queries` : undefined}
-          highlight={ibisExecs > 0 ? "good" : "neutral"}
-        />
-        <StatRow label="Raw SQL executions" value={fmt(rawExecs)} />
-        {t.ibis_execution_ms && (
-          <StatRow
-            label="Avg ibis query time"
-            value={ms(t.ibis_execution_ms.avg_ms)}
-            sub={`${fmt(t.ibis_execution_ms.count)} queries`}
-          />
-        )}
-      </Section>
 
       {/* Ontology */}
       <Section title="Ontology (M12)">

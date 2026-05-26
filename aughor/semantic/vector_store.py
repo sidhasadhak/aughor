@@ -4,7 +4,7 @@ from __future__ import annotations
 import hashlib
 import os
 
-QDRANT_URL = os.getenv("HERMES_QDRANT_URL", "http://localhost:6333")
+QDRANT_URL = os.getenv("AUGHOR_QDRANT_URL", "http://localhost:6333")
 VECTOR_DIM = 768  # nomic-embed-text
 
 

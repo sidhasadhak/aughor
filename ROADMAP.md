@@ -1,7 +1,7 @@
 # Aughor — Product Roadmap
 
 **Product:** Aughor — Autonomous Analyst  
-**Repo:** https://github.com/sidhasadhak/hypothesis-engine  
+**Repo:** https://github.com/sidhasadhak/Aughor  
 **Stack snapshot:** LangGraph · Ollama (qwen2.5-coder:14b + nomic-embed-text) · FastAPI SSE · Next.js (App Router) · DuckDB + PostgreSQL · SQLGlot · scipy/statsmodels · Qdrant · uv
 
 ---
@@ -61,6 +61,11 @@
 | Activity Log UI (46) | `web/components/ActivityLog.tsx`, `aughor/api.py` | Real-time episode feed; stop/resume/restart surviving tab switches; `status.paused` synced from backend on every fetch |
 | Exploration State Persistence (47) | `aughor/explorer/store.py`, `episodes.py`, `aughor/api.py` | Per-connection `exploration_{id}.json` + `episodes_{id}.jsonl`; explorer resumes from last position after restart; restart clears both files |
 | Per-Phase Rate Limiting (48) | `aughor/explorer/agent.py` | `_RATE_SECONDS_SCHEMA = 0.0`, `_RATE_SECONDS_INTEL = 5.0`; `_gate()` skips sleep for schema phases; `self._rate_seconds` set by `explore()` per phase group |
+| Plan-then-SQL Separation (49) | `aughor/agent/nodes.py`, `state.py`, `prompts.py`, `graph.py` | `plan_queries` (pure LLM planning → `QueryPlanV2` with typed `QueryIntent` objects in plain English) + `execute_planned_queries` (SQL generation per intent via `WRITE_SQL_PROMPT`/`SQLOutput` + execution); ontology actions + SQL examples injected only at write stage; `plan_and_execute` kept as backward-compat shim |
+| Non-blocking FastAPI event loop (50) | `aughor/api.py` | `_aiter_sync` async generator wraps sync LangGraph `agent.stream()` via `loop.run_in_executor(None, next, it)` — yields control between every node; prevents all other API calls from hanging during active investigations |
+| Loading state hardening (51) | `web/components/ActivityLog.tsx`, `DomainIntelPanel.tsx`, `HistoryPanel.tsx`, `ConfigurePanel.tsx` | `useState(false)` init (was `true`) + `AbortController` 8s timeout + silent error handling across all data-panel components; UI always renders immediately and populates when data arrives |
+| Home stat card navigation (52) | `web/app/page.tsx` | "Tables in Schema" → Schema tab; "Entities Mapped" → Ontology tab; "Insights discovered" → Intelligence sub-section of Exploration (+ real count from `getDomainInsights`); "Queries executed" → Activity tab; `StatCard` gained `onClick`, hover animation, pointer cursor |
+| Schema cache — backend + frontend (53) | `aughor/api.py`, `web/lib/schema-context.tsx`, `SchemaPanel.tsx`, `CatalogPanel.tsx`, `ConfigurePanel.tsx` | Backend: 5-min TTL in-process cache per connection (`_get_schema_cached`) eliminates repeated COUNT(*) + profiling + ontology rebuild on every `/schema` HTTP request; invalidated on delete/rebuild. Frontend: `SchemaProvider` React Context wraps right panel; one fetch per connection switch; `SchemaPanel`, `CatalogPanel`, `DataTab` all consume from context |
 
 ---
 
@@ -1061,7 +1066,7 @@ Evals (M10)  ←  needs History ✅ + stable Two-Model Arch (2a) ✅
 
 ## Current focus
 
-**Shipped:** M1 (Semantic Layer), M2a–2c + 2e–2j (Agent hardening, HITL, Direct Query, Routing v2, SQL KB, Error Classification, Schema Intelligence, KB Enrichment), M8 (Frontend Charts, Chart Intelligence, Report UX), M9 (Quick Chat + Chart Engine + Deep Analysis tab), 1e (Metrics Catalog), ER Diagram, Rich Schema Card UI, Global Analytics Rules (32), Hypothesis Expanded Accordion (33), Connection-scoped semantic cache, Paren-aware ROUND rewriter, Schema parser dedup, Timeout 600 s, UI color pass, **M12 Background Schema Explorer + Business Ontology + Domain Intelligence + SqlWriter (48 features total)**
+**Shipped:** M1 (Semantic Layer), M2a–2c + 2e–2j (Agent hardening, HITL, Direct Query, Routing v2, SQL KB, Error Classification, Schema Intelligence, KB Enrichment), M8 (Frontend Charts, Chart Intelligence, Report UX), M9 (Quick Chat + Chart Engine + Deep Analysis tab), 1e (Metrics Catalog), ER Diagram, Rich Schema Card UI, Global Analytics Rules (32), Hypothesis Expanded Accordion (33), Connection-scoped semantic cache, Paren-aware ROUND rewriter, Schema parser dedup, Timeout 600 s, UI color pass, **M12 Background Schema Explorer + Business Ontology + Domain Intelligence + SqlWriter (48 features total)**, Plan-then-SQL Separation (49), Non-blocking event loop (50), Loading state hardening (51), Home stat card navigation (52), Schema cache backend + frontend (53)
 
 **Sprint 12 — Background Explorer + Domain Intelligence ✅ SHIPPED:**
 - `aughor/explorer/agent.py` — `SchemaExplorer` with 8 phases: null meanings (3), join verification (4), lifecycle mapping (5), distribution profiling (6), cross-table patterns (7), domain intel loop (8)
@@ -1113,6 +1118,13 @@ Evals (M10)  ←  needs History ✅ + stable Two-Model Arch (2a) ✅
 
 **M2e Direct Query Mode UX ✅ SHIPPED (polish pass):**
 - `web/components/ChatMessage.tsx` — `defaultStatusText()` helper: once `queryMode === "direct"` arrives via SSE the loading text switches from "Investigating…" to "Running query…"; "Exploring…" for explore mode; `showStreamingBody` gate now also excludes `queryMode === "direct"` so ADA phase stream never appears for direct-routed queries
+
+**Recent (Sprint 13 — Infrastructure polish ✅ SHIPPED):**
+- Plan-then-SQL separation (49): clean two-stage graph — `plan_queries` reasons about WHAT to measure, `execute_planned_queries` writes dialect-specific SQL per intent
+- Non-blocking event loop (50): `_aiter_sync` wraps LangGraph's sync stream via thread pool; History, Ontology, Exploration APIs no longer hang during active investigations
+- Loading state hardening (51): all data-panel components render immediately with `loading=false` init + 8s `AbortController` timeout; no more "Loading…" dead states when backend is busy
+- Home stat card navigation (52): every stat card on the home page now deep-links to the relevant tab (Schema / Ontology / Intelligence / Activity); Insights count uses real domain intelligence count
+- Schema cache — backend + frontend (53): eliminates 3–6 redundant `get_schema()` calls per panel interaction; backend 5-min TTL cache + frontend React Context share one fetch across SchemaPanel, CatalogPanel, and DataTab
 
 **Sprint 8 onward:** M6 + M7 (Security + Observability) → M4 (Prophet) + M2d (Events Calendar) → M11 (Visual Builder) → M10 (Evals)
 

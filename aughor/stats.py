@@ -1,14 +1,9 @@
 """
 In-process stats registry for developer visibility.
 
-Tracks counters and timings across key code paths — materializer cache,
-ibis vs raw SQL, ACTION token expansions, tier gate firings, SQL correction
-retries, prior-analysis RAG hits, and ontology enrichment.
-
-Usage:
-    from aughor.stats import stats
-    stats.inc("materializer_hits")
-    stats.timing("materializer_time_saved_ms", elapsed_ms)
+Tracks counters and timings across key code paths — ACTION token expansions,
+tier gate firings, SQL correction retries, prior-analysis RAG hits, and
+ontology enrichment.
 
 Exposed via GET /dev/stats.
 """
@@ -52,11 +47,6 @@ class _Stats:
         uptime_s = int(time.time() - self._started_at)
 
         # Derived convenience metrics
-        mat_hits = counters.get("materializer_hits", 0)
-        mat_misses = counters.get("materializer_misses", 0)
-        mat_total = mat_hits + mat_misses
-        ibis_execs = counters.get("ibis_executions", 0)
-        raw_execs = counters.get("raw_sql_executions", 0)
         rag_hits = counters.get("rag_hits", 0)
         rag_misses = counters.get("rag_misses", 0)
         corrections = counters.get("sql_correction_retries", 0)
@@ -67,8 +57,6 @@ class _Stats:
             "counters": counters,
             "timings": timings,
             "derived": {
-                "materializer_hit_rate": round(mat_hits / mat_total, 3) if mat_total else None,
-                "ibis_usage_rate": round(ibis_execs / (ibis_execs + raw_execs), 3) if (ibis_execs + raw_execs) else None,
                 "rag_hit_rate": round(rag_hits / (rag_hits + rag_misses), 3) if (rag_hits + rag_misses) else None,
                 "sql_correction_success_rate": round(correction_ok / corrections, 3) if corrections else None,
             },

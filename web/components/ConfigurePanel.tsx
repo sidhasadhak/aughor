@@ -6,6 +6,7 @@ import ChevronRightIcon  from "@atlaskit/icon/core/chevron-right";
 import TableIcon         from "@atlaskit/icon/core/table";
 import InformationIcon   from "@atlaskit/icon/core/information";
 import { MetricsPanel } from "./MetricsPanel";
+import { useSchema } from "@/lib/schema-context";
 import type { Connection } from "@/lib/api";
 
 const BASE = "http://localhost:8000";
@@ -236,19 +237,10 @@ function TableDetail({
 // ── Data tab ──────────────────────────────────────────────────────────────────
 
 function DataTab({ connId }: { connId: string }) {
-  const [tables, setTables] = useState<SchemaTable[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { schema } = useSchema();
+  const tables: SchemaTable[] = (schema?.tables ?? []) as SchemaTable[];
   const [selected, setSelected] = useState<SchemaTable | null>(null);
   const [filter, setFilter] = useState("");
-
-  useEffect(() => {
-    setLoading(true);
-    fetch(`${BASE}/connections/${connId}/schema/rich`)
-      .then((r) => r.json())
-      .then((d) => setTables(d.tables ?? []))
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [connId]);
 
   if (selected) {
     return <TableDetail connId={connId} table={selected} onClose={() => setSelected(null)} />;
@@ -272,41 +264,35 @@ function DataTab({ connId }: { connId: string }) {
 
       {/* Table list */}
       <div className="flex-1 overflow-y-auto">
-        {loading && (
-          <div className="flex items-center justify-center h-16 text-[12px] text-zinc-500">Loading schema…</div>
+        {tables.length > 0 && (
+          <div className="flex items-center px-3 py-2 text-[11px] text-zinc-600 font-semibold uppercase tracking-wider border-b border-zinc-700/40 sticky top-0 bg-zinc-900">
+            <span className="flex-1">Name</span>
+            <span className="w-12 text-right">Cols</span>
+            <span className="w-20 text-right">Rows</span>
+            <span className="w-4" />
+          </div>
         )}
-        {!loading && (
-          <>
-            {/* Column headers */}
-            <div className="flex items-center px-3 py-2 text-[11px] text-zinc-600 font-semibold uppercase tracking-wider border-b border-zinc-700/40 sticky top-0 bg-zinc-900">
-              <span className="flex-1">Name</span>
-              <span className="w-12 text-right">Cols</span>
-              <span className="w-20 text-right">Rows</span>
-              <span className="w-4" />
-            </div>
-            {filtered.map((t) => (
-              <button
-                key={t.name}
-                onClick={() => setSelected(t)}
-                className="w-full flex items-center px-3 py-2.5 text-[12px] border-b border-zinc-700/30 hover:bg-zinc-700/20 transition group text-left"
-              >
-                <span className="text-zinc-500 shrink-0 mr-2"><TableIcon label="Table" size="small" /></span>
-                <span className="flex-1 font-mono text-zinc-200 truncate">{t.name}</span>
-                <span className="w-12 text-right text-zinc-500 shrink-0">{t.columns.length}</span>
-                <span className="w-20 text-right text-zinc-500 shrink-0 font-mono">
-                  {Number(t.row_count) >= 1_000_000
-                    ? `${(Number(t.row_count) / 1_000_000).toFixed(1)}M`
-                    : Number(t.row_count) >= 1_000
-                    ? `${(Number(t.row_count) / 1_000).toFixed(0)}k`
-                    : t.row_count}
-                </span>
-                <span className="text-zinc-600 group-hover:text-zinc-400 transition ml-1 shrink-0"><ChevronRightIcon label="" size="small" /></span>
-              </button>
-            ))}
-            {filtered.length === 0 && (
-              <p className="text-[12px] text-zinc-500 p-4">No tables match "{filter}".</p>
-            )}
-          </>
+        {filtered.map((t) => (
+          <button
+            key={t.name}
+            onClick={() => setSelected(t)}
+            className="w-full flex items-center px-3 py-2.5 text-[12px] border-b border-zinc-700/30 hover:bg-zinc-700/20 transition group text-left"
+          >
+            <span className="text-zinc-500 shrink-0 mr-2"><TableIcon label="Table" size="small" /></span>
+            <span className="flex-1 font-mono text-zinc-200 truncate">{t.name}</span>
+            <span className="w-12 text-right text-zinc-500 shrink-0">{t.columns.length}</span>
+            <span className="w-20 text-right text-zinc-500 shrink-0 font-mono">
+              {Number(t.row_count) >= 1_000_000
+                ? `${(Number(t.row_count) / 1_000_000).toFixed(1)}M`
+                : Number(t.row_count) >= 1_000
+                ? `${(Number(t.row_count) / 1_000).toFixed(0)}k`
+                : t.row_count}
+            </span>
+            <span className="text-zinc-600 group-hover:text-zinc-400 transition ml-1 shrink-0"><ChevronRightIcon label="" size="small" /></span>
+          </button>
+        ))}
+        {filter && filtered.length === 0 && (
+          <p className="text-[12px] text-zinc-500 p-4">No tables match &ldquo;{filter}&rdquo;.</p>
         )}
       </div>
     </div>

@@ -224,6 +224,16 @@ class DatabaseConnection(ABC):
         """
         return None
 
+    def dry_run(self, sql: str) -> tuple[bool, str]:
+        """Validate SQL without returning rows. Returns (ok, error_message).
+
+        Default implementation uses sqlglot parse-only validation. Subclasses
+        override with a real EXPLAIN query against the live engine so column
+        and table names are checked, not just syntax.
+        """
+        ok, reason = _validate(sql)
+        return ok, reason
+
     def translate(self, sql: str) -> str:
         """Rewrite SQL from any dialect to this backend's dialect."""
         if self.dialect == "duckdb":
@@ -252,11 +262,34 @@ class DuckDBConnection(DatabaseConnection):
             except Exception:
                 pass  # best-effort — don't fail the connection over schema routing
 
+    def dry_run(self, sql: str) -> tuple[bool, str]:
+        """Run EXPLAIN against DuckDB — catches bad column/table names without returning rows."""
+        sql = sql.strip().rstrip(";")
+        ok, reason = _validate(sql)
+        if not ok:
+            return False, reason
+        sql = self._normalize_to_duckdb(sql)
+        try:
+            self._conn.execute(f"EXPLAIN {sql}")
+            return True, ""
+        except Exception as e:
+            return False, str(e)
+
+    @staticmethod
+    def _normalize_to_duckdb(sql: str) -> str:
+        """Transpile any-dialect SQL to DuckDB syntax via SQLGlot. Silent no-op on failure."""
+        try:
+            result = sqlglot.transpile(sql, write="duckdb", error_level=sqlglot.ErrorLevel.IGNORE)
+            return result[0] if result and result[0] else sql
+        except Exception:
+            return sql
+
     def execute(self, hypothesis_id: str, sql: str) -> QueryResult:
         sql = sql.strip().rstrip(";")
         ok, reason = _validate(sql)
         if not ok:
             return QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[], row_count=0, error=reason)
+        sql = self._normalize_to_duckdb(sql)
         try:
             self._conn.execute(sql)
             rows = self._conn.fetchall()
@@ -300,6 +333,8 @@ class DuckDBConnection(DatabaseConnection):
 
         try:
             tp, cp = get_or_build_profiles(self, self._connection_id or "fixture", tables, fk_hints)
+            from aughor.tools.schema import inject_value_annotations
+            base = inject_value_annotations(base, cp)
             annotation = render_profile_annotations(tp, cp)
             if annotation:
                 base += "\n\n" + annotation
@@ -399,6 +434,25 @@ class PostgresConnection(DatabaseConnection):
         if self._schema_name != "public":
             with self._conn.cursor() as cur:
                 cur.execute(f"SET search_path = {self._schema_name}")
+
+    def dry_run(self, sql: str) -> tuple[bool, str]:
+        """Run EXPLAIN against Postgres — catches bad column/table names without returning rows."""
+        sql = sql.strip().rstrip(";")
+        ok, reason = _validate(sql)
+        if not ok:
+            return False, reason
+        sql = self.translate(sql)
+        sql = self._apply_dialect_fixes(sql)
+        try:
+            with self._conn.cursor() as cur:
+                cur.execute(f"EXPLAIN {sql}")
+            return True, ""
+        except Exception as e:
+            try:
+                self._connect()
+            except Exception:
+                pass
+            return False, str(e)
 
     def _apply_dialect_fixes(self, sql: str) -> str:
         """
@@ -504,6 +558,8 @@ class PostgresConnection(DatabaseConnection):
 
         try:
             tp, cp = get_or_build_profiles(self, self._connection_id or "postgres", tables, fk_hints)
+            from aughor.tools.schema import inject_value_annotations
+            enriched = inject_value_annotations(enriched, cp)
             annotation = render_profile_annotations(tp, cp)
             if annotation:
                 enriched += "\n\n" + annotation
@@ -622,54 +678,6 @@ class PostgresConnection(DatabaseConnection):
             return ibis.connect(self._dsn)
         except ImportError:
             return None
-
-    def bulk_read(self, hypothesis_id: str, sql: str) -> QueryResult:
-        """Bulk-read via connectorx (Arrow-backed, fast for large result sets).
-
-        Use this as an explicit opt-in for queries expected to return thousands
-        of rows.  Falls back to the normal ``execute()`` path if connectorx is
-        not installed or if the query fails within connectorx.
-        """
-        sql = sql.strip().rstrip(";")
-        ok, reason = _validate(sql)
-        if not ok:
-            return QueryResult(
-                hypothesis_id=hypothesis_id, sql=sql,
-                columns=[], rows=[], row_count=0, error=reason,
-            )
-
-        sql_fixed = self.translate(sql)
-        sql_fixed = self._apply_dialect_fixes(sql_fixed)
-
-        try:
-            import connectorx as cx
-        except ImportError:
-            return self.execute(hypothesis_id, sql)
-
-        try:
-            table = cx.read_sql(self._dsn, sql_fixed, return_type="arrow2")
-            columns = table.column_names
-            n = table.num_rows
-            col_data = {col: table.column(col).to_pylist() for col in columns}
-            rows = [
-                [
-                    str(col_data[col][i]) if col_data[col][i] is not None else "NULL"
-                    for col in columns
-                ]
-                for i in range(min(n, MAX_ROWS))
-            ]
-            return QueryResult(
-                hypothesis_id=hypothesis_id,
-                sql=sql,
-                columns=columns,
-                rows=rows,
-                row_count=n,
-            )
-        except Exception as e:
-            return QueryResult(
-                hypothesis_id=hypothesis_id, sql=sql,
-                columns=[], rows=[], row_count=0, error=str(e),
-            )
 
     def test(self) -> tuple[bool, str]:
         try:

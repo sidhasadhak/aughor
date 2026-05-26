@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { getSchemaRich, RichSchema } from "@/lib/api";
+import { useSchema } from "@/lib/schema-context";
 // SchemaCards kept for potential future use
 // import { SchemaCards } from "./SchemaCards";
 import { ERDiagram } from "./ERDiagram";
@@ -12,19 +11,7 @@ interface Props {
 }
 
 export function SchemaPanel({ connId, connName }: Props) {
-  const [richSchema, setRichSchema] = useState<RichSchema | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!connId) { setRichSchema(null); return; }
-    setLoading(true);
-    setError(null);
-    getSchemaRich(connId)
-      .then(setRichSchema)
-      .catch(() => setError("Failed to load schema."))
-      .finally(() => setLoading(false));
-  }, [connId]);
+  const { schema: richSchema, loading, error } = useSchema();
 
   if (!connId) {
     return (

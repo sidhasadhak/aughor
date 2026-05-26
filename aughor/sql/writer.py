@@ -134,6 +134,38 @@ def _make_diagnosis(error: str, sql: str, table_cols: dict[str, list[str]]) -> s
             "Use ONLY the table names listed in the SCHEMA above."
         )
 
+    # DuckDB: TIMESTAMPDIFF not found (MySQL function)
+    err_lower = error.lower()
+    if "timestampdiff" in err_lower:
+        return (
+            "DIAGNOSIS: TIMESTAMPDIFF is a MySQL function — DuckDB doesn't have it. "
+            "Use datediff('day', date1, date2) for day differences, or "
+            "CAST(date2 AS DATE) - CAST(date1 AS DATE) which returns an integer number of days."
+        )
+
+    # DuckDB: JULIANDAY not found (SQLite function)
+    if "julianday" in err_lower:
+        return (
+            "DIAGNOSIS: JULIANDAY is a SQLite function — DuckDB doesn't have it. "
+            "For day differences use datediff('day', date1, date2). "
+            "For date-to-number conversions use epoch_days(date::DATE) or CAST(date AS DATE) arithmetic."
+        )
+
+    # DuckDB: aggregate in GROUP BY
+    if "group by clause cannot contain aggregates" in err_lower:
+        return (
+            "DIAGNOSIS: An aggregate function (COUNT, SUM, AVG, etc.) appears inside GROUP BY — "
+            "that is never valid. GROUP BY must contain only raw column references. "
+            "Move the aggregate to SELECT or HAVING."
+        )
+
+    # DuckDB: HAVING references a SELECT alias
+    if "having" in err_lower and ("does not exist" in err_lower or "not found" in err_lower):
+        return (
+            "DIAGNOSIS: HAVING cannot reference a SELECT alias — rewrite using the full expression. "
+            "E.g. instead of HAVING converted = 1, use HAVING SUM(CASE WHEN ... THEN 1 ELSE 0 END) = 1."
+        )
+
     return ""
 
 
@@ -171,6 +203,18 @@ class SqlWriter:
 
     # ── SQL generation ─────────────────────────────────────────────────────────
 
+    # DuckDB-specific rules injected into every write prompt
+    _DUCKDB_RULES = """
+DUCKDB DIALECT RULES (violations cause runtime errors):
+- Date differences: use datediff('day', date1, date2) or CAST(date2 AS DATE) - CAST(date1 AS DATE). NEVER use TIMESTAMPDIFF, JULIANDAY, DATEDIFF(unit, ...) (those are MySQL/SQLite).
+- Interval arithmetic: use INTERVAL '1' DAY syntax. NEVER cast an interval to numeric directly.
+- GROUP BY: NEVER put aggregate functions (COUNT, SUM, AVG, MAX, MIN) inside GROUP BY. Aggregates belong only in SELECT or HAVING.
+- HAVING: reference only aggregate expressions or columns that appear in GROUP BY. You CANNOT reference SELECT aliases in HAVING.
+- String aggregation: use string_agg(col, sep) not GROUP_CONCAT.
+- Type casting: use col::TYPE syntax (e.g. val::DATE, val::NUMERIC) or CAST(val AS TYPE).
+- Window functions: fully supported — OVER (PARTITION BY ... ORDER BY ...).
+""".strip()
+
     def write(self, question: str, extra_context: str = "") -> str:
         """
         Natural-language question → executable SQL.
@@ -181,12 +225,14 @@ class SqlWriter:
         class _SQL(BaseModel):
             sql: str
 
+        dialect_rules = self._DUCKDB_RULES if self._db.dialect == "duckdb" else f"Target dialect: {self._db.dialect}."
+
         result = self._llm.complete(
             system=(
                 "You are a data analyst writing SQL against a business database. "
                 "Write SELECT-only SQL using exact table and column names from the schema. "
-                f"Target dialect: {self._db.dialect}. "
-                "Never invent column names — use only names that appear in the SCHEMA."
+                "Never invent column names — use only names that appear in the SCHEMA.\n\n"
+                + dialect_rules
             ),
             user=(
                 f"SCHEMA:\n{self._schema}\n\n"
@@ -244,13 +290,22 @@ class SqlWriter:
                     ),
                     response_model=_Fix,
                 )
+            except Exception as e:
+                current_error = str(e)
+                continue
+
+            # Validate the correction before accepting it — catches the LLM
+            # fixing one error while introducing another (wrong column, bad syntax).
+            dry_ok, dry_err = self._db.dry_run(fixed.corrected_sql)
+            if dry_ok:
                 return FixResult(
                     ok=True,
                     sql=fixed.corrected_sql,
                     explanation=fixed.explanation,
                     attempts=attempt,
                 )
-            except Exception as e:
-                current_error = str(e)
+            # Dry-run failed: feed the real error back into the next attempt
+            current_sql = fixed.corrected_sql
+            current_error = dry_err
 
-        return FixResult(ok=False, sql=sql, final_error=current_error, attempts=max_retries)
+        return FixResult(ok=False, sql=current_sql, final_error=current_error, attempts=max_retries)

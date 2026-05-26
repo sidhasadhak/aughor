@@ -397,14 +397,19 @@ function InsightsSection({ insights }: { insights: ExplorationFindings["insights
 
 interface Props {
   connectionId: string;
+  initialSection?: SectionKey;
 }
 
 type SectionKey = "nulls" | "joins" | "lifecycles" | "distributions" | "insights" | "intelligence";
 
-export function ExplorationPanel({ connectionId }: Props) {
+export function ExplorationPanel({ connectionId, initialSection }: Props) {
   const [status, setStatus] = useState<ExplorationStatus | null>(null);
   const [findings, setFindings] = useState<ExplorationFindings | null>(null);
-  const [activeSection, setActiveSection] = useState<SectionKey>("joins");
+  const [activeSection, setActiveSection] = useState<SectionKey>(initialSection ?? "joins");
+
+  useEffect(() => {
+    if (initialSection) setActiveSection(initialSection);
+  }, [initialSection]);
 
   useEffect(() => {
     let cancelled = false;
