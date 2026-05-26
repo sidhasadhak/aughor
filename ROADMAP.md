@@ -1,7 +1,7 @@
 # Aughor — Product Roadmap
 
 **Product:** Aughor — Autonomous Analyst  
-**Repo:** https://github.com/sidhasadhak/Aughor  
+**Repo:** https://github.com/sidhasadhak/aughor  
 **Stack snapshot:** LangGraph · Ollama (qwen2.5-coder:14b + nomic-embed-text) · FastAPI SSE · Next.js (App Router) · DuckDB + PostgreSQL · SQLGlot · scipy/statsmodels · Qdrant · uv
 
 ---
