@@ -89,6 +89,12 @@ class OntologyMetric(BaseModel):
     unit: str = ""
     tables: list[str] = Field(default_factory=list)
     known_divergent_calculations: list[str] = Field(default_factory=list)
+    # Health scorecard fields (M13a)
+    target_value: Optional[float] = None
+    warning_threshold: Optional[float] = None   # yellow zone boundary
+    critical_threshold: Optional[float] = None  # red zone boundary
+    target_period: Optional[str] = None         # "monthly", "quarterly", "ytd"
+    benchmark_source: Optional[str] = None      # "internal: FY2025 plan", "industry: ecommerce"
 
 
 class OntologyAction(BaseModel):

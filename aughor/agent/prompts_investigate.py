@@ -365,6 +365,12 @@ FULL EVIDENCE (query results by phase):
 
 {events_section}
 
+{metric_targets_section}
+
+{playbook_section}
+
+{external_context_section}
+
 Write a complete, honest investigation report.
 
 IMPORTANT — ANSWER THE QUESTION ASKED:
@@ -396,10 +402,19 @@ CONFIDENCE ASSESSMENT:
 RECOMMENDATIONS:
   For each CONTROLLABLE root cause, provide a specific, actionable recommendation with:
   action, expected_impact (quantified if possible), owner (team/function), timeline.
+  If METRIC TARGETS are provided above, prioritise root causes where the current value
+  exceeds the warning or critical threshold — those are the highest-urgency items.
 
 DATA GAPS:
   List every hypothesis that could NOT be tested due to missing schema (no sessions table,
   no inventory table, etc.) with what data would be needed.
+
+CAUSAL LINKS:
+  Extract directional cause→effect relationships you identified with reasonable evidence.
+  These will be stored as proposals and only promoted to a causal knowledge graph if a
+  human later confirms the recommendations were effective.
+  Format: from_signal (upstream cause) → to_signal (downstream effect).
+  Only include links you can defend from the evidence above. Leave empty if none.
 """
 
 # ── Pydantic response models for structured LLM outputs ──────────────────────
@@ -473,6 +488,14 @@ class ADARecommendationModel(BaseModel):
     timeline: str
 
 
+class CausalLinkModel(BaseModel):
+    from_signal: str = Field(description="The upstream cause signal, e.g. 'elevated stockout rate'")
+    to_signal: str = Field(description="The downstream effect signal, e.g. 'increased refund rate'")
+    from_entity: Optional[str] = Field(default=None, description="Business entity id if identifiable, e.g. 'Inventory'")
+    to_entity: Optional[str] = Field(default=None, description="Business entity id if identifiable, e.g. 'Order'")
+    confidence: float = Field(default=0.5, description="Your confidence in this causal link, 0–1")
+
+
 class ADASynthesisModel(BaseModel):
     headline: str
     executive_summary: str
@@ -482,3 +505,7 @@ class ADASynthesisModel(BaseModel):
     confidence_justification: str
     recommendations: list[ADARecommendationModel]
     data_gaps: list[str] = Field(default_factory=list)
+    causal_links: list[CausalLinkModel] = Field(
+        default_factory=list,
+        description="Directional cause→effect pairs identified in this investigation. Only include links with clear evidence.",
+    )

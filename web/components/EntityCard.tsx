@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ProcessMapper } from "@/components/ProcessMapper";
 import CheckCircleIcon  from "@atlaskit/icon/core/check-circle";
 import CloseIcon        from "@atlaskit/icon/core/close";
 import ChevronDownIcon  from "@atlaskit/icon/core/chevron-down";
@@ -19,6 +20,7 @@ interface Props {
   relatedActions: OntologyAction[];
   relatedMetrics: OntologyMetric[];
   onUpdated: (e: OntologyEntity) => void;
+  onInvestigate?: (question: string) => void;
 }
 
 function GrainBadge({ verified }: { verified: boolean }) {
@@ -143,7 +145,7 @@ function EditableDescription({
   );
 }
 
-export function EntityCard({ entity, connectionId, relatedActions, relatedMetrics, onUpdated }: Props) {
+export function EntityCard({ entity, connectionId, relatedActions, relatedMetrics, onUpdated, onInvestigate }: Props) {
   const saveDescription = async (description: string) => {
     const updated = await patchOntologyEntity(connectionId, entity.id, { description });
     onUpdated(updated);
@@ -192,6 +194,15 @@ export function EntityCard({ entity, connectionId, relatedActions, relatedMetric
             </div>
           )}
         </div>
+      )}
+
+      {/* Process Map — live transition flow for entities with lifecycle data */}
+      {entity.has_lifecycle && entity.lifecycle_column && (
+        <ProcessMapper
+          connId={connectionId}
+          entityId={entity.id}
+          onInvestigate={onInvestigate}
+        />
       )}
 
       {/* Business rules */}

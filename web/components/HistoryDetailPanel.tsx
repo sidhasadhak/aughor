@@ -134,6 +134,7 @@ export function HistoryDetailPanel({ invId }: Props) {
                   queryHistory={queryHistory}
                   queryMode={reportType === "direct" ? "direct" : "investigate"}
                   hypotheses={hypotheses}
+                  invId={inv.id}
                 />
               </>
             )}

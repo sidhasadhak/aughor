@@ -21,6 +21,7 @@ import {
   type ConnectionSettings,
 } from "@/lib/api";
 import { OntologyCanvas } from "./OntologyCanvas";
+import { ProcessMapper } from "./ProcessMapper";
 import { cn } from "@/lib/utils";
 
 // ── Small reusable bits ───────────────────────────────────────────────────────
@@ -61,7 +62,7 @@ function ConfidencePill({ c }: { c: string }) {
 
 // ── Entity detail drawer ──────────────────────────────────────────────────────
 
-type DrawerTab = "overview" | "relationships" | "actions" | "metrics";
+type DrawerTab = "overview" | "relationships" | "actions" | "metrics" | "map";
 
 function EntityDetailDrawer({
   entity,
@@ -130,6 +131,7 @@ function EntityDetailDrawer({
     { id: "relationships", label: "Relations",  count: incomingRels.length + outgoingRels.length },
     { id: "actions",       label: "Actions",    count: actions.length },
     { id: "metrics",       label: "Metrics",    count: metrics.length },
+    ...(entity.has_lifecycle ? [{ id: "map" as DrawerTab, label: "Map" }] : []),
   ];
 
   return (
@@ -413,6 +415,14 @@ function EntityDetailDrawer({
               ))
             )}
           </div>
+        )}
+
+        {tab === "map" && (
+          <ProcessMapper
+            connId={connectionId}
+            entityId={entity.id}
+            onInvestigate={onInvestigate}
+          />
         )}
       </div>
     </div>
@@ -879,6 +889,7 @@ export function OntologyPanel({ connectionId, onInvestigate }: Props) {
         <div className="flex-1 overflow-hidden relative">
           <OntologyCanvas
             graph={graph}
+            connId={connectionId}
             selectedEntityId={selectedEntityId}
             onSelectEntity={(id) => { setSelectedEntityId(id); setSelectedEdge(null); setShowSettings(false); }}
             onInvestigate={onInvestigate}

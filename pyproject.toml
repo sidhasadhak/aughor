@@ -25,9 +25,14 @@ dependencies = [
     "pyyaml>=6.0.3",
     "qdrant-client>=1.9.0",
     "langgraph-checkpoint-sqlite>=3.1.0",
+    "python-multipart>=0.0.9",
 ]
 
 [project.optional-dependencies]
+docs = [
+    "PyPDF2>=3.0.0",
+    "python-docx>=1.0.0",
+]
 warehouse = [
     "ibis-framework[duckdb,postgres]>=9.0.0",
     "connectorx>=0.3.3",

@@ -66,6 +66,14 @@
 | Loading state hardening (51) | `web/components/ActivityLog.tsx`, `DomainIntelPanel.tsx`, `HistoryPanel.tsx`, `ConfigurePanel.tsx` | `useState(false)` init (was `true`) + `AbortController` 8s timeout + silent error handling across all data-panel components; UI always renders immediately and populates when data arrives |
 | Home stat card navigation (52) | `web/app/page.tsx` | "Tables in Schema" → Schema tab; "Entities Mapped" → Ontology tab; "Insights discovered" → Intelligence sub-section of Exploration (+ real count from `getDomainInsights`); "Queries executed" → Activity tab; `StatCard` gained `onClick`, hover animation, pointer cursor |
 | Schema cache — backend + frontend (53) | `aughor/api.py`, `web/lib/schema-context.tsx`, `SchemaPanel.tsx`, `CatalogPanel.tsx`, `ConfigurePanel.tsx` | Backend: 5-min TTL in-process cache per connection (`_get_schema_cached`) eliminates repeated COUNT(*) + profiling + ontology rebuild on every `/schema` HTTP request; invalidated on delete/rebuild. Frontend: `SchemaProvider` React Context wraps right panel; one fetch per connection switch; `SchemaPanel`, `CatalogPanel`, `DataTab` all consume from context |
+| Metric Targets & Health Scorecard (54) | `aughor/ontology/models.py`, `aughor/semantic/metrics.py`, `aughor/agent/prompts_investigate.py`, `aughor/api.py`, `web/components/ProcessHealthPanel.tsx`, `web/components/MetricsPanel.tsx`, `web/lib/api.ts` | `OntologyMetric` + `MetricDefinition` gain `target_value`, `warning_threshold`, `critical_threshold`, `target_period`, `benchmark_source`; `GET /connections/{conn_id}/health-scorecard` executes each metric's SQL and returns green/yellow/red status + variance; `ProcessHealthPanel` renders health grid on home page with "Investigate →" per off-target metric; ADA synthesis receives `{metric_targets_section}` to prioritise controllable root causes above threshold; MetricsPanel form extended with Health Scorecard section |
+| Structured Playbook from KB (55) | `aughor/playbook/models.py`, `store.py`, `builder.py`, `retriever.py`, `aughor/agent/investigate.py`, `aughor/agent/prompts_investigate.py`, `aughor/api.py`, `web/components/PlaybookPanel.tsx` | `seed_from_kb()` converts 272 draft `PlaybookEntry` objects from 84 Tier-2 KB causal entries on startup; `retrieve_for_metric_and_phases()` matches investigation context to playbook entries by metric name + tag scoring; `{playbook_section}` injected into `ADA_SYNTHESIZE_PROMPT`; LLM prefers retrieved entries and flags unmatched ones "[unproven]"; full CRUD + seed API; `PlaybookPanel` in Data → Playbook tab with browse/filter/promote/deprecate |
+| Outcome Tracking & Feedback Loop (56) | `aughor/playbook/outcomes.py`, `aughor/api.py`, `web/components/ReportView.tsx`, `web/components/RecommendationInbox.tsx` | `RecOutcome` model; per-recommendation "Mark" dropdown (accepted/implemented/verified/rejected/dismissed) in ReportView; `POST /investigations/{inv_id}/recommendations/{rec_index}/outcome` + `GET` outcomes endpoints; `update_playbook_success_rates()` recomputes `historical_success_rate` and auto-promotes drafts with ≥2 outcomes + ≥50% success; `RecommendationInbox` shows cross-investigation pending actions in Data → Inbox tab |
+| Document Ingestion — Context Layer (57) | `aughor/knowledge/documents.py`, `aughor/knowledge/indexer.py`, `aughor/agent/investigate.py`, `aughor/agent/prompts_investigate.py`, `aughor/api.py`, `web/components/DocumentUploader.tsx` | Paragraph-aware chunker for PDF/Word/Markdown/TXT; `aughor_documents` Qdrant collection; `{external_context_section}` injected into ADA synthesis; drag-and-drop uploader in Data → Documents tab; optional `[docs]` dep group |
+| Business Process Visual Mapper (58) | `aughor/process/models.py`, `aughor/process/mapper.py`, `aughor/api.py`, `web/components/ProcessMapper.tsx`, `web/components/OntologyPanel.tsx` | LAG() SQL transition volumes per `(from_state, to_state)` pair; node counts via GROUP BY; custom SVG swimlane with conversion-rate health colours; SVG-native tooltip; "Investigate →" per node; "Map" tab in entity detail drawer for lifecycle entities |
+| Causal Graph — Outcome-Gated (59) | `aughor/process/causal.py`, `aughor/agent/investigate.py`, `aughor/agent/prompts_investigate.py`, `aughor/playbook/outcomes.py`, `aughor/playbook/retriever.py`, `aughor/api.py`, `web/components/OntologyCanvas.tsx`, `web/lib/api.ts` | ADA extracts structured `CausalLinkModel` pairs at synthesis time; saved as proposals keyed by `inv_id`; promoted to `ConfirmedCausalEdge` only when a recommendation is marked verified/implemented; weight +1 per confirmation, -1 per rejection (pruned at 0); backward traversal injects confirmed causal context into future investigations; orange dashed arrows on OntologyCanvas with ×N weight badge |
+| Streaming completion fix | `web/lib/useChat.ts` | `ADA_REPORT` and `EXPLORE_REPORT` reducer cases now set `streaming: false` immediately — UI no longer shows "running" while server generates follow-ups and persists investigation |
+| Consistent panel background | `web/app/page.tsx`, `web/components/ChatPanel.tsx` | All right panels standardised to `#0d0e11`; main content wrapper sets it as base; ChatPanel root + input bar updated to match |
 
 ---
 
@@ -952,6 +960,154 @@ autoevals>=0.0.70
 
 ---
 
+## Milestone 13 — Business Intelligence Layer
+**Goal:** Transform Aughor from a reactive analyst into a proactive operating system for the business. Six phases in priority order — each buildable on top of what's already shipped. Together they close the loop between data, diagnosis, and action.
+
+**Foundation already in place:** OntologyMetric with formula_sql (M12b ✅), 84 Tier-2 KB causal chains with `inflation_causes`/`deflation_causes` (2j ✅), ADA attribution waterfall with `controllable` flag (investigate.py ✅), Qdrant running with 3 collections + nomic-embed-text embedder (1c ✅), ontology lifecycle states extracted per entity (M12a ✅), `recommended_actions: list[str]` already in `AnalysisReport` (state.py ✅).
+
+---
+
+### Phase 13a — Metric Targets & Health Scorecard
+
+**What:** Add target values and alert thresholds to metrics. Build a `/health-scorecard` endpoint and a `ProcessHealthPanel` that shows green/yellow/red status for every tracked metric — before the user asks a single question.
+
+**Why first:** The smallest code change with the largest product transformation. Aughor currently answers questions; this makes it volunteer problems. A user opening the app should see "Refund Rate: 12% vs target 8% (red, ↑ trend)" in 2 seconds.
+
+**Files to modify:**
+- `aughor/ontology/models.py` — extend `OntologyMetric`: add `target_value: Optional[float]`, `warning_threshold: Optional[float]`, `critical_threshold: Optional[float]`, `target_period: Optional[str]`, `benchmark_source: Optional[str]`
+- `aughor/semantic/metrics.py` — extend `MetricDefinition` with same target fields; `load_metrics()` / `save_metric()` updated
+- `aughor/agent/prompts_investigate.py` — `ADA_SYNTHESIZE_PROMPT` gains instruction: "Compare findings against `{metric_targets_section}`. Prioritize controllable root causes where current value exceeds warning_threshold."
+- `aughor/api.py` — new `GET /connections/{conn_id}/health-scorecard` endpoint: for each metric with a target, execute its `formula_sql`, compute variance + trend, return `{metric, current, target, variance, status: green|yellow|red, trend: up|down|flat}` array
+- `web/lib/api.ts` — `getHealthScorecard(connId)` + TypeScript types
+- `web/components/MetricsPanel.tsx` — add target/threshold fields to the metrics form
+
+**Files to create:**
+- `web/components/ProcessHealthPanel.tsx` — grid of metric health cards; color-coded status; "Investigate" button per red/yellow metric that launches an ADA investigation pre-scoped to that metric; sparkline trend (last 7 data points via existing stats engine)
+
+**New deps:** none  
+**Acceptance:** Opening ProcessHealthPanel on the Olist dataset shows at least 3 metrics with color-coded status. Clicking "Investigate" on a red metric launches an ADA investigation with that metric as the hypothesis seed. Target fields appear in the metrics form and persist across restart.
+
+---
+
+### Phase 13b — Structured Playbook from KB
+
+**What:** Convert the 84 Tier-2 KB entries into a persistent, retrievable playbook of proven interventions. During ADA synthesis, recommendations are retrieved from the playbook rather than hallucinated. If no playbook entry matches, the LLM generates one but flags it "unproven".
+
+**Why:** The KB already encodes "if refund_rate > 10%, check return policy window" — it just isn't stored as a reusable recommendation with a success rate. This is 80% a data transformation problem, not a new capability problem.
+
+**Files to create:**
+- `aughor/playbook/__init__.py`
+- `aughor/playbook/models.py` — `PlaybookEntry(BaseModel)`: `id`, `trigger_metric: str`, `trigger_operator: Literal["gt","lt","eq"]`, `trigger_value: float`, `trigger_condition: str`, `recommendation: str`, `expected_impact: str`, `typical_timeline: str`, `owner_role: str`, `evidence_sources: list[str]`, `historical_success_rate: float`, `status: Literal["active","deprecated","draft"]`
+- `aughor/playbook/store.py` — `load_playbook()`, `save_entry()`, `list_entries()`, `get_by_metric(metric: str)` → `list[PlaybookEntry]`; persists to `data/playbook.json`
+- `aughor/playbook/builder.py` — `seed_from_kb(kb_entries) → list[PlaybookEntry]`; converts each `inflation_causes` / `deflation_causes` / `causal_relationships` KB entry into draft `PlaybookEntry` objects; run once on startup if `data/playbook.json` is empty
+- `aughor/playbook/retriever.py` — `retrieve_for_root_cause(metric_name: str, direction: Literal["up","down"], ontology: OntologyGraph) → list[PlaybookEntry]`; returns matching entries sorted by `historical_success_rate`
+
+**Files to modify:**
+- `aughor/agent/investigate.py` — after ADA root-cause identification, call `playbook_retriever.retrieve_for_root_cause()` and inject matched entries into `recommendations`; unmatched root causes fall back to LLM with `"[unproven — add to playbook?]"` suffix in the recommendation text
+- `aughor/api.py` — `GET /playbook`, `GET /playbook/{id}`, `POST /playbook`, `PUT /playbook/{id}`, `DELETE /playbook/{id}`
+
+**Files to create (web):**
+- `web/components/PlaybookPanel.tsx` — browse entries by metric/trigger; edit recommendation text and owner_role; approve drafts; "Add to Playbook" button surfaces in investigation reports when an LLM-generated recommendation has no playbook match
+
+**New deps:** none  
+**Acceptance:** After `seed_from_kb()` runs, `GET /playbook` returns ≥ 20 draft entries from the Olist KB. An ADA investigation that identifies refund rate as a root cause includes at least one playbook-sourced recommendation.
+
+---
+
+### Phase 13c — Outcome Tracking & Feedback Loop
+
+**What:** Allow users to mark recommendations as accepted, implemented, or done. Track before/after metric values. Over time, `historical_success_rate` on playbook entries reflects real organisational history.
+
+**Why:** Without this, the playbook is a static list. With it, the system learns. After 10 "reviewed return policy" outcomes, Aughor knows that action has a 70% success rate in 4 weeks — and surfaces it first for new refund-rate spikes.
+
+**Files to create:**
+- `aughor/playbook/outcomes.py` — `RecOutcome(BaseModel)`: `id`, `inv_id`, `rec_id`, `action_text`, `metric_name`, `metric_before: Optional[float]`, `metric_after: Optional[float]`, `status: Literal["accepted","rejected","implemented","verified"]`, `implemented_at: Optional[str]`, `verified_at: Optional[str]`; `log_outcome()`, `load_outcomes_for_inv(inv_id)`, `update_playbook_success_rates()` (recomputes `historical_success_rate` from outcomes table)
+
+**Files to modify:**
+- `aughor/agent/state.py` — assign stable IDs to each item in `recommended_actions` (change `list[str]` to `list[RecommendationItem]` with `id` + `text` fields)
+- `aughor/api.py` — `POST /investigations/{inv_id}/recommendations/{rec_id}/status` with body `{status, metric_before?, metric_after?}`; calls `outcomes.log_outcome()` + triggers `update_playbook_success_rates()`; `GET /investigations/{inv_id}/recommendations` lists current statuses
+- `aughor/agent/investigate.py` — `ADA_SYNTHESIZE_PROMPT` gains `{playbook_evidence_section}`: "These recommendations have prior outcome data: [entry.recommendation — tried N times, success rate X%]"; retriever now sorts by `historical_success_rate` descending
+
+**Files to create (web):**
+- `web/components/RecommendationInbox.tsx` — shows all pending recommendations from recent investigations; each card: action text, expected impact, evidence link, "Mark Done" button, metric before/after input fields; accessible from the home page and from individual investigation reports
+
+**New deps:** none  
+**Acceptance:** Marking a recommendation "verified" with before/after values triggers `update_playbook_success_rates()`. The next ADA investigation on the same metric receives a prompt section showing the historical success rate.
+
+---
+
+### Phase 13d — Document Ingestion (Context Layer)
+
+**What:** Allow users to upload PDFs, Word docs, and Markdown files (SOPs, return policies, strategy decks). Chunks are embedded into a new Qdrant collection. During ADA synthesis, relevant document snippets are retrieved and injected as external context alongside the KB.
+
+**Why:** Aughor currently only knows what's in the database schema and the hardcoded KB. It cannot answer "How does our return rate compare to our stated policy?" because it has never read the return policy document. This adds the missing external-context channel.
+
+**Files to create:**
+- `aughor/knowledge/__init__.py`
+- `aughor/knowledge/documents.py` — `parse_document(path: str) → list[str]` (chunked text, ~400 tokens/chunk); handles `.pdf` (PyPDF2), `.docx` (python-docx), `.md` and `.txt` (direct split); returns chunks with `{chunk_text, source_file, chunk_index}`
+- `aughor/knowledge/indexer.py` — `index_document(conn_id, doc_id, chunks)`: embeds each chunk via existing `embedder.py`, upserts into new `aughor_documents` Qdrant collection with payload `{conn_id, doc_id, source_file, chunk_index, text}`; `search_documents(conn_id, query, k=5) → list[str]`; `delete_document(conn_id, doc_id)`
+
+**Files to modify:**
+- `aughor/semantic/kb_retriever.py` — `retrieve_for_synthesis(conn_id, question) → str`: after existing KB retrieval, also calls `indexer.search_documents(conn_id, question)`; returns combined block with `## KNOWLEDGE BASE` and `## UPLOADED DOCUMENTS` sections
+- `aughor/agent/prompts_investigate.py` — `ADA_SYNTHESIZE_PROMPT` gains `{external_context_section}` placeholder; prompt instructs: "If UPLOADED DOCUMENTS contains policy or benchmark data relevant to the finding, cite it explicitly."
+- `aughor/api.py` — `POST /connections/{conn_id}/documents` (multipart upload); `GET /connections/{conn_id}/documents` (list); `DELETE /connections/{conn_id}/documents/{doc_id}`
+
+**Files to create (web):**
+- `web/components/DocumentUploader.tsx` — drag-and-drop upload in the Configure panel (Data tab); shows uploaded document list with delete; file type badge (PDF/Word/Markdown)
+
+**New deps:**
+```
+PyPDF2>=3.0.0
+python-docx>=1.0.0
+```
+
+**Acceptance:** Uploading a return-policy PDF and running an investigation that touches refund rate includes a synthesis note citing the uploaded document. `GET /connections/{conn_id}/documents` lists the file. Deleting it removes the Qdrant vectors.
+
+---
+
+### Phase 13e — Business Process Visual Mapper
+
+**What:** Extract process flows from the ontology's lifecycle states. Compute transition volumes and dwell times per step via SQL. Render as a colour-coded swimlane diagram — each step green/yellow/red based on drop-off rate vs baseline.
+
+**Why:** The CEO can open Aughor, see the Order-to-Cash flow, spot that "Payment Authorization" has a 40% drop-off vs industry 15%, and click through to an investigation. This is the "show me the map" entry point before the user knows what question to ask.
+
+**Files to create:**
+- `aughor/process/__init__.py`
+- `aughor/process/models.py` — `ProcessStep(BaseModel)`: `id`, `entity_id`, `state_name`, `volume: int`, `entry_rate: float`, `drop_off_rate: float`, `avg_dwell_seconds: Optional[float]`, `health_status: Literal["green","yellow","red"]`; `ProcessFlow(BaseModel)`: `entity_id`, `steps: list[ProcessStep]`, `transitions: list[StepTransition]`; `StepTransition`: `from_state`, `to_state`, `volume`, `rate`
+- `aughor/process/mapper.py` — `build_process_flow(conn_id, entity: OntologyEntity, db) → ProcessFlow`: (1) queries `SELECT {status_col}, COUNT(*) FROM {source_table} GROUP BY 1` to get volumes per state; (2) queries transition pairs via `LAG(status)` window function where available; (3) computes drop-off = 1 - (volume_next / volume_current); (4) flags step red if drop-off > 2 standard deviations above mean across all steps
+
+**Files to modify:**
+- `aughor/api.py` — `GET /connections/{conn_id}/process-flows` returns all entity flows; `GET /connections/{conn_id}/process-flows/{entity_id}` returns single flow
+
+**Files to create (web):**
+- `web/components/ProcessMapper.tsx` — horizontal swimlane using `@xyflow/react` (already in deps from OntologyCanvas); nodes = lifecycle states with volume badge and red/yellow/green ring; edges = transitions with volume label; click node → `onChatWithStep` callback launches investigation scoped to that step's drop-off
+
+**New deps:** none (`@xyflow/react` already installed)  
+**Acceptance:** `GET /connections/{conn_id}/process-flows` returns at least one flow for the Olist dataset with the Order entity's 7 lifecycle states. Clicking a red step in the ProcessMapper launches an ADA investigation.
+
+---
+
+### Phase 13f — Causal Graph in the Ontology
+
+**What:** Store causal edges in the ontology graph — extracted from ADA attribution waterfalls and domain intelligence episodes. Enable backward traversal: given an off-target metric, algorithmically trace upstream causal drivers and surface matching playbook actions without an LLM call.
+
+**Why:** The ADA waterfall already produces "discount_depth contributed 42% to revenue decline" — that is a causal edge sitting in prose. Extracting it and persisting it makes the ontology a true digital twin: not just what exists, but what drives what.
+
+**Files to modify:**
+- `aughor/ontology/models.py` — add `CausalEdge(BaseModel)`: `id`, `source_metric: str`, `target_metric: str`, `relationship: Literal["drives","inhibits","correlates_with"]`, `evidence_strength: Literal["strong","moderate","weak","hypothesized"]`, `contribution_pct: Optional[float]`, `typical_lag: Optional[str]`, `source_investigations: list[str]`; add `causal_edges: dict[str, CausalEdge]` to `OntologyGraph`
+- `aughor/ontology/store.py` — `append_causal_edge(conn_id, edge: CausalEdge)` upserts into persisted graph
+- `aughor/agent/investigate.py` — after ADA synthesis, parse `attribution_waterfall` entries and call `store.append_causal_edge()` for each contribution with `contribution_pct > 5%`; `evidence_strength` = "strong" if pct > 20%, "moderate" if 10–20%, "weak" otherwise
+- `aughor/playbook/retriever.py` — add `traverse_causal_graph(off_target_metric, ontology, max_depth=3) → list[str]`: BFS backward from `target_metric` through causal edges; returns list of upstream `source_metric` names; `retrieve_for_root_cause` gains a causal traversal pass before the direct metric lookup
+- `aughor/api.py` — `GET /ontology/causal-edges` returns all edges; `GET /ontology/causal-edges/{metric}` returns edges where `target_metric == metric`
+
+**Files to modify (web):**
+- `web/components/OntologyCanvas.tsx` — render `causal_edges` as dashed arrows (`strokeDasharray: "4 2"`) with `relationship` label; edge colour: drives=amber, inhibits=red, correlates_with=zinc; click causal edge → show `contribution_pct` and source investigation link
+
+**New deps:** none  
+**Acceptance:** After 3 ADA investigations on the Olist dataset, `GET /ontology/causal-edges` returns ≥ 5 edges. OntologyCanvas shows dashed causal arrows alongside solid structural edges. `traverse_causal_graph("revenue")` returns upstream drivers that map to playbook entries.
+
+---
+
 ## Build Sequence & Dependency Graph
 
 **Recommended sprint order — each sprint compounds on the last:**
@@ -962,14 +1118,21 @@ autoevals>=0.0.70
 | **2 — Semantic Depth** ✅ | 1e (Metrics Catalog) + 2j (KB Pattern Enrichment) | Agent understands business KPIs and causal chains |
 | **3 — Conversational** ✅ | M9 (Quick Chat + multi-turn history + Chart Engine + Deep Analysis tab) | Analyst-feel experience; session memory; rich inline charts; resizable |
 | **5 — Ontology (structural)** ✅ | M12a (entity/relationship extraction — no LLM) | Grain-verified entities, lifecycle states, cardinality joins; ENTITY MODEL in every prompt |
-| **6 — Ontology (semantic)** | M12b (LLM enrichment + ACTION: tokens) | Planner calls actions; business rules enforced automatically |
+| **6 — Ontology (semantic)** ✅ | M12b (LLM enrichment + ACTION: tokens) | Planner calls actions; business rules enforced automatically |
 | **7 — Production Safety** | M6 (Security: Gradient Safety + PII + Audit + Budget) + M7 (Observability) | Enterprise-ready; Langfuse traces |
 | **8 — Analytical Depth** | M4 (Prophet forecasting) + M2d (Events Calendar) | "Is this drop unusual *given the trend*?" |
 | **9 — LLM-free Path** | M11 (Visual Query Builder) | Deterministic queries; power user UX |
-| **10 — Ontology UI** | M12c (OntologyPanel + metric divergence detection) | Browsable semantic layer; divergent metric flagging |
+| **10 — Ontology UI** ✅ | M12c (OntologyPanel + metric divergence detection) | Browsable semantic layer; divergent metric flagging |
 | **11 — Infra Evolution** ✅ | M3 (ibis + Connector-X + Materializer) | ibis optional backend; connectorx bulk_read; sidecar DuckDB query cache |
 | **12 — Provider Flexibility** | M5 (Anthropic backend + prompt caching) | Cloud deployment fallback when Ollama unavailable |
-| **13 — Quality Gates** | M10 (Evals — Braintrust) | CI regression testing on verdict quality |
+| **13 — Infrastructure polish** ✅ | Plan-then-SQL (49) + Non-blocking event loop (50) + Loading hardening (51) + Stat cards (52) + Schema cache (53) | Clean two-stage planner; zero-blocking API; instant panel renders |
+| **14 — BI Layer: Health** | M13a (Metric Targets + Health Scorecard) | Aughor shows process health proactively on open; reactive Q&A → proactive monitoring |
+| **15 — BI Layer: Playbook** | M13b (Playbook from KB) | KB causal chains become reusable, retrievable interventions; recommendations stop being hallucinated |
+| **16 — BI Layer: Feedback** | M13c (Outcome Tracking) | Recommendations get a success rate; system learns from organisational history |
+| **17 — BI Layer: Context** | M13d (Document Ingestion) | SOPs, return policies, strategy docs feed into synthesis; Qdrant infra already ready |
+| **18 — BI Layer: Process Map** | M13e (Business Process Visual Mapper) | Swimlane health diagram; click red step → ADA investigation |
+| **19 — BI Layer: Causal Twin** | M13f (Causal Graph in Ontology) | ADA waterfalls write causal edges; algorithmic root-cause traversal |
+| **20 — Quality Gates** | M10 (Evals — Braintrust) | CI regression testing on verdict quality |
 
 ```
 History ✅
@@ -1028,6 +1191,23 @@ ER Diagram ✅                ←  Mermaid infra reused (made interactive) in M1
 Metrics Catalog (1e) ✅      ←  metric formulas become OntologyMetric.formula_sql in M12a/12b
 
 Evals (M10)  ←  needs History ✅ + stable Two-Model Arch (2a) ✅
+
+Ontology Semantic (M12b) ✅ + KB Pattern Enrichment (2j) ✅ + ADA waterfall (investigate.py) ✅
+    └── M13a: Metric Targets + Health Scorecard  ←  add target/threshold fields to OntologyMetric; scorecard API reads metric formula_sql; ProcessHealthPanel
+            └── M13b: Playbook from KB  ←  KB inflation/deflation/causal entries → PlaybookEntry objects; ADA synthesis retrieves instead of hallucinating
+                    └── M13c: Outcome Tracking  ←  accept/reject/done per recommendation; success rate updates playbook entries
+                            └── M13b v2: ranked retrieval by historical_success_rate
+
+Qdrant (1c) ✅ + Embedder (1c) ✅ + kb_retriever.py ✅
+    └── M13d: Document Ingestion  ←  new aughor_documents collection; same upsert/search pattern; {external_context_section} in ADA synthesis
+
+Ontology lifecycle states (M12a) ✅ + Explorer join verification (42) ✅ + OntologyCanvas (@xyflow/react) ✅
+    └── M13e: Process Visual Mapper  ←  lifecycle states → swimlane nodes; LAG() transition volumes; drop-off rate health colours
+            └── M13d: "Compare to Industry" overlay  ←  depends on uploaded benchmark documents
+
+ADA attribution waterfall (investigate.py) ✅ + OntologyGraph (M12b) ✅ + Playbook (M13b)
+    └── M13f: Causal Graph  ←  extract causal edges from ADA waterfalls after each investigation; BFS backward traversal root cause → playbook action
+            └── OntologyCanvas: dashed causal arrows alongside solid structural edges
 ```
 
 ---
@@ -1066,7 +1246,7 @@ Evals (M10)  ←  needs History ✅ + stable Two-Model Arch (2a) ✅
 
 ## Current focus
 
-**Shipped:** M1 (Semantic Layer), M2a–2c + 2e–2j (Agent hardening, HITL, Direct Query, Routing v2, SQL KB, Error Classification, Schema Intelligence, KB Enrichment), M8 (Frontend Charts, Chart Intelligence, Report UX), M9 (Quick Chat + Chart Engine + Deep Analysis tab), 1e (Metrics Catalog), ER Diagram, Rich Schema Card UI, Global Analytics Rules (32), Hypothesis Expanded Accordion (33), Connection-scoped semantic cache, Paren-aware ROUND rewriter, Schema parser dedup, Timeout 600 s, UI color pass, **M12 Background Schema Explorer + Business Ontology + Domain Intelligence + SqlWriter (48 features total)**, Plan-then-SQL Separation (49), Non-blocking event loop (50), Loading state hardening (51), Home stat card navigation (52), Schema cache backend + frontend (53)
+**Shipped:** M1 (Semantic Layer), M2a–2c + 2e–2j (Agent hardening, HITL, Direct Query, Routing v2, SQL KB, Error Classification, Schema Intelligence, KB Enrichment), M8 (Frontend Charts, Chart Intelligence, Report UX), M9 (Quick Chat + Chart Engine + Deep Analysis tab), 1e (Metrics Catalog), ER Diagram, Rich Schema Card UI, Global Analytics Rules (32), Hypothesis Expanded Accordion (33), Connection-scoped semantic cache, Paren-aware ROUND rewriter, Schema parser dedup, Timeout 600 s, UI color pass, **M12 Background Schema Explorer + Business Ontology + Domain Intelligence + SqlWriter (48 features total)**, Plan-then-SQL Separation (49), Non-blocking event loop (50), Loading state hardening (51), Home stat card navigation (52), Schema cache backend + frontend (53), **M13a–13e: Metric Targets + Health Scorecard (54), Structured Playbook from KB (55), Outcome Tracking & Feedback Loop (56), Document Ingestion (57), Process Visual Mapper (58)**
 
 **Sprint 12 — Background Explorer + Domain Intelligence ✅ SHIPPED:**
 - `aughor/explorer/agent.py` — `SchemaExplorer` with 8 phases: null meanings (3), join verification (4), lifecycle mapping (5), distribution profiling (6), cross-table patterns (7), domain intel loop (8)
@@ -1126,6 +1306,46 @@ Evals (M10)  ←  needs History ✅ + stable Two-Model Arch (2a) ✅
 - Home stat card navigation (52): every stat card on the home page now deep-links to the relevant tab (Schema / Ontology / Intelligence / Activity); Insights count uses real domain intelligence count
 - Schema cache — backend + frontend (53): eliminates 3–6 redundant `get_schema()` calls per panel interaction; backend 5-min TTL cache + frontend React Context share one fetch across SchemaPanel, CatalogPanel, and DataTab
 
-**Sprint 8 onward:** M6 + M7 (Security + Observability) → M4 (Prophet) + M2d (Events Calendar) → M11 (Visual Builder) → M10 (Evals)
+**Sprint 14 — M13a: Metric Targets & Health Scorecard ✅ SHIPPED:**
+- `OntologyMetric` + `MetricDefinition` extended with `target_value`, `warning_threshold`, `critical_threshold`, `target_period`, `benchmark_source`
+- `GET /connections/{conn_id}/health-scorecard` executes each metric's `sql` and returns green/yellow/red + variance
+- `ProcessHealthPanel.tsx` — health grid on home page; red/yellow cards show "Investigate →" button; sorted by urgency
+- `ADA_SYNTHESIZE_PROMPT` gains `{metric_targets_section}`; synthesis prioritises controllable root causes above threshold
+- `MetricsPanel.tsx` — Health Scorecard section in form with target/threshold/period/benchmark fields
+
+**Sprint 15 — M13b: Structured Playbook from KB ✅ SHIPPED:**
+- `aughor/playbook/` — `models.py`, `store.py`, `builder.py`, `retriever.py`
+- `seed_from_kb()` converts 272 draft `PlaybookEntry` objects from 84 Tier-2 KB causal entries on first startup; `force=True` replaces KB entries while preserving user-created ones
+- ADA synthesis: `{playbook_section}` injected into `ADA_SYNTHESIZE_PROMPT`; retriever matches investigation labels against `trigger_metric` + tags; LLM instructed to prefer playbook entries and flag unmatched ones "[unproven — consider adding to playbook]"
+- `GET/POST/PUT/DELETE /playbook` + `POST /playbook/seed` API routes
+- `web/components/PlaybookPanel.tsx` — browse/filter/promote/deprecate entries; "Re-seed from KB" button; accessible via Data → Playbook tab
+
+**Sprint 16 — M13c: Outcome Tracking ✅ SHIPPED:**
+- `aughor/playbook/outcomes.py` — `RecOutcome` model; `log_outcome()` upserts to `data/recommendation_outcomes.json`; `update_playbook_success_rates()` recomputes `historical_success_rate` and auto-promotes drafts with ≥2 outcomes + ≥50% success to active
+- `POST /investigations/{inv_id}/recommendations/{rec_index}/outcome` + `GET /investigations/{inv_id}/outcomes` API routes; triggers `update_playbook_success_rates()` on terminal status
+- `ReportView.tsx` — per-recommendation `RecommendationCard` with "Mark" dropdown (accepted / implemented / verified / rejected / dismissed); existing outcomes loaded on mount; status chip replaces button when actioned
+- `web/components/RecommendationInbox.tsx` — cross-investigation inbox; loads recent complete investigations, aggregates pending recommendations, "View →" deep-links to chat; pending/all filter toggle
+- Data panel "Inbox" tab wires inbox into the main layout
+
+**Sprint 17 — M13d: Document Ingestion ✅ SHIPPED:**
+- `aughor/knowledge/documents.py` — `extract_text()` for PDF/Word/Markdown/TXT; paragraph-aware chunker (~400 tokens / ~200 token overlap); `chunk_file()` returns `DocumentChunk` objects
+- `aughor/knowledge/indexer.py` — `index_file()` embeds chunks into `aughor_documents` Qdrant collection; `search_documents()` semantic retrieval; `build_external_context_section()` for prompt injection; `data/documents.json` metadata registry; `delete_document()` removes both registry + Qdrant chunks
+- `ADA_SYNTHESIZE_PROMPT` gains `{external_context_section}`; `_ada_synthesize()` retrieves top-4 document snippets against the investigation question and injects them before synthesis
+- `POST /documents/upload` (multipart), `GET /documents`, `DELETE /documents/{doc_id}`, `POST /documents/search` API routes
+- `web/components/DocumentUploader.tsx` — drag-and-drop zone, multi-file upload, per-doc chunk count + age, remove button; accessible via Data → Documents tab
+- **New deps:** `python-multipart>=0.0.9` (core); `PyPDF2>=3.0.0`, `python-docx>=1.0.0` (optional `[docs]` group)
+
+**Sprint 18 — M13e: Process Visual Mapper ✅ SHIPPED:**
+- `aughor/process/models.py` — `ProcessNode`, `ProcessEdge`, `ProcessMap` Pydantic models
+- `aughor/process/mapper.py` — `build_process_map()`: GROUP BY for node counts; LAG() SQL over `created_at_col` + `identity_key` for transition edges; graceful fallback to nodes-only when no temporal column; terminal state detection; ontology-order-preserving node sort
+- `GET /connections/{conn_id}/process-map/{entity_id}` API endpoint
+- `web/components/ProcessMapper.tsx` — custom SVG swimlane (no extra dep); nodes coloured by minimum outbound conversion rate (green ≥80% / amber ≥50% / red <50%); edge arcs with stroke-width scaled to volume + rate % labels; SVG-native tooltip; "Investigate →" click per node
+- Wired into `EntityDetailDrawer` in `OntologyPanel.tsx` as a new "Map" tab (only shown for entities with `has_lifecycle: true`)
+
+**Sprint 19 — M13f: Causal Graph:**
+- `CausalEdge` model in `ontology/models.py`; appended to OntologyGraph after each ADA investigation
+- Backward traversal in `playbook/retriever.py`; dashed causal arrows in OntologyCanvas
+
+**After M13:** M6 + M7 (Security + Observability) → M4 (Prophet) + M2d (Events Calendar) → M11 (Visual Builder) → M10 (Evals)
 
 **Deferred:** M5 Provider Switcher (Anthropic backend) — moved to near-end; M6 Security must land before any multi-tenant or enterprise deployment

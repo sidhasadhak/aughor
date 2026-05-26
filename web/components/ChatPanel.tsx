@@ -51,7 +51,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
     <div
       className="rounded-xl flex flex-col overflow-hidden"
       style={{
-        background: "#11171D",
+        background: "#0d0e11",
         border: "1px solid rgba(255,255,255,0.09)",
         boxShadow: "0 6px 20px rgba(0,0,0,0.5), 0 1px 0 rgba(255,255,255,0.04) inset",
       }}
@@ -328,7 +328,7 @@ export function ChatPanel({ connectionId, restoreSessionId, initialQuestion, ini
   };
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 overflow-hidden" style={{ background: "#11171D" }}>
+    <div className="flex-1 flex flex-col min-w-0 overflow-hidden" style={{ background: "#0d0e11" }}>
 
       {isEmpty ? (
         /* ── Empty state ── */
@@ -451,7 +451,7 @@ export function ChatPanel({ connectionId, restoreSessionId, initialQuestion, ini
           </div>
 
           {/* ── Input bar ── */}
-          <div className="border-t border-zinc-800 pt-3 pb-3 shrink-0" style={{ background: "#11171D" }}>
+          <div className="border-t border-zinc-800 pt-3 pb-3 shrink-0" style={{ background: "#0d0e11" }}>
             <div className="w-[90%] mx-auto space-y-2">
               <InputBox {...inputBoxProps} />
               <p className="text-[12px] text-center" style={{ color: "#687986" }}>Always review the accuracy of responses.</p>

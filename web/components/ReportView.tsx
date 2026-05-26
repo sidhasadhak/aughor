@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -12,6 +12,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import type { DataQualityNote, Finding, Hypothesis, QueryCitation, Report, StatResult, Verdict } from "@/lib/types";
+import { logOutcome, getInvestigationOutcomes, type RecOutcome, type RecStatus } from "@/lib/api";
 import { InvestigationChart } from "@/components/InvestigationChart";
 import { SHARE_COL_PATTERN, buildColumnFormatter } from "@/lib/formatCell";
 
@@ -21,6 +22,7 @@ interface Props {
   queryHistory?: QueryCitation[];
   queryMode?: "direct" | "investigate" | null;
   hypotheses?: Hypothesis[];
+  invId?: string | null;
 }
 
 // ── Palette definitions ──────────────────────────────────────────────────────
@@ -469,11 +471,104 @@ function KeyFindingCard({
   );
 }
 
+// ── Outcome status styles ─────────────────────────────────────────────────────
+
+const STATUS_STYLE: Record<RecStatus, { label: string; chip: string }> = {
+  accepted:    { label: "Accepted",    chip: "border-blue-500/30 bg-blue-500/10 text-blue-400"       },
+  implemented: { label: "Implemented", chip: "border-violet-500/30 bg-violet-500/10 text-violet-400" },
+  verified:    { label: "Verified",    chip: "border-emerald-500/30 bg-emerald-500/10 text-emerald-400" },
+  rejected:    { label: "Rejected",    chip: "border-red-500/30 bg-red-500/10 text-red-400"          },
+  dismissed:   { label: "Dismissed",   chip: "border-zinc-600 bg-zinc-800/50 text-zinc-500"          },
+};
+
+function RecommendationCard({
+  action,
+  index,
+  invId,
+  existingOutcome,
+}: {
+  action: string;
+  index: number;
+  invId: string;
+  existingOutcome: RecOutcome | undefined;
+}) {
+  const [outcome, setOutcome] = useState<RecOutcome | undefined>(existingOutcome);
+  const [saving, setSaving] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const mark = useCallback(async (status: RecStatus) => {
+    setSaving(true);
+    setMenuOpen(false);
+    try {
+      const result = await logOutcome(invId, index, action, status);
+      setOutcome(result);
+    } catch {
+      /* silent */
+    } finally {
+      setSaving(false);
+    }
+  }, [invId, index, action]);
+
+  const current = outcome ? STATUS_STYLE[outcome.status] : null;
+
+  return (
+    <div className="rounded-lg border border-violet-500/20 bg-violet-500/5 p-3 flex items-start gap-3">
+      <span className="shrink-0 flex h-5 w-5 items-center justify-center rounded-full bg-violet-500/20 border border-violet-500/30 text-xs font-mono text-violet-300 mt-0.5">
+        {index + 1}
+      </span>
+      <p className="text-sm text-zinc-300 leading-relaxed flex-1">{action}</p>
+      <div className="shrink-0 relative">
+        {current ? (
+          <div className="flex items-center gap-1.5">
+            <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded border ${current.chip}`}>
+              {current.label}
+            </span>
+            <button
+              onClick={() => setMenuOpen(o => !o)}
+              className="text-[10px] text-zinc-500 hover:text-zinc-400 transition px-1"
+              title="Change status"
+            >
+              ▾
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setMenuOpen(o => !o)}
+            disabled={saving}
+            className="text-[10px] text-zinc-500 hover:text-zinc-300 border border-zinc-600 hover:border-zinc-500 rounded px-2 py-1 transition whitespace-nowrap"
+          >
+            {saving ? "…" : "Mark"}
+          </button>
+        )}
+        {menuOpen && (
+          <div className="absolute right-0 top-full mt-1 z-20 w-36 rounded-lg border border-zinc-600 bg-zinc-900 shadow-xl overflow-hidden">
+            {(["accepted", "implemented", "verified", "rejected", "dismissed"] as RecStatus[]).map(s => (
+              <button
+                key={s}
+                onClick={() => mark(s)}
+                className="w-full text-left px-3 py-1.5 text-xs text-zinc-300 hover:bg-zinc-800 transition capitalize"
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Main ReportView ───────────────────────────────────────────────────────────
 
-export function ReportView({ report, queryCount, queryHistory = [], queryMode, hypotheses = [] }: Props) {
+export function ReportView({ report, queryCount, queryHistory = [], queryMode, hypotheses = [], invId }: Props) {
   const dqNotes = report.data_quality_notes ?? [];
   const isDirect = queryMode === "direct";
+
+  const [outcomes, setOutcomes] = useState<RecOutcome[]>([]);
+  useEffect(() => {
+    if (!invId) return;
+    getInvestigationOutcomes(invId).then(setOutcomes).catch(() => {});
+  }, [invId]);
   const isQueryFailure = isDirect && !report.verdict && report.headline === "Query execution failed";
 
   const directTable = isDirect
@@ -575,12 +670,22 @@ export function ReportView({ report, queryCount, queryHistory = [], queryMode, h
         <CollapsibleSection title="Recommended Actions">
           <div className="space-y-2">
             {(report.recommended_actions ?? []).map((action, i) => (
-              <div key={i} className="rounded-lg border border-violet-500/20 bg-violet-500/5 p-3 flex items-start gap-3">
-                <span className="shrink-0 flex h-5 w-5 items-center justify-center rounded-full bg-violet-500/20 border border-violet-500/30 text-xs font-mono text-violet-300 mt-0.5">
-                  {i + 1}
-                </span>
-                <p className="text-sm text-zinc-300 leading-relaxed">{action}</p>
-              </div>
+              invId ? (
+                <RecommendationCard
+                  key={i}
+                  action={action}
+                  index={i}
+                  invId={invId}
+                  existingOutcome={outcomes.find(o => o.rec_index === i)}
+                />
+              ) : (
+                <div key={i} className="rounded-lg border border-violet-500/20 bg-violet-500/5 p-3 flex items-start gap-3">
+                  <span className="shrink-0 flex h-5 w-5 items-center justify-center rounded-full bg-violet-500/20 border border-violet-500/30 text-xs font-mono text-violet-300 mt-0.5">
+                    {i + 1}
+                  </span>
+                  <p className="text-sm text-zinc-300 leading-relaxed">{action}</p>
+                </div>
+              )
             ))}
           </div>
         </CollapsibleSection>

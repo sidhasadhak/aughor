@@ -8,7 +8,7 @@
  * detail drawer; hover to highlight the local neighbourhood.
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import type {
   OntologyGraph,
@@ -16,7 +16,9 @@ import type {
   OntologyRelationship,
   OntologyAction,
   OntologyMetric,
+  CausalEdge,
 } from "@/lib/api";
+import { getCausalGraph } from "@/lib/api";
 
 // ── Layout constants ──────────────────────────────────────────────────────────
 
@@ -496,6 +498,87 @@ function FlowEdges({
   );
 }
 
+// ── Causal edges overlay ──────────────────────────────────────────────────────
+// Rendered on top of structural edges; dashed orange arrows between entities.
+
+function CausalEdges({
+  causalEdges,
+  nodeMap,
+  canvasW,
+  canvasH,
+}: {
+  causalEdges: CausalEdge[];
+  nodeMap: Record<string, { x: number; y: number; h: number }>;
+  canvasW: number;
+  canvasH: number;
+}) {
+  const positioned = useMemo(() => {
+    return causalEdges.flatMap(e => {
+      if (!e.from_entity || !e.to_entity) return [];
+      const src = nodeMap[e.from_entity];
+      const dst = nodeMap[e.to_entity];
+      if (!src || !dst) return [];
+      const y1 = src.y + src.h / 2 + 8;   // slight vertical offset from structural edges
+      const y2 = dst.y + dst.h / 2 + 8;
+      let x1: number, x2: number;
+      if (src.x + NODE_W <= dst.x) {
+        x1 = src.x + NODE_W; x2 = dst.x;
+      } else if (dst.x + NODE_W <= src.x) {
+        x1 = src.x; x2 = dst.x + NODE_W;
+      } else {
+        x1 = src.x + NODE_W * 0.75;
+        x2 = dst.x + NODE_W * 0.25;
+      }
+      return [{ edge: e, x1, y1, x2, y2 }];
+    });
+  }, [causalEdges, nodeMap]);
+
+  if (positioned.length === 0) return null;
+
+  return (
+    <svg
+      className="absolute inset-0 overflow-visible"
+      width={canvasW}
+      height={canvasH}
+      style={{ zIndex: 1, pointerEvents: "none" }}
+    >
+      <defs>
+        <marker id="arr-causal" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+          <path d="M1,1.5 L7,4 L1,6.5 Z" fill="#f97316" opacity="0.9" />
+        </marker>
+      </defs>
+      {positioned.map(({ edge, x1, y1, x2, y2 }) => {
+        const goRight = x2 >= x1;
+        const dx = Math.max(80, Math.abs(x2 - x1) * 0.46);
+        const cpx1 = x1 + (goRight ? dx : -dx);
+        const cpx2 = x2 - (goRight ? dx : -dx);
+        const d = `M${x1},${y1} C${cpx1},${y1} ${cpx2},${y2} ${x2},${y2}`;
+        const mx = cubicBezier(x1, cpx1, cpx2, x2, 0.5);
+        const my = cubicBezier(y1, y1, y2, y2, 0.5);
+        const weightLabel = edge.weight > 1 ? `×${edge.weight}` : "";
+        return (
+          <g key={edge.id} opacity={0.75}>
+            <path
+              d={d}
+              fill="none"
+              stroke="#f97316"
+              strokeWidth={1.5}
+              strokeDasharray="6 4"
+              markerEnd="url(#arr-causal)"
+            />
+            {weightLabel && (
+              <g transform={`translate(${mx},${my - 14})`}>
+                <rect x={-12} y={-7} width={24} height={14} rx={3} fill="#1a1008" stroke="#f97316" strokeWidth={0.7} opacity={0.9} />
+                <text textAnchor="middle" dominantBaseline="central" fontSize={8} fontFamily="monospace" fill="#fb923c">{weightLabel}</text>
+              </g>
+            )}
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
 // ── Legend ────────────────────────────────────────────────────────────────────
 
 function CanvasLegend() {
@@ -532,6 +615,12 @@ function CanvasLegend() {
             strokeDasharray="3 30" style={{ animation: "edge-flow-verified 2.2s linear infinite" }} />
         </svg>
         <span className="text-[9px] text-zinc-500">verified</span>
+      </div>
+      <div className="flex items-center gap-1.5">
+        <svg width="28" height="8" className="shrink-0">
+          <line x1="0" y1="4" x2="28" y2="4" stroke="#f97316" strokeWidth="1.5" strokeDasharray="6 4" />
+        </svg>
+        <span className="text-[9px] text-zinc-500">causal</span>
       </div>
     </div>
   );
@@ -572,12 +661,14 @@ const INITIAL_ZOOM = 0.72;
 
 export function OntologyCanvas({
   graph,
+  connId,
   selectedEntityId,
   onSelectEntity,
   onInvestigate,
   onClickEdge,
 }: {
   graph: OntologyGraph;
+  connId?: string;
   selectedEntityId: string | null;
   onSelectEntity: (id: string | null) => void;
   onInvestigate?: (q: string) => void;
@@ -586,6 +677,12 @@ export function OntologyCanvas({
   const [hoveredEntityId, setHoveredEntityId] = useState<string | null>(null);
   const [hoveredEdgeId,   setHoveredEdgeId]   = useState<string | null>(null);
   const [zoom,            setZoom]             = useState(INITIAL_ZOOM);
+  const [causalEdges,     setCausalEdges]      = useState<CausalEdge[]>([]);
+
+  useEffect(() => {
+    if (!connId) return;
+    getCausalGraph(connId).then(setCausalEdges).catch(() => {});
+  }, [connId]);
 
   const { nodes, canvasW, canvasH, colLabels } = useMemo(() => computeLayout(graph), [graph]);
   const nodeMap = useMemo(
@@ -702,6 +799,13 @@ export function OntologyCanvas({
               hoveredEdgeId={hoveredEdgeId}
               onHoverEdge={setHoveredEdgeId}
               onClickEdge={onClickEdge}
+            />
+
+            <CausalEdges
+              causalEdges={causalEdges}
+              nodeMap={nodeMap}
+              canvasW={canvasW}
+              canvasH={canvasH}
             />
 
             {nodes.map(nl => {

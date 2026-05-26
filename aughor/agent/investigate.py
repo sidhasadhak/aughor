@@ -1200,11 +1200,63 @@ def ada_synthesize(state: AgentState) -> dict:
     phases_summary = _phases_summary(phases)
     evidence_log = _phases_evidence(phases)
 
+    # Build metric targets block for synthesis guidance
+    metric_targets_section = ""
+    try:
+        from aughor.semantic.metrics import list_metrics
+        targeted = [m for m in list_metrics() if m.target_value is not None]
+        if targeted:
+            lines = ["METRIC TARGETS (compare findings against these benchmarks):"]
+            for m in targeted:
+                parts = [f"  {m.label}: target={m.target_value}{' ' + m.unit if m.unit else ''}"]
+                if m.warning_threshold is not None:
+                    parts.append(f"warning>={m.warning_threshold}")
+                if m.critical_threshold is not None:
+                    parts.append(f"critical>={m.critical_threshold}")
+                if m.benchmark_source:
+                    parts.append(f"source: {m.benchmark_source}")
+                lines.append(", ".join(parts))
+            metric_targets_section = "\n".join(lines) + "\n"
+    except Exception:
+        pass
+
+    # Build playbook section — match playbook entries against this investigation's context
+    playbook_section = ""
+    try:
+        from aughor.playbook.retriever import (
+            retrieve_for_metric_and_phases,
+            build_playbook_prompt_section,
+            build_causal_playbook_section,
+        )
+        labels: list[str] = []
+        if intake_data.get("metric_label"):
+            labels.append(intake_data["metric_label"])
+        for phase in phases:
+            if phase.get("title"):
+                labels.append(phase["title"])
+        labels.append(question)
+        matched = retrieve_for_metric_and_phases(labels, limit=5)
+        causal_section = build_causal_playbook_section(question, conn_id=state.get("connection_id", ""))
+        playbook_section = causal_section + build_playbook_prompt_section(matched)
+    except Exception:
+        pass
+
+    # Build external context section from uploaded documents
+    external_context_section = ""
+    try:
+        from aughor.knowledge.indexer import build_external_context_section
+        external_context_section = build_external_context_section(question, top_k=4)
+    except Exception:
+        pass
+
     synth_prompt = ADA_SYNTHESIZE_PROMPT.format(
         question=question,
         phases_summary=phases_summary,
         evidence_log=evidence_log[:6000],
         events_section=events_section,
+        metric_targets_section=metric_targets_section,
+        playbook_section=playbook_section,
+        external_context_section=external_context_section,
     ) + early_stop_note
     try:
         synth: ADASynthesisModel = _provider("narrator").complete(
@@ -1218,6 +1270,28 @@ def ada_synthesize(state: AgentState) -> dict:
         )
     except Exception as e:
         synth = None
+
+    # Save causal proposals from this investigation (outcome-gated promotion)
+    inv_id = state.get("investigation_id") or ""
+    conn_id = state.get("connection_id") or ""
+    if synth and inv_id and hasattr(synth, "causal_links") and synth.causal_links:
+        try:
+            from aughor.process.causal import CausalProposal, save_proposals
+            proposals = [
+                CausalProposal(
+                    from_signal=cl.from_signal,
+                    to_signal=cl.to_signal,
+                    from_entity=cl.from_entity,
+                    to_entity=cl.to_entity,
+                    confidence=cl.confidence,
+                    inv_id=inv_id,
+                    conn_id=conn_id,
+                )
+                for cl in synth.causal_links
+            ]
+            save_proposals(inv_id, proposals)
+        except Exception:
+            pass
 
     if synth:
         waterfall = [

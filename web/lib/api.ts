@@ -113,6 +113,31 @@ export interface Metric {
   filters: string[];
   unit: string | null;
   caveats: string | null;
+  target_value: number | null;
+  warning_threshold: number | null;
+  critical_threshold: number | null;
+  target_period: string | null;
+  benchmark_source: string | null;
+}
+
+export type HealthStatus = "green" | "yellow" | "red" | "unknown";
+
+export interface ScorecardItem {
+  name: string;
+  label: string;
+  current: number | null;
+  target: number | null;
+  variance: number | null;
+  status: HealthStatus;
+  unit: string | null;
+  target_period: string | null;
+  benchmark_source: string | null;
+}
+
+export async function getHealthScorecard(connId: string): Promise<ScorecardItem[]> {
+  const res = await fetch(`${BASE}/connections/${encodeURIComponent(connId)}/health-scorecard`);
+  if (!res.ok) return [];
+  return res.json();
 }
 
 export async function getMetrics(): Promise<Metric[]> {
@@ -524,6 +549,136 @@ export async function getEntityLifecycleCounts(
 ): Promise<LifecycleCount[]> {
   const res = await fetch(
     `${BASE}/ontology/entities/${encodeURIComponent(entityId)}/lifecycle-counts?connection_id=${encodeURIComponent(connectionId)}`,
+  );
+  if (!res.ok) return [];
+  return res.json();
+}
+
+// ── Outcome Tracking ──────────────────────────────────────────────────────────
+
+export type RecStatus = "accepted" | "rejected" | "implemented" | "verified" | "dismissed";
+
+export interface RecOutcome {
+  id: string;
+  inv_id: string;
+  rec_index: number;
+  rec_text: string;
+  status: RecStatus;
+  metric_name: string | null;
+  metric_before: number | null;
+  metric_after: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function logOutcome(
+  invId: string,
+  recIndex: number,
+  recText: string,
+  status: RecStatus,
+  opts?: { metric_name?: string; metric_before?: number; metric_after?: number },
+): Promise<RecOutcome> {
+  const res = await fetch(
+    `${BASE}/investigations/${encodeURIComponent(invId)}/recommendations/${recIndex}/outcome`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rec_text: recText, status, ...opts }),
+    },
+  );
+  if (!res.ok) throw new Error("Failed to log outcome");
+  return res.json();
+}
+
+export async function getInvestigationOutcomes(invId: string): Promise<RecOutcome[]> {
+  const res = await fetch(`${BASE}/investigations/${encodeURIComponent(invId)}/outcomes`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+// ── Document Ingestion ────────────────────────────────────────────────────────
+
+export interface DocumentEntry {
+  doc_id: string;
+  filename: string;
+  title: string;
+  chunk_count: number;
+  uploaded_at: string;
+}
+
+export async function listDocuments(): Promise<DocumentEntry[]> {
+  const res = await fetch(`${BASE}/documents`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function uploadDocument(file: File): Promise<DocumentEntry> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${BASE}/documents/upload`, { method: "POST", body: form });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail ?? "Upload failed");
+  }
+  return res.json();
+}
+
+export async function deleteDocument(docId: string): Promise<void> {
+  const res = await fetch(`${BASE}/documents/${encodeURIComponent(docId)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Delete failed");
+}
+
+// ── Process Map ───────────────────────────────────────────────────────────────
+
+export interface ProcessNode {
+  state: string;
+  count: number;
+  is_terminal: boolean;
+}
+
+export interface ProcessEdge {
+  from_state: string;
+  to_state: string;
+  count: number;
+  rate: number;
+}
+
+export interface ProcessMap {
+  entity_id: string;
+  display_name: string;
+  lifecycle_column: string;
+  nodes: ProcessNode[];
+  edges: ProcessEdge[];
+  total_records: number;
+  has_transitions: boolean;
+}
+
+export async function getProcessMap(connId: string, entityId: string): Promise<ProcessMap | null> {
+  const res = await fetch(
+    `${BASE}/connections/${encodeURIComponent(connId)}/process-map/${encodeURIComponent(entityId)}`,
+  );
+  if (!res.ok) return null;
+  return res.json();
+}
+
+// ── Causal Graph ──────────────────────────────────────────────────────────────
+
+export interface CausalEdge {
+  id: string;
+  from_signal: string;
+  to_signal: string;
+  from_entity: string | null;
+  to_entity: string | null;
+  weight: number;
+  confirmed_by: string[];
+  conn_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function getCausalGraph(connId: string): Promise<CausalEdge[]> {
+  const res = await fetch(
+    `${BASE}/connections/${encodeURIComponent(connId)}/causal-graph`,
   );
   if (!res.ok) return [];
   return res.json();

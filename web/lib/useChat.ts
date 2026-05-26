@@ -127,9 +127,9 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case "PHASE":
       return updateLast(state, t => ({ ...t, phases: [...t.phases, action.phase], statusText: `Analyzing ${action.phase.phase_id}…` }));
     case "ADA_REPORT":
-      return updateLast(state, t => ({ ...t, adaReport: action.report, queryMode: action.queryMode, statusText: null }));
+      return { ...updateLast(state, t => ({ ...t, status: "done", adaReport: action.report, queryMode: action.queryMode, statusText: null })), streaming: false };
     case "EXPLORE_REPORT":
-      return updateLast(state, t => ({ ...t, exploreReport: action.report, subQuestions: action.subQuestions, subqAnswers: action.subqAnswers, queryMode: "explore", statusText: null }));
+      return { ...updateLast(state, t => ({ ...t, status: "done", exploreReport: action.report, subQuestions: action.subQuestions, subqAnswers: action.subqAnswers, queryMode: "explore", statusText: null })), streaming: false };
     case "REPORT":
       return updateLast(state, t => ({ ...t, report: action.report, queryMode: action.queryMode, statusText: null }));
     case "ERROR":

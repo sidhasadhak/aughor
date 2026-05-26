@@ -20,6 +20,11 @@ const EMPTY_METRIC: Metric = {
   filters: [],
   unit: null,
   caveats: null,
+  target_value: null,
+  warning_threshold: null,
+  critical_threshold: null,
+  target_period: null,
+  benchmark_source: null,
 };
 
 function parseList(val: string): string[] {
@@ -39,6 +44,11 @@ interface FormState {
   filters: string;
   unit: string;
   caveats: string;
+  target_value: string;
+  warning_threshold: string;
+  critical_threshold: string;
+  target_period: string;
+  benchmark_source: string;
 }
 
 function metricToForm(m: Metric): FormState {
@@ -51,7 +61,17 @@ function metricToForm(m: Metric): FormState {
     filters: joinList(m.filters),
     unit: m.unit ?? "",
     caveats: m.caveats ?? "",
+    target_value: m.target_value != null ? String(m.target_value) : "",
+    warning_threshold: m.warning_threshold != null ? String(m.warning_threshold) : "",
+    critical_threshold: m.critical_threshold != null ? String(m.critical_threshold) : "",
+    target_period: m.target_period ?? "",
+    benchmark_source: m.benchmark_source ?? "",
   };
+}
+
+function parseOptFloat(s: string): number | null {
+  const n = parseFloat(s.trim());
+  return isNaN(n) ? null : n;
 }
 
 function formToMetric(f: FormState): Metric {
@@ -64,11 +84,17 @@ function formToMetric(f: FormState): Metric {
     filters: parseList(f.filters),
     unit: f.unit.trim() || null,
     caveats: f.caveats.trim() || null,
+    target_value: parseOptFloat(f.target_value),
+    warning_threshold: parseOptFloat(f.warning_threshold),
+    critical_threshold: parseOptFloat(f.critical_threshold),
+    target_period: f.target_period.trim() || null,
+    benchmark_source: f.benchmark_source.trim() || null,
   };
 }
 
 const EMPTY_FORM: FormState = {
   name: "", label: "", sql: "", tables: "", dimensions: "", filters: "", unit: "", caveats: "",
+  target_value: "", warning_threshold: "", critical_threshold: "", target_period: "", benchmark_source: "",
 };
 
 export function MetricsPanel() {
@@ -179,6 +205,9 @@ export function MetricsPanel() {
                 <div className="text-xs text-zinc-500 font-mono truncate">{m.name}</div>
               </div>
               <div className="flex items-center gap-1 ml-2 flex-shrink-0">
+                {m.target_value != null && (
+                  <span className="w-[5px] h-[5px] rounded-full bg-emerald-400/60 shrink-0" title="Has target" />
+                )}
                 {m.unit && (
                   <Badge className="text-[10px] px-1 py-0 border-zinc-600 bg-zinc-800 text-zinc-400">
                     {m.unit}
@@ -284,6 +313,57 @@ export function MetricsPanel() {
                 onChange={(e) => setForm({ ...form, caveats: e.target.value })}
               />
             </Field>
+
+            <div className="pt-2 border-t border-zinc-700/50">
+              <p className="text-[11px] font-semibold text-zinc-500 uppercase tracking-wider mb-3">Health Scorecard</p>
+              <div className="grid grid-cols-3 gap-3">
+                <Field label="Target value" hint="threshold for green">
+                  <input
+                    className={inputCls}
+                    type="number"
+                    placeholder="e.g. 0.08"
+                    value={form.target_value}
+                    onChange={(e) => setForm({ ...form, target_value: e.target.value })}
+                  />
+                </Field>
+                <Field label="Warning ≥" hint="yellow zone">
+                  <input
+                    className={inputCls}
+                    type="number"
+                    placeholder="e.g. 0.10"
+                    value={form.warning_threshold}
+                    onChange={(e) => setForm({ ...form, warning_threshold: e.target.value })}
+                  />
+                </Field>
+                <Field label="Critical ≥" hint="red zone">
+                  <input
+                    className={inputCls}
+                    type="number"
+                    placeholder="e.g. 0.15"
+                    value={form.critical_threshold}
+                    onChange={(e) => setForm({ ...form, critical_threshold: e.target.value })}
+                  />
+                </Field>
+              </div>
+              <div className="grid grid-cols-2 gap-3 mt-3">
+                <Field label="Target period">
+                  <input
+                    className={inputCls}
+                    placeholder="monthly, quarterly, ytd"
+                    value={form.target_period}
+                    onChange={(e) => setForm({ ...form, target_period: e.target.value })}
+                  />
+                </Field>
+                <Field label="Benchmark source">
+                  <input
+                    className={inputCls}
+                    placeholder="internal: FY2025 plan"
+                    value={form.benchmark_source}
+                    onChange={(e) => setForm({ ...form, benchmark_source: e.target.value })}
+                  />
+                </Field>
+              </div>
+            </div>
 
             {error && <p className="text-xs text-red-400">{error}</p>}
 

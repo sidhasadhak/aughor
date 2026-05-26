@@ -32,6 +32,12 @@ class MetricDefinition(BaseModel):
     filters: list[str] = Field(default_factory=list, description="Default WHERE conditions always applied")
     unit: Optional[str] = Field(default=None, description="Display unit: '$', '%', 'days', etc.")
     caveats: Optional[str] = Field(default=None, description="Finance/data-team approved caveats or exclusions")
+    # Health scorecard fields (M13a)
+    target_value: Optional[float] = Field(default=None, description="Target value for health scorecard")
+    warning_threshold: Optional[float] = Field(default=None, description="Yellow-zone boundary (absolute value)")
+    critical_threshold: Optional[float] = Field(default=None, description="Red-zone boundary (absolute value)")
+    target_period: Optional[str] = Field(default=None, description="'monthly', 'quarterly', 'ytd'")
+    benchmark_source: Optional[str] = Field(default=None, description="e.g. 'internal: FY2025 plan'")
 
 
 # ── Persistence ───────────────────────────────────────────────────────────────

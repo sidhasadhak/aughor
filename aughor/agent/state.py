@@ -320,6 +320,7 @@ class ADAReport(TypedDict):
 class AgentState(TypedDict):
     question: str
     connection_id: str
+    investigation_id: str
     schema_context: str
 
     # Investigation state

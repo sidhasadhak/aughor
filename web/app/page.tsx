@@ -11,7 +11,6 @@ import ClockIcon       from "@atlaskit/icon/core/clock";
 import SearchIcon      from "@atlaskit/icon/core/search";
 import AddIcon         from "@atlaskit/icon/core/add";
 import CloseIcon       from "@atlaskit/icon/core/close";
-import ArrowLeftIcon   from "@atlaskit/icon/core/arrow-left";
 import NodeIcon        from "@atlaskit/icon/core/node";
 
 import { ConfigurePanel } from "@/components/ConfigurePanel";
@@ -27,6 +26,10 @@ import { ExplorationPanel } from "@/components/ExplorationPanel";
 import { SystemPanel } from "@/components/SystemPanel";
 import { ActivityLog } from "@/components/ActivityLog";
 import { SchemaProvider } from "@/lib/schema-context";
+import { ProcessHealthPanel } from "@/components/ProcessHealthPanel";
+import { PlaybookPanel } from "@/components/PlaybookPanel";
+import { RecommendationInbox } from "@/components/RecommendationInbox";
+import { DocumentUploader } from "@/components/DocumentUploader";
 import { getConnections, addConnection as apiAddConnection, deleteConnection as apiDeleteConnection, getExplorationStatus, getOntology, getConnectionFreshness, getDomainInsights, type Connection, type ExplorationStatus, type OntologyGraph } from "@/lib/api";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -460,7 +463,7 @@ function HomePage({
   selectedConn: string;
   onGoToChat: (q?: string) => void;
   onGoToCatalog: () => void;
-  onGoToData: (subTab?: "ontology" | "schema" | "exploration" | "activity", section?: "nulls" | "joins" | "lifecycles" | "distributions" | "insights" | "intelligence") => void;
+  onGoToData: (subTab?: "ontology" | "schema" | "exploration" | "activity" | "playbook" | "inbox" | "documents", section?: "nulls" | "joins" | "lifecycles" | "distributions" | "insights" | "intelligence") => void;
 }) {
   const [recentInvs, setRecentInvs] = useState<RecentInv[]>([]);
   const [exploration, setExploration] = useState<ExplorationStatus | null>(null);
@@ -576,6 +579,9 @@ function HomePage({
           </div>
         </div>
 
+        {/* ── Business Health scorecard ── */}
+        <ProcessHealthPanel connectionId={selectedConn} onInvestigate={onGoToChat} />
+
         {/* ── Recent activity ── */}
         <div>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
@@ -672,7 +678,7 @@ export default function Home() {
   const [selectedChatSessionId, setSelectedChatSessionId] = useState<string | null>(null);
   const [chatKey, setChatKey] = useState(0);
   const [chatInitialQuestion, setChatInitialQuestion] = useState<string | undefined>(undefined);
-  const [connRightTab, setConnRightTab] = useState<"ontology" | "schema" | "exploration" | "activity" | "system">("ontology");
+  const [connRightTab, setConnRightTab] = useState<"ontology" | "schema" | "exploration" | "activity" | "system" | "playbook" | "inbox" | "documents">("ontology");
   const [explorationSection, setExplorationSection] = useState<"nulls" | "joins" | "lifecycles" | "distributions" | "insights" | "intelligence" | undefined>(undefined);
   const [showHistory, setShowHistory] = useState(false);
   const [showConfigure, setShowConfigure] = useState(false);
@@ -988,6 +994,7 @@ export default function Home() {
               <button
                 onClick={() => {
                   setSelectedChatSessionId(null);
+                  setSelectedHistoryInvId(null);
                   setChatKey(k => k + 1);   // remounts ChatPanel → clears conversation
                   setTab("chat");
                 }}
@@ -1040,14 +1047,17 @@ export default function Home() {
                   </button>
                 </div>
                 <HistoryPanel
-                  selectedId={selectedHistoryInvId}
+                  selectedId={selectedHistoryInvId ?? selectedChatSessionId}
                   onSelect={(id, kind) => {
                     setShowHistory(false);
                     if (kind === "chat") {
+                      setSelectedHistoryInvId(null);
                       setSelectedChatSessionId(id);
                       setTab("chat");
                     } else {
-                      setSelectedHistoryInvId(id); // opens full-screen modal overlay
+                      setSelectedChatSessionId(null);
+                      setSelectedHistoryInvId(id);
+                      setTab("chat");
                     }
                   }}
                 />
@@ -1065,37 +1075,8 @@ export default function Home() {
             />
           )}
 
-          {/* ── Investigation history detail — full-screen slide-over ── */}
-          {selectedHistoryInvId && (
-            <>
-              <div
-                className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm"
-                onClick={() => setSelectedHistoryInvId(null)}
-              />
-              <div
-                className="fixed top-0 right-0 bottom-0 z-50 flex flex-col bg-zinc-900 border-l border-zinc-700/80 shadow-2xl overflow-hidden"
-                style={{ width: "90%" }}
-              >
-                <div className="h-12 border-b border-zinc-700/80 flex items-center px-4 gap-3 shrink-0 bg-zinc-900">
-                  <button
-                    onClick={() => setSelectedHistoryInvId(null)}
-                    className="flex items-center gap-1.5 text-xs text-zinc-400 hover:text-zinc-200 transition"
-                  >
-                    <ArrowLeftIcon label="Back" size="small" />
-                    Back
-                  </button>
-                  <span className="text-xs text-zinc-600">·</span>
-                  <span className="text-xs text-zinc-500">Investigation Detail</span>
-                </div>
-                <div className="flex-1 overflow-auto">
-                  <HistoryDetailPanel invId={selectedHistoryInvId} />
-                </div>
-              </div>
-            </>
-          )}
-
           {/* ── Main content area ── */}
-          <div className="flex-1 flex overflow-hidden min-w-0">
+          <div className="flex-1 flex overflow-hidden min-w-0" style={{ background: "#0d0e11" }}>
 
             {/* ════ HOME TAB ════ */}
             {tab === "home" && (
@@ -1118,13 +1099,15 @@ export default function Home() {
 
             {/* ════ CHAT TAB ════ */}
             {tab === "chat" && (
-              <ChatPanel
-                key={chatKey}
-                connectionId={selectedConn}
-                restoreSessionId={selectedChatSessionId}
-                initialQuestion={chatInitialQuestion}
-                initialMode="investigate"
-              />
+              selectedHistoryInvId
+                ? <HistoryDetailPanel invId={selectedHistoryInvId} />
+                : <ChatPanel
+                    key={chatKey}
+                    connectionId={selectedConn}
+                    restoreSessionId={selectedChatSessionId}
+                    initialQuestion={chatInitialQuestion}
+                    initialMode="investigate"
+                  />
             )}
 
             {/* ════ CATALOG TAB ════ */}
@@ -1144,7 +1127,7 @@ export default function Home() {
                 {/* Right: ontology-first panel with sub-tabs */}
                 <div className="flex-1 flex flex-col overflow-hidden">
                   <div className="flex items-center border-b border-zinc-700/80 px-4 shrink-0 bg-zinc-900/40">
-                    {(["ontology", "schema", "exploration", "activity", "system"] as const).map((t) => (
+                    {(["ontology", "schema", "exploration", "activity", "playbook", "inbox", "documents", "system"] as const).map((t) => (
                       <button
                         key={t}
                         onClick={() => setConnRightTab(t)}
@@ -1158,6 +1141,9 @@ export default function Home() {
                          : t === "schema"    ? "Schema"
                          : t === "exploration" ? "Exploration"
                          : t === "activity"  ? "Activity"
+                         : t === "playbook"  ? "Playbook"
+                         : t === "inbox"     ? "Inbox"
+                         : t === "documents" ? "Documents"
                          : "System Stats"}
                       </button>
                     ))}
@@ -1173,6 +1159,21 @@ export default function Home() {
                     <ExplorationPanel connectionId={selectedConn} initialSection={explorationSection} />
                   ) : connRightTab === "activity" ? (
                     <ActivityLog connectionId={selectedConn} isActive={connRightTab === "activity"} />
+                  ) : connRightTab === "playbook" ? (
+                    <PlaybookPanel />
+                  ) : connRightTab === "inbox" ? (
+                    <div className="flex-1 overflow-y-auto p-4">
+                      <RecommendationInbox
+                        onOpenInvestigation={(invId) => {
+                          setSelectedHistoryInvId(invId);
+                          setTab("chat");
+                        }}
+                      />
+                    </div>
+                  ) : connRightTab === "documents" ? (
+                    <div className="flex-1 overflow-y-auto p-4">
+                      <DocumentUploader />
+                    </div>
                   ) : (
                     <SystemPanel />
                   )}

@@ -16,7 +16,7 @@ try:
 except ImportError:
     pass
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -166,6 +166,19 @@ async def _ontology_refresh_loop() -> None:
 @app.on_event("startup")
 async def _start_ontology_refresh_loop() -> None:
     asyncio.create_task(_ontology_refresh_loop(), name="ontology-refresh")
+
+
+@app.on_event("startup")
+async def _seed_playbook() -> None:
+    """Seed playbook from KB on first startup when data/playbook.json is empty."""
+    try:
+        from aughor.playbook.builder import seed_from_kb
+        n = seed_from_kb()
+        if n:
+            import logging
+            logging.getLogger(__name__).info("Playbook seeded with %d entries from KB.", n)
+    except Exception:
+        pass
 
 
 # ── Request / response models ────────────────────────────────────────────────
@@ -531,6 +544,7 @@ async def _stream_investigation(question: str, connection_id: str, request: Requ
         initial_state: AgentState = {
             "question": question,
             "connection_id": connection_id,
+            "investigation_id": inv_id,
             "schema_context": schema,
             "unresolved_tensions": [],
             "scan_context": "",
@@ -1441,6 +1455,11 @@ class MetricRequest(BaseModel):
     filters: list[str] = []
     unit: Optional[str] = None
     caveats: Optional[str] = None
+    target_value: Optional[float] = None
+    warning_threshold: Optional[float] = None
+    critical_threshold: Optional[float] = None
+    target_period: Optional[str] = None
+    benchmark_source: Optional[str] = None
 
 
 @app.get("/metrics")
@@ -1471,6 +1490,184 @@ def remove_metric(name: str):
     return {"ok": True, "name": name}
 
 
+@app.get("/connections/{conn_id}/health-scorecard")
+def get_health_scorecard(conn_id: str):
+    """
+    For each MetricDefinition with a target_value, execute its SQL against the
+    connection and return current value, target, variance, and health status.
+    """
+    targeted = [m for m in list_metrics() if m.target_value is not None]
+    if not targeted:
+        return []
+
+    try:
+        db = open_connection_for(conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+
+    results = []
+    for metric in targeted:
+        try:
+            qr = db.execute(f"SELECT ({metric.sql}) AS _v")
+            rows = qr.rows if qr else []
+            current: Optional[float] = None
+            if rows and rows[0]:
+                raw = rows[0][0] if isinstance(rows[0], (list, tuple)) else list(rows[0].values())[0]
+                try:
+                    current = float(raw)
+                except (TypeError, ValueError):
+                    current = None
+
+            if current is None:
+                status = "unknown"
+                variance = None
+            else:
+                variance = (current - metric.target_value) / metric.target_value if metric.target_value else None
+                if metric.critical_threshold is not None and abs(current - metric.target_value) >= metric.critical_threshold:
+                    status = "red"
+                elif metric.warning_threshold is not None and abs(current - metric.target_value) >= metric.warning_threshold:
+                    status = "yellow"
+                else:
+                    status = "green"
+
+            results.append({
+                "name": metric.name,
+                "label": metric.label,
+                "current": current,
+                "target": metric.target_value,
+                "variance": variance,
+                "status": status,
+                "unit": metric.unit,
+                "target_period": metric.target_period,
+                "benchmark_source": metric.benchmark_source,
+            })
+        except Exception:
+            results.append({
+                "name": metric.name,
+                "label": metric.label,
+                "current": None,
+                "target": metric.target_value,
+                "variance": None,
+                "status": "unknown",
+                "unit": metric.unit,
+                "target_period": metric.target_period,
+                "benchmark_source": metric.benchmark_source,
+            })
+
+    try:
+        db.close()
+    except Exception:
+        pass
+    return results
+
+
+# ── Playbook ──────────────────────────────────────────────────────────────────
+
+class PlaybookEntryRequest(BaseModel):
+    trigger_metric: str
+    trigger_condition: str
+    trigger_operator: str = "any"
+    trigger_value: float = 0.0
+    recommendation: str
+    expected_impact: str = ""
+    typical_timeline: str = ""
+    owner_role: str = ""
+    tags: list[str] = []
+    status: str = "draft"
+    source_kb_id: Optional[str] = None
+
+
+@app.get("/playbook")
+def get_playbook():
+    from aughor.playbook.store import list_entries
+    return [e.model_dump() for e in list_entries()]
+
+
+@app.get("/playbook/{entry_id}")
+def get_playbook_entry(entry_id: str):
+    from aughor.playbook.store import get_entry
+    e = get_entry(entry_id)
+    if not e:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    return e.model_dump()
+
+
+@app.post("/playbook", status_code=201)
+def create_playbook_entry(req: PlaybookEntryRequest):
+    from aughor.playbook.models import PlaybookEntry
+    from aughor.playbook.store import save_entry
+    import uuid
+    entry = PlaybookEntry(id=f"user_{uuid.uuid4().hex[:12]}", **req.model_dump())
+    save_entry(entry)
+    return entry.model_dump()
+
+
+@app.put("/playbook/{entry_id}")
+def update_playbook_entry(entry_id: str, req: PlaybookEntryRequest):
+    from aughor.playbook.models import PlaybookEntry
+    from aughor.playbook.store import get_entry, save_entry
+    existing = get_entry(entry_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    updated = PlaybookEntry(
+        id=entry_id,
+        evidence_sources=existing.evidence_sources,
+        historical_success_rate=existing.historical_success_rate,
+        **req.model_dump(),
+    )
+    save_entry(updated)
+    return updated.model_dump()
+
+
+@app.delete("/playbook/{entry_id}")
+def delete_playbook_entry(entry_id: str):
+    from aughor.playbook.store import delete_entry
+    if not delete_entry(entry_id):
+        raise HTTPException(status_code=404, detail="Entry not found")
+    return {"ok": True, "id": entry_id}
+
+
+@app.post("/playbook/seed")
+def reseed_playbook():
+    """Force re-seed of playbook from KB (overwrites existing entries)."""
+    from aughor.playbook.builder import seed_from_kb
+    n = seed_from_kb(force=True)
+    return {"seeded": n}
+
+
+# ── Outcome Tracking ─────────────────────────────────────────────────────────
+
+class OutcomeRequest(BaseModel):
+    rec_text: str
+    status: str  # accepted | rejected | implemented | verified | dismissed
+    metric_name: Optional[str] = None
+    metric_before: Optional[float] = None
+    metric_after: Optional[float] = None
+
+
+@app.post("/investigations/{inv_id}/recommendations/{rec_index}/outcome", status_code=201)
+def log_recommendation_outcome(inv_id: str, rec_index: int, req: OutcomeRequest):
+    from aughor.playbook.outcomes import log_outcome, update_playbook_success_rates
+    outcome = log_outcome(
+        inv_id=inv_id,
+        rec_index=rec_index,
+        rec_text=req.rec_text,
+        status=req.status,  # type: ignore[arg-type]
+        metric_name=req.metric_name,
+        metric_before=req.metric_before,
+        metric_after=req.metric_after,
+    )
+    if req.status in ("verified", "rejected"):
+        update_playbook_success_rates()
+    return outcome.model_dump()
+
+
+@app.get("/investigations/{inv_id}/outcomes")
+def get_investigation_outcomes(inv_id: str):
+    from aughor.playbook.outcomes import load_outcomes_for_inv
+    return [o.model_dump() for o in load_outcomes_for_inv(inv_id)]
+
+
 @app.get("/investigations/indexed-ids")
 def get_indexed_ids():
     """Return the set of investigation IDs that have been indexed in Qdrant."""
@@ -1483,6 +1680,84 @@ def get_indexed_ids():
 @app.get("/investigations")
 def get_investigations(limit: int = 50):
     return list_investigations(limit=limit)
+
+
+# ── Document Ingestion ────────────────────────────────────────────────────────
+
+@app.post("/documents/upload", status_code=201)
+async def upload_document(file: UploadFile = File(...)):
+    """Upload a PDF, Word, Markdown, or plain-text document for semantic indexing."""
+    import tempfile
+    from pathlib import Path as _Path
+    allowed = {".pdf", ".docx", ".md", ".txt", ".markdown"}
+    suffix = _Path(file.filename or "").suffix.lower()
+    if suffix not in allowed:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unsupported file type '{suffix}'. Allowed: {', '.join(sorted(allowed))}",
+        )
+    content = await file.read()
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+        tmp.write(content)
+        tmp_path = _Path(tmp.name)
+    try:
+        from aughor.knowledge.indexer import index_file
+        entry = index_file(tmp_path, title=_Path(file.filename or "").stem.replace("_", " ").replace("-", " ").title())
+        entry["filename"] = file.filename or entry["filename"]
+        return entry
+    except RuntimeError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        logger.exception("Document indexing failed")
+        raise HTTPException(status_code=500, detail=f"Indexing failed: {e}")
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+
+@app.get("/documents")
+def list_documents_endpoint():
+    from aughor.knowledge.indexer import list_documents
+    return list_documents()
+
+
+@app.delete("/documents/{doc_id}")
+def delete_document_endpoint(doc_id: str):
+    from aughor.knowledge.indexer import delete_document
+    if not delete_document(doc_id):
+        raise HTTPException(status_code=404, detail="Document not found")
+    return {"ok": True, "doc_id": doc_id}
+
+
+@app.post("/documents/search")
+def search_documents_endpoint(body: dict):
+    from aughor.knowledge.indexer import search_documents
+    query = body.get("query", "")
+    top_k = int(body.get("top_k", 5))
+    return search_documents(query, top_k=top_k)
+
+
+# ── Process Map ───────────────────────────────────────────────────────────────
+
+@app.get("/connections/{conn_id}/process-map/{entity_id}")
+def get_process_map(conn_id: str, entity_id: str):
+    """Return live ProcessMap (node counts + LAG-based transitions) for an entity."""
+    try:
+        from aughor.process.mapper import build_process_map
+        pm = build_process_map(entity_id, conn_id)
+        return pm.model_dump()
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.exception("process_map failed")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/connections/{conn_id}/causal-graph")
+def get_causal_graph(conn_id: str):
+    """Return confirmed causal edges for this connection."""
+    from aughor.process.causal import load_causal_graph
+    edges = load_causal_graph(conn_id)
+    return [e.model_dump() for e in edges]
 
 
 @app.get("/chat-sessions/{session_id}/turns")

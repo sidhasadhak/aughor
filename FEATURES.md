@@ -60,6 +60,12 @@
 51. [Loading State Hardening](#51-loading-state-hardening)
 52. [Home Stat Card Navigation](#52-home-stat-card-navigation)
 53. [Schema Cache — Backend + Frontend Context](#53-schema-cache--backend--frontend-context)
+54. [Metric Targets & Health Scorecard](#54-metric-targets--health-scorecard)
+55. [Structured Playbook from KB](#55-structured-playbook-from-kb)
+56. [Outcome Tracking & Feedback Loop](#56-outcome-tracking--feedback-loop)
+57. [Document Ingestion — Context Layer](#57-document-ingestion--context-layer)
+58. [Business Process Visual Mapper](#58-business-process-visual-mapper)
+59. [Causal Graph in Ontology — Outcome-Gated](#59-causal-graph-in-ontology--shipped)
 
 ---
 
@@ -1764,4 +1770,135 @@ A two-layer caching system that eliminates repeated schema fetches. The backend 
 
 ---
 
-*Last updated: 2026-05-26 · 53 features. See `ROADMAP.md` for upcoming features.*
+---
+
+## 54. Metric Targets & Health Scorecard
+
+### What
+Each tracked metric can now carry a `target_value`, `warning_threshold`, and `critical_threshold`. A `/health-scorecard` endpoint computes the current value for every targeted metric and returns green/yellow/red status with trend direction. A `ProcessHealthPanel` renders this as a proactive health grid — the first thing a user sees when opening the app.
+
+### Why
+Aughor previously answered questions. This makes it volunteer problems. "Refund Rate: 12% vs target 8% (red, ↑)" surfaces before the user types anything.
+
+### How
+`OntologyMetric` and `MetricDefinition` gain four new optional fields. The scorecard endpoint executes each metric's `formula_sql` against the live DB, computes `(current - target) / target`, and assigns a health band. ADA synthesis receives a `{metric_targets_section}` and is instructed to prioritise controllable root causes above threshold.
+
+### Key files
+- `aughor/ontology/models.py` — `OntologyMetric` target fields
+- `aughor/semantic/metrics.py` — `MetricDefinition` target fields
+- `aughor/api.py` — `GET /connections/{conn_id}/health-scorecard`
+- `web/components/ProcessHealthPanel.tsx`
+
+---
+
+## 55. Structured Playbook from KB
+
+### What
+The 84 Tier-2 KB causal entries are automatically converted into a persistent, retrievable `PlaybookEntry` library. During ADA synthesis, matched entries replace LLM-generated recommendations. Unmatched root causes fall back to LLM generation but are flagged "unproven — add to playbook?".
+
+### Why
+The KB already encodes proven interventions as JSON. They were inaccessible to the synthesis step. Now "if refund_rate > 10%, review the return policy window" is a first-class recommendation that can accumulate a success rate over time.
+
+### How
+`aughor/playbook/builder.py` runs `seed_from_kb()` on startup, converting `inflation_causes` / `deflation_causes` / `causal_relationships` KB entries into draft `PlaybookEntry` objects stored in `data/playbook.json`. `playbook/retriever.py` matches root causes by metric name and trigger operator during ADA synthesis.
+
+### Key files
+- `aughor/playbook/models.py`, `store.py`, `builder.py`, `retriever.py`
+- `aughor/agent/investigate.py` — synthesis integration
+- `web/components/PlaybookPanel.tsx`
+
+---
+
+## 56. Outcome Tracking & Feedback Loop ✅ Shipped
+
+### What
+Users can mark each recommendation as accepted, implemented, or verified — with before/after metric values. `historical_success_rate` on playbook entries is recomputed after each outcome. Synthesis retrieves and presents entries ranked by success rate.
+
+### Why
+Without feedback, the playbook is a static list. With it, the system learns from organisational history. After 10 "reviewed return policy" outcomes, Aughor knows that action has a 70% success rate in 4 weeks.
+
+### How
+`aughor/playbook/outcomes.py` stores `RecOutcome` records (SQLite or JSON). A `POST /investigations/{inv_id}/recommendations/{rec_id}/status` endpoint logs outcomes and triggers `update_playbook_success_rates()`. `RecommendationInbox.tsx` surfaces pending recommendations across recent investigations.
+
+### Key files
+- `aughor/playbook/outcomes.py`
+- `aughor/api.py` — outcomes endpoints
+- `web/components/RecommendationInbox.tsx`
+
+---
+
+## 57. Document Ingestion — Context Layer ✅ Shipped
+
+### What
+Users can upload PDFs, Word docs, and Markdown files (SOPs, return policies, strategy decks). Chunks are embedded into a new `aughor_documents` Qdrant collection. During ADA synthesis, relevant document snippets are retrieved and injected alongside the KB as `{external_context_section}`.
+
+### Why
+Aughor only knew what was in the database schema and the hardcoded KB. It couldn't answer "How does our return rate compare to our stated policy?" because it had never read the return policy. This adds the missing external-context channel.
+
+### How
+`aughor/knowledge/documents.py` parses files into ~400-token chunks. `aughor/knowledge/indexer.py` embeds via the existing nomic-embed-text embedder and upserts into a new Qdrant collection, following the same `ensure_collection` + `upsert` + `search` pattern already used by three other collections.
+
+### Key files
+- `aughor/knowledge/documents.py`, `indexer.py`
+- `aughor/semantic/kb_retriever.py` — extended to include document search
+- `aughor/api.py` — document upload/list/delete endpoints
+- `web/components/DocumentUploader.tsx`
+
+---
+
+## 58. Business Process Visual Mapper ✅ Shipped
+
+### What
+Process flows are extracted from ontology lifecycle states. Transition volumes and average dwell times are computed via SQL (`LAG()` window function). A swimlane diagram renders each lifecycle state as a node coloured green/yellow/red based on drop-off rate vs baseline — click a red step to launch an investigation scoped to that drop-off.
+
+### Why
+The ontology already knows Order has states `Pending → Shipped → Delivered / Canceled`. The business question "where are we losing customers in the funnel?" deserves a visual answer before the user formulates it.
+
+### How
+`aughor/process/mapper.py` queries the entity's lifecycle column via GROUP BY for node counts, and optionally uses `LAG() OVER (PARTITION BY pk ORDER BY ts)` to compute state transition volumes when a temporal column is available. Falls back to nodes-only mode for snapshot tables (one row per record). `ProcessMapper.tsx` uses a custom SVG layout engine — no @xyflow/react dependency. Health colours: green ≥80%, amber ≥50%, red <50% conversion rate per edge.
+
+### Key files
+- `aughor/process/models.py`, `aughor/process/mapper.py`
+- `aughor/api.py` — `GET /connections/{conn_id}/process-map/{entity_id}`
+- `web/components/ProcessMapper.tsx`
+- `web/components/OntologyPanel.tsx` — "Map" tab in entity drawer
+
+---
+
+## 59. Causal Graph in Ontology ✅ Shipped
+
+### What
+An outcome-gated causal knowledge graph that accumulates verified cause→effect relationships from ADA investigations. Edges are only promoted to the graph when a human confirms the recommendation was effective (marking it `verified` or `implemented`). Confirmed edges appear as orange dashed arrows on the OntologyCanvas and feed back into future investigation context.
+
+### Why
+ADA discovers causal relationships on every investigation — "elevated stockout rate → increased refund rate". Without persisting these as a graph, each investigation starts from scratch. Persisting them turns the system into a compound learner. The outcome-gating prevents wrong investigations from polluting the graph over time — a key quality risk with auto-appended edges.
+
+### How
+
+**Proposal lifecycle:**
+
+1. ADA synthesis extracts `causal_links: list[CausalLinkModel]` alongside the report — structured `(from_signal, to_signal, confidence)` pairs with evidence from the investigation
+2. Proposals are saved to `data/causal_proposals.json` keyed by `inv_id` — not yet in the graph
+3. When `log_outcome()` is called with `verified` or `implemented`, `promote_on_outcome(inv_id)` runs — weight +1 per confirmation, edge created if new
+4. When called with `rejected`, weight -1; edges pruned at weight ≤ 0
+5. Confirmed edges are stored in `data/causal_graph.json`
+
+**Graph use:**
+- `backward_traverse(target_signal, depth=3)` walks upstream from any signal to find known causes — used in `build_causal_playbook_section()` which is prepended to the playbook section in ADA synthesis
+- `GET /connections/{conn_id}/causal-graph` returns all confirmed edges for a connection
+- OntologyCanvas fetches and renders confirmed edges as orange dashed arrows with a ×N weight badge for multiply-confirmed edges; "causal" entry added to legend
+
+### Key files
+- `aughor/process/causal.py` — `CausalProposal`, `ConfirmedCausalEdge`, `save_proposals()`, `promote_on_outcome()`, `load_causal_graph()`, `backward_traverse()`, `build_causal_context_section()`
+- `aughor/agent/prompts_investigate.py` — `CausalLinkModel`, `ADASynthesisModel.causal_links`, causal extraction instruction in synthesis prompt
+- `aughor/agent/investigate.py` — saves proposals after synthesis; adds `investigation_id` to state
+- `aughor/playbook/outcomes.py` — calls `promote_on_outcome()` on verified/implemented/rejected status
+- `aughor/playbook/retriever.py` — `build_causal_playbook_section()` prepends confirmed causal context
+- `aughor/agent/state.py` — `investigation_id` field added to `AgentState`
+- `aughor/api.py` — `GET /connections/{conn_id}/causal-graph`
+- `web/lib/api.ts` — `CausalEdge` type, `getCausalGraph()`
+- `web/components/OntologyCanvas.tsx` — `CausalEdges` SVG overlay; `connId` prop; causal legend entry
+
+---
+
+*Last updated: 2026-05-27 · 59 features — all shipped. See `ROADMAP.md` for upcoming milestones.*
