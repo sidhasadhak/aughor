@@ -91,6 +91,16 @@ _explorer_tasks: dict = {}  # conn_id → asyncio.Task
 
 
 @app.on_event("startup")
+async def _setup_samples() -> None:
+    """Create and seed the bundled samples DuckDB if it doesn't exist yet."""
+    try:
+        from aughor.samples.setup import ensure_samples_db
+        ensure_samples_db()
+    except Exception as exc:
+        logger.warning("Samples DB setup failed (non-fatal): %s", exc)
+
+
+@app.on_event("startup")
 async def _validate_connections() -> None:
     """Verify every saved connection can be decrypted with the current key.
 
@@ -1407,16 +1417,128 @@ def connection_freshness(conn_id: str):
     return {"freshness": max_ts, "source": max_source}
 
 
+@app.get("/catalog/tree")
+def get_catalog_tree():
+    """Return the full 4-level catalog hierarchy:
+    Section → Catalog (connection) → Schema → Table (name + row estimate).
+
+    Uses fast information_schema queries — does NOT trigger the full profiling
+    or ontology pipeline.  Falls back to an empty schema list for unreachable
+    connections so the tree always loads.
+    """
+    from aughor.db.registry import list_connections, SAMPLES_ID
+
+    def _quick_schemas(conn_id: str, conn_type: str) -> list[dict]:
+        """Return [{name, tables:[{name,row_count}]}] via lightweight SQL only."""
+        try:
+            db = open_connection_for(conn_id)
+            if conn_type == "duckdb":
+                rows = db.execute(
+                    "__catalog__",
+                    """
+                    SELECT schema_name, table_name, estimated_size
+                    FROM duckdb_tables()
+                    WHERE internal = false
+                      AND schema_name NOT IN ('information_schema','temp','pg_catalog')
+                    ORDER BY schema_name, table_name
+                    """,
+                ).rows
+            else:
+                rows = db.execute(
+                    "__catalog__",
+                    """
+                    SELECT
+                        t.table_schema,
+                        t.table_name,
+                        COALESCE(s.n_live_tup, 0)
+                    FROM information_schema.tables t
+                    LEFT JOIN pg_stat_user_tables s
+                        ON s.schemaname = t.table_schema
+                        AND s.relname   = t.table_name
+                    WHERE t.table_type = 'BASE TABLE'
+                      AND t.table_schema NOT IN
+                          ('information_schema','pg_catalog','pg_toast')
+                    ORDER BY t.table_schema, t.table_name
+                    """,
+                ).rows
+            db.close()
+        except Exception as exc:
+            logger.debug("catalog tree: schema query failed for %s: %s", conn_id, exc)
+            return []
+
+        # Group by schema
+        schema_map: dict[str, list] = {}
+        for schema, table_name, row_est in rows:
+            schema_map.setdefault(schema, []).append(
+                {"name": table_name, "row_count": row_est}
+            )
+        return [{"name": s, "tables": t} for s, t in schema_map.items()]
+
+    sections: list[dict] = []
+
+    # ── Sample Catalog (always first, always available) ───────────────────────
+    sample_schemas: list[dict] = []
+    try:
+        sample_schemas = _quick_schemas(SAMPLES_ID, "duckdb")
+    except Exception as exc:
+        logger.debug("catalog tree: samples unavailable: %s", exc)
+
+    sections.append({
+        "id": "samples",
+        "label": "Sample Catalog",
+        "entries": [{
+            "conn_id": SAMPLES_ID,
+            "name": "samples",
+            "conn_type": "duckdb",
+            "builtin": True,
+            "schemas": sample_schemas,
+        }],
+    })
+
+    # ── My Connections ─────────────────────────────────────────────────────────
+    user_entries = []
+    for conn_info in list_connections():
+        cid = conn_info["id"]
+        if cid == SAMPLES_ID:
+            continue
+        schemas = _quick_schemas(cid, conn_info.get("conn_type", "duckdb"))
+        user_entries.append({
+            "conn_id": cid,
+            "name": conn_info["name"],
+            "conn_type": conn_info.get("conn_type", ""),
+            "builtin": conn_info.get("builtin", False),
+            "schemas": schemas,
+        })
+
+    sections.append({
+        "id": "connections",
+        "label": "My Connections",
+        "entries": user_entries,
+    })
+
+    return {"sections": sections}
+
+
 @app.get("/connections/{conn_id}/tables/{table}/sample")
-def table_sample(conn_id: str, table: str, limit: int = 100):
+def table_sample(conn_id: str, table: str, limit: int = 100, schema: str = ""):
+    """Return up to `limit` rows from the named table.
+
+    For multi-schema connections (e.g. the samples catalog) pass an optional
+    `schema` query parameter so the query can be fully qualified:
+        GET /connections/samples/tables/orders/sample?schema=ecommerce
+    """
     try:
         db = open_connection_for(conn_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Connection not found")
     try:
-        # Use parameterised table name to prevent injection via identifier quoting
-        safe_table = table.replace('"', '')
-        result = db.execute("sample", f'SELECT * FROM "{safe_table}" LIMIT {int(limit)}')
+        safe_table  = table.replace('"', '').replace(';', '')
+        safe_schema = schema.replace('"', '').replace(';', '') if schema else ""
+        if safe_schema:
+            ref = f'"{safe_schema}"."{safe_table}"'
+        else:
+            ref = f'"{safe_table}"'
+        result = db.execute("sample", f"SELECT * FROM {ref} LIMIT {int(limit)}")
         columns = result.columns
         rows = [[str(v) if v is not None else None for v in row] for row in result.rows]
         db.close()

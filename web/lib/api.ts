@@ -93,9 +93,54 @@ export interface TableSample {
   rows: (string | null)[][];
 }
 
-export async function sampleTable(connId: string, table: string, limit = 100): Promise<TableSample> {
-  const res = await fetch(`${BASE}/connections/${encodeURIComponent(connId)}/tables/${encodeURIComponent(table)}/sample?limit=${limit}`);
+export async function sampleTable(
+  connId: string,
+  table: string,
+  limit = 100,
+  schema?: string,
+): Promise<TableSample> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (schema) params.set("schema", schema);
+  const res = await fetch(
+    `${BASE}/connections/${encodeURIComponent(connId)}/tables/${encodeURIComponent(table)}/sample?${params}`,
+  );
   if (!res.ok) throw new Error(`Failed to sample table "${table}"`);
+  return res.json();
+}
+
+// ── Catalog tree ──────────────────────────────────────────────────────────────
+
+export interface CatalogTableInfo {
+  name: string;
+  row_count: number | null;
+}
+
+export interface CatalogSchemaInfo {
+  name: string;
+  tables: CatalogTableInfo[];
+}
+
+export interface CatalogEntry {
+  conn_id: string;
+  name: string;
+  conn_type: string;
+  builtin: boolean;
+  schemas: CatalogSchemaInfo[];
+}
+
+export interface CatalogSection {
+  id: string;
+  label: string;
+  entries: CatalogEntry[];
+}
+
+export interface CatalogTree {
+  sections: CatalogSection[];
+}
+
+export async function getCatalogTree(): Promise<CatalogTree> {
+  const res = await fetch(`${BASE}/catalog/tree`);
+  if (!res.ok) throw new Error("Failed to fetch catalog tree");
   return res.json();
 }
 

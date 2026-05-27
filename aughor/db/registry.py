@@ -21,6 +21,7 @@ KEY_FILE    = Path(__file__).parent.parent.parent / "data" / ".aughor_key"
 
 BUILTIN_ID = "fixture"
 POSTGRES_BUILTIN_ID = "mydb"
+SAMPLES_ID = "samples"
 
 
 def _postgres_builtin_dsn() -> str:
@@ -78,6 +79,19 @@ def list_connections() -> list[dict]:
     hidden = _hidden_builtins()
     rows = []
 
+    # Always include the samples catalog (built-in, read-only, never deleted)
+    if SAMPLES_ID not in hidden:
+        samples_path = Path(__file__).parent.parent.parent / "data" / "samples.duckdb"
+        rows.append({
+            "id": SAMPLES_ID,
+            "name": "Sample Catalog",
+            "conn_type": "duckdb",
+            "dsn_preview": str(samples_path),
+            "schema_name": None,  # exposes multiple schemas
+            "meta": {"builtin_samples": True},
+            "builtin": True,
+        })
+
     # Include built-in fixture unless user has removed it
     if BUILTIN_ID not in hidden:
         fixture_path = Path(__file__).parent.parent.parent / "data" / "aughor.duckdb"
@@ -129,6 +143,8 @@ def add_connection(name: str, conn_type: str, dsn: str, meta: dict | None = None
 
 def get_meta(conn_id: str) -> dict:
     """Return the metadata dict stored for a connection (e.g. schema_name)."""
+    if conn_id == SAMPLES_ID:
+        return {"builtin_samples": True}
     if conn_id in (BUILTIN_ID, POSTGRES_BUILTIN_ID):
         # Builtins store settings in the settings file
         return _load_settings().get(conn_id, {})
@@ -178,6 +194,9 @@ def update_connection_settings(conn_id: str, updates: dict) -> dict:
 
 def get_dsn(conn_id: str) -> tuple[str, str]:
     """Return (conn_type, plain_dsn) for the given connection ID."""
+    if conn_id == SAMPLES_ID:
+        samples_path = Path(__file__).parent.parent.parent / "data" / "samples.duckdb"
+        return "duckdb", str(samples_path)
     if conn_id == BUILTIN_ID:
         fixture_path = Path(__file__).parent.parent.parent / "data" / "aughor.duckdb"
         return "duckdb", str(fixture_path)
@@ -195,6 +214,8 @@ def get_dsn(conn_id: str) -> tuple[str, str]:
 
 
 def delete_connection(conn_id: str) -> None:
+    if conn_id == SAMPLES_ID:
+        raise ValueError("The Sample Catalog cannot be deleted.")
     if conn_id in (BUILTIN_ID, POSTGRES_BUILTIN_ID):
         # Hide the builtin so it won't reappear on restart
         settings = _load_settings()

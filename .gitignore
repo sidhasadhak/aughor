@@ -14,6 +14,8 @@ data/connections.db
 data/.hermes_key
 data/.aughor_key
 data/hermes.duckdb
+data/aughor.duckdb
+data/samples.duckdb
 data/history.db
 data/checkpoints.db
 data/checkpoints.db-shm

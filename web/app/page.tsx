@@ -1203,7 +1203,6 @@ export default function Home() {
                 connections={connections}
                 selectedConn={selectedConn}
                 onSelect={setSelectedConn}
-                onAddConn={() => setShowAddConn(true)}
                 onDeleteConn={conn => setPendingDeleteConn(conn)}
                 onChatWithTable={(table, connId) => {
                   if (connId !== selectedConn) setSelectedConn(connId);
