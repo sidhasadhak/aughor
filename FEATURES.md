@@ -66,6 +66,9 @@
 57. [Document Ingestion — Context Layer](#57-document-ingestion--context-layer)
 58. [Business Process Visual Mapper](#58-business-process-visual-mapper)
 59. [Causal Graph in Ontology — Outcome-Gated](#59-causal-graph-in-ontology--shipped)
+60. [Catalog 3-Panel Layout + Sample Data Tab](#60-catalog-3-panel-layout--sample-data-tab)
+61. [Phase 8 Ontology Gate](#61-phase-8-ontology-gate)
+62. [Connection Persistence Hardening](#62-connection-persistence-hardening)
 
 ---
 
@@ -1901,4 +1904,64 @@ ADA discovers causal relationships on every investigation — "elevated stockout
 
 ---
 
-*Last updated: 2026-05-27 · 59 features — all shipped. See `ROADMAP.md` for upcoming milestones.*
+---
+
+## 60. Catalog 3-Panel Layout + Sample Data Tab
+
+### What
+The Catalog view is a full 3-panel Databricks-style browser: a connection sidebar on the left, a scrollable table list in the centre, and a detail panel on the right. The detail panel has two tabs — **Columns** (field names, types, FK flags, row count) and **Sample** (live data preview). Sample data loads lazily on first tab click — no network call until the user actually wants to see it.
+
+### Why
+The previous `CatalogPanel` was a flat accordion list with no way to inspect actual data values. Adding a sample tab fills the gap: users can immediately verify column contents, catch data quality surprises, and build intuition about the schema before writing questions or triggering investigations.
+
+### How
+`CatalogScreen.tsx` replaces `CatalogPanel.tsx` as the catalog entry point. A `SampleGrid` component handles the lazy fetch: on first render of the Sample tab it calls `sampleTable(connId, table, 100)`, shows a spinner, then renders a horizontal-scroll table. Cells display `—` for nulls and truncate at 32 characters with title-tooltip for full values. A row-count footer confirms how many rows were returned. The component self-fetches connections on mount via `getConnections()` so the panel is never empty even when the parent page's load was slow.
+
+### Key files
+- `web/components/CatalogScreen.tsx` — 3-panel layout, `SampleGrid`, `TableDetail`, `DetailTab` type
+- `web/lib/api.ts` — `sampleTable(connId, table, limit)` → `GET /connections/{conn_id}/tables/{table}/sample`; `TableSample` interface (`columns: string[]`, `rows: (string|null)[][]`)
+
+---
+
+## 61. Phase 8 Ontology Gate
+
+### What
+Phase 8 (domain intelligence) now waits for the ontology to be available before it starts. If the ontology isn't in cache when Phase 8 is about to begin, the explorer builds it immediately by calling `get_schema()` — then proceeds. The missing-ontology warning is now logged at `warning` level rather than `info`.
+
+### Why
+Phases 3–7 (structural exploration) complete in a few seconds. The ontology was being built asynchronously — often finishing *after* Phase 8 had already been entered and silently exited on `load_latest_ontology()` returning `None`. The result was `insights_found: 0` with no visible error. This gate converts that silent failure into a proactive build with visible log output.
+
+### How
+In `explore()`, just before the Phase 8 loop starts, `load_latest_ontology(self.connection_id)` is called. If it returns `None`, `self._conn.get_schema()` is called synchronously — which builds, enriches, and caches the ontology as a side-effect. Any exception during the build is caught and logged; Phase 8 will then log a `warning` and skip gracefully. Manual recovery is still available via `POST /exploration/{conn_id}/domains/{domain}/extend`.
+
+### Key files
+- `aughor/explorer/agent.py` — ontology gate in `explore()` before Phase 8 block; `_phase8_domain_intelligence` warning upgrade
+
+---
+
+## 62. Connection Persistence Hardening
+
+### What
+A three-layer fix that prevents connections from being irreversibly lost when the server restarts. Connections appeared to disappear because the Fernet encryption key was only stored in an untracked file — if that file was deleted (e.g. by `git clean`) a new key was generated and all stored DSNs became unreadable. This is now impossible.
+
+### Why
+The connection registry encrypts DSNs with a Fernet key. The key was read from `data/.aughor_key` — an untracked, gitignored file that could easily be deleted during cleanup. Each deletion silently generated a fresh key, making every saved connection undecryptable. The only symptom was "connections missing" with no error, making the root cause very hard to find.
+
+### How
+
+**Layer 1 — Key pinned to `.env`:** `AUGHOR_SECRET_KEY` is now written into `.env` as the first entry. `aughor/db/registry.py` reads the key from this env var, falling back to the file only if the var is unset. The `.env` file is gitignored but tracked alongside the project, so the key survives `git clean`.
+
+**Layer 2 — File gitignored:** `data/.aughor_key` (previously listed as `data/.hermes_key` — stale from the package rename) is added to `.gitignore`, preventing accidental commit of the raw key.
+
+**Layer 3 — Startup validator:** `_validate_connections()` runs as a FastAPI startup event. It iterates every registered connection, attempts to decrypt its DSN, and logs a clear error for any that fail. Misconfiguration surfaces immediately at server start rather than silently at query time.
+
+**CORS hardening:** `allow_origins` changed from `["http://localhost:3000"]` to `["*"]`. The restricted origin caused silent 4xx failures when the browser used any other origin (different port, IP address, or during local testing), which appeared as "no connections found."
+
+### Key files
+- `aughor/.env` — `AUGHOR_SECRET_KEY` pinned as first entry
+- `aughor/.gitignore` — `data/.aughor_key` added
+- `aughor/api.py` — `_validate_connections()` startup event; `allow_origins=["*"]`
+
+---
+
+*Last updated: 2026-05-28 · 62 features — all shipped. See `ROADMAP.md` for upcoming milestones.*

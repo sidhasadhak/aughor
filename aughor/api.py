@@ -55,7 +55,7 @@ app = FastAPI(title="Aughor API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -88,6 +88,38 @@ def _invalidate_schema_cache(conn_id: str) -> None:
 
 _explorers: dict = {}       # conn_id → SchemaExplorer
 _explorer_tasks: dict = {}  # conn_id → asyncio.Task
+
+
+@app.on_event("startup")
+async def _validate_connections() -> None:
+    """Verify every saved connection can be decrypted with the current key.
+
+    If decryption fails it means the encryption key changed (e.g. .aughor_key
+    was deleted and regenerated, or AUGHOR_SECRET_KEY env var was removed).
+    Log a loud WARNING so the user knows immediately rather than seeing a
+    confusing empty connection list later.
+    """
+    from aughor.db.registry import _db, _decrypt, list_connections
+    try:
+        with _db() as conn:
+            rows = conn.execute("SELECT id, name, dsn_enc FROM connections").fetchall()
+        bad = []
+        for row in rows:
+            try:
+                _decrypt(row["dsn_enc"])
+            except Exception:
+                bad.append(f"{row['name']} (id={row['id']})")
+        if bad:
+            logger.error(
+                "⚠️  CONNECTION KEY MISMATCH — %d connection(s) cannot be decrypted: %s\n"
+                "   The encryption key has changed. Set AUGHOR_SECRET_KEY in .env to the\n"
+                "   original key value (found in data/.aughor_key) and restart.",
+                len(bad), ", ".join(bad),
+            )
+        else:
+            logger.info("Connection key check passed — %d connection(s) OK", len(rows))
+    except Exception as exc:
+        logger.warning("Could not run connection key check: %s", exc)
 
 
 @app.on_event("startup")

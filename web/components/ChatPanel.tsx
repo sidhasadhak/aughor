@@ -9,6 +9,7 @@ import ChevronDownIcon    from "@atlaskit/icon/core/chevron-down";
 import ChevronRightIcon   from "@atlaskit/icon/core/chevron-right";
 import CommentIcon        from "@atlaskit/icon/core/comment";
 import AiSparkleIcon      from "@atlaskit/icon/core/ai-sparkle";
+import { uploadDocument } from "@/lib/api";
 import { useChat, type DebugEvent } from "@/lib/useChat";
 import { ChatMessage, SourcePanel, type SourcePanelData } from "./ChatMessage";
 
@@ -44,77 +45,151 @@ interface InputBoxProps {
   onSend: () => void;
   onStop: () => void;
   onClear: () => void;
+  attachedFile?: File | null;
+  onAttach?: (f: File | null) => void;
 }
 
-function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, setMode, onSend, onStop, onClear }: InputBoxProps) {
+function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, setMode, onSend, onStop, onClear, attachedFile, onAttach }: InputBoxProps) {
+  const [focused, setFocused] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    onAttach?.(file);
+    e.target.value = ""; // reset so same file can be re-selected
+  };
+
   return (
     <div
       className="rounded-xl flex flex-col overflow-hidden"
       style={{
         background: "#0d0e11",
-        border: "1px solid rgba(255,255,255,0.09)",
-        boxShadow: "0 6px 20px rgba(0,0,0,0.5), 0 1px 0 rgba(255,255,255,0.04) inset",
+        border: focused
+          ? "1px solid rgba(45,114,210,0.55)"
+          : "1px solid rgba(255,255,255,0.09)",
+        boxShadow: focused
+          ? "0 0 0 3px rgba(45,114,210,0.12), 0 6px 20px rgba(0,0,0,0.5), 0 1px 0 rgba(255,255,255,0.04) inset"
+          : "0 6px 20px rgba(0,0,0,0.5), 0 1px 0 rgba(255,255,255,0.04) inset",
+        transition: "border-color .15s, box-shadow .15s",
       }}
     >
+      {/* Attached file chip */}
+      {attachedFile && (
+        <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 12px 0" }}>
+          <div style={{
+            display: "flex", alignItems: "center", gap: 5,
+            padding: "2px 8px", borderRadius: "var(--r2)",
+            background: "var(--blue1)", border: "1px solid var(--blue2)",
+            fontSize: 11, color: "var(--blue5)", maxWidth: 320,
+          }}>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+              <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
+            </svg>
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{attachedFile.name}</span>
+            <button onClick={() => onAttach?.(null)} style={{ marginLeft: 2, opacity: .6, lineHeight: 1, background: "none", border: "none", color: "inherit", cursor: "pointer", padding: 0, fontSize: 12 }}>×</button>
+          </div>
+        </div>
+      )}
+
       {/* Textarea row */}
       <textarea
         ref={textareaRef}
-        rows={multiline ? 3 : 1}
+        rows={multiline ? 2 : 1}
         value={input}
         onChange={(e) => setInput(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSend(); }
         }}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
         disabled={streaming}
         placeholder={multiline ? "Ask anything about your data…" : "Ask your question…"}
         className="w-full bg-transparent text-[12px] text-zinc-100 placeholder:text-zinc-500 px-4 pt-3 pb-2 resize-none focus:outline-none disabled:opacity-50"
       />
 
-      {/* Toggle row — mode buttons left, send/stop right */}
-      <div className="flex items-center justify-between px-3 pb-2.5">
+      {/* Toggle row — mode buttons left, actions right */}
+      <div className="flex items-center justify-between px-3 pb-2">
         {/* Mode toggle */}
-        <div className="flex items-center gap-0.5">
+        <div style={{ display: "flex", alignItems: "center", gap: 2, padding: "2px", background: "var(--bg-0)", borderRadius: "var(--r2)", border: "1px solid var(--b1)" }}>
           <button
             onClick={() => setMode("ask")}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium transition-all ${
-              mode === "ask"
-                ? "bg-zinc-700 text-zinc-100 shadow-sm"
-                : "text-zinc-500 hover:text-zinc-400"
-            }`}
+            style={{
+              display: "flex", alignItems: "center", gap: 5, padding: "3px 10px",
+              borderRadius: "var(--r1)", fontSize: 11, fontWeight: 500, fontFamily: "var(--font-ui)",
+              cursor: "pointer", border: "none", transition: "all .12s",
+              background: mode === "ask" ? "var(--bg-3)" : "transparent",
+              color: mode === "ask" ? "var(--t1)" : "var(--t3)",
+              boxShadow: mode === "ask" ? "0 1px 3px rgba(0,0,0,.3)" : "none",
+            }}
           >
             <CommentIcon label="Quick" size="small" />
             Quick
           </button>
           <button
             onClick={() => setMode("investigate")}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium transition-all ${
-              mode === "investigate"
-                ? "bg-violet-600/25 text-violet-300 shadow-sm border border-violet-500/20"
-                : "text-zinc-500 hover:text-zinc-400"
-            }`}
+            style={{
+              display: "flex", alignItems: "center", gap: 5, padding: "3px 10px",
+              borderRadius: "var(--r1)", fontSize: 11, fontWeight: 500, fontFamily: "var(--font-ui)",
+              cursor: "pointer", border: mode === "investigate" ? "1px solid var(--vio2)" : "1px solid transparent",
+              transition: "all .12s",
+              background: mode === "investigate" ? "var(--vio1)" : "transparent",
+              color: mode === "investigate" ? "var(--vio5)" : "var(--t3)",
+              boxShadow: mode === "investigate" ? "0 1px 3px rgba(0,0,0,.3)" : "none",
+            }}
           >
             <AiSparkleIcon label="Agentic" size="small" />
             Agentic
           </button>
         </div>
 
-        {/* Actions */}
-        <div className="flex items-center gap-2">
+        {/* Actions: clear · attach · send/stop */}
+        <div className="flex items-center gap-1.5">
           {!multiline && !streaming && (
             <button
               onClick={onClear}
-              className="text-[12px] transition-colors"
+              className="text-[12px] transition-colors px-1"
               style={{ color: "#687986" }}
               title="Clear conversation"
             >
               Clear
             </button>
           )}
+
+          {/* Hidden file input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".pdf,.csv,.txt,.md"
+            style={{ display: "none" }}
+            onChange={handleFileChange}
+          />
+
+          {/* Attach button */}
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            title="Attach file (PDF, CSV)"
+            disabled={streaming}
+            className="flex items-center justify-center rounded-lg transition-colors disabled:opacity-30"
+            style={{
+              width: 30, height: 30,
+              color: attachedFile ? "var(--blue4)" : "#687986",
+              background: attachedFile ? "rgba(45,114,210,0.1)" : "transparent",
+            }}
+            onMouseEnter={e => { if (!attachedFile) (e.currentTarget as HTMLElement).style.color = "#c0bfbc"; }}
+            onMouseLeave={e => { if (!attachedFile) (e.currentTarget as HTMLElement).style.color = "#687986"; }}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
+            </svg>
+          </button>
+
+          {/* Send / Stop */}
           {streaming ? (
             <button
               onClick={onStop}
               title="Stop"
-              className="w-7 h-7 rounded-lg bg-red-500/15 border border-red-500/30 text-red-400 flex items-center justify-center hover:bg-red-500/25 transition"
+              className="rounded-lg bg-red-500/15 border border-red-500/30 text-red-400 flex items-center justify-center hover:bg-red-500/25 transition"
+              style={{ width: 30, height: 30 }}
             >
               <VideoStopIcon label="Stop" size="small" />
             </button>
@@ -123,9 +198,13 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
               onClick={() => onSend()}
               disabled={!input.trim()}
               title="Send"
-              className="w-7 h-7 rounded-lg text-zinc-500 flex items-center justify-center hover:text-zinc-100 disabled:opacity-25 disabled:cursor-not-allowed transition"
+              className="rounded-lg text-zinc-500 flex items-center justify-center hover:text-zinc-100 disabled:opacity-25 disabled:cursor-not-allowed transition"
+              style={{ width: 30, height: 30 }}
             >
-              <AtlasSendIcon label="Send" size="small" />
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13" />
+                <polygon points="22 2 15 22 11 13 2 9 22 2" />
+              </svg>
             </button>
           )}
         </div>
@@ -203,6 +282,7 @@ export function ChatPanel({ connectionId, restoreSessionId, initialQuestion, ini
   const [loadingStarters, setLoadingStarters] = useState(false);
   const [showDebug, setShowDebug]   = useState(false);
   const [sourcePanel, setSourcePanel] = useState<SourcePanelData | null>(null);
+  const [attachedFile, setAttachedFile] = useState<File | null>(null);
   const scrollRef               = useRef<HTMLDivElement>(null);
   const turnTopRefs             = useRef<Map<string, HTMLElement>>(new Map());
   const textareaRef             = useRef<HTMLTextAreaElement>(null);
@@ -305,13 +385,22 @@ export function ChatPanel({ connectionId, restoreSessionId, initialQuestion, ini
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialQuestion]);
 
-  const handleSend = useCallback((q?: string, m?: "ask" | "investigate", opts?: { skipCache?: boolean }) => {
+  const handleSend = useCallback(async (q?: string, m?: "ask" | "investigate", opts?: { skipCache?: boolean }) => {
     const question = (q ?? input).trim();
     if (!question || state.streaming) return;
     setInput("");
+    // Upload attached file first, then send the question
+    if (attachedFile) {
+      try {
+        await uploadDocument(attachedFile);
+      } catch {
+        // Non-fatal: still send the question even if upload fails
+      }
+      setAttachedFile(null);
+    }
     ask(question, connectionId, m ?? mode, opts);
     textareaRef.current?.focus();
-  }, [input, state.streaming, ask, connectionId, mode]);
+  }, [input, state.streaming, ask, connectionId, mode, attachedFile]);
 
   const isEmpty = state.turns.length === 0;
 
@@ -325,6 +414,8 @@ export function ChatPanel({ connectionId, restoreSessionId, initialQuestion, ini
     onSend: handleSend,
     onStop: stop,
     onClear: clear,
+    attachedFile,
+    onAttach: setAttachedFile,
   };
 
   return (
@@ -406,11 +497,13 @@ export function ChatPanel({ connectionId, restoreSessionId, initialQuestion, ini
         </div>
       ) : (
         /* ── Active chat ── */
-        <>
-          {/* Flex row: [scrollable chat] [source panel drawer] */}
-          <div className="flex flex-1 min-h-0 overflow-hidden">
-            {/* ── Chat scroll area ── */}
-            <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0">
+        <div className="flex flex-1 min-h-0 overflow-hidden">
+
+          {/* ── Chat column (scroll + floating input) ── */}
+          <div className="flex-1 min-h-0 overflow-hidden" style={{ position: "relative" }}>
+
+            {/* Scrollable messages */}
+            <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0 h-full">
               <div className="py-8 w-[90%] mx-auto">
                 {state.turns.map((turn, i) => (
                   <div
@@ -429,35 +522,48 @@ export function ChatPanel({ connectionId, restoreSessionId, initialQuestion, ini
                     />
                   </div>
                 ))}
-                <div className="h-4" />
+                {/* Spacer so last message clears the floating input */}
+                <div style={{ height: 172 }} />
               </div>
             </div>
 
-            {/* ── Source panel drawer (right side, pushes chat left) ── */}
-            {sourcePanel && (
-              <div
-                className="flex-shrink-0 flex flex-col border-l border-zinc-700/60"
-                style={{ width: 380, background: "#0f1923" }}
-              >
-                <SourcePanel
-                  columns={sourcePanel.columns}
-                  rows={sourcePanel.rows}
-                  sql={sourcePanel.sql}
-                  title={sourcePanel.title}
-                  onClose={() => setSourcePanel(null)}
-                />
+            {/* Gradient fade — blends messages into the float */}
+            <div style={{
+              position: "absolute", bottom: 0, left: 0, right: 0,
+              height: 200, pointerEvents: "none", zIndex: 1,
+              background: "linear-gradient(to bottom, transparent 0%, #0d0e11 68%)",
+            }} />
+
+            {/* ── Floating input ── */}
+            <div style={{
+              position: "absolute", bottom: 20, left: 0, right: 0,
+              zIndex: 2, pointerEvents: "none",
+            }}>
+              <div className="w-[90%] mx-auto space-y-2" style={{ pointerEvents: "all" }}>
+                <InputBox {...inputBoxProps} />
+                <p className="text-[12px] text-center" style={{ color: "#687986" }}>Always review the accuracy of responses.</p>
               </div>
-            )}
+            </div>
+
           </div>
 
-          {/* ── Input bar ── */}
-          <div className="border-t border-zinc-800 pt-3 pb-3 shrink-0" style={{ background: "#0d0e11" }}>
-            <div className="w-[90%] mx-auto space-y-2">
-              <InputBox {...inputBoxProps} />
-              <p className="text-[12px] text-center" style={{ color: "#687986" }}>Always review the accuracy of responses.</p>
+          {/* ── Source panel drawer (right side, pushes chat left) ── */}
+          {sourcePanel && (
+            <div
+              className="flex-shrink-0 flex flex-col border-l border-zinc-700/60"
+              style={{ width: 380, background: "#0f1923" }}
+            >
+              <SourcePanel
+                columns={sourcePanel.columns}
+                rows={sourcePanel.rows}
+                sql={sourcePanel.sql}
+                title={sourcePanel.title}
+                onClose={() => setSourcePanel(null)}
+              />
             </div>
-          </div>
-        </>
+          )}
+
+        </div>
       )}
 
       {/* ── Debug log drawer ── */}

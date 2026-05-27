@@ -1,192 +1,425 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@import "shadcn/tailwind.css";
 
 @custom-variant dark (&:is(.dark *));
 
+/* ── Palantir Blueprint design system ───────────────────────────────────────
+   Fonts: IBM Plex Sans (UI) + IBM Plex Mono (data / code / monospace values)
+   Primary: Blueprint blue #2D72D2
+   Shape: max 4px border-radius, 1px borders
+   ───────────────────────────────────────────────────────────────────────── */
+
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-dm-sans);
-  --font-mono: var(--font-dm-mono);
-  --font-heading: var(--font-dm-sans);
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
-  --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
-  --color-card: var(--card);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
+  --font-sans: var(--font-ibm-plex-sans), system-ui, sans-serif;
+  --font-mono: var(--font-ibm-plex-mono), 'Consolas', monospace;
 }
 
-
+/* ── Dark mode design tokens (default) ─────────────────────────────────── */
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  /* Backgrounds */
+  --bg-0: #0B1018;
+  --bg-1: #111821;
+  --bg-2: #172030;
+  --bg-3: #1C2839;
+  --bg-4: #223246;
+  --bg-hover: rgba(45, 114, 210, 0.07);
+  --bg-sel:   rgba(45, 114, 210, 0.13);
+
+  /* Borders */
+  --b0: #131C2B;
+  --b1: #1B2840;
+  --b2: #253552;
+  --b3: #314468;
+  --bfocus: #2D72D2;
+
+  /* Text */
+  --t1: #C8D4E4;
+  --t2: #8296AF;
+  --t3: #485E7C;
+  --t4: #2B3B52;
+
+  /* Intent colours — dark */
+  --blue1: #152B50; --blue2: #1A3A6E; --blue3: #2D72D2; --blue4: #4C8EEE; --blue5: #88BAFF;
+  --grn1:  #0C2B1A; --grn2:  #10522E; --grn3:  #18985A; --grn4:  #2EC87B; --grn5:  #68E0A8;
+  --amb1:  #2A1D00; --amb2:  #583C00; --amb3:  #BD8800; --amb4:  #E0AD00; --amb5:  #FFD44D;
+  --red1:  #2A0E0E; --red2:  #561A1A; --red3:  #C42A2A; --red4:  #E64848; --red5:  #FF8585;
+  --vio1:  #190E3A; --vio2:  #2D1A6A; --vio3:  #6040B8; --vio4:  #8B68D8; --vio5:  #BCA8F0;
+  --cyn1:  #0D2030; --cyn2:  #124060; --cyn3:  #1690BE; --cyn4:  #30B8E0; --cyn5:  #78D8F8;
+
+  /* Typography */
+  --font-ui:   var(--font-ibm-plex-sans), system-ui, sans-serif;
+  --font-mono: var(--font-ibm-plex-mono), 'Consolas', monospace;
+
+  /* Radii — hard-edged Palantir style */
+  --r1: 2px;
+  --r2: 3px;
+  --r3: 4px;
+
+  /* Layout */
+  --sidebar:  224px;
+  --topbar:   48px;
+
+  /* Misc */
+  --code-bg:   #090E15;
+  --shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.45);
+
+  /* ── Tailwind bridge: map Palantir tokens → Tailwind custom props ── */
+  --background:   var(--bg-0);
+  --foreground:   var(--t1);
+  --card:         var(--bg-2);
+  --card-foreground: var(--t1);
+  --popover:      var(--bg-3);
+  --popover-foreground: var(--t1);
+  --primary:      var(--blue3);
+  --primary-foreground: #fff;
+  --secondary:    var(--bg-3);
+  --secondary-foreground: var(--t1);
+  --muted:        var(--bg-2);
+  --muted-foreground: var(--t2);
+  --accent:       var(--blue3);
+  --accent-foreground: #fff;
+  --destructive:  var(--red3);
+  --border:       var(--b1);
+  --input:        var(--b2);
+  --ring:         var(--blue3);
+  --radius:       4px;
+
+  /* Sidebar tokens */
+  --sidebar:              var(--bg-1);
+  --sidebar-foreground:   var(--t1);
+  --sidebar-primary:      var(--blue3);
+  --sidebar-primary-foreground: #fff;
+  --sidebar-accent:       var(--bg-sel);
+  --sidebar-accent-foreground: var(--blue5);
+  --sidebar-border:       var(--b1);
+  --sidebar-ring:         var(--blue3);
+
+  /* Legacy palette aliases for components that still reference these */
+  --color-zinc-950: var(--bg-0);
+  --color-zinc-900: var(--bg-1);
+  --color-zinc-800: var(--bg-0);
+  --color-zinc-700: var(--bg-2);
+  --color-zinc-600: var(--b2);
+  --color-zinc-500: var(--t2);
+  --color-zinc-400: var(--t3);
+  --color-zinc-300: var(--t1);
+  --color-zinc-200: #e8eff8;
+  --color-zinc-100: #f0f5fc;
+
+  /* Accent aliases */
+  --color-violet-700: var(--vio2);
+  --color-violet-600: var(--vio3);
+  --color-violet-500: var(--vio4);
+  --color-violet-400: var(--vio5);
+  --color-sky-700:    var(--blue2);
+  --color-sky-600:    var(--blue2);
+  --color-sky-500:    var(--blue3);
+  --color-sky-400:    var(--blue4);
+  --color-red-600:    var(--red3);
+  --color-red-500:    var(--red4);
+  --color-red-400:    var(--red5);
 }
 
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+/* ── Light mode ─────────────────────────────────────────────────────────── */
+[data-theme="light"] {
+  --bg-0: #F2F5FA;
+  --bg-1: #FFFFFF;
+  --bg-2: #F7F9FC;
+  --bg-3: #ECF0F8;
+  --bg-4: #E2EAF4;
+  --bg-hover: rgba(45, 114, 210, 0.055);
+  --bg-sel:   rgba(45, 114, 210, 0.10);
+
+  --b0: #E5ECF5;
+  --b1: #D2DCEB;
+  --b2: #BBC9DC;
+  --b3: #A0B5CC;
+  --bfocus: #2D72D2;
+
+  --t1: #1A2535;
+  --t2: #3C5270;
+  --t3: #6E8EA8;
+  --t4: #A8BDD0;
+
+  --blue1: #EBF2FC; --blue2: #C4D8F8; --blue3: #2D72D2; --blue4: #1A56B0; --blue5: #0E3C80;
+  --grn1:  #E8F7EF; --grn2:  #B5E8CE; --grn3:  #18985A; --grn4:  #0D7042; --grn5:  #084F2C;
+  --amb1:  #FDF6E0; --amb2:  #F5DF9C; --amb3:  #C08A00; --amb4:  #8A6200; --amb5:  #5A4000;
+  --red1:  #FBE8E8; --red2:  #F0B5B5; --red3:  #C42A2A; --red4:  #961C1C; --red5:  #660E0E;
+  --vio1:  #F0E8FA; --vio2:  #D4B5F0; --vio3:  #6040B8; --vio4:  #4828A0; --vio5:  #301870;
+  --cyn1:  #E2F5FC; --cyn2:  #AADDF5; --cyn3:  #1690BE; --cyn4:  #0C6E94; --cyn5:  #074C6A;
+
+  --code-bg:   #EDF0F8;
+  --shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.10);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.14);
 }
 
-@layer base {
-  * {
-    @apply border-border outline-ring/50;
-  }
-  body {
-    @apply bg-background text-foreground;
-  }
-  html {
-    @apply font-sans;
-  }
+/* ── Base reset ─────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  background: var(--bg-0);
+  color: var(--t1);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* ── Ontology canvas edge flow animations ────────────────────────────────────
-   stroke-dasharray cycle lengths:
-     inferred  : "5 7"   → 12 px  (animation moves -12 per cycle)
-     exact     : "4 8"   → 12 px
-     verified  : "3 30"  → 33 px  (tiny dot on solid base; shimmer effect)
-   ─────────────────────────────────────────────────────────────────────────── */
-@keyframes edge-flow {
-  to { stroke-dashoffset: -12; }
+#__next, body > div:first-child { height: 100%; }
+
+button { font-family: var(--font-ui); cursor: pointer; border: none; background: none; color: inherit; }
+input, textarea, select { font-family: var(--font-ui); font-size: 13px; color: var(--t1); }
+a { color: var(--blue4); text-decoration: none; }
+
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--b2); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: var(--b3); }
+
+/* ── Layout ─────────────────────────────────────────────────────────────── */
+.aug-app { height: 100vh; overflow: hidden; display: flex; flex-direction: column; background: var(--bg-0); color: var(--t1); }
+.aug-body { flex: 1; display: flex; overflow: hidden; min-height: 0; }
+.aug-screen { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
+
+/* ── Topbar ──────────────────────────────────────────────────────────────── */
+.aug-topbar {
+  height: var(--topbar);
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--b1);
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 10px;
+  flex-shrink: 0;
+  z-index: 50;
 }
-@keyframes edge-flow-verified {
-  to { stroke-dashoffset: -33; }
+
+/* ── Sidebar ─────────────────────────────────────────────────────────────── */
+.aug-sidebar {
+  width: 224px;
+  background: var(--bg-1);
+  border-right: 1px solid var(--b1);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  overflow: hidden;
 }
 
-/* ── Databricks brand palette ────────────────────────────────────────────────
-   Exact colours from the Databricks palette swatch:
-     #8265BF  primary purple accent
-     #171F26  near-black navy canvas
-     #3B8DBF  steel-blue secondary accent
-     #295773  dark-teal sidebar/surfaces
-     #BF2A2A  destructive / error red
-   ─────────────────────────────────────────────────────────────────────────── */
-
-/* ── Exact values from user spec ────────────────────────────────────────────
-   Main text:   #EBEFF2   Sub text:  #5C6A73
-   Left panel:  #1F272E   Right panel (canvas): #11171D
-   Hyperlink:   #3B8DBF
-   ─────────────────────────────────────────────────────────────────────────── */
-:root {
-  /* surfaces */
-  --color-zinc-950: #0b1016;   /* deepest shadow / dropdown overlay        */
-  --color-zinc-900: #1F272E;   /* left panel / sidebar  ← spec exact       */
-  --color-zinc-800: #11171D;   /* right panel / main canvas  ← spec exact  */
-  --color-zinc-700: #252F39;   /* cards / elevated panels                  */
-  --color-zinc-600: #2e3c47;   /* borders                                  */
-  /* text */
-  --color-zinc-500: #8A9BA6;   /* sub text  ← spec exact                  */
-  --color-zinc-400: #a8b8c2;   /* placeholder / muted                      */
-  --color-zinc-300: #EBEFF2;   /* main text  ← spec exact                  */
-  --color-zinc-200: #f0f4f7;
-  --color-zinc-100: #f7f9fb;
-
-  /* Primary accent — #3B8DBF tonal scale (replaces purple) */
-  --color-violet-700: #295773;
-  --color-violet-600: #3B8DBF;
-  --color-violet-500: #4e9dcc;
-  --color-violet-400: #6ab2d9;
-  --color-violet-300: #8ac4e5;
-
-  /* Steel blue / hyperlink — #3B8DBF tonal scale */
-  --color-sky-700:  #295773;
-  --color-sky-600:  #2e6f9e;
-  --color-sky-500:  #3B8DBF;   /* hyperlink  ← spec exact                  */
-  --color-sky-400:  #5da8d4;
-  --color-sky-300:  #84c0e0;
-
-  /* Destructive */
-  --color-red-600:  #BF2A2A;
-  --color-red-500:  #d43535;
-  --color-red-400:  #e05555;
+/* ── Content header (per-screen) ─────────────────────────────────────────── */
+.aug-content-header {
+  height: 44px;
+  border-bottom: 1px solid var(--b1);
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  gap: 12px;
+  flex-shrink: 0;
+  background: var(--bg-1);
 }
+
+/* ── Nav ─────────────────────────────────────────────────────────────────── */
+.aug-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 11px;
+  border-radius: var(--r2);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--t2);
+  position: relative;
+  width: 100%;
+  text-align: left;
+  transition: all 0.1s;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+}
+.aug-nav-item:hover { background: var(--bg-hover); color: var(--t1); }
+.aug-nav-item.active { background: var(--bg-sel); color: var(--blue5); }
+.aug-nav-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 16px;
+  background: var(--blue3);
+  border-radius: 0 2px 2px 0;
+}
+.aug-nav-group {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--t4);
+  padding: 14px 13px 4px;
+}
+
+/* ── Tags ────────────────────────────────────────────────────────────────── */
+.aug-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border-radius: var(--r1);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  letter-spacing: 0.01em;
+}
+.aug-tag-blue   { color: var(--blue5); background: var(--blue1); border-color: var(--blue2); }
+.aug-tag-green  { color: var(--grn5);  background: var(--grn1);  border-color: var(--grn2); }
+.aug-tag-amber  { color: var(--amb5);  background: var(--amb1);  border-color: var(--amb2); }
+.aug-tag-red    { color: var(--red5);  background: var(--red1);  border-color: var(--red2); }
+.aug-tag-violet { color: var(--vio5);  background: var(--vio1);  border-color: var(--vio2); }
+.aug-tag-gray   { color: var(--t2);    background: var(--bg-3);  border-color: var(--b2); }
+.aug-tag-cyan   { color: var(--cyn5);  background: var(--cyn1);  border-color: var(--cyn2); }
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+.aug-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: var(--r2);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.12s;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  outline: none;
+  font-family: var(--font-ui);
+}
+.aug-btn-primary   { background: var(--blue3); border-color: var(--blue2); color: #fff; }
+.aug-btn-primary:hover { background: var(--blue4); }
+.aug-btn-secondary { background: var(--bg-3); border-color: var(--b2); color: var(--t1); }
+.aug-btn-secondary:hover { background: var(--bg-4); border-color: var(--b3); }
+.aug-btn-ghost     { background: transparent; border-color: transparent; color: var(--t2); }
+.aug-btn-ghost:hover { background: var(--bg-hover); color: var(--t1); }
+.aug-btn-minimal   { background: transparent; border-color: var(--b2); color: var(--t2); }
+.aug-btn-minimal:hover { border-color: var(--b3); color: var(--t1); }
+.aug-btn-sm { padding: 2px 8px; font-size: 11px; }
+.aug-btn:disabled { opacity: 0.38; cursor: not-allowed; pointer-events: none; }
+
+/* ── Inputs ──────────────────────────────────────────────────────────────── */
+.aug-input {
+  background: var(--bg-1);
+  border: 1px solid var(--b2);
+  border-radius: var(--r2);
+  color: var(--t1);
+  padding: 6px 10px;
+  font-size: 12px;
+  font-family: var(--font-ui);
+  outline: none;
+  transition: border-color 0.12s;
+  width: 100%;
+}
+.aug-input:focus { border-color: var(--bfocus); }
+.aug-input::placeholder { color: var(--t3); }
+
+/* ── Data table ──────────────────────────────────────────────────────────── */
+.aug-dt { width: 100%; border-collapse: collapse; font-size: 12px; }
+.aug-dt thead th {
+  text-align: left;
+  padding: 5px 12px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--t3);
+  border-bottom: 1px solid var(--b2);
+  background: var(--bg-2);
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+.aug-dt tbody td {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--b0);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--t1);
+  white-space: nowrap;
+}
+.aug-dt tbody tr:hover td { background: var(--bg-hover); }
+
+/* ── Code block ──────────────────────────────────────────────────────────── */
+.aug-code {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.7;
+  background: var(--code-bg);
+  border: 1px solid var(--b1);
+  border-radius: var(--r2);
+  padding: 10px 14px;
+  overflow-x: auto;
+  white-space: pre;
+  color: var(--t2);
+}
+
+/* ── Panel ───────────────────────────────────────────────────────────────── */
+.aug-panel { background: var(--bg-2); border: 1px solid var(--b1); border-radius: var(--r3); }
+
+/* ── Callout ─────────────────────────────────────────────────────────────── */
+.aug-callout {
+  border-radius: 0 var(--r3) var(--r3) 0;
+  padding: 10px 14px;
+  display: flex;
+  gap: 10px;
+}
+.aug-callout-blue   { background: var(--blue1); border-left: 3px solid var(--blue3); }
+.aug-callout-green  { background: var(--grn1);  border-left: 3px solid var(--grn3); }
+.aug-callout-amber  { background: var(--amb1);  border-left: 3px solid var(--amb3); }
+.aug-callout-red    { background: var(--red1);  border-left: 3px solid var(--red3); }
+.aug-callout-violet { background: var(--vio1);  border-left: 3px solid var(--vio3); }
+
+/* ── Dot indicator ───────────────────────────────────────────────────────── */
+.aug-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.aug-dot-grn  { background: var(--grn3); }
+.aug-dot-blue { background: var(--blue3); }
+.aug-dot-amb  { background: var(--amb3); }
+.aug-dot-red  { background: var(--red3); }
+.aug-dot-gray { background: var(--t3); }
+
+/* ── Progress bar ────────────────────────────────────────────────────────── */
+.aug-progress-track { height: 3px; background: var(--bg-4); border-radius: 2px; overflow: hidden; }
+.aug-progress-fill  { height: 100%; background: var(--blue3); border-radius: 2px; transition: width 0.3s; }
+
+/* ── Utility shortcuts ───────────────────────────────────────────────────── */
+.aug-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--t3);
+}
+.aug-mono { font-family: var(--font-mono); }
+.aug-divh { height: 1px; background: var(--b1); }
+
+/* ── Animations ──────────────────────────────────────────────────────────── */
+@keyframes aug-blink   { 0%, 100% { opacity: 1 } 50% { opacity: 0.25 } }
+@keyframes aug-slide-up { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: translateY(0) } }
+@keyframes aug-fade-in  { from { opacity: 0 } to { opacity: 1 } }
+@keyframes aug-spin     { from { transform: rotate(0) } to { transform: rotate(360deg) } }
+@keyframes aug-shimmer  { 0% { background-position: -200% 0 } 100% { background-position: 200% 0 } }
+
+.aug-anim-blink { animation: aug-blink 1.4s ease-in-out infinite; }
+.aug-anim-up    { animation: aug-slide-up 0.22s ease-out both; }
+.aug-anim-fade  { animation: aug-fade-in 0.18s ease-out both; }
+.aug-anim-spin  { animation: aug-spin 0.7s linear infinite; }
+.aug-shimmer {
+  background: linear-gradient(90deg, var(--bg-2) 25%, var(--bg-3) 50%, var(--bg-2) 75%);
+  background-size: 200% 100%;
+  animation: aug-shimmer 1.4s infinite;
+}
+
+/* ── Ontology canvas edge animations ─────────────────────────────────────── */
+@keyframes edge-flow         { to { stroke-dashoffset: -12; } }
+@keyframes edge-flow-verified { to { stroke-dashoffset: -33; } }

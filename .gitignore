@@ -12,6 +12,7 @@ dist/
 # Data & secrets
 data/connections.db
 data/.hermes_key
+data/.aughor_key
 data/hermes.duckdb
 data/history.db
 data/checkpoints.db

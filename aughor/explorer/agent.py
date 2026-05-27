@@ -182,6 +182,29 @@ class SchemaExplorer:
                 self._status.phase = ExplorationPhase.CROSS_TABLE
                 await self._phase7_patterns(cp, jmap)
 
+            # ── Ontology gate: Phase 8 needs the ontology; build it now if it
+            # hasn't been created yet.  On a fresh connection, phases 3-7 can
+            # finish in <10 s while the ontology build (triggered by the first
+            # /ontology API request) may not have happened yet.  get_schema()
+            # is idempotent + cached — instant on the second call.
+            from aughor.ontology.store import load_latest_ontology as _load_onto
+            if not _load_onto(self.connection_id):
+                logger.info(
+                    "[explorer:%s] Ontology not found before Phase 8 — building now…",
+                    self.connection_id,
+                )
+                try:
+                    self._conn.get_schema()   # builds + caches ontology as a side-effect
+                    logger.info(
+                        "[explorer:%s] Ontology build complete, proceeding to Phase 8",
+                        self.connection_id,
+                    )
+                except Exception as _onto_exc:
+                    logger.warning(
+                        "[explorer:%s] Ontology build failed — Phase 8 will be skipped: %s",
+                        self.connection_id, _onto_exc,
+                    )
+
             # Phase 8 — Domain intelligence: slow down to avoid overloading the DB
             # and to allow the user to stop between queries if needed
             self._rate_seconds = _RATE_SECONDS_INTEL
@@ -695,7 +718,10 @@ class SchemaExplorer:
 
         ontology = load_latest_ontology(self.connection_id)
         if not ontology:
-            logger.info(f"[explorer:{self.connection_id}] Phase 8: no ontology, skipping")
+            logger.warning(
+                "[explorer:%s] Phase 8: ontology still not available after build attempt — skipping domain intelligence",
+                self.connection_id,
+            )
             return
 
         # Group entities by domain

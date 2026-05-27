@@ -88,6 +88,17 @@ export async function getSchemaRich(id: string): Promise<RichSchema> {
   return res.json();
 }
 
+export interface TableSample {
+  columns: string[];
+  rows: (string | null)[][];
+}
+
+export async function sampleTable(connId: string, table: string, limit = 100): Promise<TableSample> {
+  const res = await fetch(`${BASE}/connections/${encodeURIComponent(connId)}/tables/${encodeURIComponent(table)}/sample?limit=${limit}`);
+  if (!res.ok) throw new Error(`Failed to sample table "${table}"`);
+  return res.json();
+}
+
 export async function getSchema(id: string): Promise<string> {
   const res = await fetch(`${BASE}/connections/${id}/schema`);
   if (!res.ok) throw new Error("Failed to fetch schema");

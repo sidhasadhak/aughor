@@ -23,94 +23,35 @@ function domainMeta(domain: string) {
   return DOMAIN_META[domain] ?? { color: "#9a9ba4", bg: "#1a1a22", border: "#2a2a35" };
 }
 
-// ── Coverage angle chips ──────────────────────────────────────────────────────
+// ── Novelty metadata ──────────────────────────────────────────────────────────
 
-const KNOWN_ANGLES: Record<string, string[]> = {
-  Commerce:   ["volume", "value", "retention", "basket_composition", "seasonality"],
-  Finance:    ["revenue", "margins", "payment_behavior", "refund_rate", "receivables"],
-  Marketing:  ["channel_mix", "conversion", "campaign_roi", "attribution", "experiments"],
-  Operations: ["fulfillment", "inventory_health", "supplier_performance", "lead_times"],
+const NOVELTY: Record<number, { label: string; color: string; bg: string; border: string }> = {
+  1: { label: "trivial",      color: "#4a4b57", bg: "#111115", border: "#1e1f24" },
+  2: { label: "expected",     color: "#6e6f78", bg: "#16171c", border: "#222228" },
+  3: { label: "interesting",  color: "#7ba8f7", bg: "#1a1e2e", border: "#2a3050" },
+  4: { label: "notable",      color: "#60a5fa", bg: "#1a2030", border: "#2a3a50" },
+  5: { label: "breakthrough", color: "#34d399", bg: "#1a2820", border: "#2a4030" },
 };
 
-function AngleChips({ domain, covered }: { domain: string; covered: string[] }) {
-  const angles = KNOWN_ANGLES[domain] ?? covered;
-  const all = Array.from(new Set([...angles, ...covered]));
-  if (all.length === 0) return null;
-  const meta = domainMeta(domain);
-
-  return (
-    <div className="flex flex-wrap gap-1.5 mb-3">
-      {all.map(a => {
-        const done = covered.includes(a);
-        return (
-          <span
-            key={a}
-            className="text-[10px] px-2 py-0.5 rounded-full font-medium transition-all"
-            style={done
-              ? { background: meta.bg, color: meta.color, border: `0.5px solid ${meta.border}` }
-              : { background: "#111115", color: "#3e3f4a", border: "0.5px solid #1e1f24" }
-            }
-          >
-            {done && <span className="mr-1">✓</span>}
-            {a.replace(/_/g, " ")}
-          </span>
-        );
-      })}
-    </div>
-  );
+function noveltyMeta(score: number) {
+  return NOVELTY[score] ?? NOVELTY[2];
 }
 
-// ── Budget bar ────────────────────────────────────────────────────────────────
-
-function BudgetBar({ used, cap, domain }: { used: number; cap: number; domain: string }) {
-  const meta = domainMeta(domain);
-  const pct = cap > 0 ? Math.min(1, used / cap) : 0;
-  return (
-    <div className="mb-3">
-      <div className="flex items-center justify-between mb-1">
-        <span className="text-[10px]" style={{ color: "#4a4b57" }}>Query budget</span>
-        <span className="text-[10px] font-mono" style={{ color: meta.color }}>
-          {used} / {cap}
-        </span>
-      </div>
-      <div className="h-1 rounded-full" style={{ background: "#1a1a22" }}>
-        <div
-          className="h-1 rounded-full transition-all"
-          style={{ width: `${pct * 100}%`, background: meta.color, opacity: 0.7 }}
-        />
-      </div>
-    </div>
-  );
+function confidenceLabel(c: number): string {
+  if (c >= 0.85) return "high";
+  if (c >= 0.65) return "medium";
+  return "low";
 }
 
-// ── Novelty badge ─────────────────────────────────────────────────────────────
-
-function NoveltyBadge({ score }: { score: number }) {
-  const colors = ["", "#4a4b57", "#6e6f78", "#7ba8f7", "#60a5fa", "#34d399"];
-  const labels = ["", "trivial", "expected", "interesting", "notable", "breakthrough"];
-  const c = colors[score] ?? "#4a4b57";
-  const l = labels[score] ?? String(score);
-  return (
-    <span
-      className="text-[9px] px-1.5 py-0.5 rounded font-medium"
-      style={{ background: `${c}22`, color: c, border: `0.5px solid ${c}44` }}
-    >
-      {l}
-    </span>
-  );
-}
-
-// ── Episode live feed row ─────────────────────────────────────────────────────
+// ── Episode query row (trace view) ────────────────────────────────────────────
 
 function EpisodeRow({ ep, domain }: { ep: ExplorationEpisode; domain: string }) {
   const [expanded, setExpanded] = useState(false);
   const meta = domainMeta(domain);
 
-  // Parse question from think: "Domain X | angle=Y | Question text"
   const parts = ep.think.split(" | ");
   const question = parts.length >= 3 ? parts.slice(2).join(" | ") : ep.think;
   const angle = parts[1]?.replace("angle=", "");
-
   const isError = ep.observation.startsWith("ERROR:") || ep.observation.startsWith("EXCEPTION:");
   const obsPreview = ep.observation.slice(0, 200) + (ep.observation.length > 200 ? "…" : "");
 
@@ -119,7 +60,6 @@ function EpisodeRow({ ep, domain }: { ep: ExplorationEpisode; domain: string }) 
       className="rounded-md mb-2 overflow-hidden"
       style={{ background: "#111115", border: "0.5px solid #1e1f24" }}
     >
-      {/* Header row */}
       <button
         className="w-full text-left px-3 py-2.5 flex items-start gap-2"
         onClick={() => setExpanded(e => !e)}
@@ -135,37 +75,22 @@ function EpisodeRow({ ep, domain }: { ep: ExplorationEpisode; domain: string }) 
         </span>
         {isError
           ? <span className="text-[9px] text-amber-400 shrink-0">error</span>
-          : <span className="text-[9px] shrink-0" style={{ color: "#3e3f4a" }}>
-              {expanded ? "▲" : "▼"}
-            </span>
+          : <span className="text-[9px] shrink-0" style={{ color: "#3e3f4a" }}>{expanded ? "▲" : "▼"}</span>
         }
       </button>
-
-      {/* Expanded: SQL + observation */}
       {expanded && (
         <div className="border-t px-3 pb-3 pt-2 space-y-2" style={{ borderColor: "#1e1f24" }}>
-          {/* SQL */}
           <div>
-            <p className="text-[9px] uppercase tracking-widest mb-1" style={{ color: "#3e3f4a" }}>SQL executed</p>
-            <pre
-              className="text-[10px] font-mono leading-relaxed overflow-x-auto rounded p-2"
-              style={{ background: "#0d0e11", color: "#6e6f78", whiteSpace: "pre-wrap", wordBreak: "break-all" }}
-            >
+            <p className="text-[9px] uppercase tracking-widest mb-1" style={{ color: "#3e3f4a" }}>SQL</p>
+            <pre className="text-[10px] font-mono leading-relaxed overflow-x-auto rounded p-2"
+              style={{ background: "#0d0e11", color: "#6e6f78", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
               {ep.sql}
             </pre>
           </div>
-          {/* Observation */}
           <div>
             <p className="text-[9px] uppercase tracking-widest mb-1" style={{ color: "#3e3f4a" }}>Result</p>
-            <pre
-              className="text-[10px] font-mono leading-relaxed overflow-x-auto rounded p-2"
-              style={{
-                background: isError ? "#1a1010" : "#0d0e11",
-                color: isError ? "#f87171" : "#6e6f78",
-                whiteSpace: "pre-wrap",
-                wordBreak: "break-all",
-              }}
-            >
+            <pre className="text-[10px] font-mono leading-relaxed overflow-x-auto rounded p-2"
+              style={{ background: isError ? "#1a1010" : "#0d0e11", color: isError ? "#f87171" : "#6e6f78", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
               {obsPreview}
             </pre>
           </div>
@@ -175,152 +100,405 @@ function EpisodeRow({ ep, domain }: { ep: ExplorationEpisode; domain: string }) 
   );
 }
 
-// ── Insight card ──────────────────────────────────────────────────────────────
+// ── Finding card ──────────────────────────────────────────────────────────────
 
-function InsightCard({ insight }: { insight: ExplorationInsight }) {
-  const meta = domainMeta(insight.domain);
+function FindingCard({ insight }: { insight: ExplorationInsight }) {
+  const [sqlOpen, setSqlOpen] = useState(false);
+  const nv = noveltyMeta(insight.novelty);
+  const dm = domainMeta(insight.domain);
+
   return (
-    <div
-      className="rounded-md p-3 mb-2"
-      style={{ background: "#13141a", border: `0.5px solid ${meta.border}` }}
-    >
-      <div className="flex items-start justify-between gap-2 mb-1.5">
-        <span
-          className="text-[9px] px-1.5 py-0.5 rounded shrink-0"
-          style={{ background: meta.bg, color: meta.color, border: `0.5px solid ${meta.border}` }}
-        >
-          {insight.angle || "general"}
+    <div style={{
+      background: "#0f1014",
+      border: "0.5px solid #1e1f24",
+      borderRadius: 8,
+      padding: "12px 14px",
+      marginBottom: 8,
+    }}>
+      {/* Novelty + angle */}
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 9, flexWrap: "wrap" }}>
+        <span style={{
+          fontSize: 10, padding: "2px 8px", borderRadius: 4, fontWeight: 500,
+          background: nv.bg, color: nv.color, border: `0.5px solid ${nv.border}`,
+        }}>
+          {nv.label}
         </span>
-        <NoveltyBadge score={insight.novelty ?? 3} />
+        {insight.angle && (
+          <span style={{
+            fontSize: 10, padding: "2px 8px", borderRadius: 4,
+            background: dm.bg, color: `${dm.color}cc`, border: `0.5px solid ${dm.border}`,
+          }}>
+            {insight.angle.replace(/_/g, " ")}
+          </span>
+        )}
       </div>
-      <p className="text-[11.5px] leading-relaxed" style={{ color: "#c8c7c3" }}>
+
+      {/* Finding text */}
+      <p style={{ fontSize: 12, color: "#c0bfbc", lineHeight: 1.65, margin: 0 }}>
         {insight.finding}
       </p>
+
+      {/* Footer */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 10, gap: 8 }}>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <span style={{ fontSize: 10, color: "#3e3f4a" }}>
+            confidence{" "}
+            <span style={{ color: confidenceLabel(insight.confidence) === "high" ? "#34d399" : confidenceLabel(insight.confidence) === "medium" ? "#7ba8f7" : "#f87171" }}>
+              {confidenceLabel(insight.confidence)}
+            </span>
+          </span>
+          {insight.entities_involved.length > 0 && (
+            <span style={{ fontSize: 10, color: "#3e3f4a" }}>
+              {insight.entities_involved.slice(0, 3).join(" · ")}
+            </span>
+          )}
+        </div>
+        {insight.sql && (
+          <button
+            onClick={() => setSqlOpen(o => !o)}
+            style={{ fontSize: 10, color: "#3e3f4a", background: "none", border: "none", cursor: "pointer", padding: 0, flexShrink: 0 }}
+          >
+            {sqlOpen ? "SQL ▲" : "SQL ▼"}
+          </button>
+        )}
+      </div>
+
+      {/* SQL */}
+      {sqlOpen && insight.sql && (
+        <pre style={{
+          marginTop: 8, fontSize: 10, fontFamily: "var(--font-mono)",
+          color: "#5a5b62", background: "#0a0b0d", borderRadius: 4,
+          padding: "8px 10px", overflowX: "auto",
+          whiteSpace: "pre-wrap", wordBreak: "break-all",
+          border: "0.5px solid #1a1b20",
+        }}>
+          {insight.sql}
+        </pre>
+      )}
     </div>
   );
 }
 
-// ── Per-domain section ────────────────────────────────────────────────────────
+// ── Domain overview card ──────────────────────────────────────────────────────
 
-interface DomainSectionProps {
+interface OverviewCardProps {
   domain: string;
   data: DomainInsights;
-  episodes: ExplorationEpisode[];
+  onSelect: (d: string) => void;
   connectionId: string;
   onExtend: () => void;
 }
 
-type SubTab = "findings" | "trace";
-
-function DomainSection({ domain, data, episodes, connectionId, onExtend }: DomainSectionProps) {
+function DomainOverviewCard({ domain, data, onSelect, connectionId, onExtend }: OverviewCardProps) {
   const [extending, setExtending] = useState(false);
-  const [subTab, setSubTab] = useState<SubTab>("findings");
   const meta = domainMeta(domain);
 
-  const domainEps = episodes.filter(ep => {
-    const parts = ep.think.split(" | ");
-    const epDomain = parts[0]?.replace("Domain ", "");
-    return epDomain === domain;
-  });
+  // Breakdown: counts per novelty score (highest first, skip zeros)
+  const breakdown = [5, 4, 3, 2, 1]
+    .map(n => ({ ...noveltyMeta(n), count: data.insights.filter(i => i.novelty === n).length }))
+    .filter(b => b.count > 0);
 
-  async function handleExtend() {
+  // Top finding preview (highest novelty)
+  const top = [...data.insights].sort((a, b) => b.novelty - a.novelty)[0];
+
+  async function handleExtend(e: React.MouseEvent) {
+    e.stopPropagation();
     setExtending(true);
-    try {
-      await extendDomainBudget(connectionId, domain);
-      onExtend();
-    } finally {
-      setExtending(false);
-    }
+    try { await extendDomainBudget(connectionId, domain); onExtend(); }
+    finally { setExtending(false); }
   }
-
-  const budgetExhausted = data.queries_used >= data.budget_cap;
 
   return (
     <div
-      className="rounded-lg mb-4 overflow-hidden"
-      style={{ border: `0.5px solid ${meta.border}` }}
+      onClick={() => onSelect(domain)}
+      style={{
+        cursor: "pointer",
+        borderRadius: 10,
+        border: `0.5px solid ${meta.border}`,
+        overflow: "hidden",
+        transition: "border-color .12s",
+      }}
+      onMouseEnter={e => (e.currentTarget as HTMLElement).style.borderColor = meta.color + "66"}
+      onMouseLeave={e => (e.currentTarget as HTMLElement).style.borderColor = meta.border}
     >
-      {/* Domain header */}
-      <div
-        className="flex items-center justify-between px-4 py-3"
-        style={{ background: meta.bg }}
-      >
-        <div className="flex items-center gap-2.5">
-          <span
-            className="w-2 h-2 rounded-full shrink-0"
-            style={{ background: meta.color }}
-          />
-          <span className="text-[13px] font-medium" style={{ color: meta.color }}>
-            {domain}
-          </span>
-          <span className="text-[10px]" style={{ color: `${meta.color}99` }}>
+      {/* Header */}
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: "10px 14px", background: meta.bg,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ width: 7, height: 7, borderRadius: "50%", background: meta.color, display: "inline-block", flexShrink: 0 }} />
+          <span style={{ fontSize: 13, fontWeight: 500, color: meta.color }}>{domain}</span>
+          <span style={{ fontSize: 10, color: `${meta.color}88` }}>
             {data.insights.length} finding{data.insights.length !== 1 ? "s" : ""}
           </span>
         </div>
         <button
           onClick={handleExtend}
           disabled={extending}
-          className="text-[10px] px-2.5 py-1 rounded transition-opacity disabled:opacity-40"
           style={{
-            background: `${meta.color}15`,
-            color: meta.color,
+            fontSize: 10, padding: "3px 9px", borderRadius: 4,
+            background: `${meta.color}15`, color: meta.color,
             border: `0.5px solid ${meta.border}`,
+            cursor: extending ? "wait" : "pointer",
+            opacity: extending ? 0.5 : 1,
           }}
         >
-          {extending ? "scheduling…" : budgetExhausted ? "Explore 5 more" : "+5 queries"}
+          {extending ? "scheduling…" : data.queries_used >= data.budget_cap ? "Explore 5 more" : "+5 queries"}
         </button>
       </div>
 
-      {/* Budget + angles */}
-      <div className="px-4 pt-3">
-        <BudgetBar used={data.queries_used} cap={data.budget_cap} domain={domain} />
-        <AngleChips domain={domain} covered={data.angles_covered} />
+      {/* Body */}
+      <div style={{ padding: "10px 14px 12px", background: "#0d0e11" }}>
+        {/* Novelty breakdown */}
+        {breakdown.length > 0 ? (
+          <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 10 }}>
+            {breakdown.map(b => (
+              <span key={b.label} style={{
+                fontSize: 10, padding: "2px 8px", borderRadius: 4,
+                background: b.bg, color: b.color, border: `0.5px solid ${b.border}`,
+              }}>
+                {b.count} {b.label}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p style={{ fontSize: 11, color: "#3e3f4a", fontStyle: "italic", marginBottom: 10 }}>No findings yet</p>
+        )}
+
+        {/* Top finding preview */}
+        {top && (
+          <p style={{
+            fontSize: 11, color: "#5a5b62", lineHeight: 1.55,
+            borderTop: "0.5px solid #1a1b20", paddingTop: 8,
+            display: "-webkit-box",
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: "vertical",
+            overflow: "hidden",
+          }}>
+            {top.finding}
+          </p>
+        )}
+
+        {/* Footer */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10 }}>
+          <span style={{ fontSize: 10, color: "#2e2f37" }}>
+            {data.angles_covered.length} angle{data.angles_covered.length !== 1 ? "s" : ""} covered
+          </span>
+          <span style={{ fontSize: 10, color: meta.color }}>View findings →</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Domain detail view ────────────────────────────────────────────────────────
+
+interface DetailProps {
+  domain: string;
+  data: DomainInsights;
+  episodes: ExplorationEpisode[];
+  connectionId: string;
+  onBack: () => void;
+  onExtend: () => void;
+}
+
+function DomainDetailView({ domain, data, episodes, connectionId, onBack, onExtend }: DetailProps) {
+  const [filterNovelty, setFilterNovelty] = useState<number | null>(null);
+  const [filterAngle, setFilterAngle]     = useState<string | null>(null);
+  const [search, setSearch]               = useState("");
+  const [showTrace, setShowTrace]         = useState(false);
+  const [extending, setExtending]         = useState(false);
+  const meta = domainMeta(domain);
+
+  const angles = Array.from(new Set(data.insights.map(i => i.angle).filter(Boolean)));
+
+  const filtered = data.insights
+    .filter(i => {
+      if (filterNovelty !== null && i.novelty !== filterNovelty) return false;
+      if (filterAngle   !== null && i.angle !== filterAngle)     return false;
+      if (search && !i.finding.toLowerCase().includes(search.toLowerCase())) return false;
+      return true;
+    })
+    .sort((a, b) => b.novelty - a.novelty);
+
+  const domainEps = episodes.filter(ep => {
+    const d = ep.think.split(" | ")[0]?.replace("Domain ", "");
+    return d === domain;
+  });
+
+  const hasFilters = filterNovelty !== null || filterAngle !== null || !!search;
+
+  async function handleExtend() {
+    setExtending(true);
+    try { await extendDomainBudget(connectionId, domain); onExtend(); }
+    finally { setExtending(false); }
+  }
+
+  return (
+    <div>
+      {/* Back + header */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
+        <button
+          onClick={onBack}
+          style={{ fontSize: 11, color: "#4a4b57", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+        >
+          ← All domains
+        </button>
+        <span style={{ color: "#2e2f37", fontSize: 12 }}>|</span>
+        <span style={{ fontSize: 13, fontWeight: 500, color: meta.color }}>{domain}</span>
+        <span style={{ fontSize: 10, color: `${meta.color}88` }}>
+          {data.insights.length} finding{data.insights.length !== 1 ? "s" : ""}
+        </span>
+        <div style={{ flex: 1 }} />
+        <button
+          onClick={handleExtend}
+          disabled={extending}
+          style={{
+            fontSize: 10, padding: "3px 9px", borderRadius: 4,
+            background: `${meta.color}15`, color: meta.color,
+            border: `0.5px solid ${meta.border}`,
+            cursor: extending ? "wait" : "pointer",
+            opacity: extending ? 0.5 : 1,
+          }}
+        >
+          {extending ? "scheduling…" : data.queries_used >= data.budget_cap ? "Explore 5 more" : "+5 queries"}
+        </button>
       </div>
 
-      {/* Sub-tabs */}
-      <div
-        className="flex border-b mx-4"
-        style={{ borderColor: "#1e1f24" }}
-      >
-        {(["findings", "trace"] as SubTab[]).map(t => (
-          <button
-            key={t}
-            onClick={() => setSubTab(t)}
-            className="text-[10px] px-3 py-1.5 border-b-2 transition-colors capitalize"
+      {/* Filter bar */}
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8, alignItems: "center" }}>
+        {/* Novelty dropdown */}
+        <select
+          value={filterNovelty ?? ""}
+          onChange={e => setFilterNovelty(e.target.value !== "" ? Number(e.target.value) : null)}
+          style={{
+            fontSize: 10, padding: "4px 8px", borderRadius: 4,
+            background: "#111115",
+            color: filterNovelty !== null ? noveltyMeta(filterNovelty).color : "#4a4b57",
+            border: "0.5px solid #1e1f24", cursor: "pointer",
+          }}
+        >
+          <option value="">All levels</option>
+          {[5, 4, 3, 2, 1].map(n => (
+            <option key={n} value={n}>{NOVELTY[n].label}</option>
+          ))}
+        </select>
+
+        {/* Angle dropdown */}
+        {angles.length > 1 && (
+          <select
+            value={filterAngle ?? ""}
+            onChange={e => setFilterAngle(e.target.value || null)}
             style={{
-              borderColor: subTab === t ? meta.color : "transparent",
-              color: subTab === t ? meta.color : "#4a4b57",
+              fontSize: 10, padding: "4px 8px", borderRadius: 4,
+              background: "#111115",
+              color: filterAngle ? meta.color : "#4a4b57",
+              border: "0.5px solid #1e1f24", cursor: "pointer",
             }}
           >
-            {t}
-            {t === "trace" && domainEps.length > 0 && (
-              <span className="ml-1 text-[9px]" style={{ color: "#3e3f4a" }}>
-                {domainEps.length}
-              </span>
-            )}
+            <option value="">All angles</option>
+            {angles.map(a => (
+              <option key={a} value={a}>{a.replace(/_/g, " ")}</option>
+            ))}
+          </select>
+        )}
+
+        {/* Search */}
+        <input
+          type="text"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search findings…"
+          style={{
+            flex: 1, minWidth: 100, fontSize: 11, padding: "4px 9px",
+            borderRadius: 4, background: "#111115",
+            color: "#9a9ba4", border: "0.5px solid #1e1f24",
+            outline: "none",
+          }}
+        />
+
+        {/* Clear */}
+        {hasFilters && (
+          <button
+            onClick={() => { setFilterNovelty(null); setFilterAngle(null); setSearch(""); }}
+            style={{ fontSize: 10, color: "#4a4b57", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+          >
+            Clear ×
           </button>
-        ))}
+        )}
+
+        {/* Queries toggle */}
+        <button
+          onClick={() => setShowTrace(v => !v)}
+          style={{
+            fontSize: 10, padding: "4px 10px", borderRadius: 4,
+            background: showTrace ? "#1a1e2e" : "#111115",
+            color: showTrace ? "#7ba8f7" : "#3e3f4a",
+            border: `0.5px solid ${showTrace ? "#2a3050" : "#1e1f24"}`,
+            cursor: "pointer",
+          }}
+        >
+          Queries{domainEps.length > 0 ? ` ${domainEps.length}` : ""}
+        </button>
       </div>
 
-      {/* Sub-tab content */}
-      <div className="px-4 py-3">
-        {subTab === "findings" && (
-          data.insights.length === 0
-            ? <p className="text-[11px] italic" style={{ color: "#3e3f4a" }}>
-                No findings yet — exploration is running or budget not started.
-              </p>
-            : data.insights.map(ins => <InsightCard key={ins.id} insight={ins} />)
-        )}
-        {subTab === "trace" && (
-          domainEps.length === 0
-            ? <p className="text-[11px] italic" style={{ color: "#3e3f4a" }}>
-                No trace yet — queries appear here as they execute.
-              </p>
-            : [...domainEps].reverse().map(ep => (
-                <EpisodeRow key={`${ep.episode_id}-${ep.ts}`} ep={ep} domain={domain} />
-              ))
-        )}
-      </div>
+      {/* Active filter chips */}
+      {hasFilters && (
+        <div style={{ display: "flex", gap: 5, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
+          {filterNovelty !== null && (() => {
+            const nv = noveltyMeta(filterNovelty);
+            return (
+              <span style={{
+                fontSize: 10, padding: "2px 8px", borderRadius: 4,
+                background: nv.bg, color: nv.color, border: `0.5px solid ${nv.border}`,
+                display: "inline-flex", alignItems: "center", gap: 4,
+              }}>
+                {nv.label}
+                <button onClick={() => setFilterNovelty(null)} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", padding: 0, lineHeight: 1 }}>×</button>
+              </span>
+            );
+          })()}
+          {filterAngle !== null && (
+            <span style={{
+              fontSize: 10, padding: "2px 8px", borderRadius: 4,
+              background: meta.bg, color: meta.color, border: `0.5px solid ${meta.border}`,
+              display: "inline-flex", alignItems: "center", gap: 4,
+            }}>
+              {filterAngle.replace(/_/g, " ")}
+              <button onClick={() => setFilterAngle(null)} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", padding: 0, lineHeight: 1 }}>×</button>
+            </span>
+          )}
+          {search && (
+            <span style={{
+              fontSize: 10, padding: "2px 8px", borderRadius: 4,
+              background: "#111115", color: "#6e6f78", border: "0.5px solid #1e1f24",
+              display: "inline-flex", alignItems: "center", gap: 4,
+            }}>
+              "{search.length > 20 ? search.slice(0, 20) + "…" : search}"
+              <button onClick={() => setSearch("")} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", padding: 0, lineHeight: 1 }}>×</button>
+            </span>
+          )}
+          <span style={{ fontSize: 10, color: "#3e3f4a" }}>
+            {filtered.length} result{filtered.length !== 1 ? "s" : ""}
+          </span>
+        </div>
+      )}
+
+      {/* Content */}
+      {showTrace ? (
+        domainEps.length === 0
+          ? <p style={{ fontSize: 11, color: "#3e3f4a", fontStyle: "italic" }}>No queries yet.</p>
+          : [...domainEps].reverse().map(ep => (
+              <EpisodeRow key={`${ep.episode_id}-${ep.ts}`} ep={ep} domain={domain} />
+            ))
+      ) : (
+        filtered.length === 0
+          ? <p style={{ fontSize: 11, color: "#3e3f4a", fontStyle: "italic" }}>
+              {hasFilters ? "No findings match these filters." : "No findings yet — exploration is running or budget not started."}
+            </p>
+          : filtered.map(ins => <FindingCard key={ins.id} insight={ins} />)
+      )}
     </div>
   );
 }
@@ -333,31 +511,23 @@ interface Props {
 }
 
 export function DomainIntelPanel({ connectionId, isActive }: Props) {
-  const [data, setData] = useState<Record<string, DomainInsights>>({});
+  const [data, setData]         = useState<Record<string, DomainInsights>>({});
   const [episodes, setEpisodes] = useState<ExplorationEpisode[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [tick, setTick] = useState(0);
+  const [tick, setTick]         = useState(0);
+  const [selected, setSelected] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isActive) return;
     let cancelled = false;
 
     const load = async () => {
-      const timeout = setTimeout(() => { /* backend busy — next poll will retry */ }, 8_000);
       try {
         const [d, eps] = await Promise.all([
           getDomainInsights(connectionId),
           getExplorationEpisodes(connectionId),
         ]);
-        clearTimeout(timeout);
-        if (!cancelled) {
-          setData(d);
-          setEpisodes(eps);
-        }
-      } catch {
-        clearTimeout(timeout);
-        // silently ignore — existing data stays visible, next poll will retry
-      }
+        if (!cancelled) { setData(d); setEpisodes(eps); }
+      } catch { /* silently ignore — stale data stays, next poll retries */ }
     };
 
     load();
@@ -366,14 +536,6 @@ export function DomainIntelPanel({ connectionId, isActive }: Props) {
   }, [connectionId, isActive, tick]);
 
   const domains = Object.keys(data);
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-40 text-sm" style={{ color: "#3e3f4a" }}>
-        Loading domain intelligence…
-      </div>
-    );
-  }
 
   if (domains.length === 0) {
     return (
@@ -396,17 +558,44 @@ export function DomainIntelPanel({ connectionId, isActive }: Props) {
   }
 
   return (
-    <div className="space-y-0">
-      {domains.map(domain => (
-        <DomainSection
-          key={domain}
-          domain={domain}
-          data={data[domain]}
+    <div>
+      {selected && data[selected] ? (
+        /* ── Detail view ── */
+        <DomainDetailView
+          domain={selected}
+          data={data[selected]}
           episodes={episodes}
           connectionId={connectionId}
+          onBack={() => setSelected(null)}
           onExtend={() => setTick(t => t + 1)}
         />
-      ))}
+      ) : (
+        /* ── Overview dashboard ── */
+        <div>
+          {/* Summary header */}
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 14 }}>
+            <span style={{ fontSize: 11, color: "#3e3f4a" }}>
+              {domains.length} domain{domains.length !== 1 ? "s" : ""}
+              {" · "}
+              {domains.reduce((n, d) => n + (data[d]?.insights.length ?? 0), 0)} total findings
+            </span>
+          </div>
+
+          {/* Domain cards grid */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 10 }}>
+            {domains.map(domain => (
+              <DomainOverviewCard
+                key={domain}
+                domain={domain}
+                data={data[domain]}
+                onSelect={setSelected}
+                connectionId={connectionId}
+                onExtend={() => setTick(t => t + 1)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

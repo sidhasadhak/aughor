@@ -2,7 +2,7 @@
 
 **Product:** Aughor — Autonomous Analyst  
 **Repo:** https://github.com/sidhasadhak/aughor  
-**Stack snapshot:** LangGraph · Ollama (qwen2.5-coder:14b + nomic-embed-text) · FastAPI SSE · Next.js (App Router) · DuckDB + PostgreSQL · SQLGlot · scipy/statsmodels · Qdrant · uv
+**Stack snapshot:** LangGraph · Ollama / Groq / Together / Anthropic (configurable via `AUGHOR_BACKEND`) · FastAPI SSE · Next.js 16 Turbopack (App Router) · DuckDB + PostgreSQL · SQLGlot · scipy/statsmodels · ChromaDB · uv
 
 ---
 
@@ -74,6 +74,9 @@
 | Causal Graph — Outcome-Gated (59) | `aughor/process/causal.py`, `aughor/agent/investigate.py`, `aughor/agent/prompts_investigate.py`, `aughor/playbook/outcomes.py`, `aughor/playbook/retriever.py`, `aughor/api.py`, `web/components/OntologyCanvas.tsx`, `web/lib/api.ts` | ADA extracts structured `CausalLinkModel` pairs at synthesis time; saved as proposals keyed by `inv_id`; promoted to `ConfirmedCausalEdge` only when a recommendation is marked verified/implemented; weight +1 per confirmation, -1 per rejection (pruned at 0); backward traversal injects confirmed causal context into future investigations; orange dashed arrows on OntologyCanvas with ×N weight badge |
 | Streaming completion fix | `web/lib/useChat.ts` | `ADA_REPORT` and `EXPLORE_REPORT` reducer cases now set `streaming: false` immediately — UI no longer shows "running" while server generates follow-ups and persists investigation |
 | Consistent panel background | `web/app/page.tsx`, `web/components/ChatPanel.tsx` | All right panels standardised to `#0d0e11`; main content wrapper sets it as base; ChatPanel root + input bar updated to match |
+| Catalog 3-panel + Sample Data tab (60) | `web/components/CatalogScreen.tsx`, `web/lib/api.ts` | Replaced `CatalogPanel.tsx` with full Databricks-style 3-panel layout: connection sidebar → table list → detail panel; detail panel has Columns tab + Sample tab; `SampleGrid` lazy-loads up to 100 rows on tab click with spinner, null display ("—"), 32-char truncation, row-count footer; `sampleTable(connId, table, limit)` in `api.ts` → `GET /connections/{conn_id}/tables/{table}/sample`; `CatalogScreen` self-fetches connections on mount so panel never shows empty when parent load was slow |
+| Phase 8 ontology gate (61) | `aughor/explorer/agent.py` | Prevents the race condition where phases 3–7 finish before the ontology is ready — Phase 8 (domain intelligence) found `load_latest_ontology()` returning None and silently skipped; fix: explicit `self._conn.get_schema()` call before Phase 8 if ontology absent; missing-ontology log upgraded from `info` to `warning`; manual recovery still available via `POST /exploration/{conn_id}/domains/{domain}/extend` |
+| Connection persistence hardening (62) | `aughor/.env`, `aughor/.gitignore`, `aughor/api.py` | Three-layer fix for connections being irreversibly lost after restart: (1) `AUGHOR_SECRET_KEY` pinned in `.env` — Fernet key survives `git clean` or file deletion; (2) `data/.aughor_key` added to `.gitignore`; (3) startup `_validate_connections()` event decrypts every DSN at boot so misconfiguration surfaces immediately; `allow_origins` changed from `["http://localhost:3000"]` → `["*"]` to eliminate silent CORS failures |
 
 ---
 
@@ -1345,6 +1348,13 @@ ADA attribution waterfall (investigate.py) ✅ + OntologyGraph (M12b) ✅ + Play
 **Sprint 19 — M13f: Causal Graph:**
 - `CausalEdge` model in `ontology/models.py`; appended to OntologyGraph after each ADA investigation
 - Backward traversal in `playbook/retriever.py`; dashed causal arrows in OntologyCanvas
+
+**Sprint 20 — Infrastructure hardening + Catalog UX ✅ SHIPPED:**
+- Catalog 3-panel layout (60): `CatalogScreen.tsx` replaces `CatalogPanel.tsx`; Databricks-style connection sidebar → table list → detail with Columns/Sample tabs; `SampleGrid` lazy-loads up to 100 rows; component self-fetches connections on mount
+- Phase 8 ontology gate (61): `aughor/explorer/agent.py` — `get_schema()` called before Phase 8 if ontology absent; ensures domain intelligence loop always has ontology available; eliminates 0-insight silent skips
+- Connection persistence hardening (62): Fernet key pinned to `.env` as `AUGHOR_SECRET_KEY`; `data/.aughor_key` gitignored; `_validate_connections()` startup event; CORS opened to `allow_origins=["*"]`
+- `python-multipart` added to `pyproject.toml` (was runtime-missing, crashed document upload endpoint)
+- Recovery runbook documented in project memory: kill all → `rm -rf web/.next` → `./start.sh` → hard-refresh browser
 
 **After M13:** M6 + M7 (Security + Observability) → M4 (Prophet) + M2d (Events Calendar) → M11 (Visual Builder) → M10 (Evals)
 
