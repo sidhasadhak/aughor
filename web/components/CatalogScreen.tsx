@@ -8,8 +8,12 @@
  *          └── Schema  (ecommerce / public / analytics …)
  *                └── Table
  *
- * Left panel: collapsible tree navigator
- * Right panel: detail view that adapts to selection level
+ * Left panel  : collapsible tree navigator (260 px)
+ * Right panel : detail view that adapts per level
+ *
+ *   Catalog  → header | tabs (Overview) | schema-list + About sidebar
+ *   Schema   → header | tabs (Tables)   | table-list  + About sidebar
+ *   Table    → header | tabs (Overview / Sample Data) | columns + About sidebar
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -17,7 +21,7 @@ import {
   getCatalogTree, getConnections, addConnection, deleteConnection,
   testConnection, sampleTable, getSchemaRich,
   type CatalogTree, type CatalogEntry, type CatalogSchemaInfo, type CatalogTableInfo,
-  type Connection, type SchemaTable, type TableSample,
+  type Connection, type SchemaTable, type SchemaColumn, type TableSample,
 } from "@/lib/api";
 import { ExplorationBadge } from "@/components/ExplorationBadge";
 
@@ -29,16 +33,16 @@ function fmtRows(n: number | string | null | undefined): string {
   if (isNaN(num)) return "—";
   if (num >= 1_000_000) return (num / 1_000_000).toFixed(1) + "M";
   if (num >= 1_000)     return Math.round(num / 1_000) + "K";
-  return String(num);
+  return num.toLocaleString();
 }
 
 function typeColor(t: string): string {
   const u = t.toUpperCase();
-  if (u.includes("VARCHAR") || u.includes("TEXT"))                 return "#7ba8f7";
-  if (u.includes("BIGINT") || u.includes("INT"))                   return "#c084fc";
+  if (u.includes("VARCHAR") || u.includes("TEXT"))                  return "#7ba8f7";
+  if (u.includes("BIGINT") || u.includes("INT"))                    return "#c084fc";
   if (u.includes("DOUBLE") || u.includes("FLOAT") || u.includes("NUMERIC")) return "#4ade80";
-  if (u.includes("DATE") || u.includes("TIME"))                    return "#f97316";
-  if (u.includes("BOOL"))                                          return "#4ade80";
+  if (u.includes("DATE") || u.includes("TIME"))                     return "#f97316";
+  if (u.includes("BOOL"))                                           return "#4ade80";
   return "#9a9ba4";
 }
 
@@ -51,10 +55,111 @@ const connMeta = (t: string) => CONN_TAG[t] ?? { label: t, color: "#9a9ba4", bg:
 // ── Selection type ────────────────────────────────────────────────────────────
 
 type Sel =
-  | { level: "table";  connId: string; schemaName: string; table: CatalogTableInfo; richTable?: SchemaTable }
-  | { level: "schema"; connId: string; schemaName: string; entry: CatalogSchemaInfo }
+  | { level: "table";   connId: string; schemaName: string; table: CatalogTableInfo }
+  | { level: "schema";  connId: string; schemaName: string; entry: CatalogSchemaInfo }
   | { level: "catalog"; connId: string; entry: CatalogEntry }
   | null;
+
+// ── Shared layout primitives ──────────────────────────────────────────────────
+
+/** The right-panel header bar — icon, name, type tag */
+function DetailHeader({
+  icon, name, tag, breadcrumb, meta,
+}: {
+  icon:       React.ReactNode;
+  name:       string;
+  tag?:       React.ReactNode;
+  breadcrumb?: string;
+  meta?:       string;
+}) {
+  return (
+    <div style={{ padding: "16px 20px 12px", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, background: "#0d0e11" }}>
+      {breadcrumb && (
+        <p style={{ fontSize: 10, color: "#3e3f4a", marginBottom: 6, fontFamily: "var(--font-mono)" }}>
+          {breadcrumb}
+        </p>
+      )}
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ color: "#6a6b75", display: "flex", alignItems: "center" }}>{icon}</span>
+        <span style={{ fontSize: 16, fontWeight: 600, color: "#e8e6e1", fontFamily: "var(--font-mono)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {name}
+        </span>
+        {tag}
+      </div>
+      {meta && <p style={{ fontSize: 10, color: "#4a4b57", marginTop: 4 }}>{meta}</p>}
+    </div>
+  );
+}
+
+/** Tab bar used by all detail panels */
+function TabBar({ tabs, active, onChange }: {
+  tabs:    { id: string; label: string }[];
+  active:  string;
+  onChange:(id: string) => void;
+}) {
+  return (
+    <div style={{ display: "flex", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, padding: "0 8px", background: "#0d0e11" }}>
+      {tabs.map(t => (
+        <button
+          key={t.id}
+          onClick={() => onChange(t.id)}
+          style={{
+            fontSize: 12, padding: "8px 12px", cursor: "pointer", border: "none",
+            background: "transparent", fontFamily: "inherit",
+            color: active === t.id ? "#e8e6e1" : "#4a4b57",
+            borderBottom: `2px solid ${active === t.id ? "#3d6bff" : "transparent"}`,
+            transition: "color .1s",
+            marginBottom: -1,
+          }}
+        >
+          {t.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** "About this X" sidebar card used in all three detail panels */
+function AboutSidebar({ title, rows }: {
+  title: string;
+  rows:  { label: string; value: React.ReactNode }[];
+}) {
+  return (
+    <div style={{
+      width: 220, flexShrink: 0, borderLeft: "0.5px solid #1e1f24",
+      padding: "16px 16px", overflowY: "auto", background: "#090a0d",
+    }}>
+      <p style={{ fontSize: 11, fontWeight: 600, color: "#6a6b75", marginBottom: 12, textTransform: "uppercase", letterSpacing: "0.07em" }}>
+        {title}
+      </p>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {rows.map(r => (
+          <div key={String(r.label)}>
+            <p style={{ fontSize: 10, color: "#3e3f4a", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.06em" }}>{r.label}</p>
+            <div style={{ fontSize: 11, color: "#9a9ba4" }}>{r.value}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** Inline search box used inside tab bodies */
+function FilterBox({ value, onChange, placeholder }: { value: string; onChange:(v:string)=>void; placeholder?: string }) {
+  return (
+    <div style={{ position: "relative", flexShrink: 0 }}>
+      <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"
+        style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", color: "#3e3f4a", pointerEvents: "none" }}>
+        <circle cx="6" cy="6" r="4" /><path d="m10 10 3 3" strokeLinecap="round" />
+      </svg>
+      <input
+        value={value} onChange={e => onChange(e.target.value)}
+        placeholder={placeholder ?? "Filter…"}
+        style={{ fontSize: 11, padding: "5px 8px 5px 26px", borderRadius: 4, background: "#111115", border: "0.5px solid #1e1f24", color: "#8a8b94", outline: "none", width: 220 }}
+      />
+    </div>
+  );
+}
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 
@@ -66,23 +171,23 @@ const IcoSection = () => (
 );
 
 const IcoCatalog = ({ color = "currentColor" }: { color?: string }) => (
-  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
     <ellipse cx="8" cy="5" rx="6" ry="2.5" stroke={color} strokeWidth="1.2" />
     <path d="M2 5v6c0 1.4 2.7 2.5 6 2.5s6-1.1 6-2.5V5" stroke={color} strokeWidth="1.2" fill="none" />
     <path d="M2 8c0 1.4 2.7 2.5 6 2.5s6-1.1 6-2.5" stroke={color} strokeWidth="1.2" opacity=".5" />
   </svg>
 );
 
-const IcoSchema = ({ color = "currentColor" }: { color?: string }) => (
-  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+const IcoSchema = ({ color = "currentColor", size = 14 }: { color?: string; size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
     <path d="M2 3h5v5H2z" stroke={color} strokeWidth="1.2" fill="none" strokeLinejoin="round" opacity=".6" />
     <path d="M9 3h5v5H9z" stroke={color} strokeWidth="1.2" fill="none" strokeLinejoin="round" opacity=".4" />
     <path d="M5.5 10.5h5v2.5h-5z" stroke={color} strokeWidth="1.2" fill="none" strokeLinejoin="round" opacity=".35" />
   </svg>
 );
 
-const IcoTable = ({ active = false }: { active?: boolean }) => (
-  <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, color: active ? "#5a9af7" : "#4a4b57" }}>
+const IcoTable = ({ active = false, size = 14 }: { active?: boolean; size?: number }) => (
+  <svg width={size} height={size} viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, color: active ? "#5a9af7" : "#4a4b57" }}>
     <rect x="1" y="2" width="14" height="3" rx="1" fill="currentColor" opacity=".8" />
     <rect x="1" y="6.5" width="14" height="2.5" fill="currentColor" opacity=".5" />
     <rect x="1" y="10.5" width="14" height="3" rx="1" fill="currentColor" opacity=".3" />
@@ -90,10 +195,8 @@ const IcoTable = ({ active = false }: { active?: boolean }) => (
 );
 
 const Chevron = ({ open }: { open: boolean }) => (
-  <svg
-    width="10" height="10" viewBox="0 0 10 10" fill="none"
-    style={{ flexShrink: 0, transition: "transform .15s", transform: open ? "rotate(90deg)" : "rotate(0deg)", color: "#3e3f4a" }}
-  >
+  <svg width="10" height="10" viewBox="0 0 10 10" fill="none"
+    style={{ flexShrink: 0, transition: "transform .15s", transform: open ? "rotate(90deg)" : "rotate(0deg)", color: "#3e3f4a" }}>
     <path d="M3 2l4 3-4 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
   </svg>
 );
@@ -108,11 +211,7 @@ function AddConnForm({ onSave, onCancel }: { onSave: () => void; onCancel: () =>
   const [err, setErr]       = useState("");
   const [loading, setLoad]  = useState(false);
 
-  const S: React.CSSProperties = {
-    width: "100%", fontSize: 11, padding: "5px 8px", borderRadius: 4,
-    background: "#111115", border: "0.5px solid #2a2b35",
-    color: "#c8c7c3", outline: "none", fontFamily: "inherit",
-  };
+  const S: React.CSSProperties = { width: "100%", fontSize: 11, padding: "5px 8px", borderRadius: 4, background: "#111115", border: "0.5px solid #2a2b35", color: "#c8c7c3", outline: "none", fontFamily: "inherit" };
   const L: React.CSSProperties = { fontSize: 10, color: "#4a4b57", marginBottom: 3, display: "block" };
 
   const handle = async (e: React.FormEvent) => {
@@ -135,15 +234,11 @@ function AddConnForm({ onSave, onCancel }: { onSave: () => void; onCancel: () =>
       </div>
       <div>
         <label style={L}>{type === "postgres" ? "Connection string" : "File path"}</label>
-        <input style={{ ...S, fontFamily: "var(--font-mono)" }}
-          placeholder={type === "postgres" ? "postgresql://user:pass@host/db" : "/path/to/file.duckdb"}
-          value={dsn} onChange={e => setDsn(e.target.value)} required />
+        <input style={{ ...S, fontFamily: "var(--font-mono)" }} placeholder={type === "postgres" ? "postgresql://user:pass@host/db" : "/path/to/file.duckdb"} value={dsn} onChange={e => setDsn(e.target.value)} required />
       </div>
       <div>
         <label style={L}>Schema <span style={{ color: "#2e2f37" }}>(optional)</span></label>
-        <input style={{ ...S, fontFamily: "var(--font-mono)" }}
-          placeholder={type === "postgres" ? "public" : "main"}
-          value={schema} onChange={e => setSchema(e.target.value)} />
+        <input style={{ ...S, fontFamily: "var(--font-mono)" }} placeholder={type === "postgres" ? "public" : "main"} value={schema} onChange={e => setSchema(e.target.value)} />
       </div>
       {err && <p style={{ fontSize: 10, color: "#f87171" }}>{err}</p>}
       <div style={{ display: "flex", gap: 6 }}>
@@ -159,9 +254,9 @@ function AddConnForm({ onSave, onCancel }: { onSave: () => void; onCancel: () =>
 // ── Sample grid ───────────────────────────────────────────────────────────────
 
 function SampleGrid({ connId, tableName, schemaName }: { connId: string; tableName: string; schemaName?: string }) {
-  const [data, setData]     = useState<TableSample | null>(null);
-  const [loading, setLoad]  = useState(false);
-  const [error, setErr]     = useState<string | null>(null);
+  const [data, setData]    = useState<TableSample | null>(null);
+  const [loading, setLoad] = useState(false);
+  const [error, setErr]    = useState<string | null>(null);
   const fetched = useRef(false);
 
   useEffect(() => { setData(null); setErr(null); fetched.current = false; }, [connId, tableName, schemaName]);
@@ -176,31 +271,33 @@ function SampleGrid({ connId, tableName, schemaName }: { connId: string; tableNa
   }, [connId, tableName, schemaName]);
 
   if (loading) return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", flexDirection: "column", gap: 8 }}>
+    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 8 }}>
       <div style={{ width: 16, height: 16, border: "2px solid #2a2b35", borderTopColor: "#4a6aaa", borderRadius: "50%", animation: "aug-spin 0.7s linear infinite" }} />
-      <span style={{ fontSize: 10, color: "#3e3f4a" }}>Loading sample…</span>
+      <span style={{ fontSize: 10, color: "#3e3f4a" }}>Loading sample data…</span>
     </div>
   );
-  if (error) return <div style={{ padding: 16, fontSize: 11, color: "#f87171", textAlign: "center" }}>{error}</div>;
+  if (error) return <div style={{ padding: 24, fontSize: 11, color: "#f87171", textAlign: "center" }}>{error}</div>;
   if (!data || data.rows.length === 0) return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}>
+    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <span style={{ fontSize: 11, color: "#3e3f4a" }}>No rows returned.</span>
     </div>
   );
 
-  const MAX_CELL = 32;
+  const MAX_CELL = 40;
   const clamp = (v: string | null) => {
-    if (v === null) return <span style={{ color: "#2e2f37", fontStyle: "italic" }}>null</span>;
+    if (v === null) return <span style={{ color: "#2e2f37", fontStyle: "italic", fontSize: 10 }}>null</span>;
     return v.length > MAX_CELL ? v.slice(0, MAX_CELL) + "…" : v;
   };
 
   return (
-    <div style={{ flex: 1, overflow: "auto", fontSize: 10, fontFamily: "var(--font-mono)" }}>
-      <table style={{ borderCollapse: "collapse", minWidth: "100%", tableLayout: "auto" }}>
+    <div style={{ flex: 1, overflow: "auto" }}>
+      <table style={{ borderCollapse: "collapse", minWidth: "100%", fontSize: 11, fontFamily: "var(--font-mono)" }}>
         <thead>
           <tr style={{ background: "#0a0b0d", position: "sticky", top: 0, zIndex: 1 }}>
             {data.columns.map(col => (
-              <th key={col} style={{ padding: "5px 10px", textAlign: "left", whiteSpace: "nowrap", borderBottom: "0.5px solid #1e1f24", borderRight: "0.5px solid #111115", fontSize: 9, color: "#4a4b57", textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 600 }}>{col}</th>
+              <th key={col} style={{ padding: "6px 12px", textAlign: "left", whiteSpace: "nowrap", borderBottom: "0.5px solid #1e1f24", borderRight: "0.5px solid #111115", fontSize: 10, color: "#5a5b62", fontWeight: 600, letterSpacing: "0.04em" }}>
+                {col}
+              </th>
             ))}
           </tr>
         </thead>
@@ -211,7 +308,7 @@ function SampleGrid({ connId, tableName, schemaName }: { connId: string; tableNa
               onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}
             >
               {row.map((cell, ci) => (
-                <td key={ci} style={{ padding: "4px 10px", color: cell === null ? "#2e2f37" : "#9a9ba4", whiteSpace: "nowrap", borderRight: "0.5px solid #111115" }}>
+                <td key={ci} style={{ padding: "5px 12px", color: cell === null ? "#2e2f37" : "#9a9ba4", whiteSpace: "nowrap", borderRight: "0.5px solid #111115" }}>
                   {clamp(cell)}
                 </td>
               ))}
@@ -219,222 +316,322 @@ function SampleGrid({ connId, tableName, schemaName }: { connId: string; tableNa
           ))}
         </tbody>
       </table>
-      <div style={{ padding: "5px 10px", borderTop: "0.5px solid #1e1f24", fontSize: 9, color: "#3e3f4a" }}>
+      <div style={{ padding: "5px 12px", borderTop: "0.5px solid #1e1f24", fontSize: 10, color: "#3e3f4a", background: "#0a0b0d" }}>
         {data.rows.length} row{data.rows.length !== 1 ? "s" : ""}
       </div>
     </div>
   );
 }
 
-// ── Right: Table detail ───────────────────────────────────────────────────────
+// ── Right: TABLE detail ───────────────────────────────────────────────────────
 
-type DetailTab = "columns" | "sample";
+type TableTab = "overview" | "sample";
 
 function TableDetailPanel({ sel, onAsk }: {
-  sel: Extract<Sel, { level: "table" }>;
+  sel:   Extract<Sel, { level: "table" }>;
   onAsk?: (table: string, connId: string) => void;
 }) {
-  const [tab, setTab]             = useState<DetailTab>("columns");
-  const [richTable, setRich]      = useState<SchemaTable | null>(null);
-  const [loadingRich, setLoadR]   = useState(false);
+  const [tab, setTab]           = useState<TableTab>("overview");
+  const [colFilter, setColFilter] = useState("");
+  const [richTable, setRich]    = useState<SchemaTable | null>(null);
+  const [loading, setLoad]      = useState(false);
+  const cm = connMeta(""); // not shown in table detail
 
-  // When switching to a new table, reset tab and re-fetch column detail if not cached on sel
+  // Fetch column detail (rich schema) when table changes
   useEffect(() => {
-    setTab("columns");
-    if (sel.richTable) { setRich(sel.richTable); return; }
-    // Fetch rich schema to get column details
-    setRich(null); setLoadR(true);
+    setTab("overview"); setColFilter(""); setRich(null);
+    setLoad(true);
     getSchemaRich(sel.connId)
-      .then(s => {
-        const found = s.tables.find(t => t.name === sel.table.name);
-        setRich(found ?? null);
-      })
+      .then(s => setRich(s.tables.find(t => t.name === sel.table.name) ?? null))
       .catch(() => setRich(null))
-      .finally(() => setLoadR(false));
+      .finally(() => setLoad(false));
   }, [sel.connId, sel.schemaName, sel.table.name]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const TAB = (active: boolean): React.CSSProperties => ({
-    fontSize: 11, padding: "5px 12px", cursor: "pointer", border: "none",
-    background: "transparent", fontFamily: "inherit",
-    color: active ? "#e8e6e1" : "#4a4b57",
-    borderBottom: `1.5px solid ${active ? "#3d6bff" : "transparent"}`,
-  });
+  const cols = richTable?.columns ?? [];
+  const q    = colFilter.toLowerCase();
+  const filteredCols = q ? cols.filter(c => c.name.toLowerCase().includes(q) || c.type.toLowerCase().includes(q)) : cols;
+  const fkCount = cols.filter(c => c.is_fk).length;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-      {/* Header */}
-      <div style={{ padding: "14px 16px 10px", borderBottom: "0.5px solid #1e1f24", flexShrink: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 4 }}>
-          <IcoTable active />
-          <span style={{ fontSize: 13, fontWeight: 500, color: "#e8e6e1", fontFamily: "var(--font-mono)" }}>{sel.table.name}</span>
-        </div>
-        <p style={{ fontSize: 10, color: "#3e3f4a", fontFamily: "var(--font-mono)" }}>
-          {sel.schemaName} · {fmtRows(sel.table.row_count)} rows
-        </p>
-      </div>
+      <DetailHeader
+        icon={<IcoTable active size={16} />}
+        name={sel.table.name}
+        breadcrumb={`${sel.connId}  ›  ${sel.schemaName}`}
+        meta={`${fmtRows(sel.table.row_count)} rows · ${cols.length || "…"} columns${fkCount ? ` · ${fkCount} FK` : ""}`}
+      />
 
-      {/* Tab bar */}
-      <div style={{ display: "flex", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, paddingLeft: 4 }}>
-        <button style={TAB(tab === "columns")} onClick={() => setTab("columns")}>Columns</button>
-        <button style={TAB(tab === "sample")}  onClick={() => setTab("sample")}>Sample</button>
-      </div>
+      <TabBar
+        tabs={[{ id: "overview", label: "Overview" }, { id: "sample", label: "Sample Data" }]}
+        active={tab}
+        onChange={id => setTab(id as TableTab)}
+      />
 
-      {/* Tab body */}
-      <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-        {tab === "columns" && (
-          <div style={{ flex: 1, overflowY: "auto" }}>
-            {loadingRich && (
-              <div style={{ padding: 24, display: "flex", justifyContent: "center" }}>
-                <div style={{ width: 16, height: 16, border: "2px solid #2a2b35", borderTopColor: "#4a6aaa", borderRadius: "50%", animation: "aug-spin 0.7s linear infinite" }} />
-              </div>
-            )}
-            {!loadingRich && !richTable && (
-              <p style={{ padding: "12px 16px", fontSize: 11, color: "#3e3f4a" }}>Column details unavailable.</p>
-            )}
-            {!loadingRich && richTable && (
-              <>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 90px 28px", padding: "5px 16px", borderBottom: "0.5px solid #1e1f24", background: "#0a0b0d", position: "sticky", top: 0, zIndex: 1 }}>
-                  {["Column", "Type", ""].map(h => <span key={h} style={{ fontSize: 9, color: "#2e2f37", textTransform: "uppercase", letterSpacing: "0.07em" }}>{h}</span>)}
+      {/* ── Overview tab ── */}
+      {tab === "overview" && (
+        <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+          {/* Main: column list */}
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            {/* Filter row */}
+            <div style={{ padding: "10px 16px", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, background: "#0d0e11" }}>
+              <FilterBox value={colFilter} onChange={setColFilter} placeholder="Filter columns…" />
+            </div>
+
+            {/* Column header */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 110px 40px", padding: "5px 16px", borderBottom: "0.5px solid #1e1f24", background: "#0a0b0d", flexShrink: 0 }}>
+              {["Column", "Type", ""].map(h => (
+                <span key={h} style={{ fontSize: 10, color: "#3e3f4a", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600 }}>{h}</span>
+              ))}
+            </div>
+
+            {/* Column rows */}
+            <div style={{ flex: 1, overflowY: "auto" }}>
+              {loading && (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 32, gap: 8 }}>
+                  <div style={{ width: 14, height: 14, border: "2px solid #2a2b35", borderTopColor: "#4a6aaa", borderRadius: "50%", animation: "aug-spin 0.7s linear infinite" }} />
+                  <span style={{ fontSize: 10, color: "#3e3f4a" }}>Loading columns…</span>
                 </div>
-                {richTable.columns.map(col => (
-                  <div key={col.name}
-                    style={{ display: "grid", gridTemplateColumns: "1fr 90px 28px", padding: "5px 16px", borderBottom: "0.5px solid #111115", alignItems: "center" }}
-                    onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "#0f1014"}
-                    onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}
-                  >
-                    <span style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "#9a9ba4", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{col.name}</span>
-                    <span style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: typeColor(col.type) }}>{col.type}</span>
-                    <span style={{ fontSize: 9, color: col.is_fk ? "#3d6bff" : "#2e2f37" }}>{col.is_fk ? "FK" : "—"}</span>
+              )}
+              {!loading && filteredCols.length === 0 && (
+                <p style={{ padding: "20px 16px", fontSize: 11, color: "#3e3f4a" }}>
+                  {q ? "No columns match." : "Column details unavailable."}
+                </p>
+              )}
+              {!loading && filteredCols.map((col, i) => (
+                <div key={col.name}
+                  style={{ display: "grid", gridTemplateColumns: "1fr 110px 40px", padding: "6px 16px", borderBottom: "0.5px solid #111115", alignItems: "center", background: i % 2 === 0 ? "transparent" : "#0a0b0d" }}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "#0f1218"}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = i % 2 === 0 ? "transparent" : "#0a0b0d"}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: 2, flexShrink: 0, background: typeColor(col.type), opacity: 0.7 }} />
+                    <span style={{ fontSize: 12, fontFamily: "var(--font-mono)", color: "#c8c7c3", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{col.name}</span>
                   </div>
-                ))}
-              </>
-            )}
+                  <span style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: typeColor(col.type) }}>{col.type}</span>
+                  {col.is_fk
+                    ? <span style={{ fontSize: 9, padding: "2px 5px", borderRadius: 3, background: "#1a1e2e", color: "#3d6bff", border: "0.5px solid #2a3050" }}>FK</span>
+                    : <span />
+                  }
+                </div>
+              ))}
+            </div>
           </div>
-        )}
-        {tab === "sample" && (
-          <SampleGrid connId={sel.connId} tableName={sel.table.name} schemaName={sel.schemaName} />
-        )}
-      </div>
 
-      {onAsk && (
-        <div style={{ padding: "10px 16px", borderTop: "0.5px solid #1e1f24", flexShrink: 0 }}>
-          <button onClick={() => onAsk(sel.table.name, sel.connId)} style={{ width: "100%", fontSize: 11, padding: "6px 0", borderRadius: 5, cursor: "pointer", background: "#1a1e2e", color: "#7ba8f7", border: "0.5px solid #2a3050", fontWeight: 500 }}
-            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = "#1e2640"; (e.currentTarget as HTMLElement).style.borderColor = "#3d6bff"; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = "#1a1e2e"; (e.currentTarget as HTMLElement).style.borderColor = "#2a3050"; }}
-          >
-            Ask about this table →
-          </button>
+          {/* About sidebar */}
+          <AboutSidebar
+            title="About this table"
+            rows={[
+              { label: "Rows",    value: fmtRows(sel.table.row_count) },
+              { label: "Columns", value: String(cols.length || "…") },
+              { label: "Schema",  value: <span style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>{sel.schemaName}</span> },
+              { label: "FK columns", value: fkCount > 0 ? String(fkCount) : "—" },
+              ...(onAsk ? [{
+                label: "Actions",
+                value: (
+                  <button onClick={() => onAsk(sel.table.name, sel.connId)} style={{ fontSize: 10, padding: "4px 10px", borderRadius: 4, cursor: "pointer", background: "#1a1e2e", color: "#7ba8f7", border: "0.5px solid #2a3050", width: "100%", textAlign: "left" as const }}>
+                    Ask about this table →
+                  </button>
+                ),
+              }] : []),
+            ]}
+          />
+        </div>
+      )}
+
+      {/* ── Sample Data tab ── */}
+      {tab === "sample" && (
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <div style={{ padding: "10px 16px", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, background: "#0d0e11", display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 11, color: "#4a4b57" }}>First 200 rows</span>
+          </div>
+          <SampleGrid connId={sel.connId} tableName={sel.table.name} schemaName={sel.schemaName} />
         </div>
       )}
     </div>
   );
 }
 
-// ── Right: Schema detail ──────────────────────────────────────────────────────
+// ── Right: SCHEMA detail ──────────────────────────────────────────────────────
+
+type SchemaTab = "tables";
 
 function SchemaDetailPanel({ sel, onSelectTable, onAsk }: {
-  sel: Extract<Sel, { level: "schema" }>;
+  sel:           Extract<Sel, { level: "schema" }>;
   onSelectTable: (table: CatalogTableInfo) => void;
-  onAsk?: (table: string, connId: string) => void;
+  onAsk?:        (table: string, connId: string) => void;
 }) {
+  const [filter, setFilter] = useState("");
   const { entry } = sel;
+  const q = filter.toLowerCase();
+  const tables = q ? entry.tables.filter(t => t.name.toLowerCase().includes(q)) : entry.tables;
+  const totalRows = entry.tables.reduce((s, t) => s + (Number(t.row_count) || 0), 0);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-      <div style={{ padding: "14px 16px 10px", borderBottom: "0.5px solid #1e1f24", flexShrink: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 4 }}>
-          <IcoSchema color="#5a7fa8" />
-          <span style={{ fontSize: 13, fontWeight: 500, color: "#e8e6e1", fontFamily: "var(--font-mono)" }}>{entry.name}</span>
-        </div>
-        <p style={{ fontSize: 10, color: "#3e3f4a" }}>{entry.tables.length} table{entry.tables.length !== 1 ? "s" : ""}</p>
-      </div>
+      <DetailHeader
+        icon={<IcoSchema color="#5a7fa8" size={16} />}
+        name={entry.name}
+        breadcrumb={sel.connId}
+        meta={`${entry.tables.length} table${entry.tables.length !== 1 ? "s" : ""}`}
+      />
 
-      <div style={{ flex: 1, overflowY: "auto" }}>
-        {/* Header row */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 80px", padding: "5px 16px", borderBottom: "0.5px solid #1e1f24", background: "#0a0b0d", position: "sticky", top: 0 }}>
-          <span style={{ fontSize: 9, color: "#2e2f37", textTransform: "uppercase", letterSpacing: "0.07em" }}>Table</span>
-          <span style={{ fontSize: 9, color: "#2e2f37", textTransform: "uppercase", letterSpacing: "0.07em", textAlign: "right" }}>Rows</span>
-        </div>
-        {entry.tables.map(t => (
-          <div key={t.name}
-            onClick={() => onSelectTable(t)}
-            style={{ display: "grid", gridTemplateColumns: "1fr 80px", padding: "7px 16px", borderBottom: "0.5px solid #111115", cursor: "pointer", alignItems: "center" }}
-            onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "#0f1014"}
-            onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
-              <IcoTable />
-              <span style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "#c8c7c3", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 6 }}>
-              <span style={{ fontSize: 10, color: "#4a4b57", fontFamily: "var(--font-mono)" }}>{fmtRows(t.row_count)}</span>
-              {onAsk && (
-                <button
-                  onClick={e => { e.stopPropagation(); onAsk(t.name, sel.connId); }}
-                  style={{ fontSize: 9, padding: "2px 6px", borderRadius: 3, cursor: "pointer", background: "transparent", color: "#3e3f4a", border: "0.5px solid #1e1f24" }}
-                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "#7ba8f7"; (e.currentTarget as HTMLElement).style.background = "#1a1e2e"; }}
-                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "#3e3f4a"; (e.currentTarget as HTMLElement).style.background = "transparent"; }}
-                >Ask →</button>
-              )}
-            </div>
+      <TabBar
+        tabs={[{ id: "tables", label: `Tables  ${entry.tables.length}` }]}
+        active="tables"
+        onChange={() => {}}
+      />
+
+      <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+        {/* Main: table list */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          {/* Filter row */}
+          <div style={{ padding: "10px 16px", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, background: "#0d0e11" }}>
+            <FilterBox value={filter} onChange={setFilter} placeholder="Filter tables…" />
           </div>
-        ))}
+
+          {/* Table header */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 60px", padding: "5px 16px", borderBottom: "0.5px solid #1e1f24", background: "#0a0b0d", flexShrink: 0 }}>
+            {["Name", "Rows", ""].map(h => (
+              <span key={h} style={{ fontSize: 10, color: "#3e3f4a", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600, textAlign: h === "Rows" ? "right" as const : "left" as const }}>{h}</span>
+            ))}
+          </div>
+
+          <div style={{ flex: 1, overflowY: "auto" }}>
+            {tables.length === 0 && (
+              <p style={{ padding: "20px 16px", fontSize: 11, color: "#3e3f4a" }}>{q ? "No tables match." : "No tables found."}</p>
+            )}
+            {tables.map((t, i) => (
+              <div key={t.name}
+                onClick={() => onSelectTable(t)}
+                style={{ display: "grid", gridTemplateColumns: "1fr 80px 60px", padding: "8px 16px", borderBottom: "0.5px solid #111115", cursor: "pointer", alignItems: "center", background: i % 2 === 0 ? "transparent" : "#0a0b0d" }}
+                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "#0f1218"}
+                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = i % 2 === 0 ? "transparent" : "#0a0b0d"}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                  <IcoTable size={12} />
+                  <span style={{ fontSize: 12, fontFamily: "var(--font-mono)", color: "#c8c7c3", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span>
+                </div>
+                <span style={{ fontSize: 11, color: "#4a4b57", fontFamily: "var(--font-mono)", textAlign: "right" }}>{fmtRows(t.row_count)}</span>
+                {onAsk && (
+                  <button
+                    onClick={e => { e.stopPropagation(); onAsk(t.name, sel.connId); }}
+                    style={{ fontSize: 9, padding: "2px 6px", borderRadius: 3, cursor: "pointer", background: "transparent", color: "#3e3f4a", border: "0.5px solid #1e1f24", justifySelf: "end" as const }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "#7ba8f7"; (e.currentTarget as HTMLElement).style.background = "#1a1e2e"; }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "#3e3f4a"; (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                  >Ask →</button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* About sidebar */}
+        <AboutSidebar
+          title="About this schema"
+          rows={[
+            { label: "Tables",     value: String(entry.tables.length) },
+            { label: "Total rows", value: totalRows > 0 ? fmtRows(totalRows) : "—" },
+            { label: "Catalog",    value: <span style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>{sel.connId}</span> },
+          ]}
+        />
       </div>
     </div>
   );
 }
 
-// ── Right: Catalog detail ─────────────────────────────────────────────────────
+// ── Right: CATALOG detail ─────────────────────────────────────────────────────
+
+type CatalogTab = "schemas";
 
 function CatalogDetailPanel({ sel, onSelectSchema }: {
-  sel: Extract<Sel, { level: "catalog" }>;
+  sel:            Extract<Sel, { level: "catalog" }>;
   onSelectSchema: (schema: CatalogSchemaInfo) => void;
 }) {
+  const [filter, setFilter] = useState("");
   const { entry } = sel;
   const cm = connMeta(entry.conn_type);
+  const q = filter.toLowerCase();
+  const schemas = q ? entry.schemas.filter(s => s.name.toLowerCase().includes(q) || s.tables.some(t => t.name.toLowerCase().includes(q))) : entry.schemas;
   const totalTables = entry.schemas.reduce((s, sc) => s + sc.tables.length, 0);
+  const totalRows   = entry.schemas.reduce((s, sc) => s + sc.tables.reduce((a, t) => a + (Number(t.row_count) || 0), 0), 0);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-      <div style={{ padding: "14px 16px 10px", borderBottom: "0.5px solid #1e1f24", flexShrink: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 6 }}>
-          <IcoCatalog color={cm.color} />
-          <span style={{ fontSize: 14, fontWeight: 500, color: "#e8e6e1" }}>{entry.name}</span>
-          {entry.builtin && (
-            <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 3, background: "#1a1a22", color: "#5a5b62", border: "0.5px solid #2a2a35", marginLeft: 2 }}>built-in</span>
-          )}
-        </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 3, background: cm.bg, color: cm.color, border: `0.5px solid ${cm.border}` }}>{cm.label}</span>
-          <span style={{ fontSize: 10, color: "#3e3f4a" }}>{entry.schemas.length} schema{entry.schemas.length !== 1 ? "s" : ""}</span>
-          <span style={{ fontSize: 10, color: "#3e3f4a" }}>{totalTables} table{totalTables !== 1 ? "s" : ""}</span>
-        </div>
-      </div>
+      <DetailHeader
+        icon={<IcoCatalog color={cm.color} />}
+        name={entry.name}
+        tag={
+          <span style={{ fontSize: 9, padding: "2px 7px", borderRadius: 3, background: cm.bg, color: cm.color, border: `0.5px solid ${cm.border}`, flexShrink: 0 }}>
+            {cm.label}
+          </span>
+        }
+        meta={`${entry.schemas.length} schema${entry.schemas.length !== 1 ? "s" : ""}  ·  ${totalTables} table${totalTables !== 1 ? "s" : ""}`}
+      />
 
-      <div style={{ flex: 1, overflowY: "auto", padding: "8px 0" }}>
-        {entry.schemas.map(sc => (
-          <div key={sc.name}
-            onClick={() => onSelectSchema(sc)}
-            style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 16px", borderBottom: "0.5px solid #111115", cursor: "pointer" }}
-            onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "#0f1014"}
-            onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}
-          >
-            <IcoSchema color="#5a7fa8" />
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ fontSize: 12, fontFamily: "var(--font-mono)", fontWeight: 500, color: "#c8c7c3" }}>{sc.name}</p>
-              <p style={{ fontSize: 10, color: "#3e3f4a", marginTop: 1 }}>{sc.tables.length} tables</p>
-            </div>
-            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ color: "#2e2f37" }}>
-              <path d="M3 2l4 3-4 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
+      <TabBar
+        tabs={[{ id: "schemas", label: `Schemas  ${entry.schemas.length}` }]}
+        active="schemas"
+        onChange={() => {}}
+      />
+
+      <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+        {/* Main: schema list */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          {/* Filter row */}
+          <div style={{ padding: "10px 16px", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, background: "#0d0e11" }}>
+            <FilterBox value={filter} onChange={setFilter} placeholder="Filter schemas…" />
           </div>
-        ))}
-      </div>
 
-      {entry.conn_id !== "samples" && (
-        <div style={{ padding: "10px 16px", borderTop: "0.5px solid #1e1f24", flexShrink: 0 }}>
-          <ExplorationBadge connectionId={entry.conn_id} />
+          {/* Schema header */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px", padding: "5px 16px", borderBottom: "0.5px solid #1e1f24", background: "#0a0b0d", flexShrink: 0 }}>
+            {["Name", "Tables", ""].map((h, i) => (
+              <span key={h + i} style={{ fontSize: 10, color: "#3e3f4a", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600, textAlign: h === "Tables" ? "right" as const : "left" as const }}>{h}</span>
+            ))}
+          </div>
+
+          <div style={{ flex: 1, overflowY: "auto" }}>
+            {schemas.length === 0 && (
+              <p style={{ padding: "20px 16px", fontSize: 11, color: "#3e3f4a" }}>{q ? "No schemas match." : "No schemas found."}</p>
+            )}
+            {schemas.map((sc, i) => {
+              const schRows = sc.tables.reduce((s, t) => s + (Number(t.row_count) || 0), 0);
+              return (
+                <div key={sc.name}
+                  onClick={() => onSelectSchema(sc)}
+                  style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px", padding: "10px 16px", borderBottom: "0.5px solid #111115", cursor: "pointer", alignItems: "center", background: i % 2 === 0 ? "transparent" : "#0a0b0d" }}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "#0f1218"}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = i % 2 === 0 ? "transparent" : "#0a0b0d"}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                    <IcoSchema color="#5a7fa8" size={14} />
+                    <div>
+                      <p style={{ fontSize: 12, fontFamily: "var(--font-mono)", fontWeight: 500, color: "#c8c7c3" }}>{sc.name}</p>
+                      <p style={{ fontSize: 10, color: "#3e3f4a", marginTop: 1 }}>{schRows > 0 ? fmtRows(schRows) + " rows" : ""}</p>
+                    </div>
+                  </div>
+                  <span style={{ fontSize: 11, color: "#4a4b57", textAlign: "right" }}>{sc.tables.length}</span>
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ color: "#2e2f37", justifySelf: "end" as const }}>
+                    <path d="M3 2l4 3-4 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                  </svg>
+                </div>
+              );
+            })}
+          </div>
         </div>
-      )}
+
+        {/* About sidebar */}
+        <AboutSidebar
+          title="About this catalog"
+          rows={[
+            { label: "Type",    value: <span style={{ fontSize: 9, padding: "2px 7px", borderRadius: 3, background: cm.bg, color: cm.color, border: `0.5px solid ${cm.border}` }}>{cm.label}</span> },
+            { label: "Schemas", value: String(entry.schemas.length) },
+            { label: "Tables",  value: String(totalTables) },
+            { label: "Total rows", value: totalRows > 0 ? fmtRows(totalRows) : "—" },
+            ...(entry.builtin ? [{ label: "Source", value: "Built-in sample catalog" }] : []),
+            ...(!entry.builtin ? [{ label: "Explorer", value: <ExplorationBadge connectionId={entry.conn_id} /> }] : []),
+          ]}
+        />
+      </div>
     </div>
   );
 }
@@ -443,11 +640,18 @@ function CatalogDetailPanel({ sel, onSelectSchema }: {
 
 function EmptyDetail() {
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, padding: 32 }}>
-      <IcoCatalog color="#2e2f37" />
-      <p style={{ fontSize: 12, color: "#3e3f4a", textAlign: "center", lineHeight: 1.6 }}>
-        Select a catalog, schema, or table<br />to see details
-      </p>
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: 40 }}>
+      <svg width="48" height="48" viewBox="0 0 48 48" fill="none" style={{ color: "#1e1f24" }}>
+        <ellipse cx="24" cy="14" rx="18" ry="7" stroke="currentColor" strokeWidth="2" />
+        <path d="M6 14v20c0 3.9 8.1 7 18 7s18-3.1 18-7V14" stroke="currentColor" strokeWidth="2" fill="none" />
+        <path d="M6 24c0 3.9 8.1 7 18 7s18-3.1 18-7" stroke="currentColor" strokeWidth="2" opacity=".5" />
+      </svg>
+      <div style={{ textAlign: "center" }}>
+        <p style={{ fontSize: 14, fontWeight: 500, color: "#3e3f4a", marginBottom: 6 }}>Select an item to view details</p>
+        <p style={{ fontSize: 12, color: "#2e2f37", lineHeight: 1.6 }}>
+          Click a catalog, schema, or table<br />in the tree to explore it
+        </p>
+      </div>
     </div>
   );
 }
@@ -455,19 +659,18 @@ function EmptyDetail() {
 // ── Tree node ─────────────────────────────────────────────────────────────────
 
 function TreeRow({
-  depth, icon, label, badge, count, isOpen, isSelected, hasChildren, onClick, onToggle, dimmed,
+  depth, icon, label, badge, count, isOpen, isSelected, hasChildren, onClick, onToggle,
 }: {
-  depth: number;
-  icon: React.ReactNode;
-  label: string;
-  badge?: React.ReactNode;
-  count?: number;
-  isOpen?: boolean;
+  depth:       number;
+  icon:        React.ReactNode;
+  label:       string;
+  badge?:      React.ReactNode;
+  count?:      number;
+  isOpen?:     boolean;
   isSelected?: boolean;
   hasChildren?: boolean;
-  onClick?: () => void;
-  onToggle?: () => void;
-  dimmed?: boolean;
+  onClick?:    () => void;
+  onToggle?:   () => void;
 }) {
   return (
     <div
@@ -478,43 +681,29 @@ function TreeRow({
         cursor: "pointer", userSelect: "none",
         background: isSelected ? "#111820" : "transparent",
         borderLeft: `2px solid ${isSelected ? "#2D72D2" : "transparent"}`,
-        transition: "background .08s",
-        minWidth: 0,
+        transition: "background .08s", minWidth: 0,
       }}
       onMouseEnter={e => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = "#0f1014"; }}
       onMouseLeave={e => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = "transparent"; }}
     >
-      {/* Toggle chevron */}
       {hasChildren ? (
-        <span
-          onClick={e => { e.stopPropagation(); onToggle?.(); }}
-          style={{ display: "flex", alignItems: "center", flexShrink: 0 }}
-        >
+        <span onClick={e => { e.stopPropagation(); onToggle?.(); }} style={{ display: "flex", alignItems: "center", flexShrink: 0 }}>
           <Chevron open={!!isOpen} />
         </span>
-      ) : (
-        <span style={{ width: 10, flexShrink: 0 }} />
-      )}
+      ) : <span style={{ width: 10, flexShrink: 0 }} />}
 
-      {/* Icon */}
-      <span style={{ color: dimmed ? "#2e2f37" : isSelected ? "#5a9af7" : "#6a6b75", display: "flex", alignItems: "center" }}>
-        {icon}
-      </span>
+      <span style={{ color: isSelected ? "#5a9af7" : "#6a6b75", display: "flex", alignItems: "center" }}>{icon}</span>
 
-      {/* Label */}
       <span style={{
         fontSize: 12, fontFamily: "var(--font-mono)", flex: 1, minWidth: 0,
         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-        color: dimmed ? "#3e3f4a" : isSelected ? "#e8e6e1" : "#c8c7c3",
-        fontWeight: isSelected ? 500 : 400,
+        color: isSelected ? "#e8e6e1" : "#c8c7c3", fontWeight: isSelected ? 500 : 400,
       }}>
         {label}
       </span>
 
-      {/* Badge */}
       {badge}
 
-      {/* Count chip */}
       {count != null && (
         <span style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "#3e3f4a", flexShrink: 0 }}>
           {count}
@@ -524,137 +713,79 @@ function TreeRow({
   );
 }
 
-// ── Tree search ───────────────────────────────────────────────────────────────
-
-function TreeSearch({ value, onChange }: { value: string; onChange: (v: string) => void }) {
-  return (
-    <div style={{ padding: "8px 10px", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, position: "relative" }}>
-      <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"
-        style={{ position: "absolute", left: 18, top: "50%", transform: "translateY(-50%)", color: "#3e3f4a", pointerEvents: "none" }}>
-        <circle cx="6" cy="6" r="4" /><path d="m10 10 3 3" strokeLinecap="round" />
-      </svg>
-      <input
-        value={value} onChange={e => onChange(e.target.value)}
-        placeholder="Search catalog…"
-        style={{ width: "100%", fontSize: 11, padding: "4px 8px 4px 24px", borderRadius: 4, background: "#111115", border: "0.5px solid #1e1f24", color: "#6e6f78", outline: "none" }}
-      />
-    </div>
-  );
-}
-
 // ── Main CatalogScreen ────────────────────────────────────────────────────────
 
 interface Props {
-  connections:       Connection[];
-  selectedConn:      string;
-  onSelect:          (id: string) => void;
-  onDeleteConn:      (conn: Connection) => void;
-  onChatWithTable?:  (table: string, connId: string) => void;
+  connections:      Connection[];
+  selectedConn:     string;
+  onSelect:         (id: string) => void;
+  onDeleteConn:     (conn: Connection) => void;
+  onChatWithTable?: (table: string, connId: string) => void;
 }
 
 export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteConn, onChatWithTable }: Props) {
-  // ── Tree data ─────────────────────────────────────────────────────────────
-  const [tree, setTree]           = useState<CatalogTree | null>(null);
-  const [treeLoading, setTreeLoad] = useState(true);
-
-  // ── Expand state: Set of "section:{id}" | "catalog:{connId}" | "schema:{connId}:{name}" ──
-  const [expanded, setExpanded]   = useState<Set<string>>(new Set(["section:samples", "catalog:samples"]));
-
-  // ── Selection ─────────────────────────────────────────────────────────────
-  const [sel, setSel]             = useState<Sel>(null);
-
-  // ── Add connection form ───────────────────────────────────────────────────
-  const [adding, setAdding]       = useState(false);
-
-  // ── Search ────────────────────────────────────────────────────────────────
-  const [search, setSearch]       = useState("");
+  const [tree, setTree]         = useState<CatalogTree | null>(null);
+  const [treeLoading, setTreeL] = useState(true);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set(["section:samples", "catalog:samples"]));
+  const [sel, setSel]           = useState<Sel>(null);
+  const [adding, setAdding]     = useState(false);
+  const [search, setSearch]     = useState("");
+  const [hovConn, setHovConn]   = useState<string | null>(null);
+  const [pendingDel, setPDel]   = useState<string | null>(null);
+  const [testing, setTesting]   = useState<string | null>(null);
+  const [testRes, setTestRes]   = useState<Record<string, boolean>>({});
   const q = search.toLowerCase();
 
-  // ── Hover / pending delete ────────────────────────────────────────────────
-  const [hovConn, setHovConn]     = useState<string | null>(null);
-  const [pendingDel, setPending]  = useState<string | null>(null);
-  const [testing, setTesting]     = useState<string | null>(null);
-  const [testRes, setTestRes]     = useState<Record<string, boolean>>({});
-
-  // ── Load tree ─────────────────────────────────────────────────────────────
   const loadTree = () => {
-    setTreeLoad(true);
+    setTreeL(true);
     getCatalogTree()
       .then(t => {
         setTree(t);
-        // Auto-expand the first user connection's schema if any
-        const userSection = t.sections.find(s => s.id === "connections");
-        if (userSection && userSection.entries.length > 0) {
-          const first = userSection.entries[0];
+        const uc = t.sections.find(s => s.id === "connections");
+        if (uc && uc.entries.length > 0) {
+          const first = uc.entries[0];
           setExpanded(prev => {
-            const next = new Set(prev);
-            next.add(`catalog:${first.conn_id}`);
-            if (first.schemas.length === 1) next.add(`schema:${first.conn_id}:${first.schemas[0].name}`);
-            return next;
+            const n = new Set(prev);
+            n.add(`catalog:${first.conn_id}`);
+            if (first.schemas.length === 1) n.add(`schema:${first.conn_id}:${first.schemas[0].name}`);
+            return n;
           });
         }
       })
-      .catch(err => console.error("[CatalogScreen] failed to load tree:", err))
-      .finally(() => setTreeLoad(false));
+      .catch(err => console.error("[CatalogScreen] tree load failed:", err))
+      .finally(() => setTreeL(false));
   };
 
   useEffect(() => { loadTree(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Toggle helpers ────────────────────────────────────────────────────────
-  const toggle = (key: string) =>
-    setExpanded(prev => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key); else next.add(key);
-      return next;
-    });
-
+  const toggle = (key: string) => setExpanded(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
   const isOpen = (key: string) => expanded.has(key);
 
-  // ── Delete connection ──────────────────────────────────────────────────────
   const handleDelete = (id: string) => {
     if (pendingDel !== id) {
-      setPending(id);
-      setTimeout(() => setPending(prev => (prev === id ? null : prev)), 3000);
+      setPDel(id);
+      setTimeout(() => setPDel(p => p === id ? null : p), 3000);
       return;
     }
-    setPending(null);
+    setPDel(null);
     const conn = connections.find(c => c.id === id);
     if (conn) onDeleteConn(conn);
   };
 
   const handleTest = async (id: string) => {
     setTesting(id);
-    try {
-      const r = await testConnection(id);
-      setTestRes(prev => ({ ...prev, [id]: r.ok }));
-    } catch { setTestRes(prev => ({ ...prev, [id]: false })); }
+    try { const r = await testConnection(id); setTestRes(p => ({ ...p, [id]: r.ok })); }
+    catch { setTestRes(p => ({ ...p, [id]: false })); }
     finally { setTesting(null); }
   };
 
-  // ── Table selection from schema detail panel ───────────────────────────────
-  const handleSelectTableFromSchema = (table: CatalogTableInfo) => {
-    if (sel?.level !== "schema") return;
-    setSel({ level: "table", connId: sel.connId, schemaName: sel.schemaName, table });
-  };
-
-  // ── Schema selection from catalog detail panel ─────────────────────────────
-  const handleSelectSchemaFromCatalog = (schemaInfo: CatalogSchemaInfo) => {
-    if (sel?.level !== "catalog") return;
-    setSel({ level: "schema", connId: sel.connId, schemaName: schemaInfo.name, entry: schemaInfo });
-    setExpanded(prev => { const n = new Set(prev); n.add(`schema:${sel.connId}:${schemaInfo.name}`); return n; });
-  };
-
-  // ── Filter tree by search ──────────────────────────────────────────────────
   const matches = (s: string) => !q || s.toLowerCase().includes(q);
 
-  // ── Render tree ───────────────────────────────────────────────────────────
   const renderTree = () => {
     if (!tree) return null;
-
     const nodes: React.ReactNode[] = [];
 
     tree.sections.forEach(section => {
-      // ── Section header ────────────────────────────────────────────────────
       nodes.push(
         <div key={`sec-${section.id}`} style={{ padding: "10px 10px 4px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -664,11 +795,10 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
             </span>
           </div>
           {section.id === "connections" && (
-            <button
-              onClick={() => setAdding(v => !v)}
+            <button onClick={() => setAdding(v => !v)}
               style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 9, padding: "2px 6px", borderRadius: 3, cursor: "pointer", background: "transparent", color: "#4a4b57", border: "0.5px solid #1e1f24" }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "#9a9ba4"; (e.currentTarget as HTMLElement).style.borderColor = "#2e2f37"; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "#4a4b57"; (e.currentTarget as HTMLElement).style.borderColor = "#1e1f24"; }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "#9a9ba4"; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "#4a4b57"; }}
             >
               <svg width="8" height="8" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 1v10M1 6h10" /></svg>
               Add
@@ -678,15 +808,10 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
       );
 
       if (section.id === "connections" && adding) {
-        nodes.push(
-          <AddConnForm key="add-form" onSave={() => { setAdding(false); loadTree(); }} onCancel={() => setAdding(false)} />
-        );
+        nodes.push(<AddConnForm key="add-form" onSave={() => { setAdding(false); loadTree(); }} onCancel={() => setAdding(false)} />);
       }
-
       if (section.entries.length === 0 && section.id === "connections") {
-        nodes.push(
-          <p key="empty-conns" style={{ fontSize: 10, color: "#2e2f37", padding: "6px 12px 10px" }}>No connections yet. Add one above.</p>
-        );
+        nodes.push(<p key="empty" style={{ fontSize: 10, color: "#2e2f37", padding: "6px 12px 10px" }}>No connections yet.</p>);
       }
 
       section.entries.forEach(entry => {
@@ -694,11 +819,9 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
         const catOpen    = isOpen(catalogKey);
         const cm         = connMeta(entry.conn_type);
         const isSamples  = entry.conn_id === "samples";
-        const catVisible = matches(entry.name) || entry.schemas.some(sc => matches(sc.name) || sc.tables.some(t => matches(t.name)));
+        const catMatch   = matches(entry.name) || entry.schemas.some(sc => matches(sc.name) || sc.tables.some(t => matches(t.name)));
+        if (!catMatch) return;
 
-        if (!catVisible) return;
-
-        // ── Catalog row ──────────────────────────────────────────────────────
         nodes.push(
           <div key={catalogKey} style={{ position: "relative" }}
             onMouseEnter={() => setHovConn(entry.conn_id)}
@@ -708,23 +831,14 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
               depth={0}
               icon={<IcoCatalog color={cm.color} />}
               label={entry.name}
-              badge={
-                <span style={{ fontSize: 8, padding: "1px 4px", borderRadius: 2, background: cm.bg, color: cm.color, border: `0.5px solid ${cm.border}`, flexShrink: 0 }}>
-                  {cm.label}
-                </span>
-              }
+              badge={<span style={{ fontSize: 8, padding: "1px 4px", borderRadius: 2, background: cm.bg, color: cm.color, border: `0.5px solid ${cm.border}`, flexShrink: 0 }}>{cm.label}</span>}
               count={entry.schemas.reduce((s, sc) => s + sc.tables.length, 0) || undefined}
               isOpen={catOpen}
               isSelected={sel?.level === "catalog" && sel.connId === entry.conn_id}
               hasChildren={entry.schemas.length > 0}
-              onClick={() => {
-                setSel({ level: "catalog", connId: entry.conn_id, entry });
-                onSelect(entry.conn_id);
-              }}
+              onClick={() => { setSel({ level: "catalog", connId: entry.conn_id, entry }); onSelect(entry.conn_id); }}
               onToggle={() => toggle(catalogKey)}
             />
-
-            {/* Hover actions (user connections only) */}
             {!isSamples && hovConn === entry.conn_id && (
               <div style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", display: "flex", gap: 4, zIndex: 2 }}>
                 <button onClick={e => { e.stopPropagation(); handleTest(entry.conn_id); }} disabled={testing === entry.conn_id}
@@ -743,16 +857,13 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
         if (!catOpen) return;
 
         entry.schemas.forEach(schema => {
-          const schemaKey  = `schema:${entry.conn_id}:${schema.name}`;
-          const schOpen    = isOpen(schemaKey);
-          const schVisible = matches(entry.name) || matches(schema.name) || schema.tables.some(t => matches(t.name));
-          if (!schVisible) return;
+          const schemaKey = `schema:${entry.conn_id}:${schema.name}`;
+          const schOpen   = isOpen(schemaKey);
+          const schMatch  = matches(entry.name) || matches(schema.name) || schema.tables.some(t => matches(t.name));
+          if (!schMatch) return;
 
-          // ── Schema row ─────────────────────────────────────────────────────
           nodes.push(
-            <TreeRow
-              key={schemaKey}
-              depth={1}
+            <TreeRow key={schemaKey} depth={1}
               icon={<IcoSchema color="#5a7fa8" />}
               label={schema.name}
               count={schema.tables.length}
@@ -767,15 +878,12 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
           if (!schOpen) return;
 
           schema.tables.forEach(table => {
-            if (!matches(table.name) && !matches(entry.name) && !matches(schema.name)) return;
+            if (!matches(table.name) && !matches(schema.name) && !matches(entry.name)) return;
             const tableKey = `table:${entry.conn_id}:${schema.name}:${table.name}`;
-            const isSel    = sel?.level === "table" && sel.connId === entry.conn_id && sel.schemaName === schema.name && sel.table.name === table.name;
+            const isSel = sel?.level === "table" && sel.connId === entry.conn_id && sel.schemaName === schema.name && sel.table.name === table.name;
 
-            // ── Table row ──────────────────────────────────────────────────────
             nodes.push(
-              <TreeRow
-                key={tableKey}
-                depth={2}
+              <TreeRow key={tableKey} depth={2}
                 icon={<IcoTable active={isSel} />}
                 label={table.name}
                 isSelected={isSel}
@@ -787,21 +895,25 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
         });
       });
     });
-
     return nodes;
   };
 
-  // ── Right panel ───────────────────────────────────────────────────────────
   const renderDetail = () => {
     if (!sel) return <EmptyDetail />;
-    if (sel.level === "table") return (
-      <TableDetailPanel sel={sel} onAsk={onChatWithTable} />
-    );
+    if (sel.level === "table") return <TableDetailPanel sel={sel} onAsk={onChatWithTable} />;
     if (sel.level === "schema") return (
-      <SchemaDetailPanel sel={sel} onSelectTable={handleSelectTableFromSchema} onAsk={onChatWithTable} />
+      <SchemaDetailPanel sel={sel}
+        onSelectTable={t => setSel({ level: "table", connId: sel.connId, schemaName: sel.schemaName, table: t })}
+        onAsk={onChatWithTable}
+      />
     );
     if (sel.level === "catalog") return (
-      <CatalogDetailPanel sel={sel} onSelectSchema={handleSelectSchemaFromCatalog} />
+      <CatalogDetailPanel sel={sel}
+        onSelectSchema={sc => {
+          setSel({ level: "schema", connId: sel.connId, schemaName: sc.name, entry: sc });
+          setExpanded(p => { const n = new Set(p); n.add(`schema:${sel.connId}:${sc.name}`); return n; });
+        }}
+      />
     );
     return <EmptyDetail />;
   };
@@ -814,12 +926,10 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
         {/* Top bar */}
         <div style={{ display: "flex", alignItems: "center", padding: "10px 12px 8px", borderBottom: "0.5px solid var(--b1)", flexShrink: 0, gap: 8 }}>
           <span style={{ fontSize: 12, fontWeight: 600, color: "var(--t2)", textTransform: "uppercase", letterSpacing: "0.06em", flex: 1 }}>Catalog</span>
-          <button
-            onClick={loadTree}
-            title="Refresh"
+          <button onClick={loadTree} title="Refresh"
             style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: 4, cursor: "pointer", background: "transparent", color: "#3e3f4a", border: "0.5px solid #1e1f24", padding: 0 }}
-            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "#9a9ba4"; (e.currentTarget as HTMLElement).style.borderColor = "#2e2f37"; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "#3e3f4a"; (e.currentTarget as HTMLElement).style.borderColor = "#1e1f24"; }}
+            onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = "#9a9ba4"}
+            onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = "#3e3f4a"}
           >
             <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M1 4.5A7 7 0 0 1 14 8" /><path d="M15 11.5A7 7 0 0 1 2 8" />
@@ -829,7 +939,14 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
         </div>
 
         {/* Search */}
-        <TreeSearch value={search} onChange={setSearch} />
+        <div style={{ padding: "8px 10px", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, position: "relative" }}>
+          <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"
+            style={{ position: "absolute", left: 18, top: "50%", transform: "translateY(-50%)", color: "#3e3f4a", pointerEvents: "none" }}>
+            <circle cx="6" cy="6" r="4" /><path d="m10 10 3 3" strokeLinecap="round" />
+          </svg>
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search catalog…"
+            style={{ width: "100%", fontSize: 11, padding: "4px 8px 4px 24px", borderRadius: 4, background: "#111115", border: "0.5px solid #1e1f24", color: "#6e6f78", outline: "none" }} />
+        </div>
 
         {/* Tree body */}
         <div style={{ flex: 1, overflowY: "auto", padding: "4px 0 12px" }}>
