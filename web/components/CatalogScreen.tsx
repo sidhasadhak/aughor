@@ -399,9 +399,9 @@ function TableDetailPanel({ sel, onAsk }: {
               )}
               {!loading && filteredCols.map((col, i) => (
                 <div key={col.name}
-                  style={{ display: "grid", gridTemplateColumns: "1fr 110px 40px", padding: "6px 16px", borderBottom: "0.5px solid #111115", alignItems: "center", background: i % 2 === 0 ? "transparent" : "#0a0b0d" }}
+                  style={{ display: "grid", gridTemplateColumns: "1fr 110px 40px", padding: "6px 16px", borderBottom: "0.5px solid #111115", alignItems: "center", background: "transparent" }}
                   onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "#0f1218"}
-                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = i % 2 === 0 ? "transparent" : "#0a0b0d"}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}
                 >
                   <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
                     <span style={{ width: 6, height: 6, borderRadius: 2, flexShrink: 0, background: typeColor(col.type), opacity: 0.7 }} />
@@ -503,9 +503,9 @@ function SchemaDetailPanel({ sel, onSelectTable, onAsk }: {
             {tables.map((t, i) => (
               <div key={t.name}
                 onClick={() => onSelectTable(t)}
-                style={{ display: "grid", gridTemplateColumns: "1fr 80px 60px", padding: "8px 16px", borderBottom: "0.5px solid #111115", cursor: "pointer", alignItems: "center", background: i % 2 === 0 ? "transparent" : "#0a0b0d" }}
+                style={{ display: "grid", gridTemplateColumns: "1fr 80px 60px", padding: "8px 16px", borderBottom: "0.5px solid #111115", cursor: "pointer", alignItems: "center", background: "transparent" }}
                 onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "#0f1218"}
-                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = i % 2 === 0 ? "transparent" : "#0a0b0d"}
+                onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
                   <IcoTable size={12} />
@@ -598,9 +598,9 @@ function CatalogDetailPanel({ sel, onSelectSchema }: {
               return (
                 <div key={sc.name}
                   onClick={() => onSelectSchema(sc)}
-                  style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px", padding: "10px 16px", borderBottom: "0.5px solid #111115", cursor: "pointer", alignItems: "center", background: i % 2 === 0 ? "transparent" : "#0a0b0d" }}
+                  style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px", padding: "10px 16px", borderBottom: "0.5px solid #111115", cursor: "pointer", alignItems: "center", background: "transparent" }}
                   onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "#0f1218"}
-                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = i % 2 === 0 ? "transparent" : "#0a0b0d"}
+                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}
                 >
                   <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
                     <IcoSchema color="#5a7fa8" size={14} />
