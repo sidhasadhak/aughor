@@ -4,21 +4,21 @@
 @custom-variant dark (&:is(.dark *));
 
 /* ── Palantir Blueprint design system ───────────────────────────────────────
-   Fonts: IBM Plex Sans (UI) + IBM Plex Mono (data / code / monospace values)
+   Fonts: DM Sans (UI) + IBM Plex Mono (data / code / monospace values)
    Primary: Blueprint blue #2D72D2
    Shape: max 4px border-radius, 1px borders
    ───────────────────────────────────────────────────────────────────────── */
 
 @theme inline {
-  --font-sans: var(--font-ibm-plex-sans), system-ui, sans-serif;
+  --font-sans: var(--font-dm-sans), system-ui, sans-serif;
   --font-mono: var(--font-ibm-plex-mono), 'Consolas', monospace;
 }
 
 /* ── Dark mode design tokens (default) ─────────────────────────────────── */
 :root {
   /* Backgrounds */
-  --bg-0: #0B1018;
-  --bg-1: #111821;
+  --bg-0: #11171d;
+  --bg-1: #1f272e;
   --bg-2: #172030;
   --bg-3: #1C2839;
   --bg-4: #223246;
@@ -47,7 +47,7 @@
   --cyn1:  #0D2030; --cyn2:  #124060; --cyn3:  #1690BE; --cyn4:  #30B8E0; --cyn5:  #78D8F8;
 
   /* Typography */
-  --font-ui:   var(--font-ibm-plex-sans), system-ui, sans-serif;
+  --font-ui:   var(--font-dm-sans), system-ui, sans-serif;
   --font-mono: var(--font-ibm-plex-mono), 'Consolas', monospace;
 
   /* Radii — hard-edged Palantir style */
@@ -60,7 +60,7 @@
   --topbar:   48px;
 
   /* Misc */
-  --code-bg:   #090E15;
+  --code-bg:   #0d1117;
   --shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.35);
   --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.45);
 

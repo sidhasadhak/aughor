@@ -46,7 +46,7 @@ function DBSelect({ connections, selectedId, onSelect }: {
       {open && (
         <>
           <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-          <div className="absolute top-full left-0 mt-1 z-40 rounded-lg shadow-xl overflow-hidden" style={{ background: "#0d0e11", border: "0.5px solid #2a2b30", minWidth: "160px" }}>
+          <div className="absolute top-full left-0 mt-1 z-40 rounded-lg shadow-xl overflow-hidden" style={{ background: "#11171d", border: "0.5px solid #2a2b30", minWidth: "160px" }}>
             {connections.map(c => (
               <button
                 key={c.id}
@@ -111,7 +111,7 @@ export function CatalogPanel({ connectionId, onChatWithTable }: Props) {
   const filtered = q ? tables.filter(t => t.name.toLowerCase().includes(q)) : tables;
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden" style={{ background: "#0d0e11" }}>
+    <div className="flex-1 flex flex-col overflow-hidden" style={{ background: "#11171d" }}>
 
       {/* ── Header ── */}
       <div className="px-5 pt-4 pb-3 shrink-0" style={{ borderBottom: "0.5px solid #1e1f24" }}>

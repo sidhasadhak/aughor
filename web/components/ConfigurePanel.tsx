@@ -403,7 +403,7 @@ export function ConfigurePanel({ connectionId, connections, onSelectConn, onClos
       {/* Panel — anchored below topbars, not covering the header */}
       <div
         className="fixed right-0 bottom-0 z-50 flex flex-col border-l border-zinc-700/80 shadow-2xl"
-        style={{ top: "100px", width: "400px", background: "#0f1923" }}
+        style={{ top: "100px", width: "400px", background: "#11171d" }}
       >
         {/* Panel header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-700/60 shrink-0">

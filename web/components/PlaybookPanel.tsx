@@ -105,7 +105,7 @@ export function PlaybookPanel() {
   const provenCount  = entries.filter(e => e.historical_success_rate > 0).length;
 
   return (
-    <div className="flex h-full gap-0" style={{ background: "#0d0e11" }}>
+    <div className="flex h-full gap-0" style={{ background: "#11171d" }}>
 
       {/* ── Left list ── */}
       <div className="flex flex-col border-r" style={{ width: "340px", flexShrink: 0, borderColor: "#1e1f24" }}>

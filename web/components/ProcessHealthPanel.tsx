@@ -84,7 +84,7 @@ function MetricHealthCard({
         <button
           onClick={() => onInvestigate(item.label)}
           className="mt-auto text-[10.5px] px-2.5 py-1 rounded-[4px] transition-all text-left"
-          style={{ border: `0.5px solid ${s.border}`, background: "#0d0e11", color: s.text }}
+          style={{ border: `0.5px solid ${s.border}`, background: "#11171d", color: s.text }}
           onMouseEnter={e => (e.currentTarget.style.background = s.bg)}
           onMouseLeave={e => (e.currentTarget.style.background = "#0d0e11")}
         >

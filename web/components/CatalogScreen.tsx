@@ -73,15 +73,15 @@ function DetailHeader({
   meta?:       string;
 }) {
   return (
-    <div style={{ padding: "16px 20px 12px", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, background: "#0d0e11" }}>
+    <div style={{ padding: "16px 20px 12px", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, background: "#11171d" }}>
       {breadcrumb && (
-        <p style={{ fontSize: 10, color: "#3e3f4a", marginBottom: 6, fontFamily: "var(--font-mono)" }}>
+        <p style={{ fontSize: 10, color: "#3e3f4a", marginBottom: 6 }}>
           {breadcrumb}
         </p>
       )}
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <span style={{ color: "#6a6b75", display: "flex", alignItems: "center" }}>{icon}</span>
-        <span style={{ fontSize: 16, fontWeight: 600, color: "#e8e6e1", fontFamily: "var(--font-mono)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <span style={{ fontSize: 16, fontWeight: 600, color: "#e8e6e1", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {name}
         </span>
         {tag}
@@ -98,7 +98,7 @@ function TabBar({ tabs, active, onChange }: {
   onChange:(id: string) => void;
 }) {
   return (
-    <div style={{ display: "flex", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, padding: "0 8px", background: "#0d0e11" }}>
+    <div style={{ display: "flex", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, padding: "0 8px", background: "#11171d" }}>
       {tabs.map(t => (
         <button
           key={t.id}
@@ -127,7 +127,7 @@ function AboutSidebar({ title, rows }: {
   return (
     <div style={{
       width: 220, flexShrink: 0, borderLeft: "0.5px solid #1e1f24",
-      padding: "16px 16px", overflowY: "auto", background: "#090a0d",
+      padding: "16px 16px", overflowY: "auto", background: "#11171d",
     }}>
       <p style={{ fontSize: 11, fontWeight: 600, color: "#6a6b75", marginBottom: 12, textTransform: "uppercase", letterSpacing: "0.07em" }}>
         {title}
@@ -222,7 +222,7 @@ function AddConnForm({ onSave, onCancel }: { onSave: () => void; onCancel: () =>
   };
 
   return (
-    <form onSubmit={handle} style={{ padding: "10px 12px", background: "#0a0b0d", borderBottom: "0.5px solid #1e1f24", display: "flex", flexDirection: "column", gap: 8 }}>
+    <form onSubmit={handle} style={{ padding: "10px 12px", background: "#11171d", borderBottom: "0.5px solid #1e1f24", display: "flex", flexDirection: "column", gap: 8 }}>
       <p style={{ fontSize: 11, fontWeight: 500, color: "#9a9ba4" }}>New connection</p>
       <div><label style={L}>Name</label><input style={S} placeholder="My database" value={name} onChange={e => setName(e.target.value)} required /></div>
       <div>
@@ -293,7 +293,7 @@ function SampleGrid({ connId, tableName, schemaName }: { connId: string; tableNa
     <div style={{ flex: 1, overflow: "auto" }}>
       <table style={{ borderCollapse: "collapse", minWidth: "100%", fontSize: 11, fontFamily: "var(--font-mono)" }}>
         <thead>
-          <tr style={{ background: "#0a0b0d", position: "sticky", top: 0, zIndex: 1 }}>
+          <tr style={{ background: "#11171d", position: "sticky", top: 0, zIndex: 1 }}>
             {data.columns.map(col => (
               <th key={col} style={{ padding: "6px 12px", textAlign: "left", whiteSpace: "nowrap", borderBottom: "0.5px solid #1e1f24", borderRight: "0.5px solid #111115", fontSize: 10, color: "#5a5b62", fontWeight: 600, letterSpacing: "0.04em" }}>
                 {col}
@@ -316,7 +316,7 @@ function SampleGrid({ connId, tableName, schemaName }: { connId: string; tableNa
           ))}
         </tbody>
       </table>
-      <div style={{ padding: "5px 12px", borderTop: "0.5px solid #1e1f24", fontSize: 10, color: "#3e3f4a", background: "#0a0b0d" }}>
+      <div style={{ padding: "5px 12px", borderTop: "0.5px solid #1e1f24", fontSize: 10, color: "#3e3f4a", background: "#11171d" }}>
         {data.rows.length} row{data.rows.length !== 1 ? "s" : ""}
       </div>
     </div>
@@ -373,12 +373,12 @@ function TableDetailPanel({ sel, onAsk }: {
           {/* Main: column list */}
           <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
             {/* Filter row */}
-            <div style={{ padding: "10px 16px", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, background: "#0d0e11" }}>
+            <div style={{ padding: "10px 16px", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, background: "#11171d" }}>
               <FilterBox value={colFilter} onChange={setColFilter} placeholder="Filter columns…" />
             </div>
 
             {/* Column header */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 110px 40px", padding: "5px 16px", borderBottom: "0.5px solid #1e1f24", background: "#0a0b0d", flexShrink: 0 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 110px 40px", padding: "5px 16px", borderBottom: "0.5px solid #1e1f24", background: "#11171d", flexShrink: 0 }}>
               {["Column", "Type", ""].map(h => (
                 <span key={h} style={{ fontSize: 10, color: "#3e3f4a", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600 }}>{h}</span>
               ))}
@@ -441,7 +441,7 @@ function TableDetailPanel({ sel, onAsk }: {
       {/* ── Sample Data tab ── */}
       {tab === "sample" && (
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          <div style={{ padding: "10px 16px", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, background: "#0d0e11", display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ padding: "10px 16px", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, background: "#11171d", display: "flex", alignItems: "center", gap: 10 }}>
             <span style={{ fontSize: 11, color: "#4a4b57" }}>First 200 rows</span>
           </div>
           <SampleGrid connId={sel.connId} tableName={sel.table.name} schemaName={sel.schemaName} />
@@ -485,12 +485,12 @@ function SchemaDetailPanel({ sel, onSelectTable, onAsk }: {
         {/* Main: table list */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
           {/* Filter row */}
-          <div style={{ padding: "10px 16px", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, background: "#0d0e11" }}>
+          <div style={{ padding: "10px 16px", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, background: "#11171d" }}>
             <FilterBox value={filter} onChange={setFilter} placeholder="Filter tables…" />
           </div>
 
           {/* Table header */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 60px", padding: "5px 16px", borderBottom: "0.5px solid #1e1f24", background: "#0a0b0d", flexShrink: 0 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 60px", padding: "5px 16px", borderBottom: "0.5px solid #1e1f24", background: "#11171d", flexShrink: 0 }}>
             {["Name", "Rows", ""].map(h => (
               <span key={h} style={{ fontSize: 10, color: "#3e3f4a", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600, textAlign: h === "Rows" ? "right" as const : "left" as const }}>{h}</span>
             ))}
@@ -509,9 +509,9 @@ function SchemaDetailPanel({ sel, onSelectTable, onAsk }: {
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
                   <IcoTable size={12} />
-                  <span style={{ fontSize: 12, fontFamily: "var(--font-mono)", color: "#c8c7c3", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span>
+                  <span style={{ fontSize: 12, color: "#c8c7c3", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span>
                 </div>
-                <span style={{ fontSize: 11, color: "#4a4b57", fontFamily: "var(--font-mono)", textAlign: "right" }}>{fmtRows(t.row_count)}</span>
+                <span style={{ fontSize: 11, color: "#4a4b57", textAlign: "right" }}>{fmtRows(t.row_count)}</span>
                 {onAsk && (
                   <button
                     onClick={e => { e.stopPropagation(); onAsk(t.name, sel.connId); }}
@@ -578,12 +578,12 @@ function CatalogDetailPanel({ sel, onSelectSchema }: {
         {/* Main: schema list */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
           {/* Filter row */}
-          <div style={{ padding: "10px 16px", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, background: "#0d0e11" }}>
+          <div style={{ padding: "10px 16px", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, background: "#11171d" }}>
             <FilterBox value={filter} onChange={setFilter} placeholder="Filter schemas…" />
           </div>
 
           {/* Schema header */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px", padding: "5px 16px", borderBottom: "0.5px solid #1e1f24", background: "#0a0b0d", flexShrink: 0 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px", padding: "5px 16px", borderBottom: "0.5px solid #1e1f24", background: "#11171d", flexShrink: 0 }}>
             {["Name", "Tables", ""].map((h, i) => (
               <span key={h + i} style={{ fontSize: 10, color: "#3e3f4a", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600, textAlign: h === "Tables" ? "right" as const : "left" as const }}>{h}</span>
             ))}
@@ -605,7 +605,7 @@ function CatalogDetailPanel({ sel, onSelectSchema }: {
                   <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
                     <IcoSchema color="#5a7fa8" size={14} />
                     <div>
-                      <p style={{ fontSize: 12, fontFamily: "var(--font-mono)", fontWeight: 500, color: "#c8c7c3" }}>{sc.name}</p>
+                      <p style={{ fontSize: 12, fontWeight: 500, color: "#c8c7c3" }}>{sc.name}</p>
                       <p style={{ fontSize: 10, color: "#3e3f4a", marginTop: 1 }}>{schRows > 0 ? fmtRows(schRows) + " rows" : ""}</p>
                     </div>
                   </div>
@@ -695,7 +695,7 @@ function TreeRow({
       <span style={{ color: isSelected ? "#5a9af7" : "#6a6b75", display: "flex", alignItems: "center" }}>{icon}</span>
 
       <span style={{
-        fontSize: 12, fontFamily: "var(--font-mono)", flex: 1, minWidth: 0,
+        fontSize: 12, flex: 1, minWidth: 0,
         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
         color: isSelected ? "#e8e6e1" : "#c8c7c3", fontWeight: isSelected ? 500 : 400,
       }}>
@@ -705,7 +705,7 @@ function TreeRow({
       {badge}
 
       {count != null && (
-        <span style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "#3e3f4a", flexShrink: 0 }}>
+        <span style={{ fontSize: 9, color: "#3e3f4a", flexShrink: 0 }}>
           {count}
         </span>
       )}

@@ -1111,6 +1111,342 @@ python-docx>=1.0.0
 
 ---
 
+## Milestone 14 — Multi-Source Connector Platform
+
+**Goal:** Expand Aughor from a single-database analyst into a multi-system intelligence hub. Connect every data source the business actually uses — cloud warehouses, S3 data lakes, REST APIs, internal wikis — and enable cross-source SQL JOINs through a DuckDB federation layer. This is what turns Aughor from a "one database" tool into a "your entire data infrastructure" tool.
+
+**Strategic rationale:** The mid-market segment Aughor targets runs on 3–5 data systems simultaneously (Postgres + S3 + Salesforce + Snowflake is a common stack). Aughor's investigative quality is currently bounded by what's in a single connected database. Federation removes that ceiling. This is Palantir's MMDP — built on open-source DuckDB.
+
+**Architecture principle:** The federation namespace model must be designed in Phase 14a (as part of the connector framework) even though the federation layer ships in Phase 14d. Building warehouse + file connectors without this upfront design means retrofitting namespacing later — significantly harder. Design the query router at the start; populate it connector by connector.
+
+**Connector taxonomy:**
+
+| Category | Examples | Query pattern | Pattern |
+|---|---|---|---|
+| **Warehouse** | BigQuery, Snowflake, Azure SQL, MySQL | Direct SQL | Extend `DatabaseConnection` ABC |
+| **File/Object** | S3, Azure Blob, local CSV/Parquet/Excel | Materialize → DuckDB | `read_parquet()` / `read_csv_auto()` views |
+| **API/CRM** | Salesforce, HubSpot, Stripe | REST sync → materialize | Incremental sync → DuckDB mirror |
+| **Knowledge** | Confluence, Notion | Text extraction → embed | Extends existing M13d doc pipeline |
+
+---
+
+### Phase 14a — Connector Framework (Week 1)
+
+**What:** Unified registry-driven connector factory. All future connectors implement a shared ABC; existing DuckDB and Postgres connections are migrated into it. The federation namespace model is defined here — even though federation ships in 14d.
+
+**Package structure:**
+```
+aughor/connectors/
+├── __init__.py
+├── base.py          # Connector ABC — extends DatabaseConnection with connector_category + namespace
+├── registry.py      # Maps "bigquery" → BigQueryConnector, "s3" → S3Connector
+├── warehouse/       # SQL-speaking cloud warehouses
+├── file/            # S3, Azure Blob, local upload
+├── api/             # Salesforce, HubSpot, Stripe
+└── knowledge/       # Confluence, Notion (feeds document pipeline)
+```
+
+**`base.py`** — one new property on the existing ABC:
+```python
+@property
+@abstractmethod
+def connector_category(self) -> Literal["warehouse", "file", "api", "knowledge"]: ...
+
+@property
+def namespace(self) -> str:
+    """Short prefix used to qualify tables in federated queries."""
+    return self.connection_id
+```
+
+**Namespace model (critical for federation):** Each connector gets a `namespace` prefix. All tables in federated contexts are qualified:
+```
+samples.ecommerce.orders           — built-in sample catalog
+mywarehouse.public.customers       — connected Postgres
+bigquery_prod.analytics.events     — BigQuery
+s3_marketing.events                — S3 Parquet materialized into DuckDB
+salesforce_sync.opportunity        — Salesforce REST sync
+```
+
+**Files to create/modify:**
+- `aughor/connectors/__init__.py`, `base.py`, `registry.py`
+- `aughor/db/registry.py` — `register_connector_type()` routes type string through `connectors/registry.py`
+- `aughor/api.py` — `POST /connections` extended with type-routing through connector registry
+- `web/components/ConnectionsPanel.tsx` — dropdown extended with all registered connector types; per-type field config (project ID for BigQuery, account for Snowflake, bucket for S3, etc.)
+
+**New deps:** none (framework only; deps added per-connector in subsequent phases)
+**Dependency on:** Existing `DatabaseConnection` ABC ✅, connection registry ✅
+
+---
+
+### Phase 14b — Warehouse Connectors (Week 1–2)
+
+**What:** BigQuery, Snowflake, MySQL, Azure SQL — all extend the existing Postgres pattern. Same `execute()` / `get_schema()` / `test()` interface; differ only in auth, schema introspection SQL, and dialect.
+
+**Priority order by demand × effort:**
+
+| Connector | Effort | Auth | Schema source |
+|---|---|---|---|
+| **BigQuery** | 2 days | Service account JSON / ADC | `INFORMATION_SCHEMA.COLUMNS` per dataset |
+| **Snowflake** | 2 days | Account identifier + user/pass or key-pair | `INFORMATION_SCHEMA.COLUMNS` |
+| **MySQL / MariaDB** | 1 day | DSN string | `information_schema.columns` |
+| **Azure SQL / Synapse** | 2 days | ODBC connection string | `INFORMATION_SCHEMA.COLUMNS` |
+
+**Example: `BigQueryConnection`**
+```python
+class BigQueryConnection(DatabaseConnection):
+    connector_category = "warehouse"
+    dialect = "bigquery"
+    
+    def __init__(self, dsn: str, schema_name: str | None = None, connection_id: str | None = None):
+        from google.cloud import bigquery
+        self._client = bigquery.Client(project=dsn)
+        self._dataset = schema_name
+        
+    def dry_run(self, sql: str) -> tuple[bool, str]:
+        # BigQuery supports native dry_run — zero cost, validates SQL
+        job_config = bigquery.QueryJobConfig(dry_run=True, use_query_cache=False)
+        self._client.query(sql, job_config=job_config)
+        return True, ""
+```
+
+**Files to create:**
+- `aughor/connectors/warehouse/bigquery.py`
+- `aughor/connectors/warehouse/snowflake.py`
+- `aughor/connectors/warehouse/mysql.py`
+- `aughor/connectors/warehouse/azure_sql.py`
+
+**Add to `pyproject.toml`:**
+```toml
+[project.optional-dependencies]
+warehouse = [
+    "google-cloud-bigquery>=3.0.0",
+    "snowflake-connector-python>=3.0.0",
+    "pymysql>=1.0.0",
+    "pyodbc>=5.0.0",
+]
+```
+
+**Frontend:** Connection type dropdown gets BigQuery / Snowflake / MySQL / Azure SQL options; form fields change per type (project ID, account identifier, ODBC string, etc.)
+
+**New deps:** All optional — `uv pip install -e ".[warehouse]"`
+**Dependency on:** Phase 14a (connector framework + namespace model)
+
+---
+
+### Phase 14c — File/Object Connectors (Week 2)
+
+**What:** S3, Azure Blob, and local CSV/Excel/Parquet upload. These connectors don't implement `execute()` against a remote DB — they materialize files into an in-memory DuckDB connection and serve queries from there. The rest of the pipeline (schema introspection, ontology building, profiling) works unchanged.
+
+**Why local upload first:** Zero-credential onboarding. A user drops a CSV of their sales data and gets an autonomous analyst with zero database setup. This is the fastest path from "download" to "first insight" — critical for early user acquisition.
+
+**Pattern: materialize-into-DuckDB**
+```python
+class S3Connector(Connector):
+    connector_category = "file"
+    dialect = "duckdb"     # queries run against the materialized DuckDB
+    
+    def __init__(self, dsn: str, ...):
+        # dsn: "s3://bucket/prefix?region=us-east-1&key=...&secret=..."
+        self._duckdb = duckdb.connect(":memory:")
+        self._duckdb.execute("INSTALL httpfs; LOAD httpfs;")
+        self._duckdb.execute(f"""
+            CREATE SECRET (TYPE S3, KEY_ID '{key}', SECRET '{secret}', REGION '{region}')
+        """)
+        # CREATE VIEW table_name AS SELECT * FROM read_parquet('s3://bucket/prefix/*.parquet')
+
+class LocalUploadConnector(Connector):
+    connector_category = "file"
+    dialect = "duckdb"
+    
+    def ingest_file(self, file_path: Path, table_name: str) -> None:
+        ext = file_path.suffix.lower()
+        if ext == ".csv":
+            self._duckdb.execute(f"CREATE TABLE {table_name} AS SELECT * FROM read_csv_auto('{file_path}')")
+        elif ext == ".parquet":
+            self._duckdb.execute(f"CREATE TABLE {table_name} AS SELECT * FROM read_parquet('{file_path}')")
+        elif ext in (".xlsx", ".xls"):
+            self._duckdb.execute(f"CREATE TABLE {table_name} AS SELECT * FROM read_excel('{file_path}')")
+```
+
+**Files to create:**
+- `aughor/connectors/file/s3.py`
+- `aughor/connectors/file/azure_blob.py`
+- `aughor/connectors/file/local_upload.py`
+
+**Frontend:**
+- `local_upload` connection type → drag-and-drop zone in "Add Connection" flow; `POST /connections/{id}/upload` multipart endpoint
+- `s3` type → bucket / prefix / region / key / secret fields
+- Both display in the catalog tree exactly like any other connection — user sees table list, column types, sample data
+
+**New deps:**
+```toml
+[project.optional-dependencies]
+cloud-storage = ["azure-storage-blob>=12.0.0"]
+```
+DuckDB `httpfs` handles S3 natively (already bundled). No extra dep for local files.
+
+**Dependency on:** Phase 14a; existing `SampleGrid` in `CatalogScreen.tsx` for display ✅
+
+---
+
+### Phase 14d — Multi-Connector Federation Layer (Week 3)
+
+**What:** Cross-source SQL JOINs in a single query. User connects Postgres (orders) + S3 Parquet (marketing events) + Snowflake (financial data). Aughor generates SQL that JOINs across all three. Uses DuckDB's native `ATTACH`, `postgres_scanner`, and `httpfs` as the federation engine.
+
+**This is the 10x feature.** Every other connector adds one more source. Federation makes every combination of sources queryable together. The investigation "why did Q3 revenue drop?" can now draw on Postgres orders, Salesforce pipeline, and S3 marketing spend in a single analysis.
+
+**Implementation:**
+```python
+class FederatedConnection(DatabaseConnection):
+    """Aggregates multiple connectors into a single DuckDB namespace."""
+    connector_category = "warehouse"
+    dialect = "duckdb"
+    
+    def __init__(self, connectors: list[Connector]):
+        self._duckdb = duckdb.connect(":memory:")
+        for conn in connectors:
+            if conn.dialect == "postgres":
+                self._duckdb.execute(
+                    f"ATTACH '{conn.dsn}' AS {conn.namespace} (TYPE postgres)"
+                )
+            elif isinstance(conn, S3Connector):
+                # Copy S3 DuckDB views into federated namespace
+                for view_name, view_sql in conn.list_views():
+                    self._duckdb.execute(
+                        f"CREATE VIEW {conn.namespace}__{view_name} AS {view_sql}"
+                    )
+            elif isinstance(conn, (BigQueryConnection, SnowflakeConnection)):
+                # Materialize a working set into DuckDB for cross-source JOINs
+                for table in conn.list_tables():
+                    df = conn.sample(table, limit=500_000)
+                    self._duckdb.register(f"{conn.namespace}__{table}", df)
+```
+
+**Schema context for federation:** `build_schema_context()` for a `FederatedConnection` emits tables with their namespace prefix and cross-namespace join hints from existing fuzzy join inference (2i ✅):
+```
+FEDERATED SOURCES (3 active):
+  mywarehouse__orders          (Postgres · 2.1M rows)
+  s3_marketing__events         (S3 Parquet · 5.4M rows)
+  salesforce_sync__opportunity (Salesforce sync · 12k rows)
+
+CROSS-SOURCE JOIN HINT:
+  mywarehouse__orders.customer_id ↔ salesforce_sync__opportunity.account_id [inferred]
+```
+
+**Query routing logic:**
+- Single namespace in query → route to that connector's native `execute()` (faster, dialect-correct)
+- Multiple namespaces detected → route to `FederatedConnection._duckdb` (all sources in one DuckDB)
+
+**UI:** "Create Federated View" option in the catalog sidebar — user selects 2+ connections, assigns a name, and a new federated entry appears in the catalog tree. The detail panel shows combined schemas across all participating sources.
+
+**Files to create:**
+- `aughor/connectors/federated.py`
+- `aughor/api.py` — `POST /connections/federate { connection_ids: list[str], name: str }`, `GET /connections/{id}/federation-members`
+
+**New deps:** none (DuckDB `postgres_scanner` + `httpfs` already bundled)
+**Dependency on:** Phases 14a, 14b, 14c (needs at least 2 connectors to federate); join inference (2i ✅) for cross-namespace hints
+
+---
+
+### Phase 14e — API/CRM Connectors (Week 3–4)
+
+**What:** Salesforce, HubSpot, Stripe. Each syncs via REST API and materializes into a local DuckDB mirror. The rest of the pipeline — SQL generation, ontology building, profiling, domain intelligence — works completely unchanged. The user queries Salesforce data the same way they query their Postgres database.
+
+**Architecture note — build a `RestApiSync` base first:** Production API connectors deal with OAuth token refresh, bulk API rate limits (Salesforce has hard per-day limits), incremental sync state (cursor-based, timestamp-based), and custom fields that vary per org. Build a shared `RestApiSync` base class with incremental state management, then implement Salesforce/HubSpot/Stripe on top of it.
+
+```python
+class RestApiSync(Connector):
+    """Base for all REST API connectors. Manages incremental sync state."""
+    
+    def _load_sync_state(self) -> dict: ...   # reads from data/sync_{conn_id}.json
+    def _save_sync_state(self, state: dict) -> None: ...
+    def _sync_incremental(self, obj: str, since: datetime) -> list[dict]: ...
+    
+class SalesforceConnector(RestApiSync):
+    connector_category = "api"
+    dialect = "duckdb"
+    _OBJECTS = ["Account", "Contact", "Opportunity", "Lead", "Case"]
+    
+    def _sync_incremental(self, obj: str, since: datetime) -> list[dict]:
+        soql = f"SELECT Id, Name, ... FROM {obj} WHERE LastModifiedDate > {since.isoformat()}Z"
+        return self._sf.query_all(soql)["records"]
+```
+
+**Why after Phase 14d:** Salesforce data becomes far more valuable when it can JOIN with warehouse data. Ship the federation layer first so Salesforce + Postgres cross-source queries work on day one.
+
+**Files to create:**
+- `aughor/connectors/api/base_sync.py` — `RestApiSync` with incremental state management
+- `aughor/connectors/api/salesforce.py`
+- `aughor/connectors/api/hubspot.py`
+- `aughor/connectors/api/stripe.py`
+
+**Add to `pyproject.toml`:**
+```toml
+[project.optional-dependencies]
+crm = ["simple-salesforce>=1.12.0", "hubspot-api-client>=8.0.0", "stripe>=7.0.0"]
+```
+
+**Dependency on:** Phase 14a (framework); Phase 14d (federation — so SFDC JOINs with warehouse immediately)
+
+---
+
+### Phase 14f — Knowledge Connectors (Week 4)
+
+**What:** Confluence and Notion. Unlike database connectors, these don't implement `execute()` — they are knowledge source connectors that feed into the existing `aughor_documents` Qdrant collection built in M13d ✅. The entire document ingestion, chunking, embedding, and synthesis pipeline already handles everything downstream.
+
+**Pattern — extend the existing document pipeline with live API sources:**
+```python
+class ConfluenceConnector:
+    """Extracts Confluence pages and indexes into aughor_documents Qdrant collection."""
+    connector_category = "knowledge"
+    
+    def sync(self, space_key: str, conn_id: str) -> int:
+        pages = self._fetch_all_pages(space_key)       # GET /rest/api/content?spaceKey=...
+        for page in pages:
+            text = html_to_text(page.body_storage)
+            chunks = chunk_text(text, size=400, overlap=100)
+            index_document(conn_id, doc_id=page.id, chunks=chunks, source=page.url)
+        return len(pages)
+```
+
+**What changes from file upload (M13d):** The source is a live API (Confluence, Notion) instead of a user-uploaded file. The chunking, embedding, and Qdrant upsert path is identical. The `DocumentUploader.tsx` UI gets a "Connect Confluence" flow alongside the drag-and-drop zone.
+
+**Files to create:**
+- `aughor/connectors/knowledge/confluence.py`
+- `aughor/connectors/knowledge/notion.py`
+
+**Add to `pyproject.toml`:**
+```toml
+[project.optional-dependencies]
+knowledge-sync = ["atlassian-python-api>=3.41.0", "notion-client>=2.2.0"]
+```
+
+**New deps:** optional; the document pipeline itself has no new deps
+**Dependency on:** Phase 14a (framework); M13d Document Ingestion ✅ (Qdrant collection, indexer, chunker all in place)
+
+---
+
+## Milestone 15 — Operational Write-Back (Action Hub)
+
+**Goal:** Close the "data-to-decision" gap. When Aughor surfaces a recommendation — "review return policy," "flag seller performance," "increase reorder threshold" — the user can act on it without leaving Aughor: create a Jira ticket, post to Slack, trigger a Zapier workflow, or call any webhook.
+
+**Why this comes last:** The trust layer must be established first. Users will not automate actions on analysis they haven't yet validated. The playbook outcome tracking (M13c ✅) is the prerequisite — it proves recommendation quality over time and gives users the confidence to act. The Action Hub is only useful after users have actioned enough playbook entries to trust the system. Shipping it too early adds automation risk on top of an unvalidated analyst.
+
+**Architecture — lightweight webhook dispatch:** Not full ERP integration. Configurable webhook endpoints that fire when a recommendation is actioned. The user defines integrations (Slack, Jira, Zapier, n8n, custom HTTP); Aughor fires them with recommendation context as the payload.
+
+**Files to create:**
+- `aughor/actions/models.py` — `ActionTrigger`: `id`, `name`, `type: Literal["webhook","slack","jira"]`, `url: str`, `headers: dict`, `enabled: bool`; `ActionPayload`: recommendation text, investigation ID, metric name, before/after values
+- `aughor/actions/executor.py` — `fire_action(trigger: ActionTrigger, payload: ActionPayload)`: async HTTP POST via `httpx`; logs result to audit trail; handles 4xx/5xx with retry
+- `aughor/api.py` — `GET/POST/PUT/DELETE /actions/triggers`; `POST /investigations/{inv_id}/recommendations/{rec_id}/execute { trigger_id }` — fires configured trigger and logs outcome
+- `web/components/ActionHubPanel.tsx` — configure webhook integrations (name, URL, headers, test fire); browsable per-recommendation "Execute →" button that appears in `RecommendationCard` alongside "Mark Done"
+
+**What this enables:** User sees "Refund Rate at 14% — recommended: audit top-10 return SKUs." Instead of copying text into Jira, they click "Execute →", pick the Jira trigger, and a ticket is created with the full investigation context as the description. The outcome is auto-logged to M13c.
+
+**New deps:** none (`httpx` already in stack for async HTTP)
+**Dependency on:** M13c Outcome Tracking ✅ (trust calibration prerequisite); M14 connectors (so actions can reference federated source context); M6 Audit Trail (so every fired action is logged immutably)
+
+---
+
 ## Build Sequence & Dependency Graph
 
 **Recommended sprint order — each sprint compounds on the last:**
@@ -1129,13 +1465,24 @@ python-docx>=1.0.0
 | **11 — Infra Evolution** ✅ | M3 (ibis + Connector-X + Materializer) | ibis optional backend; connectorx bulk_read; sidecar DuckDB query cache |
 | **12 — Provider Flexibility** | M5 (Anthropic backend + prompt caching) | Cloud deployment fallback when Ollama unavailable |
 | **13 — Infrastructure polish** ✅ | Plan-then-SQL (49) + Non-blocking event loop (50) + Loading hardening (51) + Stat cards (52) + Schema cache (53) | Clean two-stage planner; zero-blocking API; instant panel renders |
-| **14 — BI Layer: Health** | M13a (Metric Targets + Health Scorecard) | Aughor shows process health proactively on open; reactive Q&A → proactive monitoring |
-| **15 — BI Layer: Playbook** | M13b (Playbook from KB) | KB causal chains become reusable, retrievable interventions; recommendations stop being hallucinated |
-| **16 — BI Layer: Feedback** | M13c (Outcome Tracking) | Recommendations get a success rate; system learns from organisational history |
-| **17 — BI Layer: Context** | M13d (Document Ingestion) | SOPs, return policies, strategy docs feed into synthesis; Qdrant infra already ready |
-| **18 — BI Layer: Process Map** | M13e (Business Process Visual Mapper) | Swimlane health diagram; click red step → ADA investigation |
+| **14 — BI Layer: Health** ✅ | M13a (Metric Targets + Health Scorecard) | Aughor shows process health proactively on open; reactive Q&A → proactive monitoring |
+| **15 — BI Layer: Playbook** ✅ | M13b (Playbook from KB) | KB causal chains become reusable, retrievable interventions; recommendations stop being hallucinated |
+| **16 — BI Layer: Feedback** ✅ | M13c (Outcome Tracking) | Recommendations get a success rate; system learns from organisational history |
+| **17 — BI Layer: Context** ✅ | M13d (Document Ingestion) | SOPs, return policies, strategy docs feed into synthesis; Qdrant infra already ready |
+| **18 — BI Layer: Process Map** ✅ | M13e (Business Process Visual Mapper) | Swimlane health diagram; click red step → ADA investigation |
 | **19 — BI Layer: Causal Twin** | M13f (Causal Graph in Ontology) | ADA waterfalls write causal edges; algorithmic root-cause traversal |
-| **20 — Quality Gates** | M10 (Evals — Braintrust) | CI regression testing on verdict quality |
+| **20 — Catalog UX + Hardening** ✅ | Catalog 3-panel (60) + Phase 8 gate (61) + Connection persistence (62) | Databricks-style catalog; domain intel always has ontology; connections survive restart |
+| **21 — Security baseline** | M6 partial (Gradient Safety 6e + PII 6a + Audit 6c + Budget 6b) | Immutable audit trail before multi-source data flows; PII never reaches LLM |
+| **22 — Connector Framework** | M14a (base ABC + registry + namespace model) | Foundation all future connectors build on; federation namespace designed now |
+| **23 — Warehouse connectors** | M14b (BigQuery + Snowflake + MySQL + Azure SQL) | Two highest-demand cloud warehouses; same investigation quality on any warehouse |
+| **24 — File connectors** | M14c (S3 + local upload) | Data lake analytics; zero-credential onboarding via CSV/Excel drop |
+| **25 — Federation layer** | M14d (FederatedConnection + query router + catalog UI) | Cross-source JOINs; Postgres orders + S3 events + Salesforce pipeline in one query |
+| **26 — API connectors** | M14e (Salesforce + HubSpot + Stripe) | After federation — SFDC JOINs with warehouse data on day one |
+| **27 — Knowledge connectors** | M14f (Confluence + Notion) | Extends existing document pipeline; institutional knowledge from live wikis |
+| **28 — Enterprise Security** | M6 full (SSO/OIDC + RBAC + Vault credential backend) | Enterprise procurement gate; multi-tenant safe |
+| **29 — Action Hub** | M15 (webhook write-back + Slack/Jira triggers) | Data-to-decision loop; after outcome tracking proves recommendation quality |
+| **30 — Analytical depth** | M4 (Prophet forecasting) + M2d (Events Calendar) | "Is this drop unusual *given the trend*?" |
+| **31 — Quality gates** | M10 (Evals — Braintrust) + M7 (Observability) | CI regression testing; Langfuse traces on real cloud costs |
 
 ```
 History ✅
@@ -1211,6 +1558,23 @@ Ontology lifecycle states (M12a) ✅ + Explorer join verification (42) ✅ + Ont
 ADA attribution waterfall (investigate.py) ✅ + OntologyGraph (M12b) ✅ + Playbook (M13b)
     └── M13f: Causal Graph  ←  extract causal edges from ADA waterfalls after each investigation; BFS backward traversal root cause → playbook action
             └── OntologyCanvas: dashed causal arrows alongside solid structural edges
+
+DatabaseConnection ABC ✅ + Connection registry ✅
+    └── M14a: Connector Framework  ←  base ABC + registry + namespace model; federation namespace designed here
+            └── M14b: Warehouse connectors  ←  BigQuery / Snowflake / MySQL / Azure SQL; same DatabaseConnection interface
+            └── M14c: File connectors  ←  S3 + Azure Blob + local upload; materialize-into-DuckDB pattern
+            │       └── M14d: Federation layer  ←  FederatedConnection + query router; DuckDB ATTACH + postgres_scanner
+            │               └── M14e: API connectors  ←  Salesforce + HubSpot + Stripe; ship AFTER federation so cross-source JOINs work on day one
+            └── M14f: Knowledge connectors  ←  Confluence + Notion; extends M13d doc pipeline (Qdrant + indexer already in place)
+
+M13c: Outcome Tracking ✅ + M14: Connector Platform + M6: Audit Trail
+    └── M15: Action Hub  ←  webhook write-back; trust earned via outcome history; audit every fired action; richest when multiple sources connected
+
+Join Inference (2i) ✅
+    └── M14d: Federation layer  ←  cross-namespace join hints reuse fuzzy join inference from 2i
+
+Security baseline (M6 partial) → must land before Sprint 26 (API connectors) when CRM credentials enter the registry
+    └── M6 full (SSO/OIDC + RBAC + Vault)  ←  enterprise procurement gate; after connectors are proven
 ```
 
 ---
@@ -1227,6 +1591,11 @@ ADA attribution waterfall (investigate.py) ✅ + OntologyGraph (M12b) ✅ + Play
 | SQL safety | **SQLGlot** | Parse + transpile; SELECT-only allowlist |
 | Query abstraction | **ibis** (roadmap) | Backend-agnostic; same code → DuckDB/BigQuery/Snowflake |
 | Query engine | **DuckDB** | In-process OLAP, Arrow-native, zero-latency |
+| Federation engine | **DuckDB ATTACH + postgres_scanner + httpfs** | Cross-source JOINs: Postgres + S3 + Snowflake in one query (M14d) |
+| Warehouse connectors | **BigQuery, Snowflake, MySQL, Azure SQL** | All implement `DatabaseConnection` ABC; optional `[warehouse]` dep group (M14b) |
+| File connectors | **S3, Azure Blob, local CSV/Parquet/Excel** | Materialize via `read_parquet()` / `read_csv_auto()` into DuckDB; zero-credential onboarding (M14c) |
+| API connectors | **Salesforce, HubSpot, Stripe** | REST sync → DuckDB mirror; `RestApiSync` base + incremental state; optional `[crm]` group (M14e) |
+| Knowledge connectors | **Confluence, Notion** | Live API → existing `aughor_documents` Qdrant pipeline; optional `[knowledge-sync]` group (M14f) |
 | Bulk reads | **Connector-X** (roadmap) | Fast Arrow reads from Postgres/Snowflake |
 | Materialization | **QueryMaterializer** (sidecar DuckDB) | 24-hour soft TTL; upsert cache; `hermes_mat.duckdb`; SQLMesh deferred |
 | Semantic layer | **dbt** | Single source of truth for metric definitions |
@@ -1356,6 +1725,66 @@ ADA attribution waterfall (investigate.py) ✅ + OntologyGraph (M12b) ✅ + Play
 - `python-multipart` added to `pyproject.toml` (was runtime-missing, crashed document upload endpoint)
 - Recovery runbook documented in project memory: kill all → `rm -rf web/.next` → `./start.sh` → hard-refresh browser
 
-**After M13:** M6 + M7 (Security + Observability) → M4 (Prophet) + M2d (Events Calendar) → M11 (Visual Builder) → M10 (Evals)
+**After M13:** M14 (Multi-Source Connector Platform) → M6 Security baseline → M15 (Action Hub) → M6 Enterprise Security full → M4 (Prophet) + M2d (Events Calendar) → M11 (Visual Builder) → M10 (Evals) + M7 (Observability)
 
 **Deferred:** M5 Provider Switcher (Anthropic backend) — moved to near-end; M6 Security must land before any multi-tenant or enterprise deployment
+
+**Sprint 21 — M6 Security baseline (next):**
+- `aughor/security/safety.py` — `SafetyVerdict` enum gains `SUSPICIOUS`; `_score_suspicious()` heuristic layer on top of existing SQLGlot structural check
+- `aughor/security/pii.py` — `scan_and_redact()` via Microsoft Presidio; called on every `QueryResult` before LLM sees it
+- `aughor/security/audit.py` — `AuditLogger`; append-only `data/audit.db`; logs every query execution with `(investigation_id, sql, row_count, pii_redacted, timestamp)`
+- `aughor/security/sandbox.py` — `QueryBudget`; per-connection configurable row/time/query limits
+- Must land before Sprint 22 (connector framework) — every new connector's queries go through audit from day one
+
+**Sprint 22 — M14a: Connector Framework:**
+- `aughor/connectors/` package: `base.py` (Connector ABC + `connector_category` + `namespace`), `registry.py` (type-string → class mapping)
+- Namespace model locked in here — all future connectors register with a namespace prefix
+- `aughor/db/registry.py` — routes `conn_type` through connector registry; existing DuckDB + Postgres migrated to new framework
+- Frontend: connection type dropdown extended; per-type field config component
+
+**Sprint 23 — M14b: Warehouse connectors:**
+- BigQuery: `google-cloud-bigquery`; `INFORMATION_SCHEMA.COLUMNS` + native `dry_run`
+- Snowflake: `snowflake-connector-python`; account identifier auth
+- MySQL: `pymysql`; same pattern as Postgres
+- Azure SQL: `pyodbc`; T-SQL dialect via SQLGlot
+- All optional under `[warehouse]` dep group
+
+**Sprint 24 — M14c: File connectors:**
+- Local upload: drag-and-drop in "Add Connection"; `POST /connections/{id}/upload` multipart; CSV/Parquet/Excel via DuckDB native readers
+- S3: bucket/prefix/region/key/secret fields; DuckDB `httpfs` + `CREATE SECRET`; auto-discovers Parquet files as views
+- Azure Blob: `azure-storage-blob` + DuckDB `httpfs` Azure path support
+
+**Sprint 25 — M14d: Federation layer:**
+- `aughor/connectors/federated.py` — `FederatedConnection`; DuckDB `ATTACH` for Postgres; view-copy for S3/file connectors
+- Schema context emits namespaced tables + cross-namespace join hints (reuses 2i fuzzy join inference)
+- Query router: single-namespace → native connector; multi-namespace → federated DuckDB
+- `POST /connections/federate` API + "Create Federated View" in catalog UI
+
+**Sprint 26 — M14e: API connectors:**
+- `aughor/connectors/api/base_sync.py` — `RestApiSync` base: incremental state in `data/sync_{id}.json`, OAuth token refresh, bulk API rate limiting
+- Salesforce: SOQL bulk query; standard objects (Account/Contact/Opportunity/Lead); custom fields via `describe()`
+- HubSpot: CRM objects API v3; contacts/companies/deals
+- Stripe: Events + Charges + Customers; cursor-based pagination
+- All under optional `[crm]` dep group
+
+**Sprint 27 — M14f: Knowledge connectors:**
+- `aughor/connectors/knowledge/confluence.py` — space sync via Confluence REST API; HTML-to-text extraction; feeds existing `aughor_documents` Qdrant collection
+- `aughor/connectors/knowledge/notion.py` — page/database export via Notion API v1; block-to-text conversion
+- `DocumentUploader.tsx` extended with "Connect Confluence / Notion" live sync option
+
+**Sprint 28 — M6 Enterprise Security (full):**
+- FastAPI OAuth2/OIDC middleware (`python-jose` + `authlib`)
+- `user_id` scoping on investigations and connections (row-level in SQLite stores)
+- RBAC: viewer / analyst / admin roles; connection-level permissions
+- `VaultBackend` in `aughor/db/registry.py` — HashiCorp Vault credential backend for production deployments
+
+**Sprint 29 — M15: Action Hub:**
+- `aughor/actions/models.py` + `executor.py` — `ActionTrigger` model; async `httpx` webhook dispatch; logs to audit trail
+- `GET/POST/PUT/DELETE /actions/triggers` + `POST /investigations/{inv_id}/recommendations/{rec_id}/execute`
+- `web/components/ActionHubPanel.tsx` — configure webhook integrations; "Execute →" button in `RecommendationCard`
+
+**Sprint 30 — Analytical depth + Quality gates:**
+- M4 Prophet forecasting: `forecast_anomaly()` in `aughor/tools/stats.py`; trend context in ADA synthesis ("underlying problem started 3 weeks ago")
+- M2d Events Calendar: `data/events.yaml`; `lookup_events()` tool node; prevents promo drops flagged as anomalies
+- M10 LLM Evals (Braintrust): 50-question golden dataset from investigation history; `verdict_accuracy`, `query_efficiency`, `hallucination_rate` scorers; CI gate on agent PRs
+- M7 Observability (Langfuse + OpenTelemetry): most valuable now that cloud LLM calls (Anthropic) have real token costs to trace

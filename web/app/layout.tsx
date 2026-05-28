@@ -1,11 +1,21 @@
 import type { Metadata } from "next";
-import { IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
+import localFont from "next/font/local";
+import { IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
 
-const ibmPlexSans = IBM_Plex_Sans({
-  variable: "--font-ibm-plex-sans",
-  subsets: ["latin"],
-  weight: ["300", "400", "500", "600"],
+const dmSans = localFont({
+  src: [
+    {
+      path: "../public/fonts/DMSans-VariableFont_opsz,wght.ttf",
+      style: "normal",
+    },
+    {
+      path: "../public/fonts/DMSans-Italic-VariableFont_opsz,wght.ttf",
+      style: "italic",
+    },
+  ],
+  variable: "--font-dm-sans",
+  display: "swap",
 });
 
 const ibmPlexMono = IBM_Plex_Mono({
@@ -27,7 +37,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${ibmPlexSans.variable} ${ibmPlexMono.variable} h-full antialiased`}
+      className={`${dmSans.variable} ${ibmPlexMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">{children}</body>
     </html>

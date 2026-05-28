@@ -83,7 +83,7 @@ function EpisodeRow({ ep, domain }: { ep: ExplorationEpisode; domain: string }) 
           <div>
             <p className="text-[9px] uppercase tracking-widest mb-1" style={{ color: "#3e3f4a" }}>SQL</p>
             <pre className="text-[10px] font-mono leading-relaxed overflow-x-auto rounded p-2"
-              style={{ background: "#0d0e11", color: "#6e6f78", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+              style={{ background: "#11171d", color: "#6e6f78", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
               {ep.sql}
             </pre>
           </div>
@@ -167,7 +167,7 @@ function FindingCard({ insight }: { insight: ExplorationInsight }) {
       {sqlOpen && insight.sql && (
         <pre style={{
           marginTop: 8, fontSize: 10, fontFamily: "var(--font-mono)",
-          color: "#5a5b62", background: "#0a0b0d", borderRadius: 4,
+          color: "#5a5b62", background: "#11171d", borderRadius: 4,
           padding: "8px 10px", overflowX: "auto",
           whiteSpace: "pre-wrap", wordBreak: "break-all",
           border: "0.5px solid #1a1b20",
@@ -249,7 +249,7 @@ function DomainOverviewCard({ domain, data, onSelect, connectionId, onExtend }: 
       </div>
 
       {/* Body */}
-      <div style={{ padding: "10px 14px 12px", background: "#0d0e11" }}>
+      <div style={{ padding: "10px 14px 12px", background: "#11171d" }}>
         {/* Novelty breakdown */}
         {breakdown.length > 0 ? (
           <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginBottom: 10 }}>

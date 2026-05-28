@@ -131,7 +131,7 @@ function DataTable({ columns, rows, label }: { columns: string[]; rows: (string 
         {label} · {rows.length} rows
       </button>
       {open && (
-        <div className="mt-1.5 overflow-x-auto rounded-lg border border-zinc-800" style={{ background: "#0d131a" }}>
+        <div className="mt-1.5 overflow-x-auto rounded-lg border border-zinc-800" style={{ background: "#11171d" }}>
           <table className="w-full text-[11px]">
             <thead>
               <tr className="border-b border-zinc-800">
@@ -175,7 +175,7 @@ function EvidenceBlock({ finding }: { finding: InvestigationFinding }) {
     <div className="space-y-2.5">
       {/* Chart — first, most prominent */}
       {hasChart && (
-        <div className="rounded-xl border border-zinc-800/60 overflow-hidden p-3" style={{ background: "#0f1923" }}>
+        <div className="rounded-xl border border-zinc-800/60 overflow-hidden p-3" style={{ background: "#11171d" }}>
           <p className="text-[11px] text-zinc-500 mb-2">{finding.title}</p>
           <InvestigationChart columns={finding.columns} rows={finding.rows as unknown[][]} />
         </div>
@@ -290,7 +290,7 @@ function PhaseSection({
         <div className={`ml-6 mt-1 space-y-5 pb-2 ${isIntake ? "opacity-70" : ""}`}>
           {isIntake ? (
             // Intake: render as a compact key-value block
-            <div className="rounded-lg border border-zinc-800/50 overflow-hidden" style={{ background: "#0d131a" }}>
+            <div className="rounded-lg border border-zinc-800/50 overflow-hidden" style={{ background: "#11171d" }}>
               <table className="w-full text-[11px]">
                 <tbody>
                   {findings[0]?.rows?.map((row, i) => (
@@ -514,7 +514,7 @@ function StreamingPhaseCard({ phase }: { phase: InvestigationPhase }) {
       {findings.map(f => (
         <div key={f.finding_id} className="space-y-1.5 pl-2">
           {f.columns.length > 0 && f.rows.length >= 2 && f.chart_type !== "none" && (
-            <div className="rounded-lg border border-zinc-800/60 overflow-hidden p-2" style={{ background: "#0f1923" }}>
+            <div className="rounded-lg border border-zinc-800/60 overflow-hidden p-2" style={{ background: "#11171d" }}>
               <InvestigationChart columns={f.columns} rows={f.rows as unknown[][]} />
             </div>
           )}

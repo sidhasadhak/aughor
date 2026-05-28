@@ -138,7 +138,7 @@ function StatusBar({ status, stopped, onStop, onResume, onRestart, stopping, res
   const isStopped = stopped || status.paused || status.phase === "pending";
   const meta = phaseMeta(status.phase);
   return (
-    <div className="flex items-center gap-3 px-4 py-2 border-b shrink-0" style={{ borderColor: "#1e1f24", background: "#0d0e11" }}>
+    <div className="flex items-center gap-3 px-4 py-2 border-b shrink-0" style={{ borderColor: "#1e1f24", background: "#11171d" }}>
       <span className="flex items-center gap-1.5 text-[10px] px-2 py-0.5 rounded font-medium"
         style={isStopped && !isRunning ? { background: "#1e1f24", color: "#5a5b62" } : { background: meta.bg, color: meta.color }}>
         {isRunning && <span className="inline-block w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: meta.color }} />}
@@ -201,7 +201,7 @@ function RetryPanel({ ep, connectionId, errorMsg }: { ep: ExplorationEpisode; co
   );
 
   return (
-    <div className="rounded-md p-3 space-y-2 mt-2" style={{ background: "#0f1018", border: "0.5px solid #2a2b35" }}>
+    <div className="rounded-md p-3 space-y-2 mt-2" style={{ background: "#11171d", border: "0.5px solid #2a2b35" }}>
       <p className="text-[9px] uppercase tracking-widest" style={{ color: "#3e3f4a" }}>Guidance (optional)</p>
       <div className="flex gap-2">
         <input type="text" value={hint} onChange={e => setHint(e.target.value)}
@@ -221,11 +221,11 @@ function RetryPanel({ ep, connectionId, errorMsg }: { ep: ExplorationEpisode; co
         <div className="space-y-2 pt-1">
           {result.explanation && <p className="text-[11px]" style={{ color: "#7ba8f7" }}>{result.explanation}</p>}
           <pre className="text-[10px] font-mono rounded p-2 overflow-x-auto"
-            style={{ background: "#0a0b0e", color: "#5a5b62", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+            style={{ background: "var(--code-bg)", color: "#5a5b62", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
             {result.corrected_sql}
           </pre>
           {result.ok ? (
-            <div className="overflow-x-auto rounded" style={{ background: "#0a0b0e" }}>
+            <div className="overflow-x-auto rounded" style={{ background: "var(--code-bg)" }}>
               <table className="text-[10px] font-mono w-full">
                 <thead><tr>{result.columns.map(c => (
                   <th key={c} className="px-2 py-1 text-left font-medium"
@@ -261,7 +261,7 @@ function ExpandedDetail({ ep, connectionId }: { ep: ExplorationEpisode; connecti
       {/* SQL */}
       <div>
         <p style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "#2e2f37", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>SQL</p>
-        <pre style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "#5a5b62", background: "#0a0b0d", border: "0.5px solid #1a1b20", borderRadius: 4, padding: "8px 10px", overflowX: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all", lineHeight: 1.6, margin: 0 }}>
+        <pre style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "#5a5b62", background: "#11171d", border: "0.5px solid #1a1b20", borderRadius: 4, padding: "8px 10px", overflowX: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all", lineHeight: 1.6, margin: 0 }}>
           {ep.sql || "(no sql)"}
         </pre>
       </div>
@@ -311,7 +311,7 @@ function LogTable({ items, connectionId, sortCol, sortDir, onSort }: LogTablePro
 
   const TH: React.CSSProperties = {
     position: "sticky", top: 0, zIndex: 1,
-    background: "#0a0b0d",
+    background: "#11171d",
     padding: "7px 8px",
     textAlign: "left", fontSize: 9,
     fontFamily: "var(--font-mono)", color: "#3e3f4a",
@@ -451,7 +451,7 @@ function LogTable({ items, connectionId, sortCol, sortDir, onSort }: LogTablePro
 
 function Seg<T extends string>({ value, options, onChange }: { value: T; options: { v: T; label: string }[]; onChange: (v: T) => void }) {
   return (
-    <div style={{ display: "flex", gap: 1, padding: 2, background: "#0a0b0d", borderRadius: 5, border: "0.5px solid #1a1b20" }}>
+    <div style={{ display: "flex", gap: 1, padding: 2, background: "#11171d", borderRadius: 5, border: "0.5px solid #1a1b20" }}>
       {options.map(o => (
         <button key={o.v} onClick={() => onChange(o.v)} style={{
           fontSize: 10, padding: "3px 9px", borderRadius: 4, cursor: "pointer",
@@ -554,7 +554,7 @@ export function ActivityLog({ connectionId, isActive }: Props) {
 
       {/* Filter + controls bar */}
       <div className="flex items-center gap-2.5 px-4 py-2 border-b shrink-0 flex-wrap"
-        style={{ borderColor: "#1a1b20", background: "#0d0e11" }}>
+        style={{ borderColor: "#1a1b20", background: "#11171d" }}>
         <Seg<DateFilter>
           value={filterDate} onChange={setFilterDate}
           options={[
@@ -595,7 +595,7 @@ export function ActivityLog({ connectionId, isActive }: Props) {
       </div>
 
       {/* Table */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto" style={{ background: "#0d0e11" }}>
+      <div ref={scrollRef} className="flex-1 overflow-y-auto" style={{ background: "#11171d" }}>
         {displayed.length === 0 ? (
           <div className="flex items-center justify-center h-32 text-[11px]" style={{ color: "#3e3f4a" }}>
             No entries match the current filters.
