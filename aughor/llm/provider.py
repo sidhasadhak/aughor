@@ -49,7 +49,12 @@ def _model_for_role(backend: str, role: Role) -> str:
 
 
 def _build_ollama_client(model: str = "") -> instructor.Instructor:
-    raw = OpenAI(base_url=OLLAMA_BASE_URL, api_key="ollama")
+    # Cloud-backed models (e.g. kimi:cloud, qwen3-coder-next:cloud) go through Ollama
+    # to an external API and can hang indefinitely without a timeout.
+    # connect=30s, read=300s (5 min) — enough for any realistic single inference call.
+    import httpx
+    _timeout = httpx.Timeout(connect=30.0, read=300.0, write=30.0, pool=10.0)
+    raw = OpenAI(base_url=OLLAMA_BASE_URL, api_key="ollama", timeout=_timeout)
     # Reasoning models (qwen3, kimi, deepseek-r1, qwq) support native tool calling.
     # Use TOOLS mode so <think>…</think> tokens are isolated from structured output.
     # JSON mode causes reasoning tokens to pollute the output and trigger retries.

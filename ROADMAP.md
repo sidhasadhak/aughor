@@ -1447,6 +1447,284 @@ knowledge-sync = ["atlassian-python-api>=3.41.0", "notion-client>=2.2.0"]
 
 ---
 
+## Milestone 16 — Canvas: Curated Analytical Workspaces
+
+**Goal:** Replace the connection as the primary context unit with a **Canvas** — a named, persistent analytical workspace where the user curates exactly the tables (or full schemas) they care about. Investigations, history, recents, intelligence, and exploration are all Canvas-scoped. The agent sees only the tables relevant to the problem domain, not 40 unrelated tables that happen to share a database.
+
+**What changes vs. what doesn't:**
+
+| Changes | Stays the same |
+|---|---|
+| Primary context unit: `connection_id` → `canvas_id` | Connection credential store |
+| Investigations scoped to Canvas | Agent pipeline (decompose / plan / execute / synthesize) |
+| Schema context filtered to Canvas tables | Schema format, ontology injection format |
+| History, Recents, Suggestions per Canvas | History store structure |
+| Intelligence generated per Canvas | Domain intel loop mechanics |
+| Explorer runs Canvas-aware (selected tables only) | Qdrant infra (just swap filter field) |
+| Landing screen: Canvas browser | Catalog (still shows all; gains "Add to Canvas") |
+| Recommendation Inbox: Canvas + role + org levels | Ontology (schema-level, Canvas projects a slice) |
+
+**Design decisions locked:**
+- No default Canvas — user creates one before investigating (clean, intentional first-use gesture)
+- Granularity: user selects either individual tables OR an entire schema — schema is the coarsest unit
+- Canvas is persistent and named; both Quick Chat and Deep Analysis modes work within it
+- Explorer is Canvas-aware primarily; full schema-level exploration is a manual opt-in trigger
+- Multi-connection Canvas: data model supports it from day one (`scopes: list[CanvasScope]`), API enforces `len(scopes) == 1` until M14d federation lands — lift the constraint then, no migration needed
+- Intelligence promotion: manual curation first; automatic confidence-threshold promotion is Sprint 33 (Org Intelligence Layer)
+
+---
+
+### Phase 16a — Canvas Data Model + Backend Migration
+
+**What:** Introduce the Canvas as a first-class entity. Existing connections auto-migrate to legacy Canvases (entire schema scope). No user-visible change. The agent pipeline gains `canvas_id` support alongside `connection_id` for backward compatibility.
+
+**Core models:**
+```python
+# aughor/canvas/models.py
+
+class CanvasScope(BaseModel):
+    """One source within a Canvas."""
+    connection_id: str
+    schema: str
+    tables: list[str] = []     # [] = entire schema in scope
+
+    @property
+    def is_full_schema(self) -> bool:
+        return len(self.tables) == 0
+
+    def covers(self, schema: str, table: str) -> bool:
+        return self.schema == schema and (self.is_full_schema or table in self.tables)
+
+
+class Canvas(BaseModel):
+    canvas_id: str              # UUID — becomes primary context key everywhere
+    name: str                   # "Revenue Operations"
+    description: str = ""
+    created_at: str
+    updated_at: str
+    last_used_at: Optional[str] = None
+    # Multi-connection roadmap: API enforces len==1 until M14d; data model already supports N
+    scopes: list[CanvasScope]
+    # Denormalized stats for home screen
+    investigation_count: int = 0
+    exploration_active: bool = False
+```
+
+**What gets `canvas_id`:**
+
+| Store | Current key | After |
+|---|---|---|
+| Investigation history (`data/history.db`) | `connection_id` | `canvas_id` (+ keep `connection_id` for legacy backfill) |
+| Qdrant prior analyses payload | `connection_id` | `canvas_id` |
+| Qdrant schema suggestions payload | `connection_id` | `canvas_id` |
+| Explorer state (`exploration_{id}.json`) | `{connection_id}` | `{canvas_id}` |
+| Domain episodes (`episodes_{id}.jsonl`) | `{connection_id}` | `{canvas_id}` |
+| Schema cache key | connection fingerprint | canvas fingerprint (table list + connection fingerprints) |
+| `AgentState` | `connection_id: str` | `canvas_id: str` + `resolved_connection_id: str` |
+
+**`AgentState` change:**
+```python
+class AgentState(TypedDict):
+    canvas_id: str              # primary context key
+    resolved_connection_id: str # set at investigation start; SQL execution path never changes
+    canvas_schema_context: str  # pre-built filtered schema — replaces full connection schema
+    ...
+```
+`resolved_connection_id` is what the SQL executor, dialect transforms, and connection objects use — they never need to know about Canvas. The Canvas concern is entirely in the context-building layer.
+
+**Schema context builder:**
+```python
+# aughor/tools/schema.py
+def build_canvas_schema_context(canvas: Canvas, connections: dict) -> str:
+    """Returns schema string filtered to only the tables in the Canvas scope."""
+    parts = []
+    for scope in canvas.scopes:
+        conn = connections[scope.connection_id]
+        if scope.is_full_schema:
+            parts.append(conn.get_schema(schema=scope.schema))
+        else:
+            parts.append(conn.get_schema_for_tables(scope.schema, scope.tables))
+    return "\n\n".join(parts)
+```
+
+**Auto-migration on startup:**
+```python
+def migrate_connections_to_legacy_canvases(registry, canvas_store):
+    """Called once at startup. Idempotent."""
+    for conn in registry.list_connections():
+        legacy_id = f"legacy_{conn.id}"
+        if not canvas_store.exists(legacy_id):
+            canvas_store.save(Canvas(
+                canvas_id=legacy_id,
+                name=conn.name,
+                scopes=[CanvasScope(
+                    connection_id=conn.id,
+                    schema=conn.default_schema or "public",
+                    tables=[]   # entire schema
+                )],
+            ))
+```
+
+**API additions:**
+```
+GET    /canvases                        → list all Canvases
+POST   /canvases                        → create Canvas
+PUT    /canvases/{canvas_id}            → update (rename, add/remove scopes)
+DELETE /canvases/{canvas_id}
+GET    /canvases/{canvas_id}/schema     → filtered schema context (for UI preview)
+```
+Existing `POST /investigate` and `POST /chat` accept `canvas_id` OR `connection_id` — if `connection_id` received, look up its legacy Canvas and use that. No breaking changes.
+
+**Files to create:**
+- `aughor/canvas/__init__.py`, `models.py`, `store.py`
+
+**Files to modify:**
+- `aughor/api.py` — Canvas CRUD endpoints; `_startup` migration; `canvas_id` param on `/investigate` + `/chat`
+- `aughor/agent/state.py` — add `canvas_id`, `resolved_connection_id`, `canvas_schema_context`
+- `aughor/agent/nodes.py` — `decompose_question` builds `canvas_schema_context` when `canvas_id` present
+- `aughor/tools/schema.py` — add `build_canvas_schema_context()`
+- `aughor/db/history.py` — add nullable `canvas_id` column; backfill from legacy mapping on migration
+
+**New deps:** none
+**Dependency on:** Existing `DatabaseConnection` ABC ✅, connection registry ✅, investigation history ✅
+
+---
+
+### Phase 16b — Canvas Browser + Creation Flow
+
+**What:** The landing screen becomes a Canvas browser. Users create, name, and open Canvases. Investigation, Chat, History, and Recents are all scoped to the active Canvas. Catalog gains an "Add to Canvas" action.
+
+**Canvas browser (landing screen):**
+- Card grid of named Canvases — name, table count, connection source, last used, investigation count
+- "New Canvas" button → opens creation flow
+- No Canvases yet → prompt: "Create your first Canvas to start investigating"
+- Legacy Canvases (auto-created from connections) appear as `{Connection Name} — Default` until renamed
+
+**Canvas creation flow:**
+```
+1. Name your Canvas           ("Revenue Operations")
+2. Pick a connection          (connection picker — same registry)
+3. Select tables or schemas   (Catalog-style tree with checkboxes)
+   ├── ☑ entire schema: public    ← schema-level selection
+   ├── □ public
+   │     ├── ☑ orders
+   │     ├── ☑ customers
+   │     └── □ internal_audit_log
+   └── Selected: public.orders, public.customers
+4. Create → enters Canvas workspace
+```
+
+**Canvas workspace (replaces current home page layout):**
+```
+Canvas workspace
+├── Header: Canvas name + table count + connection badge + ⚙ settings
+├── Tabs: Chat | Deep Analysis | History | Intelligence | Catalog (filtered)
+└── All tabs scoped to this Canvas's tables and investigation history
+```
+
+**Catalog within Canvas:** Shows only tables in scope. Full catalog still accessible via "Browse all data" link → CatalogScreen (unchanged global view) with "Add to this Canvas" action per table.
+
+**API additions:**
+```
+GET    /canvases/{canvas_id}/history      → investigations for this Canvas
+GET    /canvases/{canvas_id}/suggestions  → schema-specific starters (Canvas-filtered)
+GET    /canvases/{canvas_id}/recents      → last N investigations in this Canvas
+```
+
+**Files to create:**
+- `web/components/CanvasBrowser.tsx` — landing screen; Canvas cards; "New Canvas" entry point
+- `web/components/CanvasCreator.tsx` — creation flow: name → connection → table/schema picker
+- `web/components/CanvasWorkspace.tsx` — Canvas-scoped workspace shell; tab nav; header
+
+**Files to modify:**
+- `web/app/page.tsx` — root route renders `CanvasBrowser` when no Canvas active; `CanvasWorkspace` when Canvas selected
+- `web/components/CatalogScreen.tsx` — gains "Add to Canvas" action per table/schema row
+- `web/lib/api.ts` — Canvas CRUD types + fetch functions; Canvas-scoped history/suggestions
+
+**New deps:** none
+**Dependency on:** Phase 16a (Canvas store + API)
+
+---
+
+### Phase 16c — Canvas-Aware Explorer + Intelligence Foundation
+
+**What:** The background Schema Explorer runs against Canvas tables only — not the full connection schema. Intelligence discoveries are tagged with `canvas_id`. Manual opt-in trigger for full schema-level exploration. Promotion field added to intelligence entries (consumed by Org Intelligence Layer in Sprint 33).
+
+**Explorer adaptation:**
+```python
+# aughor/explorer/agent.py
+
+class SchemaExplorer:
+    def explore(self, canvas: Canvas, ...):
+        # Phases 3–7: run against canvas.scopes[0].tables only (or full schema if is_full_schema)
+        # Phase 8 (domain intel): curiosity loop scoped to Canvas tables
+        # State file: exploration_{canvas.canvas_id}.json
+        ...
+```
+
+Explorer state file changes from `exploration_{connection_id}.json` → `exploration_{canvas_id}.json`. Legacy explorers (connection-scoped) continue running for legacy Canvases unchanged.
+
+**Manual schema-level exploration:**
+- "Explore full schema" button in Canvas settings (⚙)
+- Triggers a one-off connection-level exploration pass, writes to `exploration_full_{connection_id}.json`
+- Results surfaced as "Schema-level insights" separately from Canvas intelligence
+
+**Intelligence entries gain provenance fields:**
+```python
+class IntelligenceEntry(BaseModel):
+    ...
+    canvas_id: str              # which Canvas generated this
+    promoted_to_org: bool = False  # manual flag — consumed by Sprint 33
+    promotion_confidence: float = 0.0  # for future auto-promotion threshold
+```
+
+**UI change:** Intelligence tab within Canvas shows only that Canvas's domain findings. A "Promote to Org →" button appears on each entry (stores `promoted_to_org=True`, does nothing else yet — Sprint 33 builds the Org Intelligence collection).
+
+**Files to modify:**
+- `aughor/explorer/agent.py` — accept `Canvas` instead of `connection_id`; state file keyed by `canvas_id`
+- `aughor/explorer/store.py` — `ExplorationStatus.canvas_id` field; lookup by `canvas_id`
+- `aughor/api.py` — `/exploration/{canvas_id}/...` routes (alongside existing `/{conn_id}/...` for backward compat)
+- `web/components/DomainIntelPanel.tsx` — scoped to active Canvas; shows `promoted_to_org` badge; "Promote to Org →" button
+- `web/components/ActivityLog.tsx` — episode feed filtered by active Canvas
+
+**New deps:** none
+**Dependency on:** Phases 16a + 16b; existing Explorer infrastructure ✅
+
+---
+
+### Phase 16d — Multi-Connection Canvas *(roadmap — unlocks with M14d)*
+
+**What:** Lift the `len(scopes) == 1` API constraint. A Canvas can draw tables from multiple connections — e.g., `postgres_prod.public.orders` + `snowflake_dw.analytics.campaigns`. The `resolved_connection_id` in `AgentState` becomes a `FederatedConnection` id when multiple scopes are present.
+
+**What changes from Phase 16a:**
+- API: remove `if len(canvas.scopes) > 1: raise HTTPException(400, "Multi-connection Canvas not yet supported")`
+- `build_canvas_schema_context()`: already handles `list[CanvasScope]` — no change needed
+- `resolve_canvas_connection(canvas)`: if `len(scopes) == 1` → return single connection; if `len(scopes) > 1` → build `FederatedConnection` from scopes (M14d)
+- Canvas creation UI: connection picker becomes multi-connection (add a second connection source)
+
+**Dependency on:** Phase 16a (data model already correct) + M14d (FederatedConnection executor) — no earlier phase is blocked
+
+---
+
+### Phase 16e — Org Intelligence Layer *(roadmap — Sprint 33)*
+
+**What:** Verified Canvas intelligence gets promoted to a shared Org-level collection visible to all users regardless of which Canvas they work in. Org intelligence becomes the accumulated institutional memory of the organisation — built bottom-up from Canvas investigations, curated by human promotion.
+
+**Promotion pipeline:**
+```
+Canvas investigation → domain insight generated
+  → analyst reviews, clicks "Promote to Org →"
+    → org_intelligence collection in Qdrant
+      → visible in new "Org Intelligence" tab to all users
+        → injected into ADA synthesis across all Canvases (as {org_intelligence_section})
+```
+
+**Future: automatic promotion** when N Canvas investigations (across M different Canvases) confirm the same pattern with confidence > threshold. Manual curation first; auto-promotion in a later sprint.
+
+**Dependency on:** Phase 16c (promoted_to_org field + Qdrant infrastructure); M6 RBAC (only analysts with sufficient role can promote to Org)
+
+---
+
 ## Build Sequence & Dependency Graph
 
 **Recommended sprint order — each sprint compounds on the last:**
@@ -1472,17 +1750,21 @@ knowledge-sync = ["atlassian-python-api>=3.41.0", "notion-client>=2.2.0"]
 | **18 — BI Layer: Process Map** ✅ | M13e (Business Process Visual Mapper) | Swimlane health diagram; click red step → ADA investigation |
 | **19 — BI Layer: Causal Twin** | M13f (Causal Graph in Ontology) | ADA waterfalls write causal edges; algorithmic root-cause traversal |
 | **20 — Catalog UX + Hardening** ✅ | Catalog 3-panel (60) + Phase 8 gate (61) + Connection persistence (62) | Databricks-style catalog; domain intel always has ontology; connections survive restart |
-| **21 — Security baseline** | M6 partial (Gradient Safety 6e + PII 6a + Audit 6c + Budget 6b) | Immutable audit trail before multi-source data flows; PII never reaches LLM |
-| **22 — Connector Framework** | M14a (base ABC + registry + namespace model) | Foundation all future connectors build on; federation namespace designed now |
-| **23 — Warehouse connectors** | M14b (BigQuery + Snowflake + MySQL + Azure SQL) | Two highest-demand cloud warehouses; same investigation quality on any warehouse |
-| **24 — File connectors** | M14c (S3 + local upload) | Data lake analytics; zero-credential onboarding via CSV/Excel drop |
-| **25 — Federation layer** | M14d (FederatedConnection + query router + catalog UI) | Cross-source JOINs; Postgres orders + S3 events + Salesforce pipeline in one query |
-| **26 — API connectors** | M14e (Salesforce + HubSpot + Stripe) | After federation — SFDC JOINs with warehouse data on day one |
-| **27 — Knowledge connectors** | M14f (Confluence + Notion) | Extends existing document pipeline; institutional knowledge from live wikis |
-| **28 — Enterprise Security** | M6 full (SSO/OIDC + RBAC + Vault credential backend) | Enterprise procurement gate; multi-tenant safe |
-| **29 — Action Hub** | M15 (webhook write-back + Slack/Jira triggers) | Data-to-decision loop; after outcome tracking proves recommendation quality |
-| **30 — Analytical depth** | M4 (Prophet forecasting) + M2d (Events Calendar) | "Is this drop unusual *given the trend*?" |
-| **31 — Quality gates** | M10 (Evals — Braintrust) + M7 (Observability) | CI regression testing; Langfuse traces on real cloud costs |
+| **21 — Canvas: Data model + pipeline** | M16a (CanvasScope + Canvas models + store; auto-migration; canvas_id in AgentState + schema context builder; history backfill) | Non-breaking foundation; all existing workflows via legacy Canvases; agent can run Canvas-scoped immediately |
+| **22 — Canvas: Browser + workspace UI** | M16b (CanvasBrowser landing; CanvasCreator flow; CanvasWorkspace shell; Catalog "Add to Canvas"; scoped history/suggestions/recents) | User-visible Canvas; first-use creation gesture; no Canvas until user creates one |
+| **23 — Canvas: Explorer + intelligence** | M16c (Explorer Canvas-aware; exploration state by canvas_id; manual schema-level trigger; promoted_to_org field; "Promote to Org →" button) | Intelligence scoped to Canvas; provenance field ready for Sprint 33 |
+| **24 — Security baseline** | M6 partial (Gradient Safety 6e + PII 6a + Audit 6c + Budget 6b) | Audit trail scoped to Canvas; PII never reaches LLM; must land before connector sprints |
+| **25 — Connector Framework** | M14a (base ABC + registry + namespace model) | Foundation all future connectors build on; namespace designed now for M16d multi-connection Canvas |
+| **26 — Warehouse connectors** | M14b (BigQuery + Snowflake + MySQL + Azure SQL) | Highest-demand cloud warehouses; same investigation quality anywhere |
+| **27 — File connectors** | M14c (S3 + local upload) | Data lake analytics; zero-credential onboarding via CSV/Excel drop |
+| **28 — Federation + multi-connection Canvas** | M14d + M16d (FederatedConnection; lift Canvas scopes==1 constraint; Canvas spans Postgres + S3 + Snowflake) | Cross-source JOINs; Canvas becomes multi-system workspace |
+| **29 — API connectors** | M14e (Salesforce + HubSpot + Stripe) | After federation — SFDC JOINs with warehouse in same Canvas |
+| **30 — Knowledge connectors** | M14f (Confluence + Notion) | Live wiki sync → existing document pipeline; Canvas gains institutional context |
+| **31 — Enterprise Security** | M6 full (SSO/OIDC + RBAC + Vault; Canvas ownership + sharing; Inbox role-scoping) | Enterprise procurement gate; Canvas shared across team; Inbox scoped by role |
+| **32 — Action Hub** | M15 (webhook write-back + Slack/Jira triggers) | Data-to-decision loop; trust established via outcome history |
+| **33 — Org Intelligence Layer** | M16e (Qdrant org_intelligence collection; promotion pipeline; {org_intelligence_section} in ADA synthesis; Org Intelligence tab) | Canvas insights accumulate into org-wide institutional memory |
+| **34 — Analytical depth** | M4 (Prophet forecasting) + M2d (Events Calendar) | "Is this drop unusual *given the trend*?" |
+| **35 — Quality gates** | M10 (Evals — Braintrust) + M7 (Observability) | CI regression testing on verdict quality; Langfuse traces on real costs |
 
 ```
 History ✅
@@ -1725,66 +2007,117 @@ Security baseline (M6 partial) → must land before Sprint 26 (API connectors) w
 - `python-multipart` added to `pyproject.toml` (was runtime-missing, crashed document upload endpoint)
 - Recovery runbook documented in project memory: kill all → `rm -rf web/.next` → `./start.sh` → hard-refresh browser
 
-**After M13:** M14 (Multi-Source Connector Platform) → M6 Security baseline → M15 (Action Hub) → M6 Enterprise Security full → M4 (Prophet) + M2d (Events Calendar) → M11 (Visual Builder) → M10 (Evals) + M7 (Observability)
+**After M13:** Canvas (M16) → M6 Security baseline → Connector Platform (M14) → M15 (Action Hub) → M6 Enterprise Security full → Org Intelligence (M16e) → M4 (Prophet) + M2d (Events) → M10 (Evals) + M7 (Observability)
 
 **Deferred:** M5 Provider Switcher (Anthropic backend) — moved to near-end; M6 Security must land before any multi-tenant or enterprise deployment
 
-**Sprint 21 — M6 Security baseline (next):**
-- `aughor/security/safety.py` — `SafetyVerdict` enum gains `SUSPICIOUS`; `_score_suspicious()` heuristic layer on top of existing SQLGlot structural check
-- `aughor/security/pii.py` — `scan_and_redact()` via Microsoft Presidio; called on every `QueryResult` before LLM sees it
-- `aughor/security/audit.py` — `AuditLogger`; append-only `data/audit.db`; logs every query execution with `(investigation_id, sql, row_count, pii_redacted, timestamp)`
-- `aughor/security/sandbox.py` — `QueryBudget`; per-connection configurable row/time/query limits
-- Must land before Sprint 22 (connector framework) — every new connector's queries go through audit from day one
+**Sprint 19 — M13f: Causal Graph in Ontology (next):**
+- `aughor/ontology/models.py` — `CausalEdge(BaseModel)`: `id`, `source_metric`, `target_metric`, `relationship` (drives/inhibits/correlates_with), `evidence_strength`, `contribution_pct`, `typical_lag`, `source_investigations`; `causal_edges: dict[str, CausalEdge]` added to `OntologyGraph`
+- `aughor/ontology/store.py` — `append_causal_edge()` upserts into persisted graph
+- `aughor/agent/investigate.py` — after ADA synthesis, parse `attribution_waterfall` entries and call `store.append_causal_edge()` for each contribution with `contribution_pct > 5%`; evidence_strength = "strong" (>20%), "moderate" (10–20%), "weak" (<10%)
+- `aughor/playbook/retriever.py` — `traverse_causal_graph(off_target_metric, ontology, max_depth=3)`: BFS backward from `target_metric` through causal edges; returns list of upstream source_metrics; `retrieve_for_root_cause` gains a causal traversal pass before direct metric lookup
+- `aughor/api.py` — `GET /ontology/causal-edges`, `GET /ontology/causal-edges/{metric}`
+- `web/components/OntologyCanvas.tsx` — render `causal_edges` as dashed arrows (orange=drives, red=inhibits, zinc=correlates_with); `contribution_pct` + source investigation link on click
 
-**Sprint 22 — M14a: Connector Framework:**
+**Sprint 20 — Schema Self-Awareness (autonomous schema quirk detection):**
+- `aughor/tools/profiler.py` — `detect_schema_quirks(table_profiles, column_profiles)`: cross-table cardinality analysis; detects per-transaction ID columns (distinct == row_count) that have stable alternatives in the same table (same stem, lower cardinality); emits `⚠ SCHEMA QUIRK` block prepended to `scan_context` automatically — no LLM, pure arithmetic
+- `render_profile_annotations()` calls `detect_schema_quirks()` before the per-table stats; quirk block flows into `{scan_context}` in `INTAKE_PROMPT` and `BASELINE_PLAN_PROMPT`
+- `data/glossary.yaml` — correct `customer` + `orders` table entries for olist: `customer_id` marked per-order hash, `customer_unique_id` marked as stable identifier with repeat-count annotation
+- `aughor/agent/state.py` — `DataQualityNote` fields defaulted to empty string (LLMs omit them); `ExplorationReport.data_quality_notes` validator strips malformed entries; `ReasoningOutput.new_sub_question` validator coerces JSON-stringified objects (models return nested objects as strings)
+- **Explorer → KB write loop (M20b — Sprint 20b):** after `synthesize_exploration`, extract data quality discoveries from `data_quality_notes` + narrative anomalies; write connection-scoped caveats back to `glossary.yaml` via `update_column()` / `update_table()` — closes the learning loop so Explorer findings persist across sessions
+
+**Sprint 21 — M16a: Canvas Data Model + Backend Migration:**
+- `aughor/canvas/__init__.py`, `models.py`, `store.py` — `CanvasScope` + `Canvas` models; `canvas_store` SQLite-backed; `migrate_connections_to_legacy_canvases()` runs once on startup (idempotent)
+- `aughor/agent/state.py` — `canvas_id: str`, `resolved_connection_id: str`, `canvas_schema_context: str` added to `AgentState`
+- `aughor/agent/nodes.py` — `decompose_question` builds `canvas_schema_context` via `build_canvas_schema_context()` when `canvas_id` present
+- `aughor/tools/schema.py` — `build_canvas_schema_context(canvas, connections)`: filters full schema to Canvas-scoped tables only; `get_schema_for_tables(schema, tables)` on connection objects
+- `aughor/db/history.py` — nullable `canvas_id` column; backfill from legacy mapping on migration
+- `aughor/api.py` — `GET/POST/PUT/DELETE /canvases`; `GET /canvases/{id}/schema`; Canvas CRUD + startup migration; `POST /investigate` + `POST /chat` accept `canvas_id` OR `connection_id` (legacy Canvases used as fallback)
+- API enforces `len(scopes) == 1` until M14d federation lands; data model already supports N scopes
+
+**Sprint 22 — M16b: Canvas Browser + Workspace UI:**
+- `web/components/CanvasBrowser.tsx` — landing screen: Canvas card grid (name, table count, connection badge, last used, investigation count); "New Canvas" entry; "No Canvases yet" empty state prompt
+- `web/components/CanvasCreator.tsx` — 3-step creation flow: name → connection picker → table/schema tree with checkboxes (schema-level or individual table selection)
+- `web/components/CanvasWorkspace.tsx` — Canvas-scoped workspace shell: header (name + table count + connection badge + ⚙ settings), tab nav (Chat / Deep Analysis / History / Intelligence / Catalog filtered)
+- `web/app/page.tsx` — root route renders `CanvasBrowser` when no Canvas active; `CanvasWorkspace` when Canvas selected
+- `web/components/CatalogScreen.tsx` — gains "Add to Canvas" action per table/schema row
+- `web/lib/api.ts` — Canvas CRUD types + fetch functions; Canvas-scoped history/suggestions/recents
+- `GET /canvases/{id}/history`, `GET /canvases/{id}/suggestions`, `GET /canvases/{id}/recents` API routes
+
+**Sprint 23 — M16c: Canvas-Aware Explorer + Intelligence Foundation:**
+- `aughor/explorer/agent.py` — `explore()` accepts `Canvas` instead of `connection_id`; phases 3–7 run against `canvas.scopes[0].tables` only (or full schema if `is_full_schema`); state file keyed by `canvas_id`
+- `aughor/explorer/store.py` — `ExplorationStatus.canvas_id` field; lookup by `canvas_id`; legacy explorers (connection-scoped) continue unchanged
+- `aughor/api.py` — `/exploration/{canvas_id}/...` routes alongside existing `/{conn_id}/...` for backward compat; "Explore full schema" one-off trigger writes to `exploration_full_{connection_id}.json`
+- `IntelligenceEntry` gains `canvas_id: str`, `promoted_to_org: bool = False`, `promotion_confidence: float = 0.0`
+- `web/components/DomainIntelPanel.tsx` — scoped to active Canvas; "Promote to Org →" button per entry (stores flag, builds foundation for Sprint 33)
+- `web/components/ActivityLog.tsx` — episode feed filtered by active Canvas
+
+**Sprint 24 — M6 Security baseline:**
+- `aughor/security/safety.py` — `SafetyVerdict` gains `SUSPICIOUS`; `_score_suspicious()` heuristic layer on top of existing SQLGlot structural check; amber "⚠ Flagged Query" badge in `ReportView.tsx` on suspicious verdict
+- `aughor/security/pii.py` — `scan_and_redact()` via Microsoft Presidio; called on every `QueryResult` before LLM sees rows
+- `aughor/security/audit.py` — `AuditLogger`; append-only `data/audit.db`; `(canvas_id, investigation_id, sql, row_count, pii_redacted, timestamp)` per execution
+- `aughor/security/sandbox.py` — `QueryBudget`; per-connection configurable row/time/query limits; enforced inside `execute()` before query hits wire
+- Must land before Sprint 25 (connector framework) — every new connector's queries go through audit from day one
+
+**Sprint 25 — M14a: Connector Framework:**
 - `aughor/connectors/` package: `base.py` (Connector ABC + `connector_category` + `namespace`), `registry.py` (type-string → class mapping)
-- Namespace model locked in here — all future connectors register with a namespace prefix
+- Namespace model locked in here — critical for federation: `mywarehouse.public.orders`, `s3_marketing.events`, `salesforce_sync.opportunity`
 - `aughor/db/registry.py` — routes `conn_type` through connector registry; existing DuckDB + Postgres migrated to new framework
-- Frontend: connection type dropdown extended; per-type field config component
+- Frontend: connection type dropdown extended; per-type field config component (project ID for BigQuery, account for Snowflake, bucket for S3, etc.)
 
-**Sprint 23 — M14b: Warehouse connectors:**
-- BigQuery: `google-cloud-bigquery`; `INFORMATION_SCHEMA.COLUMNS` + native `dry_run`
-- Snowflake: `snowflake-connector-python`; account identifier auth
-- MySQL: `pymysql`; same pattern as Postgres
+**Sprint 26 — M14b: Warehouse connectors:**
+- BigQuery: `google-cloud-bigquery`; `INFORMATION_SCHEMA.COLUMNS` per dataset; native `dry_run` (zero cost SQL validation)
+- Snowflake: `snowflake-connector-python`; account identifier + user/pass or key-pair auth
+- MySQL: `pymysql`; same pattern as Postgres; `information_schema.columns`
 - Azure SQL: `pyodbc`; T-SQL dialect via SQLGlot
-- All optional under `[warehouse]` dep group
+- All optional under `[warehouse]` dep group: `uv pip install -e ".[warehouse]"`
 
-**Sprint 24 — M14c: File connectors:**
-- Local upload: drag-and-drop in "Add Connection"; `POST /connections/{id}/upload` multipart; CSV/Parquet/Excel via DuckDB native readers
+**Sprint 27 — M14c: File connectors:**
+- Local upload: drag-and-drop in "Add Connection"; `POST /connections/{id}/upload` multipart; CSV/Parquet/Excel via DuckDB native `read_csv_auto()` / `read_parquet()` / `read_excel()`
 - S3: bucket/prefix/region/key/secret fields; DuckDB `httpfs` + `CREATE SECRET`; auto-discovers Parquet files as views
 - Azure Blob: `azure-storage-blob` + DuckDB `httpfs` Azure path support
+- Both display in catalog tree exactly like any other connection (table list, column types, sample data)
 
-**Sprint 25 — M14d: Federation layer:**
-- `aughor/connectors/federated.py` — `FederatedConnection`; DuckDB `ATTACH` for Postgres; view-copy for S3/file connectors
+**Sprint 28 — M14d: Federation layer + M16d: Multi-connection Canvas:**
+- `aughor/connectors/federated.py` — `FederatedConnection`: DuckDB `ATTACH` for Postgres; view-copy for S3/file connectors; materialized working sets for BigQuery/Snowflake
 - Schema context emits namespaced tables + cross-namespace join hints (reuses 2i fuzzy join inference)
 - Query router: single-namespace → native connector; multi-namespace → federated DuckDB
 - `POST /connections/federate` API + "Create Federated View" in catalog UI
+- M16d: lift `len(scopes) == 1` constraint; `resolve_canvas_connection()` returns `FederatedConnection` when multiple scopes present; Canvas creation UI becomes multi-connection
 
-**Sprint 26 — M14e: API connectors:**
-- `aughor/connectors/api/base_sync.py` — `RestApiSync` base: incremental state in `data/sync_{id}.json`, OAuth token refresh, bulk API rate limiting
-- Salesforce: SOQL bulk query; standard objects (Account/Contact/Opportunity/Lead); custom fields via `describe()`
+**Sprint 29 — M14e: API connectors:**
+- `aughor/connectors/api/base_sync.py` — `RestApiSync` base: incremental state in `data/sync_{id}.json`, OAuth token refresh, bulk API rate limiting, cursor pagination
+- Salesforce: SOQL bulk query; Account/Contact/Opportunity/Lead/Case; custom fields via `describe()`
 - HubSpot: CRM objects API v3; contacts/companies/deals
 - Stripe: Events + Charges + Customers; cursor-based pagination
-- All under optional `[crm]` dep group
+- All under optional `[crm]` dep group: `uv pip install -e ".[crm]"`
 
-**Sprint 27 — M14f: Knowledge connectors:**
-- `aughor/connectors/knowledge/confluence.py` — space sync via Confluence REST API; HTML-to-text extraction; feeds existing `aughor_documents` Qdrant collection
-- `aughor/connectors/knowledge/notion.py` — page/database export via Notion API v1; block-to-text conversion
+**Sprint 30 — M14f: Knowledge connectors:**
+- `aughor/connectors/knowledge/confluence.py` — space sync via Confluence REST API; HTML-to-text; feeds existing `aughor_documents` Qdrant collection (M13d infrastructure unchanged)
+- `aughor/connectors/knowledge/notion.py` — page/database export via Notion API v1; block-to-text
 - `DocumentUploader.tsx` extended with "Connect Confluence / Notion" live sync option
+- Optional `[knowledge-sync]` dep group
 
-**Sprint 28 — M6 Enterprise Security (full):**
-- FastAPI OAuth2/OIDC middleware (`python-jose` + `authlib`)
-- `user_id` scoping on investigations and connections (row-level in SQLite stores)
-- RBAC: viewer / analyst / admin roles; connection-level permissions
+**Sprint 31 — M6 Enterprise Security (full):**
+- FastAPI OAuth2/OIDC middleware (`python-jose` + `authlib`); `user_id` scoping on investigations, connections, Canvas (row-level in SQLite stores)
+- RBAC: viewer / analyst / admin roles; connection-level + Canvas-level permissions; Inbox role-scoping
 - `VaultBackend` in `aughor/db/registry.py` — HashiCorp Vault credential backend for production deployments
+- Canvas ownership + sharing: `owner_user_id`, `shared_with: list[str]` on `Canvas` model
 
-**Sprint 29 — M15: Action Hub:**
-- `aughor/actions/models.py` + `executor.py` — `ActionTrigger` model; async `httpx` webhook dispatch; logs to audit trail
-- `GET/POST/PUT/DELETE /actions/triggers` + `POST /investigations/{inv_id}/recommendations/{rec_id}/execute`
-- `web/components/ActionHubPanel.tsx` — configure webhook integrations; "Execute →" button in `RecommendationCard`
+**Sprint 32 — M15: Action Hub:**
+- `aughor/actions/models.py` + `executor.py` — `ActionTrigger` model; async `httpx` webhook dispatch with retry; logs result to audit trail
+- `GET/POST/PUT/DELETE /actions/triggers` + `POST /investigations/{inv_id}/recommendations/{rec_id}/execute { trigger_id }`
+- `web/components/ActionHubPanel.tsx` — configure webhook integrations (Slack / Jira / Zapier / custom HTTP); "Execute →" button in `RecommendationCard` alongside "Mark Done"
 
-**Sprint 30 — Analytical depth + Quality gates:**
-- M4 Prophet forecasting: `forecast_anomaly()` in `aughor/tools/stats.py`; trend context in ADA synthesis ("underlying problem started 3 weeks ago")
-- M2d Events Calendar: `data/events.yaml`; `lookup_events()` tool node; prevents promo drops flagged as anomalies
-- M10 LLM Evals (Braintrust): 50-question golden dataset from investigation history; `verdict_accuracy`, `query_efficiency`, `hallucination_rate` scorers; CI gate on agent PRs
-- M7 Observability (Langfuse + OpenTelemetry): most valuable now that cloud LLM calls (Anthropic) have real token costs to trace
+**Sprint 33 — M16e: Org Intelligence Layer:**
+- `org_intelligence` Qdrant collection; promotion pipeline: `promoted_to_org=True` → embed + upsert to org collection
+- "Org Intelligence" tab visible to all users; `{org_intelligence_section}` injected into ADA synthesis across all Canvases
+- Auto-promotion threshold (N Canvas investigations confirming same pattern with confidence > threshold) — deferred to follow-on sprint
+
+**Sprint 34 — Analytical depth:**
+- M4 Prophet forecasting: `forecast_anomaly()` in `aughor/tools/stats.py`; trend context in ADA synthesis ("underlying problem started 3 weeks ago"); activates when series length > 30 points
+- M2d Events Calendar: `data/events.yaml`; `lookup_events(start, end)` tool node in agent; prevents promo drops flagged as anomalies
+
+**Sprint 35 — Quality gates:**
+- M10 LLM Evals (Braintrust): 50-question golden dataset from investigation history; `verdict_accuracy`, `query_efficiency`, `hallucination_rate` scorers; CI gate on every PR touching `aughor/agent/`
+- M7 Observability (Langfuse + OpenTelemetry): trace per investigation with `hypothesis_id` metadata; `trace_id` in SSE start event; most valuable now that cloud LLM calls have real token costs

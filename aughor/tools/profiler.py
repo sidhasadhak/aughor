@@ -738,6 +738,84 @@ def profile_connection(
 
 # ── Schema context rendering ──────────────────────────────────────────────────
 
+def detect_schema_quirks(
+    table_profiles: dict[str, TableProfile],
+    column_profiles: dict[str, ColumnProfile],
+) -> list[str]:
+    """
+    Cross-table cardinality analysis: detect semantic ID mismatches that LLMs
+    will silently get wrong without explicit guidance.
+
+    Currently detects:
+      Per-row ID columns — an *_id column whose distinct_count equals its table's
+      row_count (every row has a unique value) while another column in the SAME
+      table has lower cardinality, suggesting the per-row column is a session/
+      transaction hash rather than a stable entity identifier.
+
+    Returns a list of ⚠ warning strings ready to prepend to scan_context.
+    """
+    quirks: list[str] = []
+
+    # Build lookup: table → {col_name → distinct_count}
+    table_col_distinct: dict[str, dict[str, int]] = {}
+    for key, cp in column_profiles.items():
+        if "." not in key:
+            continue
+        tbl, col = key.split(".", 1)
+        table_col_distinct.setdefault(tbl, {})[col] = cp.distinct_count or 0
+
+    for table, tp in table_profiles.items():
+        if not tp.row_count or tp.row_count < 100:
+            continue  # too small to reason about reliably
+
+        col_distinct = table_col_distinct.get(table, {})
+        if not col_distinct:
+            continue
+
+        row_count = tp.row_count
+
+        # Find *_id columns that are unique per row (likely per-transaction hashes)
+        per_row_ids = [
+            col for col, distinct in col_distinct.items()
+            if col.lower().endswith("_id") and distinct == row_count
+        ]
+        # Find *_id columns with fewer distinct values (stable entity identifiers)
+        stable_ids = [
+            col for col, distinct in col_distinct.items()
+            if col.lower().endswith("_id")
+            and 0 < distinct < row_count
+            and col not in per_row_ids
+        ]
+
+        for per_row_col in per_row_ids:
+            # Only flag when there's a plausible stable alternative in the same table
+            # e.g. orders.customer_id (99441 distinct = 99441 rows) alongside
+            #      customer.customer_unique_id (96096 distinct < 99441 rows)
+            candidates = []
+            for stable_col in stable_ids:
+                # Heuristic: share a common prefix (e.g. both start with "customer")
+                stem = per_row_col.replace("_id", "")
+                if stem and stable_col.startswith(stem):
+                    candidates.append(stable_col)
+
+            if candidates:
+                stable_col = candidates[0]
+                stable_distinct = col_distinct[stable_col]
+                repeat_count = row_count - stable_distinct
+                quirks.append(
+                    f"⚠ SCHEMA QUIRK [{table}]: `{per_row_col}` is unique per row "
+                    f"({row_count:,} distinct = {row_count:,} rows) — it is a "
+                    f"per-transaction hash, NOT a stable entity identifier. "
+                    f"Use `{stable_col}` instead ({stable_distinct:,} distinct → "
+                    f"implies {repeat_count:,} rows share the same {stable_col}, "
+                    f"i.e. repeat transactions exist). "
+                    f"NEVER GROUP BY or COUNT DISTINCT on `{per_row_col}` to count "
+                    f"unique entities — always use `{stable_col}`."
+                )
+
+    return quirks
+
+
 def render_profile_annotations(
     table_profiles: dict[str, TableProfile],
     column_profiles: dict[str, ColumnProfile],
@@ -761,6 +839,15 @@ def render_profile_annotations(
 
     tables_to_detail = set(relevant_tables) if relevant_tables else set(table_profiles.keys())
     lines: list[str] = ["DATA PROFILES (computed from actual data — trust these over schema names):"]
+
+    # Prepend any cross-table cardinality quirks before the per-table stats
+    quirks = detect_schema_quirks(table_profiles, column_profiles)
+    if quirks:
+        lines.append("")
+        lines.append("SCHEMA QUIRKS (auto-detected — read before writing any query):")
+        for q in quirks:
+            lines.append(f"  {q}")
+        lines.append("")
 
     for table, tp in sorted(table_profiles.items()):
         # Header line

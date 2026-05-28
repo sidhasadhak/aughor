@@ -100,17 +100,26 @@ tables:
 
           '
   customer:
-    description: Contains core customer demographic and location data, likely used
-      to link orders to physical locations and unique individuals.
-    grain: One row per unique customer, identified by customer_id, with their associated
-      geographic and unique identifiers.
+    description: Contains core customer demographic and location data. Maps orders
+      to stable customer identities and geographic locations.
+    grain: One row per order-session — customer_id is a per-order UUID hash that changes
+      each order. Use customer_unique_id for stable cross-order customer identity.
     auto_generated: true
     columns:
       customer_id:
-        description: Primary internal identifier for a customer in the system.
+        description: Per-order UUID hash assigned at order creation. NOT a stable
+          customer identifier — a single real customer has a different customer_id
+          for each order they place.
+        caveats: NEVER use customer_id to count unique customers or identify repeat
+          purchasers — it is unique per order, not per person. Use customer_unique_id
+          for any repeat/returning customer analysis.
       customer_unique_id:
-        description: A business-level unique identifier for the customer, possibly
-          used for anonymization or cross-system identification.
+        description: Stable identifier for the real human customer across all their
+          orders. Use this for repeat purchase analysis, retention cohorts, and any
+          query that needs to recognise the same person across multiple orders.
+        caveats: 96,096 distinct values vs 99,441 orders — meaning ~3,345 orders are
+          from repeat customers. Always join on this column, not customer_id, when
+          counting unique customers or building retention metrics.
       customer_zip_code_prefix:
         description: First 3–5 digits of the customer's ZIP/postal code, used for
           geographic aggregation.
@@ -207,7 +216,11 @@ tables:
       order_id:
         description: Unique identifier for each order
       customer_id:
-        description: Identifier for the customer who placed the order
+        description: Per-order UUID hash — same value as customer.customer_id for
+          this order. NOT a stable customer identifier.
+        caveats: 'Do NOT use orders.customer_id to count unique customers or detect
+          repeat purchasers. JOIN to customer.customer_unique_id instead: JOIN customer
+          c ON o.customer_id = c.customer_id, then GROUP BY c.customer_unique_id.'
       order_status:
         description: Current status of the order (e.g., delivered, shipped, canceled)
         values: delivered, shipped, canceled, approved, invoiced, processing, created,

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Annotated, Literal, Optional
 from typing_extensions import TypedDict
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 import operator
 
 
@@ -208,6 +208,18 @@ class ReasoningOutput(BaseModel):
         description="If the data revealed an unexpected angle worth exploring, define a new sub-question to insert. Otherwise null.",
     )
 
+    @field_validator("new_sub_question", mode="before")
+    @classmethod
+    def _coerce_new_sub_question(cls, v):
+        """LLMs sometimes return nested objects as JSON strings. Parse them."""
+        if isinstance(v, str):
+            import json
+            try:
+                v = json.loads(v)
+            except (ValueError, TypeError):
+                return None  # unparseable string → treat as no new sub-question
+        return v
+
 
 class ExplorationReport(BaseModel):
     headline: str = Field(description="One sentence direct answer to the original question. Board-ready.")
@@ -215,6 +227,27 @@ class ExplorationReport(BaseModel):
     narrative: str = Field(description="Flowing paragraph connecting all sub-questions into a coherent story.")
     recommended_actions: list[str] = Field(description="Concrete next steps based on the findings.")
     data_quality_notes: list["DataQualityNote"] = Field(default_factory=list)
+
+    @field_validator("data_quality_notes", mode="before")
+    @classmethod
+    def _drop_empty_notes(cls, v):
+        """Drop malformed DataQualityNote entries that are missing required fields.
+
+        Handles both raw dicts (from LLM output) and already-instantiated
+        DataQualityNote objects (from synthesize_exploration's dq_notes merge).
+        """
+        if not isinstance(v, list):
+            return []
+        result = []
+        for n in v:
+            if isinstance(n, dict):
+                # Raw dict from LLM — keep only if it has the minimum fields
+                if n.get("issue") or n.get("table"):
+                    result.append(n)
+            else:
+                # Already a DataQualityNote instance — pass through as-is
+                result.append(n)
+        return result
 
 
 class ReplanDecision(BaseModel):
@@ -231,11 +264,11 @@ class ReplanDecision(BaseModel):
 
 
 class DataQualityNote(BaseModel):
-    table: str
-    column: Optional[str]
-    issue: str
-    impact: str
-    recommended_fix: str
+    table: str = ""
+    column: Optional[str] = None
+    issue: str = ""          # LLMs sometimes omit this — default to empty
+    impact: str = ""
+    recommended_fix: str = ""
 
 
 class AnalysisReport(BaseModel):

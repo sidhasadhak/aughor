@@ -336,6 +336,121 @@ def route_after_reason(state: AgentState) -> str:
 
 # ── Node: synthesize_exploration ──────────────────────────────────────────────
 
+# ── Schema learning models (used by _learn_from_exploration) ─────────────────
+
+class _ColumnCaveat(BaseModel):
+    table: str = Field(description="Exact table name as it appears in the schema")
+    column: str = Field(description="Exact column name")
+    caveat: str = Field(
+        description="One-sentence warning an analyst must know to avoid wrong results. "
+                    "Must be directly supported by data observed in this investigation. "
+                    "Example: 'customer_id is a per-order hash — use customer_unique_id "
+                    "to identify unique customers across orders.'"
+    )
+
+
+class _SchemaLearning(BaseModel):
+    caveats: list[_ColumnCaveat] = Field(
+        default_factory=list,
+        description="Schema-level column caveats discovered during this exploration. "
+                    "Only include findings directly supported by actual query results above. "
+                    "Empty list if no concrete schema issues were found.",
+    )
+
+
+def _learn_from_exploration(
+    report: ExplorationReport,
+    chain_summary: str,
+    conn_id: str,
+) -> int:
+    """
+    Persist schema discoveries from an exploration run back to the glossary.
+
+    Two passes:
+      1. Structured  — extract from report.data_quality_notes (no LLM, zero cost)
+      2. LLM-based   — lightweight coder pass over the chain summary to catch
+                       subtler patterns the structured notes missed
+
+    Returns the number of new caveat entries written. Never raises — best-effort only.
+    """
+    try:
+        from aughor.semantic.glossary import load_glossary, update_column
+
+        written = 0
+        glossary = load_glossary()
+
+        def _existing_caveat(table: str, column: str) -> str:
+            return (glossary.get("tables", {})
+                            .get(table, {})
+                            .get("columns", {})
+                            .get(column, {})
+                            .get("caveats", "") or "")
+
+        def _write_caveat(table: str, column: str, text: str) -> bool:
+            """Write caveat only if it adds new information. Returns True if written."""
+            nonlocal glossary
+            if not table or not column or not text or len(text) < 15:
+                return False
+            existing = _existing_caveat(table, column)
+            if text in existing:
+                return False
+            combined = f"{existing} | {text}" if existing else text
+            update_column(table, column, caveats=combined)
+            # Reload so subsequent writes see the updated state
+            glossary = load_glossary()
+            return True
+
+        # ── Pass 1: data_quality_notes (structured, free) ────────────────────
+        for note in (report.data_quality_notes or []):
+            table = (note.table or "").strip()
+            column = (note.column or "").strip()
+            issue = (note.issue or "").strip()
+            if not table or not issue or table in ("SQL Execution", ""):
+                continue
+            if column and _write_caveat(table, column, issue):
+                written += 1
+
+        # ── Pass 2: LLM extraction from chain summary ─────────────────────────
+        if not chain_summary:
+            return written
+
+        try:
+            llm = get_provider("coder")
+            learning: _SchemaLearning = llm.complete(
+                system=(
+                    "You are auditing an analytics investigation for schema-level data quality issues. "
+                    "Extract ONLY concrete, column-specific caveats that were directly observed in "
+                    "the findings below. Do not infer or guess. "
+                    "Focus on: wrong identifier columns, per-row hashes mistaken for stable IDs, "
+                    "NULL patterns that skew aggregations, type mismatches, and FK mismatches."
+                ),
+                user=(
+                    f"INVESTIGATION FINDINGS:\n{chain_summary[:4000]}\n\n"
+                    f"CONCLUSION: {report.conclusion}\n\n"
+                    "List any schema caveats (column-level gotchas) that an analyst must know "
+                    "to avoid getting wrong answers on this dataset. "
+                    "Only include findings directly evidenced by the data above. "
+                    "Return an empty list if no clear schema issues were found."
+                ),
+                response_model=_SchemaLearning,
+            )
+
+            for caveat in (learning.caveats or []):
+                table = (caveat.table or "").strip()
+                column = (caveat.column or "").strip()
+                text = (caveat.caveat or "").strip()
+                if _write_caveat(table, column, text):
+                    written += 1
+
+        except Exception:
+            pass  # LLM pass failing is fine — pass 1 already wrote what it could
+
+        return written
+
+    except Exception:
+        return 0  # Never crash the pipeline
+
+
 def synthesize_exploration(state: AgentState) -> dict[str, Any]:
     """Produce the final ExplorationReport from the completed Q→A chain."""
     answers = state.get("subq_answers", [])
@@ -383,5 +498,9 @@ def synthesize_exploration(state: AgentState) -> dict[str, Any]:
     if dq_notes:
         existing = list(report.data_quality_notes or [])
         report = ExplorationReport(**{**report.model_dump(), "data_quality_notes": existing + dq_notes})
+
+    # ── Learning loop: persist schema discoveries back to the glossary ────────
+    conn_id = state.get("connection_id", "")
+    _learn_from_exploration(report, chain_summary, conn_id)
 
     return {"explore_report": report}

@@ -591,6 +591,29 @@ def ada_intake(state: AgentState) -> dict:
     }
 
 
+# ── Premise direction helpers ─────────────────────────────────────────────────
+
+_QUESTION_DOWN_RE = re.compile(
+    r'\b(drop|dropped|decline|declined|fell|fall|falls|decrease|decreased|down|lower|'
+    r'loss|lost|shrink|shrank|worse|worsening|underperform|underperforming|slow|slowed|slowing)\b',
+    re.IGNORECASE,
+)
+_QUESTION_UP_RE = re.compile(
+    r'\b(rise|rose|risen|increase|increased|grew|grow|growth|jump|jumped|surge|surged|'
+    r'up|higher|improve|improved|gain|gained|spike|spiked|accelerat)\b',
+    re.IGNORECASE,
+)
+
+
+def _detect_question_direction(question: str) -> Optional[str]:
+    """Return 'down' if question implies a drop, 'up' if it implies a rise, else None."""
+    if _QUESTION_DOWN_RE.search(question):
+        return "down"
+    if _QUESTION_UP_RE.search(question):
+        return "up"
+    return None
+
+
 def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
     """
     Phase 2 — Baseline & Anomaly Assessment.
@@ -758,18 +781,134 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
         sig_label = "significant anomaly" if code_significant else "within normal variance"
         summary = f"{summary} [stats.py: σ={code_sigma:.2f} — {sig_label}]"
 
+    # ── Premise validation: detect when observation period contradicts the question's intent ──
+    # e.g. question asks "why did revenue DROP?" but obs period actually showed a rise.
+    # Strategy: fire ONE three-way SQL (obs vs comp vs prior) to determine actual directions.
+    # If obs vs comp contradicts question intent but comp vs prior confirms it → redirect.
+    updated_intake = None
+    try:
+        expected_dir = _detect_question_direction(question)
+        if expected_dir is not None and obs_start and obs_end and comp_start and comp_end:
+            from datetime import date, timedelta
+            cs_dt = date.fromisoformat(comp_start[:10])
+            ce_dt = date.fromisoformat(comp_end[:10])
+            # Prior period = same span as comp period, immediately before it
+            period_days = (ce_dt - cs_dt).days  # e.g. Feb: 27 days (Feb1→Feb28 span-1)
+            prior_end_dt = cs_dt - timedelta(days=1)
+            prior_start_dt = prior_end_dt - timedelta(days=period_days)
+            prior_start = prior_start_dt.isoformat()
+            prior_end = prior_end_dt.isoformat()
+
+            # Single query: returns obs_value, comp_value, prior_value
+            three_way_sql = (
+                f"SELECT "
+                f"  SUM(CASE WHEN CAST({date_col} AS DATE) >= DATE '{obs_start}' "
+                f"           AND CAST({date_col} AS DATE) <= DATE '{obs_end}' "
+                f"      THEN {metric_sql} ELSE 0 END) AS obs_value, "
+                f"  SUM(CASE WHEN CAST({date_col} AS DATE) >= DATE '{comp_start}' "
+                f"           AND CAST({date_col} AS DATE) <= DATE '{comp_end}' "
+                f"      THEN {metric_sql} ELSE 0 END) AS comp_value, "
+                f"  SUM(CASE WHEN CAST({date_col} AS DATE) >= DATE '{prior_start}' "
+                f"           AND CAST({date_col} AS DATE) <= DATE '{prior_end}' "
+                f"      THEN {metric_sql} ELSE 0 END) AS prior_value "
+                f"FROM {metric_table}"
+            )
+            # Apply ontology active filter if available (same as baseline queries)
+            active_filter = intake_data.get("active_filter")
+            if active_filter:
+                three_way_sql += f" WHERE {active_filter}"
+
+            val_result = _execute_safe(conn, "premise_check", three_way_sql)
+            if (not val_result.error and val_result.rows
+                    and len(val_result.rows[0]) >= 3):
+                row = val_result.rows[0]
+                try:
+                    obs_v = float(row[0] or 0)
+                    comp_v = float(row[1] or 0)
+                    prior_v = float(row[2] or 0)
+
+                    if comp_v == 0 or obs_v == comp_v:
+                        raise ValueError("degenerate values — skip")
+
+                    # Direction obs period actually moved vs comparison
+                    obs_dir = "up" if obs_v > comp_v else "down"
+
+                    if obs_dir != expected_dir and prior_v != 0:
+                        # Mismatch: obs period moved opposite to question intent.
+                        # Check if comp period shows the expected direction vs prior.
+                        comp_dir = "down" if comp_v < prior_v else "up"
+                        if comp_dir == expected_dir:
+                            actual_obs_pct = (obs_v - comp_v) / abs(comp_v) * 100
+                            redirect_pct = (comp_v - prior_v) / abs(prior_v) * 100
+                            direction_word = "drop" if expected_dir == "down" else "rise"
+                            correction_note = (
+                                f"Your question asked about a {direction_word} in {obs_label}, "
+                                f"but that period actually showed a "
+                                f"{'rise' if expected_dir == 'down' else 'drop'} "
+                                f"({actual_obs_pct:+.1f}%). "
+                                f"The actual {direction_word} occurred in {comp_label} "
+                                f"({redirect_pct:+.1f}% vs prior period "
+                                f"{prior_start} → {prior_end}). "
+                                f"Investigation re-anchored to this window."
+                            )
+                            # Prepend a prominent correction finding
+                            correction_finding = InvestigationFinding(
+                                finding_id="premise_correction",
+                                title=f"⚠️ Window Corrected — actual {direction_word} is in {comp_label}",
+                                sql=three_way_sql,
+                                columns=["obs_value", "comp_value", "prior_value"],
+                                rows=[[obs_v, comp_v, prior_v]],
+                                row_count=1,
+                                error=None,
+                                interpretation=correction_note,
+                                key_numbers=[
+                                    PhaseKeyNumber(
+                                        label=f"{comp_label} (re-anchored window)",
+                                        value=f"{comp_v:,.0f}",
+                                        delta=f"{redirect_pct:+.1f}%",
+                                        context=f"vs prior period {prior_start} → {prior_end}",
+                                    ),
+                                ],
+                                chart_type="none",
+                                stat_note=None,
+                                is_significant=True,
+                            )
+                            findings = [correction_finding] + findings
+                            summary = f"⚠️ {correction_note} | {summary}"
+                            passes_to_next = correction_note + " " + passes_to_next
+
+                            # Update _ada_intake so all downstream phases use correct periods
+                            updated_intake = dict(intake_data)
+                            updated_intake["observation_start"] = comp_start
+                            updated_intake["observation_end"] = comp_end
+                            updated_intake["observation_label"] = comp_label
+                            updated_intake["comparison_start"] = prior_start
+                            updated_intake["comparison_end"] = prior_end
+                            updated_intake["comparison_label"] = (
+                                f"Prior period ({prior_start} → {prior_end})"
+                            )
+                            updated_intake["_premise_corrected"] = True
+                            updated_intake["_premise_correction_note"] = correction_note
+                except (TypeError, ValueError, ZeroDivisionError):
+                    pass
+    except Exception:
+        pass  # Premise check is best-effort — never crash the pipeline
+
     phase = _phase_result(
         "baseline", "Baseline & Anomaly Assessment", "📊",
         "complete" if any(not f["error"] for f in findings) else "partial",
         summary, findings,
     )
-    return {
+    ret: dict = {
         "investigation_phases": phases + [phase],
         "_baseline_summary": summary,
         "_baseline_passes": passes_to_next,
         "_baseline_significant": code_significant,
         "_baseline_sigma": code_sigma,
     }
+    if updated_intake is not None:
+        ret["_ada_intake"] = updated_intake
+    return ret
 
 
 def ada_decompose(state: AgentState, conn: "DatabaseConnection") -> dict:
