@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import DeleteIcon from "@atlaskit/icon/core/delete";
 import type { InvestigationSummary } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { API_BASE } from "@/lib/config";
 
 interface Props {
   selectedId: string | null;
@@ -30,8 +31,8 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8_000);
     Promise.all([
-      fetch("http://localhost:8000/investigations", { signal: controller.signal }).then(r => r.json()),
-      fetch("http://localhost:8000/investigations/indexed-ids", { signal: controller.signal }).then(r => r.json()).catch(() => ({ ids: [] })),
+      fetch(`${API_BASE}/investigations`, { signal: controller.signal }).then(r => r.json()),
+      fetch(`${API_BASE}/investigations/indexed-ids`, { signal: controller.signal }).then(r => r.json()).catch(() => ({ ids: [] })),
     ])
       .then(([invs, indexed]) => {
         setItems(invs);
@@ -45,7 +46,7 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
     e.stopPropagation();
     setDeletingId(invId);
     try {
-      const res = await fetch(`http://localhost:8000/investigations/${invId}`, { method: "DELETE" });
+      const res = await fetch(`${API_BASE}/investigations/${invId}`, { method: "DELETE" });
       if (res.ok || res.status === 204) {
         setItems(prev => prev.filter(i => i.id !== invId));
       }
@@ -58,7 +59,7 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-2 text-center px-6">
         <p className="text-sm text-zinc-500">No investigations yet.</p>
-        <p className="text-xs text-zinc-500">Run your first to see it here.</p>
+        <p className="text-[11px] text-zinc-500">Run your first to see it here.</p>
       </div>
     );
   }
@@ -75,20 +76,20 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
     <div className="flex flex-col h-full">
       <div className="px-3 py-2.5 border-b border-zinc-600 shrink-0 space-y-2">
         <div className="flex items-center justify-between">
-          <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-medium">History</p>
-          <span className="text-[10px] text-zinc-500">{items.length}</span>
+          <p className="aug-label">History</p>
+          <span className="text-[11px] text-[--t3]">{items.length}</span>
         </div>
         <input
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search…"
-          className="w-full rounded-lg bg-zinc-800 border border-zinc-600 text-xs text-zinc-300 placeholder:text-zinc-400 px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-zinc-600 transition"
+          className="aug-input py-1.5"
         />
       </div>
       <ul className="flex-1 overflow-y-auto divide-y divide-zinc-600/40">
         {filtered.length === 0 && (
-          <li className="px-4 py-6 text-center text-xs text-zinc-500">No matches</li>
+          <li className="px-4 py-6 text-center text-[11px] text-zinc-500">No matches</li>
         )}
         {filtered.map(inv => {
           const isSelected = inv.id === selectedId;
@@ -110,7 +111,7 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
                   <div className="flex items-center gap-1.5 flex-1 min-w-0">
                     {/* Kind badge */}
                     <span className={cn(
-                      "inline-flex shrink-0 items-center px-1 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider",
+                      "inline-flex shrink-0 items-center px-1 py-0.5 rounded text-[11px] font-semibold uppercase tracking-wider",
                       isChat
                         ? "bg-sky-500/10 text-sky-400 border border-sky-500/20"
                         : "bg-violet-500/10 text-violet-400 border border-violet-500/20"
@@ -128,18 +129,18 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
                     {!isChat && (
                       <span
                         title={isIndexed ? "Indexed in Qdrant — eligible for cache" : "Not yet indexed"}
-                        className={cn("text-[10px]", isIndexed ? "text-emerald-400" : "text-zinc-500")}
+                        className={cn("text-[11px]", isIndexed ? "text-emerald-400" : "text-zinc-500")}
                       >
                         ◉
                       </span>
                     )}
-                    <span className="text-xs text-zinc-500">{timeAgo(inv.started_at)}</span>
+                    <span className="text-[11px] text-zinc-500">{timeAgo(inv.started_at)}</span>
                   </div>
                 </div>
                 {inv.headline && (
-                  <p className="mt-1 text-xs text-zinc-500 line-clamp-1">{inv.headline}</p>
+                  <p className="mt-1 text-[11px] text-zinc-500 line-clamp-1">{inv.headline}</p>
                 )}
-                <div className="mt-1.5 flex items-center gap-3 text-xs text-zinc-500 flex-wrap">
+                <div className="mt-1.5 flex items-center gap-3 text-[11px] text-zinc-500 flex-wrap">
                   {!isChat && <span>{inv.hypothesis_count} hypotheses</span>}
                   {!isChat && <span>·</span>}
                   <span>{inv.query_count} {isChat ? "query" : "queries"}</span>
@@ -148,19 +149,19 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
                   {inv.status === "timed_out" && (
                     <>
                       <span>·</span>
-                      <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-amber-500/20 bg-amber-500/10 text-amber-400 text-[10px] font-medium" title="Investigation exceeded the time limit">⏱ timed out</span>
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-amber-500/20 bg-amber-500/10 text-amber-400 text-[11px] font-medium" title="Investigation exceeded the time limit">⏱ timed out</span>
                     </>
                   )}
                   {inv.status === "failed" && (
                     <>
                       <span>·</span>
-                      <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-red-500/20 bg-red-500/10 text-red-400 text-[10px] font-medium">✕ failed</span>
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-red-500/20 bg-red-500/10 text-red-400 text-[11px] font-medium">✕ failed</span>
                     </>
                   )}
                   {inv.status === "running" && (
                     <>
                       <span>·</span>
-                      <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-emerald-500/20 bg-emerald-500/10 text-emerald-400 text-[10px] font-medium">● running</span>
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-emerald-500/20 bg-emerald-500/10 text-emerald-400 text-[11px] font-medium">● running</span>
                     </>
                   )}
                 </div>

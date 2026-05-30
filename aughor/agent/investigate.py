@@ -24,6 +24,7 @@ from aughor.agent.state import (
 )
 from aughor.tools.executor import format_result_for_llm
 from aughor.tools.stats import analyze_query_result
+from aughor import telemetry as _telemetry
 
 if TYPE_CHECKING:
     from aughor.db.connection import DatabaseConnection
@@ -467,6 +468,7 @@ def _phases_evidence(phases: list[InvestigationPhaseResult]) -> str:
 
 # ── Phase nodes ───────────────────────────────────────────────────────────────
 
+@_telemetry.node_span("ada_intake")
 def ada_intake(state: AgentState) -> dict:
     """
     Phase 1 — Question Intake.
@@ -614,6 +616,7 @@ def _detect_question_direction(question: str) -> Optional[str]:
     return None
 
 
+@_telemetry.node_span("ada_baseline")
 def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
     """
     Phase 2 — Baseline & Anomaly Assessment.
@@ -712,6 +715,8 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
         question=question,
         results_text=results_text,
         events_section=events_section,
+        z_threshold=2.0,
+        pct_threshold=10,
     )
     try:
         interpretation: PhaseInterpretation = _provider("narrator").complete(
@@ -911,6 +916,7 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
     return ret
 
 
+@_telemetry.node_span("ada_decompose")
 def ada_decompose(state: AgentState, conn: "DatabaseConnection") -> dict:
     """
     Phase 3 — Metric Decomposition.
@@ -1034,6 +1040,7 @@ def ada_decompose(state: AgentState, conn: "DatabaseConnection") -> dict:
     }
 
 
+@_telemetry.node_span("ada_dimensional")
 def ada_dimensional(state: AgentState, conn: "DatabaseConnection") -> dict:
     """
     Phase 4 — Dimensional Drill-Down.
@@ -1168,6 +1175,7 @@ def ada_dimensional(state: AgentState, conn: "DatabaseConnection") -> dict:
     }
 
 
+@_telemetry.node_span("ada_behavioral")
 def ada_behavioral(state: AgentState, conn: "DatabaseConnection") -> dict:
     """
     Phase 5+6 — Behavioral & Operational Diagnostics.
@@ -1305,6 +1313,7 @@ def ada_behavioral(state: AgentState, conn: "DatabaseConnection") -> dict:
     }
 
 
+@_telemetry.node_span("ada_synthesize")
 def ada_synthesize(state: AgentState) -> dict:
     """
     Phase 8 — Synthesis: Attribution Waterfall + Recommendations.
@@ -1502,6 +1511,42 @@ def ada_synthesize(state: AgentState) -> dict:
         risks=[r["action"] for r in ada_report["recommendations"][:2]],
         recommended_actions=[r["action"] for r in ada_report["recommendations"]],
     )
+
+    # ── Persist evidence claims to the ledger ────────────────────────────────
+    investigation_id = state.get("investigation_id") or ""
+    if investigation_id:
+        try:
+            from datetime import datetime, timezone
+            from aughor.evidence.linker import (
+                extract_claims_from_ada_phases,
+                extract_claims_from_report,
+            )
+            from aughor.evidence import store as _ev_store
+
+            completed_ts = datetime.now(timezone.utc).isoformat()
+
+            # Prefer ADA phases (richer provenance — has per-finding SQL)
+            if phases:
+                claims = extract_claims_from_ada_phases(
+                    investigation_id=investigation_id,
+                    phases=phases,
+                    completed_at=completed_ts,
+                )
+            else:
+                qh = [qr.model_dump() if hasattr(qr, "model_dump") else dict(qr)
+                      for qr in (state.get("query_history") or [])]
+                claims = extract_claims_from_report(
+                    investigation_id=investigation_id,
+                    report=legacy_report,
+                    query_history=qh,
+                    completed_at=completed_ts,
+                )
+
+            for claim in claims:
+                _ev_store.append_claim(claim)
+
+        except Exception:
+            pass  # evidence ledger is non-critical — never break the investigation
 
     return {
         "ada_report": ada_report,

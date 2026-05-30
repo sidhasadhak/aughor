@@ -646,20 +646,19 @@ doppler-env>=0.3.0  # Doppler (optional, lighter alternative)
 
 ---
 
-## Milestone 7 — Observability
+## Milestone 7 — Observability ✅ SHIPPED (Sprint 40)
 **Goal:** Full LLM trace per investigation in Langfuse; OpenTelemetry spans for timing across all nodes.
 
-**Files to create/modify:**
-- `hermes/agent/nodes.py` — wrap each node with `@observe` (Langfuse decorator); include `hypothesis_id` and `iteration` as trace metadata
-- `hermes/llm/provider.py` — pass Langfuse client to instructor so every LLM call is traced with prompt + completion + token count
-- `hermes/api.py` — emit `trace_id` in SSE `start` event so frontend can deep-link to the Langfuse trace for that investigation
+**Shipped:**
+- `aughor/telemetry.py` *(new)* — Langfuse client + OTel tracer singletons; lazy init from env vars; `new_trace()`, `span()` context manager, `log_generation()`, `end_trace()`, `node_span()` decorator factory; all functions strict no-ops when unconfigured
+- `aughor/agent/state.py` — `trace_id: str` added to `AgentState` TypedDict
+- `aughor/agent/nodes.py` — `@node_span` on 6 generic investigation nodes: `route_question`, `decompose`, `plan_queries`, `execute_planned_queries`, `score_evidence`, `synthesize_report`
+- `aughor/agent/investigate.py` — `@node_span` on all 6 ADA phase nodes: `ada_intake`, `ada_baseline`, `ada_decompose`, `ada_dimensional`, `ada_behavioral`, `ada_synthesize`
+- `aughor/routers/investigations.py` — `new_trace()` called before `start` SSE; `trace_id` in start event payload and `initial_state`; `end_trace()` in `finally` block
+- `pyproject.toml` — `observability` optional dep group: `langfuse>=2.0.0`, `opentelemetry-sdk>=1.24.0`, `opentelemetry-exporter-otlp>=1.24.0`
+- `tests/unit/test_telemetry.py` *(new)* — 19 unit tests: no-op paths, decorator correctness, metadata extraction, exception propagation, OTel attr types, SSE format contract
 
-**New deps:**
-```
-langfuse>=2.0.0
-opentelemetry-sdk>=1.24.0
-opentelemetry-exporter-otlp>=1.24.0
-```
+**Activation:** set `LANGFUSE_PUBLIC_KEY` + `LANGFUSE_SECRET_KEY` (and optionally `OTEL_EXPORTER_OTLP_ENDPOINT`), then `pip install "aughor[observability]"`.
 
 **Dependency on:** none, but most valuable after Milestone 5 (cloud LLM calls have real token costs worth tracing)
 
@@ -1900,7 +1899,7 @@ Security baseline (M6 partial) → must land before Sprint 26 (API connectors) w
 
 ## Current focus
 
-**Shipped:** M1 (Semantic Layer), M2a–2c + 2e–2j (Agent hardening, HITL, Direct Query, Routing v2, SQL KB, Error Classification, Schema Intelligence, KB Enrichment), M8 (Frontend Charts, Chart Intelligence, Report UX), M9 (Quick Chat + Chart Engine + Deep Analysis tab), 1e (Metrics Catalog), ER Diagram, Rich Schema Card UI, Global Analytics Rules (32), Hypothesis Expanded Accordion (33), Connection-scoped semantic cache, Paren-aware ROUND rewriter, Schema parser dedup, Timeout 600 s, UI color pass, **M12 Background Schema Explorer + Business Ontology + Domain Intelligence + SqlWriter (48 features total)**, Plan-then-SQL Separation (49), Non-blocking event loop (50), Loading state hardening (51), Home stat card navigation (52), Schema cache backend + frontend (53), **M13a–13e: Metric Targets + Health Scorecard (54), Structured Playbook from KB (55), Outcome Tracking & Feedback Loop (56), Document Ingestion (57), Process Visual Mapper (58)**
+**Shipped:** M1 (Semantic Layer), M2a–2c + 2e–2j (Agent hardening, HITL, Direct Query, Routing v2, SQL KB, Error Classification, Schema Intelligence, KB Enrichment), M8 (Frontend Charts, Chart Intelligence, Report UX), M9 (Quick Chat + Chart Engine + Deep Analysis tab), 1e (Metrics Catalog), ER Diagram, Rich Schema Card UI, Global Analytics Rules (32), Hypothesis Expanded Accordion (33), Connection-scoped semantic cache, Paren-aware ROUND rewriter, Schema parser dedup, Timeout 600 s, UI color pass, **M12 Background Schema Explorer + Business Ontology + Domain Intelligence + SqlWriter (48 features total)**, Plan-then-SQL Separation (49), Non-blocking event loop (50), Loading state hardening (51), Home stat card navigation (52), Schema cache backend + frontend (53), **M13a–13e: Metric Targets + Health Scorecard (54), Structured Playbook from KB (55), Outcome Tracking & Feedback Loop (56), Document Ingestion (57), Process Visual Mapper (58)**, **R1 Reliability Baseline + R3 Feature Reachability + R2 Test Infrastructure (Sprints 36–38)**, **M17 API Router Refactor — 3,375-line api.py → 12 domain routers (Sprint 39)**, **M7 Observability — Langfuse + OTel spans on 12 nodes, trace_id in SSE, 45 tests (Sprint 40)**, **M10 LLM Evals (Sprint 41)**, **M22 Design System Consolidation — tokens.css + type.css + 12-component audit (Sprint 42)**, **M18 Navigation + Command Palette + Ask Hero — 5-section nav, ⌘K palette, AskScreen (Sprint 43)**, **M19 Evidence Ledger — append-only SQLite claims, provenance, feedback loop (Sprint 44)**, **M20 Proactive Monitors — 6 monitor types, APScheduler, digest endpoint, alert banner (Sprint 45)**
 
 **Sprint 12 — Background Explorer + Domain Intelligence ✅ SHIPPED:**
 - `aughor/explorer/agent.py` — `SchemaExplorer` with 8 phases: null meanings (3), join verification (4), lifecycle mapping (5), distribution profiling (6), cross-table patterns (7), domain intel loop (8)
@@ -2026,7 +2025,7 @@ Security baseline (M6 partial) → must land before Sprint 26 (API connectors) w
 - `aughor/agent/state.py` — `DataQualityNote` fields defaulted to empty string (LLMs omit them); `ExplorationReport.data_quality_notes` validator strips malformed entries; `ReasoningOutput.new_sub_question` validator coerces JSON-stringified objects (models return nested objects as strings)
 - **Explorer → KB write loop (M20b — Sprint 20b):** after `synthesize_exploration`, extract data quality discoveries from `data_quality_notes` + narrative anomalies; write connection-scoped caveats back to `glossary.yaml` via `update_column()` / `update_table()` — closes the learning loop so Explorer findings persist across sessions
 
-**Sprint 21 — M16a: Canvas Data Model + Backend Migration:**
+**Sprint 21 — M16a: Canvas Data Model + Backend Migration ✅ SHIPPED:**
 - `aughor/canvas/__init__.py`, `models.py`, `store.py` — `CanvasScope` + `Canvas` models; `canvas_store` SQLite-backed; `migrate_connections_to_legacy_canvases()` runs once on startup (idempotent)
 - `aughor/agent/state.py` — `canvas_id: str`, `resolved_connection_id: str`, `canvas_schema_context: str` added to `AgentState`
 - `aughor/agent/nodes.py` — `decompose_question` builds `canvas_schema_context` via `build_canvas_schema_context()` when `canvas_id` present
@@ -2044,13 +2043,24 @@ Security baseline (M6 partial) → must land before Sprint 26 (API connectors) w
 - `web/lib/api.ts` — Canvas CRUD types + fetch functions; Canvas-scoped history/suggestions/recents
 - `GET /canvases/{id}/history`, `GET /canvases/{id}/suggestions`, `GET /canvases/{id}/recents` API routes
 
-**Sprint 23 — M16c: Canvas-Aware Explorer + Intelligence Foundation:**
+**Sprint 23 — M16c: Canvas-Aware Explorer + Intelligence Foundation ✅ SHIPPED:**
 - `aughor/explorer/agent.py` — `explore()` accepts `Canvas` instead of `connection_id`; phases 3–7 run against `canvas.scopes[0].tables` only (or full schema if `is_full_schema`); state file keyed by `canvas_id`
 - `aughor/explorer/store.py` — `ExplorationStatus.canvas_id` field; lookup by `canvas_id`; legacy explorers (connection-scoped) continue unchanged
 - `aughor/api.py` — `/exploration/{canvas_id}/...` routes alongside existing `/{conn_id}/...` for backward compat; "Explore full schema" one-off trigger writes to `exploration_full_{connection_id}.json`
 - `IntelligenceEntry` gains `canvas_id: str`, `promoted_to_org: bool = False`, `promotion_confidence: float = 0.0`
 - `web/components/DomainIntelPanel.tsx` — scoped to active Canvas; "Promote to Org →" button per entry (stores flag, builds foundation for Sprint 33)
 - `web/components/ActivityLog.tsx` — episode feed filtered by active Canvas
+
+**Sprint 40 — M7 Observability ✅ SHIPPED:**
+- `aughor/telemetry.py` *(new)* — `_langfuse()` lazy Langfuse client (reads `LANGFUSE_PUBLIC_KEY` + `LANGFUSE_SECRET_KEY`); `_otel()` lazy OTel tracer (reads `OTEL_EXPORTER_OTLP_ENDPOINT`); `new_trace(inv_id, question, conn_id)` → creates Langfuse trace keyed by `investigation_id`, returns `trace_id`; `span(trace_id, name, metadata)` context manager creates Langfuse + OTel spans; `log_generation(...)` logs LLM call to trace; `end_trace(trace_id)` finalises + flushes; `node_span(name)` decorator factory works for both `(state,)` and `(state, conn)` signatures
+- `aughor/agent/state.py` — `trace_id: str` field added to `AgentState` TypedDict
+- `aughor/agent/nodes.py` — `@node_span` applied to 6 nodes: `route_question`, `decompose`, `plan_queries`, `execute_planned_queries`, `score_evidence`, `synthesize_report`; each span carries `iteration`, `hypothesis_idx`, `hypothesis_id` metadata
+- `aughor/agent/investigate.py` — `@node_span` applied to all 6 ADA nodes: `ada_intake`, `ada_baseline`, `ada_decompose`, `ada_dimensional`, `ada_behavioral`, `ada_synthesize`
+- `aughor/routers/investigations.py` — `new_trace()` called immediately before `start` SSE; `trace_id` included in start event payload (deep-link to Langfuse trace) and in `initial_state`; `end_trace()` in `finally` block to flush on completion or error
+- `aughor/agent/graph.py` — `"trace_id": ""` added to CLI `initial_state`
+- `pyproject.toml` — `observability` optional dep group: `langfuse>=2.0.0`, `opentelemetry-sdk>=1.24.0`, `opentelemetry-exporter-otlp>=1.24.0`
+- `tests/unit/test_telemetry.py` *(new, 19 tests)* — covers no-op paths, decorator pass-through, hypothesis metadata extraction, exception propagation, OTel attr type safety, SSE format contract
+- **Test suite: 26 → 45 passing (all non-e2e)**
 
 **Sprint 24 — M6 Security baseline:**
 - `aughor/security/safety.py` — `SafetyVerdict` gains `SUSPICIOUS`; `_score_suspicious()` heuristic layer on top of existing SQLGlot structural check; amber "⚠ Flagged Query" badge in `ReportView.tsx` on suspicious verdict
@@ -2121,3 +2131,832 @@ Security baseline (M6 partial) → must land before Sprint 26 (API connectors) w
 **Sprint 35 — Quality gates:**
 - M10 LLM Evals (Braintrust): 50-question golden dataset from investigation history; `verdict_accuracy`, `query_efficiency`, `hallucination_rate` scorers; CI gate on every PR touching `aughor/agent/`
 - M7 Observability (Langfuse + OpenTelemetry): trace per investigation with `hypothesis_id` metadata; `trace_id` in SSE start event; most valuable now that cloud LLM calls have real token costs
+
+---
+
+## External Audit — Findings & Roadmap Response
+
+*Source: independent LLM audit of the full repo (May 2026). Summary: architecture and ambition are strong; reliability guardrails are not yet proportionate to the surface area. Every concrete finding below is confirmed.*
+
+---
+
+## Milestone R — Reliability Baseline ⚡ IMMEDIATE PRIORITY
+
+**Do this before any new feature work.** These are confirmed bugs and hygiene issues that degrade trust in the platform and block deployment.
+
+**Sprint R1 — Bugs + hardening:**
+
+### R1a — Fix Explorer Recursion Bug
+**Finding:** `aughor/explorer/agent.py` calls `self._save_state()` inside itself for non-canvas explorers instead of `_store.save(...)`. This means every save in a non-canvas context silently re-enters the method — potential infinite recursion or state corruption on large schemas.
+
+**Fix:**
+- `aughor/explorer/agent.py` — audit all `self._save_state()` calls; replace non-canvas invocations with the correct `_store.save(conn_id, state)` call pattern used by canvas explorers
+- Add a unit test: `test_save_state_does_not_recurse()` — monkeypatch `_store.save` and assert it is called exactly once per `_save_state()` invocation
+
+**Files:** `aughor/explorer/agent.py`, `tests/test_explorer.py` (new)
+
+---
+
+### R1b — Replace Hardcoded localhost:8000
+**Finding:** `const BASE = "http://localhost:8000"` appears in at least 6 component files — `RecommendationInbox.tsx`, `ActionHubPanel.tsx`, `CatalogScreen.tsx`, and others. This makes the frontend non-deployable without a code change.
+
+**Fix:**
+- Add `NEXT_PUBLIC_API_URL` to `web/.env.local.example` (default: `http://localhost:8000`)
+- Create `web/lib/config.ts` — `export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"`
+- Global find-and-replace: `const BASE = "http://localhost:8000"` → `import { API_BASE } from "@/lib/config"` + use `API_BASE`
+- Add `NEXT_PUBLIC_API_URL` to `start.sh` and deployment docs
+
+**Files:** `web/lib/config.ts` (new), all components with hardcoded BASE, `web/.env.local.example`
+
+---
+
+### R1c — Fix Lint Errors (42 errors, 52 warnings)
+**Finding:** `npm run lint` produces 42 errors. This signals accumulated technical debt and makes the codebase harder to reason about — particularly dangerous for a codebase this size.
+
+**Fix:** Run `npm run lint 2>&1 | head -100` to triage. Priority order:
+1. `no-unused-vars` / `@typescript-eslint/no-unused-vars` — delete dead imports
+2. `react-hooks/exhaustive-deps` — add missing deps or `// eslint-disable-line` with justification
+3. `@typescript-eslint/no-explicit-any` — replace top offenders with proper types
+4. Remaining warnings — convert to proper patterns or explicitly suppress with reason
+
+**Files:** Various `web/components/*.tsx` and `web/app/*.tsx`
+
+---
+
+### R1d — Configurable CORS
+**Finding:** `allow_origins=["*"]` is wide open. Fine for local dev; a security gap for any shared or multi-tenant deployment.
+
+**Fix:**
+- Add `AUGHOR_CORS_ORIGINS` env var (comma-separated, default `*` for backward compat)
+- `aughor/api.py` — parse `AUGHOR_CORS_ORIGINS`; if set and not `*`, use explicit list
+- Document in `.env.example`: `AUGHOR_CORS_ORIGINS=http://localhost:3000,https://your-domain.com`
+
+**Files:** `aughor/api.py`, `.env.example`
+
+---
+
+### R1e — Minimal Bearer Token Auth
+**Finding:** No auth visible anywhere. Any endpoint is callable by anyone who can reach port 8000.
+
+**Fix (lightweight, not full RBAC):**
+- Add `AUGHOR_API_KEY` to `.env.example`
+- FastAPI dependency `verify_api_key(x_api_key: str = Header(...))` — if `AUGHOR_API_KEY` is set in env, all non-GET endpoints require the matching header; if unset, auth is skipped (maintains local dev ergonomics)
+- Frontend: `web/lib/config.ts` — `API_KEY = process.env.NEXT_PUBLIC_API_KEY ?? ""`; all `fetch()` calls include `X-Api-Key` header when non-empty
+
+**Files:** `aughor/api.py`, `web/lib/config.ts`, `.env.example`
+
+---
+
+### R1f — Fix Stale hermes/* References
+**Finding:** Docs and some env var names still reference the old `hermes/` path and `HERMES_*` env var prefix. The code now uses `aughor/` and `AUGHOR_*`.
+
+**Fix:**
+- Grep for `hermes/`, `HERMES_`, `hypothesis-engine` in `*.md`, `*.txt`, `.env.example`
+- Replace with `aughor/`, `AUGHOR_*`, `aughor`
+- Update `ROADMAP.md` shipped items table (lines 11–79) where `hermes/*.py` is cited
+
+**Files:** `README.md`, `ROADMAP.md`, `.env.example`, any other docs
+
+---
+
+## Milestone R3 — Feature Reachability
+
+**Finding:** A systematic audit of `web/components/` revealed that 9 components are fully built and functional but are either completely unreachable from any nav item, or buried so deep (4–5 clicks) that they are functionally invisible. These are not planned features — they are **shipped features that deliver no value because users cannot reach them.** Fixing this is the highest-ROI sprint in the roadmap: no backend work, no new code, just wiring existing components into the render tree.
+
+**Why this sprint comes before R2 (tests):** Tests protect against regression. But if features are already unreachable, there is nothing to protect. Reachability first; then add tests to guard what you just unlocked.
+
+---
+
+### R3a — Investigation Transparency (ThinkingTrace + HypothesisCard + FeedbackPrompt)
+
+**The problem:** `useInvestigation.ts` streams real-time agent state — hypotheses forming, SQL queries running, evidence scoring, verdict assignment. This state is tracked in full (`hypotheses[]`, `statsPerHypothesis`, phase events). Three components are built to render it. None are mounted.
+
+- **`ThinkingTrace.tsx`** — Renders the full `InvestigationState`: phases completed, hypotheses being tested, reasoning log. Shows the agent "thinking" in real time. Takes `{ state: InvestigationState }` — state already exists in `ChatPanel`'s `useInvestigation` hook.
+- **`HypothesisCard.tsx`** — Visual card per hypothesis: text, confidence bar, verdict badge. Renders from `state.hypotheses[]` which populates on every SSE `hypotheses` event.
+- **`FeedbackPrompt.tsx`** — After the final report renders, lets users mark each hypothesis as confirmed / refuted / needs context. Calls `POST /investigations/{id}/feedback` which is already wired in `useInvestigation.ts` line 289.
+
+**Files to modify:**
+- `web/components/ChatPanel.tsx` — add `<ThinkingTrace state={state} />` inside the streaming phase block (collapsible, expanded while streaming); add `<HypothesisCard>` rendering per `state.hypotheses` entry; add `<FeedbackPrompt>` at the end of the last turn when `state.streaming === false && state.hypotheses.length > 0`
+
+**What unlocks:** Users see the agent reasoning. They see hypotheses form and resolve. They can validate or dispute conclusions. This is the transparency layer that makes Aughor an auditable analyst rather than a black box.
+
+---
+
+### R3b — Metrics Panel Standalone Route
+
+**The problem:** Metrics are a top-level platform concept — the metric catalog is what makes Aughor's SQL semantically governed rather than ad-hoc. But `MetricsPanel.tsx` is only reachable via: Canvases → open a canvas → Configure → Instructions tab → Metrics sub-tab. Five steps, canvas-only. A user who doesn't use canvases cannot access metrics at all.
+
+**Fix:** Add a `"metrics"` tab to `NavTab` and `NAV_GROUPS`. Mount `<MetricsPanel />` at `tab === "metrics"`. The component takes no required props.
+
+**Files to modify:**
+- `web/app/page.tsx` — add `"metrics"` to `NavTab` type; add `{ id: "metrics", icon: "metric", label: "Metrics", group: null }` to `NAV_GROUPS`; add render block `{tab === "metrics" && <MetricsPanel />}`; add `metric` icon path to `ICON_PATHS`
+
+**What unlocks:** Users can define, browse, and edit metric definitions from the main nav. Every investigation that references a metric now has a governed formula behind it.
+
+---
+
+### R3c — Document Upload Outside Canvas
+
+**The problem:** `DocumentUploader.tsx` handles PDF/CSV knowledge uploads — this is how Aughor learns institutional knowledge beyond the schema. Currently it's only reachable via `CanvasWorkspace → Configure → Data tab`. There is no path to document upload from the main chat view.
+
+**Fix:** Add a "Knowledge" tab to the `ConnectionsScreen`. Documents are per-connection (a PDF about your e-commerce schema belongs with that connection), so this placement is semantically correct.
+
+**Files to modify:**
+- `web/app/page.tsx` → `ConnectionsScreen` — add a `"knowledge"` sub-tab to the right panel alongside the existing connection detail view; mount `<DocumentUploader />` when that sub-tab is active
+- `web/components/DocumentUploader.tsx` — verify it accepts an optional `connId` prop for scoping uploads (add if missing)
+
+**What unlocks:** Any user can upload a document from the Connections screen in 2 clicks. Aughor's knowledge augmentation becomes a first-class feature rather than a canvas-only secret.
+
+---
+
+### R3d — ERD and Schema Panel in Catalog
+
+**The problem:** `ERDiagram.tsx` renders an interactive entity-relationship diagram for a connection's schema. `SchemaPanel.tsx` wraps it in a full browser with column types and row counts. Neither is reachable from any nav item. The Catalog screen shows tables and columns in list form — the ERD view would be the most useful visual for understanding a new database.
+
+**Fix:** Add a "ERD" view toggle to `CatalogScreen` — a button that switches the right panel from the list view to `<SchemaPanel connId={selectedConn} />`. `SchemaPanel` already imports and renders `ERDiagram`.
+
+**Files to modify:**
+- `web/components/CatalogScreen.tsx` — add view toggle (`List | ERD`); import `SchemaPanel`; render `<SchemaPanel connId={selectedConn} connName={sel.name} />` when ERD view is active
+
+**What unlocks:** One-click ERD view of any connected database from the Catalog tab. Essential for data exploration and onboarding new connections.
+
+---
+
+### R3e — Configure Panel from Main Chat
+
+**The problem:** `ConfigurePanel.tsx` has four tabs: About (connection metadata), Data (document upload), Instructions (system prompt for the agent), Docs. It is only mounted in `CanvasWorkspace`. Users in the main chat view cannot set a system instruction, upload a document, or see connection metadata without first creating a canvas.
+
+**Fix:** Add a "Configure" icon button to the main `ChatPanel` header. It opens `ConfigurePanel` as a slide-over (same pattern as `CanvasWorkspace`). Pass the current `selectedConn` as `connectionId`.
+
+**Files to modify:**
+- `web/components/ChatPanel.tsx` — add configure button to header; add `showConfigure` state; render `<ConfigurePanel connectionId={connectionId} ... onClose={() => setShowConfigure(false)} />` when active
+
+**What unlocks:** System instructions, document upload, and connection metadata are accessible from the primary product surface. Any chat session can be configured without knowing what a canvas is.
+
+---
+
+### R3f — Cleanup: Orphaned Components and Nav Duplication
+
+**Orphaned components to delete** (confirmed superseded, safe to remove):
+- `web/components/ConnectionsPanel.tsx` — predates `ConnectionsScreen` in `page.tsx`; same functionality, different implementation
+- `web/components/CatalogPanel.tsx` — predates `CatalogScreen`; if `CatalogScreen` covers all use cases, delete
+- `web/components/SchemaCards.tsx` — commented out inside `SchemaPanel`; was superseded by `ERDiagram`
+
+**Nav duplication:**
+- `RecentsScreen` (Recents nav tab) and `HistoryPanel` (slide-over from topbar clock) both fetch `GET /investigations` and render history. Consolidate: keep `HistoryPanel` as the primary surface (it has richer detail); have the Recents nav tab mount `HistoryPanel` directly rather than `RecentsScreen`.
+
+**Nav icon duplication:**
+- "Health" and "Activity Log" both use the `activity` icon (`M22 12h-4l-3 9...`). Add a distinct icon for Health — a heartbeat/pulse or a shield — so they're visually distinguishable.
+
+**Files to modify:**
+- `web/app/page.tsx` — update Recents to mount `HistoryPanel`; add distinct `health` icon path
+- Delete: `ConnectionsPanel.tsx`, `CatalogPanel.tsx`, `SchemaCards.tsx` (after verifying no other references)
+
+---
+
+**New deps:** None — all fixes use existing components and hooks.
+**Dependency on:** R1 (hardcoded URLs should be fixed first so components that fetch data work correctly after mounting)
+**Sprint:** 37 — immediately after R1
+
+---
+
+## Milestone R2 — Test Infrastructure
+
+**No test files exist in the repo.** This is the single biggest compounding risk: every sprint adds surface area with no regression protection. Tests don't need to be comprehensive to add value — even 20 smoke tests catch the worst class of regressions.
+
+**Sprint R2 — Smoke tests:**
+
+### R2a — Backend Smoke Tests (pytest)
+
+**Files to create:**
+- `tests/__init__.py`
+- `tests/conftest.py` — shared fixtures: test DuckDB path, test connection ID, FastAPI `TestClient`
+- `tests/test_api_smoke.py` — 10 tests:
+  - `test_health_endpoint_returns_200()`
+  - `test_list_connections_returns_list()`
+  - `test_get_schema_for_builtin_connection()`
+  - `test_post_query_run_executes_select()`
+  - `test_post_investigations_creates_record()`
+  - `test_get_metrics_returns_list()`
+  - `test_get_ontology_returns_graph()`
+  - `test_security_check_blocks_drop()`
+  - `test_security_check_allows_select()`
+  - `test_exploration_status_returns_phase()`
+- `tests/test_explorer.py` — recursion fix verification (R1a), state save isolation
+- `tests/test_connection.py` — DuckDB/Postgres execute, `_validate()`, `bulk_read()` fallback
+
+**New deps:**
+```toml
+[project.optional-dependencies]
+dev = ["pytest>=8.0.0", "httpx>=0.27.0", "pytest-anyio>=0.0.0"]
+```
+
+**CI gate:** `uv run pytest tests/ -x -q` must pass on every PR.
+
+---
+
+### R2b — Frontend Component Tests (Vitest)
+
+**Files to create:**
+- `web/src/test/setup.ts` — Vitest + Testing Library setup
+- `web/src/test/QueryBuilder.test.tsx` — buildSql() pure function tests (no render required); 8 cases: single table, multi-table with JOIN, GROUP BY, filters, ORDER BY, COUNT DISTINCT, custom expression, no measures → `SELECT *`
+- `web/src/test/api.test.ts` — mock `fetch`; assert `runDirectQuery` serializes body correctly; assert `buildQuerySql` posts correct params
+
+**New deps:**
+```json
+"devDependencies": {
+  "vitest": "^1.0.0",
+  "@testing-library/react": "^14.0.0",
+  "@testing-library/user-event": "^14.0.0"
+}
+```
+
+---
+
+## Milestone M17 — API Router Refactor
+
+**Problem:** `aughor/api.py` is 3,200+ lines and growing every sprint. It owns chat, investigations, canvases, connections, documents, ontology, actions, security, sync, query builder, and more in a single file. This makes it hard to reason about, test, and eventually extract into services.
+
+**Goal:** Split into `aughor/routers/` without any behavior changes. This is pure organizational refactoring — no new functionality.
+
+**Target structure:**
+```
+aughor/routers/
+├── __init__.py
+├── connections.py     # GET/POST/DELETE /connections, /schema, /sample, /freshness
+├── investigations.py  # POST /investigate, /chat, GET /investigations, outcomes
+├── canvas.py          # CRUD /canvases, /canvases/{id}/history|schema|suggestions
+├── query.py           # POST /query/run, /query/build-sql, /query/cache
+├── exploration.py     # /exploration/{conn_id}/status|findings|domains|episodes|retry
+├── ontology.py        # GET/PUT /ontology, /entities, /relationships, /actions, /metrics
+├── knowledge.py       # /documents/upload|list|delete, /connections/{id}/knowledge-sync
+├── actions.py         # /actions/triggers CRUD, /recommendations/execute, /logs
+├── security.py        # /security/audit|budget|check
+├── metrics.py         # /metrics CRUD, /health-scorecard
+├── catalog.py         # /catalog/tree
+└── system.py          # /health, /dev/stats, /suggestions, /connectors/types
+```
+
+**Files to create/modify:**
+- `aughor/routers/` — 12 router files, each a `fastapi.APIRouter` with `prefix` and `tags`
+- `aughor/api.py` — reduced to app initialization, middleware, startup events, and `include_router()` for each module; target < 200 lines
+- No endpoint paths change; no client-side changes needed
+
+**Migration strategy:** Extract one router at a time, run smoke tests after each, merge when green.
+
+**Dependency on:** R2a smoke tests (to catch regressions during refactor)
+
+---
+
+## Milestone M18 — Navigation Redesign ✅ SHIPPED (Sprint 43)
+
+**Problem:** The current left nav has 12+ items at a flat level — Canvases, Recents, Ontology, Domain Intel, Inbox, Activity, Health, Playbook, Query Builder, Action Hub, Catalog, Settings. This is an expert console, not a product. It forces users to know Aughor's internal architecture rather than expressing their intent.
+
+**Goal:** Reorganize into 5 intent-based sections that answer: *"What does Aughor know, why does it believe it, and what should I do next?"*
+
+**Target navigation structure:**
+
+| Section | Items | User intent |
+|---|---|---|
+| **Ask** | Chat, Canvases | "I want to ask a question or work in a scoped context" |
+| **Investigations** | History, Rec. Inbox | "I want to see what Aughor has found and act on it" |
+| **Intelligence** | Domain Intel, Ontology, Health, Playbook | "I want to understand what Aughor knows about my data" |
+| **Data Map** | Catalog, Query Builder | "I want to explore or query my data directly" |
+| **Governance** | Connections, Action Hub, Security/Audit, Settings | "I want to configure, control, and govern the platform" |
+
+**Files to modify:**
+- `web/app/page.tsx` — `NAV_GROUPS` restructured into 5 groups with `group` labels; `NavTab` type updated; group headers rendered with separators
+- Recents removed as a standalone item — surfaced within Ask (recent canvases) and Investigations (recent history)
+- Activity Log moved under Governance (it's an audit/ops concern, not a user-facing intelligence surface)
+
+**UX principles:**
+- Every section header answers a question, not a system noun
+- Depth is hidden behind the primary surface — Ontology is a detail under Intelligence, not a nav peer of Chat
+- The home screen defaults to **Ask** with the investigation-input centered, health scorecard inline, and recent investigations below
+
+---
+
+### Phase M18b — Ask Screen as Hero Workflow
+
+**Problem today:** The chat input is a small centered widget. The primary workflow of the product — asking a question and getting an investigation — feels like a secondary panel, not a hero surface.
+
+**Redesign:**
+- Investigation input becomes full-width, prominent, vertically centered in the viewport when empty
+- Placeholder text rotates through task-oriented prompts: "What drove revenue decline in Q3?", "Compare refund rates by region", "Which customers are at churn risk?"
+- Health scorecard renders inline below the input (not in a separate tab) — the executive always sees the current state of the business alongside the prompt
+- Recent investigations listed as cards immediately below with claim snippets and outcome badges
+- Suggested follow-up actions surface as chips when an investigation exists ("Explore by segment", "Set a monitor", "Export to canvas")
+
+**Files to modify:**
+- `web/app/page.tsx` — Ask tab content: `<AskHeroInput>` replacing current compact input; `<InlineHealthScorecard>` component; `<RecentInvestigationCards>` list
+- `web/components/AskHeroInput.tsx` (NEW) — full-width textarea with rotating placeholder, inline connection selector, submit button; keyboard shortcut (Enter to submit, Shift+Enter for newline)
+
+---
+
+### Phase M18c — Command Palette (⌘K)
+
+**Why it belongs in M18:** The command palette is the interaction layer that makes the 5-section navigation feel fast. Users in a dense analytical tool stop navigating menus and start commanding. Without it, the nav redesign is structural but not behavioral.
+
+**What it does:**
+- Global ⌘K / Ctrl+K keyboard shortcut opens a full-screen overlay
+- Before typing: shows recent items grouped by type (recent investigations, recent tables, pinned metrics)
+- While typing: fuzzy-matches across:
+  - **Tables** — from all connected schemas (shows connection name + row count)
+  - **Metrics** — from metric catalog (shows formula snippet)
+  - **Investigations** — recent history (shows claim snippet + outcome badge)
+  - **Canvases** — open canvases
+  - **Actions** — nav destinations ("Go to Governance", "Open Catalog", "New Canvas")
+- Arrow keys navigate, Enter activates, Escape closes
+- Results grouped with section headers and type icons
+- Match highlights the typed characters in results
+
+**Files to create:**
+- `web/components/CommandPalette.tsx` — modal overlay; `useFuse(items, query)` hook for fuzzy search; keyboard navigation with `useEffect` listener; grouped result renderer with type icons
+- `web/hooks/useCommandPalette.ts` — global state: `open`, `query`, `setOpen`, `setQuery`; provides `useCommandPalette()` hook
+
+**Files to modify:**
+- `web/app/page.tsx` — mount `<CommandPalette>` at root; attach `useEffect(() => { window.addEventListener("keydown", ...) })` for ⌘K; pass schema/metrics/history as props
+
+**New deps:**
+```json
+"fuse.js": "^7.0.0"
+```
+
+**Dependency on:** M18a (nav structure), M22 (design system — palette uses design tokens for styling)
+
+---
+
+## Milestone M22 — Design System Consolidation ✅ SHIPPED (Sprint 42)
+
+**Files changed (7):**
+- `web/styles/tokens.css` *(new)* — all CSS custom properties extracted; dark + light mode; Tailwind bridge
+- `web/styles/type.css` *(new)* — `.aug-text-h1/h2/h3/ui/sm/xs/mono`; `.aug-label` corrected to 11px
+- `web/app/globals.css` — imports new files; structural classes remain; nav-group font fixed 10→11px
+- `web/components/ConfigurePanel.tsx` — full zinc→token migration; `aug-input`/`aug-btn`/`aug-label` applied
+- `web/components/InvestigationReport.tsx` — inline hex → CSS vars; rounded-xl → rounded-md
+- `web/components/EntityCard.tsx` + `HistoryPanel.tsx` + `ExplorationReport.tsx` + `DocumentUploader.tsx` + `ProcessHealthPanel.tsx` + `CatalogScreen.tsx` + `ActivityLog.tsx` + `PlaybookPanel.tsx` + `ExplorationPanel.tsx` — radius + font + hex audit
+
+**Problem (solved):** The current UI uses at least four styling systems simultaneously — `aug-*` CSS tokens, Tailwind `zinc-*` classes, hardcoded hex values (`#11171d`, `#1c2530`, etc.), and inline styles. Individual components can look polished; together they look like multiple products stitched together. Visual consistency cannot be achieved incrementally — it requires a single, deliberate pass.
+
+**Goal achieved:** One token file. One type scale. One radius vocabulary. No font below 11px. Inline hex replaced by CSS vars.
+
+---
+
+### Phase M22a — Token File & CSS Custom Properties
+
+**Create `web/styles/tokens.css`** as the single source of truth, replacing all hardcoded values:
+
+```css
+:root {
+  /* Backgrounds — 3 elevation levels */
+  --bg-base:    #0d1117;   /* page background */
+  --bg-surface: #161b22;   /* panels, sidebars */
+  --bg-raised:  #1c2128;   /* cards, dropdowns */
+  --bg-overlay: #21262d;   /* tooltips, modals */
+
+  /* Text */
+  --text-primary:   #e6edf3;   /* headings, values */
+  --text-secondary: #8b949e;   /* labels, metadata */
+  --text-muted:     #6e7681;   /* timestamps, hints */
+  --text-disabled:  #484f58;
+
+  /* Borders */
+  --border-default:  #30363d;
+  --border-muted:    #21262d;
+  --border-emphasis: #6e7681;
+
+  /* Accent — one intelligence blue */
+  --accent:         #388bfd;
+  --accent-subtle:  #1f3a6b;
+  --accent-muted:   #0d2a5e;
+
+  /* Status — meaning only, never decoration */
+  --status-green:   #3fb950;
+  --status-amber:   #d29922;
+  --status-red:     #f85149;
+  --status-green-subtle: #0f2a1b;
+  --status-amber-subtle: #2f1e05;
+  --status-red-subtle:   #2d0c0c;
+
+  /* Type scale */
+  --t-page:    24px;   /* page titles */
+  --t-section: 16px;   /* section headers */
+  --t-body:    13px;   /* primary reading size */
+  --t-cell:    12px;   /* tables, list items */
+  --t-meta:    11px;   /* timestamps, counts, badges — minimum */
+
+  /* Radius */
+  --r-control: 4px;    /* chips, badges, table rows, buttons */
+  --r-panel:   6px;    /* cards, panels, dropdowns */
+  --r-modal:   10px;   /* modals, overlays only */
+
+  /* Spacing — standard 4-based scale */
+  --space-1:  4px;
+  --space-2:  8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+
+  /* Font */
+  --font-ui:   'Geist', 'Inter', system-ui, sans-serif;
+  --font-mono: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace;
+}
+```
+
+**Rule:** Monospace (`--font-mono`) applies only to SQL editors, query output values, connection IDs, timestamps in code contexts. All other text uses `--font-ui`.
+
+**Files to create:**
+- `web/styles/tokens.css` — all variables above
+- `web/styles/type.css` — utility classes: `.t-page`, `.t-section`, `.t-body`, `.t-cell`, `.t-meta` with correct `font-size`, `line-height`, `font-weight` per level
+
+**Files to modify:**
+- `web/app/layout.tsx` — import `tokens.css` and `type.css` at root
+- `web/tailwind.config.ts` — extend `theme.colors`, `theme.borderRadius`, `theme.fontSize`, `theme.fontFamily` to reference the CSS variables so Tailwind utilities like `text-accent`, `bg-surface`, `rounded-panel` work alongside raw CSS
+
+---
+
+### Phase M22b — Component Audit & Token Migration
+
+**Scope:** Every component file in `web/components/` audited and migrated. Priority order (highest visual impact first):
+
+1. `page.tsx` — navigation sidebar, tab rendering, global layout shell
+2. `QueryBuilder.tsx` — most recently written; already partially uses tokens
+3. `HistoryDetailPanel.tsx`, `CatalogScreen.tsx`, `OntologyGraph.tsx`
+4. All remaining components
+
+**Migration rules enforced:**
+- No `#xxxxxx` hex values in component files
+- No `rgba(...)` outside `tokens.css`
+- No font sizes below `--t-meta` (11px)
+- No `border-radius` values other than `var(--r-control)`, `var(--r-panel)`, `var(--r-modal)`
+- No `rounded-xl`, `rounded-2xl` (Tailwind classes that exceed the vocabulary)
+- `zinc-*` Tailwind classes replaced with semantic equivalents (`bg-surface`, `text-secondary`, etc.)
+
+**Lint enforcement:** Add an ESLint rule or a simple grep-based CI check that fails on hardcoded hex in component files.
+
+---
+
+### Phase M22c — Typography Enforcement
+
+**Type scale applied globally:**
+
+| Context | Token | Size | Weight |
+|---|---|---|---|
+| Page title | `--t-page` | 24px | 600 |
+| Section / panel header | `--t-section` | 16px | 600 |
+| Body copy, descriptions | `--t-body` | 13px | 400 |
+| Table cells, list items | `--t-cell` | 12px | 400 |
+| Metadata (timestamps, counts, badges) | `--t-meta` | 11px | 400 |
+
+**What gets removed:** The current 9px, 9.5px, 10px, 10.5px, 10.75px, 11.5px sizes. Anything that used sub-11px moves to `--t-meta`. Anything unclear goes to `--t-cell`.
+
+**Files to modify:** Global pass on all components — replace inline `fontSize` and `text-[Npx]` Tailwind classes with `.t-*` utility classes.
+
+---
+
+**New deps:**
+```json
+"geist": "^1.3.0"
+```
+(or rely on system `Inter` — decision at sprint start)
+
+**Dependency on:** R1c (lint pass reduces noise before token audit); should land in Sprint 41, **before** M18b/M18c so those components are built on the design system from the start.
+
+---
+
+## Milestone M19 — Evidence Ledger ✅ SHIPPED (Sprint 44)
+
+**Goal:** Make every claim Aughor produces a first-class, inspectable object with full provenance. This transforms Aughor from an "answer generator" into an "auditable intelligence memory."
+
+**The problem today:** Aughor produces findings as strings in a report. There is no way to answer: "What SQL backed that claim?", "Which metric definition was used?", "How fresh was the data?", "Has anyone validated this?". The claim evaporates when the investigation report closes.
+
+**Evidence Ledger model:**
+
+```python
+class EvidenceClaim(BaseModel):
+    id: str
+    investigation_id: str
+    hypothesis_id: Optional[str]
+    claim_text: str                          # "Revenue declined 12% in Q3"
+    sql_source: Optional[str]               # The exact SQL that produced this number
+    metric_used: Optional[str]              # Metric catalog name if applicable
+    data_freshness: Optional[str]           # ISO timestamp of latest data point used
+    confidence: float                        # 0.0–1.0 from scoring node
+    created_at: str
+    # Feedback loop
+    owner_feedback: Optional[Literal["validated","disputed","needs_context"]]
+    feedback_note: Optional[str]
+    # Downstream
+    downstream_recommendations: list[str]   # rec IDs derived from this claim
+    outcome_status: Optional[Literal["acted_on","superseded","archived"]]
+```
+
+**Files to create:**
+- `aughor/evidence/__init__.py`
+- `aughor/evidence/models.py` — `EvidenceClaim` model
+- `aughor/evidence/store.py` — `append_claim()`, `get_claims_for_investigation()`, `get_claims_for_metric()`, persists to `data/evidence_ledger.db` (SQLite, append-only)
+- `aughor/evidence/linker.py` — `extract_claims_from_report(report, investigation_id) → list[EvidenceClaim]`; parses `key_findings` and `recommended_actions` from `AnalysisReport`; links to `hypothesis_id` and SQL via `QueryResult` history
+
+**Files to modify:**
+- `aughor/agent/investigate.py` — after synthesis, call `extract_claims_from_report()` + `store.append_claim()` for each finding
+- `aughor/api.py` (or `aughor/routers/investigations.py`) — `GET /investigations/{id}/evidence` returns all claims; `POST /investigations/{id}/evidence/{claim_id}/feedback` accepts owner validation
+- `web/lib/api.ts` — `getEvidenceClaims(invId)`, `submitClaimFeedback(invId, claimId, feedback)`
+- `web/components/HistoryDetailPanel.tsx` — "Evidence" tab alongside existing Summary tab; shows claim cards with SQL toggle, metric badge, freshness timestamp, and Validate/Dispute buttons
+
+**Why this is the right next data model:** Every other Aughor capability (playbook, causal graph, outcome tracking, monitors) becomes more powerful when grounded in verifiable evidence. The playbook entry "review return policy" is more credible when it cites `EvidenceClaim#42: refund_rate=14.2%, source: SELECT...`. The causal edge `discount_depth → revenue` carries more weight when 3 evidence claims back it.
+
+---
+
+## Milestone M20 — Proactive Monitors ✅ SHIPPED (Sprint 45)
+
+**Goal:** Aughor should volunteer problems before users ask questions. The health scorecard (M13a ✅) shows current metric status on demand. Monitors make that continuous — running on a schedule and alerting when something changes.
+
+**This is what "always thinking" looks like to the user:** "Aughor noticed your refund rate crossed 10% for the first time since March. Here's what changed."
+
+### Phase M20a — Metric Monitors (cron-based)
+
+**What:** Schedule health scorecard checks on a configurable cadence. Compare current value to previous run. Alert when a metric crosses a threshold or the trend reverses.
+
+**Files to create:**
+- `aughor/monitors/__init__.py`
+- `aughor/monitors/models.py` — `Monitor(BaseModel)`: `id`, `conn_id`, `metric_name`, `check_cron: str` (cron expression), `alert_on: Literal["threshold_cross","trend_reversal","any_change"]`, `notification_channel: str`, `enabled: bool`; `MonitorAlert`: `monitor_id`, `triggered_at`, `metric_name`, `current_value`, `previous_value`, `threshold`, `message`
+- `aughor/monitors/runner.py` — `run_monitor(monitor: Monitor, db) → MonitorAlert | None`; executes metric SQL, compares to last stored value, evaluates alert condition
+- `aughor/monitors/scheduler.py` — APScheduler-backed job runner; loads enabled monitors on startup; fires `run_monitor()` per cron schedule; persists results to `data/monitor_alerts.db`
+
+**Files to modify:**
+- `aughor/api.py` / `aughor/routers/monitors.py` — `GET/POST/PUT/DELETE /monitors`, `GET /monitors/{id}/alerts`
+- `aughor/api.py` startup event — load and schedule enabled monitors via `scheduler.start()`
+
+**New deps:**
+```toml
+apscheduler>=3.10.0
+```
+
+---
+
+### Phase M20b — Anomaly & Drift Monitors
+
+**What:** Beyond threshold crossing — detect statistical anomalies and distribution shifts without the user configuring explicit thresholds.
+
+**Monitor types:**
+- **Anomaly monitor:** z-score + STL on 30-day metric history; alert when current value is > 2σ from seasonal trend (reuses existing `stats.py` infrastructure ✅)
+- **Segment drift monitor:** detect when a metric's distribution across a dimension (region, category, cohort) shifts significantly; uses Chi-squared test on distribution buckets
+- **Data freshness monitor:** alert when `MAX(updated_at)` on a key table hasn't advanced within the expected SLA window
+
+**Files to modify:**
+- `aughor/monitors/runner.py` — `run_anomaly_monitor()`, `run_drift_monitor()`, `run_freshness_monitor()` as specializations of the base runner
+- `aughor/tools/stats.py` — `detect_segment_drift(current_dist, baseline_dist) → DriftResult`; wraps Chi-squared test
+
+---
+
+### Phase M20c — Overnight Intelligence Digest
+
+**What:** A scheduled weekly (or daily) summary of what the background explorer discovered, what causal edges were confirmed, and which metrics moved. The "things Aughor learned overnight" experience.
+
+**Format:**
+```
+Aughor Weekly Intelligence Brief — week of May 26
+
+📊 Metric changes this week:
+  • Refund Rate: 14.2% → 9.8% (↓ improving, below warning threshold)
+  • Order Volume: flat (within ±2% of 7-day baseline)
+
+🔍 New domain insights:
+  • Discovered that orders with freight_value > 50 have 3× higher return rate
+  • New causal edge confirmed: shipping_delay → review_score (3 evidence points)
+
+⚠ Active monitors:
+  • Revenue (beautycommerce): GREEN — no anomalies
+  • Customer Churn (olist): YELLOW — above warning threshold for 3 days
+
+💡 Top open recommendations:
+  • "Review return policy window for high-value orders" — 5 days pending
+```
+
+**Files to create:**
+- `aughor/monitors/digest.py` — `build_weekly_digest(conn_id, db) → str` (Markdown); aggregates monitor alerts, new exploration insights, new causal edges, open recommendations
+- `aughor/api.py` — `GET /monitors/digest?conn_id=&period=week` returns digest text
+
+**Files to modify (web):**
+- `web/app/page.tsx` home screen — "Latest from Aughor" card renders the most recent digest; refreshes on mount; collapsible
+
+---
+
+## Milestone M21 — Metrics as Semantic Contracts
+
+**Goal:** Elevate metrics from SQL formulas to governed semantic contracts — the layer where Aughor definitively beats generic agents. A governed metric doesn't just have a formula; it has an owner, a freshness SLA, quality tests, lineage, and documented caveats about when it's wrong.
+
+**The difference this makes:** An investigation that references `refund_rate` should know: (a) the approved formula, (b) that it excludes marketplace returns, (c) that it's only reliable after day+3 due to processing lag, (d) that Finance uses a different definition that includes pending disputes. Aughor should surface all of this automatically — not derive it from scratch.
+
+**Extended `MetricDefinition` model:**
+
+```python
+class MetricDefinition(BaseModel):
+    # Existing fields
+    name: str
+    label: str
+    sql: str
+    tables: list[str]
+    dimensions: list[str]
+    filters: list[str]
+    unit: Optional[str]
+    caveats: Optional[str]
+    # Health scorecard (M13a ✅)
+    target_value: Optional[float]
+    warning_threshold: Optional[float]
+    critical_threshold: Optional[float]
+    target_period: Optional[str]
+    benchmark_source: Optional[str]
+    # NEW — governance fields
+    owner: Optional[str]                    # "Revenue team" or "alice@company.com"
+    freshness_sla: Optional[str]            # "daily by 6am UTC" — description
+    freshness_check_sql: Optional[str]      # SQL that returns the latest data timestamp
+    quality_tests: list[str]                # SQL assertions; fail = metric flagged unreliable
+    lineage: list[str]                      # Source tables + transformation descriptions
+    wrong_usage_examples: list[str]         # Anti-patterns with explanations
+    approved_by: Optional[str]              # Finance sign-off, etc.
+    approved_at: Optional[str]
+```
+
+**Files to modify:**
+- `aughor/semantic/metrics.py` — extend `MetricDefinition` with governance fields; `validate_metric(metric, conn) → list[str]` runs `quality_tests` SQL assertions; `check_freshness(metric, conn) → FreshnessResult`
+- `aughor/api.py` / `aughor/routers/metrics.py` — `POST /metrics/{name}/validate` runs quality tests; `GET /metrics/{name}/freshness` returns last data timestamp vs SLA
+- `web/components/MetricsPanel.tsx` — governance section in metric form: owner, freshness SLA, quality tests (textarea, one assertion per line), lineage, wrong usage examples; "Validate now" button runs quality tests inline
+- `aughor/agent/prompts.py` / `CHAT_SQL_SYSTEM` — inject `wrong_usage_examples` for the referenced metric as "never compute X as Y" rules; inject `lineage` as context for table selection
+
+**Schema injection update:**
+When building schema context for a metric, the injected block expands to:
+```
+METRIC: refund_rate (Finance-approved)
+  Formula: SUM(refund_amount) / SUM(order_amount) WHERE status != 'pending'
+  Owner: Revenue team
+  Freshness: reliable after day+3 (processing lag)
+  ⚠ Excludes marketplace returns (use gross_refund_rate for total)
+  ✗ NEVER: COUNT(refunds) / COUNT(orders) — ignores refund amounts
+```
+
+**Why this matters:** Any LLM agent can write SQL. Only Aughor can write *governed* SQL with the institutional knowledge baked in. This is the defensible moat.
+
+**New deps:** none
+**Dependency on:** M13a Health Scorecard ✅, M17 API Router (metrics now their own router)
+
+---
+
+## Milestone M23 — Charts & Data Visualization Layer
+
+**Problem:** Charts in Aughor currently render when data exists and show nothing when it doesn't. The visual design is inconsistent across chart types, loading and error states are absent, chart colors don't follow any system, and axes are whatever the charting library defaults to. This makes the charts feel like implementation details rather than analytical surfaces.
+
+**Goal:** Every chart in Aughor — in health scorecard, investigation reports, the query builder results pane, and ontology summaries — should feel analytically credible and visually deliberate.
+
+**Dependency on:** M22 (design tokens — chart colors must come from the token system, not be hardcoded separately)
+
+---
+
+### Phase M23a — Unified Chart Wrapper
+
+**Problem:** Each chart component handles its own loading, empty, and error states differently (or not at all).
+
+**Create `web/components/charts/ChartWrapper.tsx`** — a layout shell that all charts render inside:
+
+```typescript
+interface ChartWrapperProps {
+  title?: string
+  subtitle?: string       // metric name, time range, etc.
+  loading?: boolean
+  error?: string | null
+  empty?: boolean         // true when query returned 0 rows
+  emptyMessage?: string
+  height?: number         // default: 240
+  actions?: ReactNode     // top-right corner slot (download, expand, type toggle)
+  children: ReactNode
+}
+```
+
+- **Loading state:** animated skeleton bars (not spinner) — matches the chart's expected shape (line skeleton for time series, bar skeleton for categoricals)
+- **Empty state:** centered icon + "No data for this period" + optional suggestion link
+- **Error state:** red-bordered panel with the error message and a "Retry" button
+- **Title/subtitle:** standardized position, font sizes using `--t-cell` / `--t-meta`, `--text-secondary` color
+
+**Files to create:**
+- `web/components/charts/ChartWrapper.tsx`
+- `web/components/charts/ChartSkeleton.tsx` — loading skeleton variants (line, bar, number)
+
+---
+
+### Phase M23b — Chart Color System
+
+**Problem:** Chart series colors are hardcoded or pulled from a charting library's default palette (usually garish blues/greens/reds). They clash with Aughor's dark neutral palette.
+
+**Aughor chart palette** (defined in `tokens.css`):
+
+```css
+:root {
+  /* Primary series palette — calm, distinguishable on dark backgrounds */
+  --chart-1: #388bfd;   /* intelligence blue — primary metric */
+  --chart-2: #56d364;   /* green — positive comparison */
+  --chart-3: #e3b341;   /* amber — secondary metric */
+  --chart-4: #bc8cff;   /* violet — tertiary */
+  --chart-5: #ff7b72;   /* coral — warning/negative */
+  --chart-6: #79c0ff;   /* light blue — additional series */
+
+  /* Threshold / reference lines */
+  --chart-threshold-warn:   #d29922;
+  --chart-threshold-crit:   #f85149;
+  --chart-threshold-target: #3fb950;
+
+  /* Axis and grid */
+  --chart-axis:     #30363d;   /* axis lines */
+  --chart-grid:     #21262d;   /* gridlines — subtle */
+  --chart-tick:     #6e7681;   /* tick labels */
+}
+```
+
+**Rule:** Chart components never hardcode colors. They reference `--chart-N` variables. The first series is always `--chart-1`; the comparison series is always `--chart-2`. Status lines use the threshold variables.
+
+**Files to modify:**
+- `web/styles/tokens.css` — add chart palette section
+- All chart components — replace hardcoded colors with CSS variable references
+
+---
+
+### Phase M23c — Axis & Grid Styling
+
+**Standardized axis treatment:**
+
+| Element | Style |
+|---|---|
+| Axis lines | 1px solid `--chart-axis` |
+| Gridlines | 1px solid `--chart-grid` (subtle — don't compete with data) |
+| Tick labels | `--t-meta` (11px), `--chart-tick` color |
+| Axis label | `--t-cell` (12px), `--text-secondary` |
+| Value formatting | K/M/B suffixes for large numbers; 1 decimal for rates; no trailing zeros |
+| X-axis density | Maximum 6 ticks on time axis; rotate 45° if labels overlap |
+
+**Legend positioning:**
+- Time series: legend above the chart, left-aligned, horizontal
+- Bar/categorical: legend below, centered
+- Pie/donut: legend right, vertical (only when ≤ 6 slices; else top-N + "Other")
+- No legend when chart has only one series
+
+**Files to modify:**
+- All chart components — apply axis config object and legend placement rules
+
+---
+
+### Phase M23d — Chart Type Intelligence
+
+**Problem:** Chart type is currently hardcoded per component. A metric's visualization type shouldn't be a deployment-time decision.
+
+**Logic:** When rendering a `QueryResult`, the chart type selector evaluates:
+
+```typescript
+function inferChartType(columns: Column[], rows: Row[]): ChartType {
+  const hasTimeCol = columns.some(c => c.type.includes("date") || c.type.includes("timestamp"))
+  const hasCategoryCol = columns.some(c => c.type === "string" || c.type === "varchar")
+  const numericCols = columns.filter(c => ["int","float","double","decimal"].some(t => c.type.includes(t)))
+
+  if (hasTimeCol && numericCols.length >= 1) return "line"          // time series → line
+  if (hasCategoryCol && numericCols.length === 1) return "bar"       // categorical → bar
+  if (hasCategoryCol && numericCols.length >= 2) return "grouped-bar"
+  if (numericCols.length === 2 && rows.length >= 10) return "scatter" // outlier detection
+  return "table"  // fallback — always safe
+}
+```
+
+**UI:** Small chart type toggle in the `ChartWrapper` actions slot — user can override inference. Persists per query result (not persisted to backend — session only).
+
+**Files to create:**
+- `web/components/charts/chartTypeInference.ts` — `inferChartType()` pure function
+- `web/components/charts/ChartTypeToggle.tsx` — icon button group (line / bar / scatter / table)
+
+**Files to modify:**
+- `web/components/QueryBuilder.tsx` — `ResultsTable` becomes `ResultsPane` with `ChartWrapper` wrapping both chart and table views
+- Investigation report chart rendering — add chart type inference + wrapper
+
+---
+
+**New deps:** None if staying with the current charting library. If switching: `recharts` or `visx` (decision at sprint start — do not change until this milestone).
+
+**Sprint:** 46 (after M21 — metrics governance gives chart data the semantic richness to display confidently)
+
+---
+
+## Revised Sprint Sequence (Sprints 36–47)
+
+| Sprint | Milestone | What ships |
+|---|---|---|
+| **36** | **R1 — Reliability Baseline** ✅ | Explorer recursion fix, hardcoded URLs → env var, 42 lint errors, CORS config, minimal bearer token auth, stale docs cleanup |
+| **37** | **R3 — Feature Reachability** ✅ | ThinkingTrace + HypothesisCard + FeedbackPrompt in ChatPanel; MetricsPanel standalone nav route; DocumentUploader from Connections; ERD in Catalog; ConfigurePanel from main chat; orphaned component cleanup |
+| **38** | **R2 — Test Infrastructure** ✅ | Backend pytest smoke tests (26 cases), frontend Vitest (QueryBuilder buildSql, API fetch), CI gate |
+| **39** | **M17 — API Router Refactor** ✅ | `aughor/api.py` split into 12 routers; no behavior change; smoke tests validate nothing broke |
+| **40** | **M7 — Observability** ✅ | `aughor/telemetry.py` (new); `@node_span` on 12 nodes; `trace_id` in SSE start event + `AgentState`; 45 tests passing |
+| **41** | **M10 — LLM Evals** ✅ | `evals/` package; golden JSONL (15 Q&A); `verdict_accuracy`, `query_efficiency`, `hallucination_rate` scorers; CLI runner; 45 tests passing |
+| **42** | **M22 — Design System Consolidation** ✅ | `web/styles/tokens.css` (single token source); `web/styles/type.css` (aug-text-h1..xs, 11px floor); component audit: rounded-xl→md, text-[9/10px]→[11px], inline hex→CSS vars across 12 components |
+| **43** | **M18 — Navigation + Command Palette + Ask Hero** ✅ | 5-section nav (Ask / Investigations / Intelligence / Data Map / Governance); `CommandPalette.tsx` with fuse.js fuzzy search + keyboard nav + match highlighting; `AskScreen` hero with rotating placeholder, mode toggle, inline health scorecard, recent investigation cards |
+| **44** | **M19 — Evidence Ledger** ✅ | `aughor/evidence/` package (models, store, linker); append-only SQLite ledger; `ada_synthesize` auto-extracts claims; `GET /investigations/{id}/evidence` + `POST .../feedback`; Evidence tab in HistoryDetailPanel with confidence bar, SQL toggle, Validate/Dispute/Needs Context buttons |
+| **45** | **M20 — Proactive Monitors** ✅ | `aughor/monitors/` package (models, store, runner, scheduler, digest); 6 monitor types (threshold, any_change, trend_reversal, anomaly z-score, segment drift Chi-squared, data freshness); APScheduler background thread; 10 REST endpoints; unack alert banner on AskScreen |
+| **45b** | **History wiring fix** ✅ | `openInvestigation(id, kind)` handler; AskScreen / RecentsScreen / HomeScreen row clicks now open existing report by ID instead of re-submitting question as new chat |
+| **46** | **M21 — Metrics as Semantic Contracts** | Governance fields on MetricDefinition, quality tests runner, freshness checker, extended schema injection |
+| **47** | **M23 — Charts & Data Visualization** | Unified `ChartWrapper` with loading/empty/error states; chart color system from tokens; axis/grid/legend standards; chart type inference (line/bar/scatter/table) |
+| **48** | **Enterprise Hardening** | Full OAuth2/OIDC auth (replaces R1e static token), RBAC (viewer/analyst/admin), workspace tenancy, pre-execution query cancellation, secrets manager |

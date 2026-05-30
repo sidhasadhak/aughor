@@ -26,6 +26,7 @@ dependencies = [
     "qdrant-client>=1.9.0",
     "langgraph-checkpoint-sqlite>=3.1.0",
     "python-multipart>=0.0.9",
+    "apscheduler>=3.10.0",
 ]
 
 [project.optional-dependencies]
@@ -36,6 +37,35 @@ docs = [
 warehouse = [
     "ibis-framework[duckdb,postgres]>=9.0.0",
     "connectorx>=0.3.3",
+    "google-cloud-bigquery>=3.0.0",
+    "snowflake-connector-python>=3.0.0",
+    "PyMySQL>=1.0.0",
+]
+crm = [
+    "stripe>=7.0.0",
+    "hubspot-api-client>=8.0.0",
+    "simple-salesforce>=1.12.0",
+]
+cloud-storage = [
+    "azure-storage-blob>=12.0.0",
+]
+knowledge-sync = [
+    "atlassian-python-api>=3.41.0",
+    "notion-client>=2.2.0",
+]
+dev = [
+    "pytest>=8.0.0",
+    "httpx>=0.27.0",
+    "pytest-anyio>=0.0.0",
+]
+observability = [
+    "langfuse>=2.0.0",
+    "opentelemetry-sdk>=1.24.0",
+    "opentelemetry-exporter-otlp>=1.24.0",
+]
+evals = [
+    "braintrust>=0.0.150",
+    "autoevals>=0.0.70",
 ]
 
 [project.scripts]
@@ -44,6 +74,12 @@ aughor = "aughor.cli:cli"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "e2e: end-to-end tests that require a live LLM (deselect with -m 'not e2e')",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["aughor"]

@@ -69,6 +69,11 @@
 60. [Catalog 3-Panel Layout + Sample Data Tab](#60-catalog-3-panel-layout--sample-data-tab)
 61. [Phase 8 Ontology Gate](#61-phase-8-ontology-gate)
 62. [Connection Persistence Hardening](#62-connection-persistence-hardening)
+63. [Design System Consolidation](#63-design-system-consolidation)
+64. [Navigation Redesign + Command Palette + Ask Hero](#64-navigation-redesign--command-palette--ask-hero)
+65. [Evidence Ledger](#65-evidence-ledger)
+66. [Proactive Monitors](#66-proactive-monitors)
+67. [History Navigation Fix](#67-history-navigation-fix)
 
 ---
 
@@ -1964,4 +1969,142 @@ The connection registry encrypts DSNs with a Fernet key. The key was read from `
 
 ---
 
-*Last updated: 2026-05-28 · 62 features — all shipped. See `ROADMAP.md` for upcoming milestones.*
+---
+
+## 63. Design System Consolidation ✅ Shipped (Sprint 42 — M22)
+
+### What
+A single token source of truth (`web/styles/tokens.css`) and type scale (`web/styles/type.css`) replacing scattered inline hex values, Tailwind zinc overrides, and inconsistent radius/font usage across 12 components.
+
+### Why
+The UI was using four styling systems simultaneously — `aug-*` CSS custom properties, Tailwind `zinc-*` classes, raw hex values (`#11171d`, `#1c2530`), and inline styles. Components looked polished in isolation but inconsistent together. Visual consistency requires one deliberate pass, not incremental fixes.
+
+### How
+- `tokens.css` exports the full Palantir Blueprint palette: `--bg-0..4`, `--b0..3`, `--t1..4`, `--r1..3` (2/4/6px max), intent colours `--blue/grn/amb/red/vio/cyn 1..5`, Tailwind bridge via `--color-zinc-*` aliases, dark + light mode via `[data-theme="light"]`
+- `type.css` defines `.aug-text-h1/h2/h3/ui/sm/xs/mono`, `.aug-label` (corrected from 10px to 11px — was a design violation)
+- `globals.css` now just imports both files; component classes remain there
+- Component audit replaced `rounded-xl/2xl` → `rounded-md` (6px = `--r3`), `text-[9/10px]` → `text-[11px]` (11px floor), inline hex → CSS vars across `ConfigurePanel`, `InvestigationReport`, `ProcessHealthPanel`, `QueryBuilder`, and 8 others
+
+### Key files
+- `web/styles/tokens.css` *(new)*
+- `web/styles/type.css` *(new)*
+- `web/app/globals.css`
+- 12 component files — radius + font + hex audit
+
+---
+
+## 64. Navigation Redesign + Command Palette + Ask Hero ✅ Shipped (Sprint 43 — M18)
+
+### What
+Five-section intent-based left nav (Ask / Investigations / Intelligence / Data Map / Governance), a global ⌘K command palette with fuse.js fuzzy search, and a new Ask hero screen as the default landing view.
+
+### Why
+The previous nav had 12+ items at a flat level — forcing users to know Aughor's internal architecture rather than express their intent. The command palette makes the dense analytical tool keyboard-first. The Ask hero creates a clear "start here" moment.
+
+### How
+**Nav restructure:** `NAV_GROUPS` in `page.tsx` reorganised into 5 sections. `"home"` tab removed; `"ask"` becomes default. `HomeScreen` replaced by `AskScreen`.
+
+**`CommandPalette.tsx`:** Global ⌘K shortcut; `Fuse<PaletteItem>` with `threshold: 0.35`, `includeMatches: true`; character-level match highlighting via `Highlighted` component; grouped rendering (Actions / Investigations / Tables); keyboard navigation with `↵` kbd hint on active item; fetches `/investigations` + `/connections/{id}/schema` on open.
+
+**AskScreen:** Centered textarea (680px max-width) with rotating placeholder (6 questions, 3500ms interval); Ask / Investigate mode toggle; connection health chip; stats strip linking to catalog/ontology/intel/activity; inline `ProcessHealthPanel`; 2-column recent investigation grid (now correctly navigates to existing report by ID, not re-submitting question).
+
+### Key files
+- `web/components/CommandPalette.tsx` *(new)*
+- `web/app/page.tsx` — `AskScreen`, `NAV_GROUPS`, `openInvestigation()` handler
+
+---
+
+## 65. Evidence Ledger ✅ Shipped (Sprint 44 — M19)
+
+### What
+Every investigation finding becomes a first-class, auditable `EvidenceClaim` with full provenance: SQL source, metric used, data freshness timestamp, confidence score (0–1), and a human validation loop (Validated / Disputed / Needs Context).
+
+### Why
+Aughor previously produced findings as strings in a report. There was no way to answer: "What SQL backed that claim?", "Which metric definition was used?", "Has anyone validated this?" The claim evaporated when the report closed.
+
+### How
+`aughor/evidence/` package:
+- `models.py` — `EvidenceClaim` (13 fields including `owner_feedback`, `outcome_status`)
+- `store.py` — append-only SQLite at `data/evidence_ledger.db`; `INSERT OR IGNORE` idempotency; `update_feedback()` is the only mutation
+- `linker.py` — `extract_claims_from_ada_phases()` (preferred, uses per-finding SQL directly) and `extract_claims_from_report()` (fallback, resolves SQL via `hypothesis_id` lookup); `_guess_metric()` regex covers 12 KPI keywords
+
+`ada_synthesize` in `investigate.py` auto-extracts and stores claims at end of every investigation — wrapped in `try/except` so the ledger is never on the critical path.
+
+**API:** `GET /investigations/{id}/evidence` · `POST .../evidence/{claim_id}/feedback`
+
+**UI:** Evidence tab in `HistoryDetailPanel` alongside Report tab; `EvidenceClaimCard` with `ConfidenceBar` (green ≥75% / amber ≥50% / red <50%), SQL toggle, metric badge, feedback buttons.
+
+### Key files
+- `aughor/evidence/__init__.py`, `models.py`, `store.py`, `linker.py` *(all new)*
+- `aughor/agent/investigate.py` — `ada_synthesize` evidence extraction
+- `aughor/routers/investigations.py` — evidence endpoints
+- `web/lib/api.ts` — `EvidenceClaim` type + API functions
+- `web/components/HistoryDetailPanel.tsx` — Evidence tab + `EvidenceClaimCard`
+
+---
+
+## 66. Proactive Monitors ✅ Shipped (Sprint 45 — M20)
+
+### What
+Aughor volunteers problems before users ask questions. Metric monitors run on a cron schedule and fire alerts when values cross thresholds, reverse trends, behave anomalously, drift across segments, or when data tables stop updating. An intelligence digest card on the Ask screen surfaces unacknowledged alerts.
+
+### Why
+The health scorecard (M13a) shows metric status on demand. Monitors make that continuous — running in the background and proactively surfacing problems. This is what "always thinking" looks like to the user.
+
+### How
+`aughor/monitors/` package:
+
+**`models.py`:** `Monitor` (13 fields, 6 `alert_on` types: `threshold_cross`, `any_change`, `trend_reversal`, `anomaly`, `segment_drift`, `data_freshness`) + `MonitorAlert` (14 fields, 3 severity levels: warning / critical / info).
+
+**`store.py`:** Thread-safe SQLite at `data/monitors.db`. Full CRUD for monitors + append-only alert ledger with acknowledge flow.
+
+**`runner.py`:** Dispatcher + 6 typed runner functions:
+- `run_threshold_monitor()` — fires when value crosses `warning_threshold` or `critical_threshold`
+- `run_any_change_monitor()` — fires on every non-trivial change; records baseline on first run
+- `run_trend_reversal_monitor()` — compares rolling direction of last 3 stored values; fires on sign flip
+- `run_anomaly_monitor()` — z-score vs 30-day history; configurable `sigma_threshold` (default 2.5); falls back to scalar SQL + stored alert history when no time-series SQL available
+- `run_drift_monitor()` — Chi-squared goodness-of-fit vs uniform baseline across `dimension_column` segments; fires when `p < drift_p_threshold`
+- `run_freshness_monitor()` — `MAX(updated_at)` staleness check; fires when gap > `freshness_sla_hours`
+
+All runners are fully safe — exceptions are caught and surfaced as `info` alerts; the scheduler never crashes.
+
+**`scheduler.py`:** `BackgroundScheduler` (APScheduler); `start()` loads all enabled monitors at startup and schedules cron jobs; `reload_monitor()` / `remove_monitor()` stay in sync with CRUD; `trigger_now()` for synchronous on-demand test runs.
+
+**`digest.py`:** `build_digest(conn_id, period)` → `DigestResult` aggregating 5 sections: monitor alerts, exploration insights, top causal edges, open recommendations, evidence review queue. Renders to Markdown via `.to_markdown()`.
+
+**`aughor/routers/monitors.py`:** 10 endpoints — `GET/POST/PUT/DELETE /monitors`, `POST /monitors/{id}/enable|disable|trigger`, `GET /monitors/{id}/alerts`, `GET /alerts`, `POST /alerts/{id}/acknowledge`, `GET /monitors/digest`.
+
+**`aughor/api.py`:** `_start_monitor_scheduler()` startup event wired.
+
+**Frontend:** Unacknowledged alert banner at the bottom of `AskScreen` — shows count + severity (critical/warning), expands to a per-alert list with inline Ack buttons. Auto-loads on `selectedConn` change.
+
+### Key files
+- `aughor/monitors/__init__.py`, `models.py`, `store.py`, `runner.py`, `scheduler.py`, `digest.py` *(all new)*
+- `aughor/routers/monitors.py` *(new)*
+- `aughor/api.py` — startup event + router registration
+- `web/lib/api.ts` — `MonitorDef`, `MonitorAlert`, `DigestResult` types + 9 API functions
+- `web/app/page.tsx` — `AskScreen` alert banner
+
+---
+
+## 67. History Navigation Fix ✅ Shipped (Sprint 45b)
+
+### What
+Clicking any investigation row in the History / Recents / Ask-screen recent cards now opens the existing investigation report directly. Previously, all three surfaces called `onGoToChat(inv.question)` — which started a brand-new chat with the question text and discarded the existing result entirely.
+
+### Why
+Navigating to history should show the past result — including the Evidence tab, the full report, and any feedback left — not re-run the question. The old behaviour was confusing and wasteful.
+
+### How
+Added `openInvestigation(id, kind)` handler in `page.tsx`:
+- `kind === "investigation"` → `setSelectedHistoryInvId(id)` → renders `HistoryDetailPanel` with the full report
+- `kind === "chat"` → `setSelectedChatSessionId(id)` → restores the chat session
+
+`onOpenInvestigation` prop added to `AskScreen`, `HomeScreen`, and `RecentsScreen`. Row click handlers updated across all three surfaces to call `onOpenInvestigation(inv.id, kind)` instead of `onGoToChat(inv.question)`.
+
+### Key files
+- `web/app/page.tsx` — `openInvestigation()` handler; `AskScreen`, `HomeScreen`, `RecentsScreen` props + click handlers
+
+---
+
+*Last updated: 2026-05-30 · 67 features — all shipped. See `ROADMAP.md` for upcoming milestones.*

@@ -37,7 +37,7 @@ function MetricHealthCard({
   const s = STATUS_COLORS[item.status];
   return (
     <div
-      className="flex flex-col gap-3 rounded-xl p-4 transition-all"
+      className="flex flex-col gap-3 rounded-md p-4 transition-all"
       style={{ background: s.bg, border: `0.5px solid ${s.border}` }}
     >
       {/* Header */}
@@ -47,8 +47,8 @@ function MetricHealthCard({
           <span className="text-[11px] font-mono" style={{ color: s.text }}>{s.label}</span>
         </div>
         {item.target_period && (
-          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-[3px]"
-            style={{ background: "#13141a", border: "0.5px solid #1e1f24", color: "#3e3f47" }}>
+          <span className="text-[11px] font-mono px-1.5 py-0.5 rounded-[3px]"
+            style={{ background: "var(--bg-0)", border: "0.5px solid var(--b0)", color: "var(--t4)" }}>
             {item.target_period}
           </span>
         )}
@@ -56,22 +56,22 @@ function MetricHealthCard({
 
       {/* Metric name */}
       <div>
-        <p className="text-[13px] font-medium" style={{ color: "#e8e6e1" }}>{item.label}</p>
+        <p className="text-[13px] font-medium text-[--t1]">{item.label}</p>
         {item.benchmark_source && (
-          <p className="text-[10px] mt-0.5" style={{ color: "#3e3f47" }}>{item.benchmark_source}</p>
+          <p className="text-[11px] mt-0.5 text-[--t4]">{item.benchmark_source}</p>
         )}
       </div>
 
       {/* Values */}
       <div className="flex items-end justify-between gap-2">
         <div>
-          <p className="text-[22px] font-semibold font-mono leading-none" style={{ color: "#e8e6e1" }}>
+          <p className="text-[22px] font-semibold font-mono leading-none text-[--t1]">
             {fmtValue(item.current, item.unit)}
           </p>
-          <p className="text-[10.5px] mt-1 font-mono" style={{ color: "#5a5b62" }}>
+          <p className="text-[11px] mt-1 font-mono text-[--t3]">
             target {fmtValue(item.target, item.unit)}
             {item.variance !== null && (
-              <span className="ml-1.5" style={{ color: item.variance < 0 ? "#f87171" : "#4ade80" }}>
+              <span className="ml-1.5" style={{ color: item.variance < 0 ? "var(--red5)" : "var(--grn4)" }}>
                 {fmtVariance(item.variance)}
               </span>
             )}
@@ -83,10 +83,10 @@ function MetricHealthCard({
       {(item.status === "yellow" || item.status === "red") && (
         <button
           onClick={() => onInvestigate(item.label)}
-          className="mt-auto text-[10.5px] px-2.5 py-1 rounded-[4px] transition-all text-left"
-          style={{ border: `0.5px solid ${s.border}`, background: "#11171d", color: s.text }}
+          className="mt-auto text-[11px] px-2.5 py-1 rounded-[4px] transition-all text-left"
+          style={{ border: `0.5px solid ${s.border}`, background: "var(--bg-0)", color: s.text }}
           onMouseEnter={e => (e.currentTarget.style.background = s.bg)}
-          onMouseLeave={e => (e.currentTarget.style.background = "#0d0e11")}
+          onMouseLeave={e => (e.currentTarget.style.background = "var(--bg-0)")}
         >
           Investigate →
         </button>
@@ -117,7 +117,7 @@ export function ProcessHealthPanel({ connectionId, onInvestigate }: ProcessHealt
     return (
       <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))" }}>
         {[1, 2, 3].map(i => (
-          <div key={i} className="h-36 rounded-xl animate-pulse" style={{ background: "#13141a" }} />
+          <div key={i} className="h-36 rounded-md animate-pulse" style={{ background: "var(--bg-0)" }} />
         ))}
       </div>
     );
@@ -134,17 +134,17 @@ export function ProcessHealthPanel({ connectionId, onInvestigate }: ProcessHealt
     <div>
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-3">
-          <p className="text-[14px] font-medium" style={{ color: "#c8c7c3" }}>Business Health</p>
+          <p className="text-[14px] font-medium text-[--t1]">Business Health</p>
           <div className="flex items-center gap-2">
             {redYellow.length > 0 && (
-              <span className="text-[10px] px-2 py-0.5 rounded-full font-mono"
-                style={{ background: "#1a0a0a", border: "0.5px solid #3a1515", color: "#f87171" }}>
+              <span className="text-[11px] px-2 py-0.5 rounded-full font-mono"
+                style={{ background: "var(--red1)", border: "0.5px solid var(--red2)", color: "var(--red5)" }}>
                 {redYellow.length} need attention
               </span>
             )}
             {redYellow.length === 0 && green.length > 0 && (
-              <span className="text-[10px] px-2 py-0.5 rounded-full font-mono"
-                style={{ background: "#0a1a10", border: "0.5px solid #1a3a20", color: "#4ade80" }}>
+              <span className="text-[11px] px-2 py-0.5 rounded-full font-mono"
+                style={{ background: "var(--grn1)", border: "0.5px solid var(--grn2)", color: "var(--grn4)" }}>
                 all on target
               </span>
             )}

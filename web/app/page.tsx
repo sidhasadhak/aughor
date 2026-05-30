@@ -17,6 +17,14 @@ import { PlaybookPanel } from "@/components/PlaybookPanel";
 import { RecommendationInbox } from "@/components/RecommendationInbox";
 import { DocumentUploader } from "@/components/DocumentUploader";
 import { CatalogScreen } from "@/components/CatalogScreen";
+import { CanvasBrowser } from "@/components/CanvasBrowser";
+import { CanvasCreator } from "@/components/CanvasCreator";
+import { CanvasWorkspace } from "@/components/CanvasWorkspace";
+import { ActionHubPanel } from "@/components/ActionHubPanel";
+import { QueryBuilder } from "@/components/QueryBuilder";
+import { MetricsPanel } from "@/components/MetricsPanel";
+import { API_BASE } from "@/lib/config";
+import { CommandPalette } from "@/components/CommandPalette";
 import {
   getConnections,
   addConnection as apiAddConnection,
@@ -28,20 +36,28 @@ import {
   type Connection,
   type ExplorationStatus,
   type OntologyGraph,
+  type Canvas,
 } from "@/lib/api";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 type NavTab =
-  | "home"
-  | "chat"
+  | "ask"               // hero screen — investigation input + health + recents
+  | "chat"              // active investigation / chat (hidden from nav)
+  | "canvases"
+  | "canvas-workspace"
   | "recents"
-  | "ontology"
-  | "intel"
   | "inbox"
-  | "activity"
+  | "intel"
+  | "ontology"
+  | "health"
   | "playbook"
+  | "catalog"
+  | "builder"
   | "connections"
+  | "metrics"
+  | "actions"
+  | "activity"
   | "settings";
 
 type Theme = "dark" | "light";
@@ -53,6 +69,7 @@ const ICON_PATHS: Record<string, string> = {
   chat:     "M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z",
   clock:    "M12 22c5.52 0 10-4.48 10-10S17.52 2 12 2 2 6.48 2 12s4.48 10 10 10zm.5-14v5.25l4.5 2.67-.75 1.23L11 14.5V8h1.5z",
   db:       "M12 2C7.58 2 4 3.79 4 6v12c0 2.21 3.58 4 8 4s8-1.79 8-4V6c0-2.21-3.58-4-8-4zm0 2c3.87 0 6 1.5 6 2s-2.13 2-6 2-6-1.5-6-2 2.13-2 6-2zm6 12c0 .5-2.13 2-6 2s-6-1.5-6-2v-2.23C7.61 15.51 9.72 16 12 16s4.39-.49 6-1.23V16zm0-5c0 .5-2.13 2-6 2s-6-1.5-6-2V8.77C7.61 10.51 9.72 11 12 11s4.39-.49 6-1.23V11z",
+  builder:  "M3 3h7v7H3V3zm11 0h7v7h-7V3zm0 11h7v7h-7v-7zM3 14h7v7H3v-7z",
   catalog:  "M4 6h16M4 10h16M4 14h16M4 18h16",
   node:     "M12 4a2 2 0 100 4 2 2 0 000-4zM6 18a2 2 0 100 4 2 2 0 000-4zm12 0a2 2 0 100 4 2 2 0 000-4zM12 6v4m0 4v4M8 19h8M14 7l4 10M10 7L6 17",
   settings: "M12 15a3 3 0 100-6 3 3 0 000 6zm7.94-3c0-.32-.03-.63-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.49.49 0 00-.6-.22l-2.39.96a7.07 7.07 0 00-1.62-.94l-.36-2.54a.484.484 0 00-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.58.23-1.13.54-1.62.94l-2.39-.96a.48.48 0 00-.6.22L2.07 9.47a.48.48 0 00.12.61l2.03 1.58c-.05.31-.07.63-.07.94s.02.63.07.94l-2.03 1.58a.49.49 0 00-.12.61l1.92 3.32c.12.22.37.29.6.22l2.39-.96c.49.36 1.04.67 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.58-.27 1.13-.58 1.62-.94l2.39.96c.22.07.48 0 .6-.22l1.92-3.32a.48.48 0 00-.12-.61l-2.01-1.58c.05-.31.07-.63.07-.94z",
@@ -73,6 +90,9 @@ const ICON_PATHS: Record<string, string> = {
   moon:     "M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z",
   refresh:  "M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15",
   trash:    "M4 6h16M6 6l1 14h10L18 6M9 6V4h6v2M10 11v6M14 11v6",
+  canvas:   "M4 6h16M4 10h16M4 14h8M4 18h5M15 14l2 2 4-4",
+  plug:     "M7 2v4M17 2v4M12 13v6M9 19h6M5 6h14l-1.5 7a2 2 0 01-2 1.73H8.5A2 2 0 016.5 13L5 6z",
+  metric:   "M3 3v18h18M7 16l4-4 4 4 4-4M7 12l4-8 2 4 2-4 4 8",
 };
 
 function NavIcon({ name, size = 14, color = "currentColor" }: { name: string; size?: number; color?: string }) {
@@ -158,7 +178,7 @@ function Topbar({
           <div style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)", letterSpacing: ".01em" }}>
             Aughor
           </div>
-          <div style={{ fontSize: 9, color: "var(--t3)", letterSpacing: ".08em", textTransform: "uppercase", marginTop: -1 }}>
+          <div style={{ fontSize: 11, color: "var(--t4)", letterSpacing: ".06em", textTransform: "uppercase", marginTop: -1 }}>
             Intelligence Platform
           </div>
         </div>
@@ -214,17 +234,32 @@ function Topbar({
 
 // ── Sidebar ────────────────────────────────────────────────────────────────────
 
+// ── 5-section nav: Ask / Investigations / Intelligence / Data Map / Governance ──
 const NAV_GROUPS = [
-  { id: "home",        icon: "home",     label: "Overview",     group: null },
-  { id: "chat",        icon: "chat",     label: "Investigate",  group: "Workspace" },
-  { id: "recents",     icon: "clock",    label: "Recents",      group: null },
-  { id: "ontology",    icon: "node",     label: "Ontology",     group: null },
-  { id: "intel",       icon: "process",  label: "Domain Intel", group: null },
-  { id: "inbox",       icon: "spark",    label: "Rec. Inbox",   group: null },
-  { id: "activity",    icon: "activity", label: "Activity Log", group: null },
-  { id: "playbook",    icon: "playbook", label: "Playbook",     group: "System" },
-  { id: "connections", icon: "db",       label: "Catalog",      group: null },
-  { id: "settings",    icon: "settings", label: "Settings",     group: null },
+  // ASK — primary user intent: ask a question or open a canvas
+  { id: "ask",         icon: "spark",    label: "Ask",           group: null },
+  { id: "canvases",    icon: "canvas",   label: "Canvases",      group: null },
+
+  // INVESTIGATIONS — what Aughor has found; act on it
+  { id: "recents",     icon: "clock",    label: "History",       group: "Investigations" },
+  { id: "inbox",       icon: "spark",    label: "Inbox",         group: null },
+
+  // INTELLIGENCE — what Aughor knows about your data
+  { id: "intel",       icon: "process",  label: "Domain Intel",  group: "Intelligence" },
+  { id: "ontology",    icon: "node",     label: "Ontology",      group: null },
+  { id: "health",      icon: "activity", label: "Health",        group: null },
+  { id: "playbook",    icon: "playbook", label: "Playbook",      group: null },
+
+  // DATA MAP — explore and query data directly
+  { id: "catalog",     icon: "db",       label: "Catalog",       group: "Data Map" },
+  { id: "builder",     icon: "builder",  label: "Query Builder", group: null },
+
+  // GOVERNANCE — configure, control, govern the platform
+  { id: "connections", icon: "plug",     label: "Connections",   group: "Governance" },
+  { id: "metrics",     icon: "metric",   label: "Metrics",       group: null },
+  { id: "actions",     icon: "spark",    label: "Action Hub",    group: null },
+  { id: "activity",    icon: "activity", label: "Audit Log",     group: null },
+  { id: "settings",    icon: "settings", label: "Settings",      group: null },
 ] as const;
 
 function Sidebar({
@@ -297,7 +332,7 @@ function SearchOverlay({
 
   const suggestions = [
     { label: "New Investigation", icon: "spark",    action: () => { onGoToChat(); onClose(); } },
-    { label: "Browse Schema",     icon: "catalog",  action: () => { onNavigate("connections"); onClose(); } },
+    { label: "Browse Schema",     icon: "catalog",  action: () => { onNavigate("catalog"); onClose(); } },
     { label: "Ontology Graph",    icon: "node",     action: () => { onNavigate("ontology"); onClose(); } },
     { label: "Domain Intelligence", icon: "process", action: () => { onNavigate("intel"); onClose(); } },
     { label: "Activity Log",      icon: "activity", action: () => { onNavigate("activity"); onClose(); } },
@@ -427,11 +462,13 @@ function HomeScreen({
   selectedConn,
   onGoToChat,
   onNavigate,
+  onOpenInvestigation,
 }: {
   connections: Connection[];
   selectedConn: string;
   onGoToChat: (q?: string) => void;
   onNavigate: (t: NavTab) => void;
+  onOpenInvestigation: (id: string) => void;
 }) {
   const [recentInvs, setRecentInvs] = useState<RecentInv[]>([]);
   const [exploration, setExploration] = useState<ExplorationStatus | null>(null);
@@ -440,7 +477,7 @@ function HomeScreen({
   const conn = connections.find(c => c.id === selectedConn);
 
   useEffect(() => {
-    fetch("http://localhost:8000/investigations")
+    fetch(`${API_BASE}/investigations`)
       .then(r => r.json())
       .then(d => setRecentInvs(Array.isArray(d) ? d.slice(0, 8) : []))
       .catch(() => {});
@@ -488,11 +525,14 @@ function HomeScreen({
 
         {/* Stats */}
         <div style={{ display: "flex", gap: 10 }}>
-          <StatCard value={tables}   label="Tables in schema"    accent="var(--blue3)"  sub={exploration ? `↑ ${exploration.tables_total} total` : undefined} onClick={() => onNavigate("connections")} />
+          <StatCard value={tables}   label="Tables in schema"    accent="var(--blue3)"  sub={exploration ? `↑ ${exploration.tables_total} total` : undefined} onClick={() => onNavigate("catalog")} />
           <StatCard value={entities} label="Entities mapped"     accent="var(--vio3)"   sub="ontology layer"     onClick={() => onNavigate("ontology")} />
           <StatCard value={insights} label="Insights discovered" accent="var(--grn3)"   sub="domain intel"       onClick={() => onNavigate("intel")} />
           <StatCard value={queries}  label="Queries executed"    accent="var(--amb3)"   sub="last 7 days"        onClick={() => onNavigate("activity")} />
         </div>
+
+        {/* Health scorecard — surfaced above the fold */}
+        <ProcessHealthPanel connectionId={selectedConn} onInvestigate={onGoToChat} />
 
         {/* Quick actions */}
         <div>
@@ -500,7 +540,7 @@ function HomeScreen({
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
             {[
               { icon: "chat",    name: "Investigate", desc: "Ask a question and get an evidence-backed root-cause analysis.", accent: "var(--vio3)", action: () => onGoToChat() },
-              { icon: "catalog", name: "Schema",      desc: "Browse tables, columns, row counts, and schema intelligence.",   accent: "var(--cyn3)", action: () => onNavigate("connections") },
+              { icon: "catalog", name: "Schema",      desc: "Browse tables, columns, row counts, and schema intelligence.",   accent: "var(--cyn3)", action: () => onNavigate("catalog") },
               { icon: "node",    name: "Ontology",    desc: "Explore the auto-built entity graph and lifecycle states.",      accent: "var(--grn3)", action: () => onNavigate("ontology") },
               { icon: "process", name: "Domain Intel",desc: "Per-domain insights with query budgets and coverage angles.",    accent: "var(--amb3)", action: () => onNavigate("intel") },
             ].map(a => (
@@ -521,9 +561,6 @@ function HomeScreen({
             ))}
           </div>
         </div>
-
-        {/* Health scorecard */}
-        <ProcessHealthPanel connectionId={selectedConn} onInvestigate={onGoToChat} />
 
         {/* Recent activity */}
         <div>
@@ -547,7 +584,7 @@ function HomeScreen({
                 </thead>
                 <tbody>
                   {recentInvs.slice(0, 5).map((inv) => (
-                    <tr key={inv.id} style={{ cursor: "pointer" }} onClick={() => onGoToChat(inv.question)}>
+                    <tr key={inv.id} style={{ cursor: "pointer" }} onClick={() => onOpenInvestigation(inv.id)}>
                       <td style={{ maxWidth: 400 }}>
                         <div style={{ fontSize: 12, color: "var(--t1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "var(--font-ui)" }}>{inv.question}</div>
                         {inv.headline && <div style={{ fontSize: 10, color: "var(--t3)", marginTop: 2 }}>{inv.headline}</div>}
@@ -595,21 +632,21 @@ function HomeScreen({
 
 // ── Recents screen ─────────────────────────────────────────────────────────────
 
-function RecentsScreen({ onGoToChat }: { onGoToChat: (q?: string) => void }) {
-  const [activities, setActivities] = useState<Array<{ id: string; question: string; started_at: string; status: string; headline: string | null; mode?: string }>>([]);
+function RecentsScreen({ onGoToChat, onOpenInvestigation }: { onGoToChat: (q?: string) => void; onOpenInvestigation: (id: string, kind: "investigation" | "chat") => void }) {
+  const [activities, setActivities] = useState<Array<{ id: string; question: string; started_at: string; status: string; headline: string | null; kind?: string }>>([]);
   const [filter, setFilter] = useState<"all" | "investigation" | "chat">("all");
 
   useEffect(() => {
     const ctrl = new AbortController();
     const to = setTimeout(() => ctrl.abort(), 8_000);
-    fetch("http://localhost:8000/investigations", { signal: ctrl.signal })
+    fetch(`${API_BASE}/investigations`, { signal: ctrl.signal })
       .then(r => r.json())
       .then(d => setActivities(Array.isArray(d) ? d : []))
       .catch(() => {})
       .finally(() => clearTimeout(to));
   }, []);
 
-  const shown = filter === "all" ? activities : activities.filter(a => (filter === "chat" ? a.mode === "chat" : a.mode !== "chat"));
+  const shown = filter === "all" ? activities : activities.filter(a => (filter === "chat" ? a.kind === "chat" : a.kind !== "chat"));
 
   return (
     <div className="aug-screen">
@@ -647,14 +684,14 @@ function RecentsScreen({ onGoToChat }: { onGoToChat: (q?: string) => void }) {
               </thead>
               <tbody>
                 {shown.map(a => (
-                  <tr key={a.id} onClick={() => onGoToChat(a.question)} style={{ cursor: "pointer" }}>
+                  <tr key={a.id} onClick={() => onOpenInvestigation(a.id, a.kind === "chat" ? "chat" : "investigation")} style={{ cursor: "pointer" }}>
                     <td style={{ maxWidth: 420 }}>
                       <div style={{ fontSize: 12, color: "var(--t1)", fontFamily: "var(--font-ui)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.question}</div>
                       {a.headline && <div style={{ fontSize: 10, color: "var(--t3)", marginTop: 2 }}>{a.headline}</div>}
                     </td>
                     <td>
-                      <span className={`aug-tag ${a.mode === "chat" ? "aug-tag-blue" : "aug-tag-violet"}`}>
-                        {a.mode === "chat" ? "chat" : "investigation"}
+                      <span className={`aug-tag ${a.kind === "chat" ? "aug-tag-blue" : "aug-tag-violet"}`}>
+                        {a.kind === "chat" ? "Chat" : "Agentic"}
                       </span>
                     </td>
                     <td style={{ color: "var(--t3)", fontSize: 11 }}>{timeAgo(a.started_at)}</td>
@@ -670,6 +707,329 @@ function RecentsScreen({ onGoToChat }: { onGoToChat: (q?: string) => void }) {
             </table>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ── Ask Hero Screen ────────────────────────────────────────────────────────────
+
+const ASK_PLACEHOLDERS = [
+  "Why did revenue drop last month?",
+  "Which customers are at churn risk?",
+  "Compare refund rates by region",
+  "What drove the cart abandonment spike?",
+  "Show me top products by lifetime value",
+  "Is APAC churn a trend or a one-time event?",
+];
+
+type AskMode = "ask" | "investigate";
+
+function AskScreen({
+  connections,
+  selectedConn,
+  onGoToChat,
+  onNavigate,
+  onOpenInvestigation,
+}: {
+  connections: Connection[];
+  selectedConn: string;
+  onGoToChat: (q?: string, mode?: AskMode) => void;
+  onNavigate: (t: NavTab) => void;
+  onOpenInvestigation: (id: string) => void;
+}) {
+  const [q, setQ] = useState("");
+  const [mode, setMode] = useState<AskMode>("investigate");
+  const [phIdx, setPhIdx] = useState(0);
+  const [recentInvs, setRecentInvs] = useState<Array<{ id: string; question: string; started_at: string; status: string; headline: string | null }>>([]);
+  const [exploration, setExploration] = useState<ExplorationStatus | null>(null);
+  const [domainInsightCount, setDomainInsightCount] = useState<number | null>(null);
+  const [unackAlerts, setUnackAlerts] = useState<import("@/lib/api").MonitorAlert[]>([]);
+  const [digestExpanded, setDigestExpanded] = useState(false);
+  const textRef = useRef<HTMLTextAreaElement>(null);
+  const conn = connections.find(c => c.id === selectedConn);
+
+  // Rotate placeholder
+  useEffect(() => {
+    const id = setInterval(() => setPhIdx(i => (i + 1) % ASK_PLACEHOLDERS.length), 3500);
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/investigations`)
+      .then(r => r.json())
+      .then(d => setRecentInvs(Array.isArray(d) ? d.slice(0, 6) : []))
+      .catch(() => {});
+    getExplorationStatus(selectedConn).then(setExploration).catch(() => {});
+    getDomainInsights(selectedConn)
+      .then(d => setDomainInsightCount(Object.values(d).reduce((s, v) => s + (v as { insights: unknown[] }).insights.length, 0)))
+      .catch(() => {});
+    // Load unacknowledged monitor alerts for the bell badge
+    import("@/lib/api").then(({ getAllAlerts }) =>
+      getAllAlerts(selectedConn, 50)
+        .then(alerts => setUnackAlerts(alerts.filter(a => !a.acknowledged)))
+        .catch(() => {})
+    );
+  }, [selectedConn]);
+
+  const handleSubmit = () => {
+    const question = q.trim();
+    if (!question) return;
+    onGoToChat(question, mode);
+    setQ("");
+  };
+
+  const STATUS_BADGE: Record<string, React.ReactNode> = {
+    completed: <span className="aug-tag aug-tag-green">Done</span>,
+    timed_out: <span className="aug-tag aug-tag-amber">Timed out</span>,
+    running:   <span className="aug-tag aug-tag-blue">Running</span>,
+    failed:    <span className="aug-tag aug-tag-red">Failed</span>,
+  };
+
+  return (
+    <div className="aug-screen" style={{ background: "var(--bg-0)" }}>
+      <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column" }}>
+
+        {/* ── Hero ─────────────────────────────────────────────────────── */}
+        <div style={{ flex: "0 0 auto", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "52px 24px 32px", minHeight: 260 }}>
+
+          {/* Header */}
+          <div style={{ marginBottom: 28, textAlign: "center" }}>
+            <h1 style={{ fontSize: 22, fontWeight: 600, color: "var(--t1)", letterSpacing: "-.02em", marginBottom: 6 }}>
+              What do you want to investigate?
+            </h1>
+            {conn && (
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 10px", borderRadius: "var(--r2)", background: "var(--bg-2)", border: "1px solid var(--b1)" }}>
+                <span className="aug-dot aug-dot-grn aug-anim-blink" />
+                <span style={{ fontSize: 11, color: "var(--t2)", fontFamily: "var(--font-mono)" }}>{conn.name}</span>
+                <span style={{ fontSize: 11, color: "var(--t4)" }}>{conn.conn_type === "duckdb" ? "DuckDB" : "PG"}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Input area */}
+          <div style={{ width: "100%", maxWidth: 680, position: "relative" }}>
+            <div style={{ background: "var(--bg-2)", border: "1px solid var(--b2)", borderRadius: "var(--r3)", overflow: "hidden", boxShadow: "var(--shadow-sm)", transition: "border-color .12s" }}
+              onFocusCapture={e => (e.currentTarget.style.borderColor = "var(--bfocus)")}
+              onBlurCapture={e => (e.currentTarget.style.borderColor = "var(--b2)")}
+            >
+              <textarea
+                ref={textRef}
+                value={q}
+                onChange={e => setQ(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSubmit(); }
+                }}
+                placeholder={ASK_PLACEHOLDERS[phIdx]}
+                rows={3}
+                style={{
+                  width: "100%", padding: "14px 16px", resize: "none",
+                  background: "transparent", border: "none", outline: "none",
+                  fontSize: 14, color: "var(--t1)", fontFamily: "var(--font-ui)", lineHeight: 1.55,
+                }}
+              />
+              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderTop: "1px solid var(--b0)" }}>
+                {/* Mode toggle */}
+                <div style={{ display: "flex", background: "var(--bg-0)", border: "1px solid var(--b1)", borderRadius: "var(--r2)", padding: 2, gap: 2 }}>
+                  {([["ask", "Quick"], ["investigate", "Agentic"]] as [AskMode, string][]).map(([m, label]) => (
+                    <button
+                      key={m}
+                      onClick={() => setMode(m)}
+                      style={{
+                        padding: "3px 10px", borderRadius: "calc(var(--r2) - 2px)", fontSize: 11, fontWeight: 500, cursor: "pointer",
+                        background: mode === m ? "var(--blue3)" : "transparent",
+                        color: mode === m ? "#fff" : "var(--t3)",
+                        border: "none", transition: "all .12s",
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <span style={{ fontSize: 11, color: "var(--t4)", flex: 1 }}>
+                  {mode === "ask" ? "Direct SQL answer" : "Evidence-backed root-cause analysis"}
+                </span>
+                <button
+                  onClick={handleSubmit}
+                  disabled={!q.trim()}
+                  style={{
+                    display: "inline-flex", alignItems: "center", gap: 6,
+                    padding: "6px 16px", borderRadius: "var(--r2)", border: "none",
+                    background: q.trim() ? "var(--blue3)" : "var(--bg-3)",
+                    color: q.trim() ? "#fff" : "var(--t4)",
+                    fontSize: 12, fontWeight: 600, cursor: q.trim() ? "pointer" : "default",
+                    transition: "all .12s",
+                  }}
+                >
+                  <NavIcon name="send" size={12} color={q.trim() ? "#fff" : "var(--t4)"} />
+                  {mode === "ask" ? "Ask" : "Investigate"}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Chip suggestions */}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 14, justifyContent: "center", maxWidth: 680 }}>
+            {ASK_PLACEHOLDERS.slice(0, 4).map(qs => (
+              <button
+                key={qs}
+                onClick={() => { setQ(qs); textRef.current?.focus(); }}
+                style={{
+                  padding: "4px 12px", borderRadius: "var(--r2)", fontSize: 11, cursor: "pointer",
+                  background: "var(--bg-2)", border: "1px solid var(--b1)", color: "var(--t3)",
+                  transition: "all .1s",
+                }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--b2)"; e.currentTarget.style.color = "var(--t1)"; }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--b1)"; e.currentTarget.style.color = "var(--t3)"; }}
+              >
+                {qs.length > 48 ? qs.slice(0, 46) + "…" : qs}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Divider ───────────────────────────────────────────────────── */}
+        <div className="aug-divh" style={{ margin: "0 28px" }} />
+
+        {/* ── Stats strip ───────────────────────────────────────────────── */}
+        <div style={{ padding: "16px 28px 0", display: "flex", gap: 10, flexWrap: "wrap" }}>
+          {[
+            { label: "Tables", value: exploration?.tables_total ?? "—", accent: "var(--blue3)", action: () => onNavigate("catalog") },
+            { label: "Insights", value: domainInsightCount ?? "—", accent: "var(--grn3)", action: () => onNavigate("intel") },
+            { label: "Investigations", value: recentInvs.length > 0 ? recentInvs.length + "+" : "—", accent: "var(--vio3)", action: () => onNavigate("recents") },
+          ].map(s => (
+            <button key={s.label} onClick={s.action} style={{
+              display: "flex", alignItems: "center", gap: 8, padding: "8px 14px",
+              background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r2)",
+              cursor: "pointer", transition: "all .1s",
+            }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = s.accent + "66"; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--b1)"; }}
+            >
+              <div style={{ width: 4, height: 16, background: s.accent, borderRadius: 2 }} />
+              <span style={{ fontSize: 16, fontWeight: 600, color: "var(--t1)", fontFamily: "var(--font-mono)" }}>{s.value}</span>
+              <span style={{ fontSize: 11, color: "var(--t3)" }}>{s.label}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* ── Health scorecard ───────────────────────────────────────────── */}
+        <div style={{ padding: "16px 28px 0" }}>
+          <ProcessHealthPanel connectionId={selectedConn} onInvestigate={q => onGoToChat(q, "investigate")} />
+        </div>
+
+        {/* ── Recent investigations ──────────────────────────────────────── */}
+        {recentInvs.length > 0 && (
+          <div style={{ padding: "20px 28px 28px" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+              <span className="aug-label">Recent investigations</span>
+              <button onClick={() => onNavigate("recents")} style={{ fontSize: 11, color: "var(--blue4)", background: "none", border: "none", cursor: "pointer" }}>View all →</button>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              {recentInvs.map(inv => (
+                <button
+                  key={inv.id}
+                  onClick={() => onOpenInvestigation(inv.id)}
+                  style={{
+                    textAlign: "left", padding: "12px 14px",
+                    background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r2)",
+                    cursor: "pointer", transition: "all .1s",
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--b2)"; e.currentTarget.style.background = "var(--bg-3)"; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--b1)"; e.currentTarget.style.background = "var(--bg-2)"; }}
+                >
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, marginBottom: 4 }}>
+                    <span style={{ fontSize: 12, color: "var(--t1)", lineHeight: 1.4, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
+                      {inv.question}
+                    </span>
+                    <div style={{ flexShrink: 0 }}>{STATUS_BADGE[inv.status] ?? null}</div>
+                  </div>
+                  {inv.headline && (
+                    <p style={{ fontSize: 11, color: "var(--t3)", lineHeight: 1.4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {inv.headline}
+                    </p>
+                  )}
+                  <p style={{ fontSize: 11, color: "var(--t4)", marginTop: 4 }}>
+                    {(() => {
+                      const diff = Date.now() - new Date(inv.started_at).getTime();
+                      const m = Math.floor(diff / 60_000);
+                      if (m < 1) return "just now";
+                      if (m < 60) return `${m}m ago`;
+                      const h = Math.floor(m / 60);
+                      if (h < 24) return `${h}h ago`;
+                      return `${Math.floor(h / 24)}d ago`;
+                    })()}
+                  </p>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── Monitor Alert Banner / Digest Card ─────────────────────── */}
+        {unackAlerts.length > 0 && (
+          <div style={{ padding: "0 28px 28px" }}>
+            <div style={{
+              background: "var(--bg-2)", border: `1px solid ${unackAlerts.some(a => a.severity === "critical") ? "var(--red2)" : "var(--amb2)"}`,
+              borderRadius: "var(--r3)", overflow: "hidden",
+            }}>
+              {/* Header row */}
+              <div
+                onClick={() => setDigestExpanded(v => !v)}
+                style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", cursor: "pointer", userSelect: "none" }}
+              >
+                <span style={{ fontSize: 14 }}>{unackAlerts.some(a => a.severity === "critical") ? "🔴" : "🟡"}</span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: "var(--t1)", flex: 1 }}>
+                  {unackAlerts.length} unacknowledged monitor alert{unackAlerts.length !== 1 ? "s" : ""}
+                  {unackAlerts.filter(a => a.severity === "critical").length > 0 && (
+                    <span style={{ marginLeft: 8, fontSize: 11, color: "var(--red5)", fontWeight: 500 }}>
+                      · {unackAlerts.filter(a => a.severity === "critical").length} critical
+                    </span>
+                  )}
+                </span>
+                <span style={{ fontSize: 11, color: "var(--t3)" }}>{digestExpanded ? "▲ hide" : "▼ show"}</span>
+              </div>
+
+              {/* Expanded alert list */}
+              {digestExpanded && (
+                <div style={{ borderTop: "1px solid var(--b1)", padding: "8px 0" }}>
+                  {unackAlerts.slice(0, 8).map(alert => (
+                    <div key={alert.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "8px 16px" }}>
+                      <span style={{ fontSize: 12, flexShrink: 0, marginTop: 1 }}>
+                        {alert.severity === "critical" ? "🔴" : alert.severity === "warning" ? "🟡" : "⚪"}
+                      </span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontSize: 12, color: "var(--t1)", lineHeight: 1.4, margin: 0 }}>{alert.message}</p>
+                        <p style={{ fontSize: 11, color: "var(--t4)", margin: "2px 0 0" }}>
+                          {alert.monitor_name} · {alert.triggered_at.slice(0, 16).replace("T", " ")} UTC
+                        </p>
+                      </div>
+                      <button
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          try {
+                            const { acknowledgeAlert } = await import("@/lib/api");
+                            await acknowledgeAlert(alert.id);
+                            setUnackAlerts(prev => prev.filter(a => a.id !== alert.id));
+                          } catch {}
+                        }}
+                        style={{ flexShrink: 0, fontSize: 11, color: "var(--t3)", background: "none", border: "1px solid var(--b1)", borderRadius: "var(--r2)", padding: "2px 8px", cursor: "pointer" }}
+                      >
+                        Ack
+                      </button>
+                    </div>
+                  ))}
+                  {unackAlerts.length > 8 && (
+                    <p style={{ fontSize: 11, color: "var(--t3)", padding: "4px 16px" }}>
+                      … and {unackAlerts.length - 8} more
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
       </div>
     </div>
   );
@@ -691,6 +1051,7 @@ function ConnectionsScreen({
   onDeleteConn: (conn: Connection) => void;
 }) {
   const [hov, setHov] = useState<string | null>(null);
+  const [rightTab, setRightTab] = useState<"details" | "knowledge">("details");
   const sel = connections.find(c => c.id === selectedConn);
 
   return (
@@ -745,22 +1106,46 @@ function ConnectionsScreen({
       {/* Right: connection detail */}
       {sel && (
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          <div className="aug-content-header">
-            <span className="aug-dot aug-dot-grn aug-anim-blink" />
-            <span style={{ fontSize: 13, fontWeight: 500, fontFamily: "var(--font-mono)" }}>{sel.name}</span>
-            <span className={`aug-tag ${sel.conn_type === "duckdb" ? "aug-tag-green" : "aug-tag-blue"}`}>{sel.conn_type}</span>
-          </div>
-          <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px", display: "flex", flexDirection: "column", gap: 14 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-              {[["DSN", sel.dsn_preview, true], ["Schema", sel.schema_name || "default", true], ["Type", sel.conn_type, false], ["Status", "active", false]].map(([k, v, mono]) => (
-                <div key={String(k)} style={{ padding: "10px 12px", background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r2)" }}>
-                  <div className="aug-label" style={{ marginBottom: 4 }}>{k}</div>
-                  <div style={{ fontSize: 12, color: "var(--t1)", fontFamily: mono ? "var(--font-mono)" : "var(--font-ui)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v}</div>
-                </div>
+          <div className="aug-content-header" style={{ justifyContent: "space-between" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span className="aug-dot aug-dot-grn aug-anim-blink" />
+              <span style={{ fontSize: 13, fontWeight: 500, fontFamily: "var(--font-mono)" }}>{sel.name}</span>
+              <span className={`aug-tag ${sel.conn_type === "duckdb" ? "aug-tag-green" : "aug-tag-blue"}`}>{sel.conn_type}</span>
+            </div>
+            {/* Sub-tab toggle */}
+            <div style={{ display: "flex", gap: 2 }}>
+              {(["details", "knowledge"] as const).map(t => (
+                <button key={t} onClick={() => setRightTab(t)} style={{
+                  padding: "3px 10px", borderRadius: "var(--r1)", fontSize: 11, fontWeight: 500, cursor: "pointer",
+                  background: rightTab === t ? "var(--bg-sel)" : "transparent",
+                  border: `1px solid ${rightTab === t ? "var(--blue2)" : "transparent"}`,
+                  color: rightTab === t ? "var(--blue5)" : "var(--t3)",
+                }}>
+                  {t.charAt(0).toUpperCase() + t.slice(1)}
+                </button>
               ))}
             </div>
-            <ExplorationBadge connectionId={sel.id} />
           </div>
+          {rightTab === "details" ? (
+            <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px", display: "flex", flexDirection: "column", gap: 14 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                {[["DSN", sel.dsn_preview, true], ["Schema", sel.schema_name || "default", true], ["Type", sel.conn_type, false], ["Status", "active", false]].map(([k, v, mono]) => (
+                  <div key={String(k)} style={{ padding: "10px 12px", background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r2)" }}>
+                    <div className="aug-label" style={{ marginBottom: 4 }}>{k}</div>
+                    <div style={{ fontSize: 12, color: "var(--t1)", fontFamily: mono ? "var(--font-mono)" : "var(--font-ui)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{v}</div>
+                  </div>
+                ))}
+              </div>
+              <ExplorationBadge connectionId={sel.id} />
+            </div>
+          ) : (
+            <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px" }}>
+              <p style={{ fontSize: 12, color: "var(--t3)", marginBottom: 16 }}>
+                Upload documents (PDFs, reports, guides) to give Aughor institutional knowledge about this connection.
+              </p>
+              <DocumentUploader />
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -830,26 +1215,123 @@ function SettingsScreen({ theme, setTheme }: { theme: Theme; setTheme: (t: Theme
 
 // ── Add connection form ────────────────────────────────────────────────────────
 
+// ── Connector type catalogue (static — mirrors backend registry) ──────────────
+
+const CONNECTOR_TYPES = [
+  { type: "postgres",     label: "PostgreSQL",    category: "built-in",  icon: "db" },
+  { type: "duckdb",       label: "DuckDB",         category: "built-in",  icon: "db" },
+  { type: "bigquery",     label: "BigQuery",       category: "warehouse", icon: "db" },
+  { type: "snowflake",    label: "Snowflake",      category: "warehouse", icon: "db" },
+  { type: "mysql",        label: "MySQL",          category: "warehouse", icon: "db" },
+  { type: "local_upload", label: "Local Files",    category: "file",      icon: "catalog" },
+  { type: "s3",           label: "S3 / R2",        category: "file",      icon: "catalog" },
+  { type: "stripe",       label: "Stripe",         category: "api",       icon: "db" },
+  { type: "hubspot",      label: "HubSpot",        category: "api",       icon: "db" },
+  { type: "salesforce",   label: "Salesforce",     category: "api",       icon: "db" },
+  { type: "federated",    label: "Federated",      category: "federated", icon: "canvas" },
+  { type: "confluence",   label: "Confluence",     category: "knowledge", icon: "catalog" },
+  { type: "notion",       label: "Notion",         category: "knowledge", icon: "catalog" },
+] as const;
+
+type ConnType = typeof CONNECTOR_TYPES[number]["type"];
+
+// Per-type field definitions
+const CONN_FIELDS: Record<ConnType, Array<{ key: string; label: string; placeholder: string; secret?: boolean; optional?: boolean }>> = {
+  postgres: [
+    { key: "dsn",         label: "Connection string",   placeholder: "postgresql://user:pass@host:5432/db", secret: true },
+    { key: "schema_name", label: "Schema",               placeholder: "public", optional: true },
+  ],
+  duckdb: [
+    { key: "dsn",         label: "File path",            placeholder: "/path/to/file.duckdb" },
+    { key: "schema_name", label: "Schema",               placeholder: "main", optional: true },
+  ],
+  bigquery: [
+    { key: "project_id",  label: "Project ID",           placeholder: "my-gcp-project" },
+    { key: "dataset",     label: "Dataset",              placeholder: "analytics", optional: true },
+    { key: "credentials", label: "Service account JSON path (blank = ADC)", placeholder: "/path/to/sa.json", secret: true, optional: true },
+  ],
+  snowflake: [
+    { key: "account",     label: "Account identifier",   placeholder: "xy12345.us-east-1" },
+    { key: "user",        label: "Username",             placeholder: "analyst" },
+    { key: "password",    label: "Password",             placeholder: "", secret: true },
+    { key: "database",    label: "Database",             placeholder: "PROD" },
+    { key: "schema_name", label: "Schema",               placeholder: "PUBLIC", optional: true },
+    { key: "warehouse",   label: "Warehouse",            placeholder: "COMPUTE_WH", optional: true },
+  ],
+  mysql: [
+    { key: "dsn",         label: "Connection string",    placeholder: "mysql://user:pass@host:3306/mydb", secret: true },
+  ],
+  local_upload: [],
+  federated:    [],  // member connections selected in a separate picker
+  stripe: [
+    { key: "secret_key",  label: "Secret key",      placeholder: "sk_live_…",    secret: true },
+    { key: "objects",     label: "Objects to sync", placeholder: "charges,customers,subscriptions", optional: true },
+  ],
+  hubspot: [
+    { key: "access_token",label: "Access token",    placeholder: "pat-na1-…",    secret: true },
+    { key: "objects",     label: "Objects to sync", placeholder: "contacts,companies,deals,tickets", optional: true },
+  ],
+  salesforce: [
+    { key: "username",       label: "Username",        placeholder: "user@org.com", secret: false as boolean },
+    { key: "password",       label: "Password",        placeholder: "",             secret: true },
+    { key: "security_token", label: "Security token",  placeholder: "token123…",    secret: true },
+    { key: "domain",         label: "Domain",          placeholder: "login",        optional: true as boolean },
+    { key: "objects",        label: "Objects to sync", placeholder: "Account,Contact,Opportunity", optional: true as boolean },
+  ],
+  s3: [
+    { key: "bucket",  label: "Bucket",            placeholder: "my-data-bucket" },
+    { key: "prefix",  label: "Key prefix",        placeholder: "data/sales/", optional: true },
+    { key: "region",  label: "Region",            placeholder: "us-east-1" },
+    { key: "key_id",  label: "Access Key ID",     placeholder: "AKIA…", secret: true },
+    { key: "secret",  label: "Secret Access Key", placeholder: "", secret: true },
+  ],
+  confluence: [
+    { key: "base_url",   label: "Base URL",    placeholder: "https://yourorg.atlassian.net" },
+    { key: "username",   label: "Username",    placeholder: "user@example.com" },
+    { key: "api_token",  label: "API token",   placeholder: "ATATT3…", secret: true },
+    { key: "space_keys", label: "Space keys",  placeholder: "ENG,PROD (empty = all spaces)", optional: true },
+  ],
+  notion: [
+    { key: "integration_token", label: "Integration token", placeholder: "secret_…", secret: true },
+    { key: "database_ids",      label: "Database IDs",      placeholder: "id1,id2 (optional)", optional: true },
+  ],
+};
+
 function AddConnectionForm({
   onSave,
   onCancel,
 }: {
-  onSave: (name: string, type: string, dsn: string, schema?: string) => Promise<void>;
+  onSave: (name: string, type: string, dsn: string, schema?: string, meta?: Record<string, string>) => Promise<void>;
   onCancel: () => void;
 }) {
   const [name, setName] = useState("");
-  const [type, setType] = useState("postgres");
-  const [dsn, setDsn] = useState("");
-  const [schema, setSchema] = useState("");
+  const [type, setType] = useState<ConnType>("postgres");
+  const [fields, setFields] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // Reset field values when type changes
+  const handleTypeChange = (newType: ConnType) => {
+    setType(newType);
+    setFields({});
+  };
+
+  const setField = (key: string, val: string) =>
+    setFields(prev => ({ ...prev, [key]: val }));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setLoading(true);
     try {
-      await onSave(name, type, dsn, schema || undefined);
+      const dsn = fields["dsn"] || "";
+      const schemaName = fields["schema_name"] || undefined;
+      // All remaining fields (not dsn/schema_name) go into meta
+      const meta: Record<string, string> = {};
+      for (const [k, v] of Object.entries(fields)) {
+        if (k !== "dsn" && k !== "schema_name" && v) meta[k] = v;
+      }
+      await onSave(name, type, dsn, schemaName, meta);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to add connection");
     } finally {
@@ -857,9 +1339,20 @@ function AddConnectionForm({
     }
   };
 
+  const typeInfo = CONNECTOR_TYPES.find(t => t.type === type);
+  const fieldDefs = CONN_FIELDS[type] ?? [];
+  const grouped = [
+    { label: "Built-in",   items: CONNECTOR_TYPES.filter(t => t.category === "built-in") },
+    { label: "Warehouse",  items: CONNECTOR_TYPES.filter(t => t.category === "warehouse") },
+    { label: "File",       items: CONNECTOR_TYPES.filter(t => t.category === "file") },
+    { label: "API / CRM",  items: CONNECTOR_TYPES.filter(t => t.category === "api") },
+    { label: "Federation", items: CONNECTOR_TYPES.filter(t => t.category === "federated") },
+    { label: "Knowledge",  items: CONNECTOR_TYPES.filter(t => t.category === "knowledge") },
+  ];
+
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.65)", backdropFilter: "blur(3px)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-      <div style={{ width: "100%", maxWidth: 400, background: "var(--bg-3)", border: "1px solid var(--b2)", borderRadius: "var(--r3)", padding: 24, display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ width: "100%", maxWidth: 460, background: "var(--bg-3)", border: "1px solid var(--b2)", borderRadius: "var(--r3)", padding: 24, display: "flex", flexDirection: "column", gap: 16, maxHeight: "90vh", overflowY: "auto" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <span style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)" }}>Add Connection</span>
           <button onClick={onCancel} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--t3)" }}>
@@ -867,34 +1360,86 @@ function AddConnectionForm({
           </button>
         </div>
         <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {[
-            { label: "Name", value: name, set: setName, placeholder: "My Database", type: "text", mono: false },
-            { label: "Connection string", value: dsn, set: setDsn, placeholder: type === "postgres" ? "postgresql://…" : "/path/to/file.duckdb", type: "text", mono: true },
-            { label: "Schema (optional)", value: schema, set: setSchema, placeholder: type === "postgres" ? "public" : "main", type: "text", mono: true },
-          ].map(f => (
-            <div key={f.label}>
-              <div className="aug-label" style={{ marginBottom: 5 }}>{f.label}</div>
-              <input
-                value={f.value}
-                onChange={e => f.set(e.target.value)}
-                placeholder={f.placeholder}
-                required={f.label === "Name" || f.label === "Connection string"}
-                className="aug-input"
-                style={f.mono ? { fontFamily: "var(--font-mono)", fontSize: 11 } : {}}
-              />
-            </div>
-          ))}
+          {/* Name */}
           <div>
-            <div className="aug-label" style={{ marginBottom: 5 }}>Type</div>
-            <select value={type} onChange={e => setType(e.target.value)} className="aug-input">
-              <option value="postgres">PostgreSQL</option>
-              <option value="duckdb">DuckDB</option>
-            </select>
+            <div className="aug-label" style={{ marginBottom: 5 }}>Name</div>
+            <input
+              value={name}
+              onChange={e => setName(e.target.value)}
+              placeholder="My Data Source"
+              required
+              className="aug-input"
+            />
           </div>
-          {error && <div style={{ fontSize: 11, color: "var(--red4)" }}>{error}</div>}
+
+          {/* Type selector */}
+          <div>
+            <div className="aug-label" style={{ marginBottom: 7 }}>Connector type</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 5 }}>
+              {grouped.map(group => (
+                group.items.map(ct => (
+                  <button
+                    key={ct.type}
+                    type="button"
+                    onClick={() => handleTypeChange(ct.type)}
+                    style={{
+                      textAlign: "left", padding: "7px 10px",
+                      borderRadius: "var(--r2)", cursor: "pointer",
+                      background: type === ct.type ? "var(--bg-sel)" : "var(--bg-2)",
+                      border: `1px solid ${type === ct.type ? "var(--blue2)" : "var(--b1)"}`,
+                      fontSize: 11, color: type === ct.type ? "var(--blue5)" : "var(--t2)",
+                      transition: "all .1s",
+                    }}
+                  >
+                    <div style={{ fontWeight: 500 }}>{ct.label}</div>
+                    <div style={{ fontSize: 9, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".04em", marginTop: 2 }}>{ct.category}</div>
+                  </button>
+                ))
+              ))}
+            </div>
+          </div>
+
+          {/* Dynamic fields */}
+          {(type === "local_upload" || type === "federated") ? (
+            <div style={{ padding: "12px", background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r2)", fontSize: 12, color: "var(--t3)", lineHeight: 1.5 }}>
+              {type === "local_upload"
+                ? <>Local Files: create the connection, then upload CSV/Parquet/Excel files to it via the Files tab.</>
+                : <>Federated connections span multiple sources. Use <code style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--t2)" }}>POST /connections/federate</code> with a list of connection IDs.</>
+              }
+            </div>
+          ) : (
+            <>
+              {(type === "confluence" || type === "notion") && (
+                <div style={{ padding: "8px 10px", background: "var(--bg-2)", border: "1px solid var(--blue2)", borderRadius: "var(--r2)", fontSize: 11, color: "var(--blue4)", lineHeight: 1.5 }}>
+                  {type === "confluence" ? "Pages are indexed into the AI context. After saving, trigger sync via the Catalog screen." : "Pages/databases are indexed into the AI context. After saving, trigger sync via the Catalog screen."}
+                </div>
+              )}
+              {fieldDefs.map(f => (
+                <div key={f.key}>
+                  <div className="aug-label" style={{ marginBottom: 5 }}>
+                    {f.label}
+                    {f.optional && <span style={{ color: "var(--t4)", fontWeight: 400, marginLeft: 4 }}>(optional)</span>}
+                  </div>
+                  <input
+                    value={fields[f.key] ?? ""}
+                    onChange={e => setField(f.key, e.target.value)}
+                    placeholder={f.placeholder}
+                    type={f.secret ? "password" : "text"}
+                    required={!f.optional}
+                    className="aug-input"
+                    style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}
+                  />
+                </div>
+              ))}
+            </>
+          )}
+
+          {error && <div style={{ fontSize: 11, color: "var(--red4)", padding: "6px 10px", background: "var(--red1)", border: "1px solid var(--red2)", borderRadius: "var(--r2)" }}>{error}</div>}
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
             <button type="button" onClick={onCancel} className="aug-btn aug-btn-ghost">Cancel</button>
-            <button type="submit" disabled={loading} className="aug-btn aug-btn-primary">{loading ? "Saving…" : "Save Connection"}</button>
+            <button type="submit" disabled={loading || !name.trim()} className="aug-btn aug-btn-primary">
+              {loading ? "Connecting…" : "Save Connection"}
+            </button>
           </div>
         </form>
       </div>
@@ -976,15 +1521,17 @@ const LAST_CONN_KEY = "aughor_last_conn";
 const THEME_KEY = "aughor_theme";
 
 export default function Home() {
-  const [tab, setTab] = useState<NavTab>("home");
+  const [tab, setTab] = useState<NavTab>("ask");
   const [theme, setThemeState] = useState<Theme>("dark");
   const [selectedConn, setSelectedConn] = useState("");
+  const [activeCanvas, setActiveCanvas] = useState<Canvas | null>(null);
+  const [showCanvasCreator, setShowCanvasCreator] = useState(false);
   const [selectedHistoryInvId, setSelectedHistoryInvId] = useState<string | null>(null);
   const [selectedChatSessionId, setSelectedChatSessionId] = useState<string | null>(null);
   const [chatKey, setChatKey] = useState(0);
   const [chatInitialQuestion, setChatInitialQuestion] = useState<string | undefined>(undefined);
   const [chatInitialMode, setChatInitialMode] = useState<"ask" | "investigate">("investigate");
-  const [explorationSection, setExplorationSection] = useState<"nulls" | "joins" | "lifecycles" | "distributions" | "insights" | "intelligence" | undefined>(undefined);
+  const [explorationSection, setExplorationSection] = useState<"nulls" | "lifecycles" | "distributions" | "insights" | "intelligence" | undefined>(undefined);
   const [showHistory, setShowHistory] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [showAddConn, setShowAddConn] = useState(false);
@@ -1034,10 +1581,23 @@ export default function Home() {
 
   const reloadConnections = () => getConnections().then(setConnections).catch(() => {});
 
-  const goToChat = (q?: string) => {
+  const goToChat = (q?: string, mode?: "ask" | "investigate") => {
     setSelectedChatSessionId(null);
     setChatInitialQuestion(q);
+    if (mode) setChatInitialMode(mode);
     setChatKey(k => k + 1);
+    setTab("chat");
+  };
+
+  /** Open an existing investigation (or chat session) by ID — goes straight to the report. */
+  const openInvestigation = (id: string, kind: "investigation" | "chat" = "investigation") => {
+    if (kind === "chat") {
+      setSelectedHistoryInvId(null);
+      setSelectedChatSessionId(id);
+    } else {
+      setSelectedChatSessionId(null);
+      setSelectedHistoryInvId(id);
+    }
     setTab("chat");
   };
 
@@ -1046,8 +1606,19 @@ export default function Home() {
     if (t === "intel") setExplorationSection("intelligence");
   };
 
-  const handleAddConn = async (name: string, type: string, dsn: string, schema?: string) => {
-    await apiAddConnection(name, type, dsn, schema);
+  const handleCanvasSelect = (canvas: Canvas) => {
+    setActiveCanvas(canvas);
+    const primaryConn = canvas.scopes[0]?.connection_id;
+    if (primaryConn) setSelectedConn(primaryConn);
+    setSelectedHistoryInvId(null);
+    setSelectedChatSessionId(null);
+    setChatKey(k => k + 1);
+    setChatInitialQuestion(undefined);
+    setTab("canvas-workspace");
+  };
+
+  const handleAddConn = async (name: string, type: string, dsn: string, schema?: string, meta?: Record<string, string>) => {
+    await apiAddConnection(name, type, dsn, schema, meta);
     setShowAddConn(false);
     reloadConnections();
   };
@@ -1083,13 +1654,33 @@ export default function Home() {
         <SchemaProvider connId={selectedConn}>
           <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
 
-            {/* ── HOME ── */}
-            {tab === "home" && (
-              <HomeScreen
+            {/* ── ASK (hero screen) ── */}
+            {tab === "ask" && (
+              <AskScreen
                 connections={connections}
                 selectedConn={selectedConn}
                 onGoToChat={goToChat}
                 onNavigate={handleNavigate}
+                onOpenInvestigation={openInvestigation}
+              />
+            )}
+
+            {/* ── CANVASES ── */}
+            {tab === "canvases" && (
+              <CanvasBrowser
+                connections={connections}
+                onSelect={handleCanvasSelect}
+                onNew={() => setShowCanvasCreator(true)}
+              />
+            )}
+
+            {/* ── CANVAS WORKSPACE ── */}
+            {tab === "canvas-workspace" && activeCanvas && (
+              <CanvasWorkspace
+                canvas={activeCanvas}
+                connections={connections}
+                onClose={() => { setActiveCanvas(null); setTab("canvases"); }}
+                onCanvasUpdate={updated => setActiveCanvas(updated)}
               />
             )}
 
@@ -1100,10 +1691,50 @@ export default function Home() {
                 <div className="aug-content-header">
                   <NavIcon name="chat" size={14} color="var(--t3)" />
                   <span style={{ fontSize: 13, fontWeight: 500 }}>Investigate</span>
-                  {selectedConn && (
-                    <span className="aug-tag aug-tag-gray" style={{ marginLeft: 4 }}>{connections.find(c => c.id === selectedConn)?.name ?? selectedConn}</span>
-                  )}
+                  {activeCanvas ? (
+                    <>
+                      <span style={{
+                        display: "inline-flex", alignItems: "center", gap: 5,
+                        padding: "2px 8px", borderRadius: "var(--r2)", marginLeft: 4,
+                        background: "color-mix(in srgb, var(--blue4) 12%, transparent)",
+                        border: "1px solid color-mix(in srgb, var(--blue4) 30%, transparent)",
+                        fontSize: 11, color: "var(--blue4)", fontWeight: 500,
+                      }}>
+                        <NavIcon name="canvas" size={11} color="var(--blue4)" />
+                        {activeCanvas.name}
+                      </span>
+                      {activeCanvas.scopes[0]?.tables.length > 0 && (
+                        <span className="aug-tag aug-tag-gray" style={{ fontSize: 10 }}>
+                          {activeCanvas.scopes[0].tables.length} tables
+                        </span>
+                      )}
+                      <button
+                        onClick={() => setActiveCanvas(null)}
+                        title="Clear canvas"
+                        style={{
+                          background: "none", border: "none", cursor: "pointer",
+                          color: "var(--t4)", padding: "2px 4px",
+                          display: "flex", alignItems: "center",
+                        }}
+                      >
+                        <NavIcon name="close" size={11} />
+                      </button>
+                    </>
+                  ) : selectedConn ? (
+                    <span className="aug-tag aug-tag-gray" style={{ marginLeft: 4 }}>
+                      {connections.find(c => c.id === selectedConn)?.name ?? selectedConn}
+                    </span>
+                  ) : null}
                   <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+                    {!activeCanvas && (
+                      <button
+                        onClick={() => setTab("canvases")}
+                        className="aug-btn aug-btn-ghost aug-btn-sm"
+                        title="Pick a Canvas"
+                      >
+                        <NavIcon name="canvas" size={11} /> Canvas
+                      </button>
+                    )}
                     <button onClick={() => { setSelectedChatSessionId(null); setSelectedHistoryInvId(null); setChatKey(k => k + 1); }} className="aug-btn aug-btn-ghost aug-btn-sm">
                       <NavIcon name="plus" size={11} /> New
                     </button>
@@ -1127,6 +1758,7 @@ export default function Home() {
                   : <ChatPanel
                       key={chatKey}
                       connectionId={selectedConn}
+                      canvasId={activeCanvas?.id}
                       restoreSessionId={selectedChatSessionId}
                       initialQuestion={chatInitialQuestion}
                       initialMode={chatInitialMode}
@@ -1136,7 +1768,7 @@ export default function Home() {
             )}
 
             {/* ── RECENTS ── */}
-            {tab === "recents" && <RecentsScreen onGoToChat={goToChat} />}
+            {tab === "recents" && <RecentsScreen onGoToChat={goToChat} onOpenInvestigation={openInvestigation} />}
 
             {/* ── ONTOLOGY ── */}
             {tab === "ontology" && (
@@ -1197,8 +1829,54 @@ export default function Home() {
               </div>
             )}
 
+            {/* ── HEALTH SCORECARD ── */}
+            {tab === "health" && (
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
+                <div className="aug-content-header">
+                  <NavIcon name="activity" size={14} color="var(--t3)" />
+                  <span style={{ fontSize: 13, fontWeight: 500 }}>Health Scorecard</span>
+                  <span style={{ fontSize: 11, color: "var(--t3)", marginLeft: 4 }}>
+                    {connections.find(c => c.id === selectedConn)?.name ?? selectedConn}
+                  </span>
+                </div>
+                <div style={{ flex: 1, overflowY: "auto", padding: "20px 28px" }}>
+                  <ProcessHealthPanel connectionId={selectedConn} onInvestigate={goToChat} />
+                </div>
+              </div>
+            )}
+
+            {/* ── QUERY BUILDER ── */}
+            {tab === "builder" && (
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
+                <QueryBuilder initialConnId={selectedConn} />
+              </div>
+            )}
+
+            {/* ── ACTION HUB ── */}
+            {tab === "actions" && (
+              <ActionHubPanel />
+            )}
+
             {/* ── CATALOG (was Connections) ── */}
             {tab === "connections" && (
+              <ConnectionsScreen
+                connections={connections}
+                selectedConn={selectedConn}
+                onSelect={setSelectedConn}
+                onAddConn={() => setShowAddConn(true)}
+                onDeleteConn={conn => setPendingDeleteConn(conn)}
+              />
+            )}
+
+            {/* ── METRICS ── */}
+            {tab === "metrics" && (
+              <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                <MetricsPanel />
+              </div>
+            )}
+
+            {/* ── CATALOG ── */}
+            {tab === "catalog" && (
               <CatalogScreen
                 connections={connections}
                 selectedConn={selectedConn}
@@ -1250,14 +1928,14 @@ export default function Home() {
         </>
       )}
 
-      {/* ── Search overlay ── */}
-      {showSearch && (
-        <SearchOverlay
-          onClose={() => setShowSearch(false)}
-          onNavigate={handleNavigate}
-          onGoToChat={q => { goToChat(q); setShowSearch(false); }}
-        />
-      )}
+      {/* ── Command palette (⌘K) ── */}
+      <CommandPalette
+        open={showSearch}
+        onClose={() => setShowSearch(false)}
+        selectedConn={selectedConn}
+        onNavigate={t => { handleNavigate(t as NavTab); setShowSearch(false); }}
+        onGoToChat={q => { goToChat(q); setShowSearch(false); }}
+      />
 
       {/* ── Add connection modal ── */}
       {showAddConn && (
@@ -1273,6 +1951,18 @@ export default function Home() {
           conn={pendingDeleteConn}
           onConfirm={handleDeleteConn}
           onCancel={() => setPendingDeleteConn(null)}
+        />
+      )}
+
+      {/* ── Canvas creator modal ── */}
+      {showCanvasCreator && (
+        <CanvasCreator
+          connections={connections}
+          onCreated={canvas => {
+            setShowCanvasCreator(false);
+            handleCanvasSelect(canvas);
+          }}
+          onCancel={() => setShowCanvasCreator(false)}
         />
       )}
 

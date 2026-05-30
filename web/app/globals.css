@@ -1,161 +1,27 @@
 @import "tailwindcss";
 @import "tw-animate-css";
+@import "../styles/tokens.css";
+@import "../styles/type.css";
 
 @custom-variant dark (&:is(.dark *));
 
-/* ── Palantir Blueprint design system ───────────────────────────────────────
-   Fonts: DM Sans (UI) + IBM Plex Mono (data / code / monospace values)
-   Primary: Blueprint blue #2D72D2
-   Shape: max 4px border-radius, 1px borders
-   ───────────────────────────────────────────────────────────────────────── */
-
+/* ── Font wiring ─────────────────────────────────────────────────────────── */
 @theme inline {
   --font-sans: var(--font-dm-sans), system-ui, sans-serif;
   --font-mono: var(--font-ibm-plex-mono), 'Consolas', monospace;
 }
 
-/* ── Dark mode design tokens (default) ─────────────────────────────────── */
-:root {
-  /* Backgrounds */
-  --bg-0: #11171d;
-  --bg-1: #1f272e;
-  --bg-2: #172030;
-  --bg-3: #1C2839;
-  --bg-4: #223246;
-  --bg-hover: rgba(45, 114, 210, 0.07);
-  --bg-sel:   rgba(45, 114, 210, 0.13);
-
-  /* Borders */
-  --b0: #131C2B;
-  --b1: #1B2840;
-  --b2: #253552;
-  --b3: #314468;
-  --bfocus: #2D72D2;
-
-  /* Text */
-  --t1: #C8D4E4;
-  --t2: #8296AF;
-  --t3: #485E7C;
-  --t4: #2B3B52;
-
-  /* Intent colours — dark */
-  --blue1: #152B50; --blue2: #1A3A6E; --blue3: #2D72D2; --blue4: #4C8EEE; --blue5: #88BAFF;
-  --grn1:  #0C2B1A; --grn2:  #10522E; --grn3:  #18985A; --grn4:  #2EC87B; --grn5:  #68E0A8;
-  --amb1:  #2A1D00; --amb2:  #583C00; --amb3:  #BD8800; --amb4:  #E0AD00; --amb5:  #FFD44D;
-  --red1:  #2A0E0E; --red2:  #561A1A; --red3:  #C42A2A; --red4:  #E64848; --red5:  #FF8585;
-  --vio1:  #190E3A; --vio2:  #2D1A6A; --vio3:  #6040B8; --vio4:  #8B68D8; --vio5:  #BCA8F0;
-  --cyn1:  #0D2030; --cyn2:  #124060; --cyn3:  #1690BE; --cyn4:  #30B8E0; --cyn5:  #78D8F8;
-
-  /* Typography */
-  --font-ui:   var(--font-dm-sans), system-ui, sans-serif;
-  --font-mono: var(--font-ibm-plex-mono), 'Consolas', monospace;
-
-  /* Radii — hard-edged Palantir style */
-  --r1: 2px;
-  --r2: 3px;
-  --r3: 4px;
-
-  /* Layout */
-  --sidebar:  224px;
-  --topbar:   48px;
-
-  /* Misc */
-  --code-bg:   #0d1117;
-  --shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.35);
-  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.45);
-
-  /* ── Tailwind bridge: map Palantir tokens → Tailwind custom props ── */
-  --background:   var(--bg-0);
-  --foreground:   var(--t1);
-  --card:         var(--bg-2);
-  --card-foreground: var(--t1);
-  --popover:      var(--bg-3);
-  --popover-foreground: var(--t1);
-  --primary:      var(--blue3);
-  --primary-foreground: #fff;
-  --secondary:    var(--bg-3);
-  --secondary-foreground: var(--t1);
-  --muted:        var(--bg-2);
-  --muted-foreground: var(--t2);
-  --accent:       var(--blue3);
-  --accent-foreground: #fff;
-  --destructive:  var(--red3);
-  --border:       var(--b1);
-  --input:        var(--b2);
-  --ring:         var(--blue3);
-  --radius:       4px;
-
-  /* Sidebar tokens */
-  --sidebar:              var(--bg-1);
-  --sidebar-foreground:   var(--t1);
-  --sidebar-primary:      var(--blue3);
-  --sidebar-primary-foreground: #fff;
-  --sidebar-accent:       var(--bg-sel);
-  --sidebar-accent-foreground: var(--blue5);
-  --sidebar-border:       var(--b1);
-  --sidebar-ring:         var(--blue3);
-
-  /* Legacy palette aliases for components that still reference these */
-  --color-zinc-950: var(--bg-0);
-  --color-zinc-900: var(--bg-1);
-  --color-zinc-800: var(--bg-0);
-  --color-zinc-700: var(--bg-2);
-  --color-zinc-600: var(--b2);
-  --color-zinc-500: var(--t2);
-  --color-zinc-400: var(--t3);
-  --color-zinc-300: var(--t1);
-  --color-zinc-200: #e8eff8;
-  --color-zinc-100: #f0f5fc;
-
-  /* Accent aliases */
-  --color-violet-700: var(--vio2);
-  --color-violet-600: var(--vio3);
-  --color-violet-500: var(--vio4);
-  --color-violet-400: var(--vio5);
-  --color-sky-700:    var(--blue2);
-  --color-sky-600:    var(--blue2);
-  --color-sky-500:    var(--blue3);
-  --color-sky-400:    var(--blue4);
-  --color-red-600:    var(--red3);
-  --color-red-500:    var(--red4);
-  --color-red-400:    var(--red5);
-}
-
-/* ── Light mode ─────────────────────────────────────────────────────────── */
-[data-theme="light"] {
-  --bg-0: #F2F5FA;
-  --bg-1: #FFFFFF;
-  --bg-2: #F7F9FC;
-  --bg-3: #ECF0F8;
-  --bg-4: #E2EAF4;
-  --bg-hover: rgba(45, 114, 210, 0.055);
-  --bg-sel:   rgba(45, 114, 210, 0.10);
-
-  --b0: #E5ECF5;
-  --b1: #D2DCEB;
-  --b2: #BBC9DC;
-  --b3: #A0B5CC;
-  --bfocus: #2D72D2;
-
-  --t1: #1A2535;
-  --t2: #3C5270;
-  --t3: #6E8EA8;
-  --t4: #A8BDD0;
-
-  --blue1: #EBF2FC; --blue2: #C4D8F8; --blue3: #2D72D2; --blue4: #1A56B0; --blue5: #0E3C80;
-  --grn1:  #E8F7EF; --grn2:  #B5E8CE; --grn3:  #18985A; --grn4:  #0D7042; --grn5:  #084F2C;
-  --amb1:  #FDF6E0; --amb2:  #F5DF9C; --amb3:  #C08A00; --amb4:  #8A6200; --amb5:  #5A4000;
-  --red1:  #FBE8E8; --red2:  #F0B5B5; --red3:  #C42A2A; --red4:  #961C1C; --red5:  #660E0E;
-  --vio1:  #F0E8FA; --vio2:  #D4B5F0; --vio3:  #6040B8; --vio4:  #4828A0; --vio5:  #301870;
-  --cyn1:  #E2F5FC; --cyn2:  #AADDF5; --cyn3:  #1690BE; --cyn4:  #0C6E94; --cyn5:  #074C6A;
-
-  --code-bg:   #EDF0F8;
-  --shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.10);
-  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.14);
-}
-
 /* ── Base reset ─────────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; }
+
+/* ── Focus rings (accessibility — Blueprint blue outline) ────────────────── */
+:focus-visible {
+  outline: 2px solid var(--bfocus);
+  outline-offset: 2px;
+  border-radius: var(--r1);
+}
+/* inputs show focus via border-color, not outline */
+.aug-input:focus-visible { outline: none; }
 
 html, body {
   height: 100%;
@@ -251,12 +117,14 @@ a { color: var(--blue4); text-decoration: none; }
   border-radius: 0 2px 2px 0;
 }
 .aug-nav-group {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--t4);
-  padding: 14px 13px 4px;
+  padding: 12px 13px 4px;
+  margin-top: 4px;
+  border-top: 1px solid var(--b0);
 }
 
 /* ── Tags ────────────────────────────────────────────────────────────────── */
@@ -328,7 +196,7 @@ a { color: var(--blue4); text-decoration: none; }
 .aug-dt thead th {
   text-align: left;
   padding: 5px 12px;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -365,7 +233,7 @@ a { color: var(--blue4); text-decoration: none; }
 }
 
 /* ── Panel ───────────────────────────────────────────────────────────────── */
-.aug-panel { background: var(--bg-2); border: 1px solid var(--b1); border-radius: var(--r3); }
+.aug-panel { background: var(--bg-2); border: 1px solid var(--b1); border-radius: var(--r3); box-shadow: var(--shadow-sm); }
 
 /* ── Callout ─────────────────────────────────────────────────────────────── */
 .aug-callout {
@@ -393,13 +261,7 @@ a { color: var(--blue4); text-decoration: none; }
 .aug-progress-fill  { height: 100%; background: var(--blue3); border-radius: 2px; transition: width 0.3s; }
 
 /* ── Utility shortcuts ───────────────────────────────────────────────────── */
-.aug-label {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--t3);
-}
+/* NOTE: aug-label is defined in type.css at 11px (design-system minimum). */
 .aug-mono { font-family: var(--font-mono); }
 .aug-divh { height: 1px; background: var(--b1); }
 

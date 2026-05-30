@@ -1,0 +1,70 @@
+/* ── Aughor Type Scale ───────────────────────────────────────────────────────
+   Utility classes for consistent typography across the product.
+   Minimum legible size: 11px. No UI element should fall below this.
+
+   Usage:
+     <h2 className="aug-text-h2">Revenue by category</h2>
+     <p  className="aug-text-sm text-[--t2]">Supporting detail</p>
+     <span className="aug-label">Section header</span>
+   ─────────────────────────────────────────────────────────────────────────── */
+
+/* ── Headings ── */
+.aug-text-h1 {
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  color: var(--t1);
+}
+
+.aug-text-h2 {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--t1);
+}
+
+.aug-text-h3 {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--t1);
+}
+
+/* ── Body ── */
+.aug-text-ui {
+  font-size: 13px;   /* base UI size */
+  line-height: 1.5;
+  color: var(--t1);
+}
+
+.aug-text-sm {
+  font-size: 12px;   /* secondary text, table cells */
+  line-height: 1.5;
+  color: var(--t1);
+}
+
+.aug-text-xs {
+  font-size: 11px;   /* minimum — labels, captions, meta */
+  line-height: 1.5;
+  color: var(--t2);
+}
+
+/* ── Data / code ── */
+.aug-text-mono {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--t1);
+}
+
+/* ── Section label (UPPERCASE, 11px minimum) ── */
+/* Overrides the aug-label in globals.css — kept here as canonical definition.
+   10px was below the legibility floor; 11px is the corrected value. */
+.aug-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--t3);
+}

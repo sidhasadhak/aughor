@@ -108,7 +108,7 @@ function SqlToggle({ sql }: { sql: string }) {
         SQL
       </button>
       {open && (
-        <pre className="mt-1.5 text-[11px] text-zinc-400 bg-[#0d131a] rounded-lg p-3 overflow-x-auto whitespace-pre-wrap leading-relaxed border border-zinc-800">
+        <pre className="mt-1.5 text-[11px] text-zinc-400 rounded-md p-3 overflow-x-auto whitespace-pre-wrap leading-relaxed border border-zinc-800" style={{ background: "var(--code-bg)" }}>
           {sql}
         </pre>
       )}
@@ -131,7 +131,7 @@ function DataTable({ columns, rows, label }: { columns: string[]; rows: (string 
         {label} · {rows.length} rows
       </button>
       {open && (
-        <div className="mt-1.5 overflow-x-auto rounded-lg border border-zinc-800" style={{ background: "#11171d" }}>
+        <div className="mt-1.5 overflow-x-auto rounded-md border border-zinc-800" style={{ background: "var(--bg-0)" }}>
           <table className="w-full text-[11px]">
             <thead>
               <tr className="border-b border-zinc-800">
@@ -175,7 +175,7 @@ function EvidenceBlock({ finding }: { finding: InvestigationFinding }) {
     <div className="space-y-2.5">
       {/* Chart — first, most prominent */}
       {hasChart && (
-        <div className="rounded-xl border border-zinc-800/60 overflow-hidden p-3" style={{ background: "#11171d" }}>
+        <div className="rounded-md border border-zinc-800/60 overflow-hidden p-3" style={{ background: "var(--bg-0)" }}>
           <p className="text-[11px] text-zinc-500 mb-2">{finding.title}</p>
           <InvestigationChart columns={finding.columns} rows={finding.rows as unknown[][]} />
         </div>
@@ -270,7 +270,7 @@ function PhaseSection({
               {phase.phase_name}
             </span>
             {isSkipped && (
-              <span className="text-[10px] text-zinc-600 border border-zinc-800 px-1.5 py-0.5 rounded-full">skipped</span>
+              <span className="text-[11px] text-zinc-600 border border-zinc-800 px-1.5 py-0.5 rounded-full">skipped</span>
             )}
           </div>
           {/* Phase summary — the one-sentence takeaway */}
@@ -290,7 +290,7 @@ function PhaseSection({
         <div className={`ml-6 mt-1 space-y-5 pb-2 ${isIntake ? "opacity-70" : ""}`}>
           {isIntake ? (
             // Intake: render as a compact key-value block
-            <div className="rounded-lg border border-zinc-800/50 overflow-hidden" style={{ background: "#11171d" }}>
+            <div className="rounded-md border border-zinc-800/50 overflow-hidden" style={{ background: "var(--bg-0)" }}>
               <table className="w-full text-[11px]">
                 <tbody>
                   {findings[0]?.rows?.map((row, i) => (
@@ -331,15 +331,23 @@ function WaterfallSection({ entries, totalLabel }: { entries: WaterfallEntry[]; 
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
-        {totalLabel && (
-          <span className="text-[12px] font-mono text-red-400 bg-red-950/20 border border-red-900/30 px-2 py-0.5 rounded-full">
-            {totalLabel}
-          </span>
-        )}
+        {totalLabel && (() => {
+          // Colour the total label by the sign of the net change
+          const netPos = entries.reduce((s, e) => s + (e.pct_of_total ?? 0), 0) >= 0;
+          return (
+            <span className={`text-[12px] font-mono px-2 py-0.5 rounded-full border ${
+              netPos
+                ? "text-emerald-400 bg-emerald-950/20 border-emerald-900/30"
+                : "text-red-400 bg-red-950/20 border-red-900/30"
+            }`}>
+              {totalLabel}
+            </span>
+          );
+        })()}
       </div>
       <div className="space-y-2.5">
         {entries.map((entry, i) => {
-          const isNeg = entry.pct_of_total > 0;
+          const isNeg = entry.pct_of_total < 0;   // fixed: negative when pct < 0
           const barW = Math.abs(entry.pct_of_total) / maxAbs * 100;
           return (
             <div key={i} className="space-y-1">
@@ -347,10 +355,10 @@ function WaterfallSection({ entries, totalLabel }: { entries: WaterfallEntry[]; 
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="text-zinc-300 truncate max-w-[220px]">{entry.cause}</span>
                   {entry.controllable && (
-                    <span className="text-[9px] bg-amber-900/40 text-amber-400 border border-amber-800/40 px-1.5 py-0.5 rounded-full shrink-0">controllable</span>
+                    <span className="text-[11px] bg-amber-900/40 text-amber-400 border border-amber-800/40 px-1.5 py-0.5 rounded-full shrink-0">controllable</span>
                   )}
                   {!entry.structural && (
-                    <span className="text-[9px] bg-sky-900/40 text-sky-400 border border-sky-800/40 px-1.5 py-0.5 rounded-full shrink-0">transient</span>
+                    <span className="text-[11px] bg-sky-900/40 text-sky-400 border border-sky-800/40 px-1.5 py-0.5 rounded-full shrink-0">transient</span>
                   )}
                 </div>
                 <div className="flex items-center gap-3 shrink-0 ml-2">
@@ -382,7 +390,7 @@ function RecommendationsSection({ recs }: { recs: ADARecommendation[] }) {
     <div className="space-y-3">
       {recs.map((rec, i) => (
         <div key={i} className="flex items-start gap-3">
-          <span className="shrink-0 mt-0.5 w-5 h-5 rounded-full border border-emerald-700/50 bg-emerald-900/20 flex items-center justify-center text-[10px] text-emerald-400 font-mono">{i + 1}</span>
+          <span className="shrink-0 mt-0.5 w-5 h-5 rounded-full border border-emerald-700/50 bg-emerald-900/20 flex items-center justify-center text-[11px] text-emerald-400 font-mono">{i + 1}</span>
           <div className="space-y-0.5 min-w-0">
             <p className="text-[12px] text-zinc-300 leading-snug">{rec.action}</p>
             <div className="flex flex-wrap gap-3 text-[11px] text-zinc-600">
@@ -466,7 +474,7 @@ function ConfidencePill({ report }: { report: ADAReport }) {
       </button>
 
       {open && (
-        <div className="mt-2 rounded-lg border border-zinc-800 bg-zinc-900/60 p-3 space-y-2.5 text-[11px]">
+        <div className="mt-2 rounded-md border border-zinc-800 bg-zinc-900/60 p-3 space-y-2.5 text-[11px]">
           {confidence_justification && (
             <p className="text-zinc-400 leading-relaxed border-b border-zinc-800 pb-2.5">
               {confidence_justification}
@@ -506,7 +514,7 @@ function StreamingPhaseCard({ phase }: { phase: InvestigationPhase }) {
         <span className={`text-[11px] font-medium uppercase tracking-wide ${isSkipped ? "text-zinc-700" : "text-zinc-400"}`}>
           {phase.phase_name}
         </span>
-        {isSkipped && <span className="text-[10px] text-zinc-600 italic">{phase.skipped_reason}</span>}
+        {isSkipped && <span className="text-[11px] text-zinc-600 italic">{phase.skipped_reason}</span>}
       </div>
       {phase.summary && !isSkipped && (
         <p className="text-[11px] text-zinc-500 leading-relaxed"><RichText text={phase.summary} /></p>
@@ -514,7 +522,7 @@ function StreamingPhaseCard({ phase }: { phase: InvestigationPhase }) {
       {findings.map(f => (
         <div key={f.finding_id} className="space-y-1.5 pl-2">
           {f.columns.length > 0 && f.rows.length >= 2 && f.chart_type !== "none" && (
-            <div className="rounded-lg border border-zinc-800/60 overflow-hidden p-2" style={{ background: "#11171d" }}>
+            <div className="rounded-md border border-zinc-800/60 overflow-hidden p-2" style={{ background: "var(--bg-0)" }}>
               <InvestigationChart columns={f.columns} rows={f.rows as unknown[][]} />
             </div>
           )}

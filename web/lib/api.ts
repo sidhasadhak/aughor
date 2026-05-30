@@ -1,4 +1,4 @@
-const BASE = "http://localhost:8000";
+import { API_BASE as BASE } from "./config";
 
 export interface Connection {
   id: string;
@@ -25,15 +25,81 @@ export async function addConnection(
   conn_type: string,
   dsn: string,
   schema_name?: string,
+  meta?: Record<string, string>,
 ): Promise<{ id: string; message: string; test_result: string }> {
   const res = await fetch(`${BASE}/connections`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, conn_type, dsn, schema_name: schema_name || null }),
+    body: JSON.stringify({ name, conn_type, dsn: dsn || "", schema_name: schema_name || null, meta: meta || {} }),
   });
   if (!res.ok) {
     const err = await res.json();
     throw new Error(err.detail ?? "Failed to add connection");
+  }
+  return res.json();
+}
+
+export interface ConnectorTypeInfo {
+  type: string;
+  dsn_preview: string;
+  category: string;
+  fields: Array<{ key: string; label: string; placeholder: string; secret: boolean }>;
+}
+
+export async function getConnectorTypes(): Promise<ConnectorTypeInfo[]> {
+  const res = await fetch(`${BASE}/connectors/types`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return data.types ?? [];
+}
+
+export async function createFederatedConnection(
+  name: string,
+  connectionIds: string[],
+): Promise<{ id: string; message: string; test_result: string }> {
+  const res = await fetch(`${BASE}/connections/federate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, connection_ids: connectionIds }),
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.detail ?? "Federation failed");
+  }
+  return res.json();
+}
+
+export async function triggerSync(
+  connId: string,
+  incremental = true,
+): Promise<{ message: string }> {
+  const res = await fetch(
+    `${BASE}/connections/${encodeURIComponent(connId)}/sync?incremental=${incremental}`,
+    { method: "POST" },
+  );
+  if (!res.ok) throw new Error("Sync trigger failed");
+  return res.json();
+}
+
+export async function getSyncStatus(connId: string): Promise<Record<string, unknown>> {
+  const res = await fetch(`${BASE}/connections/${encodeURIComponent(connId)}/sync-status`);
+  if (!res.ok) return {};
+  return res.json();
+}
+
+export async function uploadFileToConnection(
+  connId: string,
+  file: File,
+): Promise<{ table_name: string; filename: string }> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${BASE}/connections/${encodeURIComponent(connId)}/files`, {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) {
+    const err = await res.json();
+    throw new Error(err.detail ?? "Upload failed");
   }
   return res.json();
 }
@@ -54,6 +120,7 @@ export interface SchemaColumn {
   name: string;
   type: string;
   is_fk: boolean;
+  description?: string;
 }
 
 export interface SchemaTable {
@@ -453,6 +520,9 @@ export interface ExplorationInsight {
   confidence: number;
   novelty: number;
   generated_at: string;
+  canvas_id?: string | null;
+  promoted_to_org?: boolean;
+  promotion_confidence?: number;
 }
 
 export interface DomainInsights {
@@ -475,6 +545,63 @@ export async function extendDomainBudget(connectionId: string, domain: string): 
   );
   if (!res.ok) throw new Error("Failed to extend domain budget");
   return res.json();
+}
+
+export async function getCanvasDomainInsights(canvasId: string): Promise<Record<string, DomainInsights>> {
+  const res = await fetch(`${BASE}/exploration/canvas/${encodeURIComponent(canvasId)}/domains`);
+  if (!res.ok) throw new Error("Failed to fetch canvas domain insights");
+  return res.json();
+}
+
+export async function extendCanvasDomainBudget(canvasId: string, domain: string): Promise<{ ok: boolean }> {
+  const res = await fetch(
+    `${BASE}/exploration/canvas/${encodeURIComponent(canvasId)}/domains/${encodeURIComponent(domain)}/extend`,
+    { method: "POST" }
+  );
+  if (!res.ok) throw new Error("Failed to extend canvas domain budget");
+  return res.json();
+}
+
+export async function promoteCanvasInsight(canvasId: string, insightId: string): Promise<{ promoted: boolean }> {
+  const res = await fetch(
+    `${BASE}/exploration/canvas/${encodeURIComponent(canvasId)}/insights/${encodeURIComponent(insightId)}/promote`,
+    { method: "POST" }
+  );
+  if (!res.ok) throw new Error("Failed to promote insight");
+  return res.json();
+}
+
+export async function resumeCanvasExploration(canvasId: string): Promise<{ status: string }> {
+  const res = await fetch(`${BASE}/exploration/canvas/${encodeURIComponent(canvasId)}/resume`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to resume canvas exploration");
+  return res.json();
+}
+
+export async function stopCanvasExploration(canvasId: string): Promise<{ status: string }> {
+  const res = await fetch(`${BASE}/exploration/canvas/${encodeURIComponent(canvasId)}/stop`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to stop canvas exploration");
+  return res.json();
+}
+
+export async function restartCanvasExploration(canvasId: string): Promise<{ status: string }> {
+  const res = await fetch(`${BASE}/exploration/canvas/${encodeURIComponent(canvasId)}/restart`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to restart canvas exploration");
+  return res.json();
+}
+
+export async function getCanvasExplorationStatus(canvasId: string): Promise<ExplorationStatus> {
+  const res = await fetch(`${BASE}/exploration/canvas/${encodeURIComponent(canvasId)}/status`);
+  if (!res.ok) throw new Error("Failed to fetch canvas exploration status");
+  return res.json();
+}
+
+export async function getCanvasExplorationEpisodes(canvasId: string, phase = "", limit = 300): Promise<ExplorationEpisode[]> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (phase) params.set("phase", phase);
+  const res = await fetch(`${BASE}/exploration/canvas/${encodeURIComponent(canvasId)}/episodes?${params}`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return Array.isArray(data) ? data : [];
 }
 
 export interface ExplorationFindings {
@@ -737,5 +864,323 @@ export async function getCausalGraph(connId: string): Promise<CausalEdge[]> {
     `${BASE}/connections/${encodeURIComponent(connId)}/causal-graph`,
   );
   if (!res.ok) return [];
+  return res.json();
+}
+
+// ── Canvas ────────────────────────────────────────────────────────────────────
+
+export interface CanvasScope {
+  connection_id: string;
+  schema_name: string | null;
+  tables: string[];
+}
+
+export interface Canvas {
+  id: string;
+  name: string;
+  description: string;
+  scopes: CanvasScope[];
+  is_legacy: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function getCanvases(): Promise<Canvas[]> {
+  const res = await fetch(`${BASE}/canvases`);
+  if (!res.ok) throw new Error("Failed to fetch canvases");
+  return res.json();
+}
+
+export async function createCanvas(
+  name: string,
+  description: string,
+  scopes: CanvasScope[],
+): Promise<Canvas> {
+  const res = await fetch(`${BASE}/canvases`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, description, scopes }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { detail?: string }).detail ?? "Failed to create canvas");
+  }
+  return res.json();
+}
+
+export async function updateCanvas(
+  id: string,
+  patch: { name?: string; description?: string; scopes?: CanvasScope[] },
+): Promise<Canvas> {
+  const res = await fetch(`${BASE}/canvases/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) throw new Error("Failed to update canvas");
+  return res.json();
+}
+
+export async function deleteCanvas(id: string): Promise<void> {
+  await fetch(`${BASE}/canvases/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export async function getCanvasSchema(id: string): Promise<string> {
+  const res = await fetch(`${BASE}/canvases/${encodeURIComponent(id)}/schema`);
+  if (!res.ok) throw new Error("Failed to fetch canvas schema");
+  const data = await res.json();
+  return (data as { schema: string }).schema;
+}
+
+export interface CanvasHistoryItem {
+  id: string;
+  question: string;
+  status: string;
+  started_at: string;
+  kind?: string;
+  connection_id?: string;
+}
+
+export async function getCanvasHistory(id: string, limit = 20): Promise<CanvasHistoryItem[]> {
+  const res = await fetch(`${BASE}/canvases/${encodeURIComponent(id)}/history?limit=${limit}`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return (data as { investigations: CanvasHistoryItem[] }).investigations ?? [];
+}
+
+export async function getCanvasRecents(id: string, limit = 10): Promise<Array<{ question: string; status: string; created_at: string }>> {
+  const res = await fetch(`${BASE}/canvases/${encodeURIComponent(id)}/recents?limit=${limit}`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  return (data as { recents: Array<{ question: string; status: string; created_at: string }> }).recents ?? [];
+}
+
+// ── M3 / M11 — Direct Query Runner ───────────────────────────────────────────
+
+export interface DirectQueryResult {
+  columns: string[];
+  rows: string[][];
+  row_count: number;
+  duration_ms: number;
+  sql: string;
+  cached: boolean;
+  error: string | null;
+}
+
+export async function runDirectQuery(
+  connId: string,
+  sql: string,
+  limit = 500,
+  opts: { useCache?: boolean; useBulk?: boolean } = {},
+): Promise<DirectQueryResult> {
+  const res = await fetch(`${BASE}/query/run`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      conn_id: connId,
+      sql,
+      limit,
+      use_cache: opts.useCache ?? false,
+      use_bulk: opts.useBulk ?? false,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { detail?: string }).detail ?? "Query failed");
+  }
+  return res.json();
+}
+
+export interface BuildSqlMeasure {
+  expr: string;
+  alias: string;
+}
+
+export interface BuildSqlFilter {
+  col: string;
+  op: string;
+  val: string;
+}
+
+export async function buildQuerySql(params: {
+  table: string;
+  dimensions: string[];
+  measures: BuildSqlMeasure[];
+  filters: BuildSqlFilter[];
+  order_by: string;
+  limit: number;
+}): Promise<{ sql: string }> {
+  const res = await fetch(`${BASE}/query/build-sql`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { detail?: string }).detail ?? "SQL build failed");
+  }
+  return res.json();
+}
+
+// ── Evidence Ledger ────────────────────────────────────────────────────────────
+
+export interface EvidenceClaim {
+  id: string;
+  investigation_id: string;
+  hypothesis_id: string | null;
+  claim_text: string;
+  sql_source: string | null;
+  metric_used: string | null;
+  data_freshness: string | null;
+  confidence: number;
+  created_at: string;
+  owner_feedback: "validated" | "disputed" | "needs_context" | null;
+  feedback_note: string | null;
+  downstream_recommendations: string[];
+  outcome_status: "acted_on" | "superseded" | "archived" | null;
+}
+
+export async function getEvidenceClaims(invId: string): Promise<EvidenceClaim[]> {
+  const res = await fetch(`${BASE}/investigations/${invId}/evidence`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function submitClaimFeedback(
+  invId: string,
+  claimId: string,
+  feedback: "validated" | "disputed" | "needs_context",
+  note?: string,
+): Promise<EvidenceClaim> {
+  const res = await fetch(`${BASE}/investigations/${invId}/evidence/${claimId}/feedback`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ feedback, note }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { detail?: string }).detail ?? "Feedback submission failed");
+  }
+  return res.json();
+}
+
+// ── Monitors ──────────────────────────────────────────────────────────────────
+
+export interface MonitorDef {
+  id: string;
+  conn_id: string;
+  name: string;
+  metric_name: string | null;
+  custom_sql: string | null;
+  check_cron: string;
+  alert_on: "threshold_cross" | "trend_reversal" | "anomaly" | "segment_drift" | "data_freshness" | "any_change";
+  warning_threshold: number | null;
+  critical_threshold: number | null;
+  threshold_direction: "below" | "above";
+  sigma_threshold: number;
+  history_days: number;
+  dimension_column: string | null;
+  freshness_table: string | null;
+  freshness_sla_hours: number;
+  notification_channel: string;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MonitorAlert {
+  id: string;
+  monitor_id: string;
+  monitor_name: string;
+  conn_id: string;
+  metric_name: string | null;
+  triggered_at: string;
+  alert_on: string;
+  severity: "warning" | "critical" | "info";
+  current_value: number | null;
+  previous_value: number | null;
+  threshold: number | null;
+  message: string;
+  acknowledged: boolean;
+  acknowledged_at: string | null;
+}
+
+export interface DigestSection {
+  title: string;
+  items: string[];
+}
+
+export interface DigestResult {
+  conn_id: string;
+  period: string;
+  generated_at: string;
+  sections: DigestSection[];
+  alert_count: number;
+  critical_count: number;
+  markdown: string;
+}
+
+export async function getMonitors(connId?: string): Promise<MonitorDef[]> {
+  const qs = connId ? `?conn_id=${connId}` : "";
+  const res = await fetch(`${BASE}/monitors${qs}`);
+  if (!res.ok) throw new Error("Failed to fetch monitors");
+  return res.json();
+}
+
+export async function createMonitor(data: Partial<MonitorDef> & { conn_id: string; name: string }): Promise<MonitorDef> {
+  const res = await fetch(`${BASE}/monitors`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error("Failed to create monitor");
+  return res.json();
+}
+
+export async function updateMonitor(id: string, data: Partial<MonitorDef>): Promise<MonitorDef> {
+  const res = await fetch(`${BASE}/monitors/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) throw new Error("Failed to update monitor");
+  return res.json();
+}
+
+export async function deleteMonitor(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/monitors/${id}`, { method: "DELETE" });
+  if (!res.ok && res.status !== 204) throw new Error("Failed to delete monitor");
+}
+
+export async function triggerMonitor(id: string): Promise<MonitorAlert | { fired: false }> {
+  const res = await fetch(`${BASE}/monitors/${id}/trigger`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to trigger monitor");
+  return res.json();
+}
+
+export async function getMonitorAlerts(monitorId: string, limit = 50): Promise<MonitorAlert[]> {
+  const res = await fetch(`${BASE}/monitors/${monitorId}/alerts?limit=${limit}`);
+  if (!res.ok) throw new Error("Failed to fetch alerts");
+  return res.json();
+}
+
+export async function getAllAlerts(connId?: string, limit = 100): Promise<MonitorAlert[]> {
+  const qs = new URLSearchParams();
+  if (connId) qs.set("conn_id", connId);
+  qs.set("limit", String(limit));
+  const res = await fetch(`${BASE}/alerts?${qs}`);
+  if (!res.ok) throw new Error("Failed to fetch alerts");
+  return res.json();
+}
+
+export async function acknowledgeAlert(alertId: string): Promise<MonitorAlert> {
+  const res = await fetch(`${BASE}/alerts/${alertId}/acknowledge`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to acknowledge alert");
+  return res.json();
+}
+
+export async function getDigest(connId: string, period: "week" | "day" = "week"): Promise<DigestResult> {
+  const res = await fetch(`${BASE}/monitors/digest?conn_id=${connId}&period=${period}`);
+  if (!res.ok) throw new Error("Failed to fetch digest");
   return res.json();
 }
