@@ -1,6 +1,7 @@
 """Query runner and visual query builder endpoints."""
 from __future__ import annotations
 
+import asyncio
 import re
 
 from fastapi import APIRouter, HTTPException
@@ -18,7 +19,7 @@ class _QueryRunRequest(BaseModel):
 
 
 @router.post("/query/run")
-def query_run(body: _QueryRunRequest):
+async def query_run(body: _QueryRunRequest):
     """Execute a SQL query against a registered connection."""
     import time as _t
     from aughor.db.connection import open_connection_for
@@ -27,7 +28,7 @@ def query_run(body: _QueryRunRequest):
         raise HTTPException(status_code=400, detail="sql is required")
 
     if body.use_cache:
-        from aughor.db.matcache import get_cached, put_cache
+        from aughor.db.matcache import get_cached
         cached = get_cached(body.conn_id, body.sql)
         if cached is not None:
             return {
@@ -45,18 +46,32 @@ def query_run(body: _QueryRunRequest):
     except KeyError:
         raise HTTPException(status_code=404, detail="Connection not found")
 
-    t0 = _t.monotonic()
+    _sql_to_run = body.sql
+    _use_bulk   = body.use_bulk
+    _limit      = body.limit
+
+    def _work():
+        t0 = _t.monotonic()
+        try:
+            if _use_bulk:
+                result = db.bulk_read(_sql_to_run, limit=_limit)
+            else:
+                sql = _sql_to_run.strip().rstrip(";")
+                if _limit > 0:
+                    sql = f"SELECT * FROM ({sql}) __q LIMIT {_limit}"
+                result = db.execute("__querybuilder__", sql)
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
+        return result, (_t.monotonic() - t0) * 1000
+
+    loop = asyncio.get_event_loop()
     try:
-        if body.use_bulk:
-            result = db.bulk_read(body.sql, limit=body.limit)
-        else:
-            sql = body.sql.strip().rstrip(";")
-            if body.limit > 0:
-                sql = f"SELECT * FROM ({sql}) __q LIMIT {body.limit}"
-            result = db.execute("__querybuilder__", sql)
-    finally:
-        db.close()
-    duration_ms = (_t.monotonic() - t0) * 1000
+        result, duration_ms = await loop.run_in_executor(None, _work)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
     if body.use_cache and not result.error:
         from aughor.db.matcache import put_cache

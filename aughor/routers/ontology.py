@@ -1,6 +1,7 @@
 """Ontology graph — entities, relationships, actions, metrics, lifecycle counts, rebuild."""
 from __future__ import annotations
 
+import asyncio
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
@@ -121,8 +122,11 @@ def override_ontology_action(action_id: str, body: _ActionOverride, connection_i
 
 
 @router.get("/ontology/entities/{entity_id}/lifecycle-counts")
-def get_entity_lifecycle_counts(entity_id: str, connection_id: str = BUILTIN_ID):
-    graph = _get_ontology_graph(connection_id)
+async def get_entity_lifecycle_counts(entity_id: str, connection_id: str = BUILTIN_ID):
+    loop = asyncio.get_event_loop()
+
+    # Ontology load is itself a DB call — push it off the event loop too
+    graph = await loop.run_in_executor(None, lambda: _get_ontology_graph(connection_id))
     if graph is None:
         raise HTTPException(status_code=404, detail="Ontology not available")
     entity = graph.entities.get(entity_id)
@@ -130,14 +134,25 @@ def get_entity_lifecycle_counts(entity_id: str, connection_id: str = BUILTIN_ID)
         raise HTTPException(status_code=404, detail=f"Entity '{entity_id}' not found")
     if not entity.has_lifecycle or not entity.lifecycle_column or not entity.source_tables:
         return []
+
     table = entity.source_tables[0]
     col   = entity.lifecycle_column
     where = f"WHERE {entity.active_filter}" if entity.active_filter else ""
     sql   = f"SELECT {col} AS state, COUNT(*) AS cnt FROM {table} {where} GROUP BY {col} ORDER BY cnt DESC LIMIT 50"
-    try:
+
+    def _work():
         db  = open_connection_for(connection_id)
-        res = db.execute("lifecycle_counts", sql)
-        db.close()
+        try:
+            res = db.execute("lifecycle_counts", sql)
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
+        return res
+
+    try:
+        res = await loop.run_in_executor(None, _work)
         if res.error:
             raise HTTPException(status_code=500, detail=res.error)
         return [{"state": str(r[0]), "count": int(r[1])} for r in (res.rows or [])]

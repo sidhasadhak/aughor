@@ -26,6 +26,14 @@ data/episodes_*.jsonl
 data/ontology_cache.json
 data/schema_cache.json
 data/schema_profiles.json
+data/audit.db
+data/canvases.db
+data/evidence_ledger.db
+data/monitors.db
+data/mat_cache.duckdb
+data/sync_state_*.json
+data/api_sync/
+data/uploads/
 
 # Claude Code internal state
 .claude/

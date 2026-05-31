@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900">
+  <defs>
+    <style>
+      .bg{fill:#080b10}.rail{fill:#0d1117}.tree{fill:#10161f}.bar{fill:#0f141b}.panel{fill:#101722;stroke:#263445;stroke-width:1}.panel2{fill:#0c1219;stroke:#202c3b;stroke-width:1}.sel{fill:#162337;stroke:#31506f}.chip{fill:#111b27;stroke:#2a3a4d}.drawer{fill:#0d1219;stroke:#263445}
+      .line{stroke:#243244;stroke-width:1}.edge{stroke:#3b5f81;stroke-width:1.4;fill:none}.text{fill:#eef4fb}.soft{fill:#b9c5d4}.muted{fill:#8290a3}.faint{fill:#59697b}.blue{fill:#58a6ff}.teal{fill:#42d6b2}.green{fill:#62d889}.amber{fill:#f0b84d}.red{fill:#ff6675}.violet{fill:#a78bfa}
+      .h1{font:600 24px Inter,Arial,sans-serif}.h2{font:600 16px Inter,Arial,sans-serif}.h3{font:600 13px Inter,Arial,sans-serif}.body{font:400 13px Inter,Arial,sans-serif}.small{font:500 11px Inter,Arial,sans-serif}.xs{font:600 10px Inter,Arial,sans-serif}.mono{font:500 12px ui-monospace,SFMono-Regular,Menlo,monospace}.num{font:650 28px ui-monospace,SFMono-Regular,Menlo,monospace}
+    </style>
+  </defs>
+  <rect width="1440" height="900" class="bg"/>
+  <rect width="56" height="900" class="rail"/>
+  <rect x="56" width="274" height="900" class="tree"/>
+  <rect x="330" width="1110" height="50" class="bar"/>
+  <line x1="56" y1="0" x2="56" y2="900" class="line"/><line x1="330" y1="0" x2="330" y2="900" class="line"/><line x1="330" y1="50" x2="1440" y2="50" class="line"/>
+  <rect x="16" y="18" width="24" height="24" rx="5" fill="#18283a" stroke="#31506f"/><circle cx="28" cy="30" r="5" class="blue"/>
+  <text x="84" y="36" class="text h2">Data Map</text><text x="84" y="58" class="faint small">Object graph and contracts</text>
+  <rect x="78" y="92" width="226" height="32" rx="5" fill="#0c1219" stroke="#263445"/><text x="96" y="113" class="faint body">Search objects</text>
+  <text x="84" y="154" class="faint xs">METRICS</text><text x="100" y="190" class="muted body">Revenue</text><rect x="92" y="210" width="212" height="30" rx="5" class="sel"/><text x="112" y="230" class="text body">Payment failure rate</text><text x="100" y="270" class="muted body">Refund rate</text>
+  <text x="84" y="332" class="faint xs">ENTITIES</text><text x="100" y="368" class="muted body">Customer</text><text x="100" y="408" class="muted body">Order</text><text x="100" y="448" class="muted body">Payment</text><text x="100" y="488" class="muted body">Product</text>
+  <text x="84" y="550" class="faint xs">PROCESSES</text><text x="100" y="586" class="muted body">Checkout lifecycle</text><text x="100" y="626" class="muted body">Customer activation</text>
+
+  <text x="356" y="32" class="muted body">Data Map / Metrics / Payment failure rate</text>
+  <text x="356" y="102" class="text h1">Payment failure rate</text>
+  <rect x="598" y="80" width="112" height="28" rx="5" fill="#182619" stroke="#31593b"/><text x="620" y="99" class="green small">Approved</text>
+  <rect x="720" y="80" width="138" height="28" rx="5" fill="#231b10" stroke="#654b22"/><text x="742" y="99" class="amber small">Active monitor</text>
+  <text x="356" y="130" class="muted body">Failed payment attempts divided by all payment attempts. Finance-approved metric contract.</text>
+
+  <rect x="356" y="166" width="710" height="256" rx="8" class="panel"/>
+  <text x="380" y="204" class="text h2">Metric contract</text>
+  <line x1="380" y1="228" x2="1042" y2="228" class="line"/>
+  <text x="380" y="262" class="faint xs">FORMULA</text><text x="380" y="292" class="blue mono">SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) / COUNT(*)</text>
+  <text x="380" y="336" class="faint xs">DEFAULT FILTERS</text><text x="380" y="366" class="muted body">Exclude test users, internal transactions, and manually voided payments.</text>
+  <text x="780" y="262" class="faint xs">OWNER</text><text x="780" y="292" class="text body">Payments Analytics</text>
+  <text x="780" y="336" class="faint xs">FRESHNESS SLA</text><text x="780" y="366" class="text body">15 minutes</text>
+
+  <rect x="356" y="450" width="710" height="312" rx="8" class="panel"/>
+  <text x="380" y="488" class="text h2">Object neighborhood</text>
+  <path d="M502 612 C588 560, 686 560, 782 612" class="edge"/><path d="M782 612 C858 650, 894 650, 952 612" class="edge"/>
+  <rect x="430" y="576" width="150" height="76" rx="7" fill="#101c20" stroke="#28564d"/><text x="470" y="610" class="text h3">Order</text><text x="466" y="634" class="teal small">business object</text>
+  <rect x="706" y="576" width="150" height="76" rx="7" class="sel"/><text x="750" y="610" class="text h3">Payment</text><text x="746" y="634" class="blue small">event source</text>
+  <rect x="908" y="576" width="120" height="76" rx="7" fill="#161322" stroke="#493167"/><text x="938" y="610" class="text h3">Bank</text><text x="934" y="634" class="violet small">dimension</text>
+  <rect x="430" y="692" width="598" height="42" rx="6" class="panel2"/><text x="454" y="718" class="muted body">Used by 8 investigations, 3 monitors, 2 playbook recommendations</text>
+
+  <rect x="1090" y="70" width="310" height="806" rx="0" class="drawer"/>
+  <text x="1114" y="110" class="text h2">Inspector</text>
+  <text x="1114" y="138" class="muted body">Everything about the selected object.</text>
+  <line x1="1114" y1="164" x2="1376" y2="164" class="line"/>
+  <text x="1114" y="198" class="faint xs">LINEAGE</text>
+  <text x="1114" y="228" class="muted body">payments.status</text><text x="1114" y="254" class="muted body">payments.payment_id</text><text x="1114" y="280" class="muted body">orders.order_id</text>
+  <text x="1114" y="334" class="faint xs">RECENT CLAIMS</text>
+  <rect x="1114" y="354" width="262" height="72" rx="6" class="panel2"/><text x="1132" y="382" class="text h3">Brazil card failures rose</text><text x="1132" y="404" class="green small">verified · 0.91 confidence</text>
+  <rect x="1114" y="442" width="262" height="72" rx="6" class="panel2"/><text x="1132" y="470" class="text h3">Acquirer B explains lift</text><text x="1132" y="492" class="amber small">needs owner validation</text>
+  <text x="1114" y="560" class="faint xs">ACTIONS</text>
+  <rect x="1114" y="582" width="262" height="30" rx="5" class="sel"/><text x="1160" y="602" class="text small">Start investigation</text>
+  <rect x="1114" y="626" width="262" height="30" rx="5" class="chip"/><text x="1160" y="646" class="soft small">Create monitor</text>
+  <rect x="1114" y="670" width="262" height="30" rx="5" class="chip"/><text x="1160" y="690" class="soft small">Edit metric contract</text>
+</svg>

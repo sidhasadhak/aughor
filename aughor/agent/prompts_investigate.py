@@ -1,5 +1,5 @@
 """
-ADA (Autonomous Data Analyst) phase prompts.
+ADA (Autonomous Intelligence Platform) phase prompts.
 
 Each phase asks the LLM to: (1) plan SQL, then (2) interpret results.
 All prompts are schema-adaptive — column names come from the actual schema,

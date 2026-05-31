@@ -1,5 +1,5 @@
 """
-ADA (Autonomous Data Analyst) — structured investigation engine.
+ADA (Autonomous Intelligence Platform) — structured investigation engine.
 
 Replaces the hypothesis-scoring pipeline for investigate-mode questions with
 an 8-phase analytical lifecycle that produces a progressive, number-backed
