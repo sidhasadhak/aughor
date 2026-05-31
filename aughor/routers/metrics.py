@@ -6,7 +6,15 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from aughor.semantic.metrics import MetricDefinition, delete_metric, get_metric, list_metrics, save_metric
+from aughor.semantic.metrics import (
+    MetricDefinition,
+    delete_metric,
+    get_metric,
+    list_metrics,
+    save_metric,
+    validate_metric,
+    check_freshness,
+)
 
 router = APIRouter(tags=["metrics"])
 
@@ -25,6 +33,15 @@ class MetricRequest(BaseModel):
     critical_threshold: Optional[float] = None
     target_period: Optional[str] = None
     benchmark_source: Optional[str] = None
+    # Governance fields (M21)
+    owner: Optional[str] = None
+    freshness_sla: Optional[str] = None
+    freshness_check_sql: Optional[str] = None
+    quality_tests: list[str] = []
+    lineage: list[str] = []
+    wrong_usage_examples: list[str] = []
+    approved_by: Optional[str] = None
+    approved_at: Optional[str] = None
 
 
 @router.get("/metrics")
@@ -53,6 +70,50 @@ def remove_metric(name: str):
     if not delete_metric(name):
         raise HTTPException(status_code=404, detail=f"Metric '{name}' not found.")
     return {"ok": True, "name": name}
+
+
+@router.post("/metrics/{name}/validate")
+def run_metric_validation(name: str, conn_id: str):
+    """Run all quality_tests for a metric against the given connection."""
+    from aughor.db.connection import open_connection_for
+
+    metric = get_metric(name)
+    if not metric:
+        raise HTTPException(status_code=404, detail=f"Metric '{name}' not found.")
+    try:
+        db = open_connection_for(conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    try:
+        result = validate_metric(metric, db)
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
+    return result.model_dump()
+
+
+@router.get("/metrics/{name}/freshness")
+def get_metric_freshness(name: str, conn_id: str):
+    """Check the freshness of a metric's underlying data against its SLA."""
+    from aughor.db.connection import open_connection_for
+
+    metric = get_metric(name)
+    if not metric:
+        raise HTTPException(status_code=404, detail=f"Metric '{name}' not found.")
+    try:
+        db = open_connection_for(conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    try:
+        result = check_freshness(metric, db)
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
+    return result.model_dump()
 
 
 @router.get("/connections/{conn_id}/health-scorecard")

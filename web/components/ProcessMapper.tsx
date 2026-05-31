@@ -163,12 +163,12 @@ export function ProcessMapper({ connId, entityId, onInvestigate }: Props) {
               {map.lifecycle_column}
             </span>
           </p>
-          <p className="text-[10px] text-zinc-500 mt-0.5">
+          <p className="text-[11px] text-zinc-500 mt-0.5">
             {fmt(map.total_records)} total records
             {!map.has_transitions && " · showing state distribution only"}
           </p>
         </div>
-        <div className="flex items-center gap-3 text-[10px] text-zinc-500">
+        <div className="flex items-center gap-3 text-[11px] text-zinc-500">
           <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-emerald-500" /> ≥80%</span>
           <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-amber-500" /> ≥50%</span>
           <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-red-500" /> &lt;50%</span>
@@ -176,7 +176,7 @@ export function ProcessMapper({ connId, entityId, onInvestigate }: Props) {
       </div>
 
       {/* SVG canvas */}
-      <div className="overflow-x-auto rounded-xl border border-zinc-700 bg-zinc-900">
+      <div className="overflow-x-auto rounded-md border border-zinc-700 bg-zinc-900">
         <svg
           width={svgW}
           height={svgH}
@@ -311,7 +311,7 @@ export function ProcessMapper({ connId, entityId, onInvestigate }: Props) {
 
       {/* No-transition notice */}
       {!map.has_transitions && map.nodes.length > 0 && (
-        <p className="text-[10px] text-zinc-600 text-center">
+        <p className="text-[11px] text-zinc-600 text-center">
           Transition arrows require multiple rows per record tracking state changes over time.
         </p>
       )}

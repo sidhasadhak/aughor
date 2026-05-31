@@ -132,6 +132,31 @@ def _split_into_chunks(text: str) -> list[str]:
     return [c for c in chunks if len(c.strip()) >= 50]
 
 
+def chunk_text(
+    text: str,
+    doc_id: str | None = None,
+    title: str = "Document",
+    filename: str = "api_sync",
+    uploaded_at: str | None = None,
+) -> list[DocumentChunk]:
+    """Chunk raw text string directly — no file I/O. Used by API knowledge connectors."""
+    import datetime
+    doc_id = doc_id or uuid.uuid4().hex
+    uploaded_at = uploaded_at or datetime.datetime.utcnow().isoformat() + "Z"
+    texts = _split_into_chunks(text)
+    return [
+        DocumentChunk(
+            doc_id=doc_id,
+            chunk_index=i,
+            text=t,
+            filename=filename,
+            title=title,
+            uploaded_at=uploaded_at,
+        )
+        for i, t in enumerate(texts)
+    ]
+
+
 def chunk_file(
     path: Path,
     doc_id: str | None = None,

@@ -1397,6 +1397,14 @@ def ada_synthesize(state: AgentState) -> dict:
     except Exception:
         pass
 
+    # Build org-wide intelligence section from promoted canvas insights
+    org_intelligence_section = ""
+    try:
+        from aughor.knowledge.org_intelligence import build_org_intelligence_section
+        org_intelligence_section = build_org_intelligence_section(question, top_k=5)
+    except Exception:
+        pass
+
     synth_prompt = ADA_SYNTHESIZE_PROMPT.format(
         question=question,
         phases_summary=phases_summary,
@@ -1404,6 +1412,7 @@ def ada_synthesize(state: AgentState) -> dict:
         events_section=events_section,
         metric_targets_section=metric_targets_section,
         playbook_section=playbook_section,
+        org_intelligence_section=org_intelligence_section,
         external_context_section=external_context_section,
     ) + early_stop_note
     try:

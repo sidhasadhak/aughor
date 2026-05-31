@@ -52,6 +52,7 @@ def _ensure_schema(c: sqlite3.Connection) -> None:
         "status TEXT DEFAULT 'running'",
         "kind TEXT DEFAULT 'investigation'",
         "session_id TEXT",
+        "canvas_id TEXT",          # Sprint 21 — nullable; set when launched via Canvas
     ]:
         try:
             c.execute(f"ALTER TABLE investigations ADD COLUMN {col}")
@@ -70,14 +71,19 @@ def _ensure_schema(c: sqlite3.Connection) -> None:
     c.commit()
 
 
-def create_investigation(question: str, connection_id: str) -> str:
+def create_investigation(
+    question: str,
+    connection_id: str,
+    canvas_id: Optional[str] = None,
+) -> str:
     """Insert a new in-progress row and return its ID."""
     inv_id = uuid.uuid4().hex[:8]
     c = _conn()
     _ensure_schema(c)
     c.execute(
-        "INSERT INTO investigations (id, question, connection_id, started_at, status) VALUES (?,?,?,?,?)",
-        (inv_id, question, connection_id, _now(), "running"),
+        "INSERT INTO investigations (id, question, connection_id, canvas_id, started_at, status) "
+        "VALUES (?,?,?,?,?,?)",
+        (inv_id, question, connection_id, canvas_id, _now(), "running"),
     )
     c.commit()
     c.close()
@@ -251,7 +257,7 @@ def list_investigations(limit: int = 50) -> list[dict]:
 
     # Non-chat rows (investigations)
     inv_rows = c.execute(
-        """SELECT id, question, connection_id, started_at, completed_at,
+        """SELECT id, question, connection_id, canvas_id, started_at, completed_at,
                   status, hypothesis_count, query_count, headline,
                   COALESCE(kind, 'investigation') as kind,
                   NULL as session_id

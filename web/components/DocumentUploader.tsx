@@ -32,7 +32,7 @@ function FileTypeChip({ filename }: { filename: string }) {
   };
   const style = map[ext] ?? { label: ext.toUpperCase(), chip: "border-zinc-600 bg-zinc-800 text-zinc-400" };
   return (
-    <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${style.chip}`}>
+    <span className={`text-[11px] font-mono px-1.5 py-0.5 rounded border ${style.chip}`}>
       {style.label}
     </span>
   );
@@ -111,7 +111,7 @@ export function DocumentUploader() {
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
         onClick={() => inputRef.current?.click()}
-        className={`relative rounded-xl border-2 border-dashed p-8 text-center cursor-pointer transition-all ${
+        className={`relative rounded-md border-2 border-dashed p-8 text-center cursor-pointer transition-all ${
           dragging
             ? "border-violet-500 bg-violet-500/10"
             : "border-zinc-600 hover:border-zinc-500 hover:bg-zinc-800/50"
@@ -143,7 +143,7 @@ export function DocumentUploader() {
 
       {/* Error */}
       {uploadError && (
-        <div className="rounded-lg border border-red-500/30 bg-red-500/5 p-3 text-xs text-red-400 whitespace-pre-wrap font-mono">
+        <div className="rounded-md border border-red-500/30 bg-red-500/5 p-3 text-xs text-red-400 whitespace-pre-wrap font-mono">
           {uploadError}
         </div>
       )}
@@ -151,26 +151,26 @@ export function DocumentUploader() {
       {/* Document list */}
       {docs.length > 0 && (
         <div className="space-y-2">
-          <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-mono">
+          <p className="text-[11px] text-zinc-500 uppercase tracking-widest font-mono">
             {docs.length} document{docs.length !== 1 ? "s" : ""} indexed
           </p>
           <div className="space-y-2">
             {docs.map(doc => (
               <div
                 key={doc.doc_id}
-                className="rounded-lg border border-zinc-700 bg-zinc-800/50 px-4 py-3 flex items-center gap-3"
+                className="rounded-md border border-zinc-700 bg-zinc-800/50 px-4 py-3 flex items-center gap-3"
               >
                 <FileTypeChip filename={doc.filename} />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-zinc-200 truncate">{doc.title}</p>
-                  <p className="text-[10px] text-zinc-500 font-mono mt-0.5">
+                  <p className="text-[11px] text-zinc-500 font-mono mt-0.5">
                     {doc.filename} · {doc.chunk_count} chunk{doc.chunk_count !== 1 ? "s" : ""} · {timeAgo(doc.uploaded_at)}
                   </p>
                 </div>
                 <button
                   onClick={() => handleDelete(doc.doc_id)}
                   disabled={deletingId === doc.doc_id}
-                  className="shrink-0 text-[10px] text-zinc-500 hover:text-red-400 border border-zinc-700 hover:border-red-500/40 rounded px-2 py-1 transition"
+                  className="shrink-0 text-[11px] text-zinc-500 hover:text-red-400 border border-zinc-700 hover:border-red-500/40 rounded px-2 py-1 transition"
                 >
                   {deletingId === doc.doc_id ? "…" : "Remove"}
                 </button>

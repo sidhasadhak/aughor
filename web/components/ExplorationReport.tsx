@@ -54,18 +54,18 @@ function SubQuestionCard({
         <div className="flex-1 pb-6 min-w-0">
           {/* Header */}
           <div className="flex items-start gap-2 flex-wrap mb-2">
-            <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border shrink-0 ${ps.chip}`}>
+            <span className={`text-[11px] font-mono px-1.5 py-0.5 rounded border shrink-0 ${ps.chip}`}>
               {ps.icon} {ps.label}
             </span>
             <p className="text-sm text-zinc-300 leading-snug flex-1 min-w-0">{answer.question}</p>
           </div>
 
           {/* Answer bubble */}
-          <div className="rounded-lg border border-zinc-600 bg-zinc-800/60 p-3 space-y-2">
+          <div className="rounded-md border border-zinc-600 bg-zinc-800/60 p-3 space-y-2">
             <p className="text-sm text-zinc-100 leading-relaxed font-medium">{answer.answer}</p>
             {answer.insight && answer.insight !== answer.answer && (
               <p className="text-xs text-zinc-400 leading-relaxed border-t border-zinc-600/60 pt-2">
-                <span className="text-zinc-500 uppercase tracking-widest font-mono text-[10px]">Insight </span>
+                <span className="text-zinc-500 uppercase tracking-widest font-mono text-[11px]">Insight </span>
                 {answer.insight}
               </p>
             )}
@@ -81,7 +81,7 @@ function SubQuestionCard({
             <div className="mt-2">
               <button
                 onClick={() => setOpen(o => !o)}
-                className="text-[10px] text-zinc-500 hover:text-zinc-400 transition font-mono uppercase tracking-wide flex items-center gap-1"
+                className="text-[11px] text-zinc-500 hover:text-zinc-400 transition font-mono uppercase tracking-wide flex items-center gap-1"
               >
                 <span>{open ? "▼" : "▶"}</span> Data
               </button>
@@ -102,7 +102,7 @@ function SubQuestionCard({
                   )}
                   <button
                     onClick={() => setSqlOpen(o => !o)}
-                    className="text-[10px] text-zinc-500 hover:text-zinc-400 transition font-mono uppercase tracking-wide flex items-center gap-1"
+                    className="text-[11px] text-zinc-500 hover:text-zinc-400 transition font-mono uppercase tracking-wide flex items-center gap-1"
                   >
                     <span>{sqlOpen ? "▼" : "▶"}</span> SQL
                   </button>
@@ -132,7 +132,7 @@ function SubqMiniTable({ columns, rows, rowCount }: { columns: string[]; rows: u
           <thead className="sticky top-0 bg-zinc-800 border-b border-zinc-600">
             <tr>
               {columns.map(col => (
-                <th key={col} className="px-3 py-1.5 text-left text-[10px] text-zinc-500 uppercase tracking-wide font-mono whitespace-nowrap">
+                <th key={col} className="px-3 py-1.5 text-left text-[11px] text-zinc-500 uppercase tracking-wide font-mono whitespace-nowrap">
                   {col.replace(/_/g, " ")}
                 </th>
               ))}
@@ -152,7 +152,7 @@ function SubqMiniTable({ columns, rows, rowCount }: { columns: string[]; rows: u
         </table>
       </div>
       {rowCount > MAX && (
-        <div className="px-3 py-1 border-t border-zinc-600/60 text-[10px] text-zinc-500 font-mono">
+        <div className="px-3 py-1 border-t border-zinc-600/60 text-[11px] text-zinc-500 font-mono">
           +{rowCount - MAX} more rows
         </div>
       )}
@@ -168,7 +168,7 @@ export function ExplorationReportView({ report, subQuestions, subqAnswers, query
   return (
     <div className="space-y-6">
       {/* 1. Headline answer */}
-      <div className="rounded-lg border border-violet-500/30 bg-violet-500/5 p-5">
+      <div className="rounded-md border border-violet-500/30 bg-violet-500/5 p-5">
         <p className="text-xs font-medium uppercase tracking-widest mb-2 text-violet-400">Answer</p>
         <p className="text-lg font-semibold text-white leading-snug">{report.headline}</p>
       </div>
@@ -180,7 +180,7 @@ export function ExplorationReportView({ report, subQuestions, subqAnswers, query
       </div>
 
       {/* 3. Narrative */}
-      <div className="rounded-lg border border-zinc-600 bg-zinc-800/40 p-4 space-y-1.5">
+      <div className="rounded-md border border-zinc-600 bg-zinc-800/40 p-4 space-y-1.5">
         <p className="text-xs text-zinc-500 uppercase tracking-widest font-mono">How we got here</p>
         <p className="text-sm text-zinc-300 leading-relaxed italic">{report.narrative}</p>
       </div>
@@ -205,7 +205,7 @@ export function ExplorationReportView({ report, subQuestions, subqAnswers, query
           <p className="text-xs text-zinc-500 uppercase tracking-widest font-mono">Recommended Actions</p>
           <div className="space-y-2">
             {report.recommended_actions.map((action, i) => (
-              <div key={i} className="rounded-lg border border-violet-500/20 bg-violet-500/5 p-3 flex items-start gap-3">
+              <div key={i} className="rounded-md border border-violet-500/20 bg-violet-500/5 p-3 flex items-start gap-3">
                 <span className="shrink-0 flex h-5 w-5 items-center justify-center rounded-full bg-violet-500/20 border border-violet-500/30 text-xs font-mono text-violet-300 mt-0.5">
                   {i + 1}
                 </span>
@@ -222,7 +222,7 @@ export function ExplorationReportView({ report, subQuestions, subqAnswers, query
           <p className="text-xs text-orange-400 uppercase tracking-widest font-mono">Data Quality Issues</p>
           <div className="space-y-3">
             {dqNotes.map((note, i) => (
-              <div key={i} className="rounded-lg border border-orange-500/20 bg-orange-500/5 p-3 space-y-1.5">
+              <div key={i} className="rounded-md border border-orange-500/20 bg-orange-500/5 p-3 space-y-1.5">
                 <code className="text-xs font-mono text-orange-300">{note.column ? `${note.table}.${note.column}` : note.table}</code>
                 <p className="text-xs text-zinc-300">{note.issue}</p>
                 <p className="text-xs text-zinc-500"><span className="text-orange-400">Fix:</span> {note.recommended_fix}</p>

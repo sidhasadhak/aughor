@@ -1,6 +1,7 @@
 """
 Persistence for exploration state and findings.
-Saved to data/exploration_{connection_id}.json per connection.
+Connection-scoped: data/exploration_{connection_id}.json
+Canvas-scoped:     data/exploration_canvas_{canvas_id}.json
 """
 from __future__ import annotations
 
@@ -14,6 +15,10 @@ _DATA_DIR = Path("data")
 
 def _path(connection_id: str) -> Path:
     return _DATA_DIR / f"exploration_{connection_id}.json"
+
+
+def _canvas_path(canvas_id: str) -> Path:
+    return _DATA_DIR / f"exploration_canvas_{canvas_id}.json"
 
 
 def _empty() -> dict:
@@ -186,3 +191,61 @@ def render_exploration_annotations(connection_id: str) -> str:
         " — background cartography, treat as authoritative:"
     )
     return header + "\n\n" + "\n\n".join(sections)
+
+
+# ── Canvas-scoped variants ────────────────────────────────────────────────────
+
+def load_canvas(canvas_id: str) -> dict:
+    p = _canvas_path(canvas_id)
+    if p.exists():
+        try:
+            return json.loads(p.read_text())
+        except Exception:
+            pass
+    return _empty()
+
+
+def save_canvas(canvas_id: str, state: dict) -> None:
+    _DATA_DIR.mkdir(parents=True, exist_ok=True)
+    try:
+        _canvas_path(canvas_id).write_text(json.dumps(state, indent=2, default=str))
+    except Exception:
+        pass
+
+
+def get_insights_canvas(canvas_id: str) -> list[dict]:
+    return load_canvas(canvas_id).get("insights", [])
+
+
+def get_domain_insights_canvas(canvas_id: str) -> dict[str, list[dict]]:
+    grouped: dict[str, list[dict]] = {}
+    for ins in get_insights_canvas(canvas_id):
+        d = ins.get("domain", "General")
+        grouped.setdefault(d, []).append(ins)
+    return grouped
+
+
+def extend_domain_budget_canvas(canvas_id: str, domain: str, extra: int = 5) -> int:
+    state = load_canvas(canvas_id)
+    key = f"{domain}__cap"
+    current = state.get("domain_budgets", {}).get(key, 15)
+    new_cap = current + extra
+    state.setdefault("domain_budgets", {})[key] = new_cap
+    save_canvas(canvas_id, state)
+    return new_cap
+
+
+def promote_insight(canvas_id: str, insight_id: str) -> bool:
+    """Mark a canvas insight as promoted to Org intelligence. Returns True on success."""
+    state = load_canvas(canvas_id)
+    for ins in state.get("insights", []):
+        if ins.get("id") == insight_id:
+            ins["promoted_to_org"] = True
+            ins["promotion_confidence"] = ins.get("confidence", 0.0)
+            save_canvas(canvas_id, state)
+            return True
+    return False
+
+
+def canvas_has_state(canvas_id: str) -> bool:
+    return _canvas_path(canvas_id).exists()

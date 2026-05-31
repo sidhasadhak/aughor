@@ -59,9 +59,11 @@ def _require_auth(key: str | None = Security(_api_key_header)) -> None:
 
 @app.on_event("startup")
 async def _setup_samples() -> None:
+    # Run synchronous DB seeding off the event loop so startup returns instantly.
+    loop = asyncio.get_event_loop()
     try:
         from aughor.samples.setup import ensure_samples_db
-        ensure_samples_db()
+        await loop.run_in_executor(None, ensure_samples_db)
     except Exception as exc:
         logger.warning("Samples DB setup failed (non-fatal): %s", exc)
 
@@ -100,38 +102,76 @@ async def _validate_connections() -> None:
         logger.warning("Could not run connection key check: %s", exc)
 
 
-@app.on_event("startup")
-async def _start_explorers() -> None:
+def _open_and_test(conn_id: str):
+    """
+    Synchronous: open a DB connection and test it.
+    Returns (db, ok, msg). Runs in a thread-pool executor — never call on the event loop.
+    """
+    db = open_connection_for(conn_id)
+    ok, msg = db.test()
+    if not ok:
+        db.close()
+        return None, False, msg
+    return db, True, msg
+
+
+async def _boot_explorer(
+    conn_id: str,
+    *,
+    retry_interval: int = 30,
+    max_retries: int = 20,
+) -> None:
+    """
+    Background task: open + test the connection (off the event loop), then launch
+    the SchemaExplorer.  Retries automatically if the DB isn't reachable yet —
+    useful for containers / Postgres that starts after the API.
+    """
     from aughor.explorer.agent import SchemaExplorer
-    from pathlib import Path as _Path
 
-    def _store_path(conn_id: str) -> _Path:
-        return _Path("data") / f"exploration_{conn_id}.json"
+    loop = asyncio.get_event_loop()
+    is_resume = (Path("data") / f"exploration_{conn_id}.json").exists()
 
-    for conn_info in list_connections():
-        conn_id = conn_info["id"]
-        if not _store_path(conn_id).exists():
-            continue
+    for attempt in range(1, max_retries + 1):
         try:
-            db = open_connection_for(conn_id)
-            ok, msg = db.test()
-            if not ok:
-                db.close()
-                continue
+            db, ok, msg = await loop.run_in_executor(None, _open_and_test, conn_id)
+        except Exception as exc:
+            ok, msg, db = False, str(exc), None
+
+        if ok and db is not None:
             explorer = SchemaExplorer(conn_id, db)
             _explorers[conn_id] = explorer
             task = asyncio.create_task(explorer.explore(), name=f"explorer-{conn_id}")
             _explorer_tasks[conn_id] = task
-            logger.info("Explorer resumed for connection %s", conn_id)
-        except Exception as exc:
-            logger.warning("Could not resume explorer for %s: %s", conn_id, exc)
+            logger.info(
+                "Explorer %s for connection %s",
+                "resumed" if is_resume else "started fresh",
+                conn_id,
+            )
+            return
 
+        if attempt < max_retries:
+            logger.info(
+                "Connection %s not ready (attempt %d/%d): %s — retry in %ds",
+                conn_id, attempt, max_retries, msg, retry_interval,
+            )
+            await asyncio.sleep(retry_interval)
+        else:
+            logger.warning(
+                "Explorer not started for %s after %d attempts: %s",
+                conn_id, max_retries, msg,
+            )
+
+
+async def _boot_canvas_explorers() -> None:
+    """Background task: resume canvas explorers from saved state."""
+    from aughor.explorer.agent import SchemaExplorer
     from aughor.canvas.store import get_canvas
     from aughor.explorer.store import canvas_has_state
-    from pathlib import Path as _Path2
+
+    loop = asyncio.get_event_loop()
     canvas_states = [
         p.stem.replace("exploration_canvas_", "")
-        for p in _Path2("data").glob("exploration_canvas_*.json")
+        for p in Path("data").glob("exploration_canvas_*.json")
         if p.exists()
     ]
     for canvas_id in canvas_states:
@@ -142,11 +182,10 @@ async def _start_explorers() -> None:
             if not canvas or not canvas.scopes:
                 continue
             conn_id = canvas.scopes[0].connection_id
-            tables = canvas.scopes[0].tables
-            db = open_connection_for(conn_id)
-            ok, msg = db.test()
+            tables   = canvas.scopes[0].tables
+            db, ok, msg = await loop.run_in_executor(None, _open_and_test, conn_id)
             if not ok:
-                db.close()
+                logger.info("Canvas explorer skipped for %s — %s", canvas_id, msg)
                 continue
             explorer = SchemaExplorer(conn_id, db, canvas_id=canvas_id, tables_filter=tables or None)
             _canvas_explorers[canvas_id] = explorer
@@ -155,6 +194,22 @@ async def _start_explorers() -> None:
             logger.info("Canvas explorer resumed for canvas %s", canvas_id)
         except Exception as exc:
             logger.warning("Could not resume canvas explorer for %s: %s", canvas_id, exc)
+
+
+@app.on_event("startup")
+async def _start_explorers() -> None:
+    """
+    Fire one background boot-task per connection and return immediately.
+    Each _boot_explorer() opens the DB in a thread-pool (never blocking the
+    event loop), tests the connection, and retries if it isn't up yet.
+    The server is ready to serve HTTP before any DB has been touched.
+    """
+    for conn_info in list_connections():
+        asyncio.create_task(
+            _boot_explorer(conn_info["id"]),
+            name=f"boot-{conn_info['id']}",
+        )
+    asyncio.create_task(_boot_canvas_explorers(), name="boot-canvas-explorers")
 
 
 async def _ontology_refresh_loop() -> None:

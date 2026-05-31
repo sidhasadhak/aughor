@@ -6,7 +6,6 @@ import {
   getExplorationFindings,
   type ExplorationStatus,
   type ExplorationFindings,
-  type JoinVerification,
 } from "@/lib/api";
 import { DomainIntelPanel } from "@/components/DomainIntelPanel";
 
@@ -49,7 +48,7 @@ function PhaseBar({ status }: { status: ExplorationStatus }) {
                 isFailed && i === cur ? "bg-red-500" :
                 "bg-white/10",
               ].join(" ")} />
-              <span className="absolute -bottom-4 left-1/2 -translate-x-1/2 text-[9px] text-zinc-600 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">
+              <span className="absolute -bottom-4 left-1/2 -translate-x-1/2 text-[11px] text-zinc-600 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">
                 {p.label}
               </span>
             </div>
@@ -98,71 +97,17 @@ function NullMeaningsSection({ nullMeanings }: { nullMeanings: ExplorationFindin
           <div key={key} className="bg-white/[0.03] rounded-lg p-3">
             <div className="flex items-start justify-between gap-2">
               <span className="text-xs font-mono text-zinc-300">{table}<span className="text-zinc-600">.</span>{col}</span>
-              <span className={`text-[10px] shrink-0 font-medium ${info.color}`}>{info.label}</span>
+              <span className={`text-[11px] shrink-0 font-medium ${info.color}`}>{info.label}</span>
             </div>
             {nm.business_rule && (
               <p className="text-[11px] text-zinc-500 mt-1 font-mono">{nm.business_rule}</p>
             )}
             {nm.null_rate != null && (
-              <p className="text-[10px] text-zinc-500 mt-0.5">{(nm.null_rate * 100).toFixed(1)}% null rate</p>
+              <p className="text-[11px] text-zinc-500 mt-0.5">{(nm.null_rate * 100).toFixed(1)}% null rate</p>
             )}
           </div>
         );
       })}
-    </div>
-  );
-}
-
-// ── Join Integrity ────────────────────────────────────────────────────────────
-
-function JoinIntegritySection({ joins }: { joins: JoinVerification[] }) {
-  if (joins.length === 0) return (
-    <p className="text-xs text-zinc-600 italic">No joins verified yet.</p>
-  );
-
-  const broken = joins.filter(j => !j.verified);
-  const verified = joins.filter(j => j.verified);
-
-  return (
-    <div className="space-y-2">
-      {broken.length > 0 && (
-        <div className="mb-3">
-          <p className="text-[10px] uppercase tracking-widest text-amber-500/70 mb-1.5">
-            Orphaned rows detected
-          </p>
-          {broken.map(j => (
-            <div key={j.key} className="bg-amber-500/5 border border-amber-500/20 rounded-lg p-3 mb-2">
-              <div className="flex items-center gap-1.5 font-mono text-[11px]">
-                <span className="text-zinc-300">{j.from_table}</span>
-                <span className="text-zinc-600">.</span>
-                <span className="text-amber-300">{j.from_col}</span>
-                <span className="text-zinc-600 mx-1">→</span>
-                <span className="text-zinc-300">{j.to_table}</span>
-                <span className="text-zinc-600">.</span>
-                <span className="text-zinc-400">{j.to_col}</span>
-              </div>
-              <p className="text-[11px] text-amber-400/80 mt-1">
-                {j.orphan_count.toLocaleString()} orphan rows · {j.cardinality}
-              </p>
-            </div>
-          ))}
-        </div>
-      )}
-      {verified.length > 0 && (
-        <div>
-          <p className="text-[10px] uppercase tracking-widest text-emerald-500/60 mb-1.5">
-            Verified clean
-          </p>
-          {verified.map(j => (
-            <div key={j.key} className="flex items-center justify-between py-1 border-b border-white/5 last:border-0">
-              <span className="text-[11px] font-mono text-zinc-400">
-                {j.from_table}.{j.from_col} → {j.to_table}.{j.to_col}
-              </span>
-              <span className="text-[10px] text-emerald-500/70">{j.cardinality}</span>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
@@ -181,18 +126,18 @@ function LifecycleMapsSection({ maps }: { maps: ExplorationFindings["lifecycle_m
         <div key={table} className="bg-white/[0.03] rounded-lg p-3">
           <div className="flex items-baseline gap-1.5 mb-2">
             <span className="text-xs font-mono text-zinc-200">{table}</span>
-            <span className="text-zinc-600 text-[10px]">.{lm.status_column}</span>
+            <span className="text-zinc-600 text-[11px]">.{lm.status_column}</span>
           </div>
           <div className="flex flex-wrap gap-1 mb-1.5">
             {lm.active_states.map(s => (
-              <span key={s} className="text-[10px] bg-emerald-500/10 text-emerald-400 px-1.5 py-0.5 rounded">{s}</span>
+              <span key={s} className="text-[11px] bg-emerald-500/10 text-emerald-400 px-1.5 py-0.5 rounded">{s}</span>
             ))}
             {lm.terminal_states.map(s => (
-              <span key={s} className="text-[10px] bg-zinc-500/10 text-zinc-500 px-1.5 py-0.5 rounded">{s}</span>
+              <span key={s} className="text-[11px] bg-zinc-500/10 text-zinc-500 px-1.5 py-0.5 rounded">{s}</span>
             ))}
           </div>
           {lm.transitions.length > 0 && (
-            <p className="text-[10px] text-zinc-600">{lm.transitions.length} state transitions mapped</p>
+            <p className="text-[11px] text-zinc-600">{lm.transitions.length} state transitions mapped</p>
           )}
         </div>
       ))}
@@ -259,7 +204,7 @@ function DistributionsSection({ distributions }: { distributions: ExplorationFin
           { label: "Other",        count: otherCount,  color: "#9a9ba4" },
         ] as const).map(({ label, count, color }) => (
           <div key={label} className="rounded-md p-2.5" style={{ background: "#13141a", border: "0.5px solid #1e1f24" }}>
-            <p className="text-[9px] uppercase tracking-widest mb-1" style={{ color: "#3e3f47" }}>{label}</p>
+            <p className="text-[11px] uppercase tracking-widest mb-1" style={{ color: "var(--t4)" }}>{label}</p>
             <p className="text-xl font-medium font-mono" style={{ color, letterSpacing: "-0.02em" }}>{count}</p>
           </div>
         ))}
@@ -279,8 +224,8 @@ function DistributionsSection({ distributions }: { distributions: ExplorationFin
       </div>
 
       {/* Column header */}
-      <div className="grid gap-2 px-3 pb-1 text-[9px] uppercase tracking-[0.06em]"
-        style={{ gridTemplateColumns: "180px 1fr 80px 80px", color: "#2e2f37" }}>
+      <div className="grid gap-2 px-3 pb-1 text-[11px] uppercase tracking-[0.06em]"
+        style={{ gridTemplateColumns: "180px 1fr 80px 80px", color: "var(--b0)" }}>
         <div>Column</div>
         <div>Distribution</div>
         <div className="text-center">Mean</div>
@@ -305,9 +250,9 @@ function DistributionsSection({ distributions }: { distributions: ExplorationFin
               {/* Column name + type */}
               <div style={{ flex: "0 0 180px", minWidth: 0 }}>
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[10.5px] font-mono" style={{ color: "#5a5b62" }}>{table}</span>
+                  <span className="text-[11px] font-mono" style={{ color: "#5a5b62" }}>{table}</span>
                   {d.col_type && (
-                    <span className="text-[9px] font-mono" style={{ color: "#3e3f47" }}>{d.col_type}</span>
+                    <span className="text-[11px] font-mono" style={{ color: "var(--t4)" }}>{d.col_type}</span>
                   )}
                   {d.col_type === "BIGINT" && /(^ts$|_ts$|_at$|timestamp|time)/i.test(col) && (
                     <span className="text-[8.5px] px-1 py-0 rounded" style={{ background: "#2a1a2e", color: "#c084fc", border: "0.5px solid #3e2a50" }}>unix ts</span>
@@ -317,7 +262,7 @@ function DistributionsSection({ distributions }: { distributions: ExplorationFin
               </div>
 
               {/* Stats */}
-              <div className="flex-1 flex font-mono text-[10.5px]">
+              <div className="flex-1 flex font-mono text-[11px]">
                 {([
                   { label: "p25",  value: d.p25 },
                   { label: "p50",  value: d.p50 },
@@ -325,7 +270,7 @@ function DistributionsSection({ distributions }: { distributions: ExplorationFin
                   { label: "mean", value: d.mean },
                 ] as const).map(({ label, value }) => (
                   <div key={label} className="flex-1 flex flex-col items-center">
-                    <span className="text-[9px] mb-0.5" style={{ color: "#2e2f37", letterSpacing: "0.04em" }}>{label}</span>
+                    <span className="text-[11px] mb-0.5" style={{ color: "var(--b0)", letterSpacing: "0.04em" }}>{label}</span>
                     <span style={{ color: label === "p50" || label === "mean" ? "#9a9ba4" : "#6e6f78" }}>
                       {fmtNum(value as number | null | undefined)}
                     </span>
@@ -353,7 +298,7 @@ function DistributionsSection({ distributions }: { distributions: ExplorationFin
               {/* Shape pill */}
               <div style={{ flex: "0 0 80px", textAlign: "right" }}>
                 <span
-                  className="inline-flex items-center text-[10px] px-2 py-0.5 rounded-[4px] whitespace-nowrap"
+                  className="inline-flex items-center text-[11px] px-2 py-0.5 rounded-[4px] whitespace-nowrap"
                   style={{ background: pill.bg, color: pill.text, border: `0.5px solid ${pill.border}` }}
                 >
                   {pill.label}
@@ -380,10 +325,10 @@ function InsightsSection({ insights }: { insights: ExplorationFindings["insights
         <div key={ins.id} className="bg-white/[0.03] rounded-lg p-3">
           <p className="text-[11px] text-zinc-300 leading-relaxed">{ins.finding}</p>
           <div className="flex items-center gap-2 mt-2">
-            <span className="text-[10px] text-zinc-600">
+            <span className="text-[11px] text-zinc-600">
               {ins.entities_involved.join(" × ")}
             </span>
-            <span className="text-[10px] text-emerald-500/70 ml-auto">
+            <span className="text-[11px] text-emerald-500/70 ml-auto">
               {(ins.confidence * 100).toFixed(0)}% confidence
             </span>
           </div>
@@ -400,12 +345,12 @@ interface Props {
   initialSection?: SectionKey;
 }
 
-type SectionKey = "nulls" | "joins" | "lifecycles" | "distributions" | "insights" | "intelligence";
+type SectionKey = "nulls" | "lifecycles" | "distributions" | "insights" | "intelligence";
 
 export function ExplorationPanel({ connectionId, initialSection }: Props) {
   const [status, setStatus] = useState<ExplorationStatus | null>(null);
   const [findings, setFindings] = useState<ExplorationFindings | null>(null);
-  const [activeSection, setActiveSection] = useState<SectionKey>(initialSection ?? "joins");
+  const [activeSection, setActiveSection] = useState<SectionKey>(initialSection ?? "nulls");
 
   useEffect(() => {
     if (initialSection) setActiveSection(initialSection);
@@ -446,18 +391,10 @@ export function ExplorationPanel({ connectionId, initialSection }: Props) {
   const nullCount = Object.values(findings.null_meanings).filter(
     n => n.meaning !== "not_applicable" && n.meaning !== "unknown"
   ).length;
-  const brokenJoins = findings.join_verifications.filter(j => !j.verified).length;
-  const verifiedJoins = findings.join_verifications.filter(j => j.verified).length;
   const distCount = Object.keys(findings.distributions).length;
   const lifecycleCount = Object.keys(findings.lifecycle_maps).length;
 
   const sections: { key: SectionKey; label: string; badge?: string; badgeColor?: string }[] = [
-    {
-      key: "joins",
-      label: "Join Integrity",
-      badge: brokenJoins > 0 ? `${brokenJoins} broken` : `${verifiedJoins} verified`,
-      badgeColor: brokenJoins > 0 ? "text-amber-400" : "text-emerald-400",
-    },
     {
       key: "nulls",
       label: "Null Meanings",
@@ -512,7 +449,7 @@ export function ExplorationPanel({ connectionId, initialSection }: Props) {
           >
             {s.label}
             {s.badge && (
-              <span className={`text-[9px] font-medium ${s.badgeColor ?? "text-zinc-500"}`}>
+              <span className={`text-[11px] font-medium ${s.badgeColor ?? "text-zinc-500"}`}>
                 {s.badge}
               </span>
             )}
@@ -524,9 +461,6 @@ export function ExplorationPanel({ connectionId, initialSection }: Props) {
       <div className="flex-1 overflow-y-auto p-4">
         {activeSection === "nulls" && (
           <NullMeaningsSection nullMeanings={findings.null_meanings} />
-        )}
-        {activeSection === "joins" && (
-          <JoinIntegritySection joins={findings.join_verifications} />
         )}
         {activeSection === "lifecycles" && (
           <LifecycleMapsSection maps={findings.lifecycle_maps} />

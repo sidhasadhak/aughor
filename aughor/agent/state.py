@@ -355,6 +355,16 @@ class AgentState(TypedDict):
     connection_id: str
     investigation_id: str
     schema_context: str
+    # Telemetry — Langfuse trace ID (== investigation_id). Empty string when disabled.
+    trace_id: str
+
+    # Canvas context (Sprint 21) — set when request arrives via canvas_id.
+    # canvas_id: the Canvas the user launched the investigation from.
+    # canvas_schema_context: pre-filtered schema string (Canvas table selection
+    #   applied). When present, nodes use this instead of re-building from
+    #   connection_id. Empty string when no Canvas is active.
+    canvas_id: Optional[str]
+    canvas_schema_context: str
 
     # Investigation state
     hypotheses: list[Hypothesis]

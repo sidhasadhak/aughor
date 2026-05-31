@@ -88,6 +88,49 @@ def _delete_doc_chunks(doc_id: str) -> None:
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
+def index_text(
+    text: str,
+    title: str,
+    source: str = "",
+    doc_id: Optional[str] = None,
+    source_url: str = "",
+) -> dict:
+    """
+    Chunk plain text, embed, and upsert into Qdrant — no file I/O required.
+    Returns the registry entry dict.
+
+    Used by Confluence/Notion/API knowledge connectors.
+    """
+    import datetime
+    from aughor.knowledge.documents import chunk_text as _chunk_text
+
+    doc_id = doc_id or uuid.uuid4().hex
+    uploaded_at = datetime.datetime.utcnow().isoformat() + "Z"
+    filename = source or "api_sync"
+
+    chunks = _chunk_text(
+        text=text,
+        doc_id=doc_id,
+        title=title,
+        filename=filename,
+        uploaded_at=uploaded_at,
+    )
+    if not chunks:
+        return {"doc_id": doc_id, "chunk_count": 0}
+
+    _ensure_collection()
+    _upsert_chunks(chunks)
+    _register(doc_id, filename, title, len(chunks), uploaded_at)
+    return {
+        "doc_id": doc_id,
+        "title": title,
+        "source": source,
+        "source_url": source_url,
+        "chunk_count": len(chunks),
+        "uploaded_at": uploaded_at,
+    }
+
+
 def index_file(path: Path, title: Optional[str] = None) -> dict:
     """
     Parse, chunk, embed, and upsert a document file.

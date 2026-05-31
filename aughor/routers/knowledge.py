@@ -68,6 +68,24 @@ def search_documents_endpoint(body: dict):
     return search_documents(query, top_k=top_k)
 
 
+# ── Org Intelligence ──────────────────────────────────────────────────────────
+
+@router.get("/org-intelligence")
+def list_org_intelligence_endpoint():
+    """List all insights promoted to the org-wide intelligence collection."""
+    from aughor.knowledge.org_intelligence import list_org_intelligence
+    return list_org_intelligence()
+
+
+@router.delete("/org-intelligence/{point_id}")
+def delete_org_intelligence_endpoint(point_id: str):
+    """Remove a promoted insight from the org-wide collection."""
+    from aughor.knowledge.org_intelligence import delete_org_insight
+    if not delete_org_insight(point_id):
+        raise HTTPException(status_code=404, detail="Org insight not found")
+    return {"ok": True, "id": point_id}
+
+
 # ── Glossary ──────────────────────────────────────────────────────────────────
 
 @router.get("/glossary")

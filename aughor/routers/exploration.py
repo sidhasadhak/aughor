@@ -38,18 +38,24 @@ def get_exploration_status(conn_id: str):
     if explorer:
         return explorer._status.to_dict()
     state = _expl_store.load(conn_id)
+    # Restore counters persisted at completion time (survive server restarts)
     return {
         "connection_id": conn_id,
         "phase": state.get("phase", "pending"),
         "paused": False,
-        "tables_total": 0, "columns_total": 0, "joins_total": 0,
-        "null_meanings_resolved": len(state.get("null_meanings", {})),
-        "joins_verified": sum(1 for j in state.get("join_verifications", []) if j.get("verified")),
-        "lifecycles_mapped": len(state.get("lifecycle_maps", {})),
-        "distributions_profiled": len(state.get("distributions", {})),
-        "insights_found": len(state.get("insights", [])),
-        "queries_executed": 0, "facts_discovered": 0,
-        "started_at": None, "completed_at": None, "error": None,
+        "tables_total":   state.get("tables_total", 0),
+        "columns_total":  state.get("columns_total", 0),
+        "joins_total":    len(state.get("join_verifications", [])),
+        "null_meanings_resolved":  len(state.get("null_meanings", {})),
+        "joins_verified":          sum(1 for j in state.get("join_verifications", []) if j.get("verified")),
+        "lifecycles_mapped":       len(state.get("lifecycle_maps", {})),
+        "distributions_profiled":  len(state.get("distributions", {})),
+        "insights_found":          len(state.get("insights", [])),
+        "queries_executed": state.get("queries_executed", 0),
+        "facts_discovered": len(state.get("insights", [])) + len(state.get("lifecycle_maps", {})),
+        "started_at":   state.get("started_at"),
+        "completed_at": state.get("completed_at"),
+        "error": None,
     }
 
 
@@ -107,6 +113,43 @@ def get_domain_insights(conn_id: str):
     return result
 
 
+@router.get("/exploration/{conn_id}/patterns")
+def get_connection_patterns(conn_id: str, refresh: bool = False):
+    """Return extracted patterns from domain intelligence for this connection."""
+    from aughor.explorer import store as _expl_store
+    from aughor.knowledge.patterns import get_patterns
+    by_domain = _expl_store.get_domain_insights(conn_id)
+    patterns = get_patterns(conn_id, by_domain, force_refresh=refresh)
+    return {"patterns": patterns, "count": len(patterns)}
+
+
+@router.post("/exploration/{conn_id}/briefing")
+def generate_briefing(conn_id: str, refresh: bool = False):
+    """Generate (or return cached) an LLM synthesis narrative for the connection."""
+    from aughor.explorer import store as _expl_store
+    from aughor.knowledge.patterns import get_patterns
+    from aughor.knowledge.briefing import get_briefing
+
+    by_domain = _expl_store.get_domain_insights(conn_id)
+    if not by_domain:
+        return {
+            "narrative": "",
+            "headline_theme": "",
+            "citations": [],
+            "generated_at": None,
+            "available": False,
+        }
+
+    patterns = get_patterns(conn_id, by_domain, force_refresh=False)
+    result = get_briefing(
+        connection_id=conn_id,
+        domain_data=by_domain,
+        patterns=patterns,
+        force_refresh=refresh,
+    )
+    return {**result, "available": bool(result.get("narrative"))}
+
+
 @router.post("/exploration/{conn_id}/domains/{domain}/extend")
 async def extend_domain_budget(conn_id: str, domain: str):
     from aughor.explorer import store as _expl_store
@@ -161,15 +204,34 @@ async def resume_exploration(conn_id: str):
     existing = _explorers.get(conn_id)
     if existing and existing.status.phase not in (ExplorationPhase.COMPLETE, ExplorationPhase.FAILED):
         return {"ok": False, "reason": "already running"}
-    try:
-        from aughor.explorer.agent import SchemaExplorer
-        db = open_connection_for(conn_id)
-        explorer = SchemaExplorer(conn_id, db)
-        _explorers[conn_id] = explorer
-        _explorer_tasks[conn_id] = asyncio.create_task(explorer.explore(), name=f"explorer-{conn_id}-resume")
-        return {"ok": True}
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+
+    async def _do_resume() -> None:
+        loop = asyncio.get_running_loop()
+        try:
+            def _open_and_test():
+                db = open_connection_for(conn_id)
+                ok, msg = db.test()
+                if not ok:
+                    db.close()
+                    return None, False, msg
+                return db, True, msg
+
+            db, ok, msg = await loop.run_in_executor(None, _open_and_test)
+            if not ok or db is None:
+                logger.warning("Resume: connection %s not ready — %s", conn_id, msg)
+                return
+            from aughor.explorer.agent import SchemaExplorer
+            explorer = SchemaExplorer(conn_id, db)
+            _explorers[conn_id] = explorer
+            _explorer_tasks[conn_id] = asyncio.create_task(
+                explorer.explore(), name=f"explorer-{conn_id}-resume"
+            )
+            logger.info("Resume: explorer started for %s", conn_id)
+        except Exception as exc:
+            logger.warning("Resume: failed for %s — %s", conn_id, exc)
+
+    asyncio.create_task(_do_resume(), name=f"resume-{conn_id}")
+    return {"ok": True}
 
 
 @router.post("/exploration/{conn_id}/restart")
@@ -184,6 +246,13 @@ async def restart_exploration(conn_id: str):
         p = Path("data") / fname
         if p.exists():
             p.unlink()
+    # Also bust the profile cache so the profiler re-classifies all columns
+    # with the latest semantic-type heuristics (e.g. geo/zip → key, not measure)
+    try:
+        from aughor.tools.profile_cache import invalidate as invalidate_profiles
+        invalidate_profiles(conn_id)
+    except Exception as _exc:
+        logger.warning("Could not invalidate profile cache for %s: %s", conn_id, _exc)
     try:
         from aughor.explorer.agent import SchemaExplorer
         db = open_connection_for(conn_id)
@@ -387,7 +456,28 @@ def promote_canvas_insight(canvas_id: str, insight_id: str):
     from aughor.canvas.store import get_canvas
     if not get_canvas(canvas_id):
         raise HTTPException(status_code=404, detail="Canvas not found")
-    from aughor.explorer.store import promote_insight
+    from aughor.explorer.store import promote_insight, load_canvas
     if not promote_insight(canvas_id, insight_id):
         raise HTTPException(status_code=404, detail="Insight not found")
+
+    # Push the full insight text into the org_intelligence Qdrant collection
+    try:
+        state = load_canvas(canvas_id)
+        insight = next(
+            (i for i in state.get("insights", []) if i.get("id") == insight_id),
+            None,
+        )
+        if insight:
+            from aughor.knowledge.org_intelligence import promote_to_org
+            promote_to_org(
+                insight_id=insight_id,
+                text=insight.get("finding", ""),
+                domain=insight.get("domain", ""),
+                novelty=insight.get("novelty", 3),
+                canvas_id=canvas_id,
+                angle=insight.get("angle", ""),
+            )
+    except Exception:
+        pass  # Qdrant unavailable — metadata flag is already set; non-critical
+
     return {"insight_id": insight_id, "promoted": True}

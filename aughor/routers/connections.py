@@ -68,10 +68,16 @@ async def create_connection(req: AddConnectionRequest):
     if req.schema_name:
         combined_meta["schema_name"] = req.schema_name
 
+    # Test the connection off the event loop — large files (e.g. 8GB DuckDB) can
+    # take 60+ seconds to open; blocking here would freeze all HTTP handling.
+    loop = asyncio.get_event_loop()
     try:
-        db = open_connection(req.conn_type, req.dsn, schema_name=req.schema_name, meta=combined_meta)
-        ok, msg = db.test()
-        db.close()
+        def _test():
+            db = open_connection(req.conn_type, req.dsn, schema_name=req.schema_name, meta=combined_meta)
+            ok, msg = db.test()
+            db.close()
+            return ok, msg
+        ok, msg = await loop.run_in_executor(None, _test)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Connection failed: {e}")
     if not ok:
@@ -79,13 +85,11 @@ async def create_connection(req: AddConnectionRequest):
 
     conn_id = add_connection(name=req.name, conn_type=req.conn_type, dsn=req.dsn, meta=combined_meta)
 
+    # Fire explorer as a non-blocking background task — same pattern as startup.
+    # Returns immediately; DB open + explore() run off the event loop.
     try:
-        from aughor.explorer.agent import SchemaExplorer
-        db_explorer = open_connection(req.conn_type, req.dsn, schema_name=req.schema_name)
-        explorer = SchemaExplorer(conn_id, db_explorer)
-        _explorers[conn_id] = explorer
-        task = asyncio.create_task(explorer.explore(), name=f"explorer-{conn_id}")
-        _explorer_tasks[conn_id] = task
+        from aughor.api import _boot_explorer
+        asyncio.create_task(_boot_explorer(conn_id, retry_interval=10, max_retries=3), name=f"boot-{conn_id}")
     except Exception as exc:
         logger.warning("Could not start explorer for new connection %s: %s", conn_id, exc)
 
@@ -166,6 +170,38 @@ def connection_schema_mermaid(conn_id: str):
         return {"diagram": build_mermaid_er(schema)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Schema profile ────────────────────────────────────────────────────────────
+
+@router.get("/connections/{conn_id}/schema/profile")
+def connection_schema_profile(conn_id: str):
+    """Return cached column/table profiles for the Schema Shape tab."""
+    try:
+        db = open_connection_for(conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    try:
+        from aughor.tools.schema import _parse_schema_tables
+        from aughor.tools.profile_cache import compute_schema_fingerprint, load_profiles
+
+        schema_str = _get_schema_cached(conn_id, db)
+        table_cols = _parse_schema_tables(schema_str)
+        col_counts = {t: len(cols) for t, cols in table_cols.items()}
+        fingerprint = compute_schema_fingerprint(col_counts)
+        cached = load_profiles(conn_id, fingerprint)
+        if cached is None:
+            return {"available": False, "tables": [], "columns": []}
+        table_profiles, column_profiles = cached
+        return {
+            "available": True,
+            "tables": [tp.to_dict() for tp in table_profiles.values()],
+            "columns": [cp.to_dict() for cp in column_profiles.values()],
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
 
 
 # ── Freshness ─────────────────────────────────────────────────────────────────

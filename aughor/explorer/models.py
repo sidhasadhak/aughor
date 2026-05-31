@@ -116,6 +116,7 @@ class ExplorationStatus:
     connection_id: str
     phase: ExplorationPhase = ExplorationPhase.PENDING
     paused: bool = False
+    canvas_id: Optional[str] = None
 
     tables_total: int = 0
     columns_total: int = 0
@@ -140,6 +141,7 @@ class ExplorationStatus:
             "connection_id": self.connection_id,
             "phase": self.phase.value if isinstance(self.phase, ExplorationPhase) else self.phase,
             "paused": self.paused,
+            "canvas_id": self.canvas_id,
             "tables_total": self.tables_total,
             "columns_total": self.columns_total,
             "joins_total": self.joins_total,

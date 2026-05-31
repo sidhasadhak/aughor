@@ -287,6 +287,7 @@ DUCKDB DIALECT RULES (violations cause runtime errors):
                         error_diagnosis=diagnosis + "\n" if diagnosis else "",
                         schema=self._schema,
                         kb_patterns_section="",
+                        metrics_section="",
                     ),
                     response_model=_Fix,
                 )

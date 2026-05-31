@@ -34,6 +34,9 @@ tables:
     columns:
       customer_id:
         description: Foreign key to customers table
+        caveats: customer_id alone is not a stable trace identifier—must be combined
+          with date to form a composite trace_id, as individual customer_id appears
+          in 90 rows (one per date) despite only 800 unique customers.
       date:
         description: Calendar date of the payment attempt (UTC, date only — no time
           component)
@@ -69,6 +72,10 @@ tables:
           negative (outage), neutral (holiday — varies by region)
 
           '
+      event_id:
+        caveats: event_id has only 3 distinct values across all rows and cannot support
+          cross-table tracing or segmentation due to severely limited coverage of
+          business events.
   kpi_daily:
     description: 'Pre-aggregated daily KPI summary by region and customer segment.
       Use this table for trend queries and period-over-period comparisons — it is
@@ -99,6 +106,9 @@ tables:
           only. payment_failure_rate is a ratio (0.0–1.0), not a percentage.
 
           '
+      composite_key(date,region,segment,metric):
+        caveats: The composite_key is not a physical column but a derived concatenation—analysts
+          must reconstruct it identically to join or filter correctly.
   customer:
     description: Contains core customer demographic and location data. Maps orders
       to stable customer identities and geographic locations.
@@ -153,7 +163,8 @@ tables:
           8601 string)
         values: e.g., '2017-09-15T10:00:00', '2017-10-02T12:30:00'
       price:
-        description: Unit price of the product for this order item (excluding freight)
+        description: Unit price of the product for this order item (excluding freight).
+          This is the primary sales/revenue column — SUM(price) = total sales value.
       freight_value:
         description: Shipping cost allocated to this specific order item
   order_payments:
@@ -853,3 +864,26 @@ tables:
         description: Duration of the stockout event in hours, from start until stock
           was restored.
         caveats: May be NULL if the stockout is still ongoing (not yet resolved).
+  reviews:
+    description: Customer reviews associated with orders, capturing rating, textual
+      feedback, and metadata like date and customer/order IDs.
+    grain: One row per review_id, representing a single customer review for an order.
+    auto_generated: true
+    columns:
+      review_id:
+        description: Unique identifier for each review.
+      order_id:
+        description: Identifier of the order the review is associated with.
+      customer_id:
+        description: Identifier of the customer who submitted the review.
+      rating:
+        description: Numerical rating given by the customer (likely on a scale such
+          as 1–5).
+      review_text:
+        description: Free-text or categorical feedback provided by the customer.
+        values: Not as described, Disappointed, Poor quality, Would not recommend,
+          Exactly as described, Decent but overpriced, Average product, Great product!,
+          Fast shipping, happy!, Exceeded expectations, OK, nothing special, Very
+          satisfied, Would recommend
+      review_date:
+        description: Date the review was submitted.

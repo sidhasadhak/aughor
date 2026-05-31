@@ -51,8 +51,10 @@ _RATE_SECONDS_INTEL  = 5.0   # domain intel phase runs at 1 query per 5 seconds
 _TERMINAL = frozenset({
     "canceled", "cancelled", "returned", "closed", "archived", "failed",
     "rejected", "expired", "deleted", "churned", "lost", "void", "voided",
-    "refunded", "bounced", "blocked", "completed", "done", "delivered",
-    "shipped",  # DHL "shipped" = terminal; may be overridden by specific schemas
+    "refunded", "bounced", "blocked",
+    # "completed", "done", "delivered", "shipped" removed — these are
+    # context-dependent (e.g. "shipped" is mid-flow in fulfillment).
+    # Terminal classification is now advisory, not filtering.
 })
 _ACTIVE = frozenset({
     "active", "live", "running", "processing", "open", "pending", "approved",
@@ -73,20 +75,41 @@ class SchemaExplorer:
     asyncio task.  Call ``pause()`` / ``resume()`` to yield to investigations.
     """
 
-    def __init__(self, connection_id: str, conn: "DatabaseConnection") -> None:
+    def __init__(
+        self,
+        connection_id: str,
+        conn: "DatabaseConnection",
+        canvas_id: Optional[str] = None,
+        tables_filter: Optional[list[str]] = None,
+    ) -> None:
         self.connection_id = connection_id
+        self.canvas_id = canvas_id
+        self.tables_filter = tables_filter  # non-empty list = restrict phases 3-7 to these tables
         self._conn = conn
         self._status = ExplorationStatus(
             connection_id=connection_id,
+            canvas_id=canvas_id,
             started_at=datetime.now(timezone.utc).isoformat(),
         )
-        self._episodes = EpisodeCollector(connection_id)
+        # Canvas-scoped explorer uses a separate state/episode key
+        _store_key = f"canvas_{canvas_id}" if canvas_id else connection_id
+        self._store_key = _store_key
+        self._episodes = EpisodeCollector(_store_key)
         self._can_run = asyncio.Event()
         self._can_run.set()
         self._stopped = False
-        self._state = _store.load(connection_id)
+        self._state = _store.load_canvas(canvas_id) if canvas_id else _store.load(connection_id)
         self._last_query_at: float = 0.0
         self._rate_seconds: float = _RATE_SECONDS_SCHEMA
+        self._time_window: Optional[tuple[str, str]] = None  # (start_iso, end_iso) — 12-month window
+
+    # ── State persistence helpers ─────────────────────────────────────────────
+
+    def _save_state(self) -> None:
+        if self.canvas_id:
+            _store.save_canvas(self.canvas_id, self._state)
+        else:
+            _store.save(self.connection_id, self._state)
 
     # ── External control ──────────────────────────────────────────────────────
 
@@ -122,12 +145,15 @@ class SchemaExplorer:
             if wait > 0:
                 await asyncio.sleep(wait)
 
-    def _run(self, sql: str, think: str = "") -> Optional[list]:
-        """Execute one read-only SQL query and record an episode turn."""
+    async def _run(self, sql: str, think: str = "") -> Optional[list]:
+        """Execute one read-only SQL query off the event loop and record an episode turn."""
+        loop = asyncio.get_running_loop()
         self._last_query_at = time.monotonic()
         self._status.queries_executed += 1
         try:
-            result = self._conn.execute("__explorer__", sql)
+            result = await loop.run_in_executor(
+                None, self._conn.execute, "__explorer__", sql
+            )
             if result.error:
                 self._episodes.add(think=think, sql=sql, observation=f"ERROR: {result.error}")
                 return None
@@ -139,6 +165,59 @@ class SchemaExplorer:
             self._episodes.add(think=think, sql=sql, observation=f"EXCEPTION: {e}")
             return None
 
+    # ── Time window helpers ───────────────────────────────────────────────────
+
+    def _compute_time_window(self, tp: dict) -> Optional[tuple[str, str]]:
+        """
+        Scan table profiles for MAX timestamp across the schema.
+        Returns (start_iso, end_iso) where start = MAX - 12 months, or None if
+        no date range info is available in any profile.
+        """
+        from datetime import timedelta
+        import re as _re
+
+        _ISO_PAT = _re.compile(r"^\d{4}-\d{2}-\d{2}")
+        max_date_str: Optional[str] = None
+
+        for tbl_profile in tp.values():
+            dr = getattr(tbl_profile, "date_range", None)
+            if not dr or len(dr) < 2:
+                continue
+            end_str = str(dr[1])
+            if not _ISO_PAT.match(end_str):
+                continue
+            if max_date_str is None or end_str > max_date_str:
+                max_date_str = end_str
+
+        if not max_date_str:
+            return None
+
+        try:
+            # Parse to date — accept "YYYY-MM-DD..." (timestamps too)
+            max_d = datetime.fromisoformat(max_date_str[:10])
+            # Subtract 12 months by going back 365 days (simple, avoids calendar edge cases)
+            start_d = max_d - timedelta(days=365)
+            return start_d.strftime("%Y-%m-%d"), max_d.strftime("%Y-%m-%d")
+        except (ValueError, TypeError):
+            return None
+
+    def _time_filter(self, table: str, tp: dict) -> str:
+        """
+        Return a SQL AND-clause fragment for the 12-month time window, e.g.
+          'AND order_purchase_timestamp >= \'2023-09-14\''
+        Returns '' if no time window is set or the table has no primary timestamp.
+        """
+        if not self._time_window:
+            return ""
+        t_profile = tp.get(table)
+        if not t_profile:
+            return ""
+        ts_col = getattr(t_profile, "primary_timestamp", None)
+        if not ts_col:
+            return ""
+        start_str, _ = self._time_window
+        return f"AND {ts_col} >= '{start_str}'"
+
     # ── Main loop ─────────────────────────────────────────────────────────────
 
     async def explore(self, domain_intel_only: bool = False) -> None:
@@ -148,8 +227,9 @@ class SchemaExplorer:
         and runs only Phase 8, consuming the extended budget.
         """
         logger.info(f"[explorer:{self.connection_id}] Starting (domain_intel_only={domain_intel_only})")
+        _loop = asyncio.get_running_loop()
         try:
-            tp, cp, jmap = self._load_profiler_data()
+            tp, cp, jmap = await _loop.run_in_executor(None, self._load_profiler_data)
             if not tp:
                 logger.info(f"[explorer:{self.connection_id}] No profiler data, aborting")
                 return
@@ -157,6 +237,14 @@ class SchemaExplorer:
             self._status.tables_total = len(tp)
             self._status.columns_total = sum(len(v) for v in cp.values())
             self._status.joins_total = len(jmap.get("joins", []))
+
+            # Compute 12-month time window from MAX timestamp across schema
+            self._time_window = self._compute_time_window(tp)
+            if self._time_window:
+                logger.info(
+                    "[explorer:%s] Time window: %s → %s",
+                    self.connection_id, self._time_window[0], self._time_window[1],
+                )
 
             if not domain_intel_only:
                 # Phases 3-7: schema cartography — run as fast as the DB allows
@@ -176,11 +264,11 @@ class SchemaExplorer:
 
                 # Phase 6 — Distribution profiling
                 self._status.phase = ExplorationPhase.DISTRIBUTION
-                await self._phase6_distributions(cp)
+                await self._phase6_distributions(cp, tp)
 
                 # Phase 7 — Cross-table pattern discovery
                 self._status.phase = ExplorationPhase.CROSS_TABLE
-                await self._phase7_patterns(cp, jmap)
+                await self._phase7_patterns(cp, jmap, tp)
 
             # ── Ontology gate: Phase 8 needs the ontology; build it now if it
             # hasn't been created yet.  On a fresh connection, phases 3-7 can
@@ -194,7 +282,7 @@ class SchemaExplorer:
                     self.connection_id,
                 )
                 try:
-                    self._conn.get_schema()   # builds + caches ontology as a side-effect
+                    await _loop.run_in_executor(None, self._conn.get_schema)
                     logger.info(
                         "[explorer:%s] Ontology build complete, proceeding to Phase 8",
                         self.connection_id,
@@ -209,13 +297,18 @@ class SchemaExplorer:
             # and to allow the user to stop between queries if needed
             self._rate_seconds = _RATE_SECONDS_INTEL
             self._status.phase = ExplorationPhase.DOMAIN_INTEL
-            await self._phase8_domain_intelligence(cp)
+            await self._phase8_domain_intelligence(cp, tp)
 
-            # Done
+            # Done — persist runtime counters so the status fallback can restore them
             self._status.phase = ExplorationPhase.COMPLETE
             self._status.completed_at = datetime.now(timezone.utc).isoformat()
             self._state["phase"] = ExplorationPhase.COMPLETE.value
-            _store.save(self.connection_id, self._state)
+            self._state["tables_total"] = self._status.tables_total
+            self._state["columns_total"] = self._status.columns_total
+            self._state["queries_executed"] = self._status.queries_executed
+            self._state["started_at"] = self._status.started_at
+            self._state["completed_at"] = self._status.completed_at
+            self._save_state()
             logger.info(
                 f"[explorer:{self.connection_id}] Complete — "
                 f"{self._status.queries_executed}q, "
@@ -224,13 +317,13 @@ class SchemaExplorer:
             )
 
         except asyncio.CancelledError:
-            _store.save(self.connection_id, self._state)
+            self._save_state()
             logger.info(f"[explorer:{self.connection_id}] Cancelled, progress saved")
             raise
         except Exception as e:
             self._status.phase = ExplorationPhase.FAILED
             self._status.error = str(e)
-            _store.save(self.connection_id, self._state)
+            self._save_state()
             logger.error(f"[explorer:{self.connection_id}] Error: {e}", exc_info=True)
 
     # ── Profiler data loader ──────────────────────────────────────────────────
@@ -246,7 +339,13 @@ class SchemaExplorer:
             # so use information_schema for both dialects)
             schema = getattr(self._conn, "_schema_name", None)
             if self._conn.dialect == "duckdb":
-                schema_filter = f"= '{schema}'" if schema else "= current_schema()"
+                if schema:
+                    schema_filter = f"= '{schema}'"
+                else:
+                    # No specific schema configured — scan all user-defined schemas.
+                    # DuckDB databases can store tables in non-default schemas
+                    # (e.g. samples.duckdb uses 'ecommerce'). Exclude system catalogs.
+                    schema_filter = "NOT IN ('information_schema', 'pg_catalog', 'temp')"
             else:
                 schema_filter = f"= '{schema or 'public'}'"
             r = self._conn.execute(
@@ -257,6 +356,12 @@ class SchemaExplorer:
             )
             tables = [row[0] for row in (r.rows or [])] if not r.error else []
 
+            if not tables:
+                return {}, {}, {}
+
+            # Filter tables to canvas scope when set
+            if self.tables_filter:
+                tables = [t for t in tables if t in self.tables_filter]
             if not tables:
                 return {}, {}, {}
 
@@ -315,7 +420,7 @@ class SchemaExplorer:
                 await self._gate()
 
                 if status_col and status_col != col_name:
-                    result = await self._null_cross_ref(table, col_name, status_col, col_p.null_rate)
+                    result = await self._null_cross_ref(table, col_name, status_col, col_p.null_rate, tp=tp)
                 else:
                     meaning = NullMeaning.MISSING if col_p.null_rate > 0.3 else NullMeaning.UNKNOWN
                     result = NullMeaningResult(
@@ -330,23 +435,26 @@ class SchemaExplorer:
                 }
                 self._status.null_meanings_resolved += 1
                 self._status.facts_discovered += 1
-                _store.save(self.connection_id, self._state)
+                self._save_state()
 
     async def _null_cross_ref(
-        self, table: str, col: str, status_col: str, null_rate: float
+        self, table: str, col: str, status_col: str, null_rate: float,
+        tp: Optional[dict] = None,
     ) -> NullMeaningResult:
+        tf = self._time_filter(table, tp or {})
         sql = (
             f"SELECT {status_col} AS s, COUNT(*) AS total, "
             f"SUM(CASE WHEN {col} IS NULL THEN 1 ELSE 0 END) AS null_n, "
             f"ROUND(SUM(CASE WHEN {col} IS NULL THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 1) AS null_pct "
-            f"FROM {table} GROUP BY {status_col} ORDER BY null_pct DESC LIMIT 20"
+            f"FROM {table} WHERE 1=1 {tf} "
+            f"GROUP BY {status_col} ORDER BY null_pct DESC LIMIT 20"
         )
         think = (
             f"'{table}.{col}' has {null_rate:.0%} nulls. "
             f"Cross-referencing with '{status_col}' to classify: "
             f"pending-event vs terminal-state vs data-quality issue."
         )
-        rows = self._run(sql, think=think)
+        rows = await self._run(sql, think=think)
         if not rows:
             return NullMeaningResult(
                 table=table, column=col, null_rate=null_rate, meaning=NullMeaning.UNKNOWN
@@ -416,7 +524,7 @@ class SchemaExplorer:
                 f"Verify FK {t1}.{c1} → {t2}.{c2}: "
                 f"count distinct values and check for orphan rows."
             )
-            rows = self._run(sql, think=think)
+            rows = await self._run(sql, think=think)
 
             if rows and rows[0]:
                 try:
@@ -445,7 +553,7 @@ class SchemaExplorer:
                 self._status.joins_verified += 1
                 self._status.facts_discovered += 1
                 done_keys.add(key)
-                _store.save(self.connection_id, self._state)
+                self._save_state()
 
     # ── Phase 5: Lifecycle mapping ────────────────────────────────────────────
 
@@ -465,17 +573,19 @@ class SchemaExplorer:
 
             await self._gate()
 
+            tf = self._time_filter(table, tp)
+
             # State distribution
             sql = (
                 f"SELECT {status_col} AS state, COUNT(*) AS n "
-                f"FROM {table} WHERE {status_col} IS NOT NULL "
+                f"FROM {table} WHERE {status_col} IS NOT NULL {tf} "
                 f"GROUP BY {status_col} ORDER BY n DESC LIMIT 30"
             )
             think = (
                 f"Extract lifecycle states for {table}.{status_col}. "
                 f"Classify terminal vs active states."
             )
-            rows = self._run(sql, think=think)
+            rows = await self._run(sql, think=think)
             if not rows:
                 continue
 
@@ -490,11 +600,16 @@ class SchemaExplorer:
 
             if pk_col and ts_col:
                 await self._gate()
+                # Time filter for self-join must be qualified with alias 'a'
+                alias_tf = (
+                    f"AND a.{ts_col} >= '{self._time_window[0]}'"
+                    if self._time_window else ""
+                )
                 trans_sql = (
                     f"SELECT a.{status_col} AS from_s, b.{status_col} AS to_s, COUNT(*) AS n "
                     f"FROM {table} a "
                     f"JOIN {table} b ON a.{pk_col} = b.{pk_col} AND a.{ts_col} < b.{ts_col} "
-                    f"WHERE a.{status_col} != b.{status_col} "
+                    f"WHERE a.{status_col} != b.{status_col} {alias_tf} "
                     f"GROUP BY a.{status_col}, b.{status_col} "
                     f"ORDER BY n DESC LIMIT 20"
                 )
@@ -502,7 +617,7 @@ class SchemaExplorer:
                     f"Extract state transitions for {table}: "
                     f"self-join on {pk_col} ordered by {ts_col}."
                 )
-                trans_rows = self._run(trans_sql, think=think2)
+                trans_rows = await self._run(trans_sql, think=think2)
                 if trans_rows:
                     transitions = [
                         LifecycleTransition(
@@ -523,36 +638,46 @@ class SchemaExplorer:
             }
             self._status.lifecycles_mapped += 1
             self._status.facts_discovered += 1
-            _store.save(self.connection_id, self._state)
+            self._save_state()
 
     # ── Phase 6: Distribution profiling ──────────────────────────────────────
 
-    async def _phase6_distributions(self, cp: dict) -> None:
+    async def _phase6_distributions(self, cp: dict, tp: dict = None) -> None:
         """
         Characterise the value distribution of every measure column.
         Uses basic stats + percentiles to classify shape.
         """
+        tp = tp or {}
+        # Phase-completion guard: if a previous full run already finished this
+        # phase, skip it entirely rather than re-checking every column.
+        if self._state.get("phase6_done"):
+            self._status.distributions_profiled = len(self._state.get("distributions", {}))
+            return
+
         for table, col_map in cp.items():
             for col_name, col_p in col_map.items():
                 if col_p.semantic_type != "measure":
                     continue
 
                 key = f"{table}:{col_name}"
-                if key in self._state.get("distributions", {}):
+                existing = self._state.get("distributions", {}).get(key)
+                if existing is not None and not existing.get("_partial"):
+                    # Fully computed in a previous run — skip
                     self._status.distributions_profiled += 1
                     continue
 
                 await self._gate()
 
+                tf = self._time_filter(table, tp)
                 stats_sql = (
                     f"SELECT COUNT(*) AS n, "
                     f"MIN({col_name}) AS mn, MAX({col_name}) AS mx, "
-                    f"AVG({col_name}) AS mean_v, "
-                    f"AVG({col_name}*{col_name}) - AVG({col_name})*AVG({col_name}) AS variance, "
+                    f"AVG(CAST({col_name} AS FLOAT)) AS mean_v, "
+                    f"AVG(CAST({col_name} AS FLOAT)*CAST({col_name} AS FLOAT)) - AVG(CAST({col_name} AS FLOAT))*AVG(CAST({col_name} AS FLOAT)) AS variance, "
                     f"SUM(CASE WHEN {col_name}=0 THEN 1 ELSE 0 END)*1.0/COUNT(*) AS pct_zero "
-                    f"FROM {table} WHERE {col_name} IS NOT NULL"
+                    f"FROM {table} WHERE {col_name} IS NOT NULL {tf}"
                 )
-                rows = self._run(stats_sql, think=f"Distribution stats for {table}.{col_name}.")
+                rows = await self._run(stats_sql, think=f"Distribution stats for {table}.{col_name}.")
                 if not rows or not rows[0] or not rows[0][0]:
                     continue
 
@@ -570,6 +695,17 @@ class SchemaExplorer:
                 # Initial shape classification from basic stats
                 shape = _classify_shape(mn, mx, mean_v, std_dev, float(pct_zero))
 
+                # Save a partial record immediately after the first query so that a
+                # server crash between the two queries doesn't cause the stats query
+                # to re-fire on the next run.
+                self._state.setdefault("distributions", {})[key] = {
+                    "shape": shape.value, "p25": None, "p50": None, "p75": None,
+                    "pct_zero": pct_zero, "min": mn, "max": mx, "mean": mean_v,
+                    "col_type": col_p.dtype,
+                    "_partial": True,
+                }
+                self._save_state()
+
                 # Refine with percentiles
                 await self._gate()
                 pct_sql = (
@@ -577,9 +713,9 @@ class SchemaExplorer:
                     f"percentile_cont(0.25) WITHIN GROUP (ORDER BY {col_name}) AS p25, "
                     f"percentile_cont(0.5)  WITHIN GROUP (ORDER BY {col_name}) AS p50, "
                     f"percentile_cont(0.75) WITHIN GROUP (ORDER BY {col_name}) AS p75 "
-                    f"FROM {table} WHERE {col_name} IS NOT NULL"
+                    f"FROM {table} WHERE {col_name} IS NOT NULL {tf}"
                 )
-                pct_rows = self._run(pct_sql, think=f"Percentiles for {table}.{col_name}.")
+                pct_rows = await self._run(pct_sql, think=f"Percentiles for {table}.{col_name}.")
                 p25 = p50 = p75 = None
                 if pct_rows and pct_rows[0]:
                     try:
@@ -591,23 +727,29 @@ class SchemaExplorer:
                     except (TypeError, ValueError):
                         pass
 
-                self._state.setdefault("distributions", {})[key] = {
+                # Write final (non-partial) record
+                self._state["distributions"][key] = {
                     "shape": shape.value, "p25": p25, "p50": p50, "p75": p75,
                     "pct_zero": pct_zero, "min": mn, "max": mx, "mean": mean_v,
                     "col_type": col_p.dtype,
                 }
                 self._status.distributions_profiled += 1
                 self._status.facts_discovered += 1
-                _store.save(self.connection_id, self._state)
+                self._save_state()
+
+        # Mark the entire phase as done so restarts can skip it immediately
+        self._state["phase6_done"] = True
+        self._save_state()
 
     # ── Phase 7: Cross-table pattern discovery ────────────────────────────────
 
-    async def _phase7_patterns(self, cp: dict, jmap: dict) -> None:
+    async def _phase7_patterns(self, cp: dict, jmap: dict, tp: dict = None) -> None:
         """
         For each verified join, check if a dimension in the PK table (t2)
         meaningfully explains variation in a measure in the FK table (t1).
         Records findings as OntologyInsights.
         """
+        tp = tp or {}
         done_ids = {i.get("id") for i in self._state.get("insights", [])}
         joins = jmap.get("joins", [])[:10]  # bound query count
 
@@ -641,13 +783,21 @@ class SchemaExplorer:
 
                     await self._gate()
 
+                    # Time-scope the fact table to 12-month window
+                    fact_tf = ""
+                    if self._time_window:
+                        t_profile = tp.get(t_fact)
+                        ts_col = getattr(t_profile, "primary_timestamp", None) if t_profile else None
+                        if ts_col:
+                            fact_tf = f"AND f.{ts_col} >= '{self._time_window[0]}'"
+
                     sql = (
                         f"SELECT d.{dim_col} AS dim_val, "
                         f"ROUND(AVG(f.{mea_col}), 2) AS avg_measure, "
                         f"COUNT(*) AS n "
                         f"FROM {t_fact} f "
                         f"JOIN {t_dim} d ON f.{fk_col} = d.{pk_col} "
-                        f"WHERE f.{mea_col} IS NOT NULL AND d.{dim_col} IS NOT NULL "
+                        f"WHERE f.{mea_col} IS NOT NULL AND d.{dim_col} IS NOT NULL {fact_tf} "
                         f"GROUP BY d.{dim_col} "
                         f"HAVING COUNT(*) >= 30 "
                         f"ORDER BY avg_measure DESC LIMIT 20"
@@ -657,7 +807,7 @@ class SchemaExplorer:
                         f"in '{mea_col}' ({t_fact})? "
                         f"Checking for >15% variation across segments."
                     )
-                    rows = self._run(sql, think=think)
+                    rows = await self._run(sql, think=think)
                     if not rows or len(rows) < 2:
                         continue
 
@@ -686,19 +836,26 @@ class SchemaExplorer:
                             "sql": sql,
                             "confidence": min(0.95, 0.5 + (ratio - 1) * 0.5),
                             "generated_at": datetime.now(timezone.utc).isoformat(),
+                            "canvas_id": self.canvas_id,
+                            "promoted_to_org": False,
+                            "promotion_confidence": 0.0,
                         }
                         self._state.setdefault("insights", []).append(insight)
                         done_ids.add(insight_id)
                         self._status.insights_found += 1
                         self._status.facts_discovered += 1
-                        _store.save(self.connection_id, self._state)
+                        self._save_state()
                     except (TypeError, ValueError, ZeroDivisionError):
                         continue
 
 
     # ── Phase 8: Domain intelligence curiosity loop ───────────────────────────
 
-    async def _phase8_domain_intelligence(self, cp: dict | None = None) -> None:
+    async def _phase8_domain_intelligence(
+        self,
+        cp: dict | None = None,
+        tp: dict | None = None,
+    ) -> None:
         """
         For each ontology domain, run an adaptive curiosity loop:
           1. Build domain context from ontology entities + existing findings
@@ -708,8 +865,12 @@ class SchemaExplorer:
           5. Repeat until stopping criteria met
         Stopping: hard budget (15 per domain, extendable by user) OR
                   all coverage angles answered OR novelty decay < 2 avg over last 3
+
+        cp: {table: {col: ColumnProfile}}   (column profiles — cardinality, FK flags)
+        tp: {table: TableProfile}           (table profiles — grain, row counts)
         """
         self._episodes.phase = "domain_intel"
+        _loop = asyncio.get_running_loop()
         from pydantic import BaseModel as _BM
         from typing import Literal as _Lit
         from aughor.llm.provider import get_provider
@@ -840,28 +1001,159 @@ class SchemaExplorer:
                     + "\n".join(domain_schema_lines)
                 ) if domain_schema_lines else ""
 
-                # Step 1: Ask LLM what to investigate next (schema-grounded)
+                # ── Grain + cardinality context ─────────────────────────────────
+                # Inject table grains, row counts, FK columns, and high-cardinality
+                # info so the LLM writes JOIN-safe SQL.
+                grain_lines: list[str] = []
+                fk_pairs: list[tuple[str, str, str]] = []   # (child_tbl, fk_col, parent_tbl hint)
+
+                for tbl in sorted(domain_tables):
+                    t_profile = (tp or {}).get(tbl) or (tp or {}).get(tbl.lower())
+                    c_profiles = (cp or {}).get(tbl) or (cp or {}).get(tbl.lower()) or {}
+                    row_count = getattr(t_profile, "row_count", None) if t_profile else None
+                    grain_col = getattr(t_profile, "grain_column", None) if t_profile else None
+
+                    row_str = f"{row_count:,} rows" if row_count else "? rows"
+                    grain_str = f"grain={grain_col}" if grain_col else "grain=unknown"
+                    grain_lines.append(f"  {tbl} ({row_str}, {grain_str})")
+
+                    # Cardinality notes for columns with known profiles
+                    for col_name, col_p in list(c_profiles.items())[:20]:
+                        dc = getattr(col_p, "distinct_count", None)
+                        is_fk = getattr(col_p, "is_fk", False)
+                        sem = getattr(col_p, "semantic_type", "") or ""
+                        if is_fk and dc is not None:
+                            # FK column — record for join rule generation
+                            fk_pairs.append((tbl, col_name, f"{dc:,} distinct"))
+                            grain_lines.append(
+                                f"    {col_name}: FK ({dc:,} distinct) → references another table's grain"
+                            )
+                        elif dc is not None and not getattr(col_p, "is_low_cardinality", False) and dc > 100:
+                            # High-cardinality measure/ID — note the global distinct count
+                            if sem in ("id", "foreign_key", "metric") or col_name.endswith("_id"):
+                                grain_lines.append(f"    {col_name}: {dc:,} distinct values (global, not per row)")
+
+                grain_block = ""
+                if grain_lines:
+                    grain_block = (
+                        "TABLE GRAINS AND CARDINALITY — critical for correct SQL:\n"
+                        + "\n".join(grain_lines)
+                        + "\n"
+                    )
+
+                # Build join-safety rules from FK knowledge
+                join_rules: list[str] = []
+                # Also scan all join verifications for relevant relationships
+                jv_all = self._state.get("join_verifications", [])
+                for jv_entry in jv_all:
+                    ft = jv_entry.get("from_table", "")
+                    tt = jv_entry.get("to_table", "")
+                    fc = jv_entry.get("from_col", "")
+                    card = jv_entry.get("cardinality", "")
+                    if ft in domain_tables or tt in domain_tables:
+                        if "many" in card.lower() or card in ("N:1", "1:N", "N:M"):
+                            join_rules.append(
+                                f"  {ft} ↔ {tt} via {fc} ({card}): "
+                                f"COUNT(*) after JOIN = rows in {ft}, NOT in {tt}. "
+                                f"To count {tt} rows: COUNT(DISTINCT {tt}.grain_col)."
+                            )
+
+                # Always add the generic join-safety rule
+                join_rules.insert(0, (
+                    "  GENERAL: When JOINing a parent table to a child (one-to-many), COUNT(*) counts "
+                    "child rows. To count parents use COUNT(DISTINCT parent.grain_column). "
+                    "For per-parent averages, aggregate the child in a subquery first:\n"
+                    "    SELECT parent_col, AVG(child_cnt) FROM parent\n"
+                    "    JOIN (SELECT fk_col, COUNT(*) AS child_cnt FROM child GROUP BY fk_col) s\n"
+                    "    ON parent.grain = s.fk_col GROUP BY parent_col\n"
+                    "  NEVER do: COUNT(DISTINCT child.col) / COUNT(*) in a join — total-vs-total ratio.\n"
+                    "  NEVER do: COUNT(DISTINCT col_a) / COUNT(DISTINCT col_b) — also a total-vs-total ratio.\n"
+                    "  ALWAYS use subquery aggregation for per-parent averages:\n"
+                    "    AVG(x_cnt) FROM (SELECT parent_id, COUNT(DISTINCT x) AS x_cnt FROM child GROUP BY parent_id) s\n"
+                    "    JOIN parent ON parent.grain = s.parent_id"
+                ))
+
+                join_safety_block = (
+                    "JOIN SAFETY RULES — read before writing any JOIN:\n"
+                    + "\n".join(join_rules)
+                    + "\n"
+                ) if join_rules else ""
+
+                # Build prior-phases context (phases 3-7 findings)
+                prior_phases_lines: list[str] = []
+                nm = self._state.get("null_meanings", {})
+                if nm:
+                    meaningful = {k: v for k, v in nm.items() if v.get("meaning") not in ("not_applicable", "unknown")}
+                    if meaningful:
+                        prior_phases_lines.append("NULL SEMANTICS (from Phase 3):")
+                        for k, v in list(meaningful.items())[:8]:
+                            prior_phases_lines.append(f"  {k.replace(':', '.')}: NULL = {v.get('meaning', '?')} ({v.get('null_rate', 0):.0%})")
+                jv = self._state.get("join_verifications", [])
+                if jv:
+                    orphans = [j for j in jv if j.get("orphan_count", 0) > 0]
+                    if orphans:
+                        prior_phases_lines.append("JOIN ISSUES (from Phase 4):")
+                        for j in orphans[:5]:
+                            prior_phases_lines.append(f"  {j.get('key', '?')}: {j.get('orphan_count', 0)} orphan rows")
+                lm = self._state.get("lifecycle_maps", {})
+                if lm:
+                    prior_phases_lines.append("LIFECYCLES (from Phase 5):")
+                    for tbl, m in list(lm.items())[:5]:
+                        prior_phases_lines.append(f"  {tbl}.{m.get('status_column', '?')}: {', '.join(m.get('active_states', [])[:4])} → {', '.join(m.get('terminal_states', [])[:3])}")
+                prior_phases_block = "\n".join(prior_phases_lines) + "\n\n" if prior_phases_lines else ""
+
+                # Step 1: Ask LLM what to investigate next (grain-aware, schema-grounded)
+                # Run synchronous Ollama call in a thread so the event loop stays alive.
                 try:
-                    nq: _NextQuestion = llm.complete(
-                        system=(
-                            "You are a data analyst autonomously exploring a business database. "
-                            "Propose exactly one SQL query that will reveal the most valuable business insight "
-                            "for the given domain. CRITICAL: use ONLY the exact column names provided in "
-                            "EXACT COLUMN NAMES — never guess or invent column names. "
-                            "Write SELECT-only SQL. Be specific — include actual aggregations and comparisons."
-                        ),
-                        user=(
-                            f"DOMAIN: {domain}\n\n"
-                            f"ENTITIES IN THIS DOMAIN:\n{entity_context}\n\n"
-                            f"RELATIONSHIPS:\n{relationship_context}\n\n"
-                            f"{domain_schema_block}\n\n"
-                            f"COVERAGE ANGLES TO EXPLORE: {', '.join(uncovered)}\n"
-                            f"ANGLES ALREADY COVERED: {', '.join(covered_angles) or 'none'}\n\n"
-                            f"EXISTING FINDINGS FOR THIS DOMAIN:\n{existing_findings}\n\n"
-                            "Propose the single most valuable next question to investigate. "
-                            "Choose an uncovered angle. Write SQL using ONLY the column names above."
-                        ),
-                        response_model=_NextQuestion,
+                    _sys1 = (
+                        "You are a data analyst autonomously exploring a business database. "
+                        "Propose exactly one SQL query that will reveal the most valuable business insight "
+                        "for the given domain.\n\n"
+                        "CRITICAL RULES:\n"
+                        "1. Use ONLY the exact column names listed in EXACT COLUMN NAMES — never guess.\n"
+                        "2. Write SELECT-only SQL with real aggregations and comparisons.\n"
+                        "3. READ the JOIN SAFETY RULES before writing any JOIN. "
+                        "After a one-to-many JOIN, COUNT(*) counts child rows, not parent rows. "
+                        "Always use COUNT(DISTINCT parent.grain_col) to count parent entities. "
+                        "For per-parent averages, subquery the child first.\n"
+                        "4. BANNED PATTERN — never divide two COUNT(DISTINCT) values to express an average: "
+                        "COUNT(DISTINCT child.col_a) / COUNT(DISTINCT parent.col_b) is ALWAYS wrong — "
+                        "it gives total-A / total-B across the whole group, not the average A per B row. "
+                        "The correct pattern for 'average X per parent' is: "
+                        "AVG(x_count) FROM (SELECT parent_id, COUNT(DISTINCT x) AS x_count FROM child GROUP BY parent_id) sub. "
+                        "This applies equally to COUNT(DISTINCT x) / COUNT(*) — both are banned.\n"
+                        "5. RESPECT the TIME WINDOW in the user prompt — scope every query touching a "
+                        "timestamped table to the specified date range. Trends, seasonality, and "
+                        "growth metrics are only meaningful within a bounded, recent window."
+                    )
+                    time_window_block = ""
+                    if self._time_window:
+                        time_window_block = (
+                            f"TIME WINDOW: Scope all queries to the last 12 months "
+                            f"({self._time_window[0]} to {self._time_window[1]}). "
+                            f"Add WHERE <timestamp_col> >= '{self._time_window[0]}' "
+                            f"to every query that touches a timestamped table. "
+                            f"This ensures trends and aggregations reflect recent data.\n\n"
+                        )
+
+                    _usr1 = (
+                        f"DOMAIN: {domain}\n\n"
+                        f"ENTITIES IN THIS DOMAIN:\n{entity_context}\n\n"
+                        f"RELATIONSHIPS:\n{relationship_context}\n\n"
+                        f"{domain_schema_block}\n\n"
+                        f"{grain_block}\n"
+                        f"{join_safety_block}\n"
+                        f"{time_window_block}"
+                        f"{prior_phases_block}"
+                        f"COVERAGE ANGLES TO EXPLORE: {', '.join(uncovered)}\n"
+                        f"ANGLES ALREADY COVERED: {', '.join(covered_angles) or 'none'}\n\n"
+                        f"EXISTING FINDINGS FOR THIS DOMAIN:\n{existing_findings}\n\n"
+                        "Propose the single most valuable next question. "
+                        "Choose an uncovered angle. Write grain-correct SQL."
+                    )
+                    nq: _NextQuestion = await _loop.run_in_executor(
+                        None,
+                        lambda: llm.complete(system=_sys1, user=_usr1, response_model=_NextQuestion),
                     )
                 except Exception as e:
                     logger.warning(f"[explorer:{self.connection_id}] Phase 8: LLM question gen failed for {domain}: {e}")
@@ -875,7 +1167,7 @@ class SchemaExplorer:
 
                 for attempt in range(MAX_ATTEMPTS):
                     label = think_str if attempt == 0 else f"[retry {attempt}] {think_str}"
-                    rows = self._run(sql, think=label)
+                    rows = await self._run(sql, think=label)
                     if rows is not None:
                         break
                     if attempt >= MAX_ATTEMPTS - 1:
@@ -885,7 +1177,9 @@ class SchemaExplorer:
                         )
                         break
                     error_msg = _last_episode_error()
-                    fix = sql_writer.fix(sql, error_msg, max_retries=1)
+                    fix = await _loop.run_in_executor(
+                        None, lambda: sql_writer.fix(sql, error_msg, max_retries=1)
+                    )
                     if not fix.ok:
                         logger.warning(
                             f"[explorer:{self.connection_id}] Phase 8: fix failed at attempt "
@@ -909,23 +1203,95 @@ class SchemaExplorer:
                 # Format result for LLM interpretation (max 20 rows)
                 result_text = "\n".join(str(r) for r in rows[:20])
 
-                # Step 3: Interpret the result
+                # ── Sanity-check: detect impossible ratios before interpretation ──
+                # If the SQL contains COUNT(DISTINCT ...) / COUNT(*) across a join,
+                # the result may look like "2970 distinct sellers per 110k orders" when
+                # 2970 is actually the global seller population — catch and skip.
+                _skip_result = False
                 try:
-                    interp: _Interpretation = llm.complete(
-                        system=(
-                            "You are interpreting a SQL query result as a concise business insight. "
-                            "Write 1-2 sentences maximum. Include specific numbers. "
-                            "Focus on what is actionable or surprising. "
-                            "Novelty score: 1=already known/trivial, 5=genuinely new and surprising."
-                        ),
-                        user=(
-                            f"DOMAIN: {domain}\n"
-                            f"QUESTION: {nq.question}\n"
-                            f"SQL RESULT (first 20 rows):\n{result_text}\n\n"
-                            f"EXISTING FINDINGS FOR CONTEXT:\n{existing_findings}\n\n"
-                            "Interpret this result as a business insight."
-                        ),
-                        response_model=_Interpretation,
+                    sql_upper = sql.upper()
+                    has_join = "JOIN" in sql_upper
+                    # Detect either banned ratio pattern:
+                    #   COUNT(DISTINCT x) / COUNT(*)           — child vs all rows
+                    #   COUNT(DISTINCT x) / COUNT(DISTINCT y)  — total-A / total-B
+                    # Detect either banned ratio pattern (must have an actual division):
+                    #   COUNT(DISTINCT x) / COUNT(*)           — child vs all rows
+                    #   COUNT(DISTINCT x) / COUNT(DISTINCT y)  — total-A / total-B
+                    import re as _re
+                    _div_ratio_pat = _re.compile(
+                        r"COUNT\s*\(\s*DISTINCT[^)]+\)"   # COUNT(DISTINCT x)
+                        r"[\s\d.*]*"                       # optional multiplier/cast
+                        r"/"                               # division
+                        r"\s*COUNT\s*\(",                  # / COUNT(
+                        _re.IGNORECASE,
+                    )
+                    has_distinct_div = bool(_div_ratio_pat.search(sql_upper))
+                    if has_join and has_distinct_div:
+                        # Check if any result value could be a spurious ratio:
+                        # if a "distinct_X_count" cell value equals a known total cardinality
+                        # for a global dimension column, the ratio is meaningless.
+                        for row in rows[:5]:
+                            for cell in row:
+                                try:
+                                    val = int(cell) if cell is not None else None
+                                except (ValueError, TypeError):
+                                    val = None
+                                if val is None:
+                                    continue
+                                # Check against known global cardinalities from cp
+                                for tbl_p, col_profiles in (cp or {}).items():
+                                    for col_n, col_p in col_profiles.items():
+                                        dc = getattr(col_p, "distinct_count", None)
+                                        if dc and abs(val - dc) <= max(2, dc * 0.01):
+                                            # Value equals a known global cardinality
+                                            # Only flag if this looks like a "per-X" misread
+                                            if col_n.endswith("_id") and not getattr(col_p, "is_low_cardinality", True):
+                                                logger.info(
+                                                    "[explorer:%s] Phase 8: skipping likely grain-confused result "
+                                                    "— result cell %d matches global cardinality of %s.%s (%d). "
+                                                    "SQL had JOIN+COUNT(DISTINCT)/COUNT(*).",
+                                                    self.connection_id, val, tbl_p, col_n, dc,
+                                                )
+                                                _skip_result = True
+                except Exception:
+                    pass
+
+                if _skip_result:
+                    logger.info(
+                        "[explorer:%s] Phase 8: %s/%s — result skipped (grain-confused ratio detected)",
+                        self.connection_id, domain, nq.angle,
+                    )
+                    continue
+
+                # Step 3: Interpret the result — run in thread to keep event loop live
+                try:
+                    _sys3 = (
+                        "You are interpreting a SQL query result as a concise business insight. "
+                        "Write 1-2 sentences maximum. Include specific numbers from the result. "
+                        "Focus on what is actionable or surprising.\n\n"
+                        "CRITICAL INTERPRETATION RULES:\n"
+                        "- If a column is labelled 'distinct_X_count' in a grouped query, it is the "
+                        "TOTAL distinct count of X across all rows in that group, NOT a per-row average. "
+                        "Do NOT say 'X per Y' unless the SQL explicitly computed an average (AVG or ratio "
+                        "from a subquery with per-grain counts).\n"
+                        "- Only use ratio language ('per order', 'per customer') when the SQL computed "
+                        "a genuine per-grain aggregation.\n"
+                        "- Novelty score: 1=already known/trivial, 5=genuinely new and surprising."
+                    )
+                    _usr3 = (
+                        f"DOMAIN: {domain}\n"
+                        f"QUESTION: {nq.question}\n"
+                        f"SQL:\n{sql}\n\n"
+                        f"SQL RESULT (first 20 rows):\n{result_text}\n\n"
+                        f"{grain_block}"
+                        f"EXISTING FINDINGS FOR CONTEXT:\n{existing_findings}\n\n"
+                        "Interpret this result as a business insight. "
+                        "Be precise about what the numbers represent — do not invent per-row ratios "
+                        "from total-level aggregations."
+                    )
+                    interp: _Interpretation = await _loop.run_in_executor(
+                        None,
+                        lambda: llm.complete(system=_sys3, user=_usr3, response_model=_Interpretation),
                     )
                 except Exception as e:
                     logger.warning(f"[explorer:{self.connection_id}] Phase 8: LLM interpretation failed for {domain}: {e}")
@@ -945,6 +1311,9 @@ class SchemaExplorer:
                     "confidence": min(0.95, 0.4 + interp.novelty * 0.1),
                     "novelty": interp.novelty,
                     "generated_at": datetime.now(timezone.utc).isoformat(),
+                    "canvas_id": self.canvas_id,
+                    "promoted_to_org": False,
+                    "promotion_confidence": 0.0,
                 }
                 self._state.setdefault("insights", []).append(insight)
                 domain_insights.append(insight)
@@ -961,7 +1330,7 @@ class SchemaExplorer:
                 self._status.domain_budgets = dict(budgets)
                 self._status.domain_coverage = dict(coverage)
 
-                _store.save(self.connection_id, self._state)
+                self._save_state()
                 logger.info(
                     f"[explorer:{self.connection_id}] Phase 8: {domain}/{angle_key} — "
                     f"novelty={interp.novelty} — \"{interp.finding[:80]}…\""

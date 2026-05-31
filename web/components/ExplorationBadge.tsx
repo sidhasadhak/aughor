@@ -62,7 +62,7 @@ export function ExplorationBadge({ connectionId, className }: Props) {
       />
       <span
         className={cn(
-          "text-[10px]",
+          "text-[11px]",
           isComplete ? "text-emerald-400/70" : isFailed ? "text-red-400/70" : "text-zinc-500",
         )}
       >

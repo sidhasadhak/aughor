@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-const BASE = "http://localhost:8000";
+import { API_BASE as BASE } from "@/lib/config";
 
 interface PlaybookEntry {
   id: string;
@@ -117,7 +117,7 @@ export function PlaybookPanel() {
             <button
               onClick={handleReseed}
               disabled={seeding}
-              className="text-[10.5px] px-2 py-1 rounded-[4px] transition-all"
+              className="text-[11px] px-2 py-1 rounded-[4px] transition-all"
               style={{ border: "0.5px solid #2a2b30", background: "#13141a", color: "#5a5b62" }}
               onMouseEnter={e => e.currentTarget.style.color = "#9a9ba4"}
               onMouseLeave={e => e.currentTarget.style.color = "#5a5b62"}
@@ -125,7 +125,7 @@ export function PlaybookPanel() {
               {seeding ? "Seeding…" : "Re-seed from KB"}
             </button>
           </div>
-          <div className="flex items-center gap-3 text-[10.5px] font-mono mb-3" style={{ color: "#3e3f47" }}>
+          <div className="flex items-center gap-3 text-[11px] font-mono mb-3" style={{ color: "var(--t4)" }}>
             <span><span style={{ color: "#4ade80" }}>{activeCount}</span> active</span>
             <span><span style={{ color: "#5a5b62" }}>{draftCount}</span> draft</span>
             {provenCount > 0 && <span><span style={{ color: "#7ba8f7" }}>{provenCount}</span> proven</span>}
@@ -146,7 +146,7 @@ export function PlaybookPanel() {
                 style={{
                   background: statusFilter === s ? "#1e2040" : "transparent",
                   border: `0.5px solid ${statusFilter === s ? "#3d6bff55" : "#2a2b30"}`,
-                  color: statusFilter === s ? "#7ba8f7" : "#3e3f47",
+                  color: statusFilter === s ? "#7ba8f7" : "var(--t4)",
                 }}
               >
                 {s}
@@ -165,7 +165,7 @@ export function PlaybookPanel() {
             </div>
           )}
           {!loading && filtered.length === 0 && (
-            <p className="text-[11px] text-center py-8" style={{ color: "#3e3f47" }}>
+            <p className="text-[11px] text-center py-8" style={{ color: "var(--t4)" }}>
               {entries.length === 0 ? "No playbook entries yet. Click \"Re-seed from KB\" to generate." : "No entries match."}
             </p>
           )}
@@ -192,7 +192,7 @@ export function PlaybookPanel() {
                 <div className="flex flex-col items-end gap-1 shrink-0 mt-0.5">
                   <StatusChip status={e.status} />
                   {e.historical_success_rate > 0 && (
-                    <span className="text-[9px] font-mono" style={{ color: "#3d6bff" }}>
+                    <span className="text-[11px] font-mono" style={{ color: "var(--blue3)" }}>
                       {fmtRate(e.historical_success_rate)}
                     </span>
                   )}
@@ -207,7 +207,7 @@ export function PlaybookPanel() {
       <div className="flex-1 overflow-y-auto min-h-0 p-6">
         {!selectedEntry ? (
           <div className="h-full flex items-center justify-center">
-            <p className="text-[12px]" style={{ color: "#3e3f47" }}>Select an entry to view and edit</p>
+            <p className="text-[12px]" style={{ color: "var(--t4)" }}>Select an entry to view and edit</p>
           </div>
         ) : (
           <PlaybookDetail
@@ -232,13 +232,13 @@ function PlaybookDetail({
       {/* Metric + condition */}
       <div>
         <div className="flex items-center gap-2 mb-1">
-          <span className="text-[10.5px] font-mono px-2 py-0.5 rounded-[3px]"
+          <span className="text-[11px] font-mono px-2 py-0.5 rounded-[3px]"
             style={{ background: "#13141a", border: "0.5px solid #2a2b30", color: "#5a5b62" }}>
             {entry.trigger_metric}
           </span>
           <StatusChip status={entry.status} />
           {entry.source_kb_id && (
-            <span className="text-[9.5px] font-mono" style={{ color: "#2e2f37" }}>
+            <span className="text-[9.5px] font-mono" style={{ color: "var(--b0)" }}>
               from KB: {entry.source_kb_id}
             </span>
           )}
@@ -248,7 +248,7 @@ function PlaybookDetail({
 
       {/* Recommendation */}
       <div>
-        <p className="text-[10.5px] uppercase tracking-wider mb-1.5" style={{ color: "#3e3f47" }}>Recommendation</p>
+        <p className="text-[11px] uppercase tracking-wider mb-1.5" style={{ color: "var(--t4)" }}>Recommendation</p>
         <p className="text-[13px] leading-relaxed" style={{ color: "#e8e6e1" }}>{entry.recommendation}</p>
       </div>
 
@@ -260,7 +260,7 @@ function PlaybookDetail({
           { label: "Owner",           value: entry.owner_role },
         ].map(({ label, value }) => value ? (
           <div key={label}>
-            <p className="text-[10px] uppercase tracking-wider mb-1" style={{ color: "#3e3f47" }}>{label}</p>
+            <p className="text-[11px] uppercase tracking-wider mb-1" style={{ color: "var(--t4)" }}>{label}</p>
             <p className="text-[12px]" style={{ color: "#9a9ba4" }}>{value}</p>
           </div>
         ) : null)}
@@ -269,13 +269,13 @@ function PlaybookDetail({
       {/* Success rate */}
       <div className="flex items-center gap-4">
         <div>
-          <p className="text-[10px] uppercase tracking-wider mb-1" style={{ color: "#3e3f47" }}>Historical success rate</p>
+          <p className="text-[11px] uppercase tracking-wider mb-1" style={{ color: "var(--t4)" }}>Historical success rate</p>
           <p className="text-[18px] font-semibold font-mono"
-            style={{ color: entry.historical_success_rate > 0 ? "#4ade80" : "#3e3f47" }}>
+            style={{ color: entry.historical_success_rate > 0 ? "#4ade80" : "var(--t4)" }}>
             {entry.historical_success_rate > 0 ? fmtRate(entry.historical_success_rate) : "No data yet"}
           </p>
           {entry.evidence_sources.length > 0 && (
-            <p className="text-[10px] mt-0.5" style={{ color: "#3e3f47" }}>
+            <p className="text-[11px] mt-0.5" style={{ color: "var(--t4)" }}>
               {entry.evidence_sources.length} investigation{entry.evidence_sources.length > 1 ? "s" : ""} as evidence
             </p>
           )}
@@ -286,8 +286,8 @@ function PlaybookDetail({
       {entry.tags.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {entry.tags.map(t => (
-            <span key={t} className="text-[10px] px-2 py-0.5 rounded-full font-mono"
-              style={{ background: "#13141a", border: "0.5px solid #2a2b30", color: "#3e3f47" }}>
+            <span key={t} className="text-[11px] px-2 py-0.5 rounded-full font-mono"
+              style={{ background: "#13141a", border: "0.5px solid #2a2b30", color: "var(--t4)" }}>
               {t}
             </span>
           ))}

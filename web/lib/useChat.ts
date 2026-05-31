@@ -1,7 +1,7 @@
 "use client";
 
 import { useReducer, useRef, useCallback } from "react";
-import type { ADAReport, ExplorationReport, InvestigationPhase, SubQuestion, SubQuestionAnswer } from "@/lib/types";
+import type { ADAReport, ExplorationReport, Hypothesis, InvestigationPhase, SubQuestion, SubQuestionAnswer } from "@/lib/types";
 
 // ── Debug event log — ring buffer of raw SSE events ───────────────────────────
 export interface DebugEvent {
@@ -12,7 +12,7 @@ export interface DebugEvent {
 }
 const MAX_LOG = 300;
 
-const BASE = "http://localhost:8000";
+import { API_BASE as BASE } from "./config";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -43,6 +43,12 @@ export interface ChatTurn {
   subQuestions: SubQuestion[];
   subqAnswers: SubQuestionAnswer[];
   exploreReport: ExplorationReport | null;
+
+  // Real-time investigation progress
+  queriesExecuted: { sql: string; row_count: number; error: string | null }[];
+  latestScore: Record<string, unknown> | null;
+  hypotheses: Hypothesis[];
+  investigationId: string | null;
 
   // Shared
   tablesUsed: string[];
@@ -77,13 +83,16 @@ type ChatAction =
   | { type: "CHART_TYPE";   chartType: string }
   | { type: "STATUS_TEXT";  text: string }
   | { type: "PHASE";        phase: InvestigationPhase }
-  | { type: "ADA_REPORT";   report: ADAReport; queryMode: string }
-  | { type: "EXPLORE_REPORT"; report: ExplorationReport; subQuestions: SubQuestion[]; subqAnswers: SubQuestionAnswer[] }
-  | { type: "REPORT";       report: Record<string, unknown>; queryMode: string }
+  | { type: "ADA_REPORT";   report: ADAReport; queryMode: string; investigationId: string | null }
+  | { type: "EXPLORE_REPORT"; report: ExplorationReport; subQuestions: SubQuestion[]; subqAnswers: SubQuestionAnswer[]; investigationId: string | null }
+  | { type: "REPORT";       report: Record<string, unknown>; queryMode: string; investigationId: string | null }
   | { type: "QUERY_MODE";   queryMode: string }
   | { type: "TABLES_USED";  tables: string[] }
   | { type: "FOLLOWUPS";    questions: string[] }
   | { type: "CACHE_META";   fromCache: boolean; cachedQuestion: string | null }
+  | { type: "QUERIES_EXEC"; queries: { sql: string; row_count: number; error: string | null }[]; hypIdx: number }
+  | { type: "HYPOTHESES";   hypotheses: Hypothesis[] }
+  | { type: "SCORE";        score: Record<string, unknown> }
   | { type: "ERROR";        message: string }
   | { type: "DONE" }
   | { type: "CLEAR" }
@@ -102,6 +111,8 @@ const EMPTY_TURN: Omit<ChatTurn, "id" | "question" | "mode"> = {
   sql: null, columns: [], rows: [], headline: null, chartType: null,
   statusText: null, phases: [], adaReport: null, report: null, queryMode: null,
   subQuestions: [], subqAnswers: [], exploreReport: null,
+  queriesExecuted: [], latestScore: null,
+  hypotheses: [], investigationId: null,
   tablesUsed: [], followups: [], error: null,
   fromCache: false, cachedQuestion: null,
 };
@@ -124,14 +135,29 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case "QUERY_MODE": return updateLast(state, t => ({ ...t, queryMode: action.queryMode }));
     case "CACHE_META":
       return updateLast(state, t => ({ ...t, fromCache: action.fromCache, cachedQuestion: action.cachedQuestion }));
+    case "QUERIES_EXEC": {
+      const ok = action.queries.filter(q => !q.error).length;
+      const fail = action.queries.length - ok;
+      const text = `Ran ${action.queries.length} quer${action.queries.length === 1 ? "y" : "ies"}${fail ? ` (${fail} failed)` : ""}…`;
+      return updateLast(state, t => ({ ...t, queriesExecuted: [...t.queriesExecuted, ...action.queries], statusText: text }));
+    }
+    case "HYPOTHESES":
+      return updateLast(state, t => ({ ...t, hypotheses: action.hypotheses }));
+    case "SCORE":
+      // score events carry the full updated hypotheses[] — use them to refresh state
+      return updateLast(state, t => ({
+        ...t,
+        latestScore: action.score,
+        hypotheses: (action.score.hypotheses as Hypothesis[] | undefined) ?? t.hypotheses,
+      }));
     case "PHASE":
       return updateLast(state, t => ({ ...t, phases: [...t.phases, action.phase], statusText: `Analyzing ${action.phase.phase_id}…` }));
     case "ADA_REPORT":
-      return { ...updateLast(state, t => ({ ...t, status: "done", adaReport: action.report, queryMode: action.queryMode, statusText: null })), streaming: false };
+      return { ...updateLast(state, t => ({ ...t, status: "done", adaReport: action.report, queryMode: action.queryMode, statusText: null, investigationId: action.investigationId ?? t.investigationId })), streaming: false };
     case "EXPLORE_REPORT":
-      return { ...updateLast(state, t => ({ ...t, status: "done", exploreReport: action.report, subQuestions: action.subQuestions, subqAnswers: action.subqAnswers, queryMode: "explore", statusText: null })), streaming: false };
+      return { ...updateLast(state, t => ({ ...t, status: "done", exploreReport: action.report, subQuestions: action.subQuestions, subqAnswers: action.subqAnswers, queryMode: "explore", statusText: null, investigationId: action.investigationId ?? t.investigationId })), streaming: false };
     case "REPORT":
-      return updateLast(state, t => ({ ...t, report: action.report, queryMode: action.queryMode, statusText: null }));
+      return updateLast(state, t => ({ ...t, report: action.report, queryMode: action.queryMode, statusText: null, investigationId: action.investigationId ?? t.investigationId }));
     case "ERROR":
       return { ...updateLast(state, t => ({ ...t, status: "error", error: action.message })), streaming: false };
     case "DONE":
@@ -195,14 +221,17 @@ async function consumeStream(
             case "phase_complete":
               dispatch({ type: "PHASE", phase: p.phase as InvestigationPhase });
               break;
+            case "hypotheses":
+              dispatch({ type: "HYPOTHESES", hypotheses: (p.hypotheses as Hypothesis[]) ?? [] });
+              break;
             case "ada_report":
               if (p.from_cache) dispatch({ type: "CACHE_META", fromCache: true, cachedQuestion: (p.cached_question as string) ?? null });
-              dispatch({ type: "ADA_REPORT", report: p.ada_report as ADAReport, queryMode: (p.query_mode as string) ?? "investigate" });
+              dispatch({ type: "ADA_REPORT", report: p.ada_report as ADAReport, queryMode: (p.query_mode as string) ?? "investigate", investigationId: (p.investigation_id as string) ?? null });
               break;
             case "report": {
               const qMode = (p.query_mode as string) ?? "investigate";
               if (p.from_cache) dispatch({ type: "CACHE_META", fromCache: true, cachedQuestion: (p.cached_question as string) ?? null });
-              dispatch({ type: "REPORT", report: p.report as Record<string, unknown>, queryMode: qMode });
+              dispatch({ type: "REPORT", report: p.report as Record<string, unknown>, queryMode: qMode, investigationId: (p.investigation_id as string) ?? null });
               // For direct-routed agentic queries, surface the first query's SQL + results
               // so the turn renders like Quick mode (chart/table + SQL) rather than just a headline
               if (qMode === "direct" && Array.isArray(p.query_history) && (p.query_history as unknown[]).length > 0) {
@@ -220,7 +249,18 @@ async function consumeStream(
                 report: p.explore_report as ExplorationReport,
                 subQuestions: (p.sub_questions ?? []) as SubQuestion[],
                 subqAnswers: (p.subq_answers ?? []) as SubQuestionAnswer[],
+                investigationId: (p.investigation_id as string) ?? null,
               });
+              break;
+            case "queries_executed":
+              dispatch({
+                type: "QUERIES_EXEC",
+                queries: (p.queries as { sql: string; row_count: number; error: string | null }[]) ?? [],
+                hypIdx: (p.hypothesis_idx as number) ?? 0,
+              });
+              break;
+            case "score":
+              dispatch({ type: "SCORE", score: (p.score as Record<string, unknown>) ?? {} });
               break;
             case "error":        dispatch({ type: "ERROR", message: p.message as string }); break;
             case "done":         dispatch({ type: "DONE" }); break;
@@ -258,7 +298,7 @@ export function useChat() {
     eventLogRef.current = [...eventLogRef.current.slice(-(MAX_LOG - 1)), e];
   }, []);
 
-  async function ask(question: string, connectionId: string, mode: "ask" | "investigate" = "ask", opts: { skipCache?: boolean } = {}) {
+  async function ask(question: string, connectionId: string, mode: "ask" | "investigate" = "ask", opts: { skipCache?: boolean; canvasId?: string } = {}) {
     const id = Math.random().toString(36).slice(2);
     dispatch({ type: "ASK", id, question, mode });
 
@@ -274,7 +314,7 @@ export function useChat() {
         res = await fetch(`${BASE}/investigate`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ question, connection_id: connectionId, skip_cache: opts.skipCache ?? false }),
+          body: JSON.stringify({ question, connection_id: connectionId, canvas_id: opts.canvasId ?? null, skip_cache: opts.skipCache ?? false }),
           signal,
         });
       } else {
@@ -290,6 +330,7 @@ export function useChat() {
           body: JSON.stringify({
             question,
             connection_id: connectionId,
+            canvas_id: opts.canvasId ?? null,
             history,
             session_id: sessionIdRef.current,
           }),

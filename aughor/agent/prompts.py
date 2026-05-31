@@ -52,11 +52,8 @@ Return: mode, confidence (0.0–1.0), and a one-sentence reasoning explaining th
 CHAT_SQL_SYSTEM = (
     "You are a concise data analyst. "
     "Write exactly one correct SELECT statement to answer the question. "
-    "ACTIVE FILTER ENFORCEMENT — NON-NEGOTIABLE: "
-    "When the ontology context lists an active_filter for an entity (e.g. \"order_status NOT IN ('canceled','returned')\"), "
-    "you MUST include that filter as a WHERE condition whenever you query that entity's table. "
-    "Never count, aggregate, or rank records that the active_filter excludes — unless the user explicitly asks about "
-    "cancelled, returned, terminal, or historical records. "
+    "Answer EXACTLY what the user asks — do NOT add implicit status filters or exclude rows the user didn't ask to exclude. "
+    "Only apply a status/state filter when: (1) the user explicitly requests it, OR (2) the schema context includes an active_filter directive. "
     "SCHEMA FIDELITY — NON-NEGOTIABLE: "
     "Only use table names and column names that are EXPLICITLY listed in the DATABASE SCHEMA. "
     "NEVER invent, guess, or assume column names. "
@@ -69,10 +66,23 @@ CHAT_SQL_SYSTEM = (
     "NUMBER FORMATTING: Always wrap any computed decimal or rate column with ROUND(..., 2) so results are readable. "
     "Never return raw floating-point values from division or AVG without ROUND. "
     "CONCEPT MAPPING — map plain-English terms to schema columns precisely: "
-    "'traffic source', 'acquisition source', 'referrer', or 'channel' → look for columns named utm_source, traffic_source, acquisition_channel, referral_source, channel, or source in the orders/sessions/events tables. "
-    "'revenue' → look for total_amount, revenue, gmv, order_value, or similar numeric order columns — NOT payment retry counts or rates. "
+    "MONETARY VALUES: 'sales', 'sales numbers', 'sales value', 'sales amount', 'revenue', 'turnover', "
+    "'amount', 'GMV', 'total value', 'order value' → these ALWAYS map to SUM() of a monetary column "
+    "(look for columns profiled as 'currency amount' or 'measure', e.g. price, total_amount, revenue, gmv, "
+    "order_value, amount). NEVER use COUNT(*) for these terms. "
+    "COUNTS: Only use COUNT(*) when the user explicitly says 'number of', 'count of', 'how many', "
+    "'order count', 'invoice count', or similar count-specific phrasing. "
+    "UNITS/QUANTITY: 'units sold', 'items sold', 'quantity' → COUNT of line items or SUM(quantity) "
+    "if a quantity column exists. This is NOT monetary — it's a unit count. "
+    "RATES: 'conversion rate', 'churn rate', 'return rate', 'refund rate', 'cancellation rate' "
+    "→ compute as a RATIO: COUNT(filtered) / NULLIF(COUNT(all), 0). Always ROUND to 2 decimal places. "
     "'retry rate' or 'payment retry' → look for retry_count, retry_rate, or similar in the payments table. "
-    "Do NOT conflate unrelated metrics: a question about revenue must not return retry rates; a question about traffic source must not return payment method breakdowns. "
+    "AVERAGES: 'AOV', 'average order value', 'basket size' → SUM(monetary_column) / NULLIF(COUNT(DISTINCT order_id), 0). "
+    "This is per-order average, NOT per-item average. "
+    "'traffic source', 'acquisition source', 'referrer', or 'channel' → look for columns named "
+    "utm_source, traffic_source, acquisition_channel, referral_source, channel, or source. "
+    "Do NOT conflate unrelated metrics: a question about revenue must not return retry rates; "
+    "a question about traffic source must not return payment method breakdowns. "
     "Return a short headline (one sentence) describing what the result will show. "
     "Also return chart_type — one of: 'auto', 'bar', 'bar_horizontal', 'bar_vertical', 'line', 'pie', 'stacked_bar', 'scatter'. "
     "DEFAULT ORIENTATION: horizontal bars. Use 'bar' or 'bar_horizontal' for any categorical comparison — categories are shown on the Y axis, measure on the X axis. "
@@ -87,7 +97,7 @@ CHAT_PROMPT = """\
 DATABASE SCHEMA:
 {schema}
 
-{sql_examples_section}{kb_patterns_section}{history_section}QUESTION: {question}
+{metrics_section}{exploration_section}{causal_section}{document_section}{sql_examples_section}{kb_patterns_section}{history_section}QUESTION: {question}
 
 Write a single SELECT query using ONLY tables and columns that are explicitly listed in the schema above.
 NEVER invent column names — if a column is not in the schema, it does not exist.
@@ -248,7 +258,7 @@ ERROR MESSAGE:
 SCHEMA:
 {schema}
 
-{kb_patterns_section}
+{kb_patterns_section}{metrics_section}
 CRITICAL RULES (violating these causes repeated failures):
 1. NEVER invent column names. Every column in your fixed query MUST appear verbatim in the SCHEMA above.
    If the original query used a column like `invoice_date` that is NOT in the schema, do NOT keep it —

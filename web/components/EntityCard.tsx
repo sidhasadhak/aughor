@@ -25,11 +25,11 @@ interface Props {
 
 function GrainBadge({ verified }: { verified: boolean }) {
   return verified ? (
-    <span className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-400 border border-emerald-500/25 bg-emerald-500/10 rounded-full px-2 py-0.5">
+    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-400 border border-emerald-500/25 bg-emerald-500/10 rounded-full px-2 py-0.5">
       <CheckCircleIcon label="" size="small" /> grain verified
     </span>
   ) : (
-    <span className="inline-flex items-center gap-1 text-[10px] font-medium text-zinc-500 border border-zinc-600 bg-zinc-800 rounded-full px-2 py-0.5">
+    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-zinc-500 border border-zinc-600 bg-zinc-800 rounded-full px-2 py-0.5">
       grain unverified
     </span>
   );
@@ -45,7 +45,7 @@ function LifecycleViz({ states, terminalStates }: { states: string[]; terminalSt
         return (
           <span key={s} className="flex items-center gap-1">
             <span className={`
-              text-[10px] font-mono px-2 py-0.5 rounded border
+              text-[11px] font-mono px-2 py-0.5 rounded border
               ${isTerminal
                 ? "text-red-400 border-red-500/25 bg-red-500/10"
                 : "text-zinc-300 border-zinc-600/70 bg-zinc-800"}
@@ -53,7 +53,7 @@ function LifecycleViz({ states, terminalStates }: { states: string[]; terminalSt
               {s}
             </span>
             {i < states.length - 1 && (
-              <span className="text-zinc-600 text-[10px]">→</span>
+              <span className="text-zinc-600 text-[11px]">→</span>
             )}
           </span>
         );
@@ -68,7 +68,7 @@ function SqlBlock({ sql }: { sql: string }) {
     <div>
       <button
         onClick={() => setOpen(v => !v)}
-        className="flex items-center gap-1 text-[10px] text-zinc-500 hover:text-zinc-300 transition"
+        className="flex items-center gap-1 text-[11px] text-zinc-500 hover:text-zinc-300 transition"
       >
         <span className={`transition-transform ${open ? "rotate-180" : ""}`}>
           <ChevronDownIcon label="" size="small" />
@@ -76,7 +76,7 @@ function SqlBlock({ sql }: { sql: string }) {
         view SQL
       </button>
       {open && (
-        <pre className="mt-1.5 text-[10px] font-mono text-zinc-300 bg-zinc-950 border border-zinc-700/60 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap">
+        <pre className="mt-1.5 text-[11px] font-mono text-zinc-300 bg-zinc-950 border border-zinc-700/60 rounded-md p-3 overflow-x-auto whitespace-pre-wrap">
           {sql}
         </pre>
       )}
@@ -115,13 +115,13 @@ function EditableDescription({
           <button
             onClick={save}
             disabled={saving}
-            className="flex items-center gap-1 text-[10px] text-emerald-400 hover:text-emerald-300 transition"
+            className="flex items-center gap-1 text-[11px] text-emerald-400 hover:text-emerald-300 transition"
           >
             <CheckIcon label="" size="small" /> {saving ? "saving…" : "save"}
           </button>
           <button
             onClick={() => { setDraft(value); setEditing(false); }}
-            className="flex items-center gap-1 text-[10px] text-zinc-500 hover:text-zinc-300 transition"
+            className="flex items-center gap-1 text-[11px] text-zinc-500 hover:text-zinc-300 transition"
           >
             <CloseIcon label="" size="small" /> cancel
           </button>
@@ -166,15 +166,15 @@ export function EntityCard({ entity, connectionId, relatedActions, relatedMetric
 
       {/* Identity */}
       <div className="grid grid-cols-2 gap-3 text-xs">
-        <div className="bg-zinc-800/60 border border-zinc-700/60 rounded-lg p-3">
-          <p className="text-zinc-500 text-[10px] uppercase tracking-wider mb-1">Identity Key</p>
+        <div className="bg-zinc-800/60 border border-zinc-700/60 rounded-md p-3">
+          <p className="text-zinc-500 text-[11px] uppercase tracking-wider mb-1">Identity Key</p>
           <code className="text-violet-300 font-mono">{entity.identity_key}</code>
         </div>
-        <div className="bg-zinc-800/60 border border-zinc-700/60 rounded-lg p-3">
-          <p className="text-zinc-500 text-[10px] uppercase tracking-wider mb-1">Source Tables</p>
+        <div className="bg-zinc-800/60 border border-zinc-700/60 rounded-md p-3">
+          <p className="text-zinc-500 text-[11px] uppercase tracking-wider mb-1">Source Tables</p>
           <div className="flex flex-wrap gap-1">
             {entity.source_tables.map(t => (
-              <code key={t} className="text-sky-300 font-mono text-[10px]">{t}</code>
+              <code key={t} className="text-sky-300 font-mono text-[11px]">{t}</code>
             ))}
           </div>
         </div>
@@ -183,12 +183,12 @@ export function EntityCard({ entity, connectionId, relatedActions, relatedMetric
       {/* Lifecycle */}
       {entity.has_lifecycle && entity.lifecycle_states.length > 0 && (
         <div className="space-y-2">
-          <p className="text-[10px] text-zinc-500 uppercase tracking-wider">
+          <p className="text-[11px] text-zinc-500 uppercase tracking-wider">
             Lifecycle · <code className="text-zinc-400 font-mono">{entity.lifecycle_column}</code>
           </p>
           <LifecycleViz states={entity.lifecycle_states} terminalStates={entity.terminal_states} />
           {entity.active_filter && (
-            <div className="mt-2 flex items-start gap-2 text-[10px] text-amber-300 bg-amber-500/8 border border-amber-500/20 rounded-lg px-3 py-2">
+            <div className="mt-2 flex items-start gap-2 text-[11px] text-amber-300 bg-amber-500/8 border border-amber-500/20 rounded-md px-3 py-2">
               <span className="shrink-0 font-semibold uppercase tracking-wide">Rule</span>
               <code className="font-mono">{entity.active_filter}</code>
             </div>
@@ -208,9 +208,9 @@ export function EntityCard({ entity, connectionId, relatedActions, relatedMetric
       {/* Business rules */}
       {entity.default_filters.length > 0 && (
         <div className="space-y-1.5">
-          <p className="text-[10px] text-zinc-500 uppercase tracking-wider">Default Filters</p>
+          <p className="text-[11px] text-zinc-500 uppercase tracking-wider">Default Filters</p>
           {entity.default_filters.map((f, i) => (
-            <code key={i} className="block text-[10px] font-mono text-zinc-300 bg-zinc-800 border border-zinc-700/60 rounded px-2 py-1">
+            <code key={i} className="block text-[11px] font-mono text-zinc-300 bg-zinc-800 border border-zinc-700/60 rounded px-2 py-1">
               {f}
             </code>
           ))}
@@ -220,18 +220,18 @@ export function EntityCard({ entity, connectionId, relatedActions, relatedMetric
       {/* Related actions */}
       {relatedActions.length > 0 && (
         <div className="space-y-2">
-          <p className="text-[10px] text-zinc-500 uppercase tracking-wider">Actions</p>
+          <p className="text-[11px] text-zinc-500 uppercase tracking-wider">Actions</p>
           {relatedActions.map(a => (
-            <div key={a.id} className="bg-zinc-800/50 border border-zinc-700/50 rounded-lg p-3 space-y-1.5">
+            <div key={a.id} className="bg-zinc-800/50 border border-zinc-700/50 rounded-md p-3 space-y-1.5">
               <div className="flex items-center gap-2">
                 <code className="text-[11px] font-mono text-violet-300">ACTION:{a.id}()</code>
-                <span className="text-[9px] uppercase tracking-wider text-zinc-500 border border-zinc-600 rounded px-1.5 py-0.5">{a.action_type}</span>
+                <span className="text-[11px] uppercase tracking-wider text-zinc-500 border border-zinc-600 rounded px-1.5 py-0.5">{a.action_type}</span>
               </div>
               <p className="text-[11px] text-zinc-400">{a.description}</p>
               {a.business_rules_enforced.length > 0 && (
                 <div className="flex flex-wrap gap-1">
                   {a.business_rules_enforced.map((r, i) => (
-                    <span key={i} className="text-[9px] text-amber-400/80 bg-amber-500/8 border border-amber-500/15 rounded px-1.5 py-0.5">{r}</span>
+                    <span key={i} className="text-[11px] text-amber-400/80 bg-amber-500/8 border border-amber-500/15 rounded px-1.5 py-0.5">{r}</span>
                   ))}
                 </div>
               )}
@@ -244,13 +244,13 @@ export function EntityCard({ entity, connectionId, relatedActions, relatedMetric
       {/* Related metrics */}
       {relatedMetrics.length > 0 && (
         <div className="space-y-2">
-          <p className="text-[10px] text-zinc-500 uppercase tracking-wider">Metrics</p>
+          <p className="text-[11px] text-zinc-500 uppercase tracking-wider">Metrics</p>
           {relatedMetrics.map(m => (
-            <div key={m.id} className="bg-zinc-800/50 border border-zinc-700/50 rounded-lg p-3 space-y-1.5">
+            <div key={m.id} className="bg-zinc-800/50 border border-zinc-700/50 rounded-md p-3 space-y-1.5">
               <p className="text-[11px] font-semibold text-zinc-200">{m.display_name}</p>
               {m.description && <p className="text-[11px] text-zinc-400">{m.description}</p>}
-              <code className="block text-[10px] font-mono text-emerald-300">{m.formula_sql}</code>
-              {m.unit && <span className="text-[10px] text-zinc-500">Unit: {m.unit}</span>}
+              <code className="block text-[11px] font-mono text-emerald-300">{m.formula_sql}</code>
+              {m.unit && <span className="text-[11px] text-zinc-500">Unit: {m.unit}</span>}
             </div>
           ))}
         </div>

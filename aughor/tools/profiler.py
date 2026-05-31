@@ -180,6 +180,13 @@ _FLAG_PATTERN = re.compile(
     r"verified|confirmed|flagged|blocked|archived)",
     re.IGNORECASE,
 )
+# Geographic / code-like numeric columns that should never be treated as measures.
+# Matches: seller_zip_code_prefix, postal_code, geo_id, country_code, area_prefix …
+_GEO_CODE_PATTERN = re.compile(
+    r"(zip|postal|postcode|geo_|lat|lon|latitude|longitude|"
+    r"country|city|state|region|province|prefecture|district)|_prefix$",
+    re.IGNORECASE,
+)
 
 _NUMERIC_TYPES = re.compile(
     r"\b(INT|INTEGER|BIGINT|SMALLINT|TINYINT|HUGEINT|FLOAT|DOUBLE|"
@@ -361,6 +368,9 @@ def _semantic_type(
             lo, hi = value_range
             if lo >= 0 and hi <= 10 and isinstance(hi, (int, float)) and hi == int(hi):
                 return "ordinal"
+        # Geo/postal/code columns that happen to be stored as integers — not measures
+        if _GEO_CODE_PATTERN.search(col_lower):
+            return "key"
         return "measure"
     if _TEXT_TYPES.search(dtype):
         cardinality = distinct_count / max(row_count, 1)
@@ -402,6 +412,9 @@ def _value_interpretation(col: str, value_range: Optional[tuple]) -> tuple[Optio
 
 # ── Core profile builders ─────────────────────────────────────────────────────
 
+_LARGE_TABLE_THRESHOLD = 500_000   # rows above which we skip full-scan queries
+_SAMPLE_PCT            = 5          # % to sample for top-values on large tables
+
 def _q(name: str) -> str:
     """Quote an identifier."""
     return f'"{name}"'
@@ -414,17 +427,200 @@ def _safe_float(v) -> Optional[float]:
         return None
 
 
+# ── Catalog-based stats (zero full-table scans) ───────────────────────────────
+
+def _catalog_stats_duckdb(
+    conn: "DatabaseConnection",
+    table: str,
+    schema: Optional[str] = None,
+) -> tuple[Optional[int], dict]:
+    """
+    DuckDB: pull row count from duckdb_tables() and per-column stats from SUMMARIZE.
+    Returns (row_count, {col: {approx_unique, null_pct, min, max, q25, q50, q75}}).
+    Zero full-table scans — both queries read only catalog metadata.
+    """
+    # ── Row count from catalog ────────────────────────────────────────────────
+    if schema:
+        rc_sql = (
+            f"SELECT estimated_size FROM duckdb_tables() "
+            f"WHERE table_name = '{table}' AND schema_name = '{schema}'"
+        )
+    else:
+        rc_sql = (
+            f"SELECT estimated_size FROM duckdb_tables() "
+            f"WHERE table_name = '{table}' "
+            f"AND schema_name NOT IN ('information_schema','pg_catalog','temp')"
+        )
+    row_count: Optional[int] = None
+    r = conn.execute("__profiler__", rc_sql)
+    if not r.error and r.rows and r.rows[0][0] is not None:
+        try:
+            row_count = int(r.rows[0][0])
+        except (TypeError, ValueError):
+            pass
+
+    # ── SUMMARIZE — one query, all column stats ───────────────────────────────
+    qt = f'"{schema}"."{table}"' if schema else f'"{table}"'
+    sum_sql = f"SELECT * FROM (SUMMARIZE {qt})"
+    col_stats: dict = {}
+    r2 = conn.execute("__profiler__", sum_sql)
+    if not r2.error and r2.rows and r2.columns:
+        # DuckDB SUMMARIZE columns vary by version; map by name
+        col_idx = {c.lower(): i for i, c in enumerate(r2.columns)}
+        def _get(row, key, fallback=None):
+            idx = col_idx.get(key)
+            return row[idx] if idx is not None else fallback
+
+        for row in r2.rows:
+            col_name = _get(row, "column_name") or _get(row, "column_id")
+            if not col_name:
+                continue
+            count_val = _get(row, "count")          # non-null count (string in some versions)
+            try:
+                count_int = int(float(str(count_val))) if count_val is not None else None
+            except (TypeError, ValueError):
+                count_int = None
+            # If row_count still unknown, estimate from non-null count + null_pct
+            null_pct_raw = _get(row, "null_percentage")
+            null_pct = None
+            try:
+                null_pct = float(str(null_pct_raw)) if null_pct_raw is not None else 0.0
+            except (TypeError, ValueError):
+                null_pct = 0.0
+            if row_count is None and count_int is not None and null_pct is not None and null_pct < 100:
+                try:
+                    row_count = int(count_int / max(1e-6, 1.0 - null_pct / 100.0))
+                except (ZeroDivisionError, OverflowError):
+                    pass
+
+            col_stats[str(col_name)] = {
+                "approx_unique": _safe_int(_get(row, "approx_unique")),
+                "null_pct":      null_pct,   # 0–100
+                "min":           _get(row, "min"),
+                "max":           _get(row, "max"),
+                "q25":           _safe_float(_get(row, "q25")),
+                "q50":           _safe_float(_get(row, "q50")),
+                "q75":           _safe_float(_get(row, "q75")),
+                "count":         count_int,
+            }
+
+    return row_count, col_stats
+
+
+def _catalog_stats_postgres(
+    conn: "DatabaseConnection",
+    table: str,
+    schema: str = "public",
+) -> tuple[Optional[int], dict]:
+    """
+    PostgreSQL: row count from pg_class.reltuples (zero scan),
+    column stats from pg_stats (pre-computed by autovacuum, zero scan).
+    Returns (row_count_estimate, {col: {null_frac, n_distinct, top_vals, val_min, val_max}}).
+    """
+    # ── Row count estimate from catalog ──────────────────────────────────────
+    row_count: Optional[int] = None
+    r = conn.execute(
+        "__profiler__",
+        f"SELECT reltuples::bigint FROM pg_class c "
+        f"JOIN pg_namespace n ON n.oid = c.relnamespace "
+        f"WHERE c.relname = '{table}' AND n.nspname = '{schema}'",
+    )
+    if not r.error and r.rows and r.rows[0][0] is not None:
+        try:
+            row_count = max(0, int(r.rows[0][0]))
+        except (TypeError, ValueError):
+            pass
+
+    # ── pg_stats — null_frac, n_distinct, most_common_vals ───────────────────
+    r2 = conn.execute(
+        "__profiler__",
+        f"SELECT attname, null_frac, n_distinct, "
+        f"most_common_vals::text, histogram_bounds::text "
+        f"FROM pg_stats WHERE tablename = '{table}' AND schemaname = '{schema}'",
+    )
+    col_stats: dict = {}
+    if not r2.error and r2.rows:
+        for row in r2.rows:
+            col_name, null_frac, n_dist_raw, mcv_text, hist_text = row
+            if not col_name:
+                continue
+
+            # n_distinct: -1=unique, negative fraction, positive=absolute count
+            n_distinct: Optional[int] = None
+            if n_dist_raw is not None:
+                nd = float(n_dist_raw)
+                if nd == -1.0:
+                    n_distinct = -1          # sentinel: column is unique
+                elif nd < 0:
+                    # fraction of row_count; resolve later when row_count known
+                    n_distinct = nd          # store as float sentinel
+                else:
+                    n_distinct = int(nd)
+
+            # Parse most_common_vals: "{val1,val2,...}" postgres text array
+            top_vals: list[str] = []
+            if mcv_text:
+                inner = mcv_text.strip("{}")
+                if inner:
+                    top_vals = [v.strip('"') for v in inner.split(",")][:10]
+
+            # Min/max from histogram bounds (first and last bucket boundary)
+            val_min = val_max = None
+            if hist_text:
+                inner = hist_text.strip("{}")
+                if inner:
+                    bounds = inner.split(",")
+                    if bounds:
+                        val_min = bounds[0].strip('"')
+                        val_max = bounds[-1].strip('"')
+
+            col_stats[col_name] = {
+                "null_frac":  float(null_frac) if null_frac is not None else 0.0,
+                "n_distinct": n_distinct,
+                "top_vals":   top_vals,
+                "val_min":    val_min,
+                "val_max":    val_max,
+            }
+
+    return row_count, col_stats
+
+
+def _safe_int(v) -> Optional[int]:
+    try:
+        return int(float(str(v)))
+    except (TypeError, ValueError):
+        return None
+
+
+def _resolve_n_distinct(n_distinct, row_count: Optional[int]) -> Optional[int]:
+    """Convert pg n_distinct fraction sentinel to absolute count."""
+    if n_distinct is None:
+        return None
+    if isinstance(n_distinct, int) and n_distinct >= 0:
+        return n_distinct  # already absolute (includes -1 unique sentinel below)
+    if n_distinct == -1:
+        return row_count   # unique column
+    if isinstance(n_distinct, float) and n_distinct < 0 and row_count:
+        return max(1, int(abs(n_distinct) * row_count))
+    return None
+
+
 def build_table_profile(
     conn: "DatabaseConnection",
     table: str,
     columns: list[tuple[str, str]],
     fk_cols: set[str],
+    fast_stats: Optional[dict] = None,   # pre-fetched catalog stats for this table
+    row_count_hint: Optional[int] = None,
 ) -> TableProfile:
     """
-    Compute Tier 1 table-level statistics via 3–4 SQL queries.
-    All queries are best-effort — failures produce partial profiles, not errors.
+    Compute Tier 1 table-level statistics.
+
+    Uses DB-native catalog stats (fast_stats) when available — zero full-table
+    scans.  Falls back to COUNT(*) only for databases / versions where catalog
+    stats are missing or stale (e.g. a table never ANALYZEd on Postgres).
     """
-    row_count = 0
+    row_count: int = row_count_hint or 0
     grain_column: Optional[str] = None
     grain_verified = False
     primary_timestamp: Optional[str] = None
@@ -432,77 +628,83 @@ def build_table_profile(
     freshness_lag_hours: Optional[float] = None
 
     qt = _q(table)
+    fast_stats = fast_stats or {}
 
     # ── 1. Row count ──────────────────────────────────────────────────────────
-    r = conn.execute("__profiler__", f"SELECT COUNT(*) FROM {qt}")
-    if not r.error and r.rows:
-        try:
-            row_count = int(r.rows[0][0])
-        except (TypeError, ValueError):
-            pass
+    # Use catalog estimate if we have one; fall back to COUNT(*) only when it's
+    # genuinely missing (rare: table never vacuumed / fresh DuckDB without stats).
+    if row_count == 0:
+        r = conn.execute("__profiler__", f"SELECT COUNT(*) FROM {qt}")
+        if not r.error and r.rows:
+            try:
+                row_count = int(r.rows[0][0])
+            except (TypeError, ValueError):
+                pass
 
     if row_count == 0:
         return TableProfile(table=table, row_count=0)
 
-    # ── 2. Grain detection ────────────────────────────────────────────────────
-    # Try PK-style candidates in priority order:
-    # 1) column named exactly "{table}_id" or "{table[:-1]}_id"
-    # 2) any column ending _id or _key with low cardinality expectation
-    # 3) first column (last resort)
+    # ── 2. Grain detection — prefer catalog distinct counts ───────────────────
     col_names = [c for c, _ in columns]
     grain_candidates = []
-
-    # Exact match: orders → order_id, customers → customer_id
     singular = table.rstrip("s")
     preferred = [f"{singular}_id", f"{table}_id", "id"]
     for pref in preferred:
         if pref in col_names:
             grain_candidates.insert(0, pref)
             break
-
-    # All _id / _key columns
     for cn in col_names:
         if _KEY_PATTERN.search(cn.lower()) and cn not in grain_candidates:
             grain_candidates.append(cn)
-
-    # Fallback: first column
     if col_names and col_names[0] not in grain_candidates:
         grain_candidates.append(col_names[0])
 
-    for candidate in grain_candidates[:4]:  # try at most 4
-        qc = _q(candidate)
-        r2 = conn.execute(
-            "__profiler__",
-            f"SELECT COUNT(DISTINCT {qc}) FROM {qt}",
-        )
-        if not r2.error and r2.rows:
+    for candidate in grain_candidates[:4]:
+        # Try catalog stats first (no scan)
+        cs = fast_stats.get(candidate, {})
+        approx_u = cs.get("approx_unique") or cs.get("n_distinct")
+        if approx_u is not None:
             try:
-                distinct = int(r2.rows[0][0])
-                if distinct == row_count:
+                distinct = int(approx_u)
+            except (TypeError, ValueError):
+                distinct = None
+            if distinct is not None:
+                if distinct == row_count or abs(distinct - row_count) <= max(1, row_count * 0.01):
                     grain_column = candidate
                     grain_verified = True
                     break
                 elif grain_column is None:
-                    grain_column = candidate  # best guess even if not verified
-            except (TypeError, ValueError):
-                pass
+                    grain_column = candidate
+        else:
+            # Catalog miss: only run COUNT(DISTINCT) on small tables
+            if row_count <= _LARGE_TABLE_THRESHOLD:
+                qc = _q(candidate)
+                r2 = conn.execute("__profiler__", f"SELECT COUNT(DISTINCT {qc}) FROM {qt}")
+                if not r2.error and r2.rows:
+                    try:
+                        distinct = int(r2.rows[0][0])
+                        if distinct == row_count:
+                            grain_column = candidate
+                            grain_verified = True
+                            break
+                        elif grain_column is None:
+                            grain_column = candidate
+                    except (TypeError, ValueError):
+                        pass
 
-    # ── 3. Primary timestamp + date range ────────────────────────────────────
+    # ── 3. Primary timestamp — use catalog min/max when available ─────────────
     ts_cols = [
         c for c, dtype in columns
         if _TIMESTAMP_TYPES.search(dtype)
-        and not _KEY_PATTERN.search(c.lower())  # exclude FK-like timestamps
+        and not _KEY_PATTERN.search(c.lower())
     ]
-
     if not ts_cols:
-        # Try name heuristics on non-timestamp-typed columns (Postgres VARCHAR timestamps)
         ts_cols = [
             c for c, _ in columns
             if _TIMESTAMP_PATTERN.search(c.lower())
             and not _KEY_PATTERN.search(c.lower())
         ][:2]
 
-    # Priority: created_at > order_date > first timestamp found
     def _ts_priority(col: str) -> int:
         c = col.lower()
         if c in ("created_at", "order_date", "event_date", "transaction_date"):
@@ -515,32 +717,39 @@ def build_table_profile(
 
     if ts_cols:
         primary_timestamp = ts_cols[0]
-        qts = _q(primary_timestamp)
-        try:
-            r3 = conn.execute(
-                "__profiler__",
-                f"SELECT MIN({qts})::VARCHAR, MAX({qts})::VARCHAR FROM {qt}",
-            )
-            if not r3.error and r3.rows and r3.rows[0][0] is not None:
-                min_d, max_d = str(r3.rows[0][0]), str(r3.rows[0][1])
-                date_range = (min_d, max_d)
+        cs = fast_stats.get(primary_timestamp, {})
+        ts_min = cs.get("min") or cs.get("val_min")
+        ts_max = cs.get("max") or cs.get("val_max")
 
-                # Freshness: how old is the latest record?
-                try:
-                    # Parse max_d into a datetime (best-effort)
-                    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%Y-%m-%dT%H:%M:%S"):
-                        try:
-                            max_dt = datetime.strptime(max_d[:19], fmt)
-                            now = datetime.now()
-                            lag = (now - max_dt).total_seconds() / 3600
-                            freshness_lag_hours = round(lag, 1)
-                            break
-                        except ValueError:
-                            continue
-                except Exception:
-                    pass
-        except Exception:
-            pass
+        if ts_min and ts_max:
+            date_range = (str(ts_min), str(ts_max))
+        else:
+            # Catalog miss: run MIN/MAX (one cheap query, not a full scan on
+            # indexed timestamp columns)
+            qts = _q(primary_timestamp)
+            try:
+                r3 = conn.execute(
+                    "__profiler__",
+                    f"SELECT MIN({qts})::VARCHAR, MAX({qts})::VARCHAR FROM {qt}",
+                )
+                if not r3.error and r3.rows and r3.rows[0][0] is not None:
+                    date_range = (str(r3.rows[0][0]), str(r3.rows[0][1]))
+            except Exception:
+                pass
+
+        if date_range:
+            max_d = date_range[1]
+            try:
+                for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%Y-%m-%dT%H:%M:%S"):
+                    try:
+                        max_dt = datetime.strptime(max_d[:19], fmt)
+                        lag = (datetime.now() - max_dt).total_seconds() / 3600
+                        freshness_lag_hours = round(lag, 1)
+                        break
+                    except ValueError:
+                        continue
+            except Exception:
+                pass
 
     return TableProfile(
         table=table,
@@ -559,117 +768,167 @@ def build_column_profiles(
     columns: list[tuple[str, str]],
     fk_cols: set[str],
     row_count: int,
+    fast_stats: Optional[dict] = None,   # pre-fetched catalog stats for this table
 ) -> list[ColumnProfile]:
     """
-    Compute column profiles for a table via 2 batched queries:
-      1) One aggregate query covering null rates + distinct counts for ALL columns
-      2) Top-values queries for low-cardinality string columns (up to 5 per table)
+    Compute column profiles.
 
-    Falls back gracefully if the batch query is too wide.
+    Strategy:
+      1. Drain per-column null_rate / distinct_count from catalog stats (zero scan).
+      2. For columns missing from catalog, run a single batched scan query — but
+         ONLY on tables below _LARGE_TABLE_THRESHOLD.  Above threshold, use
+         TABLESAMPLE so the query stays cheap regardless of table size.
+      3. Top-values: pulled from catalog (most_common_vals on Postgres, skipped on
+         DuckDB SUMMARIZE).  For dimension columns still missing top-values, run a
+         GROUP BY with TABLESAMPLE on large tables.
+      4. Value ranges: from catalog min/max (SUMMARIZE / histogram_bounds).
+         Scan-based MIN/MAX fired only for small tables missing catalog ranges.
     """
     if not columns or row_count == 0:
         return []
 
     qt = _q(table)
-    profiles: list[ColumnProfile] = []
+    fast_stats = fast_stats or {}
+    large = row_count > _LARGE_TABLE_THRESHOLD
 
-    # ── Batch 1: null counts + distinct counts (all columns, one query) ───────
-    # SELECT COUNT(col) / COUNT(DISTINCT col) for every column
-    # For wide tables (>40 cols) we chunk to avoid query-size issues
-    CHUNK = 30
-    col_chunks = [columns[i: i + CHUNK] for i in range(0, len(columns), CHUNK)]
+    # ── Drain catalog stats ───────────────────────────────────────────────────
+    raw_stats: dict[str, dict] = {}       # col → {non_null, distinct}
+    value_ranges: dict[str, tuple] = {}   # col → (lo, hi)
+    top_values_map: dict[str, list[str]] = {}
 
-    raw_stats: dict[str, dict] = {}  # col_name → {non_null, distinct}
-
-    for chunk in col_chunks:
-        selects = []
-        for col, _ in chunk:
-            qc = _q(col)
-            selects.append(f"COUNT({qc}) AS _nn_{col}")
-            selects.append(f"COUNT(DISTINCT {qc}) AS _dc_{col}")
-        sql = f"SELECT {', '.join(selects)} FROM {qt}"
-        r = conn.execute("__profiler__", sql)
-        if r.error or not r.rows:
-            # Per-column fallback (slower but robust)
-            for col, _ in chunk:
-                qc = _q(col)
-                r2 = conn.execute(
-                    "__profiler__",
-                    f"SELECT COUNT({qc}), COUNT(DISTINCT {qc}) FROM {qt}",
-                )
-                if not r2.error and r2.rows:
-                    raw_stats[col] = {
-                        "non_null": int(r2.rows[0][0] or 0),
-                        "distinct": int(r2.rows[0][1] or 0),
-                    }
+    for col, dtype in columns:
+        cs = fast_stats.get(col, {})
+        if not cs:
             continue
 
-        row = r.rows[0]
-        for i, (col, _) in enumerate(chunk):
+        # null_rate from catalog
+        if "null_pct" in cs:        # DuckDB SUMMARIZE: 0–100
+            null_pct = float(cs["null_pct"] or 0)
+            non_null = int(row_count * (1.0 - null_pct / 100.0))
+        elif "null_frac" in cs:     # Postgres pg_stats: 0.0–1.0
+            null_frac = float(cs["null_frac"] or 0)
+            non_null = int(row_count * (1.0 - null_frac))
+        else:
+            non_null = row_count
+
+        # distinct count from catalog
+        raw_distinct = cs.get("approx_unique") or cs.get("n_distinct")
+        if raw_distinct is not None and raw_distinct == -1:
+            distinct = row_count   # unique column
+        elif raw_distinct is not None and isinstance(raw_distinct, float) and raw_distinct < 0:
+            distinct = max(1, int(abs(raw_distinct) * row_count))
+        elif raw_distinct is not None:
             try:
-                raw_stats[col] = {
-                    "non_null": int(row[i * 2] or 0),
-                    "distinct": int(row[i * 2 + 1] or 0),
-                }
-            except (IndexError, TypeError):
-                pass
+                distinct = int(raw_distinct)
+            except (TypeError, ValueError):
+                distinct = 0
+        else:
+            distinct = 0
 
-    # ── Batch 2: value range for numeric columns (one query per table) ────────
-    numeric_cols = [
+        raw_stats[col] = {"non_null": non_null, "distinct": distinct}
+
+        # value range from catalog
+        mn = cs.get("min") or cs.get("val_min")
+        mx = cs.get("max") or cs.get("val_max")
+        if mn is not None and mx is not None and _NUMERIC_TYPES.search(dtype):
+            lo = _safe_float(mn)
+            hi = _safe_float(mx)
+            if lo is not None and hi is not None:
+                value_ranges[col] = (lo, hi)
+
+        # top values from pg most_common_vals (already parsed)
+        tvs = cs.get("top_vals")
+        if tvs:
+            top_values_map[col] = tvs
+
+    # ── Columns missing from catalog: batch scan (sampled on large tables) ────
+    missing_cols = [c for c, _ in columns if c not in raw_stats]
+    if missing_cols:
+        CHUNK = 30
+        sample_clause = f" USING SAMPLE {_SAMPLE_PCT} PERCENT" if large else ""
+        chunks = [missing_cols[i: i + CHUNK] for i in range(0, len(missing_cols), CHUNK)]
+        for chunk in chunks:
+            selects = []
+            for col in chunk:
+                qc = _q(col)
+                selects.append(f"COUNT({qc}) AS _nn_{col}")
+                selects.append(f"COUNT(DISTINCT {qc}) AS _dc_{col}")
+            sql = f"SELECT {', '.join(selects)} FROM {qt}{sample_clause}"
+            r = conn.execute("__profiler__", sql)
+            if r.error or not r.rows:
+                for col in chunk:
+                    raw_stats[col] = {"non_null": row_count, "distinct": 0}
+                continue
+            row_data = r.rows[0]
+            for i, col in enumerate(chunk):
+                try:
+                    nn  = int(row_data[i * 2] or 0)
+                    dc  = int(row_data[i * 2 + 1] or 0)
+                    # Scale up sampled counts
+                    if large and _SAMPLE_PCT < 100:
+                        factor = 100 / _SAMPLE_PCT
+                        nn = min(row_count, int(nn * factor))
+                        dc = min(row_count, int(dc * factor))
+                    raw_stats[col] = {"non_null": nn, "distinct": dc}
+                except (IndexError, TypeError):
+                    raw_stats[col] = {"non_null": row_count, "distinct": 0}
+
+    # ── Value ranges for numeric columns still missing ────────────────────────
+    numeric_missing = [
         (col, dtype) for col, dtype in columns
-        if _NUMERIC_TYPES.search(dtype) and not _KEY_PATTERN.search(col.lower())
+        if _NUMERIC_TYPES.search(dtype)
+        and not _KEY_PATTERN.search(col.lower())
+        and col not in value_ranges
     ]
-
-    value_ranges: dict[str, tuple] = {}
-    if numeric_cols:
+    if numeric_missing and not large:
         selects = []
-        for col, _ in numeric_cols[:20]:  # cap at 20 to keep query manageable
+        for col, _ in numeric_missing[:20]:
             qc = _q(col)
             selects.append(f"MIN({qc})::DOUBLE AS _lo_{col}, MAX({qc})::DOUBLE AS _hi_{col}")
-        sql = f"SELECT {', '.join(selects)} FROM {qt}"
-        r = conn.execute("__profiler__", sql)
+        r = conn.execute("__profiler__", f"SELECT {', '.join(selects)} FROM {qt}")
         if not r.error and r.rows:
-            row = r.rows[0]
-            for i, (col, _) in enumerate(numeric_cols[:20]):
+            row_data = r.rows[0]
+            for i, (col, _) in enumerate(numeric_missing[:20]):
                 try:
-                    lo = _safe_float(row[i * 2])
-                    hi = _safe_float(row[i * 2 + 1])
+                    lo = _safe_float(row_data[i * 2])
+                    hi = _safe_float(row_data[i * 2 + 1])
                     if lo is not None and hi is not None:
                         value_ranges[col] = (lo, hi)
                 except (IndexError, TypeError):
                     pass
 
-    # ── Batch 3: top values for low-cardinality string/dimension columns ──────
-    top_values_map: dict[str, list[str]] = {}
-    dim_candidates = [
+    # ── Top values for low-cardinality string columns still missing ───────────
+    dim_missing = [
         col for col, dtype in columns
-        if _TEXT_TYPES.search(dtype) and not _KEY_PATTERN.search(col.lower())
+        if _TEXT_TYPES.search(dtype)
+        and not _KEY_PATTERN.search(col.lower())
+        and col not in top_values_map
         and raw_stats.get(col, {}).get("distinct", 9999) <= 30
-    ][:5]  # at most 5 top-value queries per table
+    ][:5]
 
-    for col in dim_candidates:
+    for col in dim_missing:
         qc = _q(col)
+        sample_clause = f" USING SAMPLE {_SAMPLE_PCT} PERCENT" if large else ""
         r = conn.execute(
             "__profiler__",
-            f"SELECT {qc}, COUNT(*) AS n FROM {qt} "
+            f"SELECT {qc}, COUNT(*) AS n FROM {qt}{sample_clause} "
             f"WHERE {qc} IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 10",
         )
         if not r.error and r.rows:
             top_values_map[col] = [str(row[0]) for row in r.rows if row[0] is not None]
 
     # ── Assemble ColumnProfile objects ────────────────────────────────────────
+    profiles: list[ColumnProfile] = []
     for col, dtype in columns:
-        stats = raw_stats.get(col, {})
+        stats   = raw_stats.get(col, {})
         non_null = stats.get("non_null", row_count)
         distinct = stats.get("distinct", 0)
         null_rate = max(0.0, 1.0 - (non_null / row_count)) if row_count > 0 else 0.0
         is_low_card = distinct <= 30
-        vrange = value_ranges.get(col)
-        is_fk = col in fk_cols or bool(_KEY_PATTERN.search(col.lower()))
+        vrange  = value_ranges.get(col)
+        is_fk   = col in fk_cols or bool(_KEY_PATTERN.search(col.lower()))
 
-        sem_type = _semantic_type(
-            col, dtype, is_fk, distinct, row_count, null_rate, vrange
-        )
+        sem_type = _semantic_type(col, dtype, is_fk, distinct, row_count, null_rate, vrange)
 
         interp, unit = (None, None)
         if sem_type == "measure":
@@ -705,31 +964,62 @@ def profile_connection(
       table_profiles:  {table_name: TableProfile}
       column_profiles: {"table.column": ColumnProfile}
 
-    Designed to run once at connection time. Typically < 2 s for schemas
-    under 10 tables; capped at 20 tables with fact-table prioritisation.
+    Strategy:
+      1. Fetch DB-native catalog stats for every table upfront (one query per table):
+         - DuckDB:   duckdb_tables() row count + SUMMARIZE per-column stats
+         - Postgres: pg_class.reltuples row count + pg_stats per-column stats
+      2. Pass `fast_stats` to build_table_profile() and build_column_profiles() so
+         they skip full-table COUNT / COUNT(DISTINCT) / MIN / MAX scans.
+      3. Falls back gracefully to scan-based stats for small tables or when catalog
+         data is absent/stale.
     """
     table_profiles: dict[str, TableProfile] = {}
     column_profiles: dict[str, ColumnProfile] = {}
+    dialect = getattr(conn, "dialect", "")
 
-    # Prioritise likely fact tables so they're profiled even in large schemas.
-    # _FACT_SIGNALS is derived from KB SQL templates at module load time.
+    # ── Pre-fetch catalog stats for ALL tables (cheap, no full scans) ─────────
+    # {table_name: (row_count, {col: {...stats...}})}
+    all_catalog: dict[str, tuple[Optional[int], dict]] = {}
+    for table in tables:
+        try:
+            if dialect == "duckdb":
+                schema_name = getattr(conn, "schema_name", None)
+                rc, col_stats = _catalog_stats_duckdb(conn, table, schema=schema_name)
+            elif dialect == "postgres":
+                schema_name = getattr(conn, "schema_name", None) or "public"
+                rc, col_stats = _catalog_stats_postgres(conn, table, schema=schema_name)
+            else:
+                rc, col_stats = None, {}
+            all_catalog[table] = (rc, col_stats)
+        except Exception:
+            all_catalog[table] = (None, {})
+
+    # ── Prioritise likely fact tables so they're profiled even in large schemas ─
     prioritised = sorted(
         tables,
         key=lambda t: (0 if _FACT_SIGNALS.match(t) else 1, t),
     )
 
-    for table in prioritised[:20]:  # raised cap; fact tables always come first
+    for table in prioritised[:20]:
         fk_cols = fk_hints.get(table, set())
+        catalog_rc, fast_stats = all_catalog.get(table, (None, {}))
 
         cols = _parse_columns(conn, table)
         if not cols:
             table_profiles[table] = TableProfile(table=table)
             continue
 
-        tp = build_table_profile(conn, table, cols, fk_cols)
+        tp = build_table_profile(
+            conn, table, cols, fk_cols,
+            fast_stats=fast_stats,
+            row_count_hint=catalog_rc,
+        )
         table_profiles[table] = tp
 
-        col_profs = build_column_profiles(conn, table, cols, fk_cols, tp.row_count)
+        col_profs = build_column_profiles(
+            conn, table, cols, fk_cols, tp.row_count,
+            fast_stats=fast_stats,
+        )
         for cp in col_profs:
             column_profiles[f"{table}.{cp.column}"] = cp
 

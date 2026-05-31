@@ -154,7 +154,7 @@ function TableCard({ layout, pkSet, expanded, onExpand, registerRow }: TableCard
       style={{ left: layout.x, top: layout.y, width: CARD_W }}
     >
       {/* "Table" label */}
-      <span className="text-[10px] text-zinc-500 px-0.5" style={{ height: LABEL_H, lineHeight: `${LABEL_H}px` }}>
+      <span className="text-[11px] text-zinc-500 px-0.5" style={{ height: LABEL_H, lineHeight: `${LABEL_H}px` }}>
         Table
       </span>
 
@@ -172,7 +172,7 @@ function TableCard({ layout, pkSet, expanded, onExpand, registerRow }: TableCard
               {table.name}
             </div>
             {table.row_count && (
-              <div className="text-[10px] font-mono text-zinc-500 leading-none mt-px">
+              <div className="text-[11px] font-mono text-zinc-500 leading-none mt-px">
                 {Number(table.row_count).toLocaleString()} rows
               </div>
             )}
@@ -194,11 +194,11 @@ function TableCard({ layout, pkSet, expanded, onExpand, registerRow }: TableCard
                 {/* Badge — fixed 28px slot */}
                 <div className="w-7 flex items-center justify-center shrink-0">
                   {isPk ? (
-                    <span className="text-[9px] font-bold text-amber-400 border border-amber-400/50 rounded px-[3px] py-px leading-tight">
+                    <span className="text-[11px] font-bold text-amber-400 border border-amber-400/50 rounded px-[3px] py-px leading-tight">
                       PK
                     </span>
                   ) : col.is_fk ? (
-                    <span className="text-[9px] font-bold text-violet-400 border border-violet-400/50 rounded px-[3px] py-px leading-tight">
+                    <span className="text-[11px] font-bold text-violet-400 border border-violet-400/50 rounded px-[3px] py-px leading-tight">
                       FK
                     </span>
                   ) : null}
@@ -206,7 +206,7 @@ function TableCard({ layout, pkSet, expanded, onExpand, registerRow }: TableCard
                 <span className="flex-1 text-[11px] font-mono text-zinc-300 truncate min-w-0">
                   {col.name}
                 </span>
-                <span className="text-[10px] font-mono text-zinc-500 shrink-0 pl-2">
+                <span className="text-[11px] font-mono text-zinc-500 shrink-0 pl-2">
                   {type}
                 </span>
               </div>

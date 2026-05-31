@@ -1,6 +1,8 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useRef, useState } from "react";
+import { SqlResultTable } from "@/components/AugTable";
+import { VegaChart, type VLSpec } from "@/components/VegaChart";
 import TableIcon         from "@atlaskit/icon/core/table";
 import DownloadIcon      from "@atlaskit/icon/core/download";
 import CloseIcon         from "@atlaskit/icon/core/close";
@@ -175,100 +177,19 @@ function KPICards({ columns, rows }: { columns: string[]; rows: unknown[][] }) {
   );
 }
 
-// ── Mini table ───────────────────────────────────────────────────────────────
+// ── Mini table — Ant Design via AugTable ─────────────────────────────────────
 function MiniTable({ columns, rows }: { columns: string[]; rows: unknown[][] }) {
   return (
-    <div className="mt-2 rounded-lg border border-zinc-700/50 overflow-hidden" style={{ background: "#131c27" }}>
-      <div className="overflow-x-auto overflow-y-auto" style={{ maxHeight: "320px" }}>
-        <table className="text-[12px] w-full">
-          <thead className="sticky top-0 z-10">
-            <tr className="border-b border-zinc-700/60" style={{ background: "#1a2535" }}>
-              {columns.map((c) => (
-                <th key={c} className="px-3 py-1.5 text-left font-semibold text-zinc-400 whitespace-nowrap">
-                  {cleanLabel(c)}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, i) => (
-              <tr key={i} className="border-b border-zinc-700/30 last:border-0 hover:bg-white/[0.02] transition-colors">
-                {columns.map((col, j) => (
-                  <td key={j} className="px-3 py-1.5 text-zinc-300 font-mono whitespace-nowrap">
-                    {fmt(col, (row as unknown[])[j])}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+    <div className="mt-2 rounded-lg overflow-hidden">
+      <SqlResultTable columns={columns} rows={rows} maxHeight={320} />
     </div>
   );
 }
 
-// ── Inline chart (Observable Plot + d3-shape for pie) ────────────────────────
-/** Generic axis/label formatter — never shows raw floats */
-const NUM_FMT = (v: number) =>
-  Math.abs(v) >= 1e6 ? `${(v / 1e6).toFixed(1)}M`
-  : Math.abs(v) >= 1e3 ? `${(v / 1e3).toFixed(0)}k`
-  : Number.isInteger(v) ? String(v)
-  : v.toFixed(2);
-
-/**
- * Column-aware formatter for chart labels.
- * If the column looks like a rate/pct and the values are > 1 (already ×100),
- * append "%" and round to 1 dp.  If values are ≤ 1, treat as fraction → ×100.
- * Delegates to NUM_FMT for everything else.
- */
-function makeColFmt(colName: string, sampleValues: number[]) {
-  const isShareCol = SHARE_COL.test(colName);
-  if (isShareCol) {
-    const maxV = Math.max(...sampleValues.map(Math.abs));
-    const isAlready100 = maxV > 1; // already multiplied ×100
-    return (v: number) => isAlready100 ? `${v.toFixed(1)}%` : `${(v * 100).toFixed(1)}%`;
-  }
-  return NUM_FMT;
-}
-
+// ── Inline chart (Vega-Lite) ─────────────────────────────────────────────────
 // Columns whose values are already human-formatted time labels (Month - Year, Q1 2024, etc.)
 // → preserve SQL ordering, don't parse as dates, don't re-sort
 const TIME_LABEL_COL = /(month|quarter|week|half|period)/i;
-
-// Tableau-10 palette — matches Observable Plot's "tableau10" scheme order
-const T10 = ["#4e79a7","#f28e2b","#e15759","#76b7b2","#59a14f",
-              "#edc948","#b07aa1","#ff9da7","#9c755f","#bab0ac"];
-const PIE_COLORS = ["#818cf8","#34d399","#f59e0b","#f87171","#38bdf8","#c084fc","#fb923c","#a3e635"];
-
-/** Build a right-side HTML legend div for stacked / pie charts */
-function buildHtmlLegend(items: { label: string; color: string }[]): HTMLDivElement {
-  const div = document.createElement("div");
-  div.style.cssText = "display:flex;flex-direction:column;gap:4px;padding:4px 0;min-width:110px;max-width:160px;flex-shrink:0";
-
-  // Two-column layout when >12 items
-  const twoCol = items.length > 12;
-  if (twoCol) {
-    div.style.flexDirection = "row";
-    div.style.flexWrap = "wrap";
-    div.style.columnGap = "8px";
-    div.style.maxWidth = "280px";
-  }
-
-  items.forEach(({ label, color }) => {
-    const row = document.createElement("div");
-    row.style.cssText = "display:flex;align-items:center;gap:5px;" + (twoCol ? "width:calc(50% - 4px);" : "");
-    const swatch = document.createElement("span");
-    swatch.style.cssText = `display:inline-block;width:9px;height:9px;border-radius:2px;background:${color};flex-shrink:0`;
-    const text = document.createElement("span");
-    text.style.cssText = "font-size:12px;color:#a1a1aa;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:130px";
-    text.title = label;
-    text.textContent = label;
-    row.appendChild(swatch);
-    row.appendChild(text);
-    div.appendChild(row);
-  });
-  return div;
-}
 
 function InlineChart({
   columns,
@@ -281,414 +202,35 @@ function InlineChart({
   chartType?: string | null;
   title?: string;
 }) {
-  // outerRef = scrollable shell; innerRef = Observable Plot / SVG mount point
-  const outerRef = useRef<HTMLDivElement>(null);
-  const innerRef = useRef<HTMLDivElement>(null);
-  // userH = null means "use natural height". Set by drag handle.
+  const outerRef  = useRef<HTMLDivElement>(null);
+  const chartRef  = useRef<HTMLDivElement>(null);
+  // userH = null means "use computed default height". Set by drag handle.
   const [userH, setUserH] = useState<number | null>(null);
-  // containerW tracks the live pixel width of outerRef so the chart re-draws
-  // correctly whenever the container narrows/widens (e.g. source panel opens).
-  const [containerW, setContainerW] = useState(0);
-  useEffect(() => {
-    const el = outerRef.current;
-    if (!el) return;
-    setContainerW(el.clientWidth);
-    const ro = new ResizeObserver(([entry]) => {
-      const w = Math.round(entry.contentRect.width);
-      if (w > 0) setContainerW(w);
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
+  // expanded = false caps chart height to CLIP_H; true shows full chart
+  const [expanded, setExpanded] = useState(false);
 
   function startDrag(e: React.MouseEvent) {
     e.preventDefault();
     const startY = e.clientY;
-    const startH = outerRef.current?.clientHeight ?? 320;
+    const startH = outerRef.current?.clientHeight ?? 300;
 
     function onMove(ev: MouseEvent) {
       const newH = Math.max(80, startH + (ev.clientY - startY));
-      // Grow the container to follow the handle
-      if (outerRef.current) {
-        outerRef.current.style.maxHeight = "none";
-        outerRef.current.style.height = `${newH}px`;
-      }
-      // Grow the SVG in lock-step so there is no gap between chart and container.
-      // viewBox stays fixed so content is pinned to the top; empty space appears
-      // below — on mouseup the chart re-renders at the final height to fill it.
-      const svg = innerRef.current?.querySelector("svg");
-      if (svg) svg.setAttribute("height", String(newH));
+      if (outerRef.current) outerRef.current.style.minHeight = `${newH}px`;
     }
     function onUp(ev: MouseEvent) {
-      const newH = Math.max(80, startH + (ev.clientY - startY));
-      setUserH(newH); // triggers effect → chart re-renders at final height
+      // clear the inline style; re-render will set chart height via prop
+      if (outerRef.current) outerRef.current.style.minHeight = "";
+      setUserH(Math.max(80, startH + (ev.clientY - startY)));
       window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("mouseup",   onUp);
     }
     window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
+    window.addEventListener("mouseup",   onUp);
   }
 
-  useEffect(() => {
-    if (!innerRef.current || !rows.length) return;
-    let cancelled = false;
-    innerRef.current.innerHTML = "";
-
-    const data: Record<string, unknown>[] = rows.map((r) => {
-      const obj: Record<string, unknown> = {};
-      columns.forEach((c, i) => { obj[c] = (r as unknown[])[i]; });
-      return obj;
-    });
-
-    // Column classification
-    // Value-based date detection: if NAME doesn't match DATE_COL but value looks like
-    // an ISO date string (e.g. "order_month" → "2025-01-01 00:00:00"), treat as date.
-    const DATE_VALUE_RE = /^\d{4}-\d{2}-\d{2}/;
-    const looksLikeDate = (colIdx: number) => {
-      const v = rows[0]?.[colIdx];
-      return typeof v === "string" && DATE_VALUE_RE.test(v);
-    };
-    const dateCol =
-      columns.find((c) => DATE_COL.test(c)) ||
-      columns.find((c, i) => !isNumeric(rows[0]?.[i]) && looksLikeDate(i));
-
-    const catCols = columns.filter(
-      (c, i) => c !== dateCol && !DATE_COL.test(c) && !isNumeric(rows[0]?.[i])
-    );
-    // Prefer percentage/share/rate columns over raw counts when multiple numeric columns exist
-    const PREFER_COL = /(pct|percent|share|rate|ratio|proportion)/i;
-    const numericCols = columns.filter((c, i) => !DATE_COL.test(c) && isNumeric(rows[0]?.[i]));
-    const numCol = numericCols.find(c => PREFER_COL.test(c)) ?? numericCols[0];
-    const catCol = catCols[0];   // primary grouping / y-axis
-    const catCol2 = catCols[1];  // secondary grouping / stack fill
-
-    if (!numCol) return;
-    const hint = (chartType ?? "auto").toLowerCase();
-
-    // Preserve SQL order when the group column represents a time label (month, quarter …)
-    const isTimeLabel = catCol ? TIME_LABEL_COL.test(catCol) : false;
-
-    // Available width — use the live ResizeObserver value so the chart re-draws
-    // at the correct width whenever the source panel opens or closes.
-    const availW = containerW > 0 ? containerW : (outerRef.current?.clientWidth || 640);
-
-    // ── PIE / DONUT ─────────────────────────────────────────────────────────
-    if (hint === "pie" && catCol) {
-      import("d3-shape").then(({ pie, arc }) => {
-        if (cancelled || !innerRef.current) return;
-        innerRef.current.innerHTML = "";
-
-        const agg = new Map<string, number>();
-        data.forEach((d) => {
-          const k = String(d[catCol]);
-          agg.set(k, (agg.get(k) ?? 0) + Number(d[numCol]));
-        });
-        const slices = [...agg.entries()]
-          .sort((a, b) => b[1] - a[1])
-          .map(([label, value], i) => ({ label, value, color: PIE_COLORS[i % PIE_COLORS.length] }));
-        const total = slices.reduce((s, d) => s + d.value, 0);
-
-        const R_OUTER = 100, R_INNER = 44;
-        const pieGen = pie<typeof slices[0]>().value((d) => d.value).sort(null);
-        const arcGen = arc<{ startAngle: number; endAngle: number }>().innerRadius(R_INNER).outerRadius(R_OUTER);
-        const labelArc = arc<{ startAngle: number; endAngle: number }>().innerRadius(72).outerRadius(R_OUTER);
-
-        const H = 240;
-        const ns = "http://www.w3.org/2000/svg";
-        const svg = document.createElementNS(ns, "svg");
-        svg.setAttribute("width", String(H));
-        svg.setAttribute("height", String(H));
-        svg.setAttribute("viewBox", `0 0 ${H} ${H}`);
-        svg.style.background = "transparent";
-
-        const g = document.createElementNS(ns, "g");
-        g.setAttribute("transform", `translate(${H / 2},${H / 2})`);
-        svg.appendChild(g);
-
-        pieGen(slices).forEach((seg, i) => {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const d = arcGen(seg as any) || "";
-          const path = document.createElementNS(ns, "path");
-          path.setAttribute("d", d);
-          path.setAttribute("fill", seg.data.color);
-          path.setAttribute("stroke", "#09090b");
-          path.setAttribute("stroke-width", "1.5");
-          g.appendChild(path);
-
-          const pct = (seg.data.value / total) * 100;
-          if (pct >= 5) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const [cx, cy] = labelArc.centroid(seg as any);
-            const text = document.createElementNS(ns, "text");
-            text.setAttribute("x", String(cx));
-            text.setAttribute("y", String(cy));
-            text.setAttribute("text-anchor", "middle");
-            text.setAttribute("dominant-baseline", "middle");
-            text.setAttribute("fill", "white");
-            text.setAttribute("font-size", "9");
-            text.textContent = `${pct.toFixed(0)}%`;
-            g.appendChild(text);
-          }
-        });
-
-        // Flex wrapper: pie SVG + right legend
-        const wrapper = document.createElement("div");
-        wrapper.style.cssText = "display:flex;gap:16px;align-items:center;flex-wrap:wrap";
-        wrapper.appendChild(svg);
-        wrapper.appendChild(buildHtmlLegend(slices));
-        innerRef.current.appendChild(wrapper);
-      });
-      return () => { cancelled = true; };
-    }
-
-    // ── All other chart types — Observable Plot ──────────────────────────────
-    import("@observablehq/plot").then((Plot) => {
-      if (cancelled || !innerRef.current) return;
-      innerRef.current.innerHTML = "";
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      let chart: any = null;
-
-      // Temporal stack: date + one category + one measure → stacked bar over time
-      // e.g. "monthly revenue by source" → month on X, source as stack colour
-      const isTemporalStack = catCol && dateCol && (hint === "stacked_bar" || hint === "auto");
-      // Category stack: two category columns + one measure, no date
-      const isCatStack = catCol && catCol2 && !dateCol && (hint === "stacked_bar" || hint === "auto");
-      const isStacked = isTemporalStack || isCatStack || hint === "stacked_bar";
-
-      // ── STACKED BAR — groups on X (date or primary cat), stack fill = secondary ──
-      if (isStacked && catCol) {
-        const stackData = isTemporalStack && dateCol
-          ? data.map((d) => ({
-              group: fmtTimestampLabel(String(d[dateCol])),
-              stack: String(d[catCol]),
-              val: Number(d[numCol]),
-            }))
-          : data.map((d) => ({
-              group: fmtTimestampLabel(String(d[catCol])),
-              stack: catCol2 ? fmtTimestampLabel(String(d[catCol2])) : "",
-              val: Number(d[numCol]),
-            }));
-        const stacks = [...new Set(stackData.map((d) => d.stack))];
-
-        // Keep date order for temporal stacks; sort by total descending for categorical
-        const groupTotalsMap = new Map<string, number>();
-        stackData.forEach((d) => groupTotalsMap.set(d.group, (groupTotalsMap.get(d.group) ?? 0) + d.val));
-        const groups = (isTemporalStack || isTimeLabel)
-          ? [...new Set(stackData.map((d) => d.group))]   // preserve chronological order
-          : [...groupTotalsMap.entries()].sort((a, b) => b[1] - a[1]).map(([g]) => g);
-
-        const legendW = stacks.length > 12 ? 280 : 150;
-        const chartW = Math.max(availW - legendW - 24, Math.max(300, groups.length * 40));
-
-        chart = Plot.plot({
-          width: chartW,
-          height: userH ?? 280,
-          marginBottom: isTimeLabel || groups.length > 8 ? 70 : 50,
-          marginLeft: 60,
-          marginRight: 8,
-          marginTop: 16,
-          style: { background: "transparent", color: "#a1a1aa", fontSize: "12px" },
-          x: { label: cleanLabel(catCol), domain: groups, tickRotate: groups.length > 8 ? -40 : 0 },
-          y: { grid: true, tickFormat: makeColFmt(numCol, stackData.map(d => d.val)), label: cleanLabel(numCol) },
-          color: { scheme: "tableau10" },
-          marks: [
-            Plot.barY(stackData, Plot.stackY({
-              x: "group",
-              y: "val",
-              fill: "stack",
-              title: (d: { group: string; stack: string; val: number }) =>
-                `${d.stack}: ${makeColFmt(numCol, stackData.map(s => s.val))(d.val)}`,
-            })),
-            Plot.ruleY([0]),
-          ],
-        });
-
-        const legendItems = stacks.map((s, i) => ({ label: s, color: T10[i % T10.length] }));
-        // Pin height only — width is handled by re-rendering at the new containerW.
-        // Prevents Observable Plot's height:auto from proportionally shrinking the chart
-        // on any residual CSS scaling edge-cases.
-        const stackH = chart.getAttribute("height");
-        if (stackH) chart.style.height = `${stackH}px`;
-
-        const wrapper = document.createElement("div");
-        wrapper.style.cssText = "display:flex;gap:16px;align-items:flex-start;width:100%";
-        wrapper.appendChild(chart);
-        wrapper.appendChild(buildHtmlLegend(legendItems));
-        innerRef.current.appendChild(wrapper);
-        return;
-      }
-
-      // ── DATE BAR — explicit bar request on date+numeric data (no categories) ─
-      // Uses rectY (continuous/time scale) instead of barY (band scale) to avoid
-      // the "scale incompatible with channel: time !== band" error.
-      else if (dateCol && !catCol && (hint === "bar" || hint === "bar_horizontal")) {
-        const barData = data.map((d) => ({
-          date: new Date(normDateStr(String(d[dateCol]))),
-          val: Number(d[numCol]),
-        }));
-        chart = Plot.plot({
-          width: availW,
-          height: userH ?? 240,
-          marginLeft: 60,
-          marginRight: 16,
-          marginBottom: 40,
-          style: { background: "transparent", color: "#a1a1aa", fontSize: "12px" },
-          x: { type: "time", label: cleanLabel(dateCol) },
-          y: { grid: true, tickFormat: NUM_FMT, label: cleanLabel(numCol) },
-          marks: [
-            Plot.rectY(barData, { x: "date", y: "val", fill: "#818cf8", interval: "month", inset: 0.5 }),
-            Plot.ruleY([0]),
-          ],
-        });
-      }
-
-      // ── LINE / AREA (time-series) — time on X, measure on Y ───────────────
-      // Only fires when there is no category column alongside the date.
-      // date + category + measure is handled above as a temporal stacked bar.
-      else if (dateCol && !catCol && (hint === "line" || hint === "area" || hint === "auto")) {
-        const parsed = data.map((d) => ({
-          ...d,
-          [dateCol]: new Date(normDateStr(String(d[dateCol]))),
-          [numCol]: Number(d[numCol]),
-        }));
-        chart = Plot.plot({
-          width: availW,
-          height: userH ?? 200,
-          marginLeft: 60,
-          marginRight: 16,
-          style: { background: "transparent", color: "#a1a1aa", fontSize: "12px" },
-          x: { type: "time", label: cleanLabel(dateCol) },
-          y: { grid: true, tickFormat: makeColFmt(numCol, parsed.map((d: Record<string, unknown>) => Number(d[numCol]))), label: cleanLabel(numCol) },
-          marks: [
-            Plot.areaY(parsed, { x: dateCol, y: numCol, fill: "#10b981", fillOpacity: 0.08 }),
-            Plot.lineY(parsed, { x: dateCol, y: numCol, stroke: "#10b981", strokeWidth: 1.5 }),
-            Plot.dot(parsed.length <= 60 ? parsed : [], { x: dateCol, y: numCol, fill: "#10b981", r: 2.5 }),
-          ],
-        });
-      }
-
-      // ── VERTICAL BAR — only when user explicitly says "vertical bar" ────────
-      else if (catCol && hint === "bar_vertical") {
-        const agg = new Map<string, number>();
-        data.forEach((d) => {
-          const k = String(d[catCol]);
-          agg.set(k, (agg.get(k) ?? 0) + Number(d[numCol]));
-        });
-        const sorted = isTimeLabel
-          ? [...agg.entries()]
-          : [...agg.entries()].sort((a, b) => b[1] - a[1]);
-        const maxVal = Math.max(...sorted.map(([, v]) => v), 1);
-        const barData = sorted.map(([cat, val]) => ({ cat, val }));
-        // Expand width so each bar has at least 36px; scrolls horizontally when needed
-        const chartW = Math.max(availW, barData.length * 36);
-        const colFmt = makeColFmt(numCol, barData.map(d => d.val));
-
-        chart = Plot.plot({
-          width: chartW,
-          height: userH ?? 260,
-          marginBottom: barData.length > 10 ? 70 : 48,
-          marginLeft: 60,
-          marginRight: 16,
-          style: { background: "transparent", color: "#a1a1aa", fontSize: "12px" },
-          x: {
-            label: cleanLabel(catCol),
-            tickRotate: barData.length > 10 ? -40 : 0,
-            ...(isTimeLabel ? {} : { sort: null }),
-          },
-          y: { grid: true, tickFormat: colFmt, label: cleanLabel(numCol) },
-          marks: [
-            Plot.barY(barData, {
-              x: "cat",
-              y: "val",
-              fill: "#818cf8",
-              ...(isTimeLabel ? {} : { sort: { x: "-y" } }),
-            }),
-            Plot.text(
-              barData.filter((d) => d.val >= maxVal * 0.08),
-              {
-                x: "cat",
-                y: "val",
-                text: (d: { cat: string; val: number }) => colFmt(d.val),
-                dy: -6,
-                textAnchor: "middle",
-                fill: "#a1a1aa",
-                fontSize: 12,
-              }
-            ),
-            Plot.ruleY([0]),
-          ],
-        });
-      }
-
-      // ── HORIZONTAL BAR — default for ALL categorical data (bar / bar_horizontal / auto) ─
-      else if (catCol && (hint === "bar" || hint === "bar_horizontal" || hint === "auto")) {
-        const agg = new Map<string, number>();
-        data.forEach((d) => {
-          const k = String(d[catCol]);
-          agg.set(k, (agg.get(k) ?? 0) + Number(d[numCol]));
-        });
-        const sorted = isTimeLabel
-          ? [...agg.entries()]
-          : [...agg.entries()].sort((a, b) => b[1] - a[1]);
-        const maxVal = Math.max(...sorted.map(([, v]) => v), 1);
-        const barData = sorted.map(([cat, val]) => ({ cat, val }));
-        // Left margin: space for category labels only — no rotated Y-axis label
-        const labelMargin = Math.min(160, Math.max(70, Math.max(...barData.map((d) => d.cat.length)) * 7));
-        const colFmt = makeColFmt(numCol, barData.map(d => d.val));
-
-        chart = Plot.plot({
-          width: availW,
-          height: userH ?? Math.max(100, barData.length * 28),
-          marginLeft: labelMargin,
-          marginRight: 72,
-          marginBottom: 44,
-          style: { background: "transparent", color: "#a1a1aa", fontSize: "12px" },
-          // X: centered label, no rotated Y label (categories already visible as tick labels)
-          x: { grid: true, tickFormat: colFmt, label: cleanLabel(numCol), labelAnchor: "center" },
-          y: { label: null },
-          marks: [
-            Plot.barX(barData, {
-              x: "val",
-              y: "cat",
-              fill: "#818cf8",
-              ...(isTimeLabel ? {} : { sort: { y: "-x" } }),
-            }),
-            Plot.text(
-              barData.filter((d) => d.val >= maxVal * 0.08),
-              {
-                x: "val",
-                y: "cat",
-                text: (d: { cat: string; val: number }) => colFmt(d.val),
-                dx: 6,
-                textAnchor: "start",
-                fill: "#a1a1aa",
-                fontSize: 12,
-              }
-            ),
-            Plot.ruleX([0]),
-          ],
-        });
-      }
-
-      if (chart && innerRef.current) {
-        // Pin height — chart re-draws at the correct containerW so no CSS width-scaling
-        // occurs; the height pin prevents height:auto edge-cases.
-        const ch = (chart as SVGElement).getAttribute?.("height");
-        if (ch) (chart as SVGElement).style.height = `${ch}px`;
-        innerRef.current.appendChild(chart);
-      }
-    });
-
-    return () => { cancelled = true; };
-  // containerW triggers a re-draw when the source panel opens/closes (container width changes).
-  // userH triggers a re-draw only on mouseup (end of drag), not during the drag itself.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [columns, rows, chartType, userH, containerW]);
-
-  // ── PNG download ─────────────────────────────────────────────────────────────
   function handleDownloadPng() {
-    const svg = innerRef.current?.querySelector("svg");
+    const svg = chartRef.current?.querySelector("svg");
     if (!svg) return;
     const w = svg.clientWidth  || 640;
     const h = svg.clientHeight || 320;
@@ -716,7 +258,7 @@ function InlineChart({
       canvas.toBlob(blob => {
         if (!blob) return;
         const pngUrl = URL.createObjectURL(blob);
-        const fname = title.replace(/[^a-z0-9]+/gi, "_").toLowerCase() + ".png";
+        const fname  = title.replace(/[^a-z0-9]+/gi, "_").toLowerCase() + ".png";
         const a = Object.assign(document.createElement("a"), { href: pngUrl, download: fname });
         document.body.appendChild(a); a.click(); document.body.removeChild(a);
         URL.revokeObjectURL(pngUrl);
@@ -725,23 +267,367 @@ function InlineChart({
     img.src = url;
   }
 
+  if (!rows.length || !columns.length) return null;
+
+  // ── Column classification ──────────────────────────────────────────────────
+  const data: Record<string, unknown>[] = rows.map(r =>
+    Object.fromEntries(columns.map((c, i) => [c, (r as unknown[])[i]])),
+  );
+
+  const DATE_VALUE_RE = /^\d{4}-\d{2}-\d{2}/;
+  const looksLikeDate = (colIdx: number) => {
+    const v = rows[0]?.[colIdx];
+    return typeof v === "string" && DATE_VALUE_RE.test(v);
+  };
+
+  const dateCol =
+    columns.find(c => DATE_COL.test(c)) ||
+    columns.find((c, i) => !isNumeric(rows[0]?.[i]) && looksLikeDate(i));
+
+  const catCols = columns.filter(
+    (c, i) => c !== dateCol && !DATE_COL.test(c) && !isNumeric(rows[0]?.[i]),
+  );
+  const PREFER_COL = /(pct|percent|share|rate|ratio|proportion)/i;
+  const numericCols = columns.filter((c, i) => !DATE_COL.test(c) && isNumeric(rows[0]?.[i]));
+  const numCol  = numericCols.find(c => PREFER_COL.test(c)) ?? numericCols[0];
+  const catCol  = catCols[0];
+  const catCol2 = catCols[1];
+  const hint    = (chartType ?? "auto").toLowerCase();
+  const isTimeLabel = catCol ? TIME_LABEL_COL.test(catCol) : false;
+
+  if (!numCol) return null;
+
+  // ── Axis format ────────────────────────────────────────────────────────────
+  const isPctCol = SHARE_COL.test(numCol);
+  const sampleVals = data.slice(0, 10).map(d => Number(d[numCol])).filter(v => !isNaN(v));
+  const maxSampleVal = Math.max(...sampleVals.map(Math.abs), 0);
+  const isPctFraction = isPctCol && maxSampleVal <= 1;
+  // Axis tick format: SI adaptive (removes trailing zeros)
+  const yFmt   = isPctFraction ? ".2%" : "~s";
+  // Data-label format: 3 significant figures SI (e.g. "2.14M", "891k" not "2.14438M")
+  // Percentages always 2 decimal places
+  const lblFmt = isPctFraction ? ".2%" : ".3s";
+
+  // ── Build spec ─────────────────────────────────────────────────────────────
+  const xTitle = catCol  ? cleanLabel(catCol)  : (dateCol ? cleanLabel(dateCol) : "");
+  const yTitle = numCol  ? cleanLabel(numCol)  : "";
+
+  let spec: VLSpec | null = null;
+  let vegaData: Record<string, unknown>[] = data;
+  let defaultH = 220;
+
+  // ── PIE / DONUT ─────────────────────────────────────────────────────────────
+  if (hint === "pie" && catCol) {
+    const agg = new Map<string, number>();
+    data.forEach(d => {
+      const k = String(d[catCol]);
+      agg.set(k, (agg.get(k) ?? 0) + Number(d[numCol]));
+    });
+    vegaData = [...agg.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([label, value]) => ({ label, value }));
+
+    spec = {
+      mark: { type: "arc", innerRadius: 44, outerRadius: 100 },
+      encoding: {
+        theta: { field: "value", type: "quantitative" },
+        color: { field: "label", type: "nominal", legend: { title: cleanLabel(catCol), orient: "right" } },
+        tooltip: [
+          { field: "label", type: "nominal",     title: cleanLabel(catCol) },
+          { field: "value", type: "quantitative", format: lblFmt, title: yTitle },
+        ],
+      },
+    };
+    defaultH = 240;
+  }
+
+  // ── STACKED BAR (temporal or categorical) ────────────────────────────────────
+  else if (hint === "stacked_bar" || (hint === "auto" && catCol && (catCol2 || dateCol))) {
+    const isTemporalStack = !!(catCol && dateCol);
+    vegaData = isTemporalStack && dateCol
+      ? data.map(d => ({
+          group: fmtTimestampLabel(String(d[dateCol])),
+          stack: String(d[catCol]),
+          val:   Number(d[numCol]),
+        }))
+      : data.map(d => ({
+          group: String(d[catCol]),
+          stack: catCol2 ? String(d[catCol2]) : "",
+          val:   Number(d[numCol]),
+        }));
+
+    const groupTotals = new Map<string, number>();
+    vegaData.forEach(d => groupTotals.set(
+      d.group as string,
+      (groupTotals.get(d.group as string) ?? 0) + (d.val as number),
+    ));
+    const groupOrder = (isTemporalStack || isTimeLabel)
+      ? [...new Set(vegaData.map(d => d.group as string))]
+      : [...groupTotals.entries()].sort((a, b) => b[1] - a[1]).map(([g]) => g);
+
+    const stackLegendTitle = isTemporalStack
+      ? cleanLabel(catCol)
+      : (catCol2 ? cleanLabel(catCol2) : null);
+
+    spec = {
+      mark: { type: "bar" },
+      encoding: {
+        x: {
+          field: "group", type: "ordinal", sort: groupOrder,
+          axis: {
+            labelAngle: groupOrder.length > 8 ? -40 : -20,
+            title: isTemporalStack ? cleanLabel(dateCol ?? "") : cleanLabel(catCol),
+          },
+        },
+        y: {
+          field: "val", type: "quantitative", stack: "zero",
+          axis: { format: yFmt, grid: true, title: yTitle },
+        },
+        color: {
+          field: "stack", type: "nominal",
+          legend: { title: stackLegendTitle },
+        },
+        tooltip: [
+          { field: "group", type: "nominal",     title: isTemporalStack ? cleanLabel(dateCol ?? "") : cleanLabel(catCol) },
+          { field: "stack", type: "nominal",     title: stackLegendTitle ?? undefined },
+          { field: "val",   type: "quantitative", format: lblFmt, title: yTitle },
+        ],
+      },
+    };
+    defaultH = 280;
+  }
+
+  // ── DATE BAR (explicit bar on date + measure, no category) ──────────────────
+  else if (dateCol && !catCol && (hint === "bar" || hint === "bar_horizontal")) {
+    vegaData = data.map(d => ({
+      date: normDateStr(String(d[dateCol])),
+      val:  Number(d[numCol]),
+    }));
+    spec = {
+      padding: { top: 24 },   // room for above-bar labels
+      layer: [
+        {
+          mark: { type: "bar", color: "#818cf8", opacity: 0.85 },
+        },
+        {
+          // Value label above each bar, inside top padding
+          mark: { type: "text", dy: -6, fontSize: 11, color: "#8296AF" },
+          encoding: { text: { field: "val", type: "quantitative", format: lblFmt } },
+        },
+      ],
+      encoding: {
+        x: {
+          field: "date", type: "temporal", timeUnit: "yearmonth",
+          axis: { format: "%b %y", labelAngle: -30, title: cleanLabel(dateCol) },
+        },
+        y: { field: "val", type: "quantitative", axis: { format: yFmt, grid: true, title: yTitle } },
+        tooltip: [
+          { field: "date", type: "temporal", timeUnit: "yearmonth", title: cleanLabel(dateCol) },
+          { field: "val",  type: "quantitative", format: lblFmt, title: yTitle },
+        ],
+      },
+    };
+    defaultH = 220;
+  }
+
+  // ── LINE / AREA (timeseries) ─────────────────────────────────────────────────
+  else if (dateCol && !catCol && (hint === "line" || hint === "area" || hint === "auto")) {
+    vegaData = data.map(d => ({
+      ...d,
+      [dateCol]: normDateStr(String(d[dateCol])),
+      [numCol]:  Number(d[numCol]),
+    }));
+    const color = "#10b981";
+    spec = {
+      layer: [
+        { mark: { type: "area", color, opacity: 0.08 } },
+        { mark: { type: "line", color, strokeWidth: 1.5 } },
+        {
+          mark: { type: "point", color, size: 30, filled: true, opacity: 0.9 },
+          encoding: {
+            tooltip: [
+              { field: dateCol, type: "temporal",     title: cleanLabel(dateCol) },
+              { field: numCol,  type: "quantitative", format: lblFmt, title: yTitle },
+            ],
+          },
+        },
+      ],
+      encoding: {
+        x: {
+          field: dateCol, type: "temporal",
+          axis: { format: "%b %y", labelAngle: -30, title: cleanLabel(dateCol) },
+        },
+        y: {
+          field: numCol, type: "quantitative",
+          axis: { format: yFmt, grid: true, title: yTitle },
+        },
+      },
+      resolve: { scale: { y: "shared" } },
+    };
+    defaultH = 200;
+  }
+
+  // ── VERTICAL BAR ─────────────────────────────────────────────────────────────
+  else if (catCol && hint === "bar_vertical") {
+    const agg = new Map<string, number>();
+    data.forEach(d => {
+      const k = String(d[catCol]);
+      agg.set(k, (agg.get(k) ?? 0) + Number(d[numCol]));
+    });
+    vegaData = (isTimeLabel
+      ? [...agg.entries()]
+      : [...agg.entries()].sort((a, b) => b[1] - a[1])
+    ).map(([cat, val]) => ({ cat, val }));
+
+    spec = {
+      padding: { top: 24 },   // room for above-bar labels
+      layer: [
+        {
+          mark: { type: "bar", color: "#818cf8", opacity: 0.85, cornerRadiusEnd: 2 },
+        },
+        {
+          mark: { type: "text", dy: -6, fontSize: 11, color: "#8296AF" },
+          encoding: { text: { field: "val", type: "quantitative", format: lblFmt } },
+        },
+      ],
+      encoding: {
+        x: {
+          field: "cat", type: "ordinal",
+          sort: isTimeLabel ? null : { field: "val", order: "descending" },
+          axis: { labelAngle: vegaData.length > 10 ? -40 : -20, title: xTitle },
+        },
+        y: {
+          field: "val", type: "quantitative",
+          axis: { format: yFmt, grid: true, title: yTitle },
+        },
+        tooltip: [
+          { field: "cat", type: "nominal",     title: xTitle },
+          { field: "val", type: "quantitative", format: lblFmt, title: yTitle },
+        ],
+      },
+    };
+    defaultH = 260;
+  }
+
+  // ── SCATTER ──────────────────────────────────────────────────────────────────
+  else if (hint === "scatter" && numericCols.length >= 2) {
+    const xNum = numericCols[0];
+    const yNum = numericCols[1];
+    const colorField = catCol || undefined;
+    spec = {
+      mark: { type: "point", filled: true, size: 40, opacity: 0.7 },
+      encoding: {
+        x: {
+          field: xNum, type: "quantitative",
+          axis: { format: "~s", grid: true, title: cleanLabel(xNum) },
+        },
+        y: {
+          field: yNum, type: "quantitative",
+          axis: { format: "~s", grid: true, title: cleanLabel(yNum) },
+        },
+        ...(colorField ? { color: { field: colorField, type: "nominal", legend: { title: cleanLabel(colorField) } } } : {}),
+        tooltip: [
+          { field: xNum, type: "quantitative", format: ",.2~f", title: cleanLabel(xNum) },
+          { field: yNum, type: "quantitative", format: ",.2~f", title: cleanLabel(yNum) },
+          ...(colorField ? [{ field: colorField, type: "nominal", title: cleanLabel(colorField) }] : []),
+        ],
+      },
+    };
+    defaultH = 300;
+  }
+
+  // ── HORIZONTAL BAR — default for all categorical data ────────────────────────
+  else if (catCol) {
+    const agg = new Map<string, number>();
+    data.forEach(d => {
+      const k = String(d[catCol]);
+      agg.set(k, (agg.get(k) ?? 0) + Number(d[numCol]));
+    });
+    vegaData = (isTimeLabel
+      ? [...agg.entries()]
+      : [...agg.entries()].sort((a, b) => b[1] - a[1])
+    ).map(([cat, val]) => ({ cat, val }));
+
+    // cap at 15 bars
+    if (vegaData.length > 15) vegaData = vegaData.slice(0, 15);
+
+    // Extend x domain 14% past the max so the label of the widest bar has room.
+    // No per-layer filter transforms — those break Vega-Lite's sort computation.
+    const maxBarVal = Math.max(...vegaData.map(d => d.val as number), 1);
+
+    spec = {
+      layer: [
+        {
+          mark: { type: "bar", color: "#818cf8", opacity: 0.85, cornerRadiusEnd: 2 },
+        },
+        // Single text layer — always positioned just past the bar's right edge.
+        // Extended domainMax ensures the widest bar's label stays within bounds.
+        {
+          mark: { type: "text", align: "left", dx: 5, fontSize: 11, color: "#8296AF" },
+          encoding: { text: { field: "val", type: "quantitative", format: lblFmt } },
+        },
+      ],
+      encoding: {
+        y: {
+          field: "cat", type: "ordinal",
+          sort: isTimeLabel ? null : { field: "val", order: "descending" },
+          axis: { labelLimit: 160, title: cleanLabel(catCol) },
+        },
+        x: {
+          field: "val", type: "quantitative",
+          scale: { domainMax: maxBarVal * 1.14 },
+          axis: { format: yFmt, grid: true, title: yTitle },
+        },
+        tooltip: [
+          { field: "cat", type: "nominal",     title: xTitle },
+          { field: "val", type: "quantitative", format: lblFmt, title: yTitle },
+        ],
+      },
+    };
+    defaultH = Math.max(120, vegaData.length * 28 + 60);
+  }
+
+  if (!spec) return null;
+
+  // Cap chart height to ~60% of typical panel height unless user has dragged or expanded
+  const CLIP_H  = 400;
+  const isLong  = defaultH > CLIP_H && !userH;
+  const chartH  = userH ?? (expanded ? defaultH : Math.min(defaultH, CLIP_H));
+
   return (
-    <div className="mt-2 w-full relative group/chart">
-      {/* PNG download — top-right, appears on hover */}
-      <button
-        onClick={handleDownloadPng}
-        title="Download chart as PNG"
-        className="absolute top-0 right-0 z-10 opacity-0 group-hover/chart:opacity-100 transition-opacity w-7 h-7 flex items-center justify-center rounded-md bg-zinc-800/90 hover:bg-zinc-700 text-zinc-500 hover:text-zinc-200"
-      >
-        <DownloadIcon label="Download chart as PNG" size="small" />
-      </button>
-      <div
-        ref={outerRef}
-        className="overflow-x-auto overflow-y-hidden"
-        style={{ maxHeight: userH ? "none" : "380px" }}
-      >
-        <div ref={innerRef} />
+    <div className="mt-2 w-full group/chart">
+      {/* Header row: download button appears on hover, sits above the chart */}
+      <div className="flex justify-end h-6 mb-0.5 opacity-0 group-hover/chart:opacity-100 transition-opacity">
+        <button
+          onClick={handleDownloadPng}
+          title="Download chart as PNG"
+          className="w-6 h-6 flex items-center justify-center rounded bg-zinc-800/80 hover:bg-zinc-700 text-zinc-500 hover:text-zinc-200 transition-colors"
+        >
+          <DownloadIcon label="Download chart as PNG" size="small" />
+        </button>
       </div>
+
+      {/* Chart — no overflow:hidden so axes are never clipped */}
+      <div ref={outerRef}>
+        <div ref={chartRef}>
+          <VegaChart spec={spec} data={vegaData} height={chartH} />
+        </div>
+      </div>
+
+      {/* Expand / Collapse when chart is taller than CLIP_H */}
+      {isLong && (
+        <button
+          onClick={() => setExpanded(e => !e)}
+          className="mt-1 flex items-center gap-1 text-[11px] text-zinc-600 hover:text-zinc-300 transition-colors"
+        >
+          <span style={{ display: "inline-flex", transform: expanded ? "rotate(180deg)" : "none", transition: "transform .2s" }}>
+            <ChevronDownIcon label="" size="small" />
+          </span>
+          {expanded ? "Collapse chart" : "Show full chart"}
+        </button>
+      )}
+
+      {/* Drag-to-resize handle */}
       <div
         onMouseDown={startDrag}
         className="flex items-center justify-center h-3 cursor-ns-resize group/drag"
@@ -876,7 +762,7 @@ function ResultBody({
         <KPICards columns={columns} rows={rows} />
       ) : showChart ? (
         /* Chart card — source panel is a top-level drawer in ChatPanel, not inlined here */
-        <div className="mt-2 rounded-xl border border-zinc-700/50 overflow-hidden p-3" style={{ background: "#131c27" }}>
+        <div className="mt-2 rounded-md border border-zinc-700/50 overflow-hidden p-3" style={{ background: 'var(--bg-3)' }}>
           {/* Summary above the chart so it's seen first */}
           {summary && (
             <p className="text-[12px] italic text-zinc-400 mb-2 leading-relaxed">{summary}</p>
@@ -1023,7 +909,7 @@ export function SourcePanel({
               {columns.map((c, ci) => (
                 <th key={ci} className="px-3 py-1.5 text-left text-zinc-400 whitespace-nowrap font-medium">
                   <div className="flex items-center gap-1">
-                    <span className="text-zinc-600 font-mono text-[10px] select-none">
+                    <span className="text-zinc-600 font-mono text-[11px] select-none">
                       {isNumeric(rows[0]?.[ci]) ? "1.2" : "Ac"}
                     </span>
                     {cleanLabel(c)}
@@ -1181,7 +1067,7 @@ export function ChatMessage({
     if (!isInvestigate) return "Thinking…";
     switch (turn.queryMode) {
       case "direct":  return "Running query…";
-      case "explore": return "Exploring…";
+      case "explore": return "Investigating…";
       default:        return "Investigating…";
     }
   }
@@ -1203,7 +1089,7 @@ export function ChatMessage({
             </button>
           )}
           <div
-            className="px-3 py-2 rounded-xl text-[12px] font-semibold text-white leading-snug"
+            className="px-3 py-2 rounded-md text-[12px] font-semibold text-white leading-snug"
             style={{ background: isInvestigate ? "#633D96" : "#05355D" }}
           >
             {turn.question}

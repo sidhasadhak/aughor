@@ -5,6 +5,9 @@ import {
   getConnections, getSchemaRich, getMetrics, runDirectQuery,
   type Connection, type SchemaColumn, type SchemaJoin, type Metric, type DirectQueryResult,
 } from "@/lib/api";
+import { InvestigationChart } from "@/components/InvestigationChart";
+import { ChartWrapper }       from "@/components/charts/ChartWrapper";
+import { inferChartType, type ChartType } from "@/components/charts/chartTypeInference";
 
 // ── Aggregation catalogue ─────────────────────────────────────────────────────
 
@@ -302,35 +305,93 @@ function AcDropdown({ items, active, setActive, onSelect, onClose, pos }: {
   );
 }
 
-function ResultsTable({ result }: { result: DirectQueryResult }) {
-  if (result.error) return (
-    <div className="p-4 rounded-md border border-red-500/20 bg-red-500/5">
-      <p className="text-[12px] font-mono text-red-400 whitespace-pre-wrap">{result.error}</p>
-    </div>
-  );
-  if (!result.columns.length) return <p className="text-sm text-zinc-500 italic py-4">Query returned no rows.</p>;
+function ResultsPane({ result }: { result: DirectQueryResult }) {
+  const [view, setView] = useState<"chart" | "table">("chart");
+
+  if (result.error) {
+    return (
+      <ChartWrapper error={result.error} empty={false}>
+        <></>
+      </ChartWrapper>
+    );
+  }
+
+  if (!result.columns.length) {
+    return (
+      <ChartWrapper empty emptyMessage="Query returned no rows.">
+        <></>
+      </ChartWrapper>
+    );
+  }
+
+  const rows = result.rows as unknown[][];
+  const chartable = inferChartType(result.columns, rows);
+
+  const meta = [
+    `${result.row_count ?? result.rows.length} rows`,
+    result.duration_ms != null ? `${result.duration_ms}ms` : null,
+    result.cached ? "cached" : null,
+  ].filter(Boolean).join(" · ");
+
   return (
-    <div className="overflow-auto rounded-md border border-zinc-700/60">
-      <table className="min-w-full text-[12px] font-mono">
-        <thead>
-          <tr className="bg-zinc-800/70">
-            {result.columns.map((c,i) => (
-              <th key={i} className="text-left px-4 py-2.5 text-zinc-400 font-semibold border-b border-zinc-700/50 whitespace-nowrap">{c}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {result.rows.map((row,ri) => (
-            <tr key={ri} className={ri%2 ? "bg-zinc-800/20" : ""}>
-              {row.map((cell,ci) => (
-                <td key={ci} title={cell} className="px-4 py-2 text-zinc-300 border-b border-zinc-700/20 whitespace-nowrap max-w-[240px] truncate">
-                  {cell === "NULL" ? <span className="text-zinc-600">null</span> : cell}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="flex flex-col gap-3">
+      {/* View toggle */}
+      {chartable && (
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setView("chart")}
+            className={`text-[11px] px-2 py-0.5 rounded border transition-colors ${view === "chart" ? "border-blue-500/40 bg-blue-500/10 text-blue-300" : "border-zinc-700 text-zinc-500 hover:text-zinc-300"}`}
+          >
+            ◈ Chart
+          </button>
+          <button
+            onClick={() => setView("table")}
+            className={`text-[11px] px-2 py-0.5 rounded border transition-colors ${view === "table" ? "border-blue-500/40 bg-blue-500/10 text-blue-300" : "border-zinc-700 text-zinc-500 hover:text-zinc-300"}`}
+          >
+            ≡ Table
+          </button>
+          <span className="text-[11px] ml-auto" style={{ color: "var(--t3)" }}>{meta}</span>
+        </div>
+      )}
+
+      {/* Chart */}
+      {view === "chart" && chartable && (
+        <InvestigationChart columns={result.columns} rows={rows} />
+      )}
+
+      {/* Table — always shown when chart is off, or as fallback */}
+      {(view === "table" || !chartable) && (
+        <>
+          {!chartable && (
+            <span className="text-[11px] text-right" style={{ color: "var(--t3)" }}>{meta}</span>
+          )}
+          <div className="overflow-auto rounded-md border border-zinc-700/60">
+            <table className="min-w-full text-[12px] font-mono">
+              <thead>
+                <tr className="bg-zinc-800/70">
+                  {result.columns.map((c, i) => (
+                    <th key={i} className="text-left px-4 py-2.5 text-zinc-400 font-semibold border-b border-zinc-700/50 whitespace-nowrap">{c}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {result.rows.map((row, ri) => {
+                  const cells = row as string[];
+                  return (
+                    <tr key={ri} className={ri % 2 ? "bg-zinc-800/20" : ""}>
+                      {cells.map((cell, ci) => (
+                        <td key={ci} title={String(cell)} className="px-4 py-2 text-zinc-300 border-b border-zinc-700/20 whitespace-nowrap max-w-[240px] truncate">
+                          {cell === null || cell === "NULL" ? <span className="text-zinc-600">null</span> : String(cell)}
+                        </td>
+                      ))}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -969,7 +1030,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                       <p className="text-[12px] font-mono text-red-400">{runError}</p>
                     </div>
                   )}
-                  {result && !running && <ResultsTable result={result} />}
+                  {result && !running && <ResultsPane result={result} />}
                 </div>
               )}
               {!result && !running && !runError && (
