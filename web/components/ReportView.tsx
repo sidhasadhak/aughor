@@ -90,7 +90,7 @@ function StatCallout({ stat }: { stat: StatResult }) {
       <div className="min-w-0 space-y-0.5">
         <p className="text-xs leading-snug">{stat.interpretation}</p>
         {stat.sigma != null && (
-          <p className="text-[10px] text-zinc-500 font-mono">
+          <p className="text-[11px] text-zinc-500 font-mono">
             {stat.sigma.toFixed(1)}σ{stat.p_value != null ? ` · p=${stat.p_value.toFixed(3)}` : ""}
           </p>
         )}
@@ -112,7 +112,7 @@ function QueryMiniTable({ columns, rows }: { columns: string[]; rows: unknown[][
           <thead className="sticky top-0 bg-zinc-800 border-b border-violet-500/20">
             <tr>
               {columns.map(col => (
-                <th key={col} className="px-3 py-1.5 text-left text-[10px] text-violet-300/70 uppercase tracking-wide font-mono whitespace-nowrap">
+                <th key={col} className="px-3 py-1.5 text-left text-[11px] text-violet-300/70 uppercase tracking-wide font-mono whitespace-nowrap">
                   {col.replace(/_/g, " ")}
                 </th>
               ))}
@@ -135,7 +135,7 @@ function QueryMiniTable({ columns, rows }: { columns: string[]; rows: unknown[][
         </table>
       </div>
       {rows.length > MAX_ROWS && (
-        <div className="px-3 py-1.5 border-t border-zinc-600/60 text-[10px] text-zinc-500 font-mono">
+        <div className="px-3 py-1.5 border-t border-zinc-600/60 text-[11px] text-zinc-500 font-mono">
           +{rows.length - MAX_ROWS} more rows
         </div>
       )}
@@ -162,12 +162,12 @@ function QueryEvidence({
     <div className="p-4 space-y-3">
       {/* Query header */}
       <div className="flex items-center gap-2.5">
-        <span className="text-[10px] text-zinc-500 font-mono uppercase tracking-wide">
+        <span className="text-[11px] text-zinc-500 font-mono uppercase tracking-wide">
           Query {index + 1}/{total}
         </span>
         {query.error
           ? <span className="text-xs text-red-400 border border-red-500/20 bg-red-500/5 rounded px-1.5 py-0.5">✕ failed</span>
-          : <span className="text-[10px] text-zinc-500 font-mono">{query.row_count} row{query.row_count !== 1 ? "s" : ""}</span>
+          : <span className="text-[11px] text-zinc-500 font-mono">{query.row_count} row{query.row_count !== 1 ? "s" : ""}</span>
         }
       </div>
 
@@ -199,7 +199,7 @@ function QueryEvidence({
       <div>
         <button
           onClick={() => setSqlOpen(o => !o)}
-          className="flex items-center gap-1.5 text-[10px] text-zinc-500 hover:text-zinc-400 transition font-mono uppercase tracking-wide"
+          className="flex items-center gap-1.5 text-[11px] text-zinc-500 hover:text-zinc-400 transition font-mono uppercase tracking-wide"
         >
           <span className="text-[8px]">{sqlOpen ? "▼" : "▶"}</span> SQL
         </button>
@@ -250,13 +250,13 @@ function HypothesisAccordion({
 
           {/* Verdict + confidence + toggle */}
           <div className="flex items-center gap-2 shrink-0 ml-2">
-            <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded border ${vc.chip}`}>
+            <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded border ${vc.chip}`}>
               {vc.label}
             </span>
-            <span className="text-[10px] font-mono text-zinc-500 w-8 text-right">
+            <span className="text-[11px] font-mono text-zinc-500 w-8 text-right">
               {Math.round(hypothesis.confidence * 100)}%
             </span>
-            <span className="text-zinc-500 text-[10px] group-hover:text-zinc-400 transition">
+            <span className="text-zinc-500 text-[11px] group-hover:text-zinc-400 transition">
               {open ? "▲" : "▼"}
             </span>
           </div>
@@ -277,7 +277,7 @@ function HypothesisAccordion({
 
           {/* 1. Key finding */}
           <div className="px-4 py-3 space-y-1.5">
-            <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-mono">Key Finding</p>
+            <p className="text-[11px] text-zinc-500 uppercase tracking-widest font-mono">Key Finding</p>
             <p className="text-sm text-zinc-200 leading-relaxed">
               {hypothesis.key_finding || "No finding recorded for this hypothesis."}
             </p>
@@ -299,9 +299,9 @@ function HypothesisAccordion({
           {/* 3. Synthesis link — if the final report references this hypothesis */}
           {linkedFinding && (
             <div className="px-4 py-3 space-y-2">
-              <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-mono">Report Synthesis</p>
+              <p className="text-[11px] text-zinc-500 uppercase tracking-widest font-mono">Report Synthesis</p>
               <blockquote className="border-l-2 border-emerald-500/40 pl-3 space-y-1">
-                <p className="text-sm text-zinc-200 leading-relaxed italic">"{linkedFinding.claim}"</p>
+                <p className="text-sm text-zinc-200 leading-relaxed italic">&quot;{linkedFinding.claim}&quot;</p>
                 {linkedFinding.evidence && (
                   <p className="text-xs text-zinc-500 leading-relaxed">{linkedFinding.evidence}</p>
                 )}
@@ -344,7 +344,7 @@ function HypothesisPanel({
         <h3 className="text-sm font-semibold text-zinc-300 uppercase tracking-wide">
           Hypotheses Tested
         </h3>
-        <div className="flex items-center gap-2 text-[10px] font-mono">
+        <div className="flex items-center gap-2 text-[11px] font-mono">
           {confirmed > 0 && <span className="text-emerald-400">{confirmed} confirmed</span>}
           {confirmed > 0 && refuted > 0 && <span className="text-zinc-500">·</span>}
           {refuted > 0 && <span className="text-red-400">{refuted} refuted</span>}
@@ -429,13 +429,13 @@ function KeyFindingCard({
                   style={{ width: `${finding.confidence * 100}%` }}
                 />
               </div>
-              <span className="text-[10px] font-mono text-zinc-500">
+              <span className="text-[11px] font-mono text-zinc-500">
                 {Math.round(finding.confidence * 100)}%
               </span>
             </div>
             {/* Hypothesis chip */}
             {palette && hypothesisIndex >= 0 && (
-              <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded border ${palette.badge}`}>
+              <span className={`text-[11px] font-mono px-1.5 py-0.5 rounded border ${palette.badge}`}>
                 H{hypothesisIndex + 1}
               </span>
             )}
@@ -446,7 +446,7 @@ function KeyFindingCard({
         {finding.evidence && (
           <button
             onClick={() => setOpen(o => !o)}
-            className="shrink-0 text-[10px] text-zinc-500 hover:text-zinc-400 border border-zinc-600 hover:border-zinc-600 rounded px-2 py-1 transition mt-0.5"
+            className="shrink-0 text-[11px] text-zinc-500 hover:text-zinc-400 border border-zinc-600 hover:border-zinc-600 rounded px-2 py-1 transition mt-0.5"
           >
             {open ? "Less" : "Evidence"}
           </button>
@@ -457,11 +457,11 @@ function KeyFindingCard({
       {open && finding.evidence && (
         <div className="px-4 pb-4 pt-0">
           <div className="rounded border border-zinc-600/60 bg-zinc-800/50 p-3 space-y-1.5">
-            <p className="text-[10px] text-zinc-500 uppercase tracking-widest font-mono">Supporting Evidence</p>
+            <p className="text-[11px] text-zinc-500 uppercase tracking-widest font-mono">Supporting Evidence</p>
             <p className="text-sm text-zinc-300 leading-relaxed">{finding.evidence}</p>
             {linkedHypothesis && (
               <p className="text-xs text-zinc-500 mt-1 pt-1.5 border-t border-zinc-600">
-                From hypothesis: <span className="text-zinc-400 italic">"{linkedHypothesis.description}"</span>
+                From hypothesis: <span className="text-zinc-400 italic">&quot;{linkedHypothesis.description}&quot;</span>
               </p>
             )}
           </div>
@@ -520,12 +520,12 @@ function RecommendationCard({
       <div className="shrink-0 relative">
         {current ? (
           <div className="flex items-center gap-1.5">
-            <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded border ${current.chip}`}>
+            <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded border ${current.chip}`}>
               {current.label}
             </span>
             <button
               onClick={() => setMenuOpen(o => !o)}
-              className="text-[10px] text-zinc-500 hover:text-zinc-400 transition px-1"
+              className="text-[11px] text-zinc-500 hover:text-zinc-400 transition px-1"
               title="Change status"
             >
               ▾
@@ -535,7 +535,7 @@ function RecommendationCard({
           <button
             onClick={() => setMenuOpen(o => !o)}
             disabled={saving}
-            className="text-[10px] text-zinc-500 hover:text-zinc-300 border border-zinc-600 hover:border-zinc-500 rounded px-2 py-1 transition whitespace-nowrap"
+            className="text-[11px] text-zinc-500 hover:text-zinc-300 border border-zinc-600 hover:border-zinc-500 rounded px-2 py-1 transition whitespace-nowrap"
           >
             {saving ? "…" : "Mark"}
           </button>

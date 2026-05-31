@@ -194,7 +194,7 @@ export function CatalogPanel({ connectionId, onChatWithTable }: Props) {
                       <p className="table-name-text text-[13px] font-medium font-mono transition-colors" style={{ color: "#c8c7c3" }}>
                         {table.name}
                       </p>
-                      <p className="text-[10.5px] font-mono mt-0.5" style={{ color: "#3e3f47" }}>
+                      <p className="text-[11px] font-mono mt-0.5" style={{ color: "#3e3f47" }}>
                         {table.columns.length} columns · {fmtRows(table.row_count)} rows
                       </p>
                     </div>
@@ -221,7 +221,7 @@ export function CatalogPanel({ connectionId, onChatWithTable }: Props) {
                     {onChatWithTable && (
                       <button
                         onClick={e => { e.stopPropagation(); onChatWithTable(table.name, selectedConn); }}
-                        className="shrink-0 flex items-center gap-1 text-[10.5px] px-2.5 py-1 rounded-[4px] transition-all"
+                        className="shrink-0 flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-[4px] transition-all"
                         style={{ border: "0.5px solid #2a3050", background: "#0d1525", color: "#4a6aaa" }}
                         onMouseEnter={e => { e.currentTarget.style.borderColor = "#3d6bff"; e.currentTarget.style.color = "#7ba8f7"; }}
                         onMouseLeave={e => { e.currentTarget.style.borderColor = "#2a3050"; e.currentTarget.style.color = "#4a6aaa"; }}
@@ -254,8 +254,8 @@ export function CatalogPanel({ connectionId, onChatWithTable }: Props) {
                           onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
                         >
                           <span className="text-[11.5px] font-mono" style={{ color: "#9a9ba4" }}>{col.name}</span>
-                          <span className="text-[10.5px] font-mono" style={{ color: typeColor(col.type) }}>{col.type}</span>
-                          <span className="text-[10px] font-mono" style={{ color: col.is_fk ? "#3d6bff" : "#3e3f47" }}>
+                          <span className="text-[11px] font-mono" style={{ color: typeColor(col.type) }}>{col.type}</span>
+                          <span className="text-[11px] font-mono" style={{ color: col.is_fk ? "#3d6bff" : "#3e3f47" }}>
                             {col.is_fk ? "FK" : "—"}
                           </span>
                         </div>

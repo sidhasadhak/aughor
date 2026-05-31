@@ -87,7 +87,7 @@ def list_connections() -> list[dict]:
             "name": "Sample Catalog",
             "conn_type": "duckdb",
             "dsn_preview": str(samples_path),
-            "schema_name": None,  # exposes multiple schemas
+            "schema_name": "ecommerce",  # all sample tables live in this schema
             "meta": {"builtin_samples": True},
             "builtin": True,
         })
@@ -144,7 +144,7 @@ def add_connection(name: str, conn_type: str, dsn: str, meta: dict | None = None
 def get_meta(conn_id: str) -> dict:
     """Return the metadata dict stored for a connection (e.g. schema_name)."""
     if conn_id == SAMPLES_ID:
-        return {"builtin_samples": True}
+        return {"builtin_samples": True, "schema_name": "ecommerce"}
     if conn_id in (BUILTIN_ID, POSTGRES_BUILTIN_ID):
         # Builtins store settings in the settings file
         return _load_settings().get(conn_id, {})
@@ -236,8 +236,5 @@ def delete_connection(conn_id: str) -> None:
 
 
 def _dsn_preview(conn_type: str) -> str:
-    previews = {
-        "postgres": "postgresql://***",
-        "duckdb":   "*.duckdb",
-    }
-    return previews.get(conn_type, conn_type)
+    from aughor.connectors.registry import DSN_PREVIEWS
+    return DSN_PREVIEWS.get(conn_type, conn_type)

@@ -241,6 +241,36 @@ export interface Metric {
   critical_threshold: number | null;
   target_period: string | null;
   benchmark_source: string | null;
+  // Governance fields (M21)
+  owner: string | null;
+  freshness_sla: string | null;
+  freshness_check_sql: string | null;
+  quality_tests: string[];
+  lineage: string[];
+  wrong_usage_examples: string[];
+  approved_by: string | null;
+  approved_at: string | null;
+}
+
+export interface QualityTestResult {
+  test_sql: string;
+  passed: boolean;
+  error: string | null;
+}
+
+export interface MetricValidationResult {
+  metric: string;
+  passed: boolean;
+  results: QualityTestResult[];
+  message: string;
+}
+
+export interface MetricFreshnessResult {
+  metric: string;
+  latest_data_at: string | null;
+  sla: string | null;
+  ok: boolean;
+  message: string;
 }
 
 export type HealthStatus = "green" | "yellow" | "red" | "unknown";
@@ -297,6 +327,29 @@ export async function updateMetric(name: string, m: Metric): Promise<Metric> {
 
 export async function deleteMetric(name: string): Promise<void> {
   await fetch(`${BASE}/metrics/${encodeURIComponent(name)}`, { method: "DELETE" });
+}
+
+export async function validateMetric(name: string, connId: string): Promise<MetricValidationResult> {
+  const res = await fetch(
+    `${BASE}/metrics/${encodeURIComponent(name)}/validate?conn_id=${encodeURIComponent(connId)}`,
+    { method: "POST" },
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "Validation failed");
+  }
+  return res.json();
+}
+
+export async function getMetricFreshness(name: string, connId: string): Promise<MetricFreshnessResult> {
+  const res = await fetch(
+    `${BASE}/metrics/${encodeURIComponent(name)}/freshness?conn_id=${encodeURIComponent(connId)}`,
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "Freshness check failed");
+  }
+  return res.json();
 }
 
 // ── Ontology ──────────────────────────────────────────────────────────────────
@@ -1182,5 +1235,126 @@ export async function acknowledgeAlert(alertId: string): Promise<MonitorAlert> {
 export async function getDigest(connId: string, period: "week" | "day" = "week"): Promise<DigestResult> {
   const res = await fetch(`${BASE}/monitors/digest?conn_id=${connId}&period=${period}`);
   if (!res.ok) throw new Error("Failed to fetch digest");
+  return res.json();
+}
+
+// ── Org Intelligence ──────────────────────────────────────────────────────────
+
+export interface OrgInsight {
+  id: string;
+  insight_id: string;
+  canvas_id: string;
+  text: string;
+  domain: string;
+  angle: string;
+  novelty: number;
+  promoted_by: string;
+  promoted_at: string;
+}
+
+export async function getOrgIntelligence(): Promise<OrgInsight[]> {
+  const res = await fetch(`${BASE}/org-intelligence`);
+  if (!res.ok) throw new Error("Failed to fetch org intelligence");
+  return res.json();
+}
+
+export async function deleteOrgInsight(id: string): Promise<{ ok: boolean }> {
+  const res = await fetch(`${BASE}/org-intelligence/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to delete org insight");
+  return res.json();
+}
+
+// ── Schema Shape (M23b) ───────────────────────────────────────────────────────
+
+export interface TableProfileData {
+  table: string;
+  row_count: number;
+  grain_column: string | null;
+  grain_verified: boolean;
+  primary_timestamp: string | null;
+  date_range: [string, string] | null;
+  freshness_lag_hours: number | null;
+  computed_at: string;
+}
+
+export interface ColumnProfileData {
+  table: string;
+  column: string;
+  dtype: string;
+  semantic_type: string;
+  null_rate: number;
+  distinct_count: number;
+  is_low_cardinality: boolean;
+  value_range: [string | number, string | number] | null;
+  top_values: string[] | null;
+  is_fk: boolean;
+}
+
+export interface SchemaProfile {
+  available: boolean;
+  tables: TableProfileData[];
+  columns: ColumnProfileData[];
+}
+
+export async function getSchemaProfile(connectionId: string): Promise<SchemaProfile> {
+  const res = await fetch(`${BASE}/connections/${encodeURIComponent(connectionId)}/schema/profile`);
+  if (!res.ok) throw new Error("Failed to fetch schema profile");
+  return res.json();
+}
+
+// ── Pattern Library (M23c) ────────────────────────────────────────────────────
+
+export interface Pattern {
+  id: string;
+  type: "angle" | "entity" | "convergence";
+  title: string;
+  description: string;
+  domains: string[];
+  evidence_count: number;
+  novelty: number;
+  entities: string[];
+  angles?: string[];
+  high_novelty_count?: number;
+  example_findings: string[];
+  computed_at: string;
+}
+
+export interface PatternsResponse {
+  patterns: Pattern[];
+  count: number;
+}
+
+export async function getPatterns(connectionId: string, refresh = false): Promise<PatternsResponse> {
+  const url = `${BASE}/exploration/${encodeURIComponent(connectionId)}/patterns${refresh ? "?refresh=true" : ""}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("Failed to fetch patterns");
+  return res.json();
+}
+
+// ── Briefing Narrative (M24b) ─────────────────────────────────────────────────
+
+export interface BriefingCitation {
+  ref: string;          // "1", "2", "3" — matches [N] in narrative text
+  insight_id: string;
+  domain: string;
+  angle: string;
+  finding: string;
+}
+
+export interface BriefingNarrativeResponse {
+  narrative: string;
+  headline_theme: string;
+  citations: BriefingCitation[];
+  generated_at: string | null;
+  available: boolean;
+}
+
+export async function generateBriefingNarrative(
+  connectionId: string,
+  refresh = false,
+): Promise<BriefingNarrativeResponse> {
+  const url = `${BASE}/exploration/${encodeURIComponent(connectionId)}/briefing${refresh ? "?refresh=true" : ""}`;
+  const res = await fetch(url, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to generate briefing narrative");
   return res.json();
 }

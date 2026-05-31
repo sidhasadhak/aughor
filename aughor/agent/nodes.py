@@ -27,7 +27,6 @@ from aughor.agent.state import (
     EvidenceScore,
     Hypothesis,
     Pitfall,
-    QueryPlan,
     QueryPlanV2,
     QueryResult,
     ReplanDecision,
@@ -51,12 +50,14 @@ _CONSISTENCY_ENABLED = __import__("os").getenv("AUGHOR_CONSISTENCY_CHECK", "true
 from aughor.llm.provider import get_provider
 from aughor.tools.executor import format_result_for_llm
 from aughor.tools.stats import analyze_query_result, StatResult as _StatResult
+from aughor import telemetry as _telemetry
 
 MAX_ITER = int(__import__("os").getenv("AUGHOR_MAX_ITER", "6"))
 
 
 # ── Node: route_question ─────────────────────────────────────────────────────
 
+@_telemetry.node_span("route_question")
 def route_question(state: AgentState) -> dict[str, Any]:
     llm = get_provider("coder")
     decision: RouteDecision = llm.complete(
@@ -257,6 +258,7 @@ def exploratory_scan(state: AgentState, conn: "DatabaseConnection") -> dict[str,
 
 # ── Node: decompose_question ─────────────────────────────────────────────────
 
+@_telemetry.node_span("decompose")
 def decompose_question(state: AgentState) -> dict[str, Any]:
     from aughor.tools.prior_analyses import search_prior_investigations
     from aughor.semantic.kb_retriever import retrieve_for_decompose
@@ -274,11 +276,21 @@ def decompose_question(state: AgentState) -> dict[str, Any]:
         if scan_context else ""
     )
 
+    # Inject exploration findings (null semantics, lifecycles, cross-table insights)
+    exploration_section = ""
+    try:
+        from aughor.explorer.store import render_exploration_annotations
+        _ea = render_exploration_annotations(state.get("connection_id", ""))
+        if _ea:
+            exploration_section = f"EXPLORATION FINDINGS (background schema analysis):\n{_ea}\n\n"
+    except Exception:
+        pass
+
     rules_block = get_rules_block()
     llm = get_provider("coder")
     output: DecomposeOutput = llm.complete(
         system="You are a senior data analyst. Decompose the question into testable hypotheses.",
-        user=rules_block + DECOMPOSE_PROMPT.format(
+        user=rules_block + exploration_section + DECOMPOSE_PROMPT.format(
             question=state["question"],
             schema=state["schema_context"],
             kb_domain_section=kb_domain,
@@ -297,6 +309,7 @@ def decompose_question(state: AgentState) -> dict[str, Any]:
 
 # ── Node: plan_queries ────────────────────────────────────────────────────────
 
+@_telemetry.node_span("plan_queries")
 def plan_queries(state: AgentState) -> dict[str, Any]:
     """LLM planning call — decides WHAT to measure, produces QueryPlanV2 (no SQL)."""
     hypotheses = state["hypotheses"]
@@ -323,11 +336,21 @@ def plan_queries(state: AgentState) -> dict[str, Any]:
     raw_events = state.get("events_context") or ""
     events_section = f"{raw_events}\n" if raw_events else ""
 
+    # Inject causal context from prior verified investigations
+    causal_section = ""
+    try:
+        from aughor.process.causal import build_causal_context_section
+        _cc = build_causal_context_section(h.description, conn_id=state.get("connection_id"))
+        if _cc:
+            causal_section = _cc + "\n"
+    except Exception:
+        pass
+
     rules_block = get_rules_block()
     llm = get_provider("coder")
     plan: QueryPlanV2 = llm.complete(
         system="You are a senior data analyst planning how to test a hypothesis. Do NOT write SQL.",
-        user=rules_block + PLAN_QUERIES_PROMPT.format(
+        user=rules_block + causal_section + PLAN_QUERIES_PROMPT.format(
             hypothesis_id=h.id,
             hypothesis_description=h.description,
             schema=schema_for_hypothesis,
@@ -345,6 +368,7 @@ def plan_queries(state: AgentState) -> dict[str, Any]:
 
 # ── Node: execute_planned_queries ─────────────────────────────────────────────
 
+@_telemetry.node_span("execute_planned_queries")
 def execute_planned_queries(state: AgentState, conn: "DatabaseConnection") -> dict[str, Any]:
     """Translates each QueryIntent from current_plan into SQL, then executes with self-correction."""
     hypotheses = state["hypotheses"]
@@ -454,6 +478,16 @@ def execute_planned_queries(state: AgentState, conn: "DatabaseConnection") -> di
                 diagnosis = f"{diagnosis}\n{warn_text}".strip()
             error_diagnosis_block = f"DIAGNOSIS:\n{diagnosis}\n" if diagnosis else ""
 
+            # Inject metrics catalog so fix knows approved formulas
+            _fix_metrics = ""
+            try:
+                from aughor.semantic.metrics import build_metrics_block
+                _fix_metrics = build_metrics_block()
+                if _fix_metrics:
+                    _fix_metrics += "\n"
+            except Exception:
+                pass
+
             fix: SQLFix = get_provider("coder").complete(
                 system="You are a SQL expert. Fix the broken query.",
                 user=FIX_SQL_PROMPT.format(
@@ -463,6 +497,7 @@ def execute_planned_queries(state: AgentState, conn: "DatabaseConnection") -> di
                     error_diagnosis=error_diagnosis_block,
                     schema=state["schema_context"],
                     kb_patterns_section=kb_fix_patterns,
+                    metrics_section=_fix_metrics,
                 ),
                 response_model=SQLFix,
             )
@@ -500,6 +535,7 @@ def plan_and_execute(state: AgentState, conn: "DatabaseConnection") -> dict[str,
 
 # ── Node: score_evidence ──────────────────────────────────────────────────────
 
+@_telemetry.node_span("score_evidence")
 def score_evidence(state: AgentState) -> dict[str, Any]:
     idx = state["current_hypothesis_idx"]
     hypotheses = state["hypotheses"]
@@ -583,6 +619,7 @@ def score_evidence(state: AgentState) -> dict[str, Any]:
 
 # ── Node: synthesize_report ───────────────────────────────────────────────────
 
+@_telemetry.node_span("synthesize_report")
 def synthesize_report(state: AgentState) -> dict[str, Any]:
     query_history = state.get("query_history", [])
     pitfalls = state.get("pitfalls", [])

@@ -24,6 +24,7 @@ import {
   type Connection, type SchemaTable, type SchemaColumn, type TableSample,
 } from "@/lib/api";
 import { ExplorationBadge } from "@/components/ExplorationBadge";
+import { SchemaPanel } from "@/components/SchemaPanel";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -43,14 +44,143 @@ function typeColor(t: string): string {
   if (u.includes("DOUBLE") || u.includes("FLOAT") || u.includes("NUMERIC")) return "#4ade80";
   if (u.includes("DATE") || u.includes("TIME"))                     return "#f97316";
   if (u.includes("BOOL"))                                           return "#4ade80";
-  return "#9a9ba4";
+  return "var(--t2)";
 }
 
 const CONN_TAG: Record<string, { label: string; color: string; bg: string; border: string }> = {
-  duckdb:   { label: "DuckDB",   color: "#fbbf24", bg: "#1e1a0e", border: "#3a2e0a" },
-  postgres: { label: "Postgres", color: "#7ba8f7", bg: "#1a1e2e", border: "#2a3050" },
+  duckdb:       { label: "DuckDB",      color: "#fbbf24", bg: "#1e1a0e", border: "#3a2e0a" },
+  postgres:     { label: "Postgres",    color: "#7ba8f7", bg: "#1a1e2e", border: "#2a3050" },
+  bigquery:     { label: "BigQuery",    color: "#4ade80", bg: "#0e1e14", border: "#1a3a24" },
+  snowflake:    { label: "Snowflake",   color: "#7ba8f7", bg: "#1a1e2e", border: "#2a3050" },
+  mysql:        { label: "MySQL",       color: "#f97316", bg: "#1e160e", border: "#3a2a0a" },
+  local_upload: { label: "Files",       color: "#c084fc", bg: "#1a1228", border: "#2e1a48" },
+  s3:           { label: "S3",          color: "#f59e0b", bg: "#1e1808", border: "#3a2e08" },
+  federated:    { label: "Federated",   color: "#34d399", bg: "#0e1e18", border: "#1a3a28" },
+  stripe:       { label: "Stripe",      color: "#818cf8", bg: "#14142a", border: "#2a2a50" },
+  hubspot:      { label: "HubSpot",     color: "#f97316", bg: "#1e160e", border: "#3a2a0a" },
+  salesforce:   { label: "Salesforce",  color: "#38bdf8", bg: "#0e1a1e", border: "#1a3040" },
+  confluence:   { label: "Confluence",  color: "#60a5fa", bg: "#121a2a", border: "#1e2e48" },
+  notion:       { label: "Notion",      color: "#d4d4d8", bg: "#1a1a1a", border: "#2e2e2e" },
 };
-const connMeta = (t: string) => CONN_TAG[t] ?? { label: t, color: "#9a9ba4", bg: "#1a1a22", border: "#2a2a35" };
+
+// ── Connector action panel (sync / upload / knowledge-sync) ───────────────────
+
+import { API_BASE as BASE_API } from "@/lib/config";
+
+const _SYNCABLE      = ["stripe", "hubspot", "salesforce", "s3"];
+const _KNOWLEDGE     = ["confluence", "notion"];
+const _FILE_UPLOAD   = ["local_upload"];
+
+function ConnectorActions({ connId, connType }: { connId: string; connType: string }) {
+  const [status, setStatus]   = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [files,   setFiles]   = useState<Array<{ filename: string; table_name: string; size_bytes: number }>>([]);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = (typeof document !== "undefined") ? { current: null as HTMLInputElement | null } : { current: null };
+
+  const isSyncable    = _SYNCABLE.includes(connType);
+  const isKnowledge   = _KNOWLEDGE.includes(connType);
+  const isFileUpload  = _FILE_UPLOAD.includes(connType);
+
+  useEffect(() => {
+    if (isSyncable || isKnowledge) {
+      const endpoint = isKnowledge
+        ? `${BASE_API}/connections/${connId}/knowledge-sync/status`
+        : `${BASE_API}/connections/${connId}/sync-status`;
+      fetch(endpoint).then(r => r.json())
+        .then(d => setStatus(d.last_sync ? `Last sync: ${new Date(d.last_sync).toLocaleString()}` : "Never synced"))
+        .catch(() => setStatus(null));
+    }
+    if (isFileUpload) {
+      fetch(`${BASE_API}/connections/${connId}/files`).then(r => r.json())
+        .then(d => setFiles(d.files ?? []))
+        .catch(() => {});
+    }
+  }, [connId, connType, isSyncable, isKnowledge, isFileUpload]);
+
+  const handleSync = async () => {
+    setSyncing(true);
+    const endpoint = isKnowledge
+      ? `${BASE_API}/connections/${connId}/knowledge-sync`
+      : `${BASE_API}/connections/${connId}/sync`;
+    try {
+      await fetch(endpoint, { method: "POST" });
+      setStatus("Sync triggered — running in background…");
+    } catch {
+      setStatus("Sync failed");
+    }
+    setSyncing(false);
+  };
+
+  const handleFileUpload = async (file: File) => {
+    setUploading(true);
+    const form = new FormData();
+    form.append("file", file);
+    try {
+      const resp = await fetch(`${BASE_API}/connections/${connId}/files`, { method: "POST", body: form });
+      if (resp.ok) {
+        const fresh = await fetch(`${BASE_API}/connections/${connId}/files`).then(r => r.json());
+        setFiles(fresh.files ?? []);
+      }
+    } catch { /* silent */ }
+    setUploading(false);
+  };
+
+  const handleDelete = async (filename: string) => {
+    await fetch(`${BASE_API}/connections/${connId}/files/${encodeURIComponent(filename)}`, { method: "DELETE" });
+    setFiles(f => f.filter(x => x.filename !== filename));
+  };
+
+  if (!isSyncable && !isKnowledge && !isFileUpload) return null;
+
+  const BtnStyle: React.CSSProperties = {
+    display: "inline-flex", alignItems: "center", gap: 6,
+    padding: "5px 12px", borderRadius: 4, fontSize: 11, fontWeight: 500,
+    cursor: syncing || uploading ? "not-allowed" : "pointer",
+    background: "var(--blue1, #152B50)", border: "1px solid var(--blue2, #1A3A6E)",
+    color: "var(--blue5, #88BAFF)", transition: "all .12s",
+    opacity: syncing || uploading ? 0.5 : 1,
+  };
+
+  return (
+    <div style={{ padding: "12px 16px", borderTop: "0.5px solid #1e1f24" }}>
+      {(isSyncable || isKnowledge) && (
+        <div style={{ marginBottom: 10 }}>
+          <button style={BtnStyle} onClick={handleSync} disabled={syncing}>
+            {syncing ? "⏳ Syncing…" : isKnowledge ? "📚 Knowledge Sync" : "🔄 Sync Now"}
+          </button>
+          {status && <p style={{ fontSize: 11, color: "var(--t4)", marginTop: 6 }}>{status}</p>}
+        </div>
+      )}
+      {isFileUpload && (
+        <div>
+          <label style={{ ...BtnStyle, cursor: uploading ? "not-allowed" : "pointer" }}>
+            {uploading ? "Uploading…" : "+ Upload CSV / Parquet / Excel"}
+            <input
+              type="file"
+              accept=".csv,.tsv,.parquet,.parq,.xlsx,.xls,.json"
+              style={{ display: "none" }}
+              disabled={uploading}
+              onChange={e => { const f = e.target.files?.[0]; if (f) handleFileUpload(f); }}
+            />
+          </label>
+          {files.length > 0 && (
+            <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 4 }}>
+              {files.map(f => (
+                <div key={f.filename} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "var(--t2)" }}>
+                  <span style={{ fontFamily: "var(--font-mono, monospace)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.filename}</span>
+                  <span style={{ color: "var(--t4)", fontSize: 11 }}>{Math.round(f.size_bytes / 1024)}KB</span>
+                  <button onClick={() => handleDelete(f.filename)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--t4)", padding: 0, fontSize: 12 }} title="Remove">✕</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+const connMeta = (t: string) => CONN_TAG[t] ?? { label: t, color: "var(--t2)", bg: "#1a1a22", border: "#2a2a35" };
 
 // ── Selection type ────────────────────────────────────────────────────────────
 
@@ -73,20 +203,20 @@ function DetailHeader({
   meta?:       string;
 }) {
   return (
-    <div style={{ padding: "16px 20px 12px", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, background: "#11171d" }}>
+    <div style={{ padding: "16px 20px 12px", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, background: "var(--bg-0)" }}>
       {breadcrumb && (
-        <p style={{ fontSize: 10, color: "#3e3f4a", marginBottom: 6 }}>
+        <p style={{ fontSize: 11, color: "var(--t4)", marginBottom: 6 }}>
           {breadcrumb}
         </p>
       )}
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={{ color: "#6a6b75", display: "flex", alignItems: "center" }}>{icon}</span>
-        <span style={{ fontSize: 16, fontWeight: 600, color: "#e8e6e1", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        <span style={{ color: "var(--t3)", display: "flex", alignItems: "center" }}>{icon}</span>
+        <span style={{ fontSize: 16, fontWeight: 600, color: "var(--t1)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {name}
         </span>
         {tag}
       </div>
-      {meta && <p style={{ fontSize: 10, color: "#4a4b57", marginTop: 4 }}>{meta}</p>}
+      {meta && <p style={{ fontSize: 11, color: "var(--t4)", marginTop: 4 }}>{meta}</p>}
     </div>
   );
 }
@@ -98,7 +228,7 @@ function TabBar({ tabs, active, onChange }: {
   onChange:(id: string) => void;
 }) {
   return (
-    <div style={{ display: "flex", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, padding: "0 8px", background: "#11171d" }}>
+    <div style={{ display: "flex", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, padding: "0 8px", background: "var(--bg-0)" }}>
       {tabs.map(t => (
         <button
           key={t.id}
@@ -106,7 +236,7 @@ function TabBar({ tabs, active, onChange }: {
           style={{
             fontSize: 12, padding: "8px 12px", cursor: "pointer", border: "none",
             background: "transparent", fontFamily: "inherit",
-            color: active === t.id ? "#e8e6e1" : "#4a4b57",
+            color: active === t.id ? "var(--t1)" : "var(--t4)",
             borderBottom: `2px solid ${active === t.id ? "#3d6bff" : "transparent"}`,
             transition: "color .1s",
             marginBottom: -1,
@@ -127,16 +257,16 @@ function AboutSidebar({ title, rows }: {
   return (
     <div style={{
       width: 220, flexShrink: 0, borderLeft: "0.5px solid #1e1f24",
-      padding: "16px 16px", overflowY: "auto", background: "#11171d",
+      padding: "16px 16px", overflowY: "auto", background: "var(--bg-0)",
     }}>
-      <p style={{ fontSize: 11, fontWeight: 600, color: "#6a6b75", marginBottom: 12, textTransform: "uppercase", letterSpacing: "0.07em" }}>
+      <p style={{ fontSize: 11, fontWeight: 600, color: "var(--t3)", marginBottom: 12, textTransform: "uppercase", letterSpacing: "0.07em" }}>
         {title}
       </p>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {rows.map(r => (
           <div key={String(r.label)}>
-            <p style={{ fontSize: 10, color: "#3e3f4a", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.06em" }}>{r.label}</p>
-            <div style={{ fontSize: 11, color: "#9a9ba4" }}>{r.value}</div>
+            <p style={{ fontSize: 11, color: "var(--t4)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.06em" }}>{r.label}</p>
+            <div style={{ fontSize: 11, color: "var(--t2)" }}>{r.value}</div>
           </div>
         ))}
       </div>
@@ -149,13 +279,13 @@ function FilterBox({ value, onChange, placeholder }: { value: string; onChange:(
   return (
     <div style={{ position: "relative", flexShrink: 0 }}>
       <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"
-        style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", color: "#3e3f4a", pointerEvents: "none" }}>
+        style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", color: "var(--t4)", pointerEvents: "none" }}>
         <circle cx="6" cy="6" r="4" /><path d="m10 10 3 3" strokeLinecap="round" />
       </svg>
       <input
         value={value} onChange={e => onChange(e.target.value)}
         placeholder={placeholder ?? "Filter…"}
-        style={{ fontSize: 11, padding: "5px 8px 5px 26px", borderRadius: 4, background: "#111115", border: "0.5px solid #1e1f24", color: "#8a8b94", outline: "none", width: 220 }}
+        style={{ fontSize: 11, padding: "5px 8px 5px 26px", borderRadius: 4, background: "var(--bg-0)", border: "0.5px solid #1e1f24", color: "var(--t2)", outline: "none", width: 220 }}
       />
     </div>
   );
@@ -187,7 +317,7 @@ const IcoSchema = ({ color = "currentColor", size = 14 }: { color?: string; size
 );
 
 const IcoTable = ({ active = false, size = 14 }: { active?: boolean; size?: number }) => (
-  <svg width={size} height={size} viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, color: active ? "#5a9af7" : "#4a4b57" }}>
+  <svg width={size} height={size} viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, color: active ? "var(--blue4)" : "var(--t4)" }}>
     <rect x="1" y="2" width="14" height="3" rx="1" fill="currentColor" opacity=".8" />
     <rect x="1" y="6.5" width="14" height="2.5" fill="currentColor" opacity=".5" />
     <rect x="1" y="10.5" width="14" height="3" rx="1" fill="currentColor" opacity=".3" />
@@ -196,7 +326,7 @@ const IcoTable = ({ active = false, size = 14 }: { active?: boolean; size?: numb
 
 const Chevron = ({ open }: { open: boolean }) => (
   <svg width="10" height="10" viewBox="0 0 10 10" fill="none"
-    style={{ flexShrink: 0, transition: "transform .15s", transform: open ? "rotate(90deg)" : "rotate(0deg)", color: "#3e3f4a" }}>
+    style={{ flexShrink: 0, transition: "transform .15s", transform: open ? "rotate(90deg)" : "rotate(0deg)", color: "var(--t4)" }}>
     <path d="M3 2l4 3-4 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
   </svg>
 );
@@ -211,8 +341,8 @@ function AddConnForm({ onSave, onCancel }: { onSave: () => void; onCancel: () =>
   const [err, setErr]       = useState("");
   const [loading, setLoad]  = useState(false);
 
-  const S: React.CSSProperties = { width: "100%", fontSize: 11, padding: "5px 8px", borderRadius: 4, background: "#111115", border: "0.5px solid #2a2b35", color: "#c8c7c3", outline: "none", fontFamily: "inherit" };
-  const L: React.CSSProperties = { fontSize: 10, color: "#4a4b57", marginBottom: 3, display: "block" };
+  const S: React.CSSProperties = { width: "100%", fontSize: 11, padding: "5px 8px", borderRadius: 4, background: "var(--bg-0)", border: "0.5px solid #2a2b35", color: "#c8c7c3", outline: "none", fontFamily: "inherit" };
+  const L: React.CSSProperties = { fontSize: 11, color: "var(--t4)", marginBottom: 3, display: "block" };
 
   const handle = async (e: React.FormEvent) => {
     e.preventDefault(); setErr(""); setLoad(true);
@@ -222,8 +352,8 @@ function AddConnForm({ onSave, onCancel }: { onSave: () => void; onCancel: () =>
   };
 
   return (
-    <form onSubmit={handle} style={{ padding: "10px 12px", background: "#11171d", borderBottom: "0.5px solid #1e1f24", display: "flex", flexDirection: "column", gap: 8 }}>
-      <p style={{ fontSize: 11, fontWeight: 500, color: "#9a9ba4" }}>New connection</p>
+    <form onSubmit={handle} style={{ padding: "10px 12px", background: "var(--bg-0)", borderBottom: "0.5px solid #1e1f24", display: "flex", flexDirection: "column", gap: 8 }}>
+      <p style={{ fontSize: 11, fontWeight: 500, color: "var(--t2)" }}>New connection</p>
       <div><label style={L}>Name</label><input style={S} placeholder="My database" value={name} onChange={e => setName(e.target.value)} required /></div>
       <div>
         <label style={L}>Type</label>
@@ -237,15 +367,15 @@ function AddConnForm({ onSave, onCancel }: { onSave: () => void; onCancel: () =>
         <input style={{ ...S, fontFamily: "var(--font-mono)" }} placeholder={type === "postgres" ? "postgresql://user:pass@host/db" : "/path/to/file.duckdb"} value={dsn} onChange={e => setDsn(e.target.value)} required />
       </div>
       <div>
-        <label style={L}>Schema <span style={{ color: "#2e2f37" }}>(optional)</span></label>
+        <label style={L}>Schema <span style={{ color: "var(--b0)" }}>(optional)</span></label>
         <input style={{ ...S, fontFamily: "var(--font-mono)" }} placeholder={type === "postgres" ? "public" : "main"} value={schema} onChange={e => setSchema(e.target.value)} />
       </div>
-      {err && <p style={{ fontSize: 10, color: "#f87171" }}>{err}</p>}
+      {err && <p style={{ fontSize: 11, color: "#f87171" }}>{err}</p>}
       <div style={{ display: "flex", gap: 6 }}>
         <button type="submit" disabled={loading} style={{ flex: 1, fontSize: 11, padding: "5px 0", borderRadius: 4, cursor: "pointer", background: "#1a2030", color: "#7ba8f7", border: "0.5px solid #2a3050", opacity: loading ? .5 : 1 }}>
           {loading ? "Saving…" : "Save"}
         </button>
-        <button type="button" onClick={onCancel} style={{ fontSize: 11, padding: "5px 10px", borderRadius: 4, cursor: "pointer", background: "transparent", color: "#4a4b57", border: "0.5px solid #1e1f24" }}>Cancel</button>
+        <button type="button" onClick={onCancel} style={{ fontSize: 11, padding: "5px 10px", borderRadius: 4, cursor: "pointer", background: "transparent", color: "var(--t4)", border: "0.5px solid #1e1f24" }}>Cancel</button>
       </div>
     </form>
   );
@@ -273,19 +403,19 @@ function SampleGrid({ connId, tableName, schemaName }: { connId: string; tableNa
   if (loading) return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 8 }}>
       <div style={{ width: 16, height: 16, border: "2px solid #2a2b35", borderTopColor: "#4a6aaa", borderRadius: "50%", animation: "aug-spin 0.7s linear infinite" }} />
-      <span style={{ fontSize: 10, color: "#3e3f4a" }}>Loading sample data…</span>
+      <span style={{ fontSize: 11, color: "var(--t4)" }}>Loading sample data…</span>
     </div>
   );
   if (error) return <div style={{ padding: 24, fontSize: 11, color: "#f87171", textAlign: "center" }}>{error}</div>;
   if (!data || data.rows.length === 0) return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <span style={{ fontSize: 11, color: "#3e3f4a" }}>No rows returned.</span>
+      <span style={{ fontSize: 11, color: "var(--t4)" }}>No rows returned.</span>
     </div>
   );
 
   const MAX_CELL = 40;
   const clamp = (v: string | null) => {
-    if (v === null) return <span style={{ color: "#2e2f37", fontStyle: "italic", fontSize: 10 }}>null</span>;
+    if (v === null) return <span style={{ color: "var(--b0)", fontStyle: "italic", fontSize: 11 }}>null</span>;
     return v.length > MAX_CELL ? v.slice(0, MAX_CELL) + "…" : v;
   };
 
@@ -293,9 +423,9 @@ function SampleGrid({ connId, tableName, schemaName }: { connId: string; tableNa
     <div style={{ flex: 1, overflow: "auto" }}>
       <table style={{ borderCollapse: "collapse", minWidth: "100%", fontSize: 11, fontFamily: "var(--font-mono)" }}>
         <thead>
-          <tr style={{ background: "#11171d", position: "sticky", top: 0, zIndex: 1 }}>
+          <tr style={{ background: "var(--bg-0)", position: "sticky", top: 0, zIndex: 1 }}>
             {data.columns.map(col => (
-              <th key={col} style={{ padding: "6px 12px", textAlign: "left", whiteSpace: "nowrap", borderBottom: "0.5px solid #1e1f24", borderRight: "0.5px solid #111115", fontSize: 10, color: "#5a5b62", fontWeight: 600, letterSpacing: "0.04em" }}>
+              <th key={col} style={{ padding: "6px 12px", textAlign: "left", whiteSpace: "nowrap", borderBottom: "0.5px solid #1e1f24", borderRight: "0.5px solid #111115", fontSize: 11, color: "#5a5b62", fontWeight: 600, letterSpacing: "0.04em" }}>
                 {col}
               </th>
             ))}
@@ -308,7 +438,7 @@ function SampleGrid({ connId, tableName, schemaName }: { connId: string; tableNa
               onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}
             >
               {row.map((cell, ci) => (
-                <td key={ci} style={{ padding: "5px 12px", color: cell === null ? "#2e2f37" : "#9a9ba4", whiteSpace: "nowrap", borderRight: "0.5px solid #111115" }}>
+                <td key={ci} style={{ padding: "5px 12px", color: cell === null ? "var(--b0)" : "var(--t2)", whiteSpace: "nowrap", borderRight: "0.5px solid #111115" }}>
                   {clamp(cell)}
                 </td>
               ))}
@@ -316,7 +446,7 @@ function SampleGrid({ connId, tableName, schemaName }: { connId: string; tableNa
           ))}
         </tbody>
       </table>
-      <div style={{ padding: "5px 12px", borderTop: "0.5px solid #1e1f24", fontSize: 10, color: "#3e3f4a", background: "#11171d" }}>
+      <div style={{ padding: "5px 12px", borderTop: "0.5px solid #1e1f24", fontSize: 11, color: "var(--t4)", background: "var(--bg-0)" }}>
         {data.rows.length} row{data.rows.length !== 1 ? "s" : ""}
       </div>
     </div>
@@ -373,14 +503,14 @@ function TableDetailPanel({ sel, onAsk }: {
           {/* Main: column list */}
           <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
             {/* Filter row */}
-            <div style={{ padding: "10px 16px", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, background: "#11171d" }}>
+            <div style={{ padding: "10px 16px", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, background: "var(--bg-0)" }}>
               <FilterBox value={colFilter} onChange={setColFilter} placeholder="Filter columns…" />
             </div>
 
             {/* Column header */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 110px 40px", padding: "5px 16px", borderBottom: "0.5px solid #1e1f24", background: "#11171d", flexShrink: 0 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 110px 40px", padding: "5px 16px", borderBottom: "0.5px solid #1e1f24", background: "var(--bg-0)", flexShrink: 0 }}>
               {["Column", "Type", ""].map(h => (
-                <span key={h} style={{ fontSize: 10, color: "#3e3f4a", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600 }}>{h}</span>
+                <span key={h} style={{ fontSize: 11, color: "var(--t4)", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600 }}>{h}</span>
               ))}
             </div>
 
@@ -389,11 +519,11 @@ function TableDetailPanel({ sel, onAsk }: {
               {loading && (
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 32, gap: 8 }}>
                   <div style={{ width: 14, height: 14, border: "2px solid #2a2b35", borderTopColor: "#4a6aaa", borderRadius: "50%", animation: "aug-spin 0.7s linear infinite" }} />
-                  <span style={{ fontSize: 10, color: "#3e3f4a" }}>Loading columns…</span>
+                  <span style={{ fontSize: 11, color: "var(--t4)" }}>Loading columns…</span>
                 </div>
               )}
               {!loading && filteredCols.length === 0 && (
-                <p style={{ padding: "20px 16px", fontSize: 11, color: "#3e3f4a" }}>
+                <p style={{ padding: "20px 16px", fontSize: 11, color: "var(--t4)" }}>
                   {q ? "No columns match." : "Column details unavailable."}
                 </p>
               )}
@@ -403,9 +533,12 @@ function TableDetailPanel({ sel, onAsk }: {
                   onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "#0f1218"}
                   onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}
                 >
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }} title={col.description || ""}>
                     <span style={{ width: 6, height: 6, borderRadius: 2, flexShrink: 0, background: typeColor(col.type), opacity: 0.7 }} />
                     <span style={{ fontSize: 12, fontFamily: "var(--font-mono)", color: "#c8c7c3", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{col.name}</span>
+                    {col.description && (
+                      <span style={{ fontSize: 11, color: "#5a5e6a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 200 }}>{col.description}</span>
+                    )}
                   </div>
                   <span style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: typeColor(col.type) }}>{col.type}</span>
                   {col.is_fk
@@ -428,7 +561,7 @@ function TableDetailPanel({ sel, onAsk }: {
               ...(onAsk ? [{
                 label: "Actions",
                 value: (
-                  <button onClick={() => onAsk(sel.table.name, sel.connId)} style={{ fontSize: 10, padding: "4px 10px", borderRadius: 4, cursor: "pointer", background: "#1a1e2e", color: "#7ba8f7", border: "0.5px solid #2a3050", width: "100%", textAlign: "left" as const }}>
+                  <button onClick={() => onAsk(sel.table.name, sel.connId)} style={{ fontSize: 11, padding: "4px 10px", borderRadius: 4, cursor: "pointer", background: "#1a1e2e", color: "#7ba8f7", border: "0.5px solid #2a3050", width: "100%", textAlign: "left" as const }}>
                     Ask about this table →
                   </button>
                 ),
@@ -441,8 +574,8 @@ function TableDetailPanel({ sel, onAsk }: {
       {/* ── Sample Data tab ── */}
       {tab === "sample" && (
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          <div style={{ padding: "10px 16px", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, background: "#11171d", display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 11, color: "#4a4b57" }}>First 200 rows</span>
+          <div style={{ padding: "10px 16px", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, background: "var(--bg-0)", display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 11, color: "var(--t4)" }}>First 200 rows</span>
           </div>
           <SampleGrid connId={sel.connId} tableName={sel.table.name} schemaName={sel.schemaName} />
         </div>
@@ -485,20 +618,20 @@ function SchemaDetailPanel({ sel, onSelectTable, onAsk }: {
         {/* Main: table list */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
           {/* Filter row */}
-          <div style={{ padding: "10px 16px", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, background: "#11171d" }}>
+          <div style={{ padding: "10px 16px", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, background: "var(--bg-0)" }}>
             <FilterBox value={filter} onChange={setFilter} placeholder="Filter tables…" />
           </div>
 
           {/* Table header */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 60px", padding: "5px 16px", borderBottom: "0.5px solid #1e1f24", background: "#11171d", flexShrink: 0 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 60px", padding: "5px 16px", borderBottom: "0.5px solid #1e1f24", background: "var(--bg-0)", flexShrink: 0 }}>
             {["Name", "Rows", ""].map(h => (
-              <span key={h} style={{ fontSize: 10, color: "#3e3f4a", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600, textAlign: h === "Rows" ? "right" as const : "left" as const }}>{h}</span>
+              <span key={h} style={{ fontSize: 11, color: "var(--t4)", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600, textAlign: h === "Rows" ? "right" as const : "left" as const }}>{h}</span>
             ))}
           </div>
 
           <div style={{ flex: 1, overflowY: "auto" }}>
             {tables.length === 0 && (
-              <p style={{ padding: "20px 16px", fontSize: 11, color: "#3e3f4a" }}>{q ? "No tables match." : "No tables found."}</p>
+              <p style={{ padding: "20px 16px", fontSize: 11, color: "var(--t4)" }}>{q ? "No tables match." : "No tables found."}</p>
             )}
             {tables.map((t, i) => (
               <div key={t.name}
@@ -511,13 +644,13 @@ function SchemaDetailPanel({ sel, onSelectTable, onAsk }: {
                   <IcoTable size={12} />
                   <span style={{ fontSize: 12, color: "#c8c7c3", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span>
                 </div>
-                <span style={{ fontSize: 11, color: "#4a4b57", textAlign: "right" }}>{fmtRows(t.row_count)}</span>
+                <span style={{ fontSize: 11, color: "var(--t4)", textAlign: "right" }}>{fmtRows(t.row_count)}</span>
                 {onAsk && (
                   <button
                     onClick={e => { e.stopPropagation(); onAsk(t.name, sel.connId); }}
-                    style={{ fontSize: 9, padding: "2px 6px", borderRadius: 3, cursor: "pointer", background: "transparent", color: "#3e3f4a", border: "0.5px solid #1e1f24", justifySelf: "end" as const }}
+                    style={{ fontSize: 9, padding: "2px 6px", borderRadius: 3, cursor: "pointer", background: "transparent", color: "var(--t4)", border: "0.5px solid #1e1f24", justifySelf: "end" as const }}
                     onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "#7ba8f7"; (e.currentTarget as HTMLElement).style.background = "#1a1e2e"; }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "#3e3f4a"; (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "var(--t4)"; (e.currentTarget as HTMLElement).style.background = "transparent"; }}
                   >Ask →</button>
                 )}
               </div>
@@ -578,20 +711,20 @@ function CatalogDetailPanel({ sel, onSelectSchema }: {
         {/* Main: schema list */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
           {/* Filter row */}
-          <div style={{ padding: "10px 16px", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, background: "#11171d" }}>
+          <div style={{ padding: "10px 16px", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, background: "var(--bg-0)" }}>
             <FilterBox value={filter} onChange={setFilter} placeholder="Filter schemas…" />
           </div>
 
           {/* Schema header */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px", padding: "5px 16px", borderBottom: "0.5px solid #1e1f24", background: "#11171d", flexShrink: 0 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px", padding: "5px 16px", borderBottom: "0.5px solid #1e1f24", background: "var(--bg-0)", flexShrink: 0 }}>
             {["Name", "Tables", ""].map((h, i) => (
-              <span key={h + i} style={{ fontSize: 10, color: "#3e3f4a", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600, textAlign: h === "Tables" ? "right" as const : "left" as const }}>{h}</span>
+              <span key={h + i} style={{ fontSize: 11, color: "var(--t4)", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600, textAlign: h === "Tables" ? "right" as const : "left" as const }}>{h}</span>
             ))}
           </div>
 
           <div style={{ flex: 1, overflowY: "auto" }}>
             {schemas.length === 0 && (
-              <p style={{ padding: "20px 16px", fontSize: 11, color: "#3e3f4a" }}>{q ? "No schemas match." : "No schemas found."}</p>
+              <p style={{ padding: "20px 16px", fontSize: 11, color: "var(--t4)" }}>{q ? "No schemas match." : "No schemas found."}</p>
             )}
             {schemas.map((sc, i) => {
               const schRows = sc.tables.reduce((s, t) => s + (Number(t.row_count) || 0), 0);
@@ -606,11 +739,11 @@ function CatalogDetailPanel({ sel, onSelectSchema }: {
                     <IcoSchema color="#5a7fa8" size={14} />
                     <div>
                       <p style={{ fontSize: 12, fontWeight: 500, color: "#c8c7c3" }}>{sc.name}</p>
-                      <p style={{ fontSize: 10, color: "#3e3f4a", marginTop: 1 }}>{schRows > 0 ? fmtRows(schRows) + " rows" : ""}</p>
+                      <p style={{ fontSize: 11, color: "var(--t4)", marginTop: 1 }}>{schRows > 0 ? fmtRows(schRows) + " rows" : ""}</p>
                     </div>
                   </div>
-                  <span style={{ fontSize: 11, color: "#4a4b57", textAlign: "right" }}>{sc.tables.length}</span>
-                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ color: "#2e2f37", justifySelf: "end" as const }}>
+                  <span style={{ fontSize: 11, color: "var(--t4)", textAlign: "right" }}>{sc.tables.length}</span>
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ color: "var(--b0)", justifySelf: "end" as const }}>
                     <path d="M3 2l4 3-4 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
                   </svg>
                 </div>
@@ -619,18 +752,21 @@ function CatalogDetailPanel({ sel, onSelectSchema }: {
           </div>
         </div>
 
-        {/* About sidebar */}
-        <AboutSidebar
-          title="About this catalog"
-          rows={[
-            { label: "Type",    value: <span style={{ fontSize: 9, padding: "2px 7px", borderRadius: 3, background: cm.bg, color: cm.color, border: `0.5px solid ${cm.border}` }}>{cm.label}</span> },
-            { label: "Schemas", value: String(entry.schemas.length) },
-            { label: "Tables",  value: String(totalTables) },
-            { label: "Total rows", value: totalRows > 0 ? fmtRows(totalRows) : "—" },
-            ...(entry.builtin ? [{ label: "Source", value: "Built-in sample catalog" }] : []),
-            ...(!entry.builtin ? [{ label: "Explorer", value: <ExplorationBadge connectionId={entry.conn_id} /> }] : []),
-          ]}
-        />
+        {/* About sidebar + connector actions */}
+        <div style={{ display: "flex", flexDirection: "column", flexShrink: 0, overflow: "hidden" }}>
+          <AboutSidebar
+            title="About this catalog"
+            rows={[
+              { label: "Type",    value: <span style={{ fontSize: 9, padding: "2px 7px", borderRadius: 3, background: cm.bg, color: cm.color, border: `0.5px solid ${cm.border}` }}>{cm.label}</span> },
+              { label: "Schemas", value: String(entry.schemas.length) },
+              { label: "Tables",  value: String(totalTables) },
+              { label: "Total rows", value: totalRows > 0 ? fmtRows(totalRows) : "—" },
+              ...(entry.builtin ? [{ label: "Source", value: "Built-in sample catalog" }] : []),
+              ...(!entry.builtin ? [{ label: "Explorer", value: <ExplorationBadge connectionId={entry.conn_id} /> }] : []),
+            ]}
+          />
+          <ConnectorActions connId={entry.conn_id} connType={entry.conn_type} />
+        </div>
       </div>
     </div>
   );
@@ -641,14 +777,14 @@ function CatalogDetailPanel({ sel, onSelectSchema }: {
 function EmptyDetail() {
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: 40 }}>
-      <svg width="48" height="48" viewBox="0 0 48 48" fill="none" style={{ color: "#1e1f24" }}>
+      <svg width="48" height="48" viewBox="0 0 48 48" fill="none" style={{ color: "var(--b0)" }}>
         <ellipse cx="24" cy="14" rx="18" ry="7" stroke="currentColor" strokeWidth="2" />
         <path d="M6 14v20c0 3.9 8.1 7 18 7s18-3.1 18-7V14" stroke="currentColor" strokeWidth="2" fill="none" />
         <path d="M6 24c0 3.9 8.1 7 18 7s18-3.1 18-7" stroke="currentColor" strokeWidth="2" opacity=".5" />
       </svg>
       <div style={{ textAlign: "center" }}>
-        <p style={{ fontSize: 14, fontWeight: 500, color: "#3e3f4a", marginBottom: 6 }}>Select an item to view details</p>
-        <p style={{ fontSize: 12, color: "#2e2f37", lineHeight: 1.6 }}>
+        <p style={{ fontSize: 14, fontWeight: 500, color: "var(--t4)", marginBottom: 6 }}>Select an item to view details</p>
+        <p style={{ fontSize: 12, color: "var(--b0)", lineHeight: 1.6 }}>
           Click a catalog, schema, or table<br />in the tree to explore it
         </p>
       </div>
@@ -692,12 +828,12 @@ function TreeRow({
         </span>
       ) : <span style={{ width: 10, flexShrink: 0 }} />}
 
-      <span style={{ color: isSelected ? "#5a9af7" : "#6a6b75", display: "flex", alignItems: "center" }}>{icon}</span>
+      <span style={{ color: isSelected ? "var(--blue4)" : "var(--t3)", display: "flex", alignItems: "center" }}>{icon}</span>
 
       <span style={{
         fontSize: 12, flex: 1, minWidth: 0,
         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-        color: isSelected ? "#e8e6e1" : "#c8c7c3", fontWeight: isSelected ? 500 : 400,
+        color: isSelected ? "var(--t1)" : "#c8c7c3", fontWeight: isSelected ? 500 : 400,
       }}>
         {label}
       </span>
@@ -705,7 +841,7 @@ function TreeRow({
       {badge}
 
       {count != null && (
-        <span style={{ fontSize: 9, color: "#3e3f4a", flexShrink: 0 }}>
+        <span style={{ fontSize: 9, color: "var(--t4)", flexShrink: 0 }}>
           {count}
         </span>
       )}
@@ -734,7 +870,9 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
   const [pendingDel, setPDel]   = useState<string | null>(null);
   const [testing, setTesting]   = useState<string | null>(null);
   const [testRes, setTestRes]   = useState<Record<string, boolean>>({});
+  const [showERD, setShowERD]   = useState(false);
   const q = search.toLowerCase();
+  const selConn = connections.find(c => c.id === selectedConn);
 
   const loadTree = () => {
     setTreeL(true);
@@ -790,15 +928,15 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
         <div key={`sec-${section.id}`} style={{ padding: "10px 10px 4px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <IcoSection />
-            <span style={{ fontSize: 10, fontWeight: 600, color: "#4a4b57", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+            <span style={{ fontSize: 11, fontWeight: 600, color: "var(--t4)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
               {section.label}
             </span>
           </div>
           {section.id === "connections" && (
             <button onClick={() => setAdding(v => !v)}
-              style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 9, padding: "2px 6px", borderRadius: 3, cursor: "pointer", background: "transparent", color: "#4a4b57", border: "0.5px solid #1e1f24" }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "#9a9ba4"; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "#4a4b57"; }}
+              style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 9, padding: "2px 6px", borderRadius: 3, cursor: "pointer", background: "transparent", color: "var(--t4)", border: "0.5px solid #1e1f24" }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "var(--t2)"; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "var(--t4)"; }}
             >
               <svg width="8" height="8" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 1v10M1 6h10" /></svg>
               Add
@@ -811,7 +949,7 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
         nodes.push(<AddConnForm key="add-form" onSave={() => { setAdding(false); loadTree(); }} onCancel={() => setAdding(false)} />);
       }
       if (section.entries.length === 0 && section.id === "connections") {
-        nodes.push(<p key="empty" style={{ fontSize: 10, color: "#2e2f37", padding: "6px 12px 10px" }}>No connections yet.</p>);
+        nodes.push(<p key="empty" style={{ fontSize: 11, color: "var(--b0)", padding: "6px 12px 10px" }}>No connections yet.</p>);
       }
 
       section.entries.forEach(entry => {
@@ -842,11 +980,11 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
             {!isSamples && hovConn === entry.conn_id && (
               <div style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", display: "flex", gap: 4, zIndex: 2 }}>
                 <button onClick={e => { e.stopPropagation(); handleTest(entry.conn_id); }} disabled={testing === entry.conn_id}
-                  style={{ fontSize: 8, padding: "2px 5px", borderRadius: 2, cursor: "pointer", background: "#1a1a22", color: testRes[entry.conn_id] === true ? "#34d399" : testRes[entry.conn_id] === false ? "#f87171" : "#4a4b57", border: "0.5px solid #2a2b35" }}>
+                  style={{ fontSize: 8, padding: "2px 5px", borderRadius: 2, cursor: "pointer", background: "#1a1a22", color: testRes[entry.conn_id] === true ? "#34d399" : testRes[entry.conn_id] === false ? "#f87171" : "var(--t4)", border: "0.5px solid #2a2b35" }}>
                   {testing === entry.conn_id ? "…" : testRes[entry.conn_id] === true ? "✓" : testRes[entry.conn_id] === false ? "✗" : "Test"}
                 </button>
                 <button onClick={e => { e.stopPropagation(); handleDelete(entry.conn_id); }}
-                  style={{ fontSize: 8, padding: "2px 5px", borderRadius: 2, cursor: "pointer", background: pendingDel === entry.conn_id ? "#2a1414" : "#1a1a22", color: pendingDel === entry.conn_id ? "#f87171" : "#4a4b57", border: `0.5px solid ${pendingDel === entry.conn_id ? "#3e2020" : "#2a2b35"}` }}>
+                  style={{ fontSize: 8, padding: "2px 5px", borderRadius: 2, cursor: "pointer", background: pendingDel === entry.conn_id ? "#2a1414" : "#1a1a22", color: pendingDel === entry.conn_id ? "#f87171" : "var(--t4)", border: `0.5px solid ${pendingDel === entry.conn_id ? "#3e2020" : "#2a2b35"}` }}>
                   {pendingDel === entry.conn_id ? "Confirm" : "×"}
                 </button>
               </div>
@@ -926,10 +1064,17 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
         {/* Top bar */}
         <div style={{ display: "flex", alignItems: "center", padding: "10px 12px 8px", borderBottom: "0.5px solid var(--b1)", flexShrink: 0, gap: 8 }}>
           <span style={{ fontSize: 12, fontWeight: 600, color: "var(--t2)", textTransform: "uppercase", letterSpacing: "0.06em", flex: 1 }}>Catalog</span>
+          <button
+            onClick={() => setShowERD(v => !v)}
+            title={showERD ? "Table view" : "ERD view"}
+            style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: 4, cursor: "pointer", background: showERD ? "#1a1e2e" : "transparent", color: showERD ? "var(--blue4)" : "var(--t4)", border: showERD ? "0.5px solid #2a3050" : "0.5px solid #1e1f24", padding: 0, marginRight: 4, fontSize: 9, fontWeight: 700, letterSpacing: "0.02em" }}
+          >
+            ERD
+          </button>
           <button onClick={loadTree} title="Refresh"
-            style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: 4, cursor: "pointer", background: "transparent", color: "#3e3f4a", border: "0.5px solid #1e1f24", padding: 0 }}
-            onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = "#9a9ba4"}
-            onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = "#3e3f4a"}
+            style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: 4, cursor: "pointer", background: "transparent", color: "var(--t4)", border: "0.5px solid #1e1f24", padding: 0 }}
+            onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = "var(--t2)"}
+            onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = "var(--t4)"}
           >
             <svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M1 4.5A7 7 0 0 1 14 8" /><path d="M15 11.5A7 7 0 0 1 2 8" />
@@ -941,11 +1086,11 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
         {/* Search */}
         <div style={{ padding: "8px 10px", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, position: "relative" }}>
           <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"
-            style={{ position: "absolute", left: 18, top: "50%", transform: "translateY(-50%)", color: "#3e3f4a", pointerEvents: "none" }}>
+            style={{ position: "absolute", left: 18, top: "50%", transform: "translateY(-50%)", color: "var(--t4)", pointerEvents: "none" }}>
             <circle cx="6" cy="6" r="4" /><path d="m10 10 3 3" strokeLinecap="round" />
           </svg>
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search catalog…"
-            style={{ width: "100%", fontSize: 11, padding: "4px 8px 4px 24px", borderRadius: 4, background: "#111115", border: "0.5px solid #1e1f24", color: "#6e6f78", outline: "none" }} />
+            style={{ width: "100%", fontSize: 11, padding: "4px 8px 4px 24px", borderRadius: 4, background: "var(--bg-0)", border: "0.5px solid #1e1f24", color: "#6e6f78", outline: "none" }} />
         </div>
 
         {/* Tree body */}
@@ -953,16 +1098,19 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
           {treeLoading && (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 24, gap: 8 }}>
               <div style={{ width: 14, height: 14, border: "2px solid #2a2b35", borderTopColor: "#4a6aaa", borderRadius: "50%", animation: "aug-spin 0.7s linear infinite" }} />
-              <span style={{ fontSize: 10, color: "#3e3f4a" }}>Loading catalog…</span>
+              <span style={{ fontSize: 11, color: "var(--t4)" }}>Loading catalog…</span>
             </div>
           )}
           {!treeLoading && renderTree()}
         </div>
       </div>
 
-      {/* ── Right: Detail panel ── */}
+      {/* ── Right: Detail panel or ERD ── */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
-        {renderDetail()}
+        {showERD
+          ? <SchemaPanel connId={selectedConn} connName={selConn?.name} />
+          : renderDetail()
+        }
       </div>
 
     </div>

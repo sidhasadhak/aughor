@@ -212,6 +212,7 @@ def run_investigation(
         "query_mode": None,
         "unresolved_tensions": [],
         "connection_id": "",
+        "trace_id": "",
         "route_reasoning": None,
         "route_confidence": None,
         "replan_decision": None,

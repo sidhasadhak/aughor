@@ -5,6 +5,10 @@ import {
   getDomainInsights,
   extendDomainBudget,
   getExplorationEpisodes,
+  getCanvasDomainInsights,
+  extendCanvasDomainBudget,
+  getCanvasExplorationEpisodes,
+  promoteCanvasInsight,
   type DomainInsights,
   type ExplorationInsight,
   type ExplorationEpisode,
@@ -65,7 +69,7 @@ function EpisodeRow({ ep, domain }: { ep: ExplorationEpisode; domain: string }) 
         onClick={() => setExpanded(e => !e)}
       >
         <span
-          className="shrink-0 mt-0.5 text-[9px] px-1.5 py-0.5 rounded"
+          className="shrink-0 mt-0.5 text-[11px] px-1.5 py-0.5 rounded"
           style={{ background: meta.bg, color: meta.color, border: `0.5px solid ${meta.border}` }}
         >
           {angle ?? "query"}
@@ -74,22 +78,22 @@ function EpisodeRow({ ep, domain }: { ep: ExplorationEpisode; domain: string }) 
           {question}
         </span>
         {isError
-          ? <span className="text-[9px] text-amber-400 shrink-0">error</span>
-          : <span className="text-[9px] shrink-0" style={{ color: "#3e3f4a" }}>{expanded ? "▲" : "▼"}</span>
+          ? <span className="text-[11px] text-amber-400 shrink-0">error</span>
+          : <span className="text-[11px] shrink-0" style={{ color: "#3e3f4a" }}>{expanded ? "▲" : "▼"}</span>
         }
       </button>
       {expanded && (
         <div className="border-t px-3 pb-3 pt-2 space-y-2" style={{ borderColor: "#1e1f24" }}>
           <div>
-            <p className="text-[9px] uppercase tracking-widest mb-1" style={{ color: "#3e3f4a" }}>SQL</p>
-            <pre className="text-[10px] font-mono leading-relaxed overflow-x-auto rounded p-2"
+            <p className="text-[11px] uppercase tracking-widest mb-1" style={{ color: "#3e3f4a" }}>SQL</p>
+            <pre className="text-[11px] font-mono leading-relaxed overflow-x-auto rounded p-2"
               style={{ background: "#11171d", color: "#6e6f78", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
               {ep.sql}
             </pre>
           </div>
           <div>
-            <p className="text-[9px] uppercase tracking-widest mb-1" style={{ color: "#3e3f4a" }}>Result</p>
-            <pre className="text-[10px] font-mono leading-relaxed overflow-x-auto rounded p-2"
+            <p className="text-[11px] uppercase tracking-widest mb-1" style={{ color: "#3e3f4a" }}>Result</p>
+            <pre className="text-[11px] font-mono leading-relaxed overflow-x-auto rounded p-2"
               style={{ background: isError ? "#1a1010" : "#0d0e11", color: isError ? "#f87171" : "#6e6f78", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
               {obsPreview}
             </pre>
@@ -102,10 +106,22 @@ function EpisodeRow({ ep, domain }: { ep: ExplorationEpisode; domain: string }) 
 
 // ── Finding card ──────────────────────────────────────────────────────────────
 
-function FindingCard({ insight }: { insight: ExplorationInsight }) {
+function FindingCard({ insight, canvasId }: { insight: ExplorationInsight; canvasId?: string }) {
   const [sqlOpen, setSqlOpen] = useState(false);
+  const [promoted, setPromoted] = useState(insight.promoted_to_org ?? false);
+  const [promoting, setPromoting] = useState(false);
   const nv = noveltyMeta(insight.novelty);
   const dm = domainMeta(insight.domain);
+
+  const handlePromote = async () => {
+    if (!canvasId || promoting || promoted) return;
+    setPromoting(true);
+    try {
+      await promoteCanvasInsight(canvasId, insight.id);
+      setPromoted(true);
+    } catch { /* ignore */ }
+    finally { setPromoting(false); }
+  };
 
   return (
     <div style={{
@@ -153,14 +169,35 @@ function FindingCard({ insight }: { insight: ExplorationInsight }) {
             </span>
           )}
         </div>
-        {insight.sql && (
-          <button
-            onClick={() => setSqlOpen(o => !o)}
-            style={{ fontSize: 10, color: "#3e3f4a", background: "none", border: "none", cursor: "pointer", padding: 0, flexShrink: 0 }}
-          >
-            {sqlOpen ? "SQL ▲" : "SQL ▼"}
-          </button>
-        )}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+          {canvasId && (
+            promoted ? (
+              <span style={{ fontSize: 10, color: "#34d399" }}>Promoted ✓</span>
+            ) : (
+              <button
+                onClick={handlePromote}
+                disabled={promoting}
+                style={{
+                  fontSize: 10, padding: "2px 8px", borderRadius: 4,
+                  background: "#1a2820", color: "#34d399",
+                  border: "0.5px solid #2a4030",
+                  cursor: promoting ? "wait" : "pointer",
+                  opacity: promoting ? 0.5 : 1,
+                }}
+              >
+                {promoting ? "…" : "Promote to Org →"}
+              </button>
+            )
+          )}
+          {insight.sql && (
+            <button
+              onClick={() => setSqlOpen(o => !o)}
+              style={{ fontSize: 10, color: "#3e3f4a", background: "none", border: "none", cursor: "pointer", padding: 0 }}
+            >
+              {sqlOpen ? "SQL ▲" : "SQL ▼"}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* SQL */}
@@ -186,10 +223,11 @@ interface OverviewCardProps {
   data: DomainInsights;
   onSelect: (d: string) => void;
   connectionId: string;
+  canvasId?: string;
   onExtend: () => void;
 }
 
-function DomainOverviewCard({ domain, data, onSelect, connectionId, onExtend }: OverviewCardProps) {
+function DomainOverviewCard({ domain, data, onSelect, connectionId, canvasId, onExtend }: OverviewCardProps) {
   const [extending, setExtending] = useState(false);
   const meta = domainMeta(domain);
 
@@ -204,7 +242,11 @@ function DomainOverviewCard({ domain, data, onSelect, connectionId, onExtend }: 
   async function handleExtend(e: React.MouseEvent) {
     e.stopPropagation();
     setExtending(true);
-    try { await extendDomainBudget(connectionId, domain); onExtend(); }
+    try {
+      if (canvasId) await extendCanvasDomainBudget(canvasId, domain);
+      else await extendDomainBudget(connectionId, domain);
+      onExtend();
+    }
     finally { setExtending(false); }
   }
 
@@ -299,11 +341,12 @@ interface DetailProps {
   data: DomainInsights;
   episodes: ExplorationEpisode[];
   connectionId: string;
+  canvasId?: string;
   onBack: () => void;
   onExtend: () => void;
 }
 
-function DomainDetailView({ domain, data, episodes, connectionId, onBack, onExtend }: DetailProps) {
+function DomainDetailView({ domain, data, episodes, connectionId, canvasId, onBack, onExtend }: DetailProps) {
   const [filterNovelty, setFilterNovelty] = useState<number | null>(null);
   const [filterAngle, setFilterAngle]     = useState<string | null>(null);
   const [search, setSearch]               = useState("");
@@ -331,7 +374,11 @@ function DomainDetailView({ domain, data, episodes, connectionId, onBack, onExte
 
   async function handleExtend() {
     setExtending(true);
-    try { await extendDomainBudget(connectionId, domain); onExtend(); }
+    try {
+      if (canvasId) await extendCanvasDomainBudget(canvasId, domain);
+      else await extendDomainBudget(connectionId, domain);
+      onExtend();
+    }
     finally { setExtending(false); }
   }
 
@@ -475,7 +522,7 @@ function DomainDetailView({ domain, data, episodes, connectionId, onBack, onExte
               background: "#111115", color: "#6e6f78", border: "0.5px solid #1e1f24",
               display: "inline-flex", alignItems: "center", gap: 4,
             }}>
-              "{search.length > 20 ? search.slice(0, 20) + "…" : search}"
+              &quot;{search.length > 20 ? search.slice(0, 20) + "…" : search}&quot;
               <button onClick={() => setSearch("")} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", padding: 0, lineHeight: 1 }}>×</button>
             </span>
           )}
@@ -497,7 +544,7 @@ function DomainDetailView({ domain, data, episodes, connectionId, onBack, onExte
           ? <p style={{ fontSize: 11, color: "#3e3f4a", fontStyle: "italic" }}>
               {hasFilters ? "No findings match these filters." : "No findings yet — exploration is running or budget not started."}
             </p>
-          : filtered.map(ins => <FindingCard key={ins.id} insight={ins} />)
+          : filtered.map(ins => <FindingCard key={ins.id} insight={ins} canvasId={canvasId} />)
       )}
     </div>
   );
@@ -508,9 +555,10 @@ function DomainDetailView({ domain, data, episodes, connectionId, onBack, onExte
 interface Props {
   connectionId: string;
   isActive: boolean;
+  canvasId?: string;
 }
 
-export function DomainIntelPanel({ connectionId, isActive }: Props) {
+export function DomainIntelPanel({ connectionId, isActive, canvasId }: Props) {
   const [data, setData]         = useState<Record<string, DomainInsights>>({});
   const [episodes, setEpisodes] = useState<ExplorationEpisode[]>([]);
   const [tick, setTick]         = useState(0);
@@ -522,10 +570,9 @@ export function DomainIntelPanel({ connectionId, isActive }: Props) {
 
     const load = async () => {
       try {
-        const [d, eps] = await Promise.all([
-          getDomainInsights(connectionId),
-          getExplorationEpisodes(connectionId),
-        ]);
+        const [d, eps] = canvasId
+          ? await Promise.all([getCanvasDomainInsights(canvasId), getCanvasExplorationEpisodes(canvasId)])
+          : await Promise.all([getDomainInsights(connectionId), getExplorationEpisodes(connectionId)]);
         if (!cancelled) { setData(d); setEpisodes(eps); }
       } catch { /* silently ignore — stale data stays, next poll retries */ }
     };
@@ -533,7 +580,7 @@ export function DomainIntelPanel({ connectionId, isActive }: Props) {
     load();
     const t = setInterval(load, 10_000);
     return () => { cancelled = true; clearInterval(t); };
-  }, [connectionId, isActive, tick]);
+  }, [connectionId, canvasId, isActive, tick]);
 
   const domains = Object.keys(data);
 
@@ -566,6 +613,7 @@ export function DomainIntelPanel({ connectionId, isActive }: Props) {
           data={data[selected]}
           episodes={episodes}
           connectionId={connectionId}
+          canvasId={canvasId}
           onBack={() => setSelected(null)}
           onExtend={() => setTick(t => t + 1)}
         />
@@ -590,6 +638,7 @@ export function DomainIntelPanel({ connectionId, isActive }: Props) {
                 data={data[domain]}
                 onSelect={setSelected}
                 connectionId={connectionId}
+                canvasId={canvasId}
                 onExtend={() => setTick(t => t + 1)}
               />
             ))}

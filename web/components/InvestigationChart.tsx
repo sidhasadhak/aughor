@@ -1,7 +1,10 @@
 "use client";
 
-import { useEffect, useRef } from "react";
-import * as Plot from "@observablehq/plot";
+import { useState } from "react";
+import { VegaChart, timeseriesSpec, barSpec } from "@/components/VegaChart";
+import { ChartWrapper }        from "@/components/charts/ChartWrapper";
+import { ChartTypeToggle }     from "@/components/charts/ChartTypeToggle";
+import { inferChartType, isShareColumn, type ChartType } from "@/components/charts/chartTypeInference";
 
 interface Props {
   columns: string[];
@@ -9,180 +12,108 @@ interface Props {
   title?: string;
 }
 
-type ChartType = "timeseries" | "bar" | null;
-
-// Match date/time column names broadly
-const DATE_PATTERN = /_date$|_at$|_time$|created_at|updated_at|timestamp|^date$|^month$|^week$|^period$|^quarter$|^day$|^year$/i;
-// Value-level date detection: YYYY-MM-DD, YYYY-MM, or ISO timestamp
-const DATE_VALUE_RE = /^\d{4}-\d{2}/;
-// Prefer these as the value axis in bar charts
-const SHARE_PATTERN = /share|pct|percent|rate|ratio|proportion/i;
-const SKIP_NUMERIC_NAMES = /id$/i;
-
-function detectChart(columns: string[], rows: unknown[][]): {
-  type: ChartType;
-  xCol: number;
-  yCol: number;
-} | null {
-  if (!columns.length || rows.length < 3) return null;
-
-  const sample = rows.slice(0, 10);
-
-  const isNumeric = (idx: number) =>
-    !SKIP_NUMERIC_NAMES.test(columns[idx]) &&
-    sample.every(r => r[idx] !== null && r[idx] !== "" && !isNaN(Number(r[idx])));
-
-  const isDate = (idx: number) =>
-    DATE_PATTERN.test(columns[idx]) ||
-    (sample.length > 0 && typeof sample[0]?.[idx] === "string" && DATE_VALUE_RE.test(sample[0][idx] as string));
-
-  const isCategory = (idx: number) =>
-    !isNumeric(idx) && !isDate(idx) && typeof sample[0]?.[idx] === "string";
-
-  const dateIdx = columns.findIndex((_, i) => isDate(i));
-  const numericCols = columns.map((_, i) => i).filter(isNumeric);
-  const catIdx = columns.findIndex((_, i) => isCategory(i));
-
-  if (dateIdx >= 0 && numericCols.length > 0 && numericCols[0] !== dateIdx) {
-    return { type: "timeseries", xCol: dateIdx, yCol: numericCols[0] };
-  }
-
-  if (catIdx >= 0 && numericCols.length > 0) {
-    // Prefer share/rate/percent columns as the value axis
-    const shareColIdx = numericCols.find(i => SHARE_PATTERN.test(columns[i]));
-    const valueColIdx = shareColIdx ?? numericCols[numericCols.length - 1];
-    return { type: "bar", xCol: valueColIdx, yCol: catIdx };
-  }
-
-  return null;
-}
-
-function rowsToObjects(columns: string[], rows: unknown[][]): Record<string, unknown>[] {
+function rowsToRecords(columns: string[], rows: unknown[][]): Record<string, unknown>[] {
   return rows.map(row =>
-    Object.fromEntries(columns.map((col, i) => [col, row[i]]))
+    Object.fromEntries(columns.map((col, i) => {
+      let v = (row as unknown[])[i];
+      if (typeof v === "string") v = v.replace(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})$/, "$1T$2");
+      return [col, v];
+    })),
   );
 }
 
-function isPercentageColumn(colName: string, data: Record<string, unknown>[]): boolean {
-  if (!SHARE_PATTERN.test(colName)) return false;
-  return data.every(d => {
-    const v = Number(d[colName]);
-    return !isNaN(v) && v >= 0 && v <= 1;
-  });
+// Aggregate rows for bar charts (avg for share columns, sum otherwise)
+function aggregateForBar(
+  records: Record<string, unknown>[],
+  labelKey: string,
+  valueKey: string,
+  useAvg: boolean,
+): { label: string; value: number }[] {
+  const sum = new Map<string, number>();
+  const cnt = new Map<string, number>();
+  for (const d of records) {
+    const k = String(d[labelKey]);
+    sum.set(k, (sum.get(k) ?? 0) + Number(d[valueKey]));
+    cnt.set(k, (cnt.get(k) ?? 0) + 1);
+  }
+  return Array.from(sum.entries()).map(([label, s]) => ({
+    label,
+    value: useAvg ? s / (cnt.get(label) ?? 1) : s,
+  }));
 }
 
 export function InvestigationChart({ columns, rows, title }: Props) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const detected = detectChart(columns, rows);
+  const inferred = inferChartType(columns, rows);
+  const [override, setOverride] = useState<ChartType | "auto">("auto");
 
-  useEffect(() => {
-    if (!containerRef.current || !detected) return;
+  // Nothing chartable
+  if (!inferred) {
+    return null;
+  }
 
-    const data = rowsToObjects(columns, rows);
-    const xKey = columns[detected.xCol];
-    const yKey = columns[detected.yCol];
+  const effectiveType: ChartType = override === "auto" ? inferred.type : override;
 
-    const parseDate = (v: unknown) => {
-      let s = typeof v === "string" ? v : String(v);
-      // Normalise DuckDB timestamp "2025-05-01 00:00:00" → ISO "2025-05-01T00:00:00"
-      s = s.replace(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})/, "$1T$2");
-      const d = new Date(s);
-      return isNaN(d.getTime()) ? v : d;
-    };
+  // Available type toggle options based on inferred type
+  const available: ChartType[] = inferred.type === "line"
+    ? ["line", "bar"]
+    : inferred.type === "scatter"
+    ? ["scatter", "bar"]
+    : ["bar", "line"];
 
-    let plot: (SVGSVGElement | HTMLElement) | null = null;
+  // "table" mode — render nothing here; the caller always shows a table alongside
+  if (effectiveType === "table") return null;
 
-    if (detected.type === "timeseries") {
-      const parsed = data.map(d => ({ ...d, [xKey]: parseDate(d[xKey]), [yKey]: Number(d[yKey]) }));
+  const records  = rowsToRecords(columns, rows);
+  const xKey     = columns[inferred.xCol];
+  const yKey     = columns[inferred.yCols[0]];
+  const chartTitle = title ?? (effectiveType === "line" ? "Trend" : "Breakdown");
 
-      // Detect monthly cadence: all dates land on 1st of month
-      const dates = parsed.map(d => d[xKey]).filter(d => d instanceof Date) as Date[];
-      const isMonthly = dates.length > 1 && dates.every(d => d.getDate() === 1);
-      const xTickFmt = isMonthly
-        ? (d: Date) => d instanceof Date ? d.toLocaleDateString("en-US", { month: "short", year: "2-digit" }) : String(d)
-        : (d: Date) => d instanceof Date ? d.toLocaleDateString("en-US", { month: "short", day: "numeric" }) : String(d);
+  let content: React.ReactNode;
 
-      plot = Plot.plot({
-        style: { background: "transparent", color: "#71717a", fontSize: "11px" },
-        width: containerRef.current.offsetWidth || 480,
-        height: 180,
-        marginLeft: 55,
-        marginBottom: 32,
-        x: { label: null, tickFormat: xTickFmt },
-        y: { label: yKey, grid: true, tickFormat: (v: number) => v >= 1_000_000 ? `${(v / 1_000_000).toFixed(1)}M` : v >= 1_000 ? `${(v / 1_000).toFixed(0)}k` : String(v) },
-        marks: [
-          Plot.areaY(parsed, { x: xKey, y: yKey, fill: "#34d399", fillOpacity: 0.08 }),
-          Plot.lineY(parsed, { x: xKey, y: yKey, stroke: "#34d399", strokeWidth: 1.5 }),
-          Plot.dotY(parsed, { x: xKey, y: yKey, fill: "#34d399", r: 2.5 }),
-          Plot.ruleY([0], { stroke: "#3f3f46" }),
+  if (effectiveType === "line") {
+    const spec = timeseriesSpec(xKey, yKey);
+    content = <VegaChart spec={spec} data={records} height={200} />;
+  } else if (effectiveType === "scatter") {
+    const yKey2 = columns[inferred.yCols[0]];
+    const spec: Record<string, unknown> = {
+      mark: { type: "point", opacity: 0.7, filled: true, size: 40 },
+      encoding: {
+        x: { field: xKey, type: "quantitative", axis: { format: "~s", grid: true } },
+        y: { field: yKey2, type: "quantitative", axis: { format: "~s", grid: true } },
+        tooltip: [
+          { field: xKey, type: "quantitative" },
+          { field: yKey2, type: "quantitative" },
         ],
-      });
-    }
-
-    if (detected.type === "bar") {
-      const labelKey = columns[detected.yCol];
-      const valueKey = columns[detected.xCol];
-      // Aggregate per category: average for share/rate columns, sum for counts/amounts
-      const aggSum = new Map<string, number>();
-      const aggCnt = new Map<string, number>();
-      for (const d of data) {
-        const label = String(d[labelKey]);
-        aggSum.set(label, (aggSum.get(label) ?? 0) + Number(d[valueKey]));
-        aggCnt.set(label, (aggCnt.get(label) ?? 0) + 1);
-      }
-      const useAvg = SHARE_PATTERN.test(valueKey);
-      const aggregated = Array.from(aggSum.entries()).map(([label, sum]) => ({
-        label,
-        value: useAvg ? sum / (aggCnt.get(label) ?? 1) : sum,
-      }));
-      const sorted = aggregated.sort((a, b) => b.value - a.value).slice(0, 15);
-
-      const isPct = isPercentageColumn(valueKey, data);
-      const xTickFormat = isPct
-        ? (v: number) => `${(v * 100).toFixed(1)}%`
-        : (v: number) => v >= 1_000_000 ? `${(v / 1_000_000).toFixed(1)}M` : v >= 1_000 ? `${(v / 1_000).toFixed(0)}k` : String(v);
-
-      plot = Plot.plot({
-        style: { background: "transparent", color: "#71717a", fontSize: "11px" },
-        width: containerRef.current.offsetWidth || 480,
-        height: Math.max(120, sorted.length * 26 + 40),
-        marginLeft: 130,
-        marginBottom: 32,
-        x: { label: valueKey.replace(/_/g, " "), grid: true, tickFormat: xTickFormat },
-        y: { label: null },
-        marks: [
-          Plot.barX(sorted, {
-            x: "value",
-            y: "label",
-            sort: { y: "-x" },
-            fill: "#34d399",
-            fillOpacity: 0.7,
-          }),
-          Plot.ruleX([0], { stroke: "#3f3f46" }),
-        ],
-      });
-    }
-
-    if (plot) {
-      containerRef.current.innerHTML = "";
-      containerRef.current.append(plot);
-    }
-
-    return () => {
-      if (containerRef.current) containerRef.current.innerHTML = "";
+      },
     };
-  }, [columns, rows, detected]);
+    content = <VegaChart spec={spec} data={records} height={200} />;
+  } else {
+    // bar — aggregate and use horizontal bar spec
+    const labelKey  = xKey;   // category on y-axis
+    const valueKey  = yKey;   // value on x-axis
+    const useAvg    = isShareColumn(valueKey, rows, inferred.yCols[0]);
+    const isPct     = useAvg;
+    const aggData   = aggregateForBar(records, labelKey, valueKey, useAvg);
+    const xFormat   = isPct ? ".1%" : "~s";
+    const spec      = barSpec("value", "label", { xFormat, maxBars: 15 });
+    const barHeight = Math.max(120, Math.min(aggData.length, 15) * 26 + 40);
 
-  if (!detected) return null;
+    content = (
+      <VegaChart
+        spec={{ ...spec, data: { values: aggData } }}
+        height={barHeight}
+      />
+    );
+  }
 
   return (
-    <div className="space-y-2">
-      <p className="text-xs font-semibold text-zinc-400 uppercase tracking-wide">
-        {title ?? (detected.type === "timeseries" ? "Trend" : "Breakdown")}
-      </p>
-      <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3 overflow-hidden">
-        <div ref={containerRef} className="w-full [&_svg]:overflow-visible" />
-      </div>
-    </div>
+    <ChartWrapper
+      title={chartTitle}
+      chartType={override}
+      availableTypes={available}
+      onChartTypeChange={setOverride}
+    >
+      {content}
+    </ChartWrapper>
   );
 }

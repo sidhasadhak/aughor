@@ -218,7 +218,7 @@ function EntityNode({
   return (
     <div
       className={cn(
-        "absolute rounded-2xl border cursor-pointer select-none transition-all duration-200",
+        "absolute rounded-md border cursor-pointer select-none transition-all duration-200",
         isNeighbour && !isSelected ? "border-violet-600/35 bg-zinc-900/90" : typeTheme.border,
         isDimmed && "opacity-20 pointer-events-none",
       )}
@@ -231,7 +231,7 @@ function EntityNode({
       <div className="px-3.5 pt-3.5 pb-3 border-b border-zinc-700/40">
         <div className="flex items-center gap-3">
           {/* Avatar */}
-          <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center shrink-0 font-bold text-[15px]", typeTheme.ring)}>
+          <div className={cn("w-10 h-10 rounded-md flex items-center justify-center shrink-0 font-bold text-[15px]", typeTheme.ring)}>
             {avatar}
           </div>
 
@@ -245,9 +245,9 @@ function EntityNode({
               {entity.display_name}
             </p>
             {entity.grain_verified ? (
-              <span className="text-[9px] text-emerald-400/60">verified grain</span>
+              <span className="text-[11px] text-emerald-400/60">verified grain</span>
             ) : (
-              <span className="text-[9px] text-zinc-700 font-mono truncate">
+              <span className="text-[11px] text-zinc-700 font-mono truncate">
                 {entity.source_tables[0]}
               </span>
             )}
@@ -255,7 +255,7 @@ function EntityNode({
         </div>
 
         {entity.description && (
-          <p className="text-[10px] text-zinc-500 mt-2 leading-relaxed line-clamp-2">
+          <p className="text-[11px] text-zinc-500 mt-2 leading-relaxed line-clamp-2">
             {entity.description}
           </p>
         )}
@@ -274,7 +274,7 @@ function EntityNode({
                 <span
                   key={s}
                   className={cn(
-                    "text-[9px] font-mono rounded-md px-1.5 py-0.5 border",
+                    "text-[11px] font-mono rounded-md px-1.5 py-0.5 border",
                     isTerminal
                       ? "text-zinc-600 border-zinc-700/60 bg-zinc-800/40"
                       : "text-sky-300 border-sky-500/20 bg-sky-500/8",
@@ -291,18 +291,18 @@ function EntityNode({
       {/* Footer — counts + investigate */}
       <div className="px-3.5 py-2 flex items-center gap-2">
         {actionCount > 0 && (
-          <span className="text-[9px] text-amber-400/50">
+          <span className="text-[11px] text-amber-400/50">
             {actionCount} action{actionCount !== 1 ? "s" : ""}
           </span>
         )}
         {metricCount > 0 && (
-          <span className="text-[9px] text-emerald-400/50">
+          <span className="text-[11px] text-emerald-400/50">
             {metricCount} metric{metricCount !== 1 ? "s" : ""}
           </span>
         )}
         {onInvestigate && (
           <button
-            className="ml-auto text-[9px] text-violet-400/60 hover:text-violet-300 border border-violet-500/15 hover:border-violet-400/35 rounded-md px-1.5 py-0.5 transition"
+            className="ml-auto text-[11px] text-violet-400/60 hover:text-violet-300 border border-violet-500/15 hover:border-violet-400/35 rounded-md px-1.5 py-0.5 transition"
             onClick={(e) => {
               e.stopPropagation();
               const q = entity.active_filter
@@ -581,46 +581,46 @@ function CausalEdges({
 
 // ── Legend ────────────────────────────────────────────────────────────────────
 
-function CanvasLegend() {
+function CanvasLegend({ showCausal }: { showCausal: boolean }) {
   return (
-    <div className="absolute bottom-4 left-4 flex items-center gap-4 bg-zinc-900/80 backdrop-blur-sm border border-zinc-700/50 rounded-lg px-4 py-2.5 pointer-events-none flex-wrap">
+    <div className="absolute top-4 left-4 flex items-center gap-4 bg-zinc-900/80 backdrop-blur-sm border border-zinc-700/50 rounded-lg px-4 py-2.5 pointer-events-none flex-wrap">
       {/* Entity types */}
-      <span className="text-[9px] text-zinc-600 uppercase tracking-wider font-semibold">Objects</span>
+      <span className="text-[11px] text-zinc-600 uppercase tracking-wider font-semibold">Objects</span>
       <div className="flex items-center gap-1.5">
         <span className="w-3 h-3 rounded-md bg-emerald-700/25 border border-emerald-600/30" />
-        <span className="text-[9px] text-zinc-500">reference data</span>
+        <span className="text-[11px] text-zinc-500">reference data</span>
       </div>
       <div className="flex items-center gap-1.5">
         <span className="w-3 h-3 rounded-md bg-sky-700/25 border border-sky-600/30" />
-        <span className="text-[9px] text-zinc-500">business object</span>
+        <span className="text-[11px] text-zinc-500">business object</span>
       </div>
       <div className="flex items-center gap-1.5">
         <span className="w-3 h-3 rounded-md bg-violet-700/25 border border-violet-600/30" />
-        <span className="text-[9px] text-zinc-500">event</span>
+        <span className="text-[11px] text-zinc-500">event</span>
       </div>
       {/* Divider */}
-      <span className="text-zinc-700 text-[9px]">|</span>
+      <span className="text-zinc-700 text-[11px]">|</span>
       {/* Relationships */}
-      <span className="text-[9px] text-zinc-600 uppercase tracking-wider font-semibold">Links</span>
+      <span className="text-[11px] text-zinc-600 uppercase tracking-wider font-semibold">Links</span>
       <div className="flex items-center gap-1.5">
         <svg width="28" height="8" className="shrink-0">
           <line x1="0" y1="4" x2="28" y2="4" stroke="#4e9dcc" strokeWidth="1.5"
             strokeDasharray="5 7" style={{ animation: "edge-flow 1.2s linear infinite" }} />
         </svg>
-        <span className="text-[9px] text-zinc-500">inferred</span>
+        <span className="text-[11px] text-zinc-500">inferred</span>
       </div>
       <div className="flex items-center gap-1.5">
         <svg width="28" height="8" className="shrink-0">
           <line x1="0" y1="4" x2="28" y2="4" stroke="#34d399" strokeWidth="1.5"
             strokeDasharray="3 30" style={{ animation: "edge-flow-verified 2.2s linear infinite" }} />
         </svg>
-        <span className="text-[9px] text-zinc-500">verified</span>
+        <span className="text-[11px] text-zinc-500">verified</span>
       </div>
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1.5" style={{ opacity: showCausal ? 1 : 0.3 }}>
         <svg width="28" height="8" className="shrink-0">
           <line x1="0" y1="4" x2="28" y2="4" stroke="#f97316" strokeWidth="1.5" strokeDasharray="6 4" />
         </svg>
-        <span className="text-[9px] text-zinc-500">causal</span>
+        <span className="text-[11px] text-zinc-500">causal</span>
       </div>
     </div>
   );
@@ -643,7 +643,7 @@ function ColLabels({ labels }: { labels: { x: number; label: string }[] }) {
         <div
           key={x}
           className={cn(
-            "absolute text-[9px] uppercase tracking-widest font-semibold pointer-events-none",
+            "absolute text-[11px] uppercase tracking-widest font-semibold pointer-events-none",
             COL_LABEL_STYLE[label] ?? "text-zinc-700",
           )}
           style={{ left: x, top: 20 }}
@@ -657,7 +657,8 @@ function ColLabels({ labels }: { labels: { x: number; label: string }[] }) {
 
 // ── Main export ───────────────────────────────────────────────────────────────
 
-const INITIAL_ZOOM = 0.72;
+const INITIAL_ZOOM   = 1.0;
+const CANVAS_OVERFLOW = 600;   // extra dotted space beyond content on each side
 
 export function OntologyCanvas({
   graph,
@@ -678,13 +679,18 @@ export function OntologyCanvas({
   const [hoveredEdgeId,   setHoveredEdgeId]   = useState<string | null>(null);
   const [zoom,            setZoom]             = useState(INITIAL_ZOOM);
   const [causalEdges,     setCausalEdges]      = useState<CausalEdge[]>([]);
+  const [showCausal,      setShowCausal]       = useState(true);
 
   useEffect(() => {
     if (!connId) return;
     getCausalGraph(connId).then(setCausalEdges).catch(() => {});
   }, [connId]);
 
-  const { nodes, canvasW, canvasH, colLabels } = useMemo(() => computeLayout(graph), [graph]);
+  const { nodes, colLabels, canvasW: rawW, canvasH: rawH } = useMemo(() => computeLayout(graph), [graph]);
+  // Extend canvas with overflow so the dotted background continues well past content
+  // (gives plenty of room when zooming out or panning)
+  const canvasW = rawW + CANVAS_OVERFLOW;
+  const canvasH = rawH + CANVAS_OVERFLOW;
   const nodeMap = useMemo(
     () => Object.fromEntries(nodes.map(n => [n.entity.id, n])),
     [nodes],
@@ -750,24 +756,44 @@ export function OntologyCanvas({
   return (
     <div className="w-full h-full relative" style={{ background: "#11171D" }}>
 
-      {/* Zoom controls — pinned top-right, outside scroll area */}
+      {/* Zoom controls + causal toggle — pinned top-right, outside scroll area */}
       <div className="absolute top-3 right-3 z-20 flex items-center gap-1 bg-zinc-900/80 backdrop-blur-sm border border-zinc-700/50 rounded-lg px-2.5 py-1.5 pointer-events-auto select-none">
+        {/* Causal arrows toggle */}
         <button
-          onClick={() => setZoom(z => Math.max(0.35, +((z - 0.1).toFixed(2))))}
+          onClick={() => setShowCausal(v => !v)}
+          title={showCausal ? "Hide causal arrows" : "Show causal arrows"}
+          className={cn(
+            "flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md border transition",
+            showCausal
+              ? "text-orange-400 border-orange-500/30 bg-orange-500/10 hover:bg-orange-500/15"
+              : "text-zinc-600 border-zinc-700/50 hover:text-zinc-400",
+          )}
+        >
+          <svg width="14" height="8" className="shrink-0">
+            <line x1="0" y1="4" x2="10" y2="4" stroke="currentColor" strokeWidth="1.5" strokeDasharray="4 3" />
+            <path d="M8,1.5 L13,4 L8,6.5 Z" fill="currentColor" />
+          </svg>
+          causal
+        </button>
+
+        <div className="w-px h-3 bg-zinc-700 mx-0.5" />
+
+        <button
+          onClick={() => setZoom(z => Math.max(0.2, +((z - 0.1).toFixed(2))))}
           className="w-5 h-5 flex items-center justify-center text-zinc-400 hover:text-zinc-200 text-base font-mono transition"
         >−</button>
-        <span className="text-[10px] font-mono text-zinc-400 w-8 text-center">
+        <span className="text-[11px] font-mono text-zinc-400 w-8 text-center">
           {Math.round(zoom * 100)}%
         </span>
         <button
-          onClick={() => setZoom(z => Math.min(1.8, +((z + 0.1).toFixed(2))))}
+          onClick={() => setZoom(z => Math.min(2.0, +((z + 0.1).toFixed(2))))}
           className="w-5 h-5 flex items-center justify-center text-zinc-400 hover:text-zinc-200 text-base font-mono transition"
         >+</button>
         <div className="w-px h-3 bg-zinc-700 mx-0.5" />
         <button
           onClick={() => setZoom(INITIAL_ZOOM)}
-          className="text-[9px] text-zinc-500 hover:text-zinc-300 transition px-1"
-        >fit</button>
+          className="text-[11px] text-zinc-500 hover:text-zinc-300 transition px-1"
+        >100%</button>
       </div>
 
       {/* Scrollable canvas area */}
@@ -801,12 +827,14 @@ export function OntologyCanvas({
               onClickEdge={onClickEdge}
             />
 
-            <CausalEdges
-              causalEdges={causalEdges}
-              nodeMap={nodeMap}
-              canvasW={canvasW}
-              canvasH={canvasH}
-            />
+            {showCausal && (
+              <CausalEdges
+                causalEdges={causalEdges}
+                nodeMap={nodeMap}
+                canvasW={canvasW}
+                canvasH={canvasH}
+              />
+            )}
 
             {nodes.map(nl => {
               const actionCount = Object.values(graph.actions).filter(
@@ -842,7 +870,7 @@ export function OntologyCanvas({
               );
             })}
 
-            <CanvasLegend />
+            <CanvasLegend showCausal={showCausal} />
           </div>
         </div>
       </div>

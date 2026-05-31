@@ -8,6 +8,11 @@ import {
   resumeExploration,
   restartExploration,
   retryQuery,
+  getCanvasExplorationEpisodes,
+  getCanvasExplorationStatus,
+  stopCanvasExploration,
+  resumeCanvasExploration,
+  restartCanvasExploration,
   type ExplorationEpisode,
   type ExplorationStatus,
   type RetryQueryResult,
@@ -139,23 +144,23 @@ function StatusBar({ status, stopped, onStop, onResume, onRestart, stopping, res
   const meta = phaseMeta(status.phase);
   return (
     <div className="flex items-center gap-3 px-4 py-2 border-b shrink-0" style={{ borderColor: "#1e1f24", background: "#11171d" }}>
-      <span className="flex items-center gap-1.5 text-[10px] px-2 py-0.5 rounded font-medium"
+      <span className="flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded font-medium"
         style={isStopped && !isRunning ? { background: "#1e1f24", color: "#5a5b62" } : { background: meta.bg, color: meta.color }}>
         {isRunning && <span className="inline-block w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: meta.color }} />}
         {isStopped && !isRunning ? "stopped" : status.phase === "complete" ? "complete" : status.phase === "pending" ? "idle" : meta.label}
       </span>
-      <span className="text-[10px]" style={{ color: "#3e3f4a" }}>
+      <span className="text-[11px]" style={{ color: "var(--t4)" }}>
         {status.queries_executed > 0 && `${status.queries_executed} queries`}
         {status.facts_discovered > 0 && ` · ${status.facts_discovered} facts`}
         {status.insights_found    > 0 && ` · ${status.insights_found} insights`}
       </span>
       <div className="ml-auto flex items-center gap-2">
-        <span className="text-[10px]" style={{ color: "#2e2f37" }}>
+        <span className="text-[11px]" style={{ color: "var(--b0)" }}>
           {status.tables_total > 0 && `${status.tables_total} tables · ${status.joins_total} joins`}
         </span>
         {isRunning && (
           <button onClick={onStop} disabled={stopping}
-            className="flex items-center gap-1 text-[10px] px-2.5 py-1 rounded transition-all disabled:opacity-40"
+            className="flex items-center gap-1 text-[11px] px-2.5 py-1 rounded transition-all disabled:opacity-40"
             style={{ background: "#2a1414", color: "#f87171", border: "0.5px solid #3e2020" }}>
             <span className="w-2 h-2 rounded-sm inline-block" style={{ background: "#f87171" }} />
             {stopping ? "stopping…" : "Stop"}
@@ -163,12 +168,12 @@ function StatusBar({ status, stopped, onStop, onResume, onRestart, stopping, res
         )}
         {isStopped && !isRunning && (<>
           <button onClick={onResume} disabled={resuming || restarting}
-            className="text-[10px] px-2.5 py-1 rounded transition-all disabled:opacity-40"
+            className="text-[11px] px-2.5 py-1 rounded transition-all disabled:opacity-40"
             style={{ background: "#1a2030", color: "#60a5fa", border: "0.5px solid #2a3a50" }}>
             {resuming ? "resuming…" : "Resume"}
           </button>
           <button onClick={onRestart} disabled={resuming || restarting}
-            className="text-[10px] px-2.5 py-1 rounded transition-all disabled:opacity-40"
+            className="text-[11px] px-2.5 py-1 rounded transition-all disabled:opacity-40"
             style={{ background: "#221a10", color: "#fb923c", border: "0.5px solid #3a2a10" }}>
             {restarting ? "restarting…" : "Restart"}
           </button>
@@ -194,7 +199,7 @@ function RetryPanel({ ep, connectionId, errorMsg }: { ep: ExplorationEpisode; co
   }
 
   if (!open) return (
-    <button onClick={() => setOpen(true)} className="text-[10px] px-2.5 py-1 rounded mt-2"
+    <button onClick={() => setOpen(true)} className="text-[11px] px-2.5 py-1 rounded mt-2"
       style={{ background: "#1a1e2e", color: "#7ba8f7", border: "0.5px solid #2a3050" }}>
       ↺ Retry with fix
     </button>
@@ -202,7 +207,7 @@ function RetryPanel({ ep, connectionId, errorMsg }: { ep: ExplorationEpisode; co
 
   return (
     <div className="rounded-md p-3 space-y-2 mt-2" style={{ background: "#11171d", border: "0.5px solid #2a2b35" }}>
-      <p className="text-[9px] uppercase tracking-widest" style={{ color: "#3e3f4a" }}>Guidance (optional)</p>
+      <p className="text-[11px] uppercase tracking-widest" style={{ color: "var(--t4)" }}>Guidance (optional)</p>
       <div className="flex gap-2">
         <input type="text" value={hint} onChange={e => setHint(e.target.value)}
           onKeyDown={e => e.key === "Enter" && !loading && handleRetry()}
@@ -210,23 +215,23 @@ function RetryPanel({ ep, connectionId, errorMsg }: { ep: ExplorationEpisode; co
           className="flex-1 text-[11px] rounded px-2.5 py-1.5 focus:outline-none"
           style={{ background: "#13141a", border: "0.5px solid #2a2b35", color: "#9a9ba4" }} />
         <button onClick={handleRetry} disabled={loading}
-          className="text-[10px] px-3 py-1.5 rounded disabled:opacity-40 shrink-0"
+          className="text-[11px] px-3 py-1.5 rounded disabled:opacity-40 shrink-0"
           style={{ background: "#1a2030", color: "#60a5fa", border: "0.5px solid #2a3a50" }}>
           {loading ? "fixing…" : "Run fix"}
         </button>
         <button onClick={() => { setOpen(false); setResult(null); }}
-          className="text-[10px] px-2 py-1.5 rounded" style={{ color: "#3e3f4a" }}>✕</button>
+          className="text-[11px] px-2 py-1.5 rounded" style={{ color: "var(--t4)" }}>✕</button>
       </div>
       {result && (
         <div className="space-y-2 pt-1">
           {result.explanation && <p className="text-[11px]" style={{ color: "#7ba8f7" }}>{result.explanation}</p>}
-          <pre className="text-[10px] font-mono rounded p-2 overflow-x-auto"
+          <pre className="text-[11px] font-mono rounded p-2 overflow-x-auto"
             style={{ background: "var(--code-bg)", color: "#5a5b62", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
             {result.corrected_sql}
           </pre>
           {result.ok ? (
             <div className="overflow-x-auto rounded" style={{ background: "var(--code-bg)" }}>
-              <table className="text-[10px] font-mono w-full">
+              <table className="text-[11px] font-mono w-full">
                 <thead><tr>{result.columns.map(c => (
                   <th key={c} className="px-2 py-1 text-left font-medium"
                     style={{ color: "#4a4b57", borderBottom: "0.5px solid #1e1f24" }}>{c}</th>
@@ -239,7 +244,7 @@ function RetryPanel({ ep, connectionId, errorMsg }: { ep: ExplorationEpisode; co
               </table>
             </div>
           ) : (
-            <pre className="text-[10px] font-mono rounded p-2"
+            <pre className="text-[11px] font-mono rounded p-2"
               style={{ background: "#180f0f", color: "#f87171", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
               {result.error}
             </pre>
@@ -260,14 +265,14 @@ function ExpandedDetail({ ep, connectionId }: { ep: ExplorationEpisode; connecti
     <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "12px 4px 8px" }}>
       {/* SQL */}
       <div>
-        <p style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "#2e2f37", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>SQL</p>
+        <p style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "var(--b0)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>SQL</p>
         <pre style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "#5a5b62", background: "#11171d", border: "0.5px solid #1a1b20", borderRadius: 4, padding: "8px 10px", overflowX: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all", lineHeight: 1.6, margin: 0 }}>
           {ep.sql || "(no sql)"}
         </pre>
       </div>
       {/* Result */}
       <div>
-        <p style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "#2e2f37", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>Result</p>
+        <p style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "var(--b0)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>Result</p>
         <pre style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: isError ? "#f87171" : "#5a5b62", background: isError ? "#180f0f" : "#0a0b0d", border: `0.5px solid ${isError ? "#3e1a1a" : "#1a1b20"}`, borderRadius: 4, padding: "8px 10px", overflowX: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all", lineHeight: 1.6, margin: 0 }}>
           {obsPreview}
         </pre>
@@ -275,7 +280,7 @@ function ExpandedDetail({ ep, connectionId }: { ep: ExplorationEpisode; connecti
       {/* Query intent */}
       {ep.think && (
         <div>
-          <p style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "#2e2f37", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 4 }}>Query intent</p>
+          <p style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "var(--b0)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 4 }}>Query intent</p>
           <p style={{ fontSize: 11, color: "#4a4b57", lineHeight: 1.55, margin: 0 }}>{ep.think}</p>
         </div>
       )}
@@ -314,7 +319,7 @@ function LogTable({ items, connectionId, sortCol, sortDir, onSort }: LogTablePro
     background: "#11171d",
     padding: "7px 8px",
     textAlign: "left", fontSize: 9,
-    fontFamily: "var(--font-mono)", color: "#3e3f4a",
+    fontFamily: "var(--font-mono)", color: "var(--t4)",
     textTransform: "uppercase", letterSpacing: "0.07em",
     borderBottom: "1px solid #1e1f24", fontWeight: 500,
     whiteSpace: "nowrap",
@@ -323,7 +328,7 @@ function LogTable({ items, connectionId, sortCol, sortDir, onSort }: LogTablePro
   };
 
   function thClick(col: SortCol) {
-    return { style: { ...TH, color: sortCol === col ? "#7ba8f7" : "#3e3f4a" }, onClick: () => onSort(col) };
+    return { style: { ...TH, color: sortCol === col ? "#7ba8f7" : "var(--t4)" }, onClick: () => onSort(col) };
   }
 
   return (
@@ -341,7 +346,7 @@ function LogTable({ items, connectionId, sortCol, sortDir, onSort }: LogTablePro
         </colgroup>
         <thead>
           <tr>
-            <th {...thClick("seq")} style={{ ...TH, textAlign: "right", paddingRight: 10, color: sortCol === "seq" ? "#7ba8f7" : "#3e3f4a", cursor: "pointer" }}>
+            <th {...thClick("seq")} style={{ ...TH, textAlign: "right", paddingRight: 10, color: sortCol === "seq" ? "#7ba8f7" : "var(--t4)", cursor: "pointer" }}>
               #<SortIcon active={sortCol === "seq"} dir={sortDir} />
             </th>
             <th {...thClick("ts")}>
@@ -356,7 +361,7 @@ function LogTable({ items, connectionId, sortCol, sortDir, onSort }: LogTablePro
             <th {...thClick("status")}>
               status<SortIcon active={sortCol === "status"} dir={sortDir} />
             </th>
-            <th {...thClick("rows")} style={{ ...TH, textAlign: "right", color: sortCol === "rows" ? "#7ba8f7" : "#3e3f4a", cursor: "pointer" }}>
+            <th {...thClick("rows")} style={{ ...TH, textAlign: "right", color: sortCol === "rows" ? "#7ba8f7" : "var(--t4)", cursor: "pointer" }}>
               rows<SortIcon active={sortCol === "rows"} dir={sortDir} />
             </th>
             <th {...thClick("object")}>
@@ -388,7 +393,7 @@ function LogTable({ items, connectionId, sortCol, sortDir, onSort }: LogTablePro
                   onMouseLeave={e => { if (!isOpen) (e.currentTarget as HTMLTableRowElement).style.background = "transparent"; }}
                 >
                   {/* # */}
-                  <td style={{ padding: "7px 10px 7px 8px", textAlign: "right", fontSize: 10, fontFamily: "var(--font-mono)", color: "#2e2f37", whiteSpace: "nowrap" }}>
+                  <td style={{ padding: "7px 10px 7px 8px", textAlign: "right", fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--b0)", whiteSpace: "nowrap" }}>
                     {seq}
                   </td>
                   {/* timestamp */}
@@ -425,7 +430,7 @@ function LogTable({ items, connectionId, sortCol, sortDir, onSort }: LogTablePro
                     {meta.object}
                   </td>
                   {/* expand */}
-                  <td style={{ padding: "7px 8px", textAlign: "center", fontSize: 9, color: "#2e2f37" }}>
+                  <td style={{ padding: "7px 8px", textAlign: "center", fontSize: 9, color: "var(--b0)" }}>
                     {isOpen ? "▲" : "▼"}
                   </td>
                 </tr>
@@ -456,7 +461,7 @@ function Seg<T extends string>({ value, options, onChange }: { value: T; options
         <button key={o.v} onClick={() => onChange(o.v)} style={{
           fontSize: 10, padding: "3px 9px", borderRadius: 4, cursor: "pointer",
           background: value === o.v ? "#1a1e2e" : "transparent",
-          color: value === o.v ? "#7ba8f7" : "#3e3f4a",
+          color: value === o.v ? "#7ba8f7" : "var(--t4)",
           border: value === o.v ? "0.5px solid #2a3050" : "0.5px solid transparent",
           fontWeight: value === o.v ? 500 : 400,
           transition: "all .1s",
@@ -473,9 +478,10 @@ function Seg<T extends string>({ value, options, onChange }: { value: T; options
 interface Props {
   connectionId: string;
   isActive:     boolean;
+  canvasId?:    string;
 }
 
-export function ActivityLog({ connectionId, isActive }: Props) {
+export function ActivityLog({ connectionId, isActive, canvasId }: Props) {
   const [episodes, setEpisodes]   = useState<ExplorationEpisode[]>([]);
   const [status, setStatus]       = useState<ExplorationStatus | null>(null);
   const [stopped, setStopped]     = useState(false);
@@ -494,26 +500,52 @@ export function ActivityLog({ connectionId, isActive }: Props) {
     let cancelled = false;
     const load = async () => {
       try {
-        const [eps, st] = await Promise.all([
-          getExplorationEpisodes(connectionId, "", 1000),
-          getExplorationStatus(connectionId).catch(() => null),
-        ]);
+        const [eps, st] = canvasId
+          ? await Promise.all([
+              getCanvasExplorationEpisodes(canvasId, "", 1000),
+              getCanvasExplorationStatus(canvasId).catch(() => null),
+            ])
+          : await Promise.all([
+              getExplorationEpisodes(connectionId, "", 1000),
+              getExplorationStatus(connectionId).catch(() => null),
+            ]);
         if (!cancelled) { setEpisodes(eps); setStatus(st); if (st?.paused) setStopped(true); }
       } catch { /* next poll retries */ }
     };
     load();
     const t = setInterval(load, 5_000);
     return () => { cancelled = true; clearInterval(t); };
-  }, [connectionId, isActive]);
+  }, [connectionId, canvasId, isActive]);
 
   function handleSort(col: SortCol) {
     if (col === sortCol) setSortDir(d => d === "asc" ? "desc" : "asc");
     else { setSortCol(col); setSortDir(col === "ts" ? "desc" : "asc"); }
   }
 
-  async function handleStop()    { setStopping(true);   try { await stopExploration(connectionId);    setStopped(true);  } finally { setStopping(false);   } }
-  async function handleResume()  { setResuming(true);   try { await resumeExploration(connectionId);  setStopped(false); } finally { setResuming(false);   } }
-  async function handleRestart() { setRestarting(true); try { await restartExploration(connectionId); setStopped(false); setEpisodes([]); } finally { setRestarting(false); } }
+  async function handleStop() {
+    setStopping(true);
+    try {
+      if (canvasId) await stopCanvasExploration(canvasId);
+      else await stopExploration(connectionId);
+      setStopped(true);
+    } finally { setStopping(false); }
+  }
+  async function handleResume() {
+    setResuming(true);
+    try {
+      if (canvasId) await resumeCanvasExploration(canvasId);
+      else await resumeExploration(connectionId);
+      setStopped(false);
+    } finally { setResuming(false); }
+  }
+  async function handleRestart() {
+    setRestarting(true);
+    try {
+      if (canvasId) await restartCanvasExploration(canvasId);
+      else await restartExploration(connectionId);
+      setStopped(false); setEpisodes([]);
+    } finally { setRestarting(false); }
+  }
 
   // Build withMeta (preserve original seq)
   const withMeta: WithMeta[] = episodes.map((ep, i) => ({
@@ -540,9 +572,9 @@ export function ActivityLog({ connectionId, isActive }: Props) {
     return (
       <div className="h-full flex flex-col">
         <StatusBar status={status} stopped={stopped} onStop={handleStop} onResume={handleResume} onRestart={handleRestart} stopping={stopping} resuming={resuming} restarting={restarting} />
-        <div className="flex-1 flex flex-col items-center justify-center gap-2" style={{ color: "#3e3f4a" }}>
+        <div className="flex-1 flex flex-col items-center justify-center gap-2" style={{ color: "var(--t4)" }}>
           <p className="text-[12px]">No activity recorded yet.</p>
-          <p className="text-[11px]" style={{ color: "#2e2f37" }}>Activity appears here as background exploration runs.</p>
+          <p className="text-[11px]" style={{ color: "var(--b0)" }}>Activity appears here as background exploration runs.</p>
         </div>
       </div>
     );
@@ -578,7 +610,7 @@ export function ActivityLog({ connectionId, isActive }: Props) {
             {errorCount} error{errorCount !== 1 ? "s" : ""}
           </span>
         )}
-        <span className="text-[10px]" style={{ color: "#3e3f4a" }}>
+        <span className="text-[11px]" style={{ color: "var(--t4)" }}>
           {showAll ? `${filtered.length}` : `${Math.min(DEFAULT_LIMIT, filtered.length)} of ${filtered.length}`}
           {isRunning && <span className="ml-2 animate-pulse" style={{ color: "#4a4b57" }}>● live</span>}
         </span>
@@ -597,7 +629,7 @@ export function ActivityLog({ connectionId, isActive }: Props) {
       {/* Table */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto" style={{ background: "#11171d" }}>
         {displayed.length === 0 ? (
-          <div className="flex items-center justify-center h-32 text-[11px]" style={{ color: "#3e3f4a" }}>
+          <div className="flex items-center justify-center h-32 text-[11px]" style={{ color: "var(--t4)" }}>
             No entries match the current filters.
           </div>
         ) : (

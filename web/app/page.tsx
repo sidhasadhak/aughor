@@ -9,6 +9,9 @@ import { HistoryDetailPanel } from "@/components/HistoryDetailPanel";
 import { ChatPanel } from "@/components/ChatPanel";
 import { OntologyPanel } from "@/components/OntologyPanel";
 import { ExplorationPanel } from "@/components/ExplorationPanel";
+import { OrgIntelPanel } from "@/components/OrgIntelPanel";
+import { IntelligenceHub } from "@/components/IntelligenceHub";
+import { BriefingPanel } from "@/components/BriefingPanel";
 import { SystemPanel } from "@/components/SystemPanel";
 import { ActivityLog } from "@/components/ActivityLog";
 import { SchemaProvider } from "@/lib/schema-context";
@@ -42,13 +45,16 @@ import {
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 type NavTab =
-  | "ask"               // hero screen — investigation input + health + recents
+  | "home"              // overview dashboard — stats, health, recents, quick input
   | "chat"              // active investigation / chat (hidden from nav)
   | "canvases"
   | "canvas-workspace"
   | "recents"
   | "inbox"
+  | "briefing"
+  | "intel-hub"
   | "intel"
+  | "org-intel"
   | "ontology"
   | "health"
   | "playbook"
@@ -61,6 +67,7 @@ type NavTab =
   | "settings";
 
 type Theme = "dark" | "light";
+type AskMode = "ask" | "investigate";
 
 // ── Icon primitives ────────────────────────────────────────────────────────────
 
@@ -93,6 +100,7 @@ const ICON_PATHS: Record<string, string> = {
   canvas:   "M4 6h16M4 10h16M4 14h8M4 18h5M15 14l2 2 4-4",
   plug:     "M7 2v4M17 2v4M12 13v6M9 19h6M5 6h14l-1.5 7a2 2 0 01-2 1.73H8.5A2 2 0 016.5 13L5 6z",
   metric:   "M3 3v18h18M7 16l4-4 4 4 4-4M7 12l4-8 2 4 2-4 4 8",
+  brief:    "M3 5h18M3 9h18M3 13h12M3 17h8",
 };
 
 function NavIcon({ name, size = 14, color = "currentColor" }: { name: string; size?: number; color?: string }) {
@@ -236,8 +244,8 @@ function Topbar({
 
 // ── 5-section nav: Ask / Investigations / Intelligence / Data Map / Governance ──
 const NAV_GROUPS = [
-  // ASK — primary user intent: ask a question or open a canvas
-  { id: "ask",         icon: "spark",    label: "Ask",           group: null },
+  // HOME — overview dashboard
+  { id: "home",        icon: "home",     label: "Home",          group: null },
   { id: "canvases",    icon: "canvas",   label: "Canvases",      group: null },
 
   // INVESTIGATIONS — what Aughor has found; act on it
@@ -245,7 +253,10 @@ const NAV_GROUPS = [
   { id: "inbox",       icon: "spark",    label: "Inbox",         group: null },
 
   // INTELLIGENCE — what Aughor knows about your data
-  { id: "intel",       icon: "process",  label: "Domain Intel",  group: "Intelligence" },
+  { id: "briefing",    icon: "brief",    label: "Briefing",      group: "Intelligence" },
+  { id: "intel-hub",   icon: "node",     label: "Hub",           group: null },
+  { id: "intel",       icon: "process",  label: "Domain Intel",  group: null },
+  { id: "org-intel",   icon: "spark",    label: "Org Intel",     group: null },
   { id: "ontology",    icon: "node",     label: "Ontology",      group: null },
   { id: "health",      icon: "activity", label: "Health",        group: null },
   { id: "playbook",    icon: "playbook", label: "Playbook",      group: null },
@@ -466,7 +477,7 @@ function HomeScreen({
 }: {
   connections: Connection[];
   selectedConn: string;
-  onGoToChat: (q?: string) => void;
+  onGoToChat: (q?: string, mode?: AskMode) => void;
   onNavigate: (t: NavTab) => void;
   onOpenInvestigation: (id: string) => void;
 }) {
@@ -474,6 +485,9 @@ function HomeScreen({
   const [exploration, setExploration] = useState<ExplorationStatus | null>(null);
   const [ontology, setOntology] = useState<OntologyGraph | null>(null);
   const [domainInsightCount, setDomainInsightCount] = useState<number | null>(null);
+  const [q, setQ] = useState("");
+  const [mode, setMode] = useState<AskMode>("investigate");
+  const inputRef = useRef<HTMLInputElement>(null);
   const conn = connections.find(c => c.id === selectedConn);
 
   useEffect(() => {
@@ -501,26 +515,76 @@ function HomeScreen({
     "Is APAC churn a trend or one-time event?",
   ];
 
+  const handleSubmit = () => {
+    const question = q.trim();
+    if (!question) return;
+    onGoToChat(question, mode);
+    setQ("");
+  };
+
   return (
     <div className="aug-screen">
       <div className="aug-content-header">
         <NavIcon name="home" size={14} color="var(--t3)" />
-        <span style={{ fontSize: 13, fontWeight: 500 }}>Overview</span>
-        <div style={{ marginLeft: "auto" }}>
-          <span className="aug-tag aug-tag-gray">May 2026</span>
-        </div>
+        <span style={{ fontSize: 13, fontWeight: 500 }}>Home</span>
+        {conn && (
+          <div style={{ marginLeft: 8, display: "inline-flex", alignItems: "center", gap: 5, padding: "2px 8px", borderRadius: "var(--r2)", background: "var(--bg-2)", border: "1px solid var(--b1)" }}>
+            <span className="aug-dot aug-dot-grn aug-anim-blink" />
+            <span style={{ fontSize: 11, color: "var(--t2)", fontFamily: "var(--font-mono)" }}>{conn.name}</span>
+          </div>
+        )}
       </div>
 
       <div style={{ flex: 1, overflowY: "auto", padding: "24px 28px", display: "flex", flexDirection: "column", gap: 24 }}>
 
-        {/* Welcome */}
-        <div>
-          <h1 style={{ fontSize: 20, fontWeight: 600, color: "var(--t1)", letterSpacing: "-.02em", marginBottom: 4 }}>
-            Intelligence Overview
-          </h1>
-          <p style={{ fontSize: 12, color: "var(--t3)", lineHeight: 1.6 }}>
-            Aughor has explored your warehouse and built a live business ontology. All findings are evidence-backed.
-          </p>
+        {/* Investigation input */}
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <div style={{
+            flex: 1, display: "flex", alignItems: "center", gap: 0,
+            background: "var(--bg-2)", border: "1px solid var(--b2)",
+            borderRadius: "var(--r3)", overflow: "hidden", boxShadow: "var(--shadow-sm)",
+            transition: "border-color .12s",
+          }}
+            onFocusCapture={e => (e.currentTarget.style.borderColor = "var(--bfocus)")}
+            onBlurCapture={e => (e.currentTarget.style.borderColor = "var(--b2)")}
+          >
+            <span style={{ flexShrink: 0, marginLeft: 12, display: "flex" }}><NavIcon name="spark" size={13} color="var(--t4)" /></span>
+            <input
+              ref={inputRef}
+              value={q}
+              onChange={e => setQ(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") handleSubmit(); }}
+              placeholder="What do you want to investigate?"
+              style={{
+                flex: 1, padding: "10px 12px", background: "transparent",
+                border: "none", outline: "none", fontSize: 13,
+                color: "var(--t1)", fontFamily: "var(--font-ui)",
+              }}
+            />
+            {/* Mode toggle */}
+            <div style={{ display: "flex", background: "var(--bg-1)", borderLeft: "1px solid var(--b1)", padding: "4px", gap: 2, flexShrink: 0 }}>
+              {([["ask", "Quick"], ["investigate", "Agentic"]] as [AskMode, string][]).map(([m, label]) => (
+                <button key={m} onClick={() => setMode(m)} style={{
+                  padding: "3px 9px", borderRadius: "calc(var(--r2) - 2px)", fontSize: 11, fontWeight: 500, cursor: "pointer",
+                  background: mode === m ? "var(--blue3)" : "transparent",
+                  color: mode === m ? "#fff" : "var(--t3)",
+                  border: "none", transition: "all .12s",
+                }}>{label}</button>
+              ))}
+            </div>
+            <button
+              onClick={handleSubmit}
+              disabled={!q.trim()}
+              style={{
+                padding: "0 16px", height: "100%", background: q.trim() ? "var(--blue3)" : "var(--bg-3)",
+                border: "none", borderLeft: "1px solid var(--b1)", cursor: q.trim() ? "pointer" : "default",
+                color: q.trim() ? "#fff" : "var(--t4)", fontSize: 12, fontWeight: 600,
+                transition: "all .12s", flexShrink: 0,
+              }}
+            >
+              {mode === "investigate" ? "Investigate" : "Ask"}
+            </button>
+          </div>
         </div>
 
         {/* Stats */}
@@ -532,7 +596,7 @@ function HomeScreen({
         </div>
 
         {/* Health scorecard — surfaced above the fold */}
-        <ProcessHealthPanel connectionId={selectedConn} onInvestigate={onGoToChat} />
+        <ProcessHealthPanel connectionId={selectedConn} onInvestigate={q => onGoToChat(q, "investigate")} />
 
         {/* Quick actions */}
         <div>
@@ -707,329 +771,6 @@ function RecentsScreen({ onGoToChat, onOpenInvestigation }: { onGoToChat: (q?: s
             </table>
           </div>
         )}
-      </div>
-    </div>
-  );
-}
-
-// ── Ask Hero Screen ────────────────────────────────────────────────────────────
-
-const ASK_PLACEHOLDERS = [
-  "Why did revenue drop last month?",
-  "Which customers are at churn risk?",
-  "Compare refund rates by region",
-  "What drove the cart abandonment spike?",
-  "Show me top products by lifetime value",
-  "Is APAC churn a trend or a one-time event?",
-];
-
-type AskMode = "ask" | "investigate";
-
-function AskScreen({
-  connections,
-  selectedConn,
-  onGoToChat,
-  onNavigate,
-  onOpenInvestigation,
-}: {
-  connections: Connection[];
-  selectedConn: string;
-  onGoToChat: (q?: string, mode?: AskMode) => void;
-  onNavigate: (t: NavTab) => void;
-  onOpenInvestigation: (id: string) => void;
-}) {
-  const [q, setQ] = useState("");
-  const [mode, setMode] = useState<AskMode>("investigate");
-  const [phIdx, setPhIdx] = useState(0);
-  const [recentInvs, setRecentInvs] = useState<Array<{ id: string; question: string; started_at: string; status: string; headline: string | null }>>([]);
-  const [exploration, setExploration] = useState<ExplorationStatus | null>(null);
-  const [domainInsightCount, setDomainInsightCount] = useState<number | null>(null);
-  const [unackAlerts, setUnackAlerts] = useState<import("@/lib/api").MonitorAlert[]>([]);
-  const [digestExpanded, setDigestExpanded] = useState(false);
-  const textRef = useRef<HTMLTextAreaElement>(null);
-  const conn = connections.find(c => c.id === selectedConn);
-
-  // Rotate placeholder
-  useEffect(() => {
-    const id = setInterval(() => setPhIdx(i => (i + 1) % ASK_PLACEHOLDERS.length), 3500);
-    return () => clearInterval(id);
-  }, []);
-
-  useEffect(() => {
-    fetch(`${API_BASE}/investigations`)
-      .then(r => r.json())
-      .then(d => setRecentInvs(Array.isArray(d) ? d.slice(0, 6) : []))
-      .catch(() => {});
-    getExplorationStatus(selectedConn).then(setExploration).catch(() => {});
-    getDomainInsights(selectedConn)
-      .then(d => setDomainInsightCount(Object.values(d).reduce((s, v) => s + (v as { insights: unknown[] }).insights.length, 0)))
-      .catch(() => {});
-    // Load unacknowledged monitor alerts for the bell badge
-    import("@/lib/api").then(({ getAllAlerts }) =>
-      getAllAlerts(selectedConn, 50)
-        .then(alerts => setUnackAlerts(alerts.filter(a => !a.acknowledged)))
-        .catch(() => {})
-    );
-  }, [selectedConn]);
-
-  const handleSubmit = () => {
-    const question = q.trim();
-    if (!question) return;
-    onGoToChat(question, mode);
-    setQ("");
-  };
-
-  const STATUS_BADGE: Record<string, React.ReactNode> = {
-    completed: <span className="aug-tag aug-tag-green">Done</span>,
-    timed_out: <span className="aug-tag aug-tag-amber">Timed out</span>,
-    running:   <span className="aug-tag aug-tag-blue">Running</span>,
-    failed:    <span className="aug-tag aug-tag-red">Failed</span>,
-  };
-
-  return (
-    <div className="aug-screen" style={{ background: "var(--bg-0)" }}>
-      <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column" }}>
-
-        {/* ── Hero ─────────────────────────────────────────────────────── */}
-        <div style={{ flex: "0 0 auto", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "52px 24px 32px", minHeight: 260 }}>
-
-          {/* Header */}
-          <div style={{ marginBottom: 28, textAlign: "center" }}>
-            <h1 style={{ fontSize: 22, fontWeight: 600, color: "var(--t1)", letterSpacing: "-.02em", marginBottom: 6 }}>
-              What do you want to investigate?
-            </h1>
-            {conn && (
-              <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 10px", borderRadius: "var(--r2)", background: "var(--bg-2)", border: "1px solid var(--b1)" }}>
-                <span className="aug-dot aug-dot-grn aug-anim-blink" />
-                <span style={{ fontSize: 11, color: "var(--t2)", fontFamily: "var(--font-mono)" }}>{conn.name}</span>
-                <span style={{ fontSize: 11, color: "var(--t4)" }}>{conn.conn_type === "duckdb" ? "DuckDB" : "PG"}</span>
-              </div>
-            )}
-          </div>
-
-          {/* Input area */}
-          <div style={{ width: "100%", maxWidth: 680, position: "relative" }}>
-            <div style={{ background: "var(--bg-2)", border: "1px solid var(--b2)", borderRadius: "var(--r3)", overflow: "hidden", boxShadow: "var(--shadow-sm)", transition: "border-color .12s" }}
-              onFocusCapture={e => (e.currentTarget.style.borderColor = "var(--bfocus)")}
-              onBlurCapture={e => (e.currentTarget.style.borderColor = "var(--b2)")}
-            >
-              <textarea
-                ref={textRef}
-                value={q}
-                onChange={e => setQ(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSubmit(); }
-                }}
-                placeholder={ASK_PLACEHOLDERS[phIdx]}
-                rows={3}
-                style={{
-                  width: "100%", padding: "14px 16px", resize: "none",
-                  background: "transparent", border: "none", outline: "none",
-                  fontSize: 14, color: "var(--t1)", fontFamily: "var(--font-ui)", lineHeight: 1.55,
-                }}
-              />
-              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", borderTop: "1px solid var(--b0)" }}>
-                {/* Mode toggle */}
-                <div style={{ display: "flex", background: "var(--bg-0)", border: "1px solid var(--b1)", borderRadius: "var(--r2)", padding: 2, gap: 2 }}>
-                  {([["ask", "Quick"], ["investigate", "Agentic"]] as [AskMode, string][]).map(([m, label]) => (
-                    <button
-                      key={m}
-                      onClick={() => setMode(m)}
-                      style={{
-                        padding: "3px 10px", borderRadius: "calc(var(--r2) - 2px)", fontSize: 11, fontWeight: 500, cursor: "pointer",
-                        background: mode === m ? "var(--blue3)" : "transparent",
-                        color: mode === m ? "#fff" : "var(--t3)",
-                        border: "none", transition: "all .12s",
-                      }}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                <span style={{ fontSize: 11, color: "var(--t4)", flex: 1 }}>
-                  {mode === "ask" ? "Direct SQL answer" : "Evidence-backed root-cause analysis"}
-                </span>
-                <button
-                  onClick={handleSubmit}
-                  disabled={!q.trim()}
-                  style={{
-                    display: "inline-flex", alignItems: "center", gap: 6,
-                    padding: "6px 16px", borderRadius: "var(--r2)", border: "none",
-                    background: q.trim() ? "var(--blue3)" : "var(--bg-3)",
-                    color: q.trim() ? "#fff" : "var(--t4)",
-                    fontSize: 12, fontWeight: 600, cursor: q.trim() ? "pointer" : "default",
-                    transition: "all .12s",
-                  }}
-                >
-                  <NavIcon name="send" size={12} color={q.trim() ? "#fff" : "var(--t4)"} />
-                  {mode === "ask" ? "Ask" : "Investigate"}
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Chip suggestions */}
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 14, justifyContent: "center", maxWidth: 680 }}>
-            {ASK_PLACEHOLDERS.slice(0, 4).map(qs => (
-              <button
-                key={qs}
-                onClick={() => { setQ(qs); textRef.current?.focus(); }}
-                style={{
-                  padding: "4px 12px", borderRadius: "var(--r2)", fontSize: 11, cursor: "pointer",
-                  background: "var(--bg-2)", border: "1px solid var(--b1)", color: "var(--t3)",
-                  transition: "all .1s",
-                }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--b2)"; e.currentTarget.style.color = "var(--t1)"; }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--b1)"; e.currentTarget.style.color = "var(--t3)"; }}
-              >
-                {qs.length > 48 ? qs.slice(0, 46) + "…" : qs}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* ── Divider ───────────────────────────────────────────────────── */}
-        <div className="aug-divh" style={{ margin: "0 28px" }} />
-
-        {/* ── Stats strip ───────────────────────────────────────────────── */}
-        <div style={{ padding: "16px 28px 0", display: "flex", gap: 10, flexWrap: "wrap" }}>
-          {[
-            { label: "Tables", value: exploration?.tables_total ?? "—", accent: "var(--blue3)", action: () => onNavigate("catalog") },
-            { label: "Insights", value: domainInsightCount ?? "—", accent: "var(--grn3)", action: () => onNavigate("intel") },
-            { label: "Investigations", value: recentInvs.length > 0 ? recentInvs.length + "+" : "—", accent: "var(--vio3)", action: () => onNavigate("recents") },
-          ].map(s => (
-            <button key={s.label} onClick={s.action} style={{
-              display: "flex", alignItems: "center", gap: 8, padding: "8px 14px",
-              background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r2)",
-              cursor: "pointer", transition: "all .1s",
-            }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = s.accent + "66"; }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--b1)"; }}
-            >
-              <div style={{ width: 4, height: 16, background: s.accent, borderRadius: 2 }} />
-              <span style={{ fontSize: 16, fontWeight: 600, color: "var(--t1)", fontFamily: "var(--font-mono)" }}>{s.value}</span>
-              <span style={{ fontSize: 11, color: "var(--t3)" }}>{s.label}</span>
-            </button>
-          ))}
-        </div>
-
-        {/* ── Health scorecard ───────────────────────────────────────────── */}
-        <div style={{ padding: "16px 28px 0" }}>
-          <ProcessHealthPanel connectionId={selectedConn} onInvestigate={q => onGoToChat(q, "investigate")} />
-        </div>
-
-        {/* ── Recent investigations ──────────────────────────────────────── */}
-        {recentInvs.length > 0 && (
-          <div style={{ padding: "20px 28px 28px" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-              <span className="aug-label">Recent investigations</span>
-              <button onClick={() => onNavigate("recents")} style={{ fontSize: 11, color: "var(--blue4)", background: "none", border: "none", cursor: "pointer" }}>View all →</button>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-              {recentInvs.map(inv => (
-                <button
-                  key={inv.id}
-                  onClick={() => onOpenInvestigation(inv.id)}
-                  style={{
-                    textAlign: "left", padding: "12px 14px",
-                    background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r2)",
-                    cursor: "pointer", transition: "all .1s",
-                  }}
-                  onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--b2)"; e.currentTarget.style.background = "var(--bg-3)"; }}
-                  onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--b1)"; e.currentTarget.style.background = "var(--bg-2)"; }}
-                >
-                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, marginBottom: 4 }}>
-                    <span style={{ fontSize: 12, color: "var(--t1)", lineHeight: 1.4, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" }}>
-                      {inv.question}
-                    </span>
-                    <div style={{ flexShrink: 0 }}>{STATUS_BADGE[inv.status] ?? null}</div>
-                  </div>
-                  {inv.headline && (
-                    <p style={{ fontSize: 11, color: "var(--t3)", lineHeight: 1.4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {inv.headline}
-                    </p>
-                  )}
-                  <p style={{ fontSize: 11, color: "var(--t4)", marginTop: 4 }}>
-                    {(() => {
-                      const diff = Date.now() - new Date(inv.started_at).getTime();
-                      const m = Math.floor(diff / 60_000);
-                      if (m < 1) return "just now";
-                      if (m < 60) return `${m}m ago`;
-                      const h = Math.floor(m / 60);
-                      if (h < 24) return `${h}h ago`;
-                      return `${Math.floor(h / 24)}d ago`;
-                    })()}
-                  </p>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* ── Monitor Alert Banner / Digest Card ─────────────────────── */}
-        {unackAlerts.length > 0 && (
-          <div style={{ padding: "0 28px 28px" }}>
-            <div style={{
-              background: "var(--bg-2)", border: `1px solid ${unackAlerts.some(a => a.severity === "critical") ? "var(--red2)" : "var(--amb2)"}`,
-              borderRadius: "var(--r3)", overflow: "hidden",
-            }}>
-              {/* Header row */}
-              <div
-                onClick={() => setDigestExpanded(v => !v)}
-                style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 16px", cursor: "pointer", userSelect: "none" }}
-              >
-                <span style={{ fontSize: 14 }}>{unackAlerts.some(a => a.severity === "critical") ? "🔴" : "🟡"}</span>
-                <span style={{ fontSize: 12, fontWeight: 600, color: "var(--t1)", flex: 1 }}>
-                  {unackAlerts.length} unacknowledged monitor alert{unackAlerts.length !== 1 ? "s" : ""}
-                  {unackAlerts.filter(a => a.severity === "critical").length > 0 && (
-                    <span style={{ marginLeft: 8, fontSize: 11, color: "var(--red5)", fontWeight: 500 }}>
-                      · {unackAlerts.filter(a => a.severity === "critical").length} critical
-                    </span>
-                  )}
-                </span>
-                <span style={{ fontSize: 11, color: "var(--t3)" }}>{digestExpanded ? "▲ hide" : "▼ show"}</span>
-              </div>
-
-              {/* Expanded alert list */}
-              {digestExpanded && (
-                <div style={{ borderTop: "1px solid var(--b1)", padding: "8px 0" }}>
-                  {unackAlerts.slice(0, 8).map(alert => (
-                    <div key={alert.id} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "8px 16px" }}>
-                      <span style={{ fontSize: 12, flexShrink: 0, marginTop: 1 }}>
-                        {alert.severity === "critical" ? "🔴" : alert.severity === "warning" ? "🟡" : "⚪"}
-                      </span>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <p style={{ fontSize: 12, color: "var(--t1)", lineHeight: 1.4, margin: 0 }}>{alert.message}</p>
-                        <p style={{ fontSize: 11, color: "var(--t4)", margin: "2px 0 0" }}>
-                          {alert.monitor_name} · {alert.triggered_at.slice(0, 16).replace("T", " ")} UTC
-                        </p>
-                      </div>
-                      <button
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          try {
-                            const { acknowledgeAlert } = await import("@/lib/api");
-                            await acknowledgeAlert(alert.id);
-                            setUnackAlerts(prev => prev.filter(a => a.id !== alert.id));
-                          } catch {}
-                        }}
-                        style={{ flexShrink: 0, fontSize: 11, color: "var(--t3)", background: "none", border: "1px solid var(--b1)", borderRadius: "var(--r2)", padding: "2px 8px", cursor: "pointer" }}
-                      >
-                        Ack
-                      </button>
-                    </div>
-                  ))}
-                  {unackAlerts.length > 8 && (
-                    <p style={{ fontSize: 11, color: "var(--t3)", padding: "4px 16px" }}>
-                      … and {unackAlerts.length - 8} more
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
       </div>
     </div>
   );
@@ -1521,7 +1262,7 @@ const LAST_CONN_KEY = "aughor_last_conn";
 const THEME_KEY = "aughor_theme";
 
 export default function Home() {
-  const [tab, setTab] = useState<NavTab>("ask");
+  const [tab, setTab] = useState<NavTab>("home");
   const [theme, setThemeState] = useState<Theme>("dark");
   const [selectedConn, setSelectedConn] = useState("");
   const [activeCanvas, setActiveCanvas] = useState<Canvas | null>(null);
@@ -1583,6 +1324,7 @@ export default function Home() {
 
   const goToChat = (q?: string, mode?: "ask" | "investigate") => {
     setSelectedChatSessionId(null);
+    setSelectedHistoryInvId(null);
     setChatInitialQuestion(q);
     if (mode) setChatInitialMode(mode);
     setChatKey(k => k + 1);
@@ -1655,8 +1397,8 @@ export default function Home() {
           <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
 
             {/* ── ASK (hero screen) ── */}
-            {tab === "ask" && (
-              <AskScreen
+            {tab === "home" && (
+              <HomeScreen
                 connections={connections}
                 selectedConn={selectedConn}
                 onGoToChat={goToChat}
@@ -1781,6 +1523,33 @@ export default function Home() {
               </div>
             )}
 
+            {/* ── BRIEFING ── */}
+            {tab === "briefing" && (
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
+                <div className="aug-content-header">
+                  <NavIcon name="brief" size={14} color="var(--t3)" />
+                  <span style={{ fontSize: 13, fontWeight: 500 }}>Intelligence Brief</span>
+                  <span style={{ fontSize: 11, color: "var(--t3)", marginLeft: 4 }}>· cross-domain synthesis</span>
+                </div>
+                <BriefingPanel
+                  connectionId={selectedConn}
+                  onInvestigate={q => goToChat(q, "investigate")}
+                />
+              </div>
+            )}
+
+            {/* ── INTELLIGENCE HUB ── */}
+            {tab === "intel-hub" && (
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
+                <div className="aug-content-header">
+                  <NavIcon name="node" size={14} color="var(--t3)" />
+                  <span style={{ fontSize: 13, fontWeight: 500 }}>Intelligence Hub</span>
+                  <span style={{ fontSize: 11, color: "var(--t3)", marginLeft: 4 }}>· domain knowledge profiles</span>
+                </div>
+                <IntelligenceHub connectionId={selectedConn} />
+              </div>
+            )}
+
             {/* ── DOMAIN INTEL ── */}
             {tab === "intel" && (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
@@ -1789,6 +1558,17 @@ export default function Home() {
                   <span style={{ fontSize: 13, fontWeight: 500 }}>Domain Intelligence</span>
                 </div>
                 <ExplorationPanel connectionId={selectedConn} initialSection={explorationSection} />
+              </div>
+            )}
+
+            {/* ── ORG INTELLIGENCE ── */}
+            {tab === "org-intel" && (
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
+                <div className="aug-content-header">
+                  <NavIcon name="spark" size={14} color="var(--t3)" />
+                  <span style={{ fontSize: 13, fontWeight: 500 }}>Org Intelligence</span>
+                </div>
+                <OrgIntelPanel />
               </div>
             )}
 
@@ -1871,7 +1651,7 @@ export default function Home() {
             {/* ── METRICS ── */}
             {tab === "metrics" && (
               <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-                <MetricsPanel />
+                <MetricsPanel connId={selectedConn ?? undefined} />
               </div>
             )}
 

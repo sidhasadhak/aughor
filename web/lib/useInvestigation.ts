@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useReducer } from "react";
+import { API_BASE } from "./config";
 import type { InvestigationEvent, InvestigationState } from "./types";
 
 const initial: InvestigationState = {
@@ -271,7 +272,7 @@ export function useInvestigation() {
     dispatch({ type: "RESET" });
     dispatch({ type: "EVENT", event: { type: "start", question } });
 
-    const res = await fetch("http://localhost:8000/investigate", {
+    const res = await fetch(`${API_BASE}/investigate`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ question, connection_id: connectionId, hitl }),
@@ -286,7 +287,7 @@ export function useInvestigation() {
   }, []);
 
   const submitFeedback = useCallback(async (invId: string, feedback: string) => {
-    const res = await fetch(`http://localhost:8000/investigations/${invId}/feedback`, {
+    const res = await fetch(`${API_BASE}/investigations/${invId}/feedback`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ feedback }),

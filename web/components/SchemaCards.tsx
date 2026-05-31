@@ -44,11 +44,11 @@ function TableCard({ table, palette }: { table: SchemaTable; palette: typeof TAB
         </div>
         <div className="flex items-center gap-1 shrink-0">
           {table.row_count && (
-            <span className={`text-[9px] px-1 py-px rounded font-mono ${palette.badge}`}>
+            <span className={`text-[11px] px-1 py-px rounded font-mono ${palette.badge}`}>
               {Number(table.row_count).toLocaleString()}r
             </span>
           )}
-          <span className="text-[9px] px-1 py-px rounded bg-zinc-800/80 text-zinc-500 font-mono">
+          <span className="text-[11px] px-1 py-px rounded bg-zinc-800/80 text-zinc-500 font-mono">
             {totalCols}c
           </span>
         </div>
@@ -66,7 +66,7 @@ function TableCard({ table, palette }: { table: SchemaTable; palette: typeof TAB
                 )}
                 <span className="text-[11px] font-mono text-zinc-300 truncate">{col.name}</span>
               </div>
-              <span className={`text-[9px] font-mono px-1 py-px rounded shrink-0 ${chip.cls}`}>{chip.label}</span>
+              <span className={`text-[11px] font-mono px-1 py-px rounded shrink-0 ${chip.cls}`}>{chip.label}</span>
             </div>
           );
         })}
@@ -96,7 +96,7 @@ function JoinPaths({ joins }: { joins: SchemaJoin[] }) {
             <span className="text-zinc-300">{j.t2}</span>
             <span className="text-zinc-500">.</span>
             <span className="text-violet-400">{j.c2}</span>
-            <span className={`ml-auto text-[10px] px-1.5 py-0.5 rounded ${
+            <span className={`ml-auto text-[11px] px-1.5 py-0.5 rounded ${
               j.match === "exact"
                 ? "bg-emerald-500/15 text-emerald-400"
                 : "bg-amber-500/15 text-amber-400"
@@ -148,7 +148,7 @@ function StatChip({ value, label, accent }: { value: string | number; label: str
   return (
     <div className="flex items-baseline gap-1 px-2 py-1 rounded bg-zinc-800 border border-zinc-600">
       <span className={`text-xs font-semibold tabular-nums ${accent ?? "text-zinc-100"}`}>{value}</span>
-      <span className="text-[10px] text-zinc-500">{label}</span>
+      <span className="text-[11px] text-zinc-500">{label}</span>
     </div>
   );
 }
@@ -184,7 +184,7 @@ export function SchemaCards({ schema, search }: { schema: RichSchema; search?: s
       <StatsBar schema={schema} />
 
       {filtered.length === 0 && q ? (
-        <p className="text-xs text-zinc-500 py-4 text-center">No tables match "{q}"</p>
+        <p className="text-xs text-zinc-500 py-4 text-center">No tables match &quot;{q}&quot;</p>
       ) : (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-2">
           {filtered.map((table, i) => {

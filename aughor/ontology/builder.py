@@ -129,7 +129,10 @@ _STATUS_COL_NAMES = re.compile(
     r"(status|state|stage|phase|lifecycle|step|condition)$", re.IGNORECASE
 )
 
-# State names that mark a lifecycle terminal — no further transitions expected.
+# Heuristic terminal-state keywords — used ONLY for lifecycle annotation,
+# NOT for auto-generating active_filter.  The enricher LLM or the user
+# decides which states should be filtered; these keywords just label states
+# as "likely terminal" in the ontology display.
 _TERMINAL_KEYWORDS = {
     "cancel", "cancelled", "canceled",
     "deliver", "delivered",
@@ -175,15 +178,11 @@ def _extract_lifecycle(
     states: list[str] = [str(v) for v in cp.top_values if v is not None and v != "null"]
 
     terminal = [s for s in states if _is_terminal(s)]
-    active = [s for s in states if not _is_terminal(s)]
 
-    if not terminal:
-        return cp.column, states, [], None
-
-    terminal_list = ", ".join(f"'{s}'" for s in terminal)
-    active_filter = f"{cp.column} NOT IN ({terminal_list})"
-
-    return cp.column, states, terminal, active_filter
+    # Do NOT auto-generate active_filter from keyword heuristics.
+    # Terminal states are annotated for display / LLM context, but filtering
+    # is only applied when the user asks or the enricher LLM explicitly sets it.
+    return cp.column, states, terminal, None
 
 
 # ── Default-filter extraction from glossary caveats ──────────────────────────
@@ -539,7 +538,7 @@ def render_ontology_annotations(graph: OntologyGraph) -> str:
 
         if entity.active_filter:
             lines.append(
-                f"    RULE: when querying active {entity.display_name}s — "
+                f"    active_filter (apply only when user asks for active/valid rows): "
                 f"WHERE {entity.active_filter}"
             )
 

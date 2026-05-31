@@ -86,8 +86,8 @@ export function ConnectionsPanel({ selectedId, onSelect, activeSchemaId, onSchem
       await addConnection(formName, formType, formDsn, formSchema || undefined);
       setFormName(""); setFormDsn(""); setFormSchema(""); setAdding(false);
       await load();
-    } catch (err: any) {
-      setFormError(err.message);
+    } catch (err: unknown) {
+      setFormError(err instanceof Error ? err.message : "An error occurred");
     } finally {
       setFormLoading(false);
     }
@@ -150,7 +150,7 @@ export function ConnectionsPanel({ selectedId, onSelect, activeSchemaId, onSchem
               value={formSchema}
               onChange={e => setFormSchema(e.target.value)}
             />
-            <p className="text-[10px] text-zinc-500 leading-relaxed">
+            <p className="text-[11px] text-zinc-500 leading-relaxed">
               Restricts table discovery and queries to this schema only.
               Leave blank to use the default.
             </p>
@@ -200,7 +200,7 @@ export function ConnectionsPanel({ selectedId, onSelect, activeSchemaId, onSchem
                 </div>
                 <p className="text-xs font-mono text-zinc-500 mt-1 truncate pl-4">{conn.dsn_preview}</p>
                 {conn.schema_name && (
-                  <p className="text-[10px] text-zinc-500 mt-0.5 pl-4">
+                  <p className="text-[11px] text-zinc-500 mt-0.5 pl-4">
                     schema: <span className="font-mono text-zinc-400">{conn.schema_name}</span>
                   </p>
                 )}

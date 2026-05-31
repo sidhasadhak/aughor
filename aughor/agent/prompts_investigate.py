@@ -59,13 +59,12 @@ TASK: Parse this question into a precise investigation specification.
    Include table name. Max 8 dimensions.
 
 7. TRANSACTION STATUS FILTER — Does the metric table have a status/state column?
-   If yes, identify which values represent COMPLETED/VALID transactions
-   (e.g. 'PAID', 'COMPLETED', 'SETTLED', 'DELIVERED', 'CLOSED') as opposed to
-   drafts, pending, cancelled, or refunded rows.
-   - If a clear "completed" status exists, incorporate it into metric_sql as a CASE WHEN filter:
-     e.g. SUM(CASE WHEN status IN ('PAID','SETTLED') THEN amount ELSE 0 END)
-   - If all rows represent valid transactions (no status column or all rows count), use plain SUM().
-   - Document your choice in intake_notes.
+   If yes, list the distinct status values present and note which appear terminal vs active.
+   - Do NOT automatically filter by status — include ALL rows in metric_sql by default.
+   - Only apply a status filter if the user's question explicitly asks about completed/valid
+     transactions (e.g. "successful orders", "paid invoices", "delivered shipments").
+   - If you do filter, document the exact filter and reasoning in intake_notes.
+   - If all rows represent valid transactions (no status column), use plain SUM().
 
 Be precise. Every answer must be grounded in the schema provided.
 If something is genuinely unknowable from the schema, say so.
@@ -136,12 +135,12 @@ Interpret these results clearly and honestly.
 For EACH query result, write:
   - title: short descriptive label
   - interpretation: 2–3 sentences. Cite actual numbers from the data.
-    State whether the observed change is statistically significant (z-score threshold: ±2.0).
+    State whether the observed change is statistically significant.
     If a business calendar event may explain the anomaly, note it.
   - key_numbers: the 1–3 most important values (label, value, delta, context)
   - chart_type: "line" for time series, "bar" for comparisons, "none" for single-value outputs
-  - stat_note: if z-score is available, format as "z = X.X — [significant/within normal range] at α = 0.05"
-  - is_significant: true if |z| > 2.0 OR absolute change > 10% of prior period value
+  - stat_note: if z-score is available, format as "z = X.X — [significant/within normal range]"
+  - is_significant: true if |z| > {z_threshold} OR absolute change > {pct_threshold}% of prior period value
 
 phase_summary: one sentence — the most important finding from this phase.
 Do NOT fabricate numbers. If a query errored or returned no rows, say so honestly.
@@ -167,12 +166,15 @@ SCHEMA:
 PHASE: Metric Decomposition
 
 The metric {metric_label} can be decomposed into multiplicative or additive sub-metrics.
-For example: Revenue = Orders × AOV = New + Returning customer revenue.
+Choose a decomposition that fits the data — common patterns include:
+  - Volume × Value (e.g. order_count × avg_value)
+  - Segment breakdown (by category, region, channel, customer type — whatever dimensions exist)
+  - Funnel stages (if lifecycle states exist)
 
 Write 2–3 SQL queries to break down WHAT drove the change:
-  - If the metric is revenue/sales: decompose into volume (order count) vs. value (AOV)
-  - If revenue: also decompose into new vs. returning customer revenue
-  - If order count: decompose by channel or product category if available
+  - Use dimensions that actually exist in the SCHEMA — do not assume columns like "customer_type"
+    or "channel" unless they appear in the schema.
+  - Pick the decomposition that best explains the metric's components in THIS dataset.
 
 For EACH sub-metric, compute it for BOTH the observation period AND the comparison period.
 Use EXACT date ranges from the spec above. Include absolute change AND % contribution to total change.
@@ -368,6 +370,8 @@ FULL EVIDENCE (query results by phase):
 {metric_targets_section}
 
 {playbook_section}
+
+{org_intelligence_section}
 
 {external_context_section}
 

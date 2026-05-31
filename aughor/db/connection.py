@@ -17,6 +17,98 @@ import sqlglot
 
 from aughor.agent.state import QueryResult
 
+# Security baseline — imported lazily to avoid circular imports at module load
+def _security_pre(connection_id: str, hypothesis_id: str, sql: str) -> QueryResult | None:
+    """Run safety check. Returns a blocked QueryResult if the query is not allowed, else None."""
+    try:
+        from aughor.security.safety import SafetyChecker, SafetyVerdict
+        from aughor.security.audit  import AuditLogger
+        result = SafetyChecker.check(sql)
+        if result.verdict == SafetyVerdict.BLOCKED:
+            AuditLogger.log(
+                connection_id=connection_id,
+                hypothesis_id=hypothesis_id,
+                sql=sql,
+                verdict="blocked",
+                error=result.reason,
+            )
+            return QueryResult(
+                hypothesis_id=hypothesis_id,
+                sql=sql,
+                columns=[],
+                rows=[],
+                row_count=0,
+                error=f"[BLOCKED] {result.reason}",
+            )
+        if result.verdict == SafetyVerdict.SUSPICIOUS:
+            # Log but allow — the query still runs
+            AuditLogger.log(
+                connection_id=connection_id,
+                hypothesis_id=hypothesis_id,
+                sql=sql,
+                verdict="suspicious",
+            )
+    except Exception:
+        pass  # security failures must never break query execution
+    return None
+
+
+def _security_post(
+    connection_id: str,
+    hypothesis_id: str,
+    sql: str,
+    result: QueryResult,
+    duration_ms: float,
+) -> QueryResult:
+    """PII redaction + audit logging + budget enforcement. Returns (possibly modified) result."""
+    import time as _time
+    try:
+        from aughor.security.pii     import PiiScanner
+        from aughor.security.audit   import AuditLogger
+        from aughor.security.sandbox import get_budget
+
+        # 1. Row budget — truncate silently
+        budget = get_budget(connection_id)
+        if len(result.rows) > budget.max_rows:
+            result = QueryResult(
+                hypothesis_id=result.hypothesis_id,
+                sql=result.sql,
+                columns=result.columns,
+                rows=result.rows[:budget.max_rows],
+                row_count=result.row_count,
+                error=result.error,
+            )
+
+        # 2. PII redaction
+        pii_count = 0
+        if result.columns and result.rows:
+            scan = PiiScanner.scan_and_redact(result.columns, result.rows)
+            if scan.redacted_count > 0:
+                result = QueryResult(
+                    hypothesis_id=result.hypothesis_id,
+                    sql=result.sql,
+                    columns=result.columns,
+                    rows=scan.rows,
+                    row_count=result.row_count,
+                    error=result.error,
+                )
+                pii_count = scan.redacted_count
+
+        # 3. Audit log
+        AuditLogger.log(
+            connection_id=connection_id,
+            hypothesis_id=hypothesis_id,
+            sql=sql,
+            verdict="safe",
+            row_count=result.row_count,
+            duration_ms=duration_ms,
+            pii_redacted=pii_count,
+            error=result.error,
+        )
+    except Exception:
+        pass  # security failures must never break query execution
+    return result
+
 # ── Proactive PostgreSQL dialect transforms ───────────────────────────────────
 # Applied to every Postgres query *before* execution to prevent the most
 # common class of type errors without needing a retry round-trip.
@@ -224,6 +316,44 @@ class DatabaseConnection(ABC):
         """
         return None
 
+    def execute_ibis(self, hypothesis_id: str, expr) -> "QueryResult":
+        """Execute an ibis expression by compiling it to SQL and running via execute().
+
+        Falls back to execute() with an error message if ibis is not available or
+        the expression cannot be compiled.
+        """
+        try:
+            import ibis
+            sql_str = str(ibis.to_sql(expr, dialect=self.dialect))
+            return self.execute(hypothesis_id, sql_str)
+        except ImportError:
+            return QueryResult(
+                hypothesis_id=hypothesis_id,
+                sql="",
+                columns=[],
+                rows=[],
+                row_count=0,
+                error="ibis-framework not installed — run: uv pip install 'aughor[warehouse]'",
+            )
+        except Exception as exc:
+            return QueryResult(
+                hypothesis_id=hypothesis_id,
+                sql="",
+                columns=[],
+                rows=[],
+                row_count=0,
+                error=f"ibis compile error: {exc}",
+            )
+
+    def bulk_read(self, sql: str, limit: int = 10_000) -> "QueryResult":
+        """Bulk-read result set, potentially via Arrow/ConnectorX for speed.
+
+        The base implementation delegates to execute() with a LIMIT injected.
+        PostgresConnection overrides this with ConnectorX for columnar Arrow reads.
+        """
+        bounded = f"SELECT * FROM ({sql.strip().rstrip(';')}) __q LIMIT {limit}" if limit > 0 else sql
+        return self.execute("__bulk__", bounded)
+
     def dry_run(self, sql: str) -> tuple[bool, str]:
         """Validate SQL without returning rows. Returns (ok, error_message).
 
@@ -285,16 +415,24 @@ class DuckDBConnection(DatabaseConnection):
             return sql
 
     def execute(self, hypothesis_id: str, sql: str) -> QueryResult:
+        import time as _time
         sql = sql.strip().rstrip(";")
         ok, reason = _validate(sql)
         if not ok:
             return QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[], row_count=0, error=reason)
+
+        # Security pre-check
+        conn_id = getattr(self, "_connection_id", "")
+        if (blocked := _security_pre(conn_id, hypothesis_id, sql)):
+            return blocked
+
         sql = self._normalize_to_duckdb(sql)
+        _t0 = _time.monotonic()
         try:
             self._conn.execute(sql)
             rows = self._conn.fetchall()
             columns = [d[0] for d in self._conn.description] if self._conn.description else []
-            return QueryResult(
+            result = QueryResult(
                 hypothesis_id=hypothesis_id,
                 sql=sql,
                 columns=columns,
@@ -302,7 +440,10 @@ class DuckDBConnection(DatabaseConnection):
                 row_count=len(rows),
             )
         except Exception as e:
-            return QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[], row_count=0, error=str(e))
+            result = QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[], row_count=0, error=str(e))
+
+        elapsed_ms = (_time.monotonic() - _t0) * 1000
+        return _security_post(conn_id, hypothesis_id, sql, result, elapsed_ms)
 
     def get_schema(self) -> str:
         from aughor.tools.schema import build_schema_context, _compute_join_map, _parse_schema_tables
@@ -322,7 +463,15 @@ class DuckDBConnection(DatabaseConnection):
                 ).fetchall()
             ]
         else:
-            tables = [row[0] for row in self._conn.execute("SHOW TABLES").fetchall()]
+            # No schema configured — scan all user schemas (handles multi-schema
+            # DuckDB files like samples.duckdb where tables are in 'ecommerce').
+            tables = [
+                row[0] for row in self._conn.execute(
+                    "SELECT table_name FROM information_schema.tables "
+                    "WHERE table_schema NOT IN ('information_schema', 'pg_catalog', 'temp') "
+                    "AND table_type = 'BASE TABLE' ORDER BY table_name",
+                ).fetchall()
+            ]
         table_cols = _parse_schema_tables(base)
         from aughor.tools.schema import _compute_join_map
         jmap = _compute_join_map(table_cols)
@@ -466,15 +615,22 @@ class PostgresConnection(DatabaseConnection):
         return sql
 
     def execute(self, hypothesis_id: str, sql: str) -> QueryResult:
+        import time as _time
         sql = sql.strip().rstrip(";")
         ok, reason = _validate(sql)
         if not ok:
             return QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[], row_count=0, error=reason)
 
+        # Security pre-check
+        conn_id = getattr(self, "_connection_id", "")
+        if (blocked := _security_pre(conn_id, hypothesis_id, sql)):
+            return blocked
+
         # Translate DuckDB-flavoured SQL → Postgres, then apply proactive fixes
         sql = self.translate(sql)
         sql = self._apply_dialect_fixes(sql)
 
+        _t0 = _time.monotonic()
         try:
             with self._conn.cursor() as cur:
                 cur.execute(sql)
@@ -482,7 +638,7 @@ class PostgresConnection(DatabaseConnection):
                 columns = [desc[0] for desc in cur.description] if cur.description else []
                 # row_count from cursor (may be -1 for some queries)
                 total = cur.rowcount if cur.rowcount >= 0 else len(rows)
-                return QueryResult(
+                result = QueryResult(
                     hypothesis_id=hypothesis_id,
                     sql=sql,
                     columns=columns,
@@ -495,7 +651,10 @@ class PostgresConnection(DatabaseConnection):
                 self._connect()
             except Exception:
                 pass
-            return QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[], row_count=0, error=str(e))
+            result = QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[], row_count=0, error=str(e))
+
+        elapsed_ms = (_time.monotonic() - _t0) * 1000
+        return _security_post(conn_id, hypothesis_id, sql, result, elapsed_ms)
 
     def get_schema(self) -> str:
         """Introspect information_schema and return a Hermes-formatted schema string with SQL hints."""
@@ -546,8 +705,21 @@ class PostgresConnection(DatabaseConnection):
         if join_hints:
             enriched += "\n\n" + join_hints
 
-        # Build fk_hints from the join map
-        tables = list({table for table, _, _ in rows})
+        # Build fk_hints from the join map.
+        # Use information_schema.tables (BASE TABLE only) so this list matches
+        # what _load_profiler_data() finds — identical table sets → same profile
+        # fingerprint → ontology builder gets grain-detected profiles.
+        try:
+            with self._conn.cursor() as _tcur:
+                _tcur.execute(
+                    "SELECT table_name FROM information_schema.tables "
+                    "WHERE table_schema = %s AND table_type = 'BASE TABLE' "
+                    "ORDER BY table_name",
+                    (self._schema_name,),
+                )
+                tables = [r[0] for r in _tcur.fetchall()]
+        except Exception:
+            tables = list({table for table, _, _ in rows})  # fallback
         from aughor.tools.schema import _parse_schema_tables, _compute_join_map
         table_cols_map = _parse_schema_tables(enriched)
         jmap = _compute_join_map(table_cols_map)
@@ -679,6 +851,42 @@ class PostgresConnection(DatabaseConnection):
         except ImportError:
             return None
 
+    def bulk_read(self, sql: str, limit: int = 10_000) -> QueryResult:
+        """Fast columnar bulk read via ConnectorX → Polars → QueryResult.
+
+        ConnectorX reads Postgres data as Arrow batches (bypassing row-by-row
+        psycopg2 fetching), then converts to Polars for zero-copy column access.
+        Falls back to execute() if ConnectorX is not installed or errors.
+        """
+        bounded = (
+            f"SELECT * FROM ({sql.strip().rstrip(';')}) __q LIMIT {limit}"
+            if limit > 0
+            else sql.strip().rstrip(";")
+        )
+        try:
+            import connectorx as cx  # type: ignore
+            import polars as pl
+
+            df: pl.DataFrame = cx.read_sql(self._dsn, bounded, return_type="polars")
+            columns = list(df.columns)
+            rows = [
+                [str(v) if v is not None else "NULL" for v in row]
+                for row in df.iter_rows()
+            ]
+            return QueryResult(
+                hypothesis_id="__bulk__",
+                sql=bounded,
+                columns=columns,
+                rows=rows,
+                row_count=len(rows),
+            )
+        except ImportError:
+            # ConnectorX not installed — fall back to regular execute
+            return self.execute("__bulk__", bounded)
+        except Exception:
+            # Any error (auth, SQL) — fall back to regular execute
+            return self.execute("__bulk__", bounded)
+
     def test(self) -> tuple[bool, str]:
         try:
             with self._conn.cursor() as cur:
@@ -702,13 +910,22 @@ def open_connection(
     dsn: str,
     schema_name: str | None = None,
     connection_id: str = "",
+    meta: dict | None = None,
 ) -> DatabaseConnection:
     if conn_type == "duckdb":
         return DuckDBConnection(dsn, schema_name=schema_name, connection_id=connection_id)
     elif conn_type == "postgres":
         return PostgresConnection(dsn, schema_name=schema_name, connection_id=connection_id)
     else:
-        raise ValueError(f"Unsupported connection type: {conn_type!r}. Supported: duckdb, postgres")
+        # Delegate to the pluggable connector registry (Sprint 25+)
+        from aughor.connectors.registry import build_connector
+        return build_connector(
+            conn_type,
+            dsn=dsn,
+            schema_name=schema_name,
+            connection_id=connection_id,
+            meta=meta or {},
+        )
 
 
 def open_connection_for(conn_id: str) -> DatabaseConnection:
@@ -716,4 +933,9 @@ def open_connection_for(conn_id: str) -> DatabaseConnection:
     from aughor.db.registry import get_dsn, get_meta
     conn_type, dsn = get_dsn(conn_id)
     meta = get_meta(conn_id)
-    return open_connection(conn_type, dsn, schema_name=meta.get("schema_name"), connection_id=conn_id)
+    return open_connection(
+        conn_type, dsn,
+        schema_name=meta.get("schema_name"),
+        connection_id=conn_id,
+        meta=meta,
+    )

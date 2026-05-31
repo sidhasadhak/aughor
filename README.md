@@ -87,7 +87,7 @@ Per-domain insight tracking with budget control:
 
 - **DuckDB** — local files, in-memory, remote S3 via `duckdb://`
 - **PostgreSQL** — any Postgres-compatible database
-- Credentials encrypted at rest with Fernet symmetric encryption (key auto-generated and stored in `data/.hermes_key`, or via `HERMES_SECRET_KEY` env var)
+- Credentials encrypted at rest with Fernet symmetric encryption (key auto-generated and stored in `data/.aughor_key`, or via `AUGHOR_SECRET_KEY` env var)
 - Per-connection schema name scoping
 - All connections deletable — no locked-in defaults
 
@@ -105,7 +105,7 @@ Supports: **Ollama**, **LM Studio**, **OpenAI**, any OpenAI-compatible endpoint.
 ### 📚 Semantic Layer
 
 - **Business Glossary** — YAML file (`data/glossary.yaml`) with table descriptions, grain, column definitions, known values, join hints, and caveats — injected into every LLM context
-- **Auto-Seed** — LLM auto-generates descriptions for unannotated tables on first schema load; results written back to YAML (idempotent, disable with `HERMES_AUTOSEED=false`)
+- **Auto-Seed** — LLM auto-generates descriptions for unannotated tables on first schema load; results written back to YAML (idempotent, disable with `AUGHOR_AUTOSEED=false`)
 - **dbt Integration** — reads `manifest.json` to pull model descriptions, column-level metadata, and source documentation
 - **Metrics Catalog** — named business metrics with formulas, definitions, and consistency checks
 - **SQL Knowledge Base** — curated pattern library (`data/kb/`) injected as context for SQL generation
@@ -173,8 +173,8 @@ ollama pull nomic-embed-text
 ### 1. Clone & install
 
 ```bash
-git clone https://github.com/sidhasadhak/hypothesis-engine.git
-cd hypothesis-engine
+git clone https://github.com/sidhasadhak/aughor.git
+cd aughor
 
 # Install Python deps
 uv sync

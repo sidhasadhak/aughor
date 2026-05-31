@@ -1,0 +1,885 @@
+"use client";
+
+/**
+ * BriefingPanel — M24a + M24b Synthesis Layer
+ *
+ * Distils cross-domain intelligence into a coherent Monday morning brief.
+ *
+ * M24a: deterministic front-end synthesis (headline + signals + patterns)
+ * M24b: LLM-authored narrative with inline citation markers [1][2][3]
+ *
+ * Data sources:
+ *   • getDomainInsights()         — all domain findings, sorted by novelty
+ *   • getPatterns()               — cross-domain structural patterns
+ *   • getOrgIntelligence()        — promoted org-level signals
+ *   • generateBriefingNarrative() — LLM prose with citation links (M24b)
+ */
+
+import { useEffect, useState, useCallback } from "react";
+import {
+  getDomainInsights,
+  getPatterns,
+  getOrgIntelligence,
+  generateBriefingNarrative,
+  type DomainInsights,
+  type ExplorationInsight,
+  type Pattern,
+  type OrgInsight,
+  type BriefingCitation,
+  type BriefingNarrativeResponse,
+} from "@/lib/api";
+
+// ── Types ──────────────────────────────────────────────────────────────────────
+
+interface SynthesisSignal {
+  insight: ExplorationInsight;
+  domain: string;
+}
+
+interface BriefingData {
+  headline:      SynthesisSignal | null;
+  signals:       SynthesisSignal[];
+  patterns:      Pattern[];
+  orgInsights:   OrgInsight[];
+  domainCount:   number;
+  totalInsights: number;
+  synthesizedAt: string;
+}
+
+// ── Inline citation renderer ───────────────────────────────────────────────────
+// Parses narrative text for [N] markers and renders them as interactive chips.
+
+function CitationChip({
+  ref: refNum,
+  citation,
+  onInvestigate,
+}: {
+  ref: string;
+  citation: BriefingCitation | undefined;
+  onInvestigate: (q: string) => void;
+}) {
+  const [tooltip, setTooltip] = useState(false);
+
+  return (
+    <span style={{ position: "relative", display: "inline" }}>
+      <span
+        onMouseEnter={() => setTooltip(true)}
+        onMouseLeave={() => setTooltip(false)}
+        onClick={() => citation && onInvestigate(`Investigate: ${citation.finding}`)}
+        style={{
+          display: "inline-flex", alignItems: "center", justifyContent: "center",
+          width: 18, height: 18, borderRadius: "50%",
+          fontSize: 9, fontWeight: 700, fontFamily: "var(--font-mono)",
+          background: "var(--blue3)", color: "var(--bg-0)",
+          cursor: citation ? "pointer" : "default",
+          verticalAlign: "middle", marginLeft: 2, flexShrink: 0,
+          transition: "background .1s",
+          userSelect: "none" as const,
+        }}
+        onMouseDown={e => { (e.currentTarget as HTMLElement).style.background = "var(--blue4)"; }}
+        onMouseUp={e => { (e.currentTarget as HTMLElement).style.background = "var(--blue3)"; }}
+      >
+        {refNum}
+      </span>
+      {tooltip && citation && (
+        <span style={{
+          position: "absolute", bottom: "calc(100% + 6px)", left: "50%",
+          transform: "translateX(-50%)",
+          width: 240, padding: "8px 10px",
+          background: "var(--bg-3)", border: "1px solid var(--b2)",
+          borderRadius: "var(--r2)", boxShadow: "0 4px 16px rgba(0,0,0,.4)",
+          zIndex: 50, pointerEvents: "none" as const,
+        }}>
+          <div style={{ fontSize: 9, fontWeight: 600, color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".07em", marginBottom: 4 }}>
+            {citation.domain}{citation.angle ? ` · ${citation.angle}` : ""}
+          </div>
+          <div style={{ fontSize: 11, color: "var(--t2)", lineHeight: 1.5 }}>
+            {citation.finding.length > 120 ? citation.finding.slice(0, 120) + "…" : citation.finding}
+          </div>
+        </span>
+      )}
+    </span>
+  );
+}
+
+function NarrativeText({
+  text,
+  citations,
+  onInvestigate,
+}: {
+  text: string;
+  citations: BriefingCitation[];
+  onInvestigate: (q: string) => void;
+}) {
+  const citationMap = Object.fromEntries(citations.map(c => [c.ref, c]));
+  // Split on [N] markers
+  const parts = text.split(/(\[\d+\])/g);
+
+  return (
+    <span>
+      {parts.map((part, i) => {
+        const match = part.match(/^\[(\d+)\]$/);
+        if (match) {
+          return (
+            <CitationChip
+              key={i}
+              ref={match[1]}
+              citation={citationMap[match[1]]}
+              onInvestigate={onInvestigate}
+            />
+          );
+        }
+        return <span key={i}>{part}</span>;
+      })}
+    </span>
+  );
+}
+
+// ── Narrative card ─────────────────────────────────────────────────────────────
+
+function NarrativeCard({
+  narrative,
+  onInvestigate,
+}: {
+  narrative: BriefingNarrativeResponse;
+  onInvestigate: (q: string) => void;
+}) {
+  return (
+    <div style={{
+      background: "linear-gradient(135deg, color-mix(in srgb, var(--blue4) 8%, var(--bg-2)), var(--bg-2))",
+      border: "1px solid color-mix(in srgb, var(--blue4) 22%, var(--b1))",
+      borderRadius: "var(--r3)", padding: "18px 22px",
+    }}>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+        <span style={{
+          fontSize: 9, fontWeight: 700, padding: "2px 7px", borderRadius: "var(--r1)",
+          background: "color-mix(in srgb, var(--blue4) 16%, transparent)",
+          border: "1px solid color-mix(in srgb, var(--blue4) 30%, transparent)",
+          color: "var(--blue4)", textTransform: "uppercase" as const, letterSpacing: ".09em",
+        }}>
+          AI Synthesis
+        </span>
+        {narrative.headline_theme && (
+          <span style={{ fontSize: 12, fontWeight: 600, color: "var(--t1)", letterSpacing: ".01em" }}>
+            {narrative.headline_theme}
+          </span>
+        )}
+        {narrative.generated_at && (
+          <span style={{ fontSize: 10, color: "var(--t4)", marginLeft: "auto" }}>
+            {timeAgo(narrative.generated_at)}
+          </span>
+        )}
+      </div>
+
+      {/* Narrative prose with inline citations */}
+      <div style={{
+        fontSize: 13, color: "var(--t1)", lineHeight: 1.75, fontWeight: 400,
+        letterSpacing: ".01em",
+      }}>
+        <NarrativeText
+          text={narrative.narrative}
+          citations={narrative.citations}
+          onInvestigate={onInvestigate}
+        />
+      </div>
+
+      {/* Citation legend */}
+      {narrative.citations.length > 0 && (
+        <div style={{ marginTop: 14, display: "flex", flexDirection: "column" as const, gap: 4 }}>
+          {narrative.citations.map(c => (
+            <div
+              key={c.ref}
+              onClick={() => onInvestigate(`Investigate: ${c.finding}`)}
+              style={{
+                display: "flex", gap: 8, alignItems: "flex-start",
+                cursor: "pointer", borderRadius: "var(--r2)", padding: "4px 6px",
+                transition: "background .1s",
+              }}
+              onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = "var(--bg-3)"; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
+            >
+              <span style={{
+                width: 16, height: 16, borderRadius: "50%", flexShrink: 0, marginTop: 1,
+                fontSize: 8, fontWeight: 700, fontFamily: "var(--font-mono)",
+                background: "var(--blue3)", color: "var(--bg-0)",
+                display: "inline-flex", alignItems: "center", justifyContent: "center",
+              }}>
+                {c.ref}
+              </span>
+              <span style={{ fontSize: 10, color: "var(--t3)", lineHeight: 1.5 }}>
+                <span style={{ color: "var(--t2)", fontWeight: 500 }}>{c.domain}</span>
+                {c.angle ? ` · ${c.angle}` : ""} —{" "}
+                {c.finding.length > 100 ? c.finding.slice(0, 100) + "…" : c.finding}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Narrative generate button ──────────────────────────────────────────────────
+
+function GenerateBriefButton({
+  loading,
+  hasNarrative,
+  onClick,
+}: {
+  loading: boolean;
+  hasNarrative: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={loading}
+      style={{
+        display: "inline-flex", alignItems: "center", gap: 7,
+        padding: "8px 16px", borderRadius: "var(--r2)", fontSize: 12, fontWeight: 500,
+        background: loading
+          ? "var(--bg-2)"
+          : "color-mix(in srgb, var(--blue4) 14%, var(--bg-2))",
+        border: `1px solid ${loading ? "var(--b1)" : "color-mix(in srgb, var(--blue4) 32%, var(--b1))"}`,
+        color: loading ? "var(--t3)" : "var(--blue4)",
+        cursor: loading ? "not-allowed" : "pointer",
+        transition: "all .15s",
+      }}
+      onMouseEnter={e => { if (!loading) e.currentTarget.style.background = "color-mix(in srgb, var(--blue4) 22%, var(--bg-2))"; }}
+      onMouseLeave={e => { if (!loading) e.currentTarget.style.background = "color-mix(in srgb, var(--blue4) 14%, var(--bg-2))"; }}
+    >
+      {loading ? (
+        <>
+          <span style={{
+            width: 12, height: 12, border: "2px solid var(--b2)",
+            borderTop: "2px solid var(--blue4)", borderRadius: "50%",
+            animation: "spin 1s linear infinite", flexShrink: 0,
+          }} />
+          Generating…
+        </>
+      ) : (
+        <>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6L12 2z" />
+          </svg>
+          {hasNarrative ? "Regenerate Brief" : "Generate AI Brief"}
+        </>
+      )}
+    </button>
+  );
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
+function noveltyColor(n: number): string {
+  if (n >= 7) return "var(--grn3)";
+  if (n >= 5) return "var(--blue4)";
+  if (n >= 3) return "var(--amb3)";
+  return "var(--t4)";
+}
+
+function noveltyLabel(n: number): string {
+  if (n >= 7) return "High";
+  if (n >= 5) return "Notable";
+  if (n >= 3) return "Mid";
+  return "Low";
+}
+
+function timeAgo(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
+}
+
+const PATTERN_TYPE_COLORS: Record<string, string> = {
+  angle:       "var(--blue4)",
+  entity:      "var(--vio3)",
+  convergence: "var(--grn3)",
+};
+
+const PATTERN_TYPE_ICONS: Record<string, string> = {
+  angle:       "↻",
+  entity:      "⊕",
+  convergence: "◎",
+};
+
+// ── Synthesis engine ───────────────────────────────────────────────────────────
+
+function synthesize(
+  domainData:  Record<string, DomainInsights>,
+  patterns:    Pattern[],
+  orgInsights: OrgInsight[],
+): BriefingData {
+  const allSignals: SynthesisSignal[] = [];
+  let totalInsights = 0;
+
+  for (const [domain, data] of Object.entries(domainData)) {
+    for (const ins of data.insights) {
+      allSignals.push({ insight: ins, domain });
+      totalInsights++;
+    }
+  }
+
+  // Sort by novelty desc
+  allSignals.sort((a, b) => b.insight.novelty - a.insight.novelty);
+
+  const headline = allSignals[0] ?? null;
+
+  // Build supporting signals: breadth first (one per domain), then fill to 6
+  const seenIds    = new Set<string>(headline ? [headline.insight.id] : []);
+  const seenDomains = new Set<string>();
+  const signals: SynthesisSignal[] = [];
+
+  // Pass 1 — breadth
+  for (const s of allSignals) {
+    if (signals.length >= 6) break;
+    if (seenIds.has(s.insight.id)) continue;
+    if (seenDomains.has(s.domain)) continue;
+    seenIds.add(s.insight.id);
+    seenDomains.add(s.domain);
+    signals.push(s);
+  }
+
+  // Pass 2 — fill with highest-novelty remainder
+  for (const s of allSignals) {
+    if (signals.length >= 6) break;
+    if (seenIds.has(s.insight.id)) continue;
+    seenIds.add(s.insight.id);
+    signals.push(s);
+  }
+
+  return {
+    headline,
+    signals,
+    patterns:      patterns.slice(0, 5),
+    orgInsights:   orgInsights.slice(0, 3),
+    domainCount:   Object.keys(domainData).length,
+    totalInsights,
+    synthesizedAt: new Date().toISOString(),
+  };
+}
+
+// ── Domain tag ─────────────────────────────────────────────────────────────────
+
+const DOMAIN_COLORS = [
+  "var(--blue4)", "var(--vio3)", "var(--grn3)",
+  "var(--amb3)",  "var(--chart-4)", "var(--chart-5)",
+];
+
+function domainColor(domain: string): string {
+  let h = 0;
+  for (const c of domain) h = (h * 31 + c.charCodeAt(0)) & 0xffff;
+  return DOMAIN_COLORS[h % DOMAIN_COLORS.length];
+}
+
+function DomainTag({ domain }: { domain: string }) {
+  const color = domainColor(domain);
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center",
+      padding: "2px 8px", borderRadius: "var(--r2)", fontSize: 10,
+      background:  `color-mix(in srgb, ${color} 12%, transparent)`,
+      border:      `1px solid color-mix(in srgb, ${color} 28%, transparent)`,
+      color, fontWeight: 500, textTransform: "capitalize" as const,
+      letterSpacing: ".02em", flexShrink: 0,
+    }}>
+      {domain}
+    </span>
+  );
+}
+
+// ── Headline card ──────────────────────────────────────────────────────────────
+
+function HeadlineCard({ signal, onInvestigate }: {
+  signal:       SynthesisSignal;
+  onInvestigate: (q: string) => void;
+}) {
+  const { insight, domain } = signal;
+  const nColor = noveltyColor(insight.novelty);
+
+  return (
+    <div style={{
+      background:  "var(--bg-2)",
+      border:      `1px solid color-mix(in srgb, ${nColor} 28%, var(--b1))`,
+      borderLeft:  `3px solid ${nColor}`,
+      borderRadius: "var(--r3)", padding: "20px 24px",
+    }}>
+      {/* Badge row */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" as const }}>
+        <span style={{
+          padding: "3px 8px", borderRadius: "var(--r2)", fontSize: 10, fontWeight: 600,
+          background: `color-mix(in srgb, ${nColor} 14%, transparent)`,
+          border:     `1px solid color-mix(in srgb, ${nColor} 28%, transparent)`,
+          color: nColor, textTransform: "uppercase" as const, letterSpacing: ".07em",
+        }}>
+          {noveltyLabel(insight.novelty)} · {insight.novelty.toFixed(1)}
+        </span>
+        <DomainTag domain={domain} />
+        {insight.angle && (
+          <span style={{ fontSize: 10, color: "var(--t4)", marginLeft: "auto" }}>
+            {insight.angle}
+          </span>
+        )}
+      </div>
+
+      {/* Finding */}
+      <div style={{ fontSize: 14, fontWeight: 500, color: "var(--t1)", lineHeight: 1.65, marginBottom: 16 }}>
+        {insight.finding}
+      </div>
+
+      {/* Footer */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" as const }}>
+        {insight.entities_involved.length > 0 && (
+          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" as const }}>
+            {insight.entities_involved.slice(0, 4).map(e => (
+              <span key={e} style={{
+                padding: "1px 6px", borderRadius: "var(--r1)", fontSize: 10,
+                background: "var(--bg-3)", border: "1px solid var(--b1)",
+                color: "var(--t3)", fontFamily: "var(--font-mono)",
+              }}>{e.replace(/_/g, " ")}</span>
+            ))}
+          </div>
+        )}
+        <button
+          onClick={() => onInvestigate(`Investigate: ${insight.finding}`)}
+          style={{
+            marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6,
+            padding: "6px 14px", borderRadius: "var(--r2)", fontSize: 12, fontWeight: 500,
+            background: "var(--bg-sel)", border: "1px solid var(--blue2)",
+            color: "var(--blue4)", cursor: "pointer", transition: "all .12s",
+          }}
+          onMouseEnter={e => { e.currentTarget.style.background = "color-mix(in srgb, var(--blue4) 16%, transparent)"; }}
+          onMouseLeave={e => { e.currentTarget.style.background = "var(--bg-sel)"; }}
+        >
+          Investigate →
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Signal card ────────────────────────────────────────────────────────────────
+
+function SignalCard({ signal, onInvestigate }: {
+  signal:       SynthesisSignal;
+  onInvestigate: (q: string) => void;
+}) {
+  const { insight, domain } = signal;
+  const nColor = noveltyColor(insight.novelty);
+
+  return (
+    <div style={{
+      background: "var(--bg-2)", border: "1px solid var(--b1)",
+      borderTop:  `2px solid ${nColor}`,
+      borderRadius: "var(--r3)", padding: "14px 16px",
+      display: "flex", flexDirection: "column" as const, gap: 10,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" as const }}>
+        <span style={{
+          fontSize: 10, fontWeight: 700, color: nColor,
+          fontFamily: "var(--font-mono)",
+        }}>
+          {insight.novelty.toFixed(1)}
+        </span>
+        <DomainTag domain={domain} />
+        {insight.angle && (
+          <span style={{ fontSize: 10, color: "var(--t4)", marginLeft: "auto" }}>{insight.angle}</span>
+        )}
+      </div>
+      <div style={{ fontSize: 12, color: "var(--t2)", lineHeight: 1.55, flex: 1 }}>
+        {insight.finding.length > 160 ? insight.finding.slice(0, 160) + "…" : insight.finding}
+      </div>
+      <button
+        onClick={() => onInvestigate(`Investigate: ${insight.finding}`)}
+        style={{
+          alignSelf: "flex-start" as const,
+          padding: "4px 10px", borderRadius: "var(--r2)", fontSize: 11, fontWeight: 500,
+          background: "transparent", border: "1px solid var(--b2)",
+          color: "var(--t3)", cursor: "pointer", transition: "all .12s",
+        }}
+        onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--blue3)"; e.currentTarget.style.color = "var(--blue4)"; }}
+        onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--b2)"; e.currentTarget.style.color = "var(--t3)"; }}
+      >
+        Investigate →
+      </button>
+    </div>
+  );
+}
+
+// ── Pattern row (sidebar) ──────────────────────────────────────────────────────
+
+function PatternRow({ pattern, onInvestigate }: {
+  pattern:      Pattern;
+  onInvestigate: (q: string) => void;
+}) {
+  const color = PATTERN_TYPE_COLORS[pattern.type] ?? "var(--t3)";
+  const icon  = PATTERN_TYPE_ICONS[pattern.type]  ?? "·";
+
+  return (
+    <div
+      onClick={() => onInvestigate(`Investigate the pattern: ${pattern.title}`)}
+      style={{
+        display: "flex", alignItems: "flex-start", gap: 10,
+        padding: "10px 12px", borderRadius: "var(--r2)",
+        background: "var(--bg-2)", border: "1px solid var(--b1)",
+        cursor: "pointer", transition: "background .1s",
+      }}
+      onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = "var(--bg-3)"; }}
+      onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = "var(--bg-2)"; }}
+    >
+      <span style={{ fontSize: 13, color, flexShrink: 0, lineHeight: 1.4 }}>{icon}</span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{
+          fontSize: 11, fontWeight: 500, color: "var(--t1)",
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const,
+        }}>
+          {pattern.title}
+        </div>
+        <div style={{ fontSize: 10, color: "var(--t3)", marginTop: 2 }}>
+          {pattern.domains.length} domain{pattern.domains.length !== 1 ? "s" : ""} · {pattern.evidence_count} findings
+        </div>
+      </div>
+      <span style={{
+        fontSize: 9, padding: "2px 6px", borderRadius: "var(--r1)", flexShrink: 0,
+        background: `color-mix(in srgb, ${color} 12%, transparent)`,
+        border:     `1px solid color-mix(in srgb, ${color} 25%, transparent)`,
+        color, textTransform: "uppercase" as const, letterSpacing: ".06em", fontWeight: 600,
+      }}>
+        {pattern.type}
+      </span>
+    </div>
+  );
+}
+
+// ── Org signal row (sidebar) ───────────────────────────────────────────────────
+
+function OrgSignalRow({ insight }: { insight: OrgInsight }) {
+  const nColor = noveltyColor(insight.novelty);
+  return (
+    <div style={{
+      padding: "10px 12px", borderRadius: "var(--r2)",
+      background: "var(--bg-2)", border: "1px solid var(--b1)",
+      borderLeft: `2px solid ${nColor}`,
+    }}>
+      <div style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center", flexWrap: "wrap" as const }}>
+        <DomainTag domain={insight.domain} />
+        {insight.angle && (
+          <span style={{ fontSize: 10, color: "var(--t4)", marginLeft: "auto" }}>{insight.angle}</span>
+        )}
+      </div>
+      <div style={{ fontSize: 11, color: "var(--t2)", lineHeight: 1.5 }}>
+        {insight.text.length > 120 ? insight.text.slice(0, 120) + "…" : insight.text}
+      </div>
+    </div>
+  );
+}
+
+// ── Empty state ────────────────────────────────────────────────────────────────
+
+function BriefingEmpty() {
+  return (
+    <div style={{
+      flex: 1, display: "flex", flexDirection: "column" as const,
+      alignItems: "center", justifyContent: "center", gap: 16, padding: 48,
+    }}>
+      <div style={{
+        width: 56, height: 56, borderRadius: "var(--r3)",
+        background: "var(--bg-2)", border: "1px solid var(--b1)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+      }}>
+        {/* Brief icon */}
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
+          stroke="var(--t4)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 5h18M3 9h18M3 13h12M3 17h8" />
+        </svg>
+      </div>
+      <div style={{ textAlign: "center" as const }}>
+        <div style={{ fontSize: 14, fontWeight: 500, color: "var(--t2)", marginBottom: 6 }}>
+          No intelligence to brief yet
+        </div>
+        <div style={{ fontSize: 12, color: "var(--t3)", maxWidth: 340, lineHeight: 1.6 }}>
+          Briefings synthesise domain intelligence into a daily brief. Run an exploration on a connection — findings will appear here automatically.
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Loading state ──────────────────────────────────────────────────────────────
+
+function BriefingLoading() {
+  return (
+    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{
+        display: "flex", flexDirection: "column" as const, alignItems: "center", gap: 12,
+      }}>
+        <div style={{
+          width: 32, height: 32,
+          border: "2px solid var(--b1)",
+          borderTop: "2px solid var(--blue4)",
+          borderRadius: "50%",
+          animation: "spin 1s linear infinite",
+        }} />
+        <div style={{ fontSize: 12, color: "var(--t3)" }}>Synthesizing intelligence…</div>
+      </div>
+    </div>
+  );
+}
+
+// ── Main component ─────────────────────────────────────────────────────────────
+
+export function BriefingPanel({
+  connectionId,
+  onInvestigate,
+}: {
+  connectionId: string;
+  onInvestigate: (q: string) => void;
+}) {
+  const [briefing, setBriefing]             = useState<BriefingData | null>(null);
+  const [loading, setLoading]               = useState(false);
+  const [error, setError]                   = useState<string | null>(null);
+  const [narrative, setNarrative]           = useState<BriefingNarrativeResponse | null>(null);
+  const [narrativeLoading, setNarrativeLoading] = useState(false);
+  const [narrativeError, setNarrativeError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!connectionId) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const [domainRaw, patternsRes, orgInsights] = await Promise.all([
+        getDomainInsights(connectionId),
+        getPatterns(connectionId).catch(() => ({ patterns: [] as Pattern[], count: 0 })),
+        getOrgIntelligence().catch(() => [] as OrgInsight[]),
+      ]);
+      setBriefing(synthesize(domainRaw, patternsRes.patterns, orgInsights));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load briefing");
+    } finally {
+      setLoading(false);
+    }
+  }, [connectionId]);
+
+  const generateNarrative = useCallback(async (forceRefresh = false) => {
+    if (!connectionId) return;
+    setNarrativeLoading(true);
+    setNarrativeError(null);
+    try {
+      const result = await generateBriefingNarrative(connectionId, forceRefresh);
+      if (result.available) setNarrative(result);
+      else setNarrativeError("No domain intelligence available — run an exploration first.");
+    } catch (e) {
+      setNarrativeError(e instanceof Error ? e.message : "Failed to generate narrative");
+    } finally {
+      setNarrativeLoading(false);
+    }
+  }, [connectionId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  // Auto-fetch cached narrative (no force-refresh) on mount
+  useEffect(() => {
+    if (!connectionId || narrative !== null) return;
+    generateNarrative(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectionId]);
+
+  if (loading)  return <BriefingLoading />;
+
+  if (error) {
+    return (
+      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ fontSize: 12, color: "var(--red4)" }}>{error}</div>
+      </div>
+    );
+  }
+
+  if (!briefing || briefing.totalInsights === 0) return <BriefingEmpty />;
+
+  const hasPatterns    = briefing.patterns.length > 0;
+  const hasOrgInsights = briefing.orgInsights.length > 0;
+  const hasSidebar     = hasPatterns || hasOrgInsights || briefing.domainCount > 0;
+  const hasNarrative   = !!narrative?.narrative;
+
+  return (
+    <div style={{ flex: 1, overflowY: "auto", padding: "20px 28px" }}>
+
+      {/* ── Meta strip ── */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+        <span style={{ fontSize: 11, color: "var(--t3)" }}>
+          Synthesized from{" "}
+          <span style={{ color: "var(--t2)", fontWeight: 500 }}>{briefing.domainCount} domains</span>
+          {" "}·{" "}
+          <span style={{ color: "var(--t2)", fontWeight: 500 }}>{briefing.totalInsights} findings</span>
+          <span style={{ color: "var(--t4)", marginLeft: 6 }}>· {timeAgo(briefing.synthesizedAt)}</span>
+        </span>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
+          <GenerateBriefButton
+            loading={narrativeLoading}
+            hasNarrative={hasNarrative}
+            onClick={() => generateNarrative(hasNarrative)}
+          />
+          <button
+            onClick={load}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 5,
+              padding: "4px 10px", borderRadius: "var(--r2)", fontSize: 11,
+              background: "var(--bg-2)", border: "1px solid var(--b1)",
+              color: "var(--t3)", cursor: "pointer", transition: "all .1s",
+            }}
+            onMouseEnter={e => { e.currentTarget.style.color = "var(--t1)"; e.currentTarget.style.borderColor = "var(--b2)"; }}
+            onMouseLeave={e => { e.currentTarget.style.color = "var(--t3)"; e.currentTarget.style.borderColor = "var(--b1)"; }}
+          >
+            ↻ Reload
+          </button>
+        </div>
+      </div>
+
+      {/* ── Two-column layout ── */}
+      <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
+
+        {/* ── Main column ── */}
+        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" as const, gap: 24 }}>
+
+          {/* AI Narrative (M24b) */}
+          {(hasNarrative || narrativeLoading || narrativeError) && (
+            <div>
+              <div className="aug-label" style={{ marginBottom: 10 }}>AI Synthesis</div>
+              {narrativeLoading && (
+                <div style={{
+                  background: "color-mix(in srgb, var(--blue4) 6%, var(--bg-2))",
+                  border: "1px solid color-mix(in srgb, var(--blue4) 18%, var(--b1))",
+                  borderRadius: "var(--r3)", padding: "18px 22px",
+                  display: "flex", alignItems: "center", gap: 10,
+                }}>
+                  <span style={{
+                    width: 14, height: 14, border: "2px solid var(--b2)",
+                    borderTop: "2px solid var(--blue4)", borderRadius: "50%",
+                    animation: "spin 1s linear infinite", flexShrink: 0,
+                  }} />
+                  <span style={{ fontSize: 12, color: "var(--t3)" }}>
+                    Writing intelligence brief…
+                  </span>
+                </div>
+              )}
+              {!narrativeLoading && narrativeError && (
+                <div style={{
+                  padding: "10px 14px", borderRadius: "var(--r2)",
+                  background: "var(--red1)", border: "1px solid var(--red2)",
+                  fontSize: 11, color: "var(--red4)",
+                }}>
+                  {narrativeError}
+                </div>
+              )}
+              {!narrativeLoading && hasNarrative && narrative && (
+                <NarrativeCard narrative={narrative} onInvestigate={onInvestigate} />
+              )}
+            </div>
+          )}
+
+          {/* Headline finding */}
+          {briefing.headline && (
+            <div>
+              <div className="aug-label" style={{ marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                <span>Headline Finding</span>
+                <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: "var(--r1)", background: "var(--bg-3)", border: "1px solid var(--b1)", color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".06em", fontWeight: 600 }}>
+                  Top signal
+                </span>
+              </div>
+              <HeadlineCard signal={briefing.headline} onInvestigate={onInvestigate} />
+            </div>
+          )}
+
+          {/* Supporting signals */}
+          {briefing.signals.length > 0 && (
+            <div>
+              <div className="aug-label" style={{ marginBottom: 10 }}>
+                Supporting Signals
+                <span style={{ marginLeft: 6, fontWeight: 400, color: "var(--t4)" }}>
+                  — cross-domain findings by novelty
+                </span>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12 }}>
+                {briefing.signals.map(s => (
+                  <SignalCard key={s.insight.id} signal={s} onInvestigate={onInvestigate} />
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Sidebar ── */}
+        {hasSidebar && (
+          <div style={{ width: 272, flexShrink: 0, display: "flex", flexDirection: "column" as const, gap: 20 }}>
+
+            {/* Domain coverage */}
+            <div>
+              <div className="aug-label" style={{ marginBottom: 10 }}>Domain Coverage</div>
+              <div style={{
+                background: "var(--bg-2)", border: "1px solid var(--b1)",
+                borderRadius: "var(--r3)", padding: "14px 16px",
+              }}>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+                  <span style={{
+                    fontSize: 28, fontWeight: 600, color: "var(--t1)",
+                    letterSpacing: "-.02em", lineHeight: 1, fontFamily: "var(--font-mono)",
+                  }}>
+                    {briefing.domainCount}
+                  </span>
+                  <span style={{ fontSize: 11, color: "var(--t3)" }}>domains</span>
+                </div>
+                <div style={{
+                  marginTop: 10, width: "100%", height: 3,
+                  background: "var(--bg-3)", borderRadius: 2, overflow: "hidden",
+                }}>
+                  <div style={{
+                    height: "100%",
+                    width: `${Math.min(100, briefing.domainCount * 12)}%`,
+                    background: "var(--blue4)", borderRadius: 2,
+                    transition: "width .4s ease",
+                  }} />
+                </div>
+                <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 6 }}>
+                  {briefing.totalInsights} total findings
+                </div>
+              </div>
+            </div>
+
+            {/* Top patterns */}
+            {hasPatterns && (
+              <div>
+                <div className="aug-label" style={{ marginBottom: 10 }}>Top Patterns</div>
+                <div style={{ display: "flex", flexDirection: "column" as const, gap: 6 }}>
+                  {briefing.patterns.map(p => (
+                    <PatternRow key={p.id} pattern={p} onInvestigate={onInvestigate} />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Org intel */}
+            {hasOrgInsights && (
+              <div>
+                <div className="aug-label" style={{ marginBottom: 10 }}>Org Intelligence</div>
+                <div style={{ display: "flex", flexDirection: "column" as const, gap: 6 }}>
+                  {briefing.orgInsights.map(o => (
+                    <OrgSignalRow key={o.id} insight={o} />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Spinner keyframe */}
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+}

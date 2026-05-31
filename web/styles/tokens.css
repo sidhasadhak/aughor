@@ -61,6 +61,20 @@
   /* ── Special surfaces ── */
   --code-bg:   #0d1117;
 
+  /* ── Chart palette (M23) ── */
+  --chart-1: #4C8EEE;   /* blue — primary metric / first series   */
+  --chart-2: #2EC87B;   /* green — comparison / positive          */
+  --chart-3: #E0AD00;   /* amber — secondary metric               */
+  --chart-4: #8B68D8;   /* violet — tertiary series               */
+  --chart-5: #E64848;   /* coral — warning / negative             */
+  --chart-6: #30B8E0;   /* cyan — additional series               */
+  --chart-threshold-warn:   #BD8800;
+  --chart-threshold-crit:   #C42A2A;
+  --chart-threshold-target: #18985A;
+  --chart-axis:  #253552;
+  --chart-grid:  #1B2840;
+  --chart-tick:  #8296AF;
+
   /* ── Tailwind v4 bridge ─────────────────────────────────────────────────
      Maps Tailwind color names → Palantir tokens so components can use
      Tailwind utilities (text-zinc-500 etc.) while remaining token-driven.

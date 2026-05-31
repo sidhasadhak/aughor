@@ -18,41 +18,48 @@ export type VLSpec = Record<string, unknown>;
 
 // ── Aughor Vega-Lite config (dark theme) ────────────────────────────────────
 
+// Chart token values — must mirror tokens.css --chart-* and --chart-axis/grid/tick.
+// Vega renders to SVG and cannot read CSS variables, so we mirror the values here.
+const C1 = "#4C8EEE";  // --chart-1
+const C2 = "#2EC87B";  // --chart-2
+const C3 = "#E0AD00";  // --chart-3
+const C4 = "#8B68D8";  // --chart-4
+const C5 = "#E64848";  // --chart-5
+const C6 = "#30B8E0";  // --chart-6
+const AXIS_LINE  = "#253552";  // --chart-axis
+const AXIS_GRID  = "#1B2840";  // --chart-grid
+const AXIS_TICK  = "#8296AF";  // --chart-tick
+
 const AUG_CONFIG = {
   background: "transparent",
   font: "var(--font-ui, 'DM Sans', system-ui, sans-serif)",
   axis: {
-    labelColor:     "#8296AF",   // --t2 (was --t3 #485E7C — too dark on dark bg)
-    titleColor:     "#8296AF",
-    gridColor:      "#1B2840",   // --b1
-    domainColor:    "#253552",
-    tickColor:      "#253552",
-    labelFontSize:  11,
-    titleFontSize:  11,
-    labelPadding:   6,
+    labelColor:    AXIS_TICK,
+    titleColor:    AXIS_TICK,
+    gridColor:     AXIS_GRID,
+    domainColor:   AXIS_LINE,
+    tickColor:     AXIS_LINE,
+    labelFontSize: 11,
+    titleFontSize: 11,
+    labelPadding:  6,
+    // max 6 ticks on time axis per M23c standard
+    tickCount:     6,
   },
   header: {
-    labelColor: "#8296AF",       // --t2
-    titleColor: "#8296AF",
+    labelColor: AXIS_TICK,
+    titleColor: AXIS_TICK,
   },
   legend: {
-    labelColor:     "#8296AF",
-    titleColor:     "#8296AF",
-    labelFontSize:  11,
+    labelColor:        AXIS_TICK,
+    titleColor:        AXIS_TICK,
+    labelFontSize:     11,
     symbolStrokeWidth: 0,
-    padding: 4,
+    padding:           4,
+    orient:            "top",   // time series: legend above, left-aligned
+    direction:         "horizontal",
   },
   range: {
-    category: [
-      "#4C8EEE",   // blue4
-      "#2EC87B",   // grn4
-      "#f59e0b",   // amber
-      "#f87171",   // red
-      "#c084fc",   // purple
-      "#38bdf8",   // sky
-      "#fb923c",   // orange
-      "#a3e635",   // lime
-    ],
+    category: [C1, C2, C3, C4, C5, C6],
   },
   view: { stroke: null },
   mark: { tooltip: true },
@@ -181,7 +188,7 @@ export function timeseriesSpec(xField: string, yField: string, opts?: {
   yFormat?: string;
   xFormat?: string;
 }): VLSpec {
-  const color = opts?.color ?? "#2EC87B";
+  const color = opts?.color ?? C1;
   const enc = (extra?: VLSpec) => ({
     x: {
       field: xField,
@@ -229,7 +236,7 @@ export function barSpec(xField: string, yField: string, opts?: {
   xFormat?: string;
   maxBars?: number;
 }): VLSpec {
-  const color = opts?.color ?? "#4C8EEE";
+  const color = opts?.color ?? C1;
   return {
     mark: { type: "bar", color, opacity: 0.8, cornerRadiusEnd: 2 },
     transform: [

@@ -42,7 +42,7 @@ function StatRow({ label, value, sub, highlight }: StatRowProps) {
       <span className="text-xs text-zinc-400">{label}</span>
       <div className="text-right">
         <span className={`text-xs font-mono ${valColor}`}>{value}</span>
-        {sub && <span className="text-[10px] text-zinc-600 ml-1.5">{sub}</span>}
+        {sub && <span className="text-[11px] text-zinc-600 ml-1.5">{sub}</span>}
       </div>
     </div>
   );
@@ -56,7 +56,7 @@ interface SectionProps {
 function Section({ title, children }: SectionProps) {
   return (
     <div className="mb-5">
-      <p className="text-[10px] uppercase tracking-widest text-zinc-600 mb-2">{title}</p>
+      <p className="text-[11px] uppercase tracking-widest text-zinc-600 mb-2">{title}</p>
       <div className="bg-white/[0.03] rounded-lg px-3 py-0.5">
         {children}
       </div>
@@ -127,7 +127,7 @@ export function SystemPanel() {
         <button
           onClick={handleReset}
           disabled={resetting}
-          className="text-[10px] text-zinc-500 hover:text-zinc-300 border border-white/10 rounded px-2 py-1 transition-colors disabled:opacity-40"
+          className="text-[11px] text-zinc-500 hover:text-zinc-300 border border-white/10 rounded px-2 py-1 transition-colors disabled:opacity-40"
         >
           {resetting ? "Resetting…" : "Reset counters"}
         </button>
@@ -211,7 +211,7 @@ export function SystemPanel() {
         />
       </Section>
 
-      <p className="text-[10px] text-zinc-700 text-center mt-2">
+      <p className="text-[11px] text-zinc-700 text-center mt-2">
         Counters reset on server restart · auto-refreshes every 15s
       </p>
     </div>

@@ -220,7 +220,7 @@ def build_mermaid_er(schema_str: str) -> str:
 
 def build_rich_schema(schema_str: str) -> dict:
     """Return structured schema data for the rich UI card view."""
-    table_col_types: dict[str, list[tuple[str, str]]] = {}
+    table_col_types: dict[str, list[tuple[str, str, str]]] = {}
     table_row_counts: dict[str, str] = {}
     current: str | None = None
 
@@ -238,9 +238,13 @@ def build_rich_schema(schema_str: str) -> dict:
         elif current:
             col_m = re.match(r"^\s{2}(.+?)\s{2,}(\S+)", line)
             if col_m and not line.strip().startswith("--"):
-                table_col_types[current].append((col_m.group(1), col_m.group(2)))
+                desc = ""
+                desc_m = re.search(r"\[(.+?)\]", line)
+                if desc_m:
+                    desc = desc_m.group(1)
+                table_col_types[current].append((col_m.group(1), col_m.group(2), desc))
 
-    table_cols = {t: [c for c, _ in cols] for t, cols in table_col_types.items()}
+    table_cols = {t: [c for c, _, _ in cols] for t, cols in table_col_types.items()}
     jmap = _compute_join_map(table_cols)
 
     # Only the FK side (t1.c1) gets is_fk=True.
@@ -255,8 +259,9 @@ def build_rich_schema(schema_str: str) -> dict:
             "name": table,
             "row_count": table_row_counts.get(table),
             "columns": [
-                {"name": col, "type": typ, "is_fk": col in fk_hints.get(table, set())}
-                for col, typ in col_type_pairs
+                {"name": col, "type": typ, "is_fk": col in fk_hints.get(table, set()),
+                 **({"description": desc} if desc else {})}
+                for col, typ, desc in col_type_pairs
             ],
         })
 
@@ -264,7 +269,7 @@ def build_rich_schema(schema_str: str) -> dict:
 
     # Type mismatch on join columns
     type_index: dict[str, dict[str, str]] = {
-        t: dict(pairs) for t, pairs in table_col_types.items()
+        t: {col: typ for col, typ, _ in pairs} for t, pairs in table_col_types.items()
     }
     for j in jmap["joins"]:
         t1_type = type_index.get(j["t1"], {}).get(j["c1"], "")
@@ -507,3 +512,81 @@ def build_schema_context(
     if profile_annotation:
         enriched += "\n\n" + profile_annotation
     return enriched
+
+
+# ── Canvas-scoped schema helpers ──────────────────────────────────────────────
+
+def get_schema_for_tables(full_schema: str, tables: list[str]) -> str:
+    """Filter a full schema context string down to only the requested tables.
+
+    Parses TABLE: blocks from the schema string and returns only those whose
+    table name (case-insensitive) appears in `tables`. Preserves the join-hints
+    and metrics blocks that follow the TABLE: sections (everything after the
+    last table block is kept verbatim).
+
+    If `tables` is empty, returns the full schema unchanged.
+    """
+    if not tables:
+        return full_schema
+
+    include = {t.lower() for t in tables}
+    lines = full_schema.splitlines(keepends=True)
+    out: list[str] = []
+    in_table_block = False
+    keep_block = False
+    past_tables = False   # True once we've seen at least one TABLE: line
+
+    for line in lines:
+        if line.startswith("TABLE:"):
+            past_tables = True
+            in_table_block = True
+            # Extract table name from "TABLE: orders  (99,441 rows)"
+            table_name = line.split()[1].lower() if len(line.split()) > 1 else ""
+            keep_block = table_name in include
+            if keep_block:
+                out.append(line)
+        elif in_table_block:
+            if line.strip() == "":
+                # Blank line ends the current block
+                if keep_block:
+                    out.append(line)
+                in_table_block = False
+                keep_block = False
+            else:
+                if keep_block:
+                    out.append(line)
+        else:
+            # Non-table content (join hints, metrics, profile annotations)
+            # Emit only if we're past the table blocks section
+            if past_tables:
+                out.append(line)
+
+    return "".join(out)
+
+
+def build_canvas_schema_context(canvas: "Canvas") -> str:  # type: ignore[name-defined]
+    """Build a schema context string scoped to a Canvas.
+
+    Opens the Canvas's primary connection, builds the full schema context,
+    then filters it down to the Canvas's selected tables (if any).
+    The connection's get_schema() handles profiling and glossary enrichment.
+
+    Falls back to the full schema if the Canvas has no table filter or if
+    anything goes wrong — never raises.
+    """
+    from aughor.db.connection import open_connection_for
+
+    if not canvas.scopes:
+        return ""
+
+    scope = canvas.scopes[0]
+    try:
+        db = open_connection_for(scope.connection_id)
+        full_schema = db.get_schema()
+    except Exception:
+        return ""
+
+    if scope.is_full_schema:
+        return full_schema
+
+    return get_schema_for_tables(full_schema, scope.tables)
