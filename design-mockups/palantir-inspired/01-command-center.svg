@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900">
+  <defs>
+    <style>
+      .bg{fill:#080b10}.rail{fill:#0d1117}.nav{fill:#10161f}.bar{fill:#0f141b}.panel{fill:#101722;stroke:#263445;stroke-width:1}.panel2{fill:#0c1219;stroke:#202c3b;stroke-width:1}.sel{fill:#162337;stroke:#31506f}.chip{fill:#111b27;stroke:#2a3a4d}
+      .line{stroke:#243244;stroke-width:1}.grid{stroke:#1a2634;stroke-width:1}.text{fill:#eef4fb}.soft{fill:#b9c5d4}.muted{fill:#8290a3}.faint{fill:#59697b}.blue{fill:#58a6ff}.teal{fill:#42d6b2}.green{fill:#62d889}.amber{fill:#f0b84d}.red{fill:#ff6675}.violet{fill:#a78bfa}
+      .h1{font:600 24px Inter,Arial,sans-serif}.h2{font:600 16px Inter,Arial,sans-serif}.h3{font:600 13px Inter,Arial,sans-serif}.body{font:400 13px Inter,Arial,sans-serif}.small{font:500 11px Inter,Arial,sans-serif}.xs{font:600 10px Inter,Arial,sans-serif}.mono{font:500 12px ui-monospace,SFMono-Regular,Menlo,monospace}.num{font:650 28px ui-monospace,SFMono-Regular,Menlo,monospace}
+    </style>
+  </defs>
+  <rect width="1440" height="900" class="bg"/>
+  <rect width="56" height="900" class="rail"/>
+  <rect x="56" width="244" height="900" class="nav"/>
+  <rect x="300" width="1140" height="50" class="bar"/>
+  <line x1="56" y1="0" x2="56" y2="900" class="line"/>
+  <line x1="300" y1="0" x2="300" y2="900" class="line"/>
+  <line x1="300" y1="50" x2="1440" y2="50" class="line"/>
+
+  <rect x="16" y="18" width="24" height="24" rx="5" fill="#18283a" stroke="#31506f"/>
+  <circle cx="28" cy="30" r="5" class="blue"/>
+  <rect x="14" y="94" width="28" height="28" rx="6" class="sel"/><text x="24" y="113" class="blue xs">O</text>
+  <text x="24" y="160" class="muted xs">A</text><text x="24" y="208" class="muted xs">I</text><text x="24" y="256" class="muted xs">D</text><text x="24" y="304" class="muted xs">G</text>
+
+  <text x="82" y="36" class="text h2">Aughor</text>
+  <text x="82" y="57" class="faint small">Operational Intelligence</text>
+  <text x="82" y="100" class="faint xs">WORKSPACE</text>
+  <rect x="72" y="116" width="212" height="30" rx="5" class="sel"/><text x="92" y="136" class="text body">Command Center</text>
+  <text x="92" y="178" class="muted body">Ask</text>
+  <text x="92" y="218" class="muted body">Investigations</text>
+  <text x="92" y="258" class="muted body">Intelligence</text>
+  <text x="92" y="298" class="muted body">Data Map</text>
+  <text x="82" y="360" class="faint xs">OBJECTS</text>
+  <text x="92" y="396" class="muted body">Metrics</text>
+  <text x="92" y="436" class="muted body">Entities</text>
+  <text x="92" y="476" class="muted body">Processes</text>
+  <text x="92" y="516" class="muted body">Recommendations</text>
+  <rect x="72" y="794" width="212" height="72" rx="7" class="panel2"/>
+  <circle cx="94" cy="822" r="5" class="green"/><text x="110" y="826" class="soft small">Prod warehouse</text>
+  <text x="94" y="850" class="faint small">fresh 14 min ago · 136 objects</text>
+
+  <text x="326" y="32" class="muted body">Search objects, metrics, analyses, lineage</text>
+  <rect x="1180" y="12" width="86" height="26" rx="5" class="chip"/><text x="1200" y="29" class="soft small">Runbook</text>
+  <rect x="1276" y="12" width="114" height="26" rx="5" class="chip"/><text x="1296" y="29" class="soft small">Growth Ops</text>
+
+  <text x="326" y="102" class="text h1">Command Center</text>
+  <text x="326" y="128" class="muted body">Operational health, anomalies, and next actions across the business graph.</text>
+
+  <rect x="326" y="160" width="236" height="120" rx="7" class="panel"/>
+  <text x="346" y="192" class="faint xs">BUSINESS HEALTH</text><text x="346" y="230" class="text num">82</text><text x="402" y="230" class="muted body">/100</text><text x="346" y="258" class="amber mono">4 metrics need attention</text>
+  <rect x="582" y="160" width="236" height="120" rx="7" class="panel"/>
+  <text x="602" y="192" class="faint xs">ACTIVE ANOMALIES</text><text x="602" y="230" class="text num">7</text><text x="602" y="258" class="red mono">2 critical movement</text>
+  <rect x="838" y="160" width="236" height="120" rx="7" class="panel"/>
+  <text x="858" y="192" class="faint xs">RECOMMENDATIONS</text><text x="858" y="230" class="text num">18</text><text x="858" y="258" class="teal mono">11 pending owner review</text>
+  <rect x="1094" y="160" width="236" height="120" rx="7" class="panel"/>
+  <text x="1114" y="192" class="faint xs">ONTOLOGY COVERAGE</text><text x="1114" y="230" class="text num">84%</text><text x="1114" y="258" class="blue mono">+12 objects this week</text>
+
+  <rect x="326" y="310" width="668" height="352" rx="8" class="panel"/>
+  <text x="350" y="348" class="text h2">Priority events</text>
+  <text x="350" y="372" class="muted body">Evidence-ranked movements Aughor believes are operationally meaningful.</text>
+  <line x1="350" y1="398" x2="970" y2="398" class="line"/>
+  <circle cx="366" cy="438" r="5" class="red"/><text x="386" y="442" class="text h3">Payment failure rate rose in Brazil card payments</text><text x="386" y="464" class="muted body">Explains 71% of global failure-rate lift · confidence 0.91 · 3.4σ</text><rect x="838" y="424" width="112" height="28" rx="5" fill="#251117" stroke="#68313b"/><text x="862" y="443" class="red small">Investigate</text>
+  <circle cx="366" cy="520" r="5" class="amber"/><text x="386" y="524" class="text h3">APAC week-3 retention slipped below target</text><text x="386" y="546" class="muted body">Most visible in mobile-first acquisition cohorts · confidence 0.78</text><rect x="838" y="506" width="112" height="28" rx="5" fill="#231b10" stroke="#654b22"/><text x="873" y="525" class="amber small">Open</text>
+  <circle cx="366" cy="602" r="5" class="teal"/><text x="386" y="606" class="text h3">Discount pullback improved top-category gross margin</text><text x="386" y="628" class="muted body">Margin recovery visible across three high-volume categories · confidence 0.84</text>
+
+  <rect x="1020" y="310" width="310" height="352" rx="8" class="panel"/>
+  <text x="1044" y="348" class="text h2">Action queue</text>
+  <text x="1044" y="372" class="muted body">Recommendations awaiting approval or execution.</text>
+  <rect x="1044" y="404" width="262" height="72" rx="6" fill="#0d141d" stroke="#263445"/><text x="1064" y="431" class="text h3">Reroute BR acquirer traffic</text><text x="1064" y="452" class="muted small">Owner: Payments Ops · impact high</text>
+  <rect x="1044" y="492" width="262" height="72" rx="6" fill="#0d141d" stroke="#263445"/><text x="1064" y="519" class="text h3">Create APAC cohort monitor</text><text x="1064" y="540" class="muted small">Owner: Growth · impact medium</text>
+  <rect x="1044" y="580" width="262" height="48" rx="6" fill="#0d141d" stroke="#263445"/><text x="1064" y="609" class="text h3">Verify margin playbook</text>
+
+  <rect x="326" y="692" width="1004" height="128" rx="8" class="panel"/>
+  <text x="350" y="730" class="text h2">Evidence ledger</text>
+  <text x="350" y="758" class="muted body">Every claim, metric, SQL query, and recommendation is traceable and reviewable.</text>
+  <text x="350" y="794" class="blue mono">claim.payment_failure_brazil_card</text><text x="620" y="794" class="muted mono">metric.payment_failure_rate</text><text x="880" y="794" class="muted mono">sql.q_8472</text><text x="1080" y="794" class="green mono">verified source</text>
+</svg>

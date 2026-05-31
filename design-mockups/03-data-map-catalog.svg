@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900">
+  <defs>
+    <style>
+      .bg{fill:#07090d}.side{fill:#0d1118}.top{fill:#0f141c}.panel{fill:#101722;stroke:#223044;stroke-width:1}.panel2{fill:#0c121a;stroke:#1c2a3d;stroke-width:1}.sel{fill:#142235;stroke:#2a4764}
+      .muted{fill:#7f8da3}.soft{fill:#aab6c8}.text{fill:#edf3fb}.faint{fill:#54657a}.blue{fill:#5aa7ff}.teal{fill:#42d6b2}.amber{fill:#f2b84b}.red{fill:#ff6b74}.green{fill:#61d394}.line{stroke:#223044;stroke-width:1}.edge{stroke:#3b5f81;stroke-width:1.4;fill:none}
+      .h1{font:600 25px Inter,Arial,sans-serif}.h2{font:600 17px Inter,Arial,sans-serif}.h3{font:600 14px Inter,Arial,sans-serif}.body{font:400 13px Inter,Arial,sans-serif}.small{font:500 11px Inter,Arial,sans-serif}.mono{font:500 12px ui-monospace,SFMono-Regular,Menlo,monospace}
+    </style>
+  </defs>
+  <rect width="1440" height="900" class="bg"/>
+  <rect x="0" y="0" width="244" height="900" class="side"/><rect x="244" y="0" width="1196" height="56" class="top"/>
+  <line x1="244" y1="0" x2="244" y2="900" class="line"/><line x1="244" y1="56" x2="1440" y2="56" class="line"/>
+  <text x="30" y="39" class="text h2">Aughor</text>
+  <text x="42" y="114" class="muted body">Overview</text><text x="42" y="156" class="muted body">Ask</text><text x="42" y="198" class="muted body">Investigations</text><text x="42" y="240" class="muted body">Intelligence</text>
+  <rect x="20" y="262" width="204" height="34" rx="6" class="sel"/><text x="42" y="284" class="blue body">Data Map</text>
+  <text x="42" y="334" class="muted body">Governance</text>
+
+  <text x="286" y="116" class="text h1">Data Map</text>
+  <text x="286" y="144" class="muted body">Catalog, ontology, lineage, process maps, and metric contracts in one inspectable workspace.</text>
+
+  <rect x="286" y="178" width="292" height="662" rx="10" class="panel"/>
+  <text x="310" y="216" class="text h2">Catalog</text>
+  <rect x="310" y="242" width="244" height="34" rx="6" fill="#0b1119" stroke="#24344a"/><text x="328" y="264" class="faint body">Search tables or metrics</text>
+  <text x="310" y="308" class="faint small">PRODUCTION</text>
+  <rect x="310" y="326" width="244" height="38" rx="6" class="sel"/><text x="330" y="350" class="text body">orders</text><text x="506" y="350" class="blue small">99.4K</text>
+  <text x="330" y="392" class="muted body">order_items</text><text x="506" y="392" class="faint small">112K</text>
+  <text x="330" y="434" class="muted body">payments</text><text x="506" y="434" class="faint small">103K</text>
+  <text x="330" y="476" class="muted body">customers</text><text x="506" y="476" class="faint small">96K</text>
+  <text x="330" y="518" class="muted body">products</text><text x="506" y="518" class="faint small">32K</text>
+  <text x="310" y="582" class="faint small">METRIC CONTRACTS</text>
+  <text x="330" y="620" class="muted body">Revenue</text><text x="330" y="660" class="muted body">AOV</text><text x="330" y="700" class="muted body">Refund rate</text>
+
+  <rect x="606" y="178" width="756" height="280" rx="10" class="panel"/>
+  <text x="630" y="216" class="text h2">orders</text>
+  <text x="630" y="244" class="muted body">One row per customer order. Grain: order_id. Freshness: 14 minutes.</text>
+  <rect x="630" y="276" width="128" height="48" rx="7" fill="#0b1119" stroke="#1d2a3d"/><text x="650" y="298" class="faint small">Rows</text><text x="650" y="318" class="text mono">99,441</text>
+  <rect x="776" y="276" width="128" height="48" rx="7" fill="#0b1119" stroke="#1d2a3d"/><text x="796" y="298" class="faint small">Columns</text><text x="796" y="318" class="text mono">8</text>
+  <rect x="922" y="276" width="128" height="48" rx="7" fill="#0b1119" stroke="#1d2a3d"/><text x="942" y="298" class="faint small">Quality</text><text x="942" y="318" class="green mono">98%</text>
+  <rect x="1068" y="276" width="128" height="48" rx="7" fill="#0b1119" stroke="#1d2a3d"/><text x="1088" y="298" class="faint small">Mapped</text><text x="1088" y="318" class="blue mono">Order</text>
+
+  <line x1="630" y1="358" x2="1338" y2="358" class="line"/>
+  <text x="630" y="392" class="faint small">COLUMN</text><text x="876" y="392" class="faint small">TYPE</text><text x="1030" y="392" class="faint small">SEMANTIC MEANING</text>
+  <text x="630" y="426" class="text mono">order_id</text><text x="876" y="426" class="blue small">varchar</text><text x="1030" y="426" class="muted body">Primary order identifier</text>
+  <text x="630" y="456" class="text mono">customer_id</text><text x="876" y="456" class="blue small">varchar</text><text x="1030" y="456" class="muted body">Foreign key to Customer</text>
+
+  <rect x="606" y="486" width="468" height="354" rx="10" class="panel"/>
+  <text x="630" y="524" class="text h2">Ontology neighborhood</text>
+  <path d="M744 642 C800 610, 854 610, 914 642" class="edge"/><path d="M744 642 C808 694, 858 694, 914 642" class="edge"/>
+  <rect x="642" y="606" width="148" height="74" rx="8" fill="#111d22" stroke="#28564d"/><text x="668" y="640" class="text h3">Customer</text><text x="668" y="662" class="teal small">foundation</text>
+  <rect x="884" y="606" width="148" height="74" rx="8" class="sel"/><text x="930" y="640" class="text h3">Order</text><text x="930" y="662" class="blue small">business object</text>
+  <rect x="762" y="728" width="148" height="74" rx="8" fill="#181522" stroke="#3d315d"/><text x="796" y="762" class="text h3">Payment</text><text x="796" y="784" class="muted small">event</text>
+
+  <rect x="1098" y="486" width="264" height="354" rx="10" class="panel"/>
+  <text x="1122" y="524" class="text h2">Metric contracts</text>
+  <rect x="1122" y="554" width="216" height="58" rx="7" fill="#0b1119" stroke="#1d2a3d"/><text x="1140" y="579" class="text body">Revenue</text><text x="1140" y="598" class="green small">approved by Finance</text>
+  <rect x="1122" y="628" width="216" height="58" rx="7" fill="#0b1119" stroke="#1d2a3d"/><text x="1140" y="653" class="text body">Payment failure rate</text><text x="1140" y="672" class="amber small">active monitor</text>
+  <rect x="1122" y="702" width="216" height="58" rx="7" fill="#0b1119" stroke="#1d2a3d"/><text x="1140" y="727" class="text body">Refund rate</text><text x="1140" y="746" class="red small">off target</text>
+</svg>

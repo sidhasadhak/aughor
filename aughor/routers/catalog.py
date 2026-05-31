@@ -1,6 +1,7 @@
 """Catalog tree endpoint."""
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from fastapi import APIRouter
@@ -12,9 +13,9 @@ router = APIRouter(tags=["catalog"])
 
 
 @router.get("/catalog/tree")
-def get_catalog_tree():
+async def get_catalog_tree():
     """Return the full 4-level catalog hierarchy: Section → Catalog → Schema → Table."""
-    from aughor.db.registry import list_connections, SAMPLES_ID
+    loop = asyncio.get_event_loop()
 
     def _quick_schemas(conn_id: str, conn_type: str) -> list[dict]:
         try:
@@ -58,33 +59,38 @@ def get_catalog_tree():
             schema_map.setdefault(schema, []).append({"name": table_name, "row_count": row_est})
         return [{"name": s, "tables": t} for s, t in schema_map.items()]
 
-    sections: list[dict] = []
+    def _build_tree() -> dict:
+        from aughor.db.registry import list_connections, SAMPLES_ID
 
-    sample_schemas: list[dict] = []
-    try:
-        sample_schemas = _quick_schemas(SAMPLES_ID, "duckdb")
-    except Exception as exc:
-        logger.debug("catalog tree: samples unavailable: %s", exc)
+        sections: list[dict] = []
 
-    sections.append({
-        "id": "samples",
-        "label": "Sample Catalog",
-        "entries": [{"conn_id": SAMPLES_ID, "name": "samples", "conn_type": "duckdb", "builtin": True, "schemas": sample_schemas}],
-    })
+        sample_schemas: list[dict] = []
+        try:
+            sample_schemas = _quick_schemas(SAMPLES_ID, "duckdb")
+        except Exception as exc:
+            logger.debug("catalog tree: samples unavailable: %s", exc)
 
-    user_entries = []
-    for conn_info in list_connections():
-        cid = conn_info["id"]
-        if cid == SAMPLES_ID:
-            continue
-        schemas = _quick_schemas(cid, conn_info.get("conn_type", "duckdb"))
-        user_entries.append({
-            "conn_id": cid,
-            "name": conn_info["name"],
-            "conn_type": conn_info.get("conn_type", ""),
-            "builtin": conn_info.get("builtin", False),
-            "schemas": schemas,
+        sections.append({
+            "id": "samples",
+            "label": "Sample Catalog",
+            "entries": [{"conn_id": SAMPLES_ID, "name": "samples", "conn_type": "duckdb", "builtin": True, "schemas": sample_schemas}],
         })
 
-    sections.append({"id": "connections", "label": "My Connections", "entries": user_entries})
-    return {"sections": sections}
+        user_entries = []
+        for conn_info in list_connections():
+            cid = conn_info["id"]
+            if cid == SAMPLES_ID:
+                continue
+            schemas = _quick_schemas(cid, conn_info.get("conn_type", "duckdb"))
+            user_entries.append({
+                "conn_id": cid,
+                "name": conn_info["name"],
+                "conn_type": conn_info.get("conn_type", ""),
+                "builtin": conn_info.get("builtin", False),
+                "schemas": schemas,
+            })
+
+        sections.append({"id": "connections", "label": "My Connections", "entries": user_entries})
+        return {"sections": sections}
+
+    return await loop.run_in_executor(None, _build_tree)

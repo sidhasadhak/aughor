@@ -35,7 +35,7 @@ DEFAULT_DB = Path(__file__).parent.parent / "data" / "aughor.duckdb"
 
 @click.group()
 def cli():
-    """Aughor — Autonomous Data Analyst"""
+    """Aughor — Autonomous Intelligence Platform"""
 
 
 # ── Seed ─────────────────────────────────────────────────────────────────────

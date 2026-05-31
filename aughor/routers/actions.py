@@ -212,15 +212,28 @@ async def create_federated_connection(req: _FederateRequest):
 
 
 @router.get("/connections/{conn_id}/federation-members")
-def get_federation_members(conn_id: str):
+async def get_federation_members(conn_id: str):
+    loop = asyncio.get_event_loop()
     try:
         conn = open_connection_for(conn_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Connection not found")
     if not hasattr(conn, "federation_members"):
         raise HTTPException(status_code=400, detail="Not a federated connection")
-    members = conn.federation_members()
-    conn.close()
+
+    def _work():
+        try:
+            return conn.federation_members()
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    try:
+        members = await loop.run_in_executor(None, _work)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
     return {"connection_id": conn_id, "members": members}
 
 
@@ -246,13 +259,25 @@ async def trigger_sync(conn_id: str, incremental: bool = True):
 
 
 @router.get("/connections/{conn_id}/sync-status")
-def get_sync_status(conn_id: str):
+async def get_sync_status(conn_id: str):
+    loop = asyncio.get_event_loop()
     try:
         conn = open_connection_for(conn_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Connection not found")
     if not hasattr(conn, "sync_status"):
         return {"message": "Not a syncable connector"}
-    status = conn.sync_status()
-    conn.close()
-    return status
+
+    def _work():
+        try:
+            return conn.sync_status()
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    try:
+        return await loop.run_in_executor(None, _work)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

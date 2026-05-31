@@ -97,11 +97,15 @@ async def create_connection(req: AddConnectionRequest):
 
 
 @router.post("/connections/{conn_id}/test")
-def test_connection(conn_id: str):
+async def test_connection(conn_id: str):
+    loop = asyncio.get_event_loop()
     try:
-        db = open_connection_for(conn_id)
-        ok, msg = db.test()
-        db.close()
+        def _test():
+            db = open_connection_for(conn_id)
+            ok, msg = db.test()
+            db.close()
+            return ok, msg
+        ok, msg = await loop.run_in_executor(None, _test)
         return {"ok": ok, "message": msg}
     except KeyError:
         raise HTTPException(status_code=404, detail="Connection not found")
@@ -129,13 +133,14 @@ def remove_connection(conn_id: str):
 # ── Schema ────────────────────────────────────────────────────────────────────
 
 @router.get("/connections/{conn_id}/schema")
-def connection_schema(conn_id: str):
+async def connection_schema(conn_id: str):
+    loop = asyncio.get_event_loop()
     try:
         db = open_connection_for(conn_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Connection not found")
     try:
-        schema = _get_schema_cached(conn_id, db)
+        schema = await loop.run_in_executor(None, lambda: _get_schema_cached(conn_id, db))
         db.close()
         return {"schema": schema}
     except Exception as e:
@@ -143,31 +148,37 @@ def connection_schema(conn_id: str):
 
 
 @router.get("/connections/{conn_id}/schema/rich")
-def connection_schema_rich(conn_id: str):
+async def connection_schema_rich(conn_id: str):
+    loop = asyncio.get_event_loop()
     try:
         db = open_connection_for(conn_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Connection not found")
     try:
         from aughor.tools.schema import build_rich_schema
-        schema = _get_schema_cached(conn_id, db)
-        db.close()
-        return build_rich_schema(schema)
+        def _work():
+            s = _get_schema_cached(conn_id, db)
+            db.close()
+            return build_rich_schema(s)
+        return await loop.run_in_executor(None, _work)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/connections/{conn_id}/schema/mermaid")
-def connection_schema_mermaid(conn_id: str):
+async def connection_schema_mermaid(conn_id: str):
+    loop = asyncio.get_event_loop()
     try:
         db = open_connection_for(conn_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Connection not found")
     try:
         from aughor.tools.schema import build_mermaid_er
-        schema = _get_schema_cached(conn_id, db)
-        db.close()
-        return {"diagram": build_mermaid_er(schema)}
+        def _work():
+            s = _get_schema_cached(conn_id, db)
+            db.close()
+            return {"diagram": build_mermaid_er(s)}
+        return await loop.run_in_executor(None, _work)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -175,8 +186,9 @@ def connection_schema_mermaid(conn_id: str):
 # ── Schema profile ────────────────────────────────────────────────────────────
 
 @router.get("/connections/{conn_id}/schema/profile")
-def connection_schema_profile(conn_id: str):
+async def connection_schema_profile(conn_id: str):
     """Return cached column/table profiles for the Schema Shape tab."""
+    loop = asyncio.get_event_loop()
     try:
         db = open_connection_for(conn_id)
     except KeyError:
@@ -185,11 +197,14 @@ def connection_schema_profile(conn_id: str):
         from aughor.tools.schema import _parse_schema_tables
         from aughor.tools.profile_cache import compute_schema_fingerprint, load_profiles
 
-        schema_str = _get_schema_cached(conn_id, db)
-        table_cols = _parse_schema_tables(schema_str)
-        col_counts = {t: len(cols) for t, cols in table_cols.items()}
-        fingerprint = compute_schema_fingerprint(col_counts)
-        cached = load_profiles(conn_id, fingerprint)
+        def _work():
+            schema_str = _get_schema_cached(conn_id, db)
+            table_cols = _parse_schema_tables(schema_str)
+            col_counts = {t: len(cols) for t, cols in table_cols.items()}
+            fingerprint = compute_schema_fingerprint(col_counts)
+            return load_profiles(conn_id, fingerprint)
+
+        cached = await loop.run_in_executor(None, _work)
         if cached is None:
             return {"available": False, "tables": [], "columns": []}
         table_profiles, column_profiles = cached
@@ -207,65 +222,75 @@ def connection_schema_profile(conn_id: str):
 # ── Freshness ─────────────────────────────────────────────────────────────────
 
 @router.get("/connections/{conn_id}/freshness")
-def connection_freshness(conn_id: str):
+async def connection_freshness(conn_id: str):
+    loop = asyncio.get_event_loop()
     try:
         db = open_connection_for(conn_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Connection not found")
-    try:
+
+    def _work():
         from aughor.tools.schema import _parse_schema_tables
-        schema_str = db.get_schema()
-        table_cols = _parse_schema_tables(schema_str)
-    except Exception:
+        _DATE_PAT = re.compile(
+            r"(_at|_date|_time|_ts|timestamp|created|updated|modified|inserted)$",
+            re.IGNORECASE,
+        )
+        try:
+            schema_str = db.get_schema()
+            table_cols = _parse_schema_tables(schema_str)
+        except Exception:
+            db.close()
+            return {"freshness": None, "source": None}
+
+        max_ts: str | None = None
+        max_source: str | None = None
+        for table, cols in list(table_cols.items())[:12]:
+            date_cols = [c for c in cols if _DATE_PAT.search(c)][:1]
+            for col in date_cols:
+                try:
+                    result = db.execute("freshness", f'SELECT MAX("{col}") AS max_ts FROM "{table}"')
+                    if not result.error and result.rows and result.rows[0][0] not in (None, "NULL"):
+                        val = str(result.rows[0][0])
+                        if max_ts is None or val > max_ts:
+                            max_ts = val
+                            max_source = f"{table}.{col}"
+                except Exception:
+                    continue
         db.close()
-        return {"freshness": None, "source": None}
+        return {"freshness": max_ts, "source": max_source}
 
-    _DATE_PAT = re.compile(
-        r"(_at|_date|_time|_ts|timestamp|created|updated|modified|inserted)$",
-        re.IGNORECASE,
-    )
-    max_ts: str | None = None
-    max_source: str | None = None
-
-    for table, cols in list(table_cols.items())[:12]:
-        date_cols = [c for c in cols if _DATE_PAT.search(c)][:1]
-        for col in date_cols:
-            try:
-                result = db.execute("freshness", f'SELECT MAX("{col}") AS max_ts FROM "{table}"')
-                if not result.error and result.rows and result.rows[0][0] not in (None, "NULL"):
-                    val = str(result.rows[0][0])
-                    if max_ts is None or val > max_ts:
-                        max_ts = val
-                        max_source = f"{table}.{col}"
-            except Exception:
-                continue
-
-    db.close()
-    return {"freshness": max_ts, "source": max_source}
+    return await loop.run_in_executor(None, _work)
 
 
 # ── Table sample ──────────────────────────────────────────────────────────────
 
 @router.get("/connections/{conn_id}/tables/{table}/sample")
-def table_sample(conn_id: str, table: str, limit: int = 100, schema: str = ""):
+async def table_sample(conn_id: str, table: str, limit: int = 100, schema: str = ""):
+    loop = asyncio.get_event_loop()
     try:
         db = open_connection_for(conn_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Connection not found")
-    try:
-        safe_table  = table.replace('"', '').replace(';', '')
-        safe_schema = schema.replace('"', '').replace(';', '') if schema else ""
-        ref = f'"{safe_schema}"."{safe_table}"' if safe_schema else f'"{safe_table}"'
-        result = db.execute("sample", f"SELECT * FROM {ref} LIMIT {int(limit)}")
-        columns = result.columns
-        rows = [[str(v) if v is not None else None for v in row] for row in result.rows]
-        db.close()
-        return {"columns": columns, "rows": rows}
-    except Exception as e:
+    safe_table  = table.replace('"', '').replace(';', '')
+    safe_schema = schema.replace('"', '').replace(';', '') if schema else ""
+    ref = f'"{safe_schema}"."{safe_table}"' if safe_schema else f'"{safe_table}"'
+    _limit = int(limit)
+
+    def _work():
         try:
-            db.close()
-        except Exception:
-            pass
+            result = db.execute("sample", f"SELECT * FROM {ref} LIMIT {_limit}")
+            columns = result.columns
+            rows = [[str(v) if v is not None else None for v in row] for row in result.rows]
+            return {"columns": columns, "rows": rows}
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+    try:
+        return await loop.run_in_executor(None, _work)
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -326,25 +351,27 @@ async def upload_file_to_connection(conn_id: str, file: UploadFile = File(...)):
 
 
 @router.get("/connections/{conn_id}/files")
-def list_connection_files(conn_id: str):
+async def list_connection_files(conn_id: str):
+    loop = asyncio.get_event_loop()
     try:
         db = open_connection_for(conn_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Connection not found")
     if not hasattr(db, "list_files"):
         return {"files": []}
-    return {"files": db.list_files()}
+    return {"files": await loop.run_in_executor(None, db.list_files)}
 
 
 @router.delete("/connections/{conn_id}/files/{filename}", status_code=200)
-def delete_connection_file(conn_id: str, filename: str):
+async def delete_connection_file(conn_id: str, filename: str):
+    loop = asyncio.get_event_loop()
     try:
         db = open_connection_for(conn_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Connection not found")
     if not hasattr(db, "delete_file"):
         raise HTTPException(status_code=400, detail="Not a file connector")
-    db.delete_file(filename)
+    await loop.run_in_executor(None, lambda: db.delete_file(filename))
     return {"message": f"File '{filename}' removed"}
 
 

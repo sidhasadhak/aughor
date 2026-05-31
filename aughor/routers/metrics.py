@@ -1,6 +1,7 @@
 """Metrics catalog, health scorecard, and playbook endpoints."""
 from __future__ import annotations
 
+import asyncio
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
@@ -73,7 +74,7 @@ def remove_metric(name: str):
 
 
 @router.post("/metrics/{name}/validate")
-def run_metric_validation(name: str, conn_id: str):
+async def run_metric_validation(name: str, conn_id: str):
     """Run all quality_tests for a metric against the given connection."""
     from aughor.db.connection import open_connection_for
 
@@ -84,18 +85,26 @@ def run_metric_validation(name: str, conn_id: str):
         db = open_connection_for(conn_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Connection not found")
-    try:
-        result = validate_metric(metric, db)
-    finally:
+
+    loop = asyncio.get_event_loop()
+    def _work():
         try:
-            db.close()
-        except Exception:
-            pass
+            return validate_metric(metric, db)
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+    try:
+        result = await loop.run_in_executor(None, _work)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
     return result.model_dump()
 
 
 @router.get("/metrics/{name}/freshness")
-def get_metric_freshness(name: str, conn_id: str):
+async def get_metric_freshness(name: str, conn_id: str):
     """Check the freshness of a metric's underlying data against its SLA."""
     from aughor.db.connection import open_connection_for
 
@@ -106,18 +115,26 @@ def get_metric_freshness(name: str, conn_id: str):
         db = open_connection_for(conn_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Connection not found")
-    try:
-        result = check_freshness(metric, db)
-    finally:
+
+    loop = asyncio.get_event_loop()
+    def _work():
         try:
-            db.close()
-        except Exception:
-            pass
+            return check_freshness(metric, db)
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+    try:
+        result = await loop.run_in_executor(None, _work)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
     return result.model_dump()
 
 
 @router.get("/connections/{conn_id}/health-scorecard")
-def get_health_scorecard(conn_id: str):
+async def get_health_scorecard(conn_id: str):
     """Execute each targeted metric's SQL and return health status."""
     from aughor.db.connection import open_connection_for
 
@@ -130,50 +147,58 @@ def get_health_scorecard(conn_id: str):
     except KeyError:
         raise HTTPException(status_code=404, detail="Connection not found")
 
-    results = []
-    for metric in targeted:
-        try:
-            qr = db.execute(f"SELECT ({metric.sql}) AS _v")
-            rows = qr.rows if qr else []
-            current: Optional[float] = None
-            if rows and rows[0]:
-                raw = rows[0][0] if isinstance(rows[0], (list, tuple)) else list(rows[0].values())[0]
-                try:
-                    current = float(raw)
-                except (TypeError, ValueError):
-                    current = None
+    _targeted = targeted
 
-            if current is None:
-                status = "unknown"
-                variance = None
-            else:
-                variance = (current - metric.target_value) / metric.target_value if metric.target_value else None
-                if metric.critical_threshold is not None and abs(current - metric.target_value) >= metric.critical_threshold:
-                    status = "red"
-                elif metric.warning_threshold is not None and abs(current - metric.target_value) >= metric.warning_threshold:
-                    status = "yellow"
+    def _work():
+        results = []
+        for metric in _targeted:
+            try:
+                qr = db.execute(f"SELECT ({metric.sql}) AS _v")
+                rows = qr.rows if qr else []
+                current: Optional[float] = None
+                if rows and rows[0]:
+                    raw = rows[0][0] if isinstance(rows[0], (list, tuple)) else list(rows[0].values())[0]
+                    try:
+                        current = float(raw)
+                    except (TypeError, ValueError):
+                        current = None
+
+                if current is None:
+                    status = "unknown"
+                    variance = None
                 else:
-                    status = "green"
+                    variance = (current - metric.target_value) / metric.target_value if metric.target_value else None
+                    if metric.critical_threshold is not None and abs(current - metric.target_value) >= metric.critical_threshold:
+                        status = "red"
+                    elif metric.warning_threshold is not None and abs(current - metric.target_value) >= metric.warning_threshold:
+                        status = "yellow"
+                    else:
+                        status = "green"
 
-            results.append({
-                "name": metric.name, "label": metric.label, "current": current,
-                "target": metric.target_value, "variance": variance, "status": status,
-                "unit": metric.unit, "target_period": metric.target_period,
-                "benchmark_source": metric.benchmark_source,
-            })
+                results.append({
+                    "name": metric.name, "label": metric.label, "current": current,
+                    "target": metric.target_value, "variance": variance, "status": status,
+                    "unit": metric.unit, "target_period": metric.target_period,
+                    "benchmark_source": metric.benchmark_source,
+                })
+            except Exception:
+                results.append({
+                    "name": metric.name, "label": metric.label, "current": None,
+                    "target": metric.target_value, "variance": None, "status": "unknown",
+                    "unit": metric.unit, "target_period": metric.target_period,
+                    "benchmark_source": metric.benchmark_source,
+                })
+        try:
+            db.close()
         except Exception:
-            results.append({
-                "name": metric.name, "label": metric.label, "current": None,
-                "target": metric.target_value, "variance": None, "status": "unknown",
-                "unit": metric.unit, "target_period": metric.target_period,
-                "benchmark_source": metric.benchmark_source,
-            })
+            pass
+        return results
 
+    loop = asyncio.get_event_loop()
     try:
-        db.close()
-    except Exception:
-        pass
-    return results
+        return await loop.run_in_executor(None, _work)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ── Playbook ──────────────────────────────────────────────────────────────────

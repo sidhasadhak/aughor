@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900">
+  <defs>
+    <style>
+      .bg{fill:#080b10}.rail{fill:#0d1117}.nav{fill:#10161f}.bar{fill:#0f141b}.panel{fill:#101722;stroke:#263445;stroke-width:1}.panel2{fill:#0c1219;stroke:#202c3b;stroke-width:1}.sel{fill:#162337;stroke:#31506f}.chip{fill:#111b27;stroke:#2a3a4d}
+      .line{stroke:#243244;stroke-width:1}.text{fill:#eef4fb}.soft{fill:#b9c5d4}.muted{fill:#8290a3}.faint{fill:#59697b}.blue{fill:#58a6ff}.teal{fill:#42d6b2}.green{fill:#62d889}.amber{fill:#f0b84d}.red{fill:#ff6675}.violet{fill:#a78bfa}
+      .h1{font:600 24px Inter,Arial,sans-serif}.h2{font:600 16px Inter,Arial,sans-serif}.h3{font:600 13px Inter,Arial,sans-serif}.body{font:400 13px Inter,Arial,sans-serif}.small{font:500 11px Inter,Arial,sans-serif}.xs{font:600 10px Inter,Arial,sans-serif}.mono{font:500 12px ui-monospace,SFMono-Regular,Menlo,monospace}.num{font:650 28px ui-monospace,SFMono-Regular,Menlo,monospace}
+    </style>
+  </defs>
+  <rect width="1440" height="900" class="bg"/><rect width="56" height="900" class="rail"/><rect x="56" width="244" height="900" class="nav"/><rect x="300" width="1140" height="50" class="bar"/>
+  <line x1="56" y1="0" x2="56" y2="900" class="line"/><line x1="300" y1="0" x2="300" y2="900" class="line"/><line x1="300" y1="50" x2="1440" y2="50" class="line"/>
+  <rect x="16" y="18" width="24" height="24" rx="5" fill="#18283a" stroke="#31506f"/><circle cx="28" cy="30" r="5" class="blue"/>
+  <text x="82" y="36" class="text h2">Governance</text><text x="82" y="58" class="faint small">Controls and writeback</text>
+  <text x="82" y="104" class="faint xs">CONTROL PLANE</text>
+  <rect x="72" y="124" width="212" height="30" rx="5" class="sel"/><text x="92" y="144" class="text body">Action approvals</text>
+  <text x="92" y="184" class="muted body">Connections</text><text x="92" y="224" class="muted body">Budgets</text><text x="92" y="264" class="muted body">Audit log</text><text x="92" y="304" class="muted body">Policies</text>
+
+  <text x="326" y="32" class="muted body">Governance / Action approvals</text>
+  <text x="326" y="102" class="text h1">Action approvals</text>
+  <text x="326" y="130" class="muted body">Turn evidence-backed recommendations into governed operational changes.</text>
+
+  <rect x="326" y="166" width="662" height="614" rx="8" class="panel"/>
+  <text x="350" y="204" class="text h2">Pending recommendations</text>
+  <line x1="350" y1="232" x2="964" y2="232" class="line"/>
+  <rect x="350" y="256" width="590" height="112" rx="7" class="sel"/>
+  <text x="374" y="288" class="text h3">Reroute Brazil card payments away from Acquirer B</text>
+  <text x="374" y="314" class="muted body">Expected impact: reduce global payment failure rate by 1.6 pp.</text>
+  <text x="374" y="340" class="blue mono">source: inv.payment_failures_may · confidence 0.91</text>
+  <rect x="350" y="388" width="590" height="96" rx="7" class="panel2"/>
+  <text x="374" y="420" class="text h3">Create APAC week-3 retention monitor</text>
+  <text x="374" y="446" class="muted body">Alert when cohort retention falls below approved threshold.</text>
+  <rect x="350" y="504" width="590" height="96" rx="7" class="panel2"/>
+  <text x="374" y="536" class="text h3">Verify discount pullback margin playbook</text>
+  <text x="374" y="562" class="muted body">Promote playbook if next two weeks remain above margin target.</text>
+
+  <rect x="1016" y="166" width="334" height="614" rx="8" class="panel"/>
+  <text x="1040" y="204" class="text h2">Approval packet</text>
+  <text x="1040" y="232" class="muted body">All information needed before writeback.</text>
+  <text x="1040" y="282" class="faint xs">EVIDENCE</text>
+  <text x="1040" y="312" class="muted body">4 SQL queries, 412 cited rows</text>
+  <text x="1040" y="340" class="muted body">Metric contract: payment_failure_rate</text>
+  <text x="1040" y="368" class="muted body">Prior playbook success: 67%</text>
+  <text x="1040" y="420" class="faint xs">GUARDRAILS</text>
+  <rect x="1040" y="440" width="286" height="34" rx="5" fill="#132015" stroke="#31593b"/><text x="1060" y="462" class="green small">No PII in action payload</text>
+  <rect x="1040" y="486" width="286" height="34" rx="5" fill="#231b10" stroke="#654b22"/><text x="1060" y="508" class="amber small">Requires Payments Ops approval</text>
+  <rect x="1040" y="532" width="286" height="34" rx="5" fill="#111b27" stroke="#2a3a4d"/><text x="1060" y="554" class="blue small">Rollback plan attached</text>
+  <text x="1040" y="620" class="faint xs">DECISION</text>
+  <rect x="1040" y="644" width="134" height="34" rx="5" fill="#132015" stroke="#31593b"/><text x="1082" y="666" class="green small">Approve</text>
+  <rect x="1192" y="644" width="134" height="34" rx="5" fill="#251117" stroke="#68313b"/><text x="1239" y="666" class="red small">Reject</text>
+  <rect x="1040" y="696" width="286" height="34" rx="5" class="chip"/><text x="1110" y="718" class="soft small">Request more evidence</text>
+
+  <rect x="326" y="810" width="1024" height="48" rx="8" class="panel2"/>
+  <text x="350" y="840" class="muted body">Audit: all action decisions append to evidence ledger and update recommendation outcome memory.</text>
+</svg>

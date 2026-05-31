@@ -1,6 +1,7 @@
 """System endpoints — health, dev stats, suggestions, connector types."""
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
@@ -42,12 +43,14 @@ class _Suggestions(BaseModel):
 
 
 @router.get("/suggestions")
-def get_suggestions(connection_id: str = BUILTIN_ID):
+async def get_suggestions(connection_id: str = BUILTIN_ID):
     """Return 6 starter questions tailored to the schema of the given connection."""
     from aughor.semantic.suggestions_cache import (
         schema_fingerprint, get_cached, store as cache_store,
     )
     from aughor.db.connection import open_connection_for
+
+    loop = asyncio.get_event_loop()
 
     try:
         db = open_connection_for(connection_id)
@@ -55,7 +58,7 @@ def get_suggestions(connection_id: str = BUILTIN_ID):
         raise HTTPException(status_code=404, detail="Connection not found")
 
     try:
-        schema_summary: str = db.get_schema()
+        schema_summary: str = await loop.run_in_executor(None, db.get_schema)
         db.close()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -85,7 +88,7 @@ def get_suggestions(connection_id: str = BUILTIN_ID):
     except Exception:
         pass
 
-    system = (
+    _system = (
         "You are a data analyst assistant. Given a database schema and any domain intelligence, "
         "produce exactly 6 starter questions a business user might ask. "
         "Mix question types: 4 should be simple analytical questions (mode='ask') and "
@@ -93,16 +96,22 @@ def get_suggestions(connection_id: str = BUILTIN_ID):
         "Make every question specific to the actual table and column names provided — "
         "no generic placeholders. Keep each question concise (under 12 words)."
     )
-    user = f"Database schema:\n{schema_summary}{enrichment}\n\nReturn 6 starter questions."
+    _user = f"Database schema:\n{schema_summary}{enrichment}\n\nReturn 6 starter questions."
 
-    from aughor.llm.provider import get_provider
-    result: _Suggestions = get_provider("coder").complete(
-        system=system,
-        user=user,
-        response_model=_Suggestions,
-        temperature=0.4,
-    )
-    suggestions = [s.model_dump() for s in result.suggestions]
+    def _llm_work():
+        from aughor.llm.provider import get_provider
+        result: _Suggestions = get_provider("coder").complete(
+            system=_system,
+            user=_user,
+            response_model=_Suggestions,
+            temperature=0.4,
+        )
+        return [s.model_dump() for s in result.suggestions]
+
+    try:
+        suggestions = await loop.run_in_executor(None, _llm_work)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
     try:
         cache_store(connection_id, fingerprint, suggestions)

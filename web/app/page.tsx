@@ -117,15 +117,21 @@ function NavIcon({ name, size = 14, color = "currentColor" }: { name: string; si
 // ── Aughor logo ────────────────────────────────────────────────────────────────
 
 function AughorLogo() {
+  // Real mark — invert to white on the dark app shell, then tint to brand blue
   return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-      <polygon points="12,2 22,7 22,17 12,22 2,17 2,7" fill="var(--blue3)" opacity=".9" />
-      <polygon points="12,6 18,9.5 18,15.5 12,19 6,15.5 6,9.5" fill="var(--bg-0)" />
-      <circle cx="12" cy="12" r="2.5" fill="var(--blue4)" />
-      <line x1="12" y1="9.5" x2="12" y2="6.5" stroke="var(--blue4)" strokeWidth="1.5" />
-      <line x1="14.2" y1="13.5" x2="17" y2="15" stroke="var(--blue4)" strokeWidth="1.5" />
-      <line x1="9.8" y1="13.5" x2="7" y2="15" stroke="var(--blue4)" strokeWidth="1.5" />
-    </svg>
+    <img
+      src="/aughor-logo.jpeg"
+      width={26}
+      height={26}
+      alt="Aughor"
+      style={{
+        display: "block",
+        borderRadius: 4,
+        // Black mark on white → invert to white, then push toward brand blue via hue
+        filter: "invert(1) sepia(1) saturate(2) hue-rotate(185deg) brightness(1.1)",
+        opacity: 0.92,
+      }}
+    />
   );
 }
 
@@ -1331,11 +1337,16 @@ export default function Home() {
     setTab("chat");
   };
 
-  /** Open an existing investigation (or chat session) by ID — goes straight to the report. */
+  /** Open an existing investigation (or chat session) by ID — goes straight to the report.
+   *  Always clears chatInitialQuestion so no stale question fires if the user
+   *  subsequently presses "New" while viewing history. */
   const openInvestigation = (id: string, kind: "investigation" | "chat" = "investigation") => {
+    setChatInitialQuestion(undefined);   // ← prevent stale question re-firing on next New
+    setChatInitialMode("investigate");
     if (kind === "chat") {
       setSelectedHistoryInvId(null);
       setSelectedChatSessionId(id);
+      setChatKey(k => k + 1);            // ← fresh mount so restore doesn't layer on live state
     } else {
       setSelectedChatSessionId(null);
       setSelectedHistoryInvId(id);
@@ -1477,7 +1488,7 @@ export default function Home() {
                         <NavIcon name="canvas" size={11} /> Canvas
                       </button>
                     )}
-                    <button onClick={() => { setSelectedChatSessionId(null); setSelectedHistoryInvId(null); setChatKey(k => k + 1); }} className="aug-btn aug-btn-ghost aug-btn-sm">
+                    <button onClick={() => { setSelectedChatSessionId(null); setSelectedHistoryInvId(null); setChatInitialQuestion(undefined); setChatInitialMode("investigate"); setChatKey(k => k + 1); }} className="aug-btn aug-btn-ghost aug-btn-sm">
                       <NavIcon name="plus" size={11} /> New
                     </button>
                     <button onClick={() => setShowHistory(v => !v)} className={`aug-btn aug-btn-sm ${showHistory ? "aug-btn-primary" : "aug-btn-ghost"}`}>

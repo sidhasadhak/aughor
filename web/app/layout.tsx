@@ -25,8 +25,17 @@ const ibmPlexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Aughor — Intelligence Platform",
-  description: "Autonomous data analyst — investigates business questions with evidence-backed root-cause analysis",
+  title: "Aughor — Autonomous Intelligence Platform",
+  description: "Aughor is an Autonomous Intelligence Platform — continuously explores your data, builds a living business ontology, and answers complex analytical questions with evidence.",
+  icons: {
+    icon: "/aughor-logo.jpeg",
+    apple: "/aughor-logo.jpeg",
+  },
+  openGraph: {
+    title: "Aughor — Autonomous Intelligence Platform",
+    description: "Your warehouse, always thinking.",
+    images: [{ url: "/aughor-logo.jpeg", width: 1024, height: 1024, alt: "Aughor" }],
+  },
 };
 
 export default function RootLayout({

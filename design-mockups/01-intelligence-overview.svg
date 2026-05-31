@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900">
+  <defs>
+    <style>
+      .bg{fill:#07090d}.side{fill:#0d1118}.top{fill:#0f141c}.panel{fill:#101722;stroke:#223044;stroke-width:1}.panel2{fill:#0c121a;stroke:#1c2a3d;stroke-width:1}
+      .muted{fill:#7f8da3}.soft{fill:#aab6c8}.text{fill:#edf3fb}.faint{fill:#54657a}.blue{fill:#5aa7ff}.teal{fill:#42d6b2}.amber{fill:#f2b84b}.red{fill:#ff6b74}.green{fill:#61d394}.line{stroke:#223044;stroke-width:1}
+      .h1{font:600 26px Inter,Arial,sans-serif}.h2{font:600 17px Inter,Arial,sans-serif}.h3{font:600 14px Inter,Arial,sans-serif}.body{font:400 13px Inter,Arial,sans-serif}.small{font:500 11px Inter,Arial,sans-serif}.mono{font:500 12px ui-monospace,SFMono-Regular,Menlo,monospace}.num{font:650 30px ui-monospace,SFMono-Regular,Menlo,monospace}
+    </style>
+  </defs>
+  <rect width="1440" height="900" class="bg"/>
+  <rect x="0" y="0" width="244" height="900" class="side"/>
+  <rect x="244" y="0" width="1196" height="56" class="top"/>
+  <line x1="244" y1="0" x2="244" y2="900" class="line"/>
+  <line x1="244" y1="56" x2="1440" y2="56" class="line"/>
+
+  <text x="30" y="39" class="text h2">Aughor</text>
+  <text x="30" y="58" class="faint small">Data intelligence platform</text>
+  <rect x="20" y="94" width="204" height="34" rx="6" fill="#152238" stroke="#29415e"/>
+  <text x="42" y="116" class="blue body">Overview</text>
+  <text x="42" y="166" class="muted body">Ask</text>
+  <text x="42" y="208" class="muted body">Investigations</text>
+  <text x="42" y="250" class="muted body">Intelligence</text>
+  <text x="42" y="292" class="muted body">Data Map</text>
+  <text x="42" y="334" class="muted body">Governance</text>
+  <rect x="20" y="792" width="204" height="70" rx="8" class="panel2"/>
+  <circle cx="42" cy="819" r="5" class="green"/>
+  <text x="58" y="823" class="soft small">Production warehouse</text>
+  <text x="42" y="844" class="faint small">last explored 14 min ago</text>
+
+  <text x="286" y="36" class="soft body">Search metrics, tables, investigations</text>
+  <rect x="1178" y="15" width="208" height="28" rx="6" fill="#121b28" stroke="#24344a"/>
+  <text x="1194" y="34" class="muted small">Workspace: Growth Ops</text>
+
+  <text x="286" y="116" class="text h1">Intelligence Overview</text>
+  <text x="286" y="144" class="muted body">A calm command center for business health, anomalies, and recommended action.</text>
+
+  <rect x="286" y="180" width="254" height="132" rx="8" class="panel"/>
+  <text x="306" y="214" class="muted small">Revenue health</text>
+  <text x="306" y="256" class="text num">$2.84M</text>
+  <text x="306" y="284" class="green mono">+8.7% vs prior period</text>
+  <rect x="306" y="294" width="214" height="5" rx="3" fill="#1d2b3e"/><rect x="306" y="294" width="176" height="5" rx="3" class="green"/>
+
+  <rect x="560" y="180" width="254" height="132" rx="8" class="panel"/>
+  <text x="580" y="214" class="muted small">Open anomalies</text>
+  <text x="580" y="256" class="text num">7</text>
+  <text x="580" y="284" class="amber mono">3 high priority</text>
+  <circle cx="759" cy="246" r="28" fill="#2d1d10" stroke="#704718"/><text x="747" y="252" class="amber h3">P1</text>
+
+  <rect x="834" y="180" width="254" height="132" rx="8" class="panel"/>
+  <text x="854" y="214" class="muted small">Verified recommendations</text>
+  <text x="854" y="256" class="text num">18</text>
+  <text x="854" y="284" class="teal mono">62% success rate</text>
+
+  <rect x="1108" y="180" width="254" height="132" rx="8" class="panel"/>
+  <text x="1128" y="214" class="muted small">Ontology coverage</text>
+  <text x="1128" y="256" class="text num">84%</text>
+  <text x="1128" y="284" class="blue mono">136 entities mapped</text>
+
+  <rect x="286" y="342" width="690" height="330" rx="10" class="panel"/>
+  <text x="310" y="380" class="text h2">What changed overnight</text>
+  <text x="310" y="406" class="muted body">Aughor found three business-significant movements and ranked them by evidence strength.</text>
+  <line x1="310" y1="430" x2="952" y2="430" class="line"/>
+  <circle cx="326" cy="470" r="6" class="red"/><text x="346" y="475" class="text h3">Payment failure rate rose in Brazil</text><text x="346" y="498" class="muted body">+4.1 pp, concentrated in card payments, 0.91 confidence</text>
+  <rect x="824" y="455" width="108" height="28" rx="5" fill="#271218" stroke="#64323b"/><text x="848" y="474" class="red small">Investigate</text>
+  <circle cx="326" cy="544" r="6" class="amber"/><text x="346" y="549" class="text h3">APAC retention slipped below target</text><text x="346" y="572" class="muted body">Cohort decay started 3 weeks after activation, 0.78 confidence</text>
+  <rect x="824" y="529" width="108" height="28" rx="5" fill="#2a2111" stroke="#675129"/><text x="848" y="548" class="amber small">Review</text>
+  <circle cx="326" cy="618" r="6" class="teal"/><text x="346" y="623" class="text h3">Top categories recovered margin</text><text x="346" y="646" class="muted body">Gross margin improved after discount pullback, 0.83 confidence</text>
+
+  <rect x="1000" y="342" width="362" height="330" rx="10" class="panel"/>
+  <text x="1024" y="380" class="text h2">Business health</text>
+  <text x="1024" y="406" class="muted body">Target-tracked metrics with action routing.</text>
+  <rect x="1024" y="438" width="314" height="58" rx="7" fill="#171019" stroke="#533040"/><circle cx="1046" cy="467" r="5" class="red"/><text x="1062" y="463" class="text body">Refund rate</text><text x="1062" y="482" class="red small">23% above threshold</text>
+  <rect x="1024" y="512" width="314" height="58" rx="7" fill="#161a12" stroke="#344a2d"/><circle cx="1046" cy="541" r="5" class="green"/><text x="1062" y="537" class="text body">Activation</text><text x="1062" y="556" class="green small">On target</text>
+  <rect x="1024" y="586" width="314" height="58" rx="7" fill="#1d1710" stroke="#514020"/><circle cx="1046" cy="615" r="5" class="amber"/><text x="1062" y="611" class="text body">Inventory aging</text><text x="1062" y="630" class="amber small">Warning</text>
+
+  <rect x="286" y="704" width="1076" height="116" rx="10" class="panel"/>
+  <text x="310" y="742" class="text h2">Recommended next actions</text>
+  <text x="310" y="770" class="muted body">1. Open payment gateway investigation for Brazil card declines</text>
+  <text x="684" y="770" class="muted body">2. Create retention monitor for APAC cohort week 3</text>
+  <text x="1050" y="770" class="muted body">3. Verify margin recovery playbook</text>
+</svg>
