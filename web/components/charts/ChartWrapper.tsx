@@ -76,7 +76,7 @@ export function ChartWrapper({
         className="rounded-md overflow-hidden"
         style={{
           border: "1px solid var(--chart-grid)",
-          background: "rgba(23,32,48,.35)",
+          background: "transparent",
           padding: "10px 12px",
           minHeight: loading || empty || error ? height : undefined,
         }}

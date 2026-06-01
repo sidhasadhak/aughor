@@ -328,7 +328,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
     if (!restoreSessionId) return;
     fetch(`${BASE}/chat-sessions/${restoreSessionId}/turns`)
       .then(r => r.ok ? r.json() : [])
-      .then((turns: { id: string; question: string; headline: string; sql: string; columns: string[]; rows: unknown[][]; chart_type: string }[]) => {
+      .then((turns: { id: string; question: string; headline: string; sql: string; columns: string[]; rows: unknown[][]; chart_type: string; tables_used: string[]; intent: string; approach: string[] }[]) => {
         if (!turns.length) return;
         restore(turns.map(t => ({
           id: t.id,
@@ -352,11 +352,13 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
           latestScore: null,
           hypotheses: [],
           investigationId: null,
-          tablesUsed: [],
+          tablesUsed: t.tables_used || [],
+          analysis: (t.intent || t.approach?.length) ? { intent: t.intent || "", steps: t.approach || [] } : null,
           followups: [],
           error: null,
           fromCache: false,
           cachedQuestion: null,
+          inspectWarning: null,
         })));
       })
       .catch(() => {});

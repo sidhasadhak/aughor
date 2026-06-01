@@ -9,7 +9,7 @@ from typing import AsyncGenerator, Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from aughor.agent.state import AgentState
 from aughor.db.connection import open_connection_for
@@ -37,13 +37,19 @@ def _sse(event_type: str, data: dict) -> str:
 
 
 _TABLE_RE = re.compile(r'\b(?:FROM|JOIN)\s+(?:\w+\.)?(\w+)', re.IGNORECASE)
+# Matches CTE definitions: anything of the form `name AS (`  (only valid for CTEs in SQL)
+_CTE_DEF_RE = re.compile(r'\b(\w+)\s+AS\s*\(', re.IGNORECASE)
 
 
 def _extract_tables(sql: str) -> list[str]:
+    # Collect CTE names defined in WITH clauses so we can exclude them from the chip list.
+    # CTEs look like:  WITH cte_name AS ( ... ), other_cte AS ( ... )
+    cte_names = {m.group(1).lower() for m in _CTE_DEF_RE.finditer(sql)}
+
     seen: dict[str, None] = {}
     for m in _TABLE_RE.finditer(sql):
         t = m.group(1)
-        if t.lower() not in seen:
+        if t.lower() not in seen and t.lower() not in cte_names:
             seen[t.lower()] = None
     return list(seen.keys())
 
@@ -115,13 +121,67 @@ class OutcomeRequest(BaseModel):
     metric_after: Optional[float] = None
 
 
-_VALID_CHART_TYPES = {"auto", "bar", "bar_horizontal", "bar_vertical", "line", "area", "pie", "stacked_bar", "scatter"}
+_VALID_CHART_TYPES = {"auto", "bar", "bar_horizontal", "bar_vertical", "line", "area", "pie", "stacked_bar", "scatter",
+                      "multi_line", "heatmap", "treemap"}
+
+
+def _coerce_list_str(v: object) -> list[str]:
+    """Coerce a value that should be list[str] but may arrive as a JSON-encoded
+    string from local models (Ollama/qwen).  Handles:
+      - already a list                  → items cast to str
+      - '["a","b","c"]'                 → single JSON array string
+      - '["a"]\\n["b"]'                 → one array per line (qwen quirk)
+      - plain multi-line text           → each non-empty line becomes an item
+    """
+    if isinstance(v, list):
+        return [str(item) for item in v]
+    if not isinstance(v, str) or not v.strip():
+        return []
+    try:
+        parsed = json.loads(v)
+        if isinstance(parsed, list):
+            return [str(item) for item in parsed]
+    except (json.JSONDecodeError, ValueError):
+        pass
+    steps: list[str] = []
+    for line in v.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            parsed_line = json.loads(line)
+            if isinstance(parsed_line, list):
+                steps.extend(str(item) for item in parsed_line)
+            else:
+                steps.append(str(parsed_line))
+        except (json.JSONDecodeError, ValueError):
+            steps.append(line)
+    return steps
 
 
 class _ChatAnswer(BaseModel):
     sql: str
     headline: str
     chart_type: str = "auto"
+    intent: str = ""         # "You want to see…" — plain-English restatement of the question
+    approach: list[str] = [] # 3-5 concise steps describing how the answer is calculated
+
+    @field_validator("approach", mode="before")
+    @classmethod
+    def coerce_approach(cls, v: object) -> list[str]:
+        return _coerce_list_str(v)
+
+
+class _FollowUpBase(BaseModel):
+    """Shared model for all follow-up question responses.
+    Guards against local models (Ollama/qwen) returning questions as a
+    JSON-encoded string instead of a proper list."""
+    questions: list[str] = []
+
+    @field_validator("questions", mode="before")
+    @classmethod
+    def coerce_questions(cls, v: object) -> list[str]:
+        return _coerce_list_str(v)
 
     def model_post_init(self, __context: object) -> None:
         if self.chart_type not in _VALID_CHART_TYPES:
@@ -179,6 +239,16 @@ async def _stream_chat(
         except Exception:
             pass
 
+        # Per-connection knowledge store — retrieved, not dumped
+        conn_kb_section = ""
+        try:
+            from aughor.semantic.connection_kb import retrieve_for_question as _ckb_retrieve
+            _ckb = _ckb_retrieve(question, connection_id)
+            if _ckb:
+                conn_kb_section = _ckb + "\n\n"
+        except Exception:
+            pass
+
         sql_examples_section = ""
         try:
             from aughor.tools.prior_analyses import search_sql_examples
@@ -228,6 +298,7 @@ async def _stream_chat(
             question=question,
             schema_qualifier=schema_qualifier,
             kb_patterns_section=kb_patterns_section,
+            conn_kb_section=conn_kb_section,
             sql_examples_section=sql_examples_section,
             metrics_section=metrics_section,
             exploration_section=exploration_section,
@@ -242,6 +313,25 @@ async def _stream_chat(
         )
 
         final_sql = answer.sql
+
+        # ── Lint before execution — catch known anti-patterns in code, not prompts ──
+        from aughor.sql.lint import lint as _lint_sql, error_hint as _lint_hint, has_errors as _lint_has_errors
+        from aughor.sql.writer import SqlWriter
+        _lint_issues = _lint_sql(final_sql, dialect=db.dialect)
+        if _lint_has_errors(_lint_issues):
+            try:
+                _writer = SqlWriter(db, schema_str=schema)
+                _lint_fix = _writer.fix(
+                    final_sql,
+                    "SQL quality issues detected before execution",
+                    hint=_lint_hint(_lint_issues),
+                    max_retries=1,
+                )
+                if _lint_fix.ok:
+                    final_sql = _lint_fix.sql
+            except Exception:
+                pass   # non-fatal — proceed with original SQL
+
         yield _sse("sql", {"sql": final_sql})
         result = db.execute("chat", final_sql)
 
@@ -251,11 +341,10 @@ async def _stream_chat(
             _chat_zero_diag = _zero_row_suspicious(final_sql)
 
         if result.error or _chat_zero_diag:
-            from aughor.sql.writer import SqlWriter
-            writer = SqlWriter(db, schema_str=schema)
+            _writer2 = SqlWriter(db, schema_str=schema)
             _fix_error = result.error or "Query returned 0 rows — the SQL logic is likely wrong."
             try:
-                fix = writer.fix(final_sql, _fix_error, hint=_chat_zero_diag or "", max_retries=1)
+                fix = _writer2.fix(final_sql, _fix_error, hint=_chat_zero_diag or "", max_retries=1)
                 if fix.ok:
                     retry = db.execute("chat", fix.sql)
                     if not retry.error and (retry.row_count > 0 or not _chat_zero_diag):
@@ -274,14 +363,26 @@ async def _stream_chat(
         yield _sse("headline", {"headline": answer.headline})
         yield _sse("chart_type", {"chart_type": answer.chart_type})
         yield _sse("tables_used", {"tables": _extract_tables(final_sql)})
+        if answer.intent or answer.approach:
+            yield _sse("analysis", {"intent": answer.intent, "steps": answer.approach})
+
+        # ── Semantic Inspect — non-blocking logical validation ──────────────
+        try:
+            from aughor.sql.inspect import inspect as _inspect_sql
+            _ir = _inspect_sql(question, final_sql, result.columns, result.rows)
+            if not _ir.valid and _ir.issues:
+                yield _sse("inspect_warning", {
+                    "issues":        _ir.issues,
+                    "suggested_fix": _ir.suggested_fix,
+                })
+        except Exception:
+            pass
 
         try:
-            class _FollowUps(BaseModel):
-                questions: list[str]
-            fq: _FollowUps = get_provider("narrator").complete(
+            fq: _FollowUpBase = get_provider("narrator").complete(
                 system="Suggest exactly 3 concise follow-up data questions (max 12 words each).",
                 user=f"Question: {question}\nAnswer: {answer.headline}\nColumns: {', '.join(result.columns[:8])}",
-                response_model=_FollowUps,
+                response_model=_FollowUpBase,
             )
             yield _sse("followups", {"questions": fq.questions[:3]})
         except Exception:
@@ -292,6 +393,8 @@ async def _stream_chat(
                 question=question, connection_id=connection_id, headline=answer.headline or question,
                 sql=final_sql or "", session_id=session_id, columns=result.columns,
                 rows=result.rows, chart_type=answer.chart_type,
+                tables_used=_extract_tables(final_sql or ""),
+                intent=answer.intent, approach=answer.approach,
             )
         except Exception:
             pass
@@ -435,9 +538,7 @@ async def _stream_investigation(
                 yield _sse("ada_report", {"ada_report": ada, "investigation_id": inv_id, "query_mode": "investigate"})
                 try:
                     from aughor.llm.provider import get_provider as _gp
-                    class _FQ(BaseModel):
-                        questions: list[str]
-                    fq: _FQ = _gp("narrator").complete(system="Suggest exactly 3 concise follow-up investigation questions (max 15 words each).", user=f"Original question: {question}\nFindings: {ada.get('headline', '') if isinstance(ada, dict) else str(ada)[:200]}", response_model=_FQ)
+                    fq: _FollowUpBase = _gp("narrator").complete(system="Suggest exactly 3 concise follow-up investigation questions (max 15 words each).", user=f"Original question: {question}\nFindings: {ada.get('headline', '') if isinstance(ada, dict) else str(ada)[:200]}", response_model=_FollowUpBase)
                     yield _sse("followups", {"questions": fq.questions[:3]})
                 except Exception:
                     pass
@@ -468,9 +569,7 @@ async def _stream_investigation(
                 yield _sse("explore_report", {"explore_report": er.model_dump(), "sub_questions": sq_raw, "subq_answers": sa_raw, "query_count": len(qh), "investigation_id": inv_id, "query_mode": "explore"})
                 try:
                     from aughor.llm.provider import get_provider as _gp
-                    class _FQX(BaseModel):
-                        questions: list[str]
-                    fqx: _FQX = _gp("narrator").complete(system="Suggest exactly 3 concise follow-up questions (max 15 words each).", user=f"Original question: {question}\nFindings: {er.headline}", response_model=_FQX)
+                    fqx: _FollowUpBase = _gp("narrator").complete(system="Suggest exactly 3 concise follow-up questions (max 15 words each).", user=f"Original question: {question}\nFindings: {er.headline}", response_model=_FollowUpBase)
                     yield _sse("followups", {"questions": fqx.questions[:3]})
                 except Exception:
                     pass
@@ -482,11 +581,9 @@ async def _stream_investigation(
                 yield _sse("report", {"report": merged["report"].model_dump(), "hypotheses": [h.model_dump() for h in merged.get("hypotheses", [])], "query_count": len(qh), "query_history": [{"hypothesis_id": r.hypothesis_id, "sql": r.sql, "row_count": r.row_count, "error": r.error, "columns": r.columns, "rows": r.rows[:50], "stats": [s.model_dump() for s in (r.stats or [])]} for r in qh], "investigation_id": inv_id, "query_mode": merged.get("query_mode")})
                 try:
                     from aughor.llm.provider import get_provider as _gp
-                    class _FQR(BaseModel):
-                        questions: list[str]
                     rep = merged["report"]
                     summary = getattr(rep, "summary", "") or getattr(rep, "headline", "")
-                    fqr: _FQR = _gp("narrator").complete(system="Suggest exactly 3 concise follow-up investigation questions (max 15 words each).", user=f"Original question: {question}\nFindings: {str(summary)[:300]}", response_model=_FQR)
+                    fqr: _FollowUpBase = _gp("narrator").complete(system="Suggest exactly 3 concise follow-up investigation questions (max 15 words each).", user=f"Original question: {question}\nFindings: {str(summary)[:300]}", response_model=_FollowUpBase)
                     yield _sse("followups", {"questions": fqr.questions[:3]})
                 except Exception:
                     pass

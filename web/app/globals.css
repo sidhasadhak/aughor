@@ -71,6 +71,10 @@ a { color: var(--blue4); text-decoration: none; }
   flex-direction: column;
   flex-shrink: 0;
   overflow: hidden;
+  /* Sit above any fixed content-area overlays (history backdrop z-40, etc.)
+     so sidebar nav items are always clickable regardless of panel state. */
+  position: relative;
+  z-index: 60;
 }
 
 /* ── Content header (per-screen) ─────────────────────────────────────────── */

@@ -285,6 +285,7 @@ from aughor.routers import (  # noqa: E402
     security,
     query,
     monitors,
+    semantic,
 )
 
 app.include_router(system.router)
@@ -300,3 +301,4 @@ app.include_router(actions.router)
 app.include_router(security.router)
 app.include_router(query.router)
 app.include_router(monitors.router)
+app.include_router(semantic.router)

@@ -361,6 +361,58 @@ export interface ComputedProperty {
   unit: string;
 }
 
+// OE-1: first-class typed property on an entity (mirrors Palantir Property)
+export interface EntityProperty {
+  name: string;
+  display_name: string;
+  data_type: string;
+  semantic_type: string;
+  description: string;
+  is_primary_key: boolean;
+  is_foreign_key: boolean;
+  is_nullable: boolean;
+  null_rate: number;
+  null_meaning: string;          // from phase-3 exploration
+  is_derived: boolean;
+  value_interpretation: string;
+  unit: string;
+  sample_values: string[];
+  // OE-4: distribution stats (numeric columns)
+  distribution_shape: string;
+  p25: number | null;
+  p50: number | null;
+  p75: number | null;
+}
+
+// OE-2: named composable filter over entity rows (mirrors Palantir Object Set)
+export interface ObjectSet {
+  id: string;
+  display_name: string;
+  description: string;
+  filter_sql: string;
+  is_default: boolean;
+  source: "lifecycle" | "exploration" | "manual";
+}
+
+// OE-3: typed parameter extracted from {placeholder} tokens in sql_template
+export interface ActionParameter {
+  name: string;
+  display_name: string;
+  data_type: string;
+  required: boolean;
+  description: string;
+  default_value: string | null;
+}
+
+// OE-6: shared structural shape implemented by multiple entity types
+export interface OntologyInterface {
+  id: string;
+  display_name: string;
+  description: string;
+  property_patterns: string[];
+  implementing_entities: string[];
+}
+
 export interface OntologyEntity {
   id: string;
   display_name: string;
@@ -375,10 +427,14 @@ export interface OntologyEntity {
   lifecycle_states: string[];
   terminal_states: string[];
   active_filter: string | null;
+  object_sets: Record<string, ObjectSet>;         // OE-2
   created_at_col: string | null;
   default_filters: string[];
   exclude_when: string[];
+  properties: Record<string, EntityProperty>;     // OE-1
   computed_properties: ComputedProperty[];
+  exploration_insights: string[];                 // OE-4
+  implements: string[];                           // OE-6: interface ids
 }
 
 export interface ConnectionSettings {
@@ -432,6 +488,7 @@ export interface OntologyAction {
   entity: string;
   action_type: "filter" | "compute" | "traverse" | "aggregate" | "validate";
   sql_template: string;
+  parameters: ActionParameter[];                 // OE-3
   business_rules_enforced: string[];
   returns: string;
   source_table: string;
@@ -451,6 +508,7 @@ export interface OntologyMetric {
 
 export interface OntologyGraph {
   connection_id: string;
+  schema_name: string;
   schema_fingerprint: string;
   generated_at: string;
   enriched: boolean;
@@ -458,6 +516,7 @@ export interface OntologyGraph {
   relationships: Record<string, OntologyRelationship>;
   metrics: Record<string, OntologyMetric>;
   actions: Record<string, OntologyAction>;
+  interfaces: Record<string, OntologyInterface>;  // OE-6
 }
 
 export async function getOntology(connectionId: string): Promise<OntologyGraph> {

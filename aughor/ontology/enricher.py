@@ -17,7 +17,8 @@ from aughor.ontology.models import OntologyAction, OntologyGraph
 
 # Bump this whenever the enrichment prompt or output schema changes meaningfully.
 # Cached graphs with a lower version will be re-enriched automatically.
-ENRICHMENT_VERSION = 3
+# v4 — OE-5: relationship verbs heuristic baseline + prompt Task 3 active
+ENRICHMENT_VERSION = 4
 
 
 # ── Pydantic models for structured LLM output ────────────────────────────────
@@ -93,11 +94,11 @@ def _render_structural_summary(graph: OntologyGraph) -> str:
         lines.append(line)
 
     if graph.relationships:
-        lines.append("\nRELATIONSHIPS:")
+        lines.append("\nRELATIONSHIPS (id | from --[verb]--> to | cardinality | FK column):")
         for rid, r in graph.relationships.items():
             lines.append(
                 f"  {rid}: {r.from_entity} --[{r.verb}]--> {r.to_entity}"
-                f" ({r.cardinality}) via {r.join_sql}"
+                f"  ({r.cardinality})  FK: {r.from_table}.{r.from_col} → {r.to_table}.{r.to_col}"
             )
 
     if graph.metrics:
@@ -233,6 +234,13 @@ def enrich_ontology_semantics(
     # Add new compute / traverse actions (skip if id already exists)
     for adef in enrichment.action_definitions:
         if adef.id not in graph.actions and adef.sql_template.strip():
+            # Extract typed parameters from {placeholder} tokens in the SQL template
+            entity_obj = graph.entities.get(adef.entity)
+            try:
+                from aughor.ontology.builder import _extract_action_parameters
+                params = _extract_action_parameters(adef.sql_template, entity_obj) if entity_obj else []
+            except Exception:
+                params = []
             graph.actions[adef.id] = OntologyAction(
                 id=adef.id,
                 display_name=adef.display_name,
@@ -240,6 +248,7 @@ def enrich_ontology_semantics(
                 entity=adef.entity,
                 action_type=adef.action_type,
                 sql_template=adef.sql_template,
+                parameters=params,
                 business_rules_enforced=adef.business_rules_enforced,
                 returns=adef.returns,
                 source_table=adef.source_table,

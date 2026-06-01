@@ -94,11 +94,12 @@ function fmt(col: string, v: unknown): React.ReactNode {
     return <span style={{ color: "#2B3B52", userSelect: "none" }}>—</span>;
   }
   const s = String(v);
-  // Percentage columns: if 0–1 range, multiply ×100
+  // Percentage columns: if value is in (-1, 1) it's a stored ratio → multiply ×100
+  // Values outside that range are already percentages (e.g. 11.8 = 11.8%, -60.89 = -60.89%)
   if (SHARE_COL.test(col)) {
     const n = Number(v);
     if (!isNaN(n)) {
-      const pct = n <= 1 ? n * 100 : n;
+      const pct = Math.abs(n) <= 1 ? n * 100 : n;
       return <span style={{ fontVariantNumeric: "tabular-nums" }}>{pct.toFixed(1)}%</span>;
     }
   }

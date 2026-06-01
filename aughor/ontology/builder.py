@@ -22,9 +22,13 @@ if TYPE_CHECKING:
     from aughor.tools.profiler import ColumnProfile, TableProfile
 
 from aughor.ontology.models import (
+    ActionParameter,
+    EntityProperty,
+    ObjectSet,
     OntologyAction,
     OntologyEntity,
     OntologyGraph,
+    OntologyInterface,
     OntologyMetric,
     OntologyRelationship,
 )
@@ -129,6 +133,15 @@ _STATUS_COL_NAMES = re.compile(
     r"(status|state|stage|phase|lifecycle|step|condition)$", re.IGNORECASE
 )
 
+# Columns whose low-cardinality values are geographic/ISO codes, not lifecycle
+# states.  E.g. customer_state = "SP", seller_state = "CA" look like status
+# columns but carry no process meaning.
+_GEO_COL_EXCLUDE = re.compile(
+    r"(country|state|region|city|province|prefecture|territory|locale|"
+    r"_country_code|_state_code|_iso|_geo)$",
+    re.IGNORECASE,
+)
+
 # Heuristic terminal-state keywords — used ONLY for lifecycle annotation,
 # NOT for auto-generating active_filter.  The enricher LLM or the user
 # decides which states should be filtered; these keywords just label states
@@ -166,6 +179,7 @@ def _extract_lifecycle(
         for key, cp in column_profiles.items()
         if key.startswith(f"{table}.")
         and _STATUS_COL_NAMES.search(cp.column)
+        and not _GEO_COL_EXCLUDE.search(cp.column)   # skip geographic columns
         and cp.is_low_cardinality
         and cp.top_values
     ]
@@ -175,7 +189,35 @@ def _extract_lifecycle(
 
     # Pick the best candidate: prefer shorter column name (more likely to be the main status)
     cp = min(candidates, key=lambda c: len(c.column))
-    states: list[str] = [str(v) for v in cp.top_values if v is not None and v != "null"]
+
+    # Filter out values that look like geographic codes (2-letter ISO), formula
+    # strings (contain "/" or operators), or multi-word phrases — these are not
+    # lifecycle states.
+    def _is_valid_state(v: object) -> bool:
+        s = str(v).strip()
+        if not s or s == "null":
+            return False
+        if "/" in s:                              # formula strings: "Revenue / Ad Spend"
+            return False
+        if re.fullmatch(r"[A-Z]{2}", s):          # bare 2-letter ISO codes: SP, CA, NY
+            return False
+        if len(s) > 30:                           # descriptions, not state identifiers
+            return False
+        return True
+
+    states: list[str] = [str(v) for v in cp.top_values if _is_valid_state(v)]
+
+    # Final column-level guard: real lifecycle states are terse (avg ≤ 15 chars,
+    # avg word count ≤ 2).  KPI names / descriptions fail both.
+    if states:
+        avg_len = sum(len(s) for s in states) / len(states)
+        avg_words = sum(len(s.split()) for s in states) / len(states)
+        if avg_len > 15 or avg_words > 2:
+            return None, [], [], None
+
+    # If the filter removed everything meaningful, discard this candidate entirely
+    if not states:
+        return None, [], [], None
 
     terminal = [s for s in states if _is_terminal(s)]
 
@@ -317,6 +359,73 @@ def _lift_metrics(
     return metrics
 
 
+# ── Action parameter extraction ───────────────────────────────────────────────
+
+# SQL type mapping from profiler dtype → SQL type for ActionParameter
+_DTYPE_TO_SQL: dict[str, str] = {
+    "INTEGER": "INTEGER", "BIGINT": "BIGINT", "INT": "INTEGER",
+    "FLOAT": "NUMERIC", "DOUBLE": "NUMERIC", "NUMERIC": "NUMERIC", "DECIMAL": "NUMERIC",
+    "DATE": "DATE", "TIMESTAMP": "TIMESTAMP", "DATETIME": "TIMESTAMP",
+    "BOOLEAN": "BOOLEAN", "BOOL": "BOOLEAN",
+    "VARCHAR": "VARCHAR", "TEXT": "VARCHAR", "STRING": "VARCHAR",
+}
+
+_PLACEHOLDER_RE = re.compile(r"\{(\w+)\}")
+
+
+def _extract_action_parameters(
+    sql_template: str,
+    entity: "OntologyEntity",
+) -> list[ActionParameter]:
+    """
+    Scan sql_template for {param_name} placeholders and build a typed parameter list.
+
+    Data type inference order:
+      1. Exact match on entity.properties column name → use that column's dtype
+      2. Suffix heuristics (_id → INTEGER, _date/_at → DATE, _amount/_price → NUMERIC)
+      3. Default → VARCHAR
+    """
+    seen: set[str] = set()
+    params: list[ActionParameter] = []
+
+    for m in _PLACEHOLDER_RE.finditer(sql_template):
+        name = m.group(1)
+        if name in seen:
+            continue
+        seen.add(name)
+
+        # Try to match against a known property on the entity
+        prop = entity.properties.get(name)
+        if prop and prop.data_type:
+            raw_dtype = prop.data_type.upper().split("(")[0].strip()
+            sql_type = _DTYPE_TO_SQL.get(raw_dtype, "VARCHAR")
+            description = prop.description or f"Value for {prop.display_name or name}"
+        else:
+            # Heuristic fallback from parameter name suffix
+            low = name.lower()
+            if low.endswith("_id") or low == "id":
+                sql_type = "VARCHAR"
+            elif low.endswith(("_date", "_at", "_time", "_ts")):
+                sql_type = "DATE"
+            elif low.endswith(("_amount", "_price", "_revenue", "_cost", "_value")):
+                sql_type = "NUMERIC"
+            elif low.endswith(("_count", "_qty", "_quantity", "_num")):
+                sql_type = "INTEGER"
+            else:
+                sql_type = "VARCHAR"
+            description = ""
+
+        params.append(ActionParameter(
+            name=name,
+            display_name=_display_name_for_col(name),
+            data_type=sql_type,
+            required=True,
+            description=description,
+        ))
+
+    return params
+
+
 # ── Action generation (deterministic, M12a only) ─────────────────────────────
 
 def _generate_deterministic_actions(
@@ -324,44 +433,391 @@ def _generate_deterministic_actions(
     table_to_entity: dict[str, str],
 ) -> dict[str, OntologyAction]:
     """
-    Generate one deterministic filter action for every entity that has an active_filter.
-    E.g. for Order with active_filter 'order_status NOT IN (...)':
-      get_active_orders() → SELECT * FROM orders WHERE order_status NOT IN (...)
+    Generate deterministic actions for every entity:
+      • filter action  — for entities with an active_filter or lifecycle (get_active_*)
+      • lookup action  — for every entity with a primary key (get_{entity}_by_id)
+
+    Parameters are extracted from {placeholder} tokens in the SQL template.
     """
     actions: dict[str, OntologyAction] = {}
 
     for entity in entities.values():
-        if not entity.active_filter or not entity.source_tables:
+        if not entity.source_tables:
             continue
         table = entity.source_tables[0]
         slug = entity.id.lower()
-        # Simple plural heuristic: add 's' if doesn't already end with s
-        plural = table  # use the actual table name as-is (already plural)
-        action_id = f"get_active_{slug}s"
-        sql = f"SELECT * FROM {table}\nWHERE {entity.active_filter}"
-        actions[action_id] = OntologyAction(
-            id=action_id,
-            display_name=f"Get Active {entity.display_name}s",
-            description=(
-                f"Returns all non-terminal {entity.display_name} rows. "
-                f"Applies: {entity.active_filter}"
-            ),
-            entity=entity.id,
-            action_type="filter",
-            sql_template=sql,
-            parameters={},
-            business_rules_enforced=[f"exclude_terminal_{slug}_states"],
-            returns=f"All {plural} rows that are not in a terminal lifecycle state",
-            source_table=table,
-        )
+
+        # ── Filter action (active rows) ───────────────────────────────────────
+        # Use active_filter if set; fall back to deriving it from terminal_states
+        _active_filter = entity.active_filter
+        if not _active_filter and entity.terminal_states and entity.lifecycle_column:
+            tl = ", ".join(f"'{s}'" for s in entity.terminal_states)
+            _active_filter = f"{entity.lifecycle_column} NOT IN ({tl})"
+
+        if _active_filter:
+            action_id = f"get_active_{slug}s"
+            sql = f"SELECT * FROM {table}\nWHERE {_active_filter}"
+            actions[action_id] = OntologyAction(
+                id=action_id,
+                display_name=f"Get Active {entity.display_name}s",
+                description=(
+                    f"Returns all non-terminal {entity.display_name} rows. "
+                    f"Applies: {_active_filter}"
+                ),
+                entity=entity.id,
+                action_type="filter",
+                sql_template=sql,
+                parameters=_extract_action_parameters(sql, entity),
+                business_rules_enforced=[f"exclude_terminal_{slug}_states"],
+                returns=f"All {table} rows that are not in a terminal lifecycle state",
+                source_table=table,
+            )
+
+        # ── Lookup action (get by primary key) ────────────────────────────────
+        if entity.identity_key:
+            pk = entity.identity_key
+            action_id = f"get_{slug}_by_id"
+            sql = f"SELECT * FROM {table}\nWHERE {pk} = {{{pk}}}"
+            actions[action_id] = OntologyAction(
+                id=action_id,
+                display_name=f"Get {entity.display_name} by ID",
+                description=f"Fetch a single {entity.display_name} row by its primary key.",
+                entity=entity.id,
+                action_type="filter",
+                sql_template=sql,
+                parameters=_extract_action_parameters(sql, entity),
+                business_rules_enforced=[],
+                returns=f"One {table} row matching the given {pk}",
+                source_table=table,
+            )
 
     return actions
+
+
+# ── Property extraction ───────────────────────────────────────────────────────
+
+def _display_name_for_col(col: str) -> str:
+    """Convert snake_case column name to Title Case display name."""
+    return " ".join(w.capitalize() for w in col.replace("-", "_").split("_"))
+
+
+def _build_entity_properties(
+    table: str,
+    grain_column: str,
+    column_profiles: "dict[str, ColumnProfile]",
+    glossary: dict,
+) -> "dict[str, EntityProperty]":
+    """
+    Build the EntityProperty dict for an entity from its column profiles.
+
+    - Primary key status comes from grain_column match.
+    - FK status comes from ColumnProfile.is_fk.
+    - Descriptions are pulled from the glossary column annotations if present.
+    - sample_values are only included for low-cardinality dimension columns
+      (avoids bloating the ontology with thousands of ID values).
+    """
+    props: dict[str, EntityProperty] = {}
+    table_glossary_cols = (
+        glossary.get("tables", {}).get(table, {}).get("columns") or {}
+    )
+
+    for key, cp in column_profiles.items():
+        if not key.startswith(f"{table}."):
+            continue
+
+        col = cp.column
+        gloss = table_glossary_cols.get(col, {}) or {}
+        description = str(gloss.get("description", "") or "").strip()
+
+        # Only include sample values for genuine dimension columns to keep
+        # the ontology cache lean — skip IDs, measures, and high-cardinality cols.
+        include_samples = (
+            cp.is_low_cardinality
+            and cp.semantic_type not in ("identifier", "measure")
+            and cp.top_values
+        )
+
+        props[col] = EntityProperty(
+            name=col,
+            display_name=_display_name_for_col(col),
+            data_type=cp.dtype or "",
+            semantic_type=cp.semantic_type or "",
+            description=description,
+            is_primary_key=(col == grain_column),
+            is_foreign_key=bool(cp.is_fk),
+            is_nullable=(cp.null_rate or 0) > 0,
+            null_rate=round(cp.null_rate or 0, 4),
+            value_interpretation=cp.value_interpretation or "",
+            unit=cp.unit or "",
+            sample_values=[str(v) for v in (cp.top_values or [])][:10] if include_samples else [],
+        )
+
+    return props
+
+
+# ── Object set generation ─────────────────────────────────────────────────────
+
+def _build_object_sets(
+    entity_id: str,
+    lifecycle_col: Optional[str],
+    lifecycle_states: list[str],
+    terminal_states: list[str],
+    active_filter: Optional[str],
+) -> "dict[str, ObjectSet]":
+    """
+    Auto-generate named ObjectSets from lifecycle data.
+
+    Produces:
+      - "All {Entity}"    — no filter, full table
+      - "Active {Entity}" — non-terminal rows (filter_sql = active_filter); is_default=True
+      - One set per terminal state: "Delivered {Entity}", "Canceled {Entity}", …
+
+    For entities with no lifecycle, only the "All" set is generated.
+    """
+    sets: dict[str, ObjectSet] = {}
+    label = entity_id  # e.g. "Order"
+
+    # Always include an unfiltered "All" set
+    all_id = f"all_{label.lower()}s"
+    sets[all_id] = ObjectSet(
+        id=all_id,
+        display_name=f"All {label}s",
+        description=f"Every {label} row with no filters applied.",
+        filter_sql="",
+        is_default=not bool(active_filter),  # default if there's no active filter
+        source="lifecycle",
+    )
+
+    if not lifecycle_col or not lifecycle_states:
+        return sets
+
+    # Derive active filter from terminal_states if not explicitly set
+    _active_filter = active_filter
+    if not _active_filter and terminal_states:
+        tl = ", ".join(f"'{s}'" for s in terminal_states)
+        _active_filter = f"{lifecycle_col} NOT IN ({tl})"
+
+    # Active set (non-terminal rows)
+    active_id = f"active_{label.lower()}s"
+    active_display = f"Active {label}s"
+    if _active_filter:
+        sets[active_id] = ObjectSet(
+            id=active_id,
+            display_name=active_display,
+            description=f"{label}s that are currently in-progress (non-terminal states).",
+            filter_sql=_active_filter,
+            is_default=True,
+            source="lifecycle",
+        )
+        # "All" set is no longer default since we have an explicit active set
+        sets[all_id].is_default = False
+
+    # One set per terminal state
+    for state in terminal_states:
+        state_id = f"{state.lower().replace(' ', '_').replace('-', '_')}_{label.lower()}s"
+        state_display = f"{state.capitalize()} {label}s"
+        sets[state_id] = ObjectSet(
+            id=state_id,
+            display_name=state_display,
+            description=f"{label}s with status '{state}'.",
+            filter_sql=f"{lifecycle_col} = '{state}'",
+            is_default=False,
+            source="lifecycle",
+        )
+
+    return sets
+
+
+# ── Interface detection ───────────────────────────────────────────────────────
+#
+# Each spec: (id, display_name, description, column_re | None)
+# None means "special-case logic" (HasLifecycle, HasDuration).
+
+_INTERFACE_SPECS: list[tuple[str, str, str, str, re.Pattern | None]] = [
+    (
+        "HasTimestamp",
+        "Has Timestamp",
+        "Entity records when events occurred — has at least one temporal column.",
+        "_at, _time, _timestamp, _date columns",
+        re.compile(r"(^created_at$|^updated_at$|^deleted_at$|_at$|_time$|_timestamp$|^timestamp$)", re.IGNORECASE),
+    ),
+    (
+        "HasMonetaryValue",
+        "Has Monetary Value",
+        "Entity carries financial figures — prices, amounts, revenues, or costs.",
+        "_amount, _price, _value, _cost, _fee, _total columns",
+        re.compile(r"(_amount$|_price$|_value$|_revenue$|_cost$|_fee$|_total$|_subtotal$|_payment$)", re.IGNORECASE),
+    ),
+    (
+        "HasLifecycle",
+        "Has Lifecycle",
+        "Entity progresses through named states — has a status or state column with defined transitions.",
+        "status / state column with enumerated lifecycle values",
+        None,  # detected from entity.has_lifecycle flag
+    ),
+    (
+        "HasRating",
+        "Has Rating",
+        "Entity carries a user-assigned quality score, rating, or review.",
+        "_score, _rating, _stars, _grade columns",
+        re.compile(r"(_score$|_rating$|_stars$|_grade$|_rank$)", re.IGNORECASE),
+    ),
+    (
+        "HasGeolocation",
+        "Has Geolocation",
+        "Entity has geographic coordinates or a location reference.",
+        "_lat, _lng, _latitude, _longitude, geolocation_id columns",
+        re.compile(r"(_lat$|_lng$|_latitude$|_longitude$|geolocation_id$|_zip$|_zipcode$|_postal$)", re.IGNORECASE),
+    ),
+    (
+        "HasDuration",
+        "Has Duration",
+        "Entity spans a time interval — has both a start and end timestamp.",
+        "paired start/end timestamp columns",
+        None,  # special: requires both a start-ish AND end-ish column
+    ),
+]
+
+# Patterns for HasDuration special detection
+_DURATION_START_RE = re.compile(
+    r"(^start_|_start$|^begin|_from$|^from_|_open$|_opened$|_purchase_|_shipped_)",
+    re.IGNORECASE,
+)
+_DURATION_END_RE = re.compile(
+    r"(^end_|_end$|_until$|_close$|_closed$|_to$|^to_|_delivered|_arrival|_finish)",
+    re.IGNORECASE,
+)
+
+
+def _detect_interfaces(
+    entities: dict[str, "OntologyEntity"],
+) -> dict[str, OntologyInterface]:
+    """
+    Scan all entity properties to detect which Palantir-style interfaces each
+    entity implements.  Mutates entity.implements in-place; returns the
+    interfaces dict (only includes interfaces with at least one implementor).
+    """
+    implementors: dict[str, list[str]] = {spec[0]: [] for spec in _INTERFACE_SPECS}
+
+    for entity in entities.values():
+        prop_names = list(entity.properties.keys())
+
+        for spec in _INTERFACE_SPECS:
+            iid, _display, _desc, _patterns_label, pattern = spec
+
+            if pattern is not None:
+                qualifies = any(pattern.search(col) for col in prop_names)
+            elif iid == "HasLifecycle":
+                qualifies = entity.has_lifecycle
+            elif iid == "HasDuration":
+                has_start = any(_DURATION_START_RE.search(c) for c in prop_names)
+                has_end   = any(_DURATION_END_RE.search(c) for c in prop_names)
+                qualifies = has_start and has_end
+            else:
+                qualifies = False
+
+            if qualifies:
+                implementors[iid].append(entity.id)
+                if iid not in entity.implements:
+                    entity.implements.append(iid)
+
+    interfaces: dict[str, OntologyInterface] = {}
+    for iid, display_name, description, patterns_label, _pattern in _INTERFACE_SPECS:
+        if implementors[iid]:
+            interfaces[iid] = OntologyInterface(
+                id=iid,
+                display_name=display_name,
+                description=description,
+                property_patterns=[patterns_label],
+                implementing_entities=sorted(implementors[iid]),
+            )
+    return interfaces
+
+
+# ── Relationship verb heuristics ─────────────────────────────────────────────
+#
+# Assigned at build time so relationships read naturally even without LLM
+# enrichment.  The enricher may later override these with domain-specific verbs.
+#
+# All keys are lowercase.  From-entity perspective (active voice):
+#   "OrderItem belongs to Order", "Payment settles Order"
+
+_PAIR_VERBS: dict[tuple[str, str], str] = {
+    # Commerce core
+    ("order", "customer"):        "placed by",
+    ("order", "seller"):          "sold by",
+    ("orderitem", "order"):       "belongs to",
+    ("orderitem", "product"):     "contains",
+    ("payment", "order"):         "settles",
+    ("review", "order"):          "reviews",
+    ("review", "product"):        "rates",
+    ("review", "customer"):       "written by",
+    ("shipment", "order"):        "ships",
+    ("shipment", "customer"):     "delivered to",
+    # Finance / billing
+    ("invoice", "order"):         "invoices",
+    ("invoice", "customer"):      "billed to",
+    ("transaction", "order"):     "settles",
+    ("transaction", "customer"):  "belongs to",
+    ("refund", "order"):          "refunds",
+    ("refund", "customer"):       "returned by",
+    # Support / CRM
+    ("ticket", "customer"):       "raised by",
+    ("ticket", "order"):          "relates to",
+    ("subscription", "customer"): "held by",
+    ("subscription", "product"):  "covers",
+    # Marketing
+    ("campaign", "customer"):     "targets",
+    ("session", "customer"):      "belongs to",
+    ("lead", "campaign"):         "generated by",
+}
+
+# Cardinality-only fallback (FK-holder perspective)
+_CARDINALITY_VERBS: dict[str, str] = {
+    "N:1": "belongs to",
+    "1:N": "has",
+    "1:1": "paired with",
+    "N:N": "associated with",
+}
+
+
+def _infer_relationship_verb(
+    from_entity: str,
+    to_entity: str,
+    from_col: str,
+    cardinality: str,
+) -> str:
+    """
+    Assign a readable relationship verb before the LLM enrichment pass.
+
+    Priority:
+      1. Known entity-pair pattern  (e.g. Order → Customer → "placed by")
+      2. FK column name encodes the target entity ("customer_id" → "belongs to")
+      3. Cardinality fallback       (N:1 → "belongs to", 1:N → "has", …)
+    """
+    pair = (from_entity.lower(), to_entity.lower())
+    if pair in _PAIR_VERBS:
+        return _PAIR_VERBS[pair]
+
+    # FK col is "{to_entity_lower}_id" or close variant → membership join
+    to_lower = re.sub(r"[^a-z]", "", to_entity.lower())
+    fc_lower = from_col.lower()
+    if cardinality in ("N:1", "1:1") and fc_lower == f"{to_lower}_id":
+        return "belongs to"
+    # Handle singularisation variance: sellers → seller, customers → customer
+    if cardinality in ("N:1", "1:1") and (
+        fc_lower.startswith(to_lower + "_") or fc_lower.rstrip("s_id") == to_lower
+    ):
+        return "belongs to"
+
+    return _CARDINALITY_VERBS.get(cardinality, "relates to")
 
 
 # ── Main entry point ──────────────────────────────────────────────────────────
 
 def extract_structural_ontology(
     connection_id: str,
+    schema_name: str,
     schema_fingerprint: str,
     table_profiles: "dict[str, TableProfile]",
     column_profiles: "dict[str, ColumnProfile]",
@@ -406,6 +862,23 @@ def extract_structural_ontology(
         has_lifecycle = lifecycle_col is not None
         entity_type = _infer_entity_type(table, has_lifecycle, bool(tp.grain_verified))
 
+        # Properties — one EntityProperty per column on the source table
+        properties = _build_entity_properties(
+            table=table,
+            grain_column=tp.grain_column,
+            column_profiles=column_profiles,
+            glossary=glossary,
+        )
+
+        # Object sets — named composable filters derived from lifecycle states
+        object_sets = _build_object_sets(
+            entity_id=entity_id,
+            lifecycle_col=lifecycle_col,
+            lifecycle_states=lifecycle_states,
+            terminal_states=terminal_states,
+            active_filter=active_filter,
+        )
+
         # display_name starts as the entity_id; the enricher may improve it
         entity = OntologyEntity(
             id=entity_id,
@@ -423,6 +896,8 @@ def extract_structural_ontology(
             created_at_col=tp.primary_timestamp,
             default_filters=default_filters,
             exclude_when=exclude_when,
+            properties=properties,
+            object_sets=object_sets,
         )
         entities[entity_id] = entity
         table_to_entity[table] = entity_id
@@ -459,11 +934,13 @@ def extract_structural_ontology(
         fk_cp = column_profiles.get(f"{t1}.{c1}")
         nullable = (fk_cp.null_rate > 0) if fk_cp else False
 
+        verb = _infer_relationship_verb(from_entity, to_entity, c1, cardinality)
+
         rel = OntologyRelationship(
             id=rel_id,
             from_entity=from_entity,
             to_entity=to_entity,
-            verb="RELATES_TO",
+            verb=verb,
             cardinality=cardinality,
             join_sql=f"{t1}.{c1} = {t2}.{c2}",
             from_table=t1,
@@ -483,13 +960,18 @@ def extract_structural_ontology(
     # ── Step 4: Generate deterministic actions ────────────────────────────────
     actions = _generate_deterministic_actions(entities, table_to_entity)
 
+    # ── Step 5: Detect interface types ────────────────────────────────────────
+    interfaces = _detect_interfaces(entities)
+
     return OntologyGraph(
         connection_id=connection_id,
+        schema_name=schema_name,
         schema_fingerprint=schema_fingerprint,
         entities=entities,
         relationships=relationships,
         metrics=metrics,
         actions=actions,
+        interfaces=interfaces,
         entity_to_tables=entity_to_tables,
         table_to_entity=table_to_entity,
         relationship_index=relationship_index,

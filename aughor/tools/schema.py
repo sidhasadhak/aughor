@@ -413,6 +413,7 @@ def build_schema_context(
     conn: duckdb.DuckDBPyConnection,
     profile_annotation: str = "",
     schema_name: str | None = None,
+    connection_id: str | None = None,
 ) -> str:
     """Return a rich schema description for the LLM, including row counts and glossary annotations.
 
@@ -440,6 +441,10 @@ def build_schema_context(
     def _fqn(t: str) -> str:
         return f"{schema_name}.{t}" if schema_name else t
 
+    # Load user-authored annotations (table + column descriptions) if available
+    from aughor.db.annotations import load_annotations, inject_into_schema_parts
+    _annotations = load_annotations(connection_id) if connection_id else None
+
     for table in sorted(tables):
         fqn = _fqn(table)
         try:
@@ -448,11 +453,15 @@ def build_schema_context(
             count = "?"
 
         parts.append(f"TABLE: {table}  ({count:,} rows)")
+        if _annotations:
+            inject_into_schema_parts(parts, table, None, _annotations)
 
         cols = conn.execute(f"DESCRIBE {fqn}").fetchall()
         for col in cols:
             col_name, col_type = col[0], col[1]
             parts.append(f"  {col_name}  {col_type}")
+            if _annotations:
+                inject_into_schema_parts(parts, table, col_name, _annotations)
 
         # Explicitly flag tables with no date/timestamp columns so the LLM never
         # invents a date column name when building time-series queries on this table.

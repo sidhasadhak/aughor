@@ -1,9 +1,12 @@
 """
 Ontology cache — persists OntologyGraph objects between runs.
 
-Cache key: "{connection_id}:{schema_fingerprint}"
+Cache key: "{connection_id}:{schema_name}:{schema_fingerprint}"
 File:      data/ontology_cache.json
 Max:       20 entries (LRU eviction — same pattern as profile_cache.py)
+
+Ontologies are scoped per DB schema so a single connection that exposes
+multiple schemas (e.g. analytics + raw) gets independent ontology graphs.
 
 Human overrides (PUT /ontology/entities/{id}) are written directly into the cached
 entry so they survive restarts without requiring a re-build.  Override fields are
@@ -41,18 +44,28 @@ def _save(cache: dict) -> None:
         pass
 
 
-def _key(connection_id: str, fingerprint: str) -> str:
-    return f"{connection_id}:{fingerprint}"
+def _key(connection_id: str, schema_name: str, fingerprint: str) -> str:
+    """Stable cache key scoped to a specific DB schema within a connection."""
+    return f"{connection_id}:{schema_name}:{fingerprint}"
+
+
+def _schema_prefix(connection_id: str, schema_name: str) -> str:
+    return f"{connection_id}:{schema_name}:"
+
+
+def _conn_prefix(connection_id: str) -> str:
+    return f"{connection_id}:"
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def load_ontology(
     connection_id: str,
+    schema_name: str,
     fingerprint: str,
 ) -> Optional[OntologyGraph]:
     cache = _load()
-    entry = cache.get(_key(connection_id, fingerprint))
+    entry = cache.get(_key(connection_id, schema_name, fingerprint))
     if not entry:
         return None
     try:
@@ -63,11 +76,12 @@ def load_ontology(
 
 def save_ontology(
     connection_id: str,
+    schema_name: str,
     fingerprint: str,
     graph: OntologyGraph,
 ) -> None:
     cache = _load()
-    k = _key(connection_id, fingerprint)
+    k = _key(connection_id, schema_name, fingerprint)
     cache.pop(k, None)
     cache[k] = {"graph": graph.model_dump()}
     while len(cache) > _MAX_ENTRIES:
@@ -75,10 +89,14 @@ def save_ontology(
     _save(cache)
 
 
-def invalidate(connection_id: str) -> None:
-    """Remove all cached ontologies for a connection (called on delete / DSN change)."""
+def invalidate(connection_id: str, schema_name: Optional[str] = None) -> None:
+    """Remove cached ontologies for a connection.
+
+    If schema_name is given, only that schema's entries are removed.
+    If omitted, all schemas for the connection are evicted (e.g. on DSN change).
+    """
     cache = _load()
-    prefix = f"{connection_id}:"
+    prefix = _schema_prefix(connection_id, schema_name) if schema_name else _conn_prefix(connection_id)
     evict = [k for k in cache if k.startswith(prefix)]
     for k in evict:
         del cache[k]
@@ -86,8 +104,24 @@ def invalidate(connection_id: str) -> None:
         _save(cache)
 
 
+def list_schemas(connection_id: str) -> list[str]:
+    """Return the distinct schema names that have a cached ontology for this connection."""
+    cache = _load()
+    prefix = _conn_prefix(connection_id)
+    schemas = set()
+    for k in cache:
+        if k.startswith(prefix):
+            # key format: {conn_id}:{schema_name}:{fingerprint}
+            rest = k[len(prefix):]
+            parts = rest.split(":", 1)
+            if len(parts) == 2:
+                schemas.add(parts[0])
+    return sorted(schemas)
+
+
 def patch_entity(
     connection_id: str,
+    schema_name: str,
     fingerprint: str,
     entity_id: str,
     overrides: dict,
@@ -100,7 +134,7 @@ def patch_entity(
     other fields from the auto-extracted graph are preserved.
     """
     cache = _load()
-    k = _key(connection_id, fingerprint)
+    k = _key(connection_id, schema_name, fingerprint)
     entry = cache.get(k)
     if not entry:
         return None
@@ -131,10 +165,17 @@ def patch_entity(
     return graph
 
 
-def load_latest_ontology(connection_id: str) -> Optional[OntologyGraph]:
-    """Return the most recently cached ontology for a connection (any fingerprint)."""
+def load_latest_ontology(
+    connection_id: str,
+    schema_name: Optional[str] = None,
+) -> Optional[OntologyGraph]:
+    """Return the most recently cached ontology for a connection+schema combination.
+
+    If schema_name is None, falls back to searching all schemas for the connection
+    (useful for legacy callers that don't know the schema name yet).
+    """
     cache = _load()
-    prefix = f"{connection_id}:"
+    prefix = _schema_prefix(connection_id, schema_name) if schema_name else _conn_prefix(connection_id)
     matches = {k: v for k, v in cache.items() if k.startswith(prefix)}
     if not matches:
         return None
@@ -147,13 +188,14 @@ def load_latest_ontology(connection_id: str) -> Optional[OntologyGraph]:
 
 def patch_action(
     connection_id: str,
+    schema_name: str,
     fingerprint: str,
     action_id: str,
     overrides: dict,
 ) -> Optional[OntologyGraph]:
     """Apply user overrides to a single action within a cached graph."""
     cache = _load()
-    k = _key(connection_id, fingerprint)
+    k = _key(connection_id, schema_name, fingerprint)
     entry = cache.get(k)
     if not entry:
         return None
@@ -182,6 +224,7 @@ def patch_action(
 
 def get_or_build_ontology(
     connection_id: str,
+    schema_name: str,
     table_profiles: dict,
     column_profiles: dict,
     join_map: dict,
@@ -192,6 +235,8 @@ def get_or_build_ontology(
 
     Computes a stable fingerprint from table_profiles (table names + row counts
     + grain columns), then either returns the cached graph or builds a fresh one.
+    The graph is scoped to the given schema_name so multiple schemas on the same
+    connection each get an independent ontology.
 
     Returns None (not raises) on any failure so schema loading is never blocked.
     """
@@ -207,19 +252,20 @@ def get_or_build_ontology(
         import hashlib
         fingerprint = hashlib.md5("|".join(parts).encode()).hexdigest()[:16]
 
-        cached = load_ontology(connection_id, fingerprint)
+        cached = load_ontology(connection_id, schema_name, fingerprint)
         if cached is not None:
             return cached
 
         graph = extract_structural_ontology(
             connection_id=connection_id,
+            schema_name=schema_name,
             schema_fingerprint=fingerprint,
             table_profiles=table_profiles,
             column_profiles=column_profiles,
             join_map=join_map,
             glossary=glossary,
         )
-        save_ontology(connection_id, fingerprint, graph)
+        save_ontology(connection_id, schema_name, fingerprint, graph)
         return graph
 
     except Exception:

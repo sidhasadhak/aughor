@@ -26,6 +26,7 @@ import { CanvasWorkspace } from "@/components/CanvasWorkspace";
 import { ActionHubPanel } from "@/components/ActionHubPanel";
 import { QueryBuilder } from "@/components/QueryBuilder";
 import { MetricsPanel } from "@/components/MetricsPanel";
+import { SemanticLayerPanel } from "@/components/SemanticLayerPanel";
 import { API_BASE } from "@/lib/config";
 import { CommandPalette } from "@/components/CommandPalette";
 import {
@@ -64,6 +65,7 @@ type NavTab =
   | "metrics"
   | "actions"
   | "activity"
+  | "semantic"
   | "settings";
 
 type Theme = "dark" | "light";
@@ -101,6 +103,7 @@ const ICON_PATHS: Record<string, string> = {
   plug:     "M7 2v4M17 2v4M12 13v6M9 19h6M5 6h14l-1.5 7a2 2 0 01-2 1.73H8.5A2 2 0 016.5 13L5 6z",
   metric:   "M3 3v18h18M7 16l4-4 4 4 4-4M7 12l4-8 2 4 2-4 4 8",
   brief:    "M3 5h18M3 9h18M3 13h12M3 17h8",
+  layers:   "M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5",
 };
 
 function NavIcon({ name, size = 14, color = "currentColor" }: { name: string; size?: number; color?: string }) {
@@ -252,6 +255,7 @@ function Topbar({
 const NAV_GROUPS = [
   // HOME — overview dashboard
   { id: "home",        icon: "home",     label: "Home",          group: null },
+  { id: "chat",        icon: "chat",     label: "Investigate",   group: null },
   { id: "canvases",    icon: "canvas",   label: "Canvases",      group: null },
 
   // INVESTIGATIONS — what Aughor has found; act on it
@@ -275,6 +279,7 @@ const NAV_GROUPS = [
   { id: "connections", icon: "plug",     label: "Connections",   group: "Governance" },
   { id: "metrics",     icon: "metric",   label: "Metrics",       group: null },
   { id: "actions",     icon: "spark",    label: "Action Hub",    group: null },
+  { id: "semantic",    icon: "layers",   label: "Semantic Layer",group: null },
   { id: "activity",    icon: "activity", label: "Audit Log",     group: null },
   { id: "settings",    icon: "settings", label: "Settings",      group: null },
 ] as const;
@@ -1356,6 +1361,11 @@ export default function Home() {
 
   const handleNavigate = (t: NavTab) => {
     setTab(t);
+    // Always dismiss any floating overlays when the user navigates.
+    // The History backdrop is fixed inset-0 and will intercept sidebar clicks
+    // if left open while switching tabs — this is the most common cause of
+    // "can't open other tabs while a query is running".
+    setShowHistory(false);
     if (t === "intel") setExplorationSection("intelligence");
   };
 
@@ -1437,9 +1447,8 @@ export default function Home() {
               />
             )}
 
-            {/* ── CHAT (Investigate) ── */}
-            {tab === "chat" && (
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
+            {/* ── CHAT (Investigate) ── always mounted so SSE streams survive tab switches */}
+            <div style={{ flex: 1, flexDirection: "column", overflow: "hidden", background: "var(--bg-0)", display: tab === "chat" ? "flex" : "none" }}>
                 {/* Chat header */}
                 <div className="aug-content-header">
                   <NavIcon name="chat" size={14} color="var(--t3)" />
@@ -1517,11 +1526,14 @@ export default function Home() {
                       initialMode={chatInitialMode}
                     />
                 }
-              </div>
-            )}
+            </div>
 
             {/* ── RECENTS ── */}
-            {tab === "recents" && <RecentsScreen onGoToChat={goToChat} onOpenInvestigation={openInvestigation} />}
+            {tab === "recents" && (
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
+                <RecentsScreen onGoToChat={goToChat} onOpenInvestigation={openInvestigation} />
+              </div>
+            )}
 
             {/* ── ONTOLOGY ── */}
             {tab === "ontology" && (
@@ -1645,44 +1657,59 @@ export default function Home() {
 
             {/* ── ACTION HUB ── */}
             {tab === "actions" && (
-              <ActionHubPanel />
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
+                <ActionHubPanel />
+              </div>
             )}
 
-            {/* ── CATALOG (was Connections) ── */}
+            {/* ── CONNECTIONS ── */}
             {tab === "connections" && (
-              <ConnectionsScreen
-                connections={connections}
-                selectedConn={selectedConn}
-                onSelect={setSelectedConn}
-                onAddConn={() => setShowAddConn(true)}
-                onDeleteConn={conn => setPendingDeleteConn(conn)}
-              />
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
+                <ConnectionsScreen
+                  connections={connections}
+                  selectedConn={selectedConn}
+                  onSelect={setSelectedConn}
+                  onAddConn={() => setShowAddConn(true)}
+                  onDeleteConn={conn => setPendingDeleteConn(conn)}
+                />
+              </div>
             )}
 
             {/* ── METRICS ── */}
             {tab === "metrics" && (
-              <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+              <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", background: "var(--bg-0)" }}>
                 <MetricsPanel connId={selectedConn ?? undefined} />
               </div>
             )}
 
             {/* ── CATALOG ── */}
             {tab === "catalog" && (
-              <CatalogScreen
-                connections={connections}
-                selectedConn={selectedConn}
-                onSelect={setSelectedConn}
-                onDeleteConn={conn => setPendingDeleteConn(conn)}
-                onChatWithTable={(table, connId) => {
-                  if (connId !== selectedConn) setSelectedConn(connId);
-                  goToChat(`Tell me about the ${table} table`);
-                }}
-              />
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
+                <CatalogScreen
+                  connections={connections}
+                  selectedConn={selectedConn}
+                  onSelect={setSelectedConn}
+                  onDeleteConn={conn => setPendingDeleteConn(conn)}
+                  onChatWithTable={(table, connId) => {
+                    if (connId !== selectedConn) setSelectedConn(connId);
+                    goToChat(`Tell me about the ${table} table`);
+                  }}
+                />
+              </div>
+            )}
+
+            {/* ── SEMANTIC LAYER ── */}
+            {tab === "semantic" && (
+              <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                <SemanticLayerPanel connectionId={selectedConn ?? ""} />
+              </div>
             )}
 
             {/* ── SETTINGS ── */}
             {tab === "settings" && (
-              <SettingsScreen theme={theme} setTheme={setTheme} />
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
+                <SettingsScreen theme={theme} setTheme={setTheme} />
+              </div>
             )}
 
           </div>

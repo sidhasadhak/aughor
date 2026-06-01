@@ -488,20 +488,32 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate }
       </div>
 
       {/* ── Content ── */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      {/*
+        IMPORTANT: all three panels are always mounted — never conditionally rendered.
+        Switching tabs uses CSS display:none so React keeps each panel's state alive.
+        Unmounting ChatPanel mid-investigation kills its SSE stream and message list;
+        the user comes back to a blank window even though the backend finished fine.
+      */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", position: "relative" }}>
 
-        {/* Chat */}
-        {wsTab === "chat" && (
+        {/* Chat — always mounted, hidden when not active */}
+        <div style={{
+          display: wsTab === "chat" ? "flex" : "none",
+          flex: 1, flexDirection: "column", overflow: "hidden",
+        }}>
           <ChatPanel
             key={chatKey}
             connectionId={connectionId}
             canvasId={canvas.id}
           />
-        )}
+        </div>
 
-        {/* History */}
-        {wsTab === "history" && (
-          openInvId
+        {/* History — always mounted, hidden when not active */}
+        <div style={{
+          display: wsTab === "history" ? "flex" : "none",
+          flex: 1, flexDirection: "column", overflow: "hidden",
+        }}>
+          {openInvId
             ? (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
                 <div style={{
@@ -543,18 +555,20 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate }
                 <CanvasHistory canvasId={canvas.id} onOpen={handleHistoryOpen} />
               </div>
             )
-        )}
+          }
+        </div>
 
-        {/* Intelligence */}
-        {wsTab === "intel" && (
-          <div style={{ flex: 1, overflowY: "auto", padding: "16px 24px" }}>
-            <DomainIntelPanel
-              connectionId={connectionId}
-              canvasId={canvas.id}
-              isActive={wsTab === "intel"}
-            />
-          </div>
-        )}
+        {/* Intelligence — always mounted, hidden when not active */}
+        <div style={{
+          display: wsTab === "intel" ? "flex" : "none",
+          flex: 1, overflowY: "auto", padding: "16px 24px",
+        }}>
+          <DomainIntelPanel
+            connectionId={connectionId}
+            canvasId={canvas.id}
+            isActive={wsTab === "intel"}
+          />
+        </div>
 
       </div>
 

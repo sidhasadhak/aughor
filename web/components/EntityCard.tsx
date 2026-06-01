@@ -11,6 +11,9 @@ import {
   OntologyEntity,
   OntologyAction,
   OntologyMetric,
+  EntityProperty,
+  ObjectSet,
+  ActionParameter,
   patchOntologyEntity,
 } from "@/lib/api";
 
@@ -80,6 +83,172 @@ function SqlBlock({ sql }: { sql: string }) {
           {sql}
         </pre>
       )}
+    </div>
+  );
+}
+
+// ── Interface badges (OE-6) ───────────────────────────────────────────────────
+
+const INTERFACE_COLOURS: Record<string, string> = {
+  HasTimestamp:     "text-sky-400 border-sky-500/30 bg-sky-500/10",
+  HasMonetaryValue: "text-emerald-400 border-emerald-500/30 bg-emerald-500/10",
+  HasLifecycle:     "text-violet-400 border-violet-500/30 bg-violet-500/10",
+  HasRating:        "text-amber-400 border-amber-500/30 bg-amber-500/10",
+  HasGeolocation:   "text-teal-400 border-teal-500/30 bg-teal-500/10",
+  HasDuration:      "text-orange-400 border-orange-500/30 bg-orange-500/10",
+};
+
+function InterfaceBadges({ interfaces }: { interfaces: string[] }) {
+  if (!interfaces.length) return null;
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {interfaces.map(iid => {
+        const label = iid.replace(/^Has/, "");
+        const colour = INTERFACE_COLOURS[iid] ?? "text-zinc-400 border-zinc-600 bg-zinc-800";
+        return (
+          <span key={iid} className={`text-[10px] font-medium border rounded-full px-2 py-0.5 ${colour}`}>
+            {label}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Properties list (OE-1) ────────────────────────────────────────────────────
+
+function PropertiesSection({ properties }: { properties: Record<string, EntityProperty> }) {
+  const [open, setOpen] = useState(false);
+  const entries = Object.values(properties);
+  if (!entries.length) return null;
+
+  const pks  = entries.filter(p => p.is_primary_key);
+  const fks  = entries.filter(p => p.is_foreign_key && !p.is_primary_key);
+  const rest = entries.filter(p => !p.is_primary_key && !p.is_foreign_key);
+  const sorted = [...pks, ...fks, ...rest];
+
+  return (
+    <div className="space-y-1.5">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="flex items-center gap-1.5 text-[11px] text-zinc-500 uppercase tracking-wider hover:text-zinc-300 transition w-full"
+      >
+        <span className={`transition-transform ${open ? "rotate-180" : ""}`}>
+          <ChevronDownIcon label="" size="small" />
+        </span>
+        Properties · {entries.length}
+      </button>
+
+      {open && (
+        <div className="rounded-md border border-zinc-700/60 overflow-hidden">
+          {sorted.map((prop, i) => (
+            <div
+              key={prop.name}
+              className={`flex items-start gap-2 px-3 py-2 text-[11px] ${i % 2 === 0 ? "bg-zinc-800/40" : "bg-zinc-800/20"}`}
+            >
+              {/* Key badges */}
+              <div className="shrink-0 w-4 pt-0.5">
+                {prop.is_primary_key && <span title="Primary key" className="text-amber-400 font-bold">PK</span>}
+                {prop.is_foreign_key && !prop.is_primary_key && <span title="Foreign key" className="text-sky-400 font-bold">FK</span>}
+              </div>
+              {/* Column name + type */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-baseline gap-2 flex-wrap">
+                  <code className="font-mono text-zinc-200">{prop.name}</code>
+                  <span className="text-zinc-500 text-[10px]">{prop.data_type}</span>
+                  {prop.null_meaning && (
+                    <span className="text-zinc-500 italic truncate max-w-[160px]" title={prop.null_meaning}>
+                      null: {prop.null_meaning}
+                    </span>
+                  )}
+                </div>
+                {prop.sample_values.length > 0 && (
+                  <div className="mt-0.5 flex flex-wrap gap-1">
+                    {prop.sample_values.slice(0, 5).map(v => (
+                      <span key={v} className="bg-zinc-700/60 rounded px-1 text-zinc-400">{v}</span>
+                    ))}
+                  </div>
+                )}
+                {prop.distribution_shape && (
+                  <div className="mt-0.5 text-zinc-500">
+                    {prop.distribution_shape}
+                    {prop.p50 != null && <span> · p50: {prop.p50}</span>}
+                    {prop.p25 != null && prop.p75 != null && <span> · IQR: {prop.p25}–{prop.p75}</span>}
+                  </div>
+                )}
+              </div>
+              {/* Null rate */}
+              {prop.null_rate > 0 && (
+                <span className="shrink-0 text-zinc-500" title={`${(prop.null_rate * 100).toFixed(1)}% null`}>
+                  {(prop.null_rate * 100).toFixed(0)}% null
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Object sets (OE-2) ────────────────────────────────────────────────────────
+
+function ObjectSetsSection({ objectSets }: { objectSets: Record<string, ObjectSet> }) {
+  const sets = Object.values(objectSets);
+  if (sets.length <= 1) return null; // only "all" set — not worth showing
+  return (
+    <div className="space-y-1.5">
+      <p className="text-[11px] text-zinc-500 uppercase tracking-wider">Object Sets</p>
+      <div className="flex flex-wrap gap-1.5">
+        {sets.map(s => (
+          <span
+            key={s.id}
+            title={s.filter_sql || "No filter — all rows"}
+            className={`text-[11px] px-2 py-0.5 rounded-full border font-medium cursor-default ${
+              s.is_default
+                ? "text-violet-300 border-violet-500/40 bg-violet-500/10"
+                : "text-zinc-400 border-zinc-600/70 bg-zinc-800"
+            }`}
+          >
+            {s.display_name}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Action parameter list (OE-3) ──────────────────────────────────────────────
+
+function ParamList({ params }: { params: ActionParameter[] }) {
+  if (!params.length) return null;
+  return (
+    <div className="flex flex-wrap gap-1 mt-1">
+      {params.map(p => (
+        <span key={p.name} className="text-[10px] font-mono text-zinc-400 bg-zinc-700/50 border border-zinc-600/50 rounded px-1.5 py-0.5">
+          {p.name}: <span className="text-sky-400">{p.data_type}</span>
+          {!p.required && <span className="text-zinc-500">?</span>}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+// ── Exploration insights (OE-4) ───────────────────────────────────────────────
+
+function InsightsSection({ insights }: { insights: string[] }) {
+  if (!insights.length) return null;
+  return (
+    <div className="space-y-1.5">
+      <p className="text-[11px] text-zinc-500 uppercase tracking-wider">Exploration Insights</p>
+      <ul className="space-y-1">
+        {insights.map((finding, i) => (
+          <li key={i} className="flex items-start gap-2 text-[11px] text-zinc-400 leading-relaxed">
+            <span className="shrink-0 text-violet-400 mt-0.5">·</span>
+            {finding}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -155,9 +324,15 @@ export function EntityCard({ entity, connectionId, relatedActions, relatedMetric
     <div className="space-y-5">
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-3 flex-wrap">
-          <h2 className="text-base font-semibold text-zinc-100">{entity.display_name}</h2>
-          <GrainBadge verified={entity.grain_verified} />
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-3 flex-wrap">
+            <h2 className="text-base font-semibold text-zinc-100">{entity.display_name}</h2>
+            <GrainBadge verified={entity.grain_verified} />
+          </div>
+          {/* Interface badges (OE-6) */}
+          {entity.implements?.length > 0 && (
+            <InterfaceBadges interfaces={entity.implements} />
+          )}
         </div>
       </div>
 
@@ -205,6 +380,21 @@ export function EntityCard({ entity, connectionId, relatedActions, relatedMetric
         />
       )}
 
+      {/* Object sets (OE-2) */}
+      {entity.object_sets && (
+        <ObjectSetsSection objectSets={entity.object_sets} />
+      )}
+
+      {/* Properties (OE-1) */}
+      {entity.properties && Object.keys(entity.properties).length > 0 && (
+        <PropertiesSection properties={entity.properties} />
+      )}
+
+      {/* Exploration insights (OE-4) */}
+      {entity.exploration_insights?.length > 0 && (
+        <InsightsSection insights={entity.exploration_insights} />
+      )}
+
       {/* Business rules */}
       {entity.default_filters.length > 0 && (
         <div className="space-y-1.5">
@@ -228,6 +418,8 @@ export function EntityCard({ entity, connectionId, relatedActions, relatedMetric
                 <span className="text-[11px] uppercase tracking-wider text-zinc-500 border border-zinc-600 rounded px-1.5 py-0.5">{a.action_type}</span>
               </div>
               <p className="text-[11px] text-zinc-400">{a.description}</p>
+              {/* Action parameters (OE-3) */}
+              {a.parameters?.length > 0 && <ParamList params={a.parameters} />}
               {a.business_rules_enforced.length > 0 && (
                 <div className="flex flex-wrap gap-1">
                   {a.business_rules_enforced.map((r, i) => (

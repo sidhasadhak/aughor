@@ -176,6 +176,9 @@ def save_chat_turn(
     columns: list | None = None,
     rows: list | None = None,
     chart_type: str = "auto",
+    tables_used: list | None = None,
+    intent: str = "",
+    approach: list | None = None,
 ) -> str:
     """Persist a completed chat turn as a history row, linked to a session."""
     inv_id = uuid.uuid4().hex[:8]
@@ -189,6 +192,9 @@ def save_chat_turn(
         "columns": columns or [],
         "rows": (rows or [])[:1000],   # cap stored rows at 1 000
         "chart_type": chart_type,
+        "tables_used": tables_used or [],
+        "intent":      intent or "",
+        "approach":    approach or [],
     }
     c.execute(
         """INSERT INTO investigations
@@ -231,10 +237,13 @@ def get_session_turns(session_id: str) -> list[dict]:
     for r in rows:
         d = dict(r)
         report = json.loads(d.pop("report_json") or "{}")
-        d["sql"]        = report.get("sql", "")
-        d["columns"]    = report.get("columns", [])
-        d["rows"]       = report.get("rows", [])
-        d["chart_type"] = report.get("chart_type", "auto")
+        d["sql"]         = report.get("sql", "")
+        d["columns"]     = report.get("columns", [])
+        d["rows"]        = report.get("rows", [])
+        d["chart_type"]  = report.get("chart_type", "auto")
+        d["tables_used"] = report.get("tables_used", [])
+        d["intent"]      = report.get("intent", "")
+        d["approach"]    = report.get("approach", [])
         result.append(d)
     return result
 

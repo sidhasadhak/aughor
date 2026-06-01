@@ -53,7 +53,7 @@ Aughor builds a **queryable business ontology** from your schema, not from docum
 - **Entities** — `Customer`, `Order`, `Product` — mapped to source tables with descriptions, grain, and domain assignment
 - **Relationships** — `Customer places Order` — with inferred cardinality and join paths
 - **Metrics** — revenue, AOV, retention rate — as semantic contracts with governance (owner, SLA, quality tests, lineage)
-- **Lifecycle states** — terminal vs. active states per entity, extracted from real data distributions
+- **Lifecycle states** — terminal vs. active states per entity, extracted from real data distributions; false-positive guards reject geographic codes, formula strings, and description columns so only genuine process stages appear
 - **Actions** — deterministic SQL templates generated from entity relationships
 
 The ontology is displayed as an interactive canvas and refreshes automatically.
@@ -269,12 +269,14 @@ aughor/
 | 47 | Charts & Data Visualization Layer — chart type inference, ChartWrapper, tokens |
 | 49 | Org Intelligence Layer — promote canvas insights to org-wide knowledge |
 | 24b | Async hardening — all 18 blocking DB/LLM route handlers converted to async |
+| 24c | Ontology quality — dual-layer lifecycle false-positive detection; geo column exclusion, formula-string guard, avg-length/word-count column-level gate in both builder and explorer merger |
 
 ### Coming Next
 
 | Feature | Why |
 |---|---|
 | **Sprint 48 — Enterprise Hardening** | OAuth2/OIDC, RBAC, workspace tenancy — multi-user ready |
+| **Ontology enrichment sprint** | Close exploration→ontology loop: wire phase 3/5/8 findings back as entity axioms; replace `RELATES_TO` with domain-specific semantic verbs; endurant/perdurant visual separation on canvas |
 | **Column-level lineage** | Trace any value back to its source via SQLGlot parse trees |
 | **dbt DAG traversal** | Downstream impact analysis — "what breaks if this source changes?" |
 | **Drift detection** | Alert when schema, freshness, or value distributions shift |

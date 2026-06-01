@@ -33,7 +33,7 @@ GROQ_BASE_URL      = "https://api.groq.com/openai/v1"
 TOGETHER_BASE_URL  = "https://api.together.xyz/v1"
 
 _DEFAULT_MODELS: dict[str, dict[Role, str]] = {
-    "ollama":    {"coder": "qwen2.5-coder:32b",                       "narrator": "llama3.3:70b"},
+    "ollama":    {"coder": "qwen2.5-coder:32b",                       "narrator": "kimi-k2.6:cloud"},
     "lmstudio":  {"coder": "local-model",                             "narrator": "local-model"},
     "groq":      {"coder": "llama-3.3-70b-versatile",                 "narrator": "llama-3.3-70b-versatile"},
     "together":  {"coder": "Qwen/Qwen2.5-Coder-32B-Instruct",         "narrator": "meta-llama/Llama-3.3-70B-Instruct-Turbo"},

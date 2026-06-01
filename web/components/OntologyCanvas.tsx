@@ -453,41 +453,49 @@ function FlowEdges({
               />
             )}
 
-            {/* Cardinality badge */}
-            <g transform={`translate(${mx},${my})`}>
-              <rect
-                x={-14} y={-8} width={28} height={16} rx={4}
-                fill="#1a2030"
-                stroke={isHovered ? hoverColor : baseColor}
-                strokeWidth={0.8}
-                opacity={0.95}
-              />
-              <text
-                textAnchor="middle"
-                dominantBaseline="central"
-                fontSize={8}
-                fontFamily="monospace"
-                fill={isHovered ? hoverColor : baseColor}
-              >
-                {rel.cardinality}
-              </text>
-            </g>
+            {/* Verb label — always visible (primary edge label) */}
+            {(() => {
+              const verbText = rel.verb.toLowerCase().replace(/_/g, " ");
+              const verbW = Math.max(40, verbText.length * 5.4 + 16);
+              return (
+                <g transform={`translate(${mx},${my})`}>
+                  <rect
+                    x={-verbW / 2} y={-9} width={verbW} height={18} rx={5}
+                    fill={isHovered ? "#1e1b2e" : "#13181f"}
+                    stroke={isHovered ? hoverColor : baseColor}
+                    strokeWidth={isHovered ? 1 : 0.7}
+                    opacity={0.97}
+                  />
+                  <text
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    fontSize={9}
+                    fontFamily="system-ui, sans-serif"
+                    fill={isHovered ? hoverColor : baseColor}
+                    fontStyle="italic"
+                  >
+                    {verbText}
+                  </text>
+                </g>
+              );
+            })()}
 
-            {/* Verb label — hover only */}
+            {/* Cardinality badge — hover only (secondary info) */}
             {isHovered && (
-              <g transform={`translate(${mx},${my - 22})`}>
+              <g transform={`translate(${mx},${my + 20})`}>
                 <rect
-                  x={-36} y={-8} width={72} height={16} rx={4}
-                  fill="#1e1b2e" stroke="#7c3aed" strokeWidth={0.8} opacity={0.97}
+                  x={-14} y={-7} width={28} height={14} rx={3}
+                  fill="#1a2030" stroke={hoverColor} strokeWidth={0.6} opacity={0.85}
                 />
                 <text
                   textAnchor="middle"
                   dominantBaseline="central"
-                  fontSize={9}
-                  fill="#c4b5fd"
-                  fontFamily="system-ui, sans-serif"
+                  fontSize={8}
+                  fontFamily="monospace"
+                  fill={hoverColor}
+                  opacity={0.75}
                 >
-                  {rel.verb.toLowerCase().replace(/_/g, " ")}
+                  {rel.cardinality}
                 </text>
               </g>
             )}

@@ -250,6 +250,30 @@ def _apply_explorer_to_ontology(graph, connection_id: str) -> None:
             return
 
         # ── Lifecycle merge ───────────────────────────────────────────────────
+        import re as _re
+
+        def _valid_lifecycle_state(s: str) -> bool:
+            """Same heuristic used by the ontology builder's _is_valid_state."""
+            s = s.strip()
+            if not s or s == "null":
+                return False
+            if "/" in s:
+                return False
+            if _re.fullmatch(r"[A-Z]{2}", s):   # bare ISO-2 codes
+                return False
+            if len(s) > 30:
+                return False
+            return True
+
+        def _plausible_lifecycle_states(states: list) -> bool:
+            """Reject columns whose states look like descriptions, not process stages."""
+            valid = [s for s in states if _valid_lifecycle_state(s)]
+            if not valid:
+                return False
+            avg_len = sum(len(s) for s in valid) / len(valid)
+            avg_words = sum(len(s.split()) for s in valid) / len(valid)
+            return avg_len <= 15 and avg_words <= 2
+
         lifecycle_maps: dict = state.get("lifecycle_maps", {})
         if lifecycle_maps:
             for entity in graph.entities.values():
@@ -259,15 +283,110 @@ def _apply_explorer_to_ontology(graph, connection_id: str) -> None:
                         col = lm.get("status_column")
                         if not col:
                             break
+                        raw_states = lm.get("states", [])
+                        if not _plausible_lifecycle_states(raw_states):
+                            # Explorer found something that looks like a
+                            # description column (KPI names, formula strings,
+                            # etc.) — skip silently.
+                            break
                         entity.has_lifecycle     = True
                         entity.lifecycle_column  = col
-                        entity.lifecycle_states  = lm.get("states", entity.lifecycle_states)
+                        entity.lifecycle_states  = [s for s in raw_states if _valid_lifecycle_state(s)]
                         entity.terminal_states   = lm.get("terminal_states", entity.terminal_states)
                         terminal = lm.get("terminal_states", [])
                         if terminal:
                             tl = ", ".join(f"'{s}'" for s in terminal)
                             entity.active_filter = f"{col} NOT IN ({tl})"
+                        # Rebuild object sets to reflect the explorer-verified lifecycle
+                        try:
+                            from aughor.ontology.builder import _build_object_sets
+                            entity.object_sets = _build_object_sets(
+                                entity_id=entity.id,
+                                lifecycle_col=entity.lifecycle_column,
+                                lifecycle_states=entity.lifecycle_states,
+                                terminal_states=entity.terminal_states,
+                                active_filter=entity.active_filter,
+                            )
+                        except Exception:
+                            pass
                         break
+
+        # ── Null meaning merge (phase 3 → EntityProperty.null_meaning) ──────────
+        # Explorer state keys are "table:col" (colon-separated).
+        null_meanings: dict = state.get("null_meanings", {})
+        if null_meanings:
+            for entity in graph.entities.values():
+                src_table_set = set(entity.source_tables)
+                for key, meaning_obj in null_meanings.items():
+                    if ":" not in key:
+                        continue
+                    tbl_part, col_part = key.split(":", 1)
+                    if tbl_part not in src_table_set:
+                        continue
+                    if col_part not in entity.properties:
+                        continue
+                    prop = entity.properties[col_part]
+                    if prop.null_meaning:
+                        continue  # already set — don't overwrite
+                    if isinstance(meaning_obj, dict):
+                        meaning_text = meaning_obj.get("meaning", "")
+                    else:
+                        meaning_text = str(meaning_obj)
+                    if meaning_text and meaning_text not in ("unknown", "Unknown", ""):
+                        prop.null_meaning = meaning_text
+
+        # ── Distribution stats merge (phase 6 → EntityProperty numeric fields) ──
+        # Explorer state key: "table:col", value: {shape, p25, p50, p75, ...}
+        distributions: dict = state.get("distributions", {})
+        if distributions:
+            for entity in graph.entities.values():
+                src_table_set = set(entity.source_tables)
+                for key, dist_info in distributions.items():
+                    if ":" not in key or not isinstance(dist_info, dict):
+                        continue
+                    tbl_part, col_part = key.split(":", 1)
+                    if tbl_part not in src_table_set:
+                        continue
+                    if col_part not in entity.properties:
+                        continue
+                    prop = entity.properties[col_part]
+                    shape = dist_info.get("shape", "")
+                    if shape:
+                        prop.distribution_shape = shape
+                    for pct_field in ("p25", "p50", "p75"):
+                        raw = dist_info.get(pct_field)
+                        if raw is not None:
+                            try:
+                                setattr(prop, pct_field, float(raw))
+                            except (TypeError, ValueError):
+                                pass
+
+        # ── Insights merge (phase 8 → OntologyEntity.exploration_insights) ──────
+        # Each insight has {entities_involved: list[str], finding: str, novelty: int}.
+        # Match by source table name (most reliable — explorer uses table names).
+        insights: list = state.get("insights", [])
+        if insights:
+            sorted_insights = sorted(
+                insights, key=lambda x: x.get("novelty", 0) if isinstance(x, dict) else 0,
+                reverse=True,
+            )
+            for entity in graph.entities.values():
+                entity_name_set = {t.lower() for t in entity.source_tables}
+                entity_name_set.add(entity.id.lower())
+                entity_name_set.add(entity.display_name.lower())
+                findings: list[str] = []
+                seen: set[str] = set()
+                for item in sorted_insights:
+                    if not isinstance(item, dict):
+                        continue
+                    involved = {e.lower() for e in item.get("entities_involved", [])}
+                    if not (entity_name_set & involved):
+                        continue
+                    finding = item.get("finding", "").strip()
+                    if finding and finding not in seen:
+                        findings.append(finding)
+                        seen.add(finding)
+                entity.exploration_insights = findings[:10]
 
         # ── Join confidence upgrade ───────────────────────────────────────────
         verifications: list = state.get("join_verifications", [])
@@ -451,7 +570,11 @@ class DuckDBConnection(DatabaseConnection):
         from aughor.tools.profiler import render_profile_annotations
 
         # Build base schema string first (needed for join inference + fk_hints)
-        base = build_schema_context(self._conn, schema_name=self._schema_name)
+        base = build_schema_context(
+            self._conn,
+            schema_name=self._schema_name,
+            connection_id=self._connection_id or "fixture",
+        )
 
         # Extract table list and fk hints from the join map — filter by schema if known
         if self._schema_name:
@@ -493,8 +616,10 @@ class DuckDBConnection(DatabaseConnection):
             from aughor.ontology.builder import render_ontology_annotations
             from aughor.semantic.glossary import load_merged_glossary
             _glossary = load_merged_glossary()
+            _schema_label = self._schema_name or "default"
             graph = get_or_build_ontology(
                 connection_id=self._connection_id or "fixture",
+                schema_name=_schema_label,
                 table_profiles=tp,
                 column_profiles=cp,
                 join_map=jmap,
@@ -512,7 +637,7 @@ class DuckDBConnection(DatabaseConnection):
                         graph = enrich_ontology_semantics(
                             graph, get_provider("coder"), _glossary, base
                         )
-                        save_ontology(graph.connection_id, graph.schema_fingerprint, graph)
+                        save_ontology(graph.connection_id, graph.schema_name, graph.schema_fingerprint, graph)
                     except Exception:
                         pass  # structural ontology still works
                 else:
@@ -673,6 +798,9 @@ class PostgresConnection(DatabaseConnection):
         if not rows:
             return f"No tables found in schema '{self._schema_name}'."
 
+        from aughor.db.annotations import load_annotations, inject_into_schema_parts
+        _ann = load_annotations(self._connection_id or "postgres")
+
         parts: list[str] = []
         current_table = None
         for table, col, dtype in rows:
@@ -686,8 +814,10 @@ class PostgresConnection(DatabaseConnection):
                 except Exception:
                     count = "?"
                 parts.append(f"TABLE: {table}  ({count:,} rows)")
+                inject_into_schema_parts(parts, table, None, _ann)
                 current_table = table
             parts.append(f"  {col}  {dtype}")
+            inject_into_schema_parts(parts, table, col, _ann)
 
         schema_str = "\n".join(parts)
         hints = self._detect_sql_hints(rows)  # also populates self._varchar_ts_cols
@@ -741,8 +871,10 @@ class PostgresConnection(DatabaseConnection):
             from aughor.ontology.builder import render_ontology_annotations
             from aughor.semantic.glossary import load_merged_glossary
             _glossary = load_merged_glossary()
+            _schema_label = self._schema_name or "public"
             graph = get_or_build_ontology(
                 connection_id=self._connection_id or "postgres",
+                schema_name=_schema_label,
                 table_profiles=tp,
                 column_profiles=cp,
                 join_map=jmap,
@@ -760,7 +892,7 @@ class PostgresConnection(DatabaseConnection):
                         graph = enrich_ontology_semantics(
                             graph, get_provider("coder"), _glossary, enriched
                         )
-                        save_ontology(graph.connection_id, graph.schema_fingerprint, graph)
+                        save_ontology(graph.connection_id, graph.schema_name, graph.schema_fingerprint, graph)
                     except Exception:
                         pass  # structural ontology still works
                 else:
