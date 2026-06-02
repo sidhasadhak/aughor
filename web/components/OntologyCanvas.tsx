@@ -8,8 +8,9 @@
  * detail drawer; hover to highlight the local neighbourhood.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
+import { useWheelZoom } from "@/lib/useWheelZoom";
 import type {
   OntologyGraph,
   OntologyEntity,
@@ -663,6 +664,132 @@ function ColLabels({ labels }: { labels: { x: number; label: string }[] }) {
   );
 }
 
+// ── Entity cluster ──────────────────────────────────────────────────────────────
+//
+// The nodes-and-edges graph laid out in a LOCAL coordinate frame (0..w, 0..h),
+// with its own hover / neighbour-dimming state.  Reused by both the single-
+// connection canvas and the org board, where many clusters are tiled inside
+// connection / schema bounding boxes.
+
+/** Cheap size probe for packing clusters into boxes before render. */
+export function measureCluster(graph: OntologyGraph): { w: number; h: number } {
+  const { canvasW, canvasH } = computeLayout(graph);
+  return { w: canvasW, h: canvasH };
+}
+
+export function EntityCluster({
+  graph,
+  selectedEntityId,
+  onSelectEntity,
+  onInvestigate,
+  onClickEdge,
+  causalEdges = [],
+  showCausal = false,
+  showColLabels = true,
+}: {
+  graph: OntologyGraph;
+  selectedEntityId: string | null;
+  onSelectEntity: (id: string | null) => void;
+  onInvestigate?: (q: string) => void;
+  onClickEdge?: (rel: OntologyRelationship) => void;
+  causalEdges?: CausalEdge[];
+  showCausal?: boolean;
+  showColLabels?: boolean;
+}) {
+  const [hoveredEntityId, setHoveredEntityId] = useState<string | null>(null);
+  const [hoveredEdgeId,   setHoveredEdgeId]   = useState<string | null>(null);
+
+  const { nodes, colLabels, canvasW, canvasH } = useMemo(() => computeLayout(graph), [graph]);
+  const nodeMap = useMemo(
+    () => Object.fromEntries(nodes.map(n => [n.entity.id, n])),
+    [nodes],
+  );
+
+  const relsByEntity = useMemo(() => {
+    const m: Record<string, string[]> = {};
+    for (const r of Object.values(graph.relationships)) {
+      (m[r.from_entity] ??= []).push(r.id);
+      (m[r.to_entity]   ??= []).push(r.id);
+    }
+    return m;
+  }, [graph]);
+
+  const focusId = hoveredEntityId ?? selectedEntityId;
+
+  const neighbourIds = useMemo(() => {
+    if (!focusId) return new Set<string>();
+    const s = new Set([focusId]);
+    for (const rid of relsByEntity[focusId] ?? []) {
+      const r = graph.relationships[rid];
+      if (r) { s.add(r.from_entity); s.add(r.to_entity); }
+    }
+    return s;
+  }, [focusId, relsByEntity, graph.relationships]);
+
+  const dimmedEdges = useMemo(() => {
+    if (!focusId) return new Set<string>();
+    const active = new Set(relsByEntity[focusId] ?? []);
+    return new Set(Object.keys(graph.relationships).filter(id => !active.has(id)));
+  }, [focusId, relsByEntity, graph.relationships]);
+
+  const edges: EdgeData[] = useMemo(() => {
+    return Object.values(graph.relationships).flatMap(rel => {
+      const src = nodeMap[rel.from_entity];
+      const dst = nodeMap[rel.to_entity];
+      if (!src || !dst) return [];
+      const srcMidY = src.y + src.h / 2;
+      const dstMidY = dst.y + dst.h / 2;
+      let x1: number, x2: number;
+      if (src.x + NODE_W <= dst.x) { x1 = src.x + NODE_W; x2 = dst.x; }
+      else if (dst.x + NODE_W <= src.x) { x1 = src.x; x2 = dst.x + NODE_W; }
+      else { x1 = src.x + NODE_W * 0.75; x2 = dst.x + NODE_W * 0.25; }
+      return [{ rel, x1, y1: srcMidY, x2, y2: dstMidY }];
+    });
+  }, [graph.relationships, nodeMap]);
+
+  return (
+    <div className="relative" style={{ width: canvasW, height: canvasH }}>
+      {showColLabels && <ColLabels labels={colLabels} />}
+
+      <FlowEdges
+        edges={edges}
+        dimmedEdges={dimmedEdges}
+        canvasW={canvasW}
+        canvasH={canvasH}
+        hoveredEdgeId={hoveredEdgeId}
+        onHoverEdge={setHoveredEdgeId}
+        onClickEdge={onClickEdge}
+      />
+
+      {showCausal && (
+        <CausalEdges causalEdges={causalEdges} nodeMap={nodeMap} canvasW={canvasW} canvasH={canvasH} />
+      )}
+
+      {nodes.map(nl => {
+        const actionCount = Object.values(graph.actions).filter(a => a.entity === nl.entity.id).length;
+        const metricCount = Object.values(graph.metrics).filter(m => m.entity === nl.entity.id).length;
+        const isDimmed = focusId !== null && !neighbourIds.has(nl.entity.id);
+        const isNeighbour = focusId !== null && neighbourIds.has(nl.entity.id) && nl.entity.id !== selectedEntityId;
+        return (
+          <EntityNode
+            key={nl.entity.id}
+            layout={nl}
+            isSelected={selectedEntityId === nl.entity.id}
+            isNeighbour={isNeighbour}
+            isDimmed={isDimmed}
+            actionCount={actionCount}
+            metricCount={metricCount}
+            onClick={() => onSelectEntity(nl.entity.id === selectedEntityId ? null : nl.entity.id)}
+            onMouseEnter={() => setHoveredEntityId(nl.entity.id)}
+            onMouseLeave={() => setHoveredEntityId(null)}
+            onInvestigate={onInvestigate}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
 // ── Main export ───────────────────────────────────────────────────────────────
 
 const INITIAL_ZOOM   = 1.0;
@@ -683,83 +810,24 @@ export function OntologyCanvas({
   onInvestigate?: (q: string) => void;
   onClickEdge?: (rel: OntologyRelationship) => void;
 }) {
-  const [hoveredEntityId, setHoveredEntityId] = useState<string | null>(null);
-  const [hoveredEdgeId,   setHoveredEdgeId]   = useState<string | null>(null);
-  const [zoom,            setZoom]             = useState(INITIAL_ZOOM);
-  const [causalEdges,     setCausalEdges]      = useState<CausalEdge[]>([]);
-  const [showCausal,      setShowCausal]       = useState(true);
+  const [zoom,        setZoom]        = useState(INITIAL_ZOOM);
+  const [causalEdges, setCausalEdges] = useState<CausalEdge[]>([]);
+  const [showCausal,  setShowCausal]  = useState(true);
+
+  // Scroll viewport — trackpad pinch + ⌘/Ctrl-wheel zoom-to-cursor.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useWheelZoom(scrollRef, zoom, setZoom, { min: 0.2, max: 2.0 });
 
   useEffect(() => {
     if (!connId) return;
     getCausalGraph(connId).then(setCausalEdges).catch(() => {});
   }, [connId]);
 
-  const { nodes, colLabels, canvasW: rawW, canvasH: rawH } = useMemo(() => computeLayout(graph), [graph]);
+  const { w: rawW, h: rawH } = useMemo(() => measureCluster(graph), [graph]);
   // Extend canvas with overflow so the dotted background continues well past content
   // (gives plenty of room when zooming out or panning)
   const canvasW = rawW + CANVAS_OVERFLOW;
   const canvasH = rawH + CANVAS_OVERFLOW;
-  const nodeMap = useMemo(
-    () => Object.fromEntries(nodes.map(n => [n.entity.id, n])),
-    [nodes],
-  );
-
-  // Which entity relationships belong to
-  const relsByEntity = useMemo(() => {
-    const m: Record<string, string[]> = {};
-    for (const r of Object.values(graph.relationships)) {
-      (m[r.from_entity] ??= []).push(r.id);
-      (m[r.to_entity]   ??= []).push(r.id);
-    }
-    return m;
-  }, [graph]);
-
-  const focusId = hoveredEntityId ?? selectedEntityId;
-
-  // Neighbour set for the focused entity
-  const neighbourIds = useMemo(() => {
-    if (!focusId) return new Set<string>();
-    const s = new Set([focusId]);
-    for (const rid of relsByEntity[focusId] ?? []) {
-      const r = graph.relationships[rid];
-      if (r) { s.add(r.from_entity); s.add(r.to_entity); }
-    }
-    return s;
-  }, [focusId, relsByEntity, graph.relationships]);
-
-  // Dimmed edges = edges not touching the focused entity
-  const dimmedEdges = useMemo(() => {
-    if (!focusId) return new Set<string>();
-    const active = new Set(relsByEntity[focusId] ?? []);
-    return new Set(
-      Object.keys(graph.relationships).filter(id => !active.has(id)),
-    );
-  }, [focusId, relsByEntity, graph.relationships]);
-
-  // Build positioned edges
-  const edges: EdgeData[] = useMemo(() => {
-    return Object.values(graph.relationships).flatMap(rel => {
-      const src = nodeMap[rel.from_entity];
-      const dst = nodeMap[rel.to_entity];
-      if (!src || !dst) return [];
-
-      const srcMidY = src.y + src.h / 2;
-      const dstMidY = dst.y + dst.h / 2;
-
-      let x1: number, x2: number;
-      if (src.x + NODE_W <= dst.x) {
-        x1 = src.x + NODE_W; x2 = dst.x;
-      } else if (dst.x + NODE_W <= src.x) {
-        x1 = src.x; x2 = dst.x + NODE_W;
-      } else {
-        // Same column — self-loop offset
-        x1 = src.x + NODE_W * 0.75;
-        x2 = dst.x + NODE_W * 0.25;
-      }
-
-      return [{ rel, x1, y1: srcMidY, x2, y2: dstMidY }];
-    });
-  }, [graph.relationships, nodeMap]);
 
   return (
     <div className="w-full h-full relative" style={{ background: "#11171D" }}>
@@ -805,7 +873,7 @@ export function OntologyCanvas({
       </div>
 
       {/* Scrollable canvas area */}
-      <div className="w-full h-full overflow-auto">
+      <div ref={scrollRef} className="w-full h-full overflow-auto">
         {/* Spacer sized to scaled canvas dimensions — determines scroll range */}
         <div style={{ width: canvasW * zoom, height: canvasH * zoom, position: "relative", minWidth: "100%" }}>
           {/* Actual canvas, scaled from top-left */}
@@ -823,61 +891,15 @@ export function OntologyCanvas({
               backgroundSize: "24px 24px",
             }}
           >
-            <ColLabels labels={colLabels} />
-
-            <FlowEdges
-              edges={edges}
-              dimmedEdges={dimmedEdges}
-              canvasW={canvasW}
-              canvasH={canvasH}
-              hoveredEdgeId={hoveredEdgeId}
-              onHoverEdge={setHoveredEdgeId}
+            <EntityCluster
+              graph={graph}
+              selectedEntityId={selectedEntityId}
+              onSelectEntity={onSelectEntity}
+              onInvestigate={onInvestigate}
               onClickEdge={onClickEdge}
+              causalEdges={causalEdges}
+              showCausal={showCausal}
             />
-
-            {showCausal && (
-              <CausalEdges
-                causalEdges={causalEdges}
-                nodeMap={nodeMap}
-                canvasW={canvasW}
-                canvasH={canvasH}
-              />
-            )}
-
-            {nodes.map(nl => {
-              const actionCount = Object.values(graph.actions).filter(
-                a => a.entity === nl.entity.id,
-              ).length;
-              const metricCount = Object.values(graph.metrics).filter(
-                m => m.entity === nl.entity.id,
-              ).length;
-              const isDimmed = focusId !== null && !neighbourIds.has(nl.entity.id);
-              const isNeighbour =
-                focusId !== null &&
-                neighbourIds.has(nl.entity.id) &&
-                nl.entity.id !== selectedEntityId;
-
-              return (
-                <EntityNode
-                  key={nl.entity.id}
-                  layout={nl}
-                  isSelected={selectedEntityId === nl.entity.id}
-                  isNeighbour={isNeighbour}
-                  isDimmed={isDimmed}
-                  actionCount={actionCount}
-                  metricCount={metricCount}
-                  onClick={() =>
-                    onSelectEntity(
-                      nl.entity.id === selectedEntityId ? null : nl.entity.id,
-                    )
-                  }
-                  onMouseEnter={() => setHoveredEntityId(nl.entity.id)}
-                  onMouseLeave={() => setHoveredEntityId(null)}
-                  onInvestigate={onInvestigate}
-                />
-              );
-            })}
-
           </div>
         </div>
       </div>

@@ -2107,4 +2107,40 @@ Added `openInvestigation(id, kind)` handler in `page.tsx`:
 
 ---
 
-*Last updated: 2026-05-30 · 67 features — all shipped. See `ROADMAP.md` for upcoming milestones.*
+## 68. Org-Level Ontology Board + `table = entity` Gate Fix ✅ Shipped (Sprint 52)
+
+### What
+Two connected pieces of work:
+
+1. **Org-level ontology board.** A zoomable canvas that shows the *whole organization's* ontology at once — one bounding box per connection (database), and inside each box one sub-box per schema, each holding the **actual entity cluster** (nodes-and-edges graph: `Customer Order ──placed by──▶ Customer`, etc.) derived from that schema's tables. It is the same node/edge rendering the single-connection canvas uses, just tiled and grouped *connection → schema*. Trackpad pinch / ⌘-scroll zooms the entire board; clicking a connection header drills into its single-connection canvas.
+
+2. **`table = entity` gate fix.** The ontology builder was silently dropping any table for which the profiler couldn't detect a single-column primary key (`grain_column is None`). On beautycommerce that meant only **8 of 20 tables** became entities — the 12 dropped were the biggest, most important commerce tables (orders, payments, invoices, order_items, carts…). The builder now treats *every profiled table* as an entity, honoring the core axiom; a detected grain merely upgrades an entity to `grain_verified` rather than gating its existence.
+
+### Why
+- A business user wants to see how the business is modeled *across the org*, not one connection at a time. The board makes the ontology a navigable knowledge map (connection → schema → entity relationships) you can traverse for questions like "why did revenue drop?".
+- The gate fix restores the foundational promise: **a table is an entity.** Dropping the commerce backbone left the ontology unable to connect Orders → Payments → Order Items — exactly the traversal a root-cause analysis needs. After the fix beautycommerce went **8 → 20 entities** and **3 → 52 relationships**.
+
+### How
+**Reusable cluster (`web/components/OntologyCanvas.tsx`):** Extracted `EntityCluster` — the node/edge renderer (topological-depth `computeLayout` + `FlowEdges` + `CausalEdges` + `EntityNode` + column labels, with its own hover/neighbour-dimming state) drawing into a **local coordinate frame** sized exactly `w × h`. Added a cheap `measureCluster(graph)` size probe for packing. The single-connection `OntologyCanvas` now wraps one `EntityCluster` inside its zoom/scroll shell (behavior unchanged); the org board tiles many.
+
+**Org board (`web/components/OntologyOrgCanvas.tsx`):** Fetches the connection list, then `getOntology(conn.id)` per connection progressively (shells first). Each connection box's width tracks its widest schema cluster; boxes flex-wrap into a near-square grid; one shared `selectedEntityId` highlights across clusters. The schema-group structure (`schemaGroups()`) already returns an array, so multi-schema connections will stack several schema sub-boxes with no further layout work. Reached via the **Org / Connection toggle** in the Ontology panel header (`OntologyPanel.tsx`).
+
+**Trackpad zoom (`web/lib/useWheelZoom.ts`):** Shared hook — trackpad pinch (wheel + `ctrlKey`) and ⌘/Ctrl-wheel zoom-to-cursor; plain two-finger scroll falls through to native pan. Keeps the point under the cursor fixed while scaling. Used by both the single canvas and the org board.
+
+**Builder gate (`aughor/ontology/builder.py`):** Removed the `if tp.grain_column is None: continue` skip in Step 1 (entity identification). Every profiled table now becomes an `OntologyEntity`; `identity_key` is coerced to `""` when no PK was detected, and `grain_verified` carries the quality signal. Relationships, actions, properties, and lifecycle extraction all already tolerate a missing grain.
+
+### Known follow-ups
+- The profiler still **misses real PKs** on some large tables (e.g. `invoices.order_id` is provably unique — 2,798,854 distinct = row count — yet returned `None`). Those entities now exist but are flagged unverified. Improving the profiler's uniqueness detection would upgrade them to verified grains and enable verified joins.
+- Cross-connection ontology edges are intentionally not drawn (separate architecture).
+
+### Key files
+- `web/components/OntologyCanvas.tsx` — `EntityCluster` + `measureCluster` extraction; main canvas consumes the cluster
+- `web/components/OntologyOrgCanvas.tsx` *(new)* — org board: connection → schema → `EntityCluster` tiling
+- `web/lib/useWheelZoom.ts` *(new)* — shared trackpad pinch / ⌘-wheel zoom-to-cursor hook
+- `web/components/OntologyPanel.tsx` — Org / Connection toggle + org-mode branch
+- `aughor/ontology/builder.py` — relaxed entity gate (`table = entity`); `identity_key` coercion
+- `web/components/QueryBuilder.tsx` — contrast pass (dim `text-zinc-600` → readable `text-zinc-500` per the token bridge)
+
+---
+
+*Last updated: 2026-06-02 · 68 features — all shipped. See `ROADMAP.md` for upcoming milestones.*

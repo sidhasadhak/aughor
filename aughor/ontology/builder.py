@@ -834,14 +834,13 @@ def extract_structural_ontology(
     table_to_entity: dict[str, str] = {}
 
     # ── Step 1: Identify entity tables ───────────────────────────────────────
-    # A table is an entity candidate if its grain column is identified.
-    # We prefer grain_verified=True but also accept unverified PK candidates
-    # (grain_column is set) so we don't miss entities in small datasets.
+    # table = entity: every profiled table becomes an entity.  A detected grain
+    # column upgrades the entity to grain_verified and supplies its identity_key;
+    # its absence (high-cardinality tables where the profiler couldn't confirm a
+    # single-column PK, or genuinely composite-key tables like order_items) is a
+    # quality signal — identity_key stays None — not grounds to drop the table.
 
     for table, tp in table_profiles.items():
-        if tp.grain_column is None:
-            continue  # no PK candidate found at all — skip
-
         entity_id = _table_to_entity_name(table)
 
         # Glossary description for this table
@@ -885,7 +884,7 @@ def extract_structural_ontology(
             display_name=entity_id,
             description=description,
             source_tables=[table],
-            identity_key=tp.grain_column,
+            identity_key=tp.grain_column or "",
             grain_verified=bool(tp.grain_verified),
             entity_type=entity_type,
             has_lifecycle=has_lifecycle,

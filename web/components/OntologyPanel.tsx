@@ -21,6 +21,7 @@ import {
   type ConnectionSettings,
 } from "@/lib/api";
 import { OntologyCanvas } from "./OntologyCanvas";
+import { OntologyOrgCanvas } from "./OntologyOrgCanvas";
 import { ProcessMapper } from "./ProcessMapper";
 import { cn } from "@/lib/utils";
 
@@ -779,6 +780,7 @@ export function OntologyPanel({ connectionId, onInvestigate }: Props) {
   const [selectedEdge,      setSelectedEdge]     = useState<OntologyRelationship | null>(null);
   const [selectedConnId,    setSelectedConnId]   = useState(connectionId);
   const [showSettings,      setShowSettings]     = useState(false);
+  const [orgMode,           setOrgMode]          = useState(false);
 
   useEffect(() => { setSelectedConnId(connectionId); }, [connectionId]);
 
@@ -816,7 +818,25 @@ export function OntologyPanel({ connectionId, onInvestigate }: Props) {
     <div className="flex items-center gap-3 px-4 py-3 border-b border-zinc-700/70 shrink-0 bg-zinc-900/40">
       <p className="text-xs font-semibold text-zinc-300">Business Ontology</p>
 
-      {graph && (
+      {/* Org ⟷ Connection view toggle */}
+      <div className="flex items-center rounded-md border border-zinc-700 overflow-hidden text-[11px]">
+        <button
+          onClick={() => setOrgMode(true)}
+          className={cn(
+            "px-2.5 py-1 transition",
+            orgMode ? "bg-violet-500/15 text-violet-300" : "text-zinc-400 hover:text-zinc-200",
+          )}
+        >Org</button>
+        <button
+          onClick={() => setOrgMode(false)}
+          className={cn(
+            "px-2.5 py-1 transition border-l border-zinc-700",
+            !orgMode ? "bg-violet-500/15 text-violet-300" : "text-zinc-400 hover:text-zinc-200",
+          )}
+        >Connection</button>
+      </div>
+
+      {!orgMode && graph && (
         <div className="flex items-center gap-2 ml-auto">
           {graph.enriched ? (
             <span className="text-[11px] text-emerald-400 border border-emerald-500/20 bg-emerald-500/8 rounded-full px-2 py-0.5">
@@ -845,6 +865,20 @@ export function OntologyPanel({ connectionId, onInvestigate }: Props) {
       )}
     </div>
   );
+
+  // ── Org-level board — bypasses the single-graph loading/error gates ──────────
+  if (orgMode) {
+    return (
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {headerBar}
+        <div className="flex-1 relative overflow-hidden">
+          <OntologyOrgCanvas
+            onOpenConnection={(connId) => { setSelectedConnId(connId); setOrgMode(false); }}
+          />
+        </div>
+      </div>
+    );
+  }
 
   // ── Loading / error states ──────────────────────────────────────────────────
   if (loading) {

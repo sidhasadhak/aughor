@@ -242,17 +242,17 @@ function ColRow({ col, tableName, onAddDim, onAddMeasure }: {
         JSON.stringify({ name: col.name, type: col.type, table: tableName, is_fk: col.is_fk }))}
       className="group flex items-center gap-2 px-3 py-2 hover:bg-zinc-800/60 cursor-grab active:cursor-grabbing select-none transition-colors"
     >
-      <svg width="8" height="11" viewBox="0 0 8 14" className="text-zinc-700 group-hover:text-zinc-500 shrink-0 transition-colors">
+      <svg width="8" height="11" viewBox="0 0 8 14" className="text-zinc-500 group-hover:text-zinc-300 shrink-0 transition-colors">
         {[1,5,9,13].map(y=>[1,5].map(x=><circle key={`${x}${y}`} cx={x} cy={y} r="1.2" fill="currentColor"/>)).flat()}
       </svg>
       <span className={`w-2 h-2 rounded-full shrink-0 ${dot(col.type)}`} />
-      <span className="text-[12px] font-mono text-zinc-300 truncate flex-1" title={`${col.name} (${col.type})`}>
+      <span className="text-[12px] font-mono text-zinc-200 truncate flex-1" title={`${col.name} (${col.type})`}>
         {col.name}
       </span>
-      <span className="hidden group-hover:inline text-[11px] text-zinc-600 font-mono shrink-0 uppercase">
+      <span className="hidden group-hover:inline text-[11px] text-zinc-500 font-mono shrink-0 uppercase">
         {col.type.split(" ")[0].slice(0,6)}
       </span>
-      {col.is_fk && <span className="text-[11px] text-zinc-600">FK</span>}
+      {col.is_fk && <span className="text-[11px] text-zinc-500">FK</span>}
       <div className="hidden group-hover:flex gap-0.5 shrink-0">
         <button onMouseDown={e=>{e.stopPropagation();onAddDim();}} title="Add as dimension"
           className="px-1.5 py-0.5 rounded text-[11px] font-bold bg-blue-500/20 text-blue-400 hover:bg-blue-500/40 transition">D</button>
@@ -359,7 +359,7 @@ function AcDropdown({ items, active, setActive, onSelect, onClose, pos }: {
         style={{ top: flipUp ? pos.top - items.length * 28 - 40 : pos.top, left: pos.left }}>
         <div className="px-3 py-1.5 border-b border-zinc-700/50 flex items-center justify-between">
           <span className="text-[11px] text-zinc-500 font-medium">Suggestions</span>
-          <span className="text-[11px] text-zinc-700">↑↓  ↵ insert  Esc</span>
+          <span className="text-[11px] text-zinc-500">↑↓  ↵ insert  Esc</span>
         </div>
         {items.map((s, i) => (
           <button key={s}
@@ -450,7 +450,7 @@ function ResultsPane({ result }: { result: DirectQueryResult }) {
                     <tr key={ri} className={ri % 2 ? "bg-zinc-800/20" : ""}>
                       {cells.map((cell, ci) => (
                         <td key={ci} title={String(cell)} className="px-4 py-2 text-zinc-300 border-b border-zinc-700/20 whitespace-nowrap max-w-[240px] truncate">
-                          {cell === null || cell === "NULL" ? <span className="text-zinc-600">null</span> : String(cell)}
+                          {cell === null || cell === "NULL" ? <span className="text-zinc-500">null</span> : String(cell)}
                         </td>
                       ))}
                     </tr>
@@ -475,7 +475,8 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
   const [rowCounts,     setRowCounts]     = useState<Record<string,string|null>>({});
   const [schemaJoins,   setSchemaJoins]   = useState<SchemaJoin[]>([]);
   const [isolated,      setIsolated]      = useState<string[]>([]);
-  const [loadingSchema, setLoadingSchema] = useState(false);
+  const [loadingTree,   setLoadingTree]   = useState(false);  // fast: catalog tree
+  const [loadingCols,   setLoadingCols]   = useState(false);  // slow: columns/joins/rowcounts
   const [joinHint,      setJoinHint]      = useState<string|null>(null);
 
   const [primaryTable, setPrimaryTable] = useState<string|null>(null);
@@ -525,17 +526,27 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
 
   useEffect(() => {
     if (!connId) return;
-    setLoadingSchema(true);
+    setLoadingTree(true);
+    setLoadingCols(true);
     setPrimaryTable(null); setJoinedTables([]); setTableNames([]); setTableCols({});
     setSchemaJoins([]); setDims([]); setMeasures([]); setFilters([]);
     setSql(""); setResult(null); setCatEntry(null); setExpandedSchemas({});
+
+    // Phase 1 — fast: catalog tree gives us schema/table hierarchy immediately
     getCatalogTree()
       .then(tree => {
         const entry = tree.sections.flatMap(s => s.entries).find(e => e.conn_id === connId) ?? null;
         setCatEntry(entry);
-        if (entry) setExpandedSchemas(Object.fromEntries(entry.schemas.map(s => [s.name, true])));
+        if (entry) {
+          setExpandedSchemas(Object.fromEntries(entry.schemas.map(s => [s.name, true])));
+          // seed table names so the hierarchy renders before getSchemaRich finishes
+          setTableNames(entry.schemas.flatMap(s => s.tables.map(t => t.name)));
+        }
       })
-      .catch(() => setCatEntry(null));
+      .catch(() => setCatEntry(null))
+      .finally(() => setLoadingTree(false));
+
+    // Phase 2 — slower: rich schema adds columns, joins, row counts
     getSchemaRich(connId).then(rich => {
       const names = rich.tables.map(t => t.name);
       const cols: Record<string,SchemaColumn[]> = {};
@@ -543,7 +554,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
       rich.tables.forEach(t => { cols[t.name] = t.columns; rc[t.name] = t.row_count; });
       setTableNames(names); setTableCols(cols); setRowCounts(rc);
       setSchemaJoins(rich.joins); setIsolated(rich.isolated ?? []);
-    }).catch(()=>{}).finally(()=>setLoadingSchema(false));
+    }).catch(()=>{}).finally(()=>setLoadingCols(false));
   }, [connId]);
 
   useEffect(() => {
@@ -770,7 +781,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
             })}
           </div>
         ) : (
-          <span className="text-[12px] text-zinc-600 ml-1">Drag a field from the catalog to begin</span>
+          <span className="text-[12px] text-zinc-500 ml-1">Drag a field from the catalog to begin</span>
         )}
 
         {/* Right controls */}
@@ -807,34 +818,34 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
           {/* Header */}
           <div className="px-4 pt-4 pb-3 border-b border-zinc-700/30">
             <div className="flex items-center justify-between mb-2.5">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Catalog</p>
-              <span className="text-[11px] text-zinc-600">{tableNames.length} tables</span>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">Catalog</p>
+              <span className="text-[11px] text-zinc-500">{tableNames.length} tables</span>
             </div>
             <div className="flex items-center gap-2 bg-zinc-800/70 border border-zinc-700 rounded-md px-3 py-2">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--t4)" strokeWidth="2" strokeLinecap="round">
                 <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
               </svg>
               <input placeholder="Search tables &amp; columns…" value={colSearch} onChange={e=>setColSearch(e.target.value)}
-                className="bg-transparent text-[12px] text-zinc-300 outline-none placeholder-zinc-600 w-full" />
-              {colSearch && <button onClick={()=>setColSearch("")} className="text-zinc-600 hover:text-zinc-400 leading-none">✕</button>}
+                className="bg-transparent text-[12px] text-zinc-300 outline-none placeholder-zinc-500 w-full" />
+              {colSearch && <button onClick={()=>setColSearch("")} className="text-zinc-500 hover:text-zinc-400 leading-none">✕</button>}
             </div>
             {/* type legend */}
             <div className="flex items-center gap-3 mt-2.5">
               {[["bg-emerald-500","num"],["bg-blue-400","date"],["bg-zinc-500","text"]].map(([d,l])=>(
-                <span key={l} className="flex items-center gap-1.5 text-[11px] text-zinc-600">
+                <span key={l} className="flex items-center gap-1.5 text-[11px] text-zinc-500">
                   <span className={`w-2 h-2 rounded-full ${d}`}/>{l}
                 </span>
               ))}
-              <span className="ml-auto text-[11px] text-zinc-700">drag to auto-join</span>
+              <span className="ml-auto text-[11px] text-zinc-500">drag to auto-join</span>
             </div>
           </div>
 
           {/* Catalog → Schema → Table → columns hierarchy */}
           <div className="flex-1 overflow-y-auto py-1">
-            {loadingSchema ? (
-              <p className="text-[12px] text-zinc-600 px-4 py-4 animate-pulse">Loading catalog…</p>
+            {loadingTree ? (
+              <p className="text-[12px] text-zinc-500 px-4 py-4 animate-pulse">Loading catalog…</p>
             ) : tableNames.length === 0 ? (
-              <p className="text-[12px] text-zinc-600 px-4 py-4">No tables in this connection.</p>
+              <p className="text-[12px] text-zinc-500 px-4 py-4">No tables in this connection.</p>
             ) : (() => {
               const q = colSearch.toLowerCase().trim();
 
@@ -845,8 +856,8 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" strokeWidth="1.6" strokeLinecap="round" className="shrink-0">
                       <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3"/>
                     </svg>
-                    <span className="text-[12px] font-semibold text-zinc-200 truncate">{catalogLabel}</span>
-                    <span className="ml-auto text-[10px] text-zinc-600 shrink-0">{tableNames.length} tables</span>
+                    <span className="text-[12px] font-semibold text-zinc-100 truncate">{catalogLabel}</span>
+                    <span className="ml-auto text-[10px] text-zinc-500 shrink-0">{tableNames.length} tables</span>
                   </div>
 
                   {catSchemas.map(schema => {
@@ -861,15 +872,15 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                         {/* Schema row */}
                         <button onClick={()=>setExpandedSchemas(p=>({...p,[schema.name]: !(p[schema.name] ?? true)}))}
                           className="w-full flex items-center gap-2 pl-3 pr-2 py-1.5 hover:bg-zinc-800/40 transition">
-                          <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="var(--t4)" strokeWidth="1.5" strokeLinecap="round"
+                          <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="var(--t3)" strokeWidth="1.5" strokeLinecap="round"
                             className={`shrink-0 transition-transform duration-150 ${sOpen?"rotate-90":""}`}>
                             <polyline points="2,1 6,4 2,7"/>
                           </svg>
-                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--t4)" strokeWidth="1.7" strokeLinecap="round" className="shrink-0">
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" strokeWidth="1.7" strokeLinecap="round" className="shrink-0">
                             <path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 12l9 4 9-4M3 17l9 4 9-4"/>
                           </svg>
-                          <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400 truncate">{schema.name}</span>
-                          <span className="ml-auto text-[10px] text-zinc-600 shrink-0">{visTables.length}</span>
+                          <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-300 truncate">{schema.name}</span>
+                          <span className="ml-auto text-[10px] text-zinc-500 shrink-0">{visTables.length}</span>
                         </button>
 
                         {/* Tables under schema */}
@@ -889,28 +900,28 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                               <div className="group/tbl w-full flex items-center gap-2 pl-7 pr-2 py-1.5 hover:bg-zinc-800/40 transition">
                                 <button onClick={()=>setExpandedTables(p=>({...p,[tbl]: !(p[tbl] ?? isResolved)}))}
                                   className="flex items-center gap-2 min-w-0 flex-1">
-                                  <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="var(--t4)" strokeWidth="1.5" strokeLinecap="round"
+                                  <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="var(--t3)" strokeWidth="1.5" strokeLinecap="round"
                                     className={`shrink-0 transition-transform duration-150 ${open?"rotate-90":""}`}>
                                     <polyline points="2,1 6,4 2,7"/>
                                   </svg>
-                                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={isResolved?"var(--t2)":"var(--t4)"} strokeWidth="1.7" strokeLinecap="round" className="shrink-0">
+                                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={isResolved?"var(--t1)":"var(--t2)"} strokeWidth="1.7" strokeLinecap="round" className="shrink-0">
                                     <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="9" x2="9" y2="21"/>
                                   </svg>
-                                  <span className={`text-[12px] font-mono truncate ${isResolved ? "text-zinc-200 font-semibold" : "text-zinc-400"}`}>{tbl}</span>
-                                  {rc && <span className="text-[10px] text-zinc-600 shrink-0">{rc}</span>}
+                                  <span className={`text-[12px] font-mono truncate ${isResolved ? "text-zinc-100 font-semibold" : "text-zinc-200"}`}>{tbl}</span>
+                                  {rc && <span className="text-[10px] text-zinc-500 shrink-0">{rc}</span>}
                                 </button>
                                 {deg > 0 && (
-                                  <span title={`${deg} related table${deg>1?"s":""}`} className="hidden sm:flex items-center gap-0.5 text-[10px] text-zinc-600 shrink-0">
+                                  <span title={`${deg} related table${deg>1?"s":""}`} className="hidden sm:flex items-center gap-0.5 text-[10px] text-zinc-500 shrink-0">
                                     ⋈{deg}
                                   </span>
                                 )}
                                 {isPrimary ? (
-                                  <span className="text-[10px] text-blue-400/90 shrink-0 font-medium">primary</span>
+                                  <span className="text-[10px] text-blue-400 shrink-0 font-medium">primary</span>
                                 ) : isJoined ? (
                                   <span title={js?.join ? `${js.join.t1}.${js.join.c1} = ${js.join.t2}.${js.join.c2}` : "no join — wire in SQL"}
                                     className={`text-[11px] shrink-0 ${js?.join ? "text-emerald-500" : "text-amber-500"}`}>{js?.join ? "✓" : "⚠"}</span>
                                 ) : iso ? (
-                                  <span title="No detected joins to other tables" className="text-[10px] text-zinc-700 shrink-0">isolated</span>
+                                  <span title="No detected joins to other tables" className="text-[10px] text-zinc-500 shrink-0">isolated</span>
                                 ) : (
                                   <button onClick={()=>ensureTable(tbl)} title="Add to query (auto-join)"
                                     className="opacity-0 group-hover/tbl:opacity-100 text-[11px] text-zinc-500 hover:text-blue-400 border border-zinc-700 hover:border-blue-500/50 rounded px-1.5 leading-tight transition shrink-0">
@@ -918,14 +929,18 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                                   </button>
                                 )}
                               </div>
-                              {open && cols.map(col => (
-                                <div key={col.name} className="pl-4">
-                                  <ColRow col={col} tableName={tbl}
-                                    onAddDim={()=>addDim(col.name, tbl)}
-                                    onAddMeasure={()=>openMeasure(col, tbl)}
-                                  />
-                                </div>
-                              ))}
+                              {open && (
+                                loadingCols && cols.length === 0
+                                  ? <div className="pl-11 py-1.5"><span className="text-[11px] text-zinc-500 animate-pulse">Loading columns…</span></div>
+                                  : cols.map(col => (
+                                    <div key={col.name} className="pl-4">
+                                      <ColRow col={col} tableName={tbl}
+                                        onAddDim={()=>addDim(col.name, tbl)}
+                                        onAddMeasure={()=>openMeasure(col, tbl)}
+                                      />
+                                    </div>
+                                  ))
+                              )}
                             </div>
                           );
                         })}
@@ -974,7 +989,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
               {joinStatuses.length > 0 && (
                 <div className="rounded-md border border-zinc-700/50 bg-zinc-800/30 px-4 py-3 space-y-2">
                   <div className="flex items-center justify-between">
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-600">Resolved joins · {allTables.length} tables</p>
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Resolved joins · {allTables.length} tables</p>
                     {fanOutRisk && (
                       <span title="One-to-many joins can repeat rows from the parent table, inflating SUM/COUNT. Verify the aggregation grain."
                         className="flex items-center gap-1 text-[11px] text-amber-400/90 border border-amber-500/30 bg-amber-500/5 rounded px-1.5 py-0.5">
@@ -986,11 +1001,11 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                     <div key={table} className="flex items-center gap-2 text-[11px] font-mono">
                       <span className={`w-2 h-2 rounded-full shrink-0 ${join?"bg-emerald-400":"bg-red-400"}`}/>
                       <span className="text-zinc-500">{join ? pivot : primaryTable}</span>
-                      <span className="text-zinc-600">→</span>
+                      <span className="text-zinc-500">→</span>
                       <span className="text-zinc-300">{table}</span>
                       {join ? (
                         <>
-                          <span className="text-zinc-600 mx-1">ON</span>
+                          <span className="text-zinc-500 mx-1">ON</span>
                           <span className="text-emerald-400">{join.t1}.{join.c1} = {join.t2}.{join.c2}</span>
                           <span className={`ml-auto text-[11px] px-1.5 py-0.5 rounded border ${
                             join.match==="exact" ? "text-emerald-600 border-emerald-700/50 bg-emerald-500/5"
@@ -1009,7 +1024,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                   <div className="flex items-center gap-2 mb-2.5">
                     <span className="text-violet-400 text-[12px]">✦</span>
                     <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Suggested</p>
-                    <span className="text-[11px] text-zinc-600">one-click add, based on column types &amp; relationships</span>
+                    <span className="text-[11px] text-zinc-500">one-click add, based on column types &amp; relationships</span>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     {!hasCount && (
@@ -1043,7 +1058,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                 <div>
                   <div className="mb-3">
                     <p className="text-[13px] font-semibold text-zinc-300">Dimensions</p>
-                    <p className="text-[11px] text-zinc-600 mt-0.5">GROUP BY — drag from left or click D</p>
+                    <p className="text-[11px] text-zinc-500 mt-0.5">GROUP BY — drag from left or click D</p>
                   </div>
                   <div
                     onDragOver={e=>{e.preventDefault();setOverDims(true);}}
@@ -1051,11 +1066,11 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                     onDrop={onDropDims}
                     className={`min-h-[120px] rounded-md border-2 border-dashed p-4 flex flex-wrap gap-2 items-start content-start transition-all ${
                       overDims ? "border-blue-500 bg-blue-500/5 shadow-[0_0_0_1px_rgba(59,130,246,0.2)]"
-                               : "border-zinc-700/70 bg-zinc-800/10 hover:border-zinc-600"
+                               : "border-zinc-600 bg-zinc-800/10 hover:border-zinc-500"
                     }`}
                   >
                     {dims.length === 0 && (
-                      <div className={`w-full flex flex-col items-center justify-center py-4 gap-2 ${overDims?"text-blue-400":"text-zinc-600"}`}>
+                      <div className={`w-full flex flex-col items-center justify-center py-4 gap-2 ${overDims?"text-blue-400":"text-zinc-500"}`}>
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
                           <path d="M12 5v14M5 12l7 7 7-7"/>
                         </svg>
@@ -1076,7 +1091,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                   <div className="flex items-start justify-between mb-3">
                     <div>
                       <p className="text-[13px] font-semibold text-zinc-300">Metrics</p>
-                      <p className="text-[11px] text-zinc-600 mt-0.5">Aggregations — drag from left or click M</p>
+                      <p className="text-[11px] text-zinc-500 mt-0.5">Aggregations — drag from left or click M</p>
                     </div>
                     {metrics.length > 0 && (
                       <div className="relative">
@@ -1111,11 +1126,11 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                     onDrop={onDropMeasures}
                     className={`min-h-[120px] rounded-md border-2 border-dashed p-4 flex flex-wrap gap-2 items-start content-start transition-all ${
                       overMeasures ? "border-violet-500 bg-violet-500/5 shadow-[0_0_0_1px_rgba(139,92,246,0.2)]"
-                                   : "border-zinc-700/70 bg-zinc-800/10 hover:border-zinc-600"
+                                   : "border-zinc-600 bg-zinc-800/10 hover:border-zinc-500"
                     }`}
                   >
                     {measures.length === 0 && (
-                      <div className={`w-full flex flex-col items-center justify-center py-4 gap-2 ${overMeasures?"text-violet-400":"text-zinc-600"}`}>
+                      <div className={`w-full flex flex-col items-center justify-center py-4 gap-2 ${overMeasures?"text-violet-400":"text-zinc-500"}`}>
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
                           <path d="M12 5v14M5 12l7 7 7-7"/>
                         </svg>
@@ -1143,7 +1158,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
               {/* FILTERS */}
               <div className="border-t border-zinc-700/30 pt-5">
                 <p className="text-[13px] font-semibold text-zinc-300 mb-1">Filters</p>
-                <p className="text-[11px] text-zinc-600 mb-3">WHERE — narrow down your results</p>
+                <p className="text-[11px] text-zinc-500 mb-3">WHERE — narrow down your results</p>
                 <div className="flex flex-wrap gap-2 items-center min-h-[36px]">
                   {filters.map(f => (
                     <span key={f.id} className="inline-flex items-center gap-1.5 text-[12px] font-mono px-3 py-1 rounded-lg border bg-amber-500/10 border-amber-500/30 text-amber-300">
@@ -1216,7 +1231,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                     </span>
                   )}
                   <div className="ml-auto flex items-center gap-2">
-                    <span className="text-[11px] text-zinc-600">⌘↵ to run</span>
+                    <span className="text-[11px] text-zinc-500">⌘↵ to run</span>
                     <button onClick={()=>navigator.clipboard.writeText(sql).catch(()=>{})}
                       className="text-[11px] text-zinc-500 hover:text-zinc-300 border border-zinc-700 rounded-lg px-2.5 py-1 transition">
                       Copy
@@ -1266,7 +1281,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                 </div>
               )}
               {!result && !running && !runError && (
-                <p className="text-[12px] text-zinc-600 italic pb-4">Configure your query above, then click <strong className="text-zinc-500 font-normal">Run</strong> or press <kbd className="text-zinc-500 bg-zinc-800 border border-zinc-700 rounded px-1 py-0.5 text-[11px]">⌘↵</kbd></p>
+                <p className="text-[12px] text-zinc-500 italic pb-4">Configure your query above, then click <strong className="text-zinc-500 font-normal">Run</strong> or press <kbd className="text-zinc-500 bg-zinc-800 border border-zinc-700 rounded px-1 py-0.5 text-[11px]">⌘↵</kbd></p>
               )}
 
               </>)}
