@@ -591,7 +591,7 @@ function CausalEdges({
 
 function CanvasLegend({ showCausal }: { showCausal: boolean }) {
   return (
-    <div className="absolute top-4 left-4 flex items-center gap-4 bg-zinc-900/80 backdrop-blur-sm border border-zinc-700/50 rounded-lg px-4 py-2.5 pointer-events-none flex-wrap">
+    <div className="flex items-center gap-4 bg-zinc-900/80 backdrop-blur-sm border border-zinc-700/50 rounded-lg px-4 py-2.5 pointer-events-none flex-wrap">
       {/* Entity types */}
       <span className="text-[11px] text-zinc-600 uppercase tracking-wider font-semibold">Objects</span>
       <div className="flex items-center gap-1.5">
@@ -878,9 +878,13 @@ export function OntologyCanvas({
               );
             })}
 
-            <CanvasLegend showCausal={showCausal} />
           </div>
         </div>
+      </div>
+
+      {/* Legend — pinned top-left, outside scroll/zoom area */}
+      <div className="absolute top-3 left-3 z-20 pointer-events-none">
+        <CanvasLegend showCausal={showCausal} />
       </div>
     </div>
   );

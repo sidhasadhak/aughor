@@ -2,8 +2,9 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
-  getConnections, getSchemaRich, getMetrics, runDirectQuery,
+  getConnections, getSchemaRich, getMetrics, runDirectQuery, getCatalogTree,
   type Connection, type SchemaColumn, type SchemaJoin, type Metric, type DirectQueryResult,
+  type CatalogEntry,
 } from "@/lib/api";
 import { InvestigationChart } from "@/components/InvestigationChart";
 import { ChartWrapper }       from "@/components/charts/ChartWrapper";
@@ -66,6 +67,25 @@ function autoAlias(agg: AggFn, col: string, expr: string) {
 }
 function qualify(col: string, table: string, multi: boolean) { return multi ? `${table}.${col}` : col; }
 
+// ── Suggestion intelligence (type + name heuristics) ──────────────────────────
+// Columns that make natural GROUP BY dimensions.
+const CATEGORICAL_HINT = /(channel|region|type|status|category|segment|name|country|state|city|gender|tier|group|method|source|stage|priority|currency|brand|department|role|plan|product|customer|account|industry|cohort|level|class|kind|label)/i;
+// Numeric columns that are typically summed vs. averaged.
+const AVG_HINT = /(rate|ratio|score|pct|percent|avg|average|margin|age|duration|days|temperature|index|weight|height|balance_pct)/i;
+const SUM_HINT = /(revenue|amount|total|value|price|spend|cost|sales|qty|quantity|budget|profit|gmv|fee|sum|payment|charge|discount|tax|units)/i;
+const suggestAgg = (name: string): AggFn => AVG_HINT.test(name) ? "AVG" : "SUM";
+// Identifier-ish columns that rarely make good aggregates or dimensions on their own.
+const isIdLike = (name: string) => /(^id$|_id$|_key$|uuid|guid|^pk_|hash)/i.test(name);
+const fmtRows = (rc: string | number | null | undefined) => {
+  if (rc == null || rc === "") return null;
+  const n = typeof rc === "string" ? parseInt(rc.replace(/[^0-9]/g, ""), 10) : rc;
+  if (!Number.isFinite(n)) return null;
+  if (n >= 1e9) return `${(n/1e9).toFixed(1)}B`;
+  if (n >= 1e6) return `${(n/1e6).toFixed(1)}M`;
+  if (n >= 1e3) return `${(n/1e3).toFixed(1)}K`;
+  return String(n);
+};
+
 function measureExpr(m: MeasureItem, multi: boolean) {
   const qc = qualify(m.col, m.table, multi);
   if (m.agg === "CUSTOM")          return m.customExpr || qc || "*";
@@ -88,6 +108,60 @@ function joinClause(join: SchemaJoin, pivot: string) {
   return `LEFT JOIN ${rt} ON ${lt}.${lc} = ${rt}.${rc}`;
 }
 
+// Adjacency list over the studied join graph (undirected).
+function buildAdjacency(joins: SchemaJoin[]): Map<string, Set<string>> {
+  const adj = new Map<string, Set<string>>();
+  const link = (a: string, b: string) => { if (!adj.has(a)) adj.set(a, new Set()); adj.get(a)!.add(b); };
+  joins.forEach(j => { link(j.t1, j.t2); link(j.t2, j.t1); });
+  return adj;
+}
+
+// How many distinct tables a given table can join to (relationship degree).
+function joinDegree(table: string, joins: SchemaJoin[]): number {
+  const s = new Set<string>();
+  joins.forEach(j => { if (j.t1 === table) s.add(j.t2); if (j.t2 === table) s.add(j.t1); });
+  return s.size;
+}
+
+// BFS the shortest path from any already-resolved table to `target`.
+// Returns the ordered list of tables to ADD (intermediate hops + target), or null
+// if `target` is unreachable from the resolved set.
+function findJoinPath(resolved: Set<string>, target: string, joins: SchemaJoin[]): string[] | null {
+  if (resolved.has(target)) return [];
+  const adj = buildAdjacency(joins);
+  const prev = new Map<string, string>();
+  const seen = new Set<string>([target]);
+  const queue: string[] = [target];
+  let hit: string | null = null;
+  while (queue.length) {
+    const cur = queue.shift()!;
+    for (const nb of adj.get(cur) ?? []) {
+      if (seen.has(nb)) continue;
+      seen.add(nb); prev.set(nb, cur);
+      if (resolved.has(nb)) { hit = nb; queue.length = 0; break; }
+      queue.push(nb);
+    }
+  }
+  if (!hit) return null;
+  // Walk hit(resolved) → … → target via prev, then drop the resolved boundary node.
+  const chain: string[] = [];
+  let c: string | undefined = hit;
+  while (c !== undefined) { chain.push(c); if (c === target) break; c = prev.get(c); }
+  return chain.slice(1); // tables to add, ordered from the resolved boundary toward target
+}
+
+// Resolve the concrete join used for each joined table against the growing
+// resolved set — shared by buildSql and the UI so both agree on multi-hop paths.
+function resolveJoins(primary: string, joined: string[], joins: SchemaJoin[]) {
+  const resolved = new Set([primary]);
+  return joined.map(t => {
+    let found: SchemaJoin | null = null, pivot = primary;
+    for (const p of resolved) { const j = findJoin(p, t, joins); if (j) { found = j; pivot = p; break; } }
+    resolved.add(t);
+    return { table: t, join: found, pivot };
+  });
+}
+
 // ── SQL builder ───────────────────────────────────────────────────────────────
 
 function buildSql(
@@ -100,14 +174,9 @@ function buildSql(
     ...dims.map(d => qualify(d.col, d.table, multi)),
     ...measures.map(m => `${measureExpr(m,multi)} AS ${m.alias || autoAlias(m.agg,m.col,m.customExpr)}`),
   ];
-  const resolved = new Set([primary]);
-  const joinLines: string[] = [];
-  for (const t of joined) {
-    let found: SchemaJoin | null = null, pivot = primary;
-    for (const p of resolved) { const j = findJoin(p,t,schemaJoins); if (j){found=j;pivot=p;break;} }
-    joinLines.push(found ? joinClause(found,pivot) : `-- TODO: no join found for "${t}"`);
-    resolved.add(t);
-  }
+  const joinLines = resolveJoins(primary, joined, schemaJoins).map(
+    ({ table, join, pivot }) => join ? joinClause(join, pivot) : `-- TODO: no join found for "${table}"`,
+  );
   const hasAgg = measures.some(m => m.agg !== "CUSTOM" || /\b(SUM|COUNT|AVG|MIN|MAX|STDDEV|VARIANCE|MEDIAN)\s*\(/i.test(m.customExpr));
   const groupCols = dims.map(d => qualify(d.col,d.table,multi));
   const groupBy   = groupCols.length && hasAgg ? `GROUP BY ${groupCols.join(", ")}` : "";
@@ -170,7 +239,7 @@ function ColRow({ col, tableName, onAddDim, onAddMeasure }: {
     <div
       draggable
       onDragStart={e => e.dataTransfer.setData("application/x-col",
-        JSON.stringify({ name: col.name, type: col.type, table: tableName }))}
+        JSON.stringify({ name: col.name, type: col.type, table: tableName, is_fk: col.is_fk }))}
       className="group flex items-center gap-2 px-3 py-2 hover:bg-zinc-800/60 cursor-grab active:cursor-grabbing select-none transition-colors"
     >
       <svg width="8" height="11" viewBox="0 0 8 14" className="text-zinc-700 group-hover:text-zinc-500 shrink-0 transition-colors">
@@ -403,13 +472,18 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
   const [connId,        setConnId]        = useState(initialConnId ?? "");
   const [tableNames,    setTableNames]    = useState<string[]>([]);
   const [tableCols,     setTableCols]     = useState<Record<string,SchemaColumn[]>>({});
+  const [rowCounts,     setRowCounts]     = useState<Record<string,string|null>>({});
   const [schemaJoins,   setSchemaJoins]   = useState<SchemaJoin[]>([]);
+  const [isolated,      setIsolated]      = useState<string[]>([]);
   const [loadingSchema, setLoadingSchema] = useState(false);
+  const [joinHint,      setJoinHint]      = useState<string|null>(null);
 
   const [primaryTable, setPrimaryTable] = useState<string|null>(null);
   const [joinedTables, setJoinedTables] = useState<string[]>([]);
   const [showAddJoin,  setShowAddJoin]  = useState(false);
   const [expandedTables, setExpandedTables] = useState<Record<string,boolean>>({});
+  const [expandedSchemas, setExpandedSchemas] = useState<Record<string,boolean>>({});
+  const [catEntry, setCatEntry] = useState<CatalogEntry|null>(null);
   const [colSearch, setColSearch] = useState("");
 
   const [metrics,         setMetrics]         = useState<Metric[]>([]);
@@ -454,12 +528,21 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
     setLoadingSchema(true);
     setPrimaryTable(null); setJoinedTables([]); setTableNames([]); setTableCols({});
     setSchemaJoins([]); setDims([]); setMeasures([]); setFilters([]);
-    setSql(""); setResult(null);
+    setSql(""); setResult(null); setCatEntry(null); setExpandedSchemas({});
+    getCatalogTree()
+      .then(tree => {
+        const entry = tree.sections.flatMap(s => s.entries).find(e => e.conn_id === connId) ?? null;
+        setCatEntry(entry);
+        if (entry) setExpandedSchemas(Object.fromEntries(entry.schemas.map(s => [s.name, true])));
+      })
+      .catch(() => setCatEntry(null));
     getSchemaRich(connId).then(rich => {
       const names = rich.tables.map(t => t.name);
       const cols: Record<string,SchemaColumn[]> = {};
-      rich.tables.forEach(t => { cols[t.name] = t.columns; });
-      setTableNames(names); setTableCols(cols); setSchemaJoins(rich.joins);
+      const rc: Record<string,string|null> = {};
+      rich.tables.forEach(t => { cols[t.name] = t.columns; rc[t.name] = t.row_count; });
+      setTableNames(names); setTableCols(cols); setRowCounts(rc);
+      setSchemaJoins(rich.joins); setIsolated(rich.isolated ?? []);
     }).catch(()=>{}).finally(()=>setLoadingSchema(false));
   }, [connId]);
 
@@ -472,8 +555,30 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
   const isMulti   = allTables.length > 1;
   const allCols   = allTables.flatMap(t => (tableCols[t]??[]).map(c => c.name));
   const qualCols  = isMulti ? allTables.flatMap(t => (tableCols[t]??[]).map(c => `${t}.${c.name}`)) : [];
-  const joinStatuses = joinedTables.map(t => ({ table: t, join: findJoin(primaryTable ?? "", t, schemaJoins) }));
+  const joinStatuses = primaryTable ? resolveJoins(primaryTable, joinedTables, schemaJoins) : [];
   const joinableOptions = tableNames.filter(t => t !== primaryTable && !joinedTables.includes(t));
+
+  // Catalog → Schema → Table grouping (mirrors the nav Catalog hierarchy).
+  // Use the catalog tree's schema grouping when available; fall back to a single
+  // synthetic schema built from the rich-schema table names.
+  const tableSet = new Set(tableNames);
+  const catSchemas: { name: string; tables: string[] }[] = catEntry
+    ? catEntry.schemas
+        .map(s => ({ name: s.name, tables: s.tables.map(t => t.name).filter(n => tableSet.has(n)) }))
+        .filter(s => s.tables.length > 0)
+    : [];
+  // Any rich-schema tables not represented in the catalog tree fall into "main".
+  const grouped = new Set(catSchemas.flatMap(s => s.tables));
+  const ungrouped = tableNames.filter(t => !grouped.has(t));
+  if (ungrouped.length) catSchemas.push({ name: catSchemas.length ? "other" : "main", tables: ungrouped });
+  const catalogLabel = catEntry?.name
+    ?? connections.find(c => c.id === connId)?.name
+    ?? "Catalog";
+
+  const flashHint = useCallback((msg: string) => {
+    setJoinHint(msg);
+    window.setTimeout(() => setJoinHint(h => (h === msg ? null : h)), 4500);
+  }, []);
 
   const selectPrimary = useCallback((name: string) => {
     if (!name) return;
@@ -483,11 +588,34 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
     setSql(`SELECT *\nFROM ${name}\nLIMIT ${limit}`);
   }, [limit]);
 
-  const addJoin = useCallback((t: string) => {
-    setJoinedTables(p => [...p, t]);
-    setExpandedTables(p => ({...p, [t]: true}));
-    setShowAddJoin(false);
-  }, []);
+  // Make `table` part of the query, auto-resolving a multi-hop join path through
+  // the studied join graph. Returns true if the table is now reachable.
+  const ensureTable = useCallback((table: string): boolean => {
+    if (!table) return false;
+    if (!primaryTable) { selectPrimary(table); return true; }
+    if (table === primaryTable || joinedTables.includes(table)) return true;
+    const resolved = new Set([primaryTable, ...joinedTables]);
+    const path = findJoinPath(resolved, table, schemaJoins);
+    if (path && path.length) {
+      const toAdd = path.filter(t => t !== primaryTable && !joinedTables.includes(t));
+      setJoinedTables(p => [...p, ...toAdd.filter(t => !p.includes(t))]);
+      setExpandedTables(p => { const n = {...p}; toAdd.forEach(t => n[t] = true); return n; });
+      setAutoSql(true);
+      const hops = [primaryTable, ...joinedTables].slice(-1)[0];
+      flashHint(toAdd.length > 1
+        ? `Auto-joined ${table} via ${toAdd.slice(0, -1).join(" → ")} → ${table}`
+        : `Auto-joined ${hops} → ${table}`);
+      return true;
+    }
+    // Unreachable — add it anyway so the user can wire the join manually in SQL.
+    setJoinedTables(p => p.includes(table) ? p : [...p, table]);
+    setExpandedTables(p => ({...p, [table]: true}));
+    setAutoSql(true);
+    flashHint(`No join path to ${table} — add the ON clause manually in SQL`);
+    return false;
+  }, [primaryTable, joinedTables, schemaJoins, selectPrimary, flashHint]);
+
+  const addJoin = useCallback((t: string) => { ensureTable(t); setShowAddJoin(false); }, [ensureTable]);
 
   const removeJoin = useCallback((t: string) => {
     setJoinedTables(p => p.filter(x=>x!==t));
@@ -496,23 +624,33 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
     setFilters(p  => p.filter(f=>f.table!==t));
   }, []);
 
+  const addDim = useCallback((col: string, table: string) => {
+    ensureTable(table);
+    setDims(p => p.some(x => x.col===col && x.table===table) ? p : [...p, {id:uid(), col, table}]);
+  }, [ensureTable]);
+
+  const openMeasure = useCallback((col: SchemaColumn, table: string) => {
+    ensureTable(table);
+    setAggInfo({ col, table });
+  }, [ensureTable]);
+
   const parseDrop = (e: React.DragEvent) => {
     try {
       const d = JSON.parse(e.dataTransfer.getData("application/x-col"));
-      return { col: { name:d.name, type:d.type, is_fk:false } as SchemaColumn, table: d.table||primaryTable||"" };
+      return { col: { name:d.name, type:d.type, is_fk:!!d.is_fk } as SchemaColumn, table: d.table||primaryTable||"" };
     } catch { return null; }
   };
 
   const onDropDims = (e: React.DragEvent) => {
     e.preventDefault(); setOverDims(false);
     const d = parseDrop(e);
-    if (d) setDims(p => p.some(x=>x.col===d.col.name&&x.table===d.table) ? p : [...p, {id:uid(),col:d.col.name,table:d.table}]);
+    if (d) addDim(d.col.name, d.table);
   };
 
   const onDropMeasures = (e: React.DragEvent) => {
     e.preventDefault(); setOverMeasures(false);
     const d = parseDrop(e);
-    if (d) setAggInfo(d);
+    if (d) openMeasure(d.col, d.table);
   };
 
   const handleSqlChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -561,6 +699,31 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
     setNfTable(""); setNfCol(""); setNfOp("="); setNfVal(""); setShowAddFilter(false);
   };
 
+  // ── Suggestion intelligence (over the resolved tables) ────────────────────
+  const usedDimKeys = new Set(dims.map(d => `${d.table}.${d.col}`));
+  const usedMeaCols = new Set(measures.map(m => `${m.table}.${m.col}`));
+  const resolvedCols = allTables.flatMap(t => (tableCols[t] ?? []).map(c => ({ ...c, table: t })));
+
+  const suggestedDims = resolvedCols
+    .filter(c => !usedDimKeys.has(`${c.table}.${c.name}`) && !c.is_fk && !isIdLike(c.name)
+      && (isDate(c.type) || (!isNum(c.type) && CATEGORICAL_HINT.test(c.name))))
+    .sort((a, b) => (isDate(b.type)?1:0) - (isDate(a.type)?1:0)) // dates first
+    .slice(0, 6);
+
+  const suggestedMetrics = resolvedCols
+    .filter(c => isNum(c.type) && !c.is_fk && !isIdLike(c.name) && !usedMeaCols.has(`${c.table}.${c.name}`))
+    .slice(0, 6)
+    .map(c => ({ table: c.table, col: c.name, agg: suggestAgg(c.name) as AggFn }));
+
+  const hasCount = measures.some(m => m.agg === "COUNT" && !m.col);
+  // Joins can fan rows out across one-to-many relationships → aggregates may double-count.
+  const fanOutRisk = isMulti && measures.some(m => m.agg !== "CUSTOM");
+
+  const addMeasureDirect = (table: string, col: string, agg: AggFn) => {
+    ensureTable(table);
+    setMeasures(p => [...p, { id:uid(), col, table, agg, customExpr: col, alias: autoAlias(agg, col, col) }]);
+  };
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
@@ -585,70 +748,29 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
           </select>
         </div>
 
-        {/* Table */}
-        <div className="flex items-center gap-2">
-          <span className="text-[12px] text-zinc-500">Table</span>
-          <select value={primaryTable??""} onChange={e=>selectPrimary(e.target.value)}
-            className="text-[12px] bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1 text-zinc-200 outline-none hover:border-zinc-500 transition cursor-pointer">
-            <option value="">— select —</option>
-            {tableNames.map(t=><option key={t} value={t}>{t}</option>)}
-          </select>
-        </div>
-
-        {/* Joined table badges + add join */}
-        {primaryTable && (
-          <div className="flex items-center gap-2 ml-1">
-            {joinedTables.map(t => {
+        {/* Active table chips — populated automatically as fields are added */}
+        {primaryTable ? (
+          <div className="flex items-center gap-2 ml-1 min-w-0 overflow-x-auto">
+            {allTables.map(t => {
+              const isPrimary = t === primaryTable;
               const js = joinStatuses.find(s=>s.table===t);
-              const found = !!js?.join;
+              const found = isPrimary || !!js?.join;
               return (
-                <span key={t} className={`flex items-center gap-1.5 text-[11px] font-mono px-2.5 py-0.5 rounded-full border ${
-                  found ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
-                        : "bg-amber-500/10  border-amber-500/30  text-amber-300"
+                <span key={t} title={js?.join ? `${js.join.t1}.${js.join.c1} = ${js.join.t2}.${js.join.c2}` : undefined}
+                  className={`flex items-center gap-1.5 text-[11px] font-mono px-2.5 py-0.5 rounded-full border shrink-0 ${
+                    isPrimary ? "bg-blue-500/10 border-blue-500/30 text-blue-300"
+                    : found ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-300"
+                            : "bg-amber-500/10  border-amber-500/30  text-amber-300"
                 }`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${found ? "bg-emerald-400" : "bg-amber-400"}`} />
+                  <span className={`w-1.5 h-1.5 rounded-full ${isPrimary ? "bg-blue-400" : found ? "bg-emerald-400" : "bg-amber-400"}`} />
                   {t}
-                  <button onClick={()=>removeJoin(t)} className="opacity-50 hover:opacity-100 ml-0.5 leading-none">×</button>
+                  {!isPrimary && <button onClick={()=>removeJoin(t)} className="opacity-50 hover:opacity-100 ml-0.5 leading-none">×</button>}
                 </span>
               );
             })}
-            {joinableOptions.length > 0 && (
-              <div className="relative">
-                <button onClick={()=>setShowAddJoin(v=>!v)}
-                  className="flex items-center gap-1.5 text-[11px] text-zinc-400 hover:text-zinc-200 border border-dashed border-zinc-600 rounded-full px-2.5 py-0.5 transition hover:border-zinc-400">
-                  <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                    <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-                  </svg>
-                  Join table
-                </button>
-                {showAddJoin && (
-                  <>
-                    <div className="fixed inset-0 z-30" onClick={()=>setShowAddJoin(false)} />
-                    <div className="absolute top-full left-0 mt-2 z-40 w-56 rounded-md border border-zinc-700 bg-zinc-900 shadow-2xl overflow-hidden">
-                      <div className="px-4 py-2.5 border-b border-zinc-700/40">
-                        <p className="text-[11px] font-semibold text-zinc-400">Add table to query</p>
-                      </div>
-                      {joinableOptions.map(t => {
-                        const j = findJoin(primaryTable, t, schemaJoins);
-                        return (
-                          <button key={t} onClick={()=>addJoin(t)}
-                            className="w-full text-left px-4 py-2.5 hover:bg-zinc-800 transition border-b border-zinc-700/30 last:border-0">
-                            <div className="flex items-center gap-2">
-                              <span className={`w-2 h-2 rounded-full shrink-0 ${j?"bg-emerald-400":"bg-amber-400"}`}/>
-                              <span className="text-[12px] text-zinc-200 font-mono">{t}</span>
-                            </div>
-                            <p className="text-[11px] text-zinc-500 mt-0.5 ml-4">
-                              {j ? `${j.t1}.${j.c1} = ${j.t2}.${j.c2}` : "no join detected"}
-                            </p>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
           </div>
+        ) : (
+          <span className="text-[12px] text-zinc-600 ml-1">Drag a field from the catalog to begin</span>
         )}
 
         {/* Right controls */}
@@ -680,16 +802,19 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
       {/* ══ BODY ═════════════════════════════════════════════════════════════ */}
       <div className="flex flex-1 overflow-hidden">
 
-        {/* ── Left: Column browser ── */}
-        <aside className="w-72 shrink-0 border-r border-zinc-700/40 flex flex-col bg-zinc-900/30">
+        {/* ── Left: Catalog browser (all tables, auto-join on drag) ── */}
+        <aside className="w-80 shrink-0 border-r border-zinc-700/40 flex flex-col bg-zinc-900/30">
           {/* Header */}
           <div className="px-4 pt-4 pb-3 border-b border-zinc-700/30">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-2.5">Schema columns</p>
+            <div className="flex items-center justify-between mb-2.5">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Catalog</p>
+              <span className="text-[11px] text-zinc-600">{tableNames.length} tables</span>
+            </div>
             <div className="flex items-center gap-2 bg-zinc-800/70 border border-zinc-700 rounded-md px-3 py-2">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--t4)" strokeWidth="2" strokeLinecap="round">
                 <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
               </svg>
-              <input placeholder="Search columns…" value={colSearch} onChange={e=>setColSearch(e.target.value)}
+              <input placeholder="Search tables &amp; columns…" value={colSearch} onChange={e=>setColSearch(e.target.value)}
                 className="bg-transparent text-[12px] text-zinc-300 outline-none placeholder-zinc-600 w-full" />
               {colSearch && <button onClick={()=>setColSearch("")} className="text-zinc-600 hover:text-zinc-400 leading-none">✕</button>}
             </div>
@@ -700,98 +825,169 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                   <span className={`w-2 h-2 rounded-full ${d}`}/>{l}
                 </span>
               ))}
-              <span className="ml-auto text-[11px] text-zinc-700">drag or D / M</span>
+              <span className="ml-auto text-[11px] text-zinc-700">drag to auto-join</span>
             </div>
           </div>
 
-          {/* Column list */}
+          {/* Catalog → Schema → Table → columns hierarchy */}
           <div className="flex-1 overflow-y-auto py-1">
             {loadingSchema ? (
-              <p className="text-[12px] text-zinc-600 px-4 py-4 animate-pulse">Loading schema…</p>
-            ) : !primaryTable ? (
-              <p className="text-[12px] text-zinc-600 px-4 py-4">Select a table in the header to browse columns</p>
-            ) : (
-              allTables.map(tbl => {
-                const cols = (tableCols[tbl]??[]).filter(c=>c.name.toLowerCase().includes(colSearch.toLowerCase()));
-                const open = expandedTables[tbl] !== false;
-                const js   = joinStatuses.find(s=>s.table===tbl);
-                return (
-                  <div key={tbl} className="border-b border-zinc-700/20 last:border-0">
-                    <button
-                      onClick={()=>setExpandedTables(p=>({...p,[tbl]:!p[tbl]}))}
-                      className="w-full flex items-center gap-2 px-4 py-2.5 hover:bg-zinc-800/30 transition">
-                      <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="var(--t4)" strokeWidth="1.5" strokeLinecap="round"
-                        className={`shrink-0 transition-transform duration-150 ${open?"rotate-90":""}`}>
-                        <polyline points="2,1 6,4 2,7"/>
-                      </svg>
-                      <span className="text-[12px] font-semibold text-zinc-300 font-mono truncate">{tbl}</span>
-                      {tbl === primaryTable && <span className="ml-auto text-[11px] text-zinc-600 shrink-0">primary</span>}
-                      {tbl !== primaryTable && (
-                        js?.join
-                          ? <span className="ml-auto text-[11px] text-emerald-600 shrink-0">✓</span>
-                          : <span className="ml-auto text-[11px] text-amber-600 shrink-0">⚠</span>
-                      )}
-                    </button>
-                    {open && cols.map(col => (
-                      <ColRow key={col.name} col={col} tableName={tbl}
-                        onAddDim={()=>setDims(p=>p.some(d=>d.col===col.name&&d.table===tbl)?p:[...p,{id:uid(),col:col.name,table:tbl}])}
-                        onAddMeasure={()=>setAggInfo({col,table:tbl})}
-                      />
-                    ))}
+              <p className="text-[12px] text-zinc-600 px-4 py-4 animate-pulse">Loading catalog…</p>
+            ) : tableNames.length === 0 ? (
+              <p className="text-[12px] text-zinc-600 px-4 py-4">No tables in this connection.</p>
+            ) : (() => {
+              const q = colSearch.toLowerCase().trim();
+
+              // Catalog root
+              return (
+                <div>
+                  <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-700/20">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" strokeWidth="1.6" strokeLinecap="round" className="shrink-0">
+                      <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3"/>
+                    </svg>
+                    <span className="text-[12px] font-semibold text-zinc-200 truncate">{catalogLabel}</span>
+                    <span className="ml-auto text-[10px] text-zinc-600 shrink-0">{tableNames.length} tables</span>
                   </div>
-                );
-              })
-            )}
+
+                  {catSchemas.map(schema => {
+                    const schemaMatch = !q || schema.name.toLowerCase().includes(q);
+                    const visTables = schema.tables.filter(tbl =>
+                      !q || schemaMatch || tbl.toLowerCase().includes(q)
+                        || (tableCols[tbl]??[]).some(c => c.name.toLowerCase().includes(q)));
+                    if (q && visTables.length === 0) return null;
+                    const sOpen = q ? true : (expandedSchemas[schema.name] ?? true);
+                    return (
+                      <div key={schema.name}>
+                        {/* Schema row */}
+                        <button onClick={()=>setExpandedSchemas(p=>({...p,[schema.name]: !(p[schema.name] ?? true)}))}
+                          className="w-full flex items-center gap-2 pl-3 pr-2 py-1.5 hover:bg-zinc-800/40 transition">
+                          <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="var(--t4)" strokeWidth="1.5" strokeLinecap="round"
+                            className={`shrink-0 transition-transform duration-150 ${sOpen?"rotate-90":""}`}>
+                            <polyline points="2,1 6,4 2,7"/>
+                          </svg>
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--t4)" strokeWidth="1.7" strokeLinecap="round" className="shrink-0">
+                            <path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 12l9 4 9-4M3 17l9 4 9-4"/>
+                          </svg>
+                          <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400 truncate">{schema.name}</span>
+                          <span className="ml-auto text-[10px] text-zinc-600 shrink-0">{visTables.length}</span>
+                        </button>
+
+                        {/* Tables under schema */}
+                        {sOpen && visTables.map(tbl => {
+                          const tableMatch = !q || schemaMatch || tbl.toLowerCase().includes(q);
+                          const cols = (tableCols[tbl]??[]).filter(c => !q || tableMatch || c.name.toLowerCase().includes(q));
+                          const isPrimary  = tbl === primaryTable;
+                          const isJoined   = joinedTables.includes(tbl);
+                          const isResolved = isPrimary || isJoined;
+                          const open  = q ? true : (expandedTables[tbl] ?? isResolved);
+                          const js    = joinStatuses.find(s => s.table === tbl);
+                          const deg   = joinDegree(tbl, schemaJoins);
+                          const rc    = fmtRows(rowCounts[tbl]);
+                          const iso   = isolated.includes(tbl);
+                          return (
+                            <div key={tbl} className={isResolved ? "bg-zinc-800/20" : ""}>
+                              <div className="group/tbl w-full flex items-center gap-2 pl-7 pr-2 py-1.5 hover:bg-zinc-800/40 transition">
+                                <button onClick={()=>setExpandedTables(p=>({...p,[tbl]: !(p[tbl] ?? isResolved)}))}
+                                  className="flex items-center gap-2 min-w-0 flex-1">
+                                  <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="var(--t4)" strokeWidth="1.5" strokeLinecap="round"
+                                    className={`shrink-0 transition-transform duration-150 ${open?"rotate-90":""}`}>
+                                    <polyline points="2,1 6,4 2,7"/>
+                                  </svg>
+                                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke={isResolved?"var(--t2)":"var(--t4)"} strokeWidth="1.7" strokeLinecap="round" className="shrink-0">
+                                    <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="9" x2="9" y2="21"/>
+                                  </svg>
+                                  <span className={`text-[12px] font-mono truncate ${isResolved ? "text-zinc-200 font-semibold" : "text-zinc-400"}`}>{tbl}</span>
+                                  {rc && <span className="text-[10px] text-zinc-600 shrink-0">{rc}</span>}
+                                </button>
+                                {deg > 0 && (
+                                  <span title={`${deg} related table${deg>1?"s":""}`} className="hidden sm:flex items-center gap-0.5 text-[10px] text-zinc-600 shrink-0">
+                                    ⋈{deg}
+                                  </span>
+                                )}
+                                {isPrimary ? (
+                                  <span className="text-[10px] text-blue-400/90 shrink-0 font-medium">primary</span>
+                                ) : isJoined ? (
+                                  <span title={js?.join ? `${js.join.t1}.${js.join.c1} = ${js.join.t2}.${js.join.c2}` : "no join — wire in SQL"}
+                                    className={`text-[11px] shrink-0 ${js?.join ? "text-emerald-500" : "text-amber-500"}`}>{js?.join ? "✓" : "⚠"}</span>
+                                ) : iso ? (
+                                  <span title="No detected joins to other tables" className="text-[10px] text-zinc-700 shrink-0">isolated</span>
+                                ) : (
+                                  <button onClick={()=>ensureTable(tbl)} title="Add to query (auto-join)"
+                                    className="opacity-0 group-hover/tbl:opacity-100 text-[11px] text-zinc-500 hover:text-blue-400 border border-zinc-700 hover:border-blue-500/50 rounded px-1.5 leading-tight transition shrink-0">
+                                    + add
+                                  </button>
+                                )}
+                              </div>
+                              {open && cols.map(col => (
+                                <div key={col.name} className="pl-4">
+                                  <ColRow col={col} tableName={tbl}
+                                    onAddDim={()=>addDim(col.name, tbl)}
+                                    onAddMeasure={()=>openMeasure(col, tbl)}
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
         </aside>
 
         {/* ── Right: Builder + SQL + Results ── */}
         <main className="flex-1 overflow-y-auto">
 
-          {/* ── EMPTY STATE ── */}
-          {!primaryTable && (
-            <div className="flex flex-col items-center justify-center h-full gap-6 text-center px-8">
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--t4)" strokeWidth="1" strokeLinecap="round">
-                <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
-                <rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>
-              </svg>
-              <div>
-                <p className="text-lg font-medium text-zinc-300 mb-2">Select a table to start building</p>
-                <p className="text-sm text-zinc-500 max-w-sm">Use the Table dropdown above, then drag columns from the left panel into Dimensions or Metrics zones</p>
-              </div>
-              <div className="flex items-center gap-4 text-[12px] text-zinc-600">
-                <div className="flex flex-col items-center gap-1.5">
-                  <span className="w-8 h-8 rounded-lg bg-zinc-800 border border-zinc-700 flex items-center justify-center text-zinc-400 font-semibold">1</span>
-                  Select table
-                </div>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--t4)" strokeWidth="1.5" strokeLinecap="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12,5 19,12 12,19"/></svg>
-                <div className="flex flex-col items-center gap-1.5">
-                  <span className="w-8 h-8 rounded-lg bg-zinc-800 border border-zinc-700 flex items-center justify-center text-zinc-400 font-semibold">2</span>
-                  Drag columns
-                </div>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--t4)" strokeWidth="1.5" strokeLinecap="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12,5 19,12 12,19"/></svg>
-                <div className="flex flex-col items-center gap-1.5">
-                  <span className="w-8 h-8 rounded-lg bg-zinc-800 border border-zinc-700 flex items-center justify-center text-zinc-400 font-semibold">3</span>
-                  Run query
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* ── BUILDER ── */}
-          {primaryTable && (
+          {/* ── BUILDER (always rendered once a connection is loaded) ── */}
+          {(
             <div className="px-6 py-5 space-y-6">
+
+              {/* Onboarding prompt — until the first field is dropped */}
+              {!primaryTable && (
+                <div className="flex items-center gap-3 rounded-md border border-zinc-700/50 bg-zinc-800/30 px-4 py-3">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" strokeWidth="1.5" strokeLinecap="round" className="shrink-0">
+                    <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+                    <rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/>
+                  </svg>
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-medium text-zinc-300">Drag a field from the catalog to begin</p>
+                    <p className="text-[11px] text-zinc-500 mt-0.5">Drop columns into Dimensions or Metrics below. Fields from related tables join automatically along the studied schema relationships.</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Auto-join hint */}
+              {joinHint && (
+                <div className="flex items-center gap-2 rounded-md border border-blue-500/30 bg-blue-500/10 px-3 py-2 text-[12px] text-blue-200">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="shrink-0">
+                    <path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>
+                  </svg>
+                  <span className="font-mono">{joinHint}</span>
+                  <button onClick={()=>setJoinHint(null)} className="ml-auto opacity-60 hover:opacity-100 leading-none">×</button>
+                </div>
+              )}
 
               {/* Join status */}
               {joinStatuses.length > 0 && (
                 <div className="rounded-md border border-zinc-700/50 bg-zinc-800/30 px-4 py-3 space-y-2">
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-600">Detected joins</p>
-                  {joinStatuses.map(({table, join}) => (
+                  <div className="flex items-center justify-between">
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-600">Resolved joins · {allTables.length} tables</p>
+                    {fanOutRisk && (
+                      <span title="One-to-many joins can repeat rows from the parent table, inflating SUM/COUNT. Verify the aggregation grain."
+                        className="flex items-center gap-1 text-[11px] text-amber-400/90 border border-amber-500/30 bg-amber-500/5 rounded px-1.5 py-0.5">
+                        ⚠ joins may fan out rows
+                      </span>
+                    )}
+                  </div>
+                  {joinStatuses.map(({table, join, pivot}) => (
                     <div key={table} className="flex items-center gap-2 text-[11px] font-mono">
                       <span className={`w-2 h-2 rounded-full shrink-0 ${join?"bg-emerald-400":"bg-red-400"}`}/>
-                      <span className="text-zinc-400">{primaryTable}</span>
+                      <span className="text-zinc-500">{join ? pivot : primaryTable}</span>
                       <span className="text-zinc-600">→</span>
-                      <span className="text-zinc-400">{table}</span>
+                      <span className="text-zinc-300">{table}</span>
                       {join ? (
                         <>
                           <span className="text-zinc-600 mx-1">ON</span>
@@ -801,9 +997,42 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                                                  : "text-amber-600  border-amber-700/50  bg-amber-500/5"
                           }`}>{join.match}</span>
                         </>
-                      ) : <span className="text-red-400 ml-2 italic">no join found — add manually in SQL</span>}
+                      ) : <span className="text-red-400 ml-2 italic">no join found — add ON clause manually in SQL</span>}
                     </div>
                   ))}
+                </div>
+              )}
+
+              {/* Suggested fields */}
+              {primaryTable && (suggestedDims.length > 0 || suggestedMetrics.length > 0 || !hasCount) && (
+                <div className="rounded-md border border-zinc-700/40 bg-zinc-800/20 px-4 py-3">
+                  <div className="flex items-center gap-2 mb-2.5">
+                    <span className="text-violet-400 text-[12px]">✦</span>
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Suggested</p>
+                    <span className="text-[11px] text-zinc-600">one-click add, based on column types &amp; relationships</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {!hasCount && (
+                      <button onClick={()=>setMeasures(p=>[...p,{id:uid(),col:"",table:primaryTable,agg:"COUNT",customExpr:"",alias:"row_count"}])}
+                        className="inline-flex items-center gap-1.5 text-[11px] font-mono px-2.5 py-1 rounded border border-violet-500/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20 transition">
+                        <span className="opacity-70">M</span> COUNT(*)
+                      </button>
+                    )}
+                    {suggestedMetrics.map(s => (
+                      <button key={`m-${s.table}.${s.col}`} onClick={()=>addMeasureDirect(s.table, s.col, s.agg)}
+                        title={`${s.agg}(${isMulti?`${s.table}.`:""}${s.col})`}
+                        className="inline-flex items-center gap-1.5 text-[11px] font-mono px-2.5 py-1 rounded border border-violet-500/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20 transition">
+                        <span className="opacity-70">{s.agg}</span> {s.col}
+                      </button>
+                    ))}
+                    {suggestedDims.map(s => (
+                      <button key={`d-${s.table}.${s.name}`} onClick={()=>addDim(s.name, s.table)}
+                        title={`Group by ${isMulti?`${s.table}.`:""}${s.name}`}
+                        className="inline-flex items-center gap-1.5 text-[11px] font-mono px-2.5 py-1 rounded border border-blue-500/30 bg-blue-500/10 text-blue-300 hover:bg-blue-500/20 transition">
+                        <span className={`w-1.5 h-1.5 rounded-full ${dot(s.type)}`}/> {s.name}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
 
@@ -864,7 +1093,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                               </div>
                               {metrics.map(m => (
                                 <button key={m.name}
-                                  onClick={()=>{setMeasures(p=>[...p,{id:uid(),col:"",table:primaryTable,agg:"CUSTOM",customExpr:m.sql,alias:m.name,fromMetric:m.name}]);setShowMetricsCatalog(false);}}
+                                  onClick={()=>{setMeasures(p=>[...p,{id:uid(),col:"",table:primaryTable??"",agg:"CUSTOM",customExpr:m.sql,alias:m.name,fromMetric:m.name}]);setShowMetricsCatalog(false);}}
                                   className="w-full text-left px-4 py-3 hover:bg-zinc-800/70 transition border-b border-zinc-700/30 last:border-0">
                                   <p className="text-[12px] font-semibold text-zinc-200">{m.label}</p>
                                   <p className="text-[11px] font-mono text-zinc-500 truncate mt-0.5">{m.sql}</p>
@@ -907,6 +1136,9 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                   </div>
                 </div>
               </div>
+
+              {/* Filters / ordering / SQL / results need a resolved table */}
+              {primaryTable && (<>
 
               {/* FILTERS */}
               <div className="border-t border-zinc-700/30 pt-5">
@@ -1037,6 +1269,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                 <p className="text-[12px] text-zinc-600 italic pb-4">Configure your query above, then click <strong className="text-zinc-500 font-normal">Run</strong> or press <kbd className="text-zinc-500 bg-zinc-800 border border-zinc-700 rounded px-1 py-0.5 text-[11px]">⌘↵</kbd></p>
               )}
 
+              </>)}
             </div>
           )}
         </main>

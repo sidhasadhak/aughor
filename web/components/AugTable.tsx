@@ -20,19 +20,19 @@ const AUG_THEME: Parameters<typeof ConfigProvider>[0]["theme"] = {
   algorithm: theme.darkAlgorithm,
   token: {
     // Backgrounds
-    colorBgBase:         "#11171d",   // --bg-0
-    colorBgContainer:    "#172030",   // --bg-2
-    colorBgElevated:     "#1C2839",   // --bg-3
-    colorBgLayout:       "#11171d",
+    colorBgBase:         "#0C0D0E",   // --bg-0
+    colorBgContainer:    "#161719",   // --bg-2
+    colorBgElevated:     "#1C1D1F",   // --bg-3
+    colorBgLayout:       "#0C0D0E",
     // Borders
-    colorBorder:         "#1B2840",   // --b1
-    colorBorderSecondary:"#131C2B",   // --b0
-    colorSplit:          "#131C2B",
+    colorBorder:         "#212325",   // --b1
+    colorBorderSecondary:"#161719",   // --b0
+    colorSplit:          "#161719",
     // Text
-    colorText:           "#C8D4E4",   // --t1
-    colorTextSecondary:  "#8296AF",   // --t2
-    colorTextDescription:"#485E7C",   // --t3
-    colorTextDisabled:   "#2B3B52",   // --t4
+    colorText:           "#E3E5E9",   // --t1
+    colorTextSecondary:  "#9DA1A8",   // --t2
+    colorTextDescription:"#5E626A",   // --t3
+    colorTextDisabled:   "#393D44",   // --t4
     // Brand
     colorPrimary:        "#4C8EEE",   // --blue4
     colorPrimaryHover:   "#88BAFF",   // --blue5
@@ -47,18 +47,18 @@ const AUG_THEME: Parameters<typeof ConfigProvider>[0]["theme"] = {
   components: {
     Table: {
       // Header
-      headerBg:             "#1C2839",   // --bg-3
-      headerColor:          "#485E7C",   // --t3 — same as aug-label
-      headerSortActiveBg:   "#1C2839",
-      headerSortHoverBg:    "#223246",   // --bg-4
-      headerSplitColor:     "#1B2840",   // --b1
+      headerBg:             "#1C1D1F",   // --bg-3
+      headerColor:          "#5E626A",   // --t3 — same as aug-label
+      headerSortActiveBg:   "#1C1D1F",
+      headerSortHoverBg:    "#26282B",   // --bg-4
+      headerSplitColor:     "#212325",   // --b1
       // Rows
-      rowHoverBg:           "rgba(45, 114, 210, 0.07)",  // --bg-hover
-      rowSelectedBg:        "#1A3A6E",   // --blue2
-      rowSelectedHoverBg:   "#1A3A6E",
-      bodySortBg:           "#172030",
+      rowHoverBg:           "rgba(255, 255, 255, 0.04)",   // --bg-hover
+      rowSelectedBg:        "rgba(45, 114, 210, 0.15)",    // --bg-sel
+      rowSelectedHoverBg:   "rgba(45, 114, 210, 0.20)",
+      bodySortBg:           "#161719",
       // Borders
-      borderColor:          "#131C2B",   // --b0
+      borderColor:          "#161719",   // --b0
       // Cell sizing
       cellFontSize:         12,
       cellPaddingInline:    14,
@@ -67,8 +67,8 @@ const AUG_THEME: Parameters<typeof ConfigProvider>[0]["theme"] = {
       // filterDropdownBg: "#1C2839",
     },
     Pagination: {
-      colorBgContainer:    "#172030",
-      itemActiveBg:        "#1A3A6E",
+      colorBgContainer:    "#161719",
+      itemActiveBg:        "rgba(45, 114, 210, 0.15)",
     },
   },
 };

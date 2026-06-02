@@ -19,6 +19,8 @@ function Icon({ d, size = 14, color = "currentColor" }: { d: string; size?: numb
 
 const SEARCH_ICON = "M11 19a8 8 0 100-16 8 8 0 000 16zm10 2l-4.35-4.35";
 const PLUS_ICON   = "M12 5v14M5 12h14";
+const SLIDERS_ICON = "M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6";
+const CHEVD_ICON   = "M6 9l6 6 6-6";
 const CANVAS_ICON = "M4 6h16M4 10h16M4 14h8M4 18h5M15 14l2 2 4-4";
 const TRASH_ICON  = "M4 6h16M6 6l1 14h10L18 6M9 6V4h6v2M10 11v6M14 11v6";
 const DB_ICON     = "M12 2C7.58 2 4 3.79 4 6v12c0 2.21 3.58 4 8 4s8-1.79 8-4V6c0-2.21-3.58-4-8-4zm0 2c3.87 0 6 1.5 6 2s-2.13 2-6 2-6-1.5-6-2 2.13-2 6-2zm6 12c0 .5-2.13 2-6 2s-6-1.5-6-2v-2.23C7.61 15.51 9.72 16 12 16s4.39-.49 6-1.23V16zm0-5c0 .5-2.13 2-6 2s-6-1.5-6-2V8.77C7.61 10.51 9.72 11 12 11s4.39-.49 6-1.23V11z";
@@ -44,7 +46,7 @@ function FilterChip({ label, active, onClick }: { label: string; active?: boolea
   return (
     <button onClick={onClick} style={{
       display: "inline-flex", alignItems: "center", gap: 5,
-      padding: "5px 11px", borderRadius: "var(--r2)",
+      padding: "5px 13px", borderRadius: 999,
       background: active ? "color-mix(in srgb, var(--blue4) 12%, var(--bg-2))" : "var(--bg-2)",
       border: `1px solid ${active ? "var(--blue4)" : "var(--b1)"}`,
       color: active ? "var(--blue4)" : "var(--t2)",
@@ -77,6 +79,8 @@ export function CanvasBrowser({ connections, onSelect, onNew }: Props) {
   const [loading, setLoading]           = useState(true);
   const [search, setSearch]             = useState("");
   const [filter, setFilter]             = useState<"all" | "mine" | "auto">("all");
+  const [sort, setSort]                 = useState<"modified" | "name" | "tables">("modified");
+  const [sortOpen, setSortOpen]         = useState(false);
   const [pendingDelete, setPendingDelete] = useState<Canvas | null>(null);
   const [deleting, setDeleting]         = useState(false);
 
@@ -109,13 +113,24 @@ export function CanvasBrowser({ connections, onSelect, onNew }: Props) {
         (connMap[c.scopes[0]?.connection_id]?.name ?? "").toLowerCase().includes(q),
       );
     }
-    return list
-      .sort((a, b) =>
+    const cmp = {
+      modified: (a: Canvas, b: Canvas) =>
         new Date(b.updated_at || b.created_at).getTime() -
         new Date(a.updated_at || a.created_at).getTime(),
-      )
+      name: (a: Canvas, b: Canvas) => a.name.localeCompare(b.name),
+      tables: (a: Canvas, b: Canvas) =>
+        (b.scopes[0]?.tables.length ?? 0) - (a.scopes[0]?.tables.length ?? 0),
+    }[sort];
+    return list
+      .sort(cmp)
       .map(c => ({ key: c.id, canvas: c, connection: connMap[c.scopes[0]?.connection_id] }));
-  }, [canvases, filter, search, connMap]);
+  }, [canvases, filter, search, sort, connMap]);
+
+  const SORT_LABELS: Record<typeof sort, string> = {
+    modified: "Last modified",
+    name: "Name",
+    tables: "Table count",
+  };
 
   // ── Ant Design column defs ────────────────────────────────────────────────
 
@@ -123,7 +138,6 @@ export function CanvasBrowser({ connections, onSelect, onNew }: Props) {
     {
       title: "Name",
       key: "name",
-      sorter: (a, b) => a.canvas.name.localeCompare(b.canvas.name),
       render: (_, { canvas }) => (
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{
@@ -163,10 +177,6 @@ export function CanvasBrowser({ connections, onSelect, onNew }: Props) {
       title: "Modified",
       key: "modified",
       width: 110,
-      sorter: (a, b) =>
-        new Date(b.canvas.updated_at || b.canvas.created_at).getTime() -
-        new Date(a.canvas.updated_at || a.canvas.created_at).getTime(),
-      defaultSortOrder: "ascend",    // newest first = ascending in our custom sorter
       render: (_, { canvas }) => (
         <span style={{ fontSize: 12, color: "var(--t3)" }}>
           {timeAgo(canvas.updated_at || canvas.created_at)}
@@ -261,7 +271,7 @@ export function CanvasBrowser({ connections, onSelect, onNew }: Props) {
             Canvases
           </h1>
           <p style={{ fontSize: 12, color: "var(--t3)", margin: "5px 0 0", lineHeight: 1.5 }}>
-            Workspaces that scope a connection and optional table selection for focused analysis.
+            Curated table sets you can run scoped intelligence and investigations on.
           </p>
         </div>
         <button
@@ -310,6 +320,14 @@ export function CanvasBrowser({ connections, onSelect, onNew }: Props) {
         display: "flex", alignItems: "center", gap: 6,
         flexShrink: 0,
       }}>
+        <div style={{
+          display: "inline-flex", alignItems: "center", justifyContent: "center",
+          width: 30, height: 30, borderRadius: "var(--r2)",
+          background: "var(--bg-2)", border: "1px solid var(--b1)", color: "var(--t3)",
+          marginRight: 2,
+        }}>
+          <Icon d={SLIDERS_ICON} size={14} color="var(--t3)" />
+        </div>
         <FilterChip label="All"            active={filter === "all"}  onClick={() => setFilter("all")} />
         <FilterChip label="Created by me"  active={filter === "mine"} onClick={() => setFilter("mine")} />
         <FilterChip label="Auto-generated" active={filter === "auto"} onClick={() => setFilter("auto")} />
@@ -322,6 +340,56 @@ export function CanvasBrowser({ connections, onSelect, onNew }: Props) {
           <span style={{ fontSize: 12, fontWeight: 500, color: "var(--t2)" }}>
             {loading ? "Loading…" : `All Canvases${displayed.length > 0 ? ` (${displayed.length})` : ""}`}
           </span>
+
+          {/* Sort control */}
+          <div style={{ marginLeft: "auto", position: "relative" }}>
+            <button
+              onClick={() => setSortOpen(v => !v)}
+              onBlur={() => setTimeout(() => setSortOpen(false), 120)}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 6,
+                padding: "5px 10px", borderRadius: "var(--r2)",
+                background: sortOpen ? "var(--bg-3)" : "transparent",
+                border: `1px solid ${sortOpen ? "var(--b2)" : "transparent"}`,
+                color: "var(--t2)", fontSize: 12, cursor: "pointer", transition: "all .1s",
+              }}
+              onMouseEnter={e => { if (!sortOpen) e.currentTarget.style.background = "var(--bg-2)"; }}
+              onMouseLeave={e => { if (!sortOpen) e.currentTarget.style.background = "transparent"; }}
+            >
+              <span style={{ color: "var(--t4)" }}>Sort:</span>
+              {SORT_LABELS[sort]}
+              <Icon d={CHEVD_ICON} size={12} color="var(--t4)" />
+            </button>
+            {sortOpen && (
+              <div style={{
+                position: "absolute", top: "calc(100% + 4px)", right: 0, zIndex: 30,
+                minWidth: 160, padding: 4,
+                background: "var(--bg-2)", border: "1px solid var(--b2)",
+                borderRadius: "var(--r2)", boxShadow: "0 8px 28px rgba(0,0,0,.35)",
+              }}>
+                {(["modified", "name", "tables"] as const).map(opt => (
+                  <button
+                    key={opt}
+                    onMouseDown={() => { setSort(opt); setSortOpen(false); }}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 8, width: "100%",
+                      padding: "7px 9px", borderRadius: "var(--r1, 4px)", textAlign: "left",
+                      background: sort === opt ? "color-mix(in srgb, var(--blue4) 10%, transparent)" : "transparent",
+                      border: "none", cursor: "pointer",
+                      color: sort === opt ? "var(--blue4)" : "var(--t2)", fontSize: 12,
+                    }}
+                    onMouseEnter={e => { if (sort !== opt) e.currentTarget.style.background = "var(--bg-hover)"; }}
+                    onMouseLeave={e => { if (sort !== opt) e.currentTarget.style.background = "transparent"; }}
+                  >
+                    {sort === opt
+                      ? <Icon d="M20 6L9 17l-5-5" size={12} color="var(--blue4)" />
+                      : <span style={{ width: 12 }} />}
+                    {SORT_LABELS[opt]}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         {!loading && displayed.length === 0 ? (
@@ -361,6 +429,19 @@ export function CanvasBrowser({ connections, onSelect, onNew }: Props) {
             <style>{`
               .aug-canvas-table .ant-table-row:hover .aug-canvas-row-delete { opacity: 1 !important; }
               .aug-canvas-table .ant-table-row { cursor: pointer; }
+              /* Databricks Genie: borderless list — rows sit on the page, hairline separators only */
+              .aug-canvas-table .ant-table,
+              .aug-canvas-table .ant-table-container,
+              .aug-canvas-table .ant-table-thead > tr > th,
+              .aug-canvas-table .ant-table-tbody > tr > td { background: transparent !important; }
+              .aug-canvas-table .ant-table-thead > tr > th {
+                border-bottom: 1px solid var(--b1) !important;
+                font-weight: 500;
+              }
+              .aug-canvas-table .ant-table-thead > tr > th::before { display: none !important; }
+              .aug-canvas-table .ant-table-tbody > tr > td { border-bottom: 1px solid var(--b0) !important; }
+              .aug-canvas-table .ant-table-tbody > tr:hover > td { background: var(--bg-hover) !important; }
+              .aug-canvas-table .ant-table-tbody > tr:last-child > td { border-bottom: none !important; }
             `}</style>
             <AugTable<CanvasRow>
               className="aug-canvas-table"

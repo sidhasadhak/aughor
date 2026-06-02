@@ -26,9 +26,9 @@ const C3 = "#E0AD00";  // --chart-3  amber
 const C4 = "#8B68D8";  // --chart-4  purple
 const C5 = "#E64848";  // --chart-5  red
 const C6 = "#30B8E0";  // --chart-6  cyan
-const AXIS_LINE  = "#253552";  // --chart-axis
-const AXIS_GRID  = "#1B2840";  // --chart-grid
-const AXIS_TICK  = "#8296AF";  // --chart-tick
+const AXIS_LINE  = "#363940";  // --chart-axis
+const AXIS_GRID  = "#292b2f";  // --chart-grid
+const AXIS_TICK  = "#9AA0A8";  // --chart-tick
 
 // 20-colour categorical palette — ordered for maximum perceptual distance.
 // The first 6 match the Aughor design tokens above; 7-20 extend for high-cardinality data.
@@ -106,13 +106,13 @@ function injectTooltipCss() {
       background: #13151a !important;
       border: 1px solid #2a2d38 !important;
       border-radius: 3px !important;
-      color: #C8D4E4 !important;
+      color: #D4D7DC !important;
       box-shadow: 0 4px 16px rgba(0,0,0,.4) !important;
       padding: 6px 10px !important;
     }
-    .vg-tooltip td.title { font-weight: 600; color: #C8D4E4 !important; }
-    .vg-tooltip td.value { color: #8296AF !important; }
-    .vg-tooltip tr { border-bottom: 1px solid #1B2840 !important; }
+    .vg-tooltip td.title { font-weight: 600; color: #D4D7DC !important; }
+    .vg-tooltip td.value { color: #9AA0A8 !important; }
+    .vg-tooltip tr { border-bottom: 1px solid #292b2f !important; }
   `;
   document.head.appendChild(style);
 }

@@ -308,6 +308,99 @@ function TabPill({
   );
 }
 
+// ── Capabilities block (canvas landing — Databricks Genie style) ───────────────
+
+function CapabilitiesBlock({
+  canvas,
+  connection,
+}: {
+  canvas: Canvas;
+  connection: Connection | undefined;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const scope = canvas.scopes[0];
+  const tables = scope?.tables ?? [];
+  const isFull = tables.length === 0;
+  const connType = connection
+    ? (connection.conn_type === "duckdb" ? "DuckDB" : connection.conn_type === "postgres" ? "PostgreSQL" : connection.conn_type)
+    : null;
+
+  const caps: string[] = [
+    isFull
+      ? `Query the full schema of ${connection?.name ?? "this connection"}${connType ? ` (${connType})` : ""}`
+      : `Query ${tables.length} curated table${tables.length !== 1 ? "s" : ""}${connection ? ` from ${connection.name}` : ""}${connType ? ` (${connType})` : ""}`,
+    "Ask in Quick mode for fast SQL answers, or Agentic for multi-step root-cause analysis",
+    "Build domain intelligence, outcomes, and ontology scoped to exactly this table set",
+  ];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, textAlign: "left", marginBottom: 4 }}>
+      {/* Title */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{
+          width: 34, height: 34, borderRadius: "var(--r2)",
+          background: canvas.is_legacy ? "var(--bg-3)" : "color-mix(in srgb, var(--blue3) 16%, transparent)",
+          border: `1px solid ${canvas.is_legacy ? "var(--b2)" : "color-mix(in srgb, var(--blue3) 32%, transparent)"}`,
+          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+        }}>
+          <Icon name="canvas" size={17} color={canvas.is_legacy ? "var(--t4)" : "var(--blue4)"} />
+        </div>
+        <div style={{ fontSize: 18, fontWeight: 700, color: "var(--t1)" }}>{canvas.name}</div>
+      </div>
+
+      {/* Description */}
+      {canvas.description && (
+        <p style={{ fontSize: 13, color: "var(--t2)", lineHeight: 1.55, margin: 0 }}>
+          {canvas.description}
+        </p>
+      )}
+
+      {/* Capabilities */}
+      <div>
+        <div style={{ fontSize: 11, fontWeight: 600, color: "var(--t2)", marginBottom: 7 }}>Capabilities</div>
+        <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 6 }}>
+          {caps.map(c => (
+            <li key={c} style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12.5, color: "var(--t2)", lineHeight: 1.5 }}>
+              <span style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--t4)", marginTop: 7, flexShrink: 0 }} />
+              {c}
+            </li>
+          ))}
+        </ul>
+
+        {/* Table chips — revealed via Show more, like Databricks */}
+        {!isFull && tables.length > 0 && (
+          <>
+            {expanded && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
+                {tables.map(t => (
+                  <span key={t} style={{
+                    display: "inline-flex", alignItems: "center", gap: 5,
+                    padding: "3px 9px", borderRadius: 999,
+                    background: "var(--bg-2)", border: "1px solid var(--b1)",
+                    fontSize: 11, color: "var(--t2)", fontFamily: "var(--font-mono)",
+                  }}>
+                    <Icon name="table" size={10} color="var(--t4)" />
+                    {t}
+                  </span>
+                ))}
+              </div>
+            )}
+            <button
+              onClick={() => setExpanded(v => !v)}
+              style={{
+                marginTop: 8, background: "none", border: "none", cursor: "pointer",
+                color: "var(--blue4)", fontSize: 12, fontWeight: 500, padding: 0,
+              }}
+            >
+              {expanded ? "Show less" : `Show ${tables.length} table${tables.length !== 1 ? "s" : ""}`}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── CanvasWorkspace ───────────────────────────────────────────────────────────
 
 interface Props {
@@ -505,6 +598,7 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate }
             key={chatKey}
             connectionId={connectionId}
             canvasId={canvas.id}
+            capabilities={<CapabilitiesBlock canvas={canvas} connection={connection} />}
           />
         </div>
 

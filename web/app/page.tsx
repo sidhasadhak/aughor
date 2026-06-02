@@ -1,36 +1,53 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 
-import { ConfigurePanel } from "@/components/ConfigurePanel";
-import { ExplorationBadge } from "@/components/ExplorationBadge";
-import { HistoryPanel } from "@/components/HistoryPanel";
-import { HistoryDetailPanel } from "@/components/HistoryDetailPanel";
+// Always-eager: on the critical path at first render
 import { ChatPanel } from "@/components/ChatPanel";
-import { OntologyPanel } from "@/components/OntologyPanel";
-import { ExplorationPanel } from "@/components/ExplorationPanel";
-import { OrgIntelPanel } from "@/components/OrgIntelPanel";
-import { IntelligenceHub } from "@/components/IntelligenceHub";
-import { BriefingPanel } from "@/components/BriefingPanel";
-import { SystemPanel } from "@/components/SystemPanel";
-import { ActivityLog } from "@/components/ActivityLog";
+import { ExplorationBadge } from "@/components/ExplorationBadge";
 import { SchemaProvider } from "@/lib/schema-context";
-import { ProcessHealthPanel } from "@/components/ProcessHealthPanel";
-import { PlaybookPanel } from "@/components/PlaybookPanel";
-import { RecommendationInbox } from "@/components/RecommendationInbox";
-import { DocumentUploader } from "@/components/DocumentUploader";
-import { CatalogScreen } from "@/components/CatalogScreen";
-import { CanvasBrowser } from "@/components/CanvasBrowser";
-import { CanvasCreator } from "@/components/CanvasCreator";
-import { CanvasWorkspace } from "@/components/CanvasWorkspace";
-import { ActionHubPanel } from "@/components/ActionHubPanel";
-import { QueryBuilder } from "@/components/QueryBuilder";
-import { MetricsPanel } from "@/components/MetricsPanel";
-import { SemanticLayerPanel } from "@/components/SemanticLayerPanel";
-import { API_BASE } from "@/lib/config";
 import { CommandPalette } from "@/components/CommandPalette";
+import type { IntelLayer } from "@/components/IntelligenceWorkspace";
+
+function LoadingPanel() {
+  return (
+    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-0)" }}>
+      <div style={{ width: 20, height: 20, border: "2px solid var(--bg-3)", borderTopColor: "var(--blue3)", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />
+    </div>
+  );
+}
+
+// Lazy panels — only bundled & parsed when the user first navigates to them
+const loading = () => <LoadingPanel />;
+const ConfigurePanel    = dynamic(() => import("@/components/ConfigurePanel").then(m => ({ default: m.ConfigurePanel })),    { ssr: false, loading });
+const HistoryPanel      = dynamic(() => import("@/components/HistoryPanel").then(m => ({ default: m.HistoryPanel })),        { ssr: false, loading });
+const HistoryDetailPanel= dynamic(() => import("@/components/HistoryDetailPanel").then(m => ({ default: m.HistoryDetailPanel })), { ssr: false, loading });
+// The four Intelligence perspectives (Ontology / Hub / Domain Intel / Org Intel)
+// are now lazily loaded *inside* IntelligenceWorkspace, which fans them into
+// layers of one unified workspace.
+const IntelligenceWorkspace = dynamic(() => import("@/components/IntelligenceWorkspace").then(m => ({ default: m.IntelligenceWorkspace })), { ssr: false, loading });
+const SystemPanel       = dynamic(() => import("@/components/SystemPanel").then(m => ({ default: m.SystemPanel })),          { ssr: false, loading });
+const ProcessHealthPanel= dynamic(() => import("@/components/ProcessHealthPanel").then(m => ({ default: m.ProcessHealthPanel })), { ssr: false, loading });
+const PlaybookPanel     = dynamic(() => import("@/components/PlaybookPanel").then(m => ({ default: m.PlaybookPanel })),      { ssr: false, loading });
+const RecommendationInbox= dynamic(() => import("@/components/RecommendationInbox").then(m => ({ default: m.RecommendationInbox })), { ssr: false, loading });
+const DocumentUploader  = dynamic(() => import("@/components/DocumentUploader").then(m => ({ default: m.DocumentUploader })),{ ssr: false, loading });
+const CatalogScreen     = dynamic(() => import("@/components/CatalogScreen").then(m => ({ default: m.CatalogScreen })),      { ssr: false, loading });
+const CanvasBrowser     = dynamic(() => import("@/components/CanvasBrowser").then(m => ({ default: m.CanvasBrowser })),      { ssr: false, loading });
+const CanvasCreator     = dynamic(() => import("@/components/CanvasCreator").then(m => ({ default: m.CanvasCreator })),      { ssr: false, loading });
+const CanvasWorkspace   = dynamic(() => import("@/components/CanvasWorkspace").then(m => ({ default: m.CanvasWorkspace })),  { ssr: false, loading });
+const ActionHubPanel    = dynamic(() => import("@/components/ActionHubPanel").then(m => ({ default: m.ActionHubPanel })),    { ssr: false, loading });
+const MonitorsPanel     = dynamic(() => import("@/components/MonitorsPanel").then(m => ({ default: m.MonitorsPanel })),      { ssr: false, loading });
+const SecurityAuditPanel= dynamic(() => import("@/components/SecurityAuditPanel").then(m => ({ default: m.SecurityAuditPanel })), { ssr: false, loading });
+const QueryBuilder      = dynamic(() => import("@/components/QueryBuilder").then(m => ({ default: m.QueryBuilder })),        { ssr: false, loading });
+const MetricsPanel      = dynamic(() => import("@/components/MetricsPanel").then(m => ({ default: m.MetricsPanel })),        { ssr: false, loading });
+const SemanticLayerPanel= dynamic(() => import("@/components/SemanticLayerPanel").then(m => ({ default: m.SemanticLayerPanel })), { ssr: false, loading });
+import { API_BASE } from "@/lib/config";
 import {
   getConnections,
+  getWorkspaces,
+  createWorkspace as apiCreateWorkspace,
+  type Workspace,
   addConnection as apiAddConnection,
   deleteConnection as apiDeleteConnection,
   getExplorationStatus,
@@ -53,18 +70,21 @@ type NavTab =
   | "recents"
   | "inbox"
   | "briefing"
-  | "intel-hub"
-  | "intel"
-  | "org-intel"
-  | "ontology"
+  | "intelligence"      // unified multi-layered Intelligence workspace
+  | "intel-hub"         // legacy deep-link → intelligence/hub layer
+  | "intel"             // legacy deep-link → intelligence/domains layer
+  | "org-intel"         // legacy deep-link → intelligence/org layer
+  | "ontology"          // legacy deep-link → intelligence/ontology layer
   | "health"
   | "playbook"
   | "catalog"
   | "builder"
   | "connections"
   | "metrics"
+  | "monitors"
   | "actions"
   | "activity"
+  | "security"
   | "semantic"
   | "settings";
 
@@ -104,6 +124,8 @@ const ICON_PATHS: Record<string, string> = {
   metric:   "M3 3v18h18M7 16l4-4 4 4 4-4M7 12l4-8 2 4 2-4 4 8",
   brief:    "M3 5h18M3 9h18M3 13h12M3 17h8",
   layers:   "M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5",
+  inbox:    "M22 12h-6l-2 3h-4l-2-3H2M5.45 5.11L2 12v6a2 2 0 002 2h16a2 2 0 002-2v-6l-3.45-6.89A2 2 0 0016.76 4H7.24a2 2 0 00-1.79 1.11z",
+  shield:   "M12 2l8 3v6c0 5-3.4 9.1-8 11-4.6-1.9-8-6-8-11V5l8-3zM9.5 12l1.8 1.8L15 9.8",
 };
 
 function NavIcon({ name, size = 14, color = "currentColor" }: { name: string; size?: number; color?: string }) {
@@ -164,16 +186,174 @@ function freshnessLabel(ts: string | null): string | null {
   return `${d.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
 }
 
+// ── Workspace switcher ───────────────────────────────────────────────────────
+// The top-level scope selector. A Workspace is a named grouping of DB
+// connections; switching it re-scopes the whole app (connections, canvases,
+// intelligence) — the Databricks model where everything lives in a workspace.
+function WorkspaceSwitcher({
+  workspaces,
+  selectedWorkspace,
+  connCount,
+  onWorkspaceChange,
+  onCreateWorkspace,
+}: {
+  workspaces: Workspace[];
+  selectedWorkspace: string;
+  connCount: number;
+  onWorkspaceChange: (id: string) => void;
+  onCreateWorkspace: (name: string) => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [newName, setNewName] = useState("");
+  const ref = useRef<HTMLDivElement>(null);
+  const active = workspaces.find(w => w.id === selectedWorkspace);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) { setOpen(false); setCreating(false); }
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  const submitNew = async () => {
+    const name = newName.trim();
+    if (!name) return;
+    await onCreateWorkspace(name);
+    setNewName(""); setCreating(false); setOpen(false);
+  };
+
+  return (
+    <div ref={ref} style={{ position: "relative", flexShrink: 0 }}>
+      <button
+        onClick={() => setOpen(v => !v)}
+        title="Switch workspace"
+        className="aug-btn"
+        style={{
+          display: "flex", alignItems: "center", gap: 8,
+          padding: "5px 10px", borderRadius: "var(--r2)",
+          background: open ? "var(--bg-sel)" : "var(--bg-2)",
+          border: `1px solid ${open ? "var(--blue2)" : "var(--b1)"}`,
+          color: "var(--t1)", maxWidth: 220,
+        }}
+      >
+        <NavIcon name="layers" size={14} color="var(--blue4)" />
+        <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", minWidth: 0 }}>
+          <span style={{ fontSize: 9, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".06em", lineHeight: 1.1 }}>Workspace</span>
+          <span style={{ fontSize: 12, fontWeight: 500, color: "var(--t1)", lineHeight: 1.3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 150 }}>
+            {active?.name ?? "—"}
+          </span>
+        </span>
+        <NavIcon name="chevd" size={13} color="var(--t3)" />
+      </button>
+
+      {open && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 100,
+          minWidth: 260, background: "var(--bg-1)", border: "1px solid var(--b2)",
+          borderRadius: "var(--r3)", boxShadow: "var(--shadow-lg, 0 8px 28px rgba(0,0,0,.4))",
+          padding: 6,
+        }}>
+          <div style={{ fontSize: 9, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".06em", padding: "6px 8px 4px" }}>
+            Workspaces
+          </div>
+          {workspaces.map(w => {
+            const on = w.id === selectedWorkspace;
+            return (
+              <button
+                key={w.id}
+                onClick={() => { onWorkspaceChange(w.id); setOpen(false); }}
+                className="aug-btn"
+                style={{
+                  display: "flex", alignItems: "center", gap: 9, width: "100%",
+                  padding: "7px 8px", borderRadius: "var(--r2)",
+                  background: on ? "var(--bg-sel)" : "transparent",
+                  border: "1px solid transparent", textAlign: "left",
+                }}
+                onMouseEnter={e => { if (!on) e.currentTarget.style.background = "var(--bg-hover)"; }}
+                onMouseLeave={e => { if (!on) e.currentTarget.style.background = "transparent"; }}
+              >
+                <NavIcon name="layers" size={14} color={on ? "var(--blue4)" : "var(--t3)"} />
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ display: "block", fontSize: 12, fontWeight: on ? 500 : 400, color: "var(--t1)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {w.name}
+                  </span>
+                  <span style={{ display: "block", fontSize: 10, color: "var(--t4)" }}>
+                    {w.connection_ids.length} connection{w.connection_ids.length === 1 ? "" : "s"}{w.is_default ? " · default" : ""}
+                  </span>
+                </span>
+                {on && <NavIcon name="check" size={13} color="var(--blue4)" />}
+              </button>
+            );
+          })}
+
+          <div style={{ height: 1, background: "var(--b1)", margin: "6px 0" }} />
+
+          {creating ? (
+            <div style={{ display: "flex", gap: 6, padding: "2px 4px 4px" }}>
+              <input
+                autoFocus
+                value={newName}
+                onChange={e => setNewName(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter") submitNew(); if (e.key === "Escape") { setCreating(false); setNewName(""); } }}
+                placeholder="Workspace name…"
+                style={{
+                  flex: 1, padding: "6px 9px", fontSize: 12,
+                  background: "var(--bg-2)", border: "1px solid var(--b2)",
+                  borderRadius: "var(--r2)", color: "var(--t1)", outline: "none",
+                }}
+              />
+              <button onClick={submitNew} className="aug-btn aug-btn-secondary" style={{ padding: "6px 12px", fontSize: 12 }}>
+                Create
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => setCreating(true)}
+              className="aug-btn"
+              style={{
+                display: "flex", alignItems: "center", gap: 9, width: "100%",
+                padding: "7px 8px", borderRadius: "var(--r2)",
+                background: "transparent", border: "1px solid transparent",
+                color: "var(--t2)", textAlign: "left",
+              }}
+              onMouseEnter={e => { e.currentTarget.style.background = "var(--bg-hover)"; }}
+              onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
+            >
+              <NavIcon name="plus" size={14} color="var(--t3)" />
+              <span style={{ fontSize: 12 }}>New workspace</span>
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Topbar ─────────────────────────────────────────────────────────────────────
 
 function Topbar({
   onSearchOpen,
+  onNavigate,
+  currentTab,
   connections,
   selectedConn,
+  workspaces,
+  selectedWorkspace,
+  onWorkspaceChange,
+  onCreateWorkspace,
 }: {
   onSearchOpen: () => void;
+  onNavigate: (t: NavTab) => void;
+  currentTab: NavTab;
   connections: Connection[];
   selectedConn: string;
+  workspaces: Workspace[];
+  selectedWorkspace: string;
+  onWorkspaceChange: (id: string) => void;
+  onCreateWorkspace: (name: string) => Promise<void>;
 }) {
   const [freshness, setFreshness] = useState<string | null>(null);
   const conn = connections.find(c => c.id === selectedConn);
@@ -200,6 +380,15 @@ function Topbar({
           </div>
         </div>
       </div>
+
+      {/* Workspace switcher — the top-level scope (Databricks-style) */}
+      <WorkspaceSwitcher
+        workspaces={workspaces}
+        selectedWorkspace={selectedWorkspace}
+        connCount={connections.length}
+        onWorkspaceChange={onWorkspaceChange}
+        onCreateWorkspace={onCreateWorkspace}
+      />
 
       {/* Search */}
       <button
@@ -236,6 +425,14 @@ function Topbar({
             )}
           </div>
         )}
+        <button
+          onClick={() => onNavigate("settings")}
+          title="Settings"
+          className={`aug-btn ${currentTab === "settings" ? "aug-btn-secondary" : "aug-btn-ghost"}`}
+          style={{ padding: 6, width: 28, height: 28, justifyContent: "center" }}
+        >
+          <NavIcon name="settings" size={15} color={currentTab === "settings" ? "var(--blue4)" : "currentColor"} />
+        </button>
         <div style={{
           width: 28, height: 28, borderRadius: "var(--r2)",
           background: "var(--bg-3)", border: "1px solid var(--b2)",
@@ -251,37 +448,44 @@ function Topbar({
 
 // ── Sidebar ────────────────────────────────────────────────────────────────────
 
-// ── 5-section nav: Ask / Investigations / Intelligence / Data Map / Governance ──
-const NAV_GROUPS = [
-  // HOME — overview dashboard
-  { id: "home",        icon: "home",     label: "Home",          group: null },
-  { id: "chat",        icon: "chat",     label: "Investigate",   group: null },
-  { id: "canvases",    icon: "canvas",   label: "Canvases",      group: null },
+// ── Two-tier nav (SOTA pattern: ≤5 primary rail + collapsible secondary) ────────
+// Primary rail: the five destinations a user touches every session. Everything
+// else is grouped into collapsible sections (collapsed by default), keeping the
+// default sidebar to 5 prominent items without losing any feature. Settings lives
+// in the topbar (gear). Each id maps 1:1 to an existing render block — no screen
+// is removed, only the navigation hierarchy is flattened.
+const NAV_PRIMARY = [
+  { id: "home",         icon: "home",   label: "Home" },
+  { id: "inbox",        icon: "inbox",  label: "Inbox" },
+  { id: "canvases",     icon: "canvas", label: "Canvases" },
+  { id: "intelligence", icon: "brief",  label: "Briefing" },
+  { id: "catalog",      icon: "db",     label: "Catalog" },
+] as const;
 
-  // INVESTIGATIONS — what Aughor has found; act on it
-  { id: "recents",     icon: "clock",    label: "History",       group: "Investigations" },
-  { id: "inbox",       icon: "spark",    label: "Inbox",         group: null },
-
-  // INTELLIGENCE — what Aughor knows about your data
-  { id: "briefing",    icon: "brief",    label: "Briefing",      group: "Intelligence" },
-  { id: "intel-hub",   icon: "node",     label: "Hub",           group: null },
-  { id: "intel",       icon: "process",  label: "Domain Intel",  group: null },
-  { id: "org-intel",   icon: "spark",    label: "Org Intel",     group: null },
-  { id: "ontology",    icon: "node",     label: "Ontology",      group: null },
-  { id: "health",      icon: "activity", label: "Health",        group: null },
-  { id: "playbook",    icon: "playbook", label: "Playbook",      group: null },
-
-  // DATA MAP — explore and query data directly
-  { id: "catalog",     icon: "db",       label: "Catalog",       group: "Data Map" },
-  { id: "builder",     icon: "builder",  label: "Query Builder", group: null },
-
-  // GOVERNANCE — configure, control, govern the platform
-  { id: "connections", icon: "plug",     label: "Connections",   group: "Governance" },
-  { id: "metrics",     icon: "metric",   label: "Metrics",       group: null },
-  { id: "actions",     icon: "spark",    label: "Action Hub",    group: null },
-  { id: "semantic",    icon: "layers",   label: "Semantic Layer",group: null },
-  { id: "activity",    icon: "activity", label: "Audit Log",     group: null },
-  { id: "settings",    icon: "settings", label: "Settings",      group: null },
+const NAV_SECTIONS = [
+  {
+    label: "Intelligence", // what Aughor knows about your data
+    items: [
+      { id: "health",    icon: "activity", label: "Health" },
+      { id: "playbook",  icon: "playbook", label: "Playbook" },
+    ],
+  },
+  {
+    label: "Data", // explore and query data directly
+    items: [
+      { id: "builder",  icon: "builder", label: "Query Builder" },
+      { id: "semantic", icon: "layers",  label: "Semantic Layer" },
+      { id: "metrics",  icon: "metric",  label: "Metrics" },
+    ],
+  },
+  {
+    label: "Operations", // monitor, act, govern
+    items: [
+      { id: "monitors", icon: "activity", label: "Monitors" },
+      { id: "actions",  icon: "spark",    label: "Action Hub" },
+      { id: "security", icon: "shield",   label: "Security & Audit" },
+    ],
+  },
 ] as const;
 
 function Sidebar({
@@ -293,34 +497,33 @@ function Sidebar({
   onNavigate: (t: NavTab) => void;
   selectedConn: string;
 }) {
-  let lastGroup: string | null = null;
+  const renderItem = (item: { id: string; icon: string; label: string }) => (
+    <button
+      key={item.id}
+      className={`aug-nav-item${tab === item.id ? " active" : ""}`}
+      onClick={() => onNavigate(item.id as NavTab)}
+    >
+      <NavIcon name={item.icon} size={14} color={tab === item.id ? "var(--blue4)" : "currentColor"} />
+      <span>{item.label}</span>
+      {item.id === "catalog" && selectedConn && (
+        <ExplorationBadge connectionId={selectedConn} />
+      )}
+    </button>
+  );
 
   return (
     <nav className="aug-sidebar">
       <div style={{ flex: 1, overflowY: "auto", padding: "6px 8px 6px" }}>
-        {NAV_GROUPS.map(item => {
-          const showGroup = item.group && item.group !== lastGroup;
-          if (item.group) lastGroup = item.group;
-          return (
-            <div key={item.id}>
-              {showGroup && <div className="aug-nav-group">{item.group}</div>}
-              <button
-                className={`aug-nav-item${tab === item.id ? " active" : ""}`}
-                onClick={() => onNavigate(item.id as NavTab)}
-              >
-                <NavIcon
-                  name={item.icon}
-                  size={14}
-                  color={tab === item.id ? "var(--blue4)" : "currentColor"}
-                />
-                <span>{item.label}</span>
-                {item.id === "connections" && selectedConn && (
-                  <ExplorationBadge connectionId={selectedConn} />
-                )}
-              </button>
-            </div>
-          );
-        })}
+        {/* Primary rail */}
+        {NAV_PRIMARY.map(renderItem)}
+
+        {/* Secondary sections — always expanded (static group headers) */}
+        {NAV_SECTIONS.map(section => (
+          <div key={section.label}>
+            <div className="aug-nav-group">{section.label}</div>
+            {section.items.map(renderItem)}
+          </div>
+        ))}
       </div>
       <div style={{ padding: "10px 8px", borderTop: "1px solid var(--b0)" }}>
         <div style={{ fontSize: 10, color: "var(--t4)", textAlign: "center", letterSpacing: ".04em" }}>
@@ -787,9 +990,9 @@ function RecentsScreen({ onGoToChat, onOpenInvestigation }: { onGoToChat: (q?: s
   );
 }
 
-// ── Connections screen ─────────────────────────────────────────────────────────
-
-function ConnectionsScreen({
+// ── Connections screen (merged into CatalogScreen — directive #5) ───────────────
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function _ConnectionsScreen_DEPRECATED({
   connections,
   selectedConn,
   onSelect,
@@ -1270,6 +1473,7 @@ function DeleteConnModal({
 // ── Main ───────────────────────────────────────────────────────────────────────
 
 const LAST_CONN_KEY = "aughor_last_conn";
+const LAST_WS_KEY = "aughor_last_workspace";
 const THEME_KEY = "aughor_theme";
 
 export default function Home() {
@@ -1284,11 +1488,15 @@ export default function Home() {
   const [chatInitialQuestion, setChatInitialQuestion] = useState<string | undefined>(undefined);
   const [chatInitialMode, setChatInitialMode] = useState<"ask" | "investigate">("investigate");
   const [explorationSection, setExplorationSection] = useState<"nulls" | "lifecycles" | "distributions" | "insights" | "intelligence" | undefined>(undefined);
+  const [intelLayer, setIntelLayer] = useState<IntelLayer>("briefing");
+  const [secLens, setSecLens] = useState<"security" | "activity">("security");
   const [showHistory, setShowHistory] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [showAddConn, setShowAddConn] = useState(false);
   const [pendingDeleteConn, setPendingDeleteConn] = useState<Connection | null>(null);
   const [connections, setConnections] = useState<Connection[]>([]);
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [selectedWorkspace, setSelectedWorkspace] = useState("");
 
   // Theme effect — apply data-theme to <html>
   useEffect(() => {
@@ -1320,6 +1528,27 @@ export default function Home() {
       localStorage.setItem(LAST_CONN_KEY, selectedConn);
     }
   }, [selectedConn]);
+
+  // Load workspaces (top-level scope). The backend always guarantees a "Default"
+  // workspace containing every connection, so this never comes back empty.
+  useEffect(() => {
+    getWorkspaces()
+      .then(ws => {
+        setWorkspaces(ws);
+        const saved = typeof window !== "undefined" ? localStorage.getItem(LAST_WS_KEY) : null;
+        const valid = saved && ws.find(w => w.id === saved);
+        setSelectedWorkspace(valid ? saved : (ws[0]?.id ?? ""));
+      })
+      .catch(err => console.error("[Aughor] failed to load workspaces:", err));
+  }, []);
+
+  useEffect(() => {
+    if (selectedWorkspace && typeof window !== "undefined") {
+      localStorage.setItem(LAST_WS_KEY, selectedWorkspace);
+    }
+  }, [selectedWorkspace]);
+
+  const reloadWorkspaces = () => getWorkspaces().then(setWorkspaces).catch(() => {});
 
   // ⌘K global shortcut
   useEffect(() => {
@@ -1359,14 +1588,49 @@ export default function Home() {
     setTab("chat");
   };
 
+  // The four former Intelligence tabs are now layers of one unified workspace.
+  // Translate any legacy navigation (StatCards, command palette, search) into
+  // the `intelligence` tab opened at the matching layer.
+  const LEGACY_INTEL_LAYER: Partial<Record<NavTab, IntelLayer>> = {
+    briefing:    "briefing",
+    ontology:    "ontology",
+    "intel-hub": "hub",
+    intel:       "domains",
+    "org-intel":  "org",
+  };
+
   const handleNavigate = (t: NavTab) => {
-    setTab(t);
     // Always dismiss any floating overlays when the user navigates.
     // The History backdrop is fixed inset-0 and will intercept sidebar clicks
     // if left open while switching tabs — this is the most common cause of
     // "can't open other tabs while a query is running".
     setShowHistory(false);
-    if (t === "intel") setExplorationSection("intelligence");
+
+    // The "Briefing" rail item opens the unified Intelligence workspace at its
+    // default Briefing lens.
+    if (t === "intelligence") {
+      setIntelLayer("briefing");
+      setTab("intelligence");
+      return;
+    }
+
+    // "Audit Log" was merged into the Security & Audit workspace (directive #6).
+    // Legacy navigations to `activity` now open Security at its Activity lens.
+    if (t === "activity") {
+      setSecLens("activity");
+      setTab("security");
+      return;
+    }
+
+    // Legacy Intelligence tabs are now layers of that workspace.
+    const layer = LEGACY_INTEL_LAYER[t];
+    if (layer) {
+      setIntelLayer(layer);
+      if (layer === "domains") setExplorationSection("intelligence");
+      setTab("intelligence");
+      return;
+    }
+    setTab(t);
   };
 
   const handleCanvasSelect = (canvas: Canvas) => {
@@ -1397,14 +1661,47 @@ export default function Home() {
     reloadConnections();
   };
 
+  // ── Workspace-scoped connections ──────────────────────────────────────────
+  // Everything below the topbar sees only the connections belonging to the
+  // active workspace (Databricks-style). The Default workspace tracks every
+  // connection, so for users who never create a custom workspace this is a
+  // no-op. If a workspace's membership can't be resolved yet, fall back to the
+  // full set so the UI never goes blank.
+  const activeWs = workspaces.find(w => w.id === selectedWorkspace) ?? null;
+  const wsConnections = activeWs
+    ? connections.filter(c => activeWs.connection_ids.includes(c.id))
+    : connections;
+
+  // Keep the selected connection inside the active workspace. When the user
+  // switches workspaces and the current connection isn't a member, jump to the
+  // workspace's first connection.
+  useEffect(() => {
+    if (!activeWs || connections.length === 0) return;
+    if (wsConnections.length === 0) return;
+    if (!wsConnections.find(c => c.id === selectedConn)) {
+      setSelectedConn(wsConnections[0].id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedWorkspace, connections]);
+
   return (
     <div className="aug-app">
 
       {/* Topbar */}
       <Topbar
         onSearchOpen={() => setShowSearch(true)}
-        connections={connections}
+        onNavigate={handleNavigate}
+        currentTab={tab}
+        connections={wsConnections}
         selectedConn={selectedConn}
+        workspaces={workspaces}
+        selectedWorkspace={selectedWorkspace}
+        onWorkspaceChange={setSelectedWorkspace}
+        onCreateWorkspace={async (name) => {
+          const ws = await apiCreateWorkspace(name, []);
+          await reloadWorkspaces();
+          setSelectedWorkspace(ws.id);
+        }}
       />
 
       {/* Body */}
@@ -1420,7 +1717,7 @@ export default function Home() {
             {/* ── ASK (hero screen) ── */}
             {tab === "home" && (
               <HomeScreen
-                connections={connections}
+                connections={wsConnections}
                 selectedConn={selectedConn}
                 onGoToChat={goToChat}
                 onNavigate={handleNavigate}
@@ -1431,7 +1728,7 @@ export default function Home() {
             {/* ── CANVASES ── */}
             {tab === "canvases" && (
               <CanvasBrowser
-                connections={connections}
+                connections={wsConnections}
                 onSelect={handleCanvasSelect}
                 onNew={() => setShowCanvasCreator(true)}
               />
@@ -1441,7 +1738,7 @@ export default function Home() {
             {tab === "canvas-workspace" && activeCanvas && (
               <CanvasWorkspace
                 canvas={activeCanvas}
-                connections={connections}
+                connections={wsConnections}
                 onClose={() => { setActiveCanvas(null); setTab("canvases"); }}
                 onCanvasUpdate={updated => setActiveCanvas(updated)}
               />
@@ -1535,74 +1832,28 @@ export default function Home() {
               </div>
             )}
 
-            {/* ── ONTOLOGY ── */}
-            {tab === "ontology" && (
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
-                <div className="aug-content-header">
-                  <NavIcon name="node" size={14} color="var(--t3)" />
-                  <span style={{ fontSize: 13, fontWeight: 500 }}>Business Ontology</span>
-                </div>
-                <OntologyPanel connectionId={selectedConn} onInvestigate={q => goToChat(q)} />
-              </div>
+            {/* ── INTELLIGENCE (unified, multi-layered) ── */}
+            {tab === "intelligence" && (
+              <IntelligenceWorkspace
+                connectionId={selectedConn}
+                onInvestigate={goToChat}
+                layer={intelLayer}
+                onLayerChange={setIntelLayer}
+                domainSection={explorationSection}
+              />
             )}
 
-            {/* ── BRIEFING ── */}
-            {tab === "briefing" && (
+            {/* Briefing now lives inside the unified Intelligence workspace as its
+                default lens (see tab === "intelligence" above). */}
+
+            {/* ── SECURITY & AUDIT (merged Security + Audit Log — directive #6) ── */}
+            {tab === "security" && (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
-                <div className="aug-content-header">
-                  <NavIcon name="brief" size={14} color="var(--t3)" />
-                  <span style={{ fontSize: 13, fontWeight: 500 }}>Intelligence Brief</span>
-                  <span style={{ fontSize: 11, color: "var(--t3)", marginLeft: 4 }}>· cross-domain synthesis</span>
-                </div>
-                <BriefingPanel
-                  connectionId={selectedConn}
-                  onInvestigate={q => goToChat(q, "investigate")}
+                <SecurityAuditPanel
+                  connId={selectedConn ?? undefined}
+                  lens={secLens}
+                  onLensChange={setSecLens}
                 />
-              </div>
-            )}
-
-            {/* ── INTELLIGENCE HUB ── */}
-            {tab === "intel-hub" && (
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
-                <div className="aug-content-header">
-                  <NavIcon name="node" size={14} color="var(--t3)" />
-                  <span style={{ fontSize: 13, fontWeight: 500 }}>Intelligence Hub</span>
-                  <span style={{ fontSize: 11, color: "var(--t3)", marginLeft: 4 }}>· domain knowledge profiles</span>
-                </div>
-                <IntelligenceHub connectionId={selectedConn} />
-              </div>
-            )}
-
-            {/* ── DOMAIN INTEL ── */}
-            {tab === "intel" && (
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
-                <div className="aug-content-header">
-                  <NavIcon name="process" size={14} color="var(--t3)" />
-                  <span style={{ fontSize: 13, fontWeight: 500 }}>Domain Intelligence</span>
-                </div>
-                <ExplorationPanel connectionId={selectedConn} initialSection={explorationSection} />
-              </div>
-            )}
-
-            {/* ── ORG INTELLIGENCE ── */}
-            {tab === "org-intel" && (
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
-                <div className="aug-content-header">
-                  <NavIcon name="spark" size={14} color="var(--t3)" />
-                  <span style={{ fontSize: 13, fontWeight: 500 }}>Org Intelligence</span>
-                </div>
-                <OrgIntelPanel />
-              </div>
-            )}
-
-            {/* ── ACTIVITY LOG ── */}
-            {tab === "activity" && (
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
-                <div className="aug-content-header">
-                  <NavIcon name="activity" size={14} color="var(--t3)" />
-                  <span style={{ fontSize: 13, fontWeight: 500 }}>Activity Log</span>
-                </div>
-                <ActivityLog connectionId={selectedConn} isActive={tab === "activity"} />
               </div>
             )}
 
@@ -1655,6 +1906,13 @@ export default function Home() {
               </div>
             )}
 
+            {/* ── MONITORS ── */}
+            {tab === "monitors" && (
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
+                <MonitorsPanel connId={selectedConn ?? undefined} />
+              </div>
+            )}
+
             {/* ── ACTION HUB ── */}
             {tab === "actions" && (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
@@ -1663,18 +1921,6 @@ export default function Home() {
             )}
 
             {/* ── CONNECTIONS ── */}
-            {tab === "connections" && (
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
-                <ConnectionsScreen
-                  connections={connections}
-                  selectedConn={selectedConn}
-                  onSelect={setSelectedConn}
-                  onAddConn={() => setShowAddConn(true)}
-                  onDeleteConn={conn => setPendingDeleteConn(conn)}
-                />
-              </div>
-            )}
-
             {/* ── METRICS ── */}
             {tab === "metrics" && (
               <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", background: "var(--bg-0)" }}>
@@ -1686,7 +1932,7 @@ export default function Home() {
             {tab === "catalog" && (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
                 <CatalogScreen
-                  connections={connections}
+                  connections={wsConnections}
                   selectedConn={selectedConn}
                   onSelect={setSelectedConn}
                   onDeleteConn={conn => setPendingDeleteConn(conn)}
@@ -1775,7 +2021,7 @@ export default function Home() {
       {/* ── Canvas creator modal ── */}
       {showCanvasCreator && (
         <CanvasCreator
-          connections={connections}
+          connections={wsConnections}
           onCreated={canvas => {
             setShowCanvasCreator(false);
             handleCanvasSelect(canvas);

@@ -36,6 +36,8 @@ interface Props {
   restoreSessionId?: string | null;
   initialQuestion?: string;
   initialMode?: "ask" | "investigate";
+  /** Optional landing block rendered atop the empty state (e.g. canvas Capabilities). */
+  capabilities?: React.ReactNode;
 }
 
 /* ── Input box — module-level so React never remounts it on parent re-render ── */
@@ -279,7 +281,7 @@ function DebugLogDrawer({ eventLogRef, onClose }: { eventLogRef: React.RefObject
   );
 }
 
-export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQuestion, initialMode }: Props) {
+export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQuestion, initialMode, capabilities }: Props) {
   const { state, ask, stop, clear, restore, eventLogRef } = useChat();
   const [input, setInput]           = useState("");
   const [mode, setMode]             = useState<"ask" | "investigate">("ask");
@@ -486,13 +488,17 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
         <div className="flex-1 flex flex-col items-center justify-center py-10">
           <div className="w-[90%] flex flex-col gap-5">
 
-            <div className="text-center">
-              <p className="text-[12px] font-bold text-zinc-200">Ask your data anything</p>
-              <p className="text-[12px] text-zinc-500 mt-1.5">
-                Use <span className="text-zinc-400 font-bold">Quick</span> for fast SQL answers ·{" "}
-                <span className="text-violet-400/90 font-bold">Agentic</span> for deep root-cause analysis
-              </p>
-            </div>
+            {capabilities}
+
+            {!capabilities && (
+              <div className="text-center">
+                <p className="text-[12px] font-bold text-zinc-200">Ask your data anything</p>
+                <p className="text-[12px] text-zinc-500 mt-1.5">
+                  Use <span className="text-zinc-400 font-bold">Quick</span> for fast SQL answers ·{" "}
+                  <span className="text-violet-400/90 font-bold">Agentic</span> for deep root-cause analysis
+                </p>
+              </div>
+            )}
 
             <InputBox {...inputBoxProps} multiline />
 

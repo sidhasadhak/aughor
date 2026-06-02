@@ -20,6 +20,67 @@ export async function getConnections(): Promise<Connection[]> {
   return res.json();
 }
 
+// ── Workspaces ─────────────────────────────────────────────────────────────
+// The top-level scope (Databricks-style): a named grouping of connections.
+// Connections, Canvases and intelligence are all viewed through the lens of
+// the currently-selected Workspace.
+export interface Workspace {
+  id: string;
+  name: string;
+  description: string;
+  connection_ids: string[];
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function getWorkspaces(): Promise<Workspace[]> {
+  const res = await fetch(`${BASE}/workspaces`);
+  if (!res.ok) throw new Error("Failed to fetch workspaces");
+  return res.json();
+}
+
+export async function createWorkspace(
+  name: string,
+  connection_ids: string[] = [],
+  description = "",
+): Promise<Workspace> {
+  const res = await fetch(`${BASE}/workspaces`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, connection_ids, description }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "Failed to create workspace");
+  }
+  return res.json();
+}
+
+export async function updateWorkspace(
+  id: string,
+  patch: { name?: string; description?: string; connection_ids?: string[] },
+): Promise<Workspace> {
+  const res = await fetch(`${BASE}/workspaces/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "Failed to update workspace");
+  }
+  return res.json();
+}
+
+export async function deleteWorkspace(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/workspaces/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "Failed to delete workspace");
+  }
+}
+
 export async function addConnection(
   name: string,
   conn_type: string,
@@ -216,6 +277,11 @@ export async function getSchema(id: string): Promise<string> {
   if (!res.ok) throw new Error("Failed to fetch schema");
   const data = await res.json();
   return data.schema as string;
+}
+
+export async function refreshSchemaCache(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/connections/${id}/schema/refresh`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to refresh schema cache");
 }
 
 export async function getSchemaDiagram(id: string): Promise<string> {
@@ -1193,7 +1259,9 @@ export interface MonitorDef {
   history_days: number;
   dimension_column: string | null;
   freshness_table: string | null;
+  freshness_column: string | null;
   freshness_sla_hours: number;
+  drift_p_threshold: number | null;
   notification_channel: string;
   enabled: boolean;
   created_at: string;

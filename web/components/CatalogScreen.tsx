@@ -16,7 +16,8 @@
  *   Table    → header | tabs (Overview / Sample Data) | columns + About sidebar
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useSchema } from "@/lib/schema-context";
 import {
   getCatalogTree, getConnections, addConnection, deleteConnection,
   testConnection, sampleTable, getSchemaRich,
@@ -25,6 +26,7 @@ import {
 } from "@/lib/api";
 import { ExplorationBadge } from "@/components/ExplorationBadge";
 import { SchemaPanel } from "@/components/SchemaPanel";
+import { DocumentUploader } from "@/components/DocumentUploader";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -292,13 +294,6 @@ function FilterBox({ value, onChange, placeholder }: { value: string; onChange:(
 }
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
-
-const IcoSection = () => (
-  <svg width="13" height="13" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
-    <circle cx="8" cy="8" r="6" stroke="currentColor" strokeWidth="1.3" opacity=".5" />
-    <circle cx="8" cy="8" r="2.5" fill="currentColor" opacity=".4" />
-  </svg>
-);
 
 const IcoCatalog = ({ color = "currentColor" }: { color?: string }) => (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
@@ -676,13 +671,16 @@ function SchemaDetailPanel({ sel, onSelectTable, onAsk }: {
 
 type CatalogTab = "schemas";
 
-function CatalogDetailPanel({ sel, onSelectSchema }: {
+function CatalogDetailPanel({ sel, onSelectSchema, conn }: {
   sel:            Extract<Sel, { level: "catalog" }>;
   onSelectSchema: (schema: CatalogSchemaInfo) => void;
+  conn?:          Connection;
 }) {
   const [filter, setFilter] = useState("");
+  const [tab, setTab]       = useState<"overview" | "knowledge">("overview");
   const { entry } = sel;
   const cm = connMeta(entry.conn_type);
+  const effTab = entry.builtin && tab === "knowledge" ? "overview" : tab;
   const q = filter.toLowerCase();
   const schemas = q ? entry.schemas.filter(s => s.name.toLowerCase().includes(q) || s.tables.some(t => t.name.toLowerCase().includes(q))) : entry.schemas;
   const totalTables = entry.schemas.reduce((s, sc) => s + sc.tables.length, 0);
@@ -702,13 +700,26 @@ function CatalogDetailPanel({ sel, onSelectSchema }: {
       />
 
       <TabBar
-        tabs={[{ id: "schemas", label: `Schemas  ${entry.schemas.length}` }]}
-        active="schemas"
-        onChange={() => {}}
+        tabs={[
+          { id: "overview", label: `Overview  ${entry.schemas.length}` },
+          ...(entry.builtin ? [] : [{ id: "knowledge", label: "Knowledge" }]),
+        ]}
+        active={effTab}
+        onChange={id => setTab(id as "overview" | "knowledge")}
       />
 
+      {effTab === "knowledge" ? (
+        <div style={{ flex: 1, overflowY: "auto", padding: "18px 20px" }}>
+          <p style={{ fontSize: 12, color: "var(--t2)", marginBottom: 16, maxWidth: 560, lineHeight: 1.5 }}>
+            Upload documents (PDFs, reports, runbooks) to give Aughor institutional knowledge
+            about <span style={{ color: "var(--t1)", fontWeight: 500 }}>{entry.name}</span>. This
+            grounds Quick and Agentic answers in your team&rsquo;s own context.
+          </p>
+          <DocumentUploader />
+        </div>
+      ) : (
       <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
-        {/* Main: schema list */}
+        {/* Main: schema list (Overview tab) */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
           {/* Filter row */}
           <div style={{ padding: "10px 16px", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, background: "var(--bg-0)" }}>
@@ -758,6 +769,9 @@ function CatalogDetailPanel({ sel, onSelectSchema }: {
             title="About this catalog"
             rows={[
               { label: "Type",    value: <span style={{ fontSize: 9, padding: "2px 7px", borderRadius: 3, background: cm.bg, color: cm.color, border: `0.5px solid ${cm.border}` }}>{cm.label}</span> },
+              ...(conn && !entry.builtin ? [{ label: "Status", value: <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, color: "var(--grn4)" }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--grn4)" }} />Active</span> }] : []),
+              ...(conn?.dsn_preview ? [{ label: "DSN", value: <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--t2)", wordBreak: "break-all" as const }}>{conn.dsn_preview}</span> }] : []),
+              ...(conn && !entry.builtin ? [{ label: "Default schema", value: <span style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>{conn.schema_name || "default"}</span> }] : []),
               { label: "Schemas", value: String(entry.schemas.length) },
               { label: "Tables",  value: String(totalTables) },
               { label: "Total rows", value: totalRows > 0 ? fmtRows(totalRows) : "—" },
@@ -767,6 +781,175 @@ function CatalogDetailPanel({ sel, onSelectSchema }: {
           />
           <ConnectorActions connId={entry.conn_id} connType={entry.conn_type} />
         </div>
+      </div>
+      )}
+    </div>
+  );
+}
+
+// ── Right: Catalog home (Suggested / Favorites / Recents) ──────────────────────
+
+const FAVS_KEY    = "aug.catalog.favs";
+const RECENTS_KEY = "aug.catalog.recents";
+
+interface FlatItem {
+  key:        string;
+  name:       string;
+  type:       "Catalog" | "Schema" | "Table";
+  path:       string;
+  reason:     string;
+  rows:       number | null;
+  connId:     string;
+  schemaName?: string;
+  tableName?:  string;
+}
+
+function readLS(key: string): string[] {
+  try { return JSON.parse(localStorage.getItem(key) || "[]"); } catch { return []; }
+}
+function writeLS(key: string, v: string[]) { try { localStorage.setItem(key, JSON.stringify(v)); } catch { /* noop */ } }
+function pushRecent(key: string) {
+  const cur = readLS(RECENTS_KEY).filter(k => k !== key);
+  writeLS(RECENTS_KEY, [key, ...cur].slice(0, 15));
+}
+
+function flattenTree(tree: CatalogTree | null): FlatItem[] {
+  if (!tree) return [];
+  const out: FlatItem[] = [];
+  tree.sections.forEach(sec => sec.entries.forEach(cat => {
+    const totT = cat.schemas.reduce((s, x) => s + x.tables.length, 0);
+    out.push({ key: `${cat.conn_id}::`, name: cat.name, type: "Catalog", path: sec.label,
+      reason: `${cat.schemas.length} schema${cat.schemas.length !== 1 ? "s" : ""} · ${totT} table${totT !== 1 ? "s" : ""}`, rows: null, connId: cat.conn_id });
+    cat.schemas.forEach(sc => {
+      out.push({ key: `${cat.conn_id}:${sc.name}:`, name: sc.name, type: "Schema", path: cat.name,
+        reason: `${sc.tables.length} table${sc.tables.length !== 1 ? "s" : ""}`, rows: null, connId: cat.conn_id, schemaName: sc.name });
+      sc.tables.forEach(t => {
+        out.push({ key: `${cat.conn_id}:${sc.name}:${t.name}`, name: t.name, type: "Table", path: `${cat.name}.${sc.name}`,
+          reason: t.row_count != null ? `${fmtRows(t.row_count)} rows` : "Table", rows: t.row_count, connId: cat.conn_id, schemaName: sc.name, tableName: t.name });
+      });
+    });
+  }));
+  return out;
+}
+
+const typeIcon = (t: FlatItem["type"]) =>
+  t === "Catalog" ? <IcoCatalog color="var(--t2)" /> :
+  t === "Schema"  ? <IcoSchema color="#5a7fa8" size={15} /> :
+                    <IcoTable size={15} />;
+
+function CatalogHomePanel({ tree, onPick }: { tree: CatalogTree | null; onPick: (it: FlatItem) => void }) {
+  const [view, setView]     = useState<"suggested" | "favorites" | "recents">("suggested");
+  const [filter, setFilter] = useState("");
+  const [favs, setFavs]       = useState<string[]>([]);
+  const [recents, setRecents] = useState<string[]>([]);
+  useEffect(() => { setFavs(readLS(FAVS_KEY)); setRecents(readLS(RECENTS_KEY)); }, []);
+
+  const all   = useMemo(() => flattenTree(tree), [tree]);
+  const byKey = useMemo(() => Object.fromEntries(all.map(i => [i.key, i])), [all]);
+
+  const toggleFav = (k: string) => setFavs(prev => {
+    const n = prev.includes(k) ? prev.filter(x => x !== k) : [k, ...prev];
+    writeLS(FAVS_KEY, n);
+    return n;
+  });
+
+  let items: FlatItem[];
+  if (view === "favorites")    items = favs.map(k => byKey[k]).filter(Boolean);
+  else if (view === "recents") items = recents.map(k => byKey[k]).filter(Boolean);
+  else {
+    const tables  = all.filter(i => i.type === "Table").sort((a, b) => (b.rows || 0) - (a.rows || 0));
+    const schemas = all.filter(i => i.type === "Schema");
+    const cats    = all.filter(i => i.type === "Catalog");
+    items = [...tables.slice(0, 14), ...schemas.slice(0, 6), ...cats].slice(0, 26);
+  }
+  const q = filter.toLowerCase();
+  if (q) items = items.filter(i => i.name.toLowerCase().includes(q) || i.path.toLowerCase().includes(q));
+
+  const chips: { id: typeof view; label: string; icon: React.ReactNode }[] = [
+    { id: "suggested", label: "Suggested", icon: <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><path d="M8 1.5a4.5 4.5 0 0 0-2.7 8.1c.4.3.7.8.7 1.4v.5h4v-.5c0-.6.3-1.1.7-1.4A4.5 4.5 0 0 0 8 1.5Z"/><path d="M6 14h4M6.5 15.5h3" strokeLinecap="round"/></svg> },
+    { id: "favorites", label: "Favorites", icon: <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"><path d="M8 1.8l1.9 3.9 4.3.6-3.1 3 .7 4.2L8 11.6 4.2 13.5l.7-4.2-3.1-3 4.3-.6z"/></svg> },
+    { id: "recents",   label: "Recents",   icon: <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4"><circle cx="8" cy="8" r="6.3"/><path d="M8 4.5V8l2.5 1.5" strokeLinecap="round" strokeLinejoin="round"/></svg> },
+  ];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden", background: "var(--bg-0)" }}>
+      {/* Header */}
+      <div style={{ padding: "20px 28px 0", flexShrink: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 18 }}>
+          <span style={{ color: "var(--t2)", display: "flex" }}><IcoCatalog color="var(--t2)" /></span>
+          <h1 style={{ fontSize: 22, fontWeight: 600, color: "var(--t1)", letterSpacing: "-0.01em" }}>Catalog</h1>
+        </div>
+
+        {/* Chips + filter */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 2 }}>
+          <div style={{ display: "flex", gap: 8 }}>
+            {chips.map(c => {
+              const on = view === c.id;
+              return (
+                <button key={c.id} onClick={() => setView(c.id)}
+                  style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 500, padding: "6px 14px", borderRadius: 999, cursor: "pointer",
+                    background: on ? "rgba(45,114,210,0.13)" : "transparent",
+                    color: on ? "var(--blue5)" : "var(--t2)",
+                    border: `1px solid ${on ? "rgba(45,114,210,0.45)" : "var(--b1)"}`, transition: "all .1s" }}
+                  onMouseEnter={e => { if (!on) (e.currentTarget as HTMLElement).style.borderColor = "var(--b2)"; }}
+                  onMouseLeave={e => { if (!on) (e.currentTarget as HTMLElement).style.borderColor = "var(--b1)"; }}
+                >
+                  <span style={{ display: "flex" }}>{c.icon}</span>{c.label}
+                </button>
+              );
+            })}
+          </div>
+          <FilterBox value={filter} onChange={setFilter} placeholder="Filter…" />
+        </div>
+      </div>
+
+      {/* Table */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "10px 16px 24px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,2fr) minmax(0,1.6fr) 120px", padding: "7px 12px", borderBottom: "0.5px solid var(--b1)", position: "sticky", top: 0, background: "var(--bg-0)", zIndex: 1 }}>
+          {["Name", view === "suggested" ? "Reason for suggestion" : "Location", "Type"].map(h => (
+            <span key={h} style={{ fontSize: 11, fontWeight: 600, color: "var(--t3)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{h}</span>
+          ))}
+        </div>
+
+        {items.length === 0 ? (
+          <p style={{ fontSize: 12.5, color: "var(--t3)", padding: "28px 12px", lineHeight: 1.6 }}>
+            {view === "favorites" ? "No favorites yet. Hover a row and tap the star to pin it here."
+              : view === "recents" ? "No recent items yet. Open a table to see it here."
+              : "No catalog items found. Add a connection to get started."}
+          </p>
+        ) : items.map(it => {
+          const fav = favs.includes(it.key);
+          return (
+            <div key={it.key + view} onClick={() => onPick(it)}
+              className="aug-home-row"
+              style={{ display: "grid", gridTemplateColumns: "minmax(0,2fr) minmax(0,1.6fr) 120px", alignItems: "center",
+                padding: "10px 12px", borderBottom: "0.5px solid var(--b0)", cursor: "pointer", borderRadius: 4 }}
+              onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "var(--bg-hover)"}
+              onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 11, minWidth: 0 }}>
+                <span style={{ display: "flex", flexShrink: 0 }}>{typeIcon(it.type)}</span>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: "var(--blue5)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.name}</div>
+                  <div style={{ fontSize: 11, color: "var(--t3)", fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 1 }}>{it.path}</div>
+                </div>
+              </div>
+              <span style={{ fontSize: 12.5, color: "var(--t2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {view === "suggested" ? it.reason : it.path}
+              </span>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                <span style={{ fontSize: 12.5, color: "var(--t2)" }}>{it.type}</span>
+                <button onClick={e => { e.stopPropagation(); toggleFav(it.key); }} title={fav ? "Unfavorite" : "Favorite"}
+                  style={{ background: "none", border: "none", cursor: "pointer", padding: 2, color: fav ? "var(--amb4)" : "var(--t4)", display: "flex" }}
+                  onMouseEnter={e => { if (!fav) (e.currentTarget as HTMLElement).style.color = "var(--t2)"; }}
+                  onMouseLeave={e => { if (!fav) (e.currentTarget as HTMLElement).style.color = "var(--t4)"; }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 16 16" fill={fav ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round"><path d="M8 1.8l1.9 3.9 4.3.6-3.1 3 .7 4.2L8 11.6 4.2 13.5l.7-4.2-3.1-3 4.3-.6z"/></svg>
+                </button>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -812,14 +995,14 @@ function TreeRow({
     <div
       onClick={onClick}
       style={{
-        display: "flex", alignItems: "center", gap: 5,
-        padding: `4px 8px 4px ${8 + depth * 14}px`,
+        display: "flex", alignItems: "center", gap: 7,
+        padding: `6px 10px 6px ${10 + depth * 15}px`,
         cursor: "pointer", userSelect: "none",
-        background: isSelected ? "#111820" : "transparent",
+        background: isSelected ? "rgba(45,114,210,0.11)" : "transparent",
         borderLeft: `2px solid ${isSelected ? "#2D72D2" : "transparent"}`,
         transition: "background .08s", minWidth: 0,
       }}
-      onMouseEnter={e => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = "#0f1014"; }}
+      onMouseEnter={e => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = "var(--bg-hover)"; }}
       onMouseLeave={e => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = "transparent"; }}
     >
       {hasChildren ? (
@@ -831,9 +1014,9 @@ function TreeRow({
       <span style={{ color: isSelected ? "var(--blue4)" : "var(--t3)", display: "flex", alignItems: "center" }}>{icon}</span>
 
       <span style={{
-        fontSize: 12, flex: 1, minWidth: 0,
+        fontSize: 13, flex: 1, minWidth: 0,
         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-        color: isSelected ? "var(--t1)" : "#c8c7c3", fontWeight: isSelected ? 500 : 400,
+        color: isSelected ? "var(--t1)" : "#c5c8cd", fontWeight: isSelected ? 500 : 400,
       }}>
         {label}
       </span>
@@ -860,6 +1043,7 @@ interface Props {
 }
 
 export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteConn, onChatWithTable }: Props) {
+  const { refresh: refreshSchema } = useSchema();
   const [tree, setTree]         = useState<CatalogTree | null>(null);
   const [treeLoading, setTreeL] = useState(true);
   const [expanded, setExpanded] = useState<Set<string>>(new Set(["section:samples", "catalog:samples"]));
@@ -925,10 +1109,9 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
 
     tree.sections.forEach(section => {
       nodes.push(
-        <div key={`sec-${section.id}`} style={{ padding: "10px 10px 4px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div key={`sec-${section.id}`} style={{ padding: "14px 12px 5px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <IcoSection />
-            <span style={{ fontSize: 11, fontWeight: 600, color: "var(--t4)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+            <span style={{ fontSize: 10.5, fontWeight: 600, color: "var(--t3)", textTransform: "uppercase", letterSpacing: "0.09em" }}>
               {section.label}
             </span>
           </div>
@@ -967,9 +1150,9 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
           >
             <TreeRow
               depth={0}
-              icon={<IcoCatalog color={cm.color} />}
+              icon={<IcoCatalog color="var(--t2)" />}
               label={entry.name}
-              badge={<span style={{ fontSize: 8, padding: "1px 4px", borderRadius: 2, background: cm.bg, color: cm.color, border: `0.5px solid ${cm.border}`, flexShrink: 0 }}>{cm.label}</span>}
+              badge={<span style={{ fontSize: 9.5, fontWeight: 500, padding: "1px 6px", borderRadius: 4, background: "var(--bg-3)", color: "var(--t3)", border: "0.5px solid var(--b1)", flexShrink: 0, letterSpacing: "0.01em" }}>{cm.label}</span>}
               count={entry.schemas.reduce((s, sc) => s + sc.tables.length, 0) || undefined}
               isOpen={catOpen}
               isSelected={sel?.level === "catalog" && sel.connId === entry.conn_id}
@@ -1026,7 +1209,7 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
                 label={table.name}
                 isSelected={isSel}
                 hasChildren={false}
-                onClick={() => setSel({ level: "table", connId: entry.conn_id, schemaName: schema.name, table })}
+                onClick={() => { pushRecent(`${entry.conn_id}:${schema.name}:${table.name}`); setSel({ level: "table", connId: entry.conn_id, schemaName: schema.name, table }); }}
               />
             );
           });
@@ -1037,7 +1220,24 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
   };
 
   const renderDetail = () => {
-    if (!sel) return <EmptyDetail />;
+    if (!sel) return (
+      <CatalogHomePanel tree={tree} onPick={it => {
+        setExpanded(p => { const n = new Set(p); n.add(`catalog:${it.connId}`); if (it.schemaName) n.add(`schema:${it.connId}:${it.schemaName}`); return n; });
+        onSelect(it.connId);
+        const cat = tree?.sections.flatMap(s => s.entries).find(e => e.conn_id === it.connId);
+        if (!cat) return;
+        if (it.type === "Table" && it.schemaName && it.tableName) {
+          const sc = cat.schemas.find(s => s.name === it.schemaName);
+          const tb = sc?.tables.find(t => t.name === it.tableName);
+          if (tb) { pushRecent(it.key); setSel({ level: "table", connId: it.connId, schemaName: it.schemaName, table: tb }); }
+        } else if (it.type === "Schema" && it.schemaName) {
+          const sc = cat.schemas.find(s => s.name === it.schemaName);
+          if (sc) setSel({ level: "schema", connId: it.connId, schemaName: it.schemaName, entry: sc });
+        } else {
+          setSel({ level: "catalog", connId: it.connId, entry: cat });
+        }
+      }} />
+    );
     if (sel.level === "table") return <TableDetailPanel sel={sel} onAsk={onChatWithTable} />;
     if (sel.level === "schema") return (
       <SchemaDetailPanel sel={sel}
@@ -1047,6 +1247,7 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
     );
     if (sel.level === "catalog") return (
       <CatalogDetailPanel sel={sel}
+        conn={connections.find(c => c.id === sel.connId)}
         onSelectSchema={sc => {
           setSel({ level: "schema", connId: sel.connId, schemaName: sc.name, entry: sc });
           setExpanded(p => { const n = new Set(p); n.add(`schema:${sel.connId}:${sc.name}`); return n; });
@@ -1060,10 +1261,14 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
     <div style={{ display: "flex", flexDirection: "row", height: "100%", overflow: "hidden", background: "var(--bg-0)" }}>
 
       {/* ── Left: Tree navigator ── */}
-      <div style={{ width: 260, borderRight: "0.5px solid var(--b1)", display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-1)", flexShrink: 0 }}>
+      <div style={{ width: 340, borderRight: "0.5px solid var(--b1)", display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-1)", flexShrink: 0 }}>
         {/* Top bar */}
         <div style={{ display: "flex", alignItems: "center", padding: "10px 12px 8px", borderBottom: "0.5px solid var(--b1)", flexShrink: 0, gap: 8 }}>
-          <span style={{ fontSize: 12, fontWeight: 600, color: "var(--t2)", textTransform: "uppercase", letterSpacing: "0.06em", flex: 1 }}>Catalog</span>
+          <button onClick={() => setSel(null)} title="Catalog home"
+            style={{ fontSize: 12, fontWeight: 600, color: sel ? "var(--t3)" : "var(--t1)", textTransform: "uppercase", letterSpacing: "0.06em", flex: 1, textAlign: "left", background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: "inherit" }}
+            onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = "var(--t1)"}
+            onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = sel ? "var(--t3)" : "var(--t1)"}
+          >Catalog</button>
           <button
             onClick={() => setShowERD(v => !v)}
             title={showERD ? "Table view" : "ERD view"}
@@ -1071,7 +1276,7 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
           >
             ERD
           </button>
-          <button onClick={loadTree} title="Refresh"
+          <button onClick={() => { loadTree(); refreshSchema(); }} title="Refresh schema"
             style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: 4, cursor: "pointer", background: "transparent", color: "var(--t4)", border: "0.5px solid #1e1f24", padding: 0 }}
             onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = "var(--t2)"}
             onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = "var(--t4)"}

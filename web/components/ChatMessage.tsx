@@ -773,7 +773,7 @@ function InlineChart({
         },
         {
           // Value label above each bar, inside top padding
-          mark: { type: "text", dy: -6, fontSize: 11, color: "#8296AF" },
+          mark: { type: "text", dy: -6, fontSize: 11, color: "#9AA0A8" },
           encoding: { text: { field: "val", type: "quantitative", format: lblFmt } },
         },
       ],
@@ -848,7 +848,7 @@ function InlineChart({
           mark: { type: "bar", color: "#818cf8", opacity: 0.85, cornerRadiusEnd: 2 },
         },
         {
-          mark: { type: "text", dy: -6, fontSize: 11, color: "#8296AF" },
+          mark: { type: "text", dy: -6, fontSize: 11, color: "#9AA0A8" },
           encoding: { text: { field: "val", type: "quantitative", format: lblFmt } },
         },
       ],
@@ -967,7 +967,7 @@ function InlineChart({
           },
           // Single text layer — always positioned just past the bar's right edge.
           {
-            mark: { type: "text", align: "left", dx: 5, fontSize: 11, color: "#8296AF" },
+            mark: { type: "text", align: "left", dx: 5, fontSize: 11, color: "#9AA0A8" },
             encoding: { text: { field: "val", type: "quantitative", format: lblFmt } },
           },
         ],

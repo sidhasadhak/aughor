@@ -80,6 +80,15 @@ async def _migrate_canvases() -> None:
 
 
 @app.on_event("startup")
+async def _ensure_default_workspace() -> None:
+    try:
+        from aughor.workspace.store import ensure_default_workspace
+        ensure_default_workspace()
+    except Exception as exc:
+        logger.warning("Workspace migration failed (non-fatal): %s", exc)
+
+
+@app.on_event("startup")
 async def _validate_connections() -> None:
     from aughor.db.registry import _db, _decrypt
     try:
@@ -275,6 +284,7 @@ from aughor.routers import (  # noqa: E402
     system,
     investigations,
     canvas,
+    workspace,
     connections,
     exploration,
     catalog,
@@ -291,6 +301,7 @@ from aughor.routers import (  # noqa: E402
 app.include_router(system.router)
 app.include_router(investigations.router)
 app.include_router(canvas.router)
+app.include_router(workspace.router)
 app.include_router(connections.router)
 app.include_router(exploration.router)
 app.include_router(catalog.router)

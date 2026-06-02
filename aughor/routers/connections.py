@@ -147,6 +147,23 @@ async def connection_schema(conn_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/connections/{conn_id}/schema/refresh")
+async def refresh_schema_cache(conn_id: str):
+    """Bust the server-side schema cache for a connection and return the fresh schema."""
+    _invalidate_schema_cache(conn_id)
+    loop = asyncio.get_event_loop()
+    try:
+        db = open_connection_for(conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    try:
+        schema = await loop.run_in_executor(None, lambda: _get_schema_cached(conn_id, db))
+        db.close()
+        return {"ok": True, "schema": schema}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/connections/{conn_id}/schema/rich")
 async def connection_schema_rich(conn_id: str):
     loop = asyncio.get_event_loop()
