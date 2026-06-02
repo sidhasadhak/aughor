@@ -492,6 +492,15 @@ class DatabaseConnection(ABC):
         except Exception:
             return sql  # best-effort — fall back to original
 
+    def make_reader(self) -> "DatabaseConnection":
+        """Return a connection clone safe for use in a parallel thread.
+
+        Base implementation returns self (serial-safe fallback). Subclasses that
+        support concurrent reads override this to open a fresh connection so
+        multiple threads can run SELECT queries simultaneously.
+        """
+        return self
+
 
 # ── DuckDB ────────────────────────────────────────────────────────────────────
 
@@ -510,6 +519,26 @@ class DuckDBConnection(DatabaseConnection):
                 self._conn.execute(f"SET search_path = '{schema_name}'")
             except Exception:
                 pass  # best-effort — don't fail the connection over schema routing
+
+    def make_reader(self) -> "DuckDBConnection":
+        """Open a fresh read-only DuckDB connection for use in a parallel thread.
+
+        DuckDB allows multiple concurrent readers on the same database file via
+        separate connections. Each connection has its own internal cursor state,
+        so there are no shared-state races between threads.
+        """
+        clone = DuckDBConnection.__new__(DuckDBConnection)
+        clone._path = self._path
+        clone._schema_name = self._schema_name
+        clone._connection_id = self._connection_id
+        clone._ontology = self._ontology
+        clone._conn = duckdb.connect(str(self._path), read_only=True)
+        if self._schema_name:
+            try:
+                clone._conn.execute(f"SET search_path = '{self._schema_name}'")
+            except Exception:
+                pass
+        return clone
 
     def dry_run(self, sql: str) -> tuple[bool, str]:
         """Run EXPLAIN against DuckDB — catches bad column/table names without returning rows."""
@@ -708,6 +737,21 @@ class PostgresConnection(DatabaseConnection):
         if self._schema_name != "public":
             with self._conn.cursor() as cur:
                 cur.execute(f"SET search_path = {self._schema_name}")
+
+    def make_reader(self) -> "PostgresConnection":
+        """Open a fresh psycopg2 connection for use in a parallel thread.
+
+        psycopg2 connections are not thread-safe, so each parallel worker needs
+        its own connection. We reuse the same DSN and schema settings.
+        """
+        clone = PostgresConnection.__new__(PostgresConnection)
+        clone._dsn = self._dsn
+        clone._schema_name = self._schema_name
+        clone._connection_id = self._connection_id
+        clone._varchar_ts_cols = self._varchar_ts_cols
+        clone._ontology = self._ontology
+        clone._connect()
+        return clone
 
     def dry_run(self, sql: str) -> tuple[bool, str]:
         """Run EXPLAIN against Postgres — catches bad column/table names without returning rows."""

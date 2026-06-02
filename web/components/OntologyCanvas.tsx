@@ -28,6 +28,21 @@ const LAYER_GAP  = 130;
 const NODE_GAP_Y = 32;
 const PAD        = 60;
 
+// Compact node geometry — the "light" card used on the org board where many
+// clusters are tiled and the heavy detail card would overwhelm the view.
+const NODE_W_C   = 168;
+const NODE_H_C   = 48;
+const LAYER_GAP_C = 90;
+const NODE_GAP_C  = 22;
+
+// A cluster is drawn radially (open, roughly circular) when it is small and
+// shallow — a star of a few entities reads better as a ring than as columns.
+// Larger / deeper clusters keep the left-to-right columnar process layout.
+function preferRadial(graph: OntologyGraph): boolean {
+  const n = Object.keys(graph.entities).length;
+  return n > 1 && n <= 6;
+}
+
 // ── Layout engine — topological depth sort ────────────────────────────────────
 //
 // Left-to-right = business process start-to-finish:
@@ -48,19 +63,70 @@ interface NodeLayout {
   col: number;   // topological column index
 }
 
-function nodeHeight(e: OntologyEntity): number {
+function nodeHeight(e: OntologyEntity, compact = false): number {
+  if (compact) return NODE_H_C;
   const header    = 80;
   const lifecycle = e.has_lifecycle && e.lifecycle_states.length ? 52 : 0;
   const footer    = 32;
   return header + lifecycle + footer;
 }
 
-function computeLayout(graph: OntologyGraph): {
+interface LayoutResult {
   nodes: NodeLayout[];
   canvasW: number;
   canvasH: number;
   colLabels: { x: number; label: string }[];
-} {
+}
+
+// ── Radial layout — open, roughly circular arrangement for small clusters ───────
+//
+// The highest-degree entity sits at the centre; the rest fan out evenly on a
+// ring around it.  Reads as an open star on the dotted background rather than a
+// rigid column stack — better for the simple 2–6 entity schemas.
+function computeRadialLayout(graph: OntologyGraph, compact: boolean): LayoutResult {
+  const NW = compact ? NODE_W_C : NODE_W;
+  const entities = Object.values(graph.entities);
+  const rels     = Object.values(graph.relationships);
+
+  // degree per entity to pick the hub
+  const deg: Record<string, number> = {};
+  for (const e of entities) deg[e.id] = 0;
+  for (const r of rels) { if (r.from_entity in deg) deg[r.from_entity]++; if (r.to_entity in deg) deg[r.to_entity]++; }
+  const sorted = [...entities].sort((a, b) => (deg[b.id] - deg[a.id]) || a.display_name.localeCompare(b.display_name));
+
+  const hub = sorted[0];
+  const ring = sorted.slice(1);
+  const NH = (e: OntologyEntity) => nodeHeight(e, compact);
+
+  // Ring radius scales with the ring count so cards don't crowd.
+  const radius = Math.max(150, ring.length * (compact ? 34 : 52) + 90);
+  const cx = radius + NW / 2 + PAD;
+  const cy = radius + NH(hub) / 2 + PAD;
+
+  const nodes: NodeLayout[] = [];
+  // hub centred
+  nodes.push({ entity: hub, x: cx - NW / 2, y: cy - NH(hub) / 2, h: NH(hub), col: 0 });
+  ring.forEach((e, i) => {
+    const ang = (-Math.PI / 2) + (i * 2 * Math.PI) / ring.length;
+    const x = cx + Math.cos(ang) * radius - NW / 2;
+    const y = cy + Math.sin(ang) * radius - NH(e) / 2;
+    nodes.push({ entity: e, x, y, h: NH(e), col: 1 });
+  });
+
+  const canvasW = cx + radius + NW / 2 + PAD;
+  const canvasH = cy + radius + NH(hub) / 2 + PAD;
+  return { nodes, canvasW, canvasH, colLabels: [] };
+}
+
+function computeLayout(graph: OntologyGraph, opts: { compact?: boolean; radial?: boolean } = {}): LayoutResult {
+  const compact = !!opts.compact;
+  const useRadial = opts.radial ?? (compact && preferRadial(graph));
+  if (useRadial && Object.keys(graph.entities).length > 1) {
+    return computeRadialLayout(graph, compact);
+  }
+  const NW       = compact ? NODE_W_C : NODE_W;
+  const LAYERGAP = compact ? LAYER_GAP_C : LAYER_GAP;
+  const GAPY     = compact ? NODE_GAP_C : NODE_GAP_Y;
   const entities = Object.values(graph.entities);
   const rels     = Object.values(graph.relationships);
 
@@ -116,7 +182,7 @@ function computeLayout(graph: OntologyGraph): {
 
   const cols = Object.keys(byCol).map(Number).sort((a, b) => a - b);
   const colX: Record<number, number> = {};
-  cols.forEach((c, i) => { colX[c] = PAD + i * (NODE_W + LAYER_GAP); });
+  cols.forEach((c, i) => { colX[c] = PAD + i * (NW + LAYERGAP); });
 
   // Semantic column labels — prefer majority entity_type in column, fall back to position
   const connectedCols = cols.filter(c => c !== ISOLATED_COL || !byCol[c]?.every(e => !hasRels.has(e.id)));
@@ -154,22 +220,22 @@ function computeLayout(graph: OntologyGraph): {
   for (const col of cols) {
     let y = PAD + 28;   // leave room for column header
     for (const e of byCol[col]) {
-      const h = nodeHeight(e);
+      const h = nodeHeight(e, compact);
       nodes.push({ entity: e, x: colX[col], y, h, col });
-      y += h + NODE_GAP_Y;
+      y += h + GAPY;
     }
   }
 
   const canvasW = cols.length
-    ? colX[cols[cols.length - 1]] + NODE_W + PAD
-    : PAD * 2 + NODE_W;
+    ? colX[cols[cols.length - 1]] + NW + PAD
+    : PAD * 2 + NW;
 
   const canvasH = Math.max(
-    480,
+    compact ? 160 : 480,
     ...cols.map(c => {
       let h = PAD + 28;
-      for (const e of (byCol[c] ?? [])) h += nodeHeight(e) + NODE_GAP_Y;
-      return h + PAD - NODE_GAP_Y;
+      for (const e of (byCol[c] ?? [])) h += nodeHeight(e, compact) + GAPY;
+      return h + PAD - GAPY;
     }),
   );
 
@@ -178,8 +244,21 @@ function computeLayout(graph: OntologyGraph): {
 
 // ── Entity node card ──────────────────────────────────────────────────────────
 
+// Dot colour per entity type — used by the compact card.
+const TYPE_DOT: Record<string, string> = {
+  reference_data:  "bg-emerald-400",
+  event:           "bg-violet-400",
+  standalone:      "bg-zinc-500",
+  business_object: "bg-sky-400",
+};
+
 function EntityNode({
   layout,
+  pos,
+  width,
+  compact = false,
+  draggable = false,
+  scale = 1,
   isSelected,
   isNeighbour,
   isDimmed,
@@ -189,8 +268,15 @@ function EntityNode({
   onMouseEnter,
   onMouseLeave,
   onInvestigate,
+  onDragDelta,
+  onDragCommit,
 }: {
   layout: NodeLayout;
+  pos: { x: number; y: number };
+  width: number;
+  compact?: boolean;
+  draggable?: boolean;
+  scale?: number;
   isSelected: boolean;
   isNeighbour: boolean;
   isDimmed: boolean;
@@ -200,10 +286,41 @@ function EntityNode({
   onMouseEnter: () => void;
   onMouseLeave: () => void;
   onInvestigate?: (q: string) => void;
+  onDragDelta?: (dx: number, dy: number) => void;
+  onDragCommit?: () => void;
 }) {
-  const { entity, x, y } = layout;
+  const { entity } = layout;
+  const { x, y } = pos;
   // Avatar letter — first char of display name, uppercased
   const avatar = entity.display_name.charAt(0).toUpperCase();
+
+  // ── Drag handling (pointer) — deltas are reported in board px (screen ÷ scale)
+  const drag = useRef<{ active: boolean; lastX: number; lastY: number; moved: boolean }>(
+    { active: false, lastX: 0, lastY: 0, moved: false },
+  );
+  const onPointerDown = (e: React.PointerEvent) => {
+    if (!draggable) return;
+    if ((e.target as HTMLElement).closest("button")) return; // let buttons work
+    e.stopPropagation();
+    try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); } catch {}
+    drag.current = { active: true, lastX: e.clientX, lastY: e.clientY, moved: false };
+  };
+  const onPointerMove = (e: React.PointerEvent) => {
+    if (!drag.current.active) return;
+    const dx = (e.clientX - drag.current.lastX) / scale;
+    const dy = (e.clientY - drag.current.lastY) / scale;
+    if (Math.abs(e.clientX - drag.current.lastX) + Math.abs(e.clientY - drag.current.lastY) > 2) drag.current.moved = true;
+    drag.current.lastX = e.clientX;
+    drag.current.lastY = e.clientY;
+    onDragDelta?.(dx, dy);
+  };
+  const onPointerUp = (e: React.PointerEvent) => {
+    if (!drag.current.active) return;
+    try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch {}
+    const moved = drag.current.moved;
+    drag.current.active = false;
+    if (moved) { onDragCommit?.(); } else { onClick(); }
+  };
 
   // Entity-type colour palette
   const typeTheme = isSelected
@@ -216,15 +333,54 @@ function EntityNode({
     ? { ring: "bg-zinc-700/40 text-zinc-500 ring-1 ring-zinc-700/30", border: "border-zinc-700/40 bg-zinc-900/60 hover:border-zinc-600/60" }
     : { ring: "bg-sky-700/20 text-sky-300 ring-1 ring-sky-600/25", border: "border-zinc-700/50 bg-zinc-900/80 hover:border-sky-600/40 hover:bg-zinc-900" }; // business_object
 
+  // ── Compact "light" card — a single pill: type dot + name + degree badge.
+  if (compact) {
+    return (
+      <div
+        className={cn(
+          "absolute rounded-lg border select-none transition-colors duration-150 flex items-center gap-2 px-2.5",
+          draggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
+          isSelected
+            ? "border-violet-400/60 bg-[#1b2030] ring-1 ring-violet-500/20"
+            : isNeighbour
+            ? "border-violet-600/35 bg-zinc-900/90"
+            : "border-zinc-700/45 bg-zinc-900/70 hover:border-zinc-600/70 hover:bg-zinc-900",
+          isDimmed && "opacity-20",
+        )}
+        style={{ left: x, top: y, width, height: NODE_H_C }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onClick={() => { if (!draggable) onClick(); }}
+        onMouseEnter={onMouseEnter}
+        onMouseLeave={onMouseLeave}
+      >
+        <span className={cn("w-2 h-2 rounded-full shrink-0", TYPE_DOT[entity.entity_type ?? "business_object"] ?? "bg-sky-400")} />
+        <span className={cn("text-[12px] font-medium leading-tight truncate flex-1", isSelected ? "text-violet-100" : "text-zinc-200")}>
+          {entity.display_name}
+        </span>
+        {(actionCount > 0 || metricCount > 0) && (
+          <span className="text-[10px] text-zinc-500 font-mono shrink-0">
+            {actionCount + metricCount}
+          </span>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div
       className={cn(
         "absolute rounded-md border cursor-pointer select-none transition-all duration-200",
         isNeighbour && !isSelected ? "border-violet-600/35 bg-zinc-900/90" : typeTheme.border,
         isDimmed && "opacity-20 pointer-events-none",
+        draggable && "cursor-grab active:cursor-grabbing",
       )}
-      style={{ left: x, top: y, width: NODE_W }}
-      onClick={onClick}
+      style={{ left: x, top: y, width }}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onClick={() => { if (!draggable) onClick(); }}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
     >
@@ -672,9 +828,23 @@ function ColLabels({ labels }: { labels: { x: number; label: string }[] }) {
 // connection / schema bounding boxes.
 
 /** Cheap size probe for packing clusters into boxes before render. */
-export function measureCluster(graph: OntologyGraph): { w: number; h: number } {
-  const { canvasW, canvasH } = computeLayout(graph);
+export function measureCluster(graph: OntologyGraph, opts: { compact?: boolean } = {}): { w: number; h: number } {
+  const { canvasW, canvasH } = computeLayout(graph, opts);
   return { w: canvasW, h: canvasH };
+}
+
+// ── Persisted drag offsets ──────────────────────────────────────────────────────
+// Keyed per-cluster (connection+schema) so a node nudged on the board stays put
+// across reloads.  Stored as { entityId: {dx,dy} } deltas off the computed layout.
+type Offsets = Record<string, { dx: number; dy: number }>;
+function loadOffsets(key?: string): Offsets {
+  if (!key || typeof window === "undefined") return {};
+  try { return JSON.parse(window.localStorage.getItem(`ont-pos:${key}`) || "{}"); }
+  catch { return {}; }
+}
+function saveOffsets(key: string | undefined, o: Offsets) {
+  if (!key || typeof window === "undefined") return;
+  try { window.localStorage.setItem(`ont-pos:${key}`, JSON.stringify(o)); } catch {}
 }
 
 export function EntityCluster({
@@ -686,6 +856,9 @@ export function EntityCluster({
   causalEdges = [],
   showCausal = false,
   showColLabels = true,
+  compact = false,
+  storageKey,
+  scale = 1,
 }: {
   graph: OntologyGraph;
   selectedEntityId: string | null;
@@ -695,15 +868,43 @@ export function EntityCluster({
   causalEdges?: CausalEdge[];
   showCausal?: boolean;
   showColLabels?: boolean;
+  compact?: boolean;
+  /** When set, node drags are enabled and persisted under this key. */
+  storageKey?: string;
+  /** Board zoom — drag deltas are divided by it so movement tracks the cursor. */
+  scale?: number;
 }) {
+  const NW = compact ? NODE_W_C : NODE_W;
+  const draggable = !!storageKey;
+
   const [hoveredEntityId, setHoveredEntityId] = useState<string | null>(null);
   const [hoveredEdgeId,   setHoveredEdgeId]   = useState<string | null>(null);
+  // Ref is the source of truth (updated synchronously during a drag); state
+  // mirrors it to trigger re-render.  This keeps persistence correct regardless
+  // of React's batching between pointermove and pointerup.
+  const offsetsRef = useRef<Offsets>(loadOffsets(storageKey));
+  const [offsets, setOffsets] = useState<Offsets>(offsetsRef.current);
+  useEffect(() => {
+    const o = loadOffsets(storageKey);
+    offsetsRef.current = o;
+    setOffsets(o);
+  }, [storageKey]);
 
-  const { nodes, colLabels, canvasW, canvasH } = useMemo(() => computeLayout(graph), [graph]);
-  const nodeMap = useMemo(
-    () => Object.fromEntries(nodes.map(n => [n.entity.id, n])),
-    [nodes],
+  const { nodes, colLabels, canvasW, canvasH } = useMemo(
+    () => computeLayout(graph, { compact }),
+    [graph, compact],
   );
+
+  // Apply persisted/live drag offsets to layout positions.
+  const posOf = (id: string, x: number, y: number) => {
+    const o = offsets[id];
+    return { x: x + (o?.dx ?? 0), y: y + (o?.dy ?? 0) };
+  };
+  const nodeMap = useMemo(() => {
+    const m: Record<string, { x: number; y: number; h: number }> = {};
+    for (const n of nodes) { const p = posOf(n.entity.id, n.x, n.y); m[n.entity.id] = { x: p.x, y: p.y, h: n.h }; }
+    return m;
+  }, [nodes, offsets]);
 
   const relsByEntity = useMemo(() => {
     const m: Record<string, string[]> = {};
@@ -740,16 +941,23 @@ export function EntityCluster({
       const srcMidY = src.y + src.h / 2;
       const dstMidY = dst.y + dst.h / 2;
       let x1: number, x2: number;
-      if (src.x + NODE_W <= dst.x) { x1 = src.x + NODE_W; x2 = dst.x; }
-      else if (dst.x + NODE_W <= src.x) { x1 = src.x; x2 = dst.x + NODE_W; }
-      else { x1 = src.x + NODE_W * 0.75; x2 = dst.x + NODE_W * 0.25; }
+      if (src.x + NW <= dst.x) { x1 = src.x + NW; x2 = dst.x; }
+      else if (dst.x + NW <= src.x) { x1 = src.x; x2 = dst.x + NW; }
+      else { x1 = src.x + NW * 0.75; x2 = dst.x + NW * 0.25; }
       return [{ rel, x1, y1: srcMidY, x2, y2: dstMidY }];
     });
-  }, [graph.relationships, nodeMap]);
+  }, [graph.relationships, nodeMap, NW]);
+
+  const onDragDelta = (id: string, dx: number, dy: number) => {
+    const cur = offsetsRef.current[id] ?? { dx: 0, dy: 0 };
+    offsetsRef.current = { ...offsetsRef.current, [id]: { dx: cur.dx + dx, dy: cur.dy + dy } };
+    setOffsets(offsetsRef.current);
+  };
+  const onDragCommit = () => { saveOffsets(storageKey, offsetsRef.current); };
 
   return (
     <div className="relative" style={{ width: canvasW, height: canvasH }}>
-      {showColLabels && <ColLabels labels={colLabels} />}
+      {showColLabels && !compact && <ColLabels labels={colLabels} />}
 
       <FlowEdges
         edges={edges}
@@ -774,6 +982,11 @@ export function EntityCluster({
           <EntityNode
             key={nl.entity.id}
             layout={nl}
+            pos={posOf(nl.entity.id, nl.x, nl.y)}
+            width={NW}
+            compact={compact}
+            draggable={draggable}
+            scale={scale}
             isSelected={selectedEntityId === nl.entity.id}
             isNeighbour={isNeighbour}
             isDimmed={isDimmed}
@@ -783,6 +996,8 @@ export function EntityCluster({
             onMouseEnter={() => setHoveredEntityId(nl.entity.id)}
             onMouseLeave={() => setHoveredEntityId(null)}
             onInvestigate={onInvestigate}
+            onDragDelta={(dx, dy) => onDragDelta(nl.entity.id, dx, dy)}
+            onDragCommit={onDragCommit}
           />
         );
       })}
@@ -899,6 +1114,8 @@ export function OntologyCanvas({
               onClickEdge={onClickEdge}
               causalEdges={causalEdges}
               showCausal={showCausal}
+              scale={zoom}
+              storageKey={connId ? `${connId}:${graph.schema_name}` : undefined}
             />
           </div>
         </div>

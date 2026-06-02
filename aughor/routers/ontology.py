@@ -49,7 +49,23 @@ def _get_ontology_graph(connection_id: str, schema_name: Optional[str] = None):
     registered schema is used.
     """
     try:
-        db = open_connection_for(connection_id)
+        if schema_name:
+            # Open against the requested schema explicitly so multi-schema
+            # databases (e.g. one DuckDB file with analytics/raw/events/…) build
+            # and cache a distinct ontology per schema rather than only the one
+            # named in the connection's stored metadata.
+            from aughor.db.connection import open_connection
+            from aughor.db.registry import get_dsn, get_meta
+            conn_type, dsn = get_dsn(connection_id)
+            meta = get_meta(connection_id)
+            db = open_connection(
+                conn_type, dsn,
+                schema_name=schema_name,
+                connection_id=connection_id,
+                meta=meta,
+            )
+        else:
+            db = open_connection_for(connection_id)
         db.get_schema()
         return db.get_ontology()
     except Exception:

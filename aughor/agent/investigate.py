@@ -359,6 +359,56 @@ def _execute_safe(conn: "DatabaseConnection", phase_id: str, sql: str):
     return result
 
 
+def _parallel_execute_safe(
+    conn: "DatabaseConnection",
+    phase_id: str,
+    plan_queries: list,
+    cap: int = 4,
+) -> list[tuple]:
+    """Run up to `cap` PhasePlan queries in parallel using per-thread reader connections.
+
+    Each worker calls _execute_safe() on its own make_reader() clone so shared
+    connection state is never touched concurrently. Falls back to serial if
+    ThreadPoolExecutor fails or there is only one query.
+
+    Returns a list of (PlanQuery, QueryResult) tuples in the same order as
+    plan_queries[:cap].
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    valid = [(q, q.sql.strip()) for q in plan_queries[:cap] if q.sql and q.sql.strip()]
+    if not valid:
+        return []
+    if len(valid) == 1:
+        q, sql = valid[0]
+        r = _execute_safe(conn, phase_id, sql)
+        r.hypothesis_id = phase_id
+        return [(q, r)]
+
+    def _run(item: tuple) -> tuple:
+        q, sql = item
+        reader = conn.make_reader()
+        r = _execute_safe(reader, phase_id, sql)
+        r.hypothesis_id = phase_id
+        return (q, r)
+
+    try:
+        with ThreadPoolExecutor(max_workers=len(valid)) as pool:
+            futures = {pool.submit(_run, item): i for i, item in enumerate(valid)}
+            ordered: list[tuple | None] = [None] * len(valid)
+            for fut in as_completed(futures):
+                ordered[futures[fut]] = fut.result()
+            return [r for r in ordered if r is not None]
+    except Exception:
+        # Serial fallback — never let parallelization break the investigation
+        results = []
+        for q, sql in valid:
+            r = _execute_safe(conn, phase_id, sql)
+            r.hypothesis_id = phase_id
+            results.append((q, r))
+        return results
+
+
 def _results_to_text(results) -> str:
     """Render a list of QueryResults as compact text for LLM interpretation."""
     parts = []
@@ -692,14 +742,8 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
         )
         return {"investigation_phases": phases + [phase]}
 
-    # Step 2: Execute
-    results = []
-    for q in plan.queries:
-        if not q.sql or not q.sql.strip():
-            continue
-        r = _execute_safe(conn, "baseline", q.sql)
-        r.hypothesis_id = "baseline"
-        results.append((q, r))
+    # Step 2: Execute (parallel — each query gets its own reader connection)
+    results = _parallel_execute_safe(conn, "baseline", plan.queries, cap=4)
 
     if not results:
         phase = _phase_result(
@@ -972,13 +1016,7 @@ def ada_decompose(state: AgentState, conn: "DatabaseConnection") -> dict:
         )
         return {"investigation_phases": phases + [phase]}
 
-    results = []
-    for q in plan.queries:
-        if not q.sql or not q.sql.strip():
-            continue
-        r = _execute_safe(conn, "decomposition", q.sql)
-        r.hypothesis_id = "decomposition"
-        results.append((q, r))
+    results = _parallel_execute_safe(conn, "decomposition", plan.queries, cap=4)
 
     if not results:
         phase = _phase_result(
@@ -1108,13 +1146,7 @@ def ada_dimensional(state: AgentState, conn: "DatabaseConnection") -> dict:
         )
         return {"investigation_phases": phases + [phase]}
 
-    results = []
-    for q in plan.queries[:4]:  # cap at 4 dimensions
-        if not q.sql or not q.sql.strip():
-            continue
-        r = _execute_safe(conn, "dimensional", q.sql)
-        r.hypothesis_id = "dimensional"
-        results.append((q, r))
+    results = _parallel_execute_safe(conn, "dimensional", plan.queries, cap=4)
 
     if not results:
         phase = _phase_result(
@@ -1249,13 +1281,7 @@ def ada_behavioral(state: AgentState, conn: "DatabaseConnection") -> dict:
         )
         return {"investigation_phases": phases + [phase]}
 
-    results = []
-    for q in plan.queries[:4]:
-        if not q.sql or not q.sql.strip():
-            continue
-        r = _execute_safe(conn, "behavioral", q.sql)
-        r.hypothesis_id = "behavioral"
-        results.append((q, r))
+    results = _parallel_execute_safe(conn, "behavioral", plan.queries, cap=4)
 
     if not results:
         phase = _phase_result(

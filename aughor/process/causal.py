@@ -23,7 +23,7 @@ _CONFIRMED_PATH  = Path(__file__).parent.parent.parent / "data" / "causal_graph.
 
 def _now() -> str:
     import datetime
-    return datetime.datetime.utcnow().isoformat() + "Z"
+    return datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _edge_id(from_signal: str, to_signal: str) -> str:
@@ -62,7 +62,7 @@ class ConfirmedCausalEdge(BaseModel):
 
 def _now() -> str:
     import datetime
-    return datetime.datetime.utcnow().isoformat() + "Z"
+    return datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _edge_id(from_signal: str, to_signal: str) -> str:

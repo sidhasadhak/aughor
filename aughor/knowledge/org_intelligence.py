@@ -49,7 +49,7 @@ def promote_to_org(
     from aughor.semantic.embedder import embed_one
     from aughor.semantic.vector_store import upsert
 
-    promoted_at = datetime.datetime.utcnow().isoformat() + "Z"
+    promoted_at = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
     point_id = _point_id(canvas_id, insight_id)
 
     _ensure_collection()

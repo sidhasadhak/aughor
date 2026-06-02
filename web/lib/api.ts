@@ -585,8 +585,11 @@ export interface OntologyGraph {
   interfaces: Record<string, OntologyInterface>;  // OE-6
 }
 
-export async function getOntology(connectionId: string): Promise<OntologyGraph> {
-  const res = await fetch(`${BASE}/ontology?connection_id=${encodeURIComponent(connectionId)}`);
+export async function getOntology(connectionId: string, schemaName?: string): Promise<OntologyGraph> {
+  const q = schemaName
+    ? `connection_id=${encodeURIComponent(connectionId)}&schema_name=${encodeURIComponent(schemaName)}`
+    : `connection_id=${encodeURIComponent(connectionId)}`;
+  const res = await fetch(`${BASE}/ontology?${q}`);
   if (!res.ok) throw new Error("Ontology not available for this connection");
   return res.json();
 }

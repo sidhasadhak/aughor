@@ -57,17 +57,27 @@ MAX_ITER = int(__import__("os").getenv("AUGHOR_MAX_ITER", "6"))
 
 # ── Node: route_question ─────────────────────────────────────────────────────
 
-@_telemetry.node_span("route_question")
-def route_question(state: AgentState) -> dict[str, Any]:
+def classify_question(question: str) -> tuple[str, RouteDecision]:
+    """Pure classifier — calls LLM and returns (effective_mode, decision).
+
+    Separated from route_question so it can be called and tested independently
+    without constructing a full AgentState.
+    Low-confidence direct falls back to investigate: false-direct (shallow
+    answer) is worse than false-investigate (extra thoroughness).
+    """
     llm = get_provider("coder")
     decision: RouteDecision = llm.complete(
         system="You are a routing classifier for a business intelligence agent. Classify questions precisely.",
-        user=ROUTE_QUESTION_PROMPT.format(question=state["question"]),
+        user=ROUTE_QUESTION_PROMPT.format(question=question),
         response_model=RouteDecision,
     )
-    # Low-confidence direct classifications fall back to investigate —
-    # false-direct (shallow answer) is worse than false-investigate (extra thoroughness)
     effective_mode = decision.mode if decision.confidence >= 0.65 else "investigate"
+    return effective_mode, decision
+
+
+@_telemetry.node_span("route_question")
+def route_question(state: AgentState) -> dict[str, Any]:
+    effective_mode, decision = classify_question(state["question"])
     base = {"route_reasoning": decision.reasoning, "route_confidence": decision.confidence}
     if effective_mode == "direct":
         return {
@@ -398,32 +408,45 @@ def execute_planned_queries(state: AgentState, conn: "DatabaseConnection") -> di
     expected_if_true = plan_dict.get("expected_if_true") or None
     expected_if_false = plan_dict.get("expected_if_false") or None
 
-    # Generate SQL for each query intent
-    queries: list[str] = []
+    # Generate SQL for each query intent — parallelized (LLM calls are independent HTTP requests)
+    from concurrent.futures import ThreadPoolExecutor as _ThreadPool
+
     llm = get_provider("coder")
-    for intent in intents:
+    _schema_ctx = state["schema_context"]
+    _dialect = conn.dialect
+
+    def _gen_sql(intent: dict) -> str | None:
         intent_tables = ", ".join(intent.get("tables") or []) or "(all plan tables)"
         intent_filters = "; ".join(intent.get("filters") or []) or "none"
         intent_aggregation = intent.get("aggregation") or "none"
+        try:
+            sql_out: SQLOutput = llm.complete(
+                system="You are a SQL expert. Translate the query intent into one SQL SELECT statement.",
+                user=WRITE_SQL_PROMPT.format(
+                    dialect=_dialect,
+                    hypothesis_description=h.description,
+                    intent_description=intent.get("description", ""),
+                    intent_tables=intent_tables,
+                    intent_filters=intent_filters,
+                    intent_aggregation=intent_aggregation,
+                    schema=_schema_ctx,
+                    pitfall_section=pitfall_section,
+                    sql_examples_section=sql_examples_section,
+                    ontology_actions_section=ontology_actions_section,
+                ),
+                response_model=SQLOutput,
+            )
+            return sql_out.sql.strip() if sql_out.sql and sql_out.sql.strip() else None
+        except Exception:
+            return None
 
-        sql_out: SQLOutput = llm.complete(
-            system="You are a SQL expert. Translate the query intent into one SQL SELECT statement.",
-            user=WRITE_SQL_PROMPT.format(
-                dialect=conn.dialect,
-                hypothesis_description=h.description,
-                intent_description=intent.get("description", ""),
-                intent_tables=intent_tables,
-                intent_filters=intent_filters,
-                intent_aggregation=intent_aggregation,
-                schema=state["schema_context"],
-                pitfall_section=pitfall_section,
-                sql_examples_section=sql_examples_section,
-                ontology_actions_section=ontology_actions_section,
-            ),
-            response_model=SQLOutput,
-        )
-        if sql_out.sql and sql_out.sql.strip():
-            queries.append(sql_out.sql.strip())
+    if len(intents) > 1:
+        with _ThreadPool(max_workers=len(intents)) as pool:
+            raw = list(pool.map(_gen_sql, intents))
+    else:
+        raw = [_gen_sql(intents[0])] if intents else []
+
+    queries: list[str] = [s for s in raw if s]
 
     # Expand ACTION:name() tokens before execution
     queries, _action_notes = expand_actions(queries, ontology_graph)

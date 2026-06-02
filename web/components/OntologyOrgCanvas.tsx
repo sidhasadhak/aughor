@@ -3,173 +3,159 @@
 /**
  * OntologyOrgCanvas — the org-level board.
  *
- * One bounding box per connection (database).  Inside each box, the
- * connection's schema(s) are sub-boxed, and each schema holds the *actual*
- * entity cluster — the same nodes-and-edges graph the single-connection canvas
- * draws (customer_order ──placed by──▶ Customer …), rendered via the shared
- * `EntityCluster`.  So the org view is literally "a big box (connection) full
- * of the relationship clusters derived from its tables", grouped connection →
- * schema, exactly as you'd read the business across the org.
+ * Every (connection, schema) pair the org owns is rendered as its *own* entity
+ * cluster — the same nodes-and-edges graph the single-connection canvas draws,
+ * in its light "compact" form — floating directly on the open dotted background
+ * (no heavy card chrome).  A small label above each cluster reads
+ * "connection · schema" so you always know what you're looking at.
  *
- * Trackpad pinch / ⌘-wheel (useWheelZoom) zooms the whole board: out to see
- * every connection at once, in to read individual entities.  Cross-connection
- * edges are intentionally not drawn (that's a separate architecture).
+ * Proximity encodes grouping: clusters belonging to the same connection sit
+ * close together in one band; different connections are pushed far apart.  So a
+ * 6-schema database reads as one tight neighbourhood, distinct from the next
+ * connection's neighbourhood.
  *
- * Prototype scope: composes the existing per-connection `getOntology` endpoint
- * client-side (no backend changes).  One graph = one (connection, schema) pair,
- * so today each connection box holds a single schema cluster; the layout is
- * already structured to hold several once multi-schema graphs arrive.
+ * Schemas are enumerated from the catalog tree (all of them, not just the one in
+ * the connection's stored metadata), and each schema's ontology is fetched
+ * per-schema via getOntology(conn, schema) — that's how all six beautycommerce
+ * schemas show up rather than only "analytics".
+ *
+ * Nodes are draggable; positions persist per cluster (localStorage).  Trackpad
+ * pinch / ⌘-wheel zooms the whole board.
  */
 
 import { useEffect, useMemo, useRef, useState, useLayoutEffect } from "react";
 import { useWheelZoom } from "@/lib/useWheelZoom";
 import { EntityCluster, measureCluster } from "./OntologyCanvas";
 import {
-  getConnections,
+  getCatalogTree,
   getOntology,
-  type Connection,
   type OntologyGraph,
 } from "@/lib/api";
 
 // ── Layout constants ──────────────────────────────────────────────────────────
 
-const GAP            = 72;    // gap between connection boxes
-const BOX_PAD        = 18;    // inner padding of a connection box
-const SCHEMA_PAD     = 14;    // padding inside a schema sub-box (around the cluster)
-const SHELL_W        = 420;   // placeholder cluster width while a graph loads
-const SHELL_H        = 240;
-const MAX_COLS       = 3;
+const SCHEMA_GAP = 56;    // gap between schema clusters of the SAME connection (close)
+const CONN_GAP   = 128;   // gap between connection bands (far)
+const LABEL_H    = 30;    // floating label strip above each cluster
+const SHELL_W    = 320;   // placeholder size while a graph loads
+const SHELL_H    = 180;
 
 const DOTS = {
   backgroundImage: "radial-gradient(circle, #2a3140 1.2px, transparent 1.2px)",
-  backgroundSize: "24px 24px",
+  backgroundSize: "26px 26px",
 } as const;
 
-// ── Per-connection model ──────────────────────────────────────────────────────
+// ── Model ───────────────────────────────────────────────────────────────────────
 
-interface BoxModel {
-  conn: Connection;
+interface ClusterModel {
+  connId: string;
+  connName: string;
+  connType: string;
+  schema: string;
+  tableCount: number;
   graph: OntologyGraph | null;
   loading: boolean;
   error: boolean;
 }
 
-/** A connection's schemas — today always one graph per connection. */
-type SchemaGroup = { schema: string; graph: OntologyGraph };
-
-function schemaGroups(graph: OntologyGraph | null): SchemaGroup[] {
-  if (!graph) return [];
-  return [{ schema: graph.schema_name || "public", graph }];
+/** Bands = clusters grouped by connection, preserving discovery order. */
+function bandsOf(models: ClusterModel[]): { connId: string; connName: string; connType: string; clusters: ClusterModel[] }[] {
+  const order: string[] = [];
+  const map: Record<string, ClusterModel[]> = {};
+  for (const m of models) {
+    if (!(m.connId in map)) { map[m.connId] = []; order.push(m.connId); }
+    map[m.connId].push(m);
+  }
+  return order.map(connId => ({
+    connId,
+    connName: map[connId][0].connName,
+    connType: map[connId][0].connType,
+    clusters: map[connId],
+  }));
 }
 
-// ── A single schema sub-box (label + real entity cluster) ───────────────────────
+// ── A single floating cluster (label + open entity graph) ────────────────────────
 
-function SchemaBox({
-  group,
-  selectedEntityId,
-  onSelectEntity,
-}: {
-  group: SchemaGroup;
-  selectedEntityId: string | null;
-  onSelectEntity: (id: string | null) => void;
-}) {
-  const { graph } = group;
-  const size = useMemo(() => measureCluster(graph), [graph]);
-  const entityCount = Object.keys(graph.entities).length;
-  const relCount    = Object.keys(graph.relationships).length;
-
-  return (
-    <div className="rounded-lg border border-zinc-700/50 bg-zinc-950/30 overflow-hidden">
-      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-zinc-700/40 bg-zinc-900/40">
-        <span className="w-1.5 h-1.5 rounded-full bg-sky-400 shrink-0" />
-        <span className="text-[12px] font-medium text-zinc-200 truncate">{group.schema}</span>
-        <span className="text-[11px] text-zinc-500 ml-auto shrink-0">
-          {entityCount} entities · {relCount} rels
-        </span>
-      </div>
-      <div style={{ ...DOTS, padding: SCHEMA_PAD }}>
-        <div style={{ width: size.w, height: size.h, position: "relative" }}>
-          <EntityCluster
-            graph={graph}
-            selectedEntityId={selectedEntityId}
-            onSelectEntity={onSelectEntity}
-            showColLabels={false}
-            showCausal={false}
-          />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ── A single connection box ──────────────────────────────────────────────────────
-
-function ConnectionBox({
+function ClusterTile({
   model,
-  width,
   selectedEntityId,
   onSelectEntity,
+  scale,
   onOpen,
 }: {
-  model: BoxModel;
-  width: number;
+  model: ClusterModel;
   selectedEntityId: string | null;
   onSelectEntity: (id: string | null) => void;
+  scale: number;
   onOpen: () => void;
 }) {
-  const { conn, graph, loading, error } = model;
-  const groups = useMemo(() => schemaGroups(graph), [graph]);
-  const totalEntities = groups.reduce((n, g) => n + Object.keys(g.graph.entities).length, 0);
-  const totalRels     = groups.reduce((n, g) => n + Object.keys(g.graph.relationships).length, 0);
+  const { graph, loading, error, schema, connName, connType } = model;
+
+  const size = useMemo(
+    () => (graph ? measureCluster(graph, { compact: true }) : { w: SHELL_W, h: SHELL_H }),
+    [graph],
+  );
+  const entityCount = graph ? Object.keys(graph.entities).length : 0;
+
+  // Label — connection · schema, with a type dot.  Click opens the connection.
+  const label = (
+    <button
+      onClick={onOpen}
+      className="group flex items-center gap-2 mb-1.5 max-w-full text-left"
+      title={`Open ${connName} → ${schema}`}
+    >
+      <span className="w-2 h-2 rounded-full bg-violet-400 shrink-0" />
+      <span className="text-[12px] font-semibold text-zinc-200 group-hover:text-violet-200 transition truncate">
+        {connName}
+      </span>
+      <span className="text-zinc-600 text-[12px]">·</span>
+      <span className="text-[12px] text-zinc-400 truncate">{schema}</span>
+      <span className="text-[10px] uppercase tracking-wider text-zinc-600 border border-zinc-700/60 rounded px-1 py-0.5 shrink-0">
+        {connType}
+      </span>
+      {graph && (
+        <span className="text-[11px] text-zinc-500 shrink-0">
+          {entityCount} {entityCount === 1 ? "entity" : "entities"}
+        </span>
+      )}
+    </button>
+  );
+
+  if (loading) {
+    return (
+      <div style={{ width: SHELL_W }}>
+        {label}
+        <div className="flex items-center justify-center" style={{ height: SHELL_H }}>
+          <div className="w-5 h-5 border-2 border-violet-500/60 border-t-transparent rounded-full animate-spin" />
+        </div>
+      </div>
+    );
+  }
+  if (error || !graph || entityCount === 0) {
+    return (
+      <div style={{ width: SHELL_W }}>
+        {label}
+        <div className="flex items-center justify-center text-[11px] text-zinc-600" style={{ height: 90 }}>
+          no ontology yet
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div
-      style={{ width }}
-      className="rounded-2xl border border-zinc-700/60 bg-zinc-900/50 backdrop-blur-sm shadow-xl shadow-black/30 overflow-hidden flex flex-col"
-    >
-      {/* Connection header — click to drill into the single-connection canvas */}
-      <button
-        onClick={onOpen}
-        className="text-left px-4 pt-3.5 pb-3 border-b border-zinc-700/50 hover:bg-zinc-800/40 transition group"
-      >
-        <div className="flex items-center gap-2">
-          <span className="w-2.5 h-2.5 rounded-full bg-violet-400 shrink-0" />
-          <p className="text-[15px] font-semibold text-zinc-100 truncate flex-1 group-hover:text-violet-200 transition">
-            {conn.name}
-          </p>
-          <span className="text-[10px] uppercase tracking-wider text-zinc-500 border border-zinc-700 rounded px-1.5 py-0.5 shrink-0">
-            {conn.conn_type}
-          </span>
-        </div>
-        {graph && (
-          <div className="flex items-center gap-3 mt-1.5 text-[12px] text-zinc-400">
-            <span><strong className="text-zinc-200 font-semibold">{totalEntities}</strong> entities</span>
-            <span><strong className="text-zinc-200 font-semibold">{totalRels}</strong> relationships</span>
-            <span><strong className="text-zinc-200 font-semibold">{groups.length}</strong> schema{groups.length === 1 ? "" : "s"}</span>
-          </div>
-        )}
-      </button>
-
-      {/* Body — one cluster per schema */}
-      <div className="flex-1" style={{ padding: BOX_PAD, display: "flex", flexDirection: "column", gap: BOX_PAD }}>
-        {loading && (
-          <div className="flex items-center justify-center" style={{ minHeight: SHELL_H }}>
-            <div className="w-6 h-6 border-2 border-violet-500/70 border-t-transparent rounded-full animate-spin" />
-          </div>
-        )}
-        {error && (
-          <p className="text-[12px] text-zinc-500 text-center" style={{ minHeight: SHELL_H, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            No ontology yet — builds on next query.
-          </p>
-        )}
-        {groups.map(g => (
-          <SchemaBox
-            key={g.schema}
-            group={g}
-            selectedEntityId={selectedEntityId}
-            onSelectEntity={onSelectEntity}
-          />
-        ))}
+    <div style={{ width: size.w }}>
+      {label}
+      <div style={{ width: size.w, height: size.h, position: "relative" }}>
+        <EntityCluster
+          graph={graph}
+          compact
+          storageKey={`${model.connId}:${schema}`}
+          scale={scale}
+          selectedEntityId={selectedEntityId}
+          onSelectEntity={onSelectEntity}
+          showColLabels={false}
+          showCausal={false}
+        />
       </div>
     </div>
   );
@@ -182,9 +168,9 @@ export function OntologyOrgCanvas({
 }: {
   onOpenConnection: (connId: string) => void;
 }) {
-  const [boxes, setBoxes] = useState<BoxModel[]>([]);
+  const [models, setModels] = useState<ClusterModel[]>([]);
   const [loading, setLoading] = useState(true);
-  const [zoom, setZoom] = useState(0.45);
+  const [zoom, setZoom] = useState(0.65);
   const [selectedEntityId, setSelectedEntityId] = useState<string | null>(null);
 
   const scrollRef  = useRef<HTMLDivElement>(null);
@@ -193,53 +179,57 @@ export function OntologyOrgCanvas({
 
   useWheelZoom(scrollRef, zoom, setZoom, { min: 0.15, max: 1.5 });
 
-  // Render box shells immediately from the connection list, then fill each in
-  // as its graph resolves (progressive — don't block on the slowest connection).
+  // Enumerate every (connection, schema) from the catalog tree, render a shell
+  // per pair immediately, then fill each as its per-schema ontology resolves.
   useEffect(() => {
     let alive = true;
-    getConnections()
-      .then(conns => {
+    getCatalogTree()
+      .then(tree => {
         if (!alive) return;
-        setBoxes(conns.map(conn => ({ conn, graph: null, loading: true, error: false })));
+        const entries = tree.sections.flatMap(s => s.entries);
+        const shells: ClusterModel[] = entries.flatMap(e =>
+          e.schemas.map(sc => ({
+            connId: e.conn_id,
+            connName: e.name,
+            connType: e.conn_type,
+            schema: sc.name,
+            tableCount: sc.tables?.length ?? 0,
+            graph: null,
+            loading: true,
+            error: false,
+          })),
+        );
+        setModels(shells);
         setLoading(false);
-        conns.forEach(conn => {
-          getOntology(conn.id)
-            .then(graph => alive && setBoxes(prev => prev.map(b => b.conn.id === conn.id ? { ...b, graph, loading: false } : b)))
-            .catch(() => alive && setBoxes(prev => prev.map(b => b.conn.id === conn.id ? { ...b, loading: false, error: true } : b)));
-        });
+        for (const sh of shells) {
+          getOntology(sh.connId, sh.schema)
+            .then(graph => alive && setModels(prev => prev.map(m =>
+              m.connId === sh.connId && m.schema === sh.schema ? { ...m, graph, loading: false } : m)))
+            .catch(() => alive && setModels(prev => prev.map(m =>
+              m.connId === sh.connId && m.schema === sh.schema ? { ...m, loading: false, error: true } : m)));
+        }
       })
       .catch(() => alive && setLoading(false));
     return () => { alive = false; };
   }, []);
 
-  // Box widths track their widest schema cluster; the row budget fits the widest
-  // box so flex-wrap packs a near-square grid.
-  const boxWidths = useMemo(
-    () => boxes.map(b => {
-      const groups = schemaGroups(b.graph);
-      const clusterW = groups.length
-        ? Math.max(...groups.map(g => measureCluster(g.graph).w))
-        : SHELL_W;
-      return clusterW + SCHEMA_PAD * 2 + BOX_PAD * 2;
-    }),
-    [boxes],
-  );
-  const maxBoxW = Math.max(SHELL_W + SCHEMA_PAD * 2 + BOX_PAD * 2, ...boxWidths);
-  const cols    = Math.max(1, Math.min(MAX_COLS, Math.ceil(Math.sqrt(boxes.length || 1))));
-  const innerW  = cols * maxBoxW + (cols + 1) * GAP;
+  const bands = useMemo(() => bandsOf(models), [models]);
 
   useLayoutEffect(() => {
     const el = contentRef.current;
     if (!el) return;
     setNatural({ w: el.offsetWidth, h: el.offsetHeight });
-  }, [boxes, innerW]);
+  }, [models, zoom]);
+
+  const connCount = bands.length;
+  const schemaCount = models.length;
 
   return (
     <div className="w-full h-full relative" style={{ background: "#11171D" }}>
       {/* Title */}
       <div className="absolute top-3 left-3 z-20 bg-zinc-900/80 backdrop-blur-sm border border-zinc-700/50 rounded-lg px-3.5 py-2 pointer-events-none">
         <p className="text-[12px] font-semibold text-zinc-200">Organization Ontology</p>
-        <p className="text-[11px] text-zinc-500">{boxes.length} connections · pinch / ⌘-scroll to zoom</p>
+        <p className="text-[11px] text-zinc-500">{connCount} connections · {schemaCount} schemas · drag nodes · pinch to zoom</p>
       </div>
 
       {/* Zoom controls */}
@@ -260,18 +250,17 @@ export function OntologyOrgCanvas({
           <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
         </div>
       ) : (
-        <div ref={scrollRef} className="w-full h-full overflow-auto">
+        <div ref={scrollRef} className="w-full h-full overflow-auto" style={DOTS}>
           <div style={{ width: natural.w * zoom, height: natural.h * zoom, position: "relative", minWidth: "100%", minHeight: "100%" }}>
             <div
               ref={contentRef}
-              className="flex flex-wrap items-start"
+              className="inline-flex flex-col"
               style={{
-                width: innerW,
-                gap: GAP,
-                paddingTop: GAP + 28,   // clear the floating title card
-                paddingLeft: GAP,
-                paddingRight: GAP,
-                paddingBottom: GAP,
+                gap: CONN_GAP,
+                paddingTop: CONN_GAP,
+                paddingLeft: CONN_GAP,
+                paddingRight: CONN_GAP,
+                paddingBottom: CONN_GAP,
                 transform: `scale(${zoom})`,
                 transformOrigin: "top left",
                 position: "absolute",
@@ -279,15 +268,20 @@ export function OntologyOrgCanvas({
                 left: 0,
               }}
             >
-              {boxes.map((b, i) => (
-                <ConnectionBox
-                  key={b.conn.id}
-                  model={b}
-                  width={boxWidths[i] ?? SHELL_W}
-                  selectedEntityId={selectedEntityId}
-                  onSelectEntity={setSelectedEntityId}
-                  onOpen={() => onOpenConnection(b.conn.id)}
-                />
+              {/* One band per connection — schemas packed close inside the band. */}
+              {bands.map(band => (
+                <div key={band.connId} className="flex flex-wrap items-start" style={{ gap: SCHEMA_GAP }}>
+                  {band.clusters.map(c => (
+                    <ClusterTile
+                      key={`${c.connId}:${c.schema}`}
+                      model={c}
+                      selectedEntityId={selectedEntityId}
+                      onSelectEntity={setSelectedEntityId}
+                      scale={zoom}
+                      onOpen={() => onOpenConnection(c.connId)}
+                    />
+                  ))}
+                </div>
               ))}
             </div>
           </div>
