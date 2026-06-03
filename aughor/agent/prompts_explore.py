@@ -9,6 +9,32 @@ Pattern:
   decompose_exploration → [plan_subq → reason_over_result] × N → synthesize_exploration
 """
 
+BUILD_LEDGER_PROMPT = """\
+You are setting up the shared definitions for a data analysis so that every step
+computes the same metrics the same way. Read the question and schema, then list the
+canonical definitions the whole analysis must reuse.
+
+QUESTION: {question}
+
+SCHEMA (already annotated with any known column caveats):
+{schema}
+
+{scan_section}
+
+Produce a SHORT ledger (max ~10 lines, no prose) with these parts:
+- ENTITIES: for each entity the question involves, the EXACT column that uniquely
+  identifies it. Watch for per-row hash IDs vs stable IDs (e.g. an order-level
+  customer_id vs a stable customer_unique_id) — pick the stable identifier and say so.
+- METRICS: the exact SQL expression for each metric the question needs
+  (e.g. revenue = SUM(payment_value); unique customers = COUNT(DISTINCT customer_unique_id);
+  average order value = SUM(payment_value) / COUNT(DISTINCT order_id)).
+- SEGMENTS: any standard grouping/filter the question implies (e.g. primary payment
+  method per customer = the payment_type of that customer's highest-value order).
+
+Use only tables/columns that exist in the schema. If a concept is ambiguous, pick one
+definition and state it explicitly. This ledger is binding for all later steps.
+"""
+
 DECOMPOSE_EXPLORATION_PROMPT = """\
 You are a senior data analyst designing an investigation into a question that requires
 building understanding progressively — not testing parallel hypotheses, but sequencing
@@ -57,6 +83,10 @@ Purpose: {purpose}
 Question: {subq_question}
 Expected output: {expected_output}
 
+CANONICAL DEFINITIONS (this analysis's shared ledger — every step MUST use these
+exact identifiers and metric definitions so figures stay consistent across steps):
+{analysis_ledger}
+
 PREVIOUS SUB-QUESTION ANSWERS (context — read carefully before writing SQL):
 {prior_answers}
 
@@ -68,6 +98,11 @@ SCHEMA:
 Write 1–2 SQL SELECT queries that directly answer this sub-question.
 Rules:
 - Only SELECT statements, only tables and columns from the schema
+- CONSISTENCY: use the canonical identifiers and metric definitions above verbatim
+  (e.g. the same column for "unique customer", the same revenue expression). Never switch
+  to a different identifier or definition than an earlier step used for the same concept.
+- If a figure for this exact metric was already computed in a prior sub-question, reuse that
+  result — do not recompute it with different SQL that could yield a slightly different number.
 - Use the profile data ranges and cardinalities to write correct bucketing queries
 - If this is a threshold sub-question, use the exact transition zone found in the previous answer
 - If this is a drill_down sub-question, use 5–10× finer granularity than the relationship step
@@ -95,10 +130,16 @@ Expected output: {expected_output}
 QUERY RESULTS:
 {query_results}
 
+CANONICAL DEFINITIONS (shared ledger for this analysis):
+{analysis_ledger}
+
 PREVIOUS CONTEXT:
 {prior_context}
 
 Instructions:
+- CONSISTENCY: when this sub-question references a metric already computed earlier (per the
+  canonical definitions / previous context), cite the SAME figure verbatim — do not restate a
+  freshly rounded or re-derived value.
 - answer: one sentence, directly answering the sub-question. Must cite a specific number from the results.
   Bad: "There appears to be a relationship between discount and profit."
   Good: "Profit is positive for discounts ≤ 20% and negative for discounts ≥ 25%, with the steepest decline between 20% and 30%."
@@ -119,11 +160,19 @@ You have completed a chain of sub-questions and now have all the evidence needed
 
 ORIGINAL QUESTION: {question}
 
+CANONICAL DEFINITIONS (shared ledger used throughout this analysis):
+{analysis_ledger}
+
 INVESTIGATIVE CHAIN (sub-questions and their answers):
 {chain_summary}
 
 {events_section}
 Write the final report:
+
+CONSISTENCY: every figure in the headline, conclusion, and narrative must match the exact
+numbers already computed in the chain above. Do not recompute or re-estimate — reuse the
+chain's figures verbatim so the report and the chain never disagree.
+
 
 headline: One sentence directly answering the original question. Specific, not vague.
   Good: "A discount rate of 15–18% maximises profitability while maintaining volume."

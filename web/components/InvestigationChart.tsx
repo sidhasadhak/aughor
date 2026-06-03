@@ -26,6 +26,12 @@ function normDateStr(v: string): string {
   return v.replace(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})/, "$1T$2");
 }
 
+// Humanize a raw column name for axis/legend titles: "payment_type" → "Payment type".
+function cleanTitle(s: string): string {
+  const t = (s ?? "").replace(/_/g, " ").trim();
+  return t ? t.charAt(0).toUpperCase() + t.slice(1) : t;
+}
+
 // Aggregate rows for bar charts (avg for share columns, sum otherwise)
 function aggregateForBar(
   records: Record<string, unknown>[],
@@ -212,7 +218,12 @@ export function InvestigationChart({ columns, rows, title }: Props) {
     const isPct     = useAvg;
     const aggData   = aggregateForBar(records, labelKey, valueKey, useAvg);
     const xFormat   = isPct ? ".1%" : "~s";
-    const spec      = barSpec("value", "label", { xFormat, maxBars: 15 });
+    // Data is keyed value/label, but title the axes with the real column names.
+    const spec      = barSpec("value", "label", {
+      xFormat, maxBars: 15,
+      xTitle: cleanTitle(valueKey),
+      yTitle: cleanTitle(labelKey),
+    });
     const barHeight = Math.max(120, Math.min(aggData.length, 15) * 26 + 40);
 
     content = (

@@ -21,10 +21,10 @@ import { SqlResultTable } from "@/components/AugTable";
 import { useSchema } from "@/lib/schema-context";
 import {
   getCatalogTree, getConnections, addConnection, deleteConnection,
-  testConnection, sampleTable, getSchemaRich, getExplorationFindings,
+  testConnection, sampleTable, getSchemaRich, getTableColumns, getExplorationFindings,
   type CatalogTree, type CatalogEntry, type CatalogSchemaInfo, type CatalogTableInfo,
   type Connection, type SchemaTable, type SchemaColumn, type TableSample,
-  type DistributionProfile,
+  type TableColumn, type DistributionProfile,
 } from "@/lib/api";
 import { ExplorationBadge } from "@/components/ExplorationBadge";
 import { SchemaPanel } from "@/components/SchemaPanel";
@@ -501,18 +501,24 @@ function TableDetailPanel({ sel, onAsk }: {
   const [tab, setTab]           = useState<TableTab>("overview");
   const [colFilter, setColFilter] = useState("");
   const [richTable, setRich]    = useState<SchemaTable | null>(null);
+  const [baseCols, setBaseCols] = useState<TableColumn[]>([]);
   const [loading, setLoad]      = useState(false);
   const [distMap, setDistMap]   = useState<Record<string, DistributionProfile>>({});
   const [expandedCols, setExpandedCols] = useState<Set<string>>(new Set());
 
-  // Fetch column detail (rich schema) when table changes
+  // Fetch column detail when table changes. The authoritative column list comes
+  // from the reliable per-table reader (same path as Sample Data); the heavy
+  // whole-connection rich schema only layers on FK flags + descriptions.
   useEffect(() => {
-    setTab("overview"); setColFilter(""); setRich(null); setExpandedCols(new Set());
+    setTab("overview"); setColFilter(""); setRich(null); setBaseCols([]); setExpandedCols(new Set());
     setLoad(true);
+    getTableColumns(sel.connId, sel.table.name, sel.schemaName)
+      .then(setBaseCols)
+      .catch(() => setBaseCols([]))
+      .finally(() => setLoad(false));
     getSchemaRich(sel.connId)
       .then(s => setRich(s.tables.find(t => t.name === sel.table.name) ?? null))
-      .catch(() => setRich(null))
-      .finally(() => setLoad(false));
+      .catch(() => setRich(null));
   }, [sel.connId, sel.schemaName, sel.table.name]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch column distributions (exploration profiling) for this table
@@ -538,7 +544,14 @@ function TableDetailPanel({ sel, onAsk }: {
       .catch(() => setDistMap({}));
   }, [sel.connId, sel.table.name]);
 
-  const cols = richTable?.columns ?? [];
+  // Unify: authoritative per-table columns, enriched with rich-schema FK/desc.
+  const enrichMap = new Map((richTable?.columns ?? []).map(c => [c.name, c]));
+  const cols: SchemaColumn[] = baseCols.length
+    ? baseCols.map(b => {
+        const e = enrichMap.get(b.name);
+        return { ...(e ?? {}), name: b.name, type: b.type || e?.type || "" } as SchemaColumn;
+      })
+    : (richTable?.columns ?? []);
   const q    = colFilter.toLowerCase();
   const filteredCols = q ? cols.filter(c => c.name.toLowerCase().includes(q) || c.type.toLowerCase().includes(q)) : cols;
   const fkCount = cols.filter(c => c.is_fk).length;
@@ -1147,7 +1160,7 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
   const { refresh: refreshSchema } = useSchema();
   const [tree, setTree]         = useState<CatalogTree | null>(null);
   const [treeLoading, setTreeL] = useState(true);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set(["section:samples", "catalog:samples"]));
+  const [expanded, setExpanded] = useState<Set<string>>(new Set(["section:connections", "catalog:workspace", "schema:workspace:ecommerce"]));
   const [sel, setSel]           = useState<Sel>(null);
   const [showAddData, setShowAddData] = useState(false);
   const [search, setSearch]     = useState("");
@@ -1335,6 +1348,15 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
     return <EmptyDetail />;
   };
 
+  if (showAddData) {
+    return (
+      <AddDataPanel
+        onClose={() => setShowAddData(false)}
+        onAdded={() => { loadTree(); refreshSchema(); }}
+      />
+    );
+  }
+
   return (
     <div style={{ position: "relative", display: "flex", height: "100%", overflow: "hidden", background: "var(--bg-0)" }}>
       <ResizableSplit storageKey="catalog" initial={340} min={240} max={560} style={{ flex: 1, height: "100%" }}
@@ -1395,14 +1417,6 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
       </div>
         }
       />
-
-      {showAddData && (
-        <AddDataPanel
-          onClose={() => setShowAddData(false)}
-          onAdded={() => { loadTree(); refreshSchema(); }}
-        />
-      )}
-
     </div>
   );
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { SqlResultTable } from "@/components/AugTable";
 import { VegaChart, type VLSpec } from "@/components/VegaChart";
 import TableIcon         from "@atlaskit/icon/core/table";
@@ -17,6 +17,16 @@ import { ChatTurn } from "@/lib/useChat";
 import type { ADAReport } from "@/lib/types";
 import { InvestigationReportView } from "@/components/InvestigationReport";
 import { ExplorationReportView } from "@/components/ExplorationReport";
+import { ThinkingTrace, turnToTraceState } from "@/components/ThinkingTrace";
+
+// Format a wall-clock duration for the "Completed in …" line.
+function formatElapsed(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const s = ms / 1000;
+  if (s < 60) return `${s.toFixed(1)}s`;
+  const m = Math.floor(s / 60);
+  return `${m}m ${Math.round(s - m * 60)}s`;
+}
 
 // ── Public types (re-imported by ChatPanel) ───────────────────────────────────
 export interface SourcePanelData {
@@ -1521,6 +1531,50 @@ function InspectWarningBanner({ issues, suggestedFix }: { issues: string[]; sugg
   );
 }
 
+// ── Inline agent trace — streams during the turn, auto-collapses when done ──────
+function InlineAgentTrace({ turn }: { turn: ChatTurn }) {
+  const running = turn.status === "loading";
+  const [open, setOpen] = useState(running);
+  const prevRunning = useRef(running);
+  useEffect(() => {
+    // Collapse automatically the moment the turn stops running.
+    if (prevRunning.current && !running) setOpen(false);
+    prevRunning.current = running;
+  }, [running]);
+
+  const traceState = turnToTraceState(turn, running);
+
+  return (
+    <div className="mb-4 rounded-md border border-zinc-800/60" style={{ background: "var(--bg-0)" }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-3 py-2 group/trace"
+      >
+        <span className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-violet-400/80">
+          {running ? (
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-60" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-violet-400" />
+            </span>
+          ) : (
+            <span className="inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+          )}
+          Agent trace
+          {!running && !open && (
+            <span className="text-zinc-600 normal-case tracking-normal font-normal">· {traceState.subQuestions?.length || traceState.hypotheses?.length || 0} steps</span>
+          )}
+        </span>
+        <Chevron open={open} />
+      </button>
+      {open && (
+        <div className="border-t border-zinc-800/60">
+          <ThinkingTrace state={traceState} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 export function ChatMessage({
   turn,
@@ -1578,19 +1632,27 @@ export function ChatMessage({
         </div>
       </div>
 
+      {/* ── Inline agent trace (agentic modes) — streams live, collapses when done ── */}
+      {isInvestigate && (turn.status === "loading" || isDone) && (
+        <InlineAgentTrace turn={turn} />
+      )}
+
       {/* ── Loading state ── */}
       {turn.status === "loading" && (
         <div>
-          <div className="flex items-center gap-3 py-2">
-            <span className="flex gap-1">
-              {[0, 150, 300].map(d => (
-                <span key={d} className="w-1.5 h-1.5 rounded-full bg-zinc-700 animate-bounce" style={{ animationDelay: `${d}ms` }} />
-              ))}
-            </span>
-            <span className="text-[12px] text-zinc-600">
-              {turn.statusText || defaultStatusText()}
-            </span>
-          </div>
+          {/* Quick (ask) mode has no multi-step trace — show the simple thinking dots */}
+          {!isInvestigate && (
+            <div className="flex items-center gap-3 py-2">
+              <span className="flex gap-1">
+                {[0, 150, 300].map(d => (
+                  <span key={d} className="w-1.5 h-1.5 rounded-full bg-zinc-700 animate-bounce" style={{ animationDelay: `${d}ms` }} />
+                ))}
+              </span>
+              <span className="text-[12px] text-zinc-600">
+                {turn.statusText || defaultStatusText()}
+              </span>
+            </div>
+          )}
           {/* Live ADA phase stream — show completed phases as they arrive */}
           {showStreamingBody && <InvestigateBody turn={turn} />}
         </div>
@@ -1607,6 +1669,11 @@ export function ChatMessage({
           <span className="text-[12px] text-zinc-600">Found relevant data</span>
           {turn.tablesUsed.map(t => <TableChip key={t} name={t} />)}
         </div>
+      )}
+
+      {/* ── Elapsed time (all modes incl. Quick) ── */}
+      {isDone && turn.elapsedMs != null && (
+        <p className="text-[11px] text-zinc-600 mb-3">Completed in {formatElapsed(turn.elapsedMs)}</p>
       )}
 
       {/* ── Body ── */}

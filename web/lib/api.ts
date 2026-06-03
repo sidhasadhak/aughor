@@ -148,21 +148,112 @@ export async function getSyncStatus(connId: string): Promise<Record<string, unkn
   return res.json();
 }
 
+export interface ImportOptions {
+  tableName?: string;
+  schema?: string;
+  columnTypes?: Record<string, string>;
+}
+
 export async function uploadFileToConnection(
   connId: string,
   file: File,
-): Promise<{ table_name: string; filename: string }> {
+  opts: ImportOptions = {},
+): Promise<{ table_name: string; schema?: string; filename: string }> {
   const form = new FormData();
   form.append("file", file);
+  if (opts.tableName) form.append("table_name", opts.tableName);
+  if (opts.schema) form.append("schema", opts.schema);
+  if (opts.columnTypes && Object.keys(opts.columnTypes).length > 0)
+    form.append("column_types", JSON.stringify(opts.columnTypes));
   const res = await fetch(`${BASE}/connections/${encodeURIComponent(connId)}/files`, {
     method: "POST",
     body: form,
   });
   if (!res.ok) {
-    const err = await res.json();
+    const err = await res.json().catch(() => ({}));
     throw new Error(err.detail ?? "Upload failed");
   }
   return res.json();
+}
+
+export interface ColumnAnalysis {
+  name: string;
+  detected_type: string;
+  suggested_type: string | null;
+}
+
+export interface FileAnalysis {
+  filename: string;
+  columns: ColumnAnalysis[];
+  preview: { columns: string[]; rows: (string | null)[][] };
+  row_count: number;
+  suggested_table_name: string;
+}
+
+export async function analyzeConnectionFile(
+  connId: string,
+  file: File,
+): Promise<FileAnalysis> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(
+    `${BASE}/connections/${encodeURIComponent(connId)}/files/analyze`,
+    { method: "POST", body: form },
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "Analyze failed");
+  }
+  return res.json();
+}
+
+export interface ConnectionFile {
+  filename: string;
+  table_name: string;
+  schema: string;
+  size_bytes: number;
+  extension: string;
+  column_types?: Record<string, string>;
+}
+
+export async function listConnectionFiles(connId: string): Promise<ConnectionFile[]> {
+  const res = await fetch(`${BASE}/connections/${encodeURIComponent(connId)}/files`);
+  if (!res.ok) return [];
+  const data = await res.json().catch(() => ({ files: [] }));
+  return data.files ?? [];
+}
+
+export async function deleteConnectionFile(
+  connId: string,
+  filename: string,
+  schema = "main",
+): Promise<void> {
+  const res = await fetch(
+    `${BASE}/connections/${encodeURIComponent(connId)}/files/${encodeURIComponent(filename)}?schema=${encodeURIComponent(schema)}`,
+    { method: "DELETE" },
+  );
+  if (!res.ok) throw new Error("Delete failed");
+}
+
+export async function listConnectionSchemas(connId: string): Promise<string[]> {
+  const res = await fetch(`${BASE}/connections/${encodeURIComponent(connId)}/schemas`);
+  if (!res.ok) return ["main"];
+  const data = await res.json().catch(() => ({ schemas: ["main"] }));
+  return data.schemas ?? ["main"];
+}
+
+export async function createConnectionSchema(connId: string, name: string): Promise<string> {
+  const res = await fetch(`${BASE}/connections/${encodeURIComponent(connId)}/schemas`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "Schema create failed");
+  }
+  const data = await res.json();
+  return data.schema;
 }
 
 export async function testConnection(id: string): Promise<TestResult> {
@@ -234,6 +325,27 @@ export async function sampleTable(
   );
   if (!res.ok) throw new Error(`Failed to sample table "${table}"`);
   return res.json();
+}
+
+export interface TableColumn {
+  name: string;
+  type: string;
+}
+
+/** Reliable per-table column list — same lightweight path as the sample reader. */
+export async function getTableColumns(
+  connId: string,
+  table: string,
+  schema?: string,
+): Promise<TableColumn[]> {
+  const params = new URLSearchParams();
+  if (schema) params.set("schema", schema);
+  const res = await fetch(
+    `${BASE}/connections/${encodeURIComponent(connId)}/tables/${encodeURIComponent(table)}/columns?${params}`,
+  );
+  if (!res.ok) return [];
+  const data = await res.json().catch(() => ({ columns: [] }));
+  return data.columns ?? [];
 }
 
 // ── Catalog tree ──────────────────────────────────────────────────────────────
@@ -1064,6 +1176,8 @@ export interface Canvas {
   is_legacy: boolean;
   created_at: string;
   updated_at: string;
+  /** Most recent investigation/chat timestamp for this canvas (null if never used). */
+  last_activity?: string | null;
 }
 
 export async function getCanvases(): Promise<Canvas[]> {
@@ -1189,6 +1303,12 @@ export async function getCanvasHistory(id: string, limit = 20): Promise<CanvasHi
   if (!res.ok) return [];
   const data = await res.json();
   return (data as { investigations: CanvasHistoryItem[] }).investigations ?? [];
+}
+
+/** Remove a single history line item (an investigation, or a whole chat session). */
+export async function deleteInvestigation(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/investigations/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok && res.status !== 204) throw new Error("Failed to remove history item");
 }
 
 export async function getCanvasRecents(id: string, limit = 10): Promise<Array<{ question: string; status: string; created_at: string }>> {

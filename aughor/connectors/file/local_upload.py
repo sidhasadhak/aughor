@@ -3,17 +3,39 @@
 No external dependencies — DuckDB handles all file formats natively.
 
 DSN:   local://  (sentinel; files are stored in data/uploads/{connection_id}/)
-Usage:
-    conn = LocalUploadConnection(dsn="local://", connection_id="my_conn")
-    conn.ingest_file(Path("/tmp/sales.csv"), "sales")
-    result = conn.execute("inv1", "SELECT * FROM sales LIMIT 10")
 
-The upload directory persists between server restarts. On __init__ any
-previously-ingested tables are re-registered automatically.
+Storage layout (schema-aware)::
+
+    data/uploads/{connection_id}/
+        main/                       # default schema
+            sales.csv
+            sales.csv.import.json   # {"table_name","schema","column_types"}
+        finance/
+            ledger.parquet
+            ledger.parquet.import.json
+
+Each *schema* is a sub-directory; each data file becomes one table inside that
+schema. A sidecar ``*.import.json`` records the chosen table name and any
+per-column type overrides so the in-memory DuckDB can be rebuilt identically on
+every request (the connector is constructed fresh per request and reloads from
+disk).
+
+Typical use::
+
+    conn = LocalUploadConnection(dsn="local://", connection_id="workspace")
+    info = conn.analyze_file(Path("/tmp/sales.csv"))      # preview + type hints
+    conn.ingest_file(Path("/tmp/sales.csv"),
+                     table_name="sales", schema="finance",
+                     column_types={"id": "BIGINT", "ts": "TIMESTAMP"})
+    conn.execute("inv1", "SELECT * FROM finance.sales LIMIT 10")
 """
 from __future__ import annotations
 
+import json
+import re
+import shutil
 import time
+from collections import defaultdict
 from pathlib import Path
 
 import duckdb
@@ -23,6 +45,7 @@ from aughor.agent.state import QueryResult
 
 MAX_ROWS = 2000
 _UPLOAD_ROOT = Path("data/uploads")
+DEFAULT_SCHEMA = "main"
 
 _SUPPORTED_EXTENSIONS = {
     ".csv":     "read_csv_auto",
@@ -33,6 +56,36 @@ _SUPPORTED_EXTENSIONS = {
     ".xls":     "read_excel",
     ".json":    "read_json_auto",
 }
+
+# Allow-list of cast targets we let the UI request (prevents SQL injection via
+# the column_types map — values are interpolated into CREATE TABLE ... AS).
+_ALLOWED_CAST_TYPES = {
+    "BIGINT", "INTEGER", "DOUBLE", "DECIMAL", "VARCHAR",
+    "BOOLEAN", "DATE", "TIMESTAMP", "TIME",
+}
+
+# Tighter types we probe for, in preference order, when a column is VARCHAR.
+_PROBE_TYPES = ["BIGINT", "DOUBLE", "BOOLEAN", "DATE", "TIMESTAMP"]
+
+_SIDECAR_SUFFIX = ".import.json"
+
+
+def _is_data_file(f: Path) -> bool:
+    """A real uploaded data file — not a sidecar config, and a supported type."""
+    return (
+        f.is_file()
+        and not f.name.endswith(_SIDECAR_SUFFIX)
+        and f.suffix.lower() in _SUPPORTED_EXTENSIONS
+    )
+
+
+def _safe_ident(name: str, fallback: str = "table") -> str:
+    """Sanitize an arbitrary string into a safe lowercase SQL identifier."""
+    s = re.sub(r"[^0-9a-zA-Z_]", "_", (name or "").strip()).lower()
+    s = re.sub(r"_+", "_", s).strip("_")
+    if not s or not re.match(r"[a-z_]", s[0]):
+        s = f"{fallback}_{s}" if s else fallback
+    return s[:63]
 
 
 class LocalUploadConnection(Connector):
@@ -50,76 +103,310 @@ class LocalUploadConnection(Connector):
         self._schema_name = schema_name
         self._upload_dir = _UPLOAD_ROOT / (connection_id or "default")
         self._upload_dir.mkdir(parents=True, exist_ok=True)
+        (self._upload_dir / DEFAULT_SCHEMA).mkdir(exist_ok=True)
         self._duckdb = duckdb.connect(":memory:")
-        # Re-register any previously uploaded files
-        self._reload_existing_files()
+        # Tables materialized from a read-only seed DB (e.g. the sample catalog).
+        self._seed_path = (meta or {}).get("seed_duckdb")
+        self._seeded: set[tuple[str, str]] = set()
+        self._seed_from_duckdb()        # sample/demo tables (read-only)
+        self._reload_existing_files()   # user uploads (override seeds on clash)
 
-    # ── File ingestion ─────────────────────────────────────────────────────────
+    def _seed_from_duckdb(self) -> None:
+        """Materialize tables from a read-only seed DuckDB file into this
+        in-memory database, preserving their original schema names. Used to fold
+        the sample catalog into the Workspace so demo data and uploads coexist."""
+        if not self._seed_path:
+            return
+        p = Path(self._seed_path)
+        if not p.exists():
+            return
+        try:
+            self._duckdb.execute(f"ATTACH '{p.as_posix()}' AS _seed (READ_ONLY)")
+            tbls = self._duckdb.execute(
+                "SELECT schema_name, table_name FROM duckdb_tables() "
+                "WHERE database_name = '_seed' AND internal = false"
+            ).fetchall()
+            for schema, table in tbls:
+                self._duckdb.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
+                self._duckdb.execute(
+                    f'CREATE TABLE "{schema}"."{table}" AS '
+                    f'SELECT * FROM _seed."{schema}"."{table}"'
+                )
+                self._seeded.add((schema, table))
+            self._duckdb.execute("DETACH _seed")
+        except Exception:
+            # Demo data is best-effort; never block the Workspace on a seed error.
+            try:
+                self._duckdb.execute("DETACH _seed")
+            except Exception:
+                pass
 
-    def ingest_file(self, file_path: Path, table_name: str | None = None) -> str:
-        """
-        Copy a file into the upload directory and register it as a DuckDB table.
-        Returns the table name used.
-        """
+    # ── Schema directories ──────────────────────────────────────────────────────
+
+    def _schema_dir(self, schema: str) -> Path:
+        return self._upload_dir / _safe_ident(schema, DEFAULT_SCHEMA)
+
+    def list_schemas(self) -> list[str]:
+        names = {DEFAULT_SCHEMA}
+        for d in self._upload_dir.iterdir():
+            if d.is_dir():
+                names.add(d.name)
+        return sorted(names)
+
+    def create_schema(self, name: str) -> str:
+        schema = _safe_ident(name, "schema")
+        self._schema_dir(schema).mkdir(parents=True, exist_ok=True)
+        try:
+            self._duckdb.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
+        except Exception:
+            pass
+        return schema
+
+    def drop_schema(self, name: str) -> None:
+        schema = _safe_ident(name, "schema")
+        if schema == DEFAULT_SCHEMA:
+            raise ValueError("The default 'main' schema cannot be deleted.")
+        d = self._schema_dir(schema)
+        if d.exists():
+            shutil.rmtree(d, ignore_errors=True)
+        try:
+            self._duckdb.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
+        except Exception:
+            pass
+
+    # ── Analyze (no persistence) ────────────────────────────────────────────────
+
+    def analyze_file(self, file_path: Path, sample_rows: int = 20) -> dict:
+        """Inspect a file and return inferred columns, a sample preview, a row
+        count, and type-mismatch suggestions — without ingesting anything."""
         file_path = Path(file_path)
         ext = file_path.suffix.lower()
         if ext not in _SUPPORTED_EXTENSIONS:
             raise ValueError(
-                f"Unsupported file type: {ext}. Supported: {list(_SUPPORTED_EXTENSIONS)}"
+                f"Unsupported file type: {ext}. Supported: {sorted(_SUPPORTED_EXTENSIONS)}"
+            )
+        reader = _SUPPORTED_EXTENSIONS[ext]
+        src = f"{reader}('{file_path.as_posix()}')"
+
+        con = duckdb.connect(":memory:")
+        try:
+            desc = con.execute(f"DESCRIBE SELECT * FROM {src}").fetchall()
+            columns: list[dict] = []
+            for row in desc:
+                name, dtype = row[0], str(row[1])
+                suggested = None
+                if dtype.upper().startswith("VARCHAR"):
+                    suggested = self._suggest_type(con, src, name)
+                columns.append({
+                    "name": name,
+                    "detected_type": dtype,
+                    "suggested_type": suggested,
+                })
+
+            prev = con.execute(f"SELECT * FROM {src} LIMIT {int(sample_rows)}").fetchall()
+            pcols = [d[0] for d in con.description] if con.description else []
+            rows = [
+                [None if v is None else str(v) for v in r]
+                for r in prev
+            ]
+            try:
+                total = con.execute(f"SELECT count(*) FROM {src}").fetchone()[0]
+            except Exception:
+                total = len(rows)
+        finally:
+            con.close()
+
+        return {
+            "columns": columns,
+            "preview": {"columns": pcols, "rows": rows},
+            "row_count": total,
+            "suggested_table_name": _safe_ident(file_path.stem),
+        }
+
+    @staticmethod
+    def _suggest_type(con, src: str, col: str) -> str | None:
+        """Return a tighter type if ≥95% of non-empty values cast cleanly."""
+        c = col.replace('"', '""')
+        probes = ", ".join(
+            f'count(*) FILTER (WHERE try_cast("{c}" AS {t}) IS NOT NULL) AS p{i}'
+            for i, t in enumerate(_PROBE_TYPES)
+        )
+        q = (
+            f'SELECT count(*) FILTER (WHERE "{c}" IS NOT NULL '
+            f"AND trim(CAST(\"{c}\" AS VARCHAR)) <> '') AS nn, {probes} FROM {src}"
+        )
+        try:
+            res = con.execute(q).fetchone()
+        except Exception:
+            return None
+        nn = res[0] or 0
+        if nn == 0:
+            return None
+        threshold = 0.95 * nn
+        for i, t in enumerate(_PROBE_TYPES):
+            if (res[i + 1] or 0) >= threshold:
+                # DOUBLE that's fully integer-castable is reported as BIGINT first
+                return t
+        return None
+
+    # ── File ingestion ─────────────────────────────────────────────────────────
+
+    def ingest_file(
+        self,
+        file_path: Path,
+        table_name: str | None = None,
+        schema: str = DEFAULT_SCHEMA,
+        column_types: dict | None = None,
+    ) -> str:
+        """Copy a file into the given schema dir and register it as a DuckDB
+        table, applying any per-column type overrides. Returns the table name."""
+        file_path = Path(file_path)
+        ext = file_path.suffix.lower()
+        if ext not in _SUPPORTED_EXTENSIONS:
+            raise ValueError(
+                f"Unsupported file type: {ext}. Supported: {sorted(_SUPPORTED_EXTENSIONS)}"
             )
 
-        # Persist the file in the upload dir
-        dest = self._upload_dir / file_path.name
-        if file_path != dest:
-            import shutil
+        schema = _safe_ident(schema, DEFAULT_SCHEMA)
+        sdir = self._schema_dir(schema)
+        sdir.mkdir(parents=True, exist_ok=True)
+
+        dest = sdir / file_path.name
+        if file_path.resolve() != dest.resolve():
             shutil.copy2(file_path, dest)
 
-        table_name = table_name or file_path.stem.lower().replace("-", "_").replace(" ", "_")
-        self._register_file(dest, table_name)
+        table_name = _safe_ident(table_name or file_path.stem)
+        clean_types = self._clean_types(column_types)
+
+        # Persist the import config as a sidecar so reload is deterministic.
+        (sdir / f"{file_path.name}{_SIDECAR_SUFFIX}").write_text(
+            json.dumps({
+                "table_name": table_name,
+                "schema": schema,
+                "column_types": clean_types,
+            }, indent=2)
+        )
+
+        self._register_file(dest, table_name, schema, clean_types)
         return table_name
 
-    def _register_file(self, path: Path, table_name: str) -> None:
+    @staticmethod
+    def _clean_types(column_types: dict | None) -> dict:
+        if not column_types:
+            return {}
+        out = {}
+        for col, t in column_types.items():
+            tu = str(t).upper().strip()
+            if tu in _ALLOWED_CAST_TYPES:
+                out[col] = tu
+        return out
+
+    def _register_file(
+        self,
+        path: Path,
+        table_name: str,
+        schema: str = DEFAULT_SCHEMA,
+        column_types: dict | None = None,
+    ) -> None:
         ext = path.suffix.lower()
         reader = _SUPPORTED_EXTENSIONS.get(ext, "read_csv_auto")
+        src = f"{reader}('{path.as_posix()}')"
+        select_sql = self._build_select(src, column_types)
+        fq = f'"{schema}"."{table_name}"'
         try:
-            # DROP TABLE IF EXISTS so re-registration is idempotent
-            self._duckdb.execute(f"DROP TABLE IF EXISTS {table_name}")
-            self._duckdb.execute(
-                f"CREATE TABLE {table_name} AS SELECT * FROM {reader}('{path}')"
-            )
+            self._duckdb.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
+            self._duckdb.execute(f"DROP TABLE IF EXISTS {fq}")
+            self._duckdb.execute(f"CREATE TABLE {fq} AS {select_sql}")
         except Exception as e:
-            raise RuntimeError(f"Failed to load {path.name} as table '{table_name}': {e}") from e
+            raise RuntimeError(
+                f"Failed to load {path.name} as table '{schema}.{table_name}': {e}"
+            ) from e
+
+    def _build_select(self, src: str, column_types: dict | None) -> str:
+        """Build a SELECT that TRY_CASTs only the overridden columns."""
+        if not column_types:
+            return f"SELECT * FROM {src}"
+        con = self._duckdb
+        try:
+            desc = con.execute(f"DESCRIBE SELECT * FROM {src}").fetchall()
+            cols = [r[0] for r in desc]
+        except Exception:
+            return f"SELECT * FROM {src}"
+        parts = []
+        for name in cols:
+            esc = name.replace('"', '""')
+            t = column_types.get(name)
+            if t and t in _ALLOWED_CAST_TYPES:
+                parts.append(f'TRY_CAST("{esc}" AS {t}) AS "{esc}"')
+            else:
+                parts.append(f'"{esc}"')
+        return f"SELECT {', '.join(parts)} FROM {src}"
 
     def _reload_existing_files(self) -> None:
-        """Re-register all files in the upload dir on connector startup."""
-        for f in sorted(self._upload_dir.iterdir()):
-            if f.suffix.lower() in _SUPPORTED_EXTENSIONS and f.is_file():
-                table_name = f.stem.lower().replace("-", "_").replace(" ", "_")
+        """Re-register every file under every schema dir on startup."""
+        for sdir in sorted(self._upload_dir.iterdir()):
+            if not sdir.is_dir():
+                continue
+            schema = sdir.name
+            try:
+                self._duckdb.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
+            except Exception:
+                pass
+            for f in sorted(sdir.iterdir()):
+                if not _is_data_file(f):
+                    continue
+                cfg = self._read_sidecar(f)
+                table_name = cfg.get("table_name") or _safe_ident(f.stem)
+                column_types = cfg.get("column_types") or {}
                 try:
-                    self._register_file(f, table_name)
+                    self._register_file(f, table_name, schema, column_types)
                 except Exception:
-                    pass  # don't break startup if a file is unreadable
+                    pass  # never break startup on one bad file
+
+    @staticmethod
+    def _read_sidecar(data_file: Path) -> dict:
+        sc = data_file.with_name(f"{data_file.name}{_SIDECAR_SUFFIX}")
+        if sc.exists():
+            try:
+                return json.loads(sc.read_text())
+            except Exception:
+                return {}
+        return {}
 
     def list_files(self) -> list[dict]:
-        """Return metadata for all ingested files."""
+        """Metadata for all ingested files across schemas."""
         result = []
-        for f in sorted(self._upload_dir.iterdir()):
-            if f.suffix.lower() in _SUPPORTED_EXTENSIONS and f.is_file():
+        for sdir in sorted(self._upload_dir.iterdir()):
+            if not sdir.is_dir():
+                continue
+            schema = sdir.name
+            for f in sorted(sdir.iterdir()):
+                if not _is_data_file(f):
+                    continue
+                cfg = self._read_sidecar(f)
                 result.append({
                     "filename": f.name,
-                    "table_name": f.stem.lower().replace("-", "_").replace(" ", "_"),
+                    "table_name": cfg.get("table_name") or _safe_ident(f.stem),
+                    "schema": schema,
                     "size_bytes": f.stat().st_size,
                     "extension": f.suffix.lower(),
+                    "column_types": cfg.get("column_types") or {},
                 })
         return result
 
-    def delete_file(self, filename: str) -> None:
-        path = self._upload_dir / filename
-        table_name = path.stem.lower().replace("-", "_").replace(" ", "_")
+    def delete_file(self, filename: str, schema: str = DEFAULT_SCHEMA) -> None:
+        schema = _safe_ident(schema, DEFAULT_SCHEMA)
+        sdir = self._schema_dir(schema)
+        path = sdir / Path(filename).name
+        cfg = self._read_sidecar(path)
+        table_name = cfg.get("table_name") or _safe_ident(path.stem)
         if path.exists():
             path.unlink()
+        sc = path.with_name(f"{path.name}{_SIDECAR_SUFFIX}")
+        if sc.exists():
+            sc.unlink()
         try:
-            self._duckdb.execute(f"DROP TABLE IF EXISTS {table_name}")
+            self._duckdb.execute(f'DROP TABLE IF EXISTS "{schema}"."{table_name}"')
         except Exception:
             pass
 
@@ -164,17 +451,18 @@ class LocalUploadConnection(Connector):
         lines: list[str] = []
         try:
             self._duckdb.execute(
-                "SELECT table_name, column_name, data_type "
+                "SELECT table_schema, table_name, column_name, data_type "
                 "FROM information_schema.columns "
-                "ORDER BY table_name, ordinal_position"
+                "WHERE table_schema NOT IN ('information_schema', 'pg_catalog') "
+                "ORDER BY table_schema, table_name, ordinal_position"
             )
             rows = self._duckdb.fetchall()
-            from collections import defaultdict
-            table_cols: dict[str, list[str]] = defaultdict(list)
-            for tname, col, dtype in rows:
-                table_cols[tname].append(f"{col} {dtype}")
-            for tname, cols in table_cols.items():
-                lines.append(f"TABLE: {tname} [{', '.join(cols)}]")
+            table_cols: dict[tuple[str, str], list[str]] = defaultdict(list)
+            for tschema, tname, col, dtype in rows:
+                table_cols[(tschema, tname)].append(f"{col} {dtype}")
+            for (tschema, tname), cols in table_cols.items():
+                qualified = tname if tschema == DEFAULT_SCHEMA else f"{tschema}.{tname}"
+                lines.append(f"TABLE: {qualified} [{', '.join(cols)}]")
         except Exception as e:
             lines.append(f"# Schema introspection failed: {e}")
         return "\n".join(lines) or "(no files uploaded yet)"
@@ -183,8 +471,12 @@ class LocalUploadConnection(Connector):
         files = self.list_files()
         if not files:
             return True, "Local upload connector ready (no files uploaded yet)"
-        table_names = [f["table_name"] for f in files]
-        return True, f"Local upload: {len(files)} file(s) loaded as tables: {', '.join(table_names)}"
+        names = [
+            f["table_name"] if f["schema"] == DEFAULT_SCHEMA
+            else f"{f['schema']}.{f['table_name']}"
+            for f in files
+        ]
+        return True, f"Local upload: {len(files)} file(s) loaded as tables: {', '.join(names)}"
 
     def close(self) -> None:
         try:

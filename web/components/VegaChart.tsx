@@ -287,8 +287,14 @@ export function barSpec(xField: string, yField: string, opts?: {
   color?: string;
   xFormat?: string;
   maxBars?: number;
+  xTitle?: string;
+  yTitle?: string;
 }): VLSpec {
   const color = opts?.color ?? C1;
+  // Axis/tooltip titles default to the field name, but callers can pass the
+  // real column names (the data is often keyed by generic "value"/"label").
+  const xTitle = opts?.xTitle ?? xField;
+  const yTitle = opts?.yTitle ?? yField;
   return {
     mark: { type: "bar", color, opacity: 0.8, cornerRadiusEnd: 2 },
     transform: [
@@ -299,17 +305,17 @@ export function barSpec(xField: string, yField: string, opts?: {
       x: {
         field: xField,
         type: "quantitative",
-        axis: { format: opts?.xFormat ?? "~s", grid: true },
+        axis: { format: opts?.xFormat ?? "~s", grid: true, title: xTitle },
       },
       y: {
         field: yField,
         type: "ordinal",
         sort: { field: xField, order: "descending" },
-        axis: { labelLimit: 120 },
+        axis: { labelLimit: 120, title: yTitle },
       },
       tooltip: [
-        { field: yField, type: "nominal" },
-        { field: xField, type: "quantitative", format: opts?.xFormat ?? ",.2~f" },
+        { field: yField, type: "nominal", title: yTitle },
+        { field: xField, type: "quantitative", format: opts?.xFormat ?? ",.2~f", title: xTitle },
       ],
     },
   };

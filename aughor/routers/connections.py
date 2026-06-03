@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from aughor.db.connection import open_connection, open_connection_for
@@ -311,6 +311,51 @@ async def table_sample(conn_id: str, table: str, limit: int = 100, schema: str =
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/connections/{conn_id}/tables/{table}/columns")
+async def table_columns(conn_id: str, table: str, schema: str = ""):
+    """Reliable per-table column list (name + type) via a direct query — the
+    same lightweight path as the sample reader, so Overview and Sample Data stay
+    in sync even when the heavy whole-connection rich schema is unavailable."""
+    loop = asyncio.get_event_loop()
+    try:
+        db = open_connection_for(conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    safe_table = table.replace('"', "").replace(";", "")
+    safe_schema = schema.replace('"', "").replace(";", "") if schema else ""
+    ref = f'"{safe_schema}"."{safe_table}"' if safe_schema else f'"{safe_table}"'
+
+    def _work():
+        try:
+            # Preferred: information_schema gives column types and order.
+            where = f"table_name = '{safe_table}'"
+            if safe_schema:
+                where += f" AND table_schema = '{safe_schema}'"
+            try:
+                res = db.execute(
+                    "columns",
+                    "SELECT column_name, data_type FROM information_schema.columns "
+                    f"WHERE {where} ORDER BY ordinal_position",
+                )
+                if res.rows:
+                    return {"columns": [{"name": r[0], "type": str(r[1])} for r in res.rows]}
+            except Exception:
+                pass
+            # Fallback: an empty SELECT still yields the column names.
+            res = db.execute("columns", f"SELECT * FROM {ref} LIMIT 0")
+            return {"columns": [{"name": c, "type": ""} for c in res.columns]}
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+    try:
+        return await loop.run_in_executor(None, _work)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ── Instructions ──────────────────────────────────────────────────────────────
 
 @router.get("/connections/{conn_id}/instructions")
@@ -341,30 +386,93 @@ def put_conn_settings(conn_id: str, body: _ConnectionSettings):
 
 # ── Files (local_upload connector) ────────────────────────────────────────────
 
-@router.post("/connections/{conn_id}/files", status_code=201)
-async def upload_file_to_connection(conn_id: str, file: UploadFile = File(...)):
-    import shutil, tempfile
+def _open_file_connector(conn_id: str, need: str):
     try:
         db = open_connection_for(conn_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Connection not found")
-    if not hasattr(db, "ingest_file"):
+    if not hasattr(db, need):
         raise HTTPException(status_code=400, detail="Connection is not a file connector")
-    suffix = Path(file.filename or "upload.csv").suffix
-    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-        shutil.copyfileobj(file.file, tmp)
-        tmp_path = Path(tmp.name)
+    return db
+
+
+def _stage_upload(file: UploadFile):
+    """Write an UploadFile to a temp dir under its original name; return (tmp_dir, tmp_path)."""
+    import shutil, tempfile
+    original = Path(file.filename or "upload.csv").name
+    tmp_dir = Path(tempfile.mkdtemp())
+    tmp_path = tmp_dir / original
+    with tmp_path.open("wb") as out:
+        shutil.copyfileobj(file.file, out)
+    return tmp_dir, tmp_path
+
+
+@router.post("/connections/{conn_id}/files/analyze")
+async def analyze_connection_file(conn_id: str, file: UploadFile = File(...)):
+    """Inspect a file (columns, inferred types, type-mismatch suggestions, preview)
+    without ingesting it — drives the import review UI."""
+    import shutil
+    db = _open_file_connector(conn_id, "analyze_file")
+    tmp_dir, tmp_path = _stage_upload(file)
     try:
-        table_name = db.ingest_file(tmp_path, table_name=None)
-        return {"table_name": table_name, "filename": file.filename, "message": "File ingested"}
+        loop = asyncio.get_event_loop()
+        info = await loop.run_in_executor(None, lambda: db.analyze_file(tmp_path))
+        info["filename"] = tmp_path.name
+        return info
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Analyze failed: {e}")
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+@router.post("/connections/{conn_id}/files", status_code=201)
+async def upload_file_to_connection(
+    conn_id: str,
+    file: UploadFile = File(...),
+    table_name: Optional[str] = Form(None),
+    schema: Optional[str] = Form(None),
+    column_types: Optional[str] = Form(None),
+):
+    """Ingest a file as a table. Optional table_name, schema, and column_types
+    (a JSON object mapping column → cast type) configure the import."""
+    import shutil
+    db = _open_file_connector(conn_id, "ingest_file")
+    types: dict = {}
+    if column_types:
+        try:
+            parsed = json.loads(column_types)
+            if isinstance(parsed, dict):
+                types = parsed
+        except Exception:
+            raise HTTPException(status_code=400, detail="column_types must be valid JSON")
+    tmp_dir, tmp_path = _stage_upload(file)
+    try:
+        loop = asyncio.get_event_loop()
+        tname = await loop.run_in_executor(
+            None,
+            lambda: db.ingest_file(
+                tmp_path,
+                table_name=(table_name or None),
+                schema=(schema or "main"),
+                column_types=types,
+            ),
+        )
+        return {
+            "table_name": tname,
+            "schema": schema or "main",
+            "filename": tmp_path.name,
+            "message": "File ingested",
+        }
+    except TypeError:
+        # Connector without the extended signature — fall back to plain ingest.
+        tname = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: db.ingest_file(tmp_path, table_name=(table_name or None))
+        )
+        return {"table_name": tname, "filename": tmp_path.name, "message": "File ingested"}
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Ingestion failed: {e}")
     finally:
-        try:
-            tmp_path.unlink()
-        except Exception:
-            pass
-    db.close()
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 @router.get("/connections/{conn_id}/files")
@@ -380,7 +488,7 @@ async def list_connection_files(conn_id: str):
 
 
 @router.delete("/connections/{conn_id}/files/{filename}", status_code=200)
-async def delete_connection_file(conn_id: str, filename: str):
+async def delete_connection_file(conn_id: str, filename: str, schema: str = "main"):
     loop = asyncio.get_event_loop()
     try:
         db = open_connection_for(conn_id)
@@ -388,8 +496,33 @@ async def delete_connection_file(conn_id: str, filename: str):
         raise HTTPException(status_code=404, detail="Connection not found")
     if not hasattr(db, "delete_file"):
         raise HTTPException(status_code=400, detail="Not a file connector")
-    await loop.run_in_executor(None, lambda: db.delete_file(filename))
+    try:
+        await loop.run_in_executor(None, lambda: db.delete_file(filename, schema))
+    except TypeError:
+        await loop.run_in_executor(None, lambda: db.delete_file(filename))
     return {"message": f"File '{filename}' removed"}
+
+
+@router.get("/connections/{conn_id}/schemas")
+async def list_connection_schemas(conn_id: str):
+    loop = asyncio.get_event_loop()
+    db = _open_file_connector(conn_id, "list_schemas")
+    return {"schemas": await loop.run_in_executor(None, db.list_schemas)}
+
+
+class _SchemaCreate(BaseModel):
+    name: str
+
+
+@router.post("/connections/{conn_id}/schemas", status_code=201)
+async def create_connection_schema(conn_id: str, body: _SchemaCreate):
+    loop = asyncio.get_event_loop()
+    db = _open_file_connector(conn_id, "create_schema")
+    name = (body.name or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Schema name is required")
+    schema = await loop.run_in_executor(None, lambda: db.create_schema(name))
+    return {"schema": schema, "message": "Schema created"}
 
 
 # ── Process map + causal graph ────────────────────────────────────────────────

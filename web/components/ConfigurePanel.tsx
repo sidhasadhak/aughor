@@ -109,12 +109,12 @@ function AboutTab({
   return (
     <div className="flex-1 overflow-y-auto p-4 space-y-5">
       <div>
-        <p className="aug-label mb-2">Canvas name</p>
+        <p className="aug-label mb-2">Data Canvas name</p>
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
           className="aug-input"
-          placeholder="Canvas name"
+          placeholder="Data Canvas name"
         />
       </div>
 
@@ -256,40 +256,105 @@ function TableDetail({
 
 // ── Data tab (scoped to Canvas tables) ──────────────────────────────────────
 
-function DataTab({ connId, scopeTables }: { connId: string; scopeTables: string[] }) {
+function DataTab({
+  canvas,
+  connId,
+  onCanvasUpdate,
+}: {
+  canvas: Canvas;
+  connId: string;
+  onCanvasUpdate?: (c: Canvas) => void;
+}) {
   const { schema } = useSchema();
   const allTables: SchemaTable[] = (schema?.tables ?? []) as SchemaTable[];
   const [selected, setSelected] = useState<SchemaTable | null>(null);
   const [filter, setFilter] = useState("");
+  const [saving, setSaving] = useState(false);
 
-  // Scope: empty scope => all tables; otherwise restrict to the canvas tables
-  // (lenient leaf-name match so schema-qualified names still resolve).
-  const scopeSet = useMemo(
-    () => new Set(scopeTables.map(leaf)),
-    [scopeTables],
-  );
-  const tables = useMemo(
-    () => (scopeSet.size === 0 ? allTables : allTables.filter((t) => scopeSet.has(leaf(t.name)))),
-    [allTables, scopeSet],
-  );
+  const scope = canvas.scopes[0];
+  const scopeTables = scope?.tables ?? [];
+
+  // Membership as a set of leaf names. Empty scope = ALL tables included.
+  const allLeaves = useMemo(() => allTables.map((t) => leaf(t.name)), [allTables]);
+  const [included, setIncluded] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    setIncluded(
+      scopeTables.length === 0
+        ? new Set(allLeaves)
+        : new Set(scopeTables.map(leaf)),
+    );
+    // Re-sync when the canvas or the available table set changes.
+  }, [canvas.id, scopeTables.length, allLeaves.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const persist = (next: Set<string>) => {
+    if (!scope) return;
+    const coversAll = allLeaves.length > 0 && allLeaves.every((l) => next.has(l));
+    const tables = coversAll
+      ? []                                   // all tables → store empty (means "all")
+      : allTables.filter((t) => next.has(leaf(t.name))).map((t) => t.name);
+    setSaving(true);
+    updateCanvas(canvas.id, {
+      scopes: [{ connection_id: scope.connection_id, schema_name: scope.schema_name ?? null, tables }],
+    })
+      .then((updated) => onCanvasUpdate?.(updated))
+      .catch(() => {})
+      .finally(() => setSaving(false));
+  };
+
+  const toggle = (name: string) => {
+    const l = leaf(name);
+    const next = new Set(included);
+    if (next.has(l)) next.delete(l);
+    else next.add(l);
+    setIncluded(next);
+    persist(next);
+  };
+
+  const setAll = (on: boolean) => {
+    const next = on ? new Set(allLeaves) : new Set<string>();
+    setIncluded(next);
+    persist(next);
+  };
 
   if (selected) {
     return <TableDetail connId={connId} table={selected} onClose={() => setSelected(null)} />;
   }
 
-  const filtered = tables.filter((t) =>
+  const filtered = allTables.filter((t) =>
     !filter || t.name.toLowerCase().includes(filter.toLowerCase())
   );
+  const includedCount = allLeaves.filter((l) => included.has(l)).length;
+  const isAll = includedCount === allLeaves.length && allLeaves.length > 0;
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Scope note + filter */}
       <div className="px-3 py-2 border-b border-[--b1] shrink-0 space-y-2">
-        <p className="text-[11px] text-[--t3]">
-          {scopeSet.size === 0
-            ? "This canvas includes all tables in the connection."
-            : `Scoped to ${tables.length} table${tables.length === 1 ? "" : "s"}.`}
-        </p>
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[11px] text-[--t3]">
+            {isAll
+              ? "All tables included in this canvas."
+              : `${includedCount} of ${allTables.length} table${allTables.length === 1 ? "" : "s"} included.`}
+            {saving && <span className="text-[--t4]"> · saving…</span>}
+          </p>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => setAll(true)}
+              disabled={isAll || saving}
+              className="text-[11px] text-[--t3] hover:text-[--t1] disabled:opacity-40 transition"
+            >
+              Include all
+            </button>
+            <span className="text-[--b2]">·</span>
+            <button
+              onClick={() => setAll(false)}
+              disabled={includedCount === 0 || saving}
+              className="text-[11px] text-[--t3] hover:text-[--t1] disabled:opacity-40 transition"
+            >
+              Clear
+            </button>
+          </div>
+        </div>
         <input
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
@@ -298,24 +363,48 @@ function DataTab({ connId, scopeTables }: { connId: string; scopeTables: string[
         />
       </div>
 
-      {/* Table list */}
+      {/* Table list — checkbox toggles canvas membership; row opens detail */}
       <div className="flex-1 overflow-y-auto">
-        {tables.length > 0 && (
+        {allTables.length > 0 && (
           <div className="flex items-center px-3 py-2 aug-label border-b border-[--b1] sticky top-0" style={{ background: "var(--bg-1)" }}>
+            <span className="w-6" />
             <span className="flex-1">Name</span>
             <span className="w-12 text-right">Cols</span>
             <span className="w-20 text-right">Rows</span>
             <span className="w-4" />
           </div>
         )}
-        {filtered.map((t) => (
-          <button
+        {filtered.map((t) => {
+          const on = included.has(leaf(t.name));
+          return (
+          <div
             key={t.name}
-            onClick={() => setSelected(t)}
-            className="w-full flex items-center px-3 py-2.5 text-[12px] border-b border-[--b0] hover:bg-[--bg-hover] transition group text-left"
+            className="w-full flex items-center px-3 py-2.5 text-[12px] border-b border-[--b0] hover:bg-[--bg-hover] transition group"
           >
-            <span className="text-[--t3] shrink-0 mr-2"><TableIcon label="Table" size="small" /></span>
-            <span className="flex-1 font-mono text-[--t1] truncate">{t.name}</span>
+            {/* Membership checkbox */}
+            <button
+              onClick={() => toggle(t.name)}
+              disabled={saving}
+              title={on ? "Remove from canvas" : "Add to canvas"}
+              className="w-6 shrink-0 flex items-center"
+            >
+              <span
+                className="w-4 h-4 rounded flex items-center justify-center transition"
+                style={{
+                  border: `1px solid ${on ? "var(--blue4)" : "var(--b2)"}`,
+                  background: on ? "var(--blue4)" : "transparent",
+                }}
+              >
+                {on && (
+                  <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="#0b1220" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2.5 6.5l2.5 2.5 4.5-5" /></svg>
+                )}
+              </span>
+            </button>
+            {/* Open detail */}
+            <button onClick={() => setSelected(t)} className="flex-1 flex items-center min-w-0 text-left">
+              <span className="text-[--t3] shrink-0 mr-2"><TableIcon label="Table" size="small" /></span>
+              <span className="flex-1 font-mono text-[--t1] truncate">{t.name}</span>
+            </button>
             <span className="w-12 text-right text-[--t3] shrink-0">{t.columns.length}</span>
             <span className="w-20 text-right text-[--t3] shrink-0 font-mono">
               {Number(t.row_count) >= 1_000_000
@@ -324,14 +413,17 @@ function DataTab({ connId, scopeTables }: { connId: string; scopeTables: string[
                 ? `${(Number(t.row_count) / 1_000).toFixed(0)}k`
                 : t.row_count}
             </span>
-            <span className="text-[--t4] group-hover:text-[--t2] transition ml-1 shrink-0"><ChevronRightIcon label="" size="small" /></span>
-          </button>
-        ))}
+            <button onClick={() => setSelected(t)} className="text-[--t4] group-hover:text-[--t2] transition ml-1 shrink-0">
+              <ChevronRightIcon label="" size="small" />
+            </button>
+          </div>
+          );
+        })}
         {filter && filtered.length === 0 && (
           <p className="text-[12px] text-[--t2] p-4">No tables match &ldquo;{filter}&rdquo;.</p>
         )}
-        {!filter && tables.length === 0 && (
-          <p className="text-[12px] text-[--t2] p-4">No tables in this canvas&rsquo;s scope.</p>
+        {!filter && allTables.length === 0 && (
+          <p className="text-[12px] text-[--t2] p-4">No tables available in this connection.</p>
         )}
       </div>
     </div>
@@ -464,7 +556,7 @@ export function ConfigurePanel({ canvas, connections, onClose, onCanvasUpdate }:
             <AboutTab canvas={canvas} connection={connection} onCanvasUpdate={onCanvasUpdate} />
           )}
           {tab === "data" && (
-            <DataTab connId={connectionId} scopeTables={scopeTables} />
+            <DataTab canvas={canvas} connId={connectionId} onCanvasUpdate={onCanvasUpdate} />
           )}
           {tab === "instructions" && (
             <InstructionsTab canvasId={canvas.id} />

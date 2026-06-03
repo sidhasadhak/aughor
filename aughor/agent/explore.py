@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from aughor.db.connection import DatabaseConnection
 
 from aughor.agent.prompts_explore import (
+    BUILD_LEDGER_PROMPT,
     DECOMPOSE_EXPLORATION_PROMPT,
     PLAN_SUBQ_PROMPT,
     REASON_OVER_RESULT_PROMPT,
@@ -102,6 +103,38 @@ def _attach_stats(result: QueryResult) -> QueryResult:
         return result
 
 
+# ── Analysis ledger — canonical definitions shared by every stage ─────────────
+
+class _LedgerOut(BaseModel):
+    ledger: str = Field(
+        description="Short binding list of canonical entity identifiers, metric "
+                    "SQL expressions, and segment definitions for this analysis."
+    )
+
+
+def build_analysis_ledger(state: AgentState) -> str:
+    """Decide canonical entity/metric definitions ONCE so every downstream step
+    uses the same identifiers and expressions (prevents figures drifting between
+    stages, e.g. customer_id vs customer_unique_id). Best-effort — never blocks."""
+    scan_context = state.get("scan_context") or ""
+    scan_section = (
+        f"DATA PORTRAIT (actual distributions):\n{scan_context}\n" if scan_context else ""
+    )
+    try:
+        out: _LedgerOut = get_provider("coder").complete(
+            system="You define canonical metric/entity definitions for a data analysis.",
+            user=BUILD_LEDGER_PROMPT.format(
+                question=state["question"],
+                schema=state["schema_context"],
+                scan_section=scan_section,
+            ),
+            response_model=_LedgerOut,
+        )
+        return (out.ledger or "").strip()
+    except Exception:
+        return ""
+
+
 # ── Node: decompose_exploration ───────────────────────────────────────────────
 
 def decompose_exploration(state: AgentState) -> dict[str, Any]:
@@ -111,6 +144,9 @@ def decompose_exploration(state: AgentState) -> dict[str, Any]:
         f"DATA PORTRAIT (actual distributions — use these ranges in your SQL planning):\n{scan_context}\n"
         if scan_context else ""
     )
+
+    # Pin canonical definitions for the whole run before planning any sub-questions.
+    analysis_ledger = build_analysis_ledger(state)
 
     # Extract explicit user constraints from the question (re-use decompose pattern)
     constraint_section = "No explicit constraints detected."
@@ -135,6 +171,7 @@ def decompose_exploration(state: AgentState) -> dict[str, Any]:
         "subq_answers": [],
         "pitfalls": [],
         "iteration": 0,
+        "analysis_ledger": analysis_ledger,
     }
 
 
@@ -165,6 +202,7 @@ def plan_and_execute_subq(state: AgentState, conn: "DatabaseConnection") -> dict
             subq_question=subq.question,
             expected_output=subq.expected_output,
             prior_answers=_format_prior_answers(prior_answers),
+            analysis_ledger=state.get("analysis_ledger") or "(none)",
             schema=state["schema_context"],
             pitfall_section=format_pitfall_section(known_pitfalls),
             events_section=events_section,
@@ -275,6 +313,7 @@ def reason_over_result(state: AgentState) -> dict[str, Any]:
                 subq_question=subq.question,
                 expected_output=subq.expected_output,
                 query_results=formatted,
+                analysis_ledger=state.get("analysis_ledger") or "(none)",
                 prior_context=_format_prior_answers(prior_answers),
             ),
             response_model=ReasoningOutput,
@@ -488,6 +527,7 @@ def synthesize_exploration(state: AgentState) -> dict[str, Any]:
         system="You are a senior data analyst writing an executive investigation report.",
         user=SYNTHESIZE_EXPLORATION_PROMPT.format(
             question=state["question"],
+            analysis_ledger=state.get("analysis_ledger") or "(none)",
             chain_summary=chain_summary,
             events_section=events_section,
         ),

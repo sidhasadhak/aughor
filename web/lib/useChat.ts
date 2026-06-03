@@ -56,6 +56,10 @@ export interface ChatTurn {
   analysis: { intent: string; steps: string[] } | null;
   error: string | null;
 
+  // Timing — wall clock for the whole turn (all modes incl. Quick/ask)
+  startedAt: number;          // Date.now() when the turn began streaming
+  elapsedMs: number | null;   // frozen once the turn reaches a terminal state
+
   // Cache metadata
   fromCache: boolean;
   cachedQuestion: string | null;
@@ -120,16 +124,22 @@ const EMPTY_TURN: Omit<ChatTurn, "id" | "question" | "mode"> = {
   queriesExecuted: [], latestScore: null,
   hypotheses: [], investigationId: null,
   tablesUsed: [], followups: [], analysis: null, error: null,
+  startedAt: 0, elapsedMs: null,
   fromCache: false, cachedQuestion: null,
   inspectWarning: null,
 };
+
+// Freeze the elapsed wall-time the first time a turn reaches a terminal state.
+function finish(t: ChatTurn): ChatTurn {
+  return { ...t, elapsedMs: t.elapsedMs ?? (t.startedAt ? Date.now() - t.startedAt : null) };
+}
 
 function chatReducer(state: ChatState, action: ChatAction): ChatState {
   switch (action.type) {
     case "ASK":
       return {
         ...state, streaming: true,
-        turns: [...state.turns, { ...EMPTY_TURN, id: action.id, question: action.question, mode: action.mode }],
+        turns: [...state.turns, { ...EMPTY_TURN, id: action.id, question: action.question, mode: action.mode, startedAt: Date.now() }],
       };
     case "SQL":        return updateLast(state, t => ({ ...t, sql: action.sql }));
     case "COLUMNS":    return updateLast(state, t => ({ ...t, columns: action.columns }));
@@ -166,15 +176,15 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case "PHASE":
       return updateLast(state, t => ({ ...t, phases: [...t.phases, action.phase], statusText: `Analyzing ${action.phase.phase_id}…` }));
     case "ADA_REPORT":
-      return { ...updateLast(state, t => ({ ...t, status: "done", adaReport: action.report, queryMode: action.queryMode, statusText: null, investigationId: action.investigationId ?? t.investigationId })), streaming: false };
+      return { ...updateLast(state, t => finish({ ...t, status: "done", adaReport: action.report, queryMode: action.queryMode, statusText: null, investigationId: action.investigationId ?? t.investigationId })), streaming: false };
     case "EXPLORE_REPORT":
-      return { ...updateLast(state, t => ({ ...t, status: "done", exploreReport: action.report, subQuestions: action.subQuestions, subqAnswers: action.subqAnswers, queryMode: "explore", statusText: null, investigationId: action.investigationId ?? t.investigationId })), streaming: false };
+      return { ...updateLast(state, t => finish({ ...t, status: "done", exploreReport: action.report, subQuestions: action.subQuestions, subqAnswers: action.subqAnswers, queryMode: "explore", statusText: null, investigationId: action.investigationId ?? t.investigationId })), streaming: false };
     case "REPORT":
       return updateLast(state, t => ({ ...t, report: action.report, queryMode: action.queryMode, statusText: null, investigationId: action.investigationId ?? t.investigationId }));
     case "ERROR":
-      return { ...updateLast(state, t => ({ ...t, status: "error", error: action.message })), streaming: false };
+      return { ...updateLast(state, t => finish({ ...t, status: "error", error: action.message })), streaming: false };
     case "DONE":
-      return { ...updateLast(state, t => ({ ...t, status: "done" })), streaming: false };
+      return { ...updateLast(state, t => finish({ ...t, status: "done" })), streaming: false };
     case "CLEAR":
       return { turns: [], streaming: false };
     case "RESTORE":

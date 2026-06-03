@@ -432,7 +432,7 @@ function Topbar({
 const NAV_PRIMARY = [
   { id: "home",         icon: "home",   label: "Home" },
   { id: "inbox",        icon: "inbox",  label: "Inbox" },
-  { id: "canvases",     icon: "canvas", label: "Canvases" },
+  { id: "canvases",     icon: "canvas", label: "Data Canvas" },
 ] as const;
 
 const NAV_SECTIONS = [
@@ -705,7 +705,7 @@ function HomeScreen({
           <div className="aug-label" style={{ marginBottom: 12 }}>Get Started</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
             {[
-              { icon: "canvas",  name: "Canvases",      desc: "Curated schema + table spaces to explore and investigate.",      accent: "var(--vio3)", action: () => onNavigate("canvases") },
+              { icon: "canvas",  name: "Data Canvas",      desc: "Curated schema + table spaces to explore and investigate.",      accent: "var(--vio3)", action: () => onNavigate("canvases") },
               { icon: "db",      name: "Catalog",       desc: "Browse connections, tables, columns, and data distributions.",   accent: "var(--cyn3)", action: () => onNavigate("catalog") },
               { icon: "brief",   name: "Briefing",      desc: "Your unified intelligence digest across the workspace.",          accent: "var(--grn3)", action: () => onNavigate("intelligence") },
               { icon: "builder", name: "Query Builder", desc: "Compose and run SQL against any connection, with results.",       accent: "var(--amb3)", action: () => onNavigate("builder") },
@@ -1667,7 +1667,7 @@ export default function Home() {
                       <button
                         onClick={() => setTab("canvases")}
                         className="aug-btn aug-btn-ghost aug-btn-sm"
-                        title="Pick a Canvas"
+                        title="Pick a Data Canvas"
                       >
                         <NavIcon name="canvas" size={11} /> Canvas
                       </button>

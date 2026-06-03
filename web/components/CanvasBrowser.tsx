@@ -78,8 +78,8 @@ export function CanvasBrowser({ connections, onSelect, onNew }: Props) {
   const [canvases, setCanvases]         = useState<Canvas[]>([]);
   const [loading, setLoading]           = useState(true);
   const [search, setSearch]             = useState("");
-  const [filter, setFilter]             = useState<"all" | "mine" | "auto">("all");
-  const [sort, setSort]                 = useState<"modified" | "name" | "tables">("modified");
+  const [filter, setFilter]             = useState<"all" | "mine">("all");
+  const [sort, setSort]                 = useState<"activity" | "modified" | "name" | "tables">("activity");
   const [sortOpen, setSortOpen]         = useState(false);
   const [pendingDelete, setPendingDelete] = useState<Canvas | null>(null);
   const [deleting, setDeleting]         = useState(false);
@@ -104,7 +104,6 @@ export function CanvasBrowser({ connections, onSelect, onNew }: Props) {
   const displayed: CanvasRow[] = useMemo(() => {
     let list = [...canvases];
     if (filter === "mine") list = list.filter(c => !c.is_legacy);
-    if (filter === "auto") list = list.filter(c => c.is_legacy);
     if (search.trim()) {
       const q = search.toLowerCase();
       list = list.filter(c =>
@@ -113,7 +112,12 @@ export function CanvasBrowser({ connections, onSelect, onNew }: Props) {
         (connMap[c.scopes[0]?.connection_id]?.name ?? "").toLowerCase().includes(q),
       );
     }
+    const activityTs = (c: Canvas) =>
+      c.last_activity ? new Date(c.last_activity).getTime() : 0;
     const cmp = {
+      activity: (a: Canvas, b: Canvas) =>
+        activityTs(b) - activityTs(a) ||
+        new Date(b.updated_at || b.created_at).getTime() - new Date(a.updated_at || a.created_at).getTime(),
       modified: (a: Canvas, b: Canvas) =>
         new Date(b.updated_at || b.created_at).getTime() -
         new Date(a.updated_at || a.created_at).getTime(),
@@ -126,7 +130,17 @@ export function CanvasBrowser({ connections, onSelect, onNew }: Props) {
       .map(c => ({ key: c.id, canvas: c, connection: connMap[c.scopes[0]?.connection_id] }));
   }, [canvases, filter, search, sort, connMap]);
 
+  // Up to 5 most-recently-used canvases (those with any investigation/chat).
+  const recent: CanvasRow[] = useMemo(() => {
+    return [...canvases]
+      .filter(c => !!c.last_activity)
+      .sort((a, b) => new Date(b.last_activity!).getTime() - new Date(a.last_activity!).getTime())
+      .slice(0, 5)
+      .map(c => ({ key: c.id, canvas: c, connection: connMap[c.scopes[0]?.connection_id] }));
+  }, [canvases, connMap]);
+
   const SORT_LABELS: Record<typeof sort, string> = {
+    activity: "Latest investigation",
     modified: "Last modified",
     name: "Name",
     tables: "Table count",
@@ -237,7 +251,7 @@ export function CanvasBrowser({ connections, onSelect, onNew }: Props) {
         canvas.is_legacy ? null : (
           <button
             onClick={e => { e.stopPropagation(); setPendingDelete(canvas); }}
-            title="Delete canvas"
+            title="Delete Data Canvas"
             style={{
               background: "none", border: "none", cursor: "pointer",
               color: "var(--t4)", padding: "4px", opacity: 0,
@@ -267,9 +281,7 @@ export function CanvasBrowser({ connections, onSelect, onNew }: Props) {
           <h1 style={{
             fontSize: 22, fontWeight: 700, color: "var(--t1)",
             letterSpacing: "-.02em", margin: 0, lineHeight: 1.2,
-          }}>
-            Canvases
-          </h1>
+          }}>Data Canvas</h1>
           <p style={{ fontSize: 12, color: "var(--t3)", margin: "5px 0 0", lineHeight: 1.5 }}>
             Curated table sets you can run scoped intelligence and investigations on.
           </p>
@@ -299,7 +311,7 @@ export function CanvasBrowser({ connections, onSelect, onNew }: Props) {
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Search canvases, connections…"
+            placeholder="Search Data Canvases, connections…"
             style={{
               flex: 1, background: "none", border: "none", outline: "none",
               fontSize: 13, color: "var(--t1)", fontFamily: "var(--font-ui)",
@@ -328,9 +340,8 @@ export function CanvasBrowser({ connections, onSelect, onNew }: Props) {
         }}>
           <Icon d={SLIDERS_ICON} size={14} color="var(--t3)" />
         </div>
-        <FilterChip label="All"            active={filter === "all"}  onClick={() => setFilter("all")} />
-        <FilterChip label="Created by me"  active={filter === "mine"} onClick={() => setFilter("mine")} />
-        <FilterChip label="Auto-generated" active={filter === "auto"} onClick={() => setFilter("auto")} />
+        <FilterChip label="All"           active={filter === "all"}  onClick={() => setFilter("all")} />
+        <FilterChip label="Created by me" active={filter === "mine"} onClick={() => setFilter("mine")} />
       </div>
 
       {/* ── Table ── */}
@@ -338,7 +349,7 @@ export function CanvasBrowser({ connections, onSelect, onNew }: Props) {
         {/* Section bar */}
         <div style={{ display: "flex", alignItems: "center", marginBottom: 10 }}>
           <span style={{ fontSize: 12, fontWeight: 500, color: "var(--t2)" }}>
-            {loading ? "Loading…" : `All Canvases${displayed.length > 0 ? ` (${displayed.length})` : ""}`}
+            {loading ? "Loading…" : `All Data Canvases${displayed.length > 0 ? ` (${displayed.length})` : ""}`}
           </span>
 
           {/* Sort control */}
@@ -367,7 +378,7 @@ export function CanvasBrowser({ connections, onSelect, onNew }: Props) {
                 background: "var(--bg-2)", border: "1px solid var(--b2)",
                 borderRadius: "var(--r2)", boxShadow: "0 8px 28px rgba(0,0,0,.35)",
               }}>
-                {(["modified", "name", "tables"] as const).map(opt => (
+                {(["activity", "modified", "name", "tables"] as const).map(opt => (
                   <button
                     key={opt}
                     onMouseDown={() => { setSort(opt); setSortOpen(false); }}
@@ -408,19 +419,19 @@ export function CanvasBrowser({ connections, onSelect, onNew }: Props) {
             </div>
             <div style={{ textAlign: "center" }}>
               <div style={{ fontSize: 14, fontWeight: 600, color: "var(--t1)", marginBottom: 5 }}>
-                {search ? "No matching canvases" : "No Canvases yet"}
+                {search ? "No matching Data Canvases" : "No Data Canvases yet"}
               </div>
               <div style={{ fontSize: 12, color: "var(--t3)", lineHeight: 1.6, maxWidth: 300 }}>
                 {search
                   ? "Try a different search or clear the filter."
-                  : "Create a Canvas to scope a workspace to a connection and specific tables."}
+                  : "Create a Data Canvas to scope a workspace to a connection and specific tables."}
               </div>
             </div>
             {!search && (
               <button onClick={onNew} className="aug-btn aug-btn-primary"
                 style={{ display: "inline-flex", alignItems: "center", gap: 6, marginTop: 4 }}>
                 <Icon d={PLUS_ICON} size={12} color="currentColor" />
-                Create your first Canvas
+                Create your first Data Canvas
               </button>
             )}
           </div>
@@ -456,6 +467,47 @@ export function CanvasBrowser({ connections, onSelect, onNew }: Props) {
             />
           </>
         )}
+
+        {/* ── Recently used (up to 5, by latest investigation) ── */}
+        {!loading && !search && recent.length > 0 && (
+          <div style={{ marginTop: 28 }}>
+            <span style={{ fontSize: 12, fontWeight: 500, color: "var(--t2)", display: "block", marginBottom: 10 }}>
+              Recently used
+            </span>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
+              {recent.map(({ canvas, connection }) => (
+                <button
+                  key={canvas.id}
+                  onClick={() => onSelect(canvas)}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 10, textAlign: "left",
+                    padding: "11px 13px", borderRadius: "var(--r2)", cursor: "pointer",
+                    background: "var(--bg-2)", border: "1px solid var(--b1)", transition: "all .1s",
+                  }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--blue4)"; e.currentTarget.style.background = "var(--bg-3)"; }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--b1)"; e.currentTarget.style.background = "var(--bg-2)"; }}
+                >
+                  <div style={{
+                    width: 30, height: 30, borderRadius: 4, flexShrink: 0,
+                    background: "color-mix(in srgb, var(--blue3) 16%, transparent)",
+                    border: "1px solid color-mix(in srgb, var(--blue3) 32%, transparent)",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}>
+                    <Icon d={CANVAS_ICON} size={14} color="var(--blue4)" />
+                  </div>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 500, color: "var(--t1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {canvas.name}
+                    </div>
+                    <div style={{ fontSize: 11, color: "var(--t4)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {connection?.name ?? "—"} · {timeAgo(canvas.last_activity!)}
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── Delete confirmation modal ── */}
@@ -472,7 +524,7 @@ export function CanvasBrowser({ connections, onSelect, onNew }: Props) {
             width: 360, display: "flex", flexDirection: "column", gap: 12,
             boxShadow: "0 20px 60px rgba(0,0,0,.4)",
           }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--t1)" }}>Delete Canvas</div>
+            <div style={{ fontSize: 14, fontWeight: 600, color: "var(--t1)" }}>Delete Data Canvas</div>
             <div style={{ fontSize: 12, color: "var(--t2)", lineHeight: 1.6 }}>
               Are you sure you want to delete{" "}
               <strong style={{ color: "var(--t1)" }}>{pendingDelete.name}</strong>?

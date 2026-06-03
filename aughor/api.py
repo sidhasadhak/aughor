@@ -69,14 +69,29 @@ async def _setup_samples() -> None:
 
 
 @app.on_event("startup")
-async def _migrate_canvases() -> None:
+async def _sweep_stale_investigations() -> None:
+    # Investigations orphaned mid-run (interrupted streams / restarts) get stuck
+    # in 'running' forever and clutter history with un-openable items. Fail them.
     try:
-        from aughor.canvas.store import migrate_connections_to_legacy_canvases
-        created = migrate_connections_to_legacy_canvases()
-        if created:
-            logger.info("Canvas migration: created %d legacy Canvas(es)", created)
+        from aughor.db.history import sweep_stale_running
+        n = sweep_stale_running(max_age_minutes=60)
+        if n:
+            logger.info("Marked %d stale 'running' investigation(s) as failed", n)
     except Exception as exc:
-        logger.warning("Canvas migration failed (non-fatal): %s", exc)
+        logger.warning("Stale investigation sweep failed (non-fatal): %s", exc)
+
+
+@app.on_event("startup")
+async def _purge_legacy_canvases() -> None:
+    # Auto-generated per-connection Canvases are no longer created. Purge any
+    # left over from older installs so only user-created Canvases remain.
+    try:
+        from aughor.canvas.store import delete_legacy_canvases
+        removed = delete_legacy_canvases()
+        if removed:
+            logger.info("Canvas cleanup: removed %d auto-generated Canvas(es)", removed)
+    except Exception as exc:
+        logger.warning("Canvas cleanup failed (non-fatal): %s", exc)
 
 
 @app.on_event("startup")

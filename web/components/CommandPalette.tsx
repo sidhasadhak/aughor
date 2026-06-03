@@ -160,7 +160,7 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
   // ── Static nav action items ───────────────────────────────────────────────
 
   const NAV_ACTIONS: Omit<PaletteItem, "onSelect">[] = [
-    { id: "nav-canvases",    label: "Canvases",           sublabel: "Browse and open canvas workspaces",     type: "action", icon: "canvas",   accent: "var(--blue3)" },
+    { id: "nav-canvases",    label: "Data Canvas",           sublabel: "Browse and open Data Canvases",     type: "action", icon: "canvas",   accent: "var(--blue3)" },
     { id: "nav-recents",     label: "Investigation history", sublabel: "View all past analyses",            type: "action", icon: "clock",    accent: "var(--t3)" },
     { id: "nav-inbox",       label: "Recommendation Inbox", sublabel: "Act on Aughor's recommendations",   type: "action", icon: "inbox",    accent: "var(--amb3)" },
     { id: "nav-intel",       label: "Domain Intelligence",  sublabel: "Per-domain insights and coverage",  type: "action", icon: "process",  accent: "var(--cyn3)" },

@@ -14,10 +14,7 @@ import { useChat, type DebugEvent } from "@/lib/useChat";
 import { ChatMessage, SourcePanel, type SourcePanelData } from "./ChatMessage";
 
 import { API_BASE as BASE } from "@/lib/config";
-import { ThinkingTrace } from "@/components/ThinkingTrace";
-import { HypothesisCard } from "@/components/HypothesisCard";
 import { FeedbackPrompt } from "@/components/FeedbackPrompt";
-import type { InvestigationState } from "@/lib/types";
 
 const FALLBACK_STARTERS = [
   { text: "Show me the top 10 rows from any table",  mode: "ask" as const },
@@ -288,7 +285,6 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
   const [starters, setStarters]     = useState<Starter[]>(FALLBACK_STARTERS);
   const [loadingStarters, setLoadingStarters] = useState(false);
   const [showDebug, setShowDebug]   = useState(false);
-  const [showTrace, setShowTrace]   = useState(false);
   const [feedbackDone, setFeedbackDone] = useState<Set<string>>(new Set());
   const [sourcePanel, setSourcePanel] = useState<SourcePanelData | null>(null);
   const [attachedFile, setAttachedFile] = useState<File | null>(null);
@@ -358,6 +354,8 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
           analysis: (t.intent || t.approach?.length) ? { intent: t.intent || "", steps: t.approach || [] } : null,
           followups: [],
           error: null,
+          startedAt: 0,
+          elapsedMs: null,
           fromCache: false,
           cachedQuestion: null,
           inspectWarning: null,
@@ -418,41 +416,6 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
   }, [input, state.streaming, ask, connectionId, canvasId, mode, attachedFile]);
 
   const isEmpty = state.turns.length === 0;
-
-  // ── Auto-open trace panel when an investigation starts streaming ──────────────
-  const lastTurn = state.turns[state.turns.length - 1] ?? null;
-  const isInvestigating = state.streaming && lastTurn?.mode === "investigate";
-  useEffect(() => {
-    if (isInvestigating) setShowTrace(true);
-  }, [isInvestigating]);
-
-  // ── Map ChatTurn → InvestigationState for ThinkingTrace ──────────────────────
-  function turnToTraceState(turn: typeof state.turns[0]): InvestigationState {
-    return {
-      status: state.streaming ? "running" : turn.status === "error" ? "error" : "done",
-      question: turn.question,
-      investigationId: turn.investigationId,
-      hypotheses: turn.hypotheses,
-      queriesExecuted: turn.queriesExecuted.length,
-      currentIteration: 0,
-      log: [],
-      report: null,
-      queryHistory: [],
-      error: turn.error,
-      statsPerHypothesis: {},
-      fromCache: turn.fromCache,
-      cachedQuestion: turn.cachedQuestion,
-      humanFeedback: null,
-      queryMode: turn.queryMode as InvestigationState["queryMode"],
-      routeReasoning: null,
-      routeConfidence: null,
-      subQuestions: turn.subQuestions,
-      subqAnswers: turn.subqAnswers,
-      exploreReport: turn.exploreReport,
-      investigationPhases: turn.phases,
-      adaReport: turn.adaReport,
-    };
-  }
 
   // ── Feedback submission ───────────────────────────────────────────────────────
   async function handleFeedbackSubmit(invId: string, feedback: string) {
@@ -621,17 +584,6 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
               zIndex: 2, pointerEvents: "none",
             }}>
               <div className="w-[90%] mx-auto space-y-2" style={{ pointerEvents: "all" }}>
-                <div className="flex items-center justify-end gap-2">
-                  {/* Show trace toggle — only when last turn is an investigation */}
-                  {lastTurn?.mode === "investigate" && !showTrace && (
-                    <button
-                      onClick={() => setShowTrace(true)}
-                      className="text-[11px] text-violet-400/60 hover:text-violet-400 transition px-2 py-1 rounded border border-violet-500/20 hover:border-violet-500/40"
-                    >
-                      Show trace
-                    </button>
-                  )}
-                </div>
                 <InputBox {...inputBoxProps} />
                 <p className="text-[12px] text-center" style={{ color: "#687986" }}>Always review the accuracy of responses.</p>
               </div>
@@ -639,31 +591,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
 
           </div>
 
-          {/* ── ThinkingTrace sidebar — appears during investigation, dismissible ── */}
-          {showTrace && lastTurn && lastTurn.mode === "investigate" && !sourcePanel && (
-            <div
-              className="flex-shrink-0 flex flex-col border-l border-zinc-700/60"
-              style={{ width: 280, background: "#0a0c10", overflowY: "auto" }}
-            >
-              <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-800 shrink-0">
-                <span className="text-[11px] font-medium text-violet-400/80 uppercase tracking-wide">Agent Trace</span>
-                <button
-                  onClick={() => setShowTrace(false)}
-                  className="text-zinc-600 hover:text-zinc-300 transition text-xs"
-                >✕</button>
-              </div>
-              <ThinkingTrace state={turnToTraceState(lastTurn)} />
-              {/* Hypothesis cards — shown after hypotheses resolve */}
-              {lastTurn.hypotheses.length > 0 && (
-                <div className="px-3 pb-3 space-y-2">
-                  <p className="text-[11px] text-zinc-600 uppercase tracking-wide pt-1">Hypotheses</p>
-                  {lastTurn.hypotheses.map((h, i) => (
-                    <HypothesisCard key={h.id} hypothesis={h} index={i} />
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+          {/* Agent trace now renders inline within each assistant turn (ChatMessage). */}
 
           {/* ── Source panel drawer (right side, pushes chat left) ── */}
           {sourcePanel && (

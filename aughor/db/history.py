@@ -179,8 +179,11 @@ def save_chat_turn(
     tables_used: list | None = None,
     intent: str = "",
     approach: list | None = None,
+    canvas_id: str | None = None,
 ) -> str:
-    """Persist a completed chat turn as a history row, linked to a session."""
+    """Persist a completed chat turn as a history row, linked to a session and
+    (when run inside a Canvas) tagged with its canvas_id so Canvas history can
+    scope to the specific Canvas rather than the whole connection."""
     inv_id = uuid.uuid4().hex[:8]
     sid = session_id or uuid.uuid4().hex[:12]
     now = _now()
@@ -198,11 +201,11 @@ def save_chat_turn(
     }
     c.execute(
         """INSERT INTO investigations
-           (id, question, connection_id, started_at, completed_at,
+           (id, question, connection_id, canvas_id, started_at, completed_at,
             status, hypothesis_count, query_count, headline,
             report_json, kind, session_id)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
-        (inv_id, question, connection_id, now, now,
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+        (inv_id, question, connection_id, canvas_id, now, now,
          "complete", 0, 1, headline,
          json.dumps(report),
          "chat", sid),
@@ -210,6 +213,40 @@ def save_chat_turn(
     c.commit()
     c.close()
     return inv_id
+
+
+def last_activity_by_canvas() -> dict[str, str]:
+    """Return {canvas_id: most-recent investigation started_at} for ranking
+    Canvases by their latest activity."""
+    c = _conn()
+    _ensure_schema(c)
+    rows = c.execute(
+        """SELECT canvas_id, MAX(started_at) AS last
+           FROM investigations
+           WHERE canvas_id IS NOT NULL AND canvas_id != ''
+           GROUP BY canvas_id""",
+    ).fetchall()
+    c.close()
+    return {r["canvas_id"]: r["last"] for r in rows if r["last"]}
+
+
+def sweep_stale_running(max_age_minutes: int = 60) -> int:
+    """Mark investigations stuck in 'running' past max_age_minutes as 'failed'.
+    These are orphaned by interrupted streams / restarts and otherwise clutter
+    history with un-openable items. Returns the count updated."""
+    from datetime import timedelta
+    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=max_age_minutes)).isoformat()
+    c = _conn()
+    _ensure_schema(c)
+    cur = c.execute(
+        "UPDATE investigations SET status = 'failed', completed_at = ? "
+        "WHERE status = 'running' AND started_at < ?",
+        (_now(), cutoff),
+    )
+    n = cur.rowcount
+    c.commit()
+    c.close()
+    return n if (n and n > 0) else 0
 
 
 def get_session_turns(session_id: str) -> list[dict]:
@@ -249,10 +286,15 @@ def get_session_turns(session_id: str) -> list[dict]:
 
 
 def delete_investigation(inv_id: str) -> bool:
-    """Delete a history row by ID. Returns True if a row was deleted."""
+    """Delete a history line item. Matches either a single investigation row by
+    its ``id`` OR a whole chat session by ``session_id`` (history collapses chat
+    turns into one item keyed by session_id). Returns True if anything deleted."""
     c = _conn()
     _ensure_schema(c)
-    cursor = c.execute("DELETE FROM investigations WHERE id = ?", (inv_id,))
+    cursor = c.execute(
+        "DELETE FROM investigations WHERE id = ? OR session_id = ?",
+        (inv_id, inv_id),
+    )
     deleted = cursor.rowcount > 0
     c.commit()
     c.close()
@@ -290,7 +332,8 @@ def list_investigations(limit: int = 50) -> list[dict]:
                COUNT(*) as query_count,
                MAX(headline) as headline,
                'chat' as kind,
-               session_id
+               session_id,
+               MAX(canvas_id) as canvas_id
            FROM investigations
            WHERE kind = 'chat' AND session_id IS NOT NULL AND session_id != ''
            GROUP BY session_id, connection_id
@@ -301,7 +344,7 @@ def list_investigations(limit: int = 50) -> list[dict]:
     legacy_rows = c.execute(
         """SELECT id, question, connection_id, started_at, completed_at,
                   'complete' as status, 0 as hypothesis_count, 1 as query_count,
-                  headline, 'chat' as kind, id as session_id
+                  headline, 'chat' as kind, id as session_id, canvas_id
            FROM investigations
            WHERE kind = 'chat' AND (session_id IS NULL OR session_id = '')
            ORDER BY started_at DESC""",

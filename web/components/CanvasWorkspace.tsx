@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import type { Canvas, Connection, CanvasHistoryItem as HistoryItem } from "@/lib/api";
-import { getCanvasHistory, updateCanvas } from "@/lib/api";
+import { getCanvasHistory, updateCanvas, deleteInvestigation } from "@/lib/api";
 import { ConfigurePanel } from "@/components/ConfigurePanel";
 import { ChatPanel } from "@/components/ChatPanel";
 import { HistoryDetailPanel } from "@/components/HistoryDetailPanel";
@@ -67,6 +67,7 @@ function CanvasHistory({
 }) {
   const [items, setItems] = useState<HistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [removing, setRemoving] = useState<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -75,6 +76,19 @@ function CanvasHistory({
       .catch(() => setItems([]))
       .finally(() => setLoading(false));
   }, [canvasId]);
+
+  async function handleRemove(id: string) {
+    setRemoving(id);
+    const prev = items;
+    setItems(list => list.filter(it => it.id !== id));  // optimistic
+    try {
+      await deleteInvestigation(id);
+    } catch {
+      setItems(prev);  // restore on failure
+    } finally {
+      setRemoving(null);
+    }
+  }
 
   if (loading) {
     return (
@@ -88,7 +102,7 @@ function CanvasHistory({
     return (
       <div style={{ padding: "72px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
         <Icon name="clock" size={28} color="var(--t4)" />
-        <div style={{ fontSize: 13, color: "var(--t3)" }}>No investigations yet in this canvas.</div>
+        <div style={{ fontSize: 13, color: "var(--t3)" }}>No investigations yet in this Data Canvas.</div>
       </div>
     );
   }
@@ -97,24 +111,27 @@ function CanvasHistory({
     <div style={{ flex: 1, overflowY: "auto", padding: "16px 32px" }}>
       {items.map(item => {
         const kind = (item.kind === "chat" ? "chat" : "investigation") as "investigation" | "chat";
+        const isRemoving = removing === item.id;
         return (
-        <button
+        <div
           key={item.id}
           onClick={() => onOpen(item.id, kind)}
+          className="group/hist"
           style={{
             width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 12,
             padding: "10px 14px", marginBottom: 6,
             background: "var(--bg-2)", border: "1px solid var(--b1)",
             borderRadius: "var(--r2)", cursor: "pointer",
             transition: "border-color .1s, background .1s",
+            opacity: isRemoving ? 0.4 : 1,
           }}
           onMouseEnter={e => {
-            (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--b2)";
-            (e.currentTarget as HTMLButtonElement).style.background = "var(--bg-3)";
+            (e.currentTarget as HTMLDivElement).style.borderColor = "var(--b2)";
+            (e.currentTarget as HTMLDivElement).style.background = "var(--bg-3)";
           }}
           onMouseLeave={e => {
-            (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--b1)";
-            (e.currentTarget as HTMLButtonElement).style.background = "var(--bg-2)";
+            (e.currentTarget as HTMLDivElement).style.borderColor = "var(--b1)";
+            (e.currentTarget as HTMLDivElement).style.background = "var(--bg-2)";
           }}
         >
           <span style={{
@@ -135,7 +152,23 @@ function CanvasHistory({
           <span style={{ fontSize: 11, color: "var(--t4)", whiteSpace: "nowrap", flexShrink: 0 }}>
             {timeAgo(item.started_at)}
           </span>
-        </button>
+          <button
+            title="Remove from history"
+            disabled={isRemoving}
+            onClick={e => { e.stopPropagation(); handleRemove(item.id); }}
+            className="opacity-0 group-hover/hist:opacity-100 transition-opacity"
+            style={{
+              flexShrink: 0, width: 24, height: 24, borderRadius: 4, display: "flex",
+              alignItems: "center", justifyContent: "center",
+              background: "transparent", border: "1px solid var(--b1)", color: "var(--t4)",
+              cursor: isRemoving ? "default" : "pointer",
+            }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = "#f87171"; (e.currentTarget as HTMLButtonElement).style.borderColor = "#f87171"; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = "var(--t4)"; (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--b1)"; }}
+          >
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M3 4h10M6.5 4V2.5h3V4M5 4l.5 9h5l.5-9" /></svg>
+          </button>
+        </div>
         );
       })}
     </div>
@@ -244,7 +277,7 @@ function SettingsPopover({
         width: 280, display: "flex", flexDirection: "column", gap: 10,
         boxShadow: "0 8px 32px rgba(0,0,0,.4)",
       }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)", marginBottom: 2 }}>Canvas Settings</div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)", marginBottom: 2 }}>Data Canvas Settings</div>
         <label style={{ fontSize: 11, color: "var(--t3)", display: "flex", flexDirection: "column", gap: 4 }}>
           Name
           <input
@@ -475,7 +508,7 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate }
         {/* Back button */}
         <button
           onClick={onClose}
-          title="Back to Canvases"
+          title="Back to Data Canvases"
           style={{
             display: "inline-flex", alignItems: "center", gap: 5,
             padding: "4px 8px", borderRadius: "var(--r2)",
@@ -571,7 +604,7 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate }
         {/* Settings */}
         <button
           onClick={() => setShowSettings(v => !v)}
-          title="Canvas settings"
+          title="Data Canvas settings"
           style={{
             display: "inline-flex", alignItems: "center", justifyContent: "center",
             width: 28, height: 28, borderRadius: "var(--r2)",
@@ -652,7 +685,10 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate }
                     <Icon name="back" size={12} /> Back
                   </button>
                 </div>
-                <div style={{ flex: 1, overflowY: "auto" }}>
+                {/* Flex column (not a bare overflow block) so HistoryDetailPanel's
+                    flex:1 + position:absolute report area gets a resolved height.
+                    Without this the report collapses to 0px and looks "blank". */}
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
                   <HistoryDetailPanel
                     invId={openInvId}
                     onContinue={() => {

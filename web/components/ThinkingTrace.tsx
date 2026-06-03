@@ -1,6 +1,37 @@
 "use client";
 
 import type { InvestigationState } from "@/lib/types";
+import type { ChatTurn } from "@/lib/useChat";
+
+// Map a ChatTurn → InvestigationState so the trace can be rendered both inline
+// (ChatMessage) and, historically, in a side panel. `running` reflects whether
+// this turn is still streaming.
+export function turnToTraceState(turn: ChatTurn, running: boolean): InvestigationState {
+  return {
+    status: running ? "running" : turn.status === "error" ? "error" : "done",
+    question: turn.question,
+    investigationId: turn.investigationId,
+    hypotheses: turn.hypotheses,
+    queriesExecuted: turn.queriesExecuted.length,
+    currentIteration: 0,
+    log: [],
+    report: null,
+    queryHistory: [],
+    error: turn.error,
+    statsPerHypothesis: {},
+    fromCache: turn.fromCache,
+    cachedQuestion: turn.cachedQuestion,
+    humanFeedback: null,
+    queryMode: turn.queryMode as InvestigationState["queryMode"],
+    routeReasoning: null,
+    routeConfidence: null,
+    subQuestions: turn.subQuestions,
+    subqAnswers: turn.subqAnswers,
+    exploreReport: turn.exploreReport,
+    investigationPhases: turn.phases,
+    adaReport: turn.adaReport,
+  };
+}
 
 type StepStatus = "pending" | "running" | "done" | "error";
 type Verdict = "confirmed" | "refuted" | "inconclusive" | "untested";

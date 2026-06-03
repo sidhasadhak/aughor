@@ -205,6 +205,23 @@ def _trim(text: str, limit: int) -> str:
     return text[:limit] + f"\n… [truncated {len(text) - limit} chars]"
 
 
+def _with_ledger(state: "AgentState", schema: str) -> str:
+    """Prepend the run's canonical definitions to the schema block a phase planner
+    sees, so every phase uses the same identifiers/metric expressions and reuses
+    figures already computed earlier. No-op when no ledger was built."""
+    led = (state.get("analysis_ledger") or "").strip()
+    if not led:
+        return schema
+    return (
+        "CANONICAL DEFINITIONS (binding for THIS analysis — use these exact "
+        "identifiers and metric expressions in EVERY query so figures stay "
+        "consistent across phases; if a figure was already computed in an earlier "
+        "phase, reuse it verbatim rather than recomputing it):\n"
+        f"{led}\n\n"
+        f"{schema}"
+    )
+
+
 def _filter_schema(schema: str, table_names: list[str]) -> str:
     """
     Keep only the schema blocks for tables mentioned in table_names.
@@ -637,9 +654,18 @@ def ada_intake(state: AgentState) -> dict:
     except Exception:
         pass
 
+    # Pin canonical entity/metric definitions once so every phase uses the same
+    # identifiers/expressions (prevents figures drifting between phases).
+    try:
+        from aughor.agent.explore import build_analysis_ledger
+        analysis_ledger = build_analysis_ledger(state)
+    except Exception:
+        analysis_ledger = ""
+
     return {
         "investigation_phases": [phase],
         "_ada_intake": intake_dict,
+        "analysis_ledger": analysis_ledger,
     }
 
 
@@ -681,7 +707,7 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
 
     question = state["question"]
     intake_data = state.get("_ada_intake") or {}
-    schema = intake_data.get("filtered_schema") or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT)
+    schema = _with_ledger(state, intake_data.get("filtered_schema") or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT))
     events = state.get("events_context") or ""
     events_section = f"BUSINESS CALENDAR:\n{events}\n" if events else ""
     phases = state.get("investigation_phases", [])
@@ -973,7 +999,7 @@ def ada_decompose(state: AgentState, conn: "DatabaseConnection") -> dict:
 
     question = state["question"]
     intake_data = state.get("_ada_intake") or {}
-    schema = intake_data.get("filtered_schema") or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT)
+    schema = _with_ledger(state, intake_data.get("filtered_schema") or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT))
     phases = state.get("investigation_phases", [])
     baseline_summary = state.get("_baseline_summary", "Baseline established.")
 
@@ -1091,7 +1117,7 @@ def ada_dimensional(state: AgentState, conn: "DatabaseConnection") -> dict:
 
     question = state["question"]
     intake_data = state.get("_ada_intake") or {}
-    schema = intake_data.get("filtered_schema") or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT)
+    schema = _with_ledger(state, intake_data.get("filtered_schema") or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT))
     phases = state.get("investigation_phases", [])
 
     metric_label = intake_data.get("metric_label", "the metric")
@@ -1220,7 +1246,7 @@ def ada_behavioral(state: AgentState, conn: "DatabaseConnection") -> dict:
 
     question = state["question"]
     intake_data = state.get("_ada_intake") or {}
-    schema = intake_data.get("filtered_schema") or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT)
+    schema = _with_ledger(state, intake_data.get("filtered_schema") or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT))
     phases = state.get("investigation_phases", [])
     events = state.get("events_context") or ""
     events_section = f"BUSINESS CALENDAR:\n{events}\n" if events else ""

@@ -249,6 +249,7 @@ async def _stream_chat(
     history: list[ChatHistoryTurn],
     request: Request,
     session_id: str = "",
+    canvas_id: Optional[str] = None,
 ) -> AsyncGenerator[str, None]:
     try:
         db = open_connection_for(connection_id)
@@ -448,6 +449,7 @@ async def _stream_chat(
                 rows=result.rows, chart_type=answer.chart_type,
                 tables_used=_extract_tables(final_sql or ""),
                 intent=answer.intent, approach=answer.approach,
+                canvas_id=canvas_id,
             )
         except Exception:
             pass
@@ -739,7 +741,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
         if resolved:
             conn_id = resolved
     return StreamingResponse(
-        _stream_chat(req.question, conn_id, req.history, request, session_id=req.session_id),
+        _stream_chat(req.question, conn_id, req.history, request, session_id=req.session_id, canvas_id=req.canvas_id),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

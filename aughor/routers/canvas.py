@@ -54,7 +54,16 @@ class SuggestNameRequest(BaseModel):
 @router.get("/canvases")
 def get_canvases(include_legacy: bool = True):
     from aughor.canvas.store import list_canvases
-    return [c.model_dump() for c in list_canvases(include_legacy=include_legacy)]
+    from aughor.db.history import last_activity_by_canvas
+    activity = last_activity_by_canvas()
+    out = []
+    for c in list_canvases(include_legacy=include_legacy):
+        d = c.model_dump()
+        # Most recent investigation/chat timestamp for this canvas (drives the
+        # "latest investigation" sort and the recently-used section).
+        d["last_activity"] = activity.get(c.id)
+        out.append(d)
+    return out
 
 
 @router.post("/canvases", status_code=201)
@@ -63,11 +72,6 @@ def create_canvas_endpoint(req: CreateCanvasRequest):
     from aughor.canvas.store import create_canvas
     scope = CanvasScope(connection_id=req.connection_id, schema_name=req.schema_name, tables=req.tables)
     canvas = create_canvas(name=req.name, scopes=[scope], description=req.description)
-    try:
-        from aughor.canvas.store import migrate_connections_to_legacy_canvases
-        migrate_connections_to_legacy_canvases()
-    except Exception:
-        pass
     return canvas.model_dump()
 
 
@@ -119,11 +123,14 @@ def get_canvas_history(canvas_id: str, limit: int = 20):
     canvas = get_canvas(canvas_id)
     if not canvas:
         raise HTTPException(status_code=404, detail="Canvas not found")
-    conn_id = canvas.scopes[0].connection_id if canvas.scopes else None
-    if not conn_id:
-        return {"investigations": []}
-    all_inv = list_investigations(limit=200)
-    return {"investigations": [inv for inv in all_inv if inv.get("connection_id") == conn_id][:limit]}
+    all_inv = list_investigations(limit=400)
+    # Scope strictly to THIS canvas (not the whole connection), and hide
+    # report-less items — only completed investigations and chat sessions open.
+    def _keep(inv: dict) -> bool:
+        if inv.get("canvas_id") != canvas_id:
+            return False
+        return inv.get("kind") == "chat" or inv.get("status") == "complete"
+    return {"investigations": [inv for inv in all_inv if _keep(inv)][:limit]}
 
 
 @router.get("/canvases/{canvas_id}/suggestions")

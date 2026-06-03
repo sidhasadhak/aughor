@@ -143,6 +143,8 @@ interface SqlResultTableProps {
   columnOverrides?: Record<string, Partial<TableColumnsType<Record<string, unknown>>[number]>>;
   /** Show the "Σ Totals" on/off toggle (when there's at least one summable column). Default true. */
   totals?: boolean;
+  /** Max rendered width (px) per cell — long text truncates with an ellipsis + tooltip. Default 320. */
+  maxColWidth?: number;
 }
 
 export function SqlResultTable({
@@ -151,6 +153,7 @@ export function SqlResultTable({
   maxHeight = 320,
   columnOverrides = {},
   totals = true,
+  maxColWidth = 320,
 }: SqlResultTableProps) {
   const [showTotals, setShowTotals] = useState(false);
 
@@ -194,7 +197,14 @@ export function SqlResultTable({
         return String(va).localeCompare(String(vb));
       },
       render: (val: unknown) => (
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>
+        <span
+          title={val == null ? undefined : String(val)}
+          style={{
+            display: "block", maxWidth: maxColWidth,
+            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+            fontFamily: "var(--font-mono)", fontSize: 11,
+          }}
+        >
           {fmt(col, val)}
         </span>
       ),

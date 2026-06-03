@@ -111,7 +111,7 @@ export function CanvasCreator({ connections, onCreated, onCancel }: Props) {
     try {
       const tables = selection.kind === "all" ? [] : selectedTablesList;
       // Derive a human name + description from the schema via the LLM.
-      let name = selectedConn?.name ?? "New Canvas";
+      let name = selectedConn?.name ?? "New Data Canvas";
       let description = "";
       try {
         const s = await suggestCanvasName(connId, tables);
@@ -123,7 +123,7 @@ export function CanvasCreator({ connections, onCreated, onCancel }: Props) {
       ]);
       onCreated(canvas);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to create canvas");
+      setError(e instanceof Error ? e.message : "Failed to create Data Canvas");
       setSaving(false);
     }
   };
