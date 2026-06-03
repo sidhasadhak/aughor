@@ -63,7 +63,7 @@ function CanvasHistory({
   onOpen,
 }: {
   canvasId: string;
-  onOpen: (id: string) => void;
+  onOpen: (id: string, kind: "investigation" | "chat") => void;
 }) {
   const [items, setItems] = useState<HistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -95,10 +95,12 @@ function CanvasHistory({
 
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: "16px 32px" }}>
-      {items.map(item => (
+      {items.map(item => {
+        const kind = (item.kind === "chat" ? "chat" : "investigation") as "investigation" | "chat";
+        return (
         <button
           key={item.id}
-          onClick={() => onOpen(item.id)}
+          onClick={() => onOpen(item.id, kind)}
           style={{
             width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 12,
             padding: "10px 14px", marginBottom: 6,
@@ -122,11 +124,20 @@ function CanvasHistory({
           <span style={{ flex: 1, fontSize: 12, color: "var(--t1)", lineHeight: 1.4, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {item.question}
           </span>
+          <span style={{
+            display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0,
+            padding: "1px 6px", borderRadius: 3, fontSize: 10,
+            background: "var(--bg-3)", border: "1px solid var(--b1)", color: "var(--t4)",
+          }}>
+            <Icon name={kind === "chat" ? "chat" : "process"} size={9} color="var(--t4)" />
+            {kind === "chat" ? "Chat" : "Investigation"}
+          </span>
           <span style={{ fontSize: 11, color: "var(--t4)", whiteSpace: "nowrap", flexShrink: 0 }}>
             {timeAgo(item.started_at)}
           </span>
         </button>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -414,6 +425,7 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate }
   const [wsTab, setWsTab] = useState<WsTab>("chat");
   const [chatKey, setChatKey] = useState(0);
   const [openInvId, setOpenInvId] = useState<string | null>(null);
+  const [restoreSessionId, setRestoreSessionId] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showConfigure, setShowConfigure] = useState(false);
   const headerRef = useRef<HTMLDivElement>(null);
@@ -430,11 +442,24 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate }
     setWsTab("chat");
     setChatKey(k => k + 1);
     setOpenInvId(null);
+    setRestoreSessionId(null);
   }, [canvas.id]);
 
-  const handleHistoryOpen = (id: string) => {
-    setOpenInvId(id);
-    setWsTab("history");
+  // History line-item → navigate.  Investigations open the detail report in the
+  // History tab; chat sessions restore the conversation in the Chat tab (passing
+  // a chat id to the investigation detail panel would just render blank — the bug
+  // behind "choosing a line item does not take me there").
+  const handleHistoryOpen = (id: string, kind: "investigation" | "chat") => {
+    if (kind === "chat") {
+      setOpenInvId(null);
+      setRestoreSessionId(id);
+      setWsTab("chat");
+      setChatKey(k => k + 1);
+    } else {
+      setRestoreSessionId(null);
+      setOpenInvId(id);
+      setWsTab("history");
+    }
   };
 
   return (
@@ -523,7 +548,7 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate }
 
         {/* New chat button */}
         <button
-          onClick={() => { setWsTab("chat"); setChatKey(k => k + 1); setOpenInvId(null); }}
+          onClick={() => { setWsTab("chat"); setChatKey(k => k + 1); setOpenInvId(null); setRestoreSessionId(null); }}
           className="aug-btn aug-btn-ghost aug-btn-sm"
           title="New conversation"
           style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
@@ -598,6 +623,7 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate }
             key={chatKey}
             connectionId={connectionId}
             canvasId={canvas.id}
+            restoreSessionId={restoreSessionId}
             capabilities={<CapabilitiesBlock canvas={canvas} connection={connection} />}
           />
         </div>

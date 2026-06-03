@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 from aughor.db.connection import open_connection_for
 from aughor.db.registry import BUILTIN_ID, get_meta
+from aughor.ontology.models import OntologyAction
 from aughor.routers._shared import invalidate_schema_cache as _invalidate_schema_cache
 
 router = APIRouter(tags=["ontology"])
@@ -67,6 +68,9 @@ def _get_ontology_graph(connection_id: str, schema_name: Optional[str] = None):
         else:
             db = open_connection_for(connection_id)
         db.get_schema()
+        # Learned-skill overlay happens universally inside get_or_build_ontology
+        # (aughor.ontology.store), so both this HTTP path and the agent's planner
+        # path see crystallized skills from one seam — nothing to do here.
         return db.get_ontology()
     except Exception:
         return None
@@ -314,3 +318,123 @@ def rebuild_ontology(
         "generated_at": graph.generated_at,
         "entities": len(graph.entities),
     }
+
+
+# ── Skills (learned actions / procedural memory) ────────────────────────────────
+
+def _skill_schema(connection_id: str, schema_name: Optional[str]) -> str:
+    """Airtight {conn}:{schema} key for learned skills.
+
+    An explicit schema_name (the UI passes one drawn from the graph's own schema
+    list) is honored; otherwise we read the schema the live ontology graph is
+    actually built under — the SAME value the planner's overlay reads from — never
+    a connection-metadata guess.  This guarantees the write key == the read key.
+    """
+    if schema_name:
+        return schema_name
+    from aughor.memory.skills import resolve_active_schema
+    return resolve_active_schema(connection_id)
+
+
+@router.get("/ontology/skills")
+def list_learned_skills(
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Learned skills (origin='learned' OntologyActions) for this connection/schema."""
+    from aughor.memory.skills import load_learned_actions
+    effective = _skill_schema(connection_id, schema_name)
+    actions = load_learned_actions(connection_id, effective)
+    return {"schema_name": effective, "skills": [a.model_dump() for a in actions.values()]}
+
+
+@router.post("/ontology/skills/propose")
+def propose_learned_skill(
+    inv_id: str,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Crystallize a *candidate* skill from a finished investigation.
+
+    Returns the proposed OntologyAction WITHOUT persisting it — the UI shows it
+    for confirmation, then calls POST /ontology/skills to save.
+    """
+    from aughor.memory.skills import propose_skill_from_investigation
+    graph = _get_ontology_graph(connection_id, schema_name)
+    # Key on the graph's own schema_name — the exact overlay read key.
+    effective = graph.schema_name if graph else _skill_schema(connection_id, schema_name)
+    t2e = dict(graph.table_to_entity) if graph else None
+    candidate = propose_skill_from_investigation(inv_id, table_to_entity=t2e)
+    if candidate is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Run is not skill-worthy (low confidence, ungrounded, or no read-only query).",
+        )
+    return {"schema_name": effective, "candidate": candidate.model_dump()}
+
+
+@router.post("/ontology/skills")
+def save_learned_skill(
+    action: OntologyAction,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Persist a confirmed learned skill, gated by a read-only dry-run (EXPLAIN)."""
+    from aughor.memory.skills import save_skill
+
+    effective = _skill_schema(connection_id, schema_name)
+
+    def _validator(sql: str) -> bool:
+        db = open_connection_for(connection_id)
+        try:
+            res = db.execute("skill_dry_run", f"EXPLAIN {sql}")
+            return not res.error
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+    ok = save_skill(connection_id, effective, action, validator=_validator)
+    if not ok:
+        raise HTTPException(status_code=422, detail="Skill rejected: SQL is not read-only or failed dry-run.")
+    return {"ok": True, "schema_name": effective, "id": action.id}
+
+
+@router.post("/ontology/skills/{action_id}/use")
+def use_learned_skill(
+    action_id: str,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Increment a learned skill's usage_count (feeds per-skill autonomy)."""
+    from aughor.memory.skills import record_skill_use
+    from aughor.memory.trust import skill_autonomy
+    effective = _skill_schema(connection_id, schema_name)
+    count = record_skill_use(connection_id, effective, action_id)
+    if count == 0:
+        raise HTTPException(status_code=404, detail="Learned skill not found.")
+    return {"ok": True, "usage_count": count, "autonomy": skill_autonomy(count, connection_id)}
+
+
+@router.delete("/ontology/skills/{action_id}")
+def delete_learned_skill(
+    action_id: str,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    from aughor.memory.skills import delete_skill
+    effective = _skill_schema(connection_id, schema_name)
+    if not delete_skill(connection_id, effective, action_id):
+        raise HTTPException(status_code=404, detail="Learned skill not found.")
+    return {"ok": True}
+
+
+# ── Autonomy (trust → L0–L3 ladder) ─────────────────────────────────────────────
+
+@router.get("/ontology/autonomy")
+def get_autonomy(connection_id: str = BUILTIN_ID):
+    """The connection's earned L0–L3 autonomy level, computed from reflection
+    signals (aughor.memory.trust)."""
+    from aughor.memory.trust import autonomy_level
+    return autonomy_level(connection_id)

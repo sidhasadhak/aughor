@@ -7,6 +7,8 @@ import {
   type CatalogEntry,
 } from "@/lib/api";
 import { InvestigationChart } from "@/components/InvestigationChart";
+import { ResizableSplit } from "@/components/ResizableSplit";
+import { SqlResultTable } from "@/components/AugTable";
 import { ChartWrapper }       from "@/components/charts/ChartWrapper";
 import { inferChartType, type ChartType } from "@/components/charts/chartTypeInference";
 
@@ -428,37 +430,13 @@ function ResultsPane({ result }: { result: DirectQueryResult }) {
         <InvestigationChart columns={result.columns} rows={rows} />
       )}
 
-      {/* Table — always shown when chart is off, or as fallback */}
+      {/* Table — shared AugTable (sortable, themed, Σ Totals toggle) */}
       {(view === "table" || !chartable) && (
         <>
           {!chartable && (
             <span className="text-[11px] text-right" style={{ color: "var(--t3)" }}>{meta}</span>
           )}
-          <div className="overflow-auto rounded-md border border-zinc-700/60">
-            <table className="min-w-full text-[12px] font-mono">
-              <thead>
-                <tr className="bg-zinc-800/70">
-                  {result.columns.map((c, i) => (
-                    <th key={i} className="text-left px-4 py-2.5 text-zinc-400 font-semibold border-b border-zinc-700/50 whitespace-nowrap">{c}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {result.rows.map((row, ri) => {
-                  const cells = row as string[];
-                  return (
-                    <tr key={ri} className={ri % 2 ? "bg-zinc-800/20" : ""}>
-                      {cells.map((cell, ci) => (
-                        <td key={ci} title={String(cell)} className="px-4 py-2 text-zinc-300 border-b border-zinc-700/20 whitespace-nowrap max-w-[240px] truncate">
-                          {cell === null || cell === "NULL" ? <span className="text-zinc-500">null</span> : String(cell)}
-                        </td>
-                      ))}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <SqlResultTable columns={result.columns} rows={rows} maxHeight={420} />
         </>
       )}
     </div>
@@ -485,6 +463,8 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
   const [expandedTables, setExpandedTables] = useState<Record<string,boolean>>({});
   const [expandedSchemas, setExpandedSchemas] = useState<Record<string,boolean>>({});
   const [catEntry, setCatEntry] = useState<CatalogEntry|null>(null);
+  const [allEntries, setAllEntries] = useState<CatalogEntry[]>([]);
+  const [expandedConns, setExpandedConns] = useState<Record<string,boolean>>({});
   const [colSearch, setColSearch] = useState("");
 
   const [metrics,         setMetrics]         = useState<Metric[]>([]);
@@ -535,8 +515,12 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
     // Phase 1 — fast: catalog tree gives us schema/table hierarchy immediately
     getCatalogTree()
       .then(tree => {
-        const entry = tree.sections.flatMap(s => s.entries).find(e => e.conn_id === connId) ?? null;
+        const entries = tree.sections.flatMap(s => s.entries);
+        setAllEntries(entries);
+        const entry = entries.find(e => e.conn_id === connId) ?? null;
         setCatEntry(entry);
+        // Active connection expanded by default; others collapsed.
+        setExpandedConns(prev => ({ ...Object.fromEntries(entries.map(e => [e.conn_id, false])), ...prev, [connId]: true }));
         if (entry) {
           setExpandedSchemas(Object.fromEntries(entry.schemas.map(s => [s.name, true])));
           // seed table names so the hierarchy renders before getSchemaRich finishes
@@ -582,9 +566,6 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
   const grouped = new Set(catSchemas.flatMap(s => s.tables));
   const ungrouped = tableNames.filter(t => !grouped.has(t));
   if (ungrouped.length) catSchemas.push({ name: catSchemas.length ? "other" : "main", tables: ungrouped });
-  const catalogLabel = catEntry?.name
-    ?? connections.find(c => c.id === connId)?.name
-    ?? "Catalog";
 
   const flashHint = useCallback((msg: string) => {
     setJoinHint(msg);
@@ -811,10 +792,10 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
       </div>
 
       {/* ══ BODY ═════════════════════════════════════════════════════════════ */}
-      <div className="flex flex-1 overflow-hidden">
-
-        {/* ── Left: Catalog browser (all tables, auto-join on drag) ── */}
-        <aside className="w-80 shrink-0 border-r border-zinc-700/40 flex flex-col bg-zinc-900/30">
+      <ResizableSplit storageKey="builder" initial={320} min={220} max={520} className="flex-1 overflow-hidden"
+        left={
+        /* ── Left: Catalog browser (all tables, auto-join on drag) ── */
+        <aside className="border-r border-zinc-700/40 flex flex-col bg-zinc-900/30 h-full w-full">
           {/* Header */}
           <div className="px-4 pt-4 pb-3 border-b border-zinc-700/30">
             <div className="flex items-center justify-between mb-2.5">
@@ -849,17 +830,45 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
             ) : (() => {
               const q = colSearch.toLowerCase().trim();
 
-              // Catalog root
+              // Connection → schema → table → column hierarchy (all connections,
+              // mirroring the big Catalog tab).  The active connection expands to
+              // the full rich tree; others show a lightweight schema/table preview
+              // and switch the builder to that connection on click.
+              const dbIcon = (
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" strokeWidth="1.6" strokeLinecap="round" className="shrink-0">
+                  <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3"/>
+                </svg>
+              );
+              const entries = allEntries.length ? allEntries : (catEntry ? [catEntry] : []);
               return (
                 <div>
-                  <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-700/20">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" strokeWidth="1.6" strokeLinecap="round" className="shrink-0">
-                      <ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3"/>
-                    </svg>
-                    <span className="text-[12px] font-semibold text-zinc-100 truncate">{catalogLabel}</span>
-                    <span className="ml-auto text-[10px] text-zinc-500 shrink-0">{tableNames.length} tables</span>
-                  </div>
+                  {entries.map(entry => {
+                    const isActive = entry.conn_id === connId;
+                    const connMatches = !q || entry.name.toLowerCase().includes(q)
+                      || entry.schemas.some(s => s.name.toLowerCase().includes(q) || s.tables.some(t => t.name.toLowerCase().includes(q)));
+                    if (q && !connMatches && !isActive) return null;
+                    const cOpen = q ? connMatches : (expandedConns[entry.conn_id] ?? isActive);
+                    return (
+                      <div key={entry.conn_id} className="border-b-2 border-zinc-700/40 last:border-b-0">
+                        {/* Connection row */}
+                        <button
+                          onClick={() => {
+                            if (!isActive) { setConnId(entry.conn_id); setExpandedConns(p => ({ ...p, [entry.conn_id]: true })); }
+                            else setExpandedConns(p => ({ ...p, [entry.conn_id]: !(p[entry.conn_id] ?? true) }));
+                          }}
+                          className={`w-full flex items-center gap-2 px-3 py-2 hover:bg-zinc-800/40 transition ${isActive ? "bg-zinc-800/30" : ""}`}>
+                          <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="var(--t3)" strokeWidth="1.5" strokeLinecap="round"
+                            className={`shrink-0 transition-transform duration-150 ${cOpen ? "rotate-90" : ""}`}>
+                            <polyline points="2,1 6,4 2,7"/>
+                          </svg>
+                          {dbIcon}
+                          <span className={`text-[12px] font-semibold truncate ${isActive ? "text-zinc-100" : "text-zinc-300"}`}>{entry.name}</span>
+                          {isActive && <span className="ml-auto text-[9px] text-blue-400 shrink-0">active</span>}
+                        </button>
 
+                        {/* Active connection → full rich tree */}
+                        {cOpen && isActive && (
+                          <div className="ml-3 border-l-2 border-zinc-700/40">
                   {catSchemas.map(schema => {
                     const schemaMatch = !q || schema.name.toLowerCase().includes(q);
                     const visTables = schema.tables.filter(tbl =>
@@ -868,7 +877,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                     if (q && visTables.length === 0) return null;
                     const sOpen = q ? true : (expandedSchemas[schema.name] ?? true);
                     return (
-                      <div key={schema.name}>
+                      <div key={schema.name} className="border-b border-zinc-700/25 last:border-b-0">
                         {/* Schema row */}
                         <button onClick={()=>setExpandedSchemas(p=>({...p,[schema.name]: !(p[schema.name] ?? true)}))}
                           className="w-full flex items-center gap-2 pl-3 pr-2 py-1.5 hover:bg-zinc-800/40 transition">
@@ -880,7 +889,6 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                             <path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 12l9 4 9-4M3 17l9 4 9-4"/>
                           </svg>
                           <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-300 truncate">{schema.name}</span>
-                          <span className="ml-auto text-[10px] text-zinc-500 shrink-0">{visTables.length}</span>
                         </button>
 
                         {/* Tables under schema */}
@@ -947,14 +955,56 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                       </div>
                     );
                   })}
+                          </div>
+                        )}
+
+                        {/* Inactive connection → lightweight schema/table preview */}
+                        {cOpen && !isActive && entry.schemas.map(schema => {
+                          const sMatch = !q || schema.name.toLowerCase().includes(q);
+                          const visT = schema.tables.filter(t => !q || sMatch || t.name.toLowerCase().includes(q));
+                          if (q && visT.length === 0) return null;
+                          const sKey = `${entry.conn_id}:${schema.name}`;
+                          const sOpen = q ? true : (expandedSchemas[sKey] ?? false);
+                          return (
+                            <div key={schema.name}>
+                              <button onClick={() => setExpandedSchemas(p => ({ ...p, [sKey]: !(p[sKey] ?? false) }))}
+                                className="w-full flex items-center gap-2 pl-3 pr-2 py-1.5 hover:bg-zinc-800/40 transition">
+                                <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="var(--t3)" strokeWidth="1.5" strokeLinecap="round"
+                                  className={`shrink-0 transition-transform duration-150 ${sOpen ? "rotate-90" : ""}`}>
+                                  <polyline points="2,1 6,4 2,7"/>
+                                </svg>
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" strokeWidth="1.7" strokeLinecap="round" className="shrink-0">
+                                  <path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 12l9 4 9-4M3 17l9 4 9-4"/>
+                                </svg>
+                                <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400 truncate">{schema.name}</span>
+                                <span className="ml-auto text-[10px] text-zinc-500 shrink-0">{visT.length}</span>
+                              </button>
+                              {sOpen && visT.map(t => (
+                                <button key={t.name} onClick={() => { setConnId(entry.conn_id); setExpandedConns(p => ({ ...p, [entry.conn_id]: true })); }}
+                                  title={`Switch to ${entry.name} to query ${t.name}`}
+                                  className="group/pt w-full flex items-center gap-2 pl-7 pr-2 py-1.5 hover:bg-zinc-800/40 transition">
+                                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--t2)" strokeWidth="1.7" strokeLinecap="round" className="shrink-0">
+                                    <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="9" x2="9" y2="21"/>
+                                  </svg>
+                                  <span className="text-[12px] font-mono text-zinc-300 truncate">{t.name}</span>
+                                  {t.row_count != null && <span className="text-[10px] text-zinc-500 shrink-0">{fmtRows(String(t.row_count))}</span>}
+                                  <span className="ml-auto opacity-0 group-hover/pt:opacity-100 text-[10px] text-blue-400 shrink-0">open →</span>
+                                </button>
+                              ))}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
                 </div>
               );
             })()}
           </div>
         </aside>
-
-        {/* ── Right: Builder + SQL + Results ── */}
-        <main className="flex-1 overflow-y-auto">
+        }
+        right={
+        <main className="flex-1 overflow-y-auto h-full">
 
           {/* ── BUILDER (always rendered once a connection is loaded) ── */}
           {(
@@ -1288,7 +1338,8 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
             </div>
           )}
         </main>
-      </div>
+        }
+      />
 
       {/* ══ CURSOR-ANCHORED AUTOCOMPLETE ═════════════════════════════════════ */}
       <AcDropdown items={acItems} active={acActive} setActive={setAcActive}

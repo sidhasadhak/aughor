@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import CloseIcon       from "@atlaskit/icon/core/close";
 import ChevronDownIcon from "@atlaskit/icon/core/chevron-down";
 import NodeIcon        from "@atlaskit/icon/core/node";
@@ -61,6 +61,68 @@ function ConfidencePill({ c }: { c: string }) {
   );
 }
 
+// ── Resizable side drawer ─────────────────────────────────────────────────────
+
+const DRAWER_MIN = 300;
+const DRAWER_MAX = 720;
+const DRAWER_DEFAULT = 360;
+const DRAWER_WIDTH_KEY = "ont-drawer-w";
+
+/**
+ * Drawer width that persists across mounts, with a draggable left-edge handle.
+ * Returns the current width plus a handle element to drop at the panel's leading
+ * edge.  Dragging left widens the panel (it grows into the canvas); dragging
+ * right shrinks it.  Width is clamped to [DRAWER_MIN, DRAWER_MAX] and saved to
+ * localStorage so the choice sticks.
+ */
+function useResizableDrawer() {
+  const [width, setWidth] = useState<number>(() => {
+    if (typeof window === "undefined") return DRAWER_DEFAULT;
+    const raw = Number(window.localStorage.getItem(DRAWER_WIDTH_KEY));
+    return raw >= DRAWER_MIN && raw <= DRAWER_MAX ? raw : DRAWER_DEFAULT;
+  });
+  const dragging = useRef(false);
+
+  const onPointerDown = useCallback((e: React.PointerEvent) => {
+    e.preventDefault();
+    dragging.current = true;
+    const startX = e.clientX;
+    const startW = width;
+    const onMove = (ev: PointerEvent) => {
+      if (!dragging.current) return;
+      // Handle is on the LEFT edge; dragging left (negative dx) widens.
+      const next = Math.min(DRAWER_MAX, Math.max(DRAWER_MIN, startW - (ev.clientX - startX)));
+      setWidth(next);
+    };
+    const onUp = () => {
+      dragging.current = false;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      setWidth(w => { try { window.localStorage.setItem(DRAWER_WIDTH_KEY, String(w)); } catch {} return w; });
+    };
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  }, [width]);
+
+  const handle = (
+    <div
+      onPointerDown={onPointerDown}
+      onDoubleClick={() => { setWidth(DRAWER_DEFAULT); try { window.localStorage.setItem(DRAWER_WIDTH_KEY, String(DRAWER_DEFAULT)); } catch {} }}
+      title="Drag to resize · double-click to reset"
+      className="group absolute left-0 top-0 h-full w-1.5 -ml-0.5 cursor-col-resize z-10 flex items-stretch"
+      style={{ touchAction: "none" }}
+    >
+      <div className="w-px mx-auto h-full bg-transparent group-hover:bg-violet-400/70 transition-colors" />
+    </div>
+  );
+
+  return { width, handle };
+}
+
 // ── Entity detail drawer ──────────────────────────────────────────────────────
 
 type DrawerTab = "overview" | "relationships" | "actions" | "metrics" | "map";
@@ -87,6 +149,7 @@ function EntityDetailDrawer({
   const [draft, setDraft] = useState(entity.description);
   const [saving, setSaving] = useState(false);
   const [lifecycleCounts, setLifecycleCounts] = useState<LifecycleCount[] | null>(null);
+  const { width: drawerWidth, handle: resizeHandle } = useResizableDrawer();
 
   useEffect(() => {
     if (!entity.has_lifecycle || !entity.lifecycle_column) return;
@@ -136,7 +199,11 @@ function EntityDetailDrawer({
   ];
 
   return (
-    <div className="w-80 shrink-0 border-l border-zinc-700/70 flex flex-col bg-zinc-900 overflow-hidden">
+    <div
+      className="shrink-0 relative border-l border-zinc-700/70 flex flex-col bg-zinc-900 overflow-hidden"
+      style={{ width: drawerWidth }}
+    >
+      {resizeHandle}
       {/* Drawer header */}
       <div className="px-4 pt-4 pb-3 border-b border-zinc-700/60 flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">

@@ -10,7 +10,7 @@
  *   <AugTable<MyRow> columns={antColumns} dataSource={data} />
  */
 
-import React from "react";
+import React, { useMemo, useState } from "react";
 import { Table, ConfigProvider, theme } from "antd";
 import type { TableProps, TableColumnsType } from "antd";
 
@@ -141,6 +141,8 @@ interface SqlResultTableProps {
   maxHeight?: number;
   /** Extra column overrides, keyed by column name */
   columnOverrides?: Record<string, Partial<TableColumnsType<Record<string, unknown>>[number]>>;
+  /** Show the "Σ Totals" on/off toggle (when there's at least one summable column). Default true. */
+  totals?: boolean;
 }
 
 export function SqlResultTable({
@@ -148,7 +150,33 @@ export function SqlResultTable({
   rows,
   maxHeight = 320,
   columnOverrides = {},
+  totals = true,
 }: SqlResultTableProps) {
+  const [showTotals, setShowTotals] = useState(false);
+
+  // Per-column summable detection + column sums.
+  // Summable = every non-blank value is numeric, and the column is not an
+  // identifier (id/_id) nor a share/percent/rate column (summing those is meaningless).
+  const sums = useMemo(
+    () =>
+      columns.map((col, idx) => {
+        if (ORDINAL_COL.test(col) || SHARE_COL.test(col)) return null;
+        let saw = false;
+        let sum = 0;
+        for (const r of rows) {
+          const v = (r as unknown[])[idx];
+          if (v == null || v === "") continue;
+          if (isNaN(Number(v))) return null;
+          sum += Number(v);
+          saw = true;
+        }
+        return saw ? sum : null;
+      }),
+    [columns, rows],
+  );
+  const hasSummable = sums.some(s => s !== null);
+  const firstTextCol = sums.findIndex(s => s === null);
+
   // Build Ant Design column defs
   const antCols: TableColumnsType<Record<string, unknown>> = columns.map(col => {
     const isNum = !ORDINAL_COL.test(col) && rows.length > 0 && isNumericValue(rows[0]?.[columns.indexOf(col)]);
@@ -179,13 +207,50 @@ export function SqlResultTable({
     ...Object.fromEntries(columns.map((c, j) => [c, (r as unknown[])[j]])),
   }));
 
+  const showToggle = totals && hasSummable && rows.length > 0;
+
+  const summary =
+    showToggle && showTotals
+      ? () => (
+          <Table.Summary fixed>
+            <Table.Summary.Row>
+              {columns.map((col, i) => (
+                <Table.Summary.Cell index={i} key={col} align={sums[i] !== null ? "right" : "left"}>
+                  {sums[i] !== null ? (
+                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600 }}>
+                      {fmt(col, sums[i] as number)}
+                    </span>
+                  ) : i === firstTextCol ? (
+                    <span style={{ color: "#9DA1A8", fontWeight: 600 }}>Total</span>
+                  ) : null}
+                </Table.Summary.Cell>
+              ))}
+            </Table.Summary.Row>
+          </Table.Summary>
+        )
+      : undefined;
+
   return (
-    <AugTable<Record<string, unknown>>
-      columns={antCols}
-      dataSource={dataSource}
-      scroll={{ x: "max-content", y: maxHeight }}
-      pagination={rows.length > 100 ? { pageSize: 100, size: "small", showSizeChanger: false } : false}
-      style={{ fontSize: 12 }}
-    />
+    <div className="flex flex-col gap-1.5">
+      {showToggle && (
+        <div className="flex items-center">
+          <button
+            onClick={() => setShowTotals(v => !v)}
+            title="Show a totals row summing numeric columns"
+            className={`text-[11px] px-2 py-0.5 rounded border transition-colors ${showTotals ? "border-blue-500/40 bg-blue-500/10 text-blue-300" : "border-zinc-700 text-zinc-500 hover:text-zinc-300"}`}
+          >
+            Σ Totals {showTotals ? "on" : "off"}
+          </button>
+        </div>
+      )}
+      <AugTable<Record<string, unknown>>
+        columns={antCols}
+        dataSource={dataSource}
+        scroll={{ x: "max-content", y: maxHeight }}
+        pagination={rows.length > 100 ? { pageSize: 100, size: "small", showSizeChanger: false } : false}
+        summary={summary}
+        style={{ fontSize: 12 }}
+      />
+    </div>
   );
 }

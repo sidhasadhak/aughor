@@ -160,15 +160,14 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
   // ── Static nav action items ───────────────────────────────────────────────
 
   const NAV_ACTIONS: Omit<PaletteItem, "onSelect">[] = [
-    { id: "nav-ask",         label: "Ask a question",    sublabel: "Open the hero investigation screen",    type: "action", icon: "spark",    accent: "var(--vio3)" },
     { id: "nav-canvases",    label: "Canvases",           sublabel: "Browse and open canvas workspaces",     type: "action", icon: "canvas",   accent: "var(--blue3)" },
     { id: "nav-recents",     label: "Investigation history", sublabel: "View all past analyses",            type: "action", icon: "clock",    accent: "var(--t3)" },
     { id: "nav-inbox",       label: "Recommendation Inbox", sublabel: "Act on Aughor's recommendations",   type: "action", icon: "inbox",    accent: "var(--amb3)" },
     { id: "nav-intel",       label: "Domain Intelligence",  sublabel: "Per-domain insights and coverage",  type: "action", icon: "process",  accent: "var(--cyn3)" },
     { id: "nav-ontology",    label: "Business Ontology",    sublabel: "Entity graph and lifecycle states", type: "action", icon: "node",     accent: "var(--grn3)" },
-    { id: "nav-health",      label: "Health Scorecard",     sublabel: "Business metric targets and status",type: "action", icon: "health",   accent: "var(--grn3)" },
+    { id: "nav-health",      label: "Health Scorecard",     sublabel: "Business metric targets and status",type: "action", icon: "activity", accent: "var(--grn3)" },
     { id: "nav-playbook",    label: "Playbook",             sublabel: "Strategic decision patterns",        type: "action", icon: "playbook", accent: "var(--t2)" },
-    { id: "nav-catalog",     label: "Data Catalog",         sublabel: "Browse tables, columns, row counts", type: "action", icon: "catalog",  accent: "var(--blue3)" },
+    { id: "nav-catalog",     label: "Catalog",              sublabel: "Browse tables, columns, row counts", type: "action", icon: "db",       accent: "var(--blue3)" },
     { id: "nav-builder",     label: "Query Builder",        sublabel: "Visual SQL builder with live results",type: "action", icon: "builder", accent: "var(--t2)" },
     { id: "nav-connections", label: "Connections",          sublabel: "Manage data source connections",     type: "action", icon: "plug",     accent: "var(--grn3)" },
     { id: "nav-metrics",     label: "Metrics Catalog",      sublabel: "Semantic KPI definitions",           type: "action", icon: "metric",   accent: "var(--amb3)" },
@@ -177,7 +176,6 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
   ];
 
   const NAV_DISPATCH: Record<string, () => void> = {
-    "nav-ask":         () => onNavigate("ask"),
     "nav-canvases":    () => onNavigate("canvases"),
     "nav-recents":     () => onNavigate("recents"),
     "nav-inbox":       () => onNavigate("inbox"),
@@ -238,7 +236,7 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
     if (!query.trim()) {
       // No query — show defaults: top actions + 5 recent investigations + 5 tables
       const defaults = [
-        ...allItems.filter(i => ["nav-ask","nav-canvases","nav-recents","nav-catalog"].includes(i.id)),
+        ...allItems.filter(i => ["nav-canvases","nav-recents","nav-catalog","nav-builder"].includes(i.id)),
         ...allItems.filter(i => i.type === "investigation").slice(0, 5),
         ...allItems.filter(i => i.type === "table").slice(0, 5),
       ];

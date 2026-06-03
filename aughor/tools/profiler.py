@@ -262,6 +262,7 @@ class TableProfile:
         "table", "row_count",
         "grain_column", "grain_verified",
         "primary_timestamp", "date_range",
+        "effective_date_range",
         "freshness_lag_hours",
         "computed_at",
     )
@@ -274,6 +275,7 @@ class TableProfile:
         grain_verified: bool = False,
         primary_timestamp: Optional[str] = None,
         date_range: Optional[tuple] = None,
+        effective_date_range: Optional[tuple] = None,
         freshness_lag_hours: Optional[float] = None,
         computed_at: Optional[str] = None,
     ):
@@ -282,7 +284,14 @@ class TableProfile:
         self.grain_column = grain_column
         self.grain_verified = grain_verified
         self.primary_timestamp = primary_timestamp
+        # date_range = absolute (min, max) including outliers.
         self.date_range = date_range
+        # effective_date_range = the DENSE region (min, max) where the bulk of
+        # rows actually live, ignoring sparse stray rows.  A table whose real
+        # data is 2016–2018 but has 3 stray 2020 rows has date_range ending in
+        # 2020 yet effective_date_range ending in 2018 — so a "last 12 months"
+        # window anchored on the effective max actually returns data.
+        self.effective_date_range = effective_date_range
         self.freshness_lag_hours = freshness_lag_hours
         self.computed_at = computed_at or datetime.now(timezone.utc).isoformat()
 
@@ -290,13 +299,21 @@ class TableProfile:
         d = {k: getattr(self, k) for k in self.__slots__}
         if isinstance(d.get("date_range"), tuple):
             d["date_range"] = list(d["date_range"])
+        if isinstance(d.get("effective_date_range"), tuple):
+            d["effective_date_range"] = list(d["effective_date_range"])
         return d
 
     @classmethod
     def from_dict(cls, d: dict) -> "TableProfile":
+        patch = {}
         dr = d.get("date_range")
         if dr and isinstance(dr, list):
-            d = {**d, "date_range": tuple(dr)}
+            patch["date_range"] = tuple(dr)
+        edr = d.get("effective_date_range")
+        if edr and isinstance(edr, list):
+            patch["effective_date_range"] = tuple(edr)
+        if patch:
+            d = {**d, **patch}
         obj = cls.__new__(cls)
         for k in cls.__slots__:
             setattr(obj, k, d.get(k))
@@ -425,6 +442,52 @@ def _safe_float(v) -> Optional[float]:
         return float(v)
     except (TypeError, ValueError):
         return None
+
+
+def _robust_date_range(
+    conn: "DatabaseConnection",
+    qt: str,
+    qts: str,
+) -> Optional[tuple]:
+    """Find the DENSE date region of a timestamp column, ignoring sparse outliers.
+
+    Bins rows by month and keeps only the months whose row count clears a
+    density floor (>= 25% of the median populated month, min 2 rows).  The
+    returned (min, max) spans those dense months — so 3 stray rows in 2020 next
+    to a real 2016–2018 body of data no longer drag the max into 2020.
+
+    One cheap grouped scan; works on both DuckDB and Postgres (both support
+    date_trunc).  Returns None when there isn't enough signal to be confident,
+    in which case callers should fall back to the absolute date_range.
+    """
+    try:
+        r = conn.execute(
+            "__profiler__",
+            f"SELECT date_trunc('month', {qts})::VARCHAR AS m, COUNT(*) AS c "
+            f"FROM {qt} WHERE {qts} IS NOT NULL GROUP BY 1 ORDER BY 1",
+        )
+    except Exception:
+        return None
+    if r.error or not r.rows:
+        return None
+
+    months = [(str(row[0]), int(row[1])) for row in r.rows if row[0] is not None]
+    if len(months) < 2:
+        return None
+
+    counts = sorted(c for _, c in months)
+    mid = len(counts) // 2
+    median = counts[mid] if len(counts) % 2 else (counts[mid - 1] + counts[mid]) / 2
+    floor = max(2, median * 0.25)
+
+    dense = [m for m, c in months if c >= floor]
+    if not dense:
+        return None
+    # If every month is already dense, the absolute range is fine — signal None
+    # so the caller keeps date_range as-is.
+    if len(dense) == len(months):
+        return None
+    return (min(dense), max(dense))
 
 
 # ── Catalog-based stats (zero full-table scans) ───────────────────────────────
@@ -625,6 +688,7 @@ def build_table_profile(
     grain_verified = False
     primary_timestamp: Optional[str] = None
     date_range: Optional[tuple] = None
+    effective_date_range: Optional[tuple] = None
     freshness_lag_hours: Optional[float] = None
 
     qt = _q(table)
@@ -751,6 +815,10 @@ def build_table_profile(
             except Exception:
                 pass
 
+            # Robust dense-region bounds, ignoring sparse outlier rows that would
+            # otherwise drag MAX(date) into a period with no real data.
+            effective_date_range = _robust_date_range(conn, qt, _q(primary_timestamp))
+
     return TableProfile(
         table=table,
         row_count=row_count,
@@ -758,6 +826,7 @@ def build_table_profile(
         grain_verified=grain_verified,
         primary_timestamp=primary_timestamp,
         date_range=date_range,
+        effective_date_range=effective_date_range,
         freshness_lag_hours=freshness_lag_hours,
     )
 
@@ -1148,6 +1217,9 @@ def render_profile_annotations(
         date_str = ""
         if tp.date_range:
             date_str = f" | {tp.date_range[0][:10]} → {tp.date_range[1][:10]}"
+            edr = getattr(tp, "effective_date_range", None)
+            if edr and (edr[0][:10], edr[1][:10]) != (tp.date_range[0][:10], tp.date_range[1][:10]):
+                date_str += f" (dense data {edr[0][:10]} → {edr[1][:10]}; outliers outside)"
         stale_warn = ""
         if tp.freshness_lag_hours is not None and tp.freshness_lag_hours > 72:
             stale_warn = f" ⚠ stale ({tp.freshness_lag_hours:.0f}h ago)"

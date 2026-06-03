@@ -17,16 +17,20 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { SqlResultTable } from "@/components/AugTable";
 import { useSchema } from "@/lib/schema-context";
 import {
   getCatalogTree, getConnections, addConnection, deleteConnection,
-  testConnection, sampleTable, getSchemaRich,
+  testConnection, sampleTable, getSchemaRich, getExplorationFindings,
   type CatalogTree, type CatalogEntry, type CatalogSchemaInfo, type CatalogTableInfo,
   type Connection, type SchemaTable, type SchemaColumn, type TableSample,
+  type DistributionProfile,
 } from "@/lib/api";
 import { ExplorationBadge } from "@/components/ExplorationBadge";
 import { SchemaPanel } from "@/components/SchemaPanel";
 import { DocumentUploader } from "@/components/DocumentUploader";
+import { AddDataPanel } from "@/components/AddDataPanel";
+import { ResizableSplit } from "@/components/ResizableSplit";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -47,6 +51,74 @@ function typeColor(t: string): string {
   if (u.includes("DATE") || u.includes("TIME"))                     return "#f97316";
   if (u.includes("BOOL"))                                           return "#4ade80";
   return "var(--t2)";
+}
+
+// ── Distribution mini-viz (shared with exploration) ──────────────────────────
+
+const DIST_SHAPE_PILL: Record<string, { label: string; bg: string; text: string; border: string; barColor: string }> = {
+  fraction_0_1: { label: "0–1 ratio",    bg: "#1e2a1e", text: "#4ade80", border: "#2a4a2a", barColor: "#2a4a2a" },
+  normal:       { label: "Normal",        bg: "#1a1e2e", text: "#7ba8f7", border: "#2a3050", barColor: "#2a3050" },
+  concentrated: { label: "Concentrated", bg: "#2a1a2e", text: "#c084fc", border: "#3e2a50", barColor: "#4a4b5a" },
+  skewed_right: { label: "Right-skewed", bg: "#2a1e14", text: "#f97316", border: "#3e2a1e", barColor: "#3e2a1e" },
+  skewed_left:  { label: "Left-skewed",  bg: "#2a1e14", text: "#f97316", border: "#3e2a1e", barColor: "#3e2a1e" },
+  uniform:      { label: "Uniform",      bg: "#1a2a1e", text: "#4ade80", border: "#2a4a2a", barColor: "#2a4a2a" },
+  bimodal:      { label: "Bimodal",      bg: "#2a1a1a", text: "#f87171", border: "#3e2a2a", barColor: "#3e2a2a" },
+};
+
+function miniBarHeights(shape: string): number[] {
+  switch (shape) {
+    case "normal":       return [4, 8, 22, 24, 16, 6];
+    case "fraction_0_1": return [6, 14, 24, 16, 8, 4];
+    case "concentrated": return [3, 10, 24, 18, 8, 3];
+    case "skewed_right": return [24, 20, 14, 8, 4, 2];
+    case "skewed_left":  return [2, 4, 8, 14, 20, 24];
+    case "uniform":      return [20, 22, 22, 21, 20, 21];
+    case "bimodal":      return [20, 8, 4, 8, 22, 16];
+    default:             return [10, 14, 18, 16, 12, 8];
+  }
+}
+
+function fmtNum(n: number | null | undefined): string {
+  if (n == null) return "—";
+  if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (Math.abs(n) >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return Number.isInteger(n) ? String(n) : n.toFixed(2);
+}
+
+/** Compact per-column distribution strip shown under a column row in Catalog. */
+function ColumnDistribution({ d }: { d: DistributionProfile }) {
+  const pill = DIST_SHAPE_PILL[d.shape] ?? { label: d.shape, bg: "#1a1a1e", text: "#6e6f78", border: "#2a2b30", barColor: "#2a2b35" };
+  const barH = miniBarHeights(d.shape);
+  const maxH = Math.max(...barH);
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "6px 16px 8px 30px", background: "#0c0e13", borderBottom: "0.5px solid #111115" }}>
+      {/* mini histogram */}
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 1.5, height: 24, width: 64, flexShrink: 0 }}>
+        {barH.map((h, i) => (
+          <div key={i} style={{ flex: 1, height: `${h}px`, background: h >= maxH * 0.6 ? pill.barColor : "#2a2b35", borderRadius: "2px 2px 0 0" }} />
+        ))}
+      </div>
+      {/* percentiles */}
+      <div style={{ display: "flex", gap: 12, fontFamily: "var(--font-mono)", fontSize: 11 }}>
+        {([["p25", d.p25], ["p50", d.p50], ["p75", d.p75], ["mean", d.mean]] as const).map(([label, value]) => (
+          <div key={label} style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+            <span style={{ color: "var(--b0)", letterSpacing: "0.04em" }}>{label}</span>
+            <span style={{ color: label === "p50" || label === "mean" ? "#9a9ba4" : "#6e6f78" }}>{fmtNum(value)}</span>
+          </div>
+        ))}
+        {d.min != null && d.max != null && (
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+            <span style={{ color: "var(--b0)", letterSpacing: "0.04em" }}>range</span>
+            <span style={{ color: "#6e6f78" }}>{fmtNum(d.min)}–{fmtNum(d.max)}</span>
+          </div>
+        )}
+      </div>
+      {/* shape pill */}
+      <span style={{ marginLeft: "auto", fontSize: 11, padding: "1px 8px", borderRadius: 4, whiteSpace: "nowrap", background: pill.bg, color: pill.text, border: `0.5px solid ${pill.border}` }}>
+        {pill.label}
+      </span>
+    </div>
+  );
 }
 
 const CONN_TAG: Record<string, { label: string; color: string; bg: string; border: string }> = {
@@ -408,40 +480,10 @@ function SampleGrid({ connId, tableName, schemaName }: { connId: string; tableNa
     </div>
   );
 
-  const MAX_CELL = 40;
-  const clamp = (v: string | null) => {
-    if (v === null) return <span style={{ color: "var(--b0)", fontStyle: "italic", fontSize: 11 }}>null</span>;
-    return v.length > MAX_CELL ? v.slice(0, MAX_CELL) + "…" : v;
-  };
-
   return (
-    <div style={{ flex: 1, overflow: "auto" }}>
-      <table style={{ borderCollapse: "collapse", minWidth: "100%", fontSize: 11, fontFamily: "var(--font-mono)" }}>
-        <thead>
-          <tr style={{ background: "var(--bg-0)", position: "sticky", top: 0, zIndex: 1 }}>
-            {data.columns.map(col => (
-              <th key={col} style={{ padding: "6px 12px", textAlign: "left", whiteSpace: "nowrap", borderBottom: "0.5px solid #1e1f24", borderRight: "0.5px solid #111115", fontSize: 11, color: "#5a5b62", fontWeight: 600, letterSpacing: "0.04em" }}>
-                {col}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {data.rows.map((row, ri) => (
-            <tr key={ri} style={{ borderBottom: "0.5px solid #111115" }}
-              onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "#0f1014"}
-              onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}
-            >
-              {row.map((cell, ci) => (
-                <td key={ci} style={{ padding: "5px 12px", color: cell === null ? "var(--b0)" : "var(--t2)", whiteSpace: "nowrap", borderRight: "0.5px solid #111115" }}>
-                  {clamp(cell)}
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <div style={{ padding: "5px 12px", borderTop: "0.5px solid #1e1f24", fontSize: 11, color: "var(--t4)", background: "var(--bg-0)" }}>
+    <div style={{ flex: 1, overflow: "auto", padding: 12 }}>
+      <SqlResultTable columns={data.columns} rows={data.rows as unknown[][]} maxHeight={520} />
+      <div style={{ padding: "5px 4px", fontSize: 11, color: "var(--t4)" }}>
         {data.rows.length} row{data.rows.length !== 1 ? "s" : ""}
       </div>
     </div>
@@ -460,11 +502,12 @@ function TableDetailPanel({ sel, onAsk }: {
   const [colFilter, setColFilter] = useState("");
   const [richTable, setRich]    = useState<SchemaTable | null>(null);
   const [loading, setLoad]      = useState(false);
-  const cm = connMeta(""); // not shown in table detail
+  const [distMap, setDistMap]   = useState<Record<string, DistributionProfile>>({});
+  const [expandedCols, setExpandedCols] = useState<Set<string>>(new Set());
 
   // Fetch column detail (rich schema) when table changes
   useEffect(() => {
-    setTab("overview"); setColFilter(""); setRich(null);
+    setTab("overview"); setColFilter(""); setRich(null); setExpandedCols(new Set());
     setLoad(true);
     getSchemaRich(sel.connId)
       .then(s => setRich(s.tables.find(t => t.name === sel.table.name) ?? null))
@@ -472,10 +515,27 @@ function TableDetailPanel({ sel, onAsk }: {
       .finally(() => setLoad(false));
   }, [sel.connId, sel.schemaName, sel.table.name]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Fetch column distributions (exploration profiling) for this table
+  useEffect(() => {
+    setDistMap({});
+    getExplorationFindings(sel.connId)
+      .then(f => {
+        const m: Record<string, DistributionProfile> = {};
+        for (const [key, d] of Object.entries(f.distributions ?? {})) {
+          const [tbl, col] = key.split(":");
+          if (tbl === sel.table.name && col && d.shape !== "unknown") m[col] = d;
+        }
+        setDistMap(m);
+      })
+      .catch(() => setDistMap({}));
+  }, [sel.connId, sel.table.name]);
+
   const cols = richTable?.columns ?? [];
   const q    = colFilter.toLowerCase();
   const filteredCols = q ? cols.filter(c => c.name.toLowerCase().includes(q) || c.type.toLowerCase().includes(q)) : cols;
   const fkCount = cols.filter(c => c.is_fk).length;
+  const distCount = Object.keys(distMap).length;
+  const toggleCol = (name: string) => setExpandedCols(prev => { const n = new Set(prev); n.has(name) ? n.delete(name) : n.add(name); return n; });
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
@@ -498,8 +558,17 @@ function TableDetailPanel({ sel, onAsk }: {
           {/* Main: column list */}
           <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
             {/* Filter row */}
-            <div style={{ padding: "10px 16px", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, background: "var(--bg-0)" }}>
+            <div style={{ padding: "10px 16px", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, background: "var(--bg-0)", display: "flex", alignItems: "center", gap: 10 }}>
               <FilterBox value={colFilter} onChange={setColFilter} placeholder="Filter columns…" />
+              {distCount > 0 && (
+                <span style={{ fontSize: 11, color: "var(--t4)" }}>{distCount} profiled · click a column for its distribution</span>
+              )}
+              {onAsk && (
+                <button onClick={() => onAsk(sel.table.name, sel.connId)}
+                  style={{ marginLeft: "auto", fontSize: 11, padding: "4px 11px", borderRadius: 4, cursor: "pointer", background: "#1a1e2e", color: "#7ba8f7", border: "0.5px solid #2a3050", whiteSpace: "nowrap" }}>
+                  Ask about this table →
+                </button>
+              )}
             </div>
 
             {/* Column header */}
@@ -522,47 +591,37 @@ function TableDetailPanel({ sel, onAsk }: {
                   {q ? "No columns match." : "Column details unavailable."}
                 </p>
               )}
-              {!loading && filteredCols.map((col, i) => (
-                <div key={col.name}
-                  style={{ display: "grid", gridTemplateColumns: "1fr 110px 40px", padding: "6px 16px", borderBottom: "0.5px solid #111115", alignItems: "center", background: "transparent" }}
-                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "#0f1218"}
-                  onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }} title={col.description || ""}>
-                    <span style={{ width: 6, height: 6, borderRadius: 2, flexShrink: 0, background: typeColor(col.type), opacity: 0.7 }} />
-                    <span style={{ fontSize: 12, fontFamily: "var(--font-mono)", color: "#c8c7c3", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{col.name}</span>
-                    {col.description && (
-                      <span style={{ fontSize: 11, color: "#5a5e6a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 200 }}>{col.description}</span>
-                    )}
+              {!loading && filteredCols.map((col) => {
+                const dist = distMap[col.name];
+                const open = expandedCols.has(col.name);
+                return (
+                <div key={col.name}>
+                  <div
+                    onClick={dist ? () => toggleCol(col.name) : undefined}
+                    style={{ display: "grid", gridTemplateColumns: "1fr 110px 40px", padding: "6px 16px", borderBottom: "0.5px solid #111115", alignItems: "center", background: open ? "#0c0e13" : "transparent", cursor: dist ? "pointer" : "default" }}
+                    onMouseEnter={e => { if (!open) (e.currentTarget as HTMLElement).style.background = "#0f1218"; }}
+                    onMouseLeave={e => { if (!open) (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }} title={col.description || ""}>
+                      {dist
+                        ? <span style={{ flexShrink: 0, display: "flex" }}><Chevron open={open} /></span>
+                        : <span style={{ width: 6, height: 6, borderRadius: 2, flexShrink: 0, background: typeColor(col.type), opacity: 0.7 }} />}
+                      <span style={{ fontSize: 12, fontFamily: "var(--font-mono)", color: "#c8c7c3", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{col.name}</span>
+                      {col.description && (
+                        <span style={{ fontSize: 11, color: "#5a5e6a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 200 }}>{col.description}</span>
+                      )}
+                    </div>
+                    <span style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: typeColor(col.type) }}>{col.type}</span>
+                    {col.is_fk
+                      ? <span style={{ fontSize: 9, padding: "2px 5px", borderRadius: 3, background: "#1a1e2e", color: "#3d6bff", border: "0.5px solid #2a3050" }}>FK</span>
+                      : <span />
+                    }
                   </div>
-                  <span style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: typeColor(col.type) }}>{col.type}</span>
-                  {col.is_fk
-                    ? <span style={{ fontSize: 9, padding: "2px 5px", borderRadius: 3, background: "#1a1e2e", color: "#3d6bff", border: "0.5px solid #2a3050" }}>FK</span>
-                    : <span />
-                  }
+                  {dist && open && <ColumnDistribution d={dist} />}
                 </div>
-              ))}
+              ); })}
             </div>
           </div>
-
-          {/* About sidebar */}
-          <AboutSidebar
-            title="About this table"
-            rows={[
-              { label: "Rows",    value: fmtRows(sel.table.row_count) },
-              { label: "Columns", value: String(cols.length || "…") },
-              { label: "Schema",  value: <span style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>{sel.schemaName}</span> },
-              { label: "FK columns", value: fkCount > 0 ? String(fkCount) : "—" },
-              ...(onAsk ? [{
-                label: "Actions",
-                value: (
-                  <button onClick={() => onAsk(sel.table.name, sel.connId)} style={{ fontSize: 11, padding: "4px 10px", borderRadius: 4, cursor: "pointer", background: "#1a1e2e", color: "#7ba8f7", border: "0.5px solid #2a3050", width: "100%", textAlign: "left" as const }}>
-                    Ask about this table →
-                  </button>
-                ),
-              }] : []),
-            ]}
-          />
         </div>
       )}
 
@@ -581,14 +640,16 @@ function TableDetailPanel({ sel, onAsk }: {
 
 // ── Right: SCHEMA detail ──────────────────────────────────────────────────────
 
-type SchemaTab = "tables";
+type SchemaTab = "tables" | "erd";
 
-function SchemaDetailPanel({ sel, onSelectTable, onAsk }: {
+function SchemaDetailPanel({ sel, onSelectTable, onAsk, connName }: {
   sel:           Extract<Sel, { level: "schema" }>;
   onSelectTable: (table: CatalogTableInfo) => void;
   onAsk?:        (table: string, connId: string) => void;
+  connName?:     string;
 }) {
   const [filter, setFilter] = useState("");
+  const [tab, setTab]       = useState<SchemaTab>("tables");
   const { entry } = sel;
   const q = filter.toLowerCase();
   const tables = q ? entry.tables.filter(t => t.name.toLowerCase().includes(q)) : entry.tables;
@@ -604,11 +665,16 @@ function SchemaDetailPanel({ sel, onSelectTable, onAsk }: {
       />
 
       <TabBar
-        tabs={[{ id: "tables", label: `Tables  ${entry.tables.length}` }]}
-        active="tables"
-        onChange={() => {}}
+        tabs={[{ id: "tables", label: `Tables  ${entry.tables.length}` }, { id: "erd", label: "ERD" }]}
+        active={tab}
+        onChange={id => setTab(id as SchemaTab)}
       />
 
+      {tab === "erd" ? (
+        <div style={{ flex: 1, overflow: "hidden", minWidth: 0 }}>
+          <SchemaPanel connId={sel.connId} connName={connName ?? sel.connId} />
+        </div>
+      ) : (
       <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
         {/* Main: table list */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -663,6 +729,7 @@ function SchemaDetailPanel({ sel, onSelectTable, onAsk }: {
           ]}
         />
       </div>
+      )}
     </div>
   );
 }
@@ -671,13 +738,18 @@ function SchemaDetailPanel({ sel, onSelectTable, onAsk }: {
 
 type CatalogTab = "schemas";
 
-function CatalogDetailPanel({ sel, onSelectSchema, conn }: {
+function CatalogDetailPanel({ sel, onSelectSchema, conn, onTest, onDelete, testing, testResult }: {
   sel:            Extract<Sel, { level: "catalog" }>;
   onSelectSchema: (schema: CatalogSchemaInfo) => void;
   conn?:          Connection;
+  onTest?:        (id: string) => void;
+  onDelete?:      (id: string) => void;
+  testing?:       boolean;
+  testResult?:    boolean;
 }) {
   const [filter, setFilter] = useState("");
   const [tab, setTab]       = useState<"overview" | "knowledge">("overview");
+  const [confirmDel, setConfirmDel] = useState(false);
   const { entry } = sel;
   const cm = connMeta(entry.conn_type);
   const effTab = entry.builtin && tab === "knowledge" ? "overview" : tab;
@@ -780,6 +852,43 @@ function CatalogDetailPanel({ sel, onSelectSchema, conn }: {
             ]}
           />
           <ConnectorActions connId={entry.conn_id} connType={entry.conn_type} />
+
+          {/* Connection management actions (test / remove) */}
+          {conn && !entry.builtin && (
+            <div style={{ padding: "12px 16px", borderTop: "0.5px solid #1e1f24", display: "flex", gap: 8, position: "relative" }}>
+              <button onClick={() => onTest?.(entry.conn_id)} disabled={testing}
+                style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 4, fontSize: 11, fontWeight: 500, cursor: testing ? "not-allowed" : "pointer",
+                  background: "#13141a", border: `0.5px solid ${testResult === true ? "#2a4a2a" : testResult === false ? "#3e2020" : "#2a2b35"}`,
+                  color: testResult === true ? "#34d399" : testResult === false ? "#f87171" : "var(--t2)", opacity: testing ? 0.6 : 1 }}>
+                {testing ? "Testing…" : testResult === true ? "✓ Connection OK" : testResult === false ? "✗ Failed" : "Test connection"}
+              </button>
+              <button onClick={() => setConfirmDel(true)}
+                style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 4, fontSize: 11, fontWeight: 500, cursor: "pointer",
+                  background: "transparent", border: "0.5px solid #3e2020", color: "#f87171" }}>
+                Remove connection
+              </button>
+
+              {/* Confirmation popup */}
+              {confirmDel && (
+                <>
+                  <div onClick={() => setConfirmDel(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 300 }} />
+                  <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", zIndex: 301, width: 340,
+                    background: "var(--bg-2)", border: "1px solid var(--b2)", borderRadius: 8, padding: 20, boxShadow: "0 24px 64px rgba(0,0,0,.6)" }}>
+                    <p style={{ fontSize: 14, fontWeight: 600, color: "var(--t1)", marginBottom: 8 }}>Remove connection?</p>
+                    <p style={{ fontSize: 12, color: "var(--t3)", lineHeight: 1.5, marginBottom: 18 }}>
+                      <span style={{ color: "var(--t1)", fontFamily: "var(--font-mono)" }}>{entry.name}</span> will be disconnected and removed from your catalog. This cannot be undone.
+                    </p>
+                    <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                      <button onClick={() => setConfirmDel(false)}
+                        style={{ fontSize: 12, padding: "6px 14px", borderRadius: 4, cursor: "pointer", background: "transparent", color: "var(--t3)", border: "0.5px solid var(--b1)" }}>Cancel</button>
+                      <button onClick={() => { setConfirmDel(false); onDelete?.(entry.conn_id); }}
+                        style={{ fontSize: 12, padding: "6px 14px", borderRadius: 4, cursor: "pointer", background: "#3a1818", color: "#f87171", border: "0.5px solid #5a2424", fontWeight: 500 }}>Remove</button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
       </div>
       )}
@@ -1048,13 +1157,10 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
   const [treeLoading, setTreeL] = useState(true);
   const [expanded, setExpanded] = useState<Set<string>>(new Set(["section:samples", "catalog:samples"]));
   const [sel, setSel]           = useState<Sel>(null);
-  const [adding, setAdding]     = useState(false);
+  const [showAddData, setShowAddData] = useState(false);
   const [search, setSearch]     = useState("");
-  const [hovConn, setHovConn]   = useState<string | null>(null);
-  const [pendingDel, setPDel]   = useState<string | null>(null);
   const [testing, setTesting]   = useState<string | null>(null);
   const [testRes, setTestRes]   = useState<Record<string, boolean>>({});
-  const [showERD, setShowERD]   = useState(false);
   const q = search.toLowerCase();
   const selConn = connections.find(c => c.id === selectedConn);
 
@@ -1084,12 +1190,6 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
   const isOpen = (key: string) => expanded.has(key);
 
   const handleDelete = (id: string) => {
-    if (pendingDel !== id) {
-      setPDel(id);
-      setTimeout(() => setPDel(p => p === id ? null : p), 3000);
-      return;
-    }
-    setPDel(null);
     const conn = connections.find(c => c.id === id);
     if (conn) onDeleteConn(conn);
   };
@@ -1116,7 +1216,7 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
             </span>
           </div>
           {section.id === "connections" && (
-            <button onClick={() => setAdding(v => !v)}
+            <button onClick={() => setShowAddData(true)}
               style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 9, padding: "2px 6px", borderRadius: 3, cursor: "pointer", background: "transparent", color: "var(--t4)", border: "0.5px solid #1e1f24" }}
               onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "var(--t2)"; }}
               onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "var(--t4)"; }}
@@ -1128,9 +1228,6 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
         </div>
       );
 
-      if (section.id === "connections" && adding) {
-        nodes.push(<AddConnForm key="add-form" onSave={() => { setAdding(false); loadTree(); }} onCancel={() => setAdding(false)} />);
-      }
       if (section.entries.length === 0 && section.id === "connections") {
         nodes.push(<p key="empty" style={{ fontSize: 11, color: "var(--b0)", padding: "6px 12px 10px" }}>No connections yet.</p>);
       }
@@ -1143,11 +1240,9 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
         const catMatch   = matches(entry.name) || entry.schemas.some(sc => matches(sc.name) || sc.tables.some(t => matches(t.name)));
         if (!catMatch) return;
 
+        void isSamples;
         nodes.push(
-          <div key={catalogKey} style={{ position: "relative" }}
-            onMouseEnter={() => setHovConn(entry.conn_id)}
-            onMouseLeave={() => setHovConn(null)}
-          >
+          <div key={catalogKey} style={{ position: "relative" }}>
             <TreeRow
               depth={0}
               icon={<IcoCatalog color="var(--t2)" />}
@@ -1160,18 +1255,6 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
               onClick={() => { setSel({ level: "catalog", connId: entry.conn_id, entry }); onSelect(entry.conn_id); }}
               onToggle={() => toggle(catalogKey)}
             />
-            {!isSamples && hovConn === entry.conn_id && (
-              <div style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", display: "flex", gap: 4, zIndex: 2 }}>
-                <button onClick={e => { e.stopPropagation(); handleTest(entry.conn_id); }} disabled={testing === entry.conn_id}
-                  style={{ fontSize: 8, padding: "2px 5px", borderRadius: 2, cursor: "pointer", background: "#1a1a22", color: testRes[entry.conn_id] === true ? "#34d399" : testRes[entry.conn_id] === false ? "#f87171" : "var(--t4)", border: "0.5px solid #2a2b35" }}>
-                  {testing === entry.conn_id ? "…" : testRes[entry.conn_id] === true ? "✓" : testRes[entry.conn_id] === false ? "✗" : "Test"}
-                </button>
-                <button onClick={e => { e.stopPropagation(); handleDelete(entry.conn_id); }}
-                  style={{ fontSize: 8, padding: "2px 5px", borderRadius: 2, cursor: "pointer", background: pendingDel === entry.conn_id ? "#2a1414" : "#1a1a22", color: pendingDel === entry.conn_id ? "#f87171" : "var(--t4)", border: `0.5px solid ${pendingDel === entry.conn_id ? "#3e2020" : "#2a2b35"}` }}>
-                  {pendingDel === entry.conn_id ? "Confirm" : "×"}
-                </button>
-              </div>
-            )}
           </div>
         );
 
@@ -1241,6 +1324,7 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
     if (sel.level === "table") return <TableDetailPanel sel={sel} onAsk={onChatWithTable} />;
     if (sel.level === "schema") return (
       <SchemaDetailPanel sel={sel}
+        connName={connections.find(c => c.id === sel.connId)?.name}
         onSelectTable={t => setSel({ level: "table", connId: sel.connId, schemaName: sel.schemaName, table: t })}
         onAsk={onChatWithTable}
       />
@@ -1248,6 +1332,10 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
     if (sel.level === "catalog") return (
       <CatalogDetailPanel sel={sel}
         conn={connections.find(c => c.id === sel.connId)}
+        onTest={handleTest}
+        onDelete={handleDelete}
+        testing={testing === sel.connId}
+        testResult={testRes[sel.connId]}
         onSelectSchema={sc => {
           setSel({ level: "schema", connId: sel.connId, schemaName: sc.name, entry: sc });
           setExpanded(p => { const n = new Set(p); n.add(`schema:${sel.connId}:${sc.name}`); return n; });
@@ -1258,10 +1346,11 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "row", height: "100%", overflow: "hidden", background: "var(--bg-0)" }}>
-
-      {/* ── Left: Tree navigator ── */}
-      <div style={{ width: 340, borderRight: "0.5px solid var(--b1)", display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-1)", flexShrink: 0 }}>
+    <div style={{ position: "relative", display: "flex", height: "100%", overflow: "hidden", background: "var(--bg-0)" }}>
+      <ResizableSplit storageKey="catalog" initial={340} min={240} max={560} style={{ flex: 1, height: "100%" }}
+        left={
+      /* ── Left: Tree navigator ── */
+      <div style={{ borderRight: "0.5px solid var(--b1)", display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-1)", height: "100%", width: "100%" }}>
         {/* Top bar */}
         <div style={{ display: "flex", alignItems: "center", padding: "10px 12px 8px", borderBottom: "0.5px solid var(--b1)", flexShrink: 0, gap: 8 }}>
           <button onClick={() => setSel(null)} title="Catalog home"
@@ -1269,12 +1358,12 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
             onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = "var(--t1)"}
             onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = sel ? "var(--t3)" : "var(--t1)"}
           >Catalog</button>
-          <button
-            onClick={() => setShowERD(v => !v)}
-            title={showERD ? "Table view" : "ERD view"}
-            style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: 4, cursor: "pointer", background: showERD ? "#1a1e2e" : "transparent", color: showERD ? "var(--blue4)" : "var(--t4)", border: showERD ? "0.5px solid #2a3050" : "0.5px solid #1e1f24", padding: 0, marginRight: 4, fontSize: 9, fontWeight: 700, letterSpacing: "0.02em" }}
+          <button onClick={() => setShowAddData(true)} title="Add data"
+            style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: 4, cursor: "pointer", background: "#152b50", color: "#88baff", border: "0.5px solid #1a3a6e", padding: 0 }}
+            onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "#1a3a6e"}
+            onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "#152b50"}
           >
-            ERD
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 1v10M1 6h10" /></svg>
           </button>
           <button onClick={() => { loadTree(); refreshSchema(); }} title="Refresh schema"
             style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: 4, cursor: "pointer", background: "transparent", color: "var(--t4)", border: "0.5px solid #1e1f24", padding: 0 }}
@@ -1309,14 +1398,20 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
           {!treeLoading && renderTree()}
         </div>
       </div>
-
-      {/* ── Right: Detail panel or ERD ── */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
-        {showERD
-          ? <SchemaPanel connId={selectedConn} connName={selConn?.name} />
-          : renderDetail()
         }
+        right={
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0, height: "100%" }}>
+        {renderDetail()}
       </div>
+        }
+      />
+
+      {showAddData && (
+        <AddDataPanel
+          onClose={() => setShowAddData(false)}
+          onAdded={() => { loadTree(); refreshSchema(); }}
+        />
+      )}
 
     </div>
   );

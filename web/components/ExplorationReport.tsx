@@ -3,7 +3,7 @@
 import { useState } from "react";
 import type { ExplorationReport as ExplorationReportType, SubQuestion, SubQuestionAnswer, DataQualityNote } from "@/lib/types";
 import { InvestigationChart } from "@/components/InvestigationChart";
-import { buildColumnFormatter } from "@/lib/formatCell";
+import { SqlResultTable } from "@/components/AugTable";
 
 interface Props {
   report: ExplorationReportType;
@@ -121,43 +121,8 @@ function SubQuestionCard({
   );
 }
 
-function SubqMiniTable({ columns, rows, rowCount }: { columns: string[]; rows: unknown[][]; rowCount: number }) {
-  const MAX = 10;
-  const visible = rows.slice(0, MAX);
-  const fmt = buildColumnFormatter(columns, rows);
-  return (
-    <div className="rounded border border-zinc-600 overflow-hidden">
-      <div className="overflow-x-auto overflow-y-auto max-h-[220px]">
-        <table className="w-full text-xs">
-          <thead className="sticky top-0 bg-zinc-800 border-b border-zinc-600">
-            <tr>
-              {columns.map(col => (
-                <th key={col} className="px-3 py-1.5 text-left text-[11px] text-zinc-500 uppercase tracking-wide font-mono whitespace-nowrap">
-                  {col.replace(/_/g, " ")}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-zinc-600/40">
-            {visible.map((row, ri) => (
-              <tr key={ri} className="hover:bg-zinc-700/70/20">
-                {(row as unknown[]).map((cell, ci) => (
-                  <td key={ci} className="px-3 py-1.5 text-zinc-300 font-mono whitespace-nowrap">
-                    {cell == null ? <span className="text-zinc-500 italic">null</span> : fmt(ci, cell)}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {rowCount > MAX && (
-        <div className="px-3 py-1 border-t border-zinc-600/60 text-[11px] text-zinc-500 font-mono">
-          +{rowCount - MAX} more rows
-        </div>
-      )}
-    </div>
-  );
+function SubqMiniTable({ columns, rows }: { columns: string[]; rows: unknown[][]; rowCount: number }) {
+  return <SqlResultTable columns={columns} rows={rows} maxHeight={220} />;
 }
 
 // ── Main component ────────────────────────────────────────────────────────────

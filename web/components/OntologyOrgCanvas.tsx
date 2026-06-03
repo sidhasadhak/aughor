@@ -36,6 +36,7 @@ import {
 
 const SCHEMA_GAP = 56;    // gap between schema clusters of the SAME connection (close)
 const CONN_GAP   = 128;   // gap between connection bands (far)
+const PAN_PAD    = 1200;  // pannable breathing room on every side (incl. up/left)
 const LABEL_H    = 30;    // floating label strip above each cluster
 const SHELL_W    = 320;   // placeholder size while a graph loads
 const SHELL_H    = 180;
@@ -221,6 +222,17 @@ export function OntologyOrgCanvas({
     setNatural({ w: el.offsetWidth, h: el.offsetHeight });
   }, [models, zoom]);
 
+  // Center the board on the content on first paint, leaving equal room to pan in
+  // every direction (the board used to be pinned to 0,0 — unreachable up/left).
+  const centered = useRef(false);
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el || loading || centered.current || natural.w <= 1) return;
+    centered.current = true;
+    el.scrollLeft = PAN_PAD * zoom - 40;
+    el.scrollTop  = PAN_PAD * zoom - 40;
+  }, [loading, natural.w, natural.h, zoom]);
+
   const connCount = bands.length;
   const schemaCount = models.length;
 
@@ -251,7 +263,7 @@ export function OntologyOrgCanvas({
         </div>
       ) : (
         <div ref={scrollRef} className="w-full h-full overflow-auto" style={DOTS}>
-          <div style={{ width: natural.w * zoom, height: natural.h * zoom, position: "relative", minWidth: "100%", minHeight: "100%" }}>
+          <div style={{ width: (natural.w + PAN_PAD * 2) * zoom, height: (natural.h + PAN_PAD * 2) * zoom, position: "relative", minWidth: "100%", minHeight: "100%" }}>
             <div
               ref={contentRef}
               className="inline-flex flex-col"
@@ -261,7 +273,7 @@ export function OntologyOrgCanvas({
                 paddingLeft: CONN_GAP,
                 paddingRight: CONN_GAP,
                 paddingBottom: CONN_GAP,
-                transform: `scale(${zoom})`,
+                transform: `translate(${PAN_PAD * zoom}px, ${PAN_PAD * zoom}px) scale(${zoom})`,
                 transformOrigin: "top left",
                 position: "absolute",
                 top: 0,

@@ -30,6 +30,27 @@ from aughor.routers._shared import explorers as _explorers
 router = APIRouter(tags=["investigations"])
 
 
+def _record_memory(inv_id: str, connection_id: str, question: str, state: dict) -> None:
+    """Persist this run's reflection signals (confidence/surprise/plausibility/
+    pitfalls) into the unified agent memory.  Best-effort: never breaks the stream."""
+    try:
+        from aughor.memory import record_run
+        record_run(inv_id, connection_id, question, state)
+    except Exception:
+        pass
+    # Graduated skill promotion: once a connection has EARNED L2 trust, a
+    # high-confidence, grounded, read-only run auto-crystallizes into a reusable
+    # learned skill — stored under the exact graph.schema_name the planner reads
+    # from, gated by a read-only EXPLAIN dry-run.  Below L2 it's left as a
+    # candidate for the UI to confirm.  Best-effort: never breaks the stream.
+    # (auto_crystallize opens a connection only for L2+ skill-worthy runs.)
+    try:
+        from aughor.memory.skills import auto_crystallize
+        auto_crystallize(inv_id, connection_id)
+    except Exception:
+        pass
+
+
 # ── SSE + stream helpers ──────────────────────────────────────────────────────
 
 def _sse(event_type: str, data: dict) -> str:
@@ -82,6 +103,38 @@ async def _aiter_sync(sync_iter):
         except StopIteration:
             break
         yield item
+
+
+def _stall_summary(merged: dict) -> str:
+    """Build a human-readable terminal message when an investigation ends without
+    a report.  Prefers the agent's own last verdict/finding, then falls back to a
+    digest of the SQL errors that blocked it."""
+    scores = merged.get("evidence_scores") or []
+    if scores:
+        last = scores[-1]
+        finding = getattr(last, "key_finding", None) or (last.get("key_finding") if isinstance(last, dict) else None)
+        if finding:
+            return f"Investigation ended without a conclusive report. Last assessment: {str(finding)[:400]}"
+
+    qh = merged.get("query_history") or []
+    errs: list[str] = []
+    for r in qh:
+        e = getattr(r, "error", None) if not isinstance(r, dict) else r.get("error")
+        if e and e not in errs:
+            errs.append(str(e))
+    total = len(qh)
+    failed = len(errs)
+    if errs:
+        shown = "; ".join(errs[:3])
+        return (
+            f"Investigation could not complete: {failed} of {total} "
+            f"{'query' if total == 1 else 'queries'} failed and no conclusive "
+            f"answer could be formed. Errors: {shown[:500]}"
+        )
+    return (
+        "Investigation ended without producing a report. No conclusive evidence "
+        "was gathered — try rephrasing the question or narrowing the time range."
+    )
 
 
 # ── Request models ────────────────────────────────────────────────────────────
@@ -496,6 +549,7 @@ async def _stream_investigation(
         merged = initial_state.copy()
         deadline = time.monotonic() + _TIMEOUT
         timed_out = False
+        report_emitted = False  # did the graph reach a terminal synthesis node?
 
         async for event in _aiter_sync(agent.stream(initial_state, config={"configurable": {"thread_id": inv_id}})):
             if await request.is_disconnected():
@@ -545,6 +599,8 @@ async def _stream_investigation(
                 ada_save = dict(ada) if isinstance(ada, dict) else ada
                 ada_save["_report_type"] = "investigate"
                 complete_investigation(inv_id, report=ada_save, hypotheses=merged.get("hypotheses", []), query_history=qh, question=question, connection_id=connection_id, skip_index=False)
+                _record_memory(inv_id, connection_id, question, merged)
+                report_emitted = True
             elif node_name == "decompose_exploration":
                 yield _sse("explore_plan", {"sub_questions": [sq.model_dump() for sq in merged.get("sub_questions", [])]})
             elif node_name == "plan_and_execute_subq":
@@ -575,6 +631,8 @@ async def _stream_investigation(
                     pass
                 explore_save = {"_report_type": "explore", **er.model_dump(), "sub_questions": sq_raw, "subq_answers": sa_raw}
                 complete_investigation(inv_id, report=explore_save, hypotheses=[], query_history=qh, question=question, connection_id=connection_id, skip_index=False)
+                _record_memory(inv_id, connection_id, question, merged)
+                report_emitted = True
             elif node_name == "synthesize" and merged.get("report"):
                 qh = merged.get("query_history", [])
                 yield _sse("tables_used", {"tables": _extract_tables(" ".join(r.sql for r in qh if r.sql))})
@@ -588,10 +646,20 @@ async def _stream_investigation(
                 except Exception:
                     pass
                 complete_investigation(inv_id, report=merged["report"], hypotheses=merged.get("hypotheses", []), query_history=qh, question=question, connection_id=connection_id, skip_index=merged.get("query_mode") == "direct")
+                _record_memory(inv_id, connection_id, question, merged)
+                report_emitted = True
 
         if timed_out:
             yield _sse("error", {"message": f"Investigation timed out after {_TIMEOUT}s."})
             fail_investigation(inv_id, status="timed_out")
+        elif not report_emitted:
+            # The graph terminated without reaching a synthesis node — e.g. every
+            # query errored and the loop exhausted its iterations.  Without this
+            # branch the stream would just close on `done`, so the agent appears to
+            # "stop thinking" with no error and no summary.  Surface a terminal
+            # message assembled from what actually happened.
+            yield _sse("error", {"message": _stall_summary(merged)})
+            fail_investigation(inv_id, status="failed")
 
     except Exception as e:
         fail_investigation(inv_id, status="failed")
@@ -651,6 +719,7 @@ async def _stream_resume(inv_id: str, feedback: str, request: Request) -> AsyncG
                 qh = merged.get("query_history", [])
                 yield _sse("report", {"report": merged["report"].model_dump(), "hypotheses": [h.model_dump() for h in merged.get("hypotheses", [])], "query_count": len(qh), "query_history": [{"hypothesis_id": r.hypothesis_id, "sql": r.sql, "row_count": r.row_count, "error": r.error, "columns": r.columns, "rows": r.rows[:50], "stats": [s.model_dump() for s in (r.stats or [])]} for r in qh], "investigation_id": inv_id})
                 complete_investigation(inv_id, report=merged["report"], hypotheses=merged.get("hypotheses", []), query_history=qh, question=inv["question"], connection_id=inv.get("connection_id", ""))
+                _record_memory(inv_id, inv.get("connection_id", ""), inv["question"], merged)
     except Exception as e:
         fail_investigation(inv_id, status="failed")
         yield _sse("error", {"message": str(e)})

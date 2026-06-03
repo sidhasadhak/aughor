@@ -260,6 +260,49 @@ function SqlCell({ digest, full }: { digest: string; full: string }) {
   );
 }
 
+// ── Error expander cell ───────────────────────────────────────────────────────
+
+function ErrorCell({ error }: { error: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          background: "none",
+          border: "none",
+          color: "var(--r2, #f87171)",
+          cursor: "pointer",
+          fontSize: 11,
+          textAlign: "left",
+          padding: 0,
+          lineHeight: 1.35,
+        }}
+        title={open ? "Click to collapse" : "Click to see full error"}
+      >
+        {open ? error : (error.length > 48 ? error.slice(0, 48) + "…" : error)}
+      </button>
+      {open && (
+        <pre style={{
+          marginTop: 6,
+          background: "var(--bg-0)",
+          border: "1px solid var(--bg-3)",
+          borderRadius: 4,
+          padding: "8px 10px",
+          fontSize: 11,
+          color: "var(--r2, #f87171)",
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
+          maxHeight: 220,
+          overflow: "auto",
+        }}>
+          {error}
+        </pre>
+      )}
+    </div>
+  );
+}
+
 // ── Main panel ────────────────────────────────────────────────────────────────
 
 const VERDICT_FILTERS = ["all", "safe", "suspicious", "blocked"] as const;
@@ -609,12 +652,8 @@ export function SecurityAuditPanel({
                     <td style={{ padding: "8px 12px", color: rec.pii_redacted > 0 ? "var(--amb3, #f59e0b)" : "var(--t3)", textAlign: "center" }}>
                       {rec.pii_redacted > 0 ? rec.pii_redacted : "—"}
                     </td>
-                    <td style={{ padding: "8px 12px", color: "var(--r2, #f87171)", maxWidth: 180 }}>
-                      {rec.error ? (
-                        <span title={rec.error} style={{ cursor: "help" }}>
-                          {rec.error.slice(0, 40)}{rec.error.length > 40 ? "…" : ""}
-                        </span>
-                      ) : "—"}
+                    <td style={{ padding: "8px 12px", color: "var(--r2, #f87171)", maxWidth: 260 }}>
+                      {rec.error ? <ErrorCell error={rec.error} /> : "—"}
                     </td>
                   </tr>
                 ))}

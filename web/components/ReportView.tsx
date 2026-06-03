@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Badge } from "@/components/ui/badge";
+import { SqlResultTable } from "@/components/AugTable";
 import { Separator } from "@/components/ui/separator";
 import {
   Table,
@@ -102,45 +103,7 @@ function StatCallout({ stat }: { stat: StatResult }) {
 // ── Query result mini-table ───────────────────────────────────────────────────
 
 function QueryMiniTable({ columns, rows }: { columns: string[]; rows: unknown[][] }) {
-  const MAX_ROWS = 15;
-  const visible = rows.slice(0, MAX_ROWS);
-  const fmt = buildColumnFormatter(columns, rows);
-  return (
-    <div className="rounded border border-violet-500/20 overflow-hidden">
-      <div className="overflow-x-auto overflow-y-auto max-h-[280px]">
-        <table className="w-full text-xs">
-          <thead className="sticky top-0 bg-zinc-800 border-b border-violet-500/20">
-            <tr>
-              {columns.map(col => (
-                <th key={col} className="px-3 py-1.5 text-left text-[11px] text-violet-300/70 uppercase tracking-wide font-mono whitespace-nowrap">
-                  {col.replace(/_/g, " ")}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-zinc-600/40">
-            {visible.map((row, ri) => (
-              <tr key={ri} className="hover:bg-zinc-700/70/20 transition">
-                {(row as unknown[]).map((cell, ci) => (
-                  <td key={ci} className="px-3 py-1.5 text-zinc-300 font-mono whitespace-nowrap">
-                    {cell === null || cell === undefined
-                      ? <span className="text-zinc-500 italic">null</span>
-                      : fmt(ci, cell)
-                    }
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {rows.length > MAX_ROWS && (
-        <div className="px-3 py-1.5 border-t border-zinc-600/60 text-[11px] text-zinc-500 font-mono">
-          +{rows.length - MAX_ROWS} more rows
-        </div>
-      )}
-    </div>
-  );
+  return <SqlResultTable columns={columns} rows={rows} maxHeight={280} />;
 }
 
 // ── Single query evidence block ───────────────────────────────────────────────

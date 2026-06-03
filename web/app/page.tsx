@@ -251,7 +251,7 @@ function WorkspaceSwitcher({
 
       {open && (
         <div style={{
-          position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 100,
+          position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 100,
           minWidth: 260, background: "var(--bg-1)", border: "1px solid var(--b2)",
           borderRadius: "var(--r3)", boxShadow: "var(--shadow-lg, 0 8px 28px rgba(0,0,0,.4))",
           padding: 6,
@@ -355,17 +355,6 @@ function Topbar({
   onWorkspaceChange: (id: string) => void;
   onCreateWorkspace: (name: string) => Promise<void>;
 }) {
-  const [freshness, setFreshness] = useState<string | null>(null);
-  const conn = connections.find(c => c.id === selectedConn);
-
-  useEffect(() => {
-    if (!selectedConn) return;
-    setFreshness(null);
-    getConnectionFreshness(selectedConn)
-      .then(r => setFreshness(freshnessLabel(r.freshness)))
-      .catch(() => {});
-  }, [selectedConn]);
-
   return (
     <div className="aug-topbar">
       {/* Logo — same width as sidebar */}
@@ -380,15 +369,6 @@ function Topbar({
           </div>
         </div>
       </div>
-
-      {/* Workspace switcher — the top-level scope (Databricks-style) */}
-      <WorkspaceSwitcher
-        workspaces={workspaces}
-        selectedWorkspace={selectedWorkspace}
-        connCount={connections.length}
-        onWorkspaceChange={onWorkspaceChange}
-        onCreateWorkspace={onCreateWorkspace}
-      />
 
       {/* Search */}
       <button
@@ -411,20 +391,15 @@ function Topbar({
         </span>
       </button>
 
-      {/* Right: connection pill + avatar */}
-      <div style={{ width: 224, display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8, flexShrink: 0 }}>
-        {conn && (
-          <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 10px", background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r2)" }}>
-            <span className="aug-dot aug-dot-grn aug-anim-blink" />
-            <span style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--t2)" }}>{conn.name}</span>
-            <span style={{ fontSize: 9, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".06em" }}>
-              {conn.conn_type === "duckdb" ? "DuckDB" : "PG"}
-            </span>
-            {freshness && (
-              <span style={{ fontSize: 9, color: "var(--t4)" }}>{freshness}</span>
-            )}
-          </div>
-        )}
+      {/* Right: workspace switcher (top-level scope) + settings + avatar */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8, flexShrink: 0, minWidth: 224 }}>
+        <WorkspaceSwitcher
+          workspaces={workspaces}
+          selectedWorkspace={selectedWorkspace}
+          connCount={connections.length}
+          onWorkspaceChange={onWorkspaceChange}
+          onCreateWorkspace={onCreateWorkspace}
+        />
         <button
           onClick={() => onNavigate("settings")}
           title="Settings"
@@ -458,24 +433,23 @@ const NAV_PRIMARY = [
   { id: "home",         icon: "home",   label: "Home" },
   { id: "inbox",        icon: "inbox",  label: "Inbox" },
   { id: "canvases",     icon: "canvas", label: "Canvases" },
-  { id: "intelligence", icon: "brief",  label: "Briefing" },
-  { id: "catalog",      icon: "db",     label: "Catalog" },
 ] as const;
 
 const NAV_SECTIONS = [
   {
     label: "Intelligence", // what Aughor knows about your data
     items: [
-      { id: "health",    icon: "activity", label: "Health" },
-      { id: "playbook",  icon: "playbook", label: "Playbook" },
+      { id: "intelligence", icon: "brief",    label: "Briefing" },
+      { id: "health",       icon: "activity", label: "Health" },
+      { id: "playbook",     icon: "playbook", label: "Playbook" },
     ],
   },
   {
     label: "Data", // explore and query data directly
     items: [
+      { id: "catalog",  icon: "db",      label: "Catalog" },
       { id: "builder",  icon: "builder", label: "Query Builder" },
       { id: "semantic", icon: "layers",  label: "Semantic Layer" },
-      { id: "metrics",  icon: "metric",  label: "Metrics" },
     ],
   },
   {
@@ -699,10 +673,6 @@ function HomeScreen({
   const [exploration, setExploration] = useState<ExplorationStatus | null>(null);
   const [ontology, setOntology] = useState<OntologyGraph | null>(null);
   const [domainInsightCount, setDomainInsightCount] = useState<number | null>(null);
-  const [q, setQ] = useState("");
-  const [mode, setMode] = useState<AskMode>("investigate");
-  const inputRef = useRef<HTMLInputElement>(null);
-  const conn = connections.find(c => c.id === selectedConn);
 
   useEffect(() => {
     fetch(`${API_BASE}/investigations`)
@@ -721,106 +691,24 @@ function HomeScreen({
   const entities = ontology ? Object.keys(ontology.entities).length : "—";
   const queries  = exploration?.queries_executed ?? "—";
 
-  const starters = [
-    "Why did revenue drop 8% last month?",
-    "Which customers have the highest payment failure rate?",
-    "What is our MRR this month?",
-    "Show top 10 products by revenue",
-    "Is APAC churn a trend or one-time event?",
-  ];
-
-  const handleSubmit = () => {
-    const question = q.trim();
-    if (!question) return;
-    onGoToChat(question, mode);
-    setQ("");
-  };
-
   return (
     <div className="aug-screen">
       <div className="aug-content-header">
         <NavIcon name="home" size={14} color="var(--t3)" />
         <span style={{ fontSize: 13, fontWeight: 500 }}>Home</span>
-        {conn && (
-          <div style={{ marginLeft: 8, display: "inline-flex", alignItems: "center", gap: 5, padding: "2px 8px", borderRadius: "var(--r2)", background: "var(--bg-2)", border: "1px solid var(--b1)" }}>
-            <span className="aug-dot aug-dot-grn aug-anim-blink" />
-            <span style={{ fontSize: 11, color: "var(--t2)", fontFamily: "var(--font-mono)" }}>{conn.name}</span>
-          </div>
-        )}
       </div>
 
       <div style={{ flex: 1, overflowY: "auto", padding: "24px 28px", display: "flex", flexDirection: "column", gap: 24 }}>
 
-        {/* Investigation input */}
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <div style={{
-            flex: 1, display: "flex", alignItems: "center", gap: 0,
-            background: "var(--bg-2)", border: "1px solid var(--b2)",
-            borderRadius: "var(--r3)", overflow: "hidden", boxShadow: "var(--shadow-sm)",
-            transition: "border-color .12s",
-          }}
-            onFocusCapture={e => (e.currentTarget.style.borderColor = "var(--bfocus)")}
-            onBlurCapture={e => (e.currentTarget.style.borderColor = "var(--b2)")}
-          >
-            <span style={{ flexShrink: 0, marginLeft: 12, display: "flex" }}><NavIcon name="spark" size={13} color="var(--t4)" /></span>
-            <input
-              ref={inputRef}
-              value={q}
-              onChange={e => setQ(e.target.value)}
-              onKeyDown={e => { if (e.key === "Enter") handleSubmit(); }}
-              placeholder="What do you want to investigate?"
-              style={{
-                flex: 1, padding: "10px 12px", background: "transparent",
-                border: "none", outline: "none", fontSize: 13,
-                color: "var(--t1)", fontFamily: "var(--font-ui)",
-              }}
-            />
-            {/* Mode toggle */}
-            <div style={{ display: "flex", background: "var(--bg-1)", borderLeft: "1px solid var(--b1)", padding: "4px", gap: 2, flexShrink: 0 }}>
-              {([["ask", "Quick"], ["investigate", "Agentic"]] as [AskMode, string][]).map(([m, label]) => (
-                <button key={m} onClick={() => setMode(m)} style={{
-                  padding: "3px 9px", borderRadius: "calc(var(--r2) - 2px)", fontSize: 11, fontWeight: 500, cursor: "pointer",
-                  background: mode === m ? "var(--blue3)" : "transparent",
-                  color: mode === m ? "#fff" : "var(--t3)",
-                  border: "none", transition: "all .12s",
-                }}>{label}</button>
-              ))}
-            </div>
-            <button
-              onClick={handleSubmit}
-              disabled={!q.trim()}
-              style={{
-                padding: "0 16px", height: "100%", background: q.trim() ? "var(--blue3)" : "var(--bg-3)",
-                border: "none", borderLeft: "1px solid var(--b1)", cursor: q.trim() ? "pointer" : "default",
-                color: q.trim() ? "#fff" : "var(--t4)", fontSize: 12, fontWeight: 600,
-                transition: "all .12s", flexShrink: 0,
-              }}
-            >
-              {mode === "investigate" ? "Investigate" : "Ask"}
-            </button>
-          </div>
-        </div>
-
-        {/* Stats */}
-        <div style={{ display: "flex", gap: 10 }}>
-          <StatCard value={tables}   label="Tables in schema"    accent="var(--blue3)"  sub={exploration ? `↑ ${exploration.tables_total} total` : undefined} onClick={() => onNavigate("catalog")} />
-          <StatCard value={entities} label="Entities mapped"     accent="var(--vio3)"   sub="ontology layer"     onClick={() => onNavigate("ontology")} />
-          <StatCard value={insights} label="Insights discovered" accent="var(--grn3)"   sub="domain intel"       onClick={() => onNavigate("intel")} />
-          <StatCard value={queries}  label="Queries executed"    accent="var(--amb3)"   sub="last 7 days"        onClick={() => onNavigate("activity")} />
-        </div>
-
-        {/* Health scorecard — surfaced above the fold */}
-        <ProcessHealthPanel connectionId={selectedConn} onInvestigate={q => onGoToChat(q, "investigate")} />
-
-        {/* Quick actions */}
+        {/* Get Started — primary launcher (top of page) */}
         <div>
           <div className="aug-label" style={{ marginBottom: 12 }}>Get Started</div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
             {[
-              { icon: "chat",    name: "Investigate", desc: "Ask a question and get an evidence-backed root-cause analysis.", accent: "var(--vio3)", action: () => onGoToChat() },
-              { icon: "catalog", name: "Schema",      desc: "Browse tables, columns, row counts, and schema intelligence.",   accent: "var(--cyn3)", action: () => onNavigate("catalog") },
-              { icon: "node",    name: "Ontology",    desc: "Explore the auto-built entity graph and lifecycle states.",      accent: "var(--grn3)", action: () => onNavigate("ontology") },
-              { icon: "process", name: "Domain Intel",desc: "Per-domain insights with query budgets and coverage angles.",    accent: "var(--amb3)", action: () => onNavigate("intel") },
+              { icon: "canvas",  name: "Canvases",      desc: "Curated schema + table spaces to explore and investigate.",      accent: "var(--vio3)", action: () => onNavigate("canvases") },
+              { icon: "db",      name: "Catalog",       desc: "Browse connections, tables, columns, and data distributions.",   accent: "var(--cyn3)", action: () => onNavigate("catalog") },
+              { icon: "brief",   name: "Briefing",      desc: "Your unified intelligence digest across the workspace.",          accent: "var(--grn3)", action: () => onNavigate("intelligence") },
+              { icon: "builder", name: "Query Builder", desc: "Compose and run SQL against any connection, with results.",       accent: "var(--amb3)", action: () => onNavigate("builder") },
             ].map(a => (
               <button key={a.name} onClick={a.action} style={{
                 textAlign: "left", padding: "14px 14px",
@@ -839,6 +727,17 @@ function HomeScreen({
             ))}
           </div>
         </div>
+
+        {/* Stats */}
+        <div style={{ display: "flex", gap: 10 }}>
+          <StatCard value={tables}   label="Tables in schema"    accent="var(--blue3)"  sub={exploration ? `↑ ${exploration.tables_total} total` : undefined} onClick={() => onNavigate("catalog")} />
+          <StatCard value={entities} label="Entities mapped"     accent="var(--vio3)"   sub="ontology layer"     onClick={() => onNavigate("ontology")} />
+          <StatCard value={insights} label="Insights discovered" accent="var(--grn3)"   sub="domain intel"       onClick={() => onNavigate("intel")} />
+          <StatCard value={queries}  label="Queries executed"    accent="var(--amb3)"   sub="last 7 days"        onClick={() => onNavigate("activity")} />
+        </div>
+
+        {/* Health scorecard — surfaced above the fold */}
+        <ProcessHealthPanel connectionId={selectedConn} onInvestigate={q => onGoToChat(q, "investigate")} />
 
         {/* Recent activity */}
         <div>
@@ -880,27 +779,6 @@ function HomeScreen({
               </table>
             </div>
           )}
-        </div>
-
-        {/* Try asking */}
-        <div>
-          <div className="aug-label" style={{ marginBottom: 12 }}>Try asking</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-            {starters.map(qs => (
-              <button key={qs} onClick={() => onGoToChat(qs)} style={{
-                textAlign: "left", display: "flex", alignItems: "center", gap: 10,
-                padding: "10px 14px", borderRadius: "var(--r2)",
-                background: "var(--bg-2)", border: "1px solid var(--b1)",
-                transition: "all .1s", cursor: "pointer",
-              }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--b2)"; e.currentTarget.style.background = "var(--bg-3)"; }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--b1)"; e.currentTarget.style.background = "var(--bg-2)"; }}
-              >
-                <NavIcon name="spark" size={11} color="var(--t4)" />
-                <span style={{ fontSize: 12, color: "var(--t3)" }}>{qs}</span>
-              </button>
-            ))}
-          </div>
         </div>
 
       </div>
@@ -1947,7 +1825,11 @@ export default function Home() {
             {/* ── SEMANTIC LAYER ── */}
             {tab === "semantic" && (
               <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-                <SemanticLayerPanel connectionId={selectedConn ?? ""} />
+                <SemanticLayerPanel
+                  connectionId={selectedConn ?? ""}
+                  connName={connections.find(c => c.id === selectedConn)?.name}
+                  connections={connections.map(c => ({ id: c.id, name: c.name }))}
+                />
               </div>
             )}
 

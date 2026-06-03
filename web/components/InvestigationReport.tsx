@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { InvestigationChart } from "@/components/InvestigationChart";
+import { SqlResultTable } from "@/components/AugTable";
 import ChevronDownIcon  from "@atlaskit/icon/core/chevron-down";
 import ChevronRightIcon from "@atlaskit/icon/core/chevron-right";
 import RetryIcon        from "@atlaskit/icon/core/retry";
@@ -131,34 +132,8 @@ function DataTable({ columns, rows, label }: { columns: string[]; rows: (string 
         {label} · {rows.length} rows
       </button>
       {open && (
-        <div className="mt-1.5 overflow-x-auto rounded-md border border-zinc-800" style={{ background: "var(--bg-0)" }}>
-          <table className="w-full text-[11px]">
-            <thead>
-              <tr className="border-b border-zinc-800">
-                {columns.map((col, i) => (
-                  <th key={i} className="text-left py-1.5 px-3 text-zinc-500 font-medium whitespace-nowrap">{col}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.slice(0, 20).map((row, ri) => (
-                <tr key={ri} className="border-b border-zinc-900/50 hover:bg-white/[0.02]">
-                  {row.map((cell, ci) => {
-                    const str = cell === null ? "—" : String(cell);
-                    const n = parseFloat(str);
-                    const isNeg = !isNaN(n) && n < 0;
-                    const isPos = !isNaN(n) && n > 0 && ci > 0;
-                    return (
-                      <td key={ci} className={`py-1.5 px-3 font-mono whitespace-nowrap ${isNeg ? "text-red-400" : isPos ? "text-emerald-400" : "text-zinc-300"}`}>
-                        {str}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {rows.length > 20 && <p className="text-[11px] text-zinc-600 px-3 py-1.5">…{rows.length - 20} more rows</p>}
+        <div className="mt-1.5">
+          <SqlResultTable columns={columns} rows={rows as unknown[][]} maxHeight={280} />
         </div>
       )}
     </div>

@@ -207,6 +207,17 @@ class OntologyAction(BaseModel):
     returns: str                               # description of what the SQL returns
     source_table: str                          # primary table this queries
 
+    # Provenance — how this action came to exist.  Additive, non-breaking:
+    #   structural — derived by the ontology builder from schema shape (default)
+    #   learned    — crystallized from a repeated high-confidence investigation
+    #   manual     — authored/edited by a user
+    # Learned actions live in a separate {conn}:{schema}-keyed store
+    # (data/learned_actions.json) that survives ontology rebuilds, and are
+    # overlaid into the graph at read time.
+    origin: Literal["structural", "learned", "manual"] = "structural"
+    # How many times a learned skill has been reused — feeds per-skill autonomy.
+    usage_count: int = 0
+
 
 class OntologyGraph(BaseModel):
     connection_id: str

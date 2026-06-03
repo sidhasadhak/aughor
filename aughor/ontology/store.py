@@ -254,7 +254,7 @@ def get_or_build_ontology(
 
         cached = load_ontology(connection_id, schema_name, fingerprint)
         if cached is not None:
-            return cached
+            return _overlay_learned_actions(cached, connection_id, schema_name)
 
         graph = extract_structural_ontology(
             connection_id=connection_id,
@@ -265,8 +265,31 @@ def get_or_build_ontology(
             join_map=join_map,
             glossary=glossary,
         )
+        # Persist ONLY the structural graph to the fingerprint cache — learned
+        # skills must never be baked in (they'd be wiped on rebuild and would
+        # pollute the structural fingerprint).  Overlay happens after save.
         save_ontology(connection_id, schema_name, fingerprint, graph)
-        return graph
+        return _overlay_learned_actions(graph, connection_id, schema_name)
 
     except Exception:
         return None
+
+
+def _overlay_learned_actions(graph, connection_id: str, schema_name: str):
+    """Merge learned skills (procedural memory) into the returned graph.
+
+    This is the SINGLE seam where crystallized skills re-enter the live ontology
+    for BOTH consumers: the agent's planner (conn.get_ontology() →
+    build_actions_prompt_section) and the HTTP ontology views.  Learned actions
+    live in their own {conn}:{schema}-keyed store so they survive rebuilds;
+    structural actions win on id collision (never silently shadowed).
+    """
+    if graph is None:
+        return graph
+    try:
+        from aughor.memory.skills import load_learned_actions
+        for aid, action in load_learned_actions(connection_id, schema_name).items():
+            graph.actions.setdefault(aid, action)
+    except Exception:
+        pass
+    return graph

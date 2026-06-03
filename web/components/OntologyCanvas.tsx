@@ -8,7 +8,7 @@
  * detail drawer; hover to highlight the local neighbourhood.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useWheelZoom } from "@/lib/useWheelZoom";
 import type {
@@ -215,11 +215,72 @@ function computeLayout(graph: OntologyGraph, opts: { compact?: boolean; radial?:
 
   const colLabels = cols.map((c, i) => ({ x: colX[c], label: colLabel(c, i) }));
 
+  // ── Crossing reduction (barycenter / median heuristic) ─────────────────────
+  // Columns are fixed by topological depth; WITHIN each column we order nodes to
+  // minimise edge crossings rather than alphabetically.  Each node drifts toward
+  // the average height of its neighbours, so edges run flat instead of tangling
+  // across the whole cluster.  A handful of sweeps converge — this is the classic
+  // Sugiyama layer-ordering step (what graphviz/dagre do).
+  const undirAdj: Record<string, string[]> = {};
+  for (const e of entities) undirAdj[e.id] = [];
+  for (const r of rels) {
+    if (r.from_entity in undirAdj && r.to_entity in undirAdj && r.from_entity !== r.to_entity) {
+      undirAdj[r.from_entity].push(r.to_entity);
+      undirAdj[r.to_entity].push(r.from_entity);
+    }
+  }
+  const degree: Record<string, number> = {};
+  for (const e of entities) degree[e.id] = undirAdj[e.id].length;
+
+  // order[col] = entity ids, top→bottom.  Seed high-degree first (a stable start
+  // that floats the busiest hubs toward the centre after centering).
+  const order: Record<number, string[]> = {};
+  for (const c of cols) {
+    order[c] = byCol[c].map(e => e.id).sort(
+      (a, b) =>
+        (degree[b] - degree[a]) ||
+        graph.entities[a].display_name.localeCompare(graph.entities[b].display_name),
+    );
+  }
+
+  for (let sweep = 0; sweep < 6; sweep++) {
+    // normalised vertical position (0..1) of every node under the current order
+    const pos: Record<string, number> = {};
+    for (const c of cols) {
+      const L = Math.max(1, order[c].length);
+      order[c].forEach((id, i) => { pos[id] = (i + 0.5) / L; });
+    }
+    const prevIdx: Record<string, number> = {};
+    for (const c of cols) order[c].forEach((id, i) => { prevIdx[id] = i; });
+    for (const c of cols) {
+      const bary: Record<string, number> = {};
+      for (const id of order[c]) {
+        const ns = undirAdj[id];
+        bary[id] = ns.length
+          ? ns.reduce((s, n) => s + (pos[n] ?? 0.5), 0) / ns.length
+          : (prevIdx[id] + 0.5) / Math.max(1, order[c].length); // keep isolated nodes put
+      }
+      order[c] = [...order[c]].sort((a, b) => (bary[a] - bary[b]) || (prevIdx[a] - prevIdx[b]));
+    }
+  }
+
+  // ── Vertical centering — align columns around a shared midline so related
+  // nodes sit at similar heights (flatter edges, far fewer crossings).
+  const colContentH: Record<number, number> = {};
+  for (const c of cols) {
+    let h = 0;
+    for (const id of order[c]) h += nodeHeight(graph.entities[id], compact) + GAPY;
+    colContentH[c] = Math.max(0, h - GAPY);
+  }
+  const tallest = cols.length ? Math.max(...cols.map(c => colContentH[c])) : 0;
+  const topPad = PAD + 28;   // room for the column header
+
   // Place nodes
   const nodes: NodeLayout[] = [];
   for (const col of cols) {
-    let y = PAD + 28;   // leave room for column header
-    for (const e of byCol[col]) {
+    let y = topPad + (tallest - colContentH[col]) / 2;
+    for (const id of order[col]) {
+      const e = graph.entities[id];
       const h = nodeHeight(e, compact);
       nodes.push({ entity: e, x: colX[col], y, h, col });
       y += h + GAPY;
@@ -230,14 +291,7 @@ function computeLayout(graph: OntologyGraph, opts: { compact?: boolean; radial?:
     ? colX[cols[cols.length - 1]] + NW + PAD
     : PAD * 2 + NW;
 
-  const canvasH = Math.max(
-    compact ? 160 : 480,
-    ...cols.map(c => {
-      let h = PAD + 28;
-      for (const e of (byCol[c] ?? [])) h += nodeHeight(e, compact) + GAPY;
-      return h + PAD - GAPY;
-    }),
-  );
+  const canvasH = Math.max(compact ? 160 : 480, topPad + tallest + PAD);
 
   return { nodes, canvasW, canvasH, colLabels };
 }
@@ -500,6 +554,9 @@ function FlowEdges({
   hoveredEdgeId,
   onHoverEdge,
   onClickEdge,
+  showLabels = true,
+  compact = false,
+  hasFocus = false,
 }: {
   edges: EdgeData[];
   dimmedEdges: Set<string>;
@@ -508,6 +565,11 @@ function FlowEdges({
   hoveredEdgeId: string | null;
   onHoverEdge: (id: string | null) => void;
   onClickEdge?: (rel: OntologyRelationship) => void;
+  showLabels?: boolean;
+  /** Compact (org overview) — edges rest as calm static threads, lighting up on focus. */
+  compact?: boolean;
+  /** True when some entity is hovered/selected (so non-related edges should recede). */
+  hasFocus?: boolean;
 }) {
   return (
     <svg
@@ -533,6 +595,11 @@ function FlowEdges({
         const verified = rel.join_confidence === "verified";
         const isDimmed = dimmedEdges.has(rel.id);
         const isHovered = hoveredEdgeId === rel.id;
+        // "Active" = directly tied to the focused entity (so it should pop).
+        const isActive = hasFocus && !isDimmed;
+        // In compact overview, edges stay calm + static unless involved with focus.
+        const lit = isHovered || isActive;
+        const animate = !compact || lit;
 
         const goRight = x2 >= x1;
         const dx = Math.max(80, Math.abs(x2 - x1) * 0.46);
@@ -548,7 +615,11 @@ function FlowEdges({
         const hoverColor  = "#a78bfa";
         const stroke      = isHovered ? hoverColor : baseColor;
         const markerEnd   = isHovered ? "url(#arr-hi)" : verified ? "url(#arr-ver)" : "url(#arr-inf)";
-        const opacity     = isDimmed ? 0.08 : isHovered ? 1 : 0.65;
+        const opacity     = isDimmed
+          ? (compact ? 0.05 : 0.08)
+          : lit
+            ? 1
+            : compact ? 0.32 : 0.65;
 
         return (
           <g
@@ -573,18 +644,20 @@ function FlowEdges({
               />
             )}
 
-            {/* Base line (solid for verified, barely-there for inferred) */}
+            {/* Base line — in calm compact resting state this is the *only* line
+                drawn (static thread), so give it enough presence to read. */}
             <path
               d={d}
               fill="none"
               stroke={stroke}
               strokeWidth={verified ? 1.5 : 1}
-              opacity={verified ? 0.4 : 0.25}
+              opacity={compact && !lit ? 0.9 : verified ? 0.4 : 0.25}
               markerEnd={markerEnd}
             />
 
-            {/* Animated flow overlay */}
-            {verified ? (
+            {/* Animated flow overlay — suppressed in compact resting state to keep
+                the org overview from shimmering as a hairball. */}
+            {animate && (verified ? (
               /* Verified — tiny dot shimmer on a solid line */
               <path
                 d={d}
@@ -608,10 +681,11 @@ function FlowEdges({
                   animation: `edge-flow ${rel.join_confidence === "exact" ? "1.6s" : "1.2s"} linear infinite`,
                 }}
               />
-            )}
+            ))}
 
-            {/* Verb label — always visible (primary edge label) */}
-            {(() => {
+            {/* Verb label — shown in expanded view (or on hover in compact, to
+                keep the multi-schema org overview from drowning in pills) */}
+            {(showLabels || isHovered || isActive) && (() => {
               const verbText = rel.verb.toLowerCase().replace(/_/g, " ");
               const verbW = Math.max(40, verbText.length * 5.4 + 16);
               return (
@@ -837,14 +911,33 @@ export function measureCluster(graph: OntologyGraph, opts: { compact?: boolean }
 // Keyed per-cluster (connection+schema) so a node nudged on the board stays put
 // across reloads.  Stored as { entityId: {dx,dy} } deltas off the computed layout.
 type Offsets = Record<string, { dx: number; dy: number }>;
+
+// Drag offsets are DELTAS off the computed layout.  When the layout engine itself
+// changes (e.g. alphabetical → barycenter), old deltas point at the wrong base and
+// scramble the graph — so we version-stamp them and drop any from an older engine.
+const LAYOUT_VERSION = 2;
+const posStoreKey = (key: string) => `ont-pos:${key}`;
+
 function loadOffsets(key?: string): Offsets {
   if (!key || typeof window === "undefined") return {};
-  try { return JSON.parse(window.localStorage.getItem(`ont-pos:${key}`) || "{}"); }
-  catch { return {}; }
+  try {
+    const raw = window.localStorage.getItem(posStoreKey(key));
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    // Current format: { v, o }.  Anything else (or an older version) is stale.
+    if (parsed && typeof parsed === "object" && "v" in parsed) {
+      return parsed.v === LAYOUT_VERSION ? (parsed.o ?? {}) : {};
+    }
+    return {};   // legacy bare-map format predates the barycenter layout — discard
+  } catch { return {}; }
 }
 function saveOffsets(key: string | undefined, o: Offsets) {
   if (!key || typeof window === "undefined") return;
-  try { window.localStorage.setItem(`ont-pos:${key}`, JSON.stringify(o)); } catch {}
+  try { window.localStorage.setItem(posStoreKey(key), JSON.stringify({ v: LAYOUT_VERSION, o })); } catch {}
+}
+function clearOffsets(key?: string) {
+  if (!key || typeof window === "undefined") return;
+  try { window.localStorage.removeItem(posStoreKey(key)); } catch {}
 }
 
 export function EntityCluster({
@@ -967,6 +1060,9 @@ export function EntityCluster({
         hoveredEdgeId={hoveredEdgeId}
         onHoverEdge={setHoveredEdgeId}
         onClickEdge={onClickEdge}
+        showLabels={!compact}
+        compact={compact}
+        hasFocus={focusId !== null}
       />
 
       {showCausal && (
@@ -1007,8 +1103,12 @@ export function EntityCluster({
 
 // ── Main export ───────────────────────────────────────────────────────────────
 
-const INITIAL_ZOOM   = 1.0;
-const CANVAS_OVERFLOW = 600;   // extra dotted space beyond content on each side
+const INITIAL_ZOOM = 1.0;
+// Breathing room on EVERY side of the content so the plane can be panned up/left
+// as well as down/right (the content used to be pinned to 0,0 — unreachable above
+// or left of origin).  Translating the content inward by PAN_PAD makes negative-
+// looking space scrollable.
+const PAN_PAD = 1200;
 
 export function OntologyCanvas({
   graph,
@@ -1028,6 +1128,8 @@ export function OntologyCanvas({
   const [zoom,        setZoom]        = useState(INITIAL_ZOOM);
   const [causalEdges, setCausalEdges] = useState<CausalEdge[]>([]);
   const [showCausal,  setShowCausal]  = useState(true);
+  // Bumping this remounts the cluster with fresh (computed) positions.
+  const [layoutNonce, setLayoutNonce] = useState(0);
 
   // Scroll viewport — trackpad pinch + ⌘/Ctrl-wheel zoom-to-cursor.
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -1039,10 +1141,31 @@ export function OntologyCanvas({
   }, [connId]);
 
   const { w: rawW, h: rawH } = useMemo(() => measureCluster(graph), [graph]);
-  // Extend canvas with overflow so the dotted background continues well past content
-  // (gives plenty of room when zooming out or panning)
-  const canvasW = rawW + CANVAS_OVERFLOW;
-  const canvasH = rawH + CANVAS_OVERFLOW;
+  // The pannable plane wraps the content with PAN_PAD on every side.
+  const planeW = rawW + PAN_PAD * 2;
+  const planeH = rawH + PAN_PAD * 2;
+
+  // Center the view on the content on first paint (and when the graph changes),
+  // leaving equal room to pan in every direction.
+  const centeredKey = useRef<string>("");
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el || rawW === 0) return;
+    const key = `${connId ?? ""}:${graph.schema_name ?? ""}:${rawW}x${rawH}`;
+    if (centeredKey.current === key) return;
+    centeredKey.current = key;
+    // Put the content's top-left a little inside the viewport.
+    el.scrollLeft = PAN_PAD * zoom - 40;
+    el.scrollTop  = PAN_PAD * zoom - 40;
+  }, [connId, graph.schema_name, rawW, rawH, zoom]);
+
+  // "Tidy" — discard saved drag positions for this cluster and re-run the
+  // auto-layout (then re-center).  Lets you snap back to the clean arrangement.
+  const tidyLayout = () => {
+    clearOffsets(connId ? `${connId}:${graph.schema_name}` : undefined);
+    centeredKey.current = "";
+    setLayoutNonce(n => n + 1);
+  };
 
   return (
     <div className="w-full h-full relative" style={{ background: "#11171D" }}>
@@ -1069,6 +1192,21 @@ export function OntologyCanvas({
 
         <div className="w-px h-3 bg-zinc-700 mx-0.5" />
 
+        {/* Tidy — reset dragged positions back to the computed auto-layout */}
+        <button
+          onClick={tidyLayout}
+          title="Tidy — reset to auto-layout"
+          className="flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md border text-zinc-400 border-zinc-700/50 hover:text-violet-300 hover:border-violet-500/30 transition"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" className="shrink-0">
+            <path d="M3 12a9 9 0 1 0 3-6.7L3 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M3 3v5h5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          tidy
+        </button>
+
+        <div className="w-px h-3 bg-zinc-700 mx-0.5" />
+
         <button
           onClick={() => setZoom(z => Math.max(0.2, +((z - 0.1).toFixed(2))))}
           className="w-5 h-5 flex items-center justify-center text-zinc-400 hover:text-zinc-200 text-base font-mono transition"
@@ -1089,24 +1227,35 @@ export function OntologyCanvas({
 
       {/* Scrollable canvas area */}
       <div ref={scrollRef} className="w-full h-full overflow-auto">
-        {/* Spacer sized to scaled canvas dimensions — determines scroll range */}
-        <div style={{ width: canvasW * zoom, height: canvasH * zoom, position: "relative", minWidth: "100%" }}>
-          {/* Actual canvas, scaled from top-left */}
+        {/* Spacer sized to the scaled, padded plane — determines scroll range on
+            every side (incl. above & left of the content). */}
+        <div
+          style={{
+            width: planeW * zoom,
+            height: planeH * zoom,
+            position: "relative",
+            minWidth: "100%",
+            backgroundImage: "radial-gradient(circle, #2a3140 1.2px, transparent 1.2px)",
+            backgroundSize: `${24 * zoom}px ${24 * zoom}px`,
+          }}
+        >
+          {/* Actual canvas, translated into the padded plane then scaled from its
+              own top-left.  The translate scales with zoom so zoom-to-cursor (in
+              useWheelZoom, which works in absolute scroll coords) stays exact. */}
           <div
             className="relative"
             style={{
-              width: canvasW,
-              height: canvasH,
-              transform: `scale(${zoom})`,
+              width: rawW,
+              height: rawH,
+              transform: `translate(${PAN_PAD * zoom}px, ${PAN_PAD * zoom}px) scale(${zoom})`,
               transformOrigin: "top left",
               position: "absolute",
               top: 0,
               left: 0,
-              backgroundImage: "radial-gradient(circle, #2a3140 1.2px, transparent 1.2px)",
-              backgroundSize: "24px 24px",
             }}
           >
             <EntityCluster
+              key={layoutNonce}
               graph={graph}
               selectedEntityId={selectedEntityId}
               onSelectEntity={onSelectEntity}

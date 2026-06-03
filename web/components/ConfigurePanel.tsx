@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { SqlResultTable } from "@/components/AugTable";
 import CloseIcon         from "@atlaskit/icon/core/close";
 import ChevronRightIcon  from "@atlaskit/icon/core/chevron-right";
 import TableIcon         from "@atlaskit/icon/core/table";
@@ -207,26 +208,7 @@ function TableDetail({
             <div className="flex items-center justify-center h-24 text-[12px] text-[--t2]">Loading…</div>
           )}
           {!loading && sampleCols.length > 0 && (
-            <table className="text-[12px] whitespace-nowrap">
-              <thead className="sticky top-0 z-10">
-                <tr style={{ background: "var(--bg-3)" }}>
-                  {sampleCols.map((c) => (
-                    <th key={c} className="px-3 py-2 text-left text-[--t2] font-semibold border-r border-[--b1] last:border-0">{c}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {sampleRows.map((row, ri) => (
-                  <tr key={ri} className="border-t border-[--b0] hover:bg-white/[0.02]">
-                    {row.map((cell, ci) => (
-                      <td key={ci} className="px-3 py-1.5 text-[--t1] font-mono border-r border-[--b0] last:border-0 max-w-[180px] truncate">
-                        {cell ?? <span className="text-[--t4] italic">null</span>}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <SqlResultTable columns={sampleCols} rows={sampleRows as unknown[][]} maxHeight={420} />
           )}
           {!loading && sampleCols.length === 0 && loaded && (
             <p className="text-[12px] text-[--t2] p-4">No data available.</p>
