@@ -695,11 +695,10 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate }
       {/* Configure slide-over */}
       {showConfigure && (
         <ConfigurePanel
-          connectionId={connectionId}
+          canvas={canvas}
           connections={connections}
-          onSelectConn={() => {}}
           onClose={() => setShowConfigure(false)}
-          hideConnSwitch
+          onCanvasUpdate={onCanvasUpdate}
         />
       )}
     </div>

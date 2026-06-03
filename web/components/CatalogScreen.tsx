@@ -102,14 +102,14 @@ function ColumnDistribution({ d }: { d: DistributionProfile }) {
       <div style={{ display: "flex", gap: 12, fontFamily: "var(--font-mono)", fontSize: 11 }}>
         {([["p25", d.p25], ["p50", d.p50], ["p75", d.p75], ["mean", d.mean]] as const).map(([label, value]) => (
           <div key={label} style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-            <span style={{ color: "var(--b0)", letterSpacing: "0.04em" }}>{label}</span>
-            <span style={{ color: label === "p50" || label === "mean" ? "#9a9ba4" : "#6e6f78" }}>{fmtNum(value)}</span>
+            <span style={{ color: "var(--t3)", letterSpacing: "0.04em" }}>{label}</span>
+            <span style={{ color: label === "p50" || label === "mean" ? "var(--t1)" : "var(--t2)" }}>{fmtNum(value)}</span>
           </div>
         ))}
         {d.min != null && d.max != null && (
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
-            <span style={{ color: "var(--b0)", letterSpacing: "0.04em" }}>range</span>
-            <span style={{ color: "#6e6f78" }}>{fmtNum(d.min)}–{fmtNum(d.max)}</span>
+            <span style={{ color: "var(--t3)", letterSpacing: "0.04em" }}>range</span>
+            <span style={{ color: "var(--t2)" }}>{fmtNum(d.min)}–{fmtNum(d.max)}</span>
           </div>
         )}
       </div>
@@ -521,9 +521,17 @@ function TableDetailPanel({ sel, onAsk }: {
     getExplorationFindings(sel.connId)
       .then(f => {
         const m: Record<string, DistributionProfile> = {};
+        // The explorer keys distributions as "<table>:<column>", where <table>
+        // may be schema-qualified (e.g. "public.orders") while the catalog tree
+        // exposes the bare table name. Match leniently on the final segment.
+        const leaf = (s: string) => (s || "").split(".").pop()!.toLowerCase();
+        const target = leaf(sel.table.name);
         for (const [key, d] of Object.entries(f.distributions ?? {})) {
-          const [tbl, col] = key.split(":");
-          if (tbl === sel.table.name && col && d.shape !== "unknown") m[col] = d;
+          const sep = key.lastIndexOf(":");
+          if (sep < 0) continue;
+          const tbl = key.slice(0, sep);
+          const col = key.slice(sep + 1);
+          if (leaf(tbl) === target && col && d.shape !== "unknown") m[col] = d;
         }
         setDistMap(m);
       })
@@ -726,6 +734,7 @@ function SchemaDetailPanel({ sel, onSelectTable, onAsk, connName }: {
             { label: "Tables",     value: String(entry.tables.length) },
             { label: "Total rows", value: totalRows > 0 ? fmtRows(totalRows) : "—" },
             { label: "Catalog",    value: <span style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>{sel.connId}</span> },
+            ...(sel.connId !== "samples" ? [{ label: "Explorer", value: <ExplorationBadge connectionId={sel.connId} /> }] : []),
           ]}
         />
       </div>
@@ -763,11 +772,6 @@ function CatalogDetailPanel({ sel, onSelectSchema, conn, onTest, onDelete, testi
       <DetailHeader
         icon={<IcoCatalog color={cm.color} />}
         name={entry.name}
-        tag={
-          <span style={{ fontSize: 9, padding: "2px 7px", borderRadius: 3, background: cm.bg, color: cm.color, border: `0.5px solid ${cm.border}`, flexShrink: 0 }}>
-            {cm.label}
-          </span>
-        }
         meta={`${entry.schemas.length} schema${entry.schemas.length !== 1 ? "s" : ""}  ·  ${totalTables} table${totalTables !== 1 ? "s" : ""}`}
       />
 
@@ -790,9 +794,9 @@ function CatalogDetailPanel({ sel, onSelectSchema, conn, onTest, onDelete, testi
           <DocumentUploader />
         </div>
       ) : (
-      <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         {/* Main: schema list (Overview tab) */}
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
           {/* Filter row */}
           <div style={{ padding: "10px 16px", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, background: "var(--bg-0)" }}>
             <FilterBox value={filter} onChange={setFilter} placeholder="Filter schemas…" />
@@ -835,27 +839,14 @@ function CatalogDetailPanel({ sel, onSelectSchema, conn, onTest, onDelete, testi
           </div>
         </div>
 
-        {/* About sidebar + connector actions */}
-        <div style={{ display: "flex", flexDirection: "column", flexShrink: 0, overflow: "hidden" }}>
-          <AboutSidebar
-            title="About this catalog"
-            rows={[
-              { label: "Type",    value: <span style={{ fontSize: 9, padding: "2px 7px", borderRadius: 3, background: cm.bg, color: cm.color, border: `0.5px solid ${cm.border}` }}>{cm.label}</span> },
-              ...(conn && !entry.builtin ? [{ label: "Status", value: <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, color: "var(--grn4)" }}><span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--grn4)" }} />Active</span> }] : []),
-              ...(conn?.dsn_preview ? [{ label: "DSN", value: <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--t2)", wordBreak: "break-all" as const }}>{conn.dsn_preview}</span> }] : []),
-              ...(conn && !entry.builtin ? [{ label: "Default schema", value: <span style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>{conn.schema_name || "default"}</span> }] : []),
-              { label: "Schemas", value: String(entry.schemas.length) },
-              { label: "Tables",  value: String(totalTables) },
-              { label: "Total rows", value: totalRows > 0 ? fmtRows(totalRows) : "—" },
-              ...(entry.builtin ? [{ label: "Source", value: "Built-in sample catalog" }] : []),
-              ...(!entry.builtin ? [{ label: "Explorer", value: <ExplorationBadge connectionId={entry.conn_id} /> }] : []),
-            ]}
-          />
+        {/* Footer: connector actions + connection management */}
+        {!entry.builtin && (
+          <div style={{ flexShrink: 0, background: "var(--bg-0)" }}>
           <ConnectorActions connId={entry.conn_id} connType={entry.conn_type} />
 
           {/* Connection management actions (test / remove) */}
-          {conn && !entry.builtin && (
-            <div style={{ padding: "12px 16px", borderTop: "0.5px solid #1e1f24", display: "flex", gap: 8, position: "relative" }}>
+          {conn && (
+            <div style={{ padding: "12px 16px", borderTop: "0.5px solid #1e1f24", display: "flex", alignItems: "center", gap: 8, position: "relative" }}>
               <button onClick={() => onTest?.(entry.conn_id)} disabled={testing}
                 style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 4, fontSize: 11, fontWeight: 500, cursor: testing ? "not-allowed" : "pointer",
                   background: "#13141a", border: `0.5px solid ${testResult === true ? "#2a4a2a" : testResult === false ? "#3e2020" : "#2a2b35"}`,
@@ -889,7 +880,8 @@ function CatalogDetailPanel({ sel, onSelectSchema, conn, onTest, onDelete, testi
               )}
             </div>
           )}
-        </div>
+          </div>
+        )}
       </div>
       )}
     </div>
@@ -1235,7 +1227,6 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
       section.entries.forEach(entry => {
         const catalogKey = `catalog:${entry.conn_id}`;
         const catOpen    = isOpen(catalogKey);
-        const cm         = connMeta(entry.conn_type);
         const isSamples  = entry.conn_id === "samples";
         const catMatch   = matches(entry.name) || entry.schemas.some(sc => matches(sc.name) || sc.tables.some(t => matches(t.name)));
         if (!catMatch) return;
@@ -1247,7 +1238,6 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
               depth={0}
               icon={<IcoCatalog color="var(--t2)" />}
               label={entry.name}
-              badge={<span style={{ fontSize: 9.5, fontWeight: 500, padding: "1px 6px", borderRadius: 4, background: "var(--bg-3)", color: "var(--t3)", border: "0.5px solid var(--b1)", flexShrink: 0, letterSpacing: "0.01em" }}>{cm.label}</span>}
               count={entry.schemas.reduce((s, sc) => s + sc.tables.length, 0) || undefined}
               isOpen={catOpen}
               isSelected={sel?.level === "catalog" && sel.connId === entry.conn_id}

@@ -74,6 +74,8 @@
 65. [Evidence Ledger](#65-evidence-ledger)
 66. [Proactive Monitors](#66-proactive-monitors)
 67. [History Navigation Fix](#67-history-navigation-fix)
+68. [Org-Level Ontology Board + table = entity Gate Fix](#68-org-level-ontology-board--table--entity-gate-fix)
+69. [Canvas Creation Popup + Canvas-Scoped Configure](#69-canvas-creation-popup--canvas-scoped-configure)
 
 ---
 
@@ -2143,4 +2145,38 @@ Two connected pieces of work:
 
 ---
 
-*Last updated: 2026-06-02 · 68 features — all shipped. See `ROADMAP.md` for upcoming milestones.*
+## 69. Canvas Creation Popup + Canvas-Scoped Configure ✅ Shipped (Sprint 53)
+
+### What
+Two connected pieces of work that make the **Canvas** — not the raw connection — the unit a user creates and configures:
+
+1. **Databricks-style "Connect your data" create flow.** The old 3-step wizard (Name → Connection → Tables) is replaced with a single-screen picker: a search bar, a breadcrumb (`All connections › <connection>`), a catalog list that drills from connections into their tables, a multi-select table list with an **"All tables"** pseudo-row at the top (auto-includes new tables), and removable **"Selected:"** chips in the footer. There is **no name field** — the user just scopes the data and clicks Create.
+
+2. **Canvas-specific Configure slide-over.** The Configure panel used to operate on the raw `connection_id`. It now takes the `Canvas`: the **About** tab edits the Canvas name + description and shows its scope (connection, type, schema, "All tables" / N selected); the **Data** tab lists only the Canvas's scoped tables; **Instructions** are stored per-Canvas, not per-connection.
+
+### Why
+- Removing the name step removes the one piece of busywork in creation. The name should describe *what the data is about* — something the system can infer better than a user typing on a blank field.
+- A Canvas is a curated slice of a connection. Configuring "the connection" leaked the wrong mental model and meant two Canvases over the same database shared one set of business rules. Making description, data, and instructions Canvas-scoped matches what the user actually reasons about.
+
+### How
+**LLM-inferred name + description (`POST /canvases/suggest-name`, `aughor/routers/canvas.py`):** Reads the schema of the selected tables (or the whole connection when "All tables" is chosen) and asks the `coder` provider for a Title-Case name (2–5 words) plus a one-line description, grounded strictly in the real table/column names. On create the frontend calls `suggestCanvasName()` then `createCanvas()`. The endpoint **falls back to the connection name** on any LLM error so creation never blocks. (e.g. selecting `orders` → "Customer Orders Overview".)
+
+**Per-Canvas instructions (`GET/PUT /canvases/{id}/instructions`):** A small JSON store (`data/canvas_instructions.json`) keyed by `canvas_id`, mirroring the existing connection-level instructions endpoint but scoped to the Canvas — two Canvases on one connection keep distinct rules.
+
+**Canvas-scoped Configure (`web/components/ConfigurePanel.tsx`):** The panel now receives `canvas` + `onCanvasUpdate`. About saves via `updateCanvas`; Data restricts the schema's table list to `canvas.scopes[0].tables` using a lenient leaf-name match (so schema-qualified names like `public.orders` still resolve), with empty scope meaning all tables; Instructions read/write the new Canvas endpoints.
+
+**Request-contract hardening (`web/lib/api.ts`):** `createCanvas`/`updateCanvas` now send the backend's flat body (`connection_id` / `schema_name` / `tables`) instead of a `scopes` array, and a shared `fastApiError()` parses FastAPI's array-shaped `detail` into a readable message — fixing the "[object Object]" error that previously broke Canvas creation through both the table-selection and "All tables" paths.
+
+### Known follow-ups
+- The **Docs** tab (document uploader) and the **Instructions → Metrics** sub-tab are still connection/global-level, not Canvas-scoped.
+
+### Key files
+- `web/components/CanvasCreator.tsx` — rewritten single-screen Databricks-style picker; no name step; LLM auto-name on create
+- `web/components/ConfigurePanel.tsx` — Canvas-scoped About / Data / Instructions
+- `web/components/CanvasWorkspace.tsx` — passes `canvas` + `onCanvasUpdate` to Configure
+- `web/lib/api.ts` — `suggestCanvasName`, `getCanvasInstructions`, `putCanvasInstructions`; flat-body + `fastApiError` hardening
+- `aughor/routers/canvas.py` — `POST /canvases/suggest-name`, `GET/PUT /canvases/{id}/instructions`
+
+---
+
+*Last updated: 2026-06-03 · 69 features — all shipped. See `ROADMAP.md` for upcoming milestones.*

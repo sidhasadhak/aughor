@@ -1072,19 +1072,42 @@ export async function getCanvases(): Promise<Canvas[]> {
   return res.json();
 }
 
+/** Extract a readable message from a FastAPI error body, whose `detail`
+ *  may be a string OR an array of validation-error objects. */
+function fastApiError(body: unknown, fallback: string): string {
+  const detail = (body as { detail?: unknown } | null)?.detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    const msgs = detail
+      .map(d => (d && typeof d === "object" && "msg" in d ? String((d as { msg: unknown }).msg) : null))
+      .filter(Boolean);
+    if (msgs.length) return msgs.join("; ");
+  }
+  return fallback;
+}
+
 export async function createCanvas(
   name: string,
   description: string,
   scopes: CanvasScope[],
 ): Promise<Canvas> {
+  // The backend expects a single, flat scope on the request body
+  // (connection_id / schema_name / tables), not a `scopes` array.
+  const s = scopes[0] ?? { connection_id: "", schema_name: null, tables: [] };
   const res = await fetch(`${BASE}/canvases`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, description, scopes }),
+    body: JSON.stringify({
+      name,
+      description,
+      connection_id: s.connection_id,
+      schema_name: s.schema_name,
+      tables: s.tables,
+    }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error((err as { detail?: string }).detail ?? "Failed to create canvas");
+    throw new Error(fastApiError(err, "Failed to create canvas"));
   }
   return res.json();
 }
@@ -1093,13 +1116,52 @@ export async function updateCanvas(
   id: string,
   patch: { name?: string; description?: string; scopes?: CanvasScope[] },
 ): Promise<Canvas> {
+  // Backend UpdateCanvasRequest takes a flat { name, description, tables }.
+  const body: { name?: string; description?: string; tables?: string[] } = {};
+  if (patch.name !== undefined) body.name = patch.name;
+  if (patch.description !== undefined) body.description = patch.description;
+  if (patch.scopes !== undefined) body.tables = patch.scopes[0]?.tables ?? [];
   const res = await fetch(`${BASE}/canvases/${encodeURIComponent(id)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(patch),
+    body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error("Failed to update canvas");
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to update canvas"));
+  }
   return res.json();
+}
+
+/** LLM-inferred Canvas name + description from the scoped tables' schema. */
+export async function suggestCanvasName(
+  connectionId: string,
+  tables: string[],
+): Promise<{ name: string; description: string }> {
+  const res = await fetch(`${BASE}/canvases/suggest-name`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ connection_id: connectionId, tables }),
+  });
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "Failed to suggest name"));
+  return res.json();
+}
+
+/** Per-Canvas plain-English instructions (distinct from connection-level). */
+export async function getCanvasInstructions(canvasId: string): Promise<string> {
+  const res = await fetch(`${BASE}/canvases/${encodeURIComponent(canvasId)}/instructions`);
+  if (!res.ok) return "";
+  const d = await res.json().catch(() => ({ text: "" }));
+  return d.text ?? "";
+}
+
+export async function putCanvasInstructions(canvasId: string, text: string): Promise<void> {
+  const res = await fetch(`${BASE}/canvases/${encodeURIComponent(canvasId)}/instructions`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "Failed to save instructions"));
 }
 
 export async function deleteCanvas(id: string): Promise<void> {

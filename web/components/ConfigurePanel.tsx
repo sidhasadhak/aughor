@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { SqlResultTable } from "@/components/AugTable";
 import CloseIcon         from "@atlaskit/icon/core/close";
 import ChevronRightIcon  from "@atlaskit/icon/core/chevron-right";
@@ -9,7 +9,13 @@ import InformationIcon   from "@atlaskit/icon/core/information";
 import { MetricsPanel } from "./MetricsPanel";
 import { DocumentUploader } from "./DocumentUploader";
 import { useSchema } from "@/lib/schema-context";
-import type { Connection } from "@/lib/api";
+import {
+  updateCanvas,
+  getCanvasInstructions,
+  putCanvasInstructions,
+  type Connection,
+  type Canvas,
+} from "@/lib/api";
 
 import { API_BASE as BASE } from "@/lib/config";
 
@@ -25,6 +31,8 @@ interface SchemaTable {
   row_count: string;
   columns: SchemaColumn[];
 }
+
+const leaf = (s: string) => (s || "").split(".").pop()!.toLowerCase();
 
 // ── Shared tab bar ────────────────────────────────────────────────────────────
 
@@ -56,66 +64,93 @@ function TabBar({
   );
 }
 
-// ── About tab ─────────────────────────────────────────────────────────────────
+// ── About tab (Canvas-level) ────────────────────────────────────────────────
 
 function AboutTab({
+  canvas,
   connection,
-  connections,
-  onSelectConn,
-  hideConnSwitch,
+  onCanvasUpdate,
 }: {
+  canvas: Canvas;
   connection: Connection | undefined;
-  connections: Connection[];
-  onSelectConn: (id: string) => void;
-  hideConnSwitch?: boolean;
+  onCanvasUpdate?: (c: Canvas) => void;
 }) {
-  if (!connection) return <p className="text-[12px] text-[--t2] p-4">No connection selected.</p>;
+  const [name, setName] = useState(canvas.name);
+  const [desc, setDesc] = useState(canvas.description);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
 
-  const rows: { label: string; value: string }[] = [
-    { label: "Name",    value: connection.name },
-    { label: "Type",    value: connection.conn_type },
-    { label: "Schema",  value: connection.schema_name ?? "—" },
-    { label: "ID",      value: connection.id },
+  useEffect(() => { setName(canvas.name); setDesc(canvas.description); }, [canvas.id, canvas.name, canvas.description]);
+
+  const scope = canvas.scopes[0];
+  const tableCount = scope?.tables.length ?? 0;
+  const dirty = name.trim() !== canvas.name || desc !== canvas.description;
+
+  async function handleSave() {
+    if (!dirty || !name.trim()) return;
+    setSaving(true);
+    try {
+      const updated = await updateCanvas(canvas.id, { name: name.trim(), description: desc });
+      onCanvasUpdate?.(updated);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const scopeRows: { label: string; value: string }[] = [
+    { label: "Connection", value: connection?.name ?? scope?.connection_id ?? "—" },
+    { label: "Type",       value: connection?.conn_type ?? "—" },
+    { label: "Schema",     value: scope?.schema_name ?? connection?.schema_name ?? "—" },
+    { label: "Tables",     value: tableCount === 0 ? "All tables" : `${tableCount} selected` },
   ];
 
   return (
     <div className="flex-1 overflow-y-auto p-4 space-y-5">
       <div>
-        <p className="aug-label mb-3">About this space</p>
+        <p className="aug-label mb-2">Canvas name</p>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className="aug-input"
+          placeholder="Canvas name"
+        />
+      </div>
+
+      <div>
+        <p className="aug-label mb-2">Description</p>
+        <textarea
+          value={desc}
+          onChange={(e) => setDesc(e.target.value)}
+          rows={4}
+          placeholder="What is this canvas about? Auto-generated from your data — edit anytime."
+          className="w-full resize-none border border-[--b2] rounded-md px-3 py-2 text-[12px] text-[--t1] placeholder:text-[--t4] focus:outline-none focus:border-[--bfocus] transition-colors"
+          style={{ background: "var(--bg-0)", fontFamily: "var(--font-ui)" }}
+        />
+      </div>
+
+      <div className="flex justify-end">
+        <button
+          onClick={handleSave}
+          disabled={!dirty || !name.trim() || saving}
+          className="aug-btn aug-btn-primary aug-btn-sm disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {saving ? "Saving…" : saved ? "Saved ✓" : "Save"}
+        </button>
+      </div>
+
+      <div>
+        <p className="aug-label mb-3">Scope</p>
         <div className="rounded-md border border-[--b1] overflow-hidden" style={{ background: "var(--bg-3)" }}>
-          {rows.map((r, i) => (
+          {scopeRows.map((r, i) => (
             <div key={r.label} className={`flex items-start px-3 py-2.5 gap-4 text-[12px] ${i > 0 ? "border-t border-[--b0]" : ""}`}>
-              <span className="w-16 shrink-0 text-[--t3]">{r.label}</span>
+              <span className="w-20 shrink-0 text-[--t3]">{r.label}</span>
               <span className="text-[--t1] font-mono break-all">{r.value}</span>
             </div>
           ))}
         </div>
       </div>
-
-      {!hideConnSwitch && connections.length > 1 && (
-        <div>
-          <p className="aug-label mb-3">Switch connection</p>
-          <div className="space-y-1">
-            {connections.map((c) => (
-              <button
-                key={c.id}
-                onClick={() => onSelectConn(c.id)}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-[12px] transition ${
-                  c.id === connection.id
-                    ? "bg-[--bg-sel] text-[--t1]"
-                    : "text-[--t2] hover:bg-[--bg-hover] hover:text-[--t1]"
-                }`}
-              >
-                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${c.id === connection.id ? "bg-[--grn4]" : "bg-[--b3]"}`} />
-                <span className="font-mono truncate flex-1 text-left">{c.name}</span>
-                {c.id === connection.id && (
-                  <span className="text-[11px] text-[--grn4] font-medium">active</span>
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -219,13 +254,24 @@ function TableDetail({
   );
 }
 
-// ── Data tab ──────────────────────────────────────────────────────────────────
+// ── Data tab (scoped to Canvas tables) ──────────────────────────────────────
 
-function DataTab({ connId }: { connId: string }) {
+function DataTab({ connId, scopeTables }: { connId: string; scopeTables: string[] }) {
   const { schema } = useSchema();
-  const tables: SchemaTable[] = (schema?.tables ?? []) as SchemaTable[];
+  const allTables: SchemaTable[] = (schema?.tables ?? []) as SchemaTable[];
   const [selected, setSelected] = useState<SchemaTable | null>(null);
   const [filter, setFilter] = useState("");
+
+  // Scope: empty scope => all tables; otherwise restrict to the canvas tables
+  // (lenient leaf-name match so schema-qualified names still resolve).
+  const scopeSet = useMemo(
+    () => new Set(scopeTables.map(leaf)),
+    [scopeTables],
+  );
+  const tables = useMemo(
+    () => (scopeSet.size === 0 ? allTables : allTables.filter((t) => scopeSet.has(leaf(t.name)))),
+    [allTables, scopeSet],
+  );
 
   if (selected) {
     return <TableDetail connId={connId} table={selected} onClose={() => setSelected(null)} />;
@@ -237,8 +283,13 @@ function DataTab({ connId }: { connId: string }) {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      {/* Filter */}
-      <div className="px-3 py-2 border-b border-[--b1] shrink-0">
+      {/* Scope note + filter */}
+      <div className="px-3 py-2 border-b border-[--b1] shrink-0 space-y-2">
+        <p className="text-[11px] text-[--t3]">
+          {scopeSet.size === 0
+            ? "This canvas includes all tables in the connection."
+            : `Scoped to ${tables.length} table${tables.length === 1 ? "" : "s"}.`}
+        </p>
         <input
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
@@ -279,14 +330,17 @@ function DataTab({ connId }: { connId: string }) {
         {filter && filtered.length === 0 && (
           <p className="text-[12px] text-[--t2] p-4">No tables match &ldquo;{filter}&rdquo;.</p>
         )}
+        {!filter && tables.length === 0 && (
+          <p className="text-[12px] text-[--t2] p-4">No tables in this canvas&rsquo;s scope.</p>
+        )}
       </div>
     </div>
   );
 }
 
-// ── Instructions tab ──────────────────────────────────────────────────────────
+// ── Instructions tab (Canvas-level) ─────────────────────────────────────────
 
-function InstructionsTab({ connId }: { connId: string }) {
+function InstructionsTab({ canvasId }: { canvasId: string }) {
   const [subtab, setSubtab] = useState<"text" | "metrics">("text");
   const [text, setText] = useState("");
   const [saved, setSaved] = useState(false);
@@ -295,20 +349,15 @@ function InstructionsTab({ connId }: { connId: string }) {
 
   useEffect(() => {
     setLoaded(false);
-    fetch(`${BASE}/connections/${connId}/instructions`)
-      .then((r) => r.json())
-      .then((d) => { setText(d.text ?? ""); setLoaded(true); })
+    getCanvasInstructions(canvasId)
+      .then((t) => { setText(t); setLoaded(true); })
       .catch(() => setLoaded(true));
-  }, [connId]);
+  }, [canvasId]);
 
   async function handleSave() {
     setSaving(true);
     try {
-      await fetch(`${BASE}/connections/${connId}/instructions`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
-      });
+      await putCanvasInstructions(canvasId, text);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } finally {
@@ -327,7 +376,7 @@ function InstructionsTab({ connId }: { connId: string }) {
       {subtab === "text" && (
         <div className="flex-1 flex flex-col overflow-hidden p-3 gap-2">
           <p className="text-[12px] text-[--t2] leading-relaxed">
-            Plain-English instructions the AI follows for every query on this connection. Describe business rules, metric definitions, fiscal calendar, naming conventions, etc.
+            Plain-English instructions the AI follows for every query on this canvas. Describe business rules, metric definitions, fiscal calendar, naming conventions, etc.
           </p>
           <textarea
             value={text}
@@ -361,16 +410,17 @@ function InstructionsTab({ connId }: { connId: string }) {
 // ── Main ConfigurePanel ───────────────────────────────────────────────────────
 
 interface ConfigurePanelProps {
-  connectionId: string;
+  canvas: Canvas;
   connections: Connection[];
-  onSelectConn: (id: string) => void;
   onClose: () => void;
-  hideConnSwitch?: boolean;
+  onCanvasUpdate?: (c: Canvas) => void;
 }
 
-export function ConfigurePanel({ connectionId, connections, onSelectConn, onClose, hideConnSwitch }: ConfigurePanelProps) {
+export function ConfigurePanel({ canvas, connections, onClose, onCanvasUpdate }: ConfigurePanelProps) {
   const [tab, setTab] = useState<"about" | "data" | "instructions" | "docs">("about");
+  const connectionId = canvas.scopes[0]?.connection_id ?? "";
   const connection = connections.find((c) => c.id === connectionId);
+  const scopeTables = canvas.scopes[0]?.tables ?? [];
 
   const TABS = [
     { id: "about",        label: "About" },
@@ -395,12 +445,10 @@ export function ConfigurePanel({ connectionId, connections, onSelectConn, onClos
       >
         {/* Panel header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-[--b1] shrink-0">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 min-w-0">
             <span className="text-[--t3]"><InformationIcon label="Configure" size="small" /></span>
             <span className="text-[12px] font-semibold text-[--t1]">Configure</span>
-            {connection && (
-              <span className="text-[11px] text-[--t3] font-mono truncate max-w-[140px]">{connection.name}</span>
-            )}
+            <span className="text-[11px] text-[--t3] truncate max-w-[180px]">{canvas.name}</span>
           </div>
           <button onClick={onClose} className="text-[--t3] hover:text-[--t1] transition">
             <CloseIcon label="Close" size="small" />
@@ -413,13 +461,13 @@ export function ConfigurePanel({ connectionId, connections, onSelectConn, onClos
         {/* Tab content */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {tab === "about" && (
-            <AboutTab connection={connection} connections={connections} onSelectConn={(id) => { onSelectConn(id); }} hideConnSwitch={hideConnSwitch} />
+            <AboutTab canvas={canvas} connection={connection} onCanvasUpdate={onCanvasUpdate} />
           )}
           {tab === "data" && (
-            <DataTab connId={connectionId} />
+            <DataTab connId={connectionId} scopeTables={scopeTables} />
           )}
           {tab === "instructions" && (
-            <InstructionsTab connId={connectionId} />
+            <InstructionsTab canvasId={canvas.id} />
           )}
           {tab === "docs" && (
             <div className="flex-1 overflow-auto p-2">
