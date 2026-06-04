@@ -137,6 +137,60 @@ def _stall_summary(merged: dict) -> str:
     )
 
 
+def _try_salvage(merged: dict, inv_id: str, question: str, connection_id: str):
+    """Best-effort terminal synthesis when the graph stops without a report.
+
+    A SOTA investigation must never end with nothing: if ANY evidence was gathered
+    (explore sub-answers or ADA phases), synthesise a best-effort report from it,
+    persist it, and return the SSE string to emit. Returns ``None`` only when there
+    is genuinely no evidence to salvage. Never raises."""
+    try:
+        qmode = merged.get("query_mode")
+        qh = merged.get("query_history") or []
+
+        # Explore: synthesise from whatever sub-questions completed.
+        if merged.get("subq_answers"):
+            from aughor.agent.explore import synthesize_exploration
+            out = synthesize_exploration(merged)
+            er = out.get("explore_report")
+            if er:
+                sq_raw = [sq.model_dump() for sq in merged.get("sub_questions", [])]
+                sa_raw = [a.model_dump() for a in merged.get("subq_answers", [])]
+                explore_save = {"_report_type": "explore", **er.model_dump(),
+                                "sub_questions": sq_raw, "subq_answers": sa_raw,
+                                "_partial": True}
+                complete_investigation(inv_id, report=explore_save, hypotheses=[],
+                                       query_history=qh, question=question,
+                                       connection_id=connection_id, skip_index=False)
+                return _sse("explore_report", {
+                    "explore_report": er.model_dump(), "sub_questions": sq_raw,
+                    "subq_answers": sa_raw, "query_count": len(qh),
+                    "investigation_id": inv_id, "query_mode": "explore", "partial": True,
+                })
+
+        # ADA / investigate: synthesise from whatever phases completed.
+        if merged.get("investigation_phases"):
+            from aughor.agent.investigate import ada_synthesize
+            out = ada_synthesize(merged)
+            ada = out.get("ada_report")
+            if ada:
+                ada_save = (dict(ada) if isinstance(ada, dict) else ada.model_dump())
+                ada_save["_report_type"] = "investigate"
+                ada_save["_partial"] = True
+                complete_investigation(inv_id, report=ada_save,
+                                       hypotheses=merged.get("hypotheses", []),
+                                       query_history=qh, question=question,
+                                       connection_id=connection_id, skip_index=False)
+                payload = ada_save if isinstance(ada, dict) else ada.model_dump()
+                return _sse("ada_report", {
+                    "ada_report": payload, "investigation_id": inv_id,
+                    "query_mode": "investigate", "partial": True,
+                })
+    except Exception:
+        return None
+    return None
+
+
 # ── Request models ────────────────────────────────────────────────────────────
 
 class InvestigateRequest(BaseModel):
@@ -528,6 +582,7 @@ async def _stream_investigation(
     if _active_explorer:
         _active_explorer.pause()
 
+    merged: dict = {}  # bound before try so the except/salvage path can read partial state
     try:
         schema = db.get_schema()
         from aughor.agent.graph import build_graph_generic
@@ -652,20 +707,34 @@ async def _stream_investigation(
                 report_emitted = True
 
         if timed_out:
-            yield _sse("error", {"message": f"Investigation timed out after {_TIMEOUT}s."})
-            fail_investigation(inv_id, status="timed_out")
+            # Even on timeout, salvage a partial report from gathered evidence first.
+            salvaged = _try_salvage(merged, inv_id, question, connection_id)
+            if salvaged:
+                yield salvaged
+            else:
+                yield _sse("error", {"message": f"Investigation timed out after {_TIMEOUT}s."})
+                fail_investigation(inv_id, status="timed_out")
         elif not report_emitted:
             # The graph terminated without reaching a synthesis node — e.g. every
-            # query errored and the loop exhausted its iterations.  Without this
-            # branch the stream would just close on `done`, so the agent appears to
-            # "stop thinking" with no error and no summary.  Surface a terminal
-            # message assembled from what actually happened.
-            yield _sse("error", {"message": _stall_summary(merged)})
-            fail_investigation(inv_id, status="failed")
+            # query errored and the loop exhausted its iterations. First try a
+            # best-effort synthesis from whatever evidence exists; only if there's
+            # genuinely nothing to salvage do we surface a terminal stall message.
+            salvaged = _try_salvage(merged, inv_id, question, connection_id)
+            if salvaged:
+                yield salvaged
+            else:
+                yield _sse("error", {"message": _stall_summary(merged)})
+                fail_investigation(inv_id, status="failed")
 
     except Exception as e:
-        fail_investigation(inv_id, status="failed")
-        yield _sse("error", {"message": str(e)})
+        # An unhandled node exception still shouldn't lose partial work — salvage
+        # a best-effort report from gathered evidence before surfacing the error.
+        salvaged = _try_salvage(merged, inv_id, question, connection_id)
+        if salvaged:
+            yield salvaged
+        else:
+            fail_investigation(inv_id, status="failed")
+            yield _sse("error", {"message": str(e)})
     finally:
         _telemetry.end_trace(trace_id)
         if _active_explorer:

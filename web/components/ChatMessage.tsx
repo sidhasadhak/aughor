@@ -1633,7 +1633,7 @@ export function ChatMessage({
       </div>
 
       {/* ── Inline agent trace (agentic modes) — streams live, collapses when done ── */}
-      {isInvestigate && (turn.status === "loading" || isDone) && (
+      {isInvestigate && (turn.status === "loading" || isDone || turn.status === "error") && (
         <InlineAgentTrace turn={turn} />
       )}
 

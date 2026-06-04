@@ -184,7 +184,11 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case "ERROR":
       return { ...updateLast(state, t => finish({ ...t, status: "error", error: action.message })), streaming: false };
     case "DONE":
-      return { ...updateLast(state, t => finish({ ...t, status: "done" })), streaming: false };
+      // The backend always emits `done` in its finally block — even right after an
+      // `error`. Only promote a still-running turn; never overwrite a terminal
+      // `error` status (otherwise the failure message is set but never shown and
+      // the investigation looks like it silently "gave up").
+      return { ...updateLast(state, t => finish({ ...t, status: t.status === "loading" ? "done" : t.status })), streaming: false };
     case "CLEAR":
       return { turns: [], streaming: false };
     case "RESTORE":

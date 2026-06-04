@@ -151,28 +151,78 @@ def decompose_exploration(state: AgentState) -> dict[str, Any]:
     # Extract explicit user constraints from the question (re-use decompose pattern)
     constraint_section = "No explicit constraints detected."
 
-    llm = get_provider("coder")
-    plan: _ExplorationPlan = llm.complete(
-        system="You are a senior data analyst designing a sequential investigative chain.",
-        user=DECOMPOSE_EXPLORATION_PROMPT.format(
-            question=state["question"],
-            schema=state["schema_context"],
-            scan_section=scan_section,
-            constraint_section=constraint_section,
-        ),
-        response_model=_ExplorationPlan,
-    )
-
-    sub_questions = plan.sub_questions[:MAX_SUBQ]
+    # Resilience: the planner is the single point where an exploration most often
+    # dies (LLM/provider hiccup or an assertion-style prompt that yields no chain).
+    # Retry once with a corrective nudge, then fall back to a deterministic floor
+    # chain so the investigation ALWAYS proceeds to real queries + synthesis.
+    sub_questions = _plan_exploration_chain(state, scan_section, constraint_section)
+    if not sub_questions:
+        sub_questions = _floor_chain(state)
 
     return {
-        "sub_questions": sub_questions,
+        "sub_questions": sub_questions[:MAX_SUBQ],
         "current_subq_idx": 0,
         "subq_answers": [],
         "pitfalls": [],
         "iteration": 0,
         "analysis_ledger": analysis_ledger,
     }
+
+
+def _plan_exploration_chain(state: AgentState, scan_section: str, constraint_section: str) -> list[SubQuestion]:
+    """Run the decompose planner with one corrective retry. Never raises —
+    returns [] only if the LLM truly can't produce a valid SQL-answerable chain."""
+    llm = get_provider("coder")
+    base_user = DECOMPOSE_EXPLORATION_PROMPT.format(
+        question=state["question"],
+        schema=state["schema_context"],
+        scan_section=scan_section,
+        constraint_section=constraint_section,
+    )
+    for attempt in range(2):
+        user = base_user if attempt == 0 else (
+            base_user
+            + "\n\nYOUR PREVIOUS ATTEMPT RETURNED NO USABLE SUB-QUESTIONS. You MUST now "
+            "return at least 3 concrete, SQL-answerable sub-questions that use ONLY tables "
+            "and columns present in the schema above. Begin with a `landscape` question. "
+            "If the input is a claim rather than a question, reframe it as a verification "
+            "question (e.g. 'Is it true that …?')."
+        )
+        try:
+            plan: _ExplorationPlan = llm.complete(
+                system="You are a senior data analyst designing a sequential investigative chain.",
+                user=user,
+                response_model=_ExplorationPlan,
+            )
+            sqs = [sq for sq in (plan.sub_questions or []) if (sq.question or "").strip()]
+            if sqs:
+                return sqs
+        except Exception:
+            continue  # transient provider/parse error — fall through to retry / floor
+    return []
+
+
+def _floor_chain(state: AgentState) -> list[SubQuestion]:
+    """Deterministic safety-net chain (no LLM) so an exploration never starts
+    empty even if the planner fails entirely. Anchors on the first schema table
+    and the original question, then lets the per-sub-question SQL planner do the
+    real work against the live schema."""
+    import re as _re
+    m = _re.search(r"^TABLE:\s+([^\s\[(]+)", state.get("schema_context", "") or "", _re.MULTILINE)
+    table = m.group(1) if m else "the primary table"
+    q = (state.get("question") or "the original question").strip()
+    return [
+        SubQuestion(
+            id="Q1", purpose="landscape", depends_on=[],
+            question=f"What is the overall volume and the key measurable dimensions in the data most relevant to: {q}?",
+            expected_output=f"A small summary of row counts and key aggregates from {table} and directly related tables.",
+        ),
+        SubQuestion(
+            id="Q2", purpose="synthesis", depends_on=["Q1"],
+            question=f"Based on the landscape above, what is the most direct, evidence-backed answer to: {q}?",
+            expected_output="A focused aggregate (grouped/ranked as needed) that directly addresses the original question.",
+        ),
+    ]
 
 
 # ── Node: plan_and_execute_subq ───────────────────────────────────────────────
