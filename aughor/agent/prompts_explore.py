@@ -150,8 +150,11 @@ Instructions:
 - new_sub_question: only if the data revealed an entirely unexpected angle that the original plan missed.
   Define it as a new sub-question to insert after the current one. Return null if not applicable.
 
-NUMERIC DISCIPLINE: every number you cite in answer or insight must appear in the query results above.
-Do not extrapolate or estimate.
+NUMERIC DISCIPLINE: every number you cite in answer or insight must appear VERBATIM in the query
+results above. Do not extrapolate or estimate. Critically, do NOT compute your own derived values —
+no ratios, per-unit figures ("per order"), percentages, growth rates, or differences unless that exact
+value was returned as a column by the query. If a derived metric matters, it must come from SQL, never
+from your own arithmetic (which is often wrong). Cite only what the query actually returned.
 """
 
 SYNTHESIZE_EXPLORATION_PROMPT = """\
@@ -193,5 +196,14 @@ data_quality_notes: List any structural data issues that affected the investigat
   Empty list if none were found.
 
 NUMERIC DISCIPLINE: every number in headline, conclusion, or narrative must be traceable to a
-specific row or aggregate in the chain above. Do not invent precision.
+specific row or aggregate in the chain above. Do not invent precision. Do NOT compute your own
+derived values — no ratios, "per X" figures, percentages, growth rates, or differences unless that
+exact value was returned by a query in the chain. Your mental arithmetic is unreliable; cite only
+figures the queries actually produced.
+
+SCOPE HONESTY: answer ONLY the original question using the evidence in the chain. If the chain did
+not actually measure something the question asks about (e.g. the question asks about conversion rates
+but no conversion-rate query ran), say so plainly rather than substituting a different metric and
+presenting it as the answer. Never write "given all of the above" if the chain is short or incomplete —
+describe only what was genuinely investigated.
 """

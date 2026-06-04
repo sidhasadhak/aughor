@@ -503,6 +503,97 @@ def _skipped_finding(phase_id: str, reason: str) -> InvestigationFinding:
     )
 
 
+def _detect_phase_contradictions(phases: list[InvestigationPhaseResult]) -> str:
+    """
+    Deterministically scan phase summaries for direct factual contradictions.
+
+    Detects these contradiction classes:
+      A. Significance flip — one phase says the change is "significant" / "anomalous"
+         while another says "within normal variance" / "not significant" / "no anomaly".
+      B. Direction flip — one phase says metric is "up" / "increased" and another
+         says "down" / "decreased" for the same metric mention.
+      C. Causal attribution flip — one phase names a cause X, another says X is "not
+         the cause" or that the relationship is "not significant".
+
+    Returns a prompt section string to inject before synthesis, or "" if clean.
+    Never raises.
+    """
+    try:
+        if not phases or len(phases) < 2:
+            return ""
+
+        summaries: list[tuple[str, str]] = [
+            (p.get("phase_name", ""), (p.get("summary") or "").lower())
+            for p in phases
+        ]
+
+        contradictions: list[str] = []
+
+        # ── Class A: significance flip ────────────────────────────────────────
+        sig_positive = re.compile(
+            r'\b(significant|anomal|unusual|notable|material|above.normal|outside.normal)\b'
+        )
+        sig_negative = re.compile(
+            r'\b(within.normal|no.anomal|not.significant|insignificant|expected.variance|'
+            r'consistent.with.historical|normal.variance|no.significant)\b'
+        )
+        phases_with_sig = [(name, s) for name, s in summaries if sig_positive.search(s)]
+        phases_with_neg = [(name, s) for name, s in summaries if sig_negative.search(s)]
+        if phases_with_sig and phases_with_neg:
+            contradictions.append(
+                f"Significance contradiction: phase(s) {', '.join(n for n, _ in phases_with_sig)} "
+                f"describe the change as significant/anomalous, but phase(s) "
+                f"{', '.join(n for n, _ in phases_with_neg)} describe it as within normal variance. "
+                f"You MUST resolve this tension explicitly in your report — do NOT paper over it."
+            )
+
+        # ── Class B: direction flip on same metric keyword ─────────────────────
+        # Find metric-like tokens (revenue, orders, conversion, churn, etc.)
+        metric_re = re.compile(
+            r'\b(revenue|orders|conversion|churn|retention|aov|gmv|mrr|sessions|'
+            r'traffic|cac|ltv|profit|margin|spend|cost)\b'
+        )
+        direction_up = re.compile(r'\b(increas|grew|up|higher|gain|improv|recover|surged)\b')
+        direction_down = re.compile(r'\b(declin|decreas|fell|drop|down|lower|reduc|shrunk|worsened)\b')
+
+        metric_directions: dict[str, dict[str, list[str]]] = {}
+        for name, s in summaries:
+            for m in metric_re.finditer(s):
+                metric = m.group(1)
+                # Check surrounding context (±80 chars)
+                start = max(0, m.start() - 80)
+                end = min(len(s), m.end() + 80)
+                ctx = s[start:end]
+                if direction_up.search(ctx):
+                    metric_directions.setdefault(metric, {}).setdefault("up", []).append(name)
+                elif direction_down.search(ctx):
+                    metric_directions.setdefault(metric, {}).setdefault("down", []).append(name)
+
+        for metric, dirs in metric_directions.items():
+            if "up" in dirs and "down" in dirs:
+                contradictions.append(
+                    f"Direction contradiction on '{metric}': "
+                    f"phase(s) {', '.join(dirs['up'])} describe it as increasing, "
+                    f"phase(s) {', '.join(dirs['down'])} describe it as decreasing. "
+                    f"Clarify which direction is correct and over what time period."
+                )
+
+        if not contradictions:
+            return ""
+
+        lines = [
+            "\n⚠ CROSS-PHASE CONTRADICTIONS DETECTED — address each explicitly in your report "
+            "(surface them in the risks or data quality notes; do NOT silently average them out):"
+        ]
+        for i, c in enumerate(contradictions, 1):
+            lines.append(f"  {i}. {c}")
+        lines.append("")
+        return "\n".join(lines)
+
+    except Exception:
+        return ""
+
+
 def _phases_summary(phases: list[InvestigationPhaseResult]) -> str:
     lines = []
     for p in phases:
@@ -1400,6 +1491,13 @@ def ada_synthesize(state: AgentState) -> dict:
     phases_summary = _phases_summary(phases)
     evidence_log = _phases_evidence(phases)
 
+    # ── Cross-phase contradiction detection ───────────────────────────────────
+    # Before synthesis, deterministically check phase summaries for contradictions.
+    # Example: baseline says "significant drop (z=-2.4)" while dimensional says
+    # "no segment deviates from baseline" — the synthesizer must not silently paper
+    # over this.  We inject any contradictions as a hard instruction in the prompt.
+    contradiction_section = _detect_phase_contradictions(phases)
+
     # Build metric targets block for synthesis guidance
     metric_targets_section = ""
     try:
@@ -1466,7 +1564,7 @@ def ada_synthesize(state: AgentState) -> dict:
         playbook_section=playbook_section,
         org_intelligence_section=org_intelligence_section,
         external_context_section=external_context_section,
-    ) + early_stop_note
+    ) + contradiction_section + early_stop_note
     try:
         synth: ADASynthesisModel = _provider("narrator").complete(
             system=(

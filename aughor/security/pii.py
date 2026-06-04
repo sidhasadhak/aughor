@@ -51,6 +51,23 @@ _PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (_RE_IPv4,   "[IP]"),
 ]
 
+# A cell that is a single decimal / scientific-notation number is a measurement
+# or aggregate, never PII. Credit-card / SSN / phone numbers are integers with no
+# decimal point, so a value like "3.4012888888881881" (a SUM with a long
+# fractional part) must NOT be scanned — otherwise its fractional digits get
+# mangled into "[CARD]". Plain integers are deliberately still scanned so a bare
+# 16-digit card number in an un-named column is still caught.
+_NUMERIC_DECIMAL_RE = re.compile(
+    r'^[+-]?(?:\d{1,3}(?:,\d{3})+|\d+)?\.\d+(?:[eE][+-]?\d+)?$'  # has a decimal point
+    r'|^[+-]?\d+[eE][+-]?\d+$'                                    # or scientific notation
+)
+
+
+def _is_decimal_number(val: str) -> bool:
+    """True if the whole cell is one decimal/scientific number (so not PII)."""
+    return bool(_NUMERIC_DECIMAL_RE.match(val.strip()))
+
+
 # Column name patterns whose values should always be redacted
 _PII_COL_RE = re.compile(
     r'\b(?:email|phone|mobile|cell_?phone|ssn|sin|'
@@ -110,6 +127,12 @@ class PiiScanner:
                     if val not in ("[REDACTED]",):
                         new_row[i] = "[REDACTED]"
                         redacted_count += 1
+                    continue
+
+                # A standalone decimal/scientific number is an aggregate or
+                # measurement, never PII — skip it so long fractional digit runs
+                # aren't misread as a credit-card number ("3.40128…" → "3.[CARD]").
+                if _is_decimal_number(val):
                     continue
 
                 # Pattern-based: replace within cell (may be partial match)

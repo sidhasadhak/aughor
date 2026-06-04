@@ -176,12 +176,19 @@ tables:
     columns:
       order_id:
         description: Unique identifier for the order being paid.
+        caveats: order_id in order_payments must match exactly with orders.order_id;
+          any mismatch (e.g., due to type casting or truncation) would cause incorrect
+          joins and inflated/deflated order totals.
       payment_sequential:
         description: Sequential number indicating the order of this payment installment
           within the same order (e.g., 1 for first installment, 2 for second, etc.).
       payment_type:
         description: Method used for the payment (e.g., credit card, boleto, voucher).
         values: credit_card, boleto, voucher, cash
+        caveats: payment_type is used to infer primary payment method per customer,
+          but the analysis assumes one payment type per customer is 'primary' based
+          on frequency—this may misrepresent customers with mixed or ambiguous usage
+          patterns.
       payment_installments:
         description: Number of installments chosen for this payment (e.g., 1 for single
           payment, 12 for 12-month financing).
@@ -231,7 +238,10 @@ tables:
           this order. NOT a stable customer identifier.
         caveats: 'Do NOT use orders.customer_id to count unique customers or detect
           repeat purchasers. JOIN to customer.customer_unique_id instead: JOIN customer
-          c ON o.customer_id = c.customer_id, then GROUP BY c.customer_unique_id.'
+          c ON o.customer_id = c.customer_id, then GROUP BY c.customer_unique_id.
+          | customer_id in orders is a raw identifier that may not uniquely map to
+          customer_unique_id in the customer table without explicit join validation—using
+          customer_id directly could lead to duplicate or mismatched customer counts.'
       order_status:
         description: Current status of the order (e.g., delivered, shipped, canceled)
         values: delivered, shipped, canceled, approved, invoiced, processing, created,
@@ -439,6 +449,10 @@ tables:
           before login
       created_ts:
         description: Timestamp when the cart was created
+        caveats: carts.created_ts is in seconds, but the query multiplies it by 1000
+          assuming it's seconds-to-milliseconds conversion while impressions.ts is
+          already in milliseconds—this double-conversion error breaks the time window
+          join.
       currency:
         description: Currency code (e.g., USD, EUR) used for the cart
       traffic_source:
@@ -555,6 +569,9 @@ tables:
       ts:
         description: Unix timestamp (in milliseconds) when the impression occurred
         caveats: Stored as BIGINT; ensure proper conversion to timestamp type in analysis
+          | impressions.ts is stored in milliseconds since epoch, but the query incorrectly
+          treats it as seconds when comparing to cart.created_ts (which is in seconds),
+          causing timestamp misalignment that prevents matching impressions to carts.
       viewable:
         description: Whether the impression met viewability criteria (e.g., 50% of
           ad in view for 1+ second)

@@ -21,7 +21,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_new_customer_acquisition_cac_increased_without_volume_drop_757d69",
@@ -45,7 +45,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_product_activation_activation_rate_declined_c73aae",
@@ -68,7 +68,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_product_activation_time_to_activation_increasing_9249aa",
@@ -91,7 +91,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_average_order_value_aov_declined_month_over_month_d87275",
@@ -113,7 +113,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_average_order_value_aov_varies_significantly_by_customer_segment_5127b9",
@@ -135,7 +135,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_customer_churn_analysis_churn_rate_increased_month_over_month_761448",
@@ -158,7 +158,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_customer_churn_analysis_churn_concentrated_in_early_cohorts_within_90_days_of_signup_9c8641",
@@ -181,7 +181,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_customer_churn_analysis_involuntary_churn_from_payment_failures_88c01d",
@@ -204,7 +204,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_conversion_funnel_overall_funnel_conversion_rate_dropped_ccc363",
@@ -228,7 +228,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_conversion_funnel_trial_to_paid_conversion_dropped_fbb722",
@@ -252,7 +252,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_engagement_metrics_dau_dropped_without_mau_dropping_proportionally_10ba94",
@@ -278,7 +278,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_engagement_metrics_stickiness_dau_mau_declining_8bdf4c",
@@ -304,7 +304,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_customer_lifetime_value_ltv_declining_for_recent_cohorts_85a729",
@@ -326,7 +326,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_customer_lifetime_value_ltv_cac_ratio_deteriorating_d0a461",
@@ -348,7 +348,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_monthly_recurring_revenue_mrr_declined_month_over_month_3bb84d",
@@ -372,7 +372,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_monthly_recurring_revenue_mrr_growth_slowing_despite_stable_churn_e6d606",
@@ -396,7 +396,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_payment_failure_payment_failure_rate_increased_fa50fd",
@@ -419,7 +419,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_payment_failure_dunning_recovery_rate_declining_d58141",
@@ -442,7 +442,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_refund_rate_refund_rate_spiked_in_a_specific_period_162deb",
@@ -465,7 +465,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_refund_rate_chargeback_rate_increasing_ac577e",
@@ -488,7 +488,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_retention_cohorts_retention_at_day_30_declining_across_cohorts_d4aec6",
@@ -511,7 +511,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_retention_cohorts_steep_drop_off_at_day_1_or_week_1_89016a",
@@ -534,7 +534,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_revenue_drop_analysis_overall_revenue_drops_month_over_month_d5ab15",
@@ -556,7 +556,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_revenue_drop_analysis_revenue_drop_concentrated_in_one_region_or_segment_05130e",
@@ -578,7 +578,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_revenue_drop_analysis_revenue_drop_driven_by_fewer_new_customers_032c06",
@@ -600,7 +600,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_clv_clv_up_ec_repeat_rate_flat_a584bb",
@@ -627,7 +627,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_clv_clv_up_ec_aov_flat_2e73d0",
@@ -654,7 +654,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_clv_clv_down_ec_cohort_retention_down_81ef5b",
@@ -681,7 +681,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_clv_clv_up_in_one_channel_only_e2c7be",
@@ -708,7 +708,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_repeat_rate_repeat_rate_up_ec_clv_flat_0fad1a",
@@ -735,7 +735,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_repeat_rate_repeat_rate_down_ec_new_vs_returning_shows_new_customer_share_increasing_d561e1",
@@ -762,7 +762,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_repeat_rate_repeat_rate_up_ec_cohort_retention_flat_ab9061",
@@ -789,7 +789,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_repeat_rate_repeat_rate_down_across_all_channels_27b5cd",
@@ -816,7 +816,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_new_vs_returning_new_customer_share_rising_ec_gmv_also_rising_c5b013",
@@ -843,7 +843,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_new_vs_returning_new_customer_share_rising_ec_gmv_flat_da6c5d",
@@ -870,7 +870,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_new_vs_returning_returning_customer_share_rising_ec_repeat_rate_also_rising_9ec34d",
@@ -897,7 +897,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_new_vs_returning_new_customer_share_drops_suddenly_08ef3a",
@@ -924,7 +924,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_rfm_high_r_low_f_segment_is_growing_bfb375",
@@ -951,7 +951,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_rfm_low_r_high_f_high_m_segment_is_growing_425d40",
@@ -978,7 +978,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_rfm_the_555_segment_shrinks_while_111_segment_grows_7d85f1",
@@ -1005,7 +1005,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_rfm_monetary_score_distribution_compresses_all_scores_cluster_around_3_d0a522",
@@ -1032,7 +1032,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_cohort_retention_cohort_retention_up_ec_clv_also_up_67827a",
@@ -1059,7 +1059,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_cohort_retention_cohort_retention_flat_ec_repeat_rate_up_ee279e",
@@ -1086,7 +1086,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_cohort_retention_cohort_retention_down_in_period_1_only_12484d",
@@ -1113,7 +1113,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_cohort_retention_cohort_retention_declining_for_recent_cohorts_but_stable_for_older_ones_6dddad",
@@ -1140,7 +1140,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_customer_acquisition_cost_cac_up_conversion_rate_down_421846",
@@ -1167,7 +1167,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_customer_acquisition_cost_cac_up_new_customer_count_flat_077a6d",
@@ -1194,7 +1194,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_customer_acquisition_cost_cac_down_new_customer_count_down_ca7a25",
@@ -1221,7 +1221,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_time_between_orders_tbo_down_repeat_buy_rate_up_7d534a",
@@ -1248,7 +1248,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_time_between_orders_tbo_up_return_rate_up_02a9af",
@@ -1275,7 +1275,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_time_between_orders_tbo_up_churn_rate_up_679b5b",
@@ -1302,7 +1302,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_win_back_rate_win_back_rate_up_churn_rate_down_999d9d",
@@ -1329,7 +1329,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_win_back_rate_win_back_rate_up_marketing_spend_up_9977cb",
@@ -1356,7 +1356,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_win_back_rate_win_back_rate_down_churn_rate_up_8e12f4",
@@ -1383,7 +1383,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_first_order_to_second_order_conversion_f2s_conversion_up_first_order_count_up_93480f",
@@ -1410,7 +1410,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_first_order_to_second_order_conversion_f2s_conversion_up_churn_rate_down_f29c88",
@@ -1437,7 +1437,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_first_order_to_second_order_conversion_f2s_conversion_down_first_order_count_down_a14c80",
@@ -1464,7 +1464,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_customer_concentration_risk_concentration_risk_up_revenue_growth_up_a1c8f7",
@@ -1491,7 +1491,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_customer_concentration_risk_concentration_risk_up_churn_rate_up_0e5db4",
@@ -1518,7 +1518,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_customer_concentration_risk_concentration_risk_down_revenue_growth_down_090860",
@@ -1545,7 +1545,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_conversion_rate_conversion_rate_up_ec_gmv_also_up_27f7e0",
@@ -1572,7 +1572,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_conversion_rate_conversion_rate_up_ec_gmv_flat_a8cbc0",
@@ -1599,7 +1599,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_conversion_rate_conversion_rate_down_ec_cart_abandonment_up_3fa962",
@@ -1626,7 +1626,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_conversion_rate_conversion_rate_down_session_count_up_dramatically_afad5e",
@@ -1653,7 +1653,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_cart_abandonment_cart_abandonment_up_ec_conversion_rate_down_39e314",
@@ -1680,7 +1680,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_cart_abandonment_cart_abandonment_up_ec_aov_also_up_9619c2",
@@ -1707,7 +1707,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_cart_abandonment_cart_abandonment_up_on_mobile_only_8e4a07",
@@ -1734,7 +1734,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_cart_abandonment_cart_abandonment_flat_ec_conversion_rate_down_425187",
@@ -1761,7 +1761,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_checkout_funnel_shipping_step_drop_off_increases_ec_cart_abandonment_also_increases_03bf7e",
@@ -1788,7 +1788,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_checkout_funnel_payment_step_drop_off_spikes_suddenly_77d086",
@@ -1815,7 +1815,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_checkout_funnel_begin_checkout_drop_off_increases_but_cart_to_checkout_conversion_is_stable_3d9b81",
@@ -1842,7 +1842,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_checkout_funnel_all_step_to_step_rates_stable_but_overall_funnel_volume_drops_cf1e82",
@@ -1869,7 +1869,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_session_to_purchase_sessions_to_purchase_increases_ec_conversion_rate_decreases_e57810",
@@ -1896,7 +1896,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_session_to_purchase_sessions_to_purchase_decreases_ec_aov_also_decreases_8051e5",
@@ -1923,7 +1923,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_session_to_purchase_sessions_to_purchase_increases_for_a_specific_category_only_8a0315",
@@ -1950,7 +1950,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_session_to_purchase_sessions_to_purchase_drops_after_a_site_change_d0d50e",
@@ -1977,7 +1977,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_pdp_to_cart_rate_pdp_to_cart_rate_up_conversion_rate_up_7562b8",
@@ -2004,7 +2004,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_pdp_to_cart_rate_pdp_to_cart_rate_up_aov_down_fc2d10",
@@ -2031,7 +2031,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_pdp_to_cart_rate_pdp_to_cart_rate_down_revenue_per_visitor_up_02c915",
@@ -2058,7 +2058,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_checkout_step_drop_off_rate_shipping_to_billing_drop_off_up_shipping_cost_up_1149e4",
@@ -2085,7 +2085,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_checkout_step_drop_off_rate_review_to_payment_drop_off_up_new_payment_methods_added_1a0196",
@@ -2112,7 +2112,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_checkout_step_drop_off_rate_cart_to_shipping_drop_off_up_cart_value_up_5f36c1",
@@ -2139,7 +2139,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_payment_failure_rate_payment_failure_rate_up_checkout_step_drop_off_at_payment_up_382567",
@@ -2166,7 +2166,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_payment_failure_rate_payment_failure_rate_up_new_card_rate_up_385cc8",
@@ -2193,7 +2193,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_payment_failure_rate_payment_failure_rate_down_fraud_rate_up_e387bf",
@@ -2220,7 +2220,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_search_to_purchase_rate_search_to_purchase_rate_up_search_volume_up_ab69df",
@@ -2247,7 +2247,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_search_to_purchase_rate_search_to_purchase_rate_down_search_volume_up_129028",
@@ -2274,7 +2274,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_search_to_purchase_rate_search_to_purchase_rate_up_revenue_per_visitor_down_d07e92",
@@ -2301,7 +2301,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_cross_sell_attach_rate_cross_sell_attach_rate_up_aov_up_522c7e",
@@ -2328,7 +2328,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_cross_sell_attach_rate_cross_sell_attach_rate_down_aov_up_ec0a45",
@@ -2355,7 +2355,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_cross_sell_attach_rate_cross_sell_attach_rate_up_return_rate_up_426cd2",
@@ -2382,7 +2382,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_inventory_turnover_inventory_turnover_up_ec_stockout_rate_also_up_7f5c25",
@@ -2409,7 +2409,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_inventory_turnover_inventory_turnover_down_ec_revenue_by_category_flat_166d67",
@@ -2436,7 +2436,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_inventory_turnover_inventory_turnover_up_ec_gmv_up_04d50c",
@@ -2463,7 +2463,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_inventory_turnover_inventory_turnover_down_in_one_category_only_23bf2b",
@@ -2490,7 +2490,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_dio_dio_up_ec_inventory_turnover_down_326812",
@@ -2517,7 +2517,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_dio_dio_up_ec_stockout_rate_flat_9930a1",
@@ -2544,7 +2544,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_dio_dio_down_ec_stockout_rate_up_e37269",
@@ -2571,7 +2571,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_dio_dio_up_in_one_category_ec_revenue_by_category_for_that_category_declining_9f5fa9",
@@ -2598,7 +2598,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_product_affinity_product_affinity_between_two_items_increases_after_a_cross_sell_promotion_d1b276",
@@ -2625,7 +2625,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_product_affinity_product_affinity_drops_for_a_historically_strong_pair_b96d8a",
@@ -2652,7 +2652,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_product_affinity_high_affinity_pairs_have_very_different_ec_aov_contributions_0cb56c",
@@ -2679,7 +2679,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_product_affinity_category_level_affinity_increases_but_product_level_is_flat_3ed207",
@@ -2706,7 +2706,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_revenue_by_category_one_category_s_revenue_share_grows_while_absolute_revenue_is_flat_a86844",
@@ -2733,7 +2733,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_revenue_by_category_ec_revenue_by_category_shifts_toward_higher_aov_categories_ec_aov_rises_2e9d5c",
@@ -2760,7 +2760,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_revenue_by_category_a_category_s_revenue_drops_while_ec_stockout_rate_for_that_category_rises_7f19e9",
@@ -2787,7 +2787,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_revenue_by_category_category_revenue_grows_but_ec_product_affinity_pairs_involving_that_category_wea_1cee2b",
@@ -2814,7 +2814,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_stockout_rate_stockout_rate_up_ec_gmv_down_68ae7c",
@@ -2841,7 +2841,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_stockout_rate_stockout_rate_up_ec_inventory_turnover_up_6d289f",
@@ -2868,7 +2868,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_stockout_rate_stockout_rate_up_in_one_category_ec_revenue_by_category_for_that_category_declin_bbbe75",
@@ -2895,7 +2895,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_stockout_rate_stockout_rate_flat_ec_dio_increasing_ffc746",
@@ -2922,7 +2922,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_sell_through_rate_sell_through_rate_up_sell_through_rate_prev_period_up_0ef77d",
@@ -2949,7 +2949,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_sell_through_rate_sell_through_rate_up_dead_stock_rate_down_64bd0c",
@@ -2976,7 +2976,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_sell_through_rate_sell_through_rate_down_return_rate_up_bda8c0",
@@ -3003,7 +3003,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_dead_stock_rate_dead_stock_rate_up_sell_through_rate_down_21bbd4",
@@ -3030,7 +3030,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_dead_stock_rate_dead_stock_rate_up_return_rate_up_26aa18",
@@ -3057,7 +3057,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_dead_stock_rate_dead_stock_rate_down_markdown_spend_up_fdcae6",
@@ -3084,7 +3084,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_overstock_index_overstock_index_up_sell_through_rate_down_c7e39d",
@@ -3111,7 +3111,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_overstock_index_overstock_index_up_dead_stock_rate_up_dfb90d",
@@ -3138,7 +3138,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_overstock_index_overstock_index_down_sell_through_rate_up_093840",
@@ -3165,7 +3165,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_markdown_depth_markdown_depth_up_sell_through_rate_up_3ce0d9",
@@ -3192,7 +3192,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_markdown_depth_markdown_depth_up_gross_profit_per_order_down_264dfd",
@@ -3219,7 +3219,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_markdown_depth_markdown_depth_down_dead_stock_rate_up_7b06af",
@@ -3246,7 +3246,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_new_product_revenue_share_new_product_revenue_share_up_net_revenue_up_7a9a03",
@@ -3273,7 +3273,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_new_product_revenue_share_new_product_revenue_share_up_gross_profit_per_order_down_8f2d4c",
@@ -3300,7 +3300,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_new_product_revenue_share_new_product_revenue_share_down_new_product_count_up_aa895c",
@@ -3327,7 +3327,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_gmv_gmv_up_ec_aov_flat_d85a6e",
@@ -3354,7 +3354,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_gmv_gmv_up_order_count_flat_7988cf",
@@ -3381,7 +3381,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_gmv_gmv_up_ec_net_revenue_flat_0d6e19",
@@ -3408,7 +3408,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_gmv_gmv_up_only_in_one_category_01d946",
@@ -3435,7 +3435,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_net_revenue_ec_net_revenue_down_ec_gmv_flat_7cb5ae",
@@ -3462,7 +3462,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_net_revenue_ec_net_revenue_down_ec_refund_rate_up_fad217",
@@ -3489,7 +3489,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_net_revenue_ec_net_revenue_up_ec_gmv_up_proportionally_555e8e",
@@ -3516,7 +3516,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_net_revenue_ec_net_revenue_up_ec_gmv_flat_38c498",
@@ -3543,7 +3543,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_aov_ec_aov_up_ec_gmv_up_order_count_flat_df4f31",
@@ -3570,7 +3570,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_aov_ec_aov_down_ec_gmv_flat_0ffa95",
@@ -3597,7 +3597,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_aov_ec_aov_flat_ec_gmv_up_1df7d9",
@@ -3624,7 +3624,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_aov_ec_aov_up_ec_return_rate_up_22e56e",
@@ -3651,7 +3651,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_refund_rate_ec_refund_rate_up_ec_net_revenue_down_ec_gmv_flat_0d0a48",
@@ -3678,7 +3678,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_refund_rate_ec_refund_rate_up_in_one_category_only_50e21e",
@@ -3705,7 +3705,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_refund_rate_ec_refund_rate_up_ec_return_rate_flat_e32381",
@@ -3732,7 +3732,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_refund_rate_ec_refund_rate_down_ec_aov_up_3c4260",
@@ -3759,7 +3759,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_return_rate_ec_return_rate_up_ec_refund_rate_up_proportionally_32c4f1",
@@ -3786,7 +3786,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_return_rate_ec_return_rate_up_ec_refund_rate_flat_ca89f3",
@@ -3813,7 +3813,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_return_rate_ec_return_rate_up_ec_aov_up_5beb44",
@@ -3840,7 +3840,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_return_rate_ec_return_rate_down_ec_net_revenue_up_e880a9",
@@ -3867,7 +3867,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_discount_rate_discount_rate_up_gmv_flat_14d9bc",
@@ -3894,7 +3894,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_discount_rate_discount_rate_up_net_revenue_down_3fdca8",
@@ -3921,7 +3921,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_discount_rate_discount_rate_up_coupon_redemption_rate_flat_b47f16",
@@ -3948,7 +3948,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_revenue_per_visitor_rpv_up_conversion_rate_flat_3c25e3",
@@ -3975,7 +3975,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_revenue_per_visitor_rpv_up_visitor_count_down_532649",
@@ -4002,7 +4002,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_revenue_per_visitor_rpv_down_net_revenue_flat_f653df",
@@ -4029,7 +4029,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_gross_profit_per_order_gppo_down_net_revenue_per_order_flat_db8483",
@@ -4056,7 +4056,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_gross_profit_per_order_gppo_down_gmv_per_order_up_c08c4e",
@@ -4083,7 +4083,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_gross_profit_per_order_gppo_down_return_rate_up_23bdcc",
@@ -4110,7 +4110,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_cancellation_rate_cancellation_rate_up_net_revenue_down_7644db",
@@ -4137,7 +4137,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_cancellation_rate_cancellation_rate_up_order_volume_up_44ff0c",
@@ -4164,7 +4164,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_cancellation_rate_cancellation_rate_down_return_rate_up_735550",
@@ -4191,7 +4191,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_coupon_redemption_rate_coupon_redemption_rate_up_conversion_rate_up_364031",
@@ -4218,7 +4218,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_coupon_redemption_rate_coupon_redemption_rate_up_net_revenue_per_order_down_85f432",
@@ -4245,7 +4245,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_ec_coupon_redemption_rate_coupon_redemption_rate_up_order_volume_flat_4ca134",
@@ -4272,7 +4272,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_recognized_revenue_recognized_revenue_up_billings_up_more_f160a7",
@@ -4299,7 +4299,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_recognized_revenue_recognized_revenue_up_bookings_flat_510709",
@@ -4326,7 +4326,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_recognized_revenue_recognized_revenue_down_bookings_down_more_2a767c",
@@ -4353,7 +4353,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_recognized_revenue_recognized_revenue_up_book_to_bill_ratio_down_7714cb",
@@ -4380,7 +4380,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_deferred_revenue_deferred_revenue_up_bookings_up_a38804",
@@ -4407,7 +4407,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_deferred_revenue_deferred_revenue_down_recognized_revenue_up_cccd28",
@@ -4434,7 +4434,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_deferred_revenue_deferred_revenue_down_cancellations_up_9937c2",
@@ -4461,7 +4461,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_deferred_revenue_deferred_revenue_flat_bookings_up_1e8fff",
@@ -4488,7 +4488,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_revenue_waterfall_revenue_waterfall_shows_bookings_up_dr_conversion_flat_7b1ebb",
@@ -4514,7 +4514,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_revenue_waterfall_revenue_waterfall_shows_dr_conversion_down_bookings_up_514a04",
@@ -4540,7 +4540,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_revenue_waterfall_revenue_waterfall_shows_reversals_up_revenue_flat_c2c8ac",
@@ -4566,7 +4566,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_revenue_waterfall_revenue_waterfall_shows_dr_conversion_up_bookings_flat_bd4af0",
@@ -4592,7 +4592,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_bookings_vs_billings_vs_revenue_bookings_up_billings_flat_revenue_down_45deab",
@@ -4618,7 +4618,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_bookings_vs_billings_vs_revenue_bookings_flat_billings_up_revenue_up_2c39c1",
@@ -4644,7 +4644,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_bookings_vs_billings_vs_revenue_bookings_up_revenue_flat_1106ff",
@@ -4670,7 +4670,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_bookings_vs_billings_vs_revenue_billings_up_revenue_up_less_fe7f23",
@@ -4696,7 +4696,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_revenue_concentration_risk_concentration_risk_up_revenue_growth_up_11ada9",
@@ -4723,7 +4723,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_revenue_concentration_risk_concentration_risk_up_churn_rate_up_a8bf70",
@@ -4750,7 +4750,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_revenue_concentration_risk_concentration_risk_down_revenue_growth_down_1ff911",
@@ -4777,7 +4777,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_price_realization_rate_price_realization_down_revenue_up_693e10",
@@ -4804,7 +4804,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_price_realization_rate_price_realization_down_gross_profit_per_order_down_19bbac",
@@ -4831,7 +4831,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_price_realization_rate_price_realization_up_revenue_down_2eb931",
@@ -4858,7 +4858,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_revenue_per_employee_revenue_per_employee_up_headcount_flat_0e26ff",
@@ -4885,7 +4885,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_revenue_per_employee_revenue_per_employee_up_headcount_down_e1f8b6",
@@ -4912,7 +4912,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_revenue_per_employee_revenue_per_employee_down_headcount_up_d332d4",
@@ -4939,7 +4939,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_upsell_revenue_rate_upsell_rate_up_revenue_growth_up_9e15f7",
@@ -4966,7 +4966,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_upsell_revenue_rate_upsell_rate_up_churn_rate_down_58e656",
@@ -4993,7 +4993,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_upsell_revenue_rate_upsell_rate_down_revenue_growth_up_6dcf99",
@@ -5020,7 +5020,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_contract_renewal_rate_renewal_rate_up_churn_rate_down_b8d343",
@@ -5047,7 +5047,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_contract_renewal_rate_renewal_rate_up_upsell_revenue_rate_up_448445",
@@ -5074,7 +5074,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_contract_renewal_rate_renewal_rate_down_churn_rate_up_8aa4c5",
@@ -5101,7 +5101,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_gross_margin_gross_margin_up_cogs_per_unit_flat_973c00",
@@ -5128,7 +5128,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_gross_margin_gross_margin_down_cogs_per_unit_up_4b19e8",
@@ -5155,7 +5155,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_gross_margin_gross_margin_down_revenue_per_unit_flat_b21ea0",
@@ -5182,7 +5182,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_gross_margin_gross_margin_stable_cogs_per_unit_down_revenue_per_unit_down_0eb45a",
@@ -5209,7 +5209,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_contribution_margin_contribution_margin_down_cogs_per_unit_up_10ee51",
@@ -5236,7 +5236,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_contribution_margin_contribution_margin_up_cogs_per_unit_flat_f989b0",
@@ -5263,7 +5263,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_contribution_margin_contribution_margin_flat_rev_per_user_up_var_sga_up_5210af",
@@ -5290,7 +5290,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_contribution_margin_contribution_margin_up_customer_count_flat_5dd4ba",
@@ -5317,7 +5317,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_cogs_per_unit_cogs_per_unit_down_gross_margin_up_315c47",
@@ -5344,7 +5344,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_cogs_per_unit_cogs_per_unit_up_revenue_per_unit_up_more_5f4a34",
@@ -5371,7 +5371,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_cogs_per_unit_cogs_per_unit_down_churn_up_1ff9c6",
@@ -5398,7 +5398,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_cogs_per_unit_cogs_per_unit_flat_gross_margin_up_1da99e",
@@ -5425,7 +5425,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_operating_leverage_operating_leverage_up_contribution_margin_pct_up_8ba858",
@@ -5452,7 +5452,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_operating_leverage_operating_leverage_up_contribution_margin_pct_down_1f5c10",
@@ -5479,7 +5479,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_operating_leverage_operating_leverage_down_contribution_margin_pct_up_2097ec",
@@ -5506,7 +5506,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_fin_operating_leverage_operating_leverage_down_fixed_costs_down_e405b2",
@@ -5533,7 +5533,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_mkt_cac_by_channel_channel_cac_up_roas_down_11cd56",
@@ -5560,7 +5560,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_mkt_cac_by_channel_channel_cac_down_cpl_up_eefe2c",
@@ -5587,7 +5587,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_mkt_cac_by_channel_channel_cac_down_customer_count_down_ac4905",
@@ -5614,7 +5614,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_mkt_roas_roas_up_conversion_rate_up_b681cd",
@@ -5641,7 +5641,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_mkt_roas_roas_up_ad_spend_down_5711a4",
@@ -5668,7 +5668,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_mkt_roas_roas_down_conversion_rate_flat_c45844",
@@ -5695,7 +5695,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_mkt_cpc_cpc_up_conversion_rate_flat_3ae0d1",
@@ -5722,7 +5722,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_mkt_cpc_cpc_down_roas_down_bd3031",
@@ -5749,7 +5749,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_mkt_cpc_cpc_down_click_volume_up_7939b6",
@@ -5776,7 +5776,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_mkt_cpl_cpl_up_conversion_rate_up_5492bd",
@@ -5803,7 +5803,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_mkt_cpl_cpl_up_lead_volume_down_e1308c",
@@ -5830,7 +5830,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_mkt_cpl_cpl_down_mql_to_sql_rate_down_5121e3",
@@ -5857,7 +5857,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_mkt_cpm_cpm_up_impressions_down_7f5671",
@@ -5884,7 +5884,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_mkt_cpm_cpm_down_conversion_rate_up_ddb407",
@@ -5911,7 +5911,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_mkt_cpm_cpm_down_click_volume_down_6ed759",
@@ -5938,7 +5938,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_mkt_blended_cac_blended_cac_up_revenue_growth_up_f05d07",
@@ -5965,7 +5965,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_mkt_blended_cac_blended_cac_up_revenue_growth_flat_798afc",
@@ -5992,7 +5992,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_mkt_blended_cac_blended_cac_down_revenue_growth_down_74c7bb",
@@ -6019,7 +6019,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_mkt_payback_period_payback_period_up_cac_down_d232f9",
@@ -6046,7 +6046,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_mkt_payback_period_payback_period_up_gross_profit_per_order_up_50261c",
@@ -6073,7 +6073,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_mkt_payback_period_payback_period_down_churn_rate_up_2328c1",
@@ -6100,7 +6100,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_mkt_cpa_by_creative_cpa_by_creative_up_roas_down_625354",
@@ -6127,7 +6127,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_mkt_cpa_by_creative_cpa_by_creative_down_conversion_rate_up_9bf8a4",
@@ -6154,7 +6154,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_mkt_cpa_by_creative_cpa_by_creative_down_new_customer_count_down_706db7",
@@ -6181,7 +6181,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_mkt_audience_overlap_rate_overlap_rate_up_conversion_rate_down_58a696",
@@ -6208,7 +6208,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_mkt_audience_overlap_rate_overlap_rate_up_spend_up_5980fd",
@@ -6235,7 +6235,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_mkt_audience_overlap_rate_overlap_rate_down_roi_down_489945",
@@ -6262,7 +6262,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_mkt_campaign_incrementality_incrementality_up_conversion_rate_down_785144",
@@ -6289,7 +6289,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_mkt_campaign_incrementality_incrementality_up_spend_up_ef0cb5",
@@ -6316,7 +6316,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_mkt_campaign_incrementality_incrementality_down_conversion_rate_down_2fa9b2",
@@ -6343,7 +6343,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_mkt_ad_frequency_fatigue_point_fatigue_point_down_conversion_rate_down_74f057",
@@ -6370,7 +6370,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_mkt_ad_frequency_fatigue_point_fatigue_point_down_spend_up_2a87c1",
@@ -6397,7 +6397,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_mkt_ad_frequency_fatigue_point_fatigue_point_up_conversion_rate_up_7d2eb8",
@@ -6424,7 +6424,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_mkt_landing_page_conversion_rate_landing_page_cr_up_roas_up_f8415c",
@@ -6451,7 +6451,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_mkt_landing_page_conversion_rate_landing_page_cr_down_conversion_rate_up_1b294e",
@@ -6478,7 +6478,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_mkt_landing_page_conversion_rate_landing_page_cr_down_bounce_rate_up_37ba10",
@@ -6505,7 +6505,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_prod_dau_mau_dau_mau_up_session_length_down_da30c9",
@@ -6532,7 +6532,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_prod_dau_mau_dau_mau_down_churn_rate_up_91d176",
@@ -6559,7 +6559,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_prod_dau_mau_dau_mau_up_only_in_new_users_not_returning_5ca7f7",
@@ -6586,7 +6586,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_prod_dau_mau_dau_mau_flat_but_mau_down_84292e",
@@ -6613,7 +6613,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_prod_session_length_session_length_down_feature_usage_rate_down_466438",
@@ -6640,7 +6640,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_prod_session_length_session_length_up_churn_rate_down_640705",
@@ -6667,7 +6667,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_prod_session_length_session_length_flat_dau_mau_up_fd0352",
@@ -6694,7 +6694,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_prod_session_length_session_length_up_in_one_segment_only_9a88a7",
@@ -6721,7 +6721,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_prod_feature_usage_rate_feature_usage_rate_up_session_length_up_6ebaf3",
@@ -6748,7 +6748,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_prod_feature_usage_rate_feature_usage_rate_up_churn_rate_down_987e8c",
@@ -6775,7 +6775,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_prod_feature_usage_rate_feature_usage_rate_flat_dau_mau_up_c3c41f",
@@ -6802,7 +6802,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_prod_feature_usage_rate_feature_usage_rate_down_support_tickets_up_4a243c",
@@ -6829,7 +6829,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_prod_feature_adoption_rate_feature_adoption_up_retention_up_d2134a",
@@ -6856,7 +6856,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_prod_feature_adoption_rate_feature_adoption_up_feature_breadth_down_bf8983",
@@ -6883,7 +6883,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_prod_feature_adoption_rate_feature_adoption_down_feature_breadth_up_b12017",
@@ -6910,7 +6910,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_prod_breadth_of_use_breadth_of_use_up_retention_up_f35724",
@@ -6937,7 +6937,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_prod_breadth_of_use_breadth_of_use_down_feature_adoption_rate_up_e3cf50",
@@ -6964,7 +6964,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_prod_breadth_of_use_breadth_of_use_down_retention_down_e1849c",
@@ -6991,7 +6991,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_prod_stickiness_ratio_stickiness_ratio_up_retention_up_585f04",
@@ -7018,7 +7018,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_prod_stickiness_ratio_stickiness_ratio_down_retention_down_e62be7",
@@ -7045,7 +7045,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_prod_stickiness_ratio_stickiness_ratio_up_retention_flat_66674e",
@@ -7072,7 +7072,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_prod_session_depth_session_depth_up_retention_up_a43edd",
@@ -7099,7 +7099,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_prod_session_depth_session_depth_up_conversion_rate_up_30c256",
@@ -7126,7 +7126,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_prod_session_depth_session_depth_down_bounce_rate_up_0a29f3",
@@ -7153,7 +7153,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_prod_notification_opt_out_rate_opt_out_rate_up_engagement_down_41c425",
@@ -7180,7 +7180,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_prod_notification_opt_out_rate_opt_out_rate_up_retention_down_b4a524",
@@ -7207,7 +7207,7 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
     "id": "kb_prod_notification_opt_out_rate_opt_out_rate_down_engagement_up_6bf6d3",
@@ -7234,6 +7234,6 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   }
 ]

@@ -455,6 +455,18 @@ async def _stream_chat(
 
         final_sql = answer.sql
 
+        # ── Semantic column alignment — deterministic pre-execution check ─────
+        # Catches wrong entity column (e.g. product_id used for seller analysis)
+        # and injects a fix hint into SqlWriter if a rewrite is needed.
+        _semantic_fix_hint = ""
+        try:
+            from aughor.tools.semantic_validator import check_entity_column_alignment
+            _sem_warnings = check_entity_column_alignment(question, final_sql, schema)
+            if _sem_warnings:
+                _semantic_fix_hint = " | ".join(w.to_prompt_text() for w in _sem_warnings)
+        except Exception:
+            pass
+
         # ── Lint before execution — catch known anti-patterns in code, not prompts ──
         from aughor.sql.lint import lint as _lint_sql, error_hint as _lint_hint, has_errors as _lint_has_errors
         from aughor.sql.writer import SqlWriter
@@ -483,16 +495,23 @@ async def _stream_chat(
         if not result.error and result.row_count == 0:
             _chat_zero_diag = _zero_row_suspicious(final_sql)
 
-        if result.error or _chat_zero_diag:
+        # Also trigger a rewrite when semantic column warnings exist, even if
+        # the SQL executed successfully (wrong columns produce wrong results silently).
+        if result.error or _chat_zero_diag or _semantic_fix_hint:
             _writer2 = SqlWriter(db, schema_str=schema)
-            _fix_error = result.error or "Query returned 0 rows — the SQL logic is likely wrong."
+            _fix_error = (
+                result.error or
+                (_semantic_fix_hint if _semantic_fix_hint else None) or
+                "Query returned 0 rows — the SQL logic is likely wrong."
+            )
+            _combined_hint = " | ".join(filter(None, [_chat_zero_diag or "", _semantic_fix_hint]))
             try:
                 fix = await asyncio.to_thread(
-                    lambda: _writer2.fix(final_sql, _fix_error, hint=_chat_zero_diag or "", max_retries=1)
+                    lambda: _writer2.fix(final_sql, _fix_error, hint=_combined_hint, max_retries=1)
                 )
                 if fix.ok:
                     retry = await asyncio.to_thread(db.execute, "chat", fix.sql)
-                    if not retry.error and (retry.row_count > 0 or not _chat_zero_diag):
+                    if not retry.error and (retry.row_count > 0 or not _chat_zero_diag or _semantic_fix_hint):
                         final_sql = fix.sql
                         result = retry
                         yield _sse("sql", {"sql": final_sql})
