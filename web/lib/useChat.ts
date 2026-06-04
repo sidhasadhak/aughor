@@ -2,6 +2,7 @@
 
 import { useReducer, useRef, useCallback } from "react";
 import type { ADAReport, ExplorationReport, Hypothesis, InvestigationPhase, SubQuestion, SubQuestionAnswer } from "@/lib/types";
+import type { PlaybookRef } from "@/lib/api";
 
 // ── Debug event log — ring buffer of raw SSE events ───────────────────────────
 export interface DebugEvent {
@@ -66,6 +67,9 @@ export interface ChatTurn {
 
   // Semantic inspect — set when the post-execution LLM validator finds issues
   inspectWarning: { issues: string[]; suggestedFix: string } | null;
+
+  // Org-playbook items referenced for this turn (user can keep/modify/remove)
+  playbookRefs: PlaybookRef[];
 }
 
 interface ChatHistoryTurn {
@@ -103,6 +107,7 @@ type ChatAction =
   | { type: "HYPOTHESES";       hypotheses: Hypothesis[] }
   | { type: "SCORE";            score: Record<string, unknown> }
   | { type: "INSPECT_WARNING";  issues: string[]; suggestedFix: string }
+  | { type: "PLAYBOOK_REFS";    items: PlaybookRef[] }
   | { type: "ERROR";            message: string }
   | { type: "DONE" }
   | { type: "CLEAR" }
@@ -127,6 +132,7 @@ const EMPTY_TURN: Omit<ChatTurn, "id" | "question" | "mode"> = {
   startedAt: 0, elapsedMs: null,
   fromCache: false, cachedQuestion: null,
   inspectWarning: null,
+  playbookRefs: [],
 };
 
 // Freeze the elapsed wall-time the first time a turn reaches a terminal state.
@@ -173,6 +179,8 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
         ...t,
         inspectWarning: { issues: action.issues, suggestedFix: action.suggestedFix },
       }));
+    case "PLAYBOOK_REFS":
+      return updateLast(state, t => ({ ...t, playbookRefs: action.items }));
     case "PHASE":
       return updateLast(state, t => ({ ...t, phases: [...t.phases, action.phase], statusText: `Analyzing ${action.phase.phase_id}…` }));
     case "ADA_REPORT":
@@ -297,6 +305,7 @@ async function consumeStream(
                 suggestedFix: (p.suggested_fix as string) ?? "",
               });
               break;
+            case "playbook_refs": dispatch({ type: "PLAYBOOK_REFS", items: (p.items as PlaybookRef[]) ?? [] }); break;
             case "error":        dispatch({ type: "ERROR", message: p.message as string }); break;
             case "done":         dispatch({ type: "DONE" }); break;
           }

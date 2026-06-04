@@ -122,6 +122,23 @@ def _build_entries_for_kb(e: dict) -> list[PlaybookEntry]:
     return results
 
 
+def activate_seeded() -> int:
+    """Promote KB-seeded 'draft' entries to 'active' so they're live by default.
+    Leaves user-deprecated and user-authored entries untouched. Idempotent —
+    returns the number of entries newly promoted."""
+    from aughor.playbook.store import list_entries, _save_raw
+    raw = [e.model_dump() for e in list_entries()]
+    promoted = 0
+    for e in raw:
+        is_seed = bool(e.get("source_kb_id")) or str(e.get("id", "")).startswith("kb_")
+        if is_seed and e.get("status") == "draft":
+            e["status"] = "active"
+            promoted += 1
+    if promoted:
+        _save_raw(raw)
+    return promoted
+
+
 def seed_from_kb(force: bool = False) -> int:
     """
     Convert KB causal entries into draft PlaybookEntry objects.

@@ -275,10 +275,16 @@ async def _start_ontology_refresh_loop() -> None:
 @app.on_event("startup")
 async def _seed_playbook() -> None:
     try:
-        from aughor.playbook.builder import seed_from_kb
+        from aughor.playbook.builder import seed_from_kb, activate_seeded
         n = seed_from_kb()
         if n:
             logger.info("Playbook seeded with %d entries from KB.", n)
+        # Activate the seed by default — promote KB-seeded drafts to 'active' so
+        # they're live playbook items the user can keep / modify / remove, not
+        # dormant drafts. Idempotent; never touches user-deprecated entries.
+        promoted = activate_seeded()
+        if promoted:
+            logger.info("Activated %d seeded playbook entries.", promoted)
     except Exception:
         pass
 

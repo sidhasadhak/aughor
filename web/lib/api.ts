@@ -1305,6 +1305,39 @@ export async function getCanvasHistory(id: string, limit = 20): Promise<CanvasHi
   return (data as { investigations: CanvasHistoryItem[] }).investigations ?? [];
 }
 
+// ── Playbook (referenced items surfaced in chat/investigation) ────────────────
+export interface PlaybookRef {
+  id: string;
+  recommendation: string;
+  trigger_condition: string;
+  status: string;
+  tags: string[];
+  historical_success_rate: number;
+  source_kb_id: string | null;
+}
+
+export async function deletePlaybookEntry(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/playbook/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to remove playbook item");
+}
+
+/** Edit just the recommendation text of a playbook item (preserves the rest). */
+export async function editPlaybookRecommendation(id: string, recommendation: string): Promise<void> {
+  const cur = await fetch(`${BASE}/playbook/${encodeURIComponent(id)}`).then(r => (r.ok ? r.json() : null));
+  if (!cur) throw new Error("Playbook item not found");
+  const body = {
+    trigger_metric: cur.trigger_metric, trigger_condition: cur.trigger_condition,
+    trigger_operator: cur.trigger_operator ?? "any", trigger_value: cur.trigger_value ?? 0,
+    recommendation, expected_impact: cur.expected_impact ?? "",
+    typical_timeline: cur.typical_timeline ?? "", owner_role: cur.owner_role ?? "",
+    tags: cur.tags ?? [], status: cur.status ?? "active", source_kb_id: cur.source_kb_id ?? null,
+  };
+  const res = await fetch(`${BASE}/playbook/${encodeURIComponent(id)}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error("Failed to update playbook item");
+}
+
 /** Remove a single history line item (an investigation, or a whole chat session). */
 export async function deleteInvestigation(id: string): Promise<void> {
   const res = await fetch(`${BASE}/investigations/${encodeURIComponent(id)}`, { method: "DELETE" });

@@ -94,6 +94,23 @@ def _looks_direct(question: str) -> bool:
     return bool(_DIRECT_SIGNALS.search(question))
 
 
+def _pb_serialize(entries) -> list[dict]:
+    """Shape matched playbook entries for the `playbook_refs` SSE event so the UI
+    can show them and offer keep / modify / remove."""
+    out = []
+    for e in entries or []:
+        out.append({
+            "id": e.id,
+            "recommendation": e.recommendation,
+            "trigger_condition": e.trigger_condition,
+            "status": e.status,
+            "tags": e.tags[:6],
+            "historical_success_rate": e.historical_success_rate,
+            "source_kb_id": e.source_kb_id,
+        })
+    return out
+
+
 async def _aiter_sync(sync_iter):
     loop = asyncio.get_event_loop()
     it = iter(sync_iter)
@@ -319,7 +336,6 @@ async def _stream_chat(
         from aughor.llm.provider import get_provider
         from aughor.rules import get_chat_rules_block
 
-        schema = await asyncio.to_thread(db.get_schema)
         rules_block = get_chat_rules_block()
 
         history_section = ""
@@ -338,67 +354,69 @@ async def _stream_chat(
         _schema_name = getattr(db, "_schema_name", None)
         schema_qualifier = (_schema_name or "main") if db.dialect == "duckdb" else (_schema_name or "public")
 
-        kb_patterns_section = ""
-        try:
+        # ── Context retrieval — independent, side-effect-free fetches run
+        # CONCURRENTLY (none consumes another's output; results slot into fixed
+        # prompt sections, so completion order is irrelevant). Cuts the prelude
+        # wait from the sum of these calls to roughly the slowest single one.
+        def _kb() -> str:
             from aughor.semantic.kb_retriever import retrieve_for_planning
-            kb_patterns_section = retrieve_for_planning(question, top_k=2) or ""
-            if kb_patterns_section:
-                kb_patterns_section += "\n\n"
-        except Exception:
-            pass
+            s = retrieve_for_planning(question, top_k=2) or ""
+            return (s + "\n\n") if s else ""
 
-        # Per-connection knowledge store — retrieved, not dumped
-        conn_kb_section = ""
-        try:
-            from aughor.semantic.connection_kb import retrieve_for_question as _ckb_retrieve
-            _ckb = _ckb_retrieve(question, connection_id)
-            if _ckb:
-                conn_kb_section = _ckb + "\n\n"
-        except Exception:
-            pass
+        def _ckb() -> str:
+            from aughor.semantic.connection_kb import retrieve_for_question as _r
+            s = _r(question, connection_id)
+            return (s + "\n\n") if s else ""
 
-        sql_examples_section = ""
-        try:
+        def _sqlex() -> str:
             from aughor.tools.prior_analyses import search_sql_examples
-            sql_examples_section = search_sql_examples(question, connection_id)
-        except Exception:
-            pass
+            return search_sql_examples(question, connection_id) or ""
 
-        metrics_section = ""
-        try:
+        def _metrics() -> str:
             from aughor.semantic.metrics import build_metrics_block
-            _mb = build_metrics_block()
-            if _mb:
-                metrics_section = _mb + "\n\n"
-        except Exception:
-            pass
+            s = build_metrics_block()
+            return (s + "\n\n") if s else ""
 
-        exploration_section = ""
-        try:
+        def _expl() -> str:
             from aughor.explorer.store import render_exploration_annotations
-            _ea = render_exploration_annotations(connection_id)
-            if _ea:
-                exploration_section = _ea + "\n\n"
-        except Exception:
-            pass
+            s = render_exploration_annotations(connection_id)
+            return (s + "\n\n") if s else ""
 
-        causal_section = ""
-        try:
+        def _causal() -> str:
             from aughor.process.causal import build_causal_context_section
-            _cc = build_causal_context_section(question, conn_id=connection_id)
-            if _cc:
-                causal_section = _cc + "\n"
-        except Exception:
-            pass
+            s = build_causal_context_section(question, conn_id=connection_id)
+            return (s + "\n") if s else ""
 
-        document_section = ""
-        try:
+        def _docs() -> str:
             from aughor.knowledge.indexer import build_external_context_section
-            _ds = build_external_context_section(question, top_k=2)
-            if _ds:
-                document_section = _ds + "\n\n"
-        except Exception:
-            pass
+            s = build_external_context_section(question, top_k=2)
+            return (s + "\n\n") if s else ""
+
+        def _pb_match():
+            from aughor.playbook.retriever import retrieve_for_metric_and_phases
+            return retrieve_for_metric_and_phases([question], limit=4)
+
+        async def _safe(fn):
+            try:
+                return await asyncio.to_thread(fn)
+            except Exception:
+                return ""
+
+        async def _safe_list(fn):
+            try:
+                return await asyncio.to_thread(fn)
+            except Exception:
+                return []
+
+        (
+            schema, kb_patterns_section, conn_kb_section, sql_examples_section,
+            metrics_section, exploration_section, causal_section, document_section,
+            pb_entries,
+        ) = await asyncio.gather(
+            asyncio.to_thread(db.get_schema),  # critical: a failure here propagates
+            _safe(_kb), _safe(_ckb), _safe(_sqlex), _safe(_metrics),
+            _safe(_expl), _safe(_causal), _safe(_docs), _safe_list(_pb_match),
+        )
 
         prompt = CHAT_PROMPT.format(
             schema=schema,
@@ -415,6 +433,17 @@ async def _stream_chat(
         )
         if rules_block:
             prompt = rules_block + prompt
+        # Playbook context — when org playbook items match this question, give them
+        # to the model AND surface them to the user (emitted below) so they can
+        # keep / modify / remove them.
+        if pb_entries:
+            try:
+                from aughor.playbook.retriever import build_playbook_prompt_section
+                _pbsec = build_playbook_prompt_section(pb_entries)
+                if _pbsec:
+                    prompt = _pbsec + "\n" + prompt
+            except Exception:
+                pass
 
         # Run the (blocking) LLM call in a worker thread so the event loop stays
         # free to serve other pages (catalog/inbox/home) while the query runs.
@@ -481,6 +510,8 @@ async def _stream_chat(
         yield _sse("tables_used", {"tables": _extract_tables(final_sql)})
         if answer.intent or answer.approach:
             yield _sse("analysis", {"intent": answer.intent, "steps": answer.approach})
+        if pb_entries:
+            yield _sse("playbook_refs", {"items": _pb_serialize(pb_entries)})
 
         # Persist, then mark DONE the moment the answer is ready — so the
         # "Completed in …" time reflects when the user got their answer, not when
@@ -596,6 +627,16 @@ async def _stream_investigation(
     from aughor import telemetry as _telemetry
     trace_id = _telemetry.new_trace(inv_id, question, connection_id)
     yield _sse("start", {"question": question, "connection_id": connection_id, "investigation_id": inv_id, "trace_id": trace_id})
+
+    # Surface matched org-playbook items up front (they're also injected into ADA
+    # synthesis). The user can keep / modify / remove them from the result.
+    try:
+        from aughor.playbook.retriever import retrieve_for_metric_and_phases
+        _pb = await asyncio.to_thread(lambda: retrieve_for_metric_and_phases([question], limit=4))
+        if _pb:
+            yield _sse("playbook_refs", {"items": _pb_serialize(_pb)})
+    except Exception:
+        pass
 
     _active_explorer = _explorers.get(connection_id)
     if _active_explorer:

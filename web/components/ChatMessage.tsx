@@ -18,6 +18,7 @@ import type { ADAReport } from "@/lib/types";
 import { InvestigationReportView } from "@/components/InvestigationReport";
 import { ExplorationReportView } from "@/components/ExplorationReport";
 import { ThinkingTrace, turnToTraceState } from "@/components/ThinkingTrace";
+import { deletePlaybookEntry, editPlaybookRecommendation, type PlaybookRef } from "@/lib/api";
 
 // Format a wall-clock duration for the "Completed in …" line.
 function formatElapsed(ms: number): string {
@@ -1617,6 +1618,92 @@ function InspectWarningBanner({ issues, suggestedFix }: { issues: string[]; sugg
   );
 }
 
+// ── Referenced playbook items — keep / edit / remove ────────────────────────────
+function PlaybookRefs({ refs }: { refs: PlaybookRef[] }) {
+  const [items, setItems] = useState<PlaybookRef[]>(refs);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  useEffect(() => { setItems(refs); }, [refs]);
+  if (items.length === 0) return null;
+
+  const remove = async (id: string) => {
+    setBusy(id);
+    const prev = items;
+    setItems(list => list.filter(i => i.id !== id));   // optimistic
+    try { await deletePlaybookEntry(id); }
+    catch { setItems(prev); }
+    finally { setBusy(null); }
+  };
+  const saveEdit = async (id: string) => {
+    const text = draft.trim();
+    if (!text) { setEditing(null); return; }
+    setBusy(id);
+    try {
+      await editPlaybookRecommendation(id, text);
+      setItems(list => list.map(i => i.id === id ? { ...i, recommendation: text } : i));
+      setEditing(null);
+    } catch { /* keep editor open on failure */ }
+    finally { setBusy(null); }
+  };
+
+  return (
+    <div className="mt-4 rounded-md border border-amber-700/30" style={{ background: "color-mix(in srgb, #f59e0b 5%, var(--bg-0))" }}>
+      <div className="px-3 py-2 border-b border-amber-700/20 flex items-center gap-2">
+        <span className="text-[11px] font-medium uppercase tracking-wide text-amber-400/90">Playbook referenced</span>
+        <span className="text-[11px] text-zinc-500">— these org playbook items informed this answer. Keep, edit, or remove.</span>
+      </div>
+      <div className="divide-y divide-amber-700/15">
+        {items.map(item => (
+          <div key={item.id} className="px-3 py-2.5 group/pb">
+            <div className="flex items-start gap-2">
+              <span className="shrink-0 mt-1 w-1.5 h-1.5 rounded-full bg-amber-400/70" />
+              <div className="flex-1 min-w-0">
+                {editing === item.id ? (
+                  <div className="space-y-1.5">
+                    <textarea
+                      value={draft}
+                      onChange={e => setDraft(e.target.value)}
+                      rows={2}
+                      className="w-full text-[12px] text-zinc-200 rounded border border-zinc-700 bg-[--bg-0] px-2 py-1.5 resize-none focus:outline-none focus:border-amber-600"
+                    />
+                    <div className="flex gap-2">
+                      <button onClick={() => saveEdit(item.id)} disabled={busy === item.id}
+                        className="text-[11px] px-2 py-0.5 rounded bg-amber-600/20 border border-amber-600/40 text-amber-300 hover:bg-amber-600/30">Save</button>
+                      <button onClick={() => setEditing(null)}
+                        className="text-[11px] px-2 py-0.5 rounded border border-zinc-700 text-zinc-400 hover:text-zinc-200">Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-[12px] text-zinc-300 leading-relaxed">{item.recommendation}</p>
+                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                      {item.trigger_condition && (
+                        <span className="text-[10.5px] text-zinc-500">when {item.trigger_condition}</span>
+                      )}
+                      <span className="text-[10px] px-1.5 py-px rounded-full border border-zinc-700 text-zinc-500">
+                        {item.historical_success_rate > 0 ? `${Math.round(item.historical_success_rate * 100)}% success` : "no outcome data"}
+                      </span>
+                    </div>
+                  </>
+                )}
+              </div>
+              {editing !== item.id && (
+                <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover/pb:opacity-100 transition-opacity">
+                  <button onClick={() => { setEditing(item.id); setDraft(item.recommendation); }}
+                    className="text-[11px] px-1.5 py-0.5 rounded text-zinc-500 hover:text-zinc-200" title="Edit">Edit</button>
+                  <button onClick={() => remove(item.id)} disabled={busy === item.id}
+                    className="text-[11px] px-1.5 py-0.5 rounded text-zinc-500 hover:text-red-400" title="Remove from playbook">Remove</button>
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Inline agent trace — streams during the turn, auto-collapses when done ──────
 function InlineAgentTrace({ turn }: { turn: ChatTurn }) {
   const running = turn.status === "loading";
@@ -1814,6 +1901,9 @@ export function ChatMessage({
               </>
             )}
           </div>
+
+          {/* Referenced playbook items — keep / edit / remove */}
+          {turn.playbookRefs.length > 0 && <PlaybookRefs refs={turn.playbookRefs} />}
 
           {/* Follow-up chips */}
           {turn.followups.length > 0 && (

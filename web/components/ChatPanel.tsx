@@ -359,6 +359,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
           fromCache: false,
           cachedQuestion: null,
           inspectWarning: null,
+          playbookRefs: [],
         })));
       })
       .catch(() => {});
