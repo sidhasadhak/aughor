@@ -482,32 +482,9 @@ async def _stream_chat(
         if answer.intent or answer.approach:
             yield _sse("analysis", {"intent": answer.intent, "steps": answer.approach})
 
-        # ── Semantic Inspect — non-blocking logical validation ──────────────
-        try:
-            from aughor.sql.inspect import inspect as _inspect_sql
-            _ir = await asyncio.to_thread(
-                lambda: _inspect_sql(question, final_sql, result.columns, result.rows)
-            )
-            if not _ir.valid and _ir.issues:
-                yield _sse("inspect_warning", {
-                    "issues":        _ir.issues,
-                    "suggested_fix": _ir.suggested_fix,
-                })
-        except Exception:
-            pass
-
-        try:
-            fq: _FollowUpBase = await asyncio.to_thread(
-                lambda: get_provider("narrator").complete(
-                    system="Suggest exactly 3 concise follow-up data questions (max 12 words each).",
-                    user=f"Question: {question}\nAnswer: {answer.headline}\nColumns: {', '.join(result.columns[:8])}",
-                    response_model=_FollowUpBase,
-                )
-            )
-            yield _sse("followups", {"questions": fq.questions[:3]})
-        except Exception:
-            pass
-
+        # Persist, then mark DONE the moment the answer is ready — so the
+        # "Completed in …" time reflects when the user got their answer, not when
+        # the post-answer enrichment (inspect + follow-ups) finishes.
         try:
             await asyncio.to_thread(
                 lambda: save_chat_turn(
@@ -523,6 +500,34 @@ async def _stream_chat(
             pass
 
         yield _sse("done", {})
+
+        # ── Post-answer enrichment (streams in after DONE, never delays it) ──
+        # Semantic inspect — logical validation
+        try:
+            from aughor.sql.inspect import inspect as _inspect_sql
+            _ir = await asyncio.to_thread(
+                lambda: _inspect_sql(question, final_sql, result.columns, result.rows)
+            )
+            if not _ir.valid and _ir.issues:
+                yield _sse("inspect_warning", {
+                    "issues":        _ir.issues,
+                    "suggested_fix": _ir.suggested_fix,
+                })
+        except Exception:
+            pass
+
+        # Follow-up suggestions
+        try:
+            fq: _FollowUpBase = await asyncio.to_thread(
+                lambda: get_provider("narrator").complete(
+                    system="Suggest exactly 3 concise follow-up data questions (max 12 words each).",
+                    user=f"Question: {question}\nAnswer: {answer.headline}\nColumns: {', '.join(result.columns[:8])}",
+                    response_model=_FollowUpBase,
+                )
+            )
+            yield _sse("followups", {"questions": fq.questions[:3]})
+        except Exception:
+            pass
 
     except Exception as e:
         yield _sse("error", {"message": str(e)})
