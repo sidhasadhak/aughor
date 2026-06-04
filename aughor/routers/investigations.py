@@ -319,7 +319,7 @@ async def _stream_chat(
         from aughor.llm.provider import get_provider
         from aughor.rules import get_chat_rules_block
 
-        schema = db.get_schema()
+        schema = await asyncio.to_thread(db.get_schema)
         rules_block = get_chat_rules_block()
 
         history_section = ""
@@ -416,8 +416,12 @@ async def _stream_chat(
         if rules_block:
             prompt = rules_block + prompt
 
-        answer: _ChatAnswer = get_provider("coder").complete(
-            system=CHAT_SQL_SYSTEM, user=prompt, response_model=_ChatAnswer,
+        # Run the (blocking) LLM call in a worker thread so the event loop stays
+        # free to serve other pages (catalog/inbox/home) while the query runs.
+        answer: _ChatAnswer = await asyncio.to_thread(
+            lambda: get_provider("coder").complete(
+                system=CHAT_SQL_SYSTEM, user=prompt, response_model=_ChatAnswer,
+            )
         )
 
         final_sql = answer.sql
@@ -429,11 +433,13 @@ async def _stream_chat(
         if _lint_has_errors(_lint_issues):
             try:
                 _writer = SqlWriter(db, schema_str=schema)
-                _lint_fix = _writer.fix(
-                    final_sql,
-                    "SQL quality issues detected before execution",
-                    hint=_lint_hint(_lint_issues),
-                    max_retries=1,
+                _lint_fix = await asyncio.to_thread(
+                    lambda: _writer.fix(
+                        final_sql,
+                        "SQL quality issues detected before execution",
+                        hint=_lint_hint(_lint_issues),
+                        max_retries=1,
+                    )
                 )
                 if _lint_fix.ok:
                     final_sql = _lint_fix.sql
@@ -441,7 +447,7 @@ async def _stream_chat(
                 pass   # non-fatal — proceed with original SQL
 
         yield _sse("sql", {"sql": final_sql})
-        result = db.execute("chat", final_sql)
+        result = await asyncio.to_thread(db.execute, "chat", final_sql)
 
         from aughor.agent.investigate import _zero_row_suspicious
         _chat_zero_diag = None
@@ -452,9 +458,11 @@ async def _stream_chat(
             _writer2 = SqlWriter(db, schema_str=schema)
             _fix_error = result.error or "Query returned 0 rows — the SQL logic is likely wrong."
             try:
-                fix = _writer2.fix(final_sql, _fix_error, hint=_chat_zero_diag or "", max_retries=1)
+                fix = await asyncio.to_thread(
+                    lambda: _writer2.fix(final_sql, _fix_error, hint=_chat_zero_diag or "", max_retries=1)
+                )
                 if fix.ok:
-                    retry = db.execute("chat", fix.sql)
+                    retry = await asyncio.to_thread(db.execute, "chat", fix.sql)
                     if not retry.error and (retry.row_count > 0 or not _chat_zero_diag):
                         final_sql = fix.sql
                         result = retry
@@ -477,7 +485,9 @@ async def _stream_chat(
         # ── Semantic Inspect — non-blocking logical validation ──────────────
         try:
             from aughor.sql.inspect import inspect as _inspect_sql
-            _ir = _inspect_sql(question, final_sql, result.columns, result.rows)
+            _ir = await asyncio.to_thread(
+                lambda: _inspect_sql(question, final_sql, result.columns, result.rows)
+            )
             if not _ir.valid and _ir.issues:
                 yield _sse("inspect_warning", {
                     "issues":        _ir.issues,
@@ -487,23 +497,27 @@ async def _stream_chat(
             pass
 
         try:
-            fq: _FollowUpBase = get_provider("narrator").complete(
-                system="Suggest exactly 3 concise follow-up data questions (max 12 words each).",
-                user=f"Question: {question}\nAnswer: {answer.headline}\nColumns: {', '.join(result.columns[:8])}",
-                response_model=_FollowUpBase,
+            fq: _FollowUpBase = await asyncio.to_thread(
+                lambda: get_provider("narrator").complete(
+                    system="Suggest exactly 3 concise follow-up data questions (max 12 words each).",
+                    user=f"Question: {question}\nAnswer: {answer.headline}\nColumns: {', '.join(result.columns[:8])}",
+                    response_model=_FollowUpBase,
+                )
             )
             yield _sse("followups", {"questions": fq.questions[:3]})
         except Exception:
             pass
 
         try:
-            save_chat_turn(
-                question=question, connection_id=connection_id, headline=answer.headline or question,
-                sql=final_sql or "", session_id=session_id, columns=result.columns,
-                rows=result.rows, chart_type=answer.chart_type,
-                tables_used=_extract_tables(final_sql or ""),
-                intent=answer.intent, approach=answer.approach,
-                canvas_id=canvas_id,
+            await asyncio.to_thread(
+                lambda: save_chat_turn(
+                    question=question, connection_id=connection_id, headline=answer.headline or question,
+                    sql=final_sql or "", session_id=session_id, columns=result.columns,
+                    rows=result.rows, chart_type=answer.chart_type,
+                    tables_used=_extract_tables(final_sql or ""),
+                    intent=answer.intent, approach=answer.approach,
+                    canvas_id=canvas_id,
+                )
             )
         except Exception:
             pass
@@ -553,7 +567,7 @@ async def _stream_investigation(
         return
 
     from aughor.tools.prior_analyses import find_similar_investigation
-    cache_hit = None if (skip_cache or _looks_direct(question)) else find_similar_investigation(question, connection_id)
+    cache_hit = None if (skip_cache or _looks_direct(question)) else await asyncio.to_thread(find_similar_investigation, question, connection_id)
     if cache_hit:
         cached_id, score = cache_hit
         cached = get_investigation(cached_id)
@@ -584,7 +598,7 @@ async def _stream_investigation(
 
     merged: dict = {}  # bound before try so the except/salvage path can read partial state
     try:
-        schema = db.get_schema()
+        schema = await asyncio.to_thread(db.get_schema)
         from aughor.agent.graph import build_graph_generic
         agent = build_graph_generic(db, hitl=hitl)
 
@@ -655,8 +669,8 @@ async def _stream_investigation(
                     pass
                 ada_save = dict(ada) if isinstance(ada, dict) else ada
                 ada_save["_report_type"] = "investigate"
-                complete_investigation(inv_id, report=ada_save, hypotheses=merged.get("hypotheses", []), query_history=qh, question=question, connection_id=connection_id, skip_index=False)
-                _record_memory(inv_id, connection_id, question, merged)
+                await asyncio.to_thread(lambda: complete_investigation(inv_id, report=ada_save, hypotheses=merged.get("hypotheses", []), query_history=qh, question=question, connection_id=connection_id, skip_index=False))
+                await asyncio.to_thread(_record_memory, inv_id, connection_id, question, merged)
                 report_emitted = True
             elif node_name == "decompose_exploration":
                 yield _sse("explore_plan", {"sub_questions": [sq.model_dump() for sq in merged.get("sub_questions", [])]})
@@ -687,8 +701,8 @@ async def _stream_investigation(
                 except Exception:
                     pass
                 explore_save = {"_report_type": "explore", **er.model_dump(), "sub_questions": sq_raw, "subq_answers": sa_raw}
-                complete_investigation(inv_id, report=explore_save, hypotheses=[], query_history=qh, question=question, connection_id=connection_id, skip_index=False)
-                _record_memory(inv_id, connection_id, question, merged)
+                await asyncio.to_thread(lambda: complete_investigation(inv_id, report=explore_save, hypotheses=[], query_history=qh, question=question, connection_id=connection_id, skip_index=False))
+                await asyncio.to_thread(_record_memory, inv_id, connection_id, question, merged)
                 report_emitted = True
             elif node_name == "synthesize" and merged.get("report"):
                 qh = merged.get("query_history", [])
@@ -702,8 +716,8 @@ async def _stream_investigation(
                     yield _sse("followups", {"questions": fqr.questions[:3]})
                 except Exception:
                     pass
-                complete_investigation(inv_id, report=merged["report"], hypotheses=merged.get("hypotheses", []), query_history=qh, question=question, connection_id=connection_id, skip_index=merged.get("query_mode") == "direct")
-                _record_memory(inv_id, connection_id, question, merged)
+                await asyncio.to_thread(lambda: complete_investigation(inv_id, report=merged["report"], hypotheses=merged.get("hypotheses", []), query_history=qh, question=question, connection_id=connection_id, skip_index=merged.get("query_mode") == "direct"))
+                await asyncio.to_thread(_record_memory, inv_id, connection_id, question, merged)
                 report_emitted = True
 
         if timed_out:
