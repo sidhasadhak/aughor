@@ -9,7 +9,7 @@ from typing import AsyncGenerator, Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from aughor.agent.state import AgentState
 from aughor.db.connection import open_connection_for
@@ -30,6 +30,27 @@ from aughor.routers._shared import explorers as _explorers
 router = APIRouter(tags=["investigations"])
 
 
+def _record_memory(inv_id: str, connection_id: str, question: str, state: dict) -> None:
+    """Persist this run's reflection signals (confidence/surprise/plausibility/
+    pitfalls) into the unified agent memory.  Best-effort: never breaks the stream."""
+    try:
+        from aughor.memory import record_run
+        record_run(inv_id, connection_id, question, state)
+    except Exception:
+        pass
+    # Graduated skill promotion: once a connection has EARNED L2 trust, a
+    # high-confidence, grounded, read-only run auto-crystallizes into a reusable
+    # learned skill — stored under the exact graph.schema_name the planner reads
+    # from, gated by a read-only EXPLAIN dry-run.  Below L2 it's left as a
+    # candidate for the UI to confirm.  Best-effort: never breaks the stream.
+    # (auto_crystallize opens a connection only for L2+ skill-worthy runs.)
+    try:
+        from aughor.memory.skills import auto_crystallize
+        auto_crystallize(inv_id, connection_id)
+    except Exception:
+        pass
+
+
 # ── SSE + stream helpers ──────────────────────────────────────────────────────
 
 def _sse(event_type: str, data: dict) -> str:
@@ -37,13 +58,19 @@ def _sse(event_type: str, data: dict) -> str:
 
 
 _TABLE_RE = re.compile(r'\b(?:FROM|JOIN)\s+(?:\w+\.)?(\w+)', re.IGNORECASE)
+# Matches CTE definitions: anything of the form `name AS (`  (only valid for CTEs in SQL)
+_CTE_DEF_RE = re.compile(r'\b(\w+)\s+AS\s*\(', re.IGNORECASE)
 
 
 def _extract_tables(sql: str) -> list[str]:
+    # Collect CTE names defined in WITH clauses so we can exclude them from the chip list.
+    # CTEs look like:  WITH cte_name AS ( ... ), other_cte AS ( ... )
+    cte_names = {m.group(1).lower() for m in _CTE_DEF_RE.finditer(sql)}
+
     seen: dict[str, None] = {}
     for m in _TABLE_RE.finditer(sql):
         t = m.group(1)
-        if t.lower() not in seen:
+        if t.lower() not in seen and t.lower() not in cte_names:
             seen[t.lower()] = None
     return list(seen.keys())
 
@@ -67,6 +94,23 @@ def _looks_direct(question: str) -> bool:
     return bool(_DIRECT_SIGNALS.search(question))
 
 
+def _pb_serialize(entries) -> list[dict]:
+    """Shape matched playbook entries for the `playbook_refs` SSE event so the UI
+    can show them and offer keep / modify / remove."""
+    out = []
+    for e in entries or []:
+        out.append({
+            "id": e.id,
+            "recommendation": e.recommendation,
+            "trigger_condition": e.trigger_condition,
+            "status": e.status,
+            "tags": e.tags[:6],
+            "historical_success_rate": e.historical_success_rate,
+            "source_kb_id": e.source_kb_id,
+        })
+    return out
+
+
 async def _aiter_sync(sync_iter):
     loop = asyncio.get_event_loop()
     it = iter(sync_iter)
@@ -76,6 +120,92 @@ async def _aiter_sync(sync_iter):
         except StopIteration:
             break
         yield item
+
+
+def _stall_summary(merged: dict) -> str:
+    """Build a human-readable terminal message when an investigation ends without
+    a report.  Prefers the agent's own last verdict/finding, then falls back to a
+    digest of the SQL errors that blocked it."""
+    scores = merged.get("evidence_scores") or []
+    if scores:
+        last = scores[-1]
+        finding = getattr(last, "key_finding", None) or (last.get("key_finding") if isinstance(last, dict) else None)
+        if finding:
+            return f"Investigation ended without a conclusive report. Last assessment: {str(finding)[:400]}"
+
+    qh = merged.get("query_history") or []
+    errs: list[str] = []
+    for r in qh:
+        e = getattr(r, "error", None) if not isinstance(r, dict) else r.get("error")
+        if e and e not in errs:
+            errs.append(str(e))
+    total = len(qh)
+    failed = len(errs)
+    if errs:
+        shown = "; ".join(errs[:3])
+        return (
+            f"Investigation could not complete: {failed} of {total} "
+            f"{'query' if total == 1 else 'queries'} failed and no conclusive "
+            f"answer could be formed. Errors: {shown[:500]}"
+        )
+    return (
+        "Investigation ended without producing a report. No conclusive evidence "
+        "was gathered — try rephrasing the question or narrowing the time range."
+    )
+
+
+def _try_salvage(merged: dict, inv_id: str, question: str, connection_id: str):
+    """Best-effort terminal synthesis when the graph stops without a report.
+
+    A SOTA investigation must never end with nothing: if ANY evidence was gathered
+    (explore sub-answers or ADA phases), synthesise a best-effort report from it,
+    persist it, and return the SSE string to emit. Returns ``None`` only when there
+    is genuinely no evidence to salvage. Never raises."""
+    try:
+        qmode = merged.get("query_mode")
+        qh = merged.get("query_history") or []
+
+        # Explore: synthesise from whatever sub-questions completed.
+        if merged.get("subq_answers"):
+            from aughor.agent.explore import synthesize_exploration
+            out = synthesize_exploration(merged)
+            er = out.get("explore_report")
+            if er:
+                sq_raw = [sq.model_dump() for sq in merged.get("sub_questions", [])]
+                sa_raw = [a.model_dump() for a in merged.get("subq_answers", [])]
+                explore_save = {"_report_type": "explore", **er.model_dump(),
+                                "sub_questions": sq_raw, "subq_answers": sa_raw,
+                                "_partial": True}
+                complete_investigation(inv_id, report=explore_save, hypotheses=[],
+                                       query_history=qh, question=question,
+                                       connection_id=connection_id, skip_index=False)
+                return _sse("explore_report", {
+                    "explore_report": er.model_dump(), "sub_questions": sq_raw,
+                    "subq_answers": sa_raw, "query_count": len(qh),
+                    "investigation_id": inv_id, "query_mode": "explore", "partial": True,
+                })
+
+        # ADA / investigate: synthesise from whatever phases completed.
+        if merged.get("investigation_phases"):
+            from aughor.agent.investigate import ada_synthesize
+            out = ada_synthesize(merged)
+            ada = out.get("ada_report")
+            if ada:
+                ada_save = (dict(ada) if isinstance(ada, dict) else ada.model_dump())
+                ada_save["_report_type"] = "investigate"
+                ada_save["_partial"] = True
+                complete_investigation(inv_id, report=ada_save,
+                                       hypotheses=merged.get("hypotheses", []),
+                                       query_history=qh, question=question,
+                                       connection_id=connection_id, skip_index=False)
+                payload = ada_save if isinstance(ada, dict) else ada.model_dump()
+                return _sse("ada_report", {
+                    "ada_report": payload, "investigation_id": inv_id,
+                    "query_mode": "investigate", "partial": True,
+                })
+    except Exception:
+        return None
+    return None
 
 
 # ── Request models ────────────────────────────────────────────────────────────
@@ -115,13 +245,67 @@ class OutcomeRequest(BaseModel):
     metric_after: Optional[float] = None
 
 
-_VALID_CHART_TYPES = {"auto", "bar", "bar_horizontal", "bar_vertical", "line", "area", "pie", "stacked_bar", "scatter"}
+_VALID_CHART_TYPES = {"auto", "bar", "bar_horizontal", "bar_vertical", "line", "area", "pie", "stacked_bar", "scatter",
+                      "multi_line", "heatmap", "treemap"}
+
+
+def _coerce_list_str(v: object) -> list[str]:
+    """Coerce a value that should be list[str] but may arrive as a JSON-encoded
+    string from local models (Ollama/qwen).  Handles:
+      - already a list                  → items cast to str
+      - '["a","b","c"]'                 → single JSON array string
+      - '["a"]\\n["b"]'                 → one array per line (qwen quirk)
+      - plain multi-line text           → each non-empty line becomes an item
+    """
+    if isinstance(v, list):
+        return [str(item) for item in v]
+    if not isinstance(v, str) or not v.strip():
+        return []
+    try:
+        parsed = json.loads(v)
+        if isinstance(parsed, list):
+            return [str(item) for item in parsed]
+    except (json.JSONDecodeError, ValueError):
+        pass
+    steps: list[str] = []
+    for line in v.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            parsed_line = json.loads(line)
+            if isinstance(parsed_line, list):
+                steps.extend(str(item) for item in parsed_line)
+            else:
+                steps.append(str(parsed_line))
+        except (json.JSONDecodeError, ValueError):
+            steps.append(line)
+    return steps
 
 
 class _ChatAnswer(BaseModel):
     sql: str
     headline: str
     chart_type: str = "auto"
+    intent: str = ""         # "You want to see…" — plain-English restatement of the question
+    approach: list[str] = [] # 3-5 concise steps describing how the answer is calculated
+
+    @field_validator("approach", mode="before")
+    @classmethod
+    def coerce_approach(cls, v: object) -> list[str]:
+        return _coerce_list_str(v)
+
+
+class _FollowUpBase(BaseModel):
+    """Shared model for all follow-up question responses.
+    Guards against local models (Ollama/qwen) returning questions as a
+    JSON-encoded string instead of a proper list."""
+    questions: list[str] = []
+
+    @field_validator("questions", mode="before")
+    @classmethod
+    def coerce_questions(cls, v: object) -> list[str]:
+        return _coerce_list_str(v)
 
     def model_post_init(self, __context: object) -> None:
         if self.chart_type not in _VALID_CHART_TYPES:
@@ -136,6 +320,7 @@ async def _stream_chat(
     history: list[ChatHistoryTurn],
     request: Request,
     session_id: str = "",
+    canvas_id: Optional[str] = None,
 ) -> AsyncGenerator[str, None]:
     try:
         db = open_connection_for(connection_id)
@@ -151,7 +336,6 @@ async def _stream_chat(
         from aughor.llm.provider import get_provider
         from aughor.rules import get_chat_rules_block
 
-        schema = db.get_schema()
         rules_block = get_chat_rules_block()
 
         history_section = ""
@@ -170,57 +354,69 @@ async def _stream_chat(
         _schema_name = getattr(db, "_schema_name", None)
         schema_qualifier = (_schema_name or "main") if db.dialect == "duckdb" else (_schema_name or "public")
 
-        kb_patterns_section = ""
-        try:
+        # ── Context retrieval — independent, side-effect-free fetches run
+        # CONCURRENTLY (none consumes another's output; results slot into fixed
+        # prompt sections, so completion order is irrelevant). Cuts the prelude
+        # wait from the sum of these calls to roughly the slowest single one.
+        def _kb() -> str:
             from aughor.semantic.kb_retriever import retrieve_for_planning
-            kb_patterns_section = retrieve_for_planning(question, top_k=2) or ""
-            if kb_patterns_section:
-                kb_patterns_section += "\n\n"
-        except Exception:
-            pass
+            s = retrieve_for_planning(question, top_k=2) or ""
+            return (s + "\n\n") if s else ""
 
-        sql_examples_section = ""
-        try:
+        def _ckb() -> str:
+            from aughor.semantic.connection_kb import retrieve_for_question as _r
+            s = _r(question, connection_id)
+            return (s + "\n\n") if s else ""
+
+        def _sqlex() -> str:
             from aughor.tools.prior_analyses import search_sql_examples
-            sql_examples_section = search_sql_examples(question, connection_id)
-        except Exception:
-            pass
+            return search_sql_examples(question, connection_id) or ""
 
-        metrics_section = ""
-        try:
+        def _metrics() -> str:
             from aughor.semantic.metrics import build_metrics_block
-            _mb = build_metrics_block()
-            if _mb:
-                metrics_section = _mb + "\n\n"
-        except Exception:
-            pass
+            s = build_metrics_block()
+            return (s + "\n\n") if s else ""
 
-        exploration_section = ""
-        try:
+        def _expl() -> str:
             from aughor.explorer.store import render_exploration_annotations
-            _ea = render_exploration_annotations(connection_id)
-            if _ea:
-                exploration_section = _ea + "\n\n"
-        except Exception:
-            pass
+            s = render_exploration_annotations(connection_id)
+            return (s + "\n\n") if s else ""
 
-        causal_section = ""
-        try:
+        def _causal() -> str:
             from aughor.process.causal import build_causal_context_section
-            _cc = build_causal_context_section(question, conn_id=connection_id)
-            if _cc:
-                causal_section = _cc + "\n"
-        except Exception:
-            pass
+            s = build_causal_context_section(question, conn_id=connection_id)
+            return (s + "\n") if s else ""
 
-        document_section = ""
-        try:
+        def _docs() -> str:
             from aughor.knowledge.indexer import build_external_context_section
-            _ds = build_external_context_section(question, top_k=2)
-            if _ds:
-                document_section = _ds + "\n\n"
-        except Exception:
-            pass
+            s = build_external_context_section(question, top_k=2)
+            return (s + "\n\n") if s else ""
+
+        def _pb_match():
+            from aughor.playbook.retriever import retrieve_for_metric_and_phases
+            return retrieve_for_metric_and_phases([question], limit=4)
+
+        async def _safe(fn):
+            try:
+                return await asyncio.to_thread(fn)
+            except Exception:
+                return ""
+
+        async def _safe_list(fn):
+            try:
+                return await asyncio.to_thread(fn)
+            except Exception:
+                return []
+
+        (
+            schema, kb_patterns_section, conn_kb_section, sql_examples_section,
+            metrics_section, exploration_section, causal_section, document_section,
+            pb_entries,
+        ) = await asyncio.gather(
+            asyncio.to_thread(db.get_schema),  # critical: a failure here propagates
+            _safe(_kb), _safe(_ckb), _safe(_sqlex), _safe(_metrics),
+            _safe(_expl), _safe(_causal), _safe(_docs), _safe_list(_pb_match),
+        )
 
         prompt = CHAT_PROMPT.format(
             schema=schema,
@@ -228,6 +424,7 @@ async def _stream_chat(
             question=question,
             schema_qualifier=schema_qualifier,
             kb_patterns_section=kb_patterns_section,
+            conn_kb_section=conn_kb_section,
             sql_examples_section=sql_examples_section,
             metrics_section=metrics_section,
             exploration_section=exploration_section,
@@ -236,29 +433,85 @@ async def _stream_chat(
         )
         if rules_block:
             prompt = rules_block + prompt
+        # Playbook context — when org playbook items match this question, give them
+        # to the model AND surface them to the user (emitted below) so they can
+        # keep / modify / remove them.
+        if pb_entries:
+            try:
+                from aughor.playbook.retriever import build_playbook_prompt_section
+                _pbsec = build_playbook_prompt_section(pb_entries)
+                if _pbsec:
+                    prompt = _pbsec + "\n" + prompt
+            except Exception:
+                pass
 
-        answer: _ChatAnswer = get_provider("coder").complete(
-            system=CHAT_SQL_SYSTEM, user=prompt, response_model=_ChatAnswer,
+        # Run the (blocking) LLM call in a worker thread so the event loop stays
+        # free to serve other pages (catalog/inbox/home) while the query runs.
+        answer: _ChatAnswer = await asyncio.to_thread(
+            lambda: get_provider("coder").complete(
+                system=CHAT_SQL_SYSTEM, user=prompt, response_model=_ChatAnswer,
+            )
         )
 
         final_sql = answer.sql
+
+        # ── Semantic column alignment — deterministic pre-execution check ─────
+        # Catches wrong entity column (e.g. product_id used for seller analysis)
+        # and injects a fix hint into SqlWriter if a rewrite is needed.
+        _semantic_fix_hint = ""
+        try:
+            from aughor.tools.semantic_validator import check_entity_column_alignment
+            _sem_warnings = check_entity_column_alignment(question, final_sql, schema)
+            if _sem_warnings:
+                _semantic_fix_hint = " | ".join(w.to_prompt_text() for w in _sem_warnings)
+        except Exception:
+            pass
+
+        # ── Lint before execution — catch known anti-patterns in code, not prompts ──
+        from aughor.sql.lint import lint as _lint_sql, error_hint as _lint_hint, has_errors as _lint_has_errors
+        from aughor.sql.writer import SqlWriter
+        _lint_issues = _lint_sql(final_sql, dialect=db.dialect)
+        if _lint_has_errors(_lint_issues):
+            try:
+                _writer = SqlWriter(db, schema_str=schema)
+                _lint_fix = await asyncio.to_thread(
+                    lambda: _writer.fix(
+                        final_sql,
+                        "SQL quality issues detected before execution",
+                        hint=_lint_hint(_lint_issues),
+                        max_retries=1,
+                    )
+                )
+                if _lint_fix.ok:
+                    final_sql = _lint_fix.sql
+            except Exception:
+                pass   # non-fatal — proceed with original SQL
+
         yield _sse("sql", {"sql": final_sql})
-        result = db.execute("chat", final_sql)
+        result = await asyncio.to_thread(db.execute, "chat", final_sql)
 
         from aughor.agent.investigate import _zero_row_suspicious
         _chat_zero_diag = None
         if not result.error and result.row_count == 0:
             _chat_zero_diag = _zero_row_suspicious(final_sql)
 
-        if result.error or _chat_zero_diag:
-            from aughor.sql.writer import SqlWriter
-            writer = SqlWriter(db, schema_str=schema)
-            _fix_error = result.error or "Query returned 0 rows — the SQL logic is likely wrong."
+        # Also trigger a rewrite when semantic column warnings exist, even if
+        # the SQL executed successfully (wrong columns produce wrong results silently).
+        if result.error or _chat_zero_diag or _semantic_fix_hint:
+            _writer2 = SqlWriter(db, schema_str=schema)
+            _fix_error = (
+                result.error or
+                (_semantic_fix_hint if _semantic_fix_hint else None) or
+                "Query returned 0 rows — the SQL logic is likely wrong."
+            )
+            _combined_hint = " | ".join(filter(None, [_chat_zero_diag or "", _semantic_fix_hint]))
             try:
-                fix = writer.fix(final_sql, _fix_error, hint=_chat_zero_diag or "", max_retries=1)
+                fix = await asyncio.to_thread(
+                    lambda: _writer2.fix(final_sql, _fix_error, hint=_combined_hint, max_retries=1)
+                )
                 if fix.ok:
-                    retry = db.execute("chat", fix.sql)
-                    if not retry.error and (retry.row_count > 0 or not _chat_zero_diag):
+                    retry = await asyncio.to_thread(db.execute, "chat", fix.sql)
+                    if not retry.error and (retry.row_count > 0 or not _chat_zero_diag or _semantic_fix_hint):
                         final_sql = fix.sql
                         result = retry
                         yield _sse("sql", {"sql": final_sql})
@@ -274,29 +527,57 @@ async def _stream_chat(
         yield _sse("headline", {"headline": answer.headline})
         yield _sse("chart_type", {"chart_type": answer.chart_type})
         yield _sse("tables_used", {"tables": _extract_tables(final_sql)})
+        if answer.intent or answer.approach:
+            yield _sse("analysis", {"intent": answer.intent, "steps": answer.approach})
+        if pb_entries:
+            yield _sse("playbook_refs", {"items": _pb_serialize(pb_entries)})
 
+        # Persist, then mark DONE the moment the answer is ready — so the
+        # "Completed in …" time reflects when the user got their answer, not when
+        # the post-answer enrichment (inspect + follow-ups) finishes.
         try:
-            class _FollowUps(BaseModel):
-                questions: list[str]
-            fq: _FollowUps = get_provider("narrator").complete(
-                system="Suggest exactly 3 concise follow-up data questions (max 12 words each).",
-                user=f"Question: {question}\nAnswer: {answer.headline}\nColumns: {', '.join(result.columns[:8])}",
-                response_model=_FollowUps,
-            )
-            yield _sse("followups", {"questions": fq.questions[:3]})
-        except Exception:
-            pass
-
-        try:
-            save_chat_turn(
-                question=question, connection_id=connection_id, headline=answer.headline or question,
-                sql=final_sql or "", session_id=session_id, columns=result.columns,
-                rows=result.rows, chart_type=answer.chart_type,
+            await asyncio.to_thread(
+                lambda: save_chat_turn(
+                    question=question, connection_id=connection_id, headline=answer.headline or question,
+                    sql=final_sql or "", session_id=session_id, columns=result.columns,
+                    rows=result.rows, chart_type=answer.chart_type,
+                    tables_used=_extract_tables(final_sql or ""),
+                    intent=answer.intent, approach=answer.approach,
+                    canvas_id=canvas_id,
+                )
             )
         except Exception:
             pass
 
         yield _sse("done", {})
+
+        # ── Post-answer enrichment (streams in after DONE, never delays it) ──
+        # Semantic inspect — logical validation
+        try:
+            from aughor.sql.inspect import inspect as _inspect_sql
+            _ir = await asyncio.to_thread(
+                lambda: _inspect_sql(question, final_sql, result.columns, result.rows)
+            )
+            if not _ir.valid and _ir.issues:
+                yield _sse("inspect_warning", {
+                    "issues":        _ir.issues,
+                    "suggested_fix": _ir.suggested_fix,
+                })
+        except Exception:
+            pass
+
+        # Follow-up suggestions
+        try:
+            fq: _FollowUpBase = await asyncio.to_thread(
+                lambda: get_provider("narrator").complete(
+                    system="Suggest exactly 3 concise follow-up data questions (max 12 words each).",
+                    user=f"Question: {question}\nAnswer: {answer.headline}\nColumns: {', '.join(result.columns[:8])}",
+                    response_model=_FollowUpBase,
+                )
+            )
+            yield _sse("followups", {"questions": fq.questions[:3]})
+        except Exception:
+            pass
 
     except Exception as e:
         yield _sse("error", {"message": str(e)})
@@ -341,7 +622,7 @@ async def _stream_investigation(
         return
 
     from aughor.tools.prior_analyses import find_similar_investigation
-    cache_hit = None if (skip_cache or _looks_direct(question)) else find_similar_investigation(question, connection_id)
+    cache_hit = None if (skip_cache or _looks_direct(question)) else await asyncio.to_thread(find_similar_investigation, question, connection_id)
     if cache_hit:
         cached_id, score = cache_hit
         cached = get_investigation(cached_id)
@@ -366,12 +647,23 @@ async def _stream_investigation(
     trace_id = _telemetry.new_trace(inv_id, question, connection_id)
     yield _sse("start", {"question": question, "connection_id": connection_id, "investigation_id": inv_id, "trace_id": trace_id})
 
+    # Surface matched org-playbook items up front (they're also injected into ADA
+    # synthesis). The user can keep / modify / remove them from the result.
+    try:
+        from aughor.playbook.retriever import retrieve_for_metric_and_phases
+        _pb = await asyncio.to_thread(lambda: retrieve_for_metric_and_phases([question], limit=4))
+        if _pb:
+            yield _sse("playbook_refs", {"items": _pb_serialize(_pb)})
+    except Exception:
+        pass
+
     _active_explorer = _explorers.get(connection_id)
     if _active_explorer:
         _active_explorer.pause()
 
+    merged: dict = {}  # bound before try so the except/salvage path can read partial state
     try:
-        schema = db.get_schema()
+        schema = await asyncio.to_thread(db.get_schema)
         from aughor.agent.graph import build_graph_generic
         agent = build_graph_generic(db, hitl=hitl)
 
@@ -393,6 +685,7 @@ async def _stream_investigation(
         merged = initial_state.copy()
         deadline = time.monotonic() + _TIMEOUT
         timed_out = False
+        report_emitted = False  # did the graph reach a terminal synthesis node?
 
         async for event in _aiter_sync(agent.stream(initial_state, config={"configurable": {"thread_id": inv_id}})):
             if await request.is_disconnected():
@@ -435,15 +728,15 @@ async def _stream_investigation(
                 yield _sse("ada_report", {"ada_report": ada, "investigation_id": inv_id, "query_mode": "investigate"})
                 try:
                     from aughor.llm.provider import get_provider as _gp
-                    class _FQ(BaseModel):
-                        questions: list[str]
-                    fq: _FQ = _gp("narrator").complete(system="Suggest exactly 3 concise follow-up investigation questions (max 15 words each).", user=f"Original question: {question}\nFindings: {ada.get('headline', '') if isinstance(ada, dict) else str(ada)[:200]}", response_model=_FQ)
+                    fq: _FollowUpBase = _gp("narrator").complete(system="Suggest exactly 3 concise follow-up investigation questions (max 15 words each).", user=f"Original question: {question}\nFindings: {ada.get('headline', '') if isinstance(ada, dict) else str(ada)[:200]}", response_model=_FollowUpBase)
                     yield _sse("followups", {"questions": fq.questions[:3]})
                 except Exception:
                     pass
                 ada_save = dict(ada) if isinstance(ada, dict) else ada
                 ada_save["_report_type"] = "investigate"
-                complete_investigation(inv_id, report=ada_save, hypotheses=merged.get("hypotheses", []), query_history=qh, question=question, connection_id=connection_id, skip_index=False)
+                await asyncio.to_thread(lambda: complete_investigation(inv_id, report=ada_save, hypotheses=merged.get("hypotheses", []), query_history=qh, question=question, connection_id=connection_id, skip_index=False))
+                await asyncio.to_thread(_record_memory, inv_id, connection_id, question, merged)
+                report_emitted = True
             elif node_name == "decompose_exploration":
                 yield _sse("explore_plan", {"sub_questions": [sq.model_dump() for sq in merged.get("sub_questions", [])]})
             elif node_name == "plan_and_execute_subq":
@@ -468,37 +761,59 @@ async def _stream_investigation(
                 yield _sse("explore_report", {"explore_report": er.model_dump(), "sub_questions": sq_raw, "subq_answers": sa_raw, "query_count": len(qh), "investigation_id": inv_id, "query_mode": "explore"})
                 try:
                     from aughor.llm.provider import get_provider as _gp
-                    class _FQX(BaseModel):
-                        questions: list[str]
-                    fqx: _FQX = _gp("narrator").complete(system="Suggest exactly 3 concise follow-up questions (max 15 words each).", user=f"Original question: {question}\nFindings: {er.headline}", response_model=_FQX)
+                    fqx: _FollowUpBase = _gp("narrator").complete(system="Suggest exactly 3 concise follow-up questions (max 15 words each).", user=f"Original question: {question}\nFindings: {er.headline}", response_model=_FollowUpBase)
                     yield _sse("followups", {"questions": fqx.questions[:3]})
                 except Exception:
                     pass
                 explore_save = {"_report_type": "explore", **er.model_dump(), "sub_questions": sq_raw, "subq_answers": sa_raw}
-                complete_investigation(inv_id, report=explore_save, hypotheses=[], query_history=qh, question=question, connection_id=connection_id, skip_index=False)
+                await asyncio.to_thread(lambda: complete_investigation(inv_id, report=explore_save, hypotheses=[], query_history=qh, question=question, connection_id=connection_id, skip_index=False))
+                await asyncio.to_thread(_record_memory, inv_id, connection_id, question, merged)
+                report_emitted = True
             elif node_name == "synthesize" and merged.get("report"):
                 qh = merged.get("query_history", [])
                 yield _sse("tables_used", {"tables": _extract_tables(" ".join(r.sql for r in qh if r.sql))})
                 yield _sse("report", {"report": merged["report"].model_dump(), "hypotheses": [h.model_dump() for h in merged.get("hypotheses", [])], "query_count": len(qh), "query_history": [{"hypothesis_id": r.hypothesis_id, "sql": r.sql, "row_count": r.row_count, "error": r.error, "columns": r.columns, "rows": r.rows[:50], "stats": [s.model_dump() for s in (r.stats or [])]} for r in qh], "investigation_id": inv_id, "query_mode": merged.get("query_mode")})
                 try:
                     from aughor.llm.provider import get_provider as _gp
-                    class _FQR(BaseModel):
-                        questions: list[str]
                     rep = merged["report"]
                     summary = getattr(rep, "summary", "") or getattr(rep, "headline", "")
-                    fqr: _FQR = _gp("narrator").complete(system="Suggest exactly 3 concise follow-up investigation questions (max 15 words each).", user=f"Original question: {question}\nFindings: {str(summary)[:300]}", response_model=_FQR)
+                    fqr: _FollowUpBase = _gp("narrator").complete(system="Suggest exactly 3 concise follow-up investigation questions (max 15 words each).", user=f"Original question: {question}\nFindings: {str(summary)[:300]}", response_model=_FollowUpBase)
                     yield _sse("followups", {"questions": fqr.questions[:3]})
                 except Exception:
                     pass
-                complete_investigation(inv_id, report=merged["report"], hypotheses=merged.get("hypotheses", []), query_history=qh, question=question, connection_id=connection_id, skip_index=merged.get("query_mode") == "direct")
+                await asyncio.to_thread(lambda: complete_investigation(inv_id, report=merged["report"], hypotheses=merged.get("hypotheses", []), query_history=qh, question=question, connection_id=connection_id, skip_index=merged.get("query_mode") == "direct"))
+                await asyncio.to_thread(_record_memory, inv_id, connection_id, question, merged)
+                report_emitted = True
 
         if timed_out:
-            yield _sse("error", {"message": f"Investigation timed out after {_TIMEOUT}s."})
-            fail_investigation(inv_id, status="timed_out")
+            # Even on timeout, salvage a partial report from gathered evidence first.
+            salvaged = _try_salvage(merged, inv_id, question, connection_id)
+            if salvaged:
+                yield salvaged
+            else:
+                yield _sse("error", {"message": f"Investigation timed out after {_TIMEOUT}s."})
+                fail_investigation(inv_id, status="timed_out")
+        elif not report_emitted:
+            # The graph terminated without reaching a synthesis node — e.g. every
+            # query errored and the loop exhausted its iterations. First try a
+            # best-effort synthesis from whatever evidence exists; only if there's
+            # genuinely nothing to salvage do we surface a terminal stall message.
+            salvaged = _try_salvage(merged, inv_id, question, connection_id)
+            if salvaged:
+                yield salvaged
+            else:
+                yield _sse("error", {"message": _stall_summary(merged)})
+                fail_investigation(inv_id, status="failed")
 
     except Exception as e:
-        fail_investigation(inv_id, status="failed")
-        yield _sse("error", {"message": str(e)})
+        # An unhandled node exception still shouldn't lose partial work — salvage
+        # a best-effort report from gathered evidence before surfacing the error.
+        salvaged = _try_salvage(merged, inv_id, question, connection_id)
+        if salvaged:
+            yield salvaged
+        else:
+            fail_investigation(inv_id, status="failed")
+            yield _sse("error", {"message": str(e)})
     finally:
         _telemetry.end_trace(trace_id)
         if _active_explorer:
@@ -554,6 +869,7 @@ async def _stream_resume(inv_id: str, feedback: str, request: Request) -> AsyncG
                 qh = merged.get("query_history", [])
                 yield _sse("report", {"report": merged["report"].model_dump(), "hypotheses": [h.model_dump() for h in merged.get("hypotheses", [])], "query_count": len(qh), "query_history": [{"hypothesis_id": r.hypothesis_id, "sql": r.sql, "row_count": r.row_count, "error": r.error, "columns": r.columns, "rows": r.rows[:50], "stats": [s.model_dump() for s in (r.stats or [])]} for r in qh], "investigation_id": inv_id})
                 complete_investigation(inv_id, report=merged["report"], hypotheses=merged.get("hypotheses", []), query_history=qh, question=inv["question"], connection_id=inv.get("connection_id", ""))
+                _record_memory(inv_id, inv.get("connection_id", ""), inv["question"], merged)
     except Exception as e:
         fail_investigation(inv_id, status="failed")
         yield _sse("error", {"message": str(e)})
@@ -573,7 +889,7 @@ async def chat_endpoint(req: ChatRequest, request: Request):
         if resolved:
             conn_id = resolved
     return StreamingResponse(
-        _stream_chat(req.question, conn_id, req.history, request, session_id=req.session_id),
+        _stream_chat(req.question, conn_id, req.history, request, session_id=req.session_id, canvas_id=req.canvas_id),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

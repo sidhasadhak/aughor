@@ -71,6 +71,10 @@ a { color: var(--blue4); text-decoration: none; }
   flex-direction: column;
   flex-shrink: 0;
   overflow: hidden;
+  /* Sit above any fixed content-area overlays (history backdrop z-40, etc.)
+     so sidebar nav items are always clickable regardless of panel state. */
+  position: relative;
+  z-index: 60;
 }
 
 /* ── Content header (per-screen) ─────────────────────────────────────────── */
@@ -126,6 +130,20 @@ a { color: var(--blue4); text-decoration: none; }
   margin-top: 4px;
   border-top: 1px solid var(--b0);
 }
+/* Collapsible secondary-section header — a clickable variant of aug-nav-group */
+.aug-nav-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-top: 1px solid var(--b0);
+  cursor: pointer;
+  transition: color 0.1s;
+}
+.aug-nav-group-toggle:hover { color: var(--t2); }
+.aug-nav-group-toggle[aria-expanded="true"] { color: var(--t3); }
 
 /* ── Tags ────────────────────────────────────────────────────────────────── */
 .aug-tag {

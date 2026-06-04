@@ -20,7 +20,9 @@ async def get_catalog_tree():
     def _quick_schemas(conn_id: str, conn_type: str) -> list[dict]:
         try:
             db = open_connection_for(conn_id)
-            if conn_type == "duckdb":
+            # local_upload (the Workspace) is DuckDB-backed in memory, so it uses
+            # the DuckDB introspection path, not the Postgres one.
+            if conn_type in ("duckdb", "local_upload") or getattr(db, "dialect", "") == "duckdb":
                 rows = db.execute(
                     "__catalog__",
                     """
@@ -60,29 +62,15 @@ async def get_catalog_tree():
         return [{"name": s, "tables": t} for s, t in schema_map.items()]
 
     def _build_tree() -> dict:
-        from aughor.db.registry import list_connections, SAMPLES_ID
+        from aughor.db.registry import list_connections
 
-        sections: list[dict] = []
-
-        sample_schemas: list[dict] = []
-        try:
-            sample_schemas = _quick_schemas(SAMPLES_ID, "duckdb")
-        except Exception as exc:
-            logger.debug("catalog tree: samples unavailable: %s", exc)
-
-        sections.append({
-            "id": "samples",
-            "label": "Sample Catalog",
-            "entries": [{"conn_id": SAMPLES_ID, "name": "samples", "conn_type": "duckdb", "builtin": True, "schemas": sample_schemas}],
-        })
-
-        user_entries = []
+        # Single catalog list. The Workspace (which now folds in the sample
+        # ecommerce tables) is returned first by list_connections.
+        entries = []
         for conn_info in list_connections():
             cid = conn_info["id"]
-            if cid == SAMPLES_ID:
-                continue
             schemas = _quick_schemas(cid, conn_info.get("conn_type", "duckdb"))
-            user_entries.append({
+            entries.append({
                 "conn_id": cid,
                 "name": conn_info["name"],
                 "conn_type": conn_info.get("conn_type", ""),
@@ -90,7 +78,6 @@ async def get_catalog_tree():
                 "schemas": schemas,
             })
 
-        sections.append({"id": "connections", "label": "My Connections", "entries": user_entries})
-        return {"sections": sections}
+        return {"sections": [{"id": "connections", "label": "Catalogs", "entries": entries}]}
 
     return await loop.run_in_executor(None, _build_tree)

@@ -69,14 +69,38 @@ async def _setup_samples() -> None:
 
 
 @app.on_event("startup")
-async def _migrate_canvases() -> None:
+async def _sweep_stale_investigations() -> None:
+    # Investigations orphaned mid-run (interrupted streams / restarts) get stuck
+    # in 'running' forever and clutter history with un-openable items. Fail them.
     try:
-        from aughor.canvas.store import migrate_connections_to_legacy_canvases
-        created = migrate_connections_to_legacy_canvases()
-        if created:
-            logger.info("Canvas migration: created %d legacy Canvas(es)", created)
+        from aughor.db.history import sweep_stale_running
+        n = sweep_stale_running(max_age_minutes=60)
+        if n:
+            logger.info("Marked %d stale 'running' investigation(s) as failed", n)
     except Exception as exc:
-        logger.warning("Canvas migration failed (non-fatal): %s", exc)
+        logger.warning("Stale investigation sweep failed (non-fatal): %s", exc)
+
+
+@app.on_event("startup")
+async def _purge_legacy_canvases() -> None:
+    # Auto-generated per-connection Canvases are no longer created. Purge any
+    # left over from older installs so only user-created Canvases remain.
+    try:
+        from aughor.canvas.store import delete_legacy_canvases
+        removed = delete_legacy_canvases()
+        if removed:
+            logger.info("Canvas cleanup: removed %d auto-generated Canvas(es)", removed)
+    except Exception as exc:
+        logger.warning("Canvas cleanup failed (non-fatal): %s", exc)
+
+
+@app.on_event("startup")
+async def _ensure_default_workspace() -> None:
+    try:
+        from aughor.workspace.store import ensure_default_workspace
+        ensure_default_workspace()
+    except Exception as exc:
+        logger.warning("Workspace migration failed (non-fatal): %s", exc)
 
 
 @app.on_event("startup")
@@ -251,10 +275,16 @@ async def _start_ontology_refresh_loop() -> None:
 @app.on_event("startup")
 async def _seed_playbook() -> None:
     try:
-        from aughor.playbook.builder import seed_from_kb
+        from aughor.playbook.builder import seed_from_kb, activate_seeded
         n = seed_from_kb()
         if n:
             logger.info("Playbook seeded with %d entries from KB.", n)
+        # Activate the seed by default — promote KB-seeded drafts to 'active' so
+        # they're live playbook items the user can keep / modify / remove, not
+        # dormant drafts. Idempotent; never touches user-deprecated entries.
+        promoted = activate_seeded()
+        if promoted:
+            logger.info("Activated %d seeded playbook entries.", promoted)
     except Exception:
         pass
 
@@ -275,6 +305,7 @@ from aughor.routers import (  # noqa: E402
     system,
     investigations,
     canvas,
+    workspace,
     connections,
     exploration,
     catalog,
@@ -285,11 +316,13 @@ from aughor.routers import (  # noqa: E402
     security,
     query,
     monitors,
+    semantic,
 )
 
 app.include_router(system.router)
 app.include_router(investigations.router)
 app.include_router(canvas.router)
+app.include_router(workspace.router)
 app.include_router(connections.router)
 app.include_router(exploration.router)
 app.include_router(catalog.router)
@@ -300,3 +333,4 @@ app.include_router(actions.router)
 app.include_router(security.router)
 app.include_router(query.router)
 app.include_router(monitors.router)
+app.include_router(semantic.router)

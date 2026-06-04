@@ -227,7 +227,7 @@ class NotionSync:
                 except Exception as exc:
                     logger.debug("Notion: skipped db page: %s", exc)
 
-        state["last_sync"] = __import__("datetime").datetime.utcnow().isoformat() + "Z"
+        state["last_sync"] = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat().replace("+00:00", "Z")
         state["pages_indexed"] = count
         state["sources"] = sources
         self._save_state(state)

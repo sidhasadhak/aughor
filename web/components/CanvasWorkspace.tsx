@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import type { Canvas, Connection, CanvasHistoryItem as HistoryItem } from "@/lib/api";
-import { getCanvasHistory, updateCanvas } from "@/lib/api";
+import { getCanvasHistory, updateCanvas, deleteInvestigation } from "@/lib/api";
 import { ConfigurePanel } from "@/components/ConfigurePanel";
 import { ChatPanel } from "@/components/ChatPanel";
 import { HistoryDetailPanel } from "@/components/HistoryDetailPanel";
@@ -63,10 +63,11 @@ function CanvasHistory({
   onOpen,
 }: {
   canvasId: string;
-  onOpen: (id: string) => void;
+  onOpen: (id: string, kind: "investigation" | "chat") => void;
 }) {
   const [items, setItems] = useState<HistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [removing, setRemoving] = useState<string | null>(null);
 
   useEffect(() => {
     setLoading(true);
@@ -75,6 +76,19 @@ function CanvasHistory({
       .catch(() => setItems([]))
       .finally(() => setLoading(false));
   }, [canvasId]);
+
+  async function handleRemove(id: string) {
+    setRemoving(id);
+    const prev = items;
+    setItems(list => list.filter(it => it.id !== id));  // optimistic
+    try {
+      await deleteInvestigation(id);
+    } catch {
+      setItems(prev);  // restore on failure
+    } finally {
+      setRemoving(null);
+    }
+  }
 
   if (loading) {
     return (
@@ -88,31 +102,36 @@ function CanvasHistory({
     return (
       <div style={{ padding: "72px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
         <Icon name="clock" size={28} color="var(--t4)" />
-        <div style={{ fontSize: 13, color: "var(--t3)" }}>No investigations yet in this canvas.</div>
+        <div style={{ fontSize: 13, color: "var(--t3)" }}>No investigations yet in this Data Canvas.</div>
       </div>
     );
   }
 
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: "16px 32px" }}>
-      {items.map(item => (
-        <button
+      {items.map(item => {
+        const kind = (item.kind === "chat" ? "chat" : "investigation") as "investigation" | "chat";
+        const isRemoving = removing === item.id;
+        return (
+        <div
           key={item.id}
-          onClick={() => onOpen(item.id)}
+          onClick={() => onOpen(item.id, kind)}
+          className="group/hist"
           style={{
             width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 12,
             padding: "10px 14px", marginBottom: 6,
             background: "var(--bg-2)", border: "1px solid var(--b1)",
             borderRadius: "var(--r2)", cursor: "pointer",
             transition: "border-color .1s, background .1s",
+            opacity: isRemoving ? 0.4 : 1,
           }}
           onMouseEnter={e => {
-            (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--b2)";
-            (e.currentTarget as HTMLButtonElement).style.background = "var(--bg-3)";
+            (e.currentTarget as HTMLDivElement).style.borderColor = "var(--b2)";
+            (e.currentTarget as HTMLDivElement).style.background = "var(--bg-3)";
           }}
           onMouseLeave={e => {
-            (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--b1)";
-            (e.currentTarget as HTMLButtonElement).style.background = "var(--bg-2)";
+            (e.currentTarget as HTMLDivElement).style.borderColor = "var(--b1)";
+            (e.currentTarget as HTMLDivElement).style.background = "var(--bg-2)";
           }}
         >
           <span style={{
@@ -122,11 +141,36 @@ function CanvasHistory({
           <span style={{ flex: 1, fontSize: 12, color: "var(--t1)", lineHeight: 1.4, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {item.question}
           </span>
+          <span style={{
+            display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0,
+            padding: "1px 6px", borderRadius: 3, fontSize: 10,
+            background: "var(--bg-3)", border: "1px solid var(--b1)", color: "var(--t4)",
+          }}>
+            <Icon name={kind === "chat" ? "chat" : "process"} size={9} color="var(--t4)" />
+            {kind === "chat" ? "Chat" : "Investigation"}
+          </span>
           <span style={{ fontSize: 11, color: "var(--t4)", whiteSpace: "nowrap", flexShrink: 0 }}>
             {timeAgo(item.started_at)}
           </span>
-        </button>
-      ))}
+          <button
+            title="Remove from history"
+            disabled={isRemoving}
+            onClick={e => { e.stopPropagation(); handleRemove(item.id); }}
+            className="opacity-0 group-hover/hist:opacity-100 transition-opacity"
+            style={{
+              flexShrink: 0, width: 24, height: 24, borderRadius: 4, display: "flex",
+              alignItems: "center", justifyContent: "center",
+              background: "transparent", border: "1px solid var(--b1)", color: "var(--t4)",
+              cursor: isRemoving ? "default" : "pointer",
+            }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = "#f87171"; (e.currentTarget as HTMLButtonElement).style.borderColor = "#f87171"; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = "var(--t4)"; (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--b1)"; }}
+          >
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M3 4h10M6.5 4V2.5h3V4M5 4l.5 9h5l.5-9" /></svg>
+          </button>
+        </div>
+        );
+      })}
     </div>
   );
 }
@@ -233,7 +277,7 @@ function SettingsPopover({
         width: 280, display: "flex", flexDirection: "column", gap: 10,
         boxShadow: "0 8px 32px rgba(0,0,0,.4)",
       }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)", marginBottom: 2 }}>Canvas Settings</div>
+        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)", marginBottom: 2 }}>Data Canvas Settings</div>
         <label style={{ fontSize: 11, color: "var(--t3)", display: "flex", flexDirection: "column", gap: 4 }}>
           Name
           <input
@@ -308,6 +352,99 @@ function TabPill({
   );
 }
 
+// ── Capabilities block (canvas landing — Databricks Genie style) ───────────────
+
+function CapabilitiesBlock({
+  canvas,
+  connection,
+}: {
+  canvas: Canvas;
+  connection: Connection | undefined;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const scope = canvas.scopes[0];
+  const tables = scope?.tables ?? [];
+  const isFull = tables.length === 0;
+  const connType = connection
+    ? (connection.conn_type === "duckdb" ? "DuckDB" : connection.conn_type === "postgres" ? "PostgreSQL" : connection.conn_type)
+    : null;
+
+  const caps: string[] = [
+    isFull
+      ? `Query the full schema of ${connection?.name ?? "this connection"}${connType ? ` (${connType})` : ""}`
+      : `Query ${tables.length} curated table${tables.length !== 1 ? "s" : ""}${connection ? ` from ${connection.name}` : ""}${connType ? ` (${connType})` : ""}`,
+    "Ask in Quick mode for fast SQL answers, or Agentic for multi-step root-cause analysis",
+    "Build domain intelligence, outcomes, and ontology scoped to exactly this table set",
+  ];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, textAlign: "left", marginBottom: 4 }}>
+      {/* Title */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{
+          width: 34, height: 34, borderRadius: "var(--r2)",
+          background: canvas.is_legacy ? "var(--bg-3)" : "color-mix(in srgb, var(--blue3) 16%, transparent)",
+          border: `1px solid ${canvas.is_legacy ? "var(--b2)" : "color-mix(in srgb, var(--blue3) 32%, transparent)"}`,
+          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+        }}>
+          <Icon name="canvas" size={17} color={canvas.is_legacy ? "var(--t4)" : "var(--blue4)"} />
+        </div>
+        <div style={{ fontSize: 18, fontWeight: 700, color: "var(--t1)" }}>{canvas.name}</div>
+      </div>
+
+      {/* Description */}
+      {canvas.description && (
+        <p style={{ fontSize: 13, color: "var(--t2)", lineHeight: 1.55, margin: 0 }}>
+          {canvas.description}
+        </p>
+      )}
+
+      {/* Capabilities */}
+      <div>
+        <div style={{ fontSize: 11, fontWeight: 600, color: "var(--t2)", marginBottom: 7 }}>Capabilities</div>
+        <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 6 }}>
+          {caps.map(c => (
+            <li key={c} style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 12.5, color: "var(--t2)", lineHeight: 1.5 }}>
+              <span style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--t4)", marginTop: 7, flexShrink: 0 }} />
+              {c}
+            </li>
+          ))}
+        </ul>
+
+        {/* Table chips — revealed via Show more, like Databricks */}
+        {!isFull && tables.length > 0 && (
+          <>
+            {expanded && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
+                {tables.map(t => (
+                  <span key={t} style={{
+                    display: "inline-flex", alignItems: "center", gap: 5,
+                    padding: "3px 9px", borderRadius: 999,
+                    background: "var(--bg-2)", border: "1px solid var(--b1)",
+                    fontSize: 11, color: "var(--t2)", fontFamily: "var(--font-mono)",
+                  }}>
+                    <Icon name="table" size={10} color="var(--t4)" />
+                    {t}
+                  </span>
+                ))}
+              </div>
+            )}
+            <button
+              onClick={() => setExpanded(v => !v)}
+              style={{
+                marginTop: 8, background: "none", border: "none", cursor: "pointer",
+                color: "var(--blue4)", fontSize: 12, fontWeight: 500, padding: 0,
+              }}
+            >
+              {expanded ? "Show less" : `Show ${tables.length} table${tables.length !== 1 ? "s" : ""}`}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── CanvasWorkspace ───────────────────────────────────────────────────────────
 
 interface Props {
@@ -321,6 +458,7 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate }
   const [wsTab, setWsTab] = useState<WsTab>("chat");
   const [chatKey, setChatKey] = useState(0);
   const [openInvId, setOpenInvId] = useState<string | null>(null);
+  const [restoreSessionId, setRestoreSessionId] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [showConfigure, setShowConfigure] = useState(false);
   const headerRef = useRef<HTMLDivElement>(null);
@@ -337,11 +475,24 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate }
     setWsTab("chat");
     setChatKey(k => k + 1);
     setOpenInvId(null);
+    setRestoreSessionId(null);
   }, [canvas.id]);
 
-  const handleHistoryOpen = (id: string) => {
-    setOpenInvId(id);
-    setWsTab("history");
+  // History line-item → navigate.  Investigations open the detail report in the
+  // History tab; chat sessions restore the conversation in the Chat tab (passing
+  // a chat id to the investigation detail panel would just render blank — the bug
+  // behind "choosing a line item does not take me there").
+  const handleHistoryOpen = (id: string, kind: "investigation" | "chat") => {
+    if (kind === "chat") {
+      setOpenInvId(null);
+      setRestoreSessionId(id);
+      setWsTab("chat");
+      setChatKey(k => k + 1);
+    } else {
+      setRestoreSessionId(null);
+      setOpenInvId(id);
+      setWsTab("history");
+    }
   };
 
   return (
@@ -357,7 +508,7 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate }
         {/* Back button */}
         <button
           onClick={onClose}
-          title="Back to Canvases"
+          title="Back to Data Canvases"
           style={{
             display: "inline-flex", alignItems: "center", gap: 5,
             padding: "4px 8px", borderRadius: "var(--r2)",
@@ -430,7 +581,7 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate }
 
         {/* New chat button */}
         <button
-          onClick={() => { setWsTab("chat"); setChatKey(k => k + 1); setOpenInvId(null); }}
+          onClick={() => { setWsTab("chat"); setChatKey(k => k + 1); setOpenInvId(null); setRestoreSessionId(null); }}
           className="aug-btn aug-btn-ghost aug-btn-sm"
           title="New conversation"
           style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
@@ -453,7 +604,7 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate }
         {/* Settings */}
         <button
           onClick={() => setShowSettings(v => !v)}
-          title="Canvas settings"
+          title="Data Canvas settings"
           style={{
             display: "inline-flex", alignItems: "center", justifyContent: "center",
             width: 28, height: 28, borderRadius: "var(--r2)",
@@ -488,20 +639,34 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate }
       </div>
 
       {/* ── Content ── */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      {/*
+        IMPORTANT: all three panels are always mounted — never conditionally rendered.
+        Switching tabs uses CSS display:none so React keeps each panel's state alive.
+        Unmounting ChatPanel mid-investigation kills its SSE stream and message list;
+        the user comes back to a blank window even though the backend finished fine.
+      */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", position: "relative" }}>
 
-        {/* Chat */}
-        {wsTab === "chat" && (
+        {/* Chat — always mounted, hidden when not active */}
+        <div style={{
+          display: wsTab === "chat" ? "flex" : "none",
+          flex: 1, flexDirection: "column", overflow: "hidden",
+        }}>
           <ChatPanel
             key={chatKey}
             connectionId={connectionId}
             canvasId={canvas.id}
+            restoreSessionId={restoreSessionId}
+            capabilities={<CapabilitiesBlock canvas={canvas} connection={connection} />}
           />
-        )}
+        </div>
 
-        {/* History */}
-        {wsTab === "history" && (
-          openInvId
+        {/* History — always mounted, hidden when not active */}
+        <div style={{
+          display: wsTab === "history" ? "flex" : "none",
+          flex: 1, flexDirection: "column", overflow: "hidden",
+        }}>
+          {openInvId
             ? (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
                 <div style={{
@@ -520,7 +685,10 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate }
                     <Icon name="back" size={12} /> Back
                   </button>
                 </div>
-                <div style={{ flex: 1, overflowY: "auto" }}>
+                {/* Flex column (not a bare overflow block) so HistoryDetailPanel's
+                    flex:1 + position:absolute report area gets a resolved height.
+                    Without this the report collapses to 0px and looks "blank". */}
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
                   <HistoryDetailPanel
                     invId={openInvId}
                     onContinue={() => {
@@ -543,29 +711,30 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate }
                 <CanvasHistory canvasId={canvas.id} onOpen={handleHistoryOpen} />
               </div>
             )
-        )}
+          }
+        </div>
 
-        {/* Intelligence */}
-        {wsTab === "intel" && (
-          <div style={{ flex: 1, overflowY: "auto", padding: "16px 24px" }}>
-            <DomainIntelPanel
-              connectionId={connectionId}
-              canvasId={canvas.id}
-              isActive={wsTab === "intel"}
-            />
-          </div>
-        )}
+        {/* Intelligence — always mounted, hidden when not active */}
+        <div style={{
+          display: wsTab === "intel" ? "flex" : "none",
+          flex: 1, overflowY: "auto", padding: "16px 24px",
+        }}>
+          <DomainIntelPanel
+            connectionId={connectionId}
+            canvasId={canvas.id}
+            isActive={wsTab === "intel"}
+          />
+        </div>
 
       </div>
 
       {/* Configure slide-over */}
       {showConfigure && (
         <ConfigurePanel
-          connectionId={connectionId}
+          canvas={canvas}
           connections={connections}
-          onSelectConn={() => {}}
           onClose={() => setShowConfigure(false)}
-          hideConnSwitch
+          onCanvasUpdate={onCanvasUpdate}
         />
       )}
     </div>

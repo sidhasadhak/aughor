@@ -3,6 +3,7 @@ from aughor.routers import (  # noqa: F401
     system,
     investigations,
     canvas,
+    workspace,
     connections,
     exploration,
     catalog,

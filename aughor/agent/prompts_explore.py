@@ -9,6 +9,32 @@ Pattern:
   decompose_exploration → [plan_subq → reason_over_result] × N → synthesize_exploration
 """
 
+BUILD_LEDGER_PROMPT = """\
+You are setting up the shared definitions for a data analysis so that every step
+computes the same metrics the same way. Read the question and schema, then list the
+canonical definitions the whole analysis must reuse.
+
+QUESTION: {question}
+
+SCHEMA (already annotated with any known column caveats):
+{schema}
+
+{scan_section}
+
+Produce a SHORT ledger (max ~10 lines, no prose) with these parts:
+- ENTITIES: for each entity the question involves, the EXACT column that uniquely
+  identifies it. Watch for per-row hash IDs vs stable IDs (e.g. an order-level
+  customer_id vs a stable customer_unique_id) — pick the stable identifier and say so.
+- METRICS: the exact SQL expression for each metric the question needs
+  (e.g. revenue = SUM(payment_value); unique customers = COUNT(DISTINCT customer_unique_id);
+  average order value = SUM(payment_value) / COUNT(DISTINCT order_id)).
+- SEGMENTS: any standard grouping/filter the question implies (e.g. primary payment
+  method per customer = the payment_type of that customer's highest-value order).
+
+Use only tables/columns that exist in the schema. If a concept is ambiguous, pick one
+definition and state it explicitly. This ledger is binding for all later steps.
+"""
+
 DECOMPOSE_EXPLORATION_PROMPT = """\
 You are a senior data analyst designing an investigation into a question that requires
 building understanding progressively — not testing parallel hypotheses, but sequencing
@@ -57,6 +83,10 @@ Purpose: {purpose}
 Question: {subq_question}
 Expected output: {expected_output}
 
+CANONICAL DEFINITIONS (this analysis's shared ledger — every step MUST use these
+exact identifiers and metric definitions so figures stay consistent across steps):
+{analysis_ledger}
+
 PREVIOUS SUB-QUESTION ANSWERS (context — read carefully before writing SQL):
 {prior_answers}
 
@@ -68,6 +98,11 @@ SCHEMA:
 Write 1–2 SQL SELECT queries that directly answer this sub-question.
 Rules:
 - Only SELECT statements, only tables and columns from the schema
+- CONSISTENCY: use the canonical identifiers and metric definitions above verbatim
+  (e.g. the same column for "unique customer", the same revenue expression). Never switch
+  to a different identifier or definition than an earlier step used for the same concept.
+- If a figure for this exact metric was already computed in a prior sub-question, reuse that
+  result — do not recompute it with different SQL that could yield a slightly different number.
 - Use the profile data ranges and cardinalities to write correct bucketing queries
 - If this is a threshold sub-question, use the exact transition zone found in the previous answer
 - If this is a drill_down sub-question, use 5–10× finer granularity than the relationship step
@@ -95,10 +130,16 @@ Expected output: {expected_output}
 QUERY RESULTS:
 {query_results}
 
+CANONICAL DEFINITIONS (shared ledger for this analysis):
+{analysis_ledger}
+
 PREVIOUS CONTEXT:
 {prior_context}
 
 Instructions:
+- CONSISTENCY: when this sub-question references a metric already computed earlier (per the
+  canonical definitions / previous context), cite the SAME figure verbatim — do not restate a
+  freshly rounded or re-derived value.
 - answer: one sentence, directly answering the sub-question. Must cite a specific number from the results.
   Bad: "There appears to be a relationship between discount and profit."
   Good: "Profit is positive for discounts ≤ 20% and negative for discounts ≥ 25%, with the steepest decline between 20% and 30%."
@@ -109,8 +150,11 @@ Instructions:
 - new_sub_question: only if the data revealed an entirely unexpected angle that the original plan missed.
   Define it as a new sub-question to insert after the current one. Return null if not applicable.
 
-NUMERIC DISCIPLINE: every number you cite in answer or insight must appear in the query results above.
-Do not extrapolate or estimate.
+NUMERIC DISCIPLINE: every number you cite in answer or insight must appear VERBATIM in the query
+results above. Do not extrapolate or estimate. Critically, do NOT compute your own derived values —
+no ratios, per-unit figures ("per order"), percentages, growth rates, or differences unless that exact
+value was returned as a column by the query. If a derived metric matters, it must come from SQL, never
+from your own arithmetic (which is often wrong). Cite only what the query actually returned.
 """
 
 SYNTHESIZE_EXPLORATION_PROMPT = """\
@@ -119,11 +163,19 @@ You have completed a chain of sub-questions and now have all the evidence needed
 
 ORIGINAL QUESTION: {question}
 
+CANONICAL DEFINITIONS (shared ledger used throughout this analysis):
+{analysis_ledger}
+
 INVESTIGATIVE CHAIN (sub-questions and their answers):
 {chain_summary}
 
 {events_section}
 Write the final report:
+
+CONSISTENCY: every figure in the headline, conclusion, and narrative must match the exact
+numbers already computed in the chain above. Do not recompute or re-estimate — reuse the
+chain's figures verbatim so the report and the chain never disagree.
+
 
 headline: One sentence directly answering the original question. Specific, not vague.
   Good: "A discount rate of 15–18% maximises profitability while maintaining volume."
@@ -144,5 +196,14 @@ data_quality_notes: List any structural data issues that affected the investigat
   Empty list if none were found.
 
 NUMERIC DISCIPLINE: every number in headline, conclusion, or narrative must be traceable to a
-specific row or aggregate in the chain above. Do not invent precision.
+specific row or aggregate in the chain above. Do not invent precision. Do NOT compute your own
+derived values — no ratios, "per X" figures, percentages, growth rates, or differences unless that
+exact value was returned by a query in the chain. Your mental arithmetic is unreliable; cite only
+figures the queries actually produced.
+
+SCOPE HONESTY: answer ONLY the original question using the evidence in the chain. If the chain did
+not actually measure something the question asks about (e.g. the question asks about conversion rates
+but no conversion-rate query ran), say so plainly rather than substituting a different metric and
+presenting it as the answer. Never write "given all of the above" if the chain is short or incomplete —
+describe only what was genuinely investigated.
 """

@@ -29,6 +29,9 @@ DSN_PREVIEWS: dict[str, str] = {
     "bigquery":     "bigquery://project-id",
     "snowflake":    "snowflake://account.region",
     "mysql":        "mysql://host:3306/db",
+    "motherduck":   "md:my_database",
+    "exasol":       "exa://host:8563",
+    "gsheets":      "gsheet://spreadsheet-id",
     "local_upload": "local://uploads/",
     "s3":           "s3://bucket/prefix",
     "federated":    "federated://",
@@ -71,6 +74,22 @@ FORM_FIELDS: dict[str, list[dict]] = {
         {"key": "user",        "label": "Username", "placeholder": "root",       "secret": False},
         {"key": "password",    "label": "Password", "placeholder": "",           "secret": True},
         {"key": "database",    "label": "Database", "placeholder": "mydb",       "secret": False},
+    ],
+    "motherduck": [
+        {"key": "token",       "label": "MotherDuck token", "placeholder": "eyJhbGc… (or set MOTHERDUCK_TOKEN)", "secret": True},
+        {"key": "database",    "label": "Database",         "placeholder": "my_database",                         "secret": False},
+        {"key": "schema_name", "label": "Schema",           "placeholder": "main",                                "secret": False},
+    ],
+    "exasol": [
+        {"key": "host",        "label": "Host:Port",        "placeholder": "demodb.exasol.com:8563", "secret": False},
+        {"key": "user",        "label": "Username",         "placeholder": "sys",                    "secret": False},
+        {"key": "password",    "label": "Password",         "placeholder": "",                       "secret": True},
+        {"key": "schema_name", "label": "Schema",           "placeholder": "RETAIL",                 "secret": False},
+    ],
+    "gsheets": [
+        {"key": "spreadsheet_id", "label": "Spreadsheet ID or URL", "placeholder": "https://docs.google.com/spreadsheets/d/…", "secret": False},
+        {"key": "sheets",         "label": "Sheet/tab names",       "placeholder": "Sheet1,Sheet2 (empty = first sheet)",      "secret": False},
+        {"key": "api_key",        "label": "API key (optional, for private sheets)", "placeholder": "AIza…",                   "secret": True},
     ],
     "local_upload": [
         # No config fields — file upload is handled separately via POST /connections/{id}/files
@@ -144,6 +163,8 @@ def _register_defaults() -> None:
     REGISTRY.register("bigquery",     "aughor.connectors.warehouse.bigquery",  "BigQueryConnection")
     REGISTRY.register("snowflake",    "aughor.connectors.warehouse.snowflake", "SnowflakeConnection")
     REGISTRY.register("mysql",        "aughor.connectors.warehouse.mysql",     "MySQLConnection")
+    REGISTRY.register("motherduck",   "aughor.connectors.warehouse.motherduck", "MotherDuckConnection")
+    REGISTRY.register("exasol",       "aughor.connectors.warehouse.exasol",    "ExasolConnection")
     # File
     REGISTRY.register("local_upload", "aughor.connectors.file.local_upload",   "LocalUploadConnection")
     REGISTRY.register("s3",           "aughor.connectors.file.s3",             "S3Connection")
@@ -153,6 +174,7 @@ def _register_defaults() -> None:
     REGISTRY.register("stripe",       "aughor.connectors.api.stripe",          "StripeConnector")
     REGISTRY.register("hubspot",      "aughor.connectors.api.hubspot",         "HubSpotConnector")
     REGISTRY.register("salesforce",   "aughor.connectors.api.salesforce",      "SalesforceConnector")
+    REGISTRY.register("gsheets",      "aughor.connectors.api.gsheets",         "GoogleSheetsConnector")
     # Knowledge (stored in registry for config/auth; sync handled separately)
     # These types are not DB connectors — open_connection() is not called on them
 

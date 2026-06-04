@@ -143,7 +143,7 @@ function StatusBar({ status, stopped, onStop, onResume, onRestart, stopping, res
   const isStopped = stopped || status.paused || status.phase === "pending";
   const meta = phaseMeta(status.phase);
   return (
-    <div className="flex items-center gap-3 px-4 py-2 border-b shrink-0" style={{ borderColor: "#1e1f24", background: "#11171d" }}>
+    <div className="flex items-center gap-3 px-4 py-2 border-b shrink-0" style={{ borderColor: "#1e1f24", background: "var(--bg-0)" }}>
       <span className="flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded font-medium"
         style={isStopped && !isRunning ? { background: "#1e1f24", color: "#5a5b62" } : { background: meta.bg, color: meta.color }}>
         {isRunning && <span className="inline-block w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: meta.color }} />}
@@ -206,7 +206,7 @@ function RetryPanel({ ep, connectionId, errorMsg }: { ep: ExplorationEpisode; co
   );
 
   return (
-    <div className="rounded-md p-3 space-y-2 mt-2" style={{ background: "#11171d", border: "0.5px solid #2a2b35" }}>
+    <div className="rounded-md p-3 space-y-2 mt-2" style={{ background: "var(--bg-0)", border: "0.5px solid #2a2b35" }}>
       <p className="text-[11px] uppercase tracking-widest" style={{ color: "var(--t4)" }}>Guidance (optional)</p>
       <div className="flex gap-2">
         <input type="text" value={hint} onChange={e => setHint(e.target.value)}
@@ -266,7 +266,7 @@ function ExpandedDetail({ ep, connectionId }: { ep: ExplorationEpisode; connecti
       {/* SQL */}
       <div>
         <p style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "var(--b0)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>SQL</p>
-        <pre style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "#5a5b62", background: "#11171d", border: "0.5px solid #1a1b20", borderRadius: 4, padding: "8px 10px", overflowX: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all", lineHeight: 1.6, margin: 0 }}>
+        <pre style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "#5a5b62", background: "var(--bg-0)", border: "0.5px solid #1a1b20", borderRadius: 4, padding: "8px 10px", overflowX: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all", lineHeight: 1.6, margin: 0 }}>
           {ep.sql || "(no sql)"}
         </pre>
       </div>
@@ -316,7 +316,7 @@ function LogTable({ items, connectionId, sortCol, sortDir, onSort }: LogTablePro
 
   const TH: React.CSSProperties = {
     position: "sticky", top: 0, zIndex: 1,
-    background: "#11171d",
+    background: "var(--bg-0)",
     padding: "7px 8px",
     textAlign: "left", fontSize: 9,
     fontFamily: "var(--font-mono)", color: "var(--t4)",
@@ -456,7 +456,7 @@ function LogTable({ items, connectionId, sortCol, sortDir, onSort }: LogTablePro
 
 function Seg<T extends string>({ value, options, onChange }: { value: T; options: { v: T; label: string }[]; onChange: (v: T) => void }) {
   return (
-    <div style={{ display: "flex", gap: 1, padding: 2, background: "#11171d", borderRadius: 5, border: "0.5px solid #1a1b20" }}>
+    <div style={{ display: "flex", gap: 1, padding: 2, background: "var(--bg-0)", borderRadius: 5, border: "0.5px solid #1a1b20" }}>
       {options.map(o => (
         <button key={o.v} onClick={() => onChange(o.v)} style={{
           fontSize: 10, padding: "3px 9px", borderRadius: 4, cursor: "pointer",
@@ -586,7 +586,7 @@ export function ActivityLog({ connectionId, isActive, canvasId }: Props) {
 
       {/* Filter + controls bar */}
       <div className="flex items-center gap-2.5 px-4 py-2 border-b shrink-0 flex-wrap"
-        style={{ borderColor: "#1a1b20", background: "#11171d" }}>
+        style={{ borderColor: "#1a1b20", background: "var(--bg-0)" }}>
         <Seg<DateFilter>
           value={filterDate} onChange={setFilterDate}
           options={[
@@ -627,7 +627,7 @@ export function ActivityLog({ connectionId, isActive, canvasId }: Props) {
       </div>
 
       {/* Table */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto" style={{ background: "#11171d" }}>
+      <div ref={scrollRef} className="flex-1 overflow-y-auto" style={{ background: "var(--bg-0)" }}>
         {displayed.length === 0 ? (
           <div className="flex items-center justify-center h-32 text-[11px]" style={{ color: "var(--t4)" }}>
             No entries match the current filters.

@@ -2,7 +2,7 @@
    Single source of truth for all CSS custom properties.
    Imported by app/globals.css — do not use directly in components.
 
-   System: Palantir Blueprint palette, softened toward Databricks ergonomics.
+   System: Palantir Blueprint accent on Databricks Genie neutral-charcoal surfaces.
    Fonts : DM Sans (UI) + IBM Plex Mono (data / code / monospace values)
    Accent: Blueprint blue #2D72D2
    Shape : max 6px border-radius (--r3), 1px borders
@@ -10,27 +10,29 @@
 
 /* ── Dark mode (default) ─────────────────────────────────────────────────── */
 :root {
-  /* ── Backgrounds ── */
-  --bg-0: #11171d;
-  --bg-1: #1f272e;
-  --bg-2: #172030;
-  --bg-3: #1C2839;
-  --bg-4: #223246;
-  --bg-hover: rgba(45, 114, 210, 0.07);
-  --bg-sel:   rgba(45, 114, 210, 0.13);
+  /* ── Backgrounds ──
+     Databricks Genie near-black: flat, deep, very slightly cool — NOT charcoal.
+     Tight steps so panels barely lift off the page (Databricks reads borderless). */
+  --bg-0: #11171D;
+  --bg-1: #141517;
+  --bg-2: #161719;
+  --bg-3: #1C1D1F;
+  --bg-4: #26282B;
+  --bg-hover: rgba(255, 255, 255, 0.04);
+  --bg-sel:   rgba(45, 114, 210, 0.15);
 
-  /* ── Borders ── */
-  --b0: #131C2B;
-  --b1: #1B2840;
-  --b2: #253552;
-  --b3: #314468;
+  /* ── Borders ──  hairline, near-invisible (Databricks) */
+  --b0: #161719;
+  --b1: #212325;
+  --b2: #2A2C2F;
+  --b3: #393B3F;
   --bfocus: #2D72D2;
 
-  /* ── Text ── */
-  --t1: #C8D4E4;
-  --t2: #8296AF;
-  --t3: #485E7C;
-  --t4: #2B3B52;
+  /* ── Text ──  bright near-white primary, neutral muted greys */
+  --t1: #E3E5E9;
+  --t2: #9DA1A8;
+  --t3: #5E626A;
+  --t4: #393D44;
 
   /* ── Intent palette — dark ── */
   --blue1: #152B50; --blue2: #1A3A6E; --blue3: #2D72D2; --blue4: #4C8EEE; --blue5: #88BAFF;
@@ -59,7 +61,7 @@
   --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.45);
 
   /* ── Special surfaces ── */
-  --code-bg:   #0d1117;
+  --code-bg:   #0a0b0c;
 
   /* ── Chart palette (M23) ── */
   --chart-1: #4C8EEE;   /* blue — primary metric / first series   */
@@ -71,9 +73,9 @@
   --chart-threshold-warn:   #BD8800;
   --chart-threshold-crit:   #C42A2A;
   --chart-threshold-target: #18985A;
-  --chart-axis:  #253552;
-  --chart-grid:  #1B2840;
-  --chart-tick:  #8296AF;
+  --chart-axis:  #2A2C2F;
+  --chart-grid:  #212325;
+  --chart-tick:  #9DA1A8;
 
   /* ── Tailwind v4 bridge ─────────────────────────────────────────────────
      Maps Tailwind color names → Palantir tokens so components can use
@@ -121,18 +123,30 @@
   --color-zinc-200: #e8eff8;
   --color-zinc-100: #f0f5fc;
 
-  /* Legacy accent aliases */
-  --color-violet-700: var(--vio2);
-  --color-violet-600: var(--vio3);
-  --color-violet-500: var(--vio4);
-  --color-violet-400: var(--vio5);
-  --color-sky-700:    var(--blue2);
-  --color-sky-600:    var(--blue2);
-  --color-sky-500:    var(--blue3);
-  --color-sky-400:    var(--blue4);
-  --color-red-600:    var(--red3);
-  --color-red-500:    var(--red4);
-  --color-red-400:    var(--red5);
+  /* ── Accent palette bridge ────────────────────────────────────────────────
+     Maps Tailwind's built-in accent palettes → Aughor token ramps so that
+     `text-emerald-400`, `bg-amber-900`, etc. become theme-aware automatically.
+     Each alias points at a --grnN/--ambN/… token that itself flips in light
+     mode, so no per-theme duplication is needed. Shade→ramp is inverted:
+     50–300→ramp5 (lightest), 400→4, 500/600→3, 700/800→2, 900/950→1.
+     Semantic grouping: emerald/green→grn · amber/yellow/orange→amb ·
+     blue/sky/indigo→blue · rose/red/pink→red · teal/cyan→cyn · purple/violet→vio.
+     ── */
+  --color-emerald-50: var(--grn5); --color-emerald-100: var(--grn5); --color-emerald-200: var(--grn5); --color-emerald-300: var(--grn5); --color-emerald-400: var(--grn4); --color-emerald-500: var(--grn3); --color-emerald-600: var(--grn3); --color-emerald-700: var(--grn2); --color-emerald-800: var(--grn2); --color-emerald-900: var(--grn1); --color-emerald-950: var(--grn1);
+  --color-green-50: var(--grn5); --color-green-100: var(--grn5); --color-green-200: var(--grn5); --color-green-300: var(--grn5); --color-green-400: var(--grn4); --color-green-500: var(--grn3); --color-green-600: var(--grn3); --color-green-700: var(--grn2); --color-green-800: var(--grn2); --color-green-900: var(--grn1); --color-green-950: var(--grn1);
+  --color-amber-50: var(--amb5); --color-amber-100: var(--amb5); --color-amber-200: var(--amb5); --color-amber-300: var(--amb5); --color-amber-400: var(--amb4); --color-amber-500: var(--amb3); --color-amber-600: var(--amb3); --color-amber-700: var(--amb2); --color-amber-800: var(--amb2); --color-amber-900: var(--amb1); --color-amber-950: var(--amb1);
+  --color-yellow-50: var(--amb5); --color-yellow-100: var(--amb5); --color-yellow-200: var(--amb5); --color-yellow-300: var(--amb5); --color-yellow-400: var(--amb4); --color-yellow-500: var(--amb3); --color-yellow-600: var(--amb3); --color-yellow-700: var(--amb2); --color-yellow-800: var(--amb2); --color-yellow-900: var(--amb1); --color-yellow-950: var(--amb1);
+  --color-orange-50: var(--amb5); --color-orange-100: var(--amb5); --color-orange-200: var(--amb5); --color-orange-300: var(--amb5); --color-orange-400: var(--amb4); --color-orange-500: var(--amb3); --color-orange-600: var(--amb3); --color-orange-700: var(--amb2); --color-orange-800: var(--amb2); --color-orange-900: var(--amb1); --color-orange-950: var(--amb1);
+  --color-blue-50: var(--blue5); --color-blue-100: var(--blue5); --color-blue-200: var(--blue5); --color-blue-300: var(--blue5); --color-blue-400: var(--blue4); --color-blue-500: var(--blue3); --color-blue-600: var(--blue3); --color-blue-700: var(--blue2); --color-blue-800: var(--blue2); --color-blue-900: var(--blue1); --color-blue-950: var(--blue1);
+  --color-sky-50: var(--blue5); --color-sky-100: var(--blue5); --color-sky-200: var(--blue5); --color-sky-300: var(--blue5); --color-sky-400: var(--blue4); --color-sky-500: var(--blue3); --color-sky-600: var(--blue3); --color-sky-700: var(--blue2); --color-sky-800: var(--blue2); --color-sky-900: var(--blue1); --color-sky-950: var(--blue1);
+  --color-indigo-50: var(--blue5); --color-indigo-100: var(--blue5); --color-indigo-200: var(--blue5); --color-indigo-300: var(--blue5); --color-indigo-400: var(--blue4); --color-indigo-500: var(--blue3); --color-indigo-600: var(--blue3); --color-indigo-700: var(--blue2); --color-indigo-800: var(--blue2); --color-indigo-900: var(--blue1); --color-indigo-950: var(--blue1);
+  --color-rose-50: var(--red5); --color-rose-100: var(--red5); --color-rose-200: var(--red5); --color-rose-300: var(--red5); --color-rose-400: var(--red4); --color-rose-500: var(--red3); --color-rose-600: var(--red3); --color-rose-700: var(--red2); --color-rose-800: var(--red2); --color-rose-900: var(--red1); --color-rose-950: var(--red1);
+  --color-red-50: var(--red5); --color-red-100: var(--red5); --color-red-200: var(--red5); --color-red-300: var(--red5); --color-red-400: var(--red4); --color-red-500: var(--red3); --color-red-600: var(--red3); --color-red-700: var(--red2); --color-red-800: var(--red2); --color-red-900: var(--red1); --color-red-950: var(--red1);
+  --color-pink-50: var(--red5); --color-pink-100: var(--red5); --color-pink-200: var(--red5); --color-pink-300: var(--red5); --color-pink-400: var(--red4); --color-pink-500: var(--red3); --color-pink-600: var(--red3); --color-pink-700: var(--red2); --color-pink-800: var(--red2); --color-pink-900: var(--red1); --color-pink-950: var(--red1);
+  --color-teal-50: var(--cyn5); --color-teal-100: var(--cyn5); --color-teal-200: var(--cyn5); --color-teal-300: var(--cyn5); --color-teal-400: var(--cyn4); --color-teal-500: var(--cyn3); --color-teal-600: var(--cyn3); --color-teal-700: var(--cyn2); --color-teal-800: var(--cyn2); --color-teal-900: var(--cyn1); --color-teal-950: var(--cyn1);
+  --color-cyan-50: var(--cyn5); --color-cyan-100: var(--cyn5); --color-cyan-200: var(--cyn5); --color-cyan-300: var(--cyn5); --color-cyan-400: var(--cyn4); --color-cyan-500: var(--cyn3); --color-cyan-600: var(--cyn3); --color-cyan-700: var(--cyn2); --color-cyan-800: var(--cyn2); --color-cyan-900: var(--cyn1); --color-cyan-950: var(--cyn1);
+  --color-purple-50: var(--vio5); --color-purple-100: var(--vio5); --color-purple-200: var(--vio5); --color-purple-300: var(--vio5); --color-purple-400: var(--vio4); --color-purple-500: var(--vio3); --color-purple-600: var(--vio3); --color-purple-700: var(--vio2); --color-purple-800: var(--vio2); --color-purple-900: var(--vio1); --color-purple-950: var(--vio1);
+  --color-violet-50: var(--vio5); --color-violet-100: var(--vio5); --color-violet-200: var(--vio5); --color-violet-300: var(--vio5); --color-violet-400: var(--vio4); --color-violet-500: var(--vio3); --color-violet-600: var(--vio3); --color-violet-700: var(--vio2); --color-violet-800: var(--vio2); --color-violet-900: var(--vio1); --color-violet-950: var(--vio1);
 }
 
 /* ── Light mode overrides ─────────────────────────────────────────────────── */

@@ -133,8 +133,8 @@ def list_connector_types():
             "fields":      FORM_FIELDS.get(conn_type, []),
             "category":    (
                 "file"       if conn_type in ("local_upload", "s3") else
-                "warehouse"  if conn_type in ("bigquery", "snowflake", "mysql") else
-                "api"        if conn_type in ("stripe", "hubspot", "salesforce") else
+                "warehouse"  if conn_type in ("bigquery", "snowflake", "mysql", "motherduck", "exasol") else
+                "api"        if conn_type in ("stripe", "hubspot", "salesforce", "gsheets") else
                 "federation" if conn_type == "federated" else
                 "built-in"
             ),

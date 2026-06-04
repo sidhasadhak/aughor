@@ -22,6 +22,7 @@ KEY_FILE    = Path(__file__).parent.parent.parent / "data" / ".aughor_key"
 BUILTIN_ID = "fixture"
 POSTGRES_BUILTIN_ID = "mydb"
 SAMPLES_ID = "samples"
+WORKSPACE_ID = "workspace"  # default DuckDB-backed scratch space for file uploads
 
 
 def _postgres_builtin_dsn() -> str:
@@ -79,16 +80,18 @@ def list_connections() -> list[dict]:
     hidden = _hidden_builtins()
     rows = []
 
-    # Always include the samples catalog (built-in, read-only, never deleted)
-    if SAMPLES_ID not in hidden:
-        samples_path = Path(__file__).parent.parent.parent / "data" / "samples.duckdb"
+    # Always include the Workspace — a DuckDB-backed catalog that folds in the
+    # sample (ecommerce) demo tables read-only AND lets users upload their own
+    # files (CSV/Parquet/Excel/JSON) as new tables/schemas. This replaces the
+    # former separate "Sample Catalog" built-in.
+    if WORKSPACE_ID not in hidden:
         rows.append({
-            "id": SAMPLES_ID,
-            "name": "Sample Catalog",
-            "conn_type": "duckdb",
-            "dsn_preview": str(samples_path),
-            "schema_name": "ecommerce",  # all sample tables live in this schema
-            "meta": {"builtin_samples": True},
+            "id": WORKSPACE_ID,
+            "name": "Workspace",
+            "conn_type": "local_upload",
+            "dsn_preview": "local://workspace/",
+            "schema_name": None,
+            "meta": {"builtin_workspace": True},
             "builtin": True,
         })
 
@@ -145,6 +148,13 @@ def get_meta(conn_id: str) -> dict:
     """Return the metadata dict stored for a connection (e.g. schema_name)."""
     if conn_id == SAMPLES_ID:
         return {"builtin_samples": True, "schema_name": "ecommerce"}
+    if conn_id == WORKSPACE_ID:
+        samples_path = Path(__file__).parent.parent.parent / "data" / "samples.duckdb"
+        meta = {"builtin_workspace": True}
+        if samples_path.exists():
+            # Fold the sample ecommerce tables into the Workspace (read-only).
+            meta["seed_duckdb"] = str(samples_path)
+        return meta
     if conn_id in (BUILTIN_ID, POSTGRES_BUILTIN_ID):
         # Builtins store settings in the settings file
         return _load_settings().get(conn_id, {})
@@ -197,6 +207,8 @@ def get_dsn(conn_id: str) -> tuple[str, str]:
     if conn_id == SAMPLES_ID:
         samples_path = Path(__file__).parent.parent.parent / "data" / "samples.duckdb"
         return "duckdb", str(samples_path)
+    if conn_id == WORKSPACE_ID:
+        return "local_upload", "local://"
     if conn_id == BUILTIN_ID:
         fixture_path = Path(__file__).parent.parent.parent / "data" / "aughor.duckdb"
         return "duckdb", str(fixture_path)
@@ -216,6 +228,8 @@ def get_dsn(conn_id: str) -> tuple[str, str]:
 def delete_connection(conn_id: str) -> None:
     if conn_id == SAMPLES_ID:
         raise ValueError("The Sample Catalog cannot be deleted.")
+    if conn_id == WORKSPACE_ID:
+        raise ValueError("The Workspace cannot be deleted.")
     if conn_id in (BUILTIN_ID, POSTGRES_BUILTIN_ID):
         # Hide the builtin so it won't reappear on restart
         settings = _load_settings()

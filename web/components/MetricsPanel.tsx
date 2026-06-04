@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ResizableSplit } from "@/components/ResizableSplit";
 import {
   createMetric,
   deleteMetric,
@@ -207,9 +208,9 @@ export function MetricsPanel({ connId }: { connId?: string }) {
   const isEditing = adding || selected !== null;
 
   return (
-    <div className="flex h-full gap-4">
-      {/* ── Left: metric list ─────────────────────────────────────────────── */}
-      <div className="w-64 flex-shrink-0 flex flex-col gap-2">
+    <ResizableSplit storageKey="metrics" initial={272} min={200} max={440} className="h-full"
+      left={
+      <div className="flex flex-col gap-2 h-full overflow-y-auto pr-2">
         <div className="flex items-center justify-between mb-1">
           <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Metrics</span>
           <button
@@ -273,9 +274,9 @@ export function MetricsPanel({ connId }: { connId?: string }) {
           ))}
         </div>
       </div>
-
-      {/* ── Right: detail / form ──────────────────────────────────────────── */}
-      <div className="flex-1 min-w-0 overflow-y-auto">
+      }
+      right={
+      <div className="flex-1 min-w-0 overflow-y-auto pl-2">
         {!isEditing && (
           <div className="h-full flex items-center justify-center text-zinc-500 text-sm">
             Select a metric to edit, or add a new one
@@ -525,7 +526,8 @@ export function MetricsPanel({ connId }: { connId?: string }) {
           </div>
         )}
       </div>
-    </div>
+      }
+    />
   );
 }
 

@@ -142,7 +142,7 @@ def chunk_text(
     """Chunk raw text string directly — no file I/O. Used by API knowledge connectors."""
     import datetime
     doc_id = doc_id or uuid.uuid4().hex
-    uploaded_at = uploaded_at or datetime.datetime.utcnow().isoformat() + "Z"
+    uploaded_at = uploaded_at or datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
     texts = _split_into_chunks(text)
     return [
         DocumentChunk(
@@ -166,7 +166,7 @@ def chunk_file(
     import datetime
     doc_id = doc_id or uuid.uuid4().hex
     title = title or path.stem.replace("_", " ").replace("-", " ").title()
-    uploaded_at = uploaded_at or datetime.datetime.utcnow().isoformat() + "Z"
+    uploaded_at = uploaded_at or datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
 
     raw = extract_text(path)
     texts = _split_into_chunks(raw)

@@ -152,57 +152,28 @@ def resolve_connection_id(canvas_id: str) -> Optional[str]:
 
 # ── Legacy migration ──────────────────────────────────────────────────────────
 
-def migrate_connections_to_legacy_canvases() -> int:
-    """Create a legacy Canvas for every registered connection that lacks one.
+def delete_legacy_canvases() -> int:
+    """Delete all auto-generated (legacy) Canvases. Returns the count removed.
 
-    Idempotent — safe to call on every startup. Returns the count of new Canvases
-    created (0 on subsequent runs when all connections already have Canvases).
+    Auto-generated per-connection Canvases are no longer created. This purges any
+    that remain from older installs so only user-created Canvases are shown.
     """
-    try:
-        from aughor.db.registry import list_connections
-    except Exception:
-        return 0
-
     c = _conn()
     _ensure_schema(c)
+    cur = c.execute("DELETE FROM canvases WHERE is_legacy = 1")
+    try:
+        c.commit()
+    except Exception:
+        pass
+    return cur.rowcount if (cur.rowcount and cur.rowcount > 0) else 0
 
-    # Build set of connection_ids that already have a legacy Canvas
-    existing_rows = c.execute(
-        "SELECT scopes_json FROM canvases WHERE is_legacy = 1"
-    ).fetchall()
-    covered: set[str] = set()
-    for row in existing_rows:
-        try:
-            scopes = json.loads(row["scopes_json"] or "[]")
-            for s in scopes:
-                if s.get("connection_id"):
-                    covered.add(s["connection_id"])
-        except Exception:
-            pass
 
-    created = 0
-    for conn in list_connections():
-        conn_id = conn.get("id", "")
-        if not conn_id or conn_id in covered:
-            continue
-        name = conn.get("name") or conn_id
-        scope = CanvasScope(
-            connection_id=conn_id,
-            schema_name=conn.get("schema_name") or conn.get("meta", {}).get("schema_name"),
-        )
-        try:
-            create_canvas(
-                name=name,
-                scopes=[scope],
-                description=f"Auto-migrated from connection '{name}'",
-                is_legacy=True,
-                canvas_id=f"legacy_{conn_id}",
-            )
-            created += 1
-        except Exception:
-            pass  # already exists (race on startup) — ignore
-
-    return created
+def migrate_connections_to_legacy_canvases() -> int:
+    """Deprecated no-op. Auto-generated per-connection Canvases are no longer
+    created — connections and schemas never spawn a Canvas automatically.
+    Retained only so existing imports/call sites keep working.
+    """
+    return 0
 
 
 # ── Module-level singleton (lazy init) ───────────────────────────────────────

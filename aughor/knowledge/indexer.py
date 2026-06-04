@@ -105,7 +105,7 @@ def index_text(
     from aughor.knowledge.documents import chunk_text as _chunk_text
 
     doc_id = doc_id or uuid.uuid4().hex
-    uploaded_at = datetime.datetime.utcnow().isoformat() + "Z"
+    uploaded_at = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
     filename = source or "api_sync"
 
     chunks = _chunk_text(
@@ -138,7 +138,7 @@ def index_file(path: Path, title: Optional[str] = None) -> dict:
     """
     import datetime
     doc_id = uuid.uuid4().hex
-    uploaded_at = datetime.datetime.utcnow().isoformat() + "Z"
+    uploaded_at = datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
     title = title or path.stem.replace("_", " ").replace("-", " ").title()
 
     chunks = chunk_file(path, doc_id=doc_id, title=title, uploaded_at=uploaded_at)

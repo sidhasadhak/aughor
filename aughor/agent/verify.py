@@ -113,3 +113,54 @@ def verify_numeric_claims(
                 unverified.append(f"{val:.4g}")
 
     return unverified
+
+
+def build_pre_synthesis_number_check(
+    query_history: list["QueryResult"],
+) -> str:
+    """
+    Build a *pre-synthesis* numbers block to inject into the synthesis prompt
+    so the narrator can only use numbers that actually appear in the data.
+
+    Returns a prompt section (str).  Empty string if nothing useful to inject.
+
+    This is different from verify_numeric_claims (which runs after the fact) —
+    this runs *before* the LLM writes the report so hallucinated numbers are
+    prevented rather than flagged.
+    """
+    try:
+        reference_vals = _values_from_history(query_history)
+        if not reference_vals:
+            return ""
+
+        # Collect notable values: top-10 largest (likely headline aggregates) +
+        # any small non-trivial values that could be percentages or rates
+        interesting: list[float] = []
+        for v in reference_vals:
+            if v in (0, 0.0, 1.0, 100.0) or (v == int(v) and v <= 10):
+                continue
+            interesting.append(v)
+
+        if not interesting:
+            return ""
+
+        # De-duplicate and pick a representative sample
+        seen: set[str] = set()
+        deduped: list[float] = []
+        for v in sorted(set(interesting), reverse=True):
+            key = f"{v:.6g}"
+            if key not in seen:
+                seen.add(key)
+                deduped.append(v)
+            if len(deduped) >= 30:
+                break
+
+        val_list = ", ".join(f"{v:.6g}" for v in deduped)
+        return (
+            "\nVERIFIED NUMERIC VALUES (only these numbers — or values within ±10% of them — "
+            "may appear in headline, verdict, findings, and recommendations; "
+            "any other number is unverified and must NOT be stated as fact):\n"
+            f"  {val_list}\n"
+        )
+    except Exception:
+        return ""

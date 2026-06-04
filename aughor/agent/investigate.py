@@ -205,6 +205,23 @@ def _trim(text: str, limit: int) -> str:
     return text[:limit] + f"\n… [truncated {len(text) - limit} chars]"
 
 
+def _with_ledger(state: "AgentState", schema: str) -> str:
+    """Prepend the run's canonical definitions to the schema block a phase planner
+    sees, so every phase uses the same identifiers/metric expressions and reuses
+    figures already computed earlier. No-op when no ledger was built."""
+    led = (state.get("analysis_ledger") or "").strip()
+    if not led:
+        return schema
+    return (
+        "CANONICAL DEFINITIONS (binding for THIS analysis — use these exact "
+        "identifiers and metric expressions in EVERY query so figures stay "
+        "consistent across phases; if a figure was already computed in an earlier "
+        "phase, reuse it verbatim rather than recomputing it):\n"
+        f"{led}\n\n"
+        f"{schema}"
+    )
+
+
 def _filter_schema(schema: str, table_names: list[str]) -> str:
     """
     Keep only the schema blocks for tables mentioned in table_names.
@@ -359,6 +376,56 @@ def _execute_safe(conn: "DatabaseConnection", phase_id: str, sql: str):
     return result
 
 
+def _parallel_execute_safe(
+    conn: "DatabaseConnection",
+    phase_id: str,
+    plan_queries: list,
+    cap: int = 4,
+) -> list[tuple]:
+    """Run up to `cap` PhasePlan queries in parallel using per-thread reader connections.
+
+    Each worker calls _execute_safe() on its own make_reader() clone so shared
+    connection state is never touched concurrently. Falls back to serial if
+    ThreadPoolExecutor fails or there is only one query.
+
+    Returns a list of (PlanQuery, QueryResult) tuples in the same order as
+    plan_queries[:cap].
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    valid = [(q, q.sql.strip()) for q in plan_queries[:cap] if q.sql and q.sql.strip()]
+    if not valid:
+        return []
+    if len(valid) == 1:
+        q, sql = valid[0]
+        r = _execute_safe(conn, phase_id, sql)
+        r.hypothesis_id = phase_id
+        return [(q, r)]
+
+    def _run(item: tuple) -> tuple:
+        q, sql = item
+        reader = conn.make_reader()
+        r = _execute_safe(reader, phase_id, sql)
+        r.hypothesis_id = phase_id
+        return (q, r)
+
+    try:
+        with ThreadPoolExecutor(max_workers=len(valid)) as pool:
+            futures = {pool.submit(_run, item): i for i, item in enumerate(valid)}
+            ordered: list[tuple | None] = [None] * len(valid)
+            for fut in as_completed(futures):
+                ordered[futures[fut]] = fut.result()
+            return [r for r in ordered if r is not None]
+    except Exception:
+        # Serial fallback — never let parallelization break the investigation
+        results = []
+        for q, sql in valid:
+            r = _execute_safe(conn, phase_id, sql)
+            r.hypothesis_id = phase_id
+            results.append((q, r))
+        return results
+
+
 def _results_to_text(results) -> str:
     """Render a list of QueryResults as compact text for LLM interpretation."""
     parts = []
@@ -434,6 +501,97 @@ def _skipped_finding(phase_id: str, reason: str) -> InvestigationFinding:
         stat_note=None,
         is_significant=False,
     )
+
+
+def _detect_phase_contradictions(phases: list[InvestigationPhaseResult]) -> str:
+    """
+    Deterministically scan phase summaries for direct factual contradictions.
+
+    Detects these contradiction classes:
+      A. Significance flip — one phase says the change is "significant" / "anomalous"
+         while another says "within normal variance" / "not significant" / "no anomaly".
+      B. Direction flip — one phase says metric is "up" / "increased" and another
+         says "down" / "decreased" for the same metric mention.
+      C. Causal attribution flip — one phase names a cause X, another says X is "not
+         the cause" or that the relationship is "not significant".
+
+    Returns a prompt section string to inject before synthesis, or "" if clean.
+    Never raises.
+    """
+    try:
+        if not phases or len(phases) < 2:
+            return ""
+
+        summaries: list[tuple[str, str]] = [
+            (p.get("phase_name", ""), (p.get("summary") or "").lower())
+            for p in phases
+        ]
+
+        contradictions: list[str] = []
+
+        # ── Class A: significance flip ────────────────────────────────────────
+        sig_positive = re.compile(
+            r'\b(significant|anomal|unusual|notable|material|above.normal|outside.normal)\b'
+        )
+        sig_negative = re.compile(
+            r'\b(within.normal|no.anomal|not.significant|insignificant|expected.variance|'
+            r'consistent.with.historical|normal.variance|no.significant)\b'
+        )
+        phases_with_sig = [(name, s) for name, s in summaries if sig_positive.search(s)]
+        phases_with_neg = [(name, s) for name, s in summaries if sig_negative.search(s)]
+        if phases_with_sig and phases_with_neg:
+            contradictions.append(
+                f"Significance contradiction: phase(s) {', '.join(n for n, _ in phases_with_sig)} "
+                f"describe the change as significant/anomalous, but phase(s) "
+                f"{', '.join(n for n, _ in phases_with_neg)} describe it as within normal variance. "
+                f"You MUST resolve this tension explicitly in your report — do NOT paper over it."
+            )
+
+        # ── Class B: direction flip on same metric keyword ─────────────────────
+        # Find metric-like tokens (revenue, orders, conversion, churn, etc.)
+        metric_re = re.compile(
+            r'\b(revenue|orders|conversion|churn|retention|aov|gmv|mrr|sessions|'
+            r'traffic|cac|ltv|profit|margin|spend|cost)\b'
+        )
+        direction_up = re.compile(r'\b(increas|grew|up|higher|gain|improv|recover|surged)\b')
+        direction_down = re.compile(r'\b(declin|decreas|fell|drop|down|lower|reduc|shrunk|worsened)\b')
+
+        metric_directions: dict[str, dict[str, list[str]]] = {}
+        for name, s in summaries:
+            for m in metric_re.finditer(s):
+                metric = m.group(1)
+                # Check surrounding context (±80 chars)
+                start = max(0, m.start() - 80)
+                end = min(len(s), m.end() + 80)
+                ctx = s[start:end]
+                if direction_up.search(ctx):
+                    metric_directions.setdefault(metric, {}).setdefault("up", []).append(name)
+                elif direction_down.search(ctx):
+                    metric_directions.setdefault(metric, {}).setdefault("down", []).append(name)
+
+        for metric, dirs in metric_directions.items():
+            if "up" in dirs and "down" in dirs:
+                contradictions.append(
+                    f"Direction contradiction on '{metric}': "
+                    f"phase(s) {', '.join(dirs['up'])} describe it as increasing, "
+                    f"phase(s) {', '.join(dirs['down'])} describe it as decreasing. "
+                    f"Clarify which direction is correct and over what time period."
+                )
+
+        if not contradictions:
+            return ""
+
+        lines = [
+            "\n⚠ CROSS-PHASE CONTRADICTIONS DETECTED — address each explicitly in your report "
+            "(surface them in the risks or data quality notes; do NOT silently average them out):"
+        ]
+        for i, c in enumerate(contradictions, 1):
+            lines.append(f"  {i}. {c}")
+        lines.append("")
+        return "\n".join(lines)
+
+    except Exception:
+        return ""
 
 
 def _phases_summary(phases: list[InvestigationPhaseResult]) -> str:
@@ -587,9 +745,18 @@ def ada_intake(state: AgentState) -> dict:
     except Exception:
         pass
 
+    # Pin canonical entity/metric definitions once so every phase uses the same
+    # identifiers/expressions (prevents figures drifting between phases).
+    try:
+        from aughor.agent.explore import build_analysis_ledger
+        analysis_ledger = build_analysis_ledger(state)
+    except Exception:
+        analysis_ledger = ""
+
     return {
         "investigation_phases": [phase],
         "_ada_intake": intake_dict,
+        "analysis_ledger": analysis_ledger,
     }
 
 
@@ -631,7 +798,7 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
 
     question = state["question"]
     intake_data = state.get("_ada_intake") or {}
-    schema = intake_data.get("filtered_schema") or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT)
+    schema = _with_ledger(state, intake_data.get("filtered_schema") or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT))
     events = state.get("events_context") or ""
     events_section = f"BUSINESS CALENDAR:\n{events}\n" if events else ""
     phases = state.get("investigation_phases", [])
@@ -692,14 +859,8 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
         )
         return {"investigation_phases": phases + [phase]}
 
-    # Step 2: Execute
-    results = []
-    for q in plan.queries:
-        if not q.sql or not q.sql.strip():
-            continue
-        r = _execute_safe(conn, "baseline", q.sql)
-        r.hypothesis_id = "baseline"
-        results.append((q, r))
+    # Step 2: Execute (parallel — each query gets its own reader connection)
+    results = _parallel_execute_safe(conn, "baseline", plan.queries, cap=4)
 
     if not results:
         phase = _phase_result(
@@ -929,7 +1090,7 @@ def ada_decompose(state: AgentState, conn: "DatabaseConnection") -> dict:
 
     question = state["question"]
     intake_data = state.get("_ada_intake") or {}
-    schema = intake_data.get("filtered_schema") or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT)
+    schema = _with_ledger(state, intake_data.get("filtered_schema") or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT))
     phases = state.get("investigation_phases", [])
     baseline_summary = state.get("_baseline_summary", "Baseline established.")
 
@@ -972,13 +1133,7 @@ def ada_decompose(state: AgentState, conn: "DatabaseConnection") -> dict:
         )
         return {"investigation_phases": phases + [phase]}
 
-    results = []
-    for q in plan.queries:
-        if not q.sql or not q.sql.strip():
-            continue
-        r = _execute_safe(conn, "decomposition", q.sql)
-        r.hypothesis_id = "decomposition"
-        results.append((q, r))
+    results = _parallel_execute_safe(conn, "decomposition", plan.queries, cap=4)
 
     if not results:
         phase = _phase_result(
@@ -1053,7 +1208,7 @@ def ada_dimensional(state: AgentState, conn: "DatabaseConnection") -> dict:
 
     question = state["question"]
     intake_data = state.get("_ada_intake") or {}
-    schema = intake_data.get("filtered_schema") or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT)
+    schema = _with_ledger(state, intake_data.get("filtered_schema") or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT))
     phases = state.get("investigation_phases", [])
 
     metric_label = intake_data.get("metric_label", "the metric")
@@ -1108,13 +1263,7 @@ def ada_dimensional(state: AgentState, conn: "DatabaseConnection") -> dict:
         )
         return {"investigation_phases": phases + [phase]}
 
-    results = []
-    for q in plan.queries[:4]:  # cap at 4 dimensions
-        if not q.sql or not q.sql.strip():
-            continue
-        r = _execute_safe(conn, "dimensional", q.sql)
-        r.hypothesis_id = "dimensional"
-        results.append((q, r))
+    results = _parallel_execute_safe(conn, "dimensional", plan.queries, cap=4)
 
     if not results:
         phase = _phase_result(
@@ -1188,7 +1337,7 @@ def ada_behavioral(state: AgentState, conn: "DatabaseConnection") -> dict:
 
     question = state["question"]
     intake_data = state.get("_ada_intake") or {}
-    schema = intake_data.get("filtered_schema") or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT)
+    schema = _with_ledger(state, intake_data.get("filtered_schema") or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT))
     phases = state.get("investigation_phases", [])
     events = state.get("events_context") or ""
     events_section = f"BUSINESS CALENDAR:\n{events}\n" if events else ""
@@ -1249,13 +1398,7 @@ def ada_behavioral(state: AgentState, conn: "DatabaseConnection") -> dict:
         )
         return {"investigation_phases": phases + [phase]}
 
-    results = []
-    for q in plan.queries[:4]:
-        if not q.sql or not q.sql.strip():
-            continue
-        r = _execute_safe(conn, "behavioral", q.sql)
-        r.hypothesis_id = "behavioral"
-        results.append((q, r))
+    results = _parallel_execute_safe(conn, "behavioral", plan.queries, cap=4)
 
     if not results:
         phase = _phase_result(
@@ -1348,6 +1491,13 @@ def ada_synthesize(state: AgentState) -> dict:
     phases_summary = _phases_summary(phases)
     evidence_log = _phases_evidence(phases)
 
+    # ── Cross-phase contradiction detection ───────────────────────────────────
+    # Before synthesis, deterministically check phase summaries for contradictions.
+    # Example: baseline says "significant drop (z=-2.4)" while dimensional says
+    # "no segment deviates from baseline" — the synthesizer must not silently paper
+    # over this.  We inject any contradictions as a hard instruction in the prompt.
+    contradiction_section = _detect_phase_contradictions(phases)
+
     # Build metric targets block for synthesis guidance
     metric_targets_section = ""
     try:
@@ -1414,7 +1564,7 @@ def ada_synthesize(state: AgentState) -> dict:
         playbook_section=playbook_section,
         org_intelligence_section=org_intelligence_section,
         external_context_section=external_context_section,
-    ) + early_stop_note
+    ) + contradiction_section + early_stop_note
     try:
         synth: ADASynthesisModel = _provider("narrator").complete(
             system=(

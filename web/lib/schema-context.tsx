@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
-import { type RichSchema } from "@/lib/api";
+import { type RichSchema, refreshSchemaCache } from "@/lib/api";
 import { API_BASE } from "@/lib/config";
 
 interface SchemaContextValue {
@@ -32,7 +32,10 @@ export function SchemaProvider({
   const [error, setError] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
 
-  const refresh = useCallback(() => setTick((t) => t + 1), []);
+  const refresh = useCallback(() => {
+    if (connId) refreshSchemaCache(connId).catch(() => {});
+    setTick((t) => t + 1);
+  }, [connId]);
 
   useEffect(() => {
     if (!connId) {

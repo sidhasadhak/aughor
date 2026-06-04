@@ -1,6 +1,6 @@
 [
   {
-    "id": "kb_new_customer_acquisition_new_customer_count_dropped_month_over_month_b4ca9c",
+    "id": "kb_new_customer_acquisition_new_customer_count_dropped_month_over_month_ba3342",
     "source_kb_id": "new_customer_acquisition",
     "trigger_metric": "new_customer_acquisition",
     "trigger_condition": "new customer count dropped month-over-month",
@@ -21,10 +21,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_new_customer_acquisition_cac_increased_without_volume_drop_32fe3e",
+    "id": "kb_new_customer_acquisition_cac_increased_without_volume_drop_757d69",
     "source_kb_id": "new_customer_acquisition",
     "trigger_metric": "new_customer_acquisition",
     "trigger_condition": "CAC increased without volume drop",
@@ -45,10 +45,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_product_activation_activation_rate_declined_5ffcf6",
+    "id": "kb_product_activation_activation_rate_declined_c73aae",
     "source_kb_id": "product_activation",
     "trigger_metric": "product_activation",
     "trigger_condition": "activation rate declined",
@@ -68,10 +68,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_product_activation_time_to_activation_increasing_80f886",
+    "id": "kb_product_activation_time_to_activation_increasing_9249aa",
     "source_kb_id": "product_activation",
     "trigger_metric": "product_activation",
     "trigger_condition": "time-to-activation increasing",
@@ -91,10 +91,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_average_order_value_aov_declined_month_over_month_2f2d0f",
+    "id": "kb_average_order_value_aov_declined_month_over_month_d87275",
     "source_kb_id": "average_order_value",
     "trigger_metric": "average_order_value",
     "trigger_condition": "AOV declined month-over-month",
@@ -113,10 +113,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_average_order_value_aov_varies_significantly_by_customer_segment_448b2c",
+    "id": "kb_average_order_value_aov_varies_significantly_by_customer_segment_5127b9",
     "source_kb_id": "average_order_value",
     "trigger_metric": "average_order_value",
     "trigger_condition": "AOV varies significantly by customer segment",
@@ -135,10 +135,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_customer_churn_analysis_churn_rate_increased_month_over_month_ce6357",
+    "id": "kb_customer_churn_analysis_churn_rate_increased_month_over_month_761448",
     "source_kb_id": "customer_churn_analysis",
     "trigger_metric": "customer_churn_analysis",
     "trigger_condition": "churn rate increased month-over-month",
@@ -158,10 +158,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_customer_churn_analysis_churn_concentrated_in_early_cohorts_within_90_days_of_signup_b25940",
+    "id": "kb_customer_churn_analysis_churn_concentrated_in_early_cohorts_within_90_days_of_signup_9c8641",
     "source_kb_id": "customer_churn_analysis",
     "trigger_metric": "customer_churn_analysis",
     "trigger_condition": "churn concentrated in early cohorts (within 90 days of signup)",
@@ -181,10 +181,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_customer_churn_analysis_involuntary_churn_from_payment_failures_61b802",
+    "id": "kb_customer_churn_analysis_involuntary_churn_from_payment_failures_88c01d",
     "source_kb_id": "customer_churn_analysis",
     "trigger_metric": "customer_churn_analysis",
     "trigger_condition": "involuntary churn from payment failures",
@@ -204,10 +204,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_conversion_funnel_overall_funnel_conversion_rate_dropped_82e7c3",
+    "id": "kb_conversion_funnel_overall_funnel_conversion_rate_dropped_ccc363",
     "source_kb_id": "conversion_funnel",
     "trigger_metric": "conversion_funnel",
     "trigger_condition": "overall funnel conversion rate dropped",
@@ -228,10 +228,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_conversion_funnel_trial_to_paid_conversion_dropped_d08847",
+    "id": "kb_conversion_funnel_trial_to_paid_conversion_dropped_fbb722",
     "source_kb_id": "conversion_funnel",
     "trigger_metric": "conversion_funnel",
     "trigger_condition": "trial-to-paid conversion dropped",
@@ -252,10 +252,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_engagement_metrics_dau_dropped_without_mau_dropping_proportionally_97f5a4",
+    "id": "kb_engagement_metrics_dau_dropped_without_mau_dropping_proportionally_10ba94",
     "source_kb_id": "engagement_metrics",
     "trigger_metric": "engagement_metrics",
     "trigger_condition": "DAU dropped without MAU dropping proportionally",
@@ -278,10 +278,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_engagement_metrics_stickiness_dau_mau_declining_b59537",
+    "id": "kb_engagement_metrics_stickiness_dau_mau_declining_8bdf4c",
     "source_kb_id": "engagement_metrics",
     "trigger_metric": "engagement_metrics",
     "trigger_condition": "stickiness (DAU/MAU) declining",
@@ -304,10 +304,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_customer_lifetime_value_ltv_declining_for_recent_cohorts_c0391e",
+    "id": "kb_customer_lifetime_value_ltv_declining_for_recent_cohorts_85a729",
     "source_kb_id": "customer_lifetime_value",
     "trigger_metric": "customer_lifetime_value",
     "trigger_condition": "LTV declining for recent cohorts",
@@ -326,10 +326,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_customer_lifetime_value_ltv_cac_ratio_deteriorating_b9f6a0",
+    "id": "kb_customer_lifetime_value_ltv_cac_ratio_deteriorating_d0a461",
     "source_kb_id": "customer_lifetime_value",
     "trigger_metric": "customer_lifetime_value",
     "trigger_condition": "LTV:CAC ratio deteriorating",
@@ -348,10 +348,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_monthly_recurring_revenue_mrr_declined_month_over_month_b6bee7",
+    "id": "kb_monthly_recurring_revenue_mrr_declined_month_over_month_3bb84d",
     "source_kb_id": "monthly_recurring_revenue",
     "trigger_metric": "monthly_recurring_revenue",
     "trigger_condition": "MRR declined month-over-month",
@@ -372,10 +372,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_monthly_recurring_revenue_mrr_growth_slowing_despite_stable_churn_c7218d",
+    "id": "kb_monthly_recurring_revenue_mrr_growth_slowing_despite_stable_churn_e6d606",
     "source_kb_id": "monthly_recurring_revenue",
     "trigger_metric": "monthly_recurring_revenue",
     "trigger_condition": "MRR growth slowing despite stable churn",
@@ -396,10 +396,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_payment_failure_payment_failure_rate_increased_70a088",
+    "id": "kb_payment_failure_payment_failure_rate_increased_fa50fd",
     "source_kb_id": "payment_failure",
     "trigger_metric": "payment_failure",
     "trigger_condition": "payment failure rate increased",
@@ -419,10 +419,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_payment_failure_dunning_recovery_rate_declining_bece7b",
+    "id": "kb_payment_failure_dunning_recovery_rate_declining_d58141",
     "source_kb_id": "payment_failure",
     "trigger_metric": "payment_failure",
     "trigger_condition": "dunning recovery rate declining",
@@ -442,10 +442,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_refund_rate_refund_rate_spiked_in_a_specific_period_277b00",
+    "id": "kb_refund_rate_refund_rate_spiked_in_a_specific_period_162deb",
     "source_kb_id": "refund_rate",
     "trigger_metric": "refund_rate",
     "trigger_condition": "refund rate spiked in a specific period",
@@ -465,10 +465,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_refund_rate_chargeback_rate_increasing_d1a193",
+    "id": "kb_refund_rate_chargeback_rate_increasing_ac577e",
     "source_kb_id": "refund_rate",
     "trigger_metric": "refund_rate",
     "trigger_condition": "chargeback rate increasing",
@@ -488,10 +488,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_retention_cohorts_retention_at_day_30_declining_across_cohorts_855801",
+    "id": "kb_retention_cohorts_retention_at_day_30_declining_across_cohorts_d4aec6",
     "source_kb_id": "retention_cohorts",
     "trigger_metric": "retention_cohorts",
     "trigger_condition": "retention at day 30 declining across cohorts",
@@ -511,10 +511,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_retention_cohorts_steep_drop_off_at_day_1_or_week_1_f91d83",
+    "id": "kb_retention_cohorts_steep_drop_off_at_day_1_or_week_1_89016a",
     "source_kb_id": "retention_cohorts",
     "trigger_metric": "retention_cohorts",
     "trigger_condition": "steep drop-off at day 1 or week 1",
@@ -534,10 +534,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_revenue_drop_analysis_overall_revenue_drops_month_over_month_bd82ab",
+    "id": "kb_revenue_drop_analysis_overall_revenue_drops_month_over_month_d5ab15",
     "source_kb_id": "revenue_drop_analysis",
     "trigger_metric": "revenue_drop_analysis",
     "trigger_condition": "overall revenue drops month-over-month",
@@ -556,10 +556,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_revenue_drop_analysis_revenue_drop_concentrated_in_one_region_or_segment_bded91",
+    "id": "kb_revenue_drop_analysis_revenue_drop_concentrated_in_one_region_or_segment_05130e",
     "source_kb_id": "revenue_drop_analysis",
     "trigger_metric": "revenue_drop_analysis",
     "trigger_condition": "revenue drop concentrated in one region or segment",
@@ -578,10 +578,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_revenue_drop_analysis_revenue_drop_driven_by_fewer_new_customers_e6473a",
+    "id": "kb_revenue_drop_analysis_revenue_drop_driven_by_fewer_new_customers_032c06",
     "source_kb_id": "revenue_drop_analysis",
     "trigger_metric": "revenue_drop_analysis",
     "trigger_condition": "revenue drop driven by fewer new customers",
@@ -600,10 +600,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_clv_clv_up_ec_repeat_rate_flat_2f0172",
+    "id": "kb_ec_clv_clv_up_ec_repeat_rate_flat_a584bb",
     "source_kb_id": "ec_clv",
     "trigger_metric": "ec_clv",
     "trigger_condition": "CLV up, ec_repeat_rate flat",
@@ -627,10 +627,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_clv_clv_up_ec_aov_flat_f2fa39",
+    "id": "kb_ec_clv_clv_up_ec_aov_flat_2e73d0",
     "source_kb_id": "ec_clv",
     "trigger_metric": "ec_clv",
     "trigger_condition": "CLV up, ec_aov flat",
@@ -654,10 +654,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_clv_clv_down_ec_cohort_retention_down_3c57a0",
+    "id": "kb_ec_clv_clv_down_ec_cohort_retention_down_81ef5b",
     "source_kb_id": "ec_clv",
     "trigger_metric": "ec_clv",
     "trigger_condition": "CLV down, ec_cohort_retention down",
@@ -681,10 +681,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_clv_clv_up_in_one_channel_only_949e24",
+    "id": "kb_ec_clv_clv_up_in_one_channel_only_e2c7be",
     "source_kb_id": "ec_clv",
     "trigger_metric": "ec_clv",
     "trigger_condition": "CLV up in one channel only",
@@ -708,10 +708,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_repeat_rate_repeat_rate_up_ec_clv_flat_678644",
+    "id": "kb_ec_repeat_rate_repeat_rate_up_ec_clv_flat_0fad1a",
     "source_kb_id": "ec_repeat_rate",
     "trigger_metric": "ec_repeat_rate",
     "trigger_condition": "repeat_rate up, ec_clv flat",
@@ -735,10 +735,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_repeat_rate_repeat_rate_down_ec_new_vs_returning_shows_new_customer_share_increasing_5026a4",
+    "id": "kb_ec_repeat_rate_repeat_rate_down_ec_new_vs_returning_shows_new_customer_share_increasing_d561e1",
     "source_kb_id": "ec_repeat_rate",
     "trigger_metric": "ec_repeat_rate",
     "trigger_condition": "repeat_rate down, ec_new_vs_returning shows new customer share increasing",
@@ -762,10 +762,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_repeat_rate_repeat_rate_up_ec_cohort_retention_flat_7d13e1",
+    "id": "kb_ec_repeat_rate_repeat_rate_up_ec_cohort_retention_flat_ab9061",
     "source_kb_id": "ec_repeat_rate",
     "trigger_metric": "ec_repeat_rate",
     "trigger_condition": "repeat_rate up, ec_cohort_retention flat",
@@ -789,10 +789,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_repeat_rate_repeat_rate_down_across_all_channels_3f6959",
+    "id": "kb_ec_repeat_rate_repeat_rate_down_across_all_channels_27b5cd",
     "source_kb_id": "ec_repeat_rate",
     "trigger_metric": "ec_repeat_rate",
     "trigger_condition": "repeat_rate down across all channels",
@@ -816,10 +816,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_new_vs_returning_new_customer_share_rising_ec_gmv_also_rising_d0e276",
+    "id": "kb_ec_new_vs_returning_new_customer_share_rising_ec_gmv_also_rising_c5b013",
     "source_kb_id": "ec_new_vs_returning",
     "trigger_metric": "ec_new_vs_returning",
     "trigger_condition": "new customer share rising, ec_gmv also rising",
@@ -843,10 +843,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_new_vs_returning_new_customer_share_rising_ec_gmv_flat_4d6c6f",
+    "id": "kb_ec_new_vs_returning_new_customer_share_rising_ec_gmv_flat_da6c5d",
     "source_kb_id": "ec_new_vs_returning",
     "trigger_metric": "ec_new_vs_returning",
     "trigger_condition": "new customer share rising, ec_gmv flat",
@@ -870,10 +870,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_new_vs_returning_returning_customer_share_rising_ec_repeat_rate_also_rising_399e51",
+    "id": "kb_ec_new_vs_returning_returning_customer_share_rising_ec_repeat_rate_also_rising_9ec34d",
     "source_kb_id": "ec_new_vs_returning",
     "trigger_metric": "ec_new_vs_returning",
     "trigger_condition": "returning customer share rising, ec_repeat_rate also rising",
@@ -897,10 +897,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_new_vs_returning_new_customer_share_drops_suddenly_a66ed0",
+    "id": "kb_ec_new_vs_returning_new_customer_share_drops_suddenly_08ef3a",
     "source_kb_id": "ec_new_vs_returning",
     "trigger_metric": "ec_new_vs_returning",
     "trigger_condition": "new customer share drops suddenly",
@@ -924,10 +924,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_rfm_high_r_low_f_segment_is_growing_7cfc4b",
+    "id": "kb_ec_rfm_high_r_low_f_segment_is_growing_bfb375",
     "source_kb_id": "ec_rfm",
     "trigger_metric": "ec_rfm",
     "trigger_condition": "high-R-low-F segment is growing",
@@ -951,10 +951,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_rfm_low_r_high_f_high_m_segment_is_growing_4bf7c9",
+    "id": "kb_ec_rfm_low_r_high_f_high_m_segment_is_growing_425d40",
     "source_kb_id": "ec_rfm",
     "trigger_metric": "ec_rfm",
     "trigger_condition": "low-R-high-F-high-M segment is growing",
@@ -978,10 +978,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_rfm_the_555_segment_shrinks_while_111_segment_grows_ffc587",
+    "id": "kb_ec_rfm_the_555_segment_shrinks_while_111_segment_grows_7d85f1",
     "source_kb_id": "ec_rfm",
     "trigger_metric": "ec_rfm",
     "trigger_condition": "the 555 segment shrinks while 111 segment grows",
@@ -1005,10 +1005,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_rfm_monetary_score_distribution_compresses_all_scores_cluster_around_3_c4a067",
+    "id": "kb_ec_rfm_monetary_score_distribution_compresses_all_scores_cluster_around_3_d0a522",
     "source_kb_id": "ec_rfm",
     "trigger_metric": "ec_rfm",
     "trigger_condition": "monetary score distribution compresses (all scores cluster around 3)",
@@ -1032,10 +1032,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_cohort_retention_cohort_retention_up_ec_clv_also_up_695173",
+    "id": "kb_ec_cohort_retention_cohort_retention_up_ec_clv_also_up_67827a",
     "source_kb_id": "ec_cohort_retention",
     "trigger_metric": "ec_cohort_retention",
     "trigger_condition": "cohort retention up, ec_clv also up",
@@ -1059,10 +1059,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_cohort_retention_cohort_retention_flat_ec_repeat_rate_up_56fc95",
+    "id": "kb_ec_cohort_retention_cohort_retention_flat_ec_repeat_rate_up_ee279e",
     "source_kb_id": "ec_cohort_retention",
     "trigger_metric": "ec_cohort_retention",
     "trigger_condition": "cohort retention flat, ec_repeat_rate up",
@@ -1086,10 +1086,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_cohort_retention_cohort_retention_down_in_period_1_only_91c224",
+    "id": "kb_ec_cohort_retention_cohort_retention_down_in_period_1_only_12484d",
     "source_kb_id": "ec_cohort_retention",
     "trigger_metric": "ec_cohort_retention",
     "trigger_condition": "cohort retention down in period 1 only",
@@ -1113,10 +1113,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_cohort_retention_cohort_retention_declining_for_recent_cohorts_but_stable_for_older_ones_d5e90c",
+    "id": "kb_ec_cohort_retention_cohort_retention_declining_for_recent_cohorts_but_stable_for_older_ones_6dddad",
     "source_kb_id": "ec_cohort_retention",
     "trigger_metric": "ec_cohort_retention",
     "trigger_condition": "cohort retention declining for recent cohorts but stable for older ones",
@@ -1140,10 +1140,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_customer_acquisition_cost_cac_up_conversion_rate_down_eaf6a0",
+    "id": "kb_ec_customer_acquisition_cost_cac_up_conversion_rate_down_421846",
     "source_kb_id": "ec_customer_acquisition_cost",
     "trigger_metric": "ec_customer_acquisition_cost",
     "trigger_condition": "CAC up, conversion_rate down",
@@ -1167,10 +1167,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_customer_acquisition_cost_cac_up_new_customer_count_flat_c54eeb",
+    "id": "kb_ec_customer_acquisition_cost_cac_up_new_customer_count_flat_077a6d",
     "source_kb_id": "ec_customer_acquisition_cost",
     "trigger_metric": "ec_customer_acquisition_cost",
     "trigger_condition": "CAC up, new_customer_count flat",
@@ -1194,10 +1194,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_customer_acquisition_cost_cac_down_new_customer_count_down_7af8e9",
+    "id": "kb_ec_customer_acquisition_cost_cac_down_new_customer_count_down_ca7a25",
     "source_kb_id": "ec_customer_acquisition_cost",
     "trigger_metric": "ec_customer_acquisition_cost",
     "trigger_condition": "CAC down, new_customer_count down",
@@ -1221,10 +1221,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_time_between_orders_tbo_down_repeat_buy_rate_up_0c16ca",
+    "id": "kb_ec_time_between_orders_tbo_down_repeat_buy_rate_up_7d534a",
     "source_kb_id": "ec_time_between_orders",
     "trigger_metric": "ec_time_between_orders",
     "trigger_condition": "TBO down, repeat_buy_rate up",
@@ -1248,10 +1248,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_time_between_orders_tbo_up_return_rate_up_c5a575",
+    "id": "kb_ec_time_between_orders_tbo_up_return_rate_up_02a9af",
     "source_kb_id": "ec_time_between_orders",
     "trigger_metric": "ec_time_between_orders",
     "trigger_condition": "TBO up, return_rate up",
@@ -1275,10 +1275,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_time_between_orders_tbo_up_churn_rate_up_74a4a4",
+    "id": "kb_ec_time_between_orders_tbo_up_churn_rate_up_679b5b",
     "source_kb_id": "ec_time_between_orders",
     "trigger_metric": "ec_time_between_orders",
     "trigger_condition": "TBO up, churn_rate up",
@@ -1302,10 +1302,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_win_back_rate_win_back_rate_up_churn_rate_down_a7e5da",
+    "id": "kb_ec_win_back_rate_win_back_rate_up_churn_rate_down_999d9d",
     "source_kb_id": "ec_win_back_rate",
     "trigger_metric": "ec_win_back_rate",
     "trigger_condition": "Win-back rate up, churn_rate down",
@@ -1329,10 +1329,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_win_back_rate_win_back_rate_up_marketing_spend_up_7ccbeb",
+    "id": "kb_ec_win_back_rate_win_back_rate_up_marketing_spend_up_9977cb",
     "source_kb_id": "ec_win_back_rate",
     "trigger_metric": "ec_win_back_rate",
     "trigger_condition": "Win-back rate up, marketing_spend up",
@@ -1356,10 +1356,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_win_back_rate_win_back_rate_down_churn_rate_up_8c6a54",
+    "id": "kb_ec_win_back_rate_win_back_rate_down_churn_rate_up_8e12f4",
     "source_kb_id": "ec_win_back_rate",
     "trigger_metric": "ec_win_back_rate",
     "trigger_condition": "Win-back rate down, churn_rate up",
@@ -1383,10 +1383,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_first_order_to_second_order_conversion_f2s_conversion_up_first_order_count_up_74dbee",
+    "id": "kb_ec_first_order_to_second_order_conversion_f2s_conversion_up_first_order_count_up_93480f",
     "source_kb_id": "ec_first_order_to_second_order_conversion",
     "trigger_metric": "ec_first_order_to_second_order_conversion",
     "trigger_condition": "F2S conversion up, first_order_count up",
@@ -1410,10 +1410,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_first_order_to_second_order_conversion_f2s_conversion_up_churn_rate_down_46f449",
+    "id": "kb_ec_first_order_to_second_order_conversion_f2s_conversion_up_churn_rate_down_f29c88",
     "source_kb_id": "ec_first_order_to_second_order_conversion",
     "trigger_metric": "ec_first_order_to_second_order_conversion",
     "trigger_condition": "F2S conversion up, churn_rate down",
@@ -1437,10 +1437,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_first_order_to_second_order_conversion_f2s_conversion_down_first_order_count_down_597b97",
+    "id": "kb_ec_first_order_to_second_order_conversion_f2s_conversion_down_first_order_count_down_a14c80",
     "source_kb_id": "ec_first_order_to_second_order_conversion",
     "trigger_metric": "ec_first_order_to_second_order_conversion",
     "trigger_condition": "F2S conversion down, first_order_count down",
@@ -1464,10 +1464,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_customer_concentration_risk_concentration_risk_up_revenue_growth_up_d82895",
+    "id": "kb_ec_customer_concentration_risk_concentration_risk_up_revenue_growth_up_a1c8f7",
     "source_kb_id": "ec_customer_concentration_risk",
     "trigger_metric": "ec_customer_concentration_risk",
     "trigger_condition": "Concentration risk up, revenue growth up",
@@ -1491,10 +1491,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_customer_concentration_risk_concentration_risk_up_churn_rate_up_62b5ad",
+    "id": "kb_ec_customer_concentration_risk_concentration_risk_up_churn_rate_up_0e5db4",
     "source_kb_id": "ec_customer_concentration_risk",
     "trigger_metric": "ec_customer_concentration_risk",
     "trigger_condition": "Concentration risk up, churn_rate up",
@@ -1518,10 +1518,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_customer_concentration_risk_concentration_risk_down_revenue_growth_down_bc9c9d",
+    "id": "kb_ec_customer_concentration_risk_concentration_risk_down_revenue_growth_down_090860",
     "source_kb_id": "ec_customer_concentration_risk",
     "trigger_metric": "ec_customer_concentration_risk",
     "trigger_condition": "Concentration risk down, revenue growth down",
@@ -1545,10 +1545,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_conversion_rate_conversion_rate_up_ec_gmv_also_up_cbc53c",
+    "id": "kb_ec_conversion_rate_conversion_rate_up_ec_gmv_also_up_27f7e0",
     "source_kb_id": "ec_conversion_rate",
     "trigger_metric": "ec_conversion_rate",
     "trigger_condition": "conversion_rate up, ec_gmv also up",
@@ -1572,10 +1572,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_conversion_rate_conversion_rate_up_ec_gmv_flat_f06c0b",
+    "id": "kb_ec_conversion_rate_conversion_rate_up_ec_gmv_flat_a8cbc0",
     "source_kb_id": "ec_conversion_rate",
     "trigger_metric": "ec_conversion_rate",
     "trigger_condition": "conversion_rate up, ec_gmv flat",
@@ -1599,10 +1599,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_conversion_rate_conversion_rate_down_ec_cart_abandonment_up_bd62ad",
+    "id": "kb_ec_conversion_rate_conversion_rate_down_ec_cart_abandonment_up_3fa962",
     "source_kb_id": "ec_conversion_rate",
     "trigger_metric": "ec_conversion_rate",
     "trigger_condition": "conversion_rate down, ec_cart_abandonment up",
@@ -1626,10 +1626,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_conversion_rate_conversion_rate_down_session_count_up_dramatically_5ac5eb",
+    "id": "kb_ec_conversion_rate_conversion_rate_down_session_count_up_dramatically_afad5e",
     "source_kb_id": "ec_conversion_rate",
     "trigger_metric": "ec_conversion_rate",
     "trigger_condition": "conversion_rate down, session count up dramatically",
@@ -1653,10 +1653,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_cart_abandonment_cart_abandonment_up_ec_conversion_rate_down_be6af3",
+    "id": "kb_ec_cart_abandonment_cart_abandonment_up_ec_conversion_rate_down_39e314",
     "source_kb_id": "ec_cart_abandonment",
     "trigger_metric": "ec_cart_abandonment",
     "trigger_condition": "cart_abandonment up, ec_conversion_rate down",
@@ -1680,10 +1680,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_cart_abandonment_cart_abandonment_up_ec_aov_also_up_48096a",
+    "id": "kb_ec_cart_abandonment_cart_abandonment_up_ec_aov_also_up_9619c2",
     "source_kb_id": "ec_cart_abandonment",
     "trigger_metric": "ec_cart_abandonment",
     "trigger_condition": "cart_abandonment up, ec_aov also up",
@@ -1707,10 +1707,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_cart_abandonment_cart_abandonment_up_on_mobile_only_0e656c",
+    "id": "kb_ec_cart_abandonment_cart_abandonment_up_on_mobile_only_8e4a07",
     "source_kb_id": "ec_cart_abandonment",
     "trigger_metric": "ec_cart_abandonment",
     "trigger_condition": "cart_abandonment up on mobile only",
@@ -1734,10 +1734,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_cart_abandonment_cart_abandonment_flat_ec_conversion_rate_down_49a8bd",
+    "id": "kb_ec_cart_abandonment_cart_abandonment_flat_ec_conversion_rate_down_425187",
     "source_kb_id": "ec_cart_abandonment",
     "trigger_metric": "ec_cart_abandonment",
     "trigger_condition": "cart_abandonment flat, ec_conversion_rate down",
@@ -1761,10 +1761,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_checkout_funnel_shipping_step_drop_off_increases_ec_cart_abandonment_also_increases_52ee94",
+    "id": "kb_ec_checkout_funnel_shipping_step_drop_off_increases_ec_cart_abandonment_also_increases_03bf7e",
     "source_kb_id": "ec_checkout_funnel",
     "trigger_metric": "ec_checkout_funnel",
     "trigger_condition": "shipping step drop-off increases, ec_cart_abandonment also increases",
@@ -1788,10 +1788,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_checkout_funnel_payment_step_drop_off_spikes_suddenly_fcb218",
+    "id": "kb_ec_checkout_funnel_payment_step_drop_off_spikes_suddenly_77d086",
     "source_kb_id": "ec_checkout_funnel",
     "trigger_metric": "ec_checkout_funnel",
     "trigger_condition": "payment step drop-off spikes suddenly",
@@ -1815,10 +1815,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_checkout_funnel_begin_checkout_drop_off_increases_but_cart_to_checkout_conversion_is_stable_362fcd",
+    "id": "kb_ec_checkout_funnel_begin_checkout_drop_off_increases_but_cart_to_checkout_conversion_is_stable_3d9b81",
     "source_kb_id": "ec_checkout_funnel",
     "trigger_metric": "ec_checkout_funnel",
     "trigger_condition": "begin_checkout drop-off increases but cart_to_checkout conversion is stable",
@@ -1842,10 +1842,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_checkout_funnel_all_step_to_step_rates_stable_but_overall_funnel_volume_drops_0c9c9c",
+    "id": "kb_ec_checkout_funnel_all_step_to_step_rates_stable_but_overall_funnel_volume_drops_cf1e82",
     "source_kb_id": "ec_checkout_funnel",
     "trigger_metric": "ec_checkout_funnel",
     "trigger_condition": "all step-to-step rates stable but overall funnel volume drops",
@@ -1869,10 +1869,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_session_to_purchase_sessions_to_purchase_increases_ec_conversion_rate_decreases_d1d5e8",
+    "id": "kb_ec_session_to_purchase_sessions_to_purchase_increases_ec_conversion_rate_decreases_e57810",
     "source_kb_id": "ec_session_to_purchase",
     "trigger_metric": "ec_session_to_purchase",
     "trigger_condition": "sessions_to_purchase increases, ec_conversion_rate decreases",
@@ -1896,10 +1896,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_session_to_purchase_sessions_to_purchase_decreases_ec_aov_also_decreases_5001c8",
+    "id": "kb_ec_session_to_purchase_sessions_to_purchase_decreases_ec_aov_also_decreases_8051e5",
     "source_kb_id": "ec_session_to_purchase",
     "trigger_metric": "ec_session_to_purchase",
     "trigger_condition": "sessions_to_purchase decreases, ec_aov also decreases",
@@ -1923,10 +1923,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_session_to_purchase_sessions_to_purchase_increases_for_a_specific_category_only_5dedad",
+    "id": "kb_ec_session_to_purchase_sessions_to_purchase_increases_for_a_specific_category_only_8a0315",
     "source_kb_id": "ec_session_to_purchase",
     "trigger_metric": "ec_session_to_purchase",
     "trigger_condition": "sessions_to_purchase increases for a specific category only",
@@ -1950,10 +1950,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_session_to_purchase_sessions_to_purchase_drops_after_a_site_change_5452c1",
+    "id": "kb_ec_session_to_purchase_sessions_to_purchase_drops_after_a_site_change_d0d50e",
     "source_kb_id": "ec_session_to_purchase",
     "trigger_metric": "ec_session_to_purchase",
     "trigger_condition": "sessions_to_purchase drops after a site change",
@@ -1977,10 +1977,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_pdp_to_cart_rate_pdp_to_cart_rate_up_conversion_rate_up_33b31f",
+    "id": "kb_ec_pdp_to_cart_rate_pdp_to_cart_rate_up_conversion_rate_up_7562b8",
     "source_kb_id": "ec_pdp_to_cart_rate",
     "trigger_metric": "ec_pdp_to_cart_rate",
     "trigger_condition": "PDP to cart rate up, conversion_rate up",
@@ -2004,10 +2004,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_pdp_to_cart_rate_pdp_to_cart_rate_up_aov_down_43b4ef",
+    "id": "kb_ec_pdp_to_cart_rate_pdp_to_cart_rate_up_aov_down_fc2d10",
     "source_kb_id": "ec_pdp_to_cart_rate",
     "trigger_metric": "ec_pdp_to_cart_rate",
     "trigger_condition": "PDP to cart rate up, AOV down",
@@ -2031,10 +2031,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_pdp_to_cart_rate_pdp_to_cart_rate_down_revenue_per_visitor_up_3c1006",
+    "id": "kb_ec_pdp_to_cart_rate_pdp_to_cart_rate_down_revenue_per_visitor_up_02c915",
     "source_kb_id": "ec_pdp_to_cart_rate",
     "trigger_metric": "ec_pdp_to_cart_rate",
     "trigger_condition": "PDP to cart rate down, revenue per visitor up",
@@ -2058,10 +2058,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_checkout_step_drop_off_rate_shipping_to_billing_drop_off_up_shipping_cost_up_6072b5",
+    "id": "kb_ec_checkout_step_drop_off_rate_shipping_to_billing_drop_off_up_shipping_cost_up_1149e4",
     "source_kb_id": "ec_checkout_step_drop_off_rate",
     "trigger_metric": "ec_checkout_step_drop_off_rate",
     "trigger_condition": "Shipping-to-Billing drop-off up, shipping_cost up",
@@ -2085,10 +2085,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_checkout_step_drop_off_rate_review_to_payment_drop_off_up_new_payment_methods_added_de73b1",
+    "id": "kb_ec_checkout_step_drop_off_rate_review_to_payment_drop_off_up_new_payment_methods_added_1a0196",
     "source_kb_id": "ec_checkout_step_drop_off_rate",
     "trigger_metric": "ec_checkout_step_drop_off_rate",
     "trigger_condition": "Review-to-Payment drop-off up, new_payment_methods added",
@@ -2112,10 +2112,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_checkout_step_drop_off_rate_cart_to_shipping_drop_off_up_cart_value_up_25f191",
+    "id": "kb_ec_checkout_step_drop_off_rate_cart_to_shipping_drop_off_up_cart_value_up_5f36c1",
     "source_kb_id": "ec_checkout_step_drop_off_rate",
     "trigger_metric": "ec_checkout_step_drop_off_rate",
     "trigger_condition": "Cart-to-Shipping drop-off up, cart_value up",
@@ -2139,10 +2139,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_payment_failure_rate_payment_failure_rate_up_checkout_step_drop_off_at_payment_up_2e3bcf",
+    "id": "kb_ec_payment_failure_rate_payment_failure_rate_up_checkout_step_drop_off_at_payment_up_382567",
     "source_kb_id": "ec_payment_failure_rate",
     "trigger_metric": "ec_payment_failure_rate",
     "trigger_condition": "Payment failure rate up, checkout_step_drop_off at payment up",
@@ -2166,10 +2166,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_payment_failure_rate_payment_failure_rate_up_new_card_rate_up_230cc2",
+    "id": "kb_ec_payment_failure_rate_payment_failure_rate_up_new_card_rate_up_385cc8",
     "source_kb_id": "ec_payment_failure_rate",
     "trigger_metric": "ec_payment_failure_rate",
     "trigger_condition": "Payment failure rate up, new_card_rate up",
@@ -2193,10 +2193,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_payment_failure_rate_payment_failure_rate_down_fraud_rate_up_f9db71",
+    "id": "kb_ec_payment_failure_rate_payment_failure_rate_down_fraud_rate_up_e387bf",
     "source_kb_id": "ec_payment_failure_rate",
     "trigger_metric": "ec_payment_failure_rate",
     "trigger_condition": "Payment failure rate down, fraud_rate up",
@@ -2220,10 +2220,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_search_to_purchase_rate_search_to_purchase_rate_up_search_volume_up_872548",
+    "id": "kb_ec_search_to_purchase_rate_search_to_purchase_rate_up_search_volume_up_ab69df",
     "source_kb_id": "ec_search_to_purchase_rate",
     "trigger_metric": "ec_search_to_purchase_rate",
     "trigger_condition": "Search-to-purchase rate up, search_volume up",
@@ -2247,10 +2247,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_search_to_purchase_rate_search_to_purchase_rate_down_search_volume_up_4a94bc",
+    "id": "kb_ec_search_to_purchase_rate_search_to_purchase_rate_down_search_volume_up_129028",
     "source_kb_id": "ec_search_to_purchase_rate",
     "trigger_metric": "ec_search_to_purchase_rate",
     "trigger_condition": "Search-to-purchase rate down, search_volume up",
@@ -2274,10 +2274,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_search_to_purchase_rate_search_to_purchase_rate_up_revenue_per_visitor_down_8ed87b",
+    "id": "kb_ec_search_to_purchase_rate_search_to_purchase_rate_up_revenue_per_visitor_down_d07e92",
     "source_kb_id": "ec_search_to_purchase_rate",
     "trigger_metric": "ec_search_to_purchase_rate",
     "trigger_condition": "Search-to-purchase rate up, revenue per visitor down",
@@ -2301,10 +2301,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_cross_sell_attach_rate_cross_sell_attach_rate_up_aov_up_a088ae",
+    "id": "kb_ec_cross_sell_attach_rate_cross_sell_attach_rate_up_aov_up_522c7e",
     "source_kb_id": "ec_cross_sell_attach_rate",
     "trigger_metric": "ec_cross_sell_attach_rate",
     "trigger_condition": "Cross-sell attach rate up, AOV up",
@@ -2328,10 +2328,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_cross_sell_attach_rate_cross_sell_attach_rate_down_aov_up_059f3b",
+    "id": "kb_ec_cross_sell_attach_rate_cross_sell_attach_rate_down_aov_up_ec0a45",
     "source_kb_id": "ec_cross_sell_attach_rate",
     "trigger_metric": "ec_cross_sell_attach_rate",
     "trigger_condition": "Cross-sell attach rate down, AOV up",
@@ -2355,10 +2355,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_cross_sell_attach_rate_cross_sell_attach_rate_up_return_rate_up_d85029",
+    "id": "kb_ec_cross_sell_attach_rate_cross_sell_attach_rate_up_return_rate_up_426cd2",
     "source_kb_id": "ec_cross_sell_attach_rate",
     "trigger_metric": "ec_cross_sell_attach_rate",
     "trigger_condition": "Cross-sell attach rate up, return_rate up",
@@ -2382,10 +2382,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_inventory_turnover_inventory_turnover_up_ec_stockout_rate_also_up_946abf",
+    "id": "kb_ec_inventory_turnover_inventory_turnover_up_ec_stockout_rate_also_up_7f5c25",
     "source_kb_id": "ec_inventory_turnover",
     "trigger_metric": "ec_inventory_turnover",
     "trigger_condition": "inventory_turnover up, ec_stockout_rate also up",
@@ -2409,10 +2409,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_inventory_turnover_inventory_turnover_down_ec_revenue_by_category_flat_fd7ec1",
+    "id": "kb_ec_inventory_turnover_inventory_turnover_down_ec_revenue_by_category_flat_166d67",
     "source_kb_id": "ec_inventory_turnover",
     "trigger_metric": "ec_inventory_turnover",
     "trigger_condition": "inventory_turnover down, ec_revenue_by_category flat",
@@ -2436,10 +2436,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_inventory_turnover_inventory_turnover_up_ec_gmv_up_bd5e23",
+    "id": "kb_ec_inventory_turnover_inventory_turnover_up_ec_gmv_up_04d50c",
     "source_kb_id": "ec_inventory_turnover",
     "trigger_metric": "ec_inventory_turnover",
     "trigger_condition": "inventory_turnover up, ec_gmv up",
@@ -2463,10 +2463,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_inventory_turnover_inventory_turnover_down_in_one_category_only_03f7a9",
+    "id": "kb_ec_inventory_turnover_inventory_turnover_down_in_one_category_only_23bf2b",
     "source_kb_id": "ec_inventory_turnover",
     "trigger_metric": "ec_inventory_turnover",
     "trigger_condition": "inventory_turnover down in one category only",
@@ -2490,10 +2490,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_dio_dio_up_ec_inventory_turnover_down_6cabd2",
+    "id": "kb_ec_dio_dio_up_ec_inventory_turnover_down_326812",
     "source_kb_id": "ec_dio",
     "trigger_metric": "ec_dio",
     "trigger_condition": "DIO up, ec_inventory_turnover down",
@@ -2517,10 +2517,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_dio_dio_up_ec_stockout_rate_flat_2c64c6",
+    "id": "kb_ec_dio_dio_up_ec_stockout_rate_flat_9930a1",
     "source_kb_id": "ec_dio",
     "trigger_metric": "ec_dio",
     "trigger_condition": "DIO up, ec_stockout_rate flat",
@@ -2544,10 +2544,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_dio_dio_down_ec_stockout_rate_up_2fa40b",
+    "id": "kb_ec_dio_dio_down_ec_stockout_rate_up_e37269",
     "source_kb_id": "ec_dio",
     "trigger_metric": "ec_dio",
     "trigger_condition": "DIO down, ec_stockout_rate up",
@@ -2571,10 +2571,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_dio_dio_up_in_one_category_ec_revenue_by_category_for_that_category_declining_7ab4cc",
+    "id": "kb_ec_dio_dio_up_in_one_category_ec_revenue_by_category_for_that_category_declining_9f5fa9",
     "source_kb_id": "ec_dio",
     "trigger_metric": "ec_dio",
     "trigger_condition": "DIO up in one category, ec_revenue_by_category for that category declining",
@@ -2598,10 +2598,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_product_affinity_product_affinity_between_two_items_increases_after_a_cross_sell_promotion_96bf54",
+    "id": "kb_ec_product_affinity_product_affinity_between_two_items_increases_after_a_cross_sell_promotion_d1b276",
     "source_kb_id": "ec_product_affinity",
     "trigger_metric": "ec_product_affinity",
     "trigger_condition": "product_affinity between two items increases after a cross-sell promotion",
@@ -2625,10 +2625,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_product_affinity_product_affinity_drops_for_a_historically_strong_pair_4aecb9",
+    "id": "kb_ec_product_affinity_product_affinity_drops_for_a_historically_strong_pair_b96d8a",
     "source_kb_id": "ec_product_affinity",
     "trigger_metric": "ec_product_affinity",
     "trigger_condition": "product_affinity drops for a historically strong pair",
@@ -2652,10 +2652,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_product_affinity_high_affinity_pairs_have_very_different_ec_aov_contributions_2e111f",
+    "id": "kb_ec_product_affinity_high_affinity_pairs_have_very_different_ec_aov_contributions_0cb56c",
     "source_kb_id": "ec_product_affinity",
     "trigger_metric": "ec_product_affinity",
     "trigger_condition": "high-affinity pairs have very different ec_aov contributions",
@@ -2679,10 +2679,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_product_affinity_category_level_affinity_increases_but_product_level_is_flat_e2abaf",
+    "id": "kb_ec_product_affinity_category_level_affinity_increases_but_product_level_is_flat_3ed207",
     "source_kb_id": "ec_product_affinity",
     "trigger_metric": "ec_product_affinity",
     "trigger_condition": "category-level affinity increases but product-level is flat",
@@ -2706,10 +2706,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_revenue_by_category_one_category_s_revenue_share_grows_while_absolute_revenue_is_flat_0c0558",
+    "id": "kb_ec_revenue_by_category_one_category_s_revenue_share_grows_while_absolute_revenue_is_flat_a86844",
     "source_kb_id": "ec_revenue_by_category",
     "trigger_metric": "ec_revenue_by_category",
     "trigger_condition": "one category's revenue share grows while absolute revenue is flat",
@@ -2733,10 +2733,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_revenue_by_category_ec_revenue_by_category_shifts_toward_higher_aov_categories_ec_aov_rises_8cb58c",
+    "id": "kb_ec_revenue_by_category_ec_revenue_by_category_shifts_toward_higher_aov_categories_ec_aov_rises_2e9d5c",
     "source_kb_id": "ec_revenue_by_category",
     "trigger_metric": "ec_revenue_by_category",
     "trigger_condition": "ec_revenue_by_category shifts toward higher-AOV categories, ec_aov rises",
@@ -2760,10 +2760,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_revenue_by_category_a_category_s_revenue_drops_while_ec_stockout_rate_for_that_category_rises_d0e7e0",
+    "id": "kb_ec_revenue_by_category_a_category_s_revenue_drops_while_ec_stockout_rate_for_that_category_rises_7f19e9",
     "source_kb_id": "ec_revenue_by_category",
     "trigger_metric": "ec_revenue_by_category",
     "trigger_condition": "a category's revenue drops while ec_stockout_rate for that category rises",
@@ -2787,10 +2787,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_revenue_by_category_category_revenue_grows_but_ec_product_affinity_pairs_involving_that_category_wea_170798",
+    "id": "kb_ec_revenue_by_category_category_revenue_grows_but_ec_product_affinity_pairs_involving_that_category_wea_1cee2b",
     "source_kb_id": "ec_revenue_by_category",
     "trigger_metric": "ec_revenue_by_category",
     "trigger_condition": "category revenue grows but ec_product_affinity pairs involving that category weaken",
@@ -2814,10 +2814,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_stockout_rate_stockout_rate_up_ec_gmv_down_f06024",
+    "id": "kb_ec_stockout_rate_stockout_rate_up_ec_gmv_down_68ae7c",
     "source_kb_id": "ec_stockout_rate",
     "trigger_metric": "ec_stockout_rate",
     "trigger_condition": "stockout_rate up, ec_gmv down",
@@ -2841,10 +2841,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_stockout_rate_stockout_rate_up_ec_inventory_turnover_up_8fd5cb",
+    "id": "kb_ec_stockout_rate_stockout_rate_up_ec_inventory_turnover_up_6d289f",
     "source_kb_id": "ec_stockout_rate",
     "trigger_metric": "ec_stockout_rate",
     "trigger_condition": "stockout_rate up, ec_inventory_turnover up",
@@ -2868,10 +2868,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_stockout_rate_stockout_rate_up_in_one_category_ec_revenue_by_category_for_that_category_declin_bd0588",
+    "id": "kb_ec_stockout_rate_stockout_rate_up_in_one_category_ec_revenue_by_category_for_that_category_declin_bbbe75",
     "source_kb_id": "ec_stockout_rate",
     "trigger_metric": "ec_stockout_rate",
     "trigger_condition": "stockout_rate up in one category, ec_revenue_by_category for that category declining",
@@ -2895,10 +2895,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_stockout_rate_stockout_rate_flat_ec_dio_increasing_adfdc6",
+    "id": "kb_ec_stockout_rate_stockout_rate_flat_ec_dio_increasing_ffc746",
     "source_kb_id": "ec_stockout_rate",
     "trigger_metric": "ec_stockout_rate",
     "trigger_condition": "stockout_rate flat, ec_dio increasing",
@@ -2922,10 +2922,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_sell_through_rate_sell_through_rate_up_sell_through_rate_prev_period_up_9ea6f5",
+    "id": "kb_ec_sell_through_rate_sell_through_rate_up_sell_through_rate_prev_period_up_0ef77d",
     "source_kb_id": "ec_sell_through_rate",
     "trigger_metric": "ec_sell_through_rate",
     "trigger_condition": "Sell-through rate up, sell-through_rate_prev_period up",
@@ -2949,10 +2949,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_sell_through_rate_sell_through_rate_up_dead_stock_rate_down_551b31",
+    "id": "kb_ec_sell_through_rate_sell_through_rate_up_dead_stock_rate_down_64bd0c",
     "source_kb_id": "ec_sell_through_rate",
     "trigger_metric": "ec_sell_through_rate",
     "trigger_condition": "Sell-through rate up, dead_stock_rate down",
@@ -2976,10 +2976,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_sell_through_rate_sell_through_rate_down_return_rate_up_68fc88",
+    "id": "kb_ec_sell_through_rate_sell_through_rate_down_return_rate_up_bda8c0",
     "source_kb_id": "ec_sell_through_rate",
     "trigger_metric": "ec_sell_through_rate",
     "trigger_condition": "Sell-through rate down, return_rate up",
@@ -3003,10 +3003,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_dead_stock_rate_dead_stock_rate_up_sell_through_rate_down_962ff1",
+    "id": "kb_ec_dead_stock_rate_dead_stock_rate_up_sell_through_rate_down_21bbd4",
     "source_kb_id": "ec_dead_stock_rate",
     "trigger_metric": "ec_dead_stock_rate",
     "trigger_condition": "Dead stock rate up, sell_through_rate down",
@@ -3030,10 +3030,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_dead_stock_rate_dead_stock_rate_up_return_rate_up_cb983d",
+    "id": "kb_ec_dead_stock_rate_dead_stock_rate_up_return_rate_up_26aa18",
     "source_kb_id": "ec_dead_stock_rate",
     "trigger_metric": "ec_dead_stock_rate",
     "trigger_condition": "Dead stock rate up, return_rate up",
@@ -3057,10 +3057,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_dead_stock_rate_dead_stock_rate_down_markdown_spend_up_438904",
+    "id": "kb_ec_dead_stock_rate_dead_stock_rate_down_markdown_spend_up_fdcae6",
     "source_kb_id": "ec_dead_stock_rate",
     "trigger_metric": "ec_dead_stock_rate",
     "trigger_condition": "Dead stock rate down, markdown_spend up",
@@ -3084,10 +3084,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_overstock_index_overstock_index_up_sell_through_rate_down_94bd3c",
+    "id": "kb_ec_overstock_index_overstock_index_up_sell_through_rate_down_c7e39d",
     "source_kb_id": "ec_overstock_index",
     "trigger_metric": "ec_overstock_index",
     "trigger_condition": "Overstock index up, sell_through_rate down",
@@ -3111,10 +3111,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_overstock_index_overstock_index_up_dead_stock_rate_up_04b574",
+    "id": "kb_ec_overstock_index_overstock_index_up_dead_stock_rate_up_dfb90d",
     "source_kb_id": "ec_overstock_index",
     "trigger_metric": "ec_overstock_index",
     "trigger_condition": "Overstock index up, dead_stock_rate up",
@@ -3138,10 +3138,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_overstock_index_overstock_index_down_sell_through_rate_up_056830",
+    "id": "kb_ec_overstock_index_overstock_index_down_sell_through_rate_up_093840",
     "source_kb_id": "ec_overstock_index",
     "trigger_metric": "ec_overstock_index",
     "trigger_condition": "Overstock index down, sell_through_rate up",
@@ -3165,10 +3165,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_markdown_depth_markdown_depth_up_sell_through_rate_up_693664",
+    "id": "kb_ec_markdown_depth_markdown_depth_up_sell_through_rate_up_3ce0d9",
     "source_kb_id": "ec_markdown_depth",
     "trigger_metric": "ec_markdown_depth",
     "trigger_condition": "Markdown depth up, sell_through_rate up",
@@ -3192,10 +3192,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_markdown_depth_markdown_depth_up_gross_profit_per_order_down_2c8a5d",
+    "id": "kb_ec_markdown_depth_markdown_depth_up_gross_profit_per_order_down_264dfd",
     "source_kb_id": "ec_markdown_depth",
     "trigger_metric": "ec_markdown_depth",
     "trigger_condition": "Markdown depth up, gross_profit_per_order down",
@@ -3219,10 +3219,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_markdown_depth_markdown_depth_down_dead_stock_rate_up_f5f735",
+    "id": "kb_ec_markdown_depth_markdown_depth_down_dead_stock_rate_up_7b06af",
     "source_kb_id": "ec_markdown_depth",
     "trigger_metric": "ec_markdown_depth",
     "trigger_condition": "Markdown depth down, dead_stock_rate up",
@@ -3246,10 +3246,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_new_product_revenue_share_new_product_revenue_share_up_net_revenue_up_526a02",
+    "id": "kb_ec_new_product_revenue_share_new_product_revenue_share_up_net_revenue_up_7a9a03",
     "source_kb_id": "ec_new_product_revenue_share",
     "trigger_metric": "ec_new_product_revenue_share",
     "trigger_condition": "New product revenue share up, net_revenue up",
@@ -3273,10 +3273,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_new_product_revenue_share_new_product_revenue_share_up_gross_profit_per_order_down_cc3866",
+    "id": "kb_ec_new_product_revenue_share_new_product_revenue_share_up_gross_profit_per_order_down_8f2d4c",
     "source_kb_id": "ec_new_product_revenue_share",
     "trigger_metric": "ec_new_product_revenue_share",
     "trigger_condition": "New product revenue share up, gross_profit_per_order down",
@@ -3300,10 +3300,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_new_product_revenue_share_new_product_revenue_share_down_new_product_count_up_8a6c32",
+    "id": "kb_ec_new_product_revenue_share_new_product_revenue_share_down_new_product_count_up_aa895c",
     "source_kb_id": "ec_new_product_revenue_share",
     "trigger_metric": "ec_new_product_revenue_share",
     "trigger_condition": "New product revenue share down, new_product_count up",
@@ -3327,10 +3327,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_gmv_gmv_up_ec_aov_flat_48b6d5",
+    "id": "kb_ec_gmv_gmv_up_ec_aov_flat_d85a6e",
     "source_kb_id": "ec_gmv",
     "trigger_metric": "ec_gmv",
     "trigger_condition": "GMV up, ec_aov flat",
@@ -3354,10 +3354,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_gmv_gmv_up_order_count_flat_468528",
+    "id": "kb_ec_gmv_gmv_up_order_count_flat_7988cf",
     "source_kb_id": "ec_gmv",
     "trigger_metric": "ec_gmv",
     "trigger_condition": "GMV up, order count flat",
@@ -3381,10 +3381,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_gmv_gmv_up_ec_net_revenue_flat_0a990f",
+    "id": "kb_ec_gmv_gmv_up_ec_net_revenue_flat_0d6e19",
     "source_kb_id": "ec_gmv",
     "trigger_metric": "ec_gmv",
     "trigger_condition": "GMV up, ec_net_revenue flat",
@@ -3408,10 +3408,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_gmv_gmv_up_only_in_one_category_bf1f2a",
+    "id": "kb_ec_gmv_gmv_up_only_in_one_category_01d946",
     "source_kb_id": "ec_gmv",
     "trigger_metric": "ec_gmv",
     "trigger_condition": "GMV up only in one category",
@@ -3435,10 +3435,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_net_revenue_ec_net_revenue_down_ec_gmv_flat_e1be2c",
+    "id": "kb_ec_net_revenue_ec_net_revenue_down_ec_gmv_flat_7cb5ae",
     "source_kb_id": "ec_net_revenue",
     "trigger_metric": "ec_net_revenue",
     "trigger_condition": "ec_net_revenue down, ec_gmv flat",
@@ -3462,10 +3462,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_net_revenue_ec_net_revenue_down_ec_refund_rate_up_1df198",
+    "id": "kb_ec_net_revenue_ec_net_revenue_down_ec_refund_rate_up_fad217",
     "source_kb_id": "ec_net_revenue",
     "trigger_metric": "ec_net_revenue",
     "trigger_condition": "ec_net_revenue down, ec_refund_rate up",
@@ -3489,10 +3489,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_net_revenue_ec_net_revenue_up_ec_gmv_up_proportionally_e4ffc3",
+    "id": "kb_ec_net_revenue_ec_net_revenue_up_ec_gmv_up_proportionally_555e8e",
     "source_kb_id": "ec_net_revenue",
     "trigger_metric": "ec_net_revenue",
     "trigger_condition": "ec_net_revenue up, ec_gmv up proportionally",
@@ -3516,10 +3516,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_net_revenue_ec_net_revenue_up_ec_gmv_flat_4b192d",
+    "id": "kb_ec_net_revenue_ec_net_revenue_up_ec_gmv_flat_38c498",
     "source_kb_id": "ec_net_revenue",
     "trigger_metric": "ec_net_revenue",
     "trigger_condition": "ec_net_revenue up, ec_gmv flat",
@@ -3543,10 +3543,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_aov_ec_aov_up_ec_gmv_up_order_count_flat_e4c8ff",
+    "id": "kb_ec_aov_ec_aov_up_ec_gmv_up_order_count_flat_df4f31",
     "source_kb_id": "ec_aov",
     "trigger_metric": "ec_aov",
     "trigger_condition": "ec_aov up, ec_gmv up, order count flat",
@@ -3570,10 +3570,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_aov_ec_aov_down_ec_gmv_flat_80d10c",
+    "id": "kb_ec_aov_ec_aov_down_ec_gmv_flat_0ffa95",
     "source_kb_id": "ec_aov",
     "trigger_metric": "ec_aov",
     "trigger_condition": "ec_aov down, ec_gmv flat",
@@ -3597,10 +3597,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_aov_ec_aov_flat_ec_gmv_up_a97d05",
+    "id": "kb_ec_aov_ec_aov_flat_ec_gmv_up_1df7d9",
     "source_kb_id": "ec_aov",
     "trigger_metric": "ec_aov",
     "trigger_condition": "ec_aov flat, ec_gmv up",
@@ -3624,10 +3624,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_aov_ec_aov_up_ec_return_rate_up_414256",
+    "id": "kb_ec_aov_ec_aov_up_ec_return_rate_up_22e56e",
     "source_kb_id": "ec_aov",
     "trigger_metric": "ec_aov",
     "trigger_condition": "ec_aov up, ec_return_rate up",
@@ -3651,10 +3651,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_refund_rate_ec_refund_rate_up_ec_net_revenue_down_ec_gmv_flat_65a59c",
+    "id": "kb_ec_refund_rate_ec_refund_rate_up_ec_net_revenue_down_ec_gmv_flat_0d0a48",
     "source_kb_id": "ec_refund_rate",
     "trigger_metric": "ec_refund_rate",
     "trigger_condition": "ec_refund_rate up, ec_net_revenue down, ec_gmv flat",
@@ -3678,10 +3678,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_refund_rate_ec_refund_rate_up_in_one_category_only_1a17b1",
+    "id": "kb_ec_refund_rate_ec_refund_rate_up_in_one_category_only_50e21e",
     "source_kb_id": "ec_refund_rate",
     "trigger_metric": "ec_refund_rate",
     "trigger_condition": "ec_refund_rate up in one category only",
@@ -3705,10 +3705,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_refund_rate_ec_refund_rate_up_ec_return_rate_flat_5ad82c",
+    "id": "kb_ec_refund_rate_ec_refund_rate_up_ec_return_rate_flat_e32381",
     "source_kb_id": "ec_refund_rate",
     "trigger_metric": "ec_refund_rate",
     "trigger_condition": "ec_refund_rate up, ec_return_rate flat",
@@ -3732,10 +3732,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_refund_rate_ec_refund_rate_down_ec_aov_up_fbb061",
+    "id": "kb_ec_refund_rate_ec_refund_rate_down_ec_aov_up_3c4260",
     "source_kb_id": "ec_refund_rate",
     "trigger_metric": "ec_refund_rate",
     "trigger_condition": "ec_refund_rate down, ec_aov up",
@@ -3759,10 +3759,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_return_rate_ec_return_rate_up_ec_refund_rate_up_proportionally_dfa237",
+    "id": "kb_ec_return_rate_ec_return_rate_up_ec_refund_rate_up_proportionally_32c4f1",
     "source_kb_id": "ec_return_rate",
     "trigger_metric": "ec_return_rate",
     "trigger_condition": "ec_return_rate up, ec_refund_rate up proportionally",
@@ -3786,10 +3786,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_return_rate_ec_return_rate_up_ec_refund_rate_flat_f25efa",
+    "id": "kb_ec_return_rate_ec_return_rate_up_ec_refund_rate_flat_ca89f3",
     "source_kb_id": "ec_return_rate",
     "trigger_metric": "ec_return_rate",
     "trigger_condition": "ec_return_rate up, ec_refund_rate flat",
@@ -3813,10 +3813,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_return_rate_ec_return_rate_up_ec_aov_up_6464ee",
+    "id": "kb_ec_return_rate_ec_return_rate_up_ec_aov_up_5beb44",
     "source_kb_id": "ec_return_rate",
     "trigger_metric": "ec_return_rate",
     "trigger_condition": "ec_return_rate up, ec_aov up",
@@ -3840,10 +3840,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_return_rate_ec_return_rate_down_ec_net_revenue_up_de513d",
+    "id": "kb_ec_return_rate_ec_return_rate_down_ec_net_revenue_up_e880a9",
     "source_kb_id": "ec_return_rate",
     "trigger_metric": "ec_return_rate",
     "trigger_condition": "ec_return_rate down, ec_net_revenue up",
@@ -3867,10 +3867,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_discount_rate_discount_rate_up_gmv_flat_48ef43",
+    "id": "kb_ec_discount_rate_discount_rate_up_gmv_flat_14d9bc",
     "source_kb_id": "ec_discount_rate",
     "trigger_metric": "ec_discount_rate",
     "trigger_condition": "Discount rate up, GMV flat",
@@ -3894,10 +3894,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_discount_rate_discount_rate_up_net_revenue_down_4120bb",
+    "id": "kb_ec_discount_rate_discount_rate_up_net_revenue_down_3fdca8",
     "source_kb_id": "ec_discount_rate",
     "trigger_metric": "ec_discount_rate",
     "trigger_condition": "Discount rate up, net_revenue down",
@@ -3921,10 +3921,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_discount_rate_discount_rate_up_coupon_redemption_rate_flat_959a74",
+    "id": "kb_ec_discount_rate_discount_rate_up_coupon_redemption_rate_flat_b47f16",
     "source_kb_id": "ec_discount_rate",
     "trigger_metric": "ec_discount_rate",
     "trigger_condition": "Discount rate up, coupon_redemption_rate flat",
@@ -3948,10 +3948,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_revenue_per_visitor_rpv_up_conversion_rate_flat_cc8fc8",
+    "id": "kb_ec_revenue_per_visitor_rpv_up_conversion_rate_flat_3c25e3",
     "source_kb_id": "ec_revenue_per_visitor",
     "trigger_metric": "ec_revenue_per_visitor",
     "trigger_condition": "RPV up, conversion_rate flat",
@@ -3975,10 +3975,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_revenue_per_visitor_rpv_up_visitor_count_down_03ee0c",
+    "id": "kb_ec_revenue_per_visitor_rpv_up_visitor_count_down_532649",
     "source_kb_id": "ec_revenue_per_visitor",
     "trigger_metric": "ec_revenue_per_visitor",
     "trigger_condition": "RPV up, visitor_count down",
@@ -4002,10 +4002,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_revenue_per_visitor_rpv_down_net_revenue_flat_fa98cb",
+    "id": "kb_ec_revenue_per_visitor_rpv_down_net_revenue_flat_f653df",
     "source_kb_id": "ec_revenue_per_visitor",
     "trigger_metric": "ec_revenue_per_visitor",
     "trigger_condition": "RPV down, net_revenue flat",
@@ -4029,10 +4029,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_gross_profit_per_order_gppo_down_net_revenue_per_order_flat_3c42bd",
+    "id": "kb_ec_gross_profit_per_order_gppo_down_net_revenue_per_order_flat_db8483",
     "source_kb_id": "ec_gross_profit_per_order",
     "trigger_metric": "ec_gross_profit_per_order",
     "trigger_condition": "GPPO down, net_revenue per order flat",
@@ -4056,10 +4056,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_gross_profit_per_order_gppo_down_gmv_per_order_up_7b0a9d",
+    "id": "kb_ec_gross_profit_per_order_gppo_down_gmv_per_order_up_c08c4e",
     "source_kb_id": "ec_gross_profit_per_order",
     "trigger_metric": "ec_gross_profit_per_order",
     "trigger_condition": "GPPO down, GMV per order up",
@@ -4083,10 +4083,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_gross_profit_per_order_gppo_down_return_rate_up_76ea5d",
+    "id": "kb_ec_gross_profit_per_order_gppo_down_return_rate_up_23bdcc",
     "source_kb_id": "ec_gross_profit_per_order",
     "trigger_metric": "ec_gross_profit_per_order",
     "trigger_condition": "GPPO down, return_rate up",
@@ -4110,10 +4110,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_cancellation_rate_cancellation_rate_up_net_revenue_down_54cda7",
+    "id": "kb_ec_cancellation_rate_cancellation_rate_up_net_revenue_down_7644db",
     "source_kb_id": "ec_cancellation_rate",
     "trigger_metric": "ec_cancellation_rate",
     "trigger_condition": "Cancellation rate up, net_revenue down",
@@ -4137,10 +4137,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_cancellation_rate_cancellation_rate_up_order_volume_up_d368ef",
+    "id": "kb_ec_cancellation_rate_cancellation_rate_up_order_volume_up_44ff0c",
     "source_kb_id": "ec_cancellation_rate",
     "trigger_metric": "ec_cancellation_rate",
     "trigger_condition": "Cancellation rate up, order_volume up",
@@ -4164,10 +4164,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_cancellation_rate_cancellation_rate_down_return_rate_up_8fbb6d",
+    "id": "kb_ec_cancellation_rate_cancellation_rate_down_return_rate_up_735550",
     "source_kb_id": "ec_cancellation_rate",
     "trigger_metric": "ec_cancellation_rate",
     "trigger_condition": "Cancellation rate down, return_rate up",
@@ -4191,10 +4191,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_coupon_redemption_rate_coupon_redemption_rate_up_conversion_rate_up_a513b2",
+    "id": "kb_ec_coupon_redemption_rate_coupon_redemption_rate_up_conversion_rate_up_364031",
     "source_kb_id": "ec_coupon_redemption_rate",
     "trigger_metric": "ec_coupon_redemption_rate",
     "trigger_condition": "Coupon redemption rate up, conversion_rate up",
@@ -4218,10 +4218,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_coupon_redemption_rate_coupon_redemption_rate_up_net_revenue_per_order_down_854704",
+    "id": "kb_ec_coupon_redemption_rate_coupon_redemption_rate_up_net_revenue_per_order_down_85f432",
     "source_kb_id": "ec_coupon_redemption_rate",
     "trigger_metric": "ec_coupon_redemption_rate",
     "trigger_condition": "Coupon redemption rate up, net_revenue per order down",
@@ -4245,10 +4245,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_ec_coupon_redemption_rate_coupon_redemption_rate_up_order_volume_flat_f113d2",
+    "id": "kb_ec_coupon_redemption_rate_coupon_redemption_rate_up_order_volume_flat_4ca134",
     "source_kb_id": "ec_coupon_redemption_rate",
     "trigger_metric": "ec_coupon_redemption_rate",
     "trigger_condition": "Coupon redemption rate up, order_volume flat",
@@ -4272,10 +4272,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_recognized_revenue_recognized_revenue_up_billings_up_more_c5e51e",
+    "id": "kb_fin_recognized_revenue_recognized_revenue_up_billings_up_more_f160a7",
     "source_kb_id": "fin_recognized_revenue",
     "trigger_metric": "fin_recognized_revenue",
     "trigger_condition": "recognized_revenue up, billings up more",
@@ -4299,10 +4299,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_recognized_revenue_recognized_revenue_up_bookings_flat_dc9278",
+    "id": "kb_fin_recognized_revenue_recognized_revenue_up_bookings_flat_510709",
     "source_kb_id": "fin_recognized_revenue",
     "trigger_metric": "fin_recognized_revenue",
     "trigger_condition": "recognized_revenue up, bookings flat",
@@ -4326,10 +4326,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_recognized_revenue_recognized_revenue_down_bookings_down_more_4b2b93",
+    "id": "kb_fin_recognized_revenue_recognized_revenue_down_bookings_down_more_2a767c",
     "source_kb_id": "fin_recognized_revenue",
     "trigger_metric": "fin_recognized_revenue",
     "trigger_condition": "recognized_revenue down, bookings down more",
@@ -4353,10 +4353,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_recognized_revenue_recognized_revenue_up_book_to_bill_ratio_down_ad7da0",
+    "id": "kb_fin_recognized_revenue_recognized_revenue_up_book_to_bill_ratio_down_7714cb",
     "source_kb_id": "fin_recognized_revenue",
     "trigger_metric": "fin_recognized_revenue",
     "trigger_condition": "recognized_revenue up, book-to-bill ratio down",
@@ -4380,10 +4380,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_deferred_revenue_deferred_revenue_up_bookings_up_c21666",
+    "id": "kb_fin_deferred_revenue_deferred_revenue_up_bookings_up_a38804",
     "source_kb_id": "fin_deferred_revenue",
     "trigger_metric": "fin_deferred_revenue",
     "trigger_condition": "deferred_revenue up, bookings up",
@@ -4407,10 +4407,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_deferred_revenue_deferred_revenue_down_recognized_revenue_up_4255bf",
+    "id": "kb_fin_deferred_revenue_deferred_revenue_down_recognized_revenue_up_cccd28",
     "source_kb_id": "fin_deferred_revenue",
     "trigger_metric": "fin_deferred_revenue",
     "trigger_condition": "deferred_revenue down, recognized_revenue up",
@@ -4434,10 +4434,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_deferred_revenue_deferred_revenue_down_cancellations_up_513e86",
+    "id": "kb_fin_deferred_revenue_deferred_revenue_down_cancellations_up_9937c2",
     "source_kb_id": "fin_deferred_revenue",
     "trigger_metric": "fin_deferred_revenue",
     "trigger_condition": "deferred_revenue down, cancellations up",
@@ -4461,10 +4461,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_deferred_revenue_deferred_revenue_flat_bookings_up_e6c612",
+    "id": "kb_fin_deferred_revenue_deferred_revenue_flat_bookings_up_1e8fff",
     "source_kb_id": "fin_deferred_revenue",
     "trigger_metric": "fin_deferred_revenue",
     "trigger_condition": "deferred_revenue flat, bookings up",
@@ -4488,10 +4488,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_revenue_waterfall_revenue_waterfall_shows_bookings_up_dr_conversion_flat_fac5da",
+    "id": "kb_fin_revenue_waterfall_revenue_waterfall_shows_bookings_up_dr_conversion_flat_7b1ebb",
     "source_kb_id": "fin_revenue_waterfall",
     "trigger_metric": "fin_revenue_waterfall",
     "trigger_condition": "revenue_waterfall shows bookings up, dr_conversion flat",
@@ -4514,10 +4514,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_revenue_waterfall_revenue_waterfall_shows_dr_conversion_down_bookings_up_bf32d0",
+    "id": "kb_fin_revenue_waterfall_revenue_waterfall_shows_dr_conversion_down_bookings_up_514a04",
     "source_kb_id": "fin_revenue_waterfall",
     "trigger_metric": "fin_revenue_waterfall",
     "trigger_condition": "revenue_waterfall shows dr_conversion down, bookings up",
@@ -4540,10 +4540,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_revenue_waterfall_revenue_waterfall_shows_reversals_up_revenue_flat_681f43",
+    "id": "kb_fin_revenue_waterfall_revenue_waterfall_shows_reversals_up_revenue_flat_c2c8ac",
     "source_kb_id": "fin_revenue_waterfall",
     "trigger_metric": "fin_revenue_waterfall",
     "trigger_condition": "revenue_waterfall shows reversals up, revenue flat",
@@ -4566,10 +4566,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_revenue_waterfall_revenue_waterfall_shows_dr_conversion_up_bookings_flat_244852",
+    "id": "kb_fin_revenue_waterfall_revenue_waterfall_shows_dr_conversion_up_bookings_flat_bd4af0",
     "source_kb_id": "fin_revenue_waterfall",
     "trigger_metric": "fin_revenue_waterfall",
     "trigger_condition": "revenue_waterfall shows dr_conversion up, bookings flat",
@@ -4592,10 +4592,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_bookings_vs_billings_vs_revenue_bookings_up_billings_flat_revenue_down_a6172c",
+    "id": "kb_fin_bookings_vs_billings_vs_revenue_bookings_up_billings_flat_revenue_down_45deab",
     "source_kb_id": "fin_bookings_vs_billings_vs_revenue",
     "trigger_metric": "fin_bookings_vs_billings_vs_revenue",
     "trigger_condition": "bookings up, billings flat, revenue down",
@@ -4618,10 +4618,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_bookings_vs_billings_vs_revenue_bookings_flat_billings_up_revenue_up_009905",
+    "id": "kb_fin_bookings_vs_billings_vs_revenue_bookings_flat_billings_up_revenue_up_2c39c1",
     "source_kb_id": "fin_bookings_vs_billings_vs_revenue",
     "trigger_metric": "fin_bookings_vs_billings_vs_revenue",
     "trigger_condition": "bookings flat, billings up, revenue up",
@@ -4644,10 +4644,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_bookings_vs_billings_vs_revenue_bookings_up_revenue_flat_c65111",
+    "id": "kb_fin_bookings_vs_billings_vs_revenue_bookings_up_revenue_flat_1106ff",
     "source_kb_id": "fin_bookings_vs_billings_vs_revenue",
     "trigger_metric": "fin_bookings_vs_billings_vs_revenue",
     "trigger_condition": "bookings up, revenue flat",
@@ -4670,10 +4670,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_bookings_vs_billings_vs_revenue_billings_up_revenue_up_less_ba92c7",
+    "id": "kb_fin_bookings_vs_billings_vs_revenue_billings_up_revenue_up_less_fe7f23",
     "source_kb_id": "fin_bookings_vs_billings_vs_revenue",
     "trigger_metric": "fin_bookings_vs_billings_vs_revenue",
     "trigger_condition": "billings up, revenue up less",
@@ -4696,10 +4696,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_revenue_concentration_risk_concentration_risk_up_revenue_growth_up_e085f8",
+    "id": "kb_fin_revenue_concentration_risk_concentration_risk_up_revenue_growth_up_11ada9",
     "source_kb_id": "fin_revenue_concentration_risk",
     "trigger_metric": "fin_revenue_concentration_risk",
     "trigger_condition": "Concentration risk up, revenue growth up",
@@ -4723,10 +4723,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_revenue_concentration_risk_concentration_risk_up_churn_rate_up_774dd1",
+    "id": "kb_fin_revenue_concentration_risk_concentration_risk_up_churn_rate_up_a8bf70",
     "source_kb_id": "fin_revenue_concentration_risk",
     "trigger_metric": "fin_revenue_concentration_risk",
     "trigger_condition": "Concentration risk up, churn_rate up",
@@ -4750,10 +4750,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_revenue_concentration_risk_concentration_risk_down_revenue_growth_down_04a47c",
+    "id": "kb_fin_revenue_concentration_risk_concentration_risk_down_revenue_growth_down_1ff911",
     "source_kb_id": "fin_revenue_concentration_risk",
     "trigger_metric": "fin_revenue_concentration_risk",
     "trigger_condition": "Concentration risk down, revenue growth down",
@@ -4777,10 +4777,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_price_realization_rate_price_realization_down_revenue_up_b1c4b8",
+    "id": "kb_fin_price_realization_rate_price_realization_down_revenue_up_693e10",
     "source_kb_id": "fin_price_realization_rate",
     "trigger_metric": "fin_price_realization_rate",
     "trigger_condition": "Price realization down, revenue up",
@@ -4804,10 +4804,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_price_realization_rate_price_realization_down_gross_profit_per_order_down_8758ad",
+    "id": "kb_fin_price_realization_rate_price_realization_down_gross_profit_per_order_down_19bbac",
     "source_kb_id": "fin_price_realization_rate",
     "trigger_metric": "fin_price_realization_rate",
     "trigger_condition": "Price realization down, gross_profit_per_order down",
@@ -4831,10 +4831,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_price_realization_rate_price_realization_up_revenue_down_7a799a",
+    "id": "kb_fin_price_realization_rate_price_realization_up_revenue_down_2eb931",
     "source_kb_id": "fin_price_realization_rate",
     "trigger_metric": "fin_price_realization_rate",
     "trigger_condition": "Price realization up, revenue down",
@@ -4858,10 +4858,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_revenue_per_employee_revenue_per_employee_up_headcount_flat_a10956",
+    "id": "kb_fin_revenue_per_employee_revenue_per_employee_up_headcount_flat_0e26ff",
     "source_kb_id": "fin_revenue_per_employee",
     "trigger_metric": "fin_revenue_per_employee",
     "trigger_condition": "Revenue per employee up, headcount flat",
@@ -4885,10 +4885,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_revenue_per_employee_revenue_per_employee_up_headcount_down_b763c1",
+    "id": "kb_fin_revenue_per_employee_revenue_per_employee_up_headcount_down_e1f8b6",
     "source_kb_id": "fin_revenue_per_employee",
     "trigger_metric": "fin_revenue_per_employee",
     "trigger_condition": "Revenue per employee up, headcount down",
@@ -4912,10 +4912,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_revenue_per_employee_revenue_per_employee_down_headcount_up_45f4df",
+    "id": "kb_fin_revenue_per_employee_revenue_per_employee_down_headcount_up_d332d4",
     "source_kb_id": "fin_revenue_per_employee",
     "trigger_metric": "fin_revenue_per_employee",
     "trigger_condition": "Revenue per employee down, headcount up",
@@ -4939,10 +4939,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_upsell_revenue_rate_upsell_rate_up_revenue_growth_up_f1aa9b",
+    "id": "kb_fin_upsell_revenue_rate_upsell_rate_up_revenue_growth_up_9e15f7",
     "source_kb_id": "fin_upsell_revenue_rate",
     "trigger_metric": "fin_upsell_revenue_rate",
     "trigger_condition": "Upsell rate up, revenue growth up",
@@ -4966,10 +4966,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_upsell_revenue_rate_upsell_rate_up_churn_rate_down_8c9648",
+    "id": "kb_fin_upsell_revenue_rate_upsell_rate_up_churn_rate_down_58e656",
     "source_kb_id": "fin_upsell_revenue_rate",
     "trigger_metric": "fin_upsell_revenue_rate",
     "trigger_condition": "Upsell rate up, churn_rate down",
@@ -4993,10 +4993,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_upsell_revenue_rate_upsell_rate_down_revenue_growth_up_92a5bf",
+    "id": "kb_fin_upsell_revenue_rate_upsell_rate_down_revenue_growth_up_6dcf99",
     "source_kb_id": "fin_upsell_revenue_rate",
     "trigger_metric": "fin_upsell_revenue_rate",
     "trigger_condition": "Upsell rate down, revenue growth up",
@@ -5020,10 +5020,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_contract_renewal_rate_renewal_rate_up_churn_rate_down_bf3f31",
+    "id": "kb_fin_contract_renewal_rate_renewal_rate_up_churn_rate_down_b8d343",
     "source_kb_id": "fin_contract_renewal_rate",
     "trigger_metric": "fin_contract_renewal_rate",
     "trigger_condition": "Renewal rate up, churn_rate down",
@@ -5047,10 +5047,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_contract_renewal_rate_renewal_rate_up_upsell_revenue_rate_up_91b775",
+    "id": "kb_fin_contract_renewal_rate_renewal_rate_up_upsell_revenue_rate_up_448445",
     "source_kb_id": "fin_contract_renewal_rate",
     "trigger_metric": "fin_contract_renewal_rate",
     "trigger_condition": "Renewal rate up, upsell_revenue_rate up",
@@ -5074,10 +5074,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_contract_renewal_rate_renewal_rate_down_churn_rate_up_c303ac",
+    "id": "kb_fin_contract_renewal_rate_renewal_rate_down_churn_rate_up_8aa4c5",
     "source_kb_id": "fin_contract_renewal_rate",
     "trigger_metric": "fin_contract_renewal_rate",
     "trigger_condition": "Renewal rate down, churn_rate up",
@@ -5101,10 +5101,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_gross_margin_gross_margin_up_cogs_per_unit_flat_462492",
+    "id": "kb_fin_gross_margin_gross_margin_up_cogs_per_unit_flat_973c00",
     "source_kb_id": "fin_gross_margin",
     "trigger_metric": "fin_gross_margin",
     "trigger_condition": "gross_margin up, cogs_per_unit flat",
@@ -5128,10 +5128,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_gross_margin_gross_margin_down_cogs_per_unit_up_446685",
+    "id": "kb_fin_gross_margin_gross_margin_down_cogs_per_unit_up_4b19e8",
     "source_kb_id": "fin_gross_margin",
     "trigger_metric": "fin_gross_margin",
     "trigger_condition": "gross_margin down, cogs_per_unit up",
@@ -5155,10 +5155,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_gross_margin_gross_margin_down_revenue_per_unit_flat_667b70",
+    "id": "kb_fin_gross_margin_gross_margin_down_revenue_per_unit_flat_b21ea0",
     "source_kb_id": "fin_gross_margin",
     "trigger_metric": "fin_gross_margin",
     "trigger_condition": "gross_margin down, revenue per unit flat",
@@ -5182,10 +5182,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_gross_margin_gross_margin_stable_cogs_per_unit_down_revenue_per_unit_down_6e09a1",
+    "id": "kb_fin_gross_margin_gross_margin_stable_cogs_per_unit_down_revenue_per_unit_down_0eb45a",
     "source_kb_id": "fin_gross_margin",
     "trigger_metric": "fin_gross_margin",
     "trigger_condition": "gross_margin stable, cogs_per_unit down, revenue per unit down",
@@ -5209,10 +5209,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_contribution_margin_contribution_margin_down_cogs_per_unit_up_71825b",
+    "id": "kb_fin_contribution_margin_contribution_margin_down_cogs_per_unit_up_10ee51",
     "source_kb_id": "fin_contribution_margin",
     "trigger_metric": "fin_contribution_margin",
     "trigger_condition": "contribution_margin down, cogs_per_unit up",
@@ -5236,10 +5236,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_contribution_margin_contribution_margin_up_cogs_per_unit_flat_3bcbc5",
+    "id": "kb_fin_contribution_margin_contribution_margin_up_cogs_per_unit_flat_f989b0",
     "source_kb_id": "fin_contribution_margin",
     "trigger_metric": "fin_contribution_margin",
     "trigger_condition": "contribution_margin up, cogs_per_unit flat",
@@ -5263,10 +5263,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_contribution_margin_contribution_margin_flat_rev_per_user_up_var_sga_up_66f64c",
+    "id": "kb_fin_contribution_margin_contribution_margin_flat_rev_per_user_up_var_sga_up_5210af",
     "source_kb_id": "fin_contribution_margin",
     "trigger_metric": "fin_contribution_margin",
     "trigger_condition": "contribution_margin flat, rev_per_user up, var_sga up",
@@ -5290,10 +5290,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_contribution_margin_contribution_margin_up_customer_count_flat_752716",
+    "id": "kb_fin_contribution_margin_contribution_margin_up_customer_count_flat_5dd4ba",
     "source_kb_id": "fin_contribution_margin",
     "trigger_metric": "fin_contribution_margin",
     "trigger_condition": "contribution_margin up, customer_count flat",
@@ -5317,10 +5317,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_cogs_per_unit_cogs_per_unit_down_gross_margin_up_63b276",
+    "id": "kb_fin_cogs_per_unit_cogs_per_unit_down_gross_margin_up_315c47",
     "source_kb_id": "fin_cogs_per_unit",
     "trigger_metric": "fin_cogs_per_unit",
     "trigger_condition": "cogs_per_unit down, gross_margin up",
@@ -5344,10 +5344,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_cogs_per_unit_cogs_per_unit_up_revenue_per_unit_up_more_61be88",
+    "id": "kb_fin_cogs_per_unit_cogs_per_unit_up_revenue_per_unit_up_more_5f4a34",
     "source_kb_id": "fin_cogs_per_unit",
     "trigger_metric": "fin_cogs_per_unit",
     "trigger_condition": "cogs_per_unit up, revenue_per_unit up more",
@@ -5371,10 +5371,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_cogs_per_unit_cogs_per_unit_down_churn_up_32c586",
+    "id": "kb_fin_cogs_per_unit_cogs_per_unit_down_churn_up_1ff9c6",
     "source_kb_id": "fin_cogs_per_unit",
     "trigger_metric": "fin_cogs_per_unit",
     "trigger_condition": "cogs_per_unit down, churn up",
@@ -5398,10 +5398,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_cogs_per_unit_cogs_per_unit_flat_gross_margin_up_d2f6a4",
+    "id": "kb_fin_cogs_per_unit_cogs_per_unit_flat_gross_margin_up_1da99e",
     "source_kb_id": "fin_cogs_per_unit",
     "trigger_metric": "fin_cogs_per_unit",
     "trigger_condition": "cogs_per_unit flat, gross_margin up",
@@ -5425,10 +5425,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_operating_leverage_operating_leverage_up_contribution_margin_pct_up_e8ae04",
+    "id": "kb_fin_operating_leverage_operating_leverage_up_contribution_margin_pct_up_8ba858",
     "source_kb_id": "fin_operating_leverage",
     "trigger_metric": "fin_operating_leverage",
     "trigger_condition": "operating_leverage up, contribution_margin_pct up",
@@ -5452,10 +5452,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_operating_leverage_operating_leverage_up_contribution_margin_pct_down_00b818",
+    "id": "kb_fin_operating_leverage_operating_leverage_up_contribution_margin_pct_down_1f5c10",
     "source_kb_id": "fin_operating_leverage",
     "trigger_metric": "fin_operating_leverage",
     "trigger_condition": "operating_leverage up, contribution_margin_pct down",
@@ -5479,10 +5479,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_operating_leverage_operating_leverage_down_contribution_margin_pct_up_81e57f",
+    "id": "kb_fin_operating_leverage_operating_leverage_down_contribution_margin_pct_up_2097ec",
     "source_kb_id": "fin_operating_leverage",
     "trigger_metric": "fin_operating_leverage",
     "trigger_condition": "operating_leverage down, contribution_margin_pct up",
@@ -5506,10 +5506,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_fin_operating_leverage_operating_leverage_down_fixed_costs_down_d412cf",
+    "id": "kb_fin_operating_leverage_operating_leverage_down_fixed_costs_down_e405b2",
     "source_kb_id": "fin_operating_leverage",
     "trigger_metric": "fin_operating_leverage",
     "trigger_condition": "operating_leverage down, fixed_costs down",
@@ -5533,10 +5533,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_mkt_cac_by_channel_channel_cac_up_roas_down_c9a344",
+    "id": "kb_mkt_cac_by_channel_channel_cac_up_roas_down_11cd56",
     "source_kb_id": "mkt_cac_by_channel",
     "trigger_metric": "mkt_cac_by_channel",
     "trigger_condition": "Channel CAC up, ROAS down",
@@ -5560,10 +5560,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_mkt_cac_by_channel_channel_cac_down_cpl_up_c4b9ca",
+    "id": "kb_mkt_cac_by_channel_channel_cac_down_cpl_up_eefe2c",
     "source_kb_id": "mkt_cac_by_channel",
     "trigger_metric": "mkt_cac_by_channel",
     "trigger_condition": "Channel CAC down, CPL up",
@@ -5587,10 +5587,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_mkt_cac_by_channel_channel_cac_down_customer_count_down_cdedfc",
+    "id": "kb_mkt_cac_by_channel_channel_cac_down_customer_count_down_ac4905",
     "source_kb_id": "mkt_cac_by_channel",
     "trigger_metric": "mkt_cac_by_channel",
     "trigger_condition": "Channel CAC down, customer_count down",
@@ -5614,10 +5614,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_mkt_roas_roas_up_conversion_rate_up_d70394",
+    "id": "kb_mkt_roas_roas_up_conversion_rate_up_b681cd",
     "source_kb_id": "mkt_roas",
     "trigger_metric": "mkt_roas",
     "trigger_condition": "ROAS up, conversion_rate up",
@@ -5641,10 +5641,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_mkt_roas_roas_up_ad_spend_down_e8ebd5",
+    "id": "kb_mkt_roas_roas_up_ad_spend_down_5711a4",
     "source_kb_id": "mkt_roas",
     "trigger_metric": "mkt_roas",
     "trigger_condition": "ROAS up, ad_spend down",
@@ -5668,10 +5668,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_mkt_roas_roas_down_conversion_rate_flat_669236",
+    "id": "kb_mkt_roas_roas_down_conversion_rate_flat_c45844",
     "source_kb_id": "mkt_roas",
     "trigger_metric": "mkt_roas",
     "trigger_condition": "ROAS down, conversion_rate flat",
@@ -5695,10 +5695,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_mkt_cpc_cpc_up_conversion_rate_flat_47e0e9",
+    "id": "kb_mkt_cpc_cpc_up_conversion_rate_flat_3ae0d1",
     "source_kb_id": "mkt_cpc",
     "trigger_metric": "mkt_cpc",
     "trigger_condition": "CPC up, conversion_rate flat",
@@ -5722,10 +5722,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_mkt_cpc_cpc_down_roas_down_3fdc2e",
+    "id": "kb_mkt_cpc_cpc_down_roas_down_bd3031",
     "source_kb_id": "mkt_cpc",
     "trigger_metric": "mkt_cpc",
     "trigger_condition": "CPC down, ROAS down",
@@ -5749,10 +5749,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_mkt_cpc_cpc_down_click_volume_up_8238a2",
+    "id": "kb_mkt_cpc_cpc_down_click_volume_up_7939b6",
     "source_kb_id": "mkt_cpc",
     "trigger_metric": "mkt_cpc",
     "trigger_condition": "CPC down, click_volume up",
@@ -5776,10 +5776,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_mkt_cpl_cpl_up_conversion_rate_up_221700",
+    "id": "kb_mkt_cpl_cpl_up_conversion_rate_up_5492bd",
     "source_kb_id": "mkt_cpl",
     "trigger_metric": "mkt_cpl",
     "trigger_condition": "CPL up, conversion_rate up",
@@ -5803,10 +5803,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_mkt_cpl_cpl_up_lead_volume_down_6221d1",
+    "id": "kb_mkt_cpl_cpl_up_lead_volume_down_e1308c",
     "source_kb_id": "mkt_cpl",
     "trigger_metric": "mkt_cpl",
     "trigger_condition": "CPL up, lead_volume down",
@@ -5830,10 +5830,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_mkt_cpl_cpl_down_mql_to_sql_rate_down_7bc2e9",
+    "id": "kb_mkt_cpl_cpl_down_mql_to_sql_rate_down_5121e3",
     "source_kb_id": "mkt_cpl",
     "trigger_metric": "mkt_cpl",
     "trigger_condition": "CPL down, mql_to_sql_rate down",
@@ -5857,10 +5857,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_mkt_cpm_cpm_up_impressions_down_d8db85",
+    "id": "kb_mkt_cpm_cpm_up_impressions_down_7f5671",
     "source_kb_id": "mkt_cpm",
     "trigger_metric": "mkt_cpm",
     "trigger_condition": "CPM up, impressions down",
@@ -5884,10 +5884,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_mkt_cpm_cpm_down_conversion_rate_up_809ee4",
+    "id": "kb_mkt_cpm_cpm_down_conversion_rate_up_ddb407",
     "source_kb_id": "mkt_cpm",
     "trigger_metric": "mkt_cpm",
     "trigger_condition": "CPM down, conversion_rate up",
@@ -5911,10 +5911,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_mkt_cpm_cpm_down_click_volume_down_c712a7",
+    "id": "kb_mkt_cpm_cpm_down_click_volume_down_6ed759",
     "source_kb_id": "mkt_cpm",
     "trigger_metric": "mkt_cpm",
     "trigger_condition": "CPM down, click_volume down",
@@ -5938,10 +5938,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_mkt_blended_cac_blended_cac_up_revenue_growth_up_ee5b18",
+    "id": "kb_mkt_blended_cac_blended_cac_up_revenue_growth_up_f05d07",
     "source_kb_id": "mkt_blended_cac",
     "trigger_metric": "mkt_blended_cac",
     "trigger_condition": "Blended CAC up, revenue growth up",
@@ -5965,10 +5965,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_mkt_blended_cac_blended_cac_up_revenue_growth_flat_5a6379",
+    "id": "kb_mkt_blended_cac_blended_cac_up_revenue_growth_flat_798afc",
     "source_kb_id": "mkt_blended_cac",
     "trigger_metric": "mkt_blended_cac",
     "trigger_condition": "Blended CAC up, revenue growth flat",
@@ -5992,10 +5992,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_mkt_blended_cac_blended_cac_down_revenue_growth_down_81327e",
+    "id": "kb_mkt_blended_cac_blended_cac_down_revenue_growth_down_74c7bb",
     "source_kb_id": "mkt_blended_cac",
     "trigger_metric": "mkt_blended_cac",
     "trigger_condition": "Blended CAC down, revenue growth down",
@@ -6019,10 +6019,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_mkt_payback_period_payback_period_up_cac_down_84c3cf",
+    "id": "kb_mkt_payback_period_payback_period_up_cac_down_d232f9",
     "source_kb_id": "mkt_payback_period",
     "trigger_metric": "mkt_payback_period",
     "trigger_condition": "Payback period up, CAC down",
@@ -6046,10 +6046,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_mkt_payback_period_payback_period_up_gross_profit_per_order_up_ee584c",
+    "id": "kb_mkt_payback_period_payback_period_up_gross_profit_per_order_up_50261c",
     "source_kb_id": "mkt_payback_period",
     "trigger_metric": "mkt_payback_period",
     "trigger_condition": "Payback period up, gross_profit per order up",
@@ -6073,10 +6073,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_mkt_payback_period_payback_period_down_churn_rate_up_270f8b",
+    "id": "kb_mkt_payback_period_payback_period_down_churn_rate_up_2328c1",
     "source_kb_id": "mkt_payback_period",
     "trigger_metric": "mkt_payback_period",
     "trigger_condition": "Payback period down, churn_rate up",
@@ -6100,10 +6100,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_mkt_cpa_by_creative_cpa_by_creative_up_roas_down_27566d",
+    "id": "kb_mkt_cpa_by_creative_cpa_by_creative_up_roas_down_625354",
     "source_kb_id": "mkt_cpa_by_creative",
     "trigger_metric": "mkt_cpa_by_creative",
     "trigger_condition": "CPA by creative up, ROAS down",
@@ -6127,10 +6127,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_mkt_cpa_by_creative_cpa_by_creative_down_conversion_rate_up_6dfb4d",
+    "id": "kb_mkt_cpa_by_creative_cpa_by_creative_down_conversion_rate_up_9bf8a4",
     "source_kb_id": "mkt_cpa_by_creative",
     "trigger_metric": "mkt_cpa_by_creative",
     "trigger_condition": "CPA by creative down, conversion_rate up",
@@ -6154,10 +6154,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_mkt_cpa_by_creative_cpa_by_creative_down_new_customer_count_down_10e749",
+    "id": "kb_mkt_cpa_by_creative_cpa_by_creative_down_new_customer_count_down_706db7",
     "source_kb_id": "mkt_cpa_by_creative",
     "trigger_metric": "mkt_cpa_by_creative",
     "trigger_condition": "CPA by creative down, new_customer_count down",
@@ -6181,10 +6181,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_mkt_audience_overlap_rate_overlap_rate_up_conversion_rate_down_f3c697",
+    "id": "kb_mkt_audience_overlap_rate_overlap_rate_up_conversion_rate_down_58a696",
     "source_kb_id": "mkt_audience_overlap_rate",
     "trigger_metric": "mkt_audience_overlap_rate",
     "trigger_condition": "Overlap rate up, conversion_rate down",
@@ -6208,10 +6208,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_mkt_audience_overlap_rate_overlap_rate_up_spend_up_accb84",
+    "id": "kb_mkt_audience_overlap_rate_overlap_rate_up_spend_up_5980fd",
     "source_kb_id": "mkt_audience_overlap_rate",
     "trigger_metric": "mkt_audience_overlap_rate",
     "trigger_condition": "Overlap rate up, spend up",
@@ -6235,10 +6235,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_mkt_audience_overlap_rate_overlap_rate_down_roi_down_0de54a",
+    "id": "kb_mkt_audience_overlap_rate_overlap_rate_down_roi_down_489945",
     "source_kb_id": "mkt_audience_overlap_rate",
     "trigger_metric": "mkt_audience_overlap_rate",
     "trigger_condition": "Overlap rate down, ROI down",
@@ -6262,10 +6262,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_mkt_campaign_incrementality_incrementality_up_conversion_rate_down_8689e4",
+    "id": "kb_mkt_campaign_incrementality_incrementality_up_conversion_rate_down_785144",
     "source_kb_id": "mkt_campaign_incrementality",
     "trigger_metric": "mkt_campaign_incrementality",
     "trigger_condition": "Incrementality up, conversion_rate down",
@@ -6289,10 +6289,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_mkt_campaign_incrementality_incrementality_up_spend_up_f7a447",
+    "id": "kb_mkt_campaign_incrementality_incrementality_up_spend_up_ef0cb5",
     "source_kb_id": "mkt_campaign_incrementality",
     "trigger_metric": "mkt_campaign_incrementality",
     "trigger_condition": "Incrementality up, spend up",
@@ -6316,10 +6316,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_mkt_campaign_incrementality_incrementality_down_conversion_rate_down_08eb4a",
+    "id": "kb_mkt_campaign_incrementality_incrementality_down_conversion_rate_down_2fa9b2",
     "source_kb_id": "mkt_campaign_incrementality",
     "trigger_metric": "mkt_campaign_incrementality",
     "trigger_condition": "Incrementality down, conversion_rate down",
@@ -6343,10 +6343,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_mkt_ad_frequency_fatigue_point_fatigue_point_down_conversion_rate_down_6e7314",
+    "id": "kb_mkt_ad_frequency_fatigue_point_fatigue_point_down_conversion_rate_down_74f057",
     "source_kb_id": "mkt_ad_frequency_fatigue_point",
     "trigger_metric": "mkt_ad_frequency_fatigue_point",
     "trigger_condition": "Fatigue point down, conversion_rate down",
@@ -6370,10 +6370,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_mkt_ad_frequency_fatigue_point_fatigue_point_down_spend_up_ea3508",
+    "id": "kb_mkt_ad_frequency_fatigue_point_fatigue_point_down_spend_up_2a87c1",
     "source_kb_id": "mkt_ad_frequency_fatigue_point",
     "trigger_metric": "mkt_ad_frequency_fatigue_point",
     "trigger_condition": "Fatigue point down, spend up",
@@ -6397,10 +6397,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_mkt_ad_frequency_fatigue_point_fatigue_point_up_conversion_rate_up_636639",
+    "id": "kb_mkt_ad_frequency_fatigue_point_fatigue_point_up_conversion_rate_up_7d2eb8",
     "source_kb_id": "mkt_ad_frequency_fatigue_point",
     "trigger_metric": "mkt_ad_frequency_fatigue_point",
     "trigger_condition": "Fatigue point up, conversion_rate up",
@@ -6424,10 +6424,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_mkt_landing_page_conversion_rate_landing_page_cr_up_roas_up_defe0e",
+    "id": "kb_mkt_landing_page_conversion_rate_landing_page_cr_up_roas_up_f8415c",
     "source_kb_id": "mkt_landing_page_conversion_rate",
     "trigger_metric": "mkt_landing_page_conversion_rate",
     "trigger_condition": "Landing page CR up, ROAS up",
@@ -6451,10 +6451,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_mkt_landing_page_conversion_rate_landing_page_cr_down_conversion_rate_up_361261",
+    "id": "kb_mkt_landing_page_conversion_rate_landing_page_cr_down_conversion_rate_up_1b294e",
     "source_kb_id": "mkt_landing_page_conversion_rate",
     "trigger_metric": "mkt_landing_page_conversion_rate",
     "trigger_condition": "Landing page CR down, conversion_rate up",
@@ -6478,10 +6478,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_mkt_landing_page_conversion_rate_landing_page_cr_down_bounce_rate_up_a3f74d",
+    "id": "kb_mkt_landing_page_conversion_rate_landing_page_cr_down_bounce_rate_up_37ba10",
     "source_kb_id": "mkt_landing_page_conversion_rate",
     "trigger_metric": "mkt_landing_page_conversion_rate",
     "trigger_condition": "Landing page CR down, bounce_rate up",
@@ -6505,10 +6505,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_prod_dau_mau_dau_mau_up_session_length_down_9b5f88",
+    "id": "kb_prod_dau_mau_dau_mau_up_session_length_down_da30c9",
     "source_kb_id": "prod_dau_mau",
     "trigger_metric": "prod_dau_mau",
     "trigger_condition": "DAU/MAU up, session_length down",
@@ -6532,10 +6532,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_prod_dau_mau_dau_mau_down_churn_rate_up_5bdbcf",
+    "id": "kb_prod_dau_mau_dau_mau_down_churn_rate_up_91d176",
     "source_kb_id": "prod_dau_mau",
     "trigger_metric": "prod_dau_mau",
     "trigger_condition": "DAU/MAU down, churn_rate up",
@@ -6559,10 +6559,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_prod_dau_mau_dau_mau_up_only_in_new_users_not_returning_735cb3",
+    "id": "kb_prod_dau_mau_dau_mau_up_only_in_new_users_not_returning_5ca7f7",
     "source_kb_id": "prod_dau_mau",
     "trigger_metric": "prod_dau_mau",
     "trigger_condition": "DAU/MAU up only in new users, not returning",
@@ -6586,10 +6586,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_prod_dau_mau_dau_mau_flat_but_mau_down_b1155d",
+    "id": "kb_prod_dau_mau_dau_mau_flat_but_mau_down_84292e",
     "source_kb_id": "prod_dau_mau",
     "trigger_metric": "prod_dau_mau",
     "trigger_condition": "DAU/MAU flat but MAU down",
@@ -6613,10 +6613,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_prod_session_length_session_length_down_feature_usage_rate_down_2afb3f",
+    "id": "kb_prod_session_length_session_length_down_feature_usage_rate_down_466438",
     "source_kb_id": "prod_session_length",
     "trigger_metric": "prod_session_length",
     "trigger_condition": "session_length down, feature_usage_rate down",
@@ -6640,10 +6640,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_prod_session_length_session_length_up_churn_rate_down_c1079c",
+    "id": "kb_prod_session_length_session_length_up_churn_rate_down_640705",
     "source_kb_id": "prod_session_length",
     "trigger_metric": "prod_session_length",
     "trigger_condition": "session_length up, churn_rate down",
@@ -6667,10 +6667,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_prod_session_length_session_length_flat_dau_mau_up_7441fb",
+    "id": "kb_prod_session_length_session_length_flat_dau_mau_up_fd0352",
     "source_kb_id": "prod_session_length",
     "trigger_metric": "prod_session_length",
     "trigger_condition": "session_length flat, DAU/MAU up",
@@ -6694,10 +6694,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_prod_session_length_session_length_up_in_one_segment_only_ccacbc",
+    "id": "kb_prod_session_length_session_length_up_in_one_segment_only_9a88a7",
     "source_kb_id": "prod_session_length",
     "trigger_metric": "prod_session_length",
     "trigger_condition": "session_length up in one segment only",
@@ -6721,10 +6721,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_prod_feature_usage_rate_feature_usage_rate_up_session_length_up_26f16a",
+    "id": "kb_prod_feature_usage_rate_feature_usage_rate_up_session_length_up_6ebaf3",
     "source_kb_id": "prod_feature_usage_rate",
     "trigger_metric": "prod_feature_usage_rate",
     "trigger_condition": "feature_usage_rate up, session_length up",
@@ -6748,10 +6748,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_prod_feature_usage_rate_feature_usage_rate_up_churn_rate_down_b6ccbf",
+    "id": "kb_prod_feature_usage_rate_feature_usage_rate_up_churn_rate_down_987e8c",
     "source_kb_id": "prod_feature_usage_rate",
     "trigger_metric": "prod_feature_usage_rate",
     "trigger_condition": "feature_usage_rate up, churn_rate down",
@@ -6775,10 +6775,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_prod_feature_usage_rate_feature_usage_rate_flat_dau_mau_up_ed44b4",
+    "id": "kb_prod_feature_usage_rate_feature_usage_rate_flat_dau_mau_up_c3c41f",
     "source_kb_id": "prod_feature_usage_rate",
     "trigger_metric": "prod_feature_usage_rate",
     "trigger_condition": "feature_usage_rate flat, DAU/MAU up",
@@ -6802,10 +6802,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_prod_feature_usage_rate_feature_usage_rate_down_support_tickets_up_d787e9",
+    "id": "kb_prod_feature_usage_rate_feature_usage_rate_down_support_tickets_up_4a243c",
     "source_kb_id": "prod_feature_usage_rate",
     "trigger_metric": "prod_feature_usage_rate",
     "trigger_condition": "feature_usage_rate down, support_tickets up",
@@ -6829,10 +6829,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_prod_feature_adoption_rate_feature_adoption_up_retention_up_c48895",
+    "id": "kb_prod_feature_adoption_rate_feature_adoption_up_retention_up_d2134a",
     "source_kb_id": "prod_feature_adoption_rate",
     "trigger_metric": "prod_feature_adoption_rate",
     "trigger_condition": "Feature adoption up, retention up",
@@ -6856,10 +6856,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_prod_feature_adoption_rate_feature_adoption_up_feature_breadth_down_dd1ae5",
+    "id": "kb_prod_feature_adoption_rate_feature_adoption_up_feature_breadth_down_bf8983",
     "source_kb_id": "prod_feature_adoption_rate",
     "trigger_metric": "prod_feature_adoption_rate",
     "trigger_condition": "Feature adoption up, feature_breadth down",
@@ -6883,10 +6883,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_prod_feature_adoption_rate_feature_adoption_down_feature_breadth_up_d1c99b",
+    "id": "kb_prod_feature_adoption_rate_feature_adoption_down_feature_breadth_up_b12017",
     "source_kb_id": "prod_feature_adoption_rate",
     "trigger_metric": "prod_feature_adoption_rate",
     "trigger_condition": "Feature adoption down, feature_breadth up",
@@ -6910,10 +6910,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_prod_breadth_of_use_breadth_of_use_up_retention_up_db7147",
+    "id": "kb_prod_breadth_of_use_breadth_of_use_up_retention_up_f35724",
     "source_kb_id": "prod_breadth_of_use",
     "trigger_metric": "prod_breadth_of_use",
     "trigger_condition": "Breadth of use up, retention up",
@@ -6937,10 +6937,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_prod_breadth_of_use_breadth_of_use_down_feature_adoption_rate_up_c1b310",
+    "id": "kb_prod_breadth_of_use_breadth_of_use_down_feature_adoption_rate_up_e3cf50",
     "source_kb_id": "prod_breadth_of_use",
     "trigger_metric": "prod_breadth_of_use",
     "trigger_condition": "Breadth of use down, feature_adoption_rate up",
@@ -6964,10 +6964,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_prod_breadth_of_use_breadth_of_use_down_retention_down_b5c831",
+    "id": "kb_prod_breadth_of_use_breadth_of_use_down_retention_down_e1849c",
     "source_kb_id": "prod_breadth_of_use",
     "trigger_metric": "prod_breadth_of_use",
     "trigger_condition": "Breadth of use down, retention down",
@@ -6991,10 +6991,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_prod_stickiness_ratio_stickiness_ratio_up_retention_up_f0f40a",
+    "id": "kb_prod_stickiness_ratio_stickiness_ratio_up_retention_up_585f04",
     "source_kb_id": "prod_stickiness_ratio",
     "trigger_metric": "prod_stickiness_ratio",
     "trigger_condition": "Stickiness ratio up, retention up",
@@ -7018,10 +7018,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_prod_stickiness_ratio_stickiness_ratio_down_retention_down_2d351d",
+    "id": "kb_prod_stickiness_ratio_stickiness_ratio_down_retention_down_e62be7",
     "source_kb_id": "prod_stickiness_ratio",
     "trigger_metric": "prod_stickiness_ratio",
     "trigger_condition": "Stickiness ratio down, retention down",
@@ -7045,10 +7045,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_prod_stickiness_ratio_stickiness_ratio_up_retention_flat_544f3f",
+    "id": "kb_prod_stickiness_ratio_stickiness_ratio_up_retention_flat_66674e",
     "source_kb_id": "prod_stickiness_ratio",
     "trigger_metric": "prod_stickiness_ratio",
     "trigger_condition": "Stickiness ratio up, retention flat",
@@ -7072,10 +7072,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_prod_session_depth_session_depth_up_retention_up_1c58e3",
+    "id": "kb_prod_session_depth_session_depth_up_retention_up_a43edd",
     "source_kb_id": "prod_session_depth",
     "trigger_metric": "prod_session_depth",
     "trigger_condition": "Session depth up, retention up",
@@ -7099,10 +7099,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_prod_session_depth_session_depth_up_conversion_rate_up_bf8d5a",
+    "id": "kb_prod_session_depth_session_depth_up_conversion_rate_up_30c256",
     "source_kb_id": "prod_session_depth",
     "trigger_metric": "prod_session_depth",
     "trigger_condition": "Session depth up, conversion_rate up",
@@ -7126,10 +7126,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_prod_session_depth_session_depth_down_bounce_rate_up_7f920d",
+    "id": "kb_prod_session_depth_session_depth_down_bounce_rate_up_0a29f3",
     "source_kb_id": "prod_session_depth",
     "trigger_metric": "prod_session_depth",
     "trigger_condition": "Session depth down, bounce_rate up",
@@ -7153,10 +7153,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_prod_notification_opt_out_rate_opt_out_rate_up_engagement_down_3aa380",
+    "id": "kb_prod_notification_opt_out_rate_opt_out_rate_up_engagement_down_41c425",
     "source_kb_id": "prod_notification_opt_out_rate",
     "trigger_metric": "prod_notification_opt_out_rate",
     "trigger_condition": "Opt-out rate up, engagement down",
@@ -7180,10 +7180,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_prod_notification_opt_out_rate_opt_out_rate_up_retention_down_501ce7",
+    "id": "kb_prod_notification_opt_out_rate_opt_out_rate_up_retention_down_b4a524",
     "source_kb_id": "prod_notification_opt_out_rate",
     "trigger_metric": "prod_notification_opt_out_rate",
     "trigger_condition": "Opt-out rate up, retention down",
@@ -7207,10 +7207,10 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   },
   {
-    "id": "kb_prod_notification_opt_out_rate_opt_out_rate_down_engagement_up_0b8837",
+    "id": "kb_prod_notification_opt_out_rate_opt_out_rate_down_engagement_up_6bf6d3",
     "source_kb_id": "prod_notification_opt_out_rate",
     "trigger_metric": "prod_notification_opt_out_rate",
     "trigger_condition": "Opt-out rate down, engagement up",
@@ -7234,6 +7234,6 @@
     ],
     "evidence_sources": [],
     "historical_success_rate": 0.0,
-    "status": "draft"
+    "status": "active"
   }
 ]

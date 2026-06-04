@@ -25,6 +25,7 @@ from aughor.agent.state import (
     DataQualityNote,
     DecomposeOutput,
     EvidenceScore,
+    Finding,
     Hypothesis,
     Pitfall,
     QueryPlanV2,
@@ -57,17 +58,27 @@ MAX_ITER = int(__import__("os").getenv("AUGHOR_MAX_ITER", "6"))
 
 # ── Node: route_question ─────────────────────────────────────────────────────
 
-@_telemetry.node_span("route_question")
-def route_question(state: AgentState) -> dict[str, Any]:
+def classify_question(question: str) -> tuple[str, RouteDecision]:
+    """Pure classifier — calls LLM and returns (effective_mode, decision).
+
+    Separated from route_question so it can be called and tested independently
+    without constructing a full AgentState.
+    Low-confidence direct falls back to investigate: false-direct (shallow
+    answer) is worse than false-investigate (extra thoroughness).
+    """
     llm = get_provider("coder")
     decision: RouteDecision = llm.complete(
         system="You are a routing classifier for a business intelligence agent. Classify questions precisely.",
-        user=ROUTE_QUESTION_PROMPT.format(question=state["question"]),
+        user=ROUTE_QUESTION_PROMPT.format(question=question),
         response_model=RouteDecision,
     )
-    # Low-confidence direct classifications fall back to investigate —
-    # false-direct (shallow answer) is worse than false-investigate (extra thoroughness)
     effective_mode = decision.mode if decision.confidence >= 0.65 else "investigate"
+    return effective_mode, decision
+
+
+@_telemetry.node_span("route_question")
+def route_question(state: AgentState) -> dict[str, Any]:
+    effective_mode, decision = classify_question(state["question"])
     base = {"route_reasoning": decision.reasoning, "route_confidence": decision.confidence}
     if effective_mode == "direct":
         return {
@@ -398,32 +409,103 @@ def execute_planned_queries(state: AgentState, conn: "DatabaseConnection") -> di
     expected_if_true = plan_dict.get("expected_if_true") or None
     expected_if_false = plan_dict.get("expected_if_false") or None
 
-    # Generate SQL for each query intent
-    queries: list[str] = []
+    # Generate SQL for each query intent — parallelized (LLM calls are independent HTTP requests)
+    from concurrent.futures import ThreadPoolExecutor as _ThreadPool
+
     llm = get_provider("coder")
-    for intent in intents:
+    _schema_ctx = state["schema_context"]
+    _dialect = conn.dialect
+
+    # Build ontology formula injection section — if the hypothesis/intent mentions
+    # a known metric name, inject its approved formula_sql so the LLM can't hallucinate it.
+    _ontology_formulas_section = ""
+    try:
+        from aughor.semantic.metrics import list_metrics as _list_metrics
+        all_metrics = _list_metrics()
+        hyp_lower = h.description.lower()
+        matched_formulas: list[str] = []
+        for m in all_metrics:
+            label_lower = m.label.lower()
+            name_lower = m.name.lower()
+            if any(token in hyp_lower for token in [name_lower, label_lower] if len(token) > 3):
+                formula_line = f"  {m.label} ({m.name}): {m.sql}"
+                if m.caveats:
+                    formula_line += f"  — NOTE: {m.caveats}"
+                if m.wrong_usage_examples:
+                    formula_line += f"  — NEVER: {'; '.join(m.wrong_usage_examples[:2])}"
+                matched_formulas.append(formula_line)
+        if matched_formulas:
+            _ontology_formulas_section = (
+                "\nAPPROVED METRIC FORMULAS (use these exact SQL expressions — do NOT re-derive):\n"
+                + "\n".join(matched_formulas[:8])
+                + "\n"
+            )
+    except Exception:
+        pass
+
+    def _gen_sql(intent: dict) -> str | None:
         intent_tables = ", ".join(intent.get("tables") or []) or "(all plan tables)"
         intent_filters = "; ".join(intent.get("filters") or []) or "none"
         intent_aggregation = intent.get("aggregation") or "none"
+        # Per-intent: also try to match the intent description against metrics
+        intent_formula_section = _ontology_formulas_section
+        try:
+            if not intent_formula_section:
+                from aughor.semantic.metrics import list_metrics as _lm2
+                intent_lower = intent.get("description", "").lower()
+                for m in _lm2():
+                    if m.name in intent_lower or m.label.lower() in intent_lower:
+                        intent_formula_section = (
+                            f"\nAPPROVED FORMULA: {m.label} = {m.sql}"
+                            + (f"  — NOTE: {m.caveats}" if m.caveats else "")
+                            + "\n"
+                        )
+                        break
+        except Exception:
+            pass
+        try:
+            sql_out: SQLOutput = llm.complete(
+                system="You are a SQL expert. Translate the query intent into one SQL SELECT statement.",
+                user=WRITE_SQL_PROMPT.format(
+                    dialect=_dialect,
+                    hypothesis_description=h.description,
+                    intent_description=intent.get("description", ""),
+                    intent_tables=intent_tables,
+                    intent_filters=intent_filters,
+                    intent_aggregation=intent_aggregation,
+                    schema=_schema_ctx,
+                    pitfall_section=pitfall_section,
+                    sql_examples_section=sql_examples_section,
+                    ontology_actions_section=ontology_actions_section + intent_formula_section,
+                ),
+                response_model=SQLOutput,
+            )
+            return sql_out.sql.strip() if sql_out.sql and sql_out.sql.strip() else None
+        except Exception:
+            return None
 
-        sql_out: SQLOutput = llm.complete(
-            system="You are a SQL expert. Translate the query intent into one SQL SELECT statement.",
-            user=WRITE_SQL_PROMPT.format(
-                dialect=conn.dialect,
-                hypothesis_description=h.description,
-                intent_description=intent.get("description", ""),
-                intent_tables=intent_tables,
-                intent_filters=intent_filters,
-                intent_aggregation=intent_aggregation,
-                schema=state["schema_context"],
-                pitfall_section=pitfall_section,
-                sql_examples_section=sql_examples_section,
-                ontology_actions_section=ontology_actions_section,
-            ),
-            response_model=SQLOutput,
-        )
-        if sql_out.sql and sql_out.sql.strip():
-            queries.append(sql_out.sql.strip())
+    if len(intents) > 1:
+        with _ThreadPool(max_workers=len(intents)) as pool:
+            raw = list(pool.map(_gen_sql, intents))
+    else:
+        raw = [_gen_sql(intents[0])] if intents else []
+
+    queries: list[str] = [s for s in raw if s]
+
+    # ── Cross-query consistency: normalize date functions, detect alias drift ─
+    if queries:
+        from aughor.tools.sql_consistency import normalize_parallel_queries
+        queries, consistency_notes = normalize_parallel_queries(queries, conn.dialect)
+        for cn in consistency_notes:
+            if cn.kind in ("alias_mismatch", "join_divergence"):
+                # Inject alias/join divergence as a pitfall so the synthesizer
+                # knows these queries may have column-alignment issues.
+                new_pitfalls.append(Pitfall(
+                    original_sql=" | ".join(queries[i] for i in cn.query_indices if i < len(queries))[:200],
+                    error=cn.to_prompt_text(),
+                    fixed_sql="",
+                    fix_explanation=cn.to_prompt_text(),
+                ))
 
     # Expand ACTION:name() tokens before execution
     queries, _action_notes = expand_actions(queries, ontology_graph)
@@ -446,8 +528,20 @@ def execute_planned_queries(state: AgentState, conn: "DatabaseConnection") -> di
     for sql in queries:
         # ── Pre-flight: detect unqualified columns and invalid join paths ──
         from aughor.tools.ambiguity import detect_ambiguous_columns, detect_invalid_joins
+        from aughor.tools.semantic_validator import check_entity_column_alignment
         ambiguity_warnings = detect_ambiguous_columns(sql, state["schema_context"])
         join_warnings = detect_invalid_joins(sql, state["schema_context"])
+        # ── Semantic column alignment: catch wrong identifier columns ─────────
+        semantic_warnings = check_entity_column_alignment(
+            state["question"], sql, state["schema_context"]
+        )
+        for sw in semantic_warnings:
+            new_pitfalls.append(Pitfall(
+                original_sql=sql,
+                error=sw.to_prompt_text(),
+                fixed_sql=sql,
+                fix_explanation=sw.to_prompt_text(),
+            ))
 
         for jw in join_warnings:
             new_pitfalls.append(Pitfall(
@@ -472,7 +566,7 @@ def execute_planned_queries(state: AgentState, conn: "DatabaseConnection") -> di
             from aughor.tools.error_classifier import classify_sql_error
             kb_fix_patterns = retrieve_for_fix_sql(original_error, sql)
             diagnosis = classify_sql_error(original_error, sql, conn.dialect)
-            pre_flight = ambiguity_warnings + join_warnings
+            pre_flight = ambiguity_warnings + join_warnings + semantic_warnings
             if pre_flight:
                 warn_text = "\n".join(w.to_prompt_text() for w in pre_flight)
                 diagnosis = f"{diagnosis}\n{warn_text}".strip()
@@ -737,6 +831,15 @@ def synthesize_report(state: AgentState) -> dict[str, Any]:
     raw_events = state.get("events_context") or ""
     events_section_synth = f"\nBUSINESS CALENDAR CONTEXT (use to attribute anomalies to known events):\n{raw_events}\n" if raw_events else ""
 
+    # ── Pre-synthesis numeric guard: build a verified-numbers block so the narrator
+    # can only cite figures that actually appear in the query results.
+    pre_check_section = ""
+    try:
+        from aughor.agent.verify import build_pre_synthesis_number_check
+        pre_check_section = build_pre_synthesis_number_check(state.get("query_history", []))
+    except Exception:
+        pass
+
     report: AnalysisReport = llm.complete(
         system="You are a senior data analyst writing an executive-level investigation report.",
         user=rules_block + SYNTHESIZE_PROMPT.format(
@@ -746,7 +849,7 @@ def synthesize_report(state: AgentState) -> dict[str, Any]:
             pitfall_section=_format_pitfalls_for_synthesis(pitfalls),
             human_feedback_section=feedback_section,
             events_section=events_section_synth,
-        ) + tensions_section,
+        ) + tensions_section + pre_check_section,
         response_model=AnalysisReport,
     )
     # ── Override narrator confidence with score_evidence values (deterministic) ─
@@ -755,15 +858,43 @@ def synthesize_report(state: AgentState) -> dict[str, Any]:
     # score already computed by score_evidence for the same hypothesis.
     scored_conf = {h.id: h.confidence for h in hypotheses}
     if scored_conf:
+        # Safety: when a Finding claims a hypothesis_id that doesn't exist in
+        # the scored set, the narrator invented or abbreviated an ID.  Fall back
+        # to the *lowest* scored confidence so we never over-state certainty.
+        min_scored_conf = min(scored_conf.values()) if scored_conf else 0.3
+        unmatched_ids: list[str] = []
         corrected_findings = []
         for f in report.key_findings:
             if f.hypothesis_id and f.hypothesis_id in scored_conf:
                 corrected_findings.append(
                     Finding(**{**f.model_dump(), "confidence": scored_conf[f.hypothesis_id]})
                 )
+            elif f.hypothesis_id and f.hypothesis_id not in scored_conf:
+                # ID mismatch — apply floor confidence
+                unmatched_ids.append(f.hypothesis_id)
+                corrected_findings.append(
+                    Finding(**{**f.model_dump(), "confidence": min_scored_conf})
+                )
             else:
                 corrected_findings.append(f)
         report = AnalysisReport(**{**report.model_dump(), "key_findings": corrected_findings})
+        if unmatched_ids:
+            # Surface the mismatch as a data quality note so analysts see it
+            id_note = DataQualityNote(
+                table="Report Structure",
+                column=None,
+                issue=(
+                    f"Finding(s) referenced unrecognised hypothesis IDs: "
+                    f"{', '.join(unmatched_ids)}. "
+                    f"Expected: {', '.join(scored_conf.keys())}. "
+                    f"Confidence floored to {min_scored_conf:.0%} for affected findings."
+                ),
+                impact="Confidence scores for these findings may be unreliable.",
+                recommended_fix="Re-run the investigation to regenerate findings with correct hypothesis IDs.",
+            )
+            report = AnalysisReport(
+                **{**report.model_dump(), "data_quality_notes": list(report.data_quality_notes) + [id_note]}
+            )
 
     # ── Post-synthesis numeric verifier ──────────────────────────────────────
     try:

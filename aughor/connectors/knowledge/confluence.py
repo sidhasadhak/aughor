@@ -161,7 +161,7 @@ class ConfluenceSync:
             results[space_key] = count
             logger.info("Confluence: indexed %d pages from space %s", count, space_key)
 
-        state["last_sync"] = __import__("datetime").datetime.utcnow().isoformat() + "Z"
+        state["last_sync"] = __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat().replace("+00:00", "Z")
         state["pages_indexed"] = {k: results.get(k, 0) for k in spaces}
         self._save_state(state)
         return results

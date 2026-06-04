@@ -613,60 +613,56 @@ function DomainProfile({
     { id: "org-intel", label: `Org Intel (${domainOrg.length})` },
   ];
 
+  // A scannable metric pill used in the profile header.
+  const Pill = ({ children }: { children: React.ReactNode }) => (
+    <span style={{
+      display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, color: "var(--t2)",
+      background: "var(--bg-1)", border: "1px solid var(--b1)", borderRadius: 6, padding: "3px 9px",
+    }}>{children}</span>
+  );
+
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
       {/* Profile header */}
       <div style={{
         padding: "14px 20px", borderBottom: "1px solid var(--b1)",
-        display: "flex", flexDirection: "column", gap: 10, flexShrink: 0,
+        display: "flex", flexDirection: "column", gap: 12, flexShrink: 0,
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <button
             onClick={onBack}
-            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--t3)", fontSize: 12, padding: "2px 0", display: "flex", alignItems: "center", gap: 4 }}
+            className="aug-btn"
+            style={{ background: "var(--bg-1)", border: "1px solid var(--b1)", borderRadius: 6, cursor: "pointer", color: "var(--t2)", fontSize: 11, padding: "3px 9px", display: "flex", alignItems: "center", gap: 5 }}
           >
-            ← All domains
+            ← Hub
           </button>
-          <span style={{ color: "var(--b1)" }}>·</span>
-          <span style={{ fontSize: 14, fontWeight: 700, color: "var(--t1)", textTransform: "capitalize" }}>{domain}</span>
+          <span style={{ fontSize: 15, fontWeight: 700, color: "var(--t1)", textTransform: "capitalize" }}>{domain}</span>
           <span style={{
-            fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em",
+            fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em",
             padding: "2px 7px", borderRadius: 3,
             background: "color-mix(in srgb, var(--blue3) 14%, transparent)",
             color: "var(--blue4)",
           }}>Domain</span>
         </div>
 
-        {/* Stats strip */}
-        <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
-          <span style={{ fontSize: 11, color: "var(--t2)" }}>
-            <span style={{ color: "var(--t1)", fontWeight: 600 }}>{data.insights.length}</span> insights
-          </span>
-          <span style={{ display: "flex", gap: 5 }}>
-            <span style={{ fontSize: 11, color: "var(--grn3)", fontWeight: 600 }}>{breakdown.high}H</span>
-            <span style={{ fontSize: 11, color: "var(--amb3)", fontWeight: 600 }}>{breakdown.mid}M</span>
-            <span style={{ fontSize: 11, color: "var(--t3)", fontWeight: 600 }}>{breakdown.low}L</span>
-          </span>
-          <span style={{ fontSize: 11, color: "var(--t3)" }}>·</span>
-          <span style={{ fontSize: 11, color: "var(--t2)" }}>
-            <span style={{ color: "var(--t1)", fontWeight: 600 }}>{data.angles_covered.length}</span> angles
-          </span>
-          <span style={{ fontSize: 11, color: "var(--t3)" }}>·</span>
-          {/* Coverage bar */}
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ fontSize: 11, color: "var(--t3)" }}>Coverage</span>
-            <div style={{ width: 60, height: 4, background: "var(--bg-3)", borderRadius: 2 }}>
-              <div style={{ width: `${pct}%`, height: "100%", background: pct > 70 ? "var(--grn3)" : pct > 40 ? "var(--amb3)" : "var(--b3)", borderRadius: 2 }} />
-            </div>
-            <span style={{ fontSize: 11, color: "var(--t2)", fontWeight: 600 }}>{pct}%</span>
-          </div>
+        {/* Metric pills */}
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <Pill><strong style={{ color: "var(--t1)" }}>{data.insights.length}</strong> insights</Pill>
+          <Pill>
+            <span style={{ color: "var(--grn3)", fontWeight: 600 }}>{breakdown.high}H</span>
+            <span style={{ color: "var(--amb3)", fontWeight: 600 }}>{breakdown.mid}M</span>
+            <span style={{ color: "var(--t3)", fontWeight: 600 }}>{breakdown.low}L</span>
+          </Pill>
+          <Pill><strong style={{ color: "var(--t1)" }}>{data.angles_covered.length}</strong> angles</Pill>
+          <Pill>
+            Coverage
+            <span style={{ display: "inline-block", width: 54, height: 4, background: "var(--bg-3)", borderRadius: 2, overflow: "hidden" }}>
+              <span style={{ display: "block", width: `${pct}%`, height: "100%", background: pct > 70 ? "var(--grn3)" : pct > 40 ? "var(--amb3)" : "var(--b3)" }} />
+            </span>
+            <strong style={{ color: "var(--t1)" }}>{pct}%</strong>
+          </Pill>
           {domainOrg.length > 0 && (
-            <>
-              <span style={{ fontSize: 11, color: "var(--t3)" }}>·</span>
-              <span style={{ fontSize: 11, color: "var(--vio3)", fontWeight: 600 }}>
-                {domainOrg.length} org promoted
-              </span>
-            </>
+            <Pill><span style={{ color: "var(--vio3)", fontWeight: 600 }}>◈ {domainOrg.length}</span> org promoted</Pill>
           )}
         </div>
       </div>
@@ -693,19 +689,27 @@ function DomainProfile({
 
             {/* Top insights */}
             <div>
-              <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--t3)", marginBottom: 10 }}>
-                Top Findings
-              </div>
+              <SectionHead
+                title="Top Findings"
+                action={data.insights.length > 3 ? (
+                  <button onClick={() => setTab("insights")} style={{ fontSize: 11, color: "var(--blue4)", background: "none", border: "none", cursor: "pointer" }}>
+                    All {data.insights.length} →
+                  </button>
+                ) : undefined}
+              />
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {topInsights.length === 0 ? (
                   <p style={{ fontSize: 12, color: "var(--t3)" }}>No insights yet for this domain.</p>
                 ) : topInsights.map(ins => {
                   const nov = noveltyLabel(ins.novelty);
                   return (
-                    <div key={ins.id} style={{
-                      background: "var(--bg-1)", border: "1px solid var(--b1)", borderRadius: 6,
-                      padding: "10px 14px", display: "flex", gap: 10,
-                    }}>
+                    <button key={ins.id} onClick={() => setTab("insights")} style={{
+                      textAlign: "left", background: "var(--bg-1)", border: "1px solid var(--b1)", borderRadius: 6,
+                      padding: "10px 14px", display: "flex", gap: 10, cursor: "pointer", transition: "all .1s",
+                    }}
+                      onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--b2)"; e.currentTarget.style.background = "var(--bg-2)"; }}
+                      onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--b1)"; e.currentTarget.style.background = "var(--bg-1)"; }}
+                    >
                       <span style={{
                         flexShrink: 0, marginTop: 2, fontSize: 10, fontWeight: 700,
                         padding: "1px 6px", borderRadius: 3,
@@ -713,7 +717,7 @@ function DomainProfile({
                         color: nov.color,
                       }}>{nov.label}</span>
                       <p style={{ margin: 0, fontSize: 12, color: "var(--t2)", lineHeight: 1.55 }}>{ins.finding}</p>
-                    </div>
+                    </button>
                   );
                 })}
               </div>
@@ -722,9 +726,7 @@ function DomainProfile({
             {/* Angles covered */}
             {data.angles_covered.length > 0 && (
               <div>
-                <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--t3)", marginBottom: 10 }}>
-                  Angles Covered
-                </div>
+                <SectionHead title="Angles Covered" count={data.angles_covered.length} />
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                   {data.angles_covered.map(a => (
                     <span key={a} style={{
@@ -740,9 +742,7 @@ function DomainProfile({
 
             {/* Budget usage */}
             <div>
-              <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--t3)", marginBottom: 10 }}>
-                Query Budget
-              </div>
+              <SectionHead title="Query Budget" />
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: "var(--t2)" }}>
                   <span>{data.queries_used} queries used</span>
@@ -761,14 +761,10 @@ function DomainProfile({
             {/* Org intel preview */}
             {domainOrg.length > 0 && (
               <div>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--t3)" }}>
-                    Org-Promoted Findings
-                  </div>
-                  <button onClick={() => setTab("org-intel")} style={{ fontSize: 11, color: "var(--blue4)", background: "none", border: "none", cursor: "pointer" }}>
-                    View all →
-                  </button>
-                </div>
+                <SectionHead
+                  title="Org-Promoted Findings"
+                  action={<button onClick={() => setTab("org-intel")} style={{ fontSize: 11, color: "var(--blue4)", background: "none", border: "none", cursor: "pointer" }}>View all →</button>}
+                />
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   {domainOrg.slice(0, 2).map(o => (
                     <div key={o.id} style={{
@@ -875,9 +871,9 @@ function DomainCard({
     <button
       onClick={onClick}
       style={{
-        textAlign: "left", padding: "16px", background: "var(--bg-1)",
-        border: "1px solid var(--b1)", borderRadius: 8, cursor: "pointer",
-        transition: "all .12s", display: "flex", flexDirection: "column", gap: 12,
+        textAlign: "left", padding: "14px", background: "var(--bg-1)",
+        border: "1px solid var(--b1)", borderRadius: 6, cursor: "pointer",
+        transition: "all .12s", display: "flex", flexDirection: "column", gap: 11,
       }}
       onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--b2)"; e.currentTarget.style.background = "var(--bg-2)"; }}
       onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--b1)"; e.currentTarget.style.background = "var(--bg-1)"; }}
@@ -936,60 +932,204 @@ function DomainCard({
   );
 }
 
-// ── Hub overview ───────────────────────────────────────────────────────────────
+// ── Section header ──────────────────────────────────────────────────────────────
 
-function HubOverview({
+function SectionHead({ title, count, action }: { title: string; count?: number | string; action?: React.ReactNode }) {
+  return (
+    <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 12 }}>
+      <span style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--t3)" }}>
+        {title}
+      </span>
+      {count != null && (
+        <span style={{ fontSize: 11, color: "var(--t4)" }}>{count}</span>
+      )}
+      {action && <span style={{ marginLeft: "auto" }}>{action}</span>}
+    </div>
+  );
+}
+
+// ── Headline finding (synthesis hero card) ──────────────────────────────────────
+
+function HeadlineFinding({ insight, onOpen }: { insight: ExplorationInsight; onOpen: () => void }) {
+  const nov = noveltyLabel(insight.novelty);
+  return (
+    <button
+      onClick={onOpen}
+      style={{
+        textAlign: "left", width: "100%", display: "flex", flexDirection: "column", gap: 8,
+        padding: "12px 14px", background: "var(--bg-1)", border: "1px solid var(--b1)",
+        borderRadius: 6, cursor: "pointer", transition: "all .12s",
+      }}
+      onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--b2)"; e.currentTarget.style.background = "var(--bg-2)"; }}
+      onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--b1)"; e.currentTarget.style.background = "var(--bg-1)"; }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <span style={{ fontSize: 10, fontWeight: 600, color: "var(--blue4)", textTransform: "capitalize" }}>
+          {insight.domain}
+        </span>
+        <span style={{ fontSize: 9, fontWeight: 700, padding: "1px 6px", borderRadius: 3, background: `color-mix(in srgb, ${nov.color} 14%, transparent)`, color: nov.color, letterSpacing: "0.04em" }}>
+          {nov.label}
+        </span>
+        {insight.promoted_to_org && (
+          <span title="Promoted to org knowledge" style={{ fontSize: 10, color: "var(--vio3)" }}>◈</span>
+        )}
+        <span style={{ marginLeft: "auto", fontSize: 10, color: "var(--t4)" }}>{fmtDate(insight.generated_at)}</span>
+      </div>
+      <p style={{
+        margin: 0, fontSize: 12, color: "var(--t1)", lineHeight: 1.55,
+        display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical" as const, overflow: "hidden",
+      }}>{insight.finding}</p>
+      {insight.angle && (
+        <span style={{ fontSize: 10, color: "var(--t3)" }}>{insight.angle}</span>
+      )}
+    </button>
+  );
+}
+
+// ── Synthesis home — the core "Hub of Intelligence" command center ──────────────
+
+function SynthesisHome({
   domainData,
   orgInsights,
+  patterns,
   onSelectDomain,
 }: {
   domainData: Record<string, DomainInsights>;
   orgInsights: OrgInsight[];
+  patterns: Pattern[];
   onSelectDomain: (d: string) => void;
 }) {
   const domains = Object.keys(domainData).sort();
-  const totalInsights = domains.reduce((s, d) => s + domainData[d].insights.length, 0);
-  const totalOrg = orgInsights.length;
-  const totalAngles = domains.reduce((s, d) => s + domainData[d].angles_covered.length, 0);
-  const allNovelties = domains.flatMap(d => domainData[d].insights.map(i => i.novelty));
-  const avgNovelty = allNovelties.length ? (allNovelties.reduce((s, n) => s + n, 0) / allNovelties.length).toFixed(1) : "—";
+  const allInsights = useMemo(
+    () => domains.flatMap(d => domainData[d].insights),
+    [domainData], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
+  const totalInsights = allInsights.length;
+  const totalAngles   = domains.reduce((s, d) => s + domainData[d].angles_covered.length, 0);
+  const allNovelties  = allInsights.map(i => i.novelty);
+  const avgNovelty    = allNovelties.length ? (allNovelties.reduce((s, n) => s + n, 0) / allNovelties.length).toFixed(1) : "—";
+  const highNovelty   = allInsights.filter(i => i.novelty >= 5).length;
+  const crossDomain   = patterns.filter(p => p.domains.length > 1);
+
+  const headline = useMemo(
+    () => [...allInsights].sort((a, b) => (b.novelty - a.novelty) || ((b.confidence ?? 0) - (a.confidence ?? 0))).slice(0, 8),
+    [allInsights],
+  );
+  const topPatterns = useMemo(
+    () => [...patterns].sort((a, b) => (b.novelty - a.novelty) || (b.evidence_count - a.evidence_count)).slice(0, 4),
+    [patterns],
+  );
+  const recentOrg = useMemo(
+    () => [...orgInsights].sort((a, b) => (b.promoted_at || "").localeCompare(a.promoted_at || "")).slice(0, 4),
+    [orgInsights],
+  );
+  const gaps = useMemo(
+    () => domains.map(d => ({ d, pct: coveragePct(domainData[d]) })).filter(x => x.pct < 40).sort((a, b) => a.pct - b.pct).slice(0, 3),
+    [domainData], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
+  if (domains.length === 0) {
+    return (
+      <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "var(--t3)", gap: 8 }}>
+        <div style={{ fontSize: 32, opacity: 0.2 }}>◈</div>
+        <div style={{ fontSize: 13, color: "var(--t2)", fontWeight: 500 }}>No intelligence built yet</div>
+        <div style={{ fontSize: 11, maxWidth: 320, textAlign: "center", lineHeight: 1.6 }}>
+          Run the background explorer on a connection to begin building domain knowledge, patterns, and org intelligence.
+        </div>
+      </div>
+    );
+  }
+
+  const KPIS = [
+    { value: domains.length,    label: "Domains",       accent: "var(--blue3)" },
+    { value: totalInsights,     label: "Insights",      accent: "var(--grn3)"  },
+    { value: highNovelty,       label: "High-novelty",  accent: "var(--grn3)"  },
+    { value: crossDomain.length,label: "Cross-domain",  accent: "var(--vio3)"  },
+    { value: orgInsights.length,label: "Org knowledge", accent: "var(--vio3)"  },
+    { value: avgNovelty,        label: "Avg novelty",   accent: "var(--cyn3)"  },
+  ];
 
   return (
-    <div style={{ flex: 1, overflowY: "auto", padding: "24px 24px" }}>
-      {/* Hub stats */}
-      <div style={{ display: "flex", gap: 10, marginBottom: 28 }}>
-        {[
-          { value: domains.length, label: "Domains mapped",    accent: "var(--blue3)"  },
-          { value: totalInsights,  label: "Total insights",    accent: "var(--grn3)"   },
-          { value: totalAngles,    label: "Angles covered",    accent: "var(--amb3)"   },
-          { value: totalOrg,       label: "Org intel entries", accent: "var(--vio3)"   },
-          { value: avgNovelty,     label: "Avg novelty",       accent: "var(--cyn3)"   },
-        ].map(s => (
-          <div key={s.label} style={{
-            flex: 1, padding: "14px 16px", background: "var(--bg-1)",
-            border: "1px solid var(--b1)", borderRadius: 8,
-          }}>
+    <div style={{ flex: 1, overflowY: "auto", padding: "22px 24px 32px", display: "flex", flexDirection: "column", gap: 26 }}>
+      {/* KPI strip */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 10 }}>
+        {KPIS.map(s => (
+          <div key={s.label} style={{ padding: "12px 14px", background: "var(--bg-1)", border: "1px solid var(--b1)", borderRadius: 6 }}>
             <div style={{ fontSize: 22, fontWeight: 700, color: "var(--t1)", lineHeight: 1 }}>{s.value}</div>
             <div style={{ fontSize: 10, color: "var(--t3)", marginTop: 4 }}>{s.label}</div>
-            <div style={{ height: 2, background: s.accent, borderRadius: 1, marginTop: 10, width: 24 }} />
+            <div style={{ height: 2, background: s.accent, borderRadius: 1, marginTop: 9, width: 22 }} />
           </div>
         ))}
       </div>
 
-      {/* Domain grid */}
-      <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--t3)", marginBottom: 12 }}>
-        Domain Knowledge Profiles
+      {/* Headline findings — the cream, surfaced across all domains */}
+      <div>
+        <SectionHead title="Headline Findings" count={`top ${headline.length} across all domains`} />
+        {headline.length === 0 ? (
+          <p style={{ fontSize: 12, color: "var(--t3)" }}>No findings yet.</p>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 10 }}>
+            {headline.map(ins => (
+              <HeadlineFinding key={ins.id} insight={ins} onOpen={() => onSelectDomain(ins.domain)} />
+            ))}
+          </div>
+        )}
       </div>
-      {domains.length === 0 ? (
-        <div style={{ padding: "60px 0", textAlign: "center", color: "var(--t3)" }}>
-          <div style={{ fontSize: 32, opacity: 0.2, marginBottom: 12 }}>◈</div>
-          <div style={{ fontSize: 12 }}>No domain knowledge built yet.</div>
-          <div style={{ fontSize: 11, marginTop: 6, maxWidth: 300, margin: "8px auto 0", lineHeight: 1.6 }}>
-            Run the background explorer on a connection to begin building domain intelligence.
+
+      {/* Cross-domain patterns */}
+      <div>
+        <SectionHead title="Cross-Domain Patterns" count={`${crossDomain.length} spanning multiple domains`} />
+        {topPatterns.length === 0 ? (
+          <div style={{ padding: "20px 0", textAlign: "center", color: "var(--t3)", fontSize: 12, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: 24, opacity: 0.2 }}>◎</span>
+            <span>No patterns detected yet — they emerge as coverage deepens across domains.</span>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {topPatterns.map(p => <PatternCard key={p.id} pattern={p} />)}
+          </div>
+        )}
+      </div>
+
+      {/* Org-promoted knowledge */}
+      {recentOrg.length > 0 && (
+        <div>
+          <SectionHead title="Org-Promoted Knowledge" count={`${orgInsights.length} collective findings`} />
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 10 }}>
+            {recentOrg.map(o => {
+              const nov = noveltyLabel(o.novelty);
+              return (
+                <div key={o.id} style={{
+                  background: "color-mix(in srgb, var(--vio3) 5%, var(--bg-1))",
+                  border: "1px solid color-mix(in srgb, var(--vio3) 18%, transparent)",
+                  borderRadius: 6, padding: "11px 14px", display: "flex", flexDirection: "column", gap: 7,
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    {o.domain && <span style={{ fontSize: 10, fontWeight: 600, color: "var(--vio3)", textTransform: "capitalize" }}>{o.domain}</span>}
+                    {o.angle && <span style={{ fontSize: 10, color: "var(--t4)" }}>· {o.angle}</span>}
+                    <span style={{ marginLeft: "auto", fontSize: 10, color: nov.color, fontWeight: 600 }}>{nov.label}</span>
+                  </div>
+                  <p style={{ margin: 0, fontSize: 12, color: "var(--t2)", lineHeight: 1.55 }}>{o.text}</p>
+                </div>
+              );
+            })}
           </div>
         </div>
-      ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: 10 }}>
+      )}
+
+      {/* Domains — demoted to a browsable section */}
+      <div>
+        <SectionHead
+          title="Domains"
+          count={`${domains.length} mapped`}
+          action={gaps.length > 0 ? (
+            <span style={{ fontSize: 10, color: "var(--amb3)" }}>
+              {gaps.length} need{gaps.length === 1 ? "s" : ""} exploration: {gaps.map(g => g.d).join(", ")}
+            </span>
+          ) : undefined}
+        />
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
           {domains.map(domain => (
             <DomainCard
               key={domain}
@@ -1000,7 +1140,7 @@ function HubOverview({
             />
           ))}
         </div>
-      )}
+      </div>
     </div>
   );
 }
@@ -1010,6 +1150,7 @@ function HubOverview({
 export function IntelligenceHub({ connectionId }: { connectionId: string }) {
   const [domainData, setDomainData] = useState<Record<string, DomainInsights>>({});
   const [orgInsights, setOrgInsights] = useState<OrgInsight[]>([]);
+  const [hubPatterns, setHubPatterns] = useState<Pattern[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -1017,15 +1158,18 @@ export function IntelligenceHub({ connectionId }: { connectionId: string }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [domains, org] = await Promise.all([
+      const [domains, org, pat] = await Promise.all([
         getDomainInsights(connectionId),
         getOrgIntelligence(),
+        getPatterns(connectionId).then(r => r.patterns ?? []).catch(() => [] as Pattern[]),
       ]);
       setDomainData(domains);
       setOrgInsights(org);
+      setHubPatterns(pat);
     } catch {
       setDomainData({});
       setOrgInsights([]);
+      setHubPatterns([]);
     } finally {
       setLoading(false);
     }
@@ -1079,7 +1223,7 @@ export function IntelligenceHub({ connectionId }: { connectionId: string }) {
             onMouseLeave={e => { if (selectedDomain) e.currentTarget.style.background = "transparent"; }}
           >
             <span style={{ fontSize: 11 }}>◈</span>
-            <span>All Domains</span>
+            <span>Hub Home</span>
             <span style={{ marginLeft: "auto", fontSize: 10, color: "var(--t4)" }}>{Object.keys(domainData).length}</span>
           </button>
 
@@ -1147,9 +1291,10 @@ export function IntelligenceHub({ connectionId }: { connectionId: string }) {
           onBack={() => setSelectedDomain(null)}
         />
       ) : (
-        <HubOverview
+        <SynthesisHome
           domainData={domainData}
           orgInsights={orgInsights}
+          patterns={hubPatterns}
           onSelectDomain={setSelectedDomain}
         />
       )}

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { SqlResultTable } from "@/components/AugTable";
 import { VegaChart, type VLSpec } from "@/components/VegaChart";
 import TableIcon         from "@atlaskit/icon/core/table";
@@ -11,11 +11,23 @@ import CheckMarkIcon     from "@atlaskit/icon/core/check-mark";
 import ChevronDownIcon   from "@atlaskit/icon/core/chevron-down";
 import AngleBracketsIcon from "@atlaskit/icon/core/angle-brackets";
 import InformationIcon   from "@atlaskit/icon/core/information";
+import WarningIcon       from "@atlaskit/icon/core/warning";
 import ArrowRightIcon    from "@atlaskit/icon/core/arrow-right";
 import { ChatTurn } from "@/lib/useChat";
 import type { ADAReport } from "@/lib/types";
 import { InvestigationReportView } from "@/components/InvestigationReport";
 import { ExplorationReportView } from "@/components/ExplorationReport";
+import { ThinkingTrace, turnToTraceState } from "@/components/ThinkingTrace";
+import { deletePlaybookEntry, editPlaybookRecommendation, type PlaybookRef } from "@/lib/api";
+
+// Format a wall-clock duration for the "Completed in …" line.
+function formatElapsed(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const s = ms / 1000;
+  if (s < 60) return `${s.toFixed(1)}s`;
+  const m = Math.floor(s / 60);
+  return `${m}m ${Math.round(s - m * 60)}s`;
+}
 
 // ── Public types (re-imported by ChatPanel) ───────────────────────────────────
 export interface SourcePanelData {
@@ -29,10 +41,32 @@ export interface SourcePanelData {
 
 const DATE_COL = /(_date|_at|_time|created_at|updated_at|timestamp)$/i;
 const SHARE_COL = /(share|pct|percent|rate|ratio|proportion)/i;
+// Change / delta / period-over-period metric column names.
+// When ANY numeric column matches this pattern the question is a COMPARISON question
+// (MoM, YoY, delta, growth rate) — heatmap and stacked-bar are the wrong charts.
+// Also catches lag/prev/prior columns — their presence signals a POP query even when
+// no explicit delta column was computed.
+const CHANGE_METRIC_COL = /(change|delta|growth|mom|yoy|wow|qoq|pct_change|percent_change|_chg$|_diff$|vs_prev|^prev_|_prev$|^prior_|_prior$|^lag_|_lag$)/i;
 const ORDINAL_COL = /(year|month|day|week|rank|_id$|^id$)/i;
 
 function isNumeric(v: unknown): boolean {
   return v !== null && v !== "" && !isNaN(Number(v));
+}
+
+/** Scan the first up to 20 rows to find a non-null value for column colIdx.
+ *  Falls back to rows[0]?.[colIdx] (which may be null) if all sampled rows are null.
+ *  This prevents NULL-heavy leading rows (e.g. first month of MoM lag queries) from
+ *  incorrectly classifying numeric columns as categorical. */
+function firstNonNull(rows: unknown[][], colIdx: number): unknown {
+  // Scan the full row set — a 20-row cap breaks LAG/LEAD queries where the
+  // first N rows (one per category for the first period) are all NULL because
+  // there is no previous period to compare. E.g. 27 states ordered by month
+  // means the first 27 rows all have null mom_change_pct.
+  for (let i = 0; i < rows.length; i++) {
+    const v = (rows[i] as unknown[])[colIdx];
+    if (v !== null && v !== undefined && v !== "") return v;
+  }
+  return rows[0]?.[colIdx as number];
 }
 
 // "2024-01-01 00:00:00" or "2024-01-01T00:00:00Z" → "Jan 2024"
@@ -42,16 +76,77 @@ function normDateStr(v: string): string {
   return v.replace(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})/, "$1T$2");
 }
 
-function fmtTimestampLabel(v: string): string {
+// ── Granularity-aware date handling ───────────────────────────────────────────
+// A date column produced by DATE_TRUNC('week'/'day'/'month'/…) is ALREADY
+// aggregated. Best practice (and Vega-Lite's guidance for pre-binned data) is to
+// match the label/axis granularity to the data and NOT re-bin it. We infer the
+// grain from the column name first, then from the median spacing of distinct dates.
+type Gran = "day" | "week" | "month" | "quarter" | "year";
+
+function granFromName(col: string): Gran | null {
+  const n = (col || "").toLowerCase();
+  if (/\bweek\b|wk\b|_week|iso_week|week_/.test(n)) return "week";
+  if (/\bquarter\b|\bqtr\b|_q$|fiscal_q/.test(n)) return "quarter";
+  if (/\bmonth\b|_month|yyyymm/.test(n)) return "month";
+  if (/\byear\b|_year|yyyy$/.test(n)) return "year";
+  if (/\bday\b|_day|\bdate\b|_date$|^date$/.test(n)) return "day";
+  return null;
+}
+
+const _DAY_MS = 86_400_000;
+function detectGranularity(col: string, values: unknown[]): Gran {
+  const named = granFromName(col);
+  if (named) return named;
+  // Fall back to spacing between distinct parseable date values.
+  const ts = Array.from(new Set(
+    values.map(v => String(v ?? "")).filter(s => /^\d{4}-\d{2}-\d{2}/.test(s)),
+  )).map(s => new Date(normDateStr(s)).getTime()).filter(t => !isNaN(t)).sort((a, b) => a - b);
+  if (ts.length >= 2) {
+    const deltas = ts.slice(1).map((t, i) => t - ts[i]).sort((a, b) => a - b);
+    const med = deltas[Math.floor(deltas.length / 2)];
+    if (med <= 1.5 * _DAY_MS) return "day";
+    if (med <= 10 * _DAY_MS) return "week";
+    if (med <= 45 * _DAY_MS) return "month";
+    if (med <= 135 * _DAY_MS) return "quarter";
+    return "year";
+  }
+  return "day";  // single raw date → show the actual date, not a collapsed month
+}
+
+// Human label for a single date value at the detected grain. Always carries the
+// year for day/week — a data table must be unambiguous across years ("19 Sep 2017"),
+// never a bare "19 Sep".
+function fmtDate(v: string, gran: Gran): string {
   if (!/^\d{4}-\d{2}-\d{2}/.test(v)) return v;
-  try {
-    const d = new Date(normDateStr(v));
-    if (isNaN(d.getTime())) return v;
-    return d.toLocaleString("default", { month: "short", year: "numeric" });
-  } catch {
-    return v;
+  const d = new Date(normDateStr(v));
+  if (isNaN(d.getTime())) return v;
+  switch (gran) {
+    case "day":
+    case "week":    return d.toLocaleString("default", { day: "numeric", month: "short", year: "numeric" }); // "19 Sep 2017"
+    case "quarter": return `Q${Math.floor(d.getUTCMonth() / 3) + 1} ${d.getUTCFullYear()}`;                    // "Q1 2026"
+    case "year":    return String(d.getUTCFullYear());                                                          // "2026"
+    case "month":
+    default:        return d.toLocaleString("default", { month: "short", year: "numeric" });                   // "Jan 2026"
   }
 }
+
+// d3-time-format spec for a temporal (continuous) axis at the detected grain.
+// Axes avoid repeating the year on every tick when the data sits in one year,
+// but MUST show the year when the range spans multiple years.
+function chartDateFormat(gran: Gran, multiYear: boolean): string {
+  switch (gran) {
+    case "day":
+    case "week":    return multiYear ? "%b %Y" : "%b %d";   // "Jan 2017" across years · "Jan 05" within one
+    case "year":    return "%Y";                            // 2026
+    case "quarter":
+    case "month":
+    default:        return "%b %Y";                         // Jan 2026
+  }
+}
+
+const _GRAN_WORD: Record<Gran, string> = {
+  day: "Daily", week: "Weekly", month: "Monthly", quarter: "Quarterly", year: "Yearly",
+};
 
 // ── Human-readable label: "revenue_usd" → "Revenue USD", "payment_method" → "Payment Method" ──
 const ABBREVS = /^(usd|id|uk|us|eu|vat|sku|url|api|crm|gmv|mrr|arr|ltv|cac|ctr|aov|roi|pnl|gp|kpi)$/i;
@@ -70,16 +165,20 @@ function inferSourceTitle(columns: string[], rows: unknown[][]): string {
     const v = rows[0]?.[i];
     return DATE_COL.test(c) || (typeof v === "string" && DATE_VALUE_RE.test(v as string));
   });
-  const numColNames = columns.filter((c, i) =>  isNumeric(rows[0]?.[i]) && !ORDINAL_COL.test(c));
-  const catColNames = columns.filter((c, i) => !isNumeric(rows[0]?.[i]) && i !== dateColIdx && !DATE_COL.test(c));
+  const numColNames = columns.filter((c, i) =>  isNumeric(firstNonNull(rows, i)) && !ORDINAL_COL.test(c));
+  const catColNames = columns.filter((c, i) => !isNumeric(firstNonNull(rows, i)) && i !== dateColIdx && !DATE_COL.test(c));
 
   const measure = numColNames[0] ? cleanLabel(numColNames[0]) : "";
   const dim     = catColNames[0] ? cleanLabel(catColNames[0]) : "";
   const hasDate = dateColIdx >= 0;
+  // Use the actual time grain ("Weekly"/"Daily"/…) instead of assuming monthly.
+  const grainWord = hasDate
+    ? _GRAN_WORD[detectGranularity(columns[dateColIdx], rows.map(r => (r as unknown[])[dateColIdx]))]
+    : "";
 
-  if (measure && dim && hasDate) return `Monthly ${measure} by ${dim}`;
+  if (measure && dim && hasDate) return `${grainWord} ${measure} by ${dim}`;
   if (measure && dim)            return `${measure} by ${dim}`;
-  if (measure && hasDate)        return `Monthly ${measure}`;
+  if (measure && hasDate)        return `${grainWord} ${measure}`;
   if (measure)                   return measure;
   if (dim)                       return dim;
   return "Query result";
@@ -89,7 +188,7 @@ function inferSourceTitle(columns: string[], rows: unknown[][]): string {
 function sortRowsForDisplay(columns: string[], rows: unknown[][]): unknown[][] {
   const dimIdxs = columns
     .map((_, i) => i)
-    .filter(i => !isNumeric(rows[0]?.[i]));
+    .filter(i => !isNumeric(firstNonNull(rows, i)));
   if (!dimIdxs.length) return rows;
 
   return [...rows].sort((a, b) => {
@@ -125,17 +224,21 @@ function downloadCsv(columns: string[], rows: unknown[][], title: string) {
   URL.revokeObjectURL(url);
 }
 
-function fmt(col: string, val: unknown): string {
+function fmt(col: string, val: unknown, gran?: Gran): string {
   if (val === null || val === "NULL") return "—";
   const s = String(val);
-  // Format ISO timestamps as readable month labels (e.g. "2025-05-01 00:00:00" → "May 2025")
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return fmtTimestampLabel(s);
+  // Format a date at its true granularity (week→"Jan 5", month→"Jan 2026", …).
+  // `gran` is passed when the caller has the whole column (spacing-detected);
+  // otherwise fall back to the column name.
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return fmtDate(s, gran ?? granFromName(col) ?? "day");
   if (ORDINAL_COL.test(col)) return s;
   const n = Number(val);
   if (!isNaN(n)) {
     if (SHARE_COL.test(col)) {
-      if (n >= 0 && n <= 1)   return `${(n * 100).toFixed(2)}%`; // decimal fraction
-      if (n >= 0 && n <= 100) return `${n.toFixed(2)}%`;          // already a percentage
+      // Ratio stored as decimal fraction (e.g. 0.118 = 11.8%) — multiply ×100
+      if (Math.abs(n) <= 1)          return `${(n * 100).toFixed(2)}%`;
+      // Already a percentage (e.g. 11.8 or -60.89) — display as-is with % suffix
+      return `${n.toFixed(2)}%`;
     }
     if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
     if (Math.abs(n) >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
@@ -276,20 +379,27 @@ function InlineChart({
 
   const DATE_VALUE_RE = /^\d{4}-\d{2}-\d{2}/;
   const looksLikeDate = (colIdx: number) => {
-    const v = rows[0]?.[colIdx];
+    const v = firstNonNull(rows, colIdx);
     return typeof v === "string" && DATE_VALUE_RE.test(v);
   };
 
   const dateCol =
     columns.find(c => DATE_COL.test(c)) ||
-    columns.find((c, i) => !isNumeric(rows[0]?.[i]) && looksLikeDate(i));
+    columns.find((c, i) => !isNumeric(firstNonNull(rows, i)) && looksLikeDate(i));
 
   const catCols = columns.filter(
-    (c, i) => c !== dateCol && !DATE_COL.test(c) && !isNumeric(rows[0]?.[i]),
+    (c, i) => c !== dateCol && !DATE_COL.test(c) && !isNumeric(firstNonNull(rows, i)),
   );
   const PREFER_COL = /(pct|percent|share|rate|ratio|proportion)/i;
-  const numericCols = columns.filter((c, i) => !DATE_COL.test(c) && isNumeric(rows[0]?.[i]));
-  const numCol  = numericCols.find(c => PREFER_COL.test(c)) ?? numericCols[0];
+  const numericCols = columns.filter((c, i) => !DATE_COL.test(c) && isNumeric(firstNonNull(rows, i)));
+  // True when ANY numeric column is a change/delta/growth metric.
+  // These are COMPARISON questions — heatmap/stacked-bar are inappropriate.
+  const _isChangeMetric = numericCols.some(c => CHANGE_METRIC_COL.test(c));
+  // For change metrics, prefer the change column as the primary numeric
+  const CHANGE_PREFER_COL = /(change|delta|growth|pct_change|percent_change|_chg$|_diff$)/i;
+  const numCol  = _isChangeMetric
+    ? (numericCols.find(c => CHANGE_PREFER_COL.test(c)) ?? numericCols.find(c => PREFER_COL.test(c)) ?? numericCols[0])
+    : (numericCols.find(c => PREFER_COL.test(c)) ?? numericCols[0]);
   const catCol  = catCols[0];
   const catCol2 = catCols[1];
   const hint    = (chartType ?? "auto").toLowerCase();
@@ -311,6 +421,13 @@ function InlineChart({
   // ── Build spec ─────────────────────────────────────────────────────────────
   const xTitle = catCol  ? cleanLabel(catCol)  : (dateCol ? cleanLabel(dateCol) : "");
   const yTitle = numCol  ? cleanLabel(numCol)  : "";
+  // True grain of the date column → drives axis format and (for bars) discrete
+  // bucket labels, so pre-aggregated weekly/daily data isn't re-binned to months.
+  const dateGran: Gran = dateCol ? detectGranularity(dateCol, data.map(d => d[dateCol])) : "month";
+  const multiYear = dateCol
+    ? new Set(data.map(d => String(d[dateCol]).slice(0, 4)).filter(y => /^\d{4}$/.test(y))).size > 1
+    : false;
+  const xDateFmt = chartDateFormat(dateGran, multiYear);
 
   let spec: VLSpec | null = null;
   let vegaData: Record<string, unknown>[] = data;
@@ -341,12 +458,291 @@ function InlineChart({
     defaultH = 240;
   }
 
+  // ── HEATMAP ───────────────────────────────────────────────────────────────────
+  // Only rendered when the LLM explicitly returns chart_type = "heatmap".
+  // Auto-heatmap is intentionally removed — temporal data defaults to multi-line
+  // so users always see the trend. Change/delta metrics are additionally blocked
+  // even on explicit hint (period-over-period is comparison, not distribution).
+  const _stackUnique = catCol ? new Set(data.map(d => d[catCol])).size : 0;
+
+  if (hint === "heatmap" && !_isChangeMetric) {
+    const xSrc = dateCol ?? catCol2 ?? "";
+
+    // Build raw key→value map first, then fill the FULL grid so every
+    // group × stack cell gets a rect (prevents background bleeding through
+    // as "black" gaps where a state simply had no orders in a given period).
+    const rawRows = data.map(d => ({
+      group: xSrc === dateCol ? fmtDate(String(d[xSrc]), dateGran) : String(d[xSrc]),
+      stack: String(d[catCol!]),
+      val:   Number(d[numCol]),
+    }));
+    const heatGroupOrder = [...new Set(rawRows.map(d => d.group))];
+    const heatStacks     = [...new Set(rawRows.map(d => d.stack))];
+    const cellMap        = new Map(rawRows.map(d => [`${d.group}__${d.stack}`, d.val]));
+
+    // Full grid — missing cells get val: null (rendered as a neutral fill)
+    vegaData = heatGroupOrder.flatMap(g =>
+      heatStacks.map(s => ({
+        group: g,
+        stack: s,
+        val:   cellMap.get(`${g}__${s}`) ?? null,
+      })),
+    );
+
+    // Compute non-null max for scale calibration
+    const heatVals    = rawRows.map(d => d.val).filter(v => isFinite(v) && v > 0);
+    const heatMax     = heatVals.length ? Math.max(...heatVals) : 1;
+
+    // Use sqrt scale so dominant outliers (e.g. SP with 10× others' revenue)
+    // don't compress everything else to the same near-white shade.
+    const heatColorScale = isPctCol
+      ? { scheme: "redblue", domainMid: 0 }
+      : { scheme: "blues", type: "sqrt", domainMin: 0, domainMax: heatMax, null: "#0e1520" };
+
+    spec = {
+      mark: { type: "rect", stroke: "#0e1520", strokeWidth: 0.5 },
+      encoding: {
+        x: {
+          field: "group", type: "ordinal", sort: heatGroupOrder,
+          axis: { labelAngle: -40, title: cleanLabel(xSrc), labelLimit: 80 },
+        },
+        y: {
+          field: "stack", type: "ordinal",
+          sort: { field: "val", op: "sum", order: "descending" },
+          axis: { title: catCol ? cleanLabel(catCol) : "", labelLimit: 100 },
+        },
+        color: {
+          field: "val", type: "quantitative",
+          scale: heatColorScale,
+          legend: { title: yTitle, orient: "right", format: yFmt },
+        },
+        tooltip: [
+          { field: "group", type: "nominal",      title: cleanLabel(xSrc) },
+          { field: "stack", type: "nominal",      title: catCol ? cleanLabel(catCol) : "" },
+          { field: "val",   type: "quantitative", format: lblFmt, title: yTitle },
+        ],
+      },
+    };
+    defaultH = Math.max(220, Math.min(_stackUnique * 18 + 80, 600));
+  }
+
+  // ── MULTI-LINE (one line per category over time) ──────────────────────────────
+  // Triggered explicitly with hint="multi_line"
+  else if (hint === "multi_line" && catCol && dateCol) {
+    // Drop rows where the value is null/NaN — LAG/LEAD queries produce null for the
+    // first partition row; Number(null)=0 would create a false zero spike.
+    vegaData = data
+      .filter(d => { const v = d[numCol]; return v !== null && v !== undefined && v !== "" && !isNaN(Number(v)); })
+      .map(d => ({
+        date:   normDateStr(String(d[dateCol])),
+        series: String(d[catCol]),
+        val:    Number(d[numCol]),
+      }));
+
+    // For change metrics stored as large-scale percentages (e.g. 15.2 meaning 15.2%),
+    // use a plain numeric format and append "(%)". For 0-1 fractions, use ".2%".
+    const mlYFmt   = _isChangeMetric && !isPctFraction ? ".0f" : yFmt;
+    const mlYTitle = _isChangeMetric && !isPctFraction && isPctCol ? `${yTitle} (%)` : yTitle;
+    const mlSeriesCount = new Set(vegaData.map(d => d.series as string)).size;
+
+    // symbolType "stroke" renders a short line segment that matches the chart mark.
+    // symbolSize 200 gives a visible ~14 px line; symbolStrokeWidth matches chart line weight.
+    const mlLegend = mlSeriesCount > 12
+      ? { orient: "right", direction: "vertical", symbolType: "stroke", symbolStrokeWidth: 2, symbolSize: 200,
+          labelFontSize: 10, title: cleanLabel(catCol), titleLimit: 160 }
+      : { direction: "horizontal", symbolType: "stroke", symbolStrokeWidth: 2, symbolSize: 200,
+          title: cleanLabel(catCol), titleLimit: 160 };
+    const mlStrokeW = mlSeriesCount > 20 ? 0.9 : mlSeriesCount > 10 ? 1.1 : 1.5;
+
+    const mlXEnc = { field: "date", type: "temporal", axis: { tickCount: 12, format: xDateFmt, labelAngle: -40, title: cleanLabel(dateCol) } };
+    const mlYEnc = { field: "val",  type: "quantitative", axis: { format: mlYFmt, grid: true, title: mlYTitle } };
+    const mlColorEnc = { field: "series", type: "nominal", legend: mlLegend };
+    const mlTooltip = [
+      { field: "date",   type: "temporal",     title: cleanLabel(dateCol), format: xDateFmt },
+      { field: "series", type: "nominal",      title: cleanLabel(catCol) },
+      { field: "val",    type: "quantitative", format: mlYFmt, title: mlYTitle },
+    ];
+    spec = {
+      layer: [
+        {
+          mark: { type: "line", strokeWidth: mlStrokeW },
+          encoding: { x: mlXEnc, y: mlYEnc, color: mlColorEnc },
+        },
+        {
+          // Invisible hover points — nearest: true snaps to closest x date so the
+          // user doesn't have to click exactly on the line.
+          mark: { type: "point", filled: true, size: 60 },
+          params: [{ name: "mlHover", select: { type: "point", fields: ["date"], nearest: true, on: "pointerover", clear: "pointerout" } }],
+          encoding: {
+            x: mlXEnc,
+            y: mlYEnc,
+            color: mlColorEnc,
+            opacity: { condition: { param: "mlHover", empty: false, value: 1 }, value: 0 },
+            tooltip: mlTooltip,
+          },
+        },
+      ],
+    };
+    defaultH = mlSeriesCount > 15 ? 360 : 300;
+  }
+
+  // ── TREEMAP ───────────────────────────────────────────────────────────────────
+  // Aggregates catCol → shows proportional area tiles
+  else if (hint === "treemap" && catCol) {
+    const tmAgg = new Map<string, number>();
+    data.forEach(d => {
+      const k = String(d[catCol]);
+      tmAgg.set(k, (tmAgg.get(k) ?? 0) + Number(d[numCol]));
+    });
+    vegaData = [...tmAgg.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 40)
+      .map(([name, value]) => ({ id: name, parent: "root", value, name }));
+    // Add root node
+    vegaData.unshift({ id: "root", parent: "", value: 0, name: "root" } as Record<string, unknown>);
+
+    // Vega 6 treemap spec (not Vega-Lite)
+    spec = {
+      $schema: "https://vega.github.io/schema/vega/v6.json",
+      background: "transparent",
+      padding: 4,
+      signals: [{ name: "width", value: 0 }, { name: "height", value: 0 }],
+      data: [
+        {
+          name: "tree",
+          values: vegaData,
+          transform: [
+            { type: "stratify", key: "id", parentKey: "parent" },
+            {
+              type: "treemap",
+              field: "value",
+              sort: { field: "value", order: "descending" },
+              round: true,
+              method: "squarify",
+              ratio: 1.618,
+              size: [{ signal: "width" }, { signal: "height" }],
+            },
+          ],
+        },
+        {
+          name: "leaves",
+          source: "tree",
+          transform: [{ type: "filter", expr: "datum.parent !== ''" }],
+        },
+      ],
+      marks: [
+        {
+          type: "rect",
+          from: { data: "leaves" },
+          encode: {
+            update: {
+              x: { field: "x0" },
+              x2: { field: "x1" },
+              y: { field: "y0" },
+              y2: { field: "y1" },
+              fill: { scale: "color", field: "name" },
+              stroke: { value: "#131c27" },
+              strokeWidth: { value: 1.5 },
+              opacity: { value: 0.88 },
+              tooltip: { signal: `{"${cleanLabel(catCol)}": datum.name, "${yTitle}": format(datum.value, "${lblFmt}")}` },
+            },
+          },
+        },
+        {
+          type: "text",
+          from: { data: "leaves" },
+          encode: {
+            update: {
+              x: { signal: "(datum.x0 + datum.x1) / 2" },
+              y: { signal: "(datum.y0 + datum.y1) / 2" },
+              text: { signal: "(datum.x1 - datum.x0) > 50 ? datum.name : ''" },
+              align: { value: "center" },
+              baseline: { value: "middle" },
+              fill: { value: "rgba(255,255,255,0.80)" },
+              fontSize: { signal: "min(12, (datum.x1 - datum.x0) / 6)" },
+              fontWeight: { value: "500" },
+            },
+          },
+        },
+      ],
+      scales: [
+        {
+          name: "color",
+          type: "ordinal",
+          range: { scheme: "tableau20" },
+          domain: { data: "leaves", field: "name" },
+        },
+      ],
+    };
+    defaultH = 340;
+  }
+
+  // ── PERIOD-OVER-PERIOD / CHANGE METRIC (auto only) ───────────────────────────
+  // When the result contains a change/delta/growth column alongside date + category:
+  //   X axis  = period (the date column)
+  //   Y axis  = the delta/change metric
+  //   Lines   = one per category (state, channel, product, …)
+  // Always multi-line regardless of series count.
+  else if (hint === "auto" && _isChangeMetric && catCol && dateCol) {
+    vegaData = data
+      .filter(d => { const v = d[numCol]; return v !== null && v !== undefined && v !== "" && !isNaN(Number(v)); })
+      .map(d => ({
+        date:   normDateStr(String(d[dateCol])),
+        series: String(d[catCol]),
+        val:    Number(d[numCol]),
+      }));
+    const changeYFmt   = isPctFraction ? ".2%" : (isPctCol ? ".0f" : "~s");
+    const changeYTitle = isPctFraction ? yTitle : isPctCol ? `${yTitle} (%)` : yTitle;
+    const seriesCount  = new Set(vegaData.map(d => d.series as string)).size;
+
+    // With many series, use a right-side legend and thinner lines so colours still
+    // scan left-to-right without the legend row eating half the chart height.
+    const manyLegend = seriesCount > 12
+      ? { orient: "right", direction: "vertical", symbolType: "stroke", symbolStrokeWidth: 2, symbolSize: 200,
+          labelFontSize: 10, title: cleanLabel(catCol), titleLimit: 160 }
+      : { direction: "horizontal", symbolType: "stroke", symbolStrokeWidth: 2, symbolSize: 200,
+          title: cleanLabel(catCol), titleLimit: 160 };
+    const strokeW = seriesCount > 20 ? 0.9 : seriesCount > 10 ? 1.1 : 1.5;
+
+    const chgXEnc = { field: "date", type: "temporal", axis: { tickCount: 12, format: xDateFmt, labelAngle: -40, title: cleanLabel(dateCol) } };
+    const chgYEnc = { field: "val",  type: "quantitative", axis: { format: changeYFmt, grid: true, title: changeYTitle } };
+    const chgColorEnc = { field: "series", type: "nominal", legend: manyLegend };
+    const chgTooltip = [
+      { field: "date",   type: "temporal",     title: cleanLabel(dateCol), format: xDateFmt },
+      { field: "series", type: "nominal",      title: cleanLabel(catCol) },
+      { field: "val",    type: "quantitative", format: changeYFmt, title: changeYTitle },
+    ];
+    spec = {
+      layer: [
+        {
+          mark: { type: "line", strokeWidth: strokeW },
+          encoding: { x: chgXEnc, y: chgYEnc, color: chgColorEnc },
+        },
+        {
+          mark: { type: "point", filled: true, size: 60 },
+          params: [{ name: "chgHover", select: { type: "point", fields: ["date"], nearest: true, on: "pointerover", clear: "pointerout" } }],
+          encoding: {
+            x: chgXEnc,
+            y: chgYEnc,
+            color: chgColorEnc,
+            opacity: { condition: { param: "chgHover", empty: false, value: 1 }, value: 0 },
+            tooltip: chgTooltip,
+          },
+        },
+      ],
+    };
+    defaultH = seriesCount > 15 ? 360 : 300;
+  }
+
   // ── STACKED BAR (temporal or categorical) ────────────────────────────────────
-  else if (hint === "stacked_bar" || (hint === "auto" && catCol && (catCol2 || dateCol))) {
+  // Auto-trigger only when the category has ≤ 6 unique values — beyond that,
+  // stacked bars become unreadable colour-salads. High-cardinality date+category
+  // falls through to the multi-line auto path below.
+  else if (hint === "stacked_bar" || (hint === "auto" && catCol && (catCol2 || dateCol) && !_isChangeMetric && _stackUnique <= 6)) {
     const isTemporalStack = !!(catCol && dateCol);
     vegaData = isTemporalStack && dateCol
       ? data.map(d => ({
-          group: fmtTimestampLabel(String(d[dateCol])),
+          group: fmtDate(String(d[dateCol]), dateGran),
           stack: String(d[catCol]),
           val:   Number(d[numCol]),
         }))
@@ -397,33 +793,88 @@ function InlineChart({
     defaultH = 280;
   }
 
+  // ── TEMPORAL MULTI-LINE AUTO (date + category, many series, absolute metric) ──
+  // Fires when stacked-bar auto was skipped (_stackUnique > 6) and no other branch
+  // matched. Shows one line per category value over time — always better than a
+  // heatmap for surfacing trends.  Uses P90 clipping + right legend when > 12 series.
+  else if (hint === "auto" && dateCol && catCol && !_isChangeMetric) {
+    vegaData = data
+      .filter(d => { const v = d[numCol]; return v !== null && v !== undefined && v !== "" && !isNaN(Number(v)); })
+      .map(d => ({
+        date:   normDateStr(String(d[dateCol])),
+        series: String(d[catCol]),
+        val:    Number(d[numCol]),
+      }));
+    const tmSeriesCount = new Set(vegaData.map(d => d.series as string)).size;
+
+    const tmLegend = tmSeriesCount > 12
+      ? { orient: "right", direction: "vertical", symbolType: "stroke", symbolStrokeWidth: 2, symbolSize: 200,
+          labelFontSize: 10, title: cleanLabel(catCol), titleLimit: 160 }
+      : { direction: "horizontal", symbolType: "stroke", symbolStrokeWidth: 2, symbolSize: 200,
+          title: cleanLabel(catCol), titleLimit: 160 };
+    const tmStrokeW = tmSeriesCount > 20 ? 0.9 : tmSeriesCount > 10 ? 1.1 : 1.5;
+
+    const tmXEnc = { field: "date", type: "temporal", axis: { tickCount: 12, format: xDateFmt, labelAngle: -40, title: cleanLabel(dateCol) } };
+    const tmYEnc = { field: "val",  type: "quantitative", axis: { format: yFmt, grid: true, title: yTitle } };
+    const tmColorEnc = { field: "series", type: "nominal", legend: tmLegend };
+    const tmTooltip = [
+      { field: "date",   type: "temporal",     title: cleanLabel(dateCol), format: xDateFmt },
+      { field: "series", type: "nominal",      title: cleanLabel(catCol) },
+      { field: "val",    type: "quantitative", format: lblFmt, title: yTitle },
+    ];
+    spec = {
+      layer: [
+        {
+          mark: { type: "line", strokeWidth: tmStrokeW },
+          encoding: { x: tmXEnc, y: tmYEnc, color: tmColorEnc },
+        },
+        {
+          mark: { type: "point", filled: true, size: 60 },
+          params: [{ name: "tmHover", select: { type: "point", fields: ["date"], nearest: true, on: "pointerover", clear: "pointerout" } }],
+          encoding: {
+            x: tmXEnc,
+            y: tmYEnc,
+            color: tmColorEnc,
+            opacity: { condition: { param: "tmHover", empty: false, value: 1 }, value: 0 },
+            tooltip: tmTooltip,
+          },
+        },
+      ],
+    };
+    defaultH = tmSeriesCount > 15 ? 360 : 300;
+  }
+
   // ── DATE BAR (explicit bar on date + measure, no category) ──────────────────
   else if (dateCol && !catCol && (hint === "bar" || hint === "bar_horizontal")) {
-    vegaData = data.map(d => ({
-      date: normDateStr(String(d[dateCol])),
-      val:  Number(d[numCol]),
+    // The data is ALREADY aggregated by the SQL (DATE_TRUNC). Render each bucket
+    // as its own bar on an ordinal axis with a grain-correct label — never re-bin
+    // with timeUnit (which previously fused all weekly bars into one month bar).
+    const sorted = [...data].sort((a, b) =>
+      String(a[dateCol]).localeCompare(String(b[dateCol])));
+    vegaData = sorted.map(d => ({
+      bucket: fmtDate(String(d[dateCol]), dateGran),
+      val:    Number(d[numCol]),
     }));
+    const bucketOrder = vegaData.map(d => (d as { bucket: string }).bucket);
     spec = {
       padding: { top: 24 },   // room for above-bar labels
       layer: [
-        {
-          mark: { type: "bar", color: "#818cf8", opacity: 0.85 },
-        },
+        { mark: { type: "bar", color: "#818cf8", opacity: 0.85 } },
         {
           // Value label above each bar, inside top padding
-          mark: { type: "text", dy: -6, fontSize: 11, color: "#8296AF" },
+          mark: { type: "text", dy: -6, fontSize: 11, color: "#9AA0A8" },
           encoding: { text: { field: "val", type: "quantitative", format: lblFmt } },
         },
       ],
       encoding: {
         x: {
-          field: "date", type: "temporal", timeUnit: "yearmonth",
-          axis: { format: "%b %y", labelAngle: -30, title: cleanLabel(dateCol) },
+          field: "bucket", type: "ordinal", sort: bucketOrder,
+          axis: { labelAngle: -30, title: cleanLabel(dateCol), labelOverlap: true },
         },
         y: { field: "val", type: "quantitative", axis: { format: yFmt, grid: true, title: yTitle } },
         tooltip: [
-          { field: "date", type: "temporal", timeUnit: "yearmonth", title: cleanLabel(dateCol) },
-          { field: "val",  type: "quantitative", format: lblFmt, title: yTitle },
+          { field: "bucket", type: "ordinal", title: cleanLabel(dateCol) },
+          { field: "val",    type: "quantitative", format: lblFmt, title: yTitle },
         ],
       },
     };
@@ -455,7 +906,7 @@ function InlineChart({
       encoding: {
         x: {
           field: dateCol, type: "temporal",
-          axis: { format: "%b %y", labelAngle: -30, title: cleanLabel(dateCol) },
+          axis: { format: xDateFmt, labelAngle: -30, title: cleanLabel(dateCol) },
         },
         y: {
           field: numCol, type: "quantitative",
@@ -486,7 +937,7 @@ function InlineChart({
           mark: { type: "bar", color: "#818cf8", opacity: 0.85, cornerRadiusEnd: 2 },
         },
         {
-          mark: { type: "text", dy: -6, fontSize: 11, color: "#8296AF" },
+          mark: { type: "text", dy: -6, fontSize: 11, color: "#9AA0A8" },
           encoding: { text: { field: "val", type: "quantitative", format: lblFmt } },
         },
       ],
@@ -543,48 +994,91 @@ function InlineChart({
       const k = String(d[catCol]);
       agg.set(k, (agg.get(k) ?? 0) + Number(d[numCol]));
     });
-    vegaData = (isTimeLabel
-      ? [...agg.entries()]
-      : [...agg.entries()].sort((a, b) => b[1] - a[1])
-    ).map(([cat, val]) => ({ cat, val }));
 
-    // cap at 15 bars
-    if (vegaData.length > 15) vegaData = vegaData.slice(0, 15);
+    if (_isChangeMetric) {
+      // ── CHANGE METRIC BAR ──────────────────────────────────────────────────
+      // Sort by absolute magnitude so biggest movers (positive OR negative) appear first.
+      // Use a symmetric x domain so negative bars extend to the left.
+      // Diverging colours: green = growth, red = decline.
+      vegaData = [...agg.entries()]
+        .map(([cat, val]) => ({ cat, val }))
+        .sort((a, b) => Math.abs(b.val as number) - Math.abs(a.val as number))
+        .slice(0, 20);
 
-    // Extend x domain 14% past the max so the label of the widest bar has room.
-    // No per-layer filter transforms — those break Vega-Lite's sort computation.
-    const maxBarVal = Math.max(...vegaData.map(d => d.val as number), 1);
+      const maxAbsVal = Math.max(...vegaData.map(d => Math.abs(d.val as number)), 1);
+      // Format: if values look like stored-as-100x percentages (e.g. 15.2 for 15.2%)
+      // keep ~g format with an axis title suffix; if they're 0-1 fractions use .2%
+      const changeFmt = isPctFraction ? "+.2%" : "+.1f";
+      const changeAxisTitle = isPctFraction ? yTitle : `${yTitle}${isPctCol ? " (%)" : ""}`;
 
-    spec = {
-      layer: [
-        {
-          mark: { type: "bar", color: "#818cf8", opacity: 0.85, cornerRadiusEnd: 2 },
+      spec = {
+        mark: { type: "bar", opacity: 0.85, cornerRadiusEnd: 2 },
+        encoding: {
+          x: {
+            field: "val", type: "quantitative",
+            scale: { domain: [-maxAbsVal * 1.18, maxAbsVal * 1.18] },
+            axis: { format: changeFmt, grid: true, title: changeAxisTitle },
+          },
+          y: {
+            field: "cat", type: "ordinal",
+            sort: { field: "val", op: "sum", order: "descending" },
+            axis: { labelLimit: 160, title: cleanLabel(catCol) },
+          },
+          color: {
+            condition: { test: "datum.val >= 0", value: "#2EC87B" },
+            value: "#E64848",
+          },
+          tooltip: [
+            { field: "cat", type: "nominal",      title: cleanLabel(catCol) },
+            { field: "val", type: "quantitative",  format: changeFmt, title: changeAxisTitle },
+          ],
         },
-        // Single text layer — always positioned just past the bar's right edge.
-        // Extended domainMax ensures the widest bar's label stays within bounds.
-        {
-          mark: { type: "text", align: "left", dx: 5, fontSize: 11, color: "#8296AF" },
-          encoding: { text: { field: "val", type: "quantitative", format: lblFmt } },
-        },
-      ],
-      encoding: {
-        y: {
-          field: "cat", type: "ordinal",
-          sort: isTimeLabel ? null : { field: "val", order: "descending" },
-          axis: { labelLimit: 160, title: cleanLabel(catCol) },
-        },
-        x: {
-          field: "val", type: "quantitative",
-          scale: { domainMax: maxBarVal * 1.14 },
-          axis: { format: yFmt, grid: true, title: yTitle },
-        },
-        tooltip: [
-          { field: "cat", type: "nominal",     title: xTitle },
-          { field: "val", type: "quantitative", format: lblFmt, title: yTitle },
+      };
+      defaultH = Math.max(160, vegaData.length * 28 + 60);
+
+    } else {
+      // ── STANDARD BAR ──────────────────────────────────────────────────────
+      vegaData = (isTimeLabel
+        ? [...agg.entries()]
+        : [...agg.entries()].sort((a, b) => b[1] - a[1])
+      ).map(([cat, val]) => ({ cat, val }));
+
+      // cap at 15 bars
+      if (vegaData.length > 15) vegaData = vegaData.slice(0, 15);
+
+      // Extend x domain 14% past the max so the label of the widest bar has room.
+      const maxBarVal = Math.max(...vegaData.map(d => d.val as number), 1);
+
+      spec = {
+        layer: [
+          {
+            mark: { type: "bar", color: "#818cf8", opacity: 0.85, cornerRadiusEnd: 2 },
+          },
+          // Single text layer — always positioned just past the bar's right edge.
+          {
+            mark: { type: "text", align: "left", dx: 5, fontSize: 11, color: "#9AA0A8" },
+            encoding: { text: { field: "val", type: "quantitative", format: lblFmt } },
+          },
         ],
-      },
-    };
-    defaultH = Math.max(120, vegaData.length * 28 + 60);
+        encoding: {
+          y: {
+            field: "cat", type: "ordinal",
+            sort: isTimeLabel ? null : { field: "val", order: "descending" },
+            axis: { labelLimit: 160, title: cleanLabel(catCol) },
+          },
+          x: {
+            field: "val", type: "quantitative",
+            scale: { domainMax: maxBarVal * 1.14 },
+            axis: { format: yFmt, grid: true, title: yTitle },
+          },
+          tooltip: [
+            { field: "cat", type: "nominal",     title: xTitle },
+            { field: "val", type: "quantitative", format: lblFmt, title: yTitle },
+          ],
+        },
+      };
+      defaultH = Math.max(120, vegaData.length * 28 + 60);
+    }
   }
 
   if (!spec) return null;
@@ -762,7 +1256,7 @@ function ResultBody({
         <KPICards columns={columns} rows={rows} />
       ) : showChart ? (
         /* Chart card — source panel is a top-level drawer in ChatPanel, not inlined here */
-        <div className="mt-2 rounded-md border border-zinc-700/50 overflow-hidden p-3" style={{ background: 'var(--bg-3)' }}>
+        <div className="mt-2 rounded-md border border-zinc-700/50 overflow-hidden p-3" style={{ background: '#13151a' }}>
           {/* Summary above the chart so it's seen first */}
           {summary && (
             <p className="text-[12px] italic text-zinc-400 mb-2 leading-relaxed">{summary}</p>
@@ -860,6 +1354,14 @@ export function SourcePanel({
   const [showCode, setShowCode] = useState(false);
   const [copied,   setCopied]   = useState(false);
 
+  // Detect each date column's true grain once (from the full column), so weekly
+  // buckets render as "Jan 5" not four identical "Jan 2026" rows.
+  const granByCol: (Gran | undefined)[] = columns.map((c, ci) => {
+    const sample = rows.find(r => (r as unknown[])[ci] != null);
+    const isDate = sample != null && /^\d{4}-\d{2}-\d{2}/.test(String((sample as unknown[])[ci]));
+    return isDate ? detectGranularity(c, rows.map(r => (r as unknown[])[ci])) : undefined;
+  });
+
   function handleCopySql() {
     if (!sql) return;
     navigator.clipboard.writeText(sql).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
@@ -923,7 +1425,7 @@ export function SourcePanel({
               <tr key={ri} className="border-b border-zinc-700/20 last:border-0 hover:bg-white/[0.02]">
                 {columns.map((col, ci) => (
                   <td key={ci} className="px-3 py-1.5 text-zinc-300 font-mono whitespace-nowrap">
-                    {fmt(col, (row as unknown[])[ci])}
+                    {fmt(col, (row as unknown[])[ci], granByCol[ci])}
                   </td>
                 ))}
               </tr>
@@ -987,6 +1489,50 @@ function TableChip({ name }: { name: string }) {
   );
 }
 
+// ── Analysis section — collapsible "how I approached this" block ──────────────
+function AnalysisSection({ intent, steps }: { intent: string; steps: string[] }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mb-3 rounded-md border border-zinc-800/60 overflow-hidden" style={{ background: "#0f1520" }}>
+      {/* Header — always visible, click to toggle */}
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-zinc-800/30 transition-colors"
+      >
+        <span className="flex items-center gap-2 text-[12px] text-zinc-400 font-medium">
+          <span className="text-zinc-600">◎</span>
+          Analysis
+        </span>
+        <span className={`text-zinc-600 transition-transform duration-150 ${open ? "rotate-180" : ""}`}>
+          <ChevronDownIcon label="" size="small" />
+        </span>
+      </button>
+
+      {/* Body */}
+      {open && (
+        <div className="px-3 pb-3 space-y-2 border-t border-zinc-800/60">
+          {intent && (
+            <p className="text-[12px] text-zinc-400 leading-relaxed pt-2">{intent}</p>
+          )}
+          {steps.length > 0 && (
+            <div>
+              <p className="text-[11px] text-zinc-600 uppercase tracking-wide font-medium mt-1 mb-1.5">Calculated based on these steps</p>
+              <ol className="space-y-1">
+                {steps.map((s, i) => (
+                  <li key={i} className="flex gap-2 text-[12px] text-zinc-400 leading-snug">
+                    <span className="shrink-0 text-zinc-600 font-mono">{i + 1}.</span>
+                    <span>{s}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Investigate body — delegates to the appropriate rich report view ──────────
 function InvestigateBody({
   turn, onShowSource,
@@ -1037,6 +1583,168 @@ function Chevron({ open }: { open: boolean }) {
     <span className={`text-zinc-500 transition-transform duration-150 inline-block ${open ? "rotate-180" : ""}`}>
       <ChevronDownIcon label="" size="small" />
     </span>
+  );
+}
+
+// ── Inspect warning banner ────────────────────────────────────────────────────
+function InspectWarningBanner({ issues, suggestedFix }: { issues: string[]; suggestedFix: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mb-4 px-3 py-2 rounded-lg bg-amber-950/30 border border-amber-700/50 text-[11px] text-amber-300 leading-snug">
+      <button
+        className="flex items-start gap-2 w-full text-left"
+        onClick={() => setOpen(v => !v)}
+      >
+        <span className="shrink-0 mt-0.5 text-amber-400">
+          <WarningIcon label="Warning" size="small" />
+        </span>
+        <span className="flex-1">
+          <span className="text-amber-200 font-medium">Result may be incomplete</span>
+          <span className="text-amber-400/70 ml-1">— Semantic inspector flagged a potential issue.</span>
+        </span>
+        <span className="shrink-0 text-amber-600 mt-0.5">{open ? "▲" : "▼"}</span>
+      </button>
+      {open && (
+        <div className="mt-2 ml-6 space-y-1">
+          {issues.map((issue, i) => (
+            <p key={i} className="text-amber-300/80">• {issue}</p>
+          ))}
+          {suggestedFix && (
+            <p className="mt-1.5 text-amber-400/60 italic">Suggestion: {suggestedFix}</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Referenced playbook items — keep / edit / remove ────────────────────────────
+function PlaybookRefs({ refs }: { refs: PlaybookRef[] }) {
+  const [items, setItems] = useState<PlaybookRef[]>(refs);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  useEffect(() => { setItems(refs); }, [refs]);
+  if (items.length === 0) return null;
+
+  const remove = async (id: string) => {
+    setBusy(id);
+    const prev = items;
+    setItems(list => list.filter(i => i.id !== id));   // optimistic
+    try { await deletePlaybookEntry(id); }
+    catch { setItems(prev); }
+    finally { setBusy(null); }
+  };
+  const saveEdit = async (id: string) => {
+    const text = draft.trim();
+    if (!text) { setEditing(null); return; }
+    setBusy(id);
+    try {
+      await editPlaybookRecommendation(id, text);
+      setItems(list => list.map(i => i.id === id ? { ...i, recommendation: text } : i));
+      setEditing(null);
+    } catch { /* keep editor open on failure */ }
+    finally { setBusy(null); }
+  };
+
+  return (
+    <div className="mt-4 rounded-md border border-amber-700/30" style={{ background: "color-mix(in srgb, #f59e0b 5%, var(--bg-0))" }}>
+      <div className="px-3 py-2 border-b border-amber-700/20 flex items-center gap-2">
+        <span className="text-[11px] font-medium uppercase tracking-wide text-amber-400/90">Playbook referenced</span>
+        <span className="text-[11px] text-zinc-500">— these org playbook items informed this answer. Keep, edit, or remove.</span>
+      </div>
+      <div className="divide-y divide-amber-700/15">
+        {items.map(item => (
+          <div key={item.id} className="px-3 py-2.5 group/pb">
+            <div className="flex items-start gap-2">
+              <span className="shrink-0 mt-1 w-1.5 h-1.5 rounded-full bg-amber-400/70" />
+              <div className="flex-1 min-w-0">
+                {editing === item.id ? (
+                  <div className="space-y-1.5">
+                    <textarea
+                      value={draft}
+                      onChange={e => setDraft(e.target.value)}
+                      rows={2}
+                      className="w-full text-[12px] text-zinc-200 rounded border border-zinc-700 bg-[--bg-0] px-2 py-1.5 resize-none focus:outline-none focus:border-amber-600"
+                    />
+                    <div className="flex gap-2">
+                      <button onClick={() => saveEdit(item.id)} disabled={busy === item.id}
+                        className="text-[11px] px-2 py-0.5 rounded bg-amber-600/20 border border-amber-600/40 text-amber-300 hover:bg-amber-600/30">Save</button>
+                      <button onClick={() => setEditing(null)}
+                        className="text-[11px] px-2 py-0.5 rounded border border-zinc-700 text-zinc-400 hover:text-zinc-200">Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-[12px] text-zinc-300 leading-relaxed">{item.recommendation}</p>
+                    <div className="flex items-center gap-2 mt-1 flex-wrap">
+                      {item.trigger_condition && (
+                        <span className="text-[10.5px] text-zinc-500">when {item.trigger_condition}</span>
+                      )}
+                      <span className="text-[10px] px-1.5 py-px rounded-full border border-zinc-700 text-zinc-500">
+                        {item.historical_success_rate > 0 ? `${Math.round(item.historical_success_rate * 100)}% success` : "no outcome data"}
+                      </span>
+                    </div>
+                  </>
+                )}
+              </div>
+              {editing !== item.id && (
+                <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover/pb:opacity-100 transition-opacity">
+                  <button onClick={() => { setEditing(item.id); setDraft(item.recommendation); }}
+                    className="text-[11px] px-1.5 py-0.5 rounded text-zinc-500 hover:text-zinc-200" title="Edit">Edit</button>
+                  <button onClick={() => remove(item.id)} disabled={busy === item.id}
+                    className="text-[11px] px-1.5 py-0.5 rounded text-zinc-500 hover:text-red-400" title="Remove from playbook">Remove</button>
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Inline agent trace — streams during the turn, auto-collapses when done ──────
+function InlineAgentTrace({ turn }: { turn: ChatTurn }) {
+  const running = turn.status === "loading";
+  const [open, setOpen] = useState(running);
+  const prevRunning = useRef(running);
+  useEffect(() => {
+    // Collapse automatically the moment the turn stops running.
+    if (prevRunning.current && !running) setOpen(false);
+    prevRunning.current = running;
+  }, [running]);
+
+  const traceState = turnToTraceState(turn, running);
+
+  return (
+    <div className="mb-4 rounded-md border border-zinc-800/60" style={{ background: "var(--bg-0)" }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-3 py-2 group/trace"
+      >
+        <span className="flex items-center gap-2 text-[11px] font-medium uppercase tracking-wide text-violet-400/80">
+          {running ? (
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-60" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-violet-400" />
+            </span>
+          ) : (
+            <span className="inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+          )}
+          Agent trace
+          {!running && !open && (
+            <span className="text-zinc-600 normal-case tracking-normal font-normal">· {traceState.subQuestions?.length || traceState.hypotheses?.length || 0} steps</span>
+          )}
+        </span>
+        <Chevron open={open} />
+      </button>
+      {open && (
+        <div className="border-t border-zinc-800/60">
+          <ThinkingTrace state={traceState} />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1097,19 +1805,27 @@ export function ChatMessage({
         </div>
       </div>
 
+      {/* ── Inline agent trace (agentic modes) — streams live, collapses when done ── */}
+      {isInvestigate && (turn.status === "loading" || isDone || turn.status === "error") && (
+        <InlineAgentTrace turn={turn} />
+      )}
+
       {/* ── Loading state ── */}
       {turn.status === "loading" && (
         <div>
-          <div className="flex items-center gap-3 py-2">
-            <span className="flex gap-1">
-              {[0, 150, 300].map(d => (
-                <span key={d} className="w-1.5 h-1.5 rounded-full bg-zinc-700 animate-bounce" style={{ animationDelay: `${d}ms` }} />
-              ))}
-            </span>
-            <span className="text-[12px] text-zinc-600">
-              {turn.statusText || defaultStatusText()}
-            </span>
-          </div>
+          {/* Quick (ask) mode has no multi-step trace — show the simple thinking dots */}
+          {!isInvestigate && (
+            <div className="flex items-center gap-3 py-2">
+              <span className="flex gap-1">
+                {[0, 150, 300].map(d => (
+                  <span key={d} className="w-1.5 h-1.5 rounded-full bg-zinc-700 animate-bounce" style={{ animationDelay: `${d}ms` }} />
+                ))}
+              </span>
+              <span className="text-[12px] text-zinc-600">
+                {turn.statusText || defaultStatusText()}
+              </span>
+            </div>
+          )}
           {/* Live ADA phase stream — show completed phases as they arrive */}
           {showStreamingBody && <InvestigateBody turn={turn} />}
         </div>
@@ -1118,6 +1834,19 @@ export function ChatMessage({
       {/* ── Error state ── */}
       {turn.status === "error" && (
         <p className="text-[12px] text-red-400 py-1">{turn.error}</p>
+      )}
+
+      {/* ── Always-visible table chips (outside collapsible) ── */}
+      {isDone && turn.tablesUsed.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap mb-3">
+          <span className="text-[12px] text-zinc-600">Found relevant data</span>
+          {turn.tablesUsed.map(t => <TableChip key={t} name={t} />)}
+        </div>
+      )}
+
+      {/* ── Elapsed time (all modes incl. Quick) ── */}
+      {isDone && turn.elapsedMs != null && (
+        <p className="text-[11px] text-zinc-600 mb-3">Completed in {formatElapsed(turn.elapsedMs)}</p>
       )}
 
       {/* ── Body ── */}
@@ -1146,12 +1875,17 @@ export function ChatMessage({
             </div>
           )}
 
-          {/* Tables used */}
-          {turn.tablesUsed.length > 0 && (
-            <div className="flex items-center gap-2 flex-wrap mb-3">
-              <span className="text-[12px] text-zinc-600">Found relevant data</span>
-              {turn.tablesUsed.map(t => <TableChip key={t} name={t} />)}
-            </div>
+          {/* Semantic inspect warning — shown when post-execution validator finds a logical issue */}
+          {turn.inspectWarning && turn.inspectWarning.issues.length > 0 && (
+            <InspectWarningBanner
+              issues={turn.inspectWarning.issues}
+              suggestedFix={turn.inspectWarning.suggestedFix}
+            />
+          )}
+
+          {/* Analysis section — collapsed by default */}
+          {turn.analysis && (turn.analysis.intent || turn.analysis.steps.length > 0) && (
+            <AnalysisSection intent={turn.analysis.intent} steps={turn.analysis.steps} />
           )}
 
           {/* Main answer */}
@@ -1167,6 +1901,9 @@ export function ChatMessage({
               </>
             )}
           </div>
+
+          {/* Referenced playbook items — keep / edit / remove */}
+          {turn.playbookRefs.length > 0 && <PlaybookRefs refs={turn.playbookRefs} />}
 
           {/* Follow-up chips */}
           {turn.followups.length > 0 && (

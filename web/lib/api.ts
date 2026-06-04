@@ -20,6 +20,67 @@ export async function getConnections(): Promise<Connection[]> {
   return res.json();
 }
 
+// ── Workspaces ─────────────────────────────────────────────────────────────
+// The top-level scope (Databricks-style): a named grouping of connections.
+// Connections, Canvases and intelligence are all viewed through the lens of
+// the currently-selected Workspace.
+export interface Workspace {
+  id: string;
+  name: string;
+  description: string;
+  connection_ids: string[];
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function getWorkspaces(): Promise<Workspace[]> {
+  const res = await fetch(`${BASE}/workspaces`);
+  if (!res.ok) throw new Error("Failed to fetch workspaces");
+  return res.json();
+}
+
+export async function createWorkspace(
+  name: string,
+  connection_ids: string[] = [],
+  description = "",
+): Promise<Workspace> {
+  const res = await fetch(`${BASE}/workspaces`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, connection_ids, description }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "Failed to create workspace");
+  }
+  return res.json();
+}
+
+export async function updateWorkspace(
+  id: string,
+  patch: { name?: string; description?: string; connection_ids?: string[] },
+): Promise<Workspace> {
+  const res = await fetch(`${BASE}/workspaces/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "Failed to update workspace");
+  }
+  return res.json();
+}
+
+export async function deleteWorkspace(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/workspaces/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "Failed to delete workspace");
+  }
+}
+
 export async function addConnection(
   name: string,
   conn_type: string,
@@ -87,21 +148,112 @@ export async function getSyncStatus(connId: string): Promise<Record<string, unkn
   return res.json();
 }
 
+export interface ImportOptions {
+  tableName?: string;
+  schema?: string;
+  columnTypes?: Record<string, string>;
+}
+
 export async function uploadFileToConnection(
   connId: string,
   file: File,
-): Promise<{ table_name: string; filename: string }> {
+  opts: ImportOptions = {},
+): Promise<{ table_name: string; schema?: string; filename: string }> {
   const form = new FormData();
   form.append("file", file);
+  if (opts.tableName) form.append("table_name", opts.tableName);
+  if (opts.schema) form.append("schema", opts.schema);
+  if (opts.columnTypes && Object.keys(opts.columnTypes).length > 0)
+    form.append("column_types", JSON.stringify(opts.columnTypes));
   const res = await fetch(`${BASE}/connections/${encodeURIComponent(connId)}/files`, {
     method: "POST",
     body: form,
   });
   if (!res.ok) {
-    const err = await res.json();
+    const err = await res.json().catch(() => ({}));
     throw new Error(err.detail ?? "Upload failed");
   }
   return res.json();
+}
+
+export interface ColumnAnalysis {
+  name: string;
+  detected_type: string;
+  suggested_type: string | null;
+}
+
+export interface FileAnalysis {
+  filename: string;
+  columns: ColumnAnalysis[];
+  preview: { columns: string[]; rows: (string | null)[][] };
+  row_count: number;
+  suggested_table_name: string;
+}
+
+export async function analyzeConnectionFile(
+  connId: string,
+  file: File,
+): Promise<FileAnalysis> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(
+    `${BASE}/connections/${encodeURIComponent(connId)}/files/analyze`,
+    { method: "POST", body: form },
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "Analyze failed");
+  }
+  return res.json();
+}
+
+export interface ConnectionFile {
+  filename: string;
+  table_name: string;
+  schema: string;
+  size_bytes: number;
+  extension: string;
+  column_types?: Record<string, string>;
+}
+
+export async function listConnectionFiles(connId: string): Promise<ConnectionFile[]> {
+  const res = await fetch(`${BASE}/connections/${encodeURIComponent(connId)}/files`);
+  if (!res.ok) return [];
+  const data = await res.json().catch(() => ({ files: [] }));
+  return data.files ?? [];
+}
+
+export async function deleteConnectionFile(
+  connId: string,
+  filename: string,
+  schema = "main",
+): Promise<void> {
+  const res = await fetch(
+    `${BASE}/connections/${encodeURIComponent(connId)}/files/${encodeURIComponent(filename)}?schema=${encodeURIComponent(schema)}`,
+    { method: "DELETE" },
+  );
+  if (!res.ok) throw new Error("Delete failed");
+}
+
+export async function listConnectionSchemas(connId: string): Promise<string[]> {
+  const res = await fetch(`${BASE}/connections/${encodeURIComponent(connId)}/schemas`);
+  if (!res.ok) return ["main"];
+  const data = await res.json().catch(() => ({ schemas: ["main"] }));
+  return data.schemas ?? ["main"];
+}
+
+export async function createConnectionSchema(connId: string, name: string): Promise<string> {
+  const res = await fetch(`${BASE}/connections/${encodeURIComponent(connId)}/schemas`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "Schema create failed");
+  }
+  const data = await res.json();
+  return data.schema;
 }
 
 export async function testConnection(id: string): Promise<TestResult> {
@@ -175,6 +327,27 @@ export async function sampleTable(
   return res.json();
 }
 
+export interface TableColumn {
+  name: string;
+  type: string;
+}
+
+/** Reliable per-table column list — same lightweight path as the sample reader. */
+export async function getTableColumns(
+  connId: string,
+  table: string,
+  schema?: string,
+): Promise<TableColumn[]> {
+  const params = new URLSearchParams();
+  if (schema) params.set("schema", schema);
+  const res = await fetch(
+    `${BASE}/connections/${encodeURIComponent(connId)}/tables/${encodeURIComponent(table)}/columns?${params}`,
+  );
+  if (!res.ok) return [];
+  const data = await res.json().catch(() => ({ columns: [] }));
+  return data.columns ?? [];
+}
+
 // ── Catalog tree ──────────────────────────────────────────────────────────────
 
 export interface CatalogTableInfo {
@@ -216,6 +389,11 @@ export async function getSchema(id: string): Promise<string> {
   if (!res.ok) throw new Error("Failed to fetch schema");
   const data = await res.json();
   return data.schema as string;
+}
+
+export async function refreshSchemaCache(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/connections/${id}/schema/refresh`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to refresh schema cache");
 }
 
 export async function getSchemaDiagram(id: string): Promise<string> {
@@ -361,6 +539,58 @@ export interface ComputedProperty {
   unit: string;
 }
 
+// OE-1: first-class typed property on an entity (mirrors Palantir Property)
+export interface EntityProperty {
+  name: string;
+  display_name: string;
+  data_type: string;
+  semantic_type: string;
+  description: string;
+  is_primary_key: boolean;
+  is_foreign_key: boolean;
+  is_nullable: boolean;
+  null_rate: number;
+  null_meaning: string;          // from phase-3 exploration
+  is_derived: boolean;
+  value_interpretation: string;
+  unit: string;
+  sample_values: string[];
+  // OE-4: distribution stats (numeric columns)
+  distribution_shape: string;
+  p25: number | null;
+  p50: number | null;
+  p75: number | null;
+}
+
+// OE-2: named composable filter over entity rows (mirrors Palantir Object Set)
+export interface ObjectSet {
+  id: string;
+  display_name: string;
+  description: string;
+  filter_sql: string;
+  is_default: boolean;
+  source: "lifecycle" | "exploration" | "manual";
+}
+
+// OE-3: typed parameter extracted from {placeholder} tokens in sql_template
+export interface ActionParameter {
+  name: string;
+  display_name: string;
+  data_type: string;
+  required: boolean;
+  description: string;
+  default_value: string | null;
+}
+
+// OE-6: shared structural shape implemented by multiple entity types
+export interface OntologyInterface {
+  id: string;
+  display_name: string;
+  description: string;
+  property_patterns: string[];
+  implementing_entities: string[];
+}
+
 export interface OntologyEntity {
   id: string;
   display_name: string;
@@ -375,10 +605,14 @@ export interface OntologyEntity {
   lifecycle_states: string[];
   terminal_states: string[];
   active_filter: string | null;
+  object_sets: Record<string, ObjectSet>;         // OE-2
   created_at_col: string | null;
   default_filters: string[];
   exclude_when: string[];
+  properties: Record<string, EntityProperty>;     // OE-1
   computed_properties: ComputedProperty[];
+  exploration_insights: string[];                 // OE-4
+  implements: string[];                           // OE-6: interface ids
 }
 
 export interface ConnectionSettings {
@@ -432,6 +666,7 @@ export interface OntologyAction {
   entity: string;
   action_type: "filter" | "compute" | "traverse" | "aggregate" | "validate";
   sql_template: string;
+  parameters: ActionParameter[];                 // OE-3
   business_rules_enforced: string[];
   returns: string;
   source_table: string;
@@ -451,6 +686,7 @@ export interface OntologyMetric {
 
 export interface OntologyGraph {
   connection_id: string;
+  schema_name: string;
   schema_fingerprint: string;
   generated_at: string;
   enriched: boolean;
@@ -458,10 +694,14 @@ export interface OntologyGraph {
   relationships: Record<string, OntologyRelationship>;
   metrics: Record<string, OntologyMetric>;
   actions: Record<string, OntologyAction>;
+  interfaces: Record<string, OntologyInterface>;  // OE-6
 }
 
-export async function getOntology(connectionId: string): Promise<OntologyGraph> {
-  const res = await fetch(`${BASE}/ontology?connection_id=${encodeURIComponent(connectionId)}`);
+export async function getOntology(connectionId: string, schemaName?: string): Promise<OntologyGraph> {
+  const q = schemaName
+    ? `connection_id=${encodeURIComponent(connectionId)}&schema_name=${encodeURIComponent(schemaName)}`
+    : `connection_id=${encodeURIComponent(connectionId)}`;
+  const res = await fetch(`${BASE}/ontology?${q}`);
   if (!res.ok) throw new Error("Ontology not available for this connection");
   return res.json();
 }
@@ -936,6 +1176,8 @@ export interface Canvas {
   is_legacy: boolean;
   created_at: string;
   updated_at: string;
+  /** Most recent investigation/chat timestamp for this canvas (null if never used). */
+  last_activity?: string | null;
 }
 
 export async function getCanvases(): Promise<Canvas[]> {
@@ -944,19 +1186,42 @@ export async function getCanvases(): Promise<Canvas[]> {
   return res.json();
 }
 
+/** Extract a readable message from a FastAPI error body, whose `detail`
+ *  may be a string OR an array of validation-error objects. */
+function fastApiError(body: unknown, fallback: string): string {
+  const detail = (body as { detail?: unknown } | null)?.detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    const msgs = detail
+      .map(d => (d && typeof d === "object" && "msg" in d ? String((d as { msg: unknown }).msg) : null))
+      .filter(Boolean);
+    if (msgs.length) return msgs.join("; ");
+  }
+  return fallback;
+}
+
 export async function createCanvas(
   name: string,
   description: string,
   scopes: CanvasScope[],
 ): Promise<Canvas> {
+  // The backend expects a single, flat scope on the request body
+  // (connection_id / schema_name / tables), not a `scopes` array.
+  const s = scopes[0] ?? { connection_id: "", schema_name: null, tables: [] };
   const res = await fetch(`${BASE}/canvases`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, description, scopes }),
+    body: JSON.stringify({
+      name,
+      description,
+      connection_id: s.connection_id,
+      schema_name: s.schema_name,
+      tables: s.tables,
+    }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error((err as { detail?: string }).detail ?? "Failed to create canvas");
+    throw new Error(fastApiError(err, "Failed to create canvas"));
   }
   return res.json();
 }
@@ -965,13 +1230,52 @@ export async function updateCanvas(
   id: string,
   patch: { name?: string; description?: string; scopes?: CanvasScope[] },
 ): Promise<Canvas> {
+  // Backend UpdateCanvasRequest takes a flat { name, description, tables }.
+  const body: { name?: string; description?: string; tables?: string[] } = {};
+  if (patch.name !== undefined) body.name = patch.name;
+  if (patch.description !== undefined) body.description = patch.description;
+  if (patch.scopes !== undefined) body.tables = patch.scopes[0]?.tables ?? [];
   const res = await fetch(`${BASE}/canvases/${encodeURIComponent(id)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(patch),
+    body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error("Failed to update canvas");
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to update canvas"));
+  }
   return res.json();
+}
+
+/** LLM-inferred Canvas name + description from the scoped tables' schema. */
+export async function suggestCanvasName(
+  connectionId: string,
+  tables: string[],
+): Promise<{ name: string; description: string }> {
+  const res = await fetch(`${BASE}/canvases/suggest-name`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ connection_id: connectionId, tables }),
+  });
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "Failed to suggest name"));
+  return res.json();
+}
+
+/** Per-Canvas plain-English instructions (distinct from connection-level). */
+export async function getCanvasInstructions(canvasId: string): Promise<string> {
+  const res = await fetch(`${BASE}/canvases/${encodeURIComponent(canvasId)}/instructions`);
+  if (!res.ok) return "";
+  const d = await res.json().catch(() => ({ text: "" }));
+  return d.text ?? "";
+}
+
+export async function putCanvasInstructions(canvasId: string, text: string): Promise<void> {
+  const res = await fetch(`${BASE}/canvases/${encodeURIComponent(canvasId)}/instructions`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "Failed to save instructions"));
 }
 
 export async function deleteCanvas(id: string): Promise<void> {
@@ -999,6 +1303,45 @@ export async function getCanvasHistory(id: string, limit = 20): Promise<CanvasHi
   if (!res.ok) return [];
   const data = await res.json();
   return (data as { investigations: CanvasHistoryItem[] }).investigations ?? [];
+}
+
+// ── Playbook (referenced items surfaced in chat/investigation) ────────────────
+export interface PlaybookRef {
+  id: string;
+  recommendation: string;
+  trigger_condition: string;
+  status: string;
+  tags: string[];
+  historical_success_rate: number;
+  source_kb_id: string | null;
+}
+
+export async function deletePlaybookEntry(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/playbook/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to remove playbook item");
+}
+
+/** Edit just the recommendation text of a playbook item (preserves the rest). */
+export async function editPlaybookRecommendation(id: string, recommendation: string): Promise<void> {
+  const cur = await fetch(`${BASE}/playbook/${encodeURIComponent(id)}`).then(r => (r.ok ? r.json() : null));
+  if (!cur) throw new Error("Playbook item not found");
+  const body = {
+    trigger_metric: cur.trigger_metric, trigger_condition: cur.trigger_condition,
+    trigger_operator: cur.trigger_operator ?? "any", trigger_value: cur.trigger_value ?? 0,
+    recommendation, expected_impact: cur.expected_impact ?? "",
+    typical_timeline: cur.typical_timeline ?? "", owner_role: cur.owner_role ?? "",
+    tags: cur.tags ?? [], status: cur.status ?? "active", source_kb_id: cur.source_kb_id ?? null,
+  };
+  const res = await fetch(`${BASE}/playbook/${encodeURIComponent(id)}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error("Failed to update playbook item");
+}
+
+/** Remove a single history line item (an investigation, or a whole chat session). */
+export async function deleteInvestigation(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/investigations/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok && res.status !== 204) throw new Error("Failed to remove history item");
 }
 
 export async function getCanvasRecents(id: string, limit = 10): Promise<Array<{ question: string; status: string; created_at: string }>> {
@@ -1134,7 +1477,9 @@ export interface MonitorDef {
   history_days: number;
   dimension_column: string | null;
   freshness_table: string | null;
+  freshness_column: string | null;
   freshness_sla_hours: number;
+  drift_p_threshold: number | null;
   notification_channel: string;
   enabled: boolean;
   created_at: string;

@@ -33,7 +33,7 @@ class RecOutcome(BaseModel):
 
 def _now() -> str:
     import datetime
-    return datetime.datetime.utcnow().isoformat() + "Z"
+    return datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 # ── Persistence ───────────────────────────────────────────────────────────────

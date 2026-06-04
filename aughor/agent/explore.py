@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from aughor.db.connection import DatabaseConnection
 
 from aughor.agent.prompts_explore import (
+    BUILD_LEDGER_PROMPT,
     DECOMPOSE_EXPLORATION_PROMPT,
     PLAN_SUBQ_PROMPT,
     REASON_OVER_RESULT_PROMPT,
@@ -102,6 +103,38 @@ def _attach_stats(result: QueryResult) -> QueryResult:
         return result
 
 
+# ── Analysis ledger — canonical definitions shared by every stage ─────────────
+
+class _LedgerOut(BaseModel):
+    ledger: str = Field(
+        description="Short binding list of canonical entity identifiers, metric "
+                    "SQL expressions, and segment definitions for this analysis."
+    )
+
+
+def build_analysis_ledger(state: AgentState) -> str:
+    """Decide canonical entity/metric definitions ONCE so every downstream step
+    uses the same identifiers and expressions (prevents figures drifting between
+    stages, e.g. customer_id vs customer_unique_id). Best-effort — never blocks."""
+    scan_context = state.get("scan_context") or ""
+    scan_section = (
+        f"DATA PORTRAIT (actual distributions):\n{scan_context}\n" if scan_context else ""
+    )
+    try:
+        out: _LedgerOut = get_provider("coder").complete(
+            system="You define canonical metric/entity definitions for a data analysis.",
+            user=BUILD_LEDGER_PROMPT.format(
+                question=state["question"],
+                schema=state["schema_context"],
+                scan_section=scan_section,
+            ),
+            response_model=_LedgerOut,
+        )
+        return (out.ledger or "").strip()
+    except Exception:
+        return ""
+
+
 # ── Node: decompose_exploration ───────────────────────────────────────────────
 
 def decompose_exploration(state: AgentState) -> dict[str, Any]:
@@ -112,30 +145,84 @@ def decompose_exploration(state: AgentState) -> dict[str, Any]:
         if scan_context else ""
     )
 
+    # Pin canonical definitions for the whole run before planning any sub-questions.
+    analysis_ledger = build_analysis_ledger(state)
+
     # Extract explicit user constraints from the question (re-use decompose pattern)
     constraint_section = "No explicit constraints detected."
 
-    llm = get_provider("coder")
-    plan: _ExplorationPlan = llm.complete(
-        system="You are a senior data analyst designing a sequential investigative chain.",
-        user=DECOMPOSE_EXPLORATION_PROMPT.format(
-            question=state["question"],
-            schema=state["schema_context"],
-            scan_section=scan_section,
-            constraint_section=constraint_section,
-        ),
-        response_model=_ExplorationPlan,
-    )
-
-    sub_questions = plan.sub_questions[:MAX_SUBQ]
+    # Resilience: the planner is the single point where an exploration most often
+    # dies (LLM/provider hiccup or an assertion-style prompt that yields no chain).
+    # Retry once with a corrective nudge, then fall back to a deterministic floor
+    # chain so the investigation ALWAYS proceeds to real queries + synthesis.
+    sub_questions = _plan_exploration_chain(state, scan_section, constraint_section)
+    if not sub_questions:
+        sub_questions = _floor_chain(state)
 
     return {
-        "sub_questions": sub_questions,
+        "sub_questions": sub_questions[:MAX_SUBQ],
         "current_subq_idx": 0,
         "subq_answers": [],
         "pitfalls": [],
         "iteration": 0,
+        "analysis_ledger": analysis_ledger,
     }
+
+
+def _plan_exploration_chain(state: AgentState, scan_section: str, constraint_section: str) -> list[SubQuestion]:
+    """Run the decompose planner with one corrective retry. Never raises —
+    returns [] only if the LLM truly can't produce a valid SQL-answerable chain."""
+    llm = get_provider("coder")
+    base_user = DECOMPOSE_EXPLORATION_PROMPT.format(
+        question=state["question"],
+        schema=state["schema_context"],
+        scan_section=scan_section,
+        constraint_section=constraint_section,
+    )
+    for attempt in range(2):
+        user = base_user if attempt == 0 else (
+            base_user
+            + "\n\nYOUR PREVIOUS ATTEMPT RETURNED NO USABLE SUB-QUESTIONS. You MUST now "
+            "return at least 3 concrete, SQL-answerable sub-questions that use ONLY tables "
+            "and columns present in the schema above. Begin with a `landscape` question. "
+            "If the input is a claim rather than a question, reframe it as a verification "
+            "question (e.g. 'Is it true that …?')."
+        )
+        try:
+            plan: _ExplorationPlan = llm.complete(
+                system="You are a senior data analyst designing a sequential investigative chain.",
+                user=user,
+                response_model=_ExplorationPlan,
+            )
+            sqs = [sq for sq in (plan.sub_questions or []) if (sq.question or "").strip()]
+            if sqs:
+                return sqs
+        except Exception:
+            continue  # transient provider/parse error — fall through to retry / floor
+    return []
+
+
+def _floor_chain(state: AgentState) -> list[SubQuestion]:
+    """Deterministic safety-net chain (no LLM) so an exploration never starts
+    empty even if the planner fails entirely. Anchors on the first schema table
+    and the original question, then lets the per-sub-question SQL planner do the
+    real work against the live schema."""
+    import re as _re
+    m = _re.search(r"^TABLE:\s+([^\s\[(]+)", state.get("schema_context", "") or "", _re.MULTILINE)
+    table = m.group(1) if m else "the primary table"
+    q = (state.get("question") or "the original question").strip()
+    return [
+        SubQuestion(
+            id="Q1", purpose="landscape", depends_on=[],
+            question=f"What is the overall volume and the key measurable dimensions in the data most relevant to: {q}?",
+            expected_output=f"A small summary of row counts and key aggregates from {table} and directly related tables.",
+        ),
+        SubQuestion(
+            id="Q2", purpose="synthesis", depends_on=["Q1"],
+            question=f"Based on the landscape above, what is the most direct, evidence-backed answer to: {q}?",
+            expected_output="A focused aggregate (grouped/ranked as needed) that directly addresses the original question.",
+        ),
+    ]
 
 
 # ── Node: plan_and_execute_subq ───────────────────────────────────────────────
@@ -156,24 +243,33 @@ def plan_and_execute_subq(state: AgentState, conn: "DatabaseConnection") -> dict
     events_section = f"{raw_events}\n" if raw_events else ""
 
     llm = get_provider("coder")
-    plan: QueryPlan = llm.complete(
-        system="You are a senior data analyst writing SQL for an investigative sub-question.",
-        user=PLAN_SUBQ_PROMPT.format(
-            question=state["question"],
-            subq_id=subq.id,
-            purpose=subq.purpose,
-            subq_question=subq.question,
-            expected_output=subq.expected_output,
-            prior_answers=_format_prior_answers(prior_answers),
-            schema=state["schema_context"],
-            pitfall_section=format_pitfall_section(known_pitfalls),
-            events_section=events_section,
-        ),
-        response_model=QueryPlan,
-    )
+    # Resilience: a single sub-question's planner hiccup (provider timeout, parse
+    # error, oversized context) must NOT abort the whole chain. If the LLM raises,
+    # fall back to a deterministic landscape query so this step still produces
+    # evidence and the chain advances to the next sub-question.
+    plan: Optional[QueryPlan] = None
+    try:
+        plan = llm.complete(
+            system="You are a senior data analyst writing SQL for an investigative sub-question.",
+            user=PLAN_SUBQ_PROMPT.format(
+                question=state["question"],
+                subq_id=subq.id,
+                purpose=subq.purpose,
+                subq_question=subq.question,
+                expected_output=subq.expected_output,
+                prior_answers=_format_prior_answers(prior_answers),
+                analysis_ledger=state.get("analysis_ledger") or "(none)",
+                schema=state["schema_context"],
+                pitfall_section=format_pitfall_section(known_pitfalls),
+                events_section=events_section,
+            ),
+            response_model=QueryPlan,
+        )
+    except Exception:
+        plan = None
 
-    # Guard: ensure at least one query
-    queries = [q for q in plan.queries if q and q.strip()]
+    # Guard: ensure at least one query (covers planner failure AND empty plans)
+    queries = [q for q in (plan.queries if plan else []) if q and q.strip()]
     if not queries:
         import re as _re
         _tm = _re.search(r"^TABLE:\s+(\w+)", state["schema_context"], _re.MULTILINE)
@@ -188,8 +284,8 @@ def plan_and_execute_subq(state: AgentState, conn: "DatabaseConnection") -> dict
 
         # Attach predictions
         _d = result.model_dump()
-        _d["expected_if_true"] = plan.expected_if_true or None
-        _d["expected_if_false"] = plan.expected_if_false or None
+        _d["expected_if_true"] = (plan.expected_if_true if plan else None) or None
+        _d["expected_if_false"] = (plan.expected_if_false if plan else None) or None
         result = QueryResult(**_d)
 
         if result.error:
@@ -266,19 +362,29 @@ def reason_over_result(state: AgentState) -> dict[str, Any]:
     else:
         formatted = "\n\n".join(format_result_for_llm(r) for r in subq_results)
         llm = get_provider("coder")
-        answer_obj: ReasoningOutput = llm.complete(
-            system="You are a senior data analyst interpreting query results.",
-            user=REASON_OVER_RESULT_PROMPT.format(
-                question=state["question"],
-                subq_id=subq.id,
-                purpose=subq.purpose,
-                subq_question=subq.question,
-                expected_output=subq.expected_output,
-                query_results=formatted,
-                prior_context=_format_prior_answers(prior_answers),
-            ),
-            response_model=ReasoningOutput,
-        )
+        try:
+            answer_obj = llm.complete(
+                system="You are a senior data analyst interpreting query results.",
+                user=REASON_OVER_RESULT_PROMPT.format(
+                    question=state["question"],
+                    subq_id=subq.id,
+                    purpose=subq.purpose,
+                    subq_question=subq.question,
+                    expected_output=subq.expected_output,
+                    query_results=formatted,
+                    analysis_ledger=state.get("analysis_ledger") or "(none)",
+                    prior_context=_format_prior_answers(prior_answers),
+                ),
+                response_model=ReasoningOutput,
+            )
+        except Exception:
+            # Reasoning hiccup must not abort the chain — record the raw result as
+            # an inconclusive answer and let downstream steps / synthesis proceed.
+            answer_obj = ReasoningOutput(
+                answer=f"Query for {subq.id} returned data but automated interpretation failed; see the raw result.",
+                insight="Interpretation step errored — figures above are from the query but not narrated.",
+                refinement=None,
+            )
 
     # Use the first non-errored result for SQL/columns/rows in the answer record
     best_result = next((r for r in subq_results if not r.error), subq_results[0] if subq_results else None)
@@ -468,6 +574,22 @@ def synthesize_exploration(state: AgentState) -> dict[str, Any]:
 
     chain_summary = _format_chain_summary(answers)
 
+    # Honesty guard: if the chain ended early (fewer answered sub-questions than
+    # planned, e.g. a salvaged partial run), tell the writer NOT to present the
+    # report as comprehensive. Prevents "given all of the above" on a 1-step chain.
+    planned = state.get("sub_questions", []) or []
+    answered_ids = {a.subq_id for a in answers}
+    unanswered = [sq for sq in planned if sq.id not in answered_ids and not getattr(sq, "done", False)]
+    if planned and (len(answers) < len(planned) or unanswered):
+        gap = "; ".join(f"{sq.id}: {sq.question}" for sq in unanswered[:6]) or "later planned steps"
+        chain_summary = (
+            f"⚠️ INCOMPLETE CHAIN — only {len(answers)} of {len(planned)} planned sub-questions "
+            f"actually ran. The following were NOT investigated and have NO data: {gap}. "
+            f"Do NOT claim a comprehensive analysis or use phrases like 'given all of the above'. "
+            f"Answer only from the completed steps below and explicitly note what remains unknown.\n\n"
+            + chain_summary
+        )
+
     # Collect data quality notes from pitfalls
     dq_notes: list[DataQualityNote] = []
     for p in pitfalls:
@@ -488,6 +610,7 @@ def synthesize_exploration(state: AgentState) -> dict[str, Any]:
         system="You are a senior data analyst writing an executive investigation report.",
         user=SYNTHESIZE_EXPLORATION_PROMPT.format(
             question=state["question"],
+            analysis_ledger=state.get("analysis_ledger") or "(none)",
             chain_summary=chain_summary,
             events_section=events_section,
         ),

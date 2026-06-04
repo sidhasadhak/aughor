@@ -74,6 +74,12 @@
 65. [Evidence Ledger](#65-evidence-ledger)
 66. [Proactive Monitors](#66-proactive-monitors)
 67. [History Navigation Fix](#67-history-navigation-fix)
+68. [Org-Level Ontology Board + table = entity Gate Fix](#68-org-level-ontology-board--table--entity-gate-fix)
+69. [Canvas Creation Popup + Canvas-Scoped Configure](#69-canvas-creation-popup--canvas-scoped-configure)
+70. [Add Data, New Connectors & Workspace File Uploads](#70-add-data-new-connectors--workspace-file-uploads)
+71. [Agentic Investigation Polish — Coherence, Trace, Report, Timing](#71-agentic-investigation-polish--coherence-trace-report-timing)
+72. [Canvas Optimisation — Scope Editing & History Management](#72-canvas-optimisation--scope-editing--history-management)
+73. [Data Canvas — List Ranking, Recents & Rename](#73-data-canvas--list-ranking-recents--rename)
 
 ---
 
@@ -2107,4 +2113,135 @@ Added `openInvestigation(id, kind)` handler in `page.tsx`:
 
 ---
 
-*Last updated: 2026-05-30 · 67 features — all shipped. See `ROADMAP.md` for upcoming milestones.*
+## 68. Org-Level Ontology Board + `table = entity` Gate Fix ✅ Shipped (Sprint 52)
+
+### What
+Two connected pieces of work:
+
+1. **Org-level ontology board.** A zoomable canvas that shows the *whole organization's* ontology at once — one bounding box per connection (database), and inside each box one sub-box per schema, each holding the **actual entity cluster** (nodes-and-edges graph: `Customer Order ──placed by──▶ Customer`, etc.) derived from that schema's tables. It is the same node/edge rendering the single-connection canvas uses, just tiled and grouped *connection → schema*. Trackpad pinch / ⌘-scroll zooms the entire board; clicking a connection header drills into its single-connection canvas.
+
+2. **`table = entity` gate fix.** The ontology builder was silently dropping any table for which the profiler couldn't detect a single-column primary key (`grain_column is None`). On beautycommerce that meant only **8 of 20 tables** became entities — the 12 dropped were the biggest, most important commerce tables (orders, payments, invoices, order_items, carts…). The builder now treats *every profiled table* as an entity, honoring the core axiom; a detected grain merely upgrades an entity to `grain_verified` rather than gating its existence.
+
+### Why
+- A business user wants to see how the business is modeled *across the org*, not one connection at a time. The board makes the ontology a navigable knowledge map (connection → schema → entity relationships) you can traverse for questions like "why did revenue drop?".
+- The gate fix restores the foundational promise: **a table is an entity.** Dropping the commerce backbone left the ontology unable to connect Orders → Payments → Order Items — exactly the traversal a root-cause analysis needs. After the fix beautycommerce went **8 → 20 entities** and **3 → 52 relationships**.
+
+### How
+**Reusable cluster (`web/components/OntologyCanvas.tsx`):** Extracted `EntityCluster` — the node/edge renderer (topological-depth `computeLayout` + `FlowEdges` + `CausalEdges` + `EntityNode` + column labels, with its own hover/neighbour-dimming state) drawing into a **local coordinate frame** sized exactly `w × h`. Added a cheap `measureCluster(graph)` size probe for packing. The single-connection `OntologyCanvas` now wraps one `EntityCluster` inside its zoom/scroll shell (behavior unchanged); the org board tiles many.
+
+**Org board (`web/components/OntologyOrgCanvas.tsx`):** Fetches the connection list, then `getOntology(conn.id)` per connection progressively (shells first). Each connection box's width tracks its widest schema cluster; boxes flex-wrap into a near-square grid; one shared `selectedEntityId` highlights across clusters. The schema-group structure (`schemaGroups()`) already returns an array, so multi-schema connections will stack several schema sub-boxes with no further layout work. Reached via the **Org / Connection toggle** in the Ontology panel header (`OntologyPanel.tsx`).
+
+**Trackpad zoom (`web/lib/useWheelZoom.ts`):** Shared hook — trackpad pinch (wheel + `ctrlKey`) and ⌘/Ctrl-wheel zoom-to-cursor; plain two-finger scroll falls through to native pan. Keeps the point under the cursor fixed while scaling. Used by both the single canvas and the org board.
+
+**Builder gate (`aughor/ontology/builder.py`):** Removed the `if tp.grain_column is None: continue` skip in Step 1 (entity identification). Every profiled table now becomes an `OntologyEntity`; `identity_key` is coerced to `""` when no PK was detected, and `grain_verified` carries the quality signal. Relationships, actions, properties, and lifecycle extraction all already tolerate a missing grain.
+
+### Known follow-ups
+- The profiler still **misses real PKs** on some large tables (e.g. `invoices.order_id` is provably unique — 2,798,854 distinct = row count — yet returned `None`). Those entities now exist but are flagged unverified. Improving the profiler's uniqueness detection would upgrade them to verified grains and enable verified joins.
+- Cross-connection ontology edges are intentionally not drawn (separate architecture).
+
+### Key files
+- `web/components/OntologyCanvas.tsx` — `EntityCluster` + `measureCluster` extraction; main canvas consumes the cluster
+- `web/components/OntologyOrgCanvas.tsx` *(new)* — org board: connection → schema → `EntityCluster` tiling
+- `web/lib/useWheelZoom.ts` *(new)* — shared trackpad pinch / ⌘-wheel zoom-to-cursor hook
+- `web/components/OntologyPanel.tsx` — Org / Connection toggle + org-mode branch
+- `aughor/ontology/builder.py` — relaxed entity gate (`table = entity`); `identity_key` coercion
+- `web/components/QueryBuilder.tsx` — contrast pass (dim `text-zinc-600` → readable `text-zinc-500` per the token bridge)
+
+---
+
+## 69. Canvas Creation Popup + Canvas-Scoped Configure ✅ Shipped (Sprint 53)
+
+### What
+Two connected pieces of work that make the **Canvas** — not the raw connection — the unit a user creates and configures:
+
+1. **Databricks-style "Connect your data" create flow.** The old 3-step wizard (Name → Connection → Tables) is replaced with a single-screen picker: a search bar, a breadcrumb (`All connections › <connection>`), a catalog list that drills from connections into their tables, a multi-select table list with an **"All tables"** pseudo-row at the top (auto-includes new tables), and removable **"Selected:"** chips in the footer. There is **no name field** — the user just scopes the data and clicks Create.
+
+2. **Canvas-specific Configure slide-over.** The Configure panel used to operate on the raw `connection_id`. It now takes the `Canvas`: the **About** tab edits the Canvas name + description and shows its scope (connection, type, schema, "All tables" / N selected); the **Data** tab lists only the Canvas's scoped tables; **Instructions** are stored per-Canvas, not per-connection.
+
+### Why
+- Removing the name step removes the one piece of busywork in creation. The name should describe *what the data is about* — something the system can infer better than a user typing on a blank field.
+- A Canvas is a curated slice of a connection. Configuring "the connection" leaked the wrong mental model and meant two Canvases over the same database shared one set of business rules. Making description, data, and instructions Canvas-scoped matches what the user actually reasons about.
+
+### How
+**LLM-inferred name + description (`POST /canvases/suggest-name`, `aughor/routers/canvas.py`):** Reads the schema of the selected tables (or the whole connection when "All tables" is chosen) and asks the `coder` provider for a Title-Case name (2–5 words) plus a one-line description, grounded strictly in the real table/column names. On create the frontend calls `suggestCanvasName()` then `createCanvas()`. The endpoint **falls back to the connection name** on any LLM error so creation never blocks. (e.g. selecting `orders` → "Customer Orders Overview".)
+
+**Per-Canvas instructions (`GET/PUT /canvases/{id}/instructions`):** A small JSON store (`data/canvas_instructions.json`) keyed by `canvas_id`, mirroring the existing connection-level instructions endpoint but scoped to the Canvas — two Canvases on one connection keep distinct rules.
+
+**Canvas-scoped Configure (`web/components/ConfigurePanel.tsx`):** The panel now receives `canvas` + `onCanvasUpdate`. About saves via `updateCanvas`; Data restricts the schema's table list to `canvas.scopes[0].tables` using a lenient leaf-name match (so schema-qualified names like `public.orders` still resolve), with empty scope meaning all tables; Instructions read/write the new Canvas endpoints.
+
+**Request-contract hardening (`web/lib/api.ts`):** `createCanvas`/`updateCanvas` now send the backend's flat body (`connection_id` / `schema_name` / `tables`) instead of a `scopes` array, and a shared `fastApiError()` parses FastAPI's array-shaped `detail` into a readable message — fixing the "[object Object]" error that previously broke Canvas creation through both the table-selection and "All tables" paths.
+
+### Known follow-ups
+- The **Docs** tab (document uploader) and the **Instructions → Metrics** sub-tab are still connection/global-level, not Canvas-scoped.
+
+### Key files
+- `web/components/CanvasCreator.tsx` — rewritten single-screen Databricks-style picker; no name step; LLM auto-name on create
+- `web/components/ConfigurePanel.tsx` — Canvas-scoped About / Data / Instructions
+- `web/components/CanvasWorkspace.tsx` — passes `canvas` + `onCanvasUpdate` to Configure
+- `web/lib/api.ts` — `suggestCanvasName`, `getCanvasInstructions`, `putCanvasInstructions`; flat-body + `fastApiError` hardening
+- `aughor/routers/canvas.py` — `POST /canvases/suggest-name`, `GET/PUT /canvases/{id}/instructions`
+
+---
+
+## 70. Add Data, New Connectors & Workspace File Uploads ✅ Shipped (Sprint 54)
+
+**What it does.** Turns "Add Data" into a real onboarding surface: a full page (not a slide-in) that lists every connector with brand marks, adds three new sources, and makes "Create or modify table" a genuine **file-upload → Workspace** experience with a typed, schema-aware import flow.
+
+**Why it exists.** Users needed to bring their own data without a DBA — both external systems (MotherDuck, Exasol, Google Sheets) and ad-hoc files (CSV/Parquet/Excel/JSON) — and to control how each file lands (table name, schema, column types) instead of a silent best-guess ingest.
+
+**How it works.**
+- **New connectors.** `MotherDuckConnection` (cloud DuckDB via `md:`), `ExasolConnection` (pyexasol, `dep_check`-gated), `GoogleSheetsConnector` (public sheet → CSV export → in-memory DuckDB). Each registered in `connectors/registry.py` with form fields + DSN previews and categorised in `routers/system.py`; inline-SVG brand marks + colors in `BrandLogos.tsx`.
+- **Workspace.** A built-in `local_upload` connection (in-memory DuckDB) that **folds in the sample `ecommerce` tables read-only** (ATTACH seed → materialize) alongside user uploads, replacing the old separate "Sample Catalog". Multi-schema: each schema is a directory; uploads persist to `data/uploads/workspace/{schema}/` with a sidecar `*.import.json` recording the table name + type overrides so the in-memory DB rebuilds identically every request.
+- **Three-phase import.** `POST /connections/{id}/files/analyze` runs `DESCRIBE` + a 20-row preview + per-column **type-mismatch suggestions** (probing `try_cast` to BIGINT/DOUBLE/BOOLEAN/DATE/TIMESTAMP — catches `customer_id` read as text, etc.). The review UI lets the user edit the table name, pick/create a schema, override column types, and see conflict warnings; commit ingests with `TRY_CAST` (bad values → NULL, never a failed import).
+- **Reliable columns.** New `GET /connections/{id}/tables/{t}/columns` (information_schema, with `LIMIT 0` fallback) drives the Catalog **Overview** column list so it's as dependable as Sample Data instead of the heavy whole-connection rich schema.
+- **Readable tables.** `SqlResultTable` caps each cell at `maxColWidth` (320px) with ellipsis + tooltip so long-text columns don't blow out the layout.
+
+**Key files.** `web/components/AddDataPanel.tsx`, `CatalogScreen.tsx`, `BrandLogos.tsx`, `AugTable.tsx`; `aughor/connectors/warehouse/{motherduck,exasol}.py`, `connectors/api/gsheets.py`, `connectors/file/local_upload.py`, `connectors/registry.py`; `aughor/db/registry.py`; `aughor/routers/{connections,catalog,system}.py`.
+
+---
+
+## 71. Agentic Investigation Polish — Coherence, Trace, Report, Timing ✅ Shipped (Sprint 55)
+
+**What it does.** Makes an investigation read as one coherent chain and feel live: consistent figures across stages, an inline streaming trace, real chart labels, a calmer report with visuals upfront, and an elapsed-time readout.
+
+**Why it exists.** Stages were planning SQL independently, so the same metric (e.g. distinct customers) could differ between the chain and the narrative; the trace lived in a dismissible sidebar; charts showed generic `label`/`value` axes; the report had too many fonts/colours/boxes and hid charts behind a Data toggle.
+
+**How it works.**
+- **Analysis ledger.** At the start of a run (explore `decompose_exploration`, investigate `ada_intake`) the planner LLM pins canonical **entity identifiers + metric SQL** (e.g. *unique customer = `customer_unique_id`*, *revenue = SUM(payment_value)*), seeded from the glossary-annotated schema. Stored on `AgentState.analysis_ledger` and injected into every sub-question/phase plan + synthesis prompt with a rule to reuse already-computed figures verbatim — so numbers stop drifting.
+- **Inline trace.** `ThinkingTrace` renders at the top of each assistant turn, streaming step-by-step and **auto-collapsing** when the turn completes (shared `turnToTraceState`); the old 280px right sidebar is retired.
+- **Real chart labels.** `barSpec` takes `xTitle`/`yTitle`; `InvestigationChart` passes humanised column names so the bar shows e.g. `Payment type` / `Revenue`.
+- **Calmer report.** `ExplorationReportView` rebuilt to one body size, neutral palette, thin-border sections, chart + compact table expanded by default (only SQL collapsed), Conclusion + narrative merged into a single **Summary**.
+- **Timing.** `ChatTurn` carries `startedAt`/`elapsedMs` (frozen at terminal states in the reducer); a "Completed in 12.4s" line shows for every mode including Quick.
+
+**Key files.** `aughor/agent/{state,explore,investigate,prompts_explore}.py`; `web/components/{ThinkingTrace,ChatMessage,ChatPanel,InvestigationChart,VegaChart,ExplorationReport}.tsx`; `web/lib/useChat.ts`.
+
+---
+
+## 72. Canvas Optimisation — Scope Editing & History Management ✅ Shipped (Sprint 55–56)
+
+**What it does.** Lets users curate a Data Canvas over time — add/remove tables from its scope, remove individual history line items — and fixes historical agentic reports that wouldn't open.
+
+**How it works.**
+- **Table management.** Configure → Data subtab lists all connection tables with a membership checkbox; toggling auto-saves the Canvas scope via `updateCanvas` (empty scope = all tables), with Include-all / Clear shortcuts.
+- **History removal.** Each history row has a hover trash button; `delete_investigation()` now matches `id` **OR** `session_id`, so removing a chat line item clears the whole session.
+- **Open-from-history fix.** `HistoryDetailPanel` was mounted in a non-flex block, collapsing its `position:absolute` report area to 0px (the report was saved but rendered blank). The Canvas mount is now a proper flex column with bounded height.
+- **Scoped, clean history.** Canvas history is filtered strictly by **`canvas_id`** (chat turns persist `canvas_id` end-to-end through `/chat` → `save_chat_turn`) and shows only completed investigations + chat. A startup `sweep_stale_running()` marks orphaned `running` rows as `failed` so they stop cluttering the list.
+
+**Key files.** `web/components/ConfigurePanel.tsx`, `CanvasWorkspace.tsx`; `web/lib/api.ts`; `aughor/db/history.py`; `aughor/routers/{canvas,investigations}.py`; `aughor/api.py`.
+
+---
+
+## 73. Data Canvas — List Ranking, Recents & Rename ✅ Shipped (Sprint 56)
+
+**What it does.** Ranks the Canvas list by real usage, surfaces recently-used Canvases, and renames the concept to **Data Canvas** across the UI.
+
+**How it works.**
+- **Activity ranking.** `last_activity_by_canvas()` returns the most recent investigation/chat timestamp per canvas; `/canvases` is enriched with `last_activity`; the browser defaults to a new **"Latest investigation"** sort.
+- **Recently used.** A card strip below the All Data Canvases table shows the top 5 by activity (connection + relative time), each opening the Canvas.
+- **Rename.** User-facing "Canvas"/"Canvases" → "Data Canvas"/"Data Canvases" across nav, browser, workspace header/back/settings, command palette, and Configure. Internal routes (`/canvases`), types, IDs, and the store table are intentionally unchanged.
+
+**Key files.** `aughor/routers/canvas.py`, `aughor/db/history.py`; `web/components/CanvasBrowser.tsx`, `web/lib/api.ts`, plus a UI label pass across `CanvasWorkspace.tsx`, `CommandPalette.tsx`, `ConfigurePanel.tsx`, `web/app/page.tsx`.
+
+---
+
+*Last updated: 2026-06-04 · 73 features — all shipped. See `ROADMAP.md` for upcoming milestones.*

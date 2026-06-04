@@ -169,32 +169,54 @@ class SchemaExplorer:
 
     def _compute_time_window(self, tp: dict) -> Optional[tuple[str, str]]:
         """
-        Scan table profiles for MAX timestamp across the schema.
-        Returns (start_iso, end_iso) where start = MAX - 12 months, or None if
-        no date range info is available in any profile.
+        Scan table profiles for the most recent DENSE timestamp across the schema.
+        Returns (start_iso, end_iso) where end anchors on the latest month that
+        actually holds data and start = end - 12 months, or None if no date range
+        info is available in any profile.
+
+        Crucially we prefer the profiler's ``effective_date_range`` (the dense
+        region) over the raw ``date_range``.  A table whose real data ends in 2018
+        but has 3 stray 2020 rows reports date_range=…2020 yet
+        effective_date_range=…2018 — anchoring on the latter means "last 12 months"
+        returns real rows instead of the empty 2019–2020 gap.
         """
         from datetime import timedelta
         import re as _re
 
         _ISO_PAT = _re.compile(r"^\d{4}-\d{2}-\d{2}")
-        max_date_str: Optional[str] = None
+
+        def _field(prof, name):
+            if isinstance(prof, dict):
+                return prof.get(name)
+            return getattr(prof, name, None)
+
+        best_end: Optional[str] = None
+        best_is_effective = False
 
         for tbl_profile in tp.values():
-            dr = getattr(tbl_profile, "date_range", None)
-            if not dr or len(dr) < 2:
+            edr = _field(tbl_profile, "effective_date_range")
+            dr = _field(tbl_profile, "date_range")
+            use: Optional[str] = None
+            is_eff = False
+            if edr and len(edr) >= 2 and _ISO_PAT.match(str(edr[1])):
+                use, is_eff = str(edr[1]), True
+            elif dr and len(dr) >= 2 and _ISO_PAT.match(str(dr[1])):
+                use = str(dr[1])
+            if use is None:
                 continue
-            end_str = str(dr[1])
-            if not _ISO_PAT.match(end_str):
-                continue
-            if max_date_str is None or end_str > max_date_str:
-                max_date_str = end_str
+            if best_end is None or use > best_end:
+                best_end, best_is_effective = use, is_eff
 
-        if not max_date_str:
+        if not best_end:
             return None
 
         try:
             # Parse to date — accept "YYYY-MM-DD..." (timestamps too)
-            max_d = datetime.fromisoformat(max_date_str[:10])
+            max_d = datetime.fromisoformat(best_end[:10])
+            # An effective max is month-truncated (e.g. 2018-12-01); nudge forward
+            # ~1 month so the window covers the full final dense month.
+            if best_is_effective:
+                max_d = max_d + timedelta(days=31)
             # Subtract 12 months by going back 365 days (simple, avoids calendar edge cases)
             start_d = max_d - timedelta(days=365)
             return start_d.strftime("%Y-%m-%d"), max_d.strftime("%Y-%m-%d")

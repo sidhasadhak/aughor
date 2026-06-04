@@ -403,6 +403,12 @@ class AgentState(TypedDict):
     # Business calendar events relevant to the investigation window (set by exploratory_scan)
     events_context: str
 
+    # Canonical entity/metric definitions decided once at the start of a run and
+    # reused by every downstream planning/synthesis step so figures stay consistent
+    # across stages (e.g. "unique customer = customer_unique_id"). Set by the
+    # decompose step in both explore and investigate modes.
+    analysis_ledger: str
+
     # Adaptive replan decision produced after each score_evidence (investigate mode only)
     replan_decision: Optional[ReplanDecision]
 

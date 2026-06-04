@@ -83,7 +83,7 @@ def test_action_trigger(trigger_id: str):
         recommendation="[TEST] This is a test action from Aughor",
         metric_name="test_metric", headline="Test fire from Action Hub",
         trigger_id=trigger_id,
-        triggered_at=datetime.datetime.utcnow().isoformat() + "Z",
+        triggered_at=datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"),
     )
     log = fire_action(trigger, test_payload)
     return {"status": log.status, "http_status": log.http_status, "error": log.error}
@@ -124,7 +124,7 @@ def execute_recommendation_action(inv_id: str, rec_index: int, body: dict):
         investigation_id=inv_id, rec_index=rec_index, recommendation=rec_text,
         metric_name=body.get("metric_name", ""), headline=inv.get("headline"),
         trigger_id=trigger_id,
-        triggered_at=datetime.datetime.utcnow().isoformat() + "Z",
+        triggered_at=datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"),
     )
     return fire_action(trigger, payload).to_dict()
 

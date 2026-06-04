@@ -10,7 +10,7 @@
  *   <AugTable<MyRow> columns={antColumns} dataSource={data} />
  */
 
-import React from "react";
+import React, { useMemo, useState } from "react";
 import { Table, ConfigProvider, theme } from "antd";
 import type { TableProps, TableColumnsType } from "antd";
 
@@ -20,19 +20,19 @@ const AUG_THEME: Parameters<typeof ConfigProvider>[0]["theme"] = {
   algorithm: theme.darkAlgorithm,
   token: {
     // Backgrounds
-    colorBgBase:         "#11171d",   // --bg-0
-    colorBgContainer:    "#172030",   // --bg-2
-    colorBgElevated:     "#1C2839",   // --bg-3
-    colorBgLayout:       "#11171d",
+    colorBgBase:         "#0C0D0E",   // --bg-0
+    colorBgContainer:    "#161719",   // --bg-2
+    colorBgElevated:     "#1C1D1F",   // --bg-3
+    colorBgLayout:       "#0C0D0E",
     // Borders
-    colorBorder:         "#1B2840",   // --b1
-    colorBorderSecondary:"#131C2B",   // --b0
-    colorSplit:          "#131C2B",
+    colorBorder:         "#212325",   // --b1
+    colorBorderSecondary:"#161719",   // --b0
+    colorSplit:          "#161719",
     // Text
-    colorText:           "#C8D4E4",   // --t1
-    colorTextSecondary:  "#8296AF",   // --t2
-    colorTextDescription:"#485E7C",   // --t3
-    colorTextDisabled:   "#2B3B52",   // --t4
+    colorText:           "#E3E5E9",   // --t1
+    colorTextSecondary:  "#9DA1A8",   // --t2
+    colorTextDescription:"#5E626A",   // --t3
+    colorTextDisabled:   "#393D44",   // --t4
     // Brand
     colorPrimary:        "#4C8EEE",   // --blue4
     colorPrimaryHover:   "#88BAFF",   // --blue5
@@ -47,18 +47,18 @@ const AUG_THEME: Parameters<typeof ConfigProvider>[0]["theme"] = {
   components: {
     Table: {
       // Header
-      headerBg:             "#1C2839",   // --bg-3
-      headerColor:          "#485E7C",   // --t3 — same as aug-label
-      headerSortActiveBg:   "#1C2839",
-      headerSortHoverBg:    "#223246",   // --bg-4
-      headerSplitColor:     "#1B2840",   // --b1
+      headerBg:             "#1C1D1F",   // --bg-3
+      headerColor:          "#5E626A",   // --t3 — same as aug-label
+      headerSortActiveBg:   "#1C1D1F",
+      headerSortHoverBg:    "#26282B",   // --bg-4
+      headerSplitColor:     "#212325",   // --b1
       // Rows
-      rowHoverBg:           "rgba(45, 114, 210, 0.07)",  // --bg-hover
-      rowSelectedBg:        "#1A3A6E",   // --blue2
-      rowSelectedHoverBg:   "#1A3A6E",
-      bodySortBg:           "#172030",
+      rowHoverBg:           "rgba(255, 255, 255, 0.04)",   // --bg-hover
+      rowSelectedBg:        "rgba(45, 114, 210, 0.15)",    // --bg-sel
+      rowSelectedHoverBg:   "rgba(45, 114, 210, 0.20)",
+      bodySortBg:           "#161719",
       // Borders
-      borderColor:          "#131C2B",   // --b0
+      borderColor:          "#161719",   // --b0
       // Cell sizing
       cellFontSize:         12,
       cellPaddingInline:    14,
@@ -67,8 +67,8 @@ const AUG_THEME: Parameters<typeof ConfigProvider>[0]["theme"] = {
       // filterDropdownBg: "#1C2839",
     },
     Pagination: {
-      colorBgContainer:    "#172030",
-      itemActiveBg:        "#1A3A6E",
+      colorBgContainer:    "#161719",
+      itemActiveBg:        "rgba(45, 114, 210, 0.15)",
     },
   },
 };
@@ -94,11 +94,12 @@ function fmt(col: string, v: unknown): React.ReactNode {
     return <span style={{ color: "#2B3B52", userSelect: "none" }}>—</span>;
   }
   const s = String(v);
-  // Percentage columns: if 0–1 range, multiply ×100
+  // Percentage columns: if value is in (-1, 1) it's a stored ratio → multiply ×100
+  // Values outside that range are already percentages (e.g. 11.8 = 11.8%, -60.89 = -60.89%)
   if (SHARE_COL.test(col)) {
     const n = Number(v);
     if (!isNaN(n)) {
-      const pct = n <= 1 ? n * 100 : n;
+      const pct = Math.abs(n) <= 1 ? n * 100 : n;
       return <span style={{ fontVariantNumeric: "tabular-nums" }}>{pct.toFixed(1)}%</span>;
     }
   }
@@ -140,6 +141,10 @@ interface SqlResultTableProps {
   maxHeight?: number;
   /** Extra column overrides, keyed by column name */
   columnOverrides?: Record<string, Partial<TableColumnsType<Record<string, unknown>>[number]>>;
+  /** Show the "Σ Totals" on/off toggle (when there's at least one summable column). Default true. */
+  totals?: boolean;
+  /** Max rendered width (px) per cell — long text truncates with an ellipsis + tooltip. Default 320. */
+  maxColWidth?: number;
 }
 
 export function SqlResultTable({
@@ -147,7 +152,34 @@ export function SqlResultTable({
   rows,
   maxHeight = 320,
   columnOverrides = {},
+  totals = true,
+  maxColWidth = 320,
 }: SqlResultTableProps) {
+  const [showTotals, setShowTotals] = useState(false);
+
+  // Per-column summable detection + column sums.
+  // Summable = every non-blank value is numeric, and the column is not an
+  // identifier (id/_id) nor a share/percent/rate column (summing those is meaningless).
+  const sums = useMemo(
+    () =>
+      columns.map((col, idx) => {
+        if (ORDINAL_COL.test(col) || SHARE_COL.test(col)) return null;
+        let saw = false;
+        let sum = 0;
+        for (const r of rows) {
+          const v = (r as unknown[])[idx];
+          if (v == null || v === "") continue;
+          if (isNaN(Number(v))) return null;
+          sum += Number(v);
+          saw = true;
+        }
+        return saw ? sum : null;
+      }),
+    [columns, rows],
+  );
+  const hasSummable = sums.some(s => s !== null);
+  const firstTextCol = sums.findIndex(s => s === null);
+
   // Build Ant Design column defs
   const antCols: TableColumnsType<Record<string, unknown>> = columns.map(col => {
     const isNum = !ORDINAL_COL.test(col) && rows.length > 0 && isNumericValue(rows[0]?.[columns.indexOf(col)]);
@@ -165,7 +197,14 @@ export function SqlResultTable({
         return String(va).localeCompare(String(vb));
       },
       render: (val: unknown) => (
-        <span style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>
+        <span
+          title={val == null ? undefined : String(val)}
+          style={{
+            display: "block", maxWidth: maxColWidth,
+            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+            fontFamily: "var(--font-mono)", fontSize: 11,
+          }}
+        >
           {fmt(col, val)}
         </span>
       ),
@@ -178,13 +217,50 @@ export function SqlResultTable({
     ...Object.fromEntries(columns.map((c, j) => [c, (r as unknown[])[j]])),
   }));
 
+  const showToggle = totals && hasSummable && rows.length > 0;
+
+  const summary =
+    showToggle && showTotals
+      ? () => (
+          <Table.Summary fixed>
+            <Table.Summary.Row>
+              {columns.map((col, i) => (
+                <Table.Summary.Cell index={i} key={col} align={sums[i] !== null ? "right" : "left"}>
+                  {sums[i] !== null ? (
+                    <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600 }}>
+                      {fmt(col, sums[i] as number)}
+                    </span>
+                  ) : i === firstTextCol ? (
+                    <span style={{ color: "#9DA1A8", fontWeight: 600 }}>Total</span>
+                  ) : null}
+                </Table.Summary.Cell>
+              ))}
+            </Table.Summary.Row>
+          </Table.Summary>
+        )
+      : undefined;
+
   return (
-    <AugTable<Record<string, unknown>>
-      columns={antCols}
-      dataSource={dataSource}
-      scroll={{ x: "max-content", y: maxHeight }}
-      pagination={rows.length > 100 ? { pageSize: 100, size: "small", showSizeChanger: false } : false}
-      style={{ fontSize: 12 }}
-    />
+    <div className="flex flex-col gap-1.5">
+      {showToggle && (
+        <div className="flex items-center">
+          <button
+            onClick={() => setShowTotals(v => !v)}
+            title="Show a totals row summing numeric columns"
+            className={`text-[11px] px-2 py-0.5 rounded border transition-colors ${showTotals ? "border-blue-500/40 bg-blue-500/10 text-blue-300" : "border-zinc-700 text-zinc-500 hover:text-zinc-300"}`}
+          >
+            Σ Totals {showTotals ? "on" : "off"}
+          </button>
+        </div>
+      )}
+      <AugTable<Record<string, unknown>>
+        columns={antCols}
+        dataSource={dataSource}
+        scroll={{ x: "max-content", y: maxHeight }}
+        pagination={rows.length > 100 ? { pageSize: 100, size: "small", showSizeChanger: false } : false}
+        summary={summary}
+        style={{ fontSize: 12 }}
+      />
+    </div>
   );
 }

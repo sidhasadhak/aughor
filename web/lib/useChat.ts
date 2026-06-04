@@ -2,6 +2,7 @@
 
 import { useReducer, useRef, useCallback } from "react";
 import type { ADAReport, ExplorationReport, Hypothesis, InvestigationPhase, SubQuestion, SubQuestionAnswer } from "@/lib/types";
+import type { PlaybookRef } from "@/lib/api";
 
 // ── Debug event log — ring buffer of raw SSE events ───────────────────────────
 export interface DebugEvent {
@@ -53,11 +54,22 @@ export interface ChatTurn {
   // Shared
   tablesUsed: string[];
   followups: string[];
+  analysis: { intent: string; steps: string[] } | null;
   error: string | null;
+
+  // Timing — wall clock for the whole turn (all modes incl. Quick/ask)
+  startedAt: number;          // Date.now() when the turn began streaming
+  elapsedMs: number | null;   // frozen once the turn reaches a terminal state
 
   // Cache metadata
   fromCache: boolean;
   cachedQuestion: string | null;
+
+  // Semantic inspect — set when the post-execution LLM validator finds issues
+  inspectWarning: { issues: string[]; suggestedFix: string } | null;
+
+  // Org-playbook items referenced for this turn (user can keep/modify/remove)
+  playbookRefs: PlaybookRef[];
 }
 
 interface ChatHistoryTurn {
@@ -89,14 +101,17 @@ type ChatAction =
   | { type: "QUERY_MODE";   queryMode: string }
   | { type: "TABLES_USED";  tables: string[] }
   | { type: "FOLLOWUPS";    questions: string[] }
+  | { type: "ANALYSIS";     intent: string; steps: string[] }
   | { type: "CACHE_META";   fromCache: boolean; cachedQuestion: string | null }
   | { type: "QUERIES_EXEC"; queries: { sql: string; row_count: number; error: string | null }[]; hypIdx: number }
-  | { type: "HYPOTHESES";   hypotheses: Hypothesis[] }
-  | { type: "SCORE";        score: Record<string, unknown> }
-  | { type: "ERROR";        message: string }
+  | { type: "HYPOTHESES";       hypotheses: Hypothesis[] }
+  | { type: "SCORE";            score: Record<string, unknown> }
+  | { type: "INSPECT_WARNING";  issues: string[]; suggestedFix: string }
+  | { type: "PLAYBOOK_REFS";    items: PlaybookRef[] }
+  | { type: "ERROR";            message: string }
   | { type: "DONE" }
   | { type: "CLEAR" }
-  | { type: "RESTORE";      turns: ChatTurn[] };
+  | { type: "RESTORE";          turns: ChatTurn[] };
 
 // ── Reducer ───────────────────────────────────────────────────────────────────
 
@@ -113,16 +128,24 @@ const EMPTY_TURN: Omit<ChatTurn, "id" | "question" | "mode"> = {
   subQuestions: [], subqAnswers: [], exploreReport: null,
   queriesExecuted: [], latestScore: null,
   hypotheses: [], investigationId: null,
-  tablesUsed: [], followups: [], error: null,
+  tablesUsed: [], followups: [], analysis: null, error: null,
+  startedAt: 0, elapsedMs: null,
   fromCache: false, cachedQuestion: null,
+  inspectWarning: null,
+  playbookRefs: [],
 };
+
+// Freeze the elapsed wall-time the first time a turn reaches a terminal state.
+function finish(t: ChatTurn): ChatTurn {
+  return { ...t, elapsedMs: t.elapsedMs ?? (t.startedAt ? Date.now() - t.startedAt : null) };
+}
 
 function chatReducer(state: ChatState, action: ChatAction): ChatState {
   switch (action.type) {
     case "ASK":
       return {
         ...state, streaming: true,
-        turns: [...state.turns, { ...EMPTY_TURN, id: action.id, question: action.question, mode: action.mode }],
+        turns: [...state.turns, { ...EMPTY_TURN, id: action.id, question: action.question, mode: action.mode, startedAt: Date.now() }],
       };
     case "SQL":        return updateLast(state, t => ({ ...t, sql: action.sql }));
     case "COLUMNS":    return updateLast(state, t => ({ ...t, columns: action.columns }));
@@ -132,6 +155,7 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case "STATUS_TEXT":return updateLast(state, t => ({ ...t, statusText: action.text }));
     case "TABLES_USED":return updateLast(state, t => ({ ...t, tablesUsed: action.tables }));
     case "FOLLOWUPS":  return updateLast(state, t => ({ ...t, followups: action.questions }));
+    case "ANALYSIS":   return updateLast(state, t => ({ ...t, analysis: { intent: action.intent, steps: action.steps } }));
     case "QUERY_MODE": return updateLast(state, t => ({ ...t, queryMode: action.queryMode }));
     case "CACHE_META":
       return updateLast(state, t => ({ ...t, fromCache: action.fromCache, cachedQuestion: action.cachedQuestion }));
@@ -150,18 +174,29 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
         latestScore: action.score,
         hypotheses: (action.score.hypotheses as Hypothesis[] | undefined) ?? t.hypotheses,
       }));
+    case "INSPECT_WARNING":
+      return updateLast(state, t => ({
+        ...t,
+        inspectWarning: { issues: action.issues, suggestedFix: action.suggestedFix },
+      }));
+    case "PLAYBOOK_REFS":
+      return updateLast(state, t => ({ ...t, playbookRefs: action.items }));
     case "PHASE":
       return updateLast(state, t => ({ ...t, phases: [...t.phases, action.phase], statusText: `Analyzing ${action.phase.phase_id}…` }));
     case "ADA_REPORT":
-      return { ...updateLast(state, t => ({ ...t, status: "done", adaReport: action.report, queryMode: action.queryMode, statusText: null, investigationId: action.investigationId ?? t.investigationId })), streaming: false };
+      return { ...updateLast(state, t => finish({ ...t, status: "done", adaReport: action.report, queryMode: action.queryMode, statusText: null, investigationId: action.investigationId ?? t.investigationId })), streaming: false };
     case "EXPLORE_REPORT":
-      return { ...updateLast(state, t => ({ ...t, status: "done", exploreReport: action.report, subQuestions: action.subQuestions, subqAnswers: action.subqAnswers, queryMode: "explore", statusText: null, investigationId: action.investigationId ?? t.investigationId })), streaming: false };
+      return { ...updateLast(state, t => finish({ ...t, status: "done", exploreReport: action.report, subQuestions: action.subQuestions, subqAnswers: action.subqAnswers, queryMode: "explore", statusText: null, investigationId: action.investigationId ?? t.investigationId })), streaming: false };
     case "REPORT":
       return updateLast(state, t => ({ ...t, report: action.report, queryMode: action.queryMode, statusText: null, investigationId: action.investigationId ?? t.investigationId }));
     case "ERROR":
-      return { ...updateLast(state, t => ({ ...t, status: "error", error: action.message })), streaming: false };
+      return { ...updateLast(state, t => finish({ ...t, status: "error", error: action.message })), streaming: false };
     case "DONE":
-      return { ...updateLast(state, t => ({ ...t, status: "done" })), streaming: false };
+      // The backend always emits `done` in its finally block — even right after an
+      // `error`. Only promote a still-running turn; never overwrite a terminal
+      // `error` status (otherwise the failure message is set but never shown and
+      // the investigation looks like it silently "gave up").
+      return { ...updateLast(state, t => finish({ ...t, status: t.status === "loading" ? "done" : t.status })), streaming: false };
     case "CLEAR":
       return { turns: [], streaming: false };
     case "RESTORE":
@@ -217,6 +252,7 @@ async function consumeStream(
             case "chart_type":   dispatch({ type: "CHART_TYPE", chartType: p.chart_type as string }); break;
             case "tables_used":  dispatch({ type: "TABLES_USED",tables:    p.tables as string[] }); break;
             case "followups":    dispatch({ type: "FOLLOWUPS",  questions: p.questions as string[] }); break;
+            case "analysis":     dispatch({ type: "ANALYSIS",   intent:    p.intent as string, steps: p.steps as string[] }); break;
             case "mode":         dispatch({ type: "QUERY_MODE", queryMode: p.query_mode as string }); break;
             case "phase_complete":
               dispatch({ type: "PHASE", phase: p.phase as InvestigationPhase });
@@ -262,6 +298,14 @@ async function consumeStream(
             case "score":
               dispatch({ type: "SCORE", score: (p.score as Record<string, unknown>) ?? {} });
               break;
+            case "inspect_warning":
+              dispatch({
+                type: "INSPECT_WARNING",
+                issues:      (p.issues as string[]) ?? [],
+                suggestedFix: (p.suggested_fix as string) ?? "",
+              });
+              break;
+            case "playbook_refs": dispatch({ type: "PLAYBOOK_REFS", items: (p.items as PlaybookRef[]) ?? [] }); break;
             case "error":        dispatch({ type: "ERROR", message: p.message as string }); break;
             case "done":         dispatch({ type: "DONE" }); break;
           }

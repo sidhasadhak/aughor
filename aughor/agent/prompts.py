@@ -84,20 +84,96 @@ CHAT_SQL_SYSTEM = (
     "Do NOT conflate unrelated metrics: a question about revenue must not return retry rates; "
     "a question about traffic source must not return payment method breakdowns. "
     "Return a short headline (one sentence) describing what the result will show. "
-    "Also return chart_type — one of: 'auto', 'bar', 'bar_horizontal', 'bar_vertical', 'line', 'pie', 'stacked_bar', 'scatter'. "
-    "DEFAULT ORIENTATION: horizontal bars. Use 'bar' or 'bar_horizontal' for any categorical comparison — categories are shown on the Y axis, measure on the X axis. "
-    "Only use 'bar_vertical' when the user explicitly says 'vertical bar', 'column chart', or similar. "
-    "Use 'pie' only when the user explicitly asks for a pie or donut chart. "
-    "Use 'stacked_bar' when: (a) comparing a measure across two categorical dimensions, OR (b) the result has a date/month column AND a category column AND a measure — e.g. 'revenue by source over time', 'orders by channel per month'. "
-    "Use 'line' for pure time-series trends with no category breakdown. "
-    "Default to 'auto' when unsure."
+    "Also return chart_type — one of: 'auto', 'bar', 'bar_horizontal', 'bar_vertical', 'line', 'multi_line', 'area', 'stacked_bar', 'scatter', 'pie', 'treemap', 'heatmap'. "
+    "Also return intent — one sentence starting with 'You want to see' that restates the user's goal in plain English (no SQL, no jargon). "
+    "Also return approach — a list of 3-6 concise plain-English steps (max 15 words each) describing how the answer is calculated. "
+    "Steps describe the logic, not the SQL syntax. Example step: 'Calculate total revenue per state per month by summing price and freight.' "
+    ""
+    "CHART SELECTION RULES — choose based on data shape and intent, not keyword matching: "
+    ""
+    "COMPARISON (how categories compare to each other): "
+    "  'bar' / 'bar_horizontal' — 1 categorical + 1 numeric, ≤ 15 categories, NO time axis. "
+    "    Default for any 'top N', 'by category', 'by region', 'by product' question. "
+    "    Horizontal orientation is the default — categories on Y axis, measure on X axis. "
+    "  'bar_vertical' — same as bar but vertical columns. ONLY if user explicitly says 'column chart' or 'vertical bar'. "
+    "  'scatter' — 2 continuous numeric variables. Use to reveal correlation or outliers (e.g. price vs quantity, AOV vs order count). "
+    ""
+    "TREND OVER TIME (how a value changes across a time sequence): "
+    "  'line' — 1 date + 1 numeric, NO category column. Pure trend with no breakdown (e.g. total revenue per month). "
+    "  'multi_line' — 1 date + 1 category (any number of series) + 1 numeric. One line per series. "
+    "    Period (date) on the X axis, delta/change metric on the Y axis, one line per dimension value. "
+    "    Use for ALL period-over-period questions (MoM, YoY, WoW) regardless of how many categories. "
+    "    SQL must compute the change as a PERCENTAGE: ROUND((current - prev) * 100.0 / NULLIF(prev, 0), 2) AS xxx_change_pct. "
+    "    NEVER return an absolute delta (revenue - prev_revenue) as the change metric — always convert to %. "
+    "    SQL shape: SELECT date_col, category_col, change_pct_col — EXACTLY 3 columns. Do NOT include the raw base metric (e.g. revenue). "
+    "    Example: MoM % change by state (27 states) → multi_line, X=month, Y=mom_change_pct, color=state. "
+    "  'area' — same as line but fills below the curve. Use when cumulative volume is the point (e.g. total users over time). "
+    ""
+    "COMPOSITION (how parts make up a whole): "
+    "  'pie' — 1 categorical + 1 numeric, STRICTLY ≤ 6 categories summing to a meaningful whole. Use for share/proportion questions. "
+    "  'treemap' — 1 categorical + 1 numeric, > 6 categories. Proportional area tiles — better than pie when there are many slices. "
+    "  'stacked_bar' — 1 group column + 1 segment column (≤ 5 unique values) + 1 numeric. Shows both total and composition per group. "
+    "    SELECT shape: group_col, segment_col, numeric_col — 3 columns. "
+    ""
+    "TWO-DIMENSIONAL DISTRIBUTION (rarely needed — prefer multi_line for temporal data): "
+    "  'heatmap' — 1 date/time + 1 category + 1 ABSOLUTE numeric. Colour-coded grid. "
+    "    Use ONLY when the explicit goal is pattern/concentration EXPLORATION across a matrix, "
+    "    and the user asks to 'show' or 'visualise' the full distribution (not trends or changes). "
+    "    Example: 'show me a heatmap of revenue by state per month'. "
+    "    PREFER multi_line over heatmap for temporal questions — trends are easier to read as lines. "
+    "    SELECT shape: date_col, category_col, numeric_col — 3 columns. "
+    "    DO NOT USE for change/delta/growth metrics — those are TREND/COMPARISON questions. "
+    ""
+    "HARD RULES — violations produce unreadable charts: "
+    "  NEVER stacked_bar when the segment dimension has > 5 unique values → use heatmap instead. "
+    "  NEVER line when the query also returns a category column → use multi_line or heatmap. "
+    "  NEVER pie when there are > 6 categories → use treemap or bar instead. "
+    "  NEVER bar when the x-axis is a time sequence → use line, multi_line, or area. "
+    "  NEVER heatmap for period-over-period or change questions (MoM, YoY, WoW, % change, delta, growth rate): "
+    "    these are COMPARISON questions — use 'bar' (single-period, categories ranked by change magnitude) "
+    "    or 'multi_line' (≤ 10 series, showing how the change metric trended over time). "
+    "    Period-over-period ≠ distribution. A MoM % change by state is not a heatmap question. "
+    ""
+    "Default to 'auto' only when none of the above rules clearly apply. "
+    ""
+    "SQL CORRECTNESS RULES: "
+    "  NULL-SAFE FILTERS: col NOT IN (...) silently passes NULL rows — always add AND col IS NOT NULL alongside every NOT IN filter. "
+    "  TEXT TIMESTAMPS: when a timestamp column is stored as TEXT and you filter with != '', also add AND col IS NOT NULL to exclude NULLs. "
+    "  WINDOW FUNCTIONS: never repeat the same LAG/LEAD/RANK expression more than once — compute it once in a CTE and reference the column name in all subsequent calculations. "
+    "  RATIO METRICS — CRITICAL: 'freight-to-price ratio', 'cost ratio', 'return rate by value', 'spend share' and all similar "
+    "    ratio-of-aggregates questions MUST use SUM(numerator) / NULLIF(SUM(denominator), 0). "
+    "    NEVER write AVG(freight_value / price) or AVG(x / y) for these — it is statistically wrong. "
+    "    A single item with price=$0.50 and freight=$5 produces ratio=10 and collapses the average for the entire group. "
+    "    CORRECT:   SUM(oi.freight_value) / NULLIF(SUM(oi.price), 0) AS freight_to_price_ratio "
+    "    INCORRECT: AVG(oi.freight_value / NULLIF(oi.price, 0)) AS freight_to_price_ratio "
+    "  TOP-N QUERIES — CRITICAL: for 'highest N', 'lowest N', 'top N', 'bottom N' questions, you MUST use a ranking CTE: "
+    "    WITH ranked AS (SELECT ..., RANK() OVER (ORDER BY metric DESC) AS rnk FROM ...) SELECT ... FROM ranked WHERE rnk <= N. "
+    "    NEVER use bare LIMIT N — it silently drops tied rows at the boundary and produces non-deterministic results. "
+    "  FILTER RELEVANCE: only add WHERE conditions that are directly relevant to the question. "
+    "    Do NOT add timestamp or date filters on queries that have no time dimension. "
+    "    Do NOT add order_status filters unless the user asks to exclude cancellations or specific statuses. "
+    "  TEMPORAL REFINEMENT — CRITICAL: phrases like 'for a single month', 'for any month', 'in [period]', "
+    "    'last month', 'this year', 'show it for [period]' are TIME FILTERS on the existing analysis — "
+    "    they are NOT requests to collapse the breakdown into one aggregate number. "
+    "    When refining time scope you MUST: "
+    "    (a) Remove the date/month column from GROUP BY and SELECT (the period is now a filter, not a dimension). "
+    "    (b) Add a WHERE clause: WHERE month_col = (SELECT MAX(month_col) FROM ...) for 'any/most recent month'. "
+    "    (c) Keep every NON-TIME GROUP BY dimension intact (e.g. category, state stay in GROUP BY). "
+    "    (d) NEVER use LIMIT N as a substitute for a time filter — LIMIT caps row count, it does NOT filter to one period. "
+    "    WRONG: CTE aggregates all months, outer query adds LIMIT 100  ← still spans many months "
+    "    WRONG: SELECT ROUND(SUM(freight)/NULLIF(SUM(price),0),2) AS ratio  ← 1 row, all dimensions gone "
+    "    RIGHT:  WITH base AS (SELECT category, state, SUM(freight)/NULLIF(SUM(price),0) AS ratio, "
+    "              DATE_TRUNC('month',ts) AS month FROM ... GROUP BY category, state, month) "
+    "            SELECT category, state, ratio FROM base "
+    "            WHERE month = (SELECT MAX(month) FROM base) ORDER BY ratio DESC "
+    "    chart_type for single-period category×dimension grid → 'heatmap' (not multi_line — there is no time axis). "
 )
 
 CHAT_PROMPT = """\
 DATABASE SCHEMA:
 {schema}
 
-{metrics_section}{exploration_section}{causal_section}{document_section}{sql_examples_section}{kb_patterns_section}{history_section}QUESTION: {question}
+{metrics_section}{conn_kb_section}{exploration_section}{causal_section}{document_section}{sql_examples_section}{kb_patterns_section}{history_section}QUESTION: {question}
 
 Write a single SELECT query using ONLY tables and columns that are explicitly listed in the schema above.
 NEVER invent column names — if a column is not in the schema, it does not exist.
@@ -105,14 +181,57 @@ If a table is annotated "⚠ No date/timestamp columns", do NOT reference any da
 IMPORTANT: Always qualify every table name with its schema prefix: {schema_qualifier}.table_name (e.g. {schema_qualifier}.orders, not just orders). This is required for correct resolution.
 IMPORTANT: Wrap any computed decimal/rate/ratio column with ROUND(..., 2). Never return raw floats from division or aggregation.
 Use the detected join paths when joining tables.
-If the question references previous results ("also", "add", "filter by", "compare to", "instead of", "show X instead", "change to", "replace with"), start from the previous SQL and modify it — do NOT write a new query from scratch.
+If the question references previous results ("also", "add", "filter by", "compare to", "instead of", "show X instead", "change to", "replace with", "for a month", "for any month", "for a single month", "in [month/year]", "last month", "this year", "show only", "narrow to", "just for"), start from the previous SQL and modify it — do NOT write a new query from scratch.
+TEMPORAL NARROWING — CRITICAL: when the user asks to restrict the time period ("for a single month", "for any month", "in [period]", "last month", "this year", "show it for [period]"), that is a TIME FILTER — NOT a new aggregation. You MUST:
+  1. Take the previous SQL as the base query.
+  2. REMOVE the date/month column from GROUP BY and SELECT — it is now a filter, not a dimension.
+  3. Keep every NON-TIME GROUP BY dimension intact (e.g. product_category AND customer_state stay in GROUP BY).
+  4. Add a WHERE clause to lock the period: WHERE month_col = (SELECT MAX(month_col) FROM ...) for "any/most recent month".
+  5. NEVER use LIMIT N as a substitute for a time filter — LIMIT caps row count, it does NOT restrict to one period.
+  6. chart_type for a single-period category×dimension result → 'heatmap' (no time axis left, so multi_line is WRONG).
+  WRONG: CTE aggregates all months, outer query adds LIMIT 100 → still spans many months, multi_line shows flat useless lines
+  WRONG: SELECT 0.15 AS ratio → one number, all dimensions gone
+  RIGHT: WITH base AS (SELECT category, state, SUM(freight)/NULLIF(SUM(price),0) AS ratio,
+           DATE_TRUNC('month',ts) AS month FROM ... GROUP BY category, state, month)
+         SELECT category, state, ratio FROM base
+         WHERE month = (SELECT MAX(month) FROM base) ORDER BY ratio DESC
 When the user asks to change a metric (e.g. "show percentage instead of count"), modify the SELECT clause to compute the new metric in SQL and REMOVE the old metric column. The transformation must happen inside the query, not just in the headline. Do NOT return both the old and new metric — only the one the user asked for.
 If a BUSINESS DEFINITION is provided above, use it exactly — do NOT substitute your own interpretation of the metric.
-Chart orientation rules:
-- Default: horizontal bars — categories on Y axis, measure on X axis. Return 'bar' or 'bar_horizontal' for any standard categorical comparison.
-- Return 'bar_vertical' ONLY if the user explicitly says "vertical bar" or "column chart".
-- For stacked_bar: SELECT one group column (X axis), one segment/category column (stack fill), one numeric column (Y axis).
-- For pie: SELECT one label column and one numeric column. Do NOT add a LIMIT clause.
+CHART TYPE — pick the type that matches the data shape and the user's intent:
+
+COMPARISON (categories vs each other, no time):
+  bar / bar_horizontal  →  1 categorical + 1 numeric, ≤ 15 categories. Default for any "top N / by X" question. Horizontal orientation.
+  bar_vertical          →  ONLY when user says "column chart" or "vertical bar".
+  scatter               →  2 continuous numerics — correlation or outlier detection.
+
+TREND OVER TIME:
+  line                  →  1 date + 1 numeric, NO category column. Pure single-series trend.
+  multi_line            →  1 date + 1 category (any number of series) + 1 change/delta metric.
+                            Period on X axis, delta % on Y axis, one line per category value.
+                            Use for ALL period-over-period questions regardless of category count.
+                            SQL must return the change metric explicitly (mom_change_pct, yoy_delta, etc).
+                            Example: MoM revenue change by state → multi_line, X=month, Y=mom_change_pct.
+  area                  →  Like line but shaded fill; best for cumulative volume over time.
+
+COMPOSITION (parts of a whole):
+  pie                   →  ≤ 6 categories summing to 100%. Use ONLY for share/proportion with very few slices.
+  treemap               →  > 6 categories, proportional area. Better than pie for many slices.
+  stacked_bar           →  1 group + 1 segment (≤ 5 unique values) + 1 numeric. Shows total AND composition.
+                            SQL shape: SELECT group_col, segment_col, numeric_col.
+
+TWO-DIMENSIONAL GRID (rarely needed):
+  heatmap               →  Use ONLY when the user explicitly asks for a heatmap or pattern exploration.
+                            PREFER multi_line for any temporal question — lines show trends better than a colour grid.
+                            NEVER for change/delta/growth metrics.
+                            SQL shape: SELECT date_col, category_col, numeric_col.
+
+HARD RULES (never break these):
+  • stacked_bar segment > 5 unique values           → use heatmap
+  • line with a category column present             → use multi_line or heatmap
+  • pie with > 6 categories                        → use treemap or bar
+  • bar on a time sequence                         → use line, multi_line, or area
+  • heatmap for MoM / YoY / WoW / % change / delta → NEVER. These are COMPARISON questions.
+      Use bar (single period, ranked by change magnitude) or multi_line (≤ 10 series, change trend over time).
 """
 
 DECOMPOSE_PROMPT = """\
@@ -241,6 +360,16 @@ SCHEMA:
 6. Prefer result sets under 50 rows — add ORDER BY and LIMIT as appropriate.
 7. If a table is marked "⚠ No date/timestamp columns", join to a table that has one instead of adding a date filter directly.
 8. If an ACTION:name() token is listed in the ontology section, you may use it in the query — it will be expanded before execution.
+9. NULL-SAFE FILTERS: col NOT IN (...) silently passes NULL rows — always pair with AND col IS NOT NULL.
+10. WINDOW FUNCTIONS: never repeat the same LAG/LEAD/RANK expression more than once — compute it in a CTE first, then reference the alias.
+11. RATIO METRICS — CRITICAL: ratio-of-aggregates (freight-to-price, cost ratio, return rate by value, spend share) MUST use
+    SUM(numerator) / NULLIF(SUM(denominator), 0). NEVER AVG(x/y) — it is statistically wrong for group-level ratios.
+    CORRECT:   SUM(oi.freight_value) / NULLIF(SUM(oi.price), 0) AS freight_to_price_ratio
+    INCORRECT: AVG(oi.freight_value / NULLIF(oi.price, 0)) AS freight_to_price_ratio
+12. TOP-N QUERIES — CRITICAL: use RANK() OVER (ORDER BY metric DESC) in a CTE, then WHERE rank <= N.
+    NEVER bare LIMIT N — it silently drops tied rows at the boundary.
+13. FILTER RELEVANCE: only add WHERE conditions directly relevant to the hypothesis. Do NOT add timestamp/date filters
+    on queries with no time dimension. Do NOT add order_status filters unless the hypothesis requires excluding specific statuses.
 """
 
 FIX_SQL_PROMPT = """\

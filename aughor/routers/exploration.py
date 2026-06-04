@@ -163,9 +163,11 @@ async def extend_domain_budget(conn_id: str, domain: str):
             db = open_connection_for(conn_id)
             explorer = SchemaExplorer(conn_id, db)
             _explorers[conn_id] = explorer
-            _explorer_tasks[conn_id] = asyncio.create_task(
+            _t = asyncio.create_task(
                 explorer.explore(domain_intel_only=True), name=f"explorer-{conn_id}-extend"
             )
+            _t.add_done_callback(lambda _, k=conn_id: _explorer_tasks.pop(k, None))
+            _explorer_tasks[conn_id] = _t
         except Exception as exc:
             logger.warning("Could not restart explorer for %s after extend: %s", conn_id, exc)
     return {"ok": True, "domain": domain, "extra": 5}
@@ -223,9 +225,11 @@ async def resume_exploration(conn_id: str):
             from aughor.explorer.agent import SchemaExplorer
             explorer = SchemaExplorer(conn_id, db)
             _explorers[conn_id] = explorer
-            _explorer_tasks[conn_id] = asyncio.create_task(
+            _t = asyncio.create_task(
                 explorer.explore(), name=f"explorer-{conn_id}-resume"
             )
+            _t.add_done_callback(lambda _, k=conn_id: _explorer_tasks.pop(k, None))
+            _explorer_tasks[conn_id] = _t
             logger.info("Resume: explorer started for %s", conn_id)
         except Exception as exc:
             logger.warning("Resume: failed for %s — %s", conn_id, exc)
@@ -258,7 +262,9 @@ async def restart_exploration(conn_id: str):
         db = open_connection_for(conn_id)
         new_explorer = SchemaExplorer(conn_id, db)
         _explorers[conn_id] = new_explorer
-        _explorer_tasks[conn_id] = asyncio.create_task(new_explorer.explore(), name=f"explorer-{conn_id}-restart")
+        _t = asyncio.create_task(new_explorer.explore(), name=f"explorer-{conn_id}-restart")
+        _t.add_done_callback(lambda _, k=conn_id: _explorer_tasks.pop(k, None))
+        _explorer_tasks[conn_id] = _t
         return {"ok": True}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
@@ -393,7 +399,9 @@ async def resume_canvas_exploration(canvas_id: str):
         db = open_connection_for(conn_id)
         explorer = SchemaExplorer(conn_id, db, canvas_id=canvas_id, tables_filter=tables)
         _canvas_explorers[canvas_id] = explorer
-        _canvas_explorer_tasks[canvas_id] = asyncio.create_task(explorer.explore(), name=f"canvas-explorer-{canvas_id}")
+        _ct = asyncio.create_task(explorer.explore(), name=f"canvas-explorer-{canvas_id}")
+        _ct.add_done_callback(lambda _, k=canvas_id: _canvas_explorer_tasks.pop(k, None))
+        _canvas_explorer_tasks[canvas_id] = _ct
         return {"status": "started"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -432,7 +440,9 @@ async def restart_canvas_exploration(canvas_id: str):
         db = open_connection_for(conn_id)
         explorer = SchemaExplorer(conn_id, db, canvas_id=canvas_id, tables_filter=tables)
         _canvas_explorers[canvas_id] = explorer
-        _canvas_explorer_tasks[canvas_id] = asyncio.create_task(explorer.explore(), name=f"canvas-explorer-{canvas_id}")
+        _ct = asyncio.create_task(explorer.explore(), name=f"canvas-explorer-{canvas_id}")
+        _ct.add_done_callback(lambda _, k=canvas_id: _canvas_explorer_tasks.pop(k, None))
+        _canvas_explorer_tasks[canvas_id] = _ct
         return {"status": "restarted"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

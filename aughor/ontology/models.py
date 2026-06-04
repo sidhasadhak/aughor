@@ -26,6 +26,53 @@ class ComputedProperty(BaseModel):
     unit: str = ""           # "days", "%", "$", etc.
 
 
+class ObjectSet(BaseModel):
+    """A named, reusable filtered view of an entity's rows — mirrors Palantir's Object Set concept.
+
+    Examples:
+      - "Active Orders"    filter_sql="order_status NOT IN ('canceled', 'delivered')"
+      - "Delivered Orders" filter_sql="order_status = 'delivered'"
+      - "All Orders"       filter_sql=""  (no filter — full table)
+
+    object_sets complement active_filter (which remains the single fast-path SQL fragment
+    used by the investigation pipeline). The default object set's filter_sql is always
+    kept in sync with active_filter on the parent entity.
+    """
+    id: str                      # snake_case: "active_orders", "delivered_orders"
+    display_name: str            # "Active Orders"
+    description: str = ""
+    filter_sql: str = ""         # WHERE-clause fragment; empty string = all rows
+    is_default: bool = False     # the primary view; filter_sql mirrors entity.active_filter
+    source: Literal["lifecycle", "exploration", "manual"] = "manual"
+
+
+class EntityProperty(BaseModel):
+    """First-class property on an entity — mirrors Palantir's Property concept.
+
+    Sourced from ColumnProfile at build time; description enriched from glossary.
+    A property is the semantic label on a column — not the raw column itself.
+    """
+    name: str                           # column name as-is: "order_id", "created_at"
+    display_name: str = ""             # human-readable: "Order ID", "Created At"
+    data_type: str = ""                # dtype from profiler: "INTEGER", "VARCHAR", "TIMESTAMP"
+    semantic_type: str = ""            # profiler semantic: "identifier", "measure", "timestamp", "dimension"
+    description: str = ""             # from glossary column annotations; LLM may enrich
+    is_primary_key: bool = False
+    is_foreign_key: bool = False
+    is_nullable: bool = False          # null_rate > 0
+    null_rate: float = 0.0             # fraction of nulls in the column
+    null_meaning: str = ""            # from phase-3 exploration: "event not yet occurred", "unknown", etc.
+    is_derived: bool = False           # True for computed/formula columns, not raw source columns
+    value_interpretation: str = ""    # "currency", "fraction 0-1", "count", "duration_days"
+    unit: str = ""                     # "USD", "days", "%"
+    sample_values: list[str] = Field(default_factory=list)   # top_values from profiler (dimensions only)
+    # Distribution stats from phase-6 exploration (numeric columns only)
+    distribution_shape: str = ""      # "normal", "skewed_right", "skewed_left", "uniform", "bimodal"
+    p25: Optional[float] = None       # 25th percentile
+    p50: Optional[float] = None       # median
+    p75: Optional[float] = None       # 75th percentile
+
+
 class OntologyEntity(BaseModel):
     id: str                                    # PascalCase: "Order", "Customer"
     display_name: str                          # human-readable business name, set/corrected by enricher
@@ -53,6 +100,11 @@ class OntologyEntity(BaseModel):
     terminal_states: list[str] = Field(default_factory=list)
     active_filter: Optional[str] = None       # SQL fragment: "order_status NOT IN ('canceled')"
 
+    # Named object sets — composable, reusable filters over this entity's rows.
+    # Auto-generated from lifecycle states; enriched by exploration findings.
+    # Keyed by ObjectSet.id for fast lookup.
+    object_sets: dict[str, ObjectSet] = Field(default_factory=dict)
+
     # Temporal
     created_at_col: Optional[str] = None      # primary event-time column
 
@@ -60,8 +112,40 @@ class OntologyEntity(BaseModel):
     default_filters: list[str] = Field(default_factory=list)
     exclude_when: list[str] = Field(default_factory=list)  # human-readable descriptions
 
+    # First-class properties — one entry per column on the source table(s).
+    # Keyed by column name. Sourced from ColumnProfile at build time;
+    # description enriched from glossary. Mirrors Palantir's Property concept.
+    properties: dict[str, EntityProperty] = Field(default_factory=dict)
+
     # Per-entity derived KPIs (LLM-generated, one SELECT-clause expression each)
     computed_properties: list[ComputedProperty] = Field(default_factory=list)
+
+    # Interfaces this entity implements — set by the builder's interface detector.
+    # e.g. ["HasTimestamp", "HasMonetaryValue", "HasLifecycle"]
+    implements: list[str] = Field(default_factory=list)
+
+    # Top insights from phase-8 exploration, sorted by novelty desc.
+    # Each entry is a plain-English finding sentence (e.g. "32 % of orders
+    # never reach a terminal state — possible data pipeline gap").
+    exploration_insights: list[str] = Field(default_factory=list)
+
+
+class OntologyInterface(BaseModel):
+    """A shared structural shape implemented by multiple entity types — mirrors Palantir's Interface concept.
+
+    Interfaces let you write polymorphic queries across entity types without
+    knowing specific table schemas.  Examples:
+      HasTimestamp  — any entity that records event time (created_at, updated_at)
+      HasMonetaryValue — any entity that carries a financial amount
+      HasLifecycle  — any entity with a named status / state machine
+
+    Auto-detected by the ontology builder from property name patterns and entity flags.
+    """
+    id: str                                  # "HasTimestamp", "HasMonetaryValue"
+    display_name: str                        # "Has Timestamp"
+    description: str = ""
+    property_patterns: list[str] = Field(default_factory=list)   # human-readable pattern descriptions
+    implementing_entities: list[str] = Field(default_factory=list)  # entity ids
 
 
 class OntologyRelationship(BaseModel):
@@ -97,21 +181,47 @@ class OntologyMetric(BaseModel):
     benchmark_source: Optional[str] = None      # "internal: FY2025 plan", "industry: ecommerce"
 
 
+class ActionParameter(BaseModel):
+    """A typed, named input to an OntologyAction — mirrors Palantir's Action parameter concept.
+
+    Parameters are extracted from {placeholder} tokens in the sql_template.
+    Data type is inferred from column profiles where possible; falls back to VARCHAR.
+    """
+    name: str                           # matches {name} in sql_template
+    display_name: str = ""             # "Customer ID", "Start Date"
+    data_type: str = "VARCHAR"         # SQL type: "INTEGER", "VARCHAR", "DATE", "NUMERIC"
+    required: bool = True
+    description: str = ""
+    default_value: Optional[str] = None  # serialised as string; cast at runtime
+
+
 class OntologyAction(BaseModel):
     id: str                                    # "get_active_orders"
     display_name: str
     description: str
     entity: str                                # entity this acts on
     action_type: Literal["filter", "compute", "traverse", "aggregate", "validate"]
-    sql_template: str                          # complete, ready-to-run SQL (no params for M12a)
-    parameters: dict[str, Any] = Field(default_factory=dict)
+    sql_template: str                          # SQL with optional {param} placeholders
+    parameters: list[ActionParameter] = Field(default_factory=list)
     business_rules_enforced: list[str] = Field(default_factory=list)
     returns: str                               # description of what the SQL returns
     source_table: str                          # primary table this queries
 
+    # Provenance — how this action came to exist.  Additive, non-breaking:
+    #   structural — derived by the ontology builder from schema shape (default)
+    #   learned    — crystallized from a repeated high-confidence investigation
+    #   manual     — authored/edited by a user
+    # Learned actions live in a separate {conn}:{schema}-keyed store
+    # (data/learned_actions.json) that survives ontology rebuilds, and are
+    # overlaid into the graph at read time.
+    origin: Literal["structural", "learned", "manual"] = "structural"
+    # How many times a learned skill has been reused — feeds per-skill autonomy.
+    usage_count: int = 0
+
 
 class OntologyGraph(BaseModel):
     connection_id: str
+    schema_name: str = ""          # DB schema this ontology covers (e.g. "analytics", "public")
     schema_fingerprint: str
     generated_at: str = Field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
@@ -123,6 +233,7 @@ class OntologyGraph(BaseModel):
     relationships: dict[str, OntologyRelationship] = Field(default_factory=dict)
     metrics: dict[str, OntologyMetric] = Field(default_factory=dict)
     actions: dict[str, OntologyAction] = Field(default_factory=dict)
+    interfaces: dict[str, OntologyInterface] = Field(default_factory=dict)
 
     # Fast-lookup reverse maps
     entity_to_tables: dict[str, list[str]] = Field(default_factory=dict)

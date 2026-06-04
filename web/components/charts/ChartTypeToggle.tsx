@@ -9,21 +9,33 @@ interface Props {
 }
 
 const ICONS: Record<ChartType | "auto", string> = {
-  auto:          "◈",
-  line:          "〜",
-  bar:           "▬",
-  "grouped-bar": "▦",
-  scatter:       "⁘",
-  table:         "≡",
+  auto:           "◈",
+  line:           "〜",
+  "multi-line":   "≋",
+  area:           "◿",
+  bar:            "▬",
+  "grouped-bar":  "▦",
+  "stacked-bar":  "▥",
+  scatter:        "⁘",
+  heatmap:        "▣",
+  pie:            "◔",
+  treemap:        "⊞",
+  table:          "≡",
 };
 
 const LABELS: Record<ChartType | "auto", string> = {
-  auto:          "Auto",
-  line:          "Line",
-  bar:           "Bar",
-  "grouped-bar": "Grouped",
-  scatter:       "Scatter",
-  table:         "Table",
+  auto:           "Auto",
+  line:           "Line",
+  "multi-line":   "Multi-line",
+  area:           "Area",
+  bar:            "Bar",
+  "grouped-bar":  "Grouped",
+  "stacked-bar":  "Stacked",
+  scatter:        "Scatter",
+  heatmap:        "Heatmap",
+  pie:            "Pie",
+  treemap:        "Treemap",
+  table:          "Table",
 };
 
 export function ChartTypeToggle({ value, available, onChange }: Props) {

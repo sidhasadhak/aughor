@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import type { ExplorationReport as ExplorationReportType, SubQuestion, SubQuestionAnswer, DataQualityNote } from "@/lib/types";
+import type { ExplorationReport as ExplorationReportType, SubQuestion, SubQuestionAnswer } from "@/lib/types";
 import { InvestigationChart } from "@/components/InvestigationChart";
-import { buildColumnFormatter } from "@/lib/formatCell";
+import { SqlResultTable } from "@/components/AugTable";
 
 interface Props {
   report: ExplorationReportType;
@@ -12,106 +12,105 @@ interface Props {
   queryCount: number;
 }
 
-// ── Purpose badge ─────────────────────────────────────────────────────────────
+// ── Purpose chip (the one allowed accent) ─────────────────────────────────────
 
 const PURPOSE_STYLE: Record<string, { label: string; chip: string; icon: string }> = {
-  landscape:    { label: "Landscape",    icon: "◎", chip: "border-blue-500/30 bg-blue-500/10 text-blue-400"        },
-  relationship: { label: "Relationship", icon: "⟺", chip: "border-violet-500/30 bg-violet-500/10 text-violet-400"  },
-  threshold:    { label: "Threshold",    icon: "↯", chip: "border-amber-500/30 bg-amber-500/10 text-amber-400"      },
-  drill_down:   { label: "Drill-down",   icon: "⇣", chip: "border-rose-500/30 bg-rose-500/10 text-rose-400"        },
-  confounder:   { label: "Confounder",   icon: "⊕", chip: "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"},
-  synthesis:    { label: "Synthesis",    icon: "✦", chip: "border-zinc-500/30 bg-zinc-500/10 text-zinc-400"         },
+  landscape:    { label: "Landscape",    icon: "◎", chip: "border-blue-500/30 text-blue-400"     },
+  relationship: { label: "Relationship", icon: "⟺", chip: "border-violet-500/30 text-violet-400" },
+  threshold:    { label: "Threshold",    icon: "↯", chip: "border-amber-500/30 text-amber-400"    },
+  drill_down:   { label: "Drill-down",   icon: "⇣", chip: "border-rose-500/30 text-rose-400"      },
+  confounder:   { label: "Confounder",   icon: "⊕", chip: "border-emerald-500/30 text-emerald-400"},
+  synthesis:    { label: "Synthesis",    icon: "✦", chip: "border-zinc-500/30 text-zinc-400"      },
 };
 
-// ── Sub-question answer card ──────────────────────────────────────────────────
+// One small uppercase section label, used everywhere for a consistent rhythm.
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return <p className="text-[11px] uppercase tracking-wide text-zinc-500">{children}</p>;
+}
+
+// ── Sub-question step — chart + table shown upfront, only SQL collapsed ────────
 
 function SubQuestionCard({
   answer,
   index,
+  last,
 }: {
   answer: SubQuestionAnswer;
   index: number;
+  last: boolean;
 }) {
-  const [open, setOpen] = useState(false);
   const [sqlOpen, setSqlOpen] = useState(false);
   const ps = PURPOSE_STYLE[answer.purpose] ?? PURPOSE_STYLE.landscape;
   const hasData = !answer.error && answer.columns.length > 0 && answer.rows.length > 0;
 
   return (
     <div className="relative">
-      {/* Connector line */}
-      <div className="absolute left-[18px] top-10 bottom-0 w-px bg-zinc-800/80 pointer-events-none" />
+      {/* Connector rail */}
+      {!last && <div className="absolute left-[15px] top-9 bottom-0 w-px bg-zinc-800/80 pointer-events-none" />}
 
-      <div className="flex gap-3">
-        {/* Step indicator */}
-        <div className="shrink-0 flex flex-col items-center z-10">
-          <div className="h-9 w-9 rounded-full border border-zinc-600 bg-zinc-800 flex items-center justify-center text-xs font-mono text-zinc-400">
+      <div className="flex gap-3 pb-6">
+        {/* Step number */}
+        <div className="shrink-0 z-10">
+          <div className="h-8 w-8 rounded-full border border-zinc-700 bg-zinc-900 flex items-center justify-center text-[12px] font-mono text-zinc-400">
             {index + 1}
           </div>
         </div>
 
         {/* Content */}
-        <div className="flex-1 pb-6 min-w-0">
-          {/* Header */}
-          <div className="flex items-start gap-2 flex-wrap mb-2">
+        <div className="flex-1 min-w-0 space-y-2.5">
+          {/* Question + purpose chip */}
+          <div className="flex items-start gap-2 flex-wrap">
             <span className={`text-[11px] font-mono px-1.5 py-0.5 rounded border shrink-0 ${ps.chip}`}>
               {ps.icon} {ps.label}
             </span>
-            <p className="text-sm text-zinc-300 leading-snug flex-1 min-w-0">{answer.question}</p>
+            <p className="text-[13px] text-zinc-300 leading-snug flex-1 min-w-0">{answer.question}</p>
           </div>
 
-          {/* Answer bubble */}
-          <div className="rounded-md border border-zinc-600 bg-zinc-800/60 p-3 space-y-2">
-            <p className="text-sm text-zinc-100 leading-relaxed font-medium">{answer.answer}</p>
-            {answer.insight && answer.insight !== answer.answer && (
-              <p className="text-xs text-zinc-400 leading-relaxed border-t border-zinc-600/60 pt-2">
-                <span className="text-zinc-500 uppercase tracking-widest font-mono text-[11px]">Insight </span>
-                {answer.insight}
-              </p>
-            )}
-            {answer.refinement && (
-              <p className="text-[11px] text-violet-400/70 border-t border-zinc-600/60 pt-2 leading-relaxed italic">
-                → {answer.refinement}
-              </p>
-            )}
-          </div>
+          {/* Answer takeaway */}
+          {answer.answer && (
+            <p className="text-[13px] text-zinc-100 leading-relaxed">{answer.answer}</p>
+          )}
 
-          {/* Evidence toggle */}
-          {(hasData || answer.error) && (
-            <div className="mt-2">
+          {/* Evidence — chart + compact table, expanded by default */}
+          {hasData && (
+            <div className="space-y-2">
+              <InvestigationChart columns={answer.columns} rows={answer.rows} />
+              <SqlResultTable columns={answer.columns} rows={answer.rows} maxHeight={220} />
+            </div>
+          )}
+
+          {answer.error && (
+            <pre className="text-[12px] text-red-400/90 rounded border border-red-500/20 p-2.5 overflow-x-auto whitespace-pre-wrap font-mono" style={{ background: "var(--bg-0)" }}>
+              {answer.error}
+            </pre>
+          )}
+
+          {/* Insight */}
+          {answer.insight && answer.insight !== answer.answer && (
+            <p className="text-[12px] text-zinc-400 leading-relaxed border-t border-zinc-800/60 pt-2">
+              <span className="text-zinc-500 uppercase tracking-wide text-[11px] mr-1.5">Insight</span>
+              {answer.insight}
+            </p>
+          )}
+
+          {/* Refinement (what it led to next) */}
+          {answer.refinement && (
+            <p className="text-[12px] text-zinc-500 leading-relaxed">→ {answer.refinement}</p>
+          )}
+
+          {/* SQL — the only collapsed detail */}
+          {(hasData || answer.error) && answer.sql && (
+            <div>
               <button
-                onClick={() => setOpen(o => !o)}
-                className="text-[11px] text-zinc-500 hover:text-zinc-400 transition font-mono uppercase tracking-wide flex items-center gap-1"
+                onClick={() => setSqlOpen(o => !o)}
+                className="text-[11px] text-zinc-600 hover:text-zinc-400 transition flex items-center gap-1"
               >
-                <span>{open ? "▼" : "▶"}</span> Data
+                <span className="inline-block w-2">{sqlOpen ? "▼" : "▶"}</span> SQL
               </button>
-
-              {open && (
-                <div className="mt-2 space-y-2">
-                  {answer.error ? (
-                    <pre className="text-xs text-red-400 bg-red-500/5 rounded border border-red-500/20 p-2.5 overflow-x-auto whitespace-pre-wrap font-mono">
-                      {answer.error}
-                    </pre>
-                  ) : (
-                    <>
-                      {hasData && <InvestigationChart columns={answer.columns} rows={answer.rows} />}
-                      {hasData && (
-                        <SubqMiniTable columns={answer.columns} rows={answer.rows} rowCount={answer.row_count} />
-                      )}
-                    </>
-                  )}
-                  <button
-                    onClick={() => setSqlOpen(o => !o)}
-                    className="text-[11px] text-zinc-500 hover:text-zinc-400 transition font-mono uppercase tracking-wide flex items-center gap-1"
-                  >
-                    <span>{sqlOpen ? "▼" : "▶"}</span> SQL
-                  </button>
-                  {sqlOpen && (
-                    <pre className="text-xs text-zinc-400 bg-zinc-800 rounded border border-zinc-600/60 p-2.5 overflow-x-auto whitespace-pre-wrap font-mono leading-relaxed">
-                      {answer.sql}
-                    </pre>
-                  )}
-                </div>
+              {sqlOpen && (
+                <pre className="mt-1.5 text-[12px] text-zinc-400 rounded border border-zinc-800 p-2.5 overflow-x-auto whitespace-pre-wrap font-mono leading-relaxed" style={{ background: "var(--bg-0)" }}>
+                  {answer.sql}
+                </pre>
               )}
             </div>
           )}
@@ -121,119 +120,79 @@ function SubQuestionCard({
   );
 }
 
-function SubqMiniTable({ columns, rows, rowCount }: { columns: string[]; rows: unknown[][]; rowCount: number }) {
-  const MAX = 10;
-  const visible = rows.slice(0, MAX);
-  const fmt = buildColumnFormatter(columns, rows);
-  return (
-    <div className="rounded border border-zinc-600 overflow-hidden">
-      <div className="overflow-x-auto overflow-y-auto max-h-[220px]">
-        <table className="w-full text-xs">
-          <thead className="sticky top-0 bg-zinc-800 border-b border-zinc-600">
-            <tr>
-              {columns.map(col => (
-                <th key={col} className="px-3 py-1.5 text-left text-[11px] text-zinc-500 uppercase tracking-wide font-mono whitespace-nowrap">
-                  {col.replace(/_/g, " ")}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-zinc-600/40">
-            {visible.map((row, ri) => (
-              <tr key={ri} className="hover:bg-zinc-700/70/20">
-                {(row as unknown[]).map((cell, ci) => (
-                  <td key={ci} className="px-3 py-1.5 text-zinc-300 font-mono whitespace-nowrap">
-                    {cell == null ? <span className="text-zinc-500 italic">null</span> : fmt(ci, cell)}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {rowCount > MAX && (
-        <div className="px-3 py-1 border-t border-zinc-600/60 text-[11px] text-zinc-500 font-mono">
-          +{rowCount - MAX} more rows
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function ExplorationReportView({ report, subQuestions, subqAnswers, queryCount }: Props) {
+export function ExplorationReportView({ report, subqAnswers, queryCount }: Props) {
   const dqNotes = report.data_quality_notes ?? [];
+  const showNarrative = report.narrative && report.narrative.trim() !== (report.conclusion ?? "").trim();
 
   return (
-    <div className="space-y-6">
-      {/* 1. Headline answer */}
-      <div className="rounded-md border border-violet-500/30 bg-violet-500/5 p-5">
-        <p className="text-xs font-medium uppercase tracking-widest mb-2 text-violet-400">Answer</p>
-        <p className="text-lg font-semibold text-white leading-snug">{report.headline}</p>
-      </div>
-
-      {/* 2. Conclusion */}
+    <div className="space-y-6 text-[13px] text-zinc-300">
+      {/* Answer */}
       <div className="space-y-1.5">
-        <p className="text-xs text-zinc-500 uppercase tracking-widest font-mono">Conclusion</p>
-        <p className="text-sm text-zinc-200 leading-relaxed">{report.conclusion}</p>
+        <SectionLabel>Answer</SectionLabel>
+        <p className="text-[15px] font-medium text-zinc-100 leading-snug">{report.headline}</p>
       </div>
 
-      {/* 3. Narrative */}
-      <div className="rounded-md border border-zinc-600 bg-zinc-800/40 p-4 space-y-1.5">
-        <p className="text-xs text-zinc-500 uppercase tracking-widest font-mono">How we got here</p>
-        <p className="text-sm text-zinc-300 leading-relaxed italic">{report.narrative}</p>
-      </div>
+      {/* Summary — conclusion + narrative merged into one block */}
+      {(report.conclusion || showNarrative) && (
+        <div className="border-t border-zinc-800/60 pt-4 space-y-2">
+          <SectionLabel>Summary</SectionLabel>
+          {report.conclusion && <p className="leading-relaxed">{report.conclusion}</p>}
+          {showNarrative && <p className="leading-relaxed text-zinc-400">{report.narrative}</p>}
+        </div>
+      )}
 
-      {/* 4. Investigative chain */}
+      {/* Investigative chain */}
       {subqAnswers.length > 0 && (
-        <div className="space-y-2">
-          <p className="text-xs text-zinc-500 uppercase tracking-widest font-mono">
-            Investigative chain · {subqAnswers.length} sub-question{subqAnswers.length !== 1 ? "s" : ""}
-          </p>
-          <div className="mt-3">
+        <div className="border-t border-zinc-800/60 pt-4 space-y-3">
+          <SectionLabel>Investigative chain · {subqAnswers.length} step{subqAnswers.length !== 1 ? "s" : ""}</SectionLabel>
+          <div>
             {subqAnswers.map((a, i) => (
-              <SubQuestionCard key={a.subq_id} answer={a} index={i} />
+              <SubQuestionCard key={a.subq_id} answer={a} index={i} last={i === subqAnswers.length - 1} />
             ))}
           </div>
         </div>
       )}
 
-      {/* 5. Recommended actions */}
+      {/* Recommended actions */}
       {report.recommended_actions.length > 0 && (
-        <div className="space-y-2">
-          <p className="text-xs text-zinc-500 uppercase tracking-widest font-mono">Recommended Actions</p>
-          <div className="space-y-2">
+        <div className="border-t border-zinc-800/60 pt-4 space-y-2.5">
+          <SectionLabel>Recommended actions</SectionLabel>
+          <ol className="space-y-2">
             {report.recommended_actions.map((action, i) => (
-              <div key={i} className="rounded-md border border-violet-500/20 bg-violet-500/5 p-3 flex items-start gap-3">
-                <span className="shrink-0 flex h-5 w-5 items-center justify-center rounded-full bg-violet-500/20 border border-violet-500/30 text-xs font-mono text-violet-300 mt-0.5">
+              <li key={i} className="flex items-start gap-2.5">
+                <span className="shrink-0 mt-0.5 w-5 h-5 rounded-full border border-zinc-700 text-zinc-400 text-[11px] font-mono flex items-center justify-center">
                   {i + 1}
                 </span>
-                <p className="text-sm text-zinc-300 leading-relaxed">{action}</p>
-              </div>
+                <p className="leading-relaxed">{action}</p>
+              </li>
             ))}
-          </div>
+          </ol>
         </div>
       )}
 
-      {/* 6. Data quality notes */}
+      {/* Data quality */}
       {dqNotes.length > 0 && (
-        <div className="space-y-2">
-          <p className="text-xs text-orange-400 uppercase tracking-widest font-mono">Data Quality Issues</p>
-          <div className="space-y-3">
+        <div className="border-t border-zinc-800/60 pt-4 space-y-2">
+          <SectionLabel>Data quality</SectionLabel>
+          <ul className="space-y-1.5">
             {dqNotes.map((note, i) => (
-              <div key={i} className="rounded-md border border-orange-500/20 bg-orange-500/5 p-3 space-y-1.5">
-                <code className="text-xs font-mono text-orange-300">{note.column ? `${note.table}.${note.column}` : note.table}</code>
-                <p className="text-xs text-zinc-300">{note.issue}</p>
-                <p className="text-xs text-zinc-500"><span className="text-orange-400">Fix:</span> {note.recommended_fix}</p>
-              </div>
+              <li key={i} className="leading-relaxed flex items-start gap-2">
+                <span className="shrink-0 mt-0.5 text-zinc-600">—</span>
+                <span>
+                  <code className="text-[12px] text-zinc-400">{note.column ? `${note.table}.${note.column}` : note.table}</code>
+                  <span className="text-zinc-400"> {note.issue}</span>
+                  {note.recommended_fix && <span className="text-zinc-500"> · Fix: {note.recommended_fix}</span>}
+                </span>
+              </li>
             ))}
-          </div>
+          </ul>
         </div>
       )}
 
-      <p className="text-xs text-zinc-500 text-center font-mono">
-        {queryCount} SQL quer{queryCount === 1 ? "y" : "ies"} · {subqAnswers.length} sub-question{subqAnswers.length !== 1 ? "s" : ""} explored
+      <p className="text-[11px] text-zinc-600 pt-1">
+        {queryCount} quer{queryCount === 1 ? "y" : "ies"} · {subqAnswers.length} step{subqAnswers.length !== 1 ? "s" : ""}
       </p>
     </div>
   );

@@ -176,12 +176,19 @@ tables:
     columns:
       order_id:
         description: Unique identifier for the order being paid.
+        caveats: order_id in order_payments must match exactly with orders.order_id;
+          any mismatch (e.g., due to type casting or truncation) would cause incorrect
+          joins and inflated/deflated order totals.
       payment_sequential:
         description: Sequential number indicating the order of this payment installment
           within the same order (e.g., 1 for first installment, 2 for second, etc.).
       payment_type:
         description: Method used for the payment (e.g., credit card, boleto, voucher).
         values: credit_card, boleto, voucher, cash
+        caveats: payment_type is used to infer primary payment method per customer,
+          but the analysis assumes one payment type per customer is 'primary' based
+          on frequency—this may misrepresent customers with mixed or ambiguous usage
+          patterns.
       payment_installments:
         description: Number of installments chosen for this payment (e.g., 1 for single
           payment, 12 for 12-month financing).
@@ -231,7 +238,10 @@ tables:
           this order. NOT a stable customer identifier.
         caveats: 'Do NOT use orders.customer_id to count unique customers or detect
           repeat purchasers. JOIN to customer.customer_unique_id instead: JOIN customer
-          c ON o.customer_id = c.customer_id, then GROUP BY c.customer_unique_id.'
+          c ON o.customer_id = c.customer_id, then GROUP BY c.customer_unique_id.
+          | customer_id in orders is a raw identifier that may not uniquely map to
+          customer_unique_id in the customer table without explicit join validation—using
+          customer_id directly could lead to duplicate or mismatched customer counts.'
       order_status:
         description: Current status of the order (e.g., delivered, shipped, canceled)
         values: delivered, shipped, canceled, approved, invoiced, processing, created,
@@ -439,6 +449,10 @@ tables:
           before login
       created_ts:
         description: Timestamp when the cart was created
+        caveats: carts.created_ts is in seconds, but the query multiplies it by 1000
+          assuming it's seconds-to-milliseconds conversion while impressions.ts is
+          already in milliseconds—this double-conversion error breaks the time window
+          join.
       currency:
         description: Currency code (e.g., USD, EUR) used for the cart
       traffic_source:
@@ -555,6 +569,9 @@ tables:
       ts:
         description: Unix timestamp (in milliseconds) when the impression occurred
         caveats: Stored as BIGINT; ensure proper conversion to timestamp type in analysis
+          | impressions.ts is stored in milliseconds since epoch, but the query incorrectly
+          treats it as seconds when comparing to cart.created_ts (which is in seconds),
+          causing timestamp misalignment that prevents matching impressions to carts.
       viewable:
         description: Whether the impression met viewability criteria (e.g., 50% of
           ad in view for 1+ second)
@@ -887,3 +904,254 @@ tables:
           satisfied, Would recommend
       review_date:
         description: Date the review was submitted.
+  anonymous_users:
+    description: Tracks anonymous user sessions, capturing initial identification,
+      device and traffic source information, consent status, and bot likelihood.
+    grain: one row per anonymous user (identified by anon_id)
+    auto_generated: true
+    columns:
+      anon_id:
+        description: Unique identifier for an anonymous user session or visitor
+      first_seen_ts:
+        description: Timestamp when the user was first observed in the system
+      primary_device:
+        description: The main device type used by the user, inferred from behavioral
+          or technical signals
+        values: Mobile, Desktop, Tablet
+      primary_source:
+        description: The primary marketing channel or traffic source that brought
+          the user to the site
+        values: Influencer, Meta, Email, Affiliate, Organic, TikTok, Google
+      cookie_consent:
+        description: User's cookie consent status, likely encoded as 0/1 or 0/1/2
+          (e.g., no consent, partial, full)
+        caveats: Interpretation depends on internal encoding; verify mapping of numeric
+          values to consent levels
+      bot_probability:
+        description: Model-derived probability (0.0–1.0) that the user is a bot rather
+          than a human
+  sessions:
+    description: Web or app session-level data capturing user activity, device, and
+      traffic source information for analytics and segmentation.
+    grain: One row per unique session_id, representing a single user session on the
+      website or mobile app.
+    auto_generated: true
+    columns:
+      session_id:
+        description: Unique identifier for a session
+      anon_id:
+        description: Anonymous user identifier, used to link sessions to a single
+          user without identifying personally
+      session_start_ts:
+        description: Timestamp when the session started
+      device_type:
+        description: Type of device used during the session
+        values: Tablet, Desktop, Mobile
+      os_name:
+        description: Operating system name of the device
+        values: Windows, iOS, macOS, Android
+      os_version:
+        description: Version of the operating system
+      browser:
+        description: Web browser used during the session
+        values: Chrome, Safari, Firefox, Edge
+      traffic_source:
+        description: Marketing channel or source that brought the user to the site/app
+        values: Organic, TikTok, Affiliate, Google, Email, Influencer, Meta
+      country:
+        description: Country of the user based on IP or location data
+        values: US, CA, DE, UK, FR
+      timezone:
+        description: Timezone of the user at the time of the session
+      is_mobile_app:
+        description: Indicator (1 or 0) whether the session originated from the mobile
+          app
+        values: 0, 1
+  anonymous_users_df:
+    description: Tracks anonymous user sessions with device and acquisition source
+      metadata, used for behavioral analysis and traffic source attribution.
+    grain: One row per anonymous user session identified by anon_id
+    auto_generated: true
+    columns:
+      anon_id:
+        description: Unique identifier for an anonymous user session
+      first_seen_ts:
+        description: Timestamp when the user's session was first recorded
+      primary_device:
+        description: The main device type used during the session
+        values: Mobile, Desktop, Tablet
+      primary_source:
+        description: The primary marketing channel through which the user arrived
+        values: Influencer, Meta, Email, Affiliate, Organic, TikTok, Google
+      cookie_consent:
+        description: Indicates whether the user provided cookie consent (1 = consented,
+          0 = not consented, possibly NULL if unknown)
+        values: 1, 0
+        caveats: NULLs may represent sessions where consent status is unknown or not
+          tracked
+      bot_probability:
+        description: Model-predicted likelihood (0.0–1.0) that the session is from
+          a bot
+  brands:
+    description: A reference table storing information about beauty and skincare brands,
+      including their identity, origin, and luxury status.
+    grain: one row per unique brand_id
+    auto_generated: true
+    columns:
+      brand_id:
+        description: Unique identifier for each brand
+      brand_name:
+        description: Name of the brand
+      country_origin:
+        description: Country where the brand originates, represented by ISO country
+          codes
+        values: JP, UK, KR, US, IT, FR
+      is_luxury:
+        description: Indicator of whether the brand is considered luxury (1 = luxury,
+          0 = non-luxury)
+        values: 0, 1
+  identity_map:
+    description: Maps anonymous user identifiers to known customer identifiers, along
+      with the confidence level and timestamp of the link.
+    grain: one row per anonymous-customer identity link
+    auto_generated: true
+    columns:
+      anon_id:
+        description: Anonymous identifier for a user (e.g., from web tracking or app
+          install)
+      customer_id:
+        description: Known identifier for a customer (e.g., from login or account
+          creation)
+      link_confidence:
+        description: Numerical confidence score (0–1 or higher) indicating how likely
+          the anon_id and customer_id refer to the same person
+      linked_ts:
+        description: Timestamp when the link between anon_id and customer_id was established
+  skus:
+    description: Contains product SKU details including identifiers, physical attributes,
+      and pricing for inventory and sales tracking.
+    grain: one row per unique SKU (combination of product_id, shade, and size)
+    auto_generated: true
+    columns:
+      sku_id:
+        description: Unique identifier for each SKU
+      product_id:
+        description: Identifier for the parent product to which this SKU belongs
+      shade:
+        description: Color variant of the product
+        values: Ivory, Espresso, Nude, Rose, Sand, Berry, Caramel, Beige
+      size:
+        description: Volume or size variant of the product
+        values: 50ml, 15ml, 30ml, 100ml
+      barcode:
+        description: Global Trade Item Number (GTIN) or other barcode for scanning
+          and inventory
+      msrp_usd:
+        description: Manufacturer's Suggested Retail Price in US dollars
+      weight_grams:
+        description: Weight of the SKU in grams
+  suppliers:
+    description: Contains information about suppliers, including their identifiers,
+      names, countries, lead times, and quality scores.
+    grain: one row per unique supplier
+    auto_generated: true
+    columns:
+      supplier_id:
+        description: Unique identifier for each supplier
+      supplier_name:
+        description: Name of the supplier
+      country:
+        description: Country where the supplier is based
+        values: CN, FR, US, IT, KR
+      lead_time_days:
+        description: Average lead time in days for deliveries from this supplier
+      quality_score:
+        description: Numerical rating reflecting the supplier's quality performance
+  warehouses:
+    description: A reference table storing information about warehouses, including
+      their unique identifiers, countries, and timezones.
+    grain: one row per warehouse_id
+    auto_generated: true
+    columns:
+      warehouse_id:
+        description: Unique identifier for a warehouse
+      country:
+        description: Country where the warehouse is located
+        values: US, UK, DE
+      timezone:
+        description: Timezone associated with the warehouse location
+        values: America/Los_Angeles, America/New_York, Europe/Berlin, Europe/London
+  geolocation:
+    description: Geographic location data mapping Brazilian ZIP code prefixes to their
+      latitude, longitude, city, and state.
+    grain: one row per unique ZIP code prefix (geolocation_zip_code_prefix)
+    auto_generated: true
+    columns:
+      geolocation_zip_code_prefix:
+        description: First 5 digits of Brazilian ZIP code (CEP) representing a geographic
+          area
+      geolocation_lat:
+        description: Latitude of the centroid or representative point for the ZIP
+          code area
+      geolocation_lng:
+        description: Longitude of the centroid or representative point for the ZIP
+          code area
+      geolocation_city:
+        description: City name corresponding to the ZIP code prefix
+      geolocation_state:
+        description: Brazilian state abbreviation for the ZIP code area
+        values: SP, MG, RJ, RS, PR, SC, BA, GO, ES, PE, DF, MT, CE, PA, MS, MA, PB,
+          RN, PI, AL, TO, SE, RO, AM, AC, AP, RR
+  customer_behavior:
+    description: Tracks individual user interactions with products, including views,
+      additions to cart, and purchases, across sessions.
+    grain: One row per user event (e.g., view, add to cart, purchase) on a specific
+      product during a specific session.
+    auto_generated: true
+    columns:
+      event_time:
+        description: Timestamp of when the user event occurred.
+      event_type:
+        description: Type of user interaction with the product.
+        values: view, cart, purchase
+      product_id:
+        description: Unique identifier for the product involved in the event.
+      category_id:
+        description: Unique identifier for the product's category.
+      category_code:
+        description: Human-readable code or name for the product's category.
+      brand:
+        description: Brand name of the product involved in the event.
+      price:
+        description: Price of the product at the time of the event.
+      user_id:
+        description: Unique identifier for the user who performed the event.
+      user_session:
+        description: Unique identifier for the user session during which the event
+          occurred.
+  customer_behavior_2:
+    description: Records individual user interactions (events) with products, including
+      views, cart additions, and purchases, along with product and user context.
+    grain: One row represents one user event (view, add to cart, or purchase) for
+      a specific product at a specific time.
+    auto_generated: true
+    columns:
+      event_time:
+        description: Timestamp when the event occurred
+      event_type:
+        description: Type of user interaction event
+        values: view, cart, purchase
+      product_id:
+        description: Unique identifier for the product involved in the event
+      category_id:
+        description: Unique identifier for the product's category
+      category_code:
+        description: Human-readable code or name of the product's category
+      brand:
+        description: Brand name of the product
+      price:
+        description: Price of the product at the time of the event
+      user_id:
+        description: Unique identifier for the user who performed the event
+      user_session:
+        description: Identifier for the user session during which the event occurred
