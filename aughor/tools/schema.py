@@ -8,6 +8,26 @@ import duckdb
 from aughor.semantic.glossary import apply_glossary
 from aughor.db.type_overrides import get_table_overrides
 
+# Normalise verbose type names (PostgreSQL information_schema, DuckDB DESCRIBE).
+_TYPE_MAP: dict[str, str] = {
+    "character varying": "VARCHAR",
+    "character":         "CHAR",
+    "double precision":  "DOUBLE",
+    "numeric":           "NUMERIC",
+    "integer":           "INTEGER",
+    "bigint":            "BIGINT",
+    "smallint":          "SMALLINT",
+    "real":              "FLOAT",
+    "boolean":           "BOOLEAN",
+    "timestamp without time zone": "TIMESTAMP",
+    "timestamp with time zone":    "TIMESTAMPTZ",
+}
+
+
+def _norm_type(t: str) -> str:
+    t_clean = t.strip().lower()
+    return _TYPE_MAP.get(t_clean, t.strip())
+
 # Columns whose names indicate they are IDs/keys — skip value sampling for these.
 _KEY_COL = re.compile(
     r"(_id|_key|_code|_num|_number|_identifier|_pk|_uuid|_guid)$",

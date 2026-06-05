@@ -1345,7 +1345,7 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
               isOpen={catOpen}
               isSelected={sel?.level === "catalog" && sel.connId === entry.conn_id}
               hasChildren={entry.schemas.length > 0}
-              onClick={() => { setSel({ level: "catalog", connId: entry.conn_id, entry }); onSelect(entry.conn_id); }}
+              onClick={() => { setSel({ level: "catalog", connId: entry.conn_id, entry }); onSelect(entry.conn_id); toggle(catalogKey); }}
               onToggle={() => toggle(catalogKey)}
             />
           </div>
@@ -1367,7 +1367,7 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
               isOpen={schOpen}
               isSelected={sel?.level === "schema" && sel.connId === entry.conn_id && sel.schemaName === schema.name}
               hasChildren={schema.tables.length > 0}
-              onClick={() => setSel({ level: "schema", connId: entry.conn_id, schemaName: schema.name, entry: schema })}
+              onClick={() => { setSel({ level: "schema", connId: entry.conn_id, schemaName: schema.name, entry: schema }); toggle(schemaKey); }}
               onToggle={() => toggle(schemaKey)}
             />
           );

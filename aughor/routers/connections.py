@@ -338,7 +338,7 @@ async def table_columns(conn_id: str, table: str, schema: str = ""):
                     f"WHERE {where} ORDER BY ordinal_position",
                 )
                 if res.rows:
-                    cols = [{"name": r[0], "type": str(r[1])} for r in res.rows]
+                    cols = [{"name": r[0], "type": _norm_type(str(r[1]))} for r in res.rows]
                     from aughor.db.type_overrides import apply_overrides
                     return {"columns": apply_overrides(conn_id, safe_table, cols)}
             except Exception:
