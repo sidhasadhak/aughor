@@ -446,13 +446,30 @@ def build_schema_context(
     multi-schema files don't bleed tables from other schemas into this context.
     """
     if schema_name:
-        tables = [
-            row[0] for row in conn.execute(
-                "SELECT table_name FROM information_schema.tables "
-                "WHERE table_schema = ? AND table_type = 'BASE TABLE' ORDER BY table_name",
-                [schema_name],
-            ).fetchall()
-        ]
+        # For MotherDuck (multi-database DuckDB), restrict to the current database
+        # so we don't bleed tables from other attached databases that share the schema.
+        current_db = ""
+        try:
+            current_db = conn.execute("SELECT current_database()").fetchone()[0]
+        except Exception:
+            pass
+        if current_db:
+            tables = [
+                row[0] for row in conn.execute(
+                    "SELECT table_name FROM information_schema.tables "
+                    "WHERE table_schema = ? AND table_type = 'BASE TABLE' "
+                    "AND table_catalog = ? ORDER BY table_name",
+                    [schema_name, current_db],
+                ).fetchall()
+            ]
+        else:
+            tables = [
+                row[0] for row in conn.execute(
+                    "SELECT table_name FROM information_schema.tables "
+                    "WHERE table_schema = ? AND table_type = 'BASE TABLE' ORDER BY table_name",
+                    [schema_name],
+                ).fetchall()
+            ]
         # Fallback: the user may have set schema_name to a database name
         # (common with MotherDuck) rather than a DuckDB schema. In that case,
         # information_schema.tables returns nothing — fall back to SHOW TABLES.

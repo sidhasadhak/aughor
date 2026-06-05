@@ -26,27 +26,38 @@ async def get_catalog_tree():
             # local_upload (the Workspace) is DuckDB-backed in memory, so it uses
             # the DuckDB introspection path, not the Postgres one.
             if conn_type in ("duckdb", "local_upload") or getattr(db, "dialect", "") == "duckdb":
-                rows = db.execute(
-                    "__catalog__",
-                    """
-                    SELECT schema_name, table_name, estimated_size
-                    FROM duckdb_tables()
-                    WHERE internal = false
-                      AND schema_name NOT IN ('information_schema','temp','pg_catalog')
-                    ORDER BY schema_name, table_name
-                    """,
-                ).rows
-                # Remote DuckDB backends (MotherDuck, etc.) may not expose tables via duckdb_tables().
-                # Fall back to information_schema.tables when the local catalog is empty.
-                if not rows:
+                # Primary: information_schema.tables is the only reliable cross-database
+                # view in MotherDuck — duckdb_tables() leaks tables from ALL attached DBs.
+                # We filter by the current database so the catalog matches the connection scope.
+                current_db = ""
+                try:
+                    current_db = db._conn.execute("SELECT current_database()").fetchone()[0]
+                except Exception:
+                    pass
+                if current_db:
+                    safe_db = current_db.replace("'", "''")
                     rows = db.execute(
                         "__catalog__",
-                        """
+                        f"""
                         SELECT table_schema, table_name, 0
                         FROM information_schema.tables
                         WHERE table_type = 'BASE TABLE'
                           AND table_schema NOT IN ('information_schema','temp','pg_catalog')
+                          AND table_catalog = '{safe_db}'
                         ORDER BY table_schema, table_name
+                        """,
+                    ).rows
+                # Fallback to duckdb_tables() for local DuckDB files when information_schema
+                # is somehow unavailable.
+                if not rows:
+                    rows = db.execute(
+                        "__catalog__",
+                        """
+                        SELECT schema_name, table_name, estimated_size
+                        FROM duckdb_tables()
+                        WHERE internal = false
+                          AND schema_name NOT IN ('information_schema','temp','pg_catalog')
+                        ORDER BY schema_name, table_name
                         """,
                     ).rows
             else:

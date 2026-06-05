@@ -343,7 +343,17 @@ async def table_columns(conn_id: str, table: str, schema: str = ""):
                     return {"columns": apply_overrides(conn_id, safe_table, cols)}
             except Exception:
                 pass
-            # Fallback: an empty SELECT still yields the column names.
+            # Fallback 1: PRAGMA table_info is the DuckDB/SQLite-native way to get
+            # column metadata — works reliably for MotherDuck, attached DBs, and views.
+            try:
+                res = db.execute("columns", f"PRAGMA table_info({ref})")
+                if res.rows:
+                    cols = [{"name": r[1], "type": _norm_type(str(r[2]))} for r in res.rows]
+                    from aughor.db.type_overrides import apply_overrides
+                    return {"columns": apply_overrides(conn_id, safe_table, cols)}
+            except Exception:
+                pass
+            # Fallback 2: an empty SELECT still yields the column names.
             res = db.execute("columns", f"SELECT * FROM {ref} LIMIT 0")
             cols = [{"name": c, "type": ""} for c in res.columns]
             from aughor.db.type_overrides import apply_overrides

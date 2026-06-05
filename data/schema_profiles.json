@@ -11440,7 +11440,7 @@
       }
     }
   },
-  "9b7f9245:9bb0326850cb87d2": {
+  "195224b0:9bb0326850cb87d2": {
     "tables": {
       "attribution": {
         "table": "attribution",
@@ -11451,7 +11451,7 @@
         "date_range": null,
         "effective_date_range": null,
         "freshness_lag_hours": null,
-        "computed_at": "2026-06-05T10:41:21.251888+00:00"
+        "computed_at": "2026-06-05T15:10:40.333473+00:00"
       },
       "campaigns": {
         "table": "campaigns",
@@ -11462,7 +11462,7 @@
         "date_range": null,
         "effective_date_range": null,
         "freshness_lag_hours": null,
-        "computed_at": "2026-06-05T10:41:21.502042+00:00"
+        "computed_at": "2026-06-05T15:10:40.624359+00:00"
       },
       "cart_items": {
         "table": "cart_items",
@@ -11473,7 +11473,7 @@
         "date_range": null,
         "effective_date_range": null,
         "freshness_lag_hours": null,
-        "computed_at": "2026-06-05T10:41:21.985817+00:00"
+        "computed_at": "2026-06-05T15:10:41.157023+00:00"
       },
       "carts": {
         "table": "carts",
@@ -11484,7 +11484,7 @@
         "date_range": null,
         "effective_date_range": null,
         "freshness_lag_hours": null,
-        "computed_at": "2026-06-05T10:41:22.173450+00:00"
+        "computed_at": "2026-06-05T15:10:41.370627+00:00"
       },
       "impressions": {
         "table": "impressions",
@@ -11495,7 +11495,7 @@
         "date_range": null,
         "effective_date_range": null,
         "freshness_lag_hours": null,
-        "computed_at": "2026-06-05T10:41:22.314068+00:00"
+        "computed_at": "2026-06-05T15:10:41.505002+00:00"
       },
       "inventory_movements": {
         "table": "inventory_movements",
@@ -11506,7 +11506,7 @@
         "date_range": null,
         "effective_date_range": null,
         "freshness_lag_hours": null,
-        "computed_at": "2026-06-05T10:41:22.495236+00:00"
+        "computed_at": "2026-06-05T15:10:41.700280+00:00"
       },
       "inventory_snapshots": {
         "table": "inventory_snapshots",
@@ -11517,7 +11517,7 @@
         "date_range": null,
         "effective_date_range": null,
         "freshness_lag_hours": null,
-        "computed_at": "2026-06-05T10:41:22.691565+00:00"
+        "computed_at": "2026-06-05T15:10:41.897431+00:00"
       },
       "journal_entries": {
         "table": "journal_entries",
@@ -11528,7 +11528,7 @@
         "date_range": null,
         "effective_date_range": null,
         "freshness_lag_hours": null,
-        "computed_at": "2026-06-05T10:41:22.817867+00:00"
+        "computed_at": "2026-06-05T15:10:42.033483+00:00"
       },
       "marketing_ledger": {
         "table": "marketing_ledger",
@@ -11539,7 +11539,7 @@
         "date_range": null,
         "effective_date_range": null,
         "freshness_lag_hours": null,
-        "computed_at": "2026-06-05T10:41:23.004182+00:00"
+        "computed_at": "2026-06-05T15:10:42.225800+00:00"
       },
       "order_items": {
         "table": "order_items",
@@ -11550,7 +11550,7 @@
         "date_range": null,
         "effective_date_range": null,
         "freshness_lag_hours": null,
-        "computed_at": "2026-06-05T10:41:23.465055+00:00"
+        "computed_at": "2026-06-05T15:10:42.602953+00:00"
       },
       "orders": {
         "table": "orders",
@@ -11561,7 +11561,7 @@
         "date_range": null,
         "effective_date_range": null,
         "freshness_lag_hours": null,
-        "computed_at": "2026-06-05T10:41:23.654490+00:00"
+        "computed_at": "2026-06-05T15:10:42.796901+00:00"
       },
       "payments": {
         "table": "payments",
@@ -11572,7 +11572,7 @@
         "date_range": null,
         "effective_date_range": null,
         "freshness_lag_hours": null,
-        "computed_at": "2026-06-05T10:41:23.792680+00:00"
+        "computed_at": "2026-06-05T15:10:42.928688+00:00"
       },
       "purchase_orders": {
         "table": "purchase_orders",
@@ -11583,7 +11583,7 @@
         "date_range": null,
         "effective_date_range": null,
         "freshness_lag_hours": null,
-        "computed_at": "2026-06-05T10:41:24.151472+00:00"
+        "computed_at": "2026-06-05T15:10:43.329146+00:00"
       },
       "refunds": {
         "table": "refunds",
@@ -11594,7 +11594,7 @@
         "date_range": null,
         "effective_date_range": null,
         "freshness_lag_hours": null,
-        "computed_at": "2026-06-05T10:41:24.454214+00:00"
+        "computed_at": "2026-06-05T15:10:43.636798+00:00"
       },
       "clicks": {
         "table": "clicks",
@@ -11605,7 +11605,7 @@
         "date_range": null,
         "effective_date_range": null,
         "freshness_lag_hours": null,
-        "computed_at": "2026-06-05T10:41:25.131033+00:00"
+        "computed_at": "2026-06-05T15:10:44.315176+00:00"
       },
       "experiment_assignments": {
         "table": "experiment_assignments",
@@ -11616,7 +11616,7 @@
         "date_range": null,
         "effective_date_range": null,
         "freshness_lag_hours": null,
-        "computed_at": "2026-06-05T10:41:25.372884+00:00"
+        "computed_at": "2026-06-05T15:10:44.578177+00:00"
       },
       "experiments": {
         "table": "experiments",
@@ -11627,7 +11627,7 @@
         "date_range": null,
         "effective_date_range": null,
         "freshness_lag_hours": null,
-        "computed_at": "2026-06-05T10:41:25.592512+00:00"
+        "computed_at": "2026-06-05T15:10:44.770528+00:00"
       },
       "invoices": {
         "table": "invoices",
@@ -11638,7 +11638,7 @@
         "date_range": null,
         "effective_date_range": null,
         "freshness_lag_hours": null,
-        "computed_at": "2026-06-05T10:41:25.849841+00:00"
+        "computed_at": "2026-06-05T15:10:45.048374+00:00"
       },
       "kpi_definitions": {
         "table": "kpi_definitions",
@@ -11649,7 +11649,7 @@
         "date_range": null,
         "effective_date_range": null,
         "freshness_lag_hours": null,
-        "computed_at": "2026-06-05T10:41:26.041012+00:00"
+        "computed_at": "2026-06-05T15:10:45.260515+00:00"
       },
       "pnl": {
         "table": "pnl",
@@ -11660,7 +11660,7 @@
         "date_range": null,
         "effective_date_range": null,
         "freshness_lag_hours": null,
-        "computed_at": "2026-06-05T10:41:26.446799+00:00"
+        "computed_at": "2026-06-05T15:10:45.730791+00:00"
       }
     },
     "columns": {
