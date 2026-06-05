@@ -228,7 +228,7 @@ def build_rich_schema(schema_str: str) -> dict:
         if _SECTION_STOP.match(line):
             current = None
             continue
-        m = re.match(r"^TABLE:\s+(\w+)\s*\(?([\d,?]+)?\s*rows?\)?", line)
+        m = re.match(r"^TABLE:\s+(\w+)\s*\(([\d,?]+|\?)?\s*rows?\)?", line)
         if m:
             current = m.group(1)
             if current not in table_col_types:
