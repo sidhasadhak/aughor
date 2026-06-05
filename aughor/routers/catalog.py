@@ -29,9 +29,13 @@ async def get_catalog_tree():
                 # Primary: information_schema.tables is the only reliable cross-database
                 # view in MotherDuck — duckdb_tables() leaks tables from ALL attached DBs.
                 # We filter by the current database so the catalog matches the connection scope.
+                rows: list = []
                 current_db = ""
                 try:
-                    current_db = db._conn.execute("SELECT current_database()").fetchone()[0]
+                    # Use db.execute (not db._conn) so this works for LocalUploadConnection too.
+                    res = db.execute("__catalog__", "SELECT current_database()")
+                    if res.rows:
+                        current_db = str(res.rows[0][0])
                 except Exception:
                     pass
                 if current_db:

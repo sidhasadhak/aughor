@@ -362,6 +362,21 @@ async def table_columns(conn_id: str, table: str, schema: str = ""):
                         return {"columns": apply_overrides(conn_id, safe_table, cols)}
                 except Exception:
                     pass
+                # 1b. Try information_schema.columns WITHOUT table_catalog filter
+                # (some DuckDB builds / MotherDuck versions don't expose table_catalog).
+                try:
+                    where = f"table_name = '{safe_table}'"
+                    if safe_schema:
+                        where += f" AND table_schema = '{safe_schema}'"
+                    columns, rows = db.raw_execute(
+                        "SELECT column_name, data_type FROM information_schema.columns "
+                        f"WHERE {where} ORDER BY ordinal_position"
+                    )
+                    if rows:
+                        cols = [{"name": r[0], "type": _norm_type(str(r[1]))} for r in rows]
+                        return {"columns": apply_overrides(conn_id, safe_table, cols)}
+                except Exception:
+                    pass
                 # 2. Fallback: DESCRIBE (DuckDB-native, works for MotherDuck)
                 try:
                     columns, rows = db.raw_execute(f"DESCRIBE {ref}")
@@ -370,7 +385,15 @@ async def table_columns(conn_id: str, table: str, schema: str = ""):
                         return {"columns": apply_overrides(conn_id, safe_table, cols)}
                 except Exception:
                     pass
-                # 3. Final fallback: empty SELECT
+                # 3. Fallback: PRAGMA table_info (SQLite-native, works everywhere DuckDB works)
+                try:
+                    columns, rows = db.raw_execute(f"PRAGMA table_info({ref})")
+                    if rows:
+                        cols = [{"name": r[1], "type": _norm_type(str(r[2]))} for r in rows]
+                        return {"columns": apply_overrides(conn_id, safe_table, cols)}
+                except Exception:
+                    pass
+                # 4. Final fallback: empty SELECT
                 try:
                     columns, rows = db.raw_execute(f"SELECT * FROM {ref} LIMIT 0")
                     cols = [{"name": c, "type": ""} for c in columns]
