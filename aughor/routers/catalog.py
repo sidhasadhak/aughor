@@ -33,6 +33,19 @@ async def get_catalog_tree():
                     ORDER BY schema_name, table_name
                     """,
                 ).rows
+                # Remote DuckDB backends (MotherDuck, etc.) may not expose tables via duckdb_tables().
+                # Fall back to information_schema.tables when the local catalog is empty.
+                if not rows:
+                    rows = db.execute(
+                        "__catalog__",
+                        """
+                        SELECT table_schema, table_name, 0
+                        FROM information_schema.tables
+                        WHERE table_type = 'BASE TABLE'
+                          AND table_schema NOT IN ('information_schema','temp','pg_catalog')
+                        ORDER BY table_schema, table_name
+                        """,
+                    ).rows
             else:
                 rows = db.execute(
                     "__catalog__",

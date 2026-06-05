@@ -1492,7 +1492,7 @@ export function SourcePanel({
             </span>
           </button>
           {showCode && (
-            <div className="border-t border-zinc-700/40 overflow-x-auto" style={{ background: "#0a1018" }}>
+            <div className="border-t border-zinc-700/40 overflow-auto" style={{ background: "#0a1018", maxHeight: 320 }}>
               <FormattedSql sql={sql} />
             </div>
           )}

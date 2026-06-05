@@ -504,12 +504,19 @@ class DatabaseConnection(ABC):
 
 # ── DuckDB ────────────────────────────────────────────────────────────────────
 
+def _duckdb_is_local(path: str | Path) -> bool:
+    """Return True if the DuckDB path is a local file, False for remote URLs."""
+    p = str(path).lower()
+    return not any(p.startswith(prefix) for prefix in ("md:", "s3://", "http://", "https://", "gs://", "azure://", "memory:"))
+
 class DuckDBConnection(DatabaseConnection):
     dialect = "duckdb"
 
     def __init__(self, path: str | Path, schema_name: str | None = None, connection_id: str = ""):
         self._path = Path(path)
-        self._conn = duckdb.connect(str(self._path), read_only=True)
+        # Remote DuckDB backends (MotherDuck, S3, etc.) often fail with read_only=True.
+        _is_local = _duckdb_is_local(self._path)
+        self._conn = duckdb.connect(str(self._path), read_only=_is_local)
         self._connection_id = connection_id
         self._schema_name = schema_name or None
         if schema_name:
@@ -532,7 +539,7 @@ class DuckDBConnection(DatabaseConnection):
         clone._schema_name = self._schema_name
         clone._connection_id = self._connection_id
         clone._ontology = self._ontology
-        clone._conn = duckdb.connect(str(self._path), read_only=True)
+        clone._conn = duckdb.connect(str(self._path), read_only=_duckdb_is_local(self._path))
         if self._schema_name:
             try:
                 clone._conn.execute(f"SET search_path = '{self._schema_name}'")

@@ -45,6 +45,13 @@ function fmtRows(n: number | string | null | undefined): string {
   return num.toLocaleString();
 }
 
+const TYPE_OPTIONS = [
+  "VARCHAR", "TEXT", "INTEGER", "BIGINT", "SMALLINT", "TINYINT",
+  "DOUBLE", "FLOAT", "DECIMAL", "NUMERIC", "BOOLEAN",
+  "DATE", "TIMESTAMP", "TIME", "TIMESTAMPTZ", "INTERVAL",
+  "BLOB", "JSON", "UUID",
+];
+
 function typeColor(t: string): string {
   const u = t.toUpperCase();
   if (u.includes("VARCHAR") || u.includes("TEXT"))                  return "#7ba8f7";
@@ -658,13 +665,17 @@ function TableDetailPanel({ sel, onAsk }: {
                     </div>
                     {editingCol === col.name ? (
                       <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                        <input
+                        <select
                           value={editType}
                           onChange={e => setEditType(e.target.value)}
                           onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleSave(col.name); } if (e.key === "Escape") { setEditingCol(null); } }}
                           autoFocus
-                          style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: typeColor(editType), background: "#0c0e13", border: "0.5px solid #2a3050", borderRadius: 3, padding: "2px 5px", width: 90, outline: "none" }}
-                        />
+                          style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: typeColor(editType), background: "#0c0e13", border: "0.5px solid #2a3050", borderRadius: 3, padding: "2px 5px", width: 110, outline: "none", cursor: "pointer" }}
+                        >
+                          {TYPE_OPTIONS.map(t => (
+                            <option key={t} value={t} style={{ background: "#0c0e13", color: "#c8c7c3" }}>{t}</option>
+                          ))}
+                        </select>
                         <button
                           onClick={() => handleSave(col.name)}
                           disabled={alterBusy}
