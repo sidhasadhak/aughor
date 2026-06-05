@@ -1,6 +1,6 @@
 {
   "96f8857f": {
-    "computed_at": "2026-06-05T09:38:57.404711+00:00",
+    "computed_at": "2026-06-05T17:25:42.181374+00:00",
     "patterns": [
       {
         "id": "b8368896c2d941e9",
@@ -31,7 +31,7 @@
           "Among suppliers with at least 10 orders in the past 12 months, 10 suppliers achieved a 0% on-time delivery rate (e.g., SUP-001742, SUP-000135, SUP-001849), and the worst-performing supplier with any on-time deliveries (SUP-000934) had only 3.7% on-time delivery (1 out of 27 orders). The top performers among the lowest-rated group (e.g., SUP-000934, SUP-001293, SUP-000626) still had on-time rates below 11%.",
           "Among suppliers with \u226510 orders in the last 12 months, all high-value suppliers (top 25th percentile by total order value, e.g., SUP-000394 with $32,165) exhibited low on-time delivery rates (\u226434%) and high average lateness (\u22654.2 days), with no high-value supplier achieving >35% on-time delivery\u2014indicating that high order volume/value does not correlate with better delivery reliability and may even coincide with systemic underperformance."
         ],
-        "computed_at": "2026-06-05T09:38:57.398840+00:00"
+        "computed_at": "2026-06-05T17:25:42.179451+00:00"
       },
       {
         "id": "d71de87bbc2c03a9",
@@ -61,7 +61,7 @@
           "No campaigns ran during active A/B test experiments in the specified time window (April\u2013May 2025), so ROI comparison between experiment and non-experiment campaigns is impossible. Among non-experiment campaigns, all channels (Email, YouTube, Meta, Affiliate, TikTok, Google) showed an average ROI of 0.0 clicks per dollar across 850\u2013912 campaigns each, indicating no measurable clicks relative to spend.",
           "No campaigns ran during active A/B test experiments in the specified time window (April\u2013May 2025), and all non-experiment campaigns across all channels (Affiliate, Email, Google, Meta, TikTok, YouTube) showed an average ROI of 0.0 clicks per dollar, indicating zero measurable clicks relative to spend\u2014despite historical ROI performance showing positive returns\u2014suggesting a critical data or operational gap in experimentation coverage."
         ],
-        "computed_at": "2026-06-05T09:38:57.398840+00:00"
+        "computed_at": "2026-06-05T17:25:42.179451+00:00"
       },
       {
         "id": "97c6b85492000c2f",
@@ -91,7 +91,7 @@
           "No campaigns ran during active A/B test experiments in the specified time window (April\u2013May 2025), so ROI comparison between experiment and non-experiment campaigns is impossible. Among non-experiment campaigns, all channels (Email, YouTube, Meta, Affiliate, TikTok, Google) showed an average ROI of 0.0 clicks per dollar across 850\u2013912 campaigns each, indicating no measurable clicks relative to spend.",
           "No campaigns ran during active A/B test experiments in the specified time window (April\u2013May 2025), and all non-experiment campaigns across all channels (Affiliate, Email, Google, Meta, TikTok, YouTube) showed an average ROI of 0.0 clicks per dollar, indicating zero measurable clicks relative to spend\u2014despite historical ROI performance showing positive returns\u2014suggesting a critical data or operational gap in experimentation coverage."
         ],
-        "computed_at": "2026-06-05T09:38:57.398840+00:00"
+        "computed_at": "2026-06-05T17:25:42.179451+00:00"
       },
       {
         "id": "209d8e7633993e77",
@@ -121,7 +121,7 @@
           "All campaign-channel-objective combinations show NULL average clicks per campaign, indicating no clicks were recorded for any campaigns running between May 17, 2025, and May 18, 2026.",
           "All 16 campaign-channel-objective combinations show zero revenue per dollar spent (avg, median, min, and max = 0.0), indicating no revenue was attributed to any campaigns in the last 12 months despite active spending (207\u2013265 campaigns per combination)."
         ],
-        "computed_at": "2026-06-05T09:38:57.398840+00:00"
+        "computed_at": "2026-06-05T17:25:42.179451+00:00"
       },
       {
         "id": "567f4fde472eab5a",
@@ -150,12 +150,16 @@
           "No campaigns ran during active A/B test experiments in the specified time window (April\u2013May 2025), so ROI comparison between experiment and non-experiment campaigns is impossible. Among non-experiment campaigns, all channels (Email, YouTube, Meta, Affiliate, TikTok, Google) showed an average ROI of 0.0 clicks per dollar across 850\u2013912 campaigns each, indicating no measurable clicks relative to spend.",
           "No campaigns ran during active A/B test experiments in the specified time window (April\u2013May 2025), and all non-experiment campaigns across all channels (Affiliate, Email, Google, Meta, TikTok, YouTube) showed an average ROI of 0.0 clicks per dollar, indicating zero measurable clicks relative to spend\u2014despite historical ROI performance showing positive returns\u2014suggesting a critical data or operational gap in experimentation coverage."
         ],
-        "computed_at": "2026-06-05T09:38:57.398840+00:00"
+        "computed_at": "2026-06-05T17:25:42.179451+00:00"
       }
     ]
   },
   "2d9abd31": {
     "computed_at": "2026-06-03T21:57:15.920274+00:00",
+    "patterns": []
+  },
+  "70ffa877": {
+    "computed_at": "2026-06-05T16:09:50.964191+00:00",
     "patterns": []
   }
 }

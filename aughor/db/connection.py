@@ -533,7 +533,7 @@ class DuckDBConnection(DatabaseConnection):
         _md_db = _duckdb_motherduck_db(str(self._path))
         if _md_db:
             try:
-                self._conn.execute(f"USE '{_md_db}'")
+                self._conn.execute(f'USE "{_md_db}"')
             except Exception:
                 pass  # best-effort
         if schema_name and not _md_db:
@@ -560,7 +560,7 @@ class DuckDBConnection(DatabaseConnection):
         _md_db = _duckdb_motherduck_db(str(self._path))
         if _md_db:
             try:
-                clone._conn.execute(f"USE '{_md_db}'")
+                clone._conn.execute(f'USE "{_md_db}"')
             except Exception:
                 pass
         if self._schema_name and not _md_db:
@@ -569,6 +569,14 @@ class DuckDBConnection(DatabaseConnection):
             except Exception:
                 pass
         return clone
+
+    def raw_execute(self, sql: str) -> tuple[list[str], list]:
+        """Execute a raw SQL query bypassing validation and security checks.
+        For metadata queries only. Returns (column_names, rows)."""
+        self._conn.execute(sql)
+        rows = self._conn.fetchall()
+        columns = [d[0] for d in self._conn.description] if self._conn.description else []
+        return columns, rows
 
     def dry_run(self, sql: str) -> tuple[bool, str]:
         """Run EXPLAIN against DuckDB — catches bad column/table names without returning rows."""
@@ -782,6 +790,14 @@ class PostgresConnection(DatabaseConnection):
         clone._ontology = self._ontology
         clone._connect()
         return clone
+
+    def raw_execute(self, sql: str) -> tuple[list[str], list]:
+        """Execute a raw SQL query bypassing validation and security checks.
+        For metadata queries only. Returns (column_names, rows)."""
+        self._conn.execute(sql)
+        rows = self._conn.fetchall()
+        columns = [d[0] for d in self._conn.description] if self._conn.description else []
+        return columns, rows
 
     def dry_run(self, sql: str) -> tuple[bool, str]:
         """Run EXPLAIN against Postgres — catches bad column/table names without returning rows."""
