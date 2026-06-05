@@ -356,6 +356,52 @@ async def table_columns(conn_id: str, table: str, schema: str = ""):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+
+
+class _AlterColumnRequest(BaseModel):
+    column: str
+    new_type: str
+
+
+@router.post("/connections/{conn_id}/tables/{table}/alter-column")
+async def alter_table_column(conn_id: str, table: str, body: _AlterColumnRequest, schema: str = ""):
+    """Alter the type of a single column. Best-effort for DuckDB/SQLite connectors."""
+    loop = asyncio.get_event_loop()
+    try:
+        db = open_connection_for(conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    safe_table = table.replace('"', "").replace(";", "")
+    safe_schema = schema.replace('"', "").replace(";", "") if schema else ""
+    safe_col = body.column.replace('"', "").replace(";", "")
+    safe_type = body.new_type.replace(";", "")  # basic sanitisation
+    ref = f'"{safe_schema}"."{safe_table}"' if safe_schema else f'"{safe_table}"'
+
+    def _work():
+        try:
+            # DuckDB syntax
+            sql = f'ALTER TABLE {ref} ALTER COLUMN "{safe_col}" TYPE {safe_type}'
+            result = db.execute("alter_column", sql)
+            return {"ok": True, "sql": sql, "message": f"Column {safe_col} altered to {safe_type}"}
+        except Exception as e:
+            # Fallback for connectors that don't support ALTER COLUMN
+            err = str(e)
+            if "syntax error" in err.lower() or "not supported" in err.lower():
+                # SQLite-style: create new table with cast, swap, drop old
+                try:
+                    # This is a best-effort fallback — many connectors won't need it.
+                    return {"ok": False, "error": err, "message": "ALTER COLUMN not supported by this connector"}
+                except Exception as e2:
+                    return {"ok": False, "error": str(e2)}
+            return {"ok": False, "error": err}
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+    return await loop.run_in_executor(None, _work)
+
 # ── Instructions ──────────────────────────────────────────────────────────────
 
 @router.get("/connections/{conn_id}/instructions")

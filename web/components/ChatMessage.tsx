@@ -13,6 +13,7 @@ import AngleBracketsIcon from "@atlaskit/icon/core/angle-brackets";
 import InformationIcon   from "@atlaskit/icon/core/information";
 import WarningIcon       from "@atlaskit/icon/core/warning";
 import ArrowRightIcon    from "@atlaskit/icon/core/arrow-right";
+import { Lightbulb } from "lucide-react";
 import { ChatTurn } from "@/lib/useChat";
 import type { ADAReport } from "@/lib/types";
 import { InvestigationReportView } from "@/components/InvestigationReport";
@@ -73,7 +74,10 @@ function firstNonNull(rows: unknown[][], colIdx: number): unknown {
 // Returns the original string unchanged if it doesn't look like a timestamp
 function normDateStr(v: string): string {
   // DuckDB returns "2024-01-01 00:00:00" — normalize space separator to T for Date parsing
-  return v.replace(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})/, "$1T$2");
+  let s = v.replace(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})/, "$1T$2");
+  // Handle DATE_TRUNC month output "2018-01" by appending day
+  if (/^\d{4}-\d{2}$/.test(s)) s += "-01";
+  return s;
 }
 
 // ── Granularity-aware date handling ───────────────────────────────────────────
@@ -99,7 +103,7 @@ function detectGranularity(col: string, values: unknown[]): Gran {
   if (named) return named;
   // Fall back to spacing between distinct parseable date values.
   const ts = Array.from(new Set(
-    values.map(v => String(v ?? "")).filter(s => /^\d{4}-\d{2}-\d{2}/.test(s)),
+    values.map(v => String(v ?? "")).filter(s => /^\d{4}-\d{2}(-\d{2})?/.test(s)),
   )).map(s => new Date(normDateStr(s)).getTime()).filter(t => !isNaN(t)).sort((a, b) => a - b);
   if (ts.length >= 2) {
     const deltas = ts.slice(1).map((t, i) => t - ts[i]).sort((a, b) => a - b);
@@ -117,7 +121,7 @@ function detectGranularity(col: string, values: unknown[]): Gran {
 // year for day/week — a data table must be unambiguous across years ("19 Sep 2017"),
 // never a bare "19 Sep".
 function fmtDate(v: string, gran: Gran): string {
-  if (!/^\d{4}-\d{2}-\d{2}/.test(v)) return v;
+  if (!/^\d{4}-\d{2}(-\d{2})?/.test(v)) return v;
   const d = new Date(normDateStr(v));
   if (isNaN(d.getTime())) return v;
   switch (gran) {
@@ -157,7 +161,7 @@ function cleanLabel(s: string): string {
 }
 
 // ── Smart source-panel title derived from column semantics ────────────────────
-const DATE_VALUE_RE = /^\d{4}-\d{2}-\d{2}/;
+const DATE_VALUE_RE = /^\d{4}-\d{2}(-\d{2})?/;
 function inferSourceTitle(columns: string[], rows: unknown[][]): string {
   if (!columns.length) return "Query result";
 
@@ -377,7 +381,7 @@ function InlineChart({
     Object.fromEntries(columns.map((c, i) => [c, (r as unknown[])[i]])),
   );
 
-  const DATE_VALUE_RE = /^\d{4}-\d{2}-\d{2}/;
+  const DATE_VALUE_RE = /^\d{4}-\d{2}(-\d{2})?/;
   const looksLikeDate = (colIdx: number) => {
     const v = firstNonNull(rows, colIdx);
     return typeof v === "string" && DATE_VALUE_RE.test(v);
@@ -396,12 +400,14 @@ function InlineChart({
   // These are COMPARISON questions — heatmap/stacked-bar are inappropriate.
   const _isChangeMetric = numericCols.some(c => CHANGE_METRIC_COL.test(c));
   // For change metrics, prefer the change column as the primary numeric
-  const CHANGE_PREFER_COL = /(change|delta|growth|pct_change|percent_change|_chg$|_diff$)/i;
-  const numCol  = _isChangeMetric
-    ? (numericCols.find(c => CHANGE_PREFER_COL.test(c)) ?? numericCols.find(c => PREFER_COL.test(c)) ?? numericCols[0])
-    : (numericCols.find(c => PREFER_COL.test(c)) ?? numericCols[0]);
+  // ONLY when there is a categorical column (series dimension).
+  // When no catCol exists, plot the base metric (AOV, revenue) not the change %.
   const catCol  = catCols[0];
   const catCol2 = catCols[1];
+  const CHANGE_PREFER_COL = /(change|delta|growth|pct_change|percent_change|_chg$|_diff$)/i;
+  const baseNumCol = numericCols.find(c => PREFER_COL.test(c)) ?? numericCols.find(c => !CHANGE_METRIC_COL.test(c)) ?? numericCols[0];
+  const changeNumCol = numericCols.find(c => CHANGE_PREFER_COL.test(c)) ?? numericCols.find(c => PREFER_COL.test(c)) ?? numericCols[0];
+  const numCol  = (_isChangeMetric && catCol) ? changeNumCol : baseNumCol;
   const hint    = (chartType ?? "auto").toLowerCase();
   const isTimeLabel = catCol ? TIME_LABEL_COL.test(catCol) : false;
 
@@ -1081,6 +1087,44 @@ function InlineChart({
     }
   }
 
+  // ── FINAL FALLBACK: simple line chart when we have a date + number but
+  // no other branch matched (e.g. period-over-period with a single series).
+  else if (dateCol && numCol) {
+    vegaData = data
+      .filter(d => { const v = d[numCol]; return v !== null && v !== undefined && v !== "" && !isNaN(Number(v)); })
+      .map(d => ({
+        ...d,
+        [dateCol]: normDateStr(String(d[dateCol])),
+        [numCol]:  Number(d[numCol]),
+      }));
+    const fbColor = "#818cf8";
+    spec = {
+      layer: [
+        { mark: { type: "line", color: fbColor, strokeWidth: 1.5 } },
+        {
+          mark: { type: "point", color: fbColor, size: 30, filled: true, opacity: 0.9 },
+          encoding: {
+            tooltip: [
+              { field: dateCol, type: "temporal",     title: cleanLabel(dateCol) },
+              { field: numCol,  type: "quantitative", format: lblFmt, title: yTitle },
+            ],
+          },
+        },
+      ],
+      encoding: {
+        x: {
+          field: dateCol, type: "temporal",
+          axis: { format: xDateFmt, labelAngle: -30, title: cleanLabel(dateCol) },
+        },
+        y: {
+          field: numCol, type: "quantitative",
+          axis: { format: yFmt, grid: true, title: yTitle },
+        },
+      },
+    };
+    defaultH = 220;
+  }
+
   if (!spec) return null;
 
   // Cap chart height to ~60% of typical panel height unless user has dragged or expanded
@@ -1143,10 +1187,10 @@ function computeSummary(columns: string[], rows: unknown[][]): string | null {
     (c, i) => !ORDINAL_COL.test(c) && rows.slice(0, 5).every((r) => isNumeric((r as unknown[])[i]))
   );
   const catIdx = columns.findIndex(
-    (c, i) => i !== numIdx && !isNumeric(rows[0]?.[i as number]) && !ORDINAL_COL.test(c)
+    (c, i) => i !== numIdx && !isNumeric(firstNonNull(rows, i)) && !ORDINAL_COL.test(c)
   );
   const cat2Idx = columns.findIndex(
-    (c, i) => i !== numIdx && i !== catIdx && !isNumeric(rows[0]?.[i as number]) && !ORDINAL_COL.test(c)
+    (c, i) => i !== numIdx && i !== catIdx && !isNumeric(firstNonNull(rows, i)) && !ORDINAL_COL.test(c)
   );
 
   if (numIdx === -1) {
@@ -1624,6 +1668,7 @@ function PlaybookRefs({ refs }: { refs: PlaybookRef[] }) {
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
   useEffect(() => { setItems(refs); }, [refs]);
   if (items.length === 0) return null;
 
@@ -1649,10 +1694,18 @@ function PlaybookRefs({ refs }: { refs: PlaybookRef[] }) {
 
   return (
     <div className="mt-4 rounded-md border border-amber-700/30" style={{ background: "color-mix(in srgb, #f59e0b 5%, var(--bg-0))" }}>
-      <div className="px-3 py-2 border-b border-amber-700/20 flex items-center gap-2">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="w-full px-3 py-2 border-b border-amber-700/20 flex items-center gap-2 text-left"
+      >
+        <span className="shrink-0 text-amber-400/90">
+          <WarningIcon label="Playbook" size="small" />
+        </span>
         <span className="text-[11px] font-medium uppercase tracking-wide text-amber-400/90">Playbook referenced</span>
-        <span className="text-[11px] text-zinc-500">— these org playbook items informed this answer. Keep, edit, or remove.</span>
-      </div>
+        <span className="text-[11px] text-zinc-500">— {items.length} item{items.length !== 1 ? "s" : ""}</span>
+        <span className="ml-auto shrink-0 text-amber-600">{open ? "▲" : "▼"}</span>
+      </button>
+      {open && (
       <div className="divide-y divide-amber-700/15">
         {items.map(item => (
           <div key={item.id} className="px-3 py-2.5 group/pb">
@@ -1700,6 +1753,7 @@ function PlaybookRefs({ refs }: { refs: PlaybookRef[] }) {
           </div>
         ))}
       </div>
+      )}
     </div>
   );
 }
@@ -1749,6 +1803,52 @@ function InlineAgentTrace({ turn }: { turn: ChatTurn }) {
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
+// ── Insight narrative (Genie-style analytical interpretation) ─────────────────
+function InsightSection({ insight }: { insight: { narrative: string; anomalies: string[]; trend: string; confidence: string } }) {
+  if (!insight || !insight.narrative) return null;
+  const trendColor = insight.trend === 'up' ? 'text-emerald-400' : insight.trend === 'down' ? 'text-rose-400' : 'text-zinc-400';
+  const trendLabel = insight.trend === 'up' ? 'Trending up' : insight.trend === 'down' ? 'Trending down' : insight.trend === 'mixed' ? 'Mixed trend' : 'Stable';
+  const confColor = insight.confidence === 'high' ? 'text-emerald-400' : insight.confidence === 'low' ? 'text-amber-400' : 'text-zinc-400';
+  return (
+    <div className="mt-3 mb-3 rounded-lg border border-zinc-700/40 p-3" style={{ background: '#13151a' }}>
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">Insight</span>
+        <span className={`text-[11px] font-medium ${trendColor}`}>{trendLabel}</span>
+        <span className={`text-[11px] ${confColor}`}>{insight.confidence} confidence</span>
+      </div>
+      <p className="text-[12px] text-zinc-300 leading-relaxed">{insight.narrative}</p>
+      {insight.anomalies.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {insight.anomalies.map((a, i) => (
+            <span key={i} className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full border border-purple-700/40 text-purple-300" style={{ background: 'color-mix(in srgb, #a855f7 8%, transparent)' }}>
+              <Lightbulb size={10} strokeWidth={2.5} />
+              {a}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Clarifying questions surfaced before deep analysis ───────────────────────
+function ClarifyingQuestionsBanner({ questions, contextNote }: { questions: string[]; contextNote: string }) {
+  if (!questions || questions.length === 0) return null;
+  return (
+    <div className="mt-3 mb-3 rounded-lg border border-blue-700/30 p-3" style={{ background: 'color-mix(in srgb, #3b82f6 6%, transparent)' }}>
+      <div className="flex items-center gap-2 mb-1.5">
+        <span className="text-[11px] font-medium uppercase tracking-wide text-blue-400">Clarifying questions</span>
+      </div>
+      {contextNote && <p className="text-[11px] text-blue-300/70 mb-2">{contextNote}</p>}
+      <div className="flex flex-wrap gap-1.5">
+        {questions.map((q, i) => (
+          <span key={i} className="text-[11px] px-2 py-0.5 rounded-full border border-blue-700/40 text-blue-300">{q}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function ChatMessage({
   turn,
   onFollowUp,
@@ -1813,6 +1913,10 @@ export function ChatMessage({
       {/* ── Loading state ── */}
       {turn.status === "loading" && (
         <div>
+          {/* Clarifying questions surface early in deep analysis */}
+          {isInvestigate && turn.clarifyingQuestions.length > 0 && (
+            <ClarifyingQuestionsBanner questions={turn.clarifyingQuestions} contextNote={turn.clarifyingContext} />
+          )}
           {/* Quick (ask) mode has no multi-step trace — show the simple thinking dots */}
           {!isInvestigate && (
             <div className="flex items-center gap-3 py-2">
@@ -1897,6 +2001,7 @@ export function ChatMessage({
                 {turn.headline && (
                   <p className="text-[12px] text-zinc-300 leading-relaxed mb-2">{turn.headline}</p>
                 )}
+                {turn.insight && <InsightSection insight={turn.insight} />}
                 <ResultBody turn={turn} onShowSource={onShowSource} />
               </>
             )}

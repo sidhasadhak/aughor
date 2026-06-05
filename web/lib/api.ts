@@ -348,6 +348,30 @@ export async function getTableColumns(
   return data.columns ?? [];
 }
 
+export async function alterColumn(
+  connId: string,
+  table: string,
+  column: string,
+  newType: string,
+  schema?: string,
+): Promise<{ ok: boolean; message?: string; error?: string }> {
+  const params = new URLSearchParams();
+  if (schema) params.set("schema", schema);
+  const res = await fetch(
+    `${BASE}/connections/${encodeURIComponent(connId)}/tables/${encodeURIComponent(table)}/alter-column?${params}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ column, new_type: newType }),
+    },
+  );
+  if (!res.ok) {
+    const err = await res.text().catch(() => "Failed to alter column");
+    throw new Error(err);
+  }
+  return res.json();
+}
+
 // ── Catalog tree ──────────────────────────────────────────────────────────────
 
 export interface CatalogTableInfo {
@@ -1296,6 +1320,44 @@ export interface CanvasHistoryItem {
   started_at: string;
   kind?: string;
   connection_id?: string;
+}
+
+export interface CanvasArtifact {
+  id: string;
+  canvas_id: string;
+  kind: string;
+  title: string;
+  description: string;
+  sql: string;
+  question: string;
+  created_at: string;
+}
+
+export async function getCanvasArtifacts(canvasId: string): Promise<CanvasArtifact[]> {
+  const res = await fetch(BASE + "/canvases/" + encodeURIComponent(canvasId) + "/artifacts");
+  if (!res.ok) throw new Error("Failed to fetch artifacts");
+  const data = await res.json();
+  return data.artifacts ?? [];
+}
+
+export async function createCanvasArtifact(
+  canvasId: string,
+  payload: Omit<CanvasArtifact, "id" | "canvas_id" | "created_at">,
+): Promise<CanvasArtifact> {
+  const res = await fetch(BASE + "/canvases/" + encodeURIComponent(canvasId) + "/artifacts", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error("Failed to create artifact");
+  return res.json();
+}
+
+export async function deleteCanvasArtifact(canvasId: string, artifactId: string): Promise<void> {
+  const res = await fetch(BASE + "/canvases/" + encodeURIComponent(canvasId) + "/artifacts/" + encodeURIComponent(artifactId), {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error("Failed to delete artifact");
 }
 
 export async function getCanvasHistory(id: string, limit = 20): Promise<CanvasHistoryItem[]> {

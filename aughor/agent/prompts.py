@@ -180,6 +180,10 @@ NEVER invent column names — if a column is not in the schema, it does not exis
 If a table is annotated "⚠ No date/timestamp columns", do NOT reference any date column on it — join to a table that has one.
 IMPORTANT: Always qualify every table name with its schema prefix: {schema_qualifier}.table_name (e.g. {schema_qualifier}.orders, not just orders). This is required for correct resolution.
 IMPORTANT: Wrap any computed decimal/rate/ratio column with ROUND(..., 2). Never return raw floats from division or aggregation.
+MULTIPLE METRICS: when the user asks for two or more metrics in the same question (e.g. "order count AND average delivery time"), 
+return BOTH metrics as separate numeric columns in the same SELECT. Do NOT pick only one.
+NUMBER FORMATTING: return all numeric values as raw numbers (e.g. 0.15, 15.2). NEVER format them as strings with % signs (e.g. "15.2%") 
+in the SQL — formatting belongs in the headline, not the query result. String-formatted numbers break charts and aggregation.
 Use the detected join paths when joining tables.
 If the question references previous results ("also", "add", "filter by", "compare to", "instead of", "show X instead", "change to", "replace with", "for a month", "for any month", "for a single month", "in [month/year]", "last month", "this year", "show only", "narrow to", "just for"), start from the previous SQL and modify it — do NOT write a new query from scratch.
 TEMPORAL NARROWING — CRITICAL: when the user asks to restrict the time period ("for a single month", "for any month", "in [period]", "last month", "this year", "show it for [period]"), that is a TIME FILTER — NOT a new aggregation. You MUST:

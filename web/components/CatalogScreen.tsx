@@ -22,10 +22,12 @@ import { useSchema } from "@/lib/schema-context";
 import {
   getCatalogTree, getConnections, addConnection, deleteConnection,
   testConnection, sampleTable, getSchemaRich, getTableColumns, getExplorationFindings,
+  alterColumn,
   type CatalogTree, type CatalogEntry, type CatalogSchemaInfo, type CatalogTableInfo,
   type Connection, type SchemaTable, type SchemaColumn, type TableSample,
-  type TableColumn, type DistributionProfile,
+  type TableColumn, type DistributionProfile, type RichSchema,
 } from "@/lib/api";
+import { ERDiagram } from "@/components/ERDiagram";
 import { ExplorationBadge } from "@/components/ExplorationBadge";
 import { SchemaPanel } from "@/components/SchemaPanel";
 import { DocumentUploader } from "@/components/DocumentUploader";
@@ -505,6 +507,9 @@ function TableDetailPanel({ sel, onAsk }: {
   const [loading, setLoad]      = useState(false);
   const [distMap, setDistMap]   = useState<Record<string, DistributionProfile>>({});
   const [expandedCols, setExpandedCols] = useState<Set<string>>(new Set());
+  const [editingCol, setEditingCol]   = useState<string | null>(null);
+  const [editType, setEditType]       = useState("");
+  const [alterBusy, setAlterBusy]     = useState(false);
 
   // Fetch column detail when table changes. The authoritative column list comes
   // from the reliable per-table reader (same path as Sample Data); the heavy
@@ -557,6 +562,25 @@ function TableDetailPanel({ sel, onAsk }: {
   const fkCount = cols.filter(c => c.is_fk).length;
   const distCount = Object.keys(distMap).length;
   const toggleCol = (name: string) => setExpandedCols(prev => { const n = new Set(prev); n.has(name) ? n.delete(name) : n.add(name); return n; });
+
+  const handleSave = async (colName: string) => {
+    if (!editType.trim() || editType.trim() === (cols.find(c => c.name === colName)?.type ?? "")) {
+      setEditingCol(null);
+      return;
+    }
+    setAlterBusy(true);
+    try {
+      await alterColumn(sel.connId, sel.table.name, colName, editType.trim(), sel.schemaName);
+      // Refresh columns
+      const refreshed = await getTableColumns(sel.connId, sel.table.name, sel.schemaName);
+      setBaseCols(refreshed);
+    } catch (e) {
+      alert((e as Error).message || "Failed to alter column");
+    } finally {
+      setAlterBusy(false);
+      setEditingCol(null);
+    }
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
@@ -632,7 +656,28 @@ function TableDetailPanel({ sel, onAsk }: {
                         <span style={{ fontSize: 11, color: "#5a5e6a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 200 }}>{col.description}</span>
                       )}
                     </div>
-                    <span style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: typeColor(col.type) }}>{col.type}</span>
+                    {editingCol === col.name ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        <input
+                          value={editType}
+                          onChange={e => setEditType(e.target.value)}
+                          onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleSave(col.name); } if (e.key === "Escape") { setEditingCol(null); } }}
+                          autoFocus
+                          style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: typeColor(editType), background: "#0c0e13", border: "0.5px solid #2a3050", borderRadius: 3, padding: "2px 5px", width: 90, outline: "none" }}
+                        />
+                        <button
+                          onClick={() => handleSave(col.name)}
+                          disabled={alterBusy}
+                          style={{ fontSize: 9, padding: "1px 4px", borderRadius: 3, background: "#1a1e2e", color: "#7ba8f7", border: "0.5px solid #2a3050", cursor: "pointer" }}
+                        >Save</button>
+                      </div>
+                    ) : (
+                      <span
+                        onClick={() => { setEditingCol(col.name); setEditType(col.type); }}
+                        title="Click to edit type"
+                        style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: typeColor(col.type), cursor: "pointer", borderBottom: "1px dashed #2a2b35" }}
+                      >{col.type}</span>
+                    )}
                     {col.is_fk
                       ? <span style={{ fontSize: 9, padding: "2px 5px", borderRadius: 3, background: "#1a1e2e", color: "#3d6bff", border: "0.5px solid #2a3050" }}>FK</span>
                       : <span />
@@ -671,10 +716,33 @@ function SchemaDetailPanel({ sel, onSelectTable, onAsk, connName }: {
 }) {
   const [filter, setFilter] = useState("");
   const [tab, setTab]       = useState<SchemaTab>("tables");
+  const [erdSchema, setErdSchema] = useState<RichSchema | null>(null);
+  const [erdLoading, setErdLoading] = useState(false);
+  const [erdError, setErdError]   = useState<string | null>(null);
   const { entry } = sel;
   const q = filter.toLowerCase();
   const tables = q ? entry.tables.filter(t => t.name.toLowerCase().includes(q)) : entry.tables;
   const totalRows = entry.tables.reduce((s, t) => s + (Number(t.row_count) || 0), 0);
+
+  // Fetch rich schema and filter to the selected schema's tables
+  useEffect(() => {
+    if (tab !== "erd") return;
+    setErdLoading(true);
+    setErdError(null);
+    getSchemaRich(sel.connId)
+      .then(full => {
+        const allowed = new Set(entry.tables.map(t => t.name));
+        const filtered: RichSchema = {
+          tables: full.tables.filter(t => allowed.has(t.name)),
+          joins: full.joins.filter(j => allowed.has(j.t1) && allowed.has(j.t2)),
+          isolated: full.isolated?.filter(n => allowed.has(n)) ?? [],
+          warnings: full.warnings ?? [],
+        };
+        setErdSchema(filtered);
+      })
+      .catch(() => setErdError("Failed to load schema diagram"))
+      .finally(() => setErdLoading(false));
+  }, [sel.connId, entry.name, tab, entry.tables]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
@@ -693,7 +761,18 @@ function SchemaDetailPanel({ sel, onSelectTable, onAsk, connName }: {
 
       {tab === "erd" ? (
         <div style={{ flex: 1, overflow: "hidden", minWidth: 0 }}>
-          <SchemaPanel connId={sel.connId} connName={connName ?? sel.connId} />
+          {erdLoading ? (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", gap: 8 }}>
+              <div style={{ width: 14, height: 14, border: "2px solid #2a2b35", borderTopColor: "#4a6aaa", borderRadius: "50%", animation: "aug-spin 0.7s linear infinite" }} />
+              <span style={{ fontSize: 11, color: "var(--t4)" }}>Loading diagram…</span>
+            </div>
+          ) : erdError ? (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}>
+              <span style={{ fontSize: 11, color: "var(--t4)" }}>{erdError}</span>
+            </div>
+          ) : erdSchema ? (
+            <ERDiagram schema={erdSchema} />
+          ) : null}
         </div>
       ) : (
       <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>

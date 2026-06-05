@@ -1,0 +1,24 @@
+{
+  "d32fea56": [
+    {
+      "from_signal": "February 2026 has 28 calendar days vs January 31 days",
+      "to_signal": "Net revenue declined $4.06M (-9.52%) MoM",
+      "from_entity": null,
+      "to_entity": null,
+      "confidence": 0.5,
+      "inv_id": "d32fea56",
+      "conn_id": "96f8857f",
+      "created_at": "2026-06-04T09:07:14.717756Z"
+    },
+    {
+      "from_signal": "Stable daily net revenue run-rate ($1.376M Jan \u2192 $1.378M Feb)",
+      "to_signal": "Underlying commercial momentum remained flat to slightly positive",
+      "from_entity": null,
+      "to_entity": null,
+      "confidence": 0.5,
+      "inv_id": "d32fea56",
+      "conn_id": "96f8857f",
+      "created_at": "2026-06-04T09:07:14.717796Z"
+    }
+  ]
+}

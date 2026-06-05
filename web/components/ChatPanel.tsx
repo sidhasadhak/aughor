@@ -19,9 +19,9 @@ import { FeedbackPrompt } from "@/components/FeedbackPrompt";
 const FALLBACK_STARTERS = [
   { text: "Show me the top 10 rows from any table",  mode: "ask" as const },
   { text: "What tables are available?",              mode: "ask" as const },
+  { text: "What was the average order value last month?", mode: "ask" as const },
   { text: "Why did a key metric change recently?",   mode: "investigate" as const },
   { text: "What is driving an unexpected trend?",    mode: "investigate" as const },
-  { text: "Summarise the most recent data",          mode: "ask" as const },
   { text: "Diagnose an anomaly in the data",         mode: "investigate" as const },
 ];
 
@@ -126,8 +126,8 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
               boxShadow: mode === "ask" ? "0 1px 3px rgba(0,0,0,.3)" : "none",
             }}
           >
-            <CommentIcon label="Quick" size="small" />
-            Quick
+            <CommentIcon label="Insight" size="small" />
+            Insight
           </button>
           <button
             onClick={() => setMode("investigate")}
@@ -141,8 +141,8 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
               boxShadow: mode === "investigate" ? "0 1px 3px rgba(0,0,0,.3)" : "none",
             }}
           >
-            <AiSparkleIcon label="Agentic" size="small" />
-            Agentic
+            <AiSparkleIcon label="Deep Analysis" size="small" />
+            Deep Analysis
           </button>
         </div>
 
@@ -326,7 +326,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
     if (!restoreSessionId) return;
     fetch(`${BASE}/chat-sessions/${restoreSessionId}/turns`)
       .then(r => r.ok ? r.json() : [])
-      .then((turns: { id: string; question: string; headline: string; sql: string; columns: string[]; rows: unknown[][]; chart_type: string; tables_used: string[]; intent: string; approach: string[] }[]) => {
+      .then((turns: { id: string; question: string; headline: string; sql: string; columns: string[]; rows: unknown[][]; chart_type: string; tables_used: string[]; intent: string; approach: string[]; insight: { narrative: string; anomalies: string[]; trend: string; confidence: string } | null }[]) => {
         if (!turns.length) return;
         restore(turns.map(t => ({
           id: t.id,
@@ -360,6 +360,9 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
           cachedQuestion: null,
           inspectWarning: null,
           playbookRefs: [],
+          insight: t.insight || null,
+          clarifyingQuestions: [],
+          clarifyingContext: "",
         })));
       })
       .catch(() => {});

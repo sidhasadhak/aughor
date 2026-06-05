@@ -70,6 +70,18 @@ export interface ChatTurn {
 
   // Org-playbook items referenced for this turn (user can keep/modify/remove)
   playbookRefs: PlaybookRef[];
+
+  // Insight narrative — analytical interpretation streamed post-answer (Genie-style)
+  insight: {
+    narrative: string;
+    anomalies: string[];
+    trend: string;
+    confidence: string;
+  } | null;
+
+  // Clarifying questions surfaced before deep analysis starts
+  clarifyingQuestions: string[];
+  clarifyingContext: string;
 }
 
 interface ChatHistoryTurn {
@@ -109,6 +121,8 @@ type ChatAction =
   | { type: "INSPECT_WARNING";  issues: string[]; suggestedFix: string }
   | { type: "PLAYBOOK_REFS";    items: PlaybookRef[] }
   | { type: "ERROR";            message: string }
+  | { type: "INSIGHT";           narrative: string; anomalies: string[]; trend: string; confidence: string }
+  | { type: "CLARIFYING_QUESTIONS"; questions: string[]; contextNote: string }
   | { type: "DONE" }
   | { type: "CLEAR" }
   | { type: "RESTORE";          turns: ChatTurn[] };
@@ -133,6 +147,9 @@ const EMPTY_TURN: Omit<ChatTurn, "id" | "question" | "mode"> = {
   fromCache: false, cachedQuestion: null,
   inspectWarning: null,
   playbookRefs: [],
+  insight: null,
+  clarifyingQuestions: [],
+  clarifyingContext: '',
 };
 
 // Freeze the elapsed wall-time the first time a turn reaches a terminal state.
@@ -181,6 +198,10 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
       }));
     case "PLAYBOOK_REFS":
       return updateLast(state, t => ({ ...t, playbookRefs: action.items }));
+    case "CLARIFYING_QUESTIONS":
+      return updateLast(state, t => ({ ...t, clarifyingQuestions: action.questions, clarifyingContext: action.contextNote }));
+    case "INSIGHT":
+      return updateLast(state, t => ({ ...t, insight: { narrative: action.narrative, anomalies: action.anomalies, trend: action.trend, confidence: action.confidence } }));
     case "PHASE":
       return updateLast(state, t => ({ ...t, phases: [...t.phases, action.phase], statusText: `Analyzing ${action.phase.phase_id}…` }));
     case "ADA_REPORT":
@@ -213,6 +234,8 @@ function summarisePayload(type: string, p: Record<string, unknown>): string {
     case "explore_report": return `narrative: ${String((p.explore_report as { narrative?: string })?.narrative ?? "").slice(0, 60)}`;
     case "report":         return `mode: ${p.query_mode ?? "?"}`;
     case "error":          return `message: ${p.message}`;
+    case "insight":        return String(p.narrative ?? "").slice(0, 40);
+    case "clarifying_questions": return String((p.questions as string[])?.length ?? 0) + " questions";
     case "start":          return `inv: ${p.investigation_id ?? "new"}`;
     default:               return Object.keys(p).slice(0, 3).join(", ");
   }
@@ -306,6 +329,8 @@ async function consumeStream(
               });
               break;
             case "playbook_refs": dispatch({ type: "PLAYBOOK_REFS", items: (p.items as PlaybookRef[]) ?? [] }); break;
+            case "insight":      dispatch({ type: "INSIGHT", narrative: (p.narrative as string) ?? "", anomalies: (p.anomalies as string[]) ?? [], trend: (p.trend as string) ?? "stable", confidence: (p.confidence as string) ?? "medium" }); break;
+            case "clarifying_questions": dispatch({ type: "CLARIFYING_QUESTIONS", questions: (p.questions as string[]) ?? [], contextNote: (p.context_note as string) ?? "" }); break;
             case "error":        dispatch({ type: "ERROR", message: p.message as string }); break;
             case "done":         dispatch({ type: "DONE" }); break;
           }

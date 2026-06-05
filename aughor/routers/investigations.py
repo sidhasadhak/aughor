@@ -9,7 +9,7 @@ from typing import AsyncGenerator, Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 from aughor.agent.state import AgentState
 from aughor.db.connection import open_connection_for
@@ -312,6 +312,18 @@ class _FollowUpBase(BaseModel):
             self.chart_type = "auto"
 
 
+
+class _InsightResult(BaseModel):
+    """Rich analytical insight generated from SQL results — anomaly detection, trend, comparison."""
+    narrative: str = Field(default="", description="2-3 sentence analytical interpretation of the data.")
+    anomalies: list[str] = Field(default_factory=list, description="List of detected anomalies or unexpected patterns.")
+    trend: str = Field(default="stable", description="One of: up, down, stable, mixed.")
+    confidence: str = Field(default="medium", description="One of: high, medium, low.")
+
+class _ClarifyingQuestions(BaseModel):
+    """Clarifying questions generated before a deep analysis to narrow scope."""
+    questions: list[str] = Field(default_factory=list, description="1-2 concise clarifying questions (max 15 words each).")
+    context_note: str = Field(default="", description="One sentence explaining why these questions matter.")
 # ── Chat streaming ────────────────────────────────────────────────────────────
 
 async def _stream_chat(
@@ -535,8 +547,9 @@ async def _stream_chat(
         # Persist, then mark DONE the moment the answer is ready — so the
         # "Completed in …" time reflects when the user got their answer, not when
         # the post-answer enrichment (inspect + follow-ups) finishes.
+        _chat_inv_id = ""
         try:
-            await asyncio.to_thread(
+            _chat_inv_id = await asyncio.to_thread(
                 lambda: save_chat_turn(
                     question=question, connection_id=connection_id, headline=answer.headline or question,
                     sql=final_sql or "", session_id=session_id, columns=result.columns,
@@ -552,6 +565,55 @@ async def _stream_chat(
         yield _sse("done", {})
 
         # ── Post-answer enrichment (streams in after DONE, never delays it) ──
+        # Insight narrative — analytical interpretation with anomaly detection
+        _insight_dict = None
+        try:
+            _insight_system = (
+                "You are an analytical data interpreter. Given a user question, the SQL that answered it, "
+                "and a sample of the results, produce a concise analytical insight. "
+                "Detect any anomalies (unexpected values, spikes, drops, outliers). "
+                "Describe the overall trend. State your confidence in the interpretation."
+            )
+            # Include up to 20 rows and up to 8 columns to keep the prompt bounded
+            _sample_rows = result.rows[:20]
+            _sample_cols = result.columns[:8]
+            _rows_text = "\n".join(
+                ", ".join(str(r[i]) for i in range(len(_sample_cols))) for r in _sample_rows
+            )
+            _insight_user = (
+                f"Question: {question}\n"
+                f"SQL: {final_sql}\n"
+                f"Results (sample of {len(_sample_rows)} rows):\n"
+                f"Columns: {', '.join(_sample_cols)}\n"
+                f"{_rows_text}"
+            )
+            _insight: _InsightResult = await asyncio.to_thread(
+                lambda: get_provider("narrator").complete(
+                    system=_insight_system,
+                    user=_insight_user,
+                    response_model=_InsightResult,
+                    temperature=0.2,
+                )
+            )
+            _insight_dict = {
+                "narrative": _insight.narrative,
+                "anomalies": _insight.anomalies[:3],
+                "trend": _insight.trend,
+                "confidence": _insight.confidence,
+            }
+            yield _sse("insight", _insight_dict)
+            # Persist insight so it survives page reload / history navigation
+            if _chat_inv_id:
+                try:
+                    from aughor.db.history import update_chat_turn_insight
+                    await asyncio.to_thread(lambda: update_chat_turn_insight(_chat_inv_id, _insight_dict))
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+
+
         # Semantic inspect — logical validation
         try:
             from aughor.sql.inspect import inspect as _inspect_sql
@@ -706,6 +768,31 @@ async def _stream_investigation(
 
             if node_name == "route_question":
                 yield _sse("mode", {"query_mode": merged.get("query_mode"), "route_reasoning": merged.get("route_reasoning"), "route_confidence": merged.get("route_confidence")})
+                # For investigate/explore modes, stream clarifying questions after routing
+                # so the user sees what the agent is about to probe before it runs expensive queries.
+                if merged.get("query_mode") in ("investigate", "explore"):
+                    try:
+                        _cq_system = (
+                            "You are a senior data analyst about to run a deep investigation. "
+                            "Given the user's question, ask 1-2 short clarifying questions that would "
+                            "sharpen the analysis. Focus on time range, metric definition, or segment. "
+                            "Also write a one-sentence note explaining why these matter."
+                        )
+                        _cq: _ClarifyingQuestions = await asyncio.to_thread(
+                            lambda: get_provider("narrator").complete(
+                                system=_cq_system,
+                                user=f"Question: {question}",
+                                response_model=_ClarifyingQuestions,
+                                temperature=0.3,
+                            )
+                        )
+                        if _cq.questions:
+                            yield _sse("clarifying_questions", {
+                                "questions": _cq.questions[:2],
+                                "context_note": _cq.context_note,
+                            })
+                    except Exception:
+                        pass
             elif node_name == "decompose" and merged.get("hypotheses"):
                 yield _sse("hypotheses", {"hypotheses": [h.model_dump() for h in merged["hypotheses"]]})
             elif node_name == "plan_and_execute":
