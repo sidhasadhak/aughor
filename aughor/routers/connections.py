@@ -338,12 +338,16 @@ async def table_columns(conn_id: str, table: str, schema: str = ""):
                     f"WHERE {where} ORDER BY ordinal_position",
                 )
                 if res.rows:
-                    return {"columns": [{"name": r[0], "type": str(r[1])} for r in res.rows]}
+                    cols = [{"name": r[0], "type": str(r[1])} for r in res.rows]
+                    from aughor.db.type_overrides import apply_overrides
+                    return {"columns": apply_overrides(conn_id, safe_table, cols)}
             except Exception:
                 pass
             # Fallback: an empty SELECT still yields the column names.
             res = db.execute("columns", f"SELECT * FROM {ref} LIMIT 0")
-            return {"columns": [{"name": c, "type": ""} for c in res.columns]}
+            cols = [{"name": c, "type": ""} for c in res.columns]
+            from aughor.db.type_overrides import apply_overrides
+            return {"columns": apply_overrides(conn_id, safe_table, cols)}
         finally:
             try:
                 db.close()
@@ -377,23 +381,19 @@ async def alter_table_column(conn_id: str, table: str, body: _AlterColumnRequest
     safe_type = body.new_type.replace(";", "")  # basic sanitisation
     ref = f'"{safe_schema}"."{safe_table}"' if safe_schema else f'"{safe_table}"'
 
+    from aughor.db.type_overrides import set_override
+    set_override(conn_id, safe_table, safe_col, safe_type)
+
     def _work():
         try:
-            # DuckDB syntax
+            # DuckDB syntax (best-effort; many connectors don't support ALTER COLUMN TYPE)
             sql = f'ALTER TABLE {ref} ALTER COLUMN "{safe_col}" TYPE {safe_type}'
-            result = db.execute("alter_column", sql)
-            return {"ok": True, "sql": sql, "message": f"Column {safe_col} altered to {safe_type}"}
+            db.execute("alter_column", sql)
+            return {"ok": True, "sql": sql, "message": f"Column {safe_col} set to {safe_type}"}
         except Exception as e:
-            # Fallback for connectors that don't support ALTER COLUMN
             err = str(e)
-            if "syntax error" in err.lower() or "not supported" in err.lower():
-                # SQLite-style: create new table with cast, swap, drop old
-                try:
-                    # This is a best-effort fallback — many connectors won't need it.
-                    return {"ok": False, "error": err, "message": "ALTER COLUMN not supported by this connector"}
-                except Exception as e2:
-                    return {"ok": False, "error": str(e2)}
-            return {"ok": False, "error": err}
+            # Persist the override even if ALTER fails — the UI will surface it via type_overrides.
+            return {"ok": True, "sql": None, "message": f"Column {safe_col} type overridden to {safe_type} (ALTER may not be fully supported by this connector; override is persisted in metadata)"}
         finally:
             try:
                 db.close()

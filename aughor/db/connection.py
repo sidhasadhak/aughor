@@ -504,6 +504,15 @@ class DatabaseConnection(ABC):
 
 # ── DuckDB ────────────────────────────────────────────────────────────────────
 
+def _duckdb_motherduck_db(dsn: str) -> str | None:
+    """Extract the database name from a MotherDuck DSN, e.g. 'md:my_database' -> 'my_database'."""
+    d = str(dsn).strip()
+    if d.lower().startswith("md:"):
+        db = d[3:].strip().split("/")[0]
+        return db if db else None
+    return None
+
+
 def _duckdb_is_local(path: str | Path) -> bool:
     """Return True if the DuckDB path is a local file, False for remote URLs."""
     p = str(path).lower()
@@ -519,7 +528,15 @@ class DuckDBConnection(DatabaseConnection):
         self._conn = duckdb.connect(str(self._path), read_only=_is_local)
         self._connection_id = connection_id
         self._schema_name = schema_name or None
-        if schema_name:
+        # For MotherDuck, explicitly switch to the target database so that
+        # SHOW TABLES and duckdb_tables() return tables from that DB, not the default.
+        _md_db = _duckdb_motherduck_db(str(self._path))
+        if _md_db:
+            try:
+                self._conn.execute(f"USE '{_md_db}'")
+            except Exception:
+                pass  # best-effort
+        if schema_name and not _md_db:
             # Point the execution context at the requested schema so queries
             # land in the right namespace without requiring fully-qualified names.
             try:
@@ -540,7 +557,13 @@ class DuckDBConnection(DatabaseConnection):
         clone._connection_id = self._connection_id
         clone._ontology = self._ontology
         clone._conn = duckdb.connect(str(self._path), read_only=_duckdb_is_local(self._path))
-        if self._schema_name:
+        _md_db = _duckdb_motherduck_db(str(self._path))
+        if _md_db:
+            try:
+                clone._conn.execute(f"USE '{_md_db}'")
+            except Exception:
+                pass
+        if self._schema_name and not _md_db:
             try:
                 clone._conn.execute(f"SET search_path = '{self._schema_name}'")
             except Exception:

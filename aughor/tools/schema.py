@@ -6,6 +6,7 @@ import re
 import duckdb
 
 from aughor.semantic.glossary import apply_glossary
+from aughor.db.type_overrides import get_table_overrides
 
 # Columns whose names indicate they are IDs/keys — skip value sampling for these.
 _KEY_COL = re.compile(
@@ -432,6 +433,11 @@ def build_schema_context(
                 [schema_name],
             ).fetchall()
         ]
+        # Fallback: the user may have set schema_name to a database name
+        # (common with MotherDuck) rather than a DuckDB schema. In that case,
+        # information_schema.tables returns nothing — fall back to SHOW TABLES.
+        if not tables:
+            tables = [row[0] for row in conn.execute("SHOW TABLES").fetchall()]
     else:
         tables = [row[0] for row in conn.execute("SHOW TABLES").fetchall()]
     parts: list[str] = []
@@ -457,8 +463,11 @@ def build_schema_context(
             inject_into_schema_parts(parts, table, None, _annotations)
 
         cols = conn.execute(f"DESCRIBE {fqn}").fetchall()
+        _overrides = get_table_overrides(connection_id or "", table) if connection_id else {}
         for col in cols:
             col_name, col_type = col[0], col[1]
+            if col_name in _overrides:
+                col_type = _overrides[col_name]
             parts.append(f"  {col_name}  {col_type}")
             if _annotations:
                 inject_into_schema_parts(parts, table, col_name, _annotations)
