@@ -26,6 +26,7 @@ from aughor.routers._shared import (
     get_schema_cached as _get_schema_cached,
     invalidate_schema_cache as _invalidate_schema_cache,
 )
+from aughor.tools.schema import _norm_type
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["connections"])
@@ -339,64 +340,68 @@ async def table_columns(conn_id: str, table: str, schema: str = ""):
         try:
             # For DuckDB we can use raw_execute to bypass _validate (which rejects
             # DESCRIBE / PRAGMA) and avoid thread-safety issues by creating db in-thread.
-            from aughor.db.connection import DuckDBConnection
             from aughor.db.type_overrides import apply_overrides
-            if isinstance(db, DuckDBConnection):
-                # 1. Try information_schema.columns with current_database filter
+            # DuckDB-like connectors (including LocalUploadConnection) have dialect=duckdb
+            # and raw_execute to bypass validation for DESCRIBE / PRAGMA.
+            if getattr(db, 'dialect', '') == 'duckdb' and hasattr(db, 'raw_execute'):
+                # 1. DESCRIBE is the most reliable path for DuckDB/MotherDuck — it always
+                # returns concrete types (INTEGER, VARCHAR, TIMESTAMP, etc.) and works
+                # across attached databases, in-memory, and remote MotherDuck.
                 try:
-                    where = f"table_name = '{safe_table}'"
-                    if safe_schema:
-                        where += f" AND table_schema = '{safe_schema}'"
-                    # Restrict to the current database so MotherDuck/attached DBs
-                    # don't bleed columns from other databases.
-                    _, db_rows = db.raw_execute("SELECT current_database()")
-                    if db_rows:
-                        current_db = str(db_rows[0][0]).replace("'", "''")
-                        where += f" AND table_catalog = '{current_db}'"
-                    columns, rows = db.raw_execute(
-                        "SELECT column_name, data_type FROM information_schema.columns "
-                        f"WHERE {where} ORDER BY ordinal_position"
-                    )
+                    columns, rows, _ = db.raw_execute(f"DESCRIBE {ref}")
                     if rows:
                         cols = [{"name": r[0], "type": _norm_type(str(r[1]))} for r in rows]
                         return {"columns": apply_overrides(conn_id, safe_table, cols)}
                 except Exception:
                     pass
-                # 1b. Try information_schema.columns WITHOUT table_catalog filter
-                # (some DuckDB builds / MotherDuck versions don't expose table_catalog).
+                # 2. PRAGMA table_info — SQLite-native, works everywhere DuckDB works.
                 try:
-                    where = f"table_name = '{safe_table}'"
-                    if safe_schema:
-                        where += f" AND table_schema = '{safe_schema}'"
-                    columns, rows = db.raw_execute(
-                        "SELECT column_name, data_type FROM information_schema.columns "
-                        f"WHERE {where} ORDER BY ordinal_position"
-                    )
-                    if rows:
-                        cols = [{"name": r[0], "type": _norm_type(str(r[1]))} for r in rows]
-                        return {"columns": apply_overrides(conn_id, safe_table, cols)}
-                except Exception:
-                    pass
-                # 2. Fallback: DESCRIBE (DuckDB-native, works for MotherDuck)
-                try:
-                    columns, rows = db.raw_execute(f"DESCRIBE {ref}")
-                    if rows:
-                        cols = [{"name": r[0], "type": _norm_type(str(r[1]))} for r in rows]
-                        return {"columns": apply_overrides(conn_id, safe_table, cols)}
-                except Exception:
-                    pass
-                # 3. Fallback: PRAGMA table_info (SQLite-native, works everywhere DuckDB works)
-                try:
-                    columns, rows = db.raw_execute(f"PRAGMA table_info({ref})")
+                    columns, rows, _ = db.raw_execute(f"PRAGMA table_info({ref})")
                     if rows:
                         cols = [{"name": r[1], "type": _norm_type(str(r[2]))} for r in rows]
                         return {"columns": apply_overrides(conn_id, safe_table, cols)}
                 except Exception:
                     pass
-                # 4. Final fallback: empty SELECT
+                # 3. information_schema.columns with current_database filter — standard SQL,
+                # but MotherDuck sometimes returns empty data_type here, so we only use it
+                # if it actually yields types.
                 try:
-                    columns, rows = db.raw_execute(f"SELECT * FROM {ref} LIMIT 0")
-                    cols = [{"name": c, "type": ""} for c in columns]
+                    where = f"table_name = '{safe_table}'"
+                    if safe_schema:
+                        where += f" AND table_schema = '{safe_schema}'"
+                    _, db_rows, _ = db.raw_execute("SELECT current_database()")
+                    if db_rows:
+                        current_db = str(db_rows[0][0]).replace("'", "''")
+                        where += f" AND table_catalog = '{current_db}'"
+                    columns, rows, _ = db.raw_execute(
+                        "SELECT column_name, data_type FROM information_schema.columns "
+                        f"WHERE {where} ORDER BY ordinal_position"
+                    )
+                    if rows:
+                        cols = [{"name": r[0], "type": _norm_type(str(r[1]) if r[1] is not None else "")} for r in rows]
+                        if any(c["type"] for c in cols):
+                            return {"columns": apply_overrides(conn_id, safe_table, cols)}
+                except Exception:
+                    pass
+                # 3b. information_schema.columns WITHOUT table_catalog filter.
+                try:
+                    where = f"table_name = '{safe_table}'"
+                    if safe_schema:
+                        where += f" AND table_schema = '{safe_schema}'"
+                    columns, rows, _ = db.raw_execute(
+                        "SELECT column_name, data_type FROM information_schema.columns "
+                        f"WHERE {where} ORDER BY ordinal_position"
+                    )
+                    if rows:
+                        cols = [{"name": r[0], "type": _norm_type(str(r[1]) if r[1] is not None else "")} for r in rows]
+                        if any(c["type"] for c in cols):
+                            return {"columns": apply_overrides(conn_id, safe_table, cols)}
+                except Exception:
+                    pass
+                # 4. Final fallback: empty SELECT — use cursor description to recover types.
+                try:
+                    columns, rows, types = db.raw_execute(f"SELECT * FROM {ref} LIMIT 0")
+                    cols = [{"name": c, "type": _norm_type(t) or ""} for c, t in zip(columns, types)]
                     return {"columns": apply_overrides(conn_id, safe_table, cols)}
                 except Exception:
                     pass
@@ -456,6 +461,7 @@ async def alter_table_column(conn_id: str, table: str, body: _AlterColumnRequest
 
     from aughor.db.type_overrides import set_override
     set_override(conn_id, safe_table, safe_col, safe_type)
+    _invalidate_schema_cache(conn_id)
 
     def _work():
         try:

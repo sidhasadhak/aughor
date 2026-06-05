@@ -570,13 +570,30 @@ class DuckDBConnection(DatabaseConnection):
                 pass
         return clone
 
-    def raw_execute(self, sql: str) -> tuple[list[str], list]:
+_PG_OID_MAP: dict[int, str] = {
+    16: "BOOLEAN", 21: "SMALLINT", 23: "INTEGER", 20: "BIGINT",
+    700: "REAL", 701: "DOUBLE PRECISION", 1700: "NUMERIC",
+    1082: "DATE", 1083: "TIME", 1266: "TIMETZ",
+    1114: "TIMESTAMP", 1184: "TIMESTAMPTZ", 1186: "INTERVAL",
+    25: "TEXT", 1042: "CHAR", 1043: "VARCHAR",
+    18: "CHAR", 19: "NAME", 114: "JSON", 3802: "JSONB",
+    17: "BYTEA", 2950: "UUID",
+}
+
+
+def _pg_type_name(oid: int) -> str:
+    return _PG_OID_MAP.get(oid, f"TYPE({oid})")
+
+
+    def raw_execute(self, sql: str) -> tuple[list[str], list, list[str]]:
         """Execute a raw SQL query bypassing validation and security checks.
-        For metadata queries only. Returns (column_names, rows)."""
+        For metadata queries only. Returns (column_names, rows, types)."""
         self._conn.execute(sql)
         rows = self._conn.fetchall()
-        columns = [d[0] for d in self._conn.description] if self._conn.description else []
-        return columns, rows
+        desc = self._conn.description or []
+        columns = [d[0] for d in desc]
+        types = [str(d[1]) for d in desc]
+        return columns, rows, types
 
     def dry_run(self, sql: str) -> tuple[bool, str]:
         """Run EXPLAIN against DuckDB — catches bad column/table names without returning rows."""
@@ -791,13 +808,30 @@ class PostgresConnection(DatabaseConnection):
         clone._connect()
         return clone
 
-    def raw_execute(self, sql: str) -> tuple[list[str], list]:
+_PG_OID_MAP: dict[int, str] = {
+    16: "BOOLEAN", 21: "SMALLINT", 23: "INTEGER", 20: "BIGINT",
+    700: "REAL", 701: "DOUBLE PRECISION", 1700: "NUMERIC",
+    1082: "DATE", 1083: "TIME", 1266: "TIMETZ",
+    1114: "TIMESTAMP", 1184: "TIMESTAMPTZ", 1186: "INTERVAL",
+    25: "TEXT", 1042: "CHAR", 1043: "VARCHAR",
+    18: "CHAR", 19: "NAME", 114: "JSON", 3802: "JSONB",
+    17: "BYTEA", 2950: "UUID",
+}
+
+
+def _pg_type_name(oid: int) -> str:
+    return _PG_OID_MAP.get(oid, f"TYPE({oid})")
+
+
+    def raw_execute(self, sql: str) -> tuple[list[str], list, list[str]]:
         """Execute a raw SQL query bypassing validation and security checks.
-        For metadata queries only. Returns (column_names, rows)."""
+        For metadata queries only. Returns (column_names, rows, types)."""
         self._conn.execute(sql)
         rows = self._conn.fetchall()
-        columns = [d[0] for d in self._conn.description] if self._conn.description else []
-        return columns, rows
+        desc = self._conn.description or []
+        columns = [d[0] for d in desc]
+        types = [_pg_type_name(d[1]) for d in desc]
+        return columns, rows, types
 
     def dry_run(self, sql: str) -> tuple[bool, str]:
         """Run EXPLAIN against Postgres — catches bad column/table names without returning rows."""

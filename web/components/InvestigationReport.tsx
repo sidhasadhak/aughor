@@ -109,7 +109,7 @@ function SqlToggle({ sql }: { sql: string }) {
         SQL
       </button>
       {open && (
-        <pre className="mt-1.5 text-[11px] text-zinc-400 rounded-md p-3 overflow-x-auto whitespace-pre-wrap leading-relaxed border border-zinc-800" style={{ background: "var(--code-bg)" }}>
+        <pre className="mt-1.5 text-[11px] text-zinc-400 rounded-md p-3 overflow-auto whitespace-pre-wrap leading-relaxed border border-zinc-800" style={{ background: "var(--code-bg)", maxHeight: 400 }}>
           {sql}
         </pre>
       )}

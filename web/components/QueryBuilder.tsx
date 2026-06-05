@@ -538,7 +538,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
       rich.tables.forEach(t => { cols[t.name] = t.columns; rc[t.name] = t.row_count; });
       setTableNames(names); setTableCols(cols); setRowCounts(rc);
       setSchemaJoins(rich.joins); setIsolated(rich.isolated ?? []);
-    }).catch(()=>{}).finally(()=>setLoadingCols(false));
+    }).catch(err => { console.error("[QueryBuilder] getSchemaRich failed:", err); }).finally(()=>setLoadingCols(false));
   }, [connId]);
 
   useEffect(() => {
@@ -940,14 +940,16 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                               {open && (
                                 loadingCols && cols.length === 0
                                   ? <div className="pl-11 py-1.5"><span className="text-[11px] text-zinc-500 animate-pulse">Loading columns…</span></div>
-                                  : cols.map(col => (
-                                    <div key={col.name} className="pl-4">
-                                      <ColRow col={col} tableName={tbl}
-                                        onAddDim={()=>addDim(col.name, tbl)}
-                                        onAddMeasure={()=>openMeasure(col, tbl)}
-                                      />
-                                    </div>
-                                  ))
+                                  : cols.length > 0
+                                    ? cols.map(col => (
+                                      <div key={col.name} className="pl-4">
+                                        <ColRow col={col} tableName={tbl}
+                                          onAddDim={()=>addDim(col.name, tbl)}
+                                          onAddMeasure={()=>openMeasure(col, tbl)}
+                                        />
+                                      </div>
+                                    ))
+                                    : <div className="pl-11 py-1.5"><span className="text-[11px] text-zinc-500">No columns available — schema may need refresh</span></div>
                               )}
                             </div>
                           );

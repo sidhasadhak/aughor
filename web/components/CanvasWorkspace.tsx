@@ -543,9 +543,11 @@ interface Props {
   connections: Connection[];
   onClose: () => void;
   onCanvasUpdate: (canvas: Canvas) => void;
+  initialOpenInvId?: string | null;
+  initialRestoreSessionId?: string | null;
 }
 
-export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate }: Props) {
+export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, initialOpenInvId, initialRestoreSessionId }: Props) {
   const [wsTab, setWsTab] = useState<WsTab>("chat");
   const [chatKey, setChatKey] = useState(0);
   const [openInvId, setOpenInvId] = useState<string | null>(null);
@@ -561,13 +563,25 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate }
     ? (connection.conn_type === "duckdb" ? "DuckDB" : connection.conn_type === "postgres" ? "PostgreSQL" : connection.conn_type)
     : null;
 
-  // When canvas changes, reset to chat tab
+  // When canvas changes, reset to chat tab, but honour initial props
   useEffect(() => {
-    setWsTab("chat");
-    setChatKey(k => k + 1);
-    setOpenInvId(null);
-    setRestoreSessionId(null);
-  }, [canvas.id]);
+    if (initialOpenInvId) {
+      setWsTab("history");
+      setOpenInvId(initialOpenInvId);
+      setRestoreSessionId(null);
+      setChatKey(k => k + 1);
+    } else if (initialRestoreSessionId) {
+      setWsTab("chat");
+      setRestoreSessionId(initialRestoreSessionId);
+      setOpenInvId(null);
+      setChatKey(k => k + 1);
+    } else {
+      setWsTab("chat");
+      setChatKey(k => k + 1);
+      setOpenInvId(null);
+      setRestoreSessionId(null);
+    }
+  }, [canvas.id, initialOpenInvId, initialRestoreSessionId]);
 
   // History line-item → navigate.  Investigations open the detail report in the
   // History tab; chat sessions restore the conversation in the Chat tab (passing

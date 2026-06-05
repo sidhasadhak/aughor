@@ -75,7 +75,7 @@ const AUG_THEME: Parameters<typeof ConfigProvider>[0]["theme"] = {
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-const ORDINAL_COL = /\bid\b|_id$|^id$/i;
+const ORDINAL_COL = /\bid\b|_id$|^id$|id$|Id$|ID$/i;
 const SHARE_COL   = /pct|percent|share|rate|ratio|proportion/i;
 
 function isNumericValue(v: unknown): boolean {

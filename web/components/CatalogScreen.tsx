@@ -526,11 +526,11 @@ function TableDetailPanel({ sel, onAsk }: {
     setLoad(true);
     getTableColumns(sel.connId, sel.table.name, sel.schemaName)
       .then(setBaseCols)
-      .catch(() => setBaseCols([]))
+      .catch(err => { console.error("[Catalog] getTableColumns failed:", err); setBaseCols([]); })
       .finally(() => setLoad(false));
     getSchemaRich(sel.connId)
       .then(s => setRich(s.tables.find(t => t.name === sel.table.name) ?? null))
-      .catch(() => setRich(null));
+      .catch(err => { console.error("[Catalog] getSchemaRich failed:", err); setRich(null); });
   }, [sel.connId, sel.schemaName, sel.table.name]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fetch column distributions (exploration profiling) for this table
@@ -686,8 +686,8 @@ function TableDetailPanel({ sel, onAsk }: {
                       <span
                         onClick={() => { setEditingCol(col.name); setEditType(col.type); }}
                         title="Click to edit type"
-                        style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: typeColor(col.type), cursor: "pointer", borderBottom: "1px dashed #2a2b35" }}
-                      >{col.type}</span>
+                        style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: typeColor(col.type || "--"), cursor: "pointer", borderBottom: "1px dashed #2a2b35" }}
+                      >{col.type || "—"}</span>
                     )}
                     {col.is_fk
                       ? <span style={{ fontSize: 9, padding: "2px 5px", borderRadius: 3, background: "#1a1e2e", color: "#3d6bff", border: "0.5px solid #2a3050" }}>FK</span>
