@@ -245,7 +245,7 @@ export function timeseriesSpec(xField: string, yField: string, opts?: {
     x: {
       field: xField,
       type: "temporal",
-      axis: { format: opts?.xFormat ?? "%b %y", labelAngle: -30 },
+      axis: { format: opts?.xFormat ?? "%b %d, %Y", labelAngle: -30, labelOverlap: "parity" },
     },
     y: {
       field: yField,

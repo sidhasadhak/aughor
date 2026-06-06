@@ -45,7 +45,7 @@ type FilterOp = "=" | "!=" | ">" | ">=" | "<" | "<=" | "LIKE" | "ILIKE" | "IN" |
 const FILTER_OPS: FilterOp[] = ["=","!=",">",">=","<","<=","LIKE","ILIKE","IN","IS NULL","IS NOT NULL"];
 const NO_VAL_OPS: FilterOp[] = ["IS NULL","IS NOT NULL"];
 
-interface DimItem     { id: string; col: string; table: string }
+interface DimItem     { id: string; col: string; table: string; transform?: "date" | "month" | "year" | "quarter" | "hour" | "minute" }
 interface MeasureItem { id: string; col: string; table: string; agg: AggFn; customExpr: string; alias: string; fromMetric?: string }
 interface FilterItem  { id: string; col: string; table: string; op: FilterOp; val: string }
 
@@ -181,15 +181,27 @@ function buildSql(
     return s && s !== "main" && s !== "public" ? `"${s}"."${t}"` : `"${t}"`;
   };
   const multi = joined.length > 0;
+  const dimExpr = (d: DimItem) => {
+    const base = qualify(d.col, d.table, multi);
+    switch (d.transform) {
+      case "date":     return `DATE_TRUNC('day', ${base})`;
+      case "month":    return `DATE_TRUNC('month', ${base})`;
+      case "year":     return `DATE_TRUNC('year', ${base})`;
+      case "quarter":  return `DATE_TRUNC('quarter', ${base})`;
+      case "hour":     return `DATE_TRUNC('hour', ${base})`;
+      case "minute":   return `DATE_TRUNC('minute', ${base})`;
+      default:         return base;
+    }
+  };
   const selParts = [
-    ...dims.map(d => qualify(d.col, d.table, multi)),
+    ...dims.map(d => `${dimExpr(d)} AS ${d.col}_grouped`),
     ...measures.map(m => `${measureExpr(m,multi)} AS ${m.alias || autoAlias(m.agg,m.col,m.customExpr)}`),
   ];
   const joinLines = resolveJoins(primary, joined, schemaJoins).map(
     ({ table, join, pivot }) => join ? joinClause(join, pivot, tableSchemas) : `-- TODO: no join found for "${table}"`,
   );
   const hasAgg = measures.some(m => m.agg !== "CUSTOM" || /\b(SUM|COUNT|AVG|MIN|MAX|STDDEV|VARIANCE|MEDIAN)\s*\(/i.test(m.customExpr));
-  const groupCols = dims.map(d => qualify(d.col,d.table,multi));
+  const groupCols = dims.map(d => dimExpr(d));
   const groupBy   = groupCols.length && hasAgg ? `GROUP BY ${groupCols.join(", ")}` : "";
   const whereItems = filters.flatMap(f => {
     const qc = qualify(f.col,f.table,multi);
@@ -501,7 +513,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
   const [measures, setMeasures] = useState<MeasureItem[]>([]);
   const [filters,  setFilters]  = useState<FilterItem[]>([]);
   const [orderBy,  setOrderBy]  = useState("");
-  const [limit,    setLimit]    = useState(1000);
+  const [limit,    setLimit]    = useState(0);
 
   const [aggInfo,     setAggInfo]     = useState<{col:SchemaColumn;table:string}|null>(null);
   const [overDims,    setOverDims]    = useState(false);
@@ -609,7 +621,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
     setDims([]); setMeasures([]); setFilters([]); setOrderBy("");
     setResult(null); setRunError(null); setAutoSql(true); setColSearch("");
     const qTable = schema && schema !== "main" && schema !== "public" ? `"${schema}"."${name}"` : `"${name}"`;
-    setSql(`SELECT *\nFROM ${qTable}\nLIMIT ${limit}`);
+    setSql(limit > 0 ? `SELECT *\nFROM ${qTable}\nLIMIT ${limit}` : `SELECT *\nFROM ${qTable}`);
   }, [limit]);
 
   // Make `table` part of the query, auto-resolving a multi-hop join path through
@@ -1177,9 +1189,30 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                       </div>
                     )}
                     {dims.map(d => (
-                      <span key={d.id} className="inline-flex items-center gap-1.5 text-[12px] font-mono px-2.5 py-1 rounded-lg border bg-blue-500/10 border-blue-500/30 text-blue-300">
+                      <span key={d.id} className="inline-flex items-center gap-1 text-[12px] font-mono px-2 py-1 rounded-lg border bg-blue-500/10 border-blue-500/30 text-blue-300">
                         {isMulti ? `${d.table}.${d.col}` : d.col}
-                        <button onClick={()=>setDims(p=>p.filter(x=>x.id!==d.id))} className="opacity-50 hover:opacity-100 text-sm leading-none">×</button>
+                        {/* Date transform dropdown */}
+                        {(tableCols[d.table]?.find(c=>c.name===d.col)?.type?.toLowerCase().includes("date") ||
+                          tableCols[d.table]?.find(c=>c.name===d.col)?.type?.toLowerCase().includes("time")) && (
+                          <select
+                            value={d.transform || ""}
+                            onChange={e=> {
+                              const t = e.target.value as DimItem["transform"];
+                              setDims(p => p.map(x => x.id === d.id ? { ...x, transform: t || undefined } : x));
+                            }}
+                            className="text-[10px] bg-zinc-800 border border-zinc-700 rounded px-1 py-0.5 text-zinc-300 outline-none ml-1"
+                            onClick={e=> e.stopPropagation()}
+                          >
+                            <option value="">raw</option>
+                            <option value="date">DATE</option>
+                            <option value="month">MONTH</option>
+                            <option value="quarter">QUARTER</option>
+                            <option value="year">YEAR</option>
+                            <option value="hour">HOUR</option>
+                            <option value="minute">MIN</option>
+                          </select>
+                        )}
+                        <button onClick={()=>setDims(p=>p.filter(x=>x.id!==d.id))} className="opacity-50 hover:opacity-100 text-sm leading-none ml-0.5">×</button>
                       </span>
                     ))}
                   </div>
@@ -1315,7 +1348,11 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                 </div>
                 <div>
                   <p className="text-[12px] text-zinc-500 mb-2">LIMIT</p>
-                  <input type="number" min={1} max={50000} value={limit} onChange={e=>setLimit(parseInt(e.target.value)||1000)}
+                  <input type="number" min={0} max={50000} value={limit || ""} onChange={e=>{
+                      const v = e.target.value;
+                      setLimit(v === "" ? 0 : Math.max(0, parseInt(v) || 0));
+                    }}
+                    placeholder="∞"
                     className="text-[12px] font-mono bg-zinc-800/60 border border-zinc-700 rounded-md px-3 py-2 text-zinc-200 outline-none focus:border-zinc-500 w-24 transition" />
                 </div>
               </div>

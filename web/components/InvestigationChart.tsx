@@ -90,11 +90,40 @@ export function InvestigationChart({ columns, rows, title }: Props) {
 
   // ── LINE ──────────────────────────────────────────────────────────────────
   if (effectiveType === "line") {
-    const spec = timeseriesSpec(xKey, yKey);
+    // Auto-detect date span and pick a readable axis format
+    let xFormat = "%b %d, %Y";
+    try {
+      const dates = records.map(d => new Date(String(d[xKey]).replace(/ /, "T"))).filter(d => !isNaN(d.getTime()));
+      if (dates.length >= 2) {
+        const min = new Date(Math.min(...dates.map(d=>d.getTime())));
+        const max = new Date(Math.max(...dates.map(d=>d.getTime())));
+        const days = (max.getTime() - min.getTime()) / 86400000;
+        if (days <= 1) xFormat = "%H:%M";
+        else if (days <= 7) xFormat = "%a %H:%M";
+        else if (days <= 90) xFormat = "%b %d";
+        else if (days <= 730) xFormat = "%b %Y";
+        else xFormat = "%Y";
+      }
+    } catch {}
+    const spec = timeseriesSpec(xKey, yKey, { xFormat });
     content = <VegaChart spec={spec} data={records} height={200} />;
 
   // ── MULTI-LINE ────────────────────────────────────────────────────────────
   } else if (effectiveType === "multi-line" && colorKey) {
+    let xFormat = "%b %d, %Y";
+    try {
+      const dates = records.map(d => new Date(String(d[xKey]).replace(/ /, "T"))).filter(d => !isNaN(d.getTime()));
+      if (dates.length >= 2) {
+        const min = new Date(Math.min(...dates.map(d=>d.getTime())));
+        const max = new Date(Math.max(...dates.map(d=>d.getTime())));
+        const days = (max.getTime() - min.getTime()) / 86400000;
+        if (days <= 1) xFormat = "%H:%M";
+        else if (days <= 7) xFormat = "%a %H:%M";
+        else if (days <= 90) xFormat = "%b %d";
+        else if (days <= 730) xFormat = "%b %Y";
+        else xFormat = "%Y";
+      }
+    } catch {}
     const multiData = records.map(d => ({
       ...d,
       [xKey]: typeof d[xKey] === "string" ? normDateStr(d[xKey] as string) : d[xKey],
@@ -102,11 +131,11 @@ export function InvestigationChart({ columns, rows, title }: Props) {
     const spec = {
       mark: { type: "line", strokeWidth: 1.5, point: { size: 20, filled: true, opacity: 0.8 } },
       encoding: {
-        x: { field: xKey,      type: "temporal",     axis: { format: "%b %y", labelAngle: -30 } },
+        x: { field: xKey,      type: "temporal",     axis: { format: xFormat, labelAngle: -30, labelOverlap: "parity" } },
         y: { field: yKey,      type: "quantitative",  axis: { format: "~s", grid: true } },
         color: { field: colorKey, type: "nominal",    legend: { title: colorKey.replace(/_/g, " ") } },
         tooltip: [
-          { field: xKey,      type: "temporal",     format: "%b %Y" },
+          { field: xKey,      type: "temporal",     format: "%b %d, %Y" },
           { field: colorKey,  type: "nominal" },
           { field: yKey,      type: "quantitative",  format: ",.2~f" },
         ],
