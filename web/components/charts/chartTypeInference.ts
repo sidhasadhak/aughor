@@ -31,6 +31,7 @@ export type ChartType =
   | "stacked-bar"
   | "scatter"
   | "heatmap"
+  | "matrix"
   | "pie"
   | "treemap"
   | "table";

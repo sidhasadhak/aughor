@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
   getConnections, getSchemaRich, getTableColumns, getMetrics, runDirectQuery, getCatalogTree,
+  createCanvas, suggestCanvasName,
   type Connection, type SchemaColumn, type SchemaJoin, type Metric, type DirectQueryResult,
   type CatalogEntry,
 } from "@/lib/api";
@@ -397,8 +398,23 @@ function AcDropdown({ items, active, setActive, onSelect, onClose, pos }: {
   );
 }
 
-function ResultsPane({ result }: { result: DirectQueryResult }) {
-  const [view, setView] = useState<"chart" | "table">("chart");
+function ResultsPane({
+  result,
+  connId,
+  sql,
+  primaryTable,
+  joinedTables,
+  onStartCanvas,
+}: {
+  result: DirectQueryResult;
+  connId: string;
+  sql: string;
+  primaryTable: string | null;
+  joinedTables: string[];
+  onStartCanvas?: (canvasId: string) => void;
+}) {
+  const [view, setView] = useState<"chart" | "matrix" | "table">("chart");
+  const [creatingCanvas, setCreatingCanvas] = useState(false);
 
   if (result.error) {
     return (
@@ -418,6 +434,13 @@ function ResultsPane({ result }: { result: DirectQueryResult }) {
 
   const rows = result.rows as unknown[][];
   const chartable = inferChartType(result.columns, rows);
+  const hasTwoCats =
+    chartable &&
+    chartable.colorCol !== undefined &&
+    result.columns.filter((_, i) => {
+      const firstVal = rows.find(r => r[i] != null)?.[i];
+      return firstVal != null && isNaN(Number(firstVal));
+    }).length >= 2;
 
   const meta = [
     `${result.row_count ?? result.rows.length} rows`,
@@ -425,33 +448,75 @@ function ResultsPane({ result }: { result: DirectQueryResult }) {
     result.cached ? "cached" : null,
   ].filter(Boolean).join(" · ");
 
+  const handleCreateCanvas = async () => {
+    if (!connId || !primaryTable) return;
+    setCreatingCanvas(true);
+    try {
+      const tables = [primaryTable, ...joinedTables];
+      let name = "Query Canvas";
+      let description = `Canvas from Query Builder: ${tables.join(", ")}`;
+      try {
+        const suggested = await suggestCanvasName(connId, tables);
+        name = suggested.name;
+        description = suggested.description;
+      } catch {}
+      const canvas = await createCanvas(name, description, [
+        { connection_id: connId, schema_name: null, tables },
+      ]);
+      onStartCanvas?.(canvas.id);
+    } catch (e) {
+      alert((e as Error).message || "Failed to create canvas");
+    } finally {
+      setCreatingCanvas(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-3">
-      {/* View toggle */}
-      {chartable && (
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setView("chart")}
-            className={`text-[11px] px-2 py-0.5 rounded border transition-colors ${view === "chart" ? "border-blue-500/40 bg-blue-500/10 text-blue-300" : "border-zinc-700 text-zinc-500 hover:text-zinc-300"}`}
-          >
-            ◈ Chart
-          </button>
-          <button
-            onClick={() => setView("table")}
-            className={`text-[11px] px-2 py-0.5 rounded border transition-colors ${view === "table" ? "border-blue-500/40 bg-blue-500/10 text-blue-300" : "border-zinc-700 text-zinc-500 hover:text-zinc-300"}`}
-          >
-            ≡ Table
-          </button>
-          <span className="text-[11px] ml-auto" style={{ color: "var(--t3)" }}>{meta}</span>
-        </div>
-      )}
+      {/* View toggle + actions */}
+      <div className="flex items-center gap-2">
+        {chartable && (
+          <>
+            <button
+              onClick={() => setView("chart")}
+              className={`text-[11px] px-2 py-0.5 rounded border transition-colors ${view === "chart" ? "border-blue-500/40 bg-blue-500/10 text-blue-300" : "border-zinc-700 text-zinc-500 hover:text-zinc-300"}`}
+            >
+              ◈ Chart
+            </button>
+            {hasTwoCats && (
+              <button
+                onClick={() => setView("matrix")}
+                className={`text-[11px] px-2 py-0.5 rounded border transition-colors ${view === "matrix" ? "border-blue-500/40 bg-blue-500/10 text-blue-300" : "border-zinc-700 text-zinc-500 hover:text-zinc-300"}`}
+              >
+                ⊞ Matrix
+              </button>
+            )}
+          </>
+        )}
+        <button
+          onClick={() => setView("table")}
+          className={`text-[11px] px-2 py-0.5 rounded border transition-colors ${view === "table" ? "border-blue-500/40 bg-blue-500/10 text-blue-300" : "border-zinc-700 text-zinc-500 hover:text-zinc-300"}`}
+        >
+          ≡ Table
+        </button>
+        <span className="text-[11px] ml-auto" style={{ color: "var(--t3)" }}>{meta}</span>
+      </div>
 
       {/* Chart */}
       {view === "chart" && chartable && (
-        <InvestigationChart columns={result.columns} rows={rows} />
+        <div className="overflow-x-auto overflow-y-auto" style={{ maxHeight: 520 }}>
+          <InvestigationChart columns={result.columns} rows={rows} />
+        </div>
       )}
 
-      {/* Table — shared AugTable (sortable, themed, Σ Totals toggle) */}
+      {/* Matrix */}
+      {view === "matrix" && chartable && (
+        <div className="overflow-x-auto overflow-y-auto" style={{ maxHeight: 520 }}>
+          <InvestigationChart columns={result.columns} rows={rows} title="Matrix" />
+        </div>
+      )}
+
+      {/* Table */}
       {(view === "table" || !chartable) && (
         <>
           {!chartable && (
@@ -459,6 +524,34 @@ function ResultsPane({ result }: { result: DirectQueryResult }) {
           )}
           <SqlResultTable columns={result.columns} rows={rows} maxHeight={420} />
         </>
+      )}
+
+      {/* Start Canvas */}
+      {primaryTable && (
+        <div className="flex justify-end pt-2">
+          <button
+            onClick={handleCreateCanvas}
+            disabled={creatingCanvas}
+            className="text-[11px] px-3 py-1.5 rounded border border-violet-500/40 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20 transition disabled:opacity-50 flex items-center gap-1.5"
+          >
+            {creatingCanvas ? (
+              <>
+                <span className="w-3 h-3 border border-violet-400 border-t-transparent rounded-full animate-spin" />
+                Creating…
+              </>
+            ) : (
+              <>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <rect x="3" y="3" width="7" height="7" rx="1"/>
+                  <rect x="14" y="3" width="7" height="7" rx="1"/>
+                  <rect x="14" y="14" width="7" height="7" rx="1"/>
+                  <rect x="3" y="14" width="7" height="7" rx="1"/>
+                </svg>
+                Start Canvas
+              </>
+            )}
+          </button>
+        </div>
       )}
     </div>
   );
@@ -1413,7 +1506,19 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                       <p className="text-[12px] font-mono text-red-400">{runError}</p>
                     </div>
                   )}
-                  {result && !running && <ResultsPane result={result} />}
+                  {result && !running && (
+                    <ResultsPane
+                      result={result}
+                      connId={connId}
+                      sql={sql}
+                      primaryTable={primaryTable}
+                      joinedTables={joinedTables}
+                      onStartCanvas={(id) => {
+                        // Navigate to canvas workspace
+                        window.location.href = `/?canvas=${id}`;
+                      }}
+                    />
+                  )}
                 </div>
               )}
               {!result && !running && !runError && (

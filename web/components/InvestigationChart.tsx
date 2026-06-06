@@ -70,6 +70,7 @@ export function InvestigationChart({ columns, rows, title }: Props) {
       case "pie":        return ["pie", "bar", "treemap"];
       case "treemap":    return ["treemap", "bar", "pie"];
       case "grouped-bar": return ["grouped-bar", "bar", "line"];
+      case "matrix":     return ["matrix", "heatmap", "bar"];
       default:           return ["bar", "line"];
     }
   })();
@@ -83,6 +84,7 @@ export function InvestigationChart({ columns, rows, title }: Props) {
   const chartTitle = title ?? (
     effectiveType === "line" || effectiveType === "multi-line" ? "Trend" :
     effectiveType === "heatmap" ? "Distribution" :
+    effectiveType === "matrix" ? "Matrix" :
     effectiveType === "grouped-bar" ? "Comparison" : "Breakdown"
   );
 
@@ -271,6 +273,54 @@ export function InvestigationChart({ columns, rows, title }: Props) {
     };
     content = <VegaChart spec={spec} data={stackData} height={240} />;
 
+  // ── MATRIX (pivot / cross-tab heatmap) ────────────────────────────────────
+  } else if (effectiveType === "matrix" && colorKey) {
+    const matrixData = records.map(d => ({
+      row: String(d[xKey]),
+      col: String(d[colorKey]),
+      val: Number(d[yKey]),
+    }));
+    const rowOrder = [...new Set(matrixData.map(d => d.row))];
+    const colOrder = [...new Set(matrixData.map(d => d.col))];
+    const spec = {
+      mark: { type: "rect", stroke: "var(--chart-grid)", strokeWidth: 0.5 },
+      encoding: {
+        x: {
+          field: "col", type: "ordinal", sort: colOrder,
+          axis: { title: cleanTitle(colorKey), labelAngle: -30, labelLimit: 120 },
+          scale: { paddingInner: 0.02 },
+        },
+        y: {
+          field: "row", type: "ordinal", sort: rowOrder,
+          axis: { title: cleanTitle(xKey), labelLimit: 120 },
+          scale: { paddingInner: 0.02 },
+        },
+        color: {
+          field: "val", type: "quantitative",
+          scale: { scheme: "viridis" },
+          legend: { title: cleanTitle(yKey), orient: "right" },
+        },
+        tooltip: [
+          { field: "row", type: "nominal", title: cleanTitle(xKey) },
+          { field: "col", type: "nominal", title: cleanTitle(colorKey) },
+          { field: "val", type: "quantitative", format: ",.2~f", title: cleanTitle(yKey) },
+        ],
+      },
+      config: {
+        axis: { grid: false, domain: false },
+        view: { stroke: "transparent" },
+      },
+    };
+    const rowCount = rowOrder.length;
+    const colCount = colOrder.length;
+    const mHeight = Math.max(200, Math.min(rowCount * 24 + 60, 600));
+    const mWidth  = Math.max(320, Math.min(colCount * 50 + 160, 900));
+    content = (
+      <div style={{ overflowX: "auto", overflowY: "hidden" }}>
+        <VegaChart spec={spec} data={matrixData} height={mHeight} className="min-w-0" />
+      </div>
+    );
+
   // ── BAR (default) ─────────────────────────────────────────────────────────
   } else {
     const labelKey  = xKey;
@@ -302,7 +352,9 @@ export function InvestigationChart({ columns, rows, title }: Props) {
       availableTypes={available}
       onChartTypeChange={setOverride}
     >
-      {content}
+      <div style={{ overflowX: "auto", overflowY: "auto", maxHeight: 520 }}>
+        {content}
+      </div>
     </ChartWrapper>
   );
 }
