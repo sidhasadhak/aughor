@@ -18,7 +18,7 @@ class Hypothesis(BaseModel):
 
 
 class RouteDecision(BaseModel):
-    mode: Literal["direct", "investigate", "explore"]
+    mode: Literal["direct", "investigate", "explore", "final_text"]
     confidence: float = Field(ge=0.0, le=1.0, description="Classification confidence (0–1)")
     reasoning: str = Field(description="One sentence explaining the classification")
 
@@ -385,12 +385,15 @@ class AgentState(TypedDict):
     # Output
     report: Optional[AnalysisReport]
 
+    # final_text mode: answer from KB/ontology without SQL (MindsDB final_text path)
+    final_text_answer: str
+
     # Human-in-the-Loop (optional — only present when hitl_enabled=True)
     hitl_enabled: bool
     human_feedback: Optional[str]
 
     # Routing: set by route_question node; None until classified
-    query_mode: Optional[Literal["direct", "investigate"]]
+    query_mode: Optional[Literal["direct", "investigate", "explore", "final_text"]]
     route_reasoning: Optional[str]
     route_confidence: Optional[float]
 
@@ -409,6 +412,10 @@ class AgentState(TypedDict):
     # decompose step in both explore and investigate modes.
     analysis_ledger: str
 
+    # Structured Data Catalog (MindsDB-style): compact markdown with column defs
+    # + 5-row samples for only the relevant tables. Built once per investigation.
+    data_catalog: str
+
     # Adaptive replan decision produced after each score_evidence (investigate mode only)
     replan_decision: Optional[ReplanDecision]
 
@@ -417,6 +424,10 @@ class AgentState(TypedDict):
     current_subq_idx: int
     subq_answers: Annotated[list[SubQuestionAnswer], operator.add]
     explore_report: Optional[ExplorationReport]
+
+    # Per-sub-question data portrait produced by exploratory_scan_subq.
+    # Key = subq.id, value = formatted markdown paragraph of discovery results.
+    subq_data_portrait: dict[str, str]
 
     # ADA investigate mode state (only when query_mode == "investigate")
     investigation_phases: list[InvestigationPhaseResult]

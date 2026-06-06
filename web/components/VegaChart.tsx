@@ -18,41 +18,21 @@ export type VLSpec = Record<string, unknown>;
 
 // ── Aughor Vega-Lite config (dark theme) ────────────────────────────────────
 
-// Chart token values — must mirror tokens.css --chart-* and --chart-axis/grid/tick.
-// Vega renders to SVG and cannot read CSS variables, so we mirror the values here.
-const C1 = "#4C8EEE";  // --chart-1  blue
-const C2 = "#2EC87B";  // --chart-2  green
-const C3 = "#E0AD00";  // --chart-3  amber
-const C4 = "#8B68D8";  // --chart-4  purple
-const C5 = "#E64848";  // --chart-5  red
-const C6 = "#30B8E0";  // --chart-6  cyan
-const AXIS_LINE  = "#363940";  // --chart-axis
-const AXIS_GRID  = "#292b2f";  // --chart-grid
-const AXIS_TICK  = "#9AA0A8";  // --chart-tick
+const C1 = "#4C8EEE";
+const C2 = "#2EC87B";
+const C3 = "#E0AD00";
+const C4 = "#8B68D8";
+const C5 = "#E64848";
+const C6 = "#30B8E0";
+const AXIS_LINE  = "#363940";
+const AXIS_GRID  = "#292b2f";
+const AXIS_TICK  = "#9AA0A8";
 
-// 20-colour categorical palette — ordered for maximum perceptual distance.
-// The first 6 match the Aughor design tokens above; 7-20 extend for high-cardinality data.
 export const AUG_PALETTE = [
-  C1,        // 1  blue
-  C2,        // 2  green
-  C3,        // 3  amber
-  C4,        // 4  purple
-  C5,        // 5  red
-  C6,        // 6  cyan
-  "#F97316", // 7  orange
-  "#EC4899", // 8  pink
-  "#10B981", // 9  emerald
-  "#6366F1", // 10 indigo
-  "#F59E0B", // 11 gold
-  "#14B8A6", // 12 teal
-  "#A855F7", // 13 violet
-  "#22D3EE", // 14 sky
-  "#84CC16", // 15 lime
-  "#E879F9", // 16 fuchsia
-  "#34D399", // 17 seafoam
-  "#FB923C", // 18 peach
-  "#818CF8", // 19 periwinkle
-  "#4ADE80", // 20 light green
+  C1, C2, C3, C4, C5, C6,
+  "#F97316", "#EC4899", "#10B981", "#6366F1", "#F59E0B", "#14B8A6",
+  "#A855F7", "#22D3EE", "#84CC16", "#E879F9", "#34D399", "#FB923C",
+  "#818CF8", "#4ADE80",
 ];
 
 const AUG_CONFIG = {
@@ -67,7 +47,6 @@ const AUG_CONFIG = {
     labelFontSize: 11,
     titleFontSize: 11,
     labelPadding:  6,
-    // max 6 ticks on time axis per M23c standard
     tickCount:     6,
   },
   header: {
@@ -80,18 +59,13 @@ const AUG_CONFIG = {
     labelFontSize:     11,
     symbolStrokeWidth: 0,
     padding:           4,
-    orient:            "top",   // time series: legend above, left-aligned
+    orient:            "top",
     direction:         "horizontal",
   },
-  range: {
-    // Use the full 20-colour palette so high-cardinality categoricals don't recycle
-    category: AUG_PALETTE,
-  },
+  range: { category: AUG_PALETTE },
   view: { stroke: null },
   mark: { tooltip: true },
 };
-
-// ── vega-tooltip dark theme — injected once ──────────────────────────────────
 
 let tooltipCssInjected = false;
 
@@ -117,20 +91,63 @@ function injectTooltipCss() {
   document.head.appendChild(style);
 }
 
-// ── Component ────────────────────────────────────────────────────────────────
-
 interface Props {
   spec: VLSpec;
-  /** Override / set the data.values field in the spec */
   data?: Record<string, unknown>[];
   height?: number;
+  width?: number;          // deprecated: chart always fits container width
   className?: string;
+  showLabels?: boolean;
 }
 
-export function VegaChart({ spec, data, height, className }: Props) {
+/** Inject data-label text layers into a Vega-Lite spec.
+ *  Keeps every existing mark/layer and appends a matching text mark on top. */
+function injectLabels(spec: VLSpec): VLSpec {
+  const existing = (spec.layer || [spec]) as VLSpec[];
+  const topEnc = (spec.encoding || {}) as Record<string, unknown>;
+  const wrapped: VLSpec[] = [];
+  let changed = false;
+  for (const layer of existing) {
+    const enc = (layer.encoding || {}) as Record<string, unknown>;
+    const yEnc = (enc.y || topEnc.y) as Record<string, unknown> | undefined;
+    const xEnc = (enc.x || topEnc.x) as Record<string, unknown> | undefined;
+    if (!yEnc || !xEnc) {
+      wrapped.push(layer);
+      continue;
+    }
+    const yField = (yEnc.field || yEnc.aggregate) as string | undefined;
+    const xField = (xEnc.field || xEnc.aggregate) as string | undefined;
+    if (!yField || !xField) {
+      wrapped.push(layer);
+      continue;
+    }
+    const markType = (layer.mark as Record<string, unknown>)?.type;
+    if (markType === "text" || markType === "point" || markType === "rect" || markType === "rule") {
+      wrapped.push(layer);
+      continue;
+    }
+    const yOffset = markType === "bar" || markType === "area" ? -4 : -8;
+    const labelLayer = {
+      mark: { type: "text", align: "center", baseline: "bottom", dy: yOffset, fontSize: 10, color: "#9AA0A8" },
+      encoding: {
+        x: { field: xField, ...(xEnc.type ? { type: xEnc.type } : {}) },
+        y: { field: yField, ...(yEnc.type ? { type: yEnc.type } : {}) },
+        text: { field: yField, type: "quantitative", format: ",.2~f" },
+        ...(enc.color ? { color: enc.color } : {}),
+      },
+    };
+    wrapped.push({ layer: [layer, labelLayer] });
+    changed = true;
+  }
+  if (!changed) return spec;
+  return { ...spec, layer: wrapped };
+}
+
+export function VegaChart({ spec, data, height, width, className, showLabels }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<{ finalize: () => void } | null>(null);
   const [w, setW] = useState(0);
+  const [err, setErr] = useState<string | null>(null);
 
   // Track container width for responsive sizing
   useEffect(() => {
@@ -147,29 +164,31 @@ export function VegaChart({ spec, data, height, className }: Props) {
 
   // Render whenever spec, data, or container width changes
   useEffect(() => {
-    if (!containerRef.current || w === 0) return;
+    setErr(null);
+    if (!containerRef.current) return;
 
     injectTooltipCss();
 
-    // Detect Vega vs Vega-Lite spec by checking $schema
-    const isVega = typeof spec.$schema === "string" && spec.$schema.includes("/vega/");
+    const specWithLabels = showLabels ? injectLabels(spec) : spec;
+    const isVega = typeof specWithLabels.$schema === "string" && specWithLabels.$schema.includes("/vega/");
+    const safeW = Math.max(w, 320) - 2;
 
     let mergedSpec: VLSpec;
+    const baseSpec = specWithLabels;
     if (isVega) {
-      // Vega spec — inject width/height signals and data override only; no VL config merging
       const baseSignals = (spec.signals as unknown[] | undefined) ?? [];
       mergedSpec = {
-        ...spec,
+        ...baseSpec,
         signals: [
           ...baseSignals.filter((s: unknown) => {
             const sig = s as Record<string, unknown>;
             return sig.name !== "width" && sig.name !== "height";
           }),
-          { name: "width",  value: w - 2 },
+          { name: "width",  value: safeW - 2 },
           { name: "height", value: height ?? 340 },
         ],
         ...(data ? {
-          data: (spec.data as unknown[]).map((d: unknown) => {
+          data: (baseSpec.data as unknown[]).map((d: unknown) => {
             const ds = d as Record<string, unknown>;
             return ds.name === "tree" ? { ...ds, values: data } : ds;
           }),
@@ -178,19 +197,27 @@ export function VegaChart({ spec, data, height, className }: Props) {
     } else {
       mergedSpec = {
         $schema: "https://vega.github.io/schema/vega-lite/v5.json",
-        ...spec,
-        // Override/merge config — spec-level config wins over our defaults for
-        // anything explicitly set; for anything not set, our defaults apply.
+        ...baseSpec,
         config: {
           ...AUG_CONFIG,
-          ...(spec.config as Record<string, unknown> | undefined ?? {}),
+          ...(baseSpec.config as Record<string, unknown> | undefined ?? {}),
         },
-        // "fit + padding" = width/height is the TOTAL SVG size (axes included).
-        // Without this, axes overflow the container and get clipped.
         autosize: { type: "fit", contains: "padding" },
-        width: w - 2,
-        ...(height ? { height } : {}),
-        ...(data ? { data: { values: data } } : {}),
+        width: safeW - 2,
+        height: height ?? 340,
+        ...(data ? { data: { values: data.map((d: Record<string, unknown>) => {
+      const sanitized: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(d)) {
+        if (typeof v === "number" && (Number.isNaN(v) || !Number.isFinite(v))) {
+          sanitized[k] = null;
+        } else if (v === "" || v === undefined) {
+          sanitized[k] = null;
+        } else {
+          sanitized[k] = v;
+        }
+      }
+      return sanitized;
+    }) } } : {}),
       };
     }
 
@@ -208,27 +235,28 @@ export function VegaChart({ spec, data, height, className }: Props) {
         tooltip: { theme: "custom" },
       }).then(result => {
         if (!cancelled) viewRef.current = result.view;
-      }).catch(() => {});
+      }).catch((e: Error) => {
+        if (!cancelled) setErr(e.message || "Chart render failed");
+      });
     });
 
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [spec, data, w, height]);
 
   // Cleanup on unmount
   useEffect(() => {
-    return () => {
-      viewRef.current?.finalize();
-    };
+    return () => { viewRef.current?.finalize(); };
   }, []);
 
   return (
-    <div
-      ref={containerRef}
-      className={className}
-      style={{ width: "100%", overflow: "hidden" }}
-    />
+    <div className={className} style={{ width: "100%" }}>
+      {err && (
+        <div className="text-[11px] text-red-400 bg-red-500/10 border border-red-500/20 rounded px-2 py-1 mb-1">
+          Chart error: {err}
+        </div>
+      )}
+      <div ref={containerRef} style={{ width: "100%", overflow: "hidden" }} />
+    </div>
   );
 }
 
@@ -245,38 +273,26 @@ export function timeseriesSpec(xField: string, yField: string, opts?: {
     x: {
       field: xField,
       type: "temporal",
-      axis: { format: opts?.xFormat ?? "%b %d, %Y", labelAngle: -30, labelOverlap: "parity" },
+      axis: { format: opts?.xFormat ?? "%b %d, %Y", labelAngle: 0, labelOverlap: true },
     },
     y: {
       field: yField,
       type: "quantitative",
-      axis: {
-        format: opts?.yFormat ?? "~s",
-        grid: true,
-      },
+      axis: { format: opts?.yFormat ?? "~s", grid: true },
     },
     ...extra,
   });
 
   return {
     layer: [
-      {
-        mark: { type: "area", color, opacity: 0.08 },
-        encoding: enc(),
-      },
-      {
-        mark: { type: "line", color, strokeWidth: 1.5 },
-        encoding: enc(),
-      },
-      {
-        mark: { type: "point", color, size: 25, filled: true, opacity: 0.9 },
-        encoding: enc({
-          tooltip: [
-            { field: xField, type: "temporal", title: xField },
-            { field: yField, type: "quantitative", title: yField, format: opts?.yFormat ?? ",.2~f" },
-          ],
-        }),
-      },
+      { mark: { type: "area", color, opacity: 0.08 }, encoding: enc() },
+      { mark: { type: "line", color, strokeWidth: 1.5 }, encoding: enc() },
+      { mark: { type: "point", color, size: 25, filled: true, opacity: 0.9 }, encoding: enc({
+        tooltip: [
+          { field: xField, type: "temporal", title: xField },
+          { field: yField, type: "quantitative", title: yField, format: opts?.yFormat ?? ",.2~f" },
+        ],
+      })},
     ],
     resolve: { scale: { y: "shared" } },
   };
@@ -291,16 +307,16 @@ export function barSpec(xField: string, yField: string, opts?: {
   yTitle?: string;
 }): VLSpec {
   const color = opts?.color ?? C1;
-  // Axis/tooltip titles default to the field name, but callers can pass the
-  // real column names (the data is often keyed by generic "value"/"label").
   const xTitle = opts?.xTitle ?? xField;
   const yTitle = opts?.yTitle ?? yField;
+  const maxBars = opts?.maxBars;
+  const transform = maxBars != null ? [
+    { window: [{ op: "row_number", as: "_rank" }], sort: [{ field: xField, order: "descending" }] },
+    { filter: `datum._rank <= ${maxBars}` },
+  ] : [];
   return {
     mark: { type: "bar", color, opacity: 0.8, cornerRadiusEnd: 2 },
-    transform: [
-      { window: [{ op: "row_number", as: "_rank" }], sort: [{ field: xField, order: "descending" }] },
-      { filter: `datum._rank <= ${opts?.maxBars ?? 15}` },
-    ],
+    transform,
     encoding: {
       x: {
         field: xField,

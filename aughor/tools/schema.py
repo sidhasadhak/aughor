@@ -495,7 +495,7 @@ def build_schema_context(
         except Exception:
             count = "?"
 
-        parts.append(f"TABLE: {table}  ({count:,} rows)")
+        parts.append(f"TABLE: {fqn}  ({count:,} rows)")
         if _annotations:
             inject_into_schema_parts(parts, table, None, _annotations)
 
@@ -579,12 +579,18 @@ def get_schema_for_tables(full_schema: str, tables: list[str]) -> str:
     and metrics blocks that follow the TABLE: sections (everything after the
     last table block is kept verbatim).
 
+    Matches both bare table names ("orders") and qualified names ("ecommerce.orders")
+    so Canvas table filters work regardless of how the schema context formats
+    table headers.
+
     If `tables` is empty, returns the full schema unchanged.
     """
     if not tables:
         return full_schema
 
     include = {t.lower() for t in tables}
+    # Also build a set of bare-only names for cross-matching qualified <-> bare
+    include_bare = {t.split(".")[-1].lower() for t in tables}
     lines = full_schema.splitlines(keepends=True)
     out: list[str] = []
     in_table_block = False
@@ -595,9 +601,10 @@ def get_schema_for_tables(full_schema: str, tables: list[str]) -> str:
         if line.startswith("TABLE:"):
             past_tables = True
             in_table_block = True
-            # Extract table name from "TABLE: orders  (99,441 rows)"
-            table_name = line.split()[1].lower() if len(line.split()) > 1 else ""
-            keep_block = table_name in include
+            # Extract table name from "TABLE: orders  (99,441 rows)" or "TABLE: ecommerce.orders"
+            raw_name = line.split()[1].lower() if len(line.split()) > 1 else ""
+            bare_name = raw_name.split(".")[-1]
+            keep_block = raw_name in include or bare_name in include or raw_name in include_bare or bare_name in include_bare
             if keep_block:
                 out.append(line)
         elif in_table_block:
@@ -629,14 +636,14 @@ def build_canvas_schema_context(canvas: "Canvas") -> str:  # type: ignore[name-d
     Falls back to the full schema if the Canvas has no table filter or if
     anything goes wrong — never raises.
     """
-    from aughor.db.connection import open_connection_for
+    from aughor.db.connection import open_connection_for_with_schema
 
     if not canvas.scopes:
         return ""
 
     scope = canvas.scopes[0]
     try:
-        db = open_connection_for(scope.connection_id)
+        db = open_connection_for_with_schema(scope.connection_id, schema_name=scope.schema_name)
         full_schema = db.get_schema()
     except Exception:
         return ""

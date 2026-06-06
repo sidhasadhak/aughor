@@ -18,8 +18,36 @@ import sqlglot
 from aughor.agent.state import QueryResult
 
 # Security baseline — imported lazily to avoid circular imports at module load
+
+# Internal/metadata queries the platform issues to inspect its OWN plumbing
+# (catalog browse, schema filter, column probes, freshness checks, profiler scans).
+# These are not user activity and must NOT be safety-scored or audit-logged —
+# otherwise the audit trail is flooded with `current_database()` /
+# `information_schema` noise flagged SUSPICIOUS, drowning out real user queries.
+# Two shapes: dunder labels (`__catalog__`, `__profiler__`, …) and a small
+# allowlist of bare metadata labels used at older call sites.
+_INTERNAL_HYPO_IDS = frozenset({
+    "scan", "_catalog", "sample", "freshness", "columns", "alter_column",
+    "skill_dry_run", "benchmark", "process_map_nodes", "process_map_edges",
+    "lifecycle_counts", "list_schemas",
+})
+
+
+def _is_internal_query(hypothesis_id: str | None) -> bool:
+    """True for platform-internal/metadata queries that should bypass the
+    security audit (dunder labels like ``__catalog__`` or a known metadata id)."""
+    if not hypothesis_id:
+        return False
+    h = hypothesis_id.strip()
+    if len(h) >= 4 and h.startswith("__") and h.endswith("__"):
+        return True
+    return h in _INTERNAL_HYPO_IDS
+
+
 def _security_pre(connection_id: str, hypothesis_id: str, sql: str) -> QueryResult | None:
     """Run safety check. Returns a blocked QueryResult if the query is not allowed, else None."""
+    if _is_internal_query(hypothesis_id):
+        return None  # platform plumbing — never block or audit
     try:
         from aughor.security.safety import SafetyChecker, SafetyVerdict
         from aughor.security.audit  import AuditLogger
@@ -62,6 +90,8 @@ def _security_post(
 ) -> QueryResult:
     """PII redaction + audit logging + budget enforcement. Returns (possibly modified) result."""
     import time as _time
+    if _is_internal_query(hypothesis_id):
+        return result  # platform plumbing — skip PII/audit, but still return rows
     try:
         from aughor.security.pii     import PiiScanner
         from aughor.security.audit   import AuditLogger
@@ -216,12 +246,14 @@ _FORBIDDEN = re.compile(
 MAX_ROWS = 500
 
 
-def _validate(sql: str) -> tuple[bool, str]:
+def _validate(sql: str, dialect: str = "duckdb") -> tuple[bool, str]:
     sql = sql.strip().rstrip(";")
     if _FORBIDDEN.search(sql):
         return False, "Only SELECT statements are permitted"
     try:
-        parsed = sqlglot.parse_one(sql, error_level=sqlglot.ErrorLevel.RAISE)
+        # Parse in the connection's own dialect — a Postgres connection must not
+        # be validated as DuckDB, or valid Postgres-only syntax gets rejected.
+        parsed = sqlglot.parse_one(sql, read=dialect or "duckdb", error_level=sqlglot.ErrorLevel.RAISE)
     except Exception as e:
         return False, f"SQL parse error: {e}"
     if not isinstance(parsed, (sqlglot.exp.Select, sqlglot.exp.Union)):
@@ -405,8 +437,23 @@ def _apply_explorer_to_ontology(graph, connection_id: str) -> None:
 
 # ── Base class ────────────────────────────────────────────────────────────────
 
+_PG_OID_MAP: dict[int, str] = {
+    16: "BOOLEAN", 21: "SMALLINT", 23: "INTEGER", 20: "BIGINT",
+    700: "REAL", 701: "DOUBLE PRECISION", 1700: "NUMERIC",
+    1082: "DATE", 1083: "TIME", 1266: "TIMETZ",
+    1114: "TIMESTAMP", 1184: "TIMESTAMPTZ", 1186: "INTERVAL",
+    25: "TEXT", 1042: "CHAR", 1043: "VARCHAR",
+    18: "CHAR", 19: "NAME", 114: "JSON", 3802: "JSONB",
+    17: "BYTEA", 2950: "UUID",
+}
+
+
+def _pg_type_name(oid: int) -> str:
+    return _PG_OID_MAP.get(oid, f"TYPE({oid})")
+
 class DatabaseConnection(ABC):
     dialect: str = "duckdb"
+    poolable: bool = True  # may this connection be reused via the pool? (see db/pool.py)
     _ontology = None  # Optional[OntologyGraph] — set by get_schema()
 
     @abstractmethod
@@ -480,7 +527,7 @@ class DatabaseConnection(ABC):
         override with a real EXPLAIN query against the live engine so column
         and table names are checked, not just syntax.
         """
-        ok, reason = _validate(sql)
+        ok, reason = _validate(sql, getattr(self, "dialect", "duckdb"))
         return ok, reason
 
     def translate(self, sql: str) -> str:
@@ -570,21 +617,6 @@ class DuckDBConnection(DatabaseConnection):
                 pass
         return clone
 
-_PG_OID_MAP: dict[int, str] = {
-    16: "BOOLEAN", 21: "SMALLINT", 23: "INTEGER", 20: "BIGINT",
-    700: "REAL", 701: "DOUBLE PRECISION", 1700: "NUMERIC",
-    1082: "DATE", 1083: "TIME", 1266: "TIMETZ",
-    1114: "TIMESTAMP", 1184: "TIMESTAMPTZ", 1186: "INTERVAL",
-    25: "TEXT", 1042: "CHAR", 1043: "VARCHAR",
-    18: "CHAR", 19: "NAME", 114: "JSON", 3802: "JSONB",
-    17: "BYTEA", 2950: "UUID",
-}
-
-
-def _pg_type_name(oid: int) -> str:
-    return _PG_OID_MAP.get(oid, f"TYPE({oid})")
-
-
     def raw_execute(self, sql: str) -> tuple[list[str], list, list[str]]:
         """Execute a raw SQL query bypassing validation and security checks.
         For metadata queries only. Returns (column_names, rows, types)."""
@@ -598,7 +630,7 @@ def _pg_type_name(oid: int) -> str:
     def dry_run(self, sql: str) -> tuple[bool, str]:
         """Run EXPLAIN against DuckDB — catches bad column/table names without returning rows."""
         sql = sql.strip().rstrip(";")
-        ok, reason = _validate(sql)
+        ok, reason = _validate(sql, getattr(self, "dialect", "duckdb"))
         if not ok:
             return False, reason
         sql = self._normalize_to_duckdb(sql)
@@ -612,7 +644,7 @@ def _pg_type_name(oid: int) -> str:
     def _normalize_to_duckdb(sql: str) -> str:
         """Transpile any-dialect SQL to DuckDB syntax via SQLGlot. Silent no-op on failure."""
         try:
-            result = sqlglot.transpile(sql, write="duckdb", error_level=sqlglot.ErrorLevel.IGNORE)
+            result = sqlglot.transpile(sql, read="duckdb", write="duckdb", error_level=sqlglot.ErrorLevel.IGNORE)
             return result[0] if result and result[0] else sql
         except Exception:
             return sql
@@ -620,7 +652,7 @@ def _pg_type_name(oid: int) -> str:
     def execute(self, hypothesis_id: str, sql: str) -> QueryResult:
         import time as _time
         sql = sql.strip().rstrip(";")
-        ok, reason = _validate(sql)
+        ok, reason = _validate(sql, getattr(self, "dialect", "duckdb"))
         if not ok:
             return QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[], row_count=0, error=reason)
 
@@ -822,21 +854,6 @@ class PostgresConnection(DatabaseConnection):
         clone._connect()
         return clone
 
-_PG_OID_MAP: dict[int, str] = {
-    16: "BOOLEAN", 21: "SMALLINT", 23: "INTEGER", 20: "BIGINT",
-    700: "REAL", 701: "DOUBLE PRECISION", 1700: "NUMERIC",
-    1082: "DATE", 1083: "TIME", 1266: "TIMETZ",
-    1114: "TIMESTAMP", 1184: "TIMESTAMPTZ", 1186: "INTERVAL",
-    25: "TEXT", 1042: "CHAR", 1043: "VARCHAR",
-    18: "CHAR", 19: "NAME", 114: "JSON", 3802: "JSONB",
-    17: "BYTEA", 2950: "UUID",
-}
-
-
-def _pg_type_name(oid: int) -> str:
-    return _PG_OID_MAP.get(oid, f"TYPE({oid})")
-
-
     def raw_execute(self, sql: str) -> tuple[list[str], list, list[str]]:
         """Execute a raw SQL query bypassing validation and security checks.
         For metadata queries only. Returns (column_names, rows, types)."""
@@ -850,7 +867,7 @@ def _pg_type_name(oid: int) -> str:
     def dry_run(self, sql: str) -> tuple[bool, str]:
         """Run EXPLAIN against Postgres — catches bad column/table names without returning rows."""
         sql = sql.strip().rstrip(";")
-        ok, reason = _validate(sql)
+        ok, reason = _validate(sql, getattr(self, "dialect", "duckdb"))
         if not ok:
             return False, reason
         sql = self.translate(sql)
@@ -880,7 +897,7 @@ def _pg_type_name(oid: int) -> str:
     def execute(self, hypothesis_id: str, sql: str) -> QueryResult:
         import time as _time
         sql = sql.strip().rstrip(";")
-        ok, reason = _validate(sql)
+        ok, reason = _validate(sql, getattr(self, "dialect", "duckdb"))
         if not ok:
             return QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[], row_count=0, error=reason)
 
@@ -1172,6 +1189,18 @@ def _pg_type_name(oid: int) -> str:
         except Exception:
             pass
 
+    def is_healthy(self) -> bool:
+        """Cheap liveness probe so the pool never hands out a dropped connection."""
+        try:
+            if self._conn is None or getattr(self._conn, "closed", 1):
+                return False
+            with self._conn.cursor() as cur:
+                cur.execute("SELECT 1")
+                cur.fetchone()
+            return True
+        except Exception:
+            return False
+
 
 # ── Factory ───────────────────────────────────────────────────────────────────
 
@@ -1199,13 +1228,37 @@ def open_connection(
 
 
 def open_connection_for(conn_id: str) -> DatabaseConnection:
-    """Open a registered connection with all stored metadata applied (schema_name, connection_id etc.)."""
+    """Open (or reuse a pooled) registered connection with stored metadata applied."""
     from aughor.db.registry import get_dsn, get_meta
+    from aughor.db import pool
     conn_type, dsn = get_dsn(conn_id)
     meta = get_meta(conn_id)
-    return open_connection(
+    schema_name = meta.get("schema_name")
+    key = f"{conn_id}|{schema_name or ''}"
+    return pool.acquire(key, lambda: open_connection(
         conn_type, dsn,
-        schema_name=meta.get("schema_name"),
+        schema_name=schema_name,
         connection_id=conn_id,
         meta=meta,
-    )
+    ))
+
+
+def open_connection_for_with_schema(conn_id: str, schema_name: str | None = None) -> DatabaseConnection:
+    """Open a registered connection with an optional schema override.
+
+    Used by Canvas-scoped flows so that the connection resolves tables in the
+    Canvas's selected schema even when the underlying connection was registered
+    without one.
+    """
+    from aughor.db.registry import get_dsn, get_meta
+    from aughor.db import pool
+    conn_type, dsn = get_dsn(conn_id)
+    meta = get_meta(conn_id)
+    eff_schema = schema_name or meta.get("schema_name")
+    key = f"{conn_id}|{eff_schema or ''}"
+    return pool.acquire(key, lambda: open_connection(
+        conn_type, dsn,
+        schema_name=eff_schema,
+        connection_id=conn_id,
+        meta=meta,
+    ))

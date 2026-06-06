@@ -67,6 +67,12 @@ def _save_raw(metrics: list[dict], path: Path | None = None) -> None:
     p.parent.mkdir(parents=True, exist_ok=True)
     with open(p, "w") as f:
         json.dump(metrics, f, indent=2)
+    # Metrics feed the schema-linker's table/column hints — refresh that cache.
+    try:
+        from aughor.tools.schema_linker import invalidate_hints
+        invalidate_hints()  # metrics are global → clear all connections
+    except Exception:
+        pass
 
 
 # ── Public API ────────────────────────────────────────────────────────────────

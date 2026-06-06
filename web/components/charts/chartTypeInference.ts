@@ -28,6 +28,7 @@ export type ChartType =
   | "area"
   | "bar"
   | "grouped-bar"
+  | "combo"      // bar + line with dual y-axes
   | "stacked-bar"
   | "scatter"
   | "heatmap"
@@ -175,9 +176,9 @@ export function inferChartType(
       return { type: "pie", xCol: catIdx, yCols: numericIdxs };
     }
 
-    // Multiple numeric columns → grouped-bar
+    // Multiple numeric columns → combo chart (bar + line, dual axes)
     if (numericIdxs.length >= 2) {
-      return { type: "grouped-bar", xCol: catIdx, yCols: numericIdxs };
+      return { type: "combo", xCol: catIdx, yCols: numericIdxs };
     }
 
     // Single numeric, any cardinality → bar

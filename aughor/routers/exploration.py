@@ -16,6 +16,7 @@ from aughor.routers._shared import (
     explorer_tasks as _explorer_tasks,
     canvas_explorers as _canvas_explorers,
     canvas_explorer_tasks as _canvas_explorer_tasks,
+    kickoff_exploration,
 )
 
 logger = logging.getLogger(__name__)
@@ -41,10 +42,12 @@ def _filter_by_schema(domain_data: dict, conn_id: str, schema: str | None) -> di
         return domain_data
     try:
         safe_schema = schema.replace("'", "''")
-        if getattr(db, "dialect", "") == "duckdb":
-            res = db.execute("__schema_filter__", f"""SELECT table_name FROM information_schema.tables WHERE table_schema = '{safe_schema}' AND table_type = 'BASE TABLE'""")
-        else:
-            res = db.execute("__schema_filter__", f"""SELECT table_name FROM information_schema.tables WHERE table_schema = '{safe_schema}' AND table_type = 'BASE TABLE'""")
+        # information_schema.tables is standard SQL — same query for every dialect.
+        res = db.execute(
+            "__schema_filter__",
+            "SELECT table_name FROM information_schema.tables "
+            f"WHERE table_schema = '{safe_schema}' AND table_type = 'BASE TABLE'",
+        )
         tables_in_schema = {str(r[0]) for r in res.rows}
     except Exception:
         db.close()
@@ -364,35 +367,9 @@ async def start_exploration(conn_id: str):
     if existing and existing.status.phase not in (ExplorationPhase.COMPLETE, ExplorationPhase.FAILED):
         return {"ok": False, "reason": "already running", "phase": existing.status.phase.value}
 
-    async def _do_start() -> None:
-        loop = asyncio.get_running_loop()
-        try:
-            def _open_and_test():
-                db = open_connection_for(conn_id)
-                ok, msg = db.test()
-                if not ok:
-                    db.close()
-                    return None, False, msg
-                return db, True, msg
-
-            db, ok, msg = await loop.run_in_executor(None, _open_and_test)
-            if not ok or db is None:
-                logger.warning("Start: connection %s not ready — %s", conn_id, msg)
-                return
-            from aughor.explorer.agent import SchemaExplorer
-            explorer = SchemaExplorer(conn_id, db)
-            _explorers[conn_id] = explorer
-            _t = asyncio.create_task(
-                explorer.explore(), name=f"explorer-{conn_id}-start"
-            )
-            _t.add_done_callback(lambda _, k=conn_id: _explorer_tasks.pop(k, None))
-            _explorer_tasks[conn_id] = _t
-            logger.info("Start: explorer started for %s", conn_id)
-        except Exception as exc:
-            logger.warning("Start: failed for %s — %s", conn_id, exc)
-
-    asyncio.create_task(_do_start(), name=f"start-{conn_id}")
-    return {"ok": True}
+    # Same background open+test+explore path used by connection auto-onboarding.
+    started = kickoff_exploration(conn_id)
+    return {"ok": started}
 
 
 @router.post("/exploration/{conn_id}/trigger-intel")

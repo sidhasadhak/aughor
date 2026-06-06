@@ -135,7 +135,7 @@ def _filter_schema(schema_str: str, keep_tables: set[str]) -> str:
     current_lines: list[str] = []
 
     for line in schema_str.splitlines():
-        m = re.match(r"^TABLE:\s+(\w+)", line)
+        m = re.match(r"^TABLE:\s+([\w.]+)", line)
         if m:
             if current_table and current_table in keep_tables:
                 blocks.append("\n".join(current_lines))

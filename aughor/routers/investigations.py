@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import re
 from typing import AsyncGenerator, Optional
@@ -27,6 +28,7 @@ from aughor.db.history import (
 from aughor.db.registry import BUILTIN_ID
 from aughor.routers._shared import explorers as _explorers
 
+logger = logging.getLogger(__name__)
 router = APIRouter(tags=["investigations"])
 
 
@@ -246,7 +248,7 @@ class OutcomeRequest(BaseModel):
 
 
 _VALID_CHART_TYPES = {"auto", "bar", "bar_horizontal", "bar_vertical", "line", "area", "pie", "stacked_bar", "scatter",
-                      "multi_line", "heatmap", "treemap"}
+                      "multi_line", "heatmap", "treemap", "combo"}
 
 
 def _coerce_list_str(v: object) -> list[str]:
@@ -289,6 +291,10 @@ class _ChatAnswer(BaseModel):
     chart_type: str = "auto"
     intent: str = ""         # "You want to see…" — plain-English restatement of the question
     approach: list[str] = [] # 3-5 concise steps describing how the answer is calculated
+    # MindsDB-style: chart config generated alongside SQL so chart always matches data
+    chart_config: dict = Field(default_factory=dict, description=
+        "Vega-Lite chart configuration: {type, x_field, y_field, color_field, title}. "
+        "Empty dict if the result is not chartable.")
 
     @field_validator("approach", mode="before")
     @classmethod
@@ -307,11 +313,6 @@ class _FollowUpBase(BaseModel):
     def coerce_questions(cls, v: object) -> list[str]:
         return _coerce_list_str(v)
 
-    def model_post_init(self, __context: object) -> None:
-        if self.chart_type not in _VALID_CHART_TYPES:
-            self.chart_type = "auto"
-
-
 
 class _InsightResult(BaseModel):
     """Rich analytical insight generated from SQL results — anomaly detection, trend, comparison."""
@@ -319,6 +320,18 @@ class _InsightResult(BaseModel):
     anomalies: list[str] = Field(default_factory=list, description="List of detected anomalies or unexpected patterns.")
     trend: str = Field(default="stable", description="One of: up, down, stable, mixed.")
     confidence: str = Field(default="medium", description="One of: high, medium, low.")
+
+
+class _PostAnswer(_InsightResult):
+    """Combined post-answer enrichment: analytical insight + follow-up questions
+    in ONE narrator call (was two separate narrator round-trips per answer).
+    Inherits insight fields; adds the follow-up list with the same coercion guard."""
+    questions: list[str] = Field(default_factory=list, description="Exactly 3 concise follow-up data questions, max 12 words each.")
+
+    @field_validator("questions", mode="before")
+    @classmethod
+    def coerce_questions(cls, v: object) -> list[str]:
+        return _coerce_list_str(v)
 
 class _ClarifyingQuestions(BaseModel):
     """Clarifying questions generated before a deep analysis to narrow scope."""
@@ -334,8 +347,22 @@ async def _stream_chat(
     session_id: str = "",
     canvas_id: Optional[str] = None,
 ) -> AsyncGenerator[str, None]:
+    # Resolve canvas schema override so table names resolve correctly
+    canvas_scope_schema: str | None = None
+    if canvas_id:
+        try:
+            from aughor.canvas.store import get_canvas
+            canvas = get_canvas(canvas_id)
+            if canvas and canvas.scopes:
+                canvas_scope_schema = canvas.scopes[0].schema_name
+        except Exception:
+            pass
     try:
-        db = open_connection_for(connection_id)
+        if canvas_id and canvas_scope_schema:
+            from aughor.db.connection import open_connection_for_with_schema
+            db = open_connection_for_with_schema(connection_id, schema_name=canvas_scope_schema)
+        else:
+            db = open_connection_for(connection_id)
     except KeyError as e:
         yield _sse("error", {"message": str(e)})
         return
@@ -429,6 +456,88 @@ async def _stream_chat(
             _safe(_kb), _safe(_ckb), _safe(_sqlex), _safe(_metrics),
             _safe(_expl), _safe(_causal), _safe(_docs), _safe_list(_pb_match),
         )
+
+        # Schema-linking pre-filter: narrow schema to relevant tables/columns
+        # for this specific question. Reduces hallucination by 30-60%.
+        try:
+            from aughor.tools.schema_linker import link_schema_for_prompt
+            schema = link_schema_for_prompt(question, schema, top_k_tables=4, top_k_cols=8, connection_id=connection_id)
+        except Exception:
+            logger.warning("Schema-linking pre-filter failed; using full schema", exc_info=True)
+
+        # Build structured Data Catalog from linked tables (MindsDB-style)
+        try:
+            from aughor.tools.data_catalog import build_data_catalog
+            from aughor.tools.schema import _parse_schema_tables
+            linked_tables = list(_parse_schema_tables(schema).keys())
+            if linked_tables:
+                data_catalog = await asyncio.to_thread(
+                    lambda: build_data_catalog(db, linked_tables)
+                )
+                if data_catalog:
+                    schema = data_catalog
+        except Exception:
+            logger.warning("Data Catalog build failed; using linked schema text", exc_info=True)
+
+        # Hard cap: max 10 tables in context (MindsDB best practice)
+        try:
+            from aughor.tools.data_catalog import enforce_context_cap
+            schema = enforce_context_cap(schema, max_tables=10)
+        except Exception:
+            pass
+
+        # ── final_text path (MindsDB-style): definitional questions answered from KB ──
+        definitional = re.search(
+            r"^(what is|what are|what does|define|explain|meaning of)",
+            question,
+            re.IGNORECASE,
+        )
+        if definitional:
+            try:
+                from aughor.semantic.kb_retriever import has_strong_kb_match, retrieve_for_planning
+                if has_strong_kb_match(question, threshold=0.75, top_k=3):
+                    kb_answer = retrieve_for_planning(question, top_k=3) or ""
+                    # Also pull connection KB
+                    try:
+                        from aughor.semantic.connection_kb import retrieve_for_question as _ckb_fn
+                        ckb = _ckb_fn(question, connection_id)
+                        if ckb:
+                            kb_answer = kb_answer + "\n\n" + ckb
+                    except Exception:
+                        pass
+                    if kb_answer.strip():
+                        _answer_text = kb_answer.strip()
+                        # Emit as `headline` — the only text channel the chat turn
+                        # renders for a no-SQL answer (final_text/definitional path).
+                        # The previous `answer` event had no frontend handler, so the
+                        # turn rendered blank. `mode` tags it so it shows as a Quick turn.
+                        yield _sse("mode", {"query_mode": "final_text"})
+                        yield _sse("headline", {"headline": _answer_text})
+                        yield _sse("done", {})
+                        try:
+                            await asyncio.to_thread(
+                                lambda: save_chat_turn(
+                                    question=question, connection_id=connection_id,
+                                    headline=_answer_text[:2000], sql="", session_id=session_id,
+                                    columns=[], rows=[], chart_type="none", tables_used=[],
+                                    intent="", approach=[],
+                                    canvas_id=canvas_id,
+                                )
+                            )
+                        except Exception:
+                            pass
+                        return
+            except Exception:
+                pass
+
+        # Inject schema-prefix note when canvas-scoped
+        if canvas_scope_schema:
+            schema = (
+                f"DEFAULT SCHEMA: {canvas_scope_schema}\n"
+                "CRITICAL: Every table reference in SQL MUST include this schema prefix "
+                f"(e.g. {canvas_scope_schema}.table_name). Do NOT use bare table names.\n\n"
+                + schema
+            )
 
         prompt = CHAT_PROMPT.format(
             schema=schema,
@@ -538,6 +647,8 @@ async def _stream_chat(
         yield _sse("rows", {"rows": result.rows[:10000]})
         yield _sse("headline", {"headline": answer.headline})
         yield _sse("chart_type", {"chart_type": answer.chart_type})
+        if answer.chart_config:
+            yield _sse("chart_config", {"chart_config": answer.chart_config})
         yield _sse("tables_used", {"tables": _extract_tables(final_sql)})
         if answer.intent or answer.approach:
             yield _sse("analysis", {"intent": answer.intent, "steps": answer.approach})
@@ -565,54 +676,66 @@ async def _stream_chat(
         yield _sse("done", {})
 
         # ── Post-answer enrichment (streams in after DONE, never delays it) ──
-        # Insight narrative — analytical interpretation with anomaly detection
+        # ONE narrator call produces BOTH the analytical insight and the
+        # follow-up questions (was two separate round-trips). For trivial result
+        # shapes (a single scalar / empty set) there's no trend to interpret, so
+        # we ask only for follow-ups and skip the narrative — same single call.
         _insight_dict = None
+        _insight_worth_it = len(result.rows) >= 2 or (len(result.rows) == 1 and len(result.columns) >= 3)
         try:
-            _insight_system = (
-                "You are an analytical data interpreter. Given a user question, the SQL that answered it, "
-                "and a sample of the results, produce a concise analytical insight. "
-                "Detect any anomalies (unexpected values, spikes, drops, outliers). "
-                "Describe the overall trend. State your confidence in the interpretation."
-            )
-            # Include up to 20 rows and up to 8 columns to keep the prompt bounded
+            # Bounded sample: up to 20 rows × 8 columns
             _sample_rows = result.rows[:20]
             _sample_cols = result.columns[:8]
             _rows_text = "\n".join(
                 ", ".join(str(r[i]) for i in range(len(_sample_cols))) for r in _sample_rows
             )
-            _insight_user = (
+            if _insight_worth_it:
+                _system = (
+                    "You are an analytical data interpreter. Given a user question, the SQL that answered it, "
+                    "and a sample of the results: (1) produce a concise analytical insight — detect anomalies "
+                    "(unexpected values, spikes, drops, outliers), describe the overall trend, state your "
+                    "confidence; and (2) suggest exactly 3 concise follow-up data questions (max 12 words each)."
+                )
+            else:
+                _system = (
+                    "Given a user question and its answer, suggest exactly 3 concise follow-up data questions "
+                    "(max 12 words each). Leave the narrative empty."
+                )
+            _user = (
                 f"Question: {question}\n"
                 f"SQL: {final_sql}\n"
+                f"Answer: {answer.headline}\n"
                 f"Results (sample of {len(_sample_rows)} rows):\n"
                 f"Columns: {', '.join(_sample_cols)}\n"
                 f"{_rows_text}"
             )
-            _insight: _InsightResult = await asyncio.to_thread(
+            _pa: _PostAnswer = await asyncio.to_thread(
                 lambda: get_provider("narrator").complete(
-                    system=_insight_system,
-                    user=_insight_user,
-                    response_model=_InsightResult,
+                    system=_system,
+                    user=_user,
+                    response_model=_PostAnswer,
                     temperature=0.2,
                 )
             )
-            _insight_dict = {
-                "narrative": _insight.narrative,
-                "anomalies": _insight.anomalies[:3],
-                "trend": _insight.trend,
-                "confidence": _insight.confidence,
-            }
-            yield _sse("insight", _insight_dict)
-            # Persist insight so it survives page reload / history navigation
-            if _chat_inv_id:
-                try:
-                    from aughor.db.history import update_chat_turn_insight
-                    await asyncio.to_thread(lambda: update_chat_turn_insight(_chat_inv_id, _insight_dict))
-                except Exception:
-                    pass
+            if _insight_worth_it and _pa.narrative:
+                _insight_dict = {
+                    "narrative": _pa.narrative,
+                    "anomalies": _pa.anomalies[:3],
+                    "trend": _pa.trend,
+                    "confidence": _pa.confidence,
+                }
+                yield _sse("insight", _insight_dict)
+                # Persist insight so it survives page reload / history navigation
+                if _chat_inv_id:
+                    try:
+                        from aughor.db.history import update_chat_turn_insight
+                        await asyncio.to_thread(lambda: update_chat_turn_insight(_chat_inv_id, _insight_dict))
+                    except Exception:
+                        pass
+            if _pa.questions:
+                yield _sse("followups", {"questions": _pa.questions[:3]})
         except Exception:
             pass
-
-
 
         # Semantic inspect — logical validation
         try:
@@ -625,19 +748,6 @@ async def _stream_chat(
                     "issues":        _ir.issues,
                     "suggested_fix": _ir.suggested_fix,
                 })
-        except Exception:
-            pass
-
-        # Follow-up suggestions
-        try:
-            fq: _FollowUpBase = await asyncio.to_thread(
-                lambda: get_provider("narrator").complete(
-                    system="Suggest exactly 3 concise follow-up data questions (max 12 words each).",
-                    user=f"Question: {question}\nAnswer: {answer.headline}\nColumns: {', '.join(result.columns[:8])}",
-                    response_model=_FollowUpBase,
-                )
-            )
-            yield _sse("followups", {"questions": fq.questions[:3]})
         except Exception:
             pass
 
@@ -663,6 +773,7 @@ async def _stream_investigation(
     _TIMEOUT = int(os.getenv("AUGHOR_TIMEOUT_SECONDS", "600"))
 
     canvas_schema_context: str = ""
+    canvas_scope_schema: str | None = None
     if canvas_id:
         try:
             from aughor.canvas.store import get_canvas, resolve_connection_id
@@ -670,12 +781,17 @@ async def _stream_investigation(
             canvas = get_canvas(canvas_id)
             if canvas and canvas.primary_connection_id:
                 connection_id = canvas.primary_connection_id
+                canvas_scope_schema = canvas.scopes[0].schema_name if canvas.scopes else None
                 canvas_schema_context = build_canvas_schema_context(canvas)
         except Exception:
             pass
 
     try:
-        db = open_connection_for(connection_id)
+        if canvas_id and canvas_scope_schema:
+            from aughor.db.connection import open_connection_for_with_schema
+            db = open_connection_for_with_schema(connection_id, schema_name=canvas_scope_schema)
+        else:
+            db = open_connection_for(connection_id)
     except KeyError as e:
         yield _sse("error", {"message": str(e)})
         return
@@ -725,14 +841,56 @@ async def _stream_investigation(
 
     merged: dict = {}  # bound before try so the except/salvage path can read partial state
     try:
-        schema = await asyncio.to_thread(db.get_schema)
+        full_schema = await asyncio.to_thread(db.get_schema)
+        # When a Canvas is active, use the pre-filtered canvas schema context so the
+        # agent only sees the tables selected for that Canvas.
+        schema = canvas_schema_context if canvas_schema_context else full_schema
+        # Inject a schema-prefix note so the LLM always uses fully-qualified names
+        if canvas_scope_schema:
+            schema = (
+                f"DEFAULT SCHEMA: {canvas_scope_schema}\n"
+                "CRITICAL: Every table reference in SQL MUST include this schema prefix "
+                f"(e.g. {canvas_scope_schema}.table_name). Do NOT use bare table names.\n\n"
+                + schema
+            )
+        # Schema-linking pre-filter: narrow to relevant tables/columns per question.
+        try:
+            from aughor.tools.schema_linker import link_schema
+            schema = link_schema(question, schema, top_k_tables=4, top_k_cols=8, connection_id=connection_id)
+        except Exception:
+            logger.warning("Schema-linking pre-filter failed (agentic path); using full schema", exc_info=True)
+        # Build structured Data Catalog (MindsDB-style) from linked tables
+        data_catalog = ""
+        try:
+            from aughor.tools.data_catalog import build_data_catalog
+            from aughor.tools.schema import _parse_schema_tables
+            linked_tables = list(_parse_schema_tables(schema).keys())
+            if linked_tables:
+                data_catalog = await asyncio.to_thread(
+                    lambda: build_data_catalog(db, linked_tables)
+                )
+        except Exception:
+            logger.warning("Data Catalog build failed (agentic path); using linked schema", exc_info=True)
+
+        # Hard cap: max 10 tables in context (MindsDB best practice)
+        try:
+            from aughor.tools.data_catalog import enforce_context_cap
+            schema = enforce_context_cap(schema, max_tables=10)
+            if data_catalog:
+                data_catalog = enforce_context_cap(data_catalog, max_tables=10)
+        except Exception:
+            pass
+
+        # Prefer structured Data Catalog as the primary schema context (MindsDB-style)
+        schema_for_agent = data_catalog if data_catalog else schema
+
         from aughor.agent.graph import build_graph_generic
         agent = build_graph_generic(db, hitl=hitl)
 
         initial_state: AgentState = {
             "question": question, "connection_id": connection_id, "investigation_id": inv_id,
             "trace_id": trace_id,
-            "schema_context": schema, "unresolved_tensions": [], "scan_context": "", "events_context": "",
+            "schema_context": schema_for_agent, "unresolved_tensions": [], "scan_context": "", "events_context": "",
             "hypotheses": [], "current_hypothesis_idx": 0, "query_history": [], "evidence_scores": [],
             "pitfalls": [], "prior_analyses": [], "iteration": 0,
             "max_iterations": int(os.getenv("AUGHOR_MAX_ITER", "6")),
@@ -741,6 +899,9 @@ async def _stream_investigation(
             "sub_questions": [], "current_subq_idx": 0, "subq_answers": [], "explore_report": None,
             "investigation_phases": [], "ada_report": None, "_ada_intake": None,
             "canvas_id": canvas_id, "canvas_schema_context": canvas_schema_context,
+            "data_catalog": data_catalog or "",
+            "subq_data_portrait": {},
+            "final_text_answer": "",
         }
 
         import time
@@ -921,8 +1082,22 @@ async def _stream_resume(inv_id: str, feedback: str, request: Request) -> AsyncG
         yield _sse("error", {"message": f"Investigation is not paused (status: {inv.get('status')})"})
         yield _sse("done", {})
         return
+    # Resume with canvas schema override if applicable
+    canvas_scope_schema: str | None = None
+    if inv.get("canvas_id"):
+        try:
+            from aughor.canvas.store import get_canvas
+            canvas = get_canvas(inv["canvas_id"])
+            if canvas and canvas.scopes:
+                canvas_scope_schema = canvas.scopes[0].schema_name
+        except Exception:
+            pass
     try:
-        db = open_connection_for(inv["connection_id"])
+        if canvas_scope_schema:
+            from aughor.db.connection import open_connection_for_with_schema
+            db = open_connection_for_with_schema(inv["connection_id"], schema_name=canvas_scope_schema)
+        else:
+            db = open_connection_for(inv["connection_id"])
     except Exception as e:
         yield _sse("error", {"message": str(e)})
         yield _sse("done", {})

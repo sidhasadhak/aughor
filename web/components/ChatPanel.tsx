@@ -477,7 +477,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
               {loadingStarters ? (
                 <div className="grid grid-cols-2 gap-1.5">
                   {Array.from({ length: 6 }).map((_, i) => (
-                    <div key={i} className="h-14 rounded-lg animate-pulse" style={{ background: "#13141a" }} />
+                    <div key={i} className="h-14 rounded-lg animate-pulse" style={{ background: "var(--bg-1)" }} />
                   ))}
                 </div>
               ) : (
@@ -488,12 +488,12 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                       onClick={() => handleSend(s.text, s.mode)}
                       className="flex items-start gap-1.5 px-3 py-2 rounded-lg text-[11.5px] text-left leading-snug transition-all"
                       style={s.mode === "investigate" ? {
-                        background: "#13141a",
+                        background: "var(--bg-1)",
                         border: "0.5px solid #1e2a1e",
                         color: "#4a7a55",
                       } : {
-                        background: "#13141a",
-                        border: "0.5px solid #1e1f24",
+                        background: "var(--bg-1)",
+                        border: "0.5px solid var(--b2)",
                         color: "#6e6f78",
                       }}
                       onMouseEnter={e => {
@@ -510,7 +510,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                           (e.currentTarget as HTMLElement).style.borderColor = "#1e2a1e";
                           (e.currentTarget as HTMLElement).style.color = "#4a7a55";
                         } else {
-                          (e.currentTarget as HTMLElement).style.borderColor = "#1e1f24";
+                          (e.currentTarget as HTMLElement).style.borderColor = "var(--bg-3)";
                           (e.currentTarget as HTMLElement).style.color = "#6e6f78";
                         }
                       }}

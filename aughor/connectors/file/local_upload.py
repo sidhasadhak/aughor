@@ -488,6 +488,8 @@ class LocalUploadConnection(Connector):
                     "AND table_type = 'BASE TABLE' ORDER BY table_schema, table_name"
                 )
             schema_table_rows = self._duckdb.fetchall()
+            schemas_present = {s for s, _ in schema_table_rows}
+            multi_schema = len(schemas_present) > 1
             for tschema, tname in schema_table_rows:
                 try:
                     count = self._duckdb.execute(
@@ -495,9 +497,11 @@ class LocalUploadConnection(Connector):
                     ).fetchone()[0]
                 except Exception:
                     count = "?"
-                # Use bare table names (like DuckDB build_schema_context) so the
-                # rich schema, QueryBuilder, and Catalog tree all agree on keys.
-                parts.append(f"TABLE: {tname}  ({count:,} rows)")
+                # Emit schema-qualified names when there are multiple schemas or
+                # the table lives outside the default schema so the LLM always
+                # references the correct table.
+                display_name = f"{tschema}.{tname}" if (multi_schema or tschema != DEFAULT_SCHEMA) else tname
+                parts.append(f"TABLE: {display_name}  ({count:,} rows)")
                 try:
                     cols = self._duckdb.execute(
                         f'DESCRIBE "{tschema}"."{tname}"'

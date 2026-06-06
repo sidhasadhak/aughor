@@ -53,7 +53,9 @@ TASK: Parse this question into a precise investigation specification.
    - If NO date column exists anywhere reachable by join, set date_column to "NONE" and explain in intake_notes.
 
 5. METRIC TABLE — Which table contains the metric?
-   Prefer fact tables (orders, order_items, transactions, sessions, events…).
+   CRITICAL: the table name MUST appear verbatim in the SCHEMA above. Do NOT invent or assume table names.
+   Prefer fact tables. Use the EXACT table name as shown in the SCHEMA (e.g. ecommerce.orders).
+   If the SCHEMA shows a schema prefix (e.g. "TABLE: ecommerce.orders"), you MUST include that prefix in metric_table.
 
 6. AVAILABLE DIMENSIONS — List every categorical column available for drill-down.
    Include table name. Max 8 dimensions.
@@ -99,11 +101,12 @@ Write 2–3 SQL queries to:
 
 SQL RULES:
   - DuckDB dialect only
+  - ALWAYS use the exact table names shown in the SCHEMA, including schema prefix (e.g. ecommerce.orders)
   - DATE_TRUNC for period alignment
   - NULLIF(x, 0) before every division
   - Filter date column BEFORE joins (early predicate pushdown)
   - Compact result sets (≤ 20 rows)
-  - Use only tables and columns present in the schema above
+  - Use ONLY tables and columns that are explicitly listed in the SCHEMA above. NEVER invent table names.
   - Alias every computed column with a human-readable name
   - TABLE NAMES: Use table names EXACTLY as shown in the SCHEMA section above. If the schema
     shows "inventory_movements" (no prefix), use that name as-is. If it shows "schema.table",

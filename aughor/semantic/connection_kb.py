@@ -122,6 +122,7 @@ def upsert_entry(connection_id: str, entry: KnowledgeEntry) -> KnowledgeEntry:
     entries.append(entry)
     save_entries(connection_id, entries)
     _index_entry(entry)
+    _invalidate_linker_hints(connection_id)
     return entry
 
 
@@ -133,7 +134,17 @@ def delete_entry(connection_id: str, entry_id: str) -> bool:
         return False
     save_entries(connection_id, entries)
     _delete_from_index(connection_id, entry_id)
+    _invalidate_linker_hints(connection_id)
     return True
+
+
+def _invalidate_linker_hints(connection_id: str) -> None:
+    """Refresh the schema-linker's per-connection hint cache after a KB edit."""
+    try:
+        from aughor.tools.schema_linker import invalidate_hints
+        invalidate_hints(connection_id)
+    except Exception:
+        pass
 
 
 # ── Vector index ──────────────────────────────────────────────────────────────

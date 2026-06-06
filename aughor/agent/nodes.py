@@ -65,6 +65,9 @@ def classify_question(question: str) -> tuple[str, RouteDecision]:
     without constructing a full AgentState.
     Low-confidence direct falls back to investigate: false-direct (shallow
     answer) is worse than false-investigate (extra thoroughness).
+
+    MindsDB-style final_text path: if the question is definitional/ontological
+    and the KB has a strong match, route to final_text without generating SQL.
     """
     llm = get_provider("coder")
     decision: RouteDecision = llm.complete(
@@ -73,6 +76,22 @@ def classify_question(question: str) -> tuple[str, RouteDecision]:
         response_model=RouteDecision,
     )
     effective_mode = decision.mode if decision.confidence >= 0.65 else "investigate"
+
+    # Final-text path: definitional questions that the KB can answer without SQL
+    if effective_mode == "direct":
+        definitional = re.search(
+            r"^(what is|what are|what does|define|explain|meaning of)",
+            question,
+            re.IGNORECASE,
+        )
+        if definitional:
+            try:
+                from aughor.semantic.kb_retriever import has_strong_kb_match
+                if has_strong_kb_match(question, threshold=0.75, top_k=3):
+                    decision.mode = "final_text"
+                    effective_mode = "final_text"
+            except Exception:
+                pass
     return effective_mode, decision
 
 
@@ -85,6 +104,16 @@ def route_question(state: AgentState) -> dict[str, Any]:
             **base,
             "query_mode": "direct",
             "hypotheses": [Hypothesis(id="direct", description=state["question"], confidence=0.0, verdict="untested")],
+            "current_hypothesis_idx": 0,
+            "iteration": 0,
+            "pitfalls": [],
+            "prior_analyses": [],
+        }
+    if effective_mode == "final_text":
+        return {
+            **base,
+            "query_mode": "final_text",
+            "hypotheses": [],
             "current_hypothesis_idx": 0,
             "iteration": 0,
             "pitfalls": [],
@@ -108,10 +137,77 @@ def route_after_classify(state: AgentState) -> str:
     mode = state.get("query_mode")
     if mode == "direct":
         return "plan_queries"
+    if mode == "final_text":
+        return "answer_text_only"
     if mode == "explore":
         return "exploratory_scan_explore"
     return "exploratory_scan"
 
+
+
+# ── Node: answer_text_only ─────────────────────────────────────────────────
+# MindsDB-style final_text path: answer definitional/ontological questions
+# from the KB without generating SQL.
+
+def answer_text_only(state: AgentState) -> dict[str, Any]:
+    """Compose a natural-language answer from KB, connection KB, and playbook.
+
+    No database connection needed. Returns a headline + findings report.
+    """
+    question = state["question"]
+    conn_id = state.get("connection_id") or ""
+
+    snippets: list[str] = []
+
+    # 1. Global KB
+    try:
+        from aughor.semantic.kb_retriever import retrieve_for_planning
+        kb = retrieve_for_planning(question, top_k=3)
+        if kb:
+            snippets.append(kb)
+    except Exception:
+        pass
+
+    # 2. Connection-specific KB
+    try:
+        from aughor.semantic.connection_kb import retrieve_for_question as _conn_kb
+        ckb = _conn_kb(question, conn_id)
+        if ckb:
+            snippets.append(ckb)
+    except Exception:
+        pass
+
+    # 3. Playbook
+    try:
+        from aughor.playbook.retriever import retrieve_for_metric_and_phases
+        pb_entries = retrieve_for_metric_and_phases([question], limit=3)
+        if pb_entries:
+            for e in pb_entries:
+                if e.get("recommendation"):
+                    snippets.append(e["recommendation"])
+    except Exception:
+        pass
+
+    answer = " ".join(snippets).strip()
+    if not answer:
+        answer = (
+            f"I don\'t have a stored definition for '{question}'. "
+            "Try rephrasing as a data query (e.g. 'Show me...')."
+        )
+
+    return {
+        "final_text_answer": answer,
+        "query_mode": "final_text",
+        "report": {
+            "headline": answer,
+            "verdict": "",
+            "key_findings": [],
+            "what_is_not_the_cause": [],
+            "data_quality_notes": [],
+            "risks": [],
+            "recommended_actions": [],
+        },
+    }
 
 # ── Node: exploratory_scan ────────────────────────────────────────────────────
 
@@ -175,7 +271,7 @@ def exploratory_scan(state: AgentState, conn: "DatabaseConnection") -> dict[str,
         if _SECTION_STOP.match(line):
             current = None
             continue
-        m = re.match(r"^TABLE:\s+(\w+)", line)
+        m = re.match(r"^TABLE:\s+([\w.]+)", line)
         if m:
             current = m.group(1)
             table_col_types[current] = []
@@ -515,7 +611,7 @@ def execute_planned_queries(state: AgentState, conn: "DatabaseConnection") -> di
     # Fallback: if no queries were generated, run a diagnostic count
     if not queries:
         import re as _re
-        _tm = _re.search(r"^TABLE:\s+(\w+)", state["schema_context"], _re.MULTILINE)
+        _tm = _re.search(r"^TABLE:\s+([\w.]+)", state["schema_context"], _re.MULTILINE)
         fallback_table = _tm.group(1) if _tm else "unknown"
         queries = [
             f'SELECT COUNT(*) AS row_count, \'{h.id} — planner returned no query intents; '

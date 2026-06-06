@@ -115,3 +115,31 @@ def test_safety_is_allowed_interface() -> None:
     ok2, reason2 = SafetyChecker.is_allowed("DROP TABLE users")
     assert ok2 is False
     assert reason2  # non-empty reason
+
+
+# ── Internal-query audit bypass ───────────────────────────────────────────────
+
+def test_internal_query_bypasses_audit() -> None:
+    """Platform plumbing (dunder labels + metadata allowlist) is not audited;
+    real user labels are. Keeps the audit trail to genuine user activity."""
+    from aughor.db.connection import _is_internal_query
+
+    # dunder plumbing labels
+    for h in ("__catalog__", "__schema_filter__", "__profiler__", "__bulk__"):
+        assert _is_internal_query(h) is True, h
+    # bare metadata allowlist
+    for h in ("scan", "columns", "freshness", "list_schemas", "sample"):
+        assert _is_internal_query(h) is True, h
+    # genuine user activity must still be audited
+    for h in ("chat", "h1", "inv1", "hypothesis_3"):
+        assert _is_internal_query(h) is False, h
+    # edge cases that must NOT match the dunder shape
+    for h in ("", "__", "_x", None):
+        assert _is_internal_query(h) is False, repr(h)
+
+
+def test_security_pre_skips_internal_query() -> None:
+    """_security_pre never blocks an internal query, even a dangerous-looking one."""
+    from aughor.db.connection import _security_pre
+    # A DROP would normally be BLOCKED; under an internal label it's not even scored.
+    assert _security_pre("c1", "__catalog__", "DROP TABLE x") is None

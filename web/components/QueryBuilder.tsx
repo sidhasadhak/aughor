@@ -405,6 +405,7 @@ function ResultsPane({
   primaryTable,
   joinedTables,
   onStartCanvas,
+  tableSchemas,
 }: {
   result: DirectQueryResult;
   connId: string;
@@ -412,6 +413,7 @@ function ResultsPane({
   primaryTable: string | null;
   joinedTables: string[];
   onStartCanvas?: (canvasId: string) => void;
+  tableSchemas?: Record<string, string>;
 }) {
   const [view, setView] = useState<"chart" | "matrix" | "table">("chart");
   const [creatingCanvas, setCreatingCanvas] = useState(false);
@@ -453,6 +455,9 @@ function ResultsPane({
     setCreatingCanvas(true);
     try {
       const tables = [primaryTable, ...joinedTables];
+      // Use the primary table's schema as the canvas scope schema so multi-schema
+      // DuckDB connections resolve bare table names correctly.
+      const scopeSchema = tableSchemas?.[primaryTable] || null;
       let name = "Query Canvas";
       let description = `Canvas from Query Builder: ${tables.join(", ")}`;
       try {
@@ -461,7 +466,7 @@ function ResultsPane({
         description = suggested.description;
       } catch {}
       const canvas = await createCanvas(name, description, [
-        { connection_id: connId, schema_name: null, tables },
+        { connection_id: connId, schema_name: scopeSchema, tables },
       ]);
       onStartCanvas?.(canvas.id);
     } catch (e) {
@@ -1513,6 +1518,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                       sql={sql}
                       primaryTable={primaryTable}
                       joinedTables={joinedTables}
+                      tableSchemas={tableSchemas}
                       onStartCanvas={(id) => {
                         // Navigate to canvas workspace
                         window.location.href = `/?canvas=${id}`;

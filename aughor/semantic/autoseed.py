@@ -78,7 +78,7 @@ def _parse_table_blocks(schema_str: str) -> dict[str, str]:
     current_lines: list[str] = []
 
     for line in schema_str.splitlines():
-        m = re.match(r"^TABLE:\s+(\w+)", line)
+        m = re.match(r"^TABLE:\s+([\w.]+)", line)
         if m:
             if current_table and current_lines:
                 blocks[current_table] = "\n".join(current_lines)

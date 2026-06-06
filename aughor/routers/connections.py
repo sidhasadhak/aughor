@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from aughor.db.connection import open_connection, open_connection_for
 from aughor.db.registry import (
+    get_dsn,
     BUILTIN_ID,
     add_connection,
     delete_connection,
@@ -25,6 +26,7 @@ from aughor.routers._shared import (
     explorer_tasks as _explorer_tasks,
     get_schema_cached as _get_schema_cached,
     invalidate_schema_cache as _invalidate_schema_cache,
+    kickoff_exploration as _kickoff_exploration,
 )
 from aughor.tools.schema import _norm_type
 
@@ -86,12 +88,22 @@ async def create_connection(req: AddConnectionRequest):
 
     conn_id = add_connection(name=req.name, conn_type=req.conn_type, dsn=req.dsn, meta=combined_meta)
 
-    # NOTE: Explorer no longer auto-starts on connection creation.
-    # The user must manually start it via POST /exploration/{conn_id}/start
-    # or POST /exploration/{conn_id}/restart.
-    # This prevents heavy background work from interfering with connection setup.
+    # Auto-onboarding: kick off schema exploration in the background so a brand-new
+    # connection becomes intelligent without a manual step. It's non-blocking (the
+    # heavy work runs as a background task), visible via GET /exploration/{id}/status,
+    # and cancellable via POST /exploration/{id}/stop.
+    explorer_started = False
+    try:
+        explorer_started = _kickoff_exploration(conn_id)
+    except Exception:
+        logger.warning("create_connection: explorer kickoff failed for %s", conn_id, exc_info=True)
 
-    return {"id": conn_id, "message": "Connection added", "test_result": msg}
+    return {
+        "id": conn_id,
+        "message": "Connection added",
+        "test_result": msg,
+        "exploring": explorer_started,
+    }
 
 
 @router.post("/connections/{conn_id}/test")
@@ -470,16 +482,90 @@ async def alter_table_column(conn_id: str, table: str, body: _AlterColumnRequest
     set_override(conn_id, safe_table, safe_col, safe_type)
     _invalidate_schema_cache(conn_id)
 
+    # Invalidate Qdrant investigation cache for this connection so old cached
+    # SQL (generated before the type change) is not replayed.
+    try:
+        from aughor.tools.prior_analyses import INVESTIGATIONS_COLLECTION
+        from aughor.semantic.vector_store import delete_by_filter
+        from qdrant_client.models import Filter, FieldCondition, MatchValue
+        filt = Filter(
+            must=[FieldCondition(key="connection_id", match=MatchValue(value=conn_id))]
+        )
+        deleted = delete_by_filter(INVESTIGATIONS_COLLECTION, filt)
+        if deleted:
+            print(f"[alter_column] cleared {deleted} cached investigations for {conn_id}")
+    except Exception:
+        pass
+
+    # For local_upload connections, update the sidecar so the type is applied
+    # on next load (each request creates a fresh in-memory DB from sidecars).
+    conn_type, _ = get_dsn(conn_id)
+    if conn_type == "local_upload":
+        from aughor.connectors.file.local_upload import _UPLOAD_ROOT, _SIDECAR_SUFFIX, _safe_ident
+        upload_dir = _UPLOAD_ROOT / (conn_id or "default")
+        schema_dir = upload_dir / _safe_ident(safe_schema or "main", "main")
+        if schema_dir.exists():
+            for f in schema_dir.iterdir():
+                if not f.is_file() or f.name.endswith(_SIDECAR_SUFFIX):
+                    continue
+                sc = f.with_name(f"{f.name}{_SIDECAR_SUFFIX}")
+                if sc.exists():
+                    try:
+                        cfg = json.loads(sc.read_text())
+                        if cfg.get("table_name") == safe_table:
+                            cfg.setdefault("column_types", {})[safe_col] = safe_type
+                            sc.write_text(json.dumps(cfg, indent=2))
+                            break
+                    except Exception:
+                        pass
+
     def _work():
         try:
             # DuckDB syntax (best-effort; many connectors don't support ALTER COLUMN TYPE)
             sql = f'ALTER TABLE {ref} ALTER COLUMN "{safe_col}" TYPE {safe_type}'
             db.execute("alter_column", sql)
-            return {"ok": True, "sql": sql, "message": f"Column {safe_col} set to {safe_type}"}
+            return {
+                "ok": True, "applied": True, "override_only": False, "sql": sql,
+                "message": f"Column {safe_col} changed to {safe_type}.",
+            }
         except Exception as e:
-            err = str(e)
-            # Persist the override even if ALTER fails — the UI will surface it via type_overrides.
-            return {"ok": True, "sql": None, "message": f"Column {safe_col} type overridden to {safe_type} (ALTER may not be fully supported by this connector; override is persisted in metadata)"}
+            # For local_upload, the sidecar column_types were updated above, so the
+            # table is genuinely recreated with the new type on the next connection
+            # open. Re-register the file in the current ephemeral DB so it takes
+            # effect immediately too. This is a REAL type change.
+            if conn_type == "local_upload":
+                try:
+                    from aughor.connectors.file.local_upload import LocalUploadConnection
+                    if isinstance(db, LocalUploadConnection):
+                        schema_dir = db._schema_dir(safe_schema or "main")
+                        for f in schema_dir.iterdir():
+                            if not f.is_file() or f.name.endswith(_SIDECAR_SUFFIX):
+                                continue
+                            sc = f.with_name(f"{f.name}{_SIDECAR_SUFFIX}")
+                            if sc.exists():
+                                cfg = json.loads(sc.read_text())
+                                if cfg.get("table_name") == safe_table:
+                                    db._register_file(f, safe_table, safe_schema or "main", cfg.get("column_types", {}))
+                                    break
+                    return {
+                        "ok": True, "applied": True, "override_only": False, "sql": None,
+                        "message": f"Column {safe_col} changed to {safe_type} (applied on reload).",
+                    }
+                except Exception:
+                    logger.warning("local_upload type recreation failed for %s.%s", safe_table, safe_col, exc_info=True)
+            # Other connectors: ALTER is unsupported and we cannot rewrite the source.
+            # We saved a DISPLAY-ONLY override (catalog shows the new type) but the
+            # underlying column type is unchanged and queries still use the real type.
+            # Be honest about this — do NOT claim the column was changed.
+            return {
+                "ok": True, "applied": False, "override_only": True, "sql": None,
+                "error": str(e),
+                "message": (
+                    f"Saved a display override: the catalog will show {safe_col} as {safe_type}, "
+                    f"but this connector does not support changing the column type, so the database "
+                    f"column is unchanged and queries still use its real type."
+                ),
+            }
         finally:
             try:
                 db.close()

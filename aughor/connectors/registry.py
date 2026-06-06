@@ -89,7 +89,9 @@ FORM_FIELDS: dict[str, list[dict]] = {
     "gsheets": [
         {"key": "spreadsheet_id", "label": "Spreadsheet ID or URL", "placeholder": "https://docs.google.com/spreadsheets/d/…", "secret": False},
         {"key": "sheets",         "label": "Sheet/tab names",       "placeholder": "Sheet1,Sheet2 (empty = first sheet)",      "secret": False},
-        {"key": "api_key",        "label": "API key (optional, for private sheets)", "placeholder": "AIza…",                   "secret": True},
+        # The sheet must be shared "Anyone with the link can view" — read via the
+        # public CSV export. No API key field: a key alone cannot unlock a private
+        # sheet (that needs OAuth), so offering one would over-promise.
     ],
     "local_upload": [
         # No config fields — file upload is handled separately via POST /connections/{id}/files

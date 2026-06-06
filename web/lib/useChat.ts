@@ -32,6 +32,8 @@ export interface ChatTurn {
   rows: unknown[][];
   headline: string | null;
   chartType: string | null;
+  // MindsDB-style: chart config from backend (Vega-Lite spec subset)
+  chartConfig?: Record<string, unknown> | null;
 
   // Investigate mode — ADA phases stream in progressively
   statusText: string | null;
@@ -105,6 +107,7 @@ type ChatAction =
   | { type: "ROWS";         rows: unknown[][] }
   | { type: "HEADLINE";     headline: string }
   | { type: "CHART_TYPE";   chartType: string }
+  | { type: "CHART_CONFIG"; chartConfig: Record<string, unknown> }
   | { type: "STATUS_TEXT";  text: string }
   | { type: "PHASE";        phase: InvestigationPhase }
   | { type: "ADA_REPORT";   report: ADAReport; queryMode: string; investigationId: string | null }
@@ -169,6 +172,7 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case "ROWS":       return updateLast(state, t => ({ ...t, rows: action.rows }));
     case "HEADLINE":   return updateLast(state, t => ({ ...t, headline: action.headline }));
     case "CHART_TYPE": return updateLast(state, t => ({ ...t, chartType: action.chartType }));
+    case "CHART_CONFIG": return updateLast(state, t => ({ ...t, chartConfig: action.chartConfig }));
     case "STATUS_TEXT":return updateLast(state, t => ({ ...t, statusText: action.text }));
     case "TABLES_USED":return updateLast(state, t => ({ ...t, tablesUsed: action.tables }));
     case "FOLLOWUPS":  return updateLast(state, t => ({ ...t, followups: action.questions }));
@@ -272,7 +276,9 @@ async function consumeStream(
             case "columns":      dispatch({ type: "COLUMNS",    columns:   p.columns as string[] }); break;
             case "rows":         dispatch({ type: "ROWS",       rows:      p.rows as unknown[][] }); break;
             case "headline":     dispatch({ type: "HEADLINE",   headline:  p.headline as string }); break;
+            case "answer":       dispatch({ type: "HEADLINE",   headline:  (p.text ?? p.answer) as string }); break;
             case "chart_type":   dispatch({ type: "CHART_TYPE", chartType: p.chart_type as string }); break;
+            case "chart_config": dispatch({ type: "CHART_CONFIG", chartConfig: p.chart_config as Record<string, unknown> }); break;
             case "tables_used":  dispatch({ type: "TABLES_USED",tables:    p.tables as string[] }); break;
             case "followups":    dispatch({ type: "FOLLOWUPS",  questions: p.questions as string[] }); break;
             case "analysis":     dispatch({ type: "ANALYSIS",   intent:    p.intent as string, steps: p.steps as string[] }); break;

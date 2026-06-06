@@ -61,6 +61,19 @@ def collection_count(collection: str) -> int:
         return 0
 
 
+def delete_by_filter(collection: str, query_filter) -> int:
+    """Delete points matching a Qdrant filter. Returns number of points deleted."""
+    try:
+        client = _client()
+        # Qdrant delete API returns operation info; we count before/after
+        before = collection_count(collection)
+        client.delete(collection_name=collection, points_selector=query_filter)
+        after = collection_count(collection)
+        return max(0, before - after)
+    except Exception:
+        return 0
+
+
 def scroll_payloads(collection: str, limit: int = 10_000) -> list[dict]:
     """Return all point payloads in a collection. Empty list on any error."""
     try:

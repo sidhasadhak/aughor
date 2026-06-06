@@ -15,10 +15,13 @@ Graph branch (entered when route_question returns mode="explore"):
 """
 from __future__ import annotations
 
+import logging
 from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from aughor.db.connection import DatabaseConnection
+
+logger = logging.getLogger(__name__)
 
 from aughor.agent.prompts_explore import (
     BUILD_LEDGER_PROMPT,
@@ -208,7 +211,7 @@ def _floor_chain(state: AgentState) -> list[SubQuestion]:
     and the original question, then lets the per-sub-question SQL planner do the
     real work against the live schema."""
     import re as _re
-    m = _re.search(r"^TABLE:\s+([^\s\[(]+)", state.get("schema_context", "") or "", _re.MULTILINE)
+    m = _re.search(r"^(?:TABLE:|##)\s+([^\s\[(]+)", state.get("schema_context", "") or "", _re.MULTILINE)
     table = m.group(1) if m else "the primary table"
     q = (state.get("question") or "the original question").strip()
     return [
@@ -242,6 +245,22 @@ def plan_and_execute_subq(state: AgentState, conn: "DatabaseConnection") -> dict
     raw_events = state.get("events_context") or ""
     events_section = f"{raw_events}\n" if raw_events else ""
 
+    # Per-sub-question schema context: prefer structured Data Catalog if available,
+    # else fall back to linked schema text.
+    subq_schema = state.get("data_catalog") or state["schema_context"]
+    if not subq_schema:
+        subq_schema = state["schema_context"]
+    try:
+        from aughor.tools.schema_linker import link_schema
+        linked = link_schema(
+            subq.question, subq_schema, top_k_tables=4, top_k_cols=8,
+            connection_id=state.get("connection_id"),
+        )
+        if linked:
+            subq_schema = linked
+    except Exception:
+        logger.warning("schema-linking failed for sub-question; using unlinked schema", exc_info=True)
+
     llm = get_provider("coder")
     # Resilience: a single sub-question's planner hiccup (provider timeout, parse
     # error, oversized context) must NOT abort the whole chain. If the LLM raises,
@@ -259,9 +278,10 @@ def plan_and_execute_subq(state: AgentState, conn: "DatabaseConnection") -> dict
                 expected_output=subq.expected_output,
                 prior_answers=_format_prior_answers(prior_answers),
                 analysis_ledger=state.get("analysis_ledger") or "(none)",
-                schema=state["schema_context"],
+                schema=subq_schema,
                 pitfall_section=format_pitfall_section(known_pitfalls),
                 events_section=events_section,
+                data_portrait=state.get("subq_data_portrait", {}).get(subq.id, ""),
             ),
             response_model=QueryPlan,
         )
@@ -272,7 +292,7 @@ def plan_and_execute_subq(state: AgentState, conn: "DatabaseConnection") -> dict
     queries = [q for q in (plan.queries if plan else []) if q and q.strip()]
     if not queries:
         import re as _re
-        _tm = _re.search(r"^TABLE:\s+(\w+)", state["schema_context"], _re.MULTILINE)
+        _tm = _re.search(r"^(?:TABLE:|##)\s+([\w.]+)", state["schema_context"], _re.MULTILINE)
         fallback_table = _tm.group(1) if _tm else "unknown"
         queries = [f'SELECT COUNT(*) AS row_count FROM "{fallback_table}"']
 
@@ -330,6 +350,99 @@ def plan_and_execute_subq(state: AgentState, conn: "DatabaseConnection") -> dict
         "pitfalls": new_pitfalls,
     }
 
+
+
+# ── Node: exploratory_scan_subq ───────────────────────────────────────────────
+# MindsDB-style mid-chain discovery: before planning SQL for a sub-question,
+# run 1–2 quick probes to discover cardinalities, ranges, and distinct values.
+# Results feed into the planner as a "Data Portrait" paragraph.
+
+def exploratory_scan_subq(state: AgentState, conn: "DatabaseConnection") -> dict[str, Any]:
+    """Run quick discovery queries for the current sub-question.
+
+    Max 2 queries, max 3 seconds each. Produces a short markdown paragraph
+    stored in state["subq_data_portrait"][subq.id].
+    """
+    import time as _time
+    sub_questions = state.get("sub_questions", [])
+    idx = state.get("current_subq_idx", 0)
+    if idx >= len(sub_questions):
+        return {}
+
+    subq = sub_questions[idx]
+    purpose = subq.purpose
+
+    # Extract first table from schema context
+    import re as _re
+    m = _re.search(r'^(?:TABLE:|##)\s+([\w.]+)', state.get("schema_context", ""), _re.MULTILINE)
+    table = m.group(1) if m else None
+    if not table:
+        return {}
+
+    discoveries: list[str] = []
+    _MAX_Q = 2
+    _TIMEOUT = 3.0
+
+    def _timed(sql: str) -> tuple[list[str], list[list]]:
+        t0 = _time.time()
+        try:
+            result = conn.execute(subq.id + "_scan", sql)
+            if _time.time() - t0 > _TIMEOUT:
+                return [], []
+            return result.columns, result.rows
+        except Exception:
+            return [], []
+
+    queries_run = 0
+
+    # Landscape / drill_down: cardinality + date range
+    if purpose in ("landscape", "drill_down"):
+        # Count distinct key column (first non-date column)
+        cols, rows = _timed(f"SELECT * FROM {table} LIMIT 1")
+        if rows and cols:
+            key_col = next((c for c in cols if not _re.search(r'date|time|_at$', c, _re.I)), cols[0])
+            c2, r2 = _timed(f'SELECT COUNT(DISTINCT "{key_col}") AS distinct_count FROM {table}')
+            if r2 and queries_run < _MAX_Q:
+                discoveries.append(f"Distinct {key_col}: {r2[0][0]}")
+                queries_run += 1
+        # Date range
+        date_col = next((c for c in (cols or []) if _re.search(r'date|time|_at$', c, _re.I)), None)
+        if date_col and queries_run < _MAX_Q:
+            c3, r3 = _timed(f'SELECT MIN("{date_col}") AS min_date, MAX("{date_col}") AS max_date FROM {table}')
+            if r3:
+                discoveries.append(f"{date_col} range: {r3[0][0]} to {r3[0][1]}")
+                queries_run += 1
+
+    # Relationship: distinct categorical values
+    elif purpose == "relationship":
+        cols, rows = _timed(f"SELECT * FROM {table} LIMIT 1")
+        if rows and cols:
+            cat_col = next((c for c in cols if _re.search(r'name|type|category|status|region|state$', c, _re.I)), cols[0])
+            if queries_run < _MAX_Q:
+                c2, r2 = _timed(f'SELECT DISTINCT "{cat_col}" FROM {table} LIMIT 20')
+                if r2:
+                    vals = [str(r[0]) for r in r2[:20]]
+                    discoveries.append(f"Distinct {cat_col} values: {', '.join(vals)}")
+                    queries_run += 1
+
+    # Threshold / confounder: numeric summary
+    elif purpose in ("threshold", "confounder"):
+        cols, rows = _timed(f"SELECT * FROM {table} LIMIT 1")
+        if rows and cols:
+            num_col = next((c for c in cols if _re.search(r'amount|price|total|revenue|count|score|value$', c, _re.I)), cols[0])
+            if queries_run < _MAX_Q:
+                c2, r2 = _timed(f'SELECT MIN("{num_col}") AS min_v, MAX("{num_col}") AS max_v, AVG("{num_col}")::FLOAT AS avg_v FROM {table}')
+                if r2 and r2[0]:
+                    discoveries.append(
+                        f"{num_col} summary: min={r2[0][0]}, max={r2[0][1]}, avg={r2[0][2] if len(r2[0]) > 2 else 'N/A'}"
+                    )
+                    queries_run += 1
+
+    portrait = "\n".join(f"- {d}" for d in discoveries) if discoveries else ""
+    current_portraits = state.get("subq_data_portrait", {})
+    updated_portraits = {**current_portraits, subq.id: portrait}
+
+    return {"subq_data_portrait": updated_portraits}
 
 # ── Node: reason_over_result ──────────────────────────────────────────────────
 

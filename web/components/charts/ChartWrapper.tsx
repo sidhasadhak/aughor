@@ -73,12 +73,13 @@ export function ChartWrapper({
 
       {/* Chart body */}
       <div
-        className="rounded-md overflow-hidden"
+        className="rounded-md"
         style={{
           border: "1px solid var(--chart-grid)",
           background: "transparent",
           padding: "10px 12px",
           minHeight: loading || empty || error ? height : undefined,
+
         }}
       >
         {loading ? (

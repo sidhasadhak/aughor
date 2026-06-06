@@ -314,3 +314,22 @@ def _format_for_decompose(hits: list[dict]) -> str:
             parts.append(f"  Related metrics to cross-check: {', '.join(related)}")
 
     return "\n".join(p for p in parts if p is not None)
+
+def has_strong_kb_match(query: str, threshold: float = 0.75, top_k: int = 3) -> bool:
+    """Return True if the KB contains a match with score >= threshold."""
+    if not KB_ENABLED or not KB_PATH:
+        return False
+    try:
+        if not _ensure_indexed():
+            return False
+        from aughor.semantic.embedder import embed_one
+        from aughor.semantic.vector_store import search
+        vector = embed_one(query)
+        hits = search(KB_COLLECTION, vector, top_k=top_k)
+        for h in hits:
+            if h["score"] >= threshold:
+                return True
+        return False
+    except Exception:
+        return False
+

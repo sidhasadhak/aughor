@@ -354,7 +354,7 @@ export async function alterColumn(
   column: string,
   newType: string,
   schema?: string,
-): Promise<{ ok: boolean; message?: string; error?: string }> {
+): Promise<{ ok: boolean; applied?: boolean; override_only?: boolean; message?: string; error?: string }> {
   const params = new URLSearchParams();
   if (schema) params.set("schema", schema);
   const res = await fetch(

@@ -578,7 +578,7 @@ function TableDetailPanel({ sel, onAsk }: {
     }
     setAlterBusy(true);
     try {
-      await alterColumn(sel.connId, sel.table.name, colName, editType.trim(), sel.schemaName);
+      const res = await alterColumn(sel.connId, sel.table.name, colName, editType.trim(), sel.schemaName);
       // Refresh columns and rich schema so both are in sync
       const [refreshed, rich] = await Promise.all([
         getTableColumns(sel.connId, sel.table.name, sel.schemaName),
@@ -586,6 +586,8 @@ function TableDetailPanel({ sel, onAsk }: {
       ]);
       setBaseCols(refreshed);
       if (rich) setRich(rich);
+      // Be honest when the change is a display-only override (connector can't ALTER).
+      if (res && res.applied === false && res.message) alert(res.message);
     } catch (e) {
       alert((e as Error).message || "Failed to alter column");
     } finally {

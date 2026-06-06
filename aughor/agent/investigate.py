@@ -225,6 +225,7 @@ def _with_ledger(state: "AgentState", schema: str) -> str:
 def _filter_schema(schema: str, table_names: list[str]) -> str:
     """
     Keep only the schema blocks for tables mentioned in table_names.
+    Works with both TABLE: headers (traditional schema) and ## headers (data catalog).
     Uses word-boundary matching to avoid 'orders' matching 'order_items'.
     Falls back to full schema if nothing matches.
     """
@@ -283,6 +284,97 @@ def _validate_intake_date_column(date_column: str) -> str | None:
             "this is not a date column. You MUST use a column whose schema type contains "
             "DATE, TIMESTAMP, or TIME. Check the schema for the correct date column and update date_column."
         )
+    return None
+
+
+
+
+def _extract_qualified_tables(schema: str) -> dict[str, str]:
+    """Map bare table names → fully-qualified names from schema context.
+
+    Handles both TABLE: ecommerce.orders (schema context) and ## ecommerce.orders (data catalog).
+    Returns a dict like {'orders': 'ecommerce.orders', 'customers': 'ecommerce.customers'}.
+    If the schema has no qualified names, the mapping is identity (bare → bare).
+    """
+    # TABLE: header format (traditional schema context)
+    table_pattern = re.compile(r'^TABLE:\s+([\w.]+)', re.MULTILINE)
+    # ## header format (data catalog markdown)
+    catalog_pattern = re.compile(r'^##\s+([\w.]+)', re.MULTILINE)
+    mapping: dict[str, str] = {}
+    for m in table_pattern.finditer(schema):
+        qualified = m.group(1)
+        bare = qualified.split(".")[-1].lower()
+        if bare not in mapping or len(qualified) < len(mapping[bare]):
+            mapping[bare] = qualified
+    for m in catalog_pattern.finditer(schema):
+        qualified = m.group(1)
+        bare = qualified.split(".")[-1].lower()
+        if bare not in mapping or len(qualified) < len(mapping[bare]):
+            mapping[bare] = qualified
+    return mapping
+
+
+def _qualify_intake_table_names(intake, schema: str) -> None:
+    """In-place fix bare table/column references in an IntakeOutput using the schema context."""
+    mapping = _extract_qualified_tables(schema)
+    if not mapping:
+        return
+
+    # metric_table
+    if intake.metric_table:
+        bare = intake.metric_table.split(".")[-1].lower()
+        if bare in mapping and intake.metric_table != mapping[bare]:
+            intake.metric_table = mapping[bare]
+
+    # date_column  (table.column)
+    if intake.date_column and intake.date_column.upper() != "NONE":
+        parts = intake.date_column.split(".")
+        if len(parts) == 2:
+            bare_table = parts[0].lower()
+            if bare_table in mapping and parts[0] != mapping[bare_table]:
+                intake.date_column = f"{mapping[bare_table]}.{parts[1]}"
+
+    # dimensions  (list of table.column)
+    qualified_dims: list[str] = []
+    for dim in intake.dimensions:
+        parts = dim.split(".")
+        if len(parts) == 2:
+            bare_table = parts[0].lower()
+            if bare_table in mapping and parts[0] != mapping[bare_table]:
+                qualified_dims.append(f"{mapping[bare_table]}.{parts[1]}")
+            else:
+                qualified_dims.append(dim)
+        else:
+            qualified_dims.append(dim)
+    intake.dimensions = qualified_dims
+def _validate_intake_metric_table(metric_table: str, schema: str) -> str | None:
+    """Return an error if metric_table does not exist in the schema."""
+    if not metric_table or not schema:
+        return None
+    import re
+    # Match both TABLE: and ## header formats
+    table_pattern = re.compile(r'^TABLE:\s+([\w.]+)', re.MULTILINE)
+    catalog_pattern = re.compile(r'^##\s+([\w.]+)', re.MULTILINE)
+    found_qualified = [m.group(1) for m in table_pattern.finditer(schema)] + [m.group(1) for m in catalog_pattern.finditer(schema)]
+    found_bare = [t.split(".")[-1].lower() for t in found_qualified]
+    bare = metric_table.split(".")[-1].lower()
+
+    if bare not in found_bare:
+        return (
+            f"metric_table '{metric_table}' does not exist in the schema. "
+            f"Available tables: {', '.join(found_bare[:12])}. "
+            "You MUST choose one of the tables listed above."
+        )
+
+    # If schema uses qualified names, require the intake to also use them
+    has_qualified = any('.' in t for t in found_qualified)
+    if has_qualified and '.' not in metric_table:
+        qualified_match = next((t for t in found_qualified if t.split(".")[-1].lower() == bare), None)
+        if qualified_match:
+            return (
+                f"metric_table '{metric_table}' is missing the schema prefix. "
+                f"The schema uses qualified names. Use '{qualified_match}' instead."
+            )
     return None
 
 
@@ -677,6 +769,28 @@ def ada_intake(state: AgentState) -> dict:
             except Exception as e2:
                 # Keep the original (even if bad) rather than crashing
                 pass
+
+    # Code-level validation: reject and retry if metric_table does not exist in schema
+    if intake is not None:
+        mt_error = _validate_intake_metric_table(intake.metric_table, schema)
+        if mt_error:
+            retry_prompt = (
+                prompt
+                + f"\n\nCORRECTION REQUIRED: {mt_error}\n"
+                "Re-examine the schema, pick a table that actually exists, and return the fixed spec."
+            )
+            try:
+                intake = _provider("coder").complete(
+                    system="You are a precise data analyst parsing a business question. Return a structured investigation specification.",
+                    user=retry_prompt,
+                    response_model=IntakeOutput,
+                )
+            except Exception:
+                pass
+
+    # Post-process: ensure all table references are fully-qualified when the schema uses them
+    if intake is not None:
+        _qualify_intake_table_names(intake, schema)
 
     if intake is None:
         phase = _phase_result(

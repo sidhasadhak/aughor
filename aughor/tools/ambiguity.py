@@ -127,7 +127,7 @@ def _build_col_map(schema_context: str) -> dict[str, list[str]]:
     current_table: str | None = None
 
     for line in schema_context.splitlines():
-        table_m = re.match(r"^TABLE:\s+(\w+)", line)
+        table_m = re.match(r"^TABLE:\s+([\w.]+)", line)
         if table_m:
             current_table = table_m.group(1)
             continue

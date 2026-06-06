@@ -10,13 +10,32 @@
  *   <AugTable<MyRow> columns={antColumns} dataSource={data} />
  */
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Table, ConfigProvider, theme } from "antd";
 import type { TableProps, TableColumnsType } from "antd";
 
+// ── Theme-mode hook ──────────────────────────────────────────────────────────
+// Ant Design's theme tokens must be real colors (it derives shades), so we can't
+// feed it CSS vars. Instead we watch <html data-theme> and hand Ant a matching
+// dark/light token set so tables flip with the rest of the app.
+function useThemeMode(): "light" | "dark" {
+  const [mode, setMode] = useState<"light" | "dark">(() =>
+    typeof document !== "undefined" && document.documentElement.getAttribute("data-theme") === "light"
+      ? "light" : "dark");
+  useEffect(() => {
+    const el = document.documentElement;
+    const sync = () => setMode(el.getAttribute("data-theme") === "light" ? "light" : "dark");
+    sync();
+    const obs = new MutationObserver(sync);
+    obs.observe(el, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => obs.disconnect();
+  }, []);
+  return mode;
+}
+
 // ── Aughor dark tokens for Ant Design ───────────────────────────────────────
 
-const AUG_THEME: Parameters<typeof ConfigProvider>[0]["theme"] = {
+const AUG_THEME_DARK: Parameters<typeof ConfigProvider>[0]["theme"] = {
   algorithm: theme.darkAlgorithm,
   token: {
     // Backgrounds
@@ -71,6 +90,53 @@ const AUG_THEME: Parameters<typeof ConfigProvider>[0]["theme"] = {
   },
 };
 
+// ── Aughor light tokens for Ant Design (mirrors the light palette in tokens.css) ──
+const AUG_THEME_LIGHT: Parameters<typeof ConfigProvider>[0]["theme"] = {
+  algorithm: theme.defaultAlgorithm,
+  token: {
+    colorBgBase:          "#F2F5FA",   // --bg-0
+    colorBgContainer:     "#FFFFFF",   // --bg-1
+    colorBgElevated:      "#F7F9FC",   // --bg-2
+    colorBgLayout:        "#F2F5FA",
+    colorBorder:          "#D2DCEB",   // --b1
+    colorBorderSecondary: "#E5ECF5",   // --b0
+    colorSplit:           "#E5ECF5",
+    colorText:            "#1A2535",   // --t1
+    colorTextSecondary:   "#3C5270",   // --t2
+    colorTextDescription: "#6E8EA8",   // --t3
+    colorTextDisabled:    "#A8BDD0",   // --t4
+    colorPrimary:         "#2D72D2",   // --blue3
+    colorPrimaryHover:    "#1A56B0",   // --blue4
+    fontSize:             12,
+    fontFamily:           "'DM Sans', system-ui, sans-serif",
+    borderRadius:         3,
+    borderRadiusSM:       2,
+    controlHeight:        30,
+    lineWidth:            1,
+  },
+  components: {
+    Table: {
+      headerBg:           "#F7F9FC",   // --bg-2
+      headerColor:        "#6E8EA8",   // --t3
+      headerSortActiveBg: "#ECF0F8",   // --bg-3
+      headerSortHoverBg:  "#ECF0F8",   // --bg-3
+      headerSplitColor:   "#D2DCEB",   // --b1
+      rowHoverBg:         "rgba(45, 114, 210, 0.045)",
+      rowSelectedBg:      "rgba(45, 114, 210, 0.10)",
+      rowSelectedHoverBg: "rgba(45, 114, 210, 0.16)",
+      bodySortBg:         "#FFFFFF",
+      borderColor:        "#E5ECF5",   // --b0
+      cellFontSize:       12,
+      cellPaddingInline:  14,
+      cellPaddingBlock:   9,
+    },
+    Pagination: {
+      colorBgContainer:   "#FFFFFF",
+      itemActiveBg:       "rgba(45, 114, 210, 0.12)",
+    },
+  },
+};
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 const ORDINAL_COL = /\bid\b|_id$|^id$|id$|Id$|ID$/i;
@@ -120,8 +186,9 @@ function fmt(col: string, v: unknown): React.ReactNode {
 export function AugTable<T extends object = Record<string, unknown>>(
   props: TableProps<T>,
 ) {
+  const antTheme = useThemeMode() === "light" ? AUG_THEME_LIGHT : AUG_THEME_DARK;
   return (
-    <ConfigProvider theme={AUG_THEME}>
+    <ConfigProvider theme={antTheme}>
       <Table<T>
         size="small"
         showSorterTooltip={false}
