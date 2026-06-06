@@ -473,11 +473,20 @@ class LocalUploadConnection(Connector):
     def get_schema(self) -> str:
         parts: list[str] = []
         try:
-            self._duckdb.execute(
-                "SELECT table_schema, table_name FROM information_schema.tables "
-                "WHERE table_schema NOT IN ('information_schema', 'pg_catalog', 'temp') "
-                "AND table_type = 'BASE TABLE' ORDER BY table_schema, table_name"
-            )
+            # Respect schema_name filter if set; otherwise list all non-system schemas.
+            if self._schema_name:
+                self._duckdb.execute(
+                    "SELECT table_schema, table_name FROM information_schema.tables "
+                    "WHERE table_schema = ? AND table_type = 'BASE TABLE' "
+                    "ORDER BY table_name",
+                    [self._schema_name],
+                )
+            else:
+                self._duckdb.execute(
+                    "SELECT table_schema, table_name FROM information_schema.tables "
+                    "WHERE table_schema NOT IN ('information_schema', 'pg_catalog', 'temp') "
+                    "AND table_type = 'BASE TABLE' ORDER BY table_schema, table_name"
+                )
             schema_table_rows = self._duckdb.fetchall()
             for tschema, tname in schema_table_rows:
                 try:
@@ -486,8 +495,9 @@ class LocalUploadConnection(Connector):
                     ).fetchone()[0]
                 except Exception:
                     count = "?"
-                qualified = tname if tschema == DEFAULT_SCHEMA else f"{tschema}.{tname}"
-                parts.append(f"TABLE: {qualified}  ({count:,} rows)")
+                # Use bare table names (like DuckDB build_schema_context) so the
+                # rich schema, QueryBuilder, and Catalog tree all agree on keys.
+                parts.append(f"TABLE: {tname}  ({count:,} rows)")
                 try:
                     cols = self._duckdb.execute(
                         f'DESCRIBE "{tschema}"."{tname}"'

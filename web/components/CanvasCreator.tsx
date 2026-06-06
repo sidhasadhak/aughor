@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   createCanvas,
   getSchemaRich,
+  getCatalogTree,
   suggestCanvasName,
   type Connection,
   type Canvas,
@@ -61,9 +62,24 @@ export function CanvasCreator({ connections, onCreated, onCancel }: Props) {
     if (!connId) return;
     setLoadingTables(true);
     setAllTables([]);
+    // Try rich schema first; fall back to catalog tree which is more reliable
     getSchemaRich(connId)
-      .then(s => setAllTables(s.tables.map(t => t.name)))
-      .catch(() => setAllTables([]))
+      .then(s => {
+        if (s.tables.length > 0) {
+          setAllTables(s.tables.map(t => t.name));
+        } else {
+          throw new Error("empty schema");
+        }
+      })
+      .catch(() => {
+        getCatalogTree()
+          .then(tree => {
+            const entry = tree.sections.flatMap(s => s.entries).find(e => e.conn_id === connId);
+            const names = entry?.schemas.flatMap(sch => sch.tables.map(t => t.name)) ?? [];
+            setAllTables(names);
+          })
+          .catch(() => setAllTables([]));
+      })
       .finally(() => setLoadingTables(false));
   }, [connId]);
 

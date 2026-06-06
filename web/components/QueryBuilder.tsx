@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
-  getConnections, getSchemaRich, getMetrics, runDirectQuery, getCatalogTree,
+  getConnections, getSchemaRich, getTableColumns, getMetrics, runDirectQuery, getCatalogTree,
   type Connection, type SchemaColumn, type SchemaJoin, type Metric, type DirectQueryResult,
   type CatalogEntry,
 } from "@/lib/api";
@@ -455,6 +455,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
   const [isolated,      setIsolated]      = useState<string[]>([]);
   const [loadingTree,   setLoadingTree]   = useState(false);  // fast: catalog tree
   const [loadingCols,   setLoadingCols]   = useState(false);  // slow: columns/joins/rowcounts
+  const [loadingTableCols, setLoadingTableCols] = useState<Set<string>>(new Set());
   const [joinHint,      setJoinHint]      = useState<string|null>(null);
 
   const [primaryTable, setPrimaryTable] = useState<string|null>(null);
@@ -468,6 +469,22 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
   const [colSearch, setColSearch] = useState("");
 
   const [metrics,         setMetrics]         = useState<Metric[]>([]);
+
+  // Fetch columns for a single table on-demand (fallback when rich schema is empty)
+  const fetchTableColumns = useCallback(async (table: string, schemaName?: string) => {
+    if (!connId || loadingTableCols.has(table)) return;
+    setLoadingTableCols(p => { const n = new Set(p); n.add(table); return n; });
+    try {
+      const cols = await getTableColumns(connId, table, schemaName);
+      if (cols.length > 0) {
+        setTableCols(prev => ({ ...prev, [table]: cols.map(c => ({ ...c, is_fk: false } as SchemaColumn)) }));
+      }
+    } catch (e) {
+      console.error(`[QueryBuilder] failed to load columns for ${table}:`, e);
+    } finally {
+      setLoadingTableCols(p => { const n = new Set(p); n.delete(table); return n; });
+    }
+  }, [connId, loadingTableCols]);
   const [showMetricsCatalog, setShowMetricsCatalog] = useState(false);
 
   const [dims,     setDims]     = useState<DimItem[]>([]);
@@ -906,7 +923,15 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                           return (
                             <div key={tbl} className={isResolved ? "bg-zinc-800/20" : ""}>
                               <div className="group/tbl w-full flex items-center gap-2 pl-7 pr-2 py-1.5 hover:bg-zinc-800/40 transition">
-                                <button onClick={()=>setExpandedTables(p=>({...p,[tbl]: !(p[tbl] ?? isResolved)}))}
+                                <button onClick={()=> {
+                                    const willOpen = !(expandedTables[tbl] ?? isResolved);
+                                    setExpandedTables(p=>({...p,[tbl]: willOpen}));
+                                    if (willOpen && !(tableCols[tbl]?.length > 0) && !loadingTableCols.has(tbl)) {
+                                      // Try to infer schema name from catalog tree
+                                      const schemaName = catEntry?.schemas.find(s => s.tables.some(t => t.name === tbl))?.name;
+                                      fetchTableColumns(tbl, schemaName);
+                                    }
+                                  }}
                                   className="flex items-center gap-2 min-w-0 flex-1">
                                   <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="var(--t3)" strokeWidth="1.5" strokeLinecap="round"
                                     className={`shrink-0 transition-transform duration-150 ${open?"rotate-90":""}`}>
@@ -949,7 +974,11 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                                         />
                                       </div>
                                     ))
-                                    : <div className="pl-11 py-1.5"><span className="text-[11px] text-zinc-500">No columns available — schema may need refresh</span></div>
+                                    : <div className="pl-11 py-1.5">
+                                      <span className="text-[11px] text-zinc-500">
+                                        {loadingTableCols.has(tbl) ? "Loading columns…" : "No columns available — schema may need refresh"}
+                                      </span>
+                                    </div>
                               )}
                             </div>
                           );

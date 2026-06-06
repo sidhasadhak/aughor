@@ -69,6 +69,7 @@ export function InvestigationChart({ columns, rows, title }: Props) {
       case "scatter":    return ["scatter", "bar"];
       case "pie":        return ["pie", "bar", "treemap"];
       case "treemap":    return ["treemap", "bar", "pie"];
+      case "grouped-bar": return ["grouped-bar", "bar", "line"];
       default:           return ["bar", "line"];
     }
   })();
@@ -81,7 +82,8 @@ export function InvestigationChart({ columns, rows, title }: Props) {
   const colorKey = inferred.colorCol !== undefined ? columns[inferred.colorCol] : undefined;
   const chartTitle = title ?? (
     effectiveType === "line" || effectiveType === "multi-line" ? "Trend" :
-    effectiveType === "heatmap" ? "Distribution" : "Breakdown"
+    effectiveType === "heatmap" ? "Distribution" :
+    effectiveType === "grouped-bar" ? "Comparison" : "Breakdown"
   );
 
   let content: React.ReactNode;
@@ -187,6 +189,36 @@ export function InvestigationChart({ columns, rows, title }: Props) {
       },
     };
     content = <VegaChart spec={spec} data={pieData} height={220} />;
+
+  // ── GROUPED BAR ───────────────────────────────────────────────────────────
+  } else if (effectiveType === "grouped-bar") {
+    const groupKey = xKey;
+    const measureKeys = inferred.yCols.map(i => columns[i]);
+    const melted = records.flatMap(d =>
+      measureKeys.map(mk => ({
+        group: String(d[groupKey]),
+        measure: mk.replace(/_/g, " "),
+        value: Number(d[mk]),
+      }))
+    );
+    const spec = {
+      mark: { type: "bar" },
+      encoding: {
+        x: { field: "group", type: "ordinal", axis: { labelAngle: -20, title: cleanTitle(groupKey) } },
+        y: { field: "value", type: "quantitative", axis: { format: "~s", grid: true, title: "" } },
+        color: { field: "measure", type: "nominal", legend: { title: "" } },
+        xOffset: { field: "measure", type: "nominal" },
+        tooltip: [
+          { field: "group", type: "nominal" },
+          { field: "measure", type: "nominal" },
+          { field: "value", type: "quantitative", format: ",.2~f" },
+        ],
+      },
+    };
+    const groupCount = new Set(melted.map(d => d.group)).size;
+    const measureCount = measureKeys.length;
+    const barHeight = Math.max(160, Math.min(groupCount, 15) * measureCount * 22 + 60);
+    content = <VegaChart spec={spec} data={melted} height={barHeight} />;
 
   // ── STACKED BAR ───────────────────────────────────────────────────────────
   } else if (effectiveType === "stacked-bar" && colorKey) {
