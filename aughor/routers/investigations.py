@@ -411,11 +411,6 @@ async def _stream_chat(
             from aughor.tools.prior_analyses import search_sql_examples
             return search_sql_examples(question, connection_id) or ""
 
-        def _metrics() -> str:
-            from aughor.semantic.metrics import build_metrics_block
-            s = build_metrics_block()
-            return (s + "\n\n") if s else ""
-
         def _expl() -> str:
             from aughor.explorer.store import render_exploration_annotations
             s = render_exploration_annotations(connection_id)
@@ -449,13 +444,25 @@ async def _stream_chat(
 
         (
             schema, kb_patterns_section, conn_kb_section, sql_examples_section,
-            metrics_section, exploration_section, causal_section, document_section,
+            exploration_section, causal_section, document_section,
             pb_entries,
         ) = await asyncio.gather(
             asyncio.to_thread(db.get_schema),  # critical: a failure here propagates
-            _safe(_kb), _safe(_ckb), _safe(_sqlex), _safe(_metrics),
+            _safe(_kb), _safe(_ckb), _safe(_sqlex),
             _safe(_expl), _safe(_causal), _safe(_docs), _safe_list(_pb_match),
         )
+
+        # Metrics built AFTER schema (needs the column set to filter out metrics
+        # whose tables/columns aren't in THIS connection — metrics are global, so
+        # an unfiltered block leaks another connection's formula). Kept out of the
+        # gather to avoid a concurrent get_schema on the same db connection.
+        metrics_section = ""
+        try:
+            from aughor.semantic.metrics import build_metrics_block
+            _mb = build_metrics_block(schema_text=schema)
+            metrics_section = (_mb + "\n\n") if _mb else ""
+        except Exception:
+            metrics_section = ""
 
         # Schema-linking pre-filter: narrow schema to relevant tables/columns
         # for this specific question. Reduces hallucination by 30-60%.

@@ -561,7 +561,10 @@ def build_schema_context(
     join_hints = infer_joins(enriched)
     if join_hints:
         enriched += "\n\n" + join_hints
-    metrics_block = build_metrics_block()
+    # Filter metrics against THIS schema so a globally-stored metric that
+    # references columns absent here (another connection's metric) doesn't leak
+    # a wrong formula into the prompt.
+    metrics_block = build_metrics_block(schema_text=enriched)
     if metrics_block:
         enriched += "\n\n" + metrics_block
     if profile_annotation:
