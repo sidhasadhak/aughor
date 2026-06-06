@@ -5184,5 +5184,1616 @@
         "is_fk": false
       }
     }
+  },
+  "workspace:c24ecbbe98db185d": {
+    "tables": {
+      "bakehouse.media_customer_reviews": {
+        "table": "bakehouse.media_customer_reviews",
+        "row_count": 204,
+        "grain_column": "new_id",
+        "grain_verified": false,
+        "primary_timestamp": "review_date",
+        "date_range": [
+          "2024-05-20 19:17:03.052",
+          "2024-05-31 20:45:07.063"
+        ],
+        "effective_date_range": null,
+        "freshness_lag_hours": 17643.1,
+        "computed_at": "2026-06-05T21:48:08.325413+00:00"
+      },
+      "bakehouse.media_gold_reviews_chunked": {
+        "table": "bakehouse.media_gold_reviews_chunked",
+        "row_count": 196,
+        "grain_column": "chunk_id",
+        "grain_verified": false,
+        "primary_timestamp": "review_date",
+        "date_range": [
+          "2024-06-03 22:38:11.002",
+          "2024-06-03 22:46:46.175"
+        ],
+        "effective_date_range": null,
+        "freshness_lag_hours": 17569.0,
+        "computed_at": "2026-06-05T21:48:08.327141+00:00"
+      },
+      "bakehouse.sales_customers": {
+        "table": "bakehouse.sales_customers",
+        "row_count": 300,
+        "grain_column": "phone_number",
+        "grain_verified": false,
+        "primary_timestamp": null,
+        "date_range": null,
+        "effective_date_range": null,
+        "freshness_lag_hours": null,
+        "computed_at": "2026-06-05T21:48:08.328688+00:00"
+      },
+      "bakehouse.sales_franchises": {
+        "table": "bakehouse.sales_franchises",
+        "row_count": 48,
+        "grain_column": "franchiseID",
+        "grain_verified": true,
+        "primary_timestamp": null,
+        "date_range": null,
+        "effective_date_range": null,
+        "freshness_lag_hours": null,
+        "computed_at": "2026-06-05T21:48:08.332578+00:00"
+      },
+      "bakehouse.sales_suppliers": {
+        "table": "bakehouse.sales_suppliers",
+        "row_count": 27,
+        "grain_column": "supplierID",
+        "grain_verified": false,
+        "primary_timestamp": "approved",
+        "date_range": [
+          "true",
+          "true"
+        ],
+        "effective_date_range": null,
+        "freshness_lag_hours": null,
+        "computed_at": "2026-06-05T21:48:08.336060+00:00"
+      },
+      "bakehouse.sales_transactions": {
+        "table": "bakehouse.sales_transactions",
+        "row_count": 3333,
+        "grain_column": "transactionID",
+        "grain_verified": false,
+        "primary_timestamp": "dateTime",
+        "date_range": [
+          "2024-05-01 02:03:28.344+02",
+          "2024-05-17 13:48:38.084+02"
+        ],
+        "effective_date_range": null,
+        "freshness_lag_hours": 17986.0,
+        "computed_at": "2026-06-05T21:48:08.343068+00:00"
+      },
+      "ecommerce.customers": {
+        "table": "ecommerce.customers",
+        "row_count": 500,
+        "grain_column": "customer_id",
+        "grain_verified": false,
+        "primary_timestamp": "signup_date",
+        "date_range": [
+          "2020-01-04",
+          "2024-02-09"
+        ],
+        "effective_date_range": null,
+        "freshness_lag_hours": 20351.8,
+        "computed_at": "2026-06-05T21:48:08.347709+00:00"
+      },
+      "ecommerce.order_items": {
+        "table": "ecommerce.order_items",
+        "row_count": 12000,
+        "grain_column": "item_id",
+        "grain_verified": false,
+        "primary_timestamp": null,
+        "date_range": null,
+        "effective_date_range": null,
+        "freshness_lag_hours": null,
+        "computed_at": "2026-06-05T21:48:08.351266+00:00"
+      },
+      "ecommerce.orders": {
+        "table": "ecommerce.orders",
+        "row_count": 5000,
+        "grain_column": "order_id",
+        "grain_verified": false,
+        "primary_timestamp": "order_date",
+        "date_range": [
+          "2023-01-01",
+          "2024-12-30"
+        ],
+        "effective_date_range": null,
+        "freshness_lag_hours": 12551.8,
+        "computed_at": "2026-06-05T21:48:08.353415+00:00"
+      },
+      "ecommerce.products": {
+        "table": "ecommerce.products",
+        "row_count": 150,
+        "grain_column": "product_id",
+        "grain_verified": false,
+        "primary_timestamp": null,
+        "date_range": null,
+        "effective_date_range": null,
+        "freshness_lag_hours": null,
+        "computed_at": "2026-06-05T21:48:08.356223+00:00"
+      },
+      "ecommerce.reviews": {
+        "table": "ecommerce.reviews",
+        "row_count": 3000,
+        "grain_column": "review_id",
+        "grain_verified": false,
+        "primary_timestamp": "review_date",
+        "date_range": [
+          "2023-01-15",
+          "2024-12-13"
+        ],
+        "effective_date_range": null,
+        "freshness_lag_hours": 12959.8,
+        "computed_at": "2026-06-05T21:48:08.359815+00:00"
+      }
+    },
+    "columns": {
+      "bakehouse.media_customer_reviews.review": {
+        "table": "bakehouse.media_customer_reviews",
+        "column": "review",
+        "dtype": "VARCHAR",
+        "semantic_type": "text",
+        "null_rate": 0.0,
+        "distinct_count": 207,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "bakehouse.media_customer_reviews.franchiseID": {
+        "table": "bakehouse.media_customer_reviews",
+        "column": "franchiseID",
+        "dtype": "BIGINT",
+        "semantic_type": "measure",
+        "null_rate": 0.0,
+        "distinct_count": 47,
+        "is_low_cardinality": false,
+        "value_range": [
+          3000000.0,
+          3000047.0
+        ],
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "bakehouse.media_customer_reviews.review_date": {
+        "table": "bakehouse.media_customer_reviews",
+        "column": "review_date",
+        "dtype": "TIMESTAMP",
+        "semantic_type": "timestamp",
+        "null_rate": 0.0,
+        "distinct_count": 5,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "bakehouse.media_customer_reviews.new_id": {
+        "table": "bakehouse.media_customer_reviews",
+        "column": "new_id",
+        "dtype": "BIGINT",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 223,
+        "is_low_cardinality": false,
+        "value_range": [
+          1.0,
+          204.0
+        ],
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "bakehouse.media_gold_reviews_chunked.franchiseID": {
+        "table": "bakehouse.media_gold_reviews_chunked",
+        "column": "franchiseID",
+        "dtype": "BIGINT",
+        "semantic_type": "measure",
+        "null_rate": 0.0,
+        "distinct_count": 47,
+        "is_low_cardinality": false,
+        "value_range": [
+          3000000.0,
+          3000047.0
+        ],
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "bakehouse.media_gold_reviews_chunked.review_date": {
+        "table": "bakehouse.media_gold_reviews_chunked",
+        "column": "review_date",
+        "dtype": "TIMESTAMP",
+        "semantic_type": "timestamp",
+        "null_rate": 0.0,
+        "distinct_count": 6,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "bakehouse.media_gold_reviews_chunked.chunked_text": {
+        "table": "bakehouse.media_gold_reviews_chunked",
+        "column": "chunked_text",
+        "dtype": "VARCHAR",
+        "semantic_type": "text",
+        "null_rate": 0.0,
+        "distinct_count": 139,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "bakehouse.media_gold_reviews_chunked.chunk_id": {
+        "table": "bakehouse.media_gold_reviews_chunked",
+        "column": "chunk_id",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 150,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "bakehouse.media_gold_reviews_chunked.review_uri": {
+        "table": "bakehouse.media_gold_reviews_chunked",
+        "column": "review_uri",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 1,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "s3://us-west-2-extstaging-managed-catalog-test-bucket-1/19a85dee-54bc-43a2-87ab-023d0ec16013/tables/dfc444c3-9af1-4c78-84eb-9020bacadff2"
+        ],
+        "is_fk": false
+      },
+      "bakehouse.sales_customers.customerID": {
+        "table": "bakehouse.sales_customers",
+        "column": "customerID",
+        "dtype": "BIGINT",
+        "semantic_type": "measure",
+        "null_rate": 0.0,
+        "distinct_count": 336,
+        "is_low_cardinality": false,
+        "value_range": [
+          2000000.0,
+          2000299.0
+        ],
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "bakehouse.sales_customers.first_name": {
+        "table": "bakehouse.sales_customers",
+        "column": "first_name",
+        "dtype": "VARCHAR",
+        "semantic_type": "text",
+        "null_rate": 0.0,
+        "distinct_count": 191,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "bakehouse.sales_customers.last_name": {
+        "table": "bakehouse.sales_customers",
+        "column": "last_name",
+        "dtype": "VARCHAR",
+        "semantic_type": "text",
+        "null_rate": 0.0,
+        "distinct_count": 177,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "bakehouse.sales_customers.email_address": {
+        "table": "bakehouse.sales_customers",
+        "column": "email_address",
+        "dtype": "VARCHAR",
+        "semantic_type": "text",
+        "null_rate": 0.0,
+        "distinct_count": 269,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "bakehouse.sales_customers.phone_number": {
+        "table": "bakehouse.sales_customers",
+        "column": "phone_number",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 261,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "bakehouse.sales_customers.address": {
+        "table": "bakehouse.sales_customers",
+        "column": "address",
+        "dtype": "VARCHAR",
+        "semantic_type": "text",
+        "null_rate": 0.0,
+        "distinct_count": 290,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "bakehouse.sales_customers.city": {
+        "table": "bakehouse.sales_customers",
+        "column": "city",
+        "dtype": "VARCHAR",
+        "semantic_type": "text",
+        "null_rate": 0.0,
+        "distinct_count": 307,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "bakehouse.sales_customers.state": {
+        "table": "bakehouse.sales_customers",
+        "column": "state",
+        "dtype": "VARCHAR",
+        "semantic_type": "text",
+        "null_rate": 0.0,
+        "distinct_count": 117,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "bakehouse.sales_customers.country": {
+        "table": "bakehouse.sales_customers",
+        "column": "country",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 3,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "Australia",
+          "USA",
+          "Japan"
+        ],
+        "is_fk": false
+      },
+      "bakehouse.sales_customers.continent": {
+        "table": "bakehouse.sales_customers",
+        "column": "continent",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 2,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "Oceania",
+          "North America",
+          "Asia"
+        ],
+        "is_fk": false
+      },
+      "bakehouse.sales_customers.postal_zip_code": {
+        "table": "bakehouse.sales_customers",
+        "column": "postal_zip_code",
+        "dtype": "BIGINT",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 270,
+        "is_low_cardinality": false,
+        "value_range": [
+          1123.0,
+          99518.0
+        ],
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "bakehouse.sales_customers.gender": {
+        "table": "bakehouse.sales_customers",
+        "column": "gender",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 2,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "female",
+          "male"
+        ],
+        "is_fk": false
+      },
+      "bakehouse.sales_franchises.franchiseID": {
+        "table": "bakehouse.sales_franchises",
+        "column": "franchiseID",
+        "dtype": "BIGINT",
+        "semantic_type": "measure",
+        "null_rate": 0.0,
+        "distinct_count": 47,
+        "is_low_cardinality": false,
+        "value_range": [
+          3000000.0,
+          3000047.0
+        ],
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "bakehouse.sales_franchises.name": {
+        "table": "bakehouse.sales_franchises",
+        "column": "name",
+        "dtype": "VARCHAR",
+        "semantic_type": "text",
+        "null_rate": 0.0,
+        "distinct_count": 47,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "bakehouse.sales_franchises.city": {
+        "table": "bakehouse.sales_franchises",
+        "column": "city",
+        "dtype": "VARCHAR",
+        "semantic_type": "text",
+        "null_rate": 0.0,
+        "distinct_count": 44,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "bakehouse.sales_franchises.district": {
+        "table": "bakehouse.sales_franchises",
+        "column": "district",
+        "dtype": "VARCHAR",
+        "semantic_type": "text",
+        "null_rate": 0.0,
+        "distinct_count": 51,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "bakehouse.sales_franchises.zipcode": {
+        "table": "bakehouse.sales_franchises",
+        "column": "zipcode",
+        "dtype": "VARCHAR",
+        "semantic_type": "text",
+        "null_rate": 0.0,
+        "distinct_count": 54,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "bakehouse.sales_franchises.country": {
+        "table": "bakehouse.sales_franchises",
+        "column": "country",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 9,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "Japan",
+          "US",
+          "Australia",
+          "France",
+          "Germany",
+          "Canada",
+          "Netherlands",
+          "Italy",
+          "Sweden"
+        ],
+        "is_fk": false
+      },
+      "bakehouse.sales_franchises.size": {
+        "table": "bakehouse.sales_franchises",
+        "column": "size",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 5,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "M",
+          "S",
+          "XL",
+          "XXL",
+          "L"
+        ],
+        "is_fk": false
+      },
+      "bakehouse.sales_franchises.longitude": {
+        "table": "bakehouse.sales_franchises",
+        "column": "longitude",
+        "dtype": "DOUBLE",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 48,
+        "is_low_cardinality": false,
+        "value_range": [
+          -157.8646,
+          153.4276
+        ],
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "bakehouse.sales_franchises.latitude": {
+        "table": "bakehouse.sales_franchises",
+        "column": "latitude",
+        "dtype": "DOUBLE",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 42,
+        "is_low_cardinality": false,
+        "value_range": [
+          -37.8005,
+          59.3144
+        ],
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "bakehouse.sales_franchises.supplierID": {
+        "table": "bakehouse.sales_franchises",
+        "column": "supplierID",
+        "dtype": "BIGINT",
+        "semantic_type": "measure",
+        "null_rate": 0.0,
+        "distinct_count": 52,
+        "is_low_cardinality": false,
+        "value_range": [
+          4000000.0,
+          4000047.0
+        ],
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "bakehouse.sales_suppliers.supplierID": {
+        "table": "bakehouse.sales_suppliers",
+        "column": "supplierID",
+        "dtype": "BIGINT",
+        "semantic_type": "measure",
+        "null_rate": 0.0,
+        "distinct_count": 30,
+        "is_low_cardinality": true,
+        "value_range": [
+          4000000.0,
+          4000026.0
+        ],
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "bakehouse.sales_suppliers.name": {
+        "table": "bakehouse.sales_suppliers",
+        "column": "name",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 29,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "Cacao Wonders",
+          "Clove Cliffs",
+          "Sugar Cane Harvest",
+          "Cardamom Cove",
+          "Oat Oasis",
+          "Raisin Ranch",
+          "Vanilla Valley",
+          "Pecan Pleasures",
+          "Poppy Peaks",
+          "Mace Meadows"
+        ],
+        "is_fk": false
+      },
+      "bakehouse.sales_suppliers.ingredient": {
+        "table": "bakehouse.sales_suppliers",
+        "column": "ingredient",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 28,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "nutmeg",
+          "vanilla",
+          "oats",
+          "raisins",
+          "cardamom",
+          "almonds",
+          "cane sugar",
+          "pecans",
+          "ginger",
+          "sesame seeds"
+        ],
+        "is_fk": false
+      },
+      "bakehouse.sales_suppliers.continent": {
+        "table": "bakehouse.sales_suppliers",
+        "column": "continent",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 6,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "Asia",
+          "Europe",
+          "South America",
+          "Africa",
+          "North America",
+          "Central America"
+        ],
+        "is_fk": false
+      },
+      "bakehouse.sales_suppliers.city": {
+        "table": "bakehouse.sales_suppliers",
+        "column": "city",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 30,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "Valencia",
+          "Florence",
+          "Ambon",
+          "Atlanta",
+          "Yangon",
+          "Kabul",
+          "Izmir",
+          "Banda Aceh",
+          "Sao Paulo",
+          "Chennai"
+        ],
+        "is_fk": false
+      },
+      "bakehouse.sales_suppliers.district": {
+        "table": "bakehouse.sales_suppliers",
+        "column": "district",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 26,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "Chinatown",
+          "Alsancak",
+          "El Poblado",
+          "Mylapore",
+          "Kazimierz",
+          "Peunayong",
+          "Anjuna Beach",
+          "Tajrish Bazaar",
+          "Piazza",
+          "Santo Spirito"
+        ],
+        "is_fk": false
+      },
+      "bakehouse.sales_suppliers.size": {
+        "table": "bakehouse.sales_suppliers",
+        "column": "size",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 5,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "bakehouse.sales_suppliers.longitude": {
+        "table": "bakehouse.sales_suppliers",
+        "column": "longitude",
+        "dtype": "DOUBLE",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 29,
+        "is_low_cardinality": true,
+        "value_range": [
+          -99.1332,
+          128.1753
+        ],
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "bakehouse.sales_suppliers.latitude": {
+        "table": "bakehouse.sales_suppliers",
+        "column": "latitude",
+        "dtype": "DOUBLE",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 28,
+        "is_low_cardinality": true,
+        "value_range": [
+          -23.5489,
+          55.9533
+        ],
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "bakehouse.sales_suppliers.approved": {
+        "table": "bakehouse.sales_suppliers",
+        "column": "approved",
+        "dtype": "BOOLEAN",
+        "semantic_type": "flag",
+        "null_rate": 0.0,
+        "distinct_count": 1,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "bakehouse.sales_transactions.transactionID": {
+        "table": "bakehouse.sales_transactions",
+        "column": "transactionID",
+        "dtype": "BIGINT",
+        "semantic_type": "measure",
+        "null_rate": 0.0,
+        "distinct_count": 4035,
+        "is_low_cardinality": false,
+        "value_range": [
+          1000000.0,
+          1003332.0
+        ],
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "bakehouse.sales_transactions.customerID": {
+        "table": "bakehouse.sales_transactions",
+        "column": "customerID",
+        "dtype": "BIGINT",
+        "semantic_type": "measure",
+        "null_rate": 0.0,
+        "distinct_count": 336,
+        "is_low_cardinality": false,
+        "value_range": [
+          2000000.0,
+          2000299.0
+        ],
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "bakehouse.sales_transactions.franchiseID": {
+        "table": "bakehouse.sales_transactions",
+        "column": "franchiseID",
+        "dtype": "BIGINT",
+        "semantic_type": "measure",
+        "null_rate": 0.0,
+        "distinct_count": 47,
+        "is_low_cardinality": false,
+        "value_range": [
+          3000000.0,
+          3000047.0
+        ],
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "bakehouse.sales_transactions.dateTime": {
+        "table": "bakehouse.sales_transactions",
+        "column": "dateTime",
+        "dtype": "TIMESTAMP WITH TIME ZONE",
+        "semantic_type": "timestamp",
+        "null_rate": 0.0,
+        "distinct_count": 3106,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "bakehouse.sales_transactions.product": {
+        "table": "bakehouse.sales_transactions",
+        "column": "product",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 6,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "Golden Gate Ginger",
+          "Tokyo Tidbits",
+          "Outback Oatmeal",
+          "Pearly Pies",
+          "Austin Almond Biscotti",
+          "Orchard Oasis"
+        ],
+        "is_fk": false
+      },
+      "bakehouse.sales_transactions.quantity": {
+        "table": "bakehouse.sales_transactions",
+        "column": "quantity",
+        "dtype": "INTEGER",
+        "semantic_type": "measure",
+        "null_rate": 0.0,
+        "distinct_count": 27,
+        "is_low_cardinality": true,
+        "value_range": [
+          1.0,
+          60.0
+        ],
+        "value_interpretation": "count",
+        "unit": "count",
+        "top_values": null,
+        "is_fk": false
+      },
+      "bakehouse.sales_transactions.unitPrice": {
+        "table": "bakehouse.sales_transactions",
+        "column": "unitPrice",
+        "dtype": "BIGINT",
+        "semantic_type": "ordinal",
+        "null_rate": 0.0,
+        "distinct_count": 1,
+        "is_low_cardinality": true,
+        "value_range": [
+          3.0,
+          3.0
+        ],
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "bakehouse.sales_transactions.totalPrice": {
+        "table": "bakehouse.sales_transactions",
+        "column": "totalPrice",
+        "dtype": "BIGINT",
+        "semantic_type": "measure",
+        "null_rate": 0.0,
+        "distinct_count": 24,
+        "is_low_cardinality": true,
+        "value_range": [
+          3.0,
+          180.0
+        ],
+        "value_interpretation": "currency amount",
+        "unit": "USD",
+        "top_values": null,
+        "is_fk": false
+      },
+      "bakehouse.sales_transactions.paymentMethod": {
+        "table": "bakehouse.sales_transactions",
+        "column": "paymentMethod",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 3,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "mastercard",
+          "amex",
+          "visa"
+        ],
+        "is_fk": false
+      },
+      "bakehouse.sales_transactions.cardNumber": {
+        "table": "bakehouse.sales_transactions",
+        "column": "cardNumber",
+        "dtype": "BIGINT",
+        "semantic_type": "measure",
+        "null_rate": 0.0,
+        "distinct_count": 2915,
+        "is_low_cardinality": false,
+        "value_range": [
+          340007480537384.0,
+          5599856254505085.0
+        ],
+        "value_interpretation": "count",
+        "unit": "count",
+        "top_values": null,
+        "is_fk": false
+      },
+      "ecommerce.customers.customer_id": {
+        "table": "ecommerce.customers",
+        "column": "customer_id",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 545,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "ecommerce.customers.full_name": {
+        "table": "ecommerce.customers",
+        "column": "full_name",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 18,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "Eve Brown",
+          "Liam Taylor",
+          "Olivia Brown",
+          "Iris Wilson",
+          "Noah Young",
+          "Bob Taylor",
+          "Ruby Jones",
+          "Sam Wilson",
+          "Paul Davis",
+          "Grace Hall"
+        ],
+        "is_fk": false
+      },
+      "ecommerce.customers.email": {
+        "table": "ecommerce.customers",
+        "column": "email",
+        "dtype": "VARCHAR",
+        "semantic_type": "text",
+        "null_rate": 0.0,
+        "distinct_count": 487,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "ecommerce.customers.city": {
+        "table": "ecommerce.customers",
+        "column": "city",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 10,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "Sydney",
+          "New York",
+          "Paris",
+          "London",
+          "Sao Paulo",
+          "Berlin",
+          "Tokyo",
+          "Toronto",
+          "Mumbai",
+          "Lagos"
+        ],
+        "is_fk": false
+      },
+      "ecommerce.customers.country": {
+        "table": "ecommerce.customers",
+        "column": "country",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 10,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "GB",
+          "JP",
+          "US",
+          "IN",
+          "AU",
+          "CA",
+          "FR",
+          "BR",
+          "NG",
+          "DE"
+        ],
+        "is_fk": false
+      },
+      "ecommerce.customers.signup_date": {
+        "table": "ecommerce.customers",
+        "column": "signup_date",
+        "dtype": "DATE",
+        "semantic_type": "timestamp",
+        "null_rate": 0.0,
+        "distinct_count": 481,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "ecommerce.customers.lifetime_orders": {
+        "table": "ecommerce.customers",
+        "column": "lifetime_orders",
+        "dtype": "BIGINT",
+        "semantic_type": "measure",
+        "null_rate": 0.0,
+        "distinct_count": 45,
+        "is_low_cardinality": false,
+        "value_range": [
+          0.0,
+          49.0
+        ],
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "ecommerce.customers.lifetime_spend": {
+        "table": "ecommerce.customers",
+        "column": "lifetime_spend",
+        "dtype": "DECIMAL(18,2)",
+        "semantic_type": "measure",
+        "null_rate": 0.0,
+        "distinct_count": 570,
+        "is_low_cardinality": false,
+        "value_range": [
+          22.5,
+          9835.0
+        ],
+        "value_interpretation": "currency amount",
+        "unit": "USD",
+        "top_values": null,
+        "is_fk": false
+      },
+      "ecommerce.order_items.item_id": {
+        "table": "ecommerce.order_items",
+        "column": "item_id",
+        "dtype": "BIGINT",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 10607,
+        "is_low_cardinality": false,
+        "value_range": [
+          1.0,
+          12000.0
+        ],
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "ecommerce.order_items.order_id": {
+        "table": "ecommerce.order_items",
+        "column": "order_id",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 4942,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "ecommerce.order_items.product_id": {
+        "table": "ecommerce.order_items",
+        "column": "product_id",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 134,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "ecommerce.order_items.quantity": {
+        "table": "ecommerce.order_items",
+        "column": "quantity",
+        "dtype": "BIGINT",
+        "semantic_type": "ordinal",
+        "null_rate": 0.0,
+        "distinct_count": 5,
+        "is_low_cardinality": true,
+        "value_range": [
+          1.0,
+          5.0
+        ],
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "ecommerce.order_items.unit_price": {
+        "table": "ecommerce.order_items",
+        "column": "unit_price",
+        "dtype": "DECIMAL(18,2)",
+        "semantic_type": "measure",
+        "null_rate": 0.0,
+        "distinct_count": 2890,
+        "is_low_cardinality": false,
+        "value_range": [
+          9.99,
+          299.89
+        ],
+        "value_interpretation": "currency amount",
+        "unit": "USD",
+        "top_values": null,
+        "is_fk": false
+      },
+      "ecommerce.order_items.line_total": {
+        "table": "ecommerce.order_items",
+        "column": "line_total",
+        "dtype": "DECIMAL(18,2)",
+        "semantic_type": "measure",
+        "null_rate": 0.0,
+        "distinct_count": 3439,
+        "is_low_cardinality": false,
+        "value_range": [
+          9.99,
+          1497.95
+        ],
+        "value_interpretation": "currency amount",
+        "unit": "USD",
+        "top_values": null,
+        "is_fk": false
+      },
+      "ecommerce.orders.order_id": {
+        "table": "ecommerce.orders",
+        "column": "order_id",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 4942,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "ecommerce.orders.customer_id": {
+        "table": "ecommerce.orders",
+        "column": "customer_id",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 545,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "ecommerce.orders.status": {
+        "table": "ecommerce.orders",
+        "column": "status",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 6,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "delivered",
+          "shipped",
+          "cancelled",
+          "refunded",
+          "processing",
+          "pending"
+        ],
+        "is_fk": false
+      },
+      "ecommerce.orders.total_amount": {
+        "table": "ecommerce.orders",
+        "column": "total_amount",
+        "dtype": "DECIMAL(18,2)",
+        "semantic_type": "measure",
+        "null_rate": 0.0,
+        "distinct_count": 7695,
+        "is_low_cardinality": false,
+        "value_range": [
+          15.0,
+          499.9
+        ],
+        "value_interpretation": "currency amount",
+        "unit": "USD",
+        "top_values": null,
+        "is_fk": false
+      },
+      "ecommerce.orders.order_date": {
+        "table": "ecommerce.orders",
+        "column": "order_date",
+        "dtype": "DATE",
+        "semantic_type": "timestamp",
+        "null_rate": 0.0,
+        "distinct_count": 886,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "ecommerce.orders.shipped_at": {
+        "table": "ecommerce.orders",
+        "column": "shipped_at",
+        "dtype": "DATE",
+        "semantic_type": "timestamp",
+        "null_rate": 0.28,
+        "distinct_count": 839,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "ecommerce.orders.delivered_at": {
+        "table": "ecommerce.orders",
+        "column": "delivered_at",
+        "dtype": "DATE",
+        "semantic_type": "timestamp",
+        "null_rate": 0.5,
+        "distinct_count": 520,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "ecommerce.orders.payment_method": {
+        "table": "ecommerce.orders",
+        "column": "payment_method",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 5,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "card",
+          "crypto",
+          "paypal",
+          "bank_transfer",
+          "apple_pay"
+        ],
+        "is_fk": false
+      },
+      "ecommerce.orders.item_count": {
+        "table": "ecommerce.orders",
+        "column": "item_count",
+        "dtype": "BIGINT",
+        "semantic_type": "ordinal",
+        "null_rate": 0.0,
+        "distinct_count": 5,
+        "is_low_cardinality": true,
+        "value_range": [
+          1.0,
+          5.0
+        ],
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "ecommerce.products.product_id": {
+        "table": "ecommerce.products",
+        "column": "product_id",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 134,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "ecommerce.products.product_name": {
+        "table": "ecommerce.products",
+        "column": "product_name",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 20,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "Mechanical Keyboard Basic",
+          "Phone Case Pro",
+          "Running Shoes Plus",
+          "Standing Desk Pro",
+          "Water Bottle Plus",
+          "Yoga Mat Elite",
+          "Laptop Stand Lite",
+          "Wireless Headphones Lite",
+          "USB Hub Elite",
+          "Coffee Maker Basic"
+        ],
+        "is_fk": false
+      },
+      "ecommerce.products.category": {
+        "table": "ecommerce.products",
+        "column": "category",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 5,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "Apparel",
+          "Accessories",
+          "Office",
+          "Electronics",
+          "Kitchen",
+          "Fitness"
+        ],
+        "is_fk": false
+      },
+      "ecommerce.products.price": {
+        "table": "ecommerce.products",
+        "column": "price",
+        "dtype": "DECIMAL(18,2)",
+        "semantic_type": "measure",
+        "null_rate": 0.0,
+        "distinct_count": 138,
+        "is_low_cardinality": false,
+        "value_range": [
+          13.19,
+          299.09
+        ],
+        "value_interpretation": "currency amount",
+        "unit": "USD",
+        "top_values": null,
+        "is_fk": false
+      },
+      "ecommerce.products.stock_quantity": {
+        "table": "ecommerce.products",
+        "column": "stock_quantity",
+        "dtype": "BIGINT",
+        "semantic_type": "measure",
+        "null_rate": 0.0,
+        "distinct_count": 158,
+        "is_low_cardinality": false,
+        "value_range": [
+          1.0,
+          496.0
+        ],
+        "value_interpretation": "count",
+        "unit": "count",
+        "top_values": null,
+        "is_fk": false
+      },
+      "ecommerce.products.is_out_of_stock": {
+        "table": "ecommerce.products",
+        "column": "is_out_of_stock",
+        "dtype": "BOOLEAN",
+        "semantic_type": "flag",
+        "null_rate": 0.0,
+        "distinct_count": 1,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "ecommerce.reviews.review_id": {
+        "table": "ecommerce.reviews",
+        "column": "review_id",
+        "dtype": "BIGINT",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 3075,
+        "is_low_cardinality": false,
+        "value_range": [
+          1.0,
+          3000.0
+        ],
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "ecommerce.reviews.order_id": {
+        "table": "ecommerce.reviews",
+        "column": "order_id",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 1010,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "ecommerce.reviews.customer_id": {
+        "table": "ecommerce.reviews",
+        "column": "customer_id",
+        "dtype": "VARCHAR",
+        "semantic_type": "key",
+        "null_rate": 0.0,
+        "distinct_count": 545,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": true
+      },
+      "ecommerce.reviews.rating": {
+        "table": "ecommerce.reviews",
+        "column": "rating",
+        "dtype": "BIGINT",
+        "semantic_type": "ordinal",
+        "null_rate": 0.0,
+        "distinct_count": 5,
+        "is_low_cardinality": true,
+        "value_range": [
+          1.0,
+          5.0
+        ],
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      },
+      "ecommerce.reviews.review_text": {
+        "table": "ecommerce.reviews",
+        "column": "review_text",
+        "dtype": "VARCHAR",
+        "semantic_type": "dimension",
+        "null_rate": 0.0,
+        "distinct_count": 13,
+        "is_low_cardinality": true,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": [
+          "Poor quality",
+          "Would not recommend",
+          "Not as described",
+          "Disappointed",
+          "Would recommend",
+          "Great product!",
+          "Exactly as described",
+          "Fast shipping, happy!",
+          "Average product",
+          "Decent but overpriced"
+        ],
+        "is_fk": false
+      },
+      "ecommerce.reviews.review_date": {
+        "table": "ecommerce.reviews",
+        "column": "review_date",
+        "dtype": "DATE",
+        "semantic_type": "timestamp",
+        "null_rate": 0.0,
+        "distinct_count": 345,
+        "is_low_cardinality": false,
+        "value_range": null,
+        "value_interpretation": null,
+        "unit": null,
+        "top_values": null,
+        "is_fk": false
+      }
+    }
   }
 }

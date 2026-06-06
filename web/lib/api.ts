@@ -849,8 +849,9 @@ export interface DomainInsights {
   angles_covered: string[];
 }
 
-export async function getDomainInsights(connectionId: string): Promise<Record<string, DomainInsights>> {
-  const res = await fetch(`${BASE}/exploration/${encodeURIComponent(connectionId)}/domains`);
+export async function getDomainInsights(connectionId: string, schema?: string): Promise<Record<string, DomainInsights>> {
+  const params = schema ? `?schema=${encodeURIComponent(schema)}` : "";
+  const res = await fetch(`${BASE}/exploration/${encodeURIComponent(connectionId)}/domains${params}`);
   if (!res.ok) throw new Error("Failed to fetch domain insights");
   return res.json();
 }
@@ -1731,8 +1732,12 @@ export interface PatternsResponse {
   count: number;
 }
 
-export async function getPatterns(connectionId: string, refresh = false): Promise<PatternsResponse> {
-  const url = `${BASE}/exploration/${encodeURIComponent(connectionId)}/patterns${refresh ? "?refresh=true" : ""}`;
+export async function getPatterns(connectionId: string, refresh = false, schema?: string): Promise<PatternsResponse> {
+  const q = new URLSearchParams();
+  if (refresh) q.set("refresh", "true");
+  if (schema) q.set("schema", schema);
+  const qs = q.toString() ? `?${q.toString()}` : "";
+  const url = `${BASE}/exploration/${encodeURIComponent(connectionId)}/patterns${qs}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error("Failed to fetch patterns");
   return res.json();
@@ -1759,9 +1764,105 @@ export interface BriefingNarrativeResponse {
 export async function generateBriefingNarrative(
   connectionId: string,
   refresh = false,
+  schema?: string,
 ): Promise<BriefingNarrativeResponse> {
-  const url = `${BASE}/exploration/${encodeURIComponent(connectionId)}/briefing${refresh ? "?refresh=true" : ""}`;
+  const q = new URLSearchParams();
+  if (refresh) q.set("refresh", "true");
+  if (schema) q.set("schema", schema);
+  const qs = q.toString() ? `?${q.toString()}` : "";
+  const url = `${BASE}/exploration/${encodeURIComponent(connectionId)}/briefing${qs}`;
   const res = await fetch(url, { method: "POST" });
   if (!res.ok) throw new Error("Failed to generate briefing narrative");
+  return res.json();
+}
+
+// ── Explorer Control ────────────────────────────────────────────────────────────
+
+export interface ExplorerStatus {
+  connection_id: string;
+  phase: string;
+  paused: boolean;
+  tables_total: number;
+  columns_total: number;
+  joins_total: number;
+  null_meanings_resolved: number;
+  joins_verified: number;
+  lifecycles_mapped: number;
+  distributions_profiled: number;
+  insights_found: number;
+  queries_executed: number;
+  facts_discovered: number;
+  started_at: string | null;
+  completed_at: string | null;
+  error: string | null;
+}
+
+export async function getExplorerStatus(connectionId: string): Promise<ExplorerStatus> {
+  const res = await fetch(`${BASE}/exploration/${encodeURIComponent(connectionId)}/status`);
+  if (!res.ok) throw new Error("Failed to fetch explorer status");
+  return res.json();
+}
+
+export async function startExplorer(connectionId: string): Promise<{ ok: boolean; reason?: string }> {
+  const res = await fetch(`${BASE}/exploration/${encodeURIComponent(connectionId)}/start`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to start explorer");
+  return res.json();
+}
+
+export async function stopExplorer(connectionId: string): Promise<{ ok: boolean }> {
+  const res = await fetch(`${BASE}/exploration/${encodeURIComponent(connectionId)}/stop`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to stop explorer");
+  return res.json();
+}
+
+export async function restartExplorer(connectionId: string): Promise<{ ok: boolean }> {
+  const res = await fetch(`${BASE}/exploration/${encodeURIComponent(connectionId)}/restart`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to restart explorer");
+  return res.json();
+}
+
+export async function resetExplorer(connectionId: string): Promise<{ ok: boolean; reset: boolean }> {
+  const res = await fetch(`${BASE}/exploration/${encodeURIComponent(connectionId)}/reset`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to reset explorer");
+  return res.json();
+}
+
+export async function triggerDomainIntelligence(connectionId: string): Promise<{ ok: boolean; reason?: string }> {
+  const res = await fetch(`${BASE}/exploration/${encodeURIComponent(connectionId)}/trigger-intel`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to trigger domain intelligence");
+  return res.json();
+}
+
+// ── Platform monitoring ───────────────────────────────────────────────────────
+
+export interface PlatformMetrics {
+  uptime_seconds: number;
+  counters: Record<string, number>;
+  timings: Record<string, { total_ms: number; count: number; avg_ms: number }>;
+  derived: {
+    rag_hit_rate: number | null;
+    sql_correction_success_rate: number | null;
+  };
+}
+
+export async function getPlatformMetrics(): Promise<PlatformMetrics> {
+  const res = await fetch(`${BASE}/dev/stats`);
+  if (!res.ok) throw new Error("Failed to fetch platform metrics");
+  return res.json();
+}
+
+export interface AuditStats {
+  total: number;
+  blocked: number;
+  allowed: number;
+  pii_redactions: number;
+  by_connection: Record<string, { total: number; blocked: number }>;
+}
+
+export async function getAuditStats(connectionId?: string): Promise<AuditStats> {
+  const params = new URLSearchParams();
+  if (connectionId) params.set("connection_id", connectionId);
+  const res = await fetch(`${BASE}/security/audit/stats?${params}`);
+  if (!res.ok) throw new Error("Failed to fetch audit stats");
   return res.json();
 }

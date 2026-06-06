@@ -21,12 +21,19 @@ import {
   getPatterns,
   getOrgIntelligence,
   generateBriefingNarrative,
+  getCatalogTree,
+  getExplorerStatus,
+  startExplorer,
+  stopExplorer,
+  restartExplorer,
+  triggerDomainIntelligence,
   type DomainInsights,
   type ExplorationInsight,
   type Pattern,
   type OrgInsight,
   type BriefingCitation,
   type BriefingNarrativeResponse,
+  type ExplorerStatus,
 } from "@/lib/api";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -647,15 +654,20 @@ export function BriefingPanel({
   const [narrative, setNarrative]           = useState<BriefingNarrativeResponse | null>(null);
   const [narrativeLoading, setNarrativeLoading] = useState(false);
   const [narrativeError, setNarrativeError] = useState<string | null>(null);
+  const [schemas, setSchemas]                 = useState<string[]>([]);
+  const [selectedSchema, setSelectedSchema]   = useState<string | null>(null);
+  const [explorerStatus, setExplorerStatus]   = useState<ExplorerStatus | null>(null);
+  const [explorerBusy, setExplorerBusy]       = useState(false);
 
   const load = useCallback(async () => {
     if (!connectionId) return;
     setLoading(true);
     setError(null);
     try {
+      const schema = selectedSchema ?? undefined;
       const [domainRaw, patternsRes, orgInsights] = await Promise.all([
-        getDomainInsights(connectionId),
-        getPatterns(connectionId).catch(() => ({ patterns: [] as Pattern[], count: 0 })),
+        getDomainInsights(connectionId, schema),
+        getPatterns(connectionId, false, schema).catch(() => ({ patterns: [] as Pattern[], count: 0 })),
         getOrgIntelligence().catch(() => [] as OrgInsight[]),
       ]);
       setBriefing(synthesize(domainRaw, patternsRes.patterns, orgInsights));
@@ -664,14 +676,14 @@ export function BriefingPanel({
     } finally {
       setLoading(false);
     }
-  }, [connectionId]);
+  }, [connectionId, selectedSchema]);
 
   const generateNarrative = useCallback(async (forceRefresh = false) => {
     if (!connectionId) return;
     setNarrativeLoading(true);
     setNarrativeError(null);
     try {
-      const result = await generateBriefingNarrative(connectionId, forceRefresh);
+      const result = await generateBriefingNarrative(connectionId, forceRefresh, selectedSchema ?? undefined);
       if (result.available) setNarrative(result);
       else setNarrativeError("No domain intelligence available — run an exploration first.");
     } catch (e) {
@@ -679,15 +691,43 @@ export function BriefingPanel({
     } finally {
       setNarrativeLoading(false);
     }
-  }, [connectionId]);
+  }, [connectionId, selectedSchema]);
 
   useEffect(() => { load(); }, [load]);
 
-  // Auto-fetch cached narrative (no force-refresh) on mount
+  // Fetch available schemas for this connection
+  useEffect(() => {
+    if (!connectionId) { setSchemas([]); setSelectedSchema(null); return; }
+    getCatalogTree()
+      .then(tree => {
+        const entry = tree.sections.flatMap(s => s.entries).find(e => e.conn_id === connectionId);
+        const names = entry?.schemas.map(s => s.name) ?? [];
+        setSchemas(names);
+        // If only one schema, auto-select it; otherwise keep previous or null
+        if (names.length === 1) setSelectedSchema(names[0]);
+      })
+      .catch(() => setSchemas([]));
+  }, [connectionId]);
+
+  // Auto-fetch cached narrative (no force-refresh) on mount / schema change
   useEffect(() => {
     if (!connectionId || narrative !== null) return;
     generateNarrative(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectionId, selectedSchema]);
+
+  // Poll explorer status every 3 seconds
+  useEffect(() => {
+    if (!connectionId) return;
+    let mounted = true;
+    const poll = () => {
+      getExplorerStatus(connectionId)
+        .then(s => { if (mounted) setExplorerStatus(s); })
+        .catch(() => { if (mounted) setExplorerStatus(null); });
+    };
+    poll();
+    const iv = setInterval(poll, 3000);
+    return () => { mounted = false; clearInterval(iv); };
   }, [connectionId]);
 
   if (loading)  return <BriefingLoading />;
@@ -700,18 +740,112 @@ export function BriefingPanel({
     );
   }
 
-  if (!briefing || briefing.totalInsights === 0) return <BriefingEmpty />;
-
-  const hasPatterns    = briefing.patterns.length > 0;
-  const hasOrgInsights = briefing.orgInsights.length > 0;
-  const hasSidebar     = hasPatterns || hasOrgInsights || briefing.domainCount > 0;
+  const hasPatterns    = (briefing?.patterns?.length ?? 0) > 0;
+  const hasOrgInsights = (briefing?.orgInsights?.length ?? 0) > 0;
+  const hasSidebar     = hasPatterns || hasOrgInsights || ((briefing?.domainCount ?? 0) > 0);
   const hasNarrative   = !!narrative?.narrative;
+  const isEmpty        = !briefing || briefing.totalInsights === 0;
 
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: "20px 28px" }}>
 
+      {/* ── Explorer control bar ── */}
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16, padding: "8px 12px", borderRadius: "var(--r2)", background: "var(--bg-2)", border: "1px solid var(--b1)" }}>
+        <span style={{ fontSize: 11, color: "var(--t3)", fontFamily: "var(--font-mono)", textTransform: "uppercase" }}>
+          Explorer
+        </span>
+        {explorerStatus ? (
+          <>
+            <span style={{
+              fontSize: 11,
+              color: explorerStatus.phase === "complete" ? "var(--grn4)" :
+                     explorerStatus.phase === "failed" ? "var(--red4)" :
+                     explorerStatus.paused ? "var(--amb4)" : "var(--blue4)",
+              fontWeight: 500,
+            }}>
+              {explorerStatus.phase}
+              {explorerStatus.paused && " (paused)"}
+            </span>
+            {explorerStatus.queries_executed > 0 && (
+              <span style={{ fontSize: 11, color: "var(--t4)" }}>
+                {explorerStatus.queries_executed}q &middot; {explorerStatus.insights_found} insights
+              </span>
+            )}
+          </>
+        ) : (
+          <span style={{ fontSize: 11, color: "var(--t4)" }}>unknown</span>
+        )}
+        <div style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
+          {(!explorerStatus || explorerStatus.phase === "complete" || explorerStatus.phase === "pending" || explorerStatus.phase === "failed") ? (
+            <>
+              <button
+                disabled={explorerBusy}
+                onClick={async () => {
+                  setExplorerBusy(true);
+                  try { await startExplorer(connectionId); } catch {}
+                  setExplorerBusy(false);
+                }}
+                style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: "var(--grn2)", color: "var(--grn5)", border: "1px solid var(--grn3)", cursor: explorerBusy ? "default" : "pointer", opacity: explorerBusy ? 0.6 : 1 }}
+              >Start</button>
+              {explorerStatus?.phase === "complete" && (
+                <button
+                  disabled={explorerBusy}
+                  onClick={async () => {
+                    setExplorerBusy(true);
+                    try { await triggerDomainIntelligence(connectionId); } catch {}
+                    setExplorerBusy(false);
+                  }}
+                  style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: "var(--blue2)", color: "var(--blue5)", border: "1px solid var(--blue3)", cursor: explorerBusy ? "default" : "pointer", opacity: explorerBusy ? 0.6 : 1 }}
+                >Trigger Intel</button>
+              )}
+            </>
+          ) : (
+            <>
+              <button
+                disabled={explorerBusy}
+                onClick={async () => {
+                  setExplorerBusy(true);
+                  try { await stopExplorer(connectionId); } catch {}
+                  setExplorerBusy(false);
+                }}
+                style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: "var(--red2)", color: "var(--red5)", border: "1px solid var(--red3)", cursor: explorerBusy ? "default" : "pointer", opacity: explorerBusy ? 0.6 : 1 }}
+              >Stop</button>
+              <button
+                disabled={explorerBusy}
+                onClick={async () => {
+                  setExplorerBusy(true);
+                  try { await restartExplorer(connectionId); } catch {}
+                  setExplorerBusy(false);
+                }}
+                style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: "var(--bg-3)", color: "var(--t3)", border: "1px solid var(--b2)", cursor: explorerBusy ? "default" : "pointer", opacity: explorerBusy ? 0.6 : 1 }}
+              >Restart</button>
+            </>
+          )}
+        </div>
+      </div>
+
+      {isEmpty ? (
+        <BriefingEmpty />
+      ) : (
+        <>
+
       {/* ── Meta strip ── */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+        {schemas.length > 1 && (
+          <select
+            value={selectedSchema ?? ""}
+            onChange={e => setSelectedSchema(e.target.value || null)}
+            style={{
+              fontSize: 11, color: "var(--t1)", background: "var(--bg-1)",
+              border: "1px solid var(--b1)", borderRadius: 4, padding: "3px 8px", cursor: "pointer",
+            }}
+          >
+            <option value="">All schemas</option>
+            {schemas.map(s => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
+        )}
         <span style={{ fontSize: 11, color: "var(--t3)" }}>
           Synthesized from{" "}
           <span style={{ color: "var(--t2)", fontWeight: 500 }}>{briefing.domainCount} domains</span>
@@ -877,6 +1011,8 @@ export function BriefingPanel({
           </div>
         )}
       </div>
+    </>
+  )}
 
       {/* Spinner keyframe */}
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>

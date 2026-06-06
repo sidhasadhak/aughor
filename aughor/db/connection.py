@@ -649,18 +649,39 @@ def _pg_type_name(oid: int) -> str:
         return _security_post(conn_id, hypothesis_id, sql, result, elapsed_ms)
 
     def get_schema(self) -> str:
-        from aughor.tools.schema import build_schema_context, _compute_join_map, _parse_schema_tables
-        from aughor.tools.profile_cache import get_or_build_profiles
-        from aughor.tools.profiler import render_profile_annotations
+        """Fast schema introspection — returns immediately. Never blocks on profiles, ontology, or LLM calls."""
+        from aughor.tools.schema import build_schema_context
 
-        # Build base schema string first (needed for join inference + fk_hints)
         base = build_schema_context(
             self._conn,
             schema_name=self._schema_name,
             connection_id=self._connection_id or "fixture",
         )
 
-        # Extract table list and fk hints from the join map — filter by schema if known
+        # Append exploration intelligence block (reads from disk — no DB calls)
+        try:
+            from aughor.explorer.store import render_exploration_annotations
+            expl_block = render_exploration_annotations(self._connection_id or "fixture")
+            if expl_block:
+                base += "\n\n" + expl_block
+        except Exception:
+            pass
+
+        return base
+
+    def build_intelligence(self) -> str:
+        """Heavy path: profiles + ontology + enrichment. Call this from a background task, never on the hot path."""
+        from aughor.tools.schema import build_schema_context, _compute_join_map, _parse_schema_tables
+        from aughor.tools.profile_cache import get_or_build_profiles
+        from aughor.tools.profiler import render_profile_annotations
+
+        base = build_schema_context(
+            self._conn,
+            schema_name=self._schema_name,
+            connection_id=self._connection_id or "fixture",
+        )
+
+        # Extract table list and fk hints from the join map
         if self._schema_name:
             tables = [
                 row[0] for row in self._conn.execute(
@@ -670,8 +691,6 @@ def _pg_type_name(oid: int) -> str:
                 ).fetchall()
             ]
         else:
-            # No schema configured — scan all user schemas (handles multi-schema
-            # DuckDB files like samples.duckdb where tables are in 'ecommerce').
             tables = [
                 row[0] for row in self._conn.execute(
                     "SELECT table_name FROM information_schema.tables "
@@ -680,12 +699,10 @@ def _pg_type_name(oid: int) -> str:
                 ).fetchall()
             ]
         table_cols = _parse_schema_tables(base)
-        from aughor.tools.schema import _compute_join_map
         jmap = _compute_join_map(table_cols)
         fk_hints: dict[str, set[str]] = {t: set() for t in tables}
         for j in jmap.get("joins", []):
             fk_hints.setdefault(j["t1"], set()).add(j["c1"])
-            # t2.c2 is the PK target — do NOT mark it as FK
 
         try:
             tp, cp = get_or_build_profiles(self, self._connection_id or "fixture", tables, fk_hints)
@@ -695,7 +712,6 @@ def _pg_type_name(oid: int) -> str:
             if annotation:
                 base += "\n\n" + annotation
 
-            # Build structural ontology from profiles + join map + glossary
             from aughor.ontology.store import get_or_build_ontology, save_ontology
             from aughor.ontology.builder import render_ontology_annotations
             from aughor.semantic.glossary import load_merged_glossary
@@ -710,7 +726,6 @@ def _pg_type_name(oid: int) -> str:
                 glossary=_glossary,
             )
             if graph is not None:
-                # M12b: semantic enrichment — re-run when prompt/schema version changes
                 from aughor.ontology.enricher import ENRICHMENT_VERSION
                 from aughor.stats import stats as _st
                 if not graph.enriched or graph.enrichment_version < ENRICHMENT_VERSION:
@@ -723,19 +738,18 @@ def _pg_type_name(oid: int) -> str:
                         )
                         save_ontology(graph.connection_id, graph.schema_name, graph.schema_fingerprint, graph)
                     except Exception:
-                        pass  # structural ontology still works
+                        pass
                 else:
                     _st.inc("enrichment_cache_hits")
-                # Merge verified exploration findings (lifecycle + join confidence)
                 _apply_explorer_to_ontology(graph, self._connection_id or "fixture")
                 self._ontology = graph
                 onto_block = render_ontology_annotations(graph)
                 if onto_block:
                     base += "\n\n" + onto_block
         except Exception:
-            pass  # profiler + ontology are best-effort — never block schema loading
+            pass
 
-        # Append exploration intelligence block (null meanings, insights, broken joins)
+        # Append exploration intelligence block
         try:
             from aughor.explorer.store import render_exploration_annotations
             expl_block = render_exploration_annotations(self._connection_id or "fixture")

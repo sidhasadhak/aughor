@@ -20,22 +20,22 @@ const AUG_THEME: Parameters<typeof ConfigProvider>[0]["theme"] = {
   algorithm: theme.darkAlgorithm,
   token: {
     // Backgrounds
-    colorBgBase:         "#0C0D0E",   // --bg-0
-    colorBgContainer:    "#161719",   // --bg-2
-    colorBgElevated:     "#1C1D1F",   // --bg-3
-    colorBgLayout:       "#0C0D0E",
+    colorBgBase:         "#0D1117",   // --bg-0
+    colorBgContainer:    "#111418",   // --bg-1
+    colorBgElevated:     "#161A20",   // --bg-2
+    colorBgLayout:       "#0D1117",
     // Borders
-    colorBorder:         "#212325",   // --b1
-    colorBorderSecondary:"#161719",   // --b0
-    colorSplit:          "#161719",
+    colorBorder:         "#1E2329",   // --b1
+    colorBorderSecondary:"#161A20",   // --b0
+    colorSplit:          "#161A20",
     // Text
-    colorText:           "#E3E5E9",   // --t1
-    colorTextSecondary:  "#9DA1A8",   // --t2
-    colorTextDescription:"#5E626A",   // --t3
-    colorTextDisabled:   "#393D44",   // --t4
+    colorText:           "#E2E4E9",   // --t1
+    colorTextSecondary:  "#8B929D",   // --t2
+    colorTextDescription:"#5A6270",   // --t3
+    colorTextDisabled:   "#3A414D",   // --t4
     // Brand
-    colorPrimary:        "#4C8EEE",   // --blue4
-    colorPrimaryHover:   "#88BAFF",   // --blue5
+    colorPrimary:        "#0C8CE9",   // --blue3
+    colorPrimaryHover:   "#4BA3F5",   // --blue4
     // Misc
     fontSize:            12,
     fontFamily:          "'DM Sans', system-ui, sans-serif",
@@ -47,28 +47,26 @@ const AUG_THEME: Parameters<typeof ConfigProvider>[0]["theme"] = {
   components: {
     Table: {
       // Header
-      headerBg:             "#1C1D1F",   // --bg-3
-      headerColor:          "#5E626A",   // --t3 — same as aug-label
-      headerSortActiveBg:   "#1C1D1F",
-      headerSortHoverBg:    "#26282B",   // --bg-4
-      headerSplitColor:     "#212325",   // --b1
+      headerBg:             "#161A20",   // --bg-2
+      headerColor:          "#5A6270",   // --t3
+      headerSortActiveBg:   "#161A20",
+      headerSortHoverBg:    "#1C2128",   // --bg-3
+      headerSplitColor:     "#1E2329",   // --b1
       // Rows
-      rowHoverBg:           "rgba(255, 255, 255, 0.04)",   // --bg-hover
-      rowSelectedBg:        "rgba(45, 114, 210, 0.15)",    // --bg-sel
-      rowSelectedHoverBg:   "rgba(45, 114, 210, 0.20)",
-      bodySortBg:           "#161719",
+      rowHoverBg:           "rgba(255, 255, 255, 0.035)",
+      rowSelectedBg:        "rgba(12, 140, 233, 0.10)",    // --bg-sel
+      rowSelectedHoverBg:   "rgba(12, 140, 233, 0.18)",
+      bodySortBg:           "#111418",
       // Borders
-      borderColor:          "#161719",   // --b0
+      borderColor:          "#161A20",   // --b0
       // Cell sizing
       cellFontSize:         12,
       cellPaddingInline:    14,
       cellPaddingBlock:     9,
-      // Sort icon
-      // filterDropdownBg: "#1C2839",
     },
     Pagination: {
-      colorBgContainer:    "#161719",
-      itemActiveBg:        "rgba(45, 114, 210, 0.15)",
+      colorBgContainer:    "#111418",
+      itemActiveBg:        "rgba(12, 140, 233, 0.12)",
     },
   },
 };

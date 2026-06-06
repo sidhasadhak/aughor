@@ -154,7 +154,7 @@ def get_or_build_profiles(
                 # SELECT-wrapped DESCRIBE passes the SELECT-only validator
                 r = conn.execute(
                     "__profiler__",
-                    f'SELECT COUNT(*) FROM (DESCRIBE "{table}")',
+                    f'SELECT COUNT(*) FROM (DESCRIBE {table})',
                 )
                 col_counts[table] = int(r.rows[0][0]) if not r.error and r.rows else 0
             else:

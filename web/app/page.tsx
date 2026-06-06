@@ -362,7 +362,7 @@ function Topbar({
       <div style={{ display: "flex", alignItems: "center", gap: 9, width: 224, flexShrink: 0 }}>
         <AughorLogo />
         <div>
-          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)", letterSpacing: ".01em" }}>
+          <div style={{ fontSize: 16, fontWeight: 600, color: "var(--t1)", letterSpacing: ".01em" }}>
             Aughor
           </div>
           {/* <div style={{ fontSize: 11, color: "var(--t4)", letterSpacing: ".06em", textTransform: "uppercase", marginTop: -1 }}>
@@ -760,7 +760,7 @@ function HomeScreen({
                 </thead>
                 <tbody>
                   {recentInvs.slice(0, 5).map((inv) => (
-                    <tr key={inv.id} style={{ cursor: "pointer" }} onClick={() => onOpenInvestigation(inv.id, (inv as any).kind === "chat" ? "chat" : "investigation", inv.connection_id, inv.canvas_id)}>
+                    <tr key={inv.id} style={{ cursor: "pointer" }} onClick={() => onOpenInvestigation(inv.id, "investigation", inv.connection_id, inv.canvas_id)}>
                       <td style={{ maxWidth: 400 }}>
                         <div style={{ fontSize: 12, color: "var(--t1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "var(--font-ui)" }}>{inv.question}</div>
                         {inv.headline && <div style={{ fontSize: 10, color: "var(--t3)", marginTop: 2 }}>{inv.headline}</div>}
@@ -1186,7 +1186,7 @@ function AddConnectionForm({
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.65)", backdropFilter: "blur(3px)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div style={{ width: "100%", maxWidth: 460, background: "var(--bg-3)", border: "1px solid var(--b2)", borderRadius: "var(--r3)", padding: 24, display: "flex", flexDirection: "column", gap: 16, maxHeight: "90vh", overflowY: "auto" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)" }}>Add Connection</span>
+          <span style={{ fontSize: 16, fontWeight: 600, color: "var(--t1)" }}>Add Connection</span>
           <button onClick={onCancel} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--t3)" }}>
             <NavIcon name="close" size={14} />
           </button>
@@ -1308,7 +1308,7 @@ function DeleteConnModal({
             <NavIcon name="trash" size={14} color="var(--red4)" />
           </div>
           <div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)" }}>Remove connection</div>
+            <div style={{ fontSize: 16, fontWeight: 600, color: "var(--t1)" }}>Remove connection</div>
             <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 3, lineHeight: 1.5 }}>
               This removes <span style={{ color: "var(--t2)" }}>{conn.name}</span> from Aughor. The database is not affected.
             </div>

@@ -329,14 +329,20 @@ def _parse_columns(conn: "DatabaseConnection", table: str) -> list[tuple[str, st
             # Wrap DESCRIBE in a subquery so it passes the SELECT-only validator
             r = conn.execute(
                 "__profiler__",
-                f'SELECT column_name, column_type FROM (DESCRIBE "{table}")',
+                f'SELECT column_name, column_type FROM (DESCRIBE {table})',
             )
             if r.error or not r.rows:
                 # Fallback: information_schema (works on DuckDB too)
+                parts = table.split('.') if ('.' in table and not table.startswith('"')) else [None, table]
+                schema_part = parts[0] if len(parts) > 1 else getattr(conn, "_schema_name", None)
+                table_part = parts[-1]
+                where = f"WHERE table_name = '{table_part}'"
+                if schema_part:
+                    where += f" AND table_schema = '{schema_part}'"
                 r = conn.execute(
                     "__profiler__",
                     f"SELECT column_name, data_type FROM information_schema.columns "
-                    f"WHERE table_name = '{table}' ORDER BY ordinal_position",
+                    f"{where} ORDER BY ordinal_position",
                 )
             if r.error or not r.rows:
                 return []
@@ -437,6 +443,14 @@ def _q(name: str) -> str:
     return f'"{name}"'
 
 
+def _qt(table: str) -> str:
+    """Quote a table identifier, handling schema.table format."""
+    if '.' in table and not table.startswith('"'):
+        parts = table.split('.')
+        return '.'.join(f'"{p}"' for p in parts)
+    return _q(table)
+
+
 def _safe_float(v) -> Optional[float]:
     try:
         return float(v)
@@ -502,6 +516,12 @@ def _catalog_stats_duckdb(
     Returns (row_count, {col: {approx_unique, null_pct, min, max, q25, q50, q75}}).
     Zero full-table scans — both queries read only catalog metadata.
     """
+    # If table is schema.table, split it (embedded schema wins over passed schema)
+    if '.' in table and not table.startswith('"'):
+        parts = table.split('.')
+        schema = parts[0]
+        table = parts[1]
+
     # ── Row count from catalog ────────────────────────────────────────────────
     if schema:
         rc_sql = (
@@ -523,7 +543,7 @@ def _catalog_stats_duckdb(
             pass
 
     # ── SUMMARIZE — one query, all column stats ───────────────────────────────
-    qt = f'"{schema}"."{table}"' if schema else f'"{table}"'
+    qt = _qt(f'{schema}.{table}' if schema else table)
     sum_sql = f"SELECT * FROM (SUMMARIZE {qt})"
     col_stats: dict = {}
     r2 = conn.execute("__profiler__", sum_sql)
@@ -580,6 +600,12 @@ def _catalog_stats_postgres(
     column stats from pg_stats (pre-computed by autovacuum, zero scan).
     Returns (row_count_estimate, {col: {null_frac, n_distinct, top_vals, val_min, val_max}}).
     """
+    # If table is schema.table, split it (embedded schema wins)
+    if '.' in table and not table.startswith('"'):
+        parts = table.split('.')
+        schema = parts[0]
+        table = parts[1]
+
     # ── Row count estimate from catalog ──────────────────────────────────────
     row_count: Optional[int] = None
     r = conn.execute(
@@ -691,7 +717,7 @@ def build_table_profile(
     effective_date_range: Optional[tuple] = None
     freshness_lag_hours: Optional[float] = None
 
-    qt = _q(table)
+    qt = _qt(table)
     fast_stats = fast_stats or {}
 
     # ── 1. Row count ──────────────────────────────────────────────────────────
@@ -856,7 +882,7 @@ def build_column_profiles(
     if not columns or row_count == 0:
         return []
 
-    qt = _q(table)
+    qt = _qt(table)
     fast_stats = fast_stats or {}
     large = row_count > _LARGE_TABLE_THRESHOLD
 

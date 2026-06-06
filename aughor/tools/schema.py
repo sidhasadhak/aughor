@@ -78,7 +78,7 @@ def _parse_schema_tables(schema_str: str) -> dict[str, list[str]]:
         if _SECTION_STOP.match(line):
             current = None
             continue
-        m = re.match(r"^TABLE:\s+(\w+)", line)
+        m = re.match(r"^TABLE:\s+([\w.]+)", line)
         if m:
             current = m.group(1)
             table_cols[current] = []
@@ -188,7 +188,7 @@ def build_mermaid_er(schema_str: str) -> str:
         if _SECTION_STOP.match(line):
             current = None
             continue
-        m = re.match(r"^TABLE:\s+(\w+)", line)
+        m = re.match(r"^TABLE:\s+([\w.]+)", line)
         if m:
             current = m.group(1)
             table_col_types[current] = []
@@ -249,7 +249,7 @@ def build_rich_schema(schema_str: str) -> dict:
         if _SECTION_STOP.match(line):
             current = None
             continue
-        m = re.match(r"^TABLE:\s+(\w+)\s*\(([\d,?]+|\?)?\s*rows?\)?", line)
+        m = re.match(r"^TABLE:\s+([\w.]+)\s*\(([\d,?]+|\?)?\s*rows?\)?", line)
         if m:
             current = m.group(1)
             if current not in table_col_types:
@@ -387,7 +387,7 @@ def inject_value_annotations(schema_str: str, column_profiles: dict) -> str:
     current_table: str | None = None
 
     for line in lines:
-        tm = re.match(r'^TABLE:\s+(\w+)', line)
+        tm = re.match(r'^TABLE:\s+([\w.]+)', line)
         if tm:
             current_table = tm.group(1)
             result.append(line)

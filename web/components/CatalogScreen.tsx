@@ -54,24 +54,24 @@ const TYPE_OPTIONS = [
 
 function typeColor(t: string): string {
   const u = t.toUpperCase();
-  if (u.includes("VARCHAR") || u.includes("TEXT"))                  return "#7ba8f7";
-  if (u.includes("BIGINT") || u.includes("INT"))                    return "#c084fc";
-  if (u.includes("DOUBLE") || u.includes("FLOAT") || u.includes("NUMERIC")) return "#4ade80";
-  if (u.includes("DATE") || u.includes("TIME"))                     return "#f97316";
-  if (u.includes("BOOL"))                                           return "#4ade80";
+  if (u.includes("VARCHAR") || u.includes("TEXT"))                  return "var(--blue4)";
+  if (u.includes("BIGINT") || u.includes("INT"))                    return "var(--vio4)";
+  if (u.includes("DOUBLE") || u.includes("FLOAT") || u.includes("NUMERIC")) return "var(--grn4)";
+  if (u.includes("DATE") || u.includes("TIME"))                     return "var(--amb4)";
+  if (u.includes("BOOL"))                                           return "var(--grn4)";
   return "var(--t2)";
 }
 
 // ── Distribution mini-viz (shared with exploration) ──────────────────────────
 
 const DIST_SHAPE_PILL: Record<string, { label: string; bg: string; text: string; border: string; barColor: string }> = {
-  fraction_0_1: { label: "0–1 ratio",    bg: "#1e2a1e", text: "#4ade80", border: "#2a4a2a", barColor: "#2a4a2a" },
-  normal:       { label: "Normal",        bg: "#1a1e2e", text: "#7ba8f7", border: "#2a3050", barColor: "#2a3050" },
-  concentrated: { label: "Concentrated", bg: "#2a1a2e", text: "#c084fc", border: "#3e2a50", barColor: "#4a4b5a" },
-  skewed_right: { label: "Right-skewed", bg: "#2a1e14", text: "#f97316", border: "#3e2a1e", barColor: "#3e2a1e" },
-  skewed_left:  { label: "Left-skewed",  bg: "#2a1e14", text: "#f97316", border: "#3e2a1e", barColor: "#3e2a1e" },
-  uniform:      { label: "Uniform",      bg: "#1a2a1e", text: "#4ade80", border: "#2a4a2a", barColor: "#2a4a2a" },
-  bimodal:      { label: "Bimodal",      bg: "#2a1a1a", text: "#f87171", border: "#3e2a2a", barColor: "#3e2a2a" },
+  fraction_0_1: { label: "0–1 ratio",    bg: "var(--grn1)", text: "var(--grn4)", border: "var(--grn2)", barColor: "var(--grn2)" },
+  normal:       { label: "Normal",        bg: "var(--blue1)", text: "var(--blue4)", border: "var(--blue2)", barColor: "var(--blue2)" },
+  concentrated: { label: "Concentrated", bg: "var(--vio1)", text: "var(--vio4)", border: "var(--vio2)", barColor: "var(--vio2)" },
+  skewed_right: { label: "Right-skewed", bg: "var(--amb1)", text: "var(--amb4)", border: "var(--amb2)", barColor: "var(--amb2)" },
+  skewed_left:  { label: "Left-skewed",  bg: "var(--amb1)", text: "var(--amb4)", border: "var(--amb2)", barColor: "var(--amb2)" },
+  uniform:      { label: "Uniform",      bg: "var(--grn1)", text: "var(--grn4)", border: "var(--grn2)", barColor: "var(--grn2)" },
+  bimodal:      { label: "Bimodal",      bg: "var(--red1)", text: "var(--red4)", border: "var(--red2)", barColor: "var(--red2)" },
 };
 
 function miniBarHeights(shape: string): number[] {
@@ -96,15 +96,15 @@ function fmtNum(n: number | null | undefined): string {
 
 /** Compact per-column distribution strip shown under a column row in Catalog. */
 function ColumnDistribution({ d }: { d: DistributionProfile }) {
-  const pill = DIST_SHAPE_PILL[d.shape] ?? { label: d.shape, bg: "#1a1a1e", text: "#6e6f78", border: "#2a2b30", barColor: "#2a2b35" };
+  const pill = DIST_SHAPE_PILL[d.shape] ?? { label: d.shape, bg: "var(--bg-1)", text: "var(--t3)", border: "var(--b1)", barColor: "var(--b2)" };
   const barH = miniBarHeights(d.shape);
   const maxH = Math.max(...barH);
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "6px 16px 8px 30px", background: "#0c0e13", borderBottom: "0.5px solid #111115" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "6px 16px 8px 30px", background: "var(--bg-0)", borderBottom: "0.5px solid var(--b0)" }}>
       {/* mini histogram */}
       <div style={{ display: "flex", alignItems: "flex-end", gap: 1.5, height: 24, width: 64, flexShrink: 0 }}>
         {barH.map((h, i) => (
-          <div key={i} style={{ flex: 1, height: `${h}px`, background: h >= maxH * 0.6 ? pill.barColor : "#2a2b35", borderRadius: "2px 2px 0 0" }} />
+          <div key={i} style={{ flex: 1, height: `${h}px`, background: h >= maxH * 0.6 ? pill.barColor : "var(--b2)", borderRadius: "2px 2px 0 0" }} />
         ))}
       </div>
       {/* percentiles */}
@@ -131,19 +131,19 @@ function ColumnDistribution({ d }: { d: DistributionProfile }) {
 }
 
 const CONN_TAG: Record<string, { label: string; color: string; bg: string; border: string }> = {
-  duckdb:       { label: "DuckDB",      color: "#fbbf24", bg: "#1e1a0e", border: "#3a2e0a" },
-  postgres:     { label: "Postgres",    color: "#7ba8f7", bg: "#1a1e2e", border: "#2a3050" },
-  bigquery:     { label: "BigQuery",    color: "#4ade80", bg: "#0e1e14", border: "#1a3a24" },
-  snowflake:    { label: "Snowflake",   color: "#7ba8f7", bg: "#1a1e2e", border: "#2a3050" },
-  mysql:        { label: "MySQL",       color: "#f97316", bg: "#1e160e", border: "#3a2a0a" },
-  local_upload: { label: "Files",       color: "#c084fc", bg: "#1a1228", border: "#2e1a48" },
-  s3:           { label: "S3",          color: "#f59e0b", bg: "#1e1808", border: "#3a2e08" },
-  federated:    { label: "Federated",   color: "#34d399", bg: "#0e1e18", border: "#1a3a28" },
-  stripe:       { label: "Stripe",      color: "#818cf8", bg: "#14142a", border: "#2a2a50" },
-  hubspot:      { label: "HubSpot",     color: "#f97316", bg: "#1e160e", border: "#3a2a0a" },
-  salesforce:   { label: "Salesforce",  color: "#38bdf8", bg: "#0e1a1e", border: "#1a3040" },
-  confluence:   { label: "Confluence",  color: "#60a5fa", bg: "#121a2a", border: "#1e2e48" },
-  notion:       { label: "Notion",      color: "#d4d4d8", bg: "#1a1a1a", border: "#2e2e2e" },
+  duckdb:       { label: "DuckDB",      color: "#fbbf24", bg: "var(--amb1)", border: "var(--amb2)" },
+  postgres:     { label: "Postgres",    color: "var(--blue4)", bg: "var(--blue1)", border: "var(--blue2)" },
+  bigquery:     { label: "BigQuery",    color: "var(--grn4)", bg: "var(--grn1)", border: "var(--grn2)" },
+  snowflake:    { label: "Snowflake",   color: "var(--blue4)", bg: "var(--blue1)", border: "var(--blue2)" },
+  mysql:        { label: "MySQL",       color: "var(--amb4)", bg: "var(--amb1)", border: "var(--amb2)" },
+  local_upload: { label: "Files",       color: "var(--vio4)", bg: "var(--vio1)", border: "var(--vio2)" },
+  s3:           { label: "S3",          color: "var(--amb4)", bg: "var(--amb1)", border: "var(--amb2)" },
+  federated:    { label: "Federated",   color: "var(--grn4)", bg: "var(--grn1)", border: "var(--grn2)" },
+  stripe:       { label: "Stripe",      color: "var(--blue4)", bg: "var(--blue1)", border: "var(--blue2)" },
+  hubspot:      { label: "HubSpot",     color: "var(--amb4)", bg: "var(--amb1)", border: "var(--amb2)" },
+  salesforce:   { label: "Salesforce",  color: "var(--cyn4)", bg: "var(--cyn1)", border: "var(--cyn2)" },
+  confluence:   { label: "Confluence",  color: "var(--blue4)", bg: "var(--blue1)", border: "var(--blue2)" },
+  notion:       { label: "Notion",      color: "var(--t2)", bg: "var(--bg-1)", border: "var(--b2)" },
 };
 
 // ── Connector action panel (sync / upload / knowledge-sync) ───────────────────
@@ -226,7 +226,7 @@ function ConnectorActions({ connId, connType }: { connId: string; connType: stri
   };
 
   return (
-    <div style={{ padding: "12px 16px", borderTop: "0.5px solid #1e1f24" }}>
+    <div style={{ padding: "12px 16px", borderTop: "0.5px solid var(--b1)" }}>
       {(isSyncable || isKnowledge) && (
         <div style={{ marginBottom: 10 }}>
           <button style={BtnStyle} onClick={handleSync} disabled={syncing}>
@@ -263,7 +263,7 @@ function ConnectorActions({ connId, connType }: { connId: string; connType: stri
     </div>
   );
 }
-const connMeta = (t: string) => CONN_TAG[t] ?? { label: t, color: "var(--t2)", bg: "#1a1a22", border: "#2a2a35" };
+const connMeta = (t: string) => CONN_TAG[t] ?? { label: t, color: "var(--t2)", bg: "var(--bg-1)", border: "var(--b2)" };
 
 // ── Selection type ────────────────────────────────────────────────────────────
 
@@ -286,7 +286,7 @@ function DetailHeader({
   meta?:       string;
 }) {
   return (
-    <div style={{ padding: "16px 20px 12px", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, background: "var(--bg-0)" }}>
+    <div style={{ padding: "16px 20px 12px", borderBottom: "0.5px solid var(--b1)", flexShrink: 0, background: "var(--bg-0)" }}>
       {breadcrumb && (
         <p style={{ fontSize: 11, color: "var(--t4)", marginBottom: 6 }}>
           {breadcrumb}
@@ -311,7 +311,7 @@ function TabBar({ tabs, active, onChange }: {
   onChange:(id: string) => void;
 }) {
   return (
-    <div style={{ display: "flex", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, padding: "0 8px", background: "var(--bg-0)" }}>
+    <div style={{ display: "flex", borderBottom: "0.5px solid var(--b1)", flexShrink: 0, padding: "0 8px", background: "var(--bg-0)" }}>
       {tabs.map(t => (
         <button
           key={t.id}
@@ -320,7 +320,7 @@ function TabBar({ tabs, active, onChange }: {
             fontSize: 12, padding: "8px 12px", cursor: "pointer", border: "none",
             background: "transparent", fontFamily: "inherit",
             color: active === t.id ? "var(--t1)" : "var(--t4)",
-            borderBottom: `2px solid ${active === t.id ? "#3d6bff" : "transparent"}`,
+            borderBottom: `2px solid ${active === t.id ? "var(--blue4)" : "transparent"}`,
             transition: "color .1s",
             marginBottom: -1,
           }}
@@ -339,7 +339,7 @@ function AboutSidebar({ title, rows }: {
 }) {
   return (
     <div style={{
-      width: 220, flexShrink: 0, borderLeft: "0.5px solid #1e1f24",
+      width: 220, flexShrink: 0, borderLeft: "0.5px solid var(--b1)",
       padding: "16px 16px", overflowY: "auto", background: "var(--bg-0)",
     }}>
       <p style={{ fontSize: 11, fontWeight: 600, color: "var(--t3)", marginBottom: 12, textTransform: "uppercase", letterSpacing: "0.07em" }}>
@@ -368,7 +368,7 @@ function FilterBox({ value, onChange, placeholder }: { value: string; onChange:(
       <input
         value={value} onChange={e => onChange(e.target.value)}
         placeholder={placeholder ?? "Filter…"}
-        style={{ fontSize: 11, padding: "5px 8px 5px 26px", borderRadius: 4, background: "var(--bg-0)", border: "0.5px solid #1e1f24", color: "var(--t2)", outline: "none", width: 220 }}
+        style={{ fontSize: 11, padding: "5px 8px 5px 26px", borderRadius: 4, background: "var(--bg-0)", border: "0.5px solid var(--b1)", color: "var(--t2)", outline: "none", width: 220 }}
       />
     </div>
   );
@@ -417,7 +417,7 @@ function AddConnForm({ onSave, onCancel }: { onSave: () => void; onCancel: () =>
   const [err, setErr]       = useState("");
   const [loading, setLoad]  = useState(false);
 
-  const S: React.CSSProperties = { width: "100%", fontSize: 11, padding: "5px 8px", borderRadius: 4, background: "var(--bg-0)", border: "0.5px solid #2a2b35", color: "#c8c7c3", outline: "none", fontFamily: "inherit" };
+  const S: React.CSSProperties = { width: "100%", fontSize: 11, padding: "5px 8px", borderRadius: 4, background: "var(--bg-0)", border: "0.5px solid var(--b2)", color: "var(--t1)", outline: "none", fontFamily: "inherit" };
   const L: React.CSSProperties = { fontSize: 11, color: "var(--t4)", marginBottom: 3, display: "block" };
 
   const handle = async (e: React.FormEvent) => {
@@ -428,7 +428,7 @@ function AddConnForm({ onSave, onCancel }: { onSave: () => void; onCancel: () =>
   };
 
   return (
-    <form onSubmit={handle} style={{ padding: "10px 12px", background: "var(--bg-0)", borderBottom: "0.5px solid #1e1f24", display: "flex", flexDirection: "column", gap: 8 }}>
+    <form onSubmit={handle} style={{ padding: "10px 12px", background: "var(--bg-0)", borderBottom: "0.5px solid var(--b1)", display: "flex", flexDirection: "column", gap: 8 }}>
       <p style={{ fontSize: 11, fontWeight: 500, color: "var(--t2)" }}>New connection</p>
       <div><label style={L}>Name</label><input style={S} placeholder="My database" value={name} onChange={e => setName(e.target.value)} required /></div>
       <div>
@@ -446,12 +446,12 @@ function AddConnForm({ onSave, onCancel }: { onSave: () => void; onCancel: () =>
         <label style={L}>Schema <span style={{ color: "var(--b0)" }}>(optional)</span></label>
         <input style={{ ...S, fontFamily: "var(--font-mono)" }} placeholder={type === "postgres" ? "public" : "main"} value={schema} onChange={e => setSchema(e.target.value)} />
       </div>
-      {err && <p style={{ fontSize: 11, color: "#f87171" }}>{err}</p>}
+      {err && <p style={{ fontSize: 11, color: "var(--red4)" }}>{err}</p>}
       <div style={{ display: "flex", gap: 6 }}>
-        <button type="submit" disabled={loading} style={{ flex: 1, fontSize: 11, padding: "5px 0", borderRadius: 4, cursor: "pointer", background: "#1a2030", color: "#7ba8f7", border: "0.5px solid #2a3050", opacity: loading ? .5 : 1 }}>
+        <button type="submit" disabled={loading} style={{ flex: 1, fontSize: 11, padding: "5px 0", borderRadius: 4, cursor: "pointer", background: "var(--blue1)", color: "var(--blue4)", border: "0.5px solid var(--blue2)", opacity: loading ? .5 : 1 }}>
           {loading ? "Saving…" : "Save"}
         </button>
-        <button type="button" onClick={onCancel} style={{ fontSize: 11, padding: "5px 10px", borderRadius: 4, cursor: "pointer", background: "transparent", color: "var(--t4)", border: "0.5px solid #1e1f24" }}>Cancel</button>
+        <button type="button" onClick={onCancel} style={{ fontSize: 11, padding: "5px 10px", borderRadius: 4, cursor: "pointer", background: "transparent", color: "var(--t4)", border: "0.5px solid var(--b1)" }}>Cancel</button>
       </div>
     </form>
   );
@@ -478,11 +478,11 @@ function SampleGrid({ connId, tableName, schemaName }: { connId: string; tableNa
 
   if (loading) return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 8 }}>
-      <div style={{ width: 16, height: 16, border: "2px solid #2a2b35", borderTopColor: "#4a6aaa", borderRadius: "50%", animation: "aug-spin 0.7s linear infinite" }} />
+      <div style={{ width: 16, height: 16, border: "2px solid var(--b2)", borderTopColor: "var(--blue3)", borderRadius: "50%", animation: "aug-spin 0.7s linear infinite" }} />
       <span style={{ fontSize: 11, color: "var(--t4)" }}>Loading sample data…</span>
     </div>
   );
-  if (error) return <div style={{ padding: 24, fontSize: 11, color: "#f87171", textAlign: "center" }}>{error}</div>;
+  if (error) return <div style={{ padding: 24, fontSize: 11, color: "var(--red4)", textAlign: "center" }}>{error}</div>;
   if (!data || data.rows.length === 0) return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
       <span style={{ fontSize: 11, color: "var(--t4)" }}>No rows returned.</span>
@@ -561,7 +561,8 @@ function TableDetailPanel({ sel, onAsk }: {
   const cols: SchemaColumn[] = baseCols.length
     ? baseCols.map(b => {
         const e = enrichMap.get(b.name);
-        return { ...(e ?? {}), name: b.name, type: b.type || e?.type || "" } as SchemaColumn;
+        const overrideType = b.type?.trim?.() ? b.type : undefined;
+        return { ...(e ?? {}), name: b.name, type: overrideType ?? e?.type ?? "" } as SchemaColumn;
       })
     : (richTable?.columns ?? []);
   const q    = colFilter.toLowerCase();
@@ -578,9 +579,13 @@ function TableDetailPanel({ sel, onAsk }: {
     setAlterBusy(true);
     try {
       await alterColumn(sel.connId, sel.table.name, colName, editType.trim(), sel.schemaName);
-      // Refresh columns
-      const refreshed = await getTableColumns(sel.connId, sel.table.name, sel.schemaName);
+      // Refresh columns and rich schema so both are in sync
+      const [refreshed, rich] = await Promise.all([
+        getTableColumns(sel.connId, sel.table.name, sel.schemaName),
+        getSchemaRich(sel.connId).then(s => s.tables.find(t => t.name === sel.table.name) ?? null).catch(() => null),
+      ]);
       setBaseCols(refreshed);
+      if (rich) setRich(rich);
     } catch (e) {
       alert((e as Error).message || "Failed to alter column");
     } finally {
@@ -610,21 +615,21 @@ function TableDetailPanel({ sel, onAsk }: {
           {/* Main: column list */}
           <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
             {/* Filter row */}
-            <div style={{ padding: "10px 16px", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, background: "var(--bg-0)", display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ padding: "10px 16px", borderBottom: "0.5px solid var(--b1)", flexShrink: 0, background: "var(--bg-0)", display: "flex", alignItems: "center", gap: 10 }}>
               <FilterBox value={colFilter} onChange={setColFilter} placeholder="Filter columns…" />
               {distCount > 0 && (
                 <span style={{ fontSize: 11, color: "var(--t4)" }}>{distCount} profiled · click a column for its distribution</span>
               )}
               {onAsk && (
                 <button onClick={() => onAsk(sel.table.name, sel.connId)}
-                  style={{ marginLeft: "auto", fontSize: 11, padding: "4px 11px", borderRadius: 4, cursor: "pointer", background: "#1a1e2e", color: "#7ba8f7", border: "0.5px solid #2a3050", whiteSpace: "nowrap" }}>
+                  style={{ marginLeft: "auto", fontSize: 11, padding: "4px 11px", borderRadius: 4, cursor: "pointer", background: "var(--blue1)", color: "var(--blue4)", border: "0.5px solid var(--blue2)", whiteSpace: "nowrap" }}>
                   Ask about this table →
                 </button>
               )}
             </div>
 
             {/* Column header */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 110px 40px", padding: "5px 16px", borderBottom: "0.5px solid #1e1f24", background: "var(--bg-0)", flexShrink: 0 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 110px 40px", padding: "5px 16px", borderBottom: "0.5px solid var(--b1)", background: "var(--bg-0)", flexShrink: 0 }}>
               {["Column", "Type", ""].map(h => (
                 <span key={h} style={{ fontSize: 11, color: "var(--t4)", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600 }}>{h}</span>
               ))}
@@ -634,7 +639,7 @@ function TableDetailPanel({ sel, onAsk }: {
             <div style={{ flex: 1, overflowY: "auto" }}>
               {loading && (
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 32, gap: 8 }}>
-                  <div style={{ width: 14, height: 14, border: "2px solid #2a2b35", borderTopColor: "#4a6aaa", borderRadius: "50%", animation: "aug-spin 0.7s linear infinite" }} />
+                  <div style={{ width: 14, height: 14, border: "2px solid var(--b2)", borderTopColor: "var(--blue3)", borderRadius: "50%", animation: "aug-spin 0.7s linear infinite" }} />
                   <span style={{ fontSize: 11, color: "var(--t4)" }}>Loading columns…</span>
                 </div>
               )}
@@ -650,17 +655,17 @@ function TableDetailPanel({ sel, onAsk }: {
                 <div key={col.name}>
                   <div
                     onClick={dist ? () => toggleCol(col.name) : undefined}
-                    style={{ display: "grid", gridTemplateColumns: "1fr 110px 40px", padding: "6px 16px", borderBottom: "0.5px solid #111115", alignItems: "center", background: open ? "#0c0e13" : "transparent", cursor: dist ? "pointer" : "default" }}
-                    onMouseEnter={e => { if (!open) (e.currentTarget as HTMLElement).style.background = "#0f1218"; }}
+                    style={{ display: "grid", gridTemplateColumns: "1fr 110px 40px", padding: "6px 16px", borderBottom: "0.5px solid var(--b0)", alignItems: "center", background: open ? "var(--bg-0)" : "transparent", cursor: dist ? "pointer" : "default" }}
+                    onMouseEnter={e => { if (!open) (e.currentTarget as HTMLElement).style.background = "var(--bg-1)"; }}
                     onMouseLeave={e => { if (!open) (e.currentTarget as HTMLElement).style.background = "transparent"; }}
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }} title={col.description || ""}>
                       {dist
                         ? <span style={{ flexShrink: 0, display: "flex" }}><Chevron open={open} /></span>
                         : <span style={{ width: 6, height: 6, borderRadius: 2, flexShrink: 0, background: typeColor(col.type), opacity: 0.7 }} />}
-                      <span style={{ fontSize: 12, fontFamily: "var(--font-mono)", color: "#c8c7c3", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{col.name}</span>
+                      <span style={{ fontSize: 12, fontFamily: "var(--font-mono)", color: "var(--t1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{col.name}</span>
                       {col.description && (
-                        <span style={{ fontSize: 11, color: "#5a5e6a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 200 }}>{col.description}</span>
+                        <span style={{ fontSize: 11, color: "var(--t3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 200 }}>{col.description}</span>
                       )}
                     </div>
                     {editingCol === col.name ? (
@@ -670,27 +675,27 @@ function TableDetailPanel({ sel, onAsk }: {
                           onChange={e => setEditType(e.target.value)}
                           onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleSave(col.name); } if (e.key === "Escape") { setEditingCol(null); } }}
                           autoFocus
-                          style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: typeColor(editType), background: "#0c0e13", border: "0.5px solid #2a3050", borderRadius: 3, padding: "2px 5px", width: 110, outline: "none", cursor: "pointer" }}
+                          style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: typeColor(editType), background: "var(--bg-0)", border: "0.5px solid var(--blue2)", borderRadius: 3, padding: "2px 5px", width: 110, outline: "none", cursor: "pointer" }}
                         >
                           {TYPE_OPTIONS.map(t => (
-                            <option key={t} value={t} style={{ background: "#0c0e13", color: "#c8c7c3" }}>{t}</option>
+                            <option key={t} value={t} style={{ background: "var(--bg-0)", color: "var(--t1)" }}>{t}</option>
                           ))}
                         </select>
                         <button
                           onClick={() => handleSave(col.name)}
                           disabled={alterBusy}
-                          style={{ fontSize: 9, padding: "1px 4px", borderRadius: 3, background: "#1a1e2e", color: "#7ba8f7", border: "0.5px solid #2a3050", cursor: "pointer" }}
+                          style={{ fontSize: 9, padding: "1px 4px", borderRadius: 3, background: "var(--blue1)", color: "var(--blue4)", border: "0.5px solid var(--blue2)", cursor: "pointer" }}
                         >Save</button>
                       </div>
                     ) : (
                       <span
                         onClick={() => { setEditingCol(col.name); setEditType(col.type); }}
                         title="Click to edit type"
-                        style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: typeColor(col.type || "--"), cursor: "pointer", borderBottom: "1px dashed #2a2b35" }}
+                        style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: typeColor(col.type || "--"), cursor: "pointer", borderBottom: "1px dashed var(--b2)" }}
                       >{col.type || "—"}</span>
                     )}
                     {col.is_fk
-                      ? <span style={{ fontSize: 9, padding: "2px 5px", borderRadius: 3, background: "#1a1e2e", color: "#3d6bff", border: "0.5px solid #2a3050" }}>FK</span>
+                      ? <span style={{ fontSize: 9, padding: "2px 5px", borderRadius: 3, background: "var(--blue1)", color: "var(--blue4)", border: "0.5px solid var(--blue2)" }}>FK</span>
                       : <span />
                     }
                   </div>
@@ -705,7 +710,7 @@ function TableDetailPanel({ sel, onAsk }: {
       {/* ── Sample Data tab ── */}
       {tab === "sample" && (
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          <div style={{ padding: "10px 16px", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, background: "var(--bg-0)", display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ padding: "10px 16px", borderBottom: "0.5px solid var(--b1)", flexShrink: 0, background: "var(--bg-0)", display: "flex", alignItems: "center", gap: 10 }}>
             <span style={{ fontSize: 11, color: "var(--t4)" }}>First 200 rows</span>
           </div>
           <SampleGrid connId={sel.connId} tableName={sel.table.name} schemaName={sel.schemaName} />
@@ -758,7 +763,7 @@ function SchemaDetailPanel({ sel, onSelectTable, onAsk, connName }: {
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
       <DetailHeader
-        icon={<IcoSchema color="#5a7fa8" size={16} />}
+        icon={<IcoSchema color="var(--blue3)" size={16} />}
         name={entry.name}
         breadcrumb={sel.connId}
         meta={`${entry.tables.length} table${entry.tables.length !== 1 ? "s" : ""}`}
@@ -774,7 +779,7 @@ function SchemaDetailPanel({ sel, onSelectTable, onAsk, connName }: {
         <div style={{ flex: 1, overflow: "hidden", minWidth: 0 }}>
           {erdLoading ? (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", gap: 8 }}>
-              <div style={{ width: 14, height: 14, border: "2px solid #2a2b35", borderTopColor: "#4a6aaa", borderRadius: "50%", animation: "aug-spin 0.7s linear infinite" }} />
+              <div style={{ width: 14, height: 14, border: "2px solid var(--b2)", borderTopColor: "var(--blue3)", borderRadius: "50%", animation: "aug-spin 0.7s linear infinite" }} />
               <span style={{ fontSize: 11, color: "var(--t4)" }}>Loading diagram…</span>
             </div>
           ) : erdError ? (
@@ -790,12 +795,12 @@ function SchemaDetailPanel({ sel, onSelectTable, onAsk, connName }: {
         {/* Main: table list */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
           {/* Filter row */}
-          <div style={{ padding: "10px 16px", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, background: "var(--bg-0)" }}>
+          <div style={{ padding: "10px 16px", borderBottom: "0.5px solid var(--b1)", flexShrink: 0, background: "var(--bg-0)" }}>
             <FilterBox value={filter} onChange={setFilter} placeholder="Filter tables…" />
           </div>
 
           {/* Table header */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 60px", padding: "5px 16px", borderBottom: "0.5px solid #1e1f24", background: "var(--bg-0)", flexShrink: 0 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 60px", padding: "5px 16px", borderBottom: "0.5px solid var(--b1)", background: "var(--bg-0)", flexShrink: 0 }}>
             {["Name", "Rows", ""].map(h => (
               <span key={h} style={{ fontSize: 11, color: "var(--t4)", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600, textAlign: h === "Rows" ? "right" as const : "left" as const }}>{h}</span>
             ))}
@@ -808,20 +813,20 @@ function SchemaDetailPanel({ sel, onSelectTable, onAsk, connName }: {
             {tables.map((t, i) => (
               <div key={t.name}
                 onClick={() => onSelectTable(t)}
-                style={{ display: "grid", gridTemplateColumns: "1fr 80px 60px", padding: "8px 16px", borderBottom: "0.5px solid #111115", cursor: "pointer", alignItems: "center", background: "transparent" }}
-                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "#0f1218"}
+                style={{ display: "grid", gridTemplateColumns: "1fr 80px 60px", padding: "8px 16px", borderBottom: "0.5px solid var(--b0)", cursor: "pointer", alignItems: "center", background: "transparent" }}
+                onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "var(--bg-1)"}
                 onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
                   <IcoTable size={12} />
-                  <span style={{ fontSize: 12, color: "#c8c7c3", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span>
+                  <span style={{ fontSize: 12, color: "var(--t1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span>
                 </div>
                 <span style={{ fontSize: 11, color: "var(--t4)", textAlign: "right" }}>{fmtRows(t.row_count)}</span>
                 {onAsk && (
                   <button
                     onClick={e => { e.stopPropagation(); onAsk(t.name, sel.connId); }}
-                    style={{ fontSize: 9, padding: "2px 6px", borderRadius: 3, cursor: "pointer", background: "transparent", color: "var(--t4)", border: "0.5px solid #1e1f24", justifySelf: "end" as const }}
-                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "#7ba8f7"; (e.currentTarget as HTMLElement).style.background = "#1a1e2e"; }}
+                    style={{ fontSize: 9, padding: "2px 6px", borderRadius: 3, cursor: "pointer", background: "transparent", color: "var(--t4)", border: "0.5px solid var(--b1)", justifySelf: "end" as const }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "var(--blue4)"; (e.currentTarget as HTMLElement).style.background = "var(--blue1)"; }}
                     onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "var(--t4)"; (e.currentTarget as HTMLElement).style.background = "transparent"; }}
                   >Ask →</button>
                 )}
@@ -901,12 +906,12 @@ function CatalogDetailPanel({ sel, onSelectSchema, conn, onTest, onDelete, testi
         {/* Main: schema list (Overview tab) */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
           {/* Filter row */}
-          <div style={{ padding: "10px 16px", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, background: "var(--bg-0)" }}>
+          <div style={{ padding: "10px 16px", borderBottom: "0.5px solid var(--b1)", flexShrink: 0, background: "var(--bg-0)" }}>
             <FilterBox value={filter} onChange={setFilter} placeholder="Filter schemas…" />
           </div>
 
           {/* Schema header */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px", padding: "5px 16px", borderBottom: "0.5px solid #1e1f24", background: "var(--bg-0)", flexShrink: 0 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px", padding: "5px 16px", borderBottom: "0.5px solid var(--b1)", background: "var(--bg-0)", flexShrink: 0 }}>
             {["Name", "Tables", ""].map((h, i) => (
               <span key={h + i} style={{ fontSize: 11, color: "var(--t4)", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600, textAlign: h === "Tables" ? "right" as const : "left" as const }}>{h}</span>
             ))}
@@ -921,14 +926,14 @@ function CatalogDetailPanel({ sel, onSelectSchema, conn, onTest, onDelete, testi
               return (
                 <div key={sc.name}
                   onClick={() => onSelectSchema(sc)}
-                  style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px", padding: "10px 16px", borderBottom: "0.5px solid #111115", cursor: "pointer", alignItems: "center", background: "transparent" }}
-                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "#0f1218"}
+                  style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px", padding: "10px 16px", borderBottom: "0.5px solid var(--b0)", cursor: "pointer", alignItems: "center", background: "transparent" }}
+                  onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "var(--bg-1)"}
                   onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "transparent"}
                 >
                   <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-                    <IcoSchema color="#5a7fa8" size={14} />
+                    <IcoSchema color="var(--blue3)" size={14} />
                     <div>
-                      <p style={{ fontSize: 12, fontWeight: 500, color: "#c8c7c3" }}>{sc.name}</p>
+                      <p style={{ fontSize: 12, fontWeight: 500, color: "var(--t1)" }}>{sc.name}</p>
                       <p style={{ fontSize: 11, color: "var(--t4)", marginTop: 1 }}>{schRows > 0 ? fmtRows(schRows) + " rows" : ""}</p>
                     </div>
                   </div>
@@ -949,16 +954,16 @@ function CatalogDetailPanel({ sel, onSelectSchema, conn, onTest, onDelete, testi
 
           {/* Connection management actions (test / remove) */}
           {conn && (
-            <div style={{ padding: "12px 16px", borderTop: "0.5px solid #1e1f24", display: "flex", alignItems: "center", gap: 8, position: "relative" }}>
+            <div style={{ padding: "12px 16px", borderTop: "0.5px solid var(--b1)", display: "flex", alignItems: "center", gap: 8, position: "relative" }}>
               <button onClick={() => onTest?.(entry.conn_id)} disabled={testing}
                 style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 4, fontSize: 11, fontWeight: 500, cursor: testing ? "not-allowed" : "pointer",
-                  background: "#13141a", border: `0.5px solid ${testResult === true ? "#2a4a2a" : testResult === false ? "#3e2020" : "#2a2b35"}`,
-                  color: testResult === true ? "#34d399" : testResult === false ? "#f87171" : "var(--t2)", opacity: testing ? 0.6 : 1 }}>
+                  background: "var(--bg-1)", border: `0.5px solid ${testResult === true ? "var(--grn2)" : testResult === false ? "var(--red2)" : "var(--b2)"}`,
+                  color: testResult === true ? "var(--grn4)" : testResult === false ? "var(--red4)" : "var(--t2)", opacity: testing ? 0.6 : 1 }}>
                 {testing ? "Testing…" : testResult === true ? "✓ Connection OK" : testResult === false ? "✗ Failed" : "Test connection"}
               </button>
               <button onClick={() => setConfirmDel(true)}
                 style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 4, fontSize: 11, fontWeight: 500, cursor: "pointer",
-                  background: "transparent", border: "0.5px solid #3e2020", color: "#f87171" }}>
+                  background: "transparent", border: "0.5px solid var(--red2)", color: "var(--red4)" }}>
                 Remove connection
               </button>
 
@@ -976,7 +981,7 @@ function CatalogDetailPanel({ sel, onSelectSchema, conn, onTest, onDelete, testi
                       <button onClick={() => setConfirmDel(false)}
                         style={{ fontSize: 12, padding: "6px 14px", borderRadius: 4, cursor: "pointer", background: "transparent", color: "var(--t3)", border: "0.5px solid var(--b1)" }}>Cancel</button>
                       <button onClick={() => { setConfirmDel(false); onDelete?.(entry.conn_id); }}
-                        style={{ fontSize: 12, padding: "6px 14px", borderRadius: 4, cursor: "pointer", background: "#3a1818", color: "#f87171", border: "0.5px solid #5a2424", fontWeight: 500 }}>Remove</button>
+                        style={{ fontSize: 12, padding: "6px 14px", borderRadius: 4, cursor: "pointer", background: "var(--red1)", color: "var(--red4)", border: "0.5px solid var(--red2)", fontWeight: 500 }}>Remove</button>
                     </div>
                   </div>
                 </>
@@ -1038,7 +1043,7 @@ function flattenTree(tree: CatalogTree | null): FlatItem[] {
 
 const typeIcon = (t: FlatItem["type"]) =>
   t === "Catalog" ? <IcoCatalog color="var(--t2)" /> :
-  t === "Schema"  ? <IcoSchema color="#5a7fa8" size={15} /> :
+  t === "Schema"  ? <IcoSchema color="var(--blue3)" size={15} /> :
                     <IcoTable size={15} />;
 
 function CatalogHomePanel({ tree, onPick }: { tree: CatalogTree | null; onPick: (it: FlatItem) => void }) {
@@ -1203,7 +1208,7 @@ function TreeRow({
         padding: `6px 10px 6px ${10 + depth * 15}px`,
         cursor: "pointer", userSelect: "none",
         background: isSelected ? "rgba(45,114,210,0.11)" : "transparent",
-        borderLeft: `2px solid ${isSelected ? "#2D72D2" : "transparent"}`,
+        borderLeft: `2px solid ${isSelected ? "var(--blue3)" : "transparent"}`,
         transition: "background .08s", minWidth: 0,
       }}
       onMouseEnter={e => { if (!isSelected) (e.currentTarget as HTMLElement).style.background = "var(--bg-hover)"; }}
@@ -1220,7 +1225,7 @@ function TreeRow({
       <span style={{
         fontSize: 13, flex: 1, minWidth: 0,
         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-        color: isSelected ? "var(--t1)" : "#c5c8cd", fontWeight: isSelected ? 500 : 400,
+        color: isSelected ? "var(--t1)" : "var(--t2)", fontWeight: isSelected ? 500 : 400,
       }}>
         {label}
       </span>
@@ -1312,7 +1317,7 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
           </div>
           {section.id === "connections" && (
             <button onClick={() => setShowAddData(true)}
-              style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 9, padding: "2px 6px", borderRadius: 3, cursor: "pointer", background: "transparent", color: "var(--t4)", border: "0.5px solid #1e1f24" }}
+              style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 9, padding: "2px 6px", borderRadius: 3, cursor: "pointer", background: "transparent", color: "var(--t4)", border: "0.5px solid var(--b1)" }}
               onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "var(--t2)"; }}
               onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "var(--t4)"; }}
             >
@@ -1361,7 +1366,7 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
 
           nodes.push(
             <TreeRow key={schemaKey} depth={1}
-              icon={<IcoSchema color="#5a7fa8" />}
+              icon={<IcoSchema color="var(--blue3)" />}
               label={schema.name}
               count={schema.tables.length}
               isOpen={schOpen}
@@ -1461,14 +1466,14 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
             onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = sel ? "var(--t3)" : "var(--t1)"}
           >Catalog</button>
           <button onClick={() => setShowAddData(true)} title="Add data"
-            style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: 4, cursor: "pointer", background: "#152b50", color: "#88baff", border: "0.5px solid #1a3a6e", padding: 0 }}
-            onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "#1a3a6e"}
-            onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "#152b50"}
+            style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: 4, cursor: "pointer", background: "var(--blue1)", color: "var(--blue5)", border: "0.5px solid var(--blue2)", padding: 0 }}
+            onMouseEnter={e => (e.currentTarget as HTMLElement).style.background = "var(--blue2)"}
+            onMouseLeave={e => (e.currentTarget as HTMLElement).style.background = "var(--blue1)"}
           >
             <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 1v10M1 6h10" /></svg>
           </button>
           <button onClick={() => { loadTree(); refreshSchema(); }} title="Refresh schema"
-            style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: 4, cursor: "pointer", background: "transparent", color: "var(--t4)", border: "0.5px solid #1e1f24", padding: 0 }}
+            style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: 4, cursor: "pointer", background: "transparent", color: "var(--t4)", border: "0.5px solid var(--b1)", padding: 0 }}
             onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = "var(--t2)"}
             onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = "var(--t4)"}
           >
@@ -1480,20 +1485,20 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
         </div>
 
         {/* Search */}
-        <div style={{ padding: "8px 10px", borderBottom: "0.5px solid #1e1f24", flexShrink: 0, position: "relative" }}>
+        <div style={{ padding: "8px 10px", borderBottom: "0.5px solid var(--b1)", flexShrink: 0, position: "relative" }}>
           <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2"
             style={{ position: "absolute", left: 18, top: "50%", transform: "translateY(-50%)", color: "var(--t4)", pointerEvents: "none" }}>
             <circle cx="6" cy="6" r="4" /><path d="m10 10 3 3" strokeLinecap="round" />
           </svg>
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search catalog…"
-            style={{ width: "100%", fontSize: 11, padding: "4px 8px 4px 24px", borderRadius: 4, background: "var(--bg-0)", border: "0.5px solid #1e1f24", color: "#6e6f78", outline: "none" }} />
+            style={{ width: "100%", fontSize: 11, padding: "4px 8px 4px 24px", borderRadius: 4, background: "var(--bg-0)", border: "0.5px solid var(--b1)", color: "var(--t2)", outline: "none" }} />
         </div>
 
         {/* Tree body */}
         <div style={{ flex: 1, overflowY: "auto", padding: "4px 0 12px" }}>
           {treeLoading && (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 24, gap: 8 }}>
-              <div style={{ width: 14, height: 14, border: "2px solid #2a2b35", borderTopColor: "#4a6aaa", borderRadius: "50%", animation: "aug-spin 0.7s linear infinite" }} />
+              <div style={{ width: 14, height: 14, border: "2px solid var(--b2)", borderTopColor: "var(--blue3)", borderRadius: "50%", animation: "aug-spin 0.7s linear infinite" }} />
               <span style={{ fontSize: 11, color: "var(--t4)" }}>Loading catalog…</span>
             </div>
           )}

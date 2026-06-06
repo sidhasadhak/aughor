@@ -19,6 +19,61 @@ from aughor.routers._shared import (
 )
 
 logger = logging.getLogger(__name__)
+import re as _re
+
+_SQL_TABLE_RE = _re.compile(
+    r"(?:FROM|JOIN|INTO|UPDATE|MERGE\s+INTO|DELETE\s+FROM)\s+(?:\"?\w+\"?\.)?\"?(\w+)\"?(?:\s+(?:AS\s+)?\w+)?(?=\s|$|[,;])",
+    _re.IGNORECASE,
+)
+
+
+def _tables_from_sql(sql: str) -> set[str]:
+    return {m.group(1) for m in _SQL_TABLE_RE.finditer(sql) if m.group(1)}
+
+
+def _filter_by_schema(domain_data: dict, conn_id: str, schema: str | None) -> dict:
+    """Filter domain insights to only those referencing tables in the given schema."""
+    if not schema:
+        return domain_data
+    try:
+        db = open_connection_for(conn_id)
+    except Exception:
+        return domain_data
+    try:
+        safe_schema = schema.replace("'", "''")
+        if getattr(db, "dialect", "") == "duckdb":
+            res = db.execute("__schema_filter__", f"""SELECT table_name FROM information_schema.tables WHERE table_schema = '{safe_schema}' AND table_type = 'BASE TABLE'""")
+        else:
+            res = db.execute("__schema_filter__", f"""SELECT table_name FROM information_schema.tables WHERE table_schema = '{safe_schema}' AND table_type = 'BASE TABLE'""")
+        tables_in_schema = {str(r[0]) for r in res.rows}
+    except Exception:
+        db.close()
+        return domain_data
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
+
+    filtered = {}
+    for domain, data in domain_data.items():
+        insights = data if isinstance(data, list) else data.get("insights", [])
+        filtered_insights = []
+        for ins in insights:
+            sql_tables = _tables_from_sql(ins.get("sql", ""))
+            entities = {e.lower() for e in ins.get("entities_involved", [])}
+            # snake_case entities for broader matching
+            snake_entities = {_re.sub(r'(?<!^)(?=[A-Z])', '_', e).lower() for e in entities}
+            all_refs = sql_tables | snake_entities | entities
+            if all_refs & tables_in_schema:
+                filtered_insights.append(ins)
+        if filtered_insights:
+            if isinstance(data, list):
+                filtered[domain] = filtered_insights
+            else:
+                filtered[domain] = {**data, "insights": filtered_insights}
+    return filtered
+
 router = APIRouter(tags=["exploration"])
 
 
@@ -96,12 +151,14 @@ def get_exploration_findings(conn_id: str):
 
 
 @router.get("/exploration/{conn_id}/domains")
-def get_domain_insights(conn_id: str):
+def get_domain_insights(conn_id: str, schema: str | None = None):
     from aughor.explorer import store as _expl_store
     state = _expl_store.load(conn_id)
     budgets  = state.get("domain_budgets", {})
     coverage = state.get("domain_coverage", {})
     by_domain = _expl_store.get_domain_insights(conn_id)
+    if schema:
+        by_domain = _filter_by_schema(by_domain, conn_id, schema)
     result = {}
     for domain, insights in by_domain.items():
         result[domain] = {
@@ -114,23 +171,27 @@ def get_domain_insights(conn_id: str):
 
 
 @router.get("/exploration/{conn_id}/patterns")
-def get_connection_patterns(conn_id: str, refresh: bool = False):
+def get_connection_patterns(conn_id: str, refresh: bool = False, schema: str | None = None):
     """Return extracted patterns from domain intelligence for this connection."""
     from aughor.explorer import store as _expl_store
     from aughor.knowledge.patterns import get_patterns
     by_domain = _expl_store.get_domain_insights(conn_id)
+    if schema:
+        by_domain = _filter_by_schema(by_domain, conn_id, schema)
     patterns = get_patterns(conn_id, by_domain, force_refresh=refresh)
     return {"patterns": patterns, "count": len(patterns)}
 
 
 @router.post("/exploration/{conn_id}/briefing")
-def generate_briefing(conn_id: str, refresh: bool = False):
+def generate_briefing(conn_id: str, refresh: bool = False, schema: str | None = None):
     """Generate (or return cached) an LLM synthesis narrative for the connection."""
     from aughor.explorer import store as _expl_store
     from aughor.knowledge.patterns import get_patterns
     from aughor.knowledge.briefing import get_briefing
 
     by_domain = _expl_store.get_domain_insights(conn_id)
+    if schema:
+        by_domain = _filter_by_schema(by_domain, conn_id, schema)
     if not by_domain:
         return {
             "narrative": "",
@@ -292,6 +353,111 @@ async def retry_query(conn_id: str, body: RetryQueryRequest):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Query execution failed: {e}")
+
+
+# ── Explorer control ─────────────────────────────────────────────────────────
+
+@router.post("/exploration/{conn_id}/start")
+async def start_exploration(conn_id: str):
+    """Start a fresh explorer run if none is active."""
+    existing = _explorers.get(conn_id)
+    if existing and existing.status.phase not in (ExplorationPhase.COMPLETE, ExplorationPhase.FAILED):
+        return {"ok": False, "reason": "already running", "phase": existing.status.phase.value}
+
+    async def _do_start() -> None:
+        loop = asyncio.get_running_loop()
+        try:
+            def _open_and_test():
+                db = open_connection_for(conn_id)
+                ok, msg = db.test()
+                if not ok:
+                    db.close()
+                    return None, False, msg
+                return db, True, msg
+
+            db, ok, msg = await loop.run_in_executor(None, _open_and_test)
+            if not ok or db is None:
+                logger.warning("Start: connection %s not ready — %s", conn_id, msg)
+                return
+            from aughor.explorer.agent import SchemaExplorer
+            explorer = SchemaExplorer(conn_id, db)
+            _explorers[conn_id] = explorer
+            _t = asyncio.create_task(
+                explorer.explore(), name=f"explorer-{conn_id}-start"
+            )
+            _t.add_done_callback(lambda _, k=conn_id: _explorer_tasks.pop(k, None))
+            _explorer_tasks[conn_id] = _t
+            logger.info("Start: explorer started for %s", conn_id)
+        except Exception as exc:
+            logger.warning("Start: failed for %s — %s", conn_id, exc)
+
+    asyncio.create_task(_do_start(), name=f"start-{conn_id}")
+    return {"ok": True}
+
+
+@router.post("/exploration/{conn_id}/trigger-intel")
+async def trigger_domain_intelligence(conn_id: str):
+    """Run only Phase 8 (domain intelligence) if phases 3-7 are already complete."""
+    from aughor.explorer import store as _expl_store
+    state = _expl_store.load(conn_id)
+    phase = state.get("phase", "pending")
+    if phase not in ("complete", ExplorationPhase.COMPLETE.value):
+        return {"ok": False, "reason": f"phases 3-7 not complete (current: {phase}) — run /start or /restart first"}
+
+    existing = _explorers.get(conn_id)
+    if existing and existing.status.phase not in (ExplorationPhase.COMPLETE, ExplorationPhase.FAILED):
+        return {"ok": False, "reason": "explorer already running", "phase": existing.status.phase.value}
+
+    async def _do_intel() -> None:
+        loop = asyncio.get_running_loop()
+        try:
+            def _open_and_test():
+                db = open_connection_for(conn_id)
+                ok, msg = db.test()
+                if not ok:
+                    db.close()
+                    return None, False, msg
+                return db, True, msg
+
+            db, ok, msg = await loop.run_in_executor(None, _open_and_test)
+            if not ok or db is None:
+                logger.warning("Trigger-intel: connection %s not ready — %s", conn_id, msg)
+                return
+            from aughor.explorer.agent import SchemaExplorer
+            explorer = SchemaExplorer(conn_id, db)
+            _explorers[conn_id] = explorer
+            _t = asyncio.create_task(
+                explorer.explore(domain_intel_only=True), name=f"explorer-{conn_id}-intel"
+            )
+            _t.add_done_callback(lambda _, k=conn_id: _explorer_tasks.pop(k, None))
+            _explorer_tasks[conn_id] = _t
+            logger.info("Trigger-intel: domain intelligence started for %s", conn_id)
+        except Exception as exc:
+            logger.warning("Trigger-intel: failed for %s — %s", conn_id, exc)
+
+    asyncio.create_task(_do_intel(), name=f"intel-{conn_id}")
+    return {"ok": True}
+
+
+@router.post("/exploration/{conn_id}/reset")
+def reset_exploration(conn_id: str):
+    """Clear exploration state without restarting. Use /restart to reset+start."""
+    explorer = _explorers.get(conn_id)
+    if explorer:
+        explorer.stop()
+    task = _explorer_tasks.get(conn_id)
+    if task and not task.done():
+        task.cancel()
+    for fname in (f"exploration_{conn_id}.json", f"episodes_{conn_id}.jsonl"):
+        p = Path("data") / fname
+        if p.exists():
+            p.unlink()
+    try:
+        from aughor.tools.profile_cache import invalidate as invalidate_profiles
+        invalidate_profiles(conn_id)
+    except Exception:
+        pass
+    return {"ok": True, "reset": True}
 
 
 # ── Canvas-scoped ─────────────────────────────────────────────────────────────

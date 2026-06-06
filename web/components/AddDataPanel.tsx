@@ -270,7 +270,7 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
         </div>
 
         {conflict && (
-          <div style={{ fontSize: 11.5, color: "#fbbf24", padding: "9px 12px", borderRadius: 6, background: "color-mix(in srgb, #fbbf24 10%, var(--bg-1))", border: "1px solid color-mix(in srgb, #fbbf24 35%, transparent)" }}>
+          <div style={{ fontSize: 11.5, color: "var(--amb4)", padding: "9px 12px", borderRadius: 6, background: "color-mix(in srgb, var(--amb4) 10%, var(--bg-1))", border: "1px solid color-mix(in srgb, var(--amb4) 35%, transparent)" }}>
             A table <strong style={{ fontFamily: "var(--font-mono)" }}>{schema}.{conflict.table_name}</strong> already exists — importing will <strong>replace</strong> it. Rename above to keep both.
           </div>
         )}
@@ -279,7 +279,7 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
         <div>
           <p style={sectionLabel}>
             Columns · {a.columns.length}
-            {mismatches > 0 && <span style={{ fontSize: 9.5, fontWeight: 600, padding: "1px 7px", borderRadius: 4, background: "color-mix(in srgb, #fbbf24 16%, transparent)", color: "#fbbf24", textTransform: "none", letterSpacing: 0 }}>{mismatches} type suggestion{mismatches > 1 ? "s" : ""}</span>}
+            {mismatches > 0 && <span style={{ fontSize: 9.5, fontWeight: 600, padding: "1px 7px", borderRadius: 4, background: "color-mix(in srgb, var(--amb4) 16%, transparent)", color: "var(--amb4)", textTransform: "none", letterSpacing: 0 }}>{mismatches} type suggestion{mismatches > 1 ? "s" : ""}</span>}
           </p>
           <div style={{ border: "1px solid var(--b1)", borderRadius: 8, overflow: "hidden" }}>
             {a.columns.map((c, i) => {
@@ -299,8 +299,8 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
                     <button type="button" onClick={() => setChosen(p => ({ ...p, [c.name]: suggest }))}
                       title={`DuckDB read this as text but the values look like ${suggest}`}
                       style={{ fontSize: 10, fontWeight: 600, padding: "3px 8px", borderRadius: 5, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
-                        background: chosen[c.name] === suggest ? "transparent" : "color-mix(in srgb, #fbbf24 16%, transparent)",
-                        color: "#fbbf24", border: "1px solid color-mix(in srgb, #fbbf24 35%, transparent)" }}>
+                        background: chosen[c.name] === suggest ? "transparent" : "color-mix(in srgb, var(--amb4) 16%, transparent)",
+                        color: "var(--amb4)", border: "1px solid color-mix(in srgb, var(--amb4) 35%, transparent)" }}>
                       {chosen[c.name] === suggest ? "✓ " : "→ "}{suggest}
                     </button>
                   )}
@@ -340,11 +340,11 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
           </div>
         )}
 
-        {error && <p style={{ fontSize: 12, color: "#f87171" }}>{error}</p>}
+        {error && <p style={{ fontSize: 12, color: "var(--red4)" }}>{error}</p>}
 
         <div style={{ display: "flex", gap: 10 }}>
           <button type="button" onClick={commit} disabled={committing}
-            style={{ fontSize: 13, fontWeight: 600, padding: "9px 20px", borderRadius: 6, cursor: committing ? "not-allowed" : "pointer", background: "#2563eb", color: "#fff", border: "none", opacity: committing ? 0.6 : 1 }}>
+            style={{ fontSize: 13, fontWeight: 600, padding: "9px 20px", borderRadius: 6, cursor: committing ? "not-allowed" : "pointer", background: "var(--blue3)", color: "#fff", border: "none", opacity: committing ? 0.6 : 1 }}>
             {committing ? "Importing…" : conflict ? "Replace table" : "Add table"}
           </button>
           {queue.length > 0 && (
@@ -397,7 +397,7 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
         </p>
       </div>
 
-      {error && <p style={{ fontSize: 12, color: "#f87171" }}>{error}</p>}
+      {error && <p style={{ fontSize: 12, color: "var(--red4)" }}>{error}</p>}
 
       {/* Existing tables, grouped by schema */}
       <div>
@@ -421,7 +421,7 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
                       </span>
                       <button onClick={() => remove(f)} title="Remove table"
                         style={{ width: 26, height: 26, borderRadius: 6, cursor: "pointer", background: "transparent", border: "1px solid var(--b1)", color: "var(--t4)", display: "flex", alignItems: "center", justifyContent: "center" }}
-                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "#f87171"; (e.currentTarget as HTMLElement).style.borderColor = "#f87171"; }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "var(--red4)"; (e.currentTarget as HTMLElement).style.borderColor = "var(--red4)"; }}
                         onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "var(--t4)"; (e.currentTarget as HTMLElement).style.borderColor = "var(--b1)"; }}
                       >
                         <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M3 4h10M6.5 4V2.5h3V4M5 4l.5 9h5l.5-9" /></svg>
@@ -594,11 +594,11 @@ export function AddDataPanel({ onClose, onAdded }: { onClose: () => void; onAdde
               </div>
             ))}
 
-            {error && <p style={{ fontSize: 12, color: "#f87171" }}>{error}</p>}
+            {error && <p style={{ fontSize: 12, color: "var(--red4)" }}>{error}</p>}
 
             <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
               <button type="submit" disabled={saving}
-                style={{ fontSize: 13, fontWeight: 600, padding: "9px 20px", borderRadius: 6, cursor: saving ? "not-allowed" : "pointer", background: "#2563eb", color: "#fff", border: "none", opacity: saving ? 0.6 : 1 }}>
+                style={{ fontSize: 13, fontWeight: 600, padding: "9px 20px", borderRadius: 6, cursor: saving ? "not-allowed" : "pointer", background: "var(--blue3)", color: "#fff", border: "none", opacity: saving ? 0.6 : 1 }}>
                 {saving ? "Connecting…" : "Create connection"}
               </button>
               <button type="button" onClick={() => setPicked(null)}

@@ -86,13 +86,10 @@ async def create_connection(req: AddConnectionRequest):
 
     conn_id = add_connection(name=req.name, conn_type=req.conn_type, dsn=req.dsn, meta=combined_meta)
 
-    # Fire explorer as a non-blocking background task — same pattern as startup.
-    # Returns immediately; DB open + explore() run off the event loop.
-    try:
-        from aughor.api import _boot_explorer
-        asyncio.create_task(_boot_explorer(conn_id, retry_interval=10, max_retries=3), name=f"boot-{conn_id}")
-    except Exception as exc:
-        logger.warning("Could not start explorer for new connection %s: %s", conn_id, exc)
+    # NOTE: Explorer no longer auto-starts on connection creation.
+    # The user must manually start it via POST /exploration/{conn_id}/start
+    # or POST /exploration/{conn_id}/restart.
+    # This prevents heavy background work from interfering with connection setup.
 
     return {"id": conn_id, "message": "Connection added", "test_result": msg}
 
@@ -180,10 +177,20 @@ async def connection_schema_rich(conn_id: str):
         raise HTTPException(status_code=404, detail="Connection not found")
     try:
         from aughor.tools.schema import build_rich_schema
+        from aughor.db.type_overrides import get_table_overrides
         def _work():
             s = _get_schema_cached(conn_id, db)
             db.close()
-            return build_rich_schema(s)
+            result = build_rich_schema(s)
+            # Apply user type overrides so the rich schema stays in sync
+            for table in result.get("tables", []):
+                tname = table.get("name", "")
+                overrides = get_table_overrides(conn_id, tname)
+                if overrides:
+                    for col in table.get("columns", []):
+                        if col.get("name") in overrides:
+                            col["type"] = overrides[col["name"]]
+            return result
         return await loop.run_in_executor(None, _work)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

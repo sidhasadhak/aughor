@@ -54,7 +54,7 @@ function timeAgo(iso: string): string {
 function statusColor(s: string): string {
   if (s === "complete" || s === "completed") return "var(--grn4)";
   if (s === "failed" || s === "timed_out") return "var(--red4)";
-  if (s === "running") return "var(--amber4, #f59e0b)";
+  if (s === "running") return "var(--amber4, var(--amb4))";
   return "var(--t4)";
 }
 
@@ -163,7 +163,7 @@ function CanvasHistory({
               background: "transparent", border: "1px solid var(--b1)", color: "var(--t4)",
               cursor: isRemoving ? "default" : "pointer",
             }}
-            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = "#f87171"; (e.currentTarget as HTMLButtonElement).style.borderColor = "#f87171"; }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = "var(--red4)"; (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--red4)"; }}
             onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = "var(--t4)"; (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--b1)"; }}
           >
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M3 4h10M6.5 4V2.5h3V4M5 4l.5 9h5l.5-9" /></svg>
@@ -525,7 +525,7 @@ function ArtifactsPanel({ canvasId }: { canvasId: string }) {
               background: "transparent", border: "1px solid var(--b1)", color: "var(--t4)",
               cursor: removing === item.id ? "default" : "pointer",
             }}
-            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = "#f87171"; (e.currentTarget as HTMLButtonElement).style.borderColor = "#f87171"; }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = "var(--red4)"; (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--red4)"; }}
             onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = "var(--t4)"; (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--b1)"; }}
           >
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M3 4h10M6.5 4V2.5h3V4M5 4l.5 9h5l.5-9" /></svg>
