@@ -220,12 +220,31 @@ def generate_sql_full_pipeline(question: str, connection_id: str, db) -> str:
         except Exception:
             pass
 
+    from pydantic import field_validator
+
     class ChatAnswerModel(BaseModel):
         sql: str = ""
         headline: str = ""
         chart_type: str = "auto"
         intent: str = ""
         approach: list[str] = Field(default_factory=list)
+
+        @field_validator("approach", mode="before")
+        @classmethod
+        def _coerce_approach(cls, v):
+            # Local models sometimes return approach as a JSON-encoded string or
+            # newline-joined list — mirror _ChatAnswer's coercion so it doesn't
+            # trigger a validation retry (noise + latency) on every question.
+            if isinstance(v, str):
+                import json as _j
+                try:
+                    x = _j.loads(v)
+                    if isinstance(x, list):
+                        return [str(i) for i in x]
+                except Exception:
+                    pass
+                return [s.strip() for s in v.splitlines() if s.strip()]
+            return v
 
     answer: ChatAnswerModel = get_provider("coder").complete(
         system=CHAT_SQL_SYSTEM, user=prompt, response_model=ChatAnswerModel,
