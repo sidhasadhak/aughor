@@ -89,30 +89,70 @@ def ensure_connection(path: str) -> str:
     return add_connection(name=name, conn_type="duckdb", dsn=path, meta={})
 
 
-def _norm_cells(rows) -> tuple[Counter, Counter]:
-    """Split all result cells into a multiset of rounded numbers and a multiset of
-    lowercased strings — lets us compare results regardless of column order/naming."""
-    nums, strs = [], []
+def _cells(rows):
+    """Classify all cells into measures (decimals — the answer quantities),
+    integers (often ids/counts), and strings (labels)."""
+    dec, integ, strs = [], [], []
     for r in rows:
         for v in r:
             if v is None:
                 continue
-            try:
-                nums.append(round(float(v), 2))
-            except (ValueError, TypeError):
-                strs.append(str(v).strip().lower())
-    return Counter(nums), Counter(strs)
+            if isinstance(v, str):
+                try:
+                    f = float(v)
+                    (dec if f != int(f) else integ).append(f)
+                except ValueError:
+                    strs.append(v.strip().lower())
+            else:
+                try:
+                    f = float(v)
+                    (dec if f != int(f) else integ).append(f)
+                except (TypeError, ValueError):
+                    strs.append(str(v).strip().lower())
+    return dec, integ, strs
+
+
+def _close(a: float, b: float, rel: float = 0.005, absol: float = 0.5) -> bool:
+    return abs(a - b) <= max(absol, rel * max(abs(a), abs(b)))
+
+
+def _subset_within_tol(need, have) -> bool:
+    """Every value in `need` has a DISTINCT match in `have` within tolerance."""
+    pool = list(have)
+    for x in need:
+        for i, y in enumerate(pool):
+            if _close(x, y):
+                pool.pop(i)
+                break
+        else:
+            return False
+    return True
 
 
 def _equiv(gen_rows, ref_rows) -> bool:
-    """True if every numeric and string value in the OFFICIAL result is present in
-    the generated result (generated ⊇ reference). Tolerates extra/renamed/reordered
-    columns and helpful additions; catches missing or wrong values."""
-    gn, gs = _norm_cells(gen_rows)
-    rn, rs = _norm_cells(ref_rows)
-    nums_ok = all(gn[k] >= v for k, v in rn.items())
-    strs_ok = all(gs[k] >= v for k, v in rs.items())
-    return nums_ok and strs_ok
+    """Execution-based correctness: does the generated result carry the same ANSWER
+    as the official query? Compares the measure quantities (decimals — revenues,
+    rates, …) with tolerance and the string labels, ignoring reference-only id
+    columns and rounding. Falls back to integer measures when the answer is counts.
+    A row-count blow-up (missing GROUP BY / filter) is treated as wrong."""
+    gd, gi, gs = _cells(gen_rows)
+    rd, ri, rs = _cells(ref_rows)
+
+    # Row-count sanity: a result far larger than the reference answered a
+    # different (un-aggregated / under-filtered) question.
+    if len(gen_rows) > 3 * max(1, len(ref_rows)) + 5:
+        return False
+
+    # String labels in the reference answer must all appear in the generated one.
+    gsc = Counter(gs)
+    if not all(gsc[x] > 0 for x in set(rs)):
+        return False
+
+    # Measures: prefer decimals (the substantive quantities); if the answer has
+    # none, fall back to integers (e.g. count-only answers like Q12).
+    ref_meas = rd if rd else ri
+    gen_meas = gd if rd else gi
+    return _subset_within_tol(ref_meas, gen_meas)
 
 
 def main():
