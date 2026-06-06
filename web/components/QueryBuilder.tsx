@@ -104,10 +104,14 @@ function findJoin(from: string, to: string, joins: SchemaJoin[]): SchemaJoin | n
   return joins.find(j => (j.t1===from&&j.t2===to)||(j.t2===from&&j.t1===to)) ?? null;
 }
 
-function joinClause(join: SchemaJoin, pivot: string) {
+function joinClause(join: SchemaJoin, pivot: string, tableSchemas?: Record<string, string>) {
   const fwd = join.t1 === pivot;
   const [lt,lc,rt,rc] = fwd ? [join.t1,join.c1,join.t2,join.c2] : [join.t2,join.c2,join.t1,join.c1];
-  return `LEFT JOIN ${rt} ON ${lt}.${lc} = ${rt}.${rc}`;
+  const qTable = (t: string) => {
+    const s = tableSchemas?.[t];
+    return s && s !== "main" && s !== "public" ? `"${s}"."${t}"` : `"${t}"`;
+  };
+  return `LEFT JOIN ${qTable(rt)} ON ${qTable(lt)}.${lc} = ${qTable(rt)}.${rc}`;
 }
 
 // Adjacency list over the studied join graph (undirected).
@@ -170,14 +174,19 @@ function buildSql(
   primary: string, joined: string[], schemaJoins: SchemaJoin[],
   dims: DimItem[], measures: MeasureItem[], filters: FilterItem[],
   orderBy: string, limit: number,
+  tableSchemas?: Record<string, string>,
 ) {
+  const qTable = (t: string) => {
+    const s = tableSchemas?.[t];
+    return s && s !== "main" && s !== "public" ? `"${s}"."${t}"` : `"${t}"`;
+  };
   const multi = joined.length > 0;
   const selParts = [
     ...dims.map(d => qualify(d.col, d.table, multi)),
     ...measures.map(m => `${measureExpr(m,multi)} AS ${m.alias || autoAlias(m.agg,m.col,m.customExpr)}`),
   ];
   const joinLines = resolveJoins(primary, joined, schemaJoins).map(
-    ({ table, join, pivot }) => join ? joinClause(join, pivot) : `-- TODO: no join found for "${table}"`,
+    ({ table, join, pivot }) => join ? joinClause(join, pivot, tableSchemas) : `-- TODO: no join found for "${table}"`,
   );
   const hasAgg = measures.some(m => m.agg !== "CUSTOM" || /\b(SUM|COUNT|AVG|MIN|MAX|STDDEV|VARIANCE|MEDIAN)\s*\(/i.test(m.customExpr));
   const groupCols = dims.map(d => qualify(d.col,d.table,multi));
@@ -189,7 +198,7 @@ function buildSql(
   });
   return [
     "SELECT", `  ${selParts.length ? selParts.join(",\n  ") : "*"}`,
-    `FROM ${primary}`, ...joinLines,
+    `FROM ${qTable(primary)}`, ...joinLines,
     ...(whereItems.length ? [`WHERE ${whereItems.join("\n  AND ")}`] : []),
     ...(groupBy ? [groupBy] : []),
     ...(orderBy.trim() ? [`ORDER BY ${orderBy}`] : []),
@@ -464,6 +473,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
   const [expandedTables, setExpandedTables] = useState<Record<string,boolean>>({});
   const [expandedSchemas, setExpandedSchemas] = useState<Record<string,boolean>>({});
   const [catEntry, setCatEntry] = useState<CatalogEntry|null>(null);
+  const [tableSchemas, setTableSchemas] = useState<Record<string, string>>({});
   const [allEntries, setAllEntries] = useState<CatalogEntry[]>([]);
   const [expandedConns, setExpandedConns] = useState<Record<string,boolean>>({});
   const [colSearch, setColSearch] = useState("");
@@ -536,6 +546,9 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
         setAllEntries(entries);
         const entry = entries.find(e => e.conn_id === connId) ?? null;
         setCatEntry(entry);
+      const ts: Record<string, string> = {};
+      entry?.schemas.forEach(s => s.tables.forEach(t => { ts[t.name] = s.name; }));
+      setTableSchemas(ts);
         // Active connection expanded by default; others collapsed.
         setExpandedConns(prev => ({ ...Object.fromEntries(entries.map(e => [e.conn_id, false])), ...prev, [connId]: true }));
         if (entry) {
@@ -560,7 +573,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
 
   useEffect(() => {
     if (!autoSql || !primaryTable) return;
-    setSql(buildSql(primaryTable, joinedTables, schemaJoins, dims, measures, filters, orderBy, limit));
+    setSql(buildSql(primaryTable, joinedTables, schemaJoins, dims, measures, filters, orderBy, limit, tableSchemas));
   }, [autoSql, primaryTable, joinedTables, schemaJoins, dims, measures, filters, orderBy, limit]);
 
   const allTables = primaryTable ? [primaryTable, ...joinedTables] : [];
@@ -589,19 +602,24 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
     window.setTimeout(() => setJoinHint(h => (h === msg ? null : h)), 4500);
   }, []);
 
-  const selectPrimary = useCallback((name: string) => {
+  const selectPrimary = useCallback((name: string, schema?: string) => {
     if (!name) return;
+    if (schema) setTableSchemas(prev => ({ ...prev, [name]: schema }));
     setPrimaryTable(name); setJoinedTables([]); setExpandedTables({[name]: true});
     setDims([]); setMeasures([]); setFilters([]); setOrderBy("");
     setResult(null); setRunError(null); setAutoSql(true); setColSearch("");
-    setSql(`SELECT *\nFROM ${name}\nLIMIT ${limit}`);
+    const qTable = schema && schema !== "main" && schema !== "public" ? `"${schema}"."${name}"` : `"${name}"`;
+    setSql(`SELECT *\nFROM ${qTable}\nLIMIT ${limit}`);
   }, [limit]);
 
   // Make `table` part of the query, auto-resolving a multi-hop join path through
   // the studied join graph. Returns true if the table is now reachable.
-  const ensureTable = useCallback((table: string): boolean => {
+  const ensureTable = useCallback((table: string, schema?: string): boolean => {
     if (!table) return false;
-    if (!primaryTable) { selectPrimary(table); return true; }
+    // Auto-lookup schema from catalog tree if not explicitly passed
+    const resolvedSchema = schema ?? catEntry?.schemas.find(s => s.tables.some(t => t.name === table))?.name;
+    if (resolvedSchema) setTableSchemas(prev => ({ ...prev, [table]: resolvedSchema }));
+    if (!primaryTable) { selectPrimary(table, resolvedSchema); return true; }
     if (table === primaryTable || joinedTables.includes(table)) return true;
     const resolved = new Set([primaryTable, ...joinedTables]);
     const path = findJoinPath(resolved, table, schemaJoins);
@@ -956,7 +974,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                                 ) : iso ? (
                                   <span title="No detected joins to other tables" className="text-[10px] text-zinc-500 shrink-0">isolated</span>
                                 ) : (
-                                  <button onClick={()=>ensureTable(tbl)} title="Add to query (auto-join)"
+                                  <button onClick={()=>ensureTable(tbl, schema.name)} title="Add to query (auto-join)"
                                     className="opacity-0 group-hover/tbl:opacity-100 text-[11px] text-zinc-500 hover:text-blue-400 border border-zinc-700 hover:border-blue-500/50 rounded px-1.5 leading-tight transition shrink-0">
                                     + add
                                   </button>
