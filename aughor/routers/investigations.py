@@ -466,18 +466,22 @@ async def _stream_chat(
 
         # Schema-linking pre-filter: narrow schema to relevant tables/columns
         # for this specific question. Reduces hallucination by 30-60%.
+        _full_schema = schema  # keep the un-narrowed schema for FK-neighbour expansion
         try:
             from aughor.tools.schema_linker import link_schema_for_prompt
-            schema = link_schema_for_prompt(question, schema, top_k_tables=4, top_k_cols=8, connection_id=connection_id)
+            schema = link_schema_for_prompt(question, schema, top_k_tables=8, top_k_cols=8, connection_id=connection_id)
         except Exception:
             logger.warning("Schema-linking pre-filter failed; using full schema", exc_info=True)
 
-        # Build structured Data Catalog from linked tables (MindsDB-style)
+        # Build structured Data Catalog from linked tables (MindsDB-style),
+        # expanded with FK neighbours so bridge/output tables a multi-table
+        # question needs only via a join are present.
         try:
             from aughor.tools.data_catalog import build_data_catalog
-            from aughor.tools.schema import _parse_schema_tables
+            from aughor.tools.schema import _parse_schema_tables, fk_neighbor_expand
             linked_tables = list(_parse_schema_tables(schema).keys())
             if linked_tables:
+                linked_tables = fk_neighbor_expand(_full_schema, linked_tables, cap=10)
                 data_catalog = await asyncio.to_thread(
                     lambda: build_data_catalog(db, linked_tables)
                 )

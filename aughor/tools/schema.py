@@ -66,6 +66,33 @@ def _col_root(col: str) -> str:
     return col
 
 
+# Short table-name alias prefix used by some schemas on every column
+# (TPC-H: c_custkey, o_orderkey, l_partkey). 1–3 letters + underscore so it
+# strips c_/o_/ps_ but never a word-prefix like ship_/bill_.
+_TABLE_PREFIX = re.compile(r"^[a-z]{1,3}_")
+
+
+def _fk_root(col: str) -> str | None:
+    """Normalised foreign-key root for a *key-like* column, else None.
+
+    Handles the convention where every column carries a short table prefix and
+    the key suffix is fused: ``c_custkey`` and ``o_custkey`` both → ``cust`` so
+    the customer↔orders FK is detected. Standard ``customer_id`` style still
+    maps to ``customer`` (prefix regex doesn't fire, ``_id`` suffix strips).
+    Returns None for non-key columns so the caller can fall back to legacy
+    behaviour — this is purely additive and introduces no new join candidates
+    for non-key columns (e.g. c_acctbal / s_acctbal stay un-joined)."""
+    c = col.lower()
+    stripped = _TABLE_PREFIX.sub("", c, count=1)
+    for suffix in _ROOT_SUFFIXES:  # _id, _key, _number, _code, …
+        if stripped.endswith(suffix):
+            root = stripped[: -len(suffix)]
+            return root if len(root) >= 3 else None
+    if stripped.endswith("key") and len(stripped) > 3:  # fused: custkey, orderkey
+        return stripped[:-3]
+    return None
+
+
 _SECTION_STOP = re.compile(
     r"^(DETECTED JOIN|NO DIRECT JOIN|METRICS CATALOG|Date range|GLOSSARY|JOIN HINTS|RELEVANT|--)"
 )
@@ -94,13 +121,23 @@ def _compute_join_map(table_cols: dict[str, list[str]]) -> dict:
     Compute join candidates across tables using root-normalised column names.
     Returns {"joins": [...], "no_join": [...]} — same shape as talonsight's get_join_map.
     """
+    # Two rooting passes, merged. A column is treated as a join key if EITHER:
+    #   • key-aware: it ends in a key/id suffix (incl. fused/prefixed forms like
+    #     c_custkey) → high-confidence FK, never blocklisted; or
+    #   • legacy: its plain root (suffix-stripped, no prefix strip) is shared and
+    #     not a generic attribute (preserves prior behaviour for non-key columns).
     root_map: dict[str, list[tuple[str, str]]] = {}
+    key_roots: set[str] = set()
     for table, cols in table_cols.items():
         for col in cols:
-            root = _col_root(col)
-            if len(root) < 3:
+            kroot = _fk_root(col)
+            if kroot and len(kroot) >= 3:
+                root_map.setdefault(kroot, []).append((table, col))
+                key_roots.add(kroot)
                 continue
-            root_map.setdefault(root, []).append((table, col))
+            oroot = _col_root(col)
+            if len(oroot) >= 3 and oroot not in _NON_KEY_ROOTS:
+                root_map.setdefault(oroot, []).append((table, col))
 
     joined_pairs: set[frozenset[str]] = set()
     joins: list[dict] = []
@@ -108,8 +145,7 @@ def _compute_join_map(table_cols: dict[str, list[str]]) -> dict:
     for root, entries in root_map.items():
         if len(entries) < 2:
             continue
-        if root in _NON_KEY_ROOTS:
-            continue  # skip generic attribute columns — not join keys
+        is_key = root in key_roots
         for i in range(len(entries)):
             for j in range(i + 1, len(entries)):
                 t1, c1 = entries[i]
@@ -119,7 +155,7 @@ def _compute_join_map(table_cols: dict[str, list[str]]) -> dict:
                 pair = frozenset([t1, t2])
                 if pair in joined_pairs:
                     continue
-                match = "exact" if (c1 == c2 or c1.endswith("_id") or c2.endswith("_id")) else "inferred"
+                match = "exact" if (is_key or c1 == c2 or c1.endswith("_id") or c2.endswith("_id")) else "inferred"
                 joins.append({"t1": t1, "c1": c1, "t2": t2, "c2": c2, "match": match})
                 joined_pairs.add(pair)
 
@@ -131,6 +167,35 @@ def _compute_join_map(table_cols: dict[str, list[str]]) -> dict:
         if frozenset([all_tables[i], all_tables[j]]) not in joined_pairs
     ]
     return {"joins": joins, "no_join": no_join}
+
+
+def fk_neighbor_expand(full_schema: str, tables: list[str], cap: int = 10) -> list[str]:
+    """Expand a set of schema-linked tables with their direct FK neighbours.
+
+    The schema-linker picks tables by keyword relevance, so it misses BRIDGE and
+    OUTPUT tables that a multi-table question needs only via a join (e.g. TPC-H Q5
+    needs `lineitem` for revenue, Q10 needs `nation` for the nation name — neither
+    is named in the question). Adding 1-hop FK neighbours (bounded by ``cap``)
+    completes the join paths without dumping the whole schema. Order-preserving:
+    the originally linked tables stay first."""
+    try:
+        jmap = _compute_join_map(_parse_schema_tables(full_schema))
+    except Exception:
+        return tables
+    adj: dict[str, set[str]] = {}
+    for j in jmap.get("joins", []):
+        adj.setdefault(j["t1"], set()).add(j["t2"])
+        adj.setdefault(j["t2"], set()).add(j["t1"])
+    out = list(tables)
+    seen = set(tables)
+    for t in tables:
+        for nb in sorted(adj.get(t, ())):
+            if len(out) >= cap:
+                break
+            if nb not in seen:
+                out.append(nb)
+                seen.add(nb)
+    return out
 
 
 def infer_joins(schema_str: str) -> str:
@@ -164,7 +229,10 @@ def infer_joins(schema_str: str) -> str:
         parts.append("DETECTED JOIN PATHS (use these to write correct JOINs):")
         parts.extend(join_lines)
     if no_join_lines:
-        parts.append("NO DIRECT JOIN DETECTED — do not hallucinate a JOIN path between:")
+        parts.append(
+            "NO DIRECT FOREIGN KEY between these table pairs — join them through an "
+            "intermediate table if the question needs both; do not invent a shared key:"
+        )
         parts.extend(no_join_lines)
     return "\n".join(parts)
 

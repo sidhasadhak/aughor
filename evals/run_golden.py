@@ -177,14 +177,15 @@ def generate_sql_full_pipeline(question: str, connection_id: str, db) -> str:
     schema = full_schema
     try:
         from aughor.tools.schema_linker import link_schema_for_prompt
-        schema = link_schema_for_prompt(question, schema, top_k_tables=4, top_k_cols=8, connection_id=connection_id)
+        schema = link_schema_for_prompt(question, schema, top_k_tables=8, top_k_cols=8, connection_id=connection_id)
     except Exception:
         pass
     try:
         from aughor.tools.data_catalog import build_data_catalog
-        from aughor.tools.schema import _parse_schema_tables
+        from aughor.tools.schema import _parse_schema_tables, fk_neighbor_expand
         linked_tables = list(_parse_schema_tables(schema).keys())
         if linked_tables:
+            linked_tables = fk_neighbor_expand(full_schema, linked_tables, cap=10)
             catalog = build_data_catalog(db, linked_tables)
             if catalog:
                 schema = catalog

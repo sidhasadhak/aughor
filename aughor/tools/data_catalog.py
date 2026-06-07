@@ -55,6 +55,7 @@ def build_data_catalog(conn: "DatabaseConnection", tables: list[str]) -> str:
         return _cache[key][1]
 
     parts: list[str] = []
+    catalog_cols: dict[str, list[str]] = {}
     for table in tables:
         try:
             # Get column info — try PRAGMA first (DuckDB), fallback to SHOW COLUMNS
@@ -73,6 +74,7 @@ def build_data_catalog(conn: "DatabaseConnection", tables: list[str]) -> str:
                 null_str = "YES" if nullable else "NO"
                 lines.append(f"| {col_name} | {col_type} | {null_str} |")
                 col_names.append(col_name)
+            catalog_cols[table] = col_names
 
             # Sample 5 rows
             sample_rows = _fetch_sample(conn, table, col_names)
@@ -97,6 +99,21 @@ def build_data_catalog(conn: "DatabaseConnection", tables: list[str]) -> str:
             continue
 
     catalog = "\n\n".join(parts)
+
+    # Append detected foreign-key joins among these tables. Without this the
+    # catalog has no relational structure and the model invents wrong join paths
+    # on multi-table questions (verified on TPC-H Q5/Q10).
+    try:
+        from aughor.tools.schema import _compute_join_map
+        jmap = _compute_join_map(catalog_cols)
+        if jmap.get("joins"):
+            jlines = ["", "FOREIGN KEY JOINS (use these exact keys to join the tables above):"]
+            for j in jmap["joins"]:
+                jlines.append(f"  {j['t1']}.{j['c1']} = {j['t2']}.{j['c2']}")
+            catalog += "\n" + "\n".join(jlines)
+    except Exception:
+        pass
+
     _cache[key] = (time.time(), catalog)
     return catalog
 
