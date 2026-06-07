@@ -117,13 +117,19 @@ def _close(a: float, b: float, rel: float = 0.005, absol: float = 0.5) -> bool:
 
 
 def _subset_within_tol(need, have) -> bool:
-    """Every value in `need` has a DISTINCT match in `have` within tolerance."""
-    pool = list(have)
-    for x in need:
-        for i, y in enumerate(pool):
-            if _close(x, y):
-                pool.pop(i)
-                break
+    """Every value in `need` matches a distinct value in `have` within tolerance.
+    Sorted two-pointer alignment — preserves the relative tolerance (so cent-level
+    rounding in large aggregates still matches) while avoiding the greedy
+    mis-consumption that made the old version falsely fail large clustered result
+    sets (5000 identical rows scored WRONG)."""
+    ns = sorted(need)
+    hs = sorted(have)
+    j = 0
+    for x in ns:
+        while j < len(hs) and hs[j] < x and not _close(x, hs[j]):
+            j += 1
+        if j < len(hs) and _close(x, hs[j]):
+            j += 1
         else:
             return False
     return True
