@@ -95,11 +95,14 @@ def _fk_root(col: str) -> str | None:
         root = stripped[:-3]
     if root is None or len(root) < 3:
         return None
-    # Role-played date dimension: order_date / ship_date / sold_date all FK to the
-    # one date_dim (d_date_sk → 'date'). Common in every star schema — collapse the
-    # role prefix so the join is detected.
-    if root.endswith("_date"):
-        return "date"
+    # Skip date/time surrogate keys. In a star schema every fact carries a
+    # *_date_sk / *_time_sk pointing at the shared date_dim/time_dim, so plain
+    # root-matching would wrongly join the facts to EACH OTHER (ss_sold_date_sk =
+    # cs_sold_date_sk). Modelling FK→dimension-PK needs ownership detection we
+    # don't have here; staying silent beats emitting false joins. (The model still
+    # joins date_dim from column naming; a temporal-grounding lever is future work.)
+    if root == "date" or root == "time" or root.endswith("date") or root.endswith("time"):
+        return None
     return root
 
 
@@ -124,6 +127,27 @@ def _parse_schema_tables(schema_str: str) -> dict[str, list[str]]:
             if col_m and not line.strip().startswith("--"):
                 table_cols[current].append(col_m.group(1))
     return table_cols
+
+
+def _table_base(t: str) -> str:
+    """Bare table name for owner matching: last path segment, lowercased, with
+    dim_/fact_/_dim wrappers and a trailing plural 's' removed."""
+    base = t.split(".")[-1].lower()
+    base = re.sub(r"^(dim|fact|tbl|stg)_", "", base)
+    base = re.sub(r"_(dim|fact|tbl)$", "", base)
+    return base.rstrip("s")
+
+
+def _find_dim_owner(root: str, entries: list[tuple[str, str]]) -> int | None:
+    """Index of the table that OWNS this key (the dimension), or None. The owner
+    is the table whose bare name matches the key root (item→item, customer→
+    customers, date→date_dim, cust→customer)."""
+    rk = root.rstrip("s")
+    for idx, (t, _c) in enumerate(entries):
+        tb = _table_base(t)
+        if tb == rk or (len(rk) >= 4 and (tb.startswith(rk) or rk.startswith(tb))):
+            return idx
+    return None
 
 
 def _compute_join_map(table_cols: dict[str, list[str]]) -> dict:
@@ -156,18 +180,27 @@ def _compute_join_map(table_cols: dict[str, list[str]]) -> dict:
         if len(entries) < 2:
             continue
         is_key = root in key_roots
-        for i in range(len(entries)):
-            for j in range(i + 1, len(entries)):
-                t1, c1 = entries[i]
-                t2, c2 = entries[j]
-                if t1 == t2:
-                    continue
-                pair = frozenset([t1, t2])
-                if pair in joined_pairs:
-                    continue
-                match = "exact" if (is_key or c1 == c2 or c1.endswith("_id") or c2.endswith("_id")) else "inferred"
-                joins.append({"t1": t1, "c1": c1, "t2": t2, "c2": c2, "match": match})
-                joined_pairs.add(pair)
+        # Star-schema routing: when ≥3 tables share a key, they are facts pointing
+        # at a DIMENSION (the eponymous table, e.g. root 'item' → table `item`).
+        # Join each fact to the dimension (FK→PK), NOT fact-to-fact — otherwise
+        # store_sales and catalog_sales get falsely joined just for both having
+        # an item key. With no eponymous owner, fall back to all-pairs.
+        owner = _find_dim_owner(root, entries) if len(entries) >= 3 else None
+        if owner is not None:
+            pairs = [(owner, j) for j in range(len(entries)) if j != owner]
+        else:
+            pairs = [(i, j) for i in range(len(entries)) for j in range(i + 1, len(entries))]
+        for a, b in pairs:
+            t1, c1 = entries[a]
+            t2, c2 = entries[b]
+            if t1 == t2:
+                continue
+            pair = frozenset([t1, t2])
+            if pair in joined_pairs:
+                continue
+            match = "exact" if (is_key or c1 == c2 or c1.endswith("_id") or c2.endswith("_id")) else "inferred"
+            joins.append({"t1": t1, "c1": c1, "t2": t2, "c2": c2, "match": match})
+            joined_pairs.add(pair)
 
     all_tables = list(table_cols.keys())
     no_join = [
