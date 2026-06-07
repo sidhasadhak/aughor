@@ -40,12 +40,20 @@ export function Chart({
   chartType = "auto",
   chartConfig = null,
   title = "chart",
+  chrome = true,
+  showLabels: showLabelsProp,
 }: {
   columns: string[];
   rows: unknown[][];
   chartType?: string | null;
   chartConfig?: Record<string, unknown> | null;
   title?: string;
+  /** Render the hover toolbar (labels + download) and drag-to-resize handle.
+   *  Set false when an outer wrapper (e.g. InvestigationChart) supplies the chrome. */
+  chrome?: boolean;
+  /** Externally control data-label visibility (chromeless mode). Falls back to
+   *  the internal toggle when undefined. */
+  showLabels?: boolean;
 }) {
   const outerRef  = useRef<HTMLDivElement>(null);
   const chartRef  = useRef<HTMLDivElement>(null);
@@ -53,7 +61,8 @@ export function Chart({
   const [userH, setUserH] = useState<number | null>(null);
 
   // showLabels = true renders data values on top of bars/points
-  const [showLabels, setShowLabels] = useState(false);
+  const [showLabelsState, setShowLabels] = useState(false);
+  const showLabels = showLabelsProp ?? showLabelsState;
 
   function startDrag(e: React.MouseEvent) {
     e.preventDefault();
@@ -1037,6 +1046,7 @@ export function Chart({
   return (
     <div className="mt-2 w-full group/chart">
       {/* Header row: download + labels toggle buttons appear on hover */}
+      {chrome && (
       <div className="flex justify-end h-6 mb-0.5 opacity-0 group-hover/chart:opacity-100 transition-opacity gap-1">
         <button
           onClick={() => setShowLabels(s => !s)}
@@ -1059,6 +1069,7 @@ export function Chart({
           <DownloadIcon label="Download chart as PNG" size="small" />
         </button>
       </div>
+      )}
 
       {/* Chart viewport — fixed 350px with internal scroll; Vega renders at full natural height */}
       <div ref={outerRef} style={{ maxHeight: 350, overflowY: 'auto', overflowX: 'auto', width: '100%' }}>
@@ -1069,12 +1080,14 @@ export function Chart({
 
 
       {/* Drag-to-resize handle */}
+      {chrome && (
       <div
         onMouseDown={startDrag}
         className="flex items-center justify-center h-3 cursor-ns-resize group/drag"
       >
         <div className="w-10 h-0.5 rounded-full bg-zinc-800 group-hover/drag:bg-zinc-600 transition-colors" />
       </div>
+      )}
     </div>
   );
 }
