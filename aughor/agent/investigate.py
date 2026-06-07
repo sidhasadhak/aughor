@@ -24,6 +24,7 @@ from aughor.agent.state import (
 )
 from aughor.tools.executor import format_result_for_llm
 from aughor.tools.stats import analyze_query_result
+from aughor.tools.table_names import bare as _bare  # aliased — local vars named `bare` shadow it
 from aughor import telemetry as _telemetry
 
 if TYPE_CHECKING:
@@ -233,7 +234,7 @@ def _filter_schema(schema: str, table_names: list[str]) -> str:
         return schema
 
     # Normalise: extract bare table names (strip schema prefix like analytics.)
-    bare = {t.split(".")[-1].lower() for t in table_names if t}
+    bare = {_bare(t) for t in table_names if t}
 
     # Build a single regex that matches any bare name at a word boundary
     pattern = re.compile(
@@ -277,7 +278,7 @@ def _validate_intake_date_column(date_column: str) -> str | None:
     """
     if not date_column or date_column.upper() == "NONE":
         return None  # explicitly set to NONE is valid (no date column found)
-    col_part = date_column.split(".")[-1].lower() if "." in date_column else date_column.lower()
+    col_part = _bare(date_column)
     if any(col_part.endswith(s) for s in _ID_COLUMN_SUFFIXES):
         return (
             f"date_column '{date_column}' ends with an identifier suffix ({col_part}) — "
@@ -303,12 +304,12 @@ def _extract_qualified_tables(schema: str) -> dict[str, str]:
     mapping: dict[str, str] = {}
     for m in table_pattern.finditer(schema):
         qualified = m.group(1)
-        bare = qualified.split(".")[-1].lower()
+        bare = _bare(qualified)
         if bare not in mapping or len(qualified) < len(mapping[bare]):
             mapping[bare] = qualified
     for m in catalog_pattern.finditer(schema):
         qualified = m.group(1)
-        bare = qualified.split(".")[-1].lower()
+        bare = _bare(qualified)
         if bare not in mapping or len(qualified) < len(mapping[bare]):
             mapping[bare] = qualified
     return mapping
@@ -322,7 +323,7 @@ def _qualify_intake_table_names(intake, schema: str) -> None:
 
     # metric_table
     if intake.metric_table:
-        bare = intake.metric_table.split(".")[-1].lower()
+        bare = _bare(intake.metric_table)
         if bare in mapping and intake.metric_table != mapping[bare]:
             intake.metric_table = mapping[bare]
 
@@ -356,8 +357,8 @@ def _validate_intake_metric_table(metric_table: str, schema: str) -> str | None:
     table_pattern = re.compile(r'^TABLE:\s+([\w.]+)', re.MULTILINE)
     catalog_pattern = re.compile(r'^##\s+([\w.]+)', re.MULTILINE)
     found_qualified = [m.group(1) for m in table_pattern.finditer(schema)] + [m.group(1) for m in catalog_pattern.finditer(schema)]
-    found_bare = [t.split(".")[-1].lower() for t in found_qualified]
-    bare = metric_table.split(".")[-1].lower()
+    found_bare = [_bare(t) for t in found_qualified]
+    bare = _bare(metric_table)
 
     if bare not in found_bare:
         return (
@@ -369,7 +370,7 @@ def _validate_intake_metric_table(metric_table: str, schema: str) -> str | None:
     # If schema uses qualified names, require the intake to also use them
     has_qualified = any('.' in t for t in found_qualified)
     if has_qualified and '.' not in metric_table:
-        qualified_match = next((t for t in found_qualified if t.split(".")[-1].lower() == bare), None)
+        qualified_match = next((t for t in found_qualified if _bare(t) == bare), None)
         if qualified_match:
             return (
                 f"metric_table '{metric_table}' is missing the schema prefix. "

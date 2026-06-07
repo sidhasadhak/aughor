@@ -7,6 +7,7 @@ import duckdb
 
 from aughor.semantic.glossary import apply_glossary
 from aughor.db.type_overrides import get_table_overrides
+from aughor.tools.table_names import bare
 
 # Normalise verbose type names (PostgreSQL information_schema, DuckDB DESCRIBE).
 _TYPE_MAP: dict[str, str] = {
@@ -132,7 +133,7 @@ def _parse_schema_tables(schema_str: str) -> dict[str, list[str]]:
 def _table_base(t: str) -> str:
     """Bare table name for owner matching: last path segment, lowercased, with
     dim_/fact_/_dim wrappers and a trailing plural 's' removed."""
-    base = t.split(".")[-1].lower()
+    base = bare(t)
     base = re.sub(r"^(dim|fact|tbl|stg)_", "", base)
     base = re.sub(r"_(dim|fact|tbl)$", "", base)
     return base.rstrip("s")
@@ -272,7 +273,7 @@ def temporal_dimension_tables(full_schema: str, linked_tables: list[str], questi
     for t, cols in tcols.items():
         if t in linked:
             continue
-        base = t.split(".")[-1].lower()
+        base = bare(t)
         if _DT_DIM_NAME.search(base) and any(_DT_SURROGATE.search(c) for c in cols):
             dims.append(t)
     return dims
@@ -741,7 +742,7 @@ def get_schema_for_tables(full_schema: str, tables: list[str]) -> str:
 
     include = {t.lower() for t in tables}
     # Also build a set of bare-only names for cross-matching qualified <-> bare
-    include_bare = {t.split(".")[-1].lower() for t in tables}
+    include_bare = {bare(t) for t in tables}
     lines = full_schema.splitlines(keepends=True)
     out: list[str] = []
     in_table_block = False
@@ -754,7 +755,7 @@ def get_schema_for_tables(full_schema: str, tables: list[str]) -> str:
             in_table_block = True
             # Extract table name from "TABLE: orders  (99,441 rows)" or "TABLE: ecommerce.orders"
             raw_name = line.split()[1].lower() if len(line.split()) > 1 else ""
-            bare_name = raw_name.split(".")[-1]
+            bare_name = bare(raw_name)
             keep_block = raw_name in include or bare_name in include or raw_name in include_bare or bare_name in include_bare
             if keep_block:
                 out.append(line)
