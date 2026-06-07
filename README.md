@@ -82,29 +82,32 @@ For complex questions ("Why did revenue drop 8% last month?"), Aughor runs a ful
 
 Investigations are resumable — pause mid-run, switch tabs, come back later.
 
-### Intelligence Injection
+### Grounded NL2SQL — Trustworthy Generation
 
-The chat and investigation pipeline injects 8 layers of contextual intelligence into every LLM call:
+Aughor doesn't just hand the schema to an LLM and hope. Every question runs through a grounding pipeline that narrows, structures, and verifies context so the model generates correct SQL on schemas it has never seen:
 
-1. Schema (always)
-2. Metrics catalog — approved KPI formulas with governance
-3. Exploration findings — null semantics, lifecycle maps
-4. Causal context — confirmed cause-effect edges
-5. Document context — uploaded PDFs, Confluence pages, Notion docs
-6. Org intelligence — insights promoted from canvas explorations to org-wide knowledge
-7. SQL examples — prior investigations as few-shot context
-8. KB patterns — domain knowledge library
+1. **Schema-linking** — narrows a large schema to the tables/columns relevant to *this* question (with a safety floor that never returns an empty schema)
+2. **Data Catalog** — a structured, MindsDB-style catalog of the linked tables: exact columns, types, sample rows, and detected foreign-key joins
+3. **Foreign-key & star-schema join grounding** — detects FK relationships even with prefixed/fused keys (`c_custkey ↔ o_custkey`), surrogate keys (`ss_item_sk ↔ i_item_sk`), and role-played date dimensions; routes facts → dimensions (not fact↔fact); pulls in bridge tables a multi-join question needs only via a join
+4. **Temporal/dimension grounding** — for star schemas, brings the `date_dim`/`time_dim` into context and tells the model that `*_date_sk` columns are surrogate keys to join, not literals
+5. **Trusted query templates** — data-team-reviewed verified SQL patterns; when a question matches one it's injected authoritatively ("reuse this exact structure"), fixing reasoning gaps prompt rules can't (e.g. multi-fact **fan-out**). Answers are marked **Verified**
+6. **Metrics catalog** — approved KPI formulas with governance, filtered to the connection's schema
+7. **Exploration findings, causal edges, documents, org intelligence, KB patterns, prior SQL examples** — the wider knowledge layers
+8. **Dialect normalization + self-correcting retry** — SQLGlot transpiles to the target dialect; on an error the failure is diagnosed (DuckDB-specific hints for `to_char`, `date_part`, etc.) and the query is rewritten
+
+This pipeline is benchmark-validated (see **Eval Suite** below) on real, unseen schemas — TPC-H, TPC-DS, ClickBench, and live warehouses.
 
 ### Connectors & Federation
 
 **Databases:** DuckDB, PostgreSQL  
 **Warehouses:** BigQuery, Snowflake, MySQL  
 **Files:** Local upload (CSV/Parquet/Excel), S3  
+**Google Sheets:** link-shared sheets via the public gviz CSV export, read into DuckDB (with a cross-request cache)  
 **API/CRM:** Stripe, HubSpot, Salesforce  
 **Knowledge:** Confluence, Notion  
 **Federation:** Virtual federated database across multiple connections — tables exposed as `{conn_id}__{table}`
 
-All credentials encrypted at rest with Fernet symmetric encryption.
+Connections are **pooled** — open handles are reused across requests (exclusive checkout, idle TTL, health checks) so Postgres/warehouse auth and Sheets fetches aren't repaid on every query. All credentials encrypted at rest with Fernet symmetric encryption. New connections kick off background exploration automatically (visible and cancellable).
 
 ### Semantic Layer
 
@@ -123,11 +126,27 @@ Full visual query builder in the UI:
 - Live SQL preview — auto-generated, editable (disconnects from builder when manually edited)
 - Results with charts, row count, timing, cached badge
 
-### Observability & Evals
+### Eval Suite — Measured on Real, Unseen Schemas
 
-- **Langfuse + OpenTelemetry** tracing — `@node_span` on all 12 investigation nodes; `trace_id` in SSE start event
-- **LLM Evals** — 15-question golden dataset, 3 Braintrust scorers (verdict accuracy, query efficiency, hallucination rate)
-- **Security baseline** — SQL safety checker, PII scanner, audit log (append-only SQLite WAL), query budget enforcement
+NL2SQL quality is validated against real benchmarks with ground-truth, not vibes (`evals/`):
+
+| Harness | Schema | How it's scored | Result |
+|---|---|---|---|
+| `run_tpch.py` | TPC-H (6M rows, 8-table joins) | execution vs DuckDB's bundled official queries | 5/7 |
+| `run_tpcds.py` | TPC-DS (2.88M rows, 24-table snowflake) | execution vs `tpcds_queries()` | 4/5 |
+| `run_clickbench.py` | ClickBench (105-column wide table) | execution vs verbatim reference | 10/10 |
+| `run_golden.py` | full-pipeline + 53-question golden set | measure-based result comparison | — |
+| `run_realdb.py` | **any live connection** | reference-free: executes-clean + **self-consistency** + cross-model **LLM-as-judge** | ~11/15 |
+
+- **Generated SQL runs through the full grounding pipeline** (`--full-pipeline`), so the number reflects the product, not a bare model.
+- **Reference-free scoring** (`run_realdb.py`) is the plug-and-play test: it auto-generates business questions from a live schema, then scores with no hand-written reference SQL — the basis for a per-answer **confidence score**.
+- **Model-agnostic** via `AUGHOR_CODER_MODEL` (validated with qwen3-coder and kimi-k2.6).
+
+### Observability & Security
+
+- **Langfuse + OpenTelemetry** tracing — `@node_span` on all investigation nodes; `trace_id` in SSE start event
+- **Security baseline** — SQL safety checker, PII scanner, audit log (append-only SQLite WAL), query budget enforcement; internal/metadata queries are excluded from the audit trail
+- **Anthropic fallback** — if the primary LLM backend (local/cloud Ollama) fails, generation transparently retries on Anthropic (Opus) when an API key is configured
 - **Action Hub** — webhook/Slack/Jira triggers from investigation recommendations
 
 ### Design System
@@ -226,12 +245,12 @@ aughor/
 │   ├── process/        # Causal graph, process mapper
 │   ├── routers/        # 12 FastAPI domain routers (async, run_in_executor)
 │   ├── security/       # Safety checker, PII scanner, audit log, query budget
-│   ├── semantic/       # Glossary, dbt, embedder, metrics catalog, KB loader
-│   ├── sql/            # SqlWriter — SQL generation & self-correction
+│   ├── semantic/       # Glossary, dbt, embedder, metrics catalog, KB, trusted_queries
+│   ├── sql/            # SqlWriter — SQL generation, dialect normalization & self-correction
 │   ├── telemetry.py    # Langfuse + OTel tracing
-│   ├── tools/          # Stats, profiler (catalog-first), schema, materializer
+│   ├── tools/          # schema-linker, data_catalog, stats, profiler, semantic_validator
 │   └── api.py          # FastAPI entrypoint — REST + SSE
-├── evals/              # Golden dataset + Braintrust scorers
+├── evals/              # run_tpch / run_tpcds / run_clickbench / run_golden / run_realdb
 ├── web/
 │   ├── app/            # Next.js App Router — layout, page, globals
 │   ├── components/     # 30+ components: ChatPanel, OntologyCanvas, QueryBuilder, …
@@ -270,18 +289,21 @@ aughor/
 | 49 | Org Intelligence Layer — promote canvas insights to org-wide knowledge |
 | 24b | Async hardening — all 18 blocking DB/LLM route handlers converted to async |
 | 24c | Ontology quality — dual-layer lifecycle false-positive detection; geo column exclusion, formula-string guard, avg-length/word-count column-level gate in both builder and explorer merger |
+| genie-revamp | **Grounded NL2SQL** — schema-linker (de-hardwired, schema-agnostic), MindsDB-style Data Catalog, FK/star-schema join grounding (prefixed/fused/surrogate keys, fact→dimension routing, FK-neighbour expansion), temporal/dimension grounding, dialect-aware self-correcting retry |
+| genie-revamp | **Eval suite** — full-pipeline harness + real-scale TPC-H / TPC-DS / ClickBench harnesses (DuckDB-generated, execution-validated) + reference-free real-DB harness (self-consistency + LLM-judge) |
+| genie-revamp | **Trusted query templates** — Databricks-style verified assets; authoritative injection fixes reasoning gaps (fan-out, grain) prompt rules can't |
+| genie-revamp | Connection pooling · Google Sheets connector · Anthropic (Opus) fallback · light-mode fix · audit-log noise reduction · LLM-call batching |
 
 ### Coming Next
 
 | Feature | Why |
 |---|---|
+| **Trusted-template productization** | UI/explorer flow to curate + review templates per connection; "Verified" trust badge; vector retrieval + typed parameterization |
 | **Sprint 48 — Enterprise Hardening** | OAuth2/OIDC, RBAC, workspace tenancy — multi-user ready |
-| **Ontology enrichment sprint** | Close exploration→ontology loop: wire phase 3/5/8 findings back as entity axioms; replace `RELATES_TO` with domain-specific semantic verbs; endurant/perdurant visual separation on canvas |
+| **Production query timeouts** | Cancel runaway generated queries on real warehouses (a real plug-and-play hazard) |
+| **Ontology enrichment sprint** | Close exploration→ontology loop: wire phase 3/5/8 findings back as entity axioms; replace `RELATES_TO` with domain-specific semantic verbs |
 | **Column-level lineage** | Trace any value back to its source via SQLGlot parse trees |
-| **dbt DAG traversal** | Downstream impact analysis — "what breaks if this source changes?" |
 | **Drift detection** | Alert when schema, freshness, or value distributions shift |
-| **Scheduled ontology refresh** | Keep the business map current on a configurable cadence |
-| **Export to dbt / Lightdash** | Push enriched ontology back to your semantic layer |
 | **Onboarding experience overhaul** | Guided setup for new users and new connections |
 
 ---
