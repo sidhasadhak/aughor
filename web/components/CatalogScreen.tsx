@@ -749,11 +749,25 @@ function SchemaDetailPanel({ sel, onSelectTable, onAsk, connName }: {
     setErdError(null);
     getSchemaRich(sel.connId)
       .then(full => {
-        const allowed = new Set(entry.tables.map(t => t.name));
+        // The rich schema reports fully-qualified names (bakehouse.media_reviews)
+        // while the catalog entry lists bare names (media_reviews). Matching them
+        // directly filters a multi-schema connection's ERD down to nothing
+        // ("No tables found"). Match on the bare last segment, scoped to this
+        // schema, and keep the original qualified names so the diagram's internal
+        // table↔join matching stays consistent.
+        const bare = (n: string) => n.split(".").pop()!.toLowerCase();
+        const allowed = new Set(entry.tables.map(t => bare(t.name)));
+        const inSchema = (n: string) => {
+          const parts = n.split(".");
+          const schemaOk =
+            parts.length < 2 ||
+            parts[parts.length - 2].toLowerCase() === entry.name.toLowerCase();
+          return schemaOk && allowed.has(bare(n));
+        };
         const filtered: RichSchema = {
-          tables: full.tables.filter(t => allowed.has(t.name)),
-          joins: full.joins.filter(j => allowed.has(j.t1) && allowed.has(j.t2)),
-          isolated: full.isolated?.filter(n => allowed.has(n)) ?? [],
+          tables: full.tables.filter(t => inSchema(t.name)),
+          joins: full.joins.filter(j => inSchema(j.t1) && inSchema(j.t2)),
+          isolated: full.isolated?.filter(n => inSchema(n)) ?? [],
           warnings: full.warnings ?? [],
         };
         setErdSchema(filtered);
