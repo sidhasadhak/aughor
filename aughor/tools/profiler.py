@@ -209,6 +209,8 @@ class ColumnProfile:
         "semantic_type",
         "null_rate", "distinct_count", "is_low_cardinality",
         "value_range",        # (min, max) for measures
+        # distribution shape for measures (the "shape of the numbers"):
+        "mean", "stddev", "p25", "p50", "p75",
         "value_interpretation",  # "fraction 0-1", "currency", "count", "duration_days"
         "unit",               # "percent_fraction", "USD", "count", "days"
         "top_values",         # for dimensions: most frequent values
@@ -229,6 +231,11 @@ class ColumnProfile:
         unit: Optional[str] = None,
         top_values: Optional[list[str]] = None,
         is_fk: bool = False,
+        mean: Optional[float] = None,
+        stddev: Optional[float] = None,
+        p25: Optional[float] = None,
+        p50: Optional[float] = None,
+        p75: Optional[float] = None,
     ):
         self.table = table
         self.column = column
@@ -238,6 +245,11 @@ class ColumnProfile:
         self.distinct_count = distinct_count
         self.is_low_cardinality = is_low_cardinality
         self.value_range = value_range
+        self.mean = mean
+        self.stddev = stddev
+        self.p25 = p25
+        self.p50 = p50
+        self.p75 = p75
         self.value_interpretation = value_interpretation
         self.unit = unit
         self.top_values = top_values
@@ -263,6 +275,7 @@ class TableProfile:
         "grain_column", "grain_verified",
         "primary_timestamp", "date_range",
         "effective_date_range",
+        "n_periods", "trailing_partial", "time_grain",
         "freshness_lag_hours",
         "computed_at",
     )
@@ -278,12 +291,23 @@ class TableProfile:
         effective_date_range: Optional[tuple] = None,
         freshness_lag_hours: Optional[float] = None,
         computed_at: Optional[str] = None,
+        n_periods: Optional[int] = None,
+        trailing_partial: bool = False,
+        time_grain: Optional[str] = None,
     ):
         self.table = table
         self.row_count = row_count
         self.grain_column = grain_column
         self.grain_verified = grain_verified
         self.primary_timestamp = primary_timestamp
+        # n_periods = number of populated months; trailing_partial = the most
+        # recent month is far below typical volume (an INCOMPLETE period that
+        # would otherwise read as a sharp drop — exclude it from trend/PoP).
+        self.n_periods = n_periods
+        self.trailing_partial = trailing_partial
+        # time_grain = the analytical grain chosen from span + cadence
+        # ("day"/"week"/"month"/…); None => temporal extent too thin for a trend.
+        self.time_grain = time_grain
         # date_range = absolute (min, max) including outliers.
         self.date_range = date_range
         # effective_date_range = the DENSE region (min, max) where the bulk of
@@ -504,6 +528,96 @@ def _robust_date_range(
     return (min(dense), max(dense))
 
 
+_GRAIN_DAYS = [
+    ("year", 365.25), ("quarter", 91.31), ("month", 30.44),
+    ("week", 7.0), ("day", 1.0), ("hour", 1.0 / 24), ("minute", 1.0 / 1440),
+]
+
+
+def _choose_grain(span_days, distinct_days):
+    """Pick the analytical time grain from the data's actual SPAN and CADENCE.
+
+    Returns (grain_name | None, n_periods). grain=None => the temporal extent is
+    too thin for any trend (caller should analyse cross-sectionally instead).
+
+    Principle: choose the COARSEST grain that still yields >= TARGET periods (so a
+    baseline/trend has enough history without drowning in noise), but never finer
+    than the data's native cadence (monthly snapshots can't be read daily).
+    """
+    TARGET, VIABLE = 12, 4
+    if not span_days or span_days <= 0:
+        return None, 0
+    # Native cadence ≈ days between populated days. ~1 => daily-dense; large =>
+    # sparse snapshots that only make sense at a coarse grain.
+    cadence = (span_days / distinct_days) if distinct_days and distinct_days > 0 else 1.0
+    # Resolution floor: don't pick a grain much finer than the cadence. Sub-day
+    # grains only when the whole span is short (otherwise day is the floor).
+    sub_day_ok = span_days < 3
+    floor = max(cadence * 0.8, (1.0 / 24 if sub_day_ok else 1.0))
+    allowed = [(n, d) for n, d in _GRAIN_DAYS if d >= floor] or [("day", 1.0)]
+    for name, gd in allowed:          # coarse -> fine
+        if span_days / gd >= TARGET:
+            return name, int(span_days / gd)
+    name, gd = allowed[-1]            # finest allowed grain
+    n = int(span_days / gd)
+    return (name if n >= VIABLE else None), n
+
+
+def _span_days(date_range):
+    try:
+        a = datetime.fromisoformat(str(date_range[0])[:19].replace(" ", "T"))
+        b = datetime.fromisoformat(str(date_range[1])[:19].replace(" ", "T"))
+        return max(0.0, (b - a).total_seconds() / 86400.0)
+    except Exception:
+        return None
+
+
+def _period_density(conn: "DatabaseConnection", qt: str, qts: str, date_range):
+    """Return (grain, n_periods, trailing_partial) using a DATA-DERIVED grain.
+
+    The grain is chosen from the span + cadence (see _choose_grain); n_periods is
+    the count of populated buckets at that grain; trailing_partial flags an
+    incomplete final bucket (would otherwise read as a sudden drop). grain=None
+    means the temporal extent is too thin — analyse cross-sectionally.
+    """
+    if not date_range:
+        return None, None, False
+    span = _span_days(date_range)
+    # Cadence signal: distinct populated calendar days (one cheap query).
+    distinct_days = None
+    try:
+        r0 = conn.execute(
+            "__profiler__",
+            f"SELECT COUNT(DISTINCT date_trunc('day', {qts})) FROM {qt} WHERE {qts} IS NOT NULL",
+        )
+        if not r0.error and r0.rows and r0.rows[0][0] is not None:
+            distinct_days = int(r0.rows[0][0])
+    except Exception:
+        pass
+    grain, est = _choose_grain(span, distinct_days)
+    if grain is None:
+        return None, (distinct_days or None), False
+    # Count populated buckets at the chosen grain + detect a partial trailing one.
+    try:
+        r = conn.execute(
+            "__profiler__",
+            f"SELECT date_trunc('{grain}', {qts})::VARCHAR AS p, COUNT(*) AS c "
+            f"FROM {qt} WHERE {qts} IS NOT NULL GROUP BY 1 ORDER BY 1",
+        )
+    except Exception:
+        return grain, est, False
+    if r.error or not r.rows:
+        return grain, est, False
+    buckets = [(str(row[0]), int(row[1])) for row in r.rows if row[0] is not None]
+    if len(buckets) < 3:
+        return grain, (len(buckets) or None), False
+    counts = sorted(c for _, c in buckets)
+    mid = len(counts) // 2
+    median = counts[mid] if len(counts) % 2 else (counts[mid - 1] + counts[mid]) / 2
+    trailing_partial = bool(buckets[-1][1] < 0.5 * median)
+    return grain, len(buckets), trailing_partial
+
+
 # ── Catalog-based stats (zero full-table scans) ───────────────────────────────
 
 def _catalog_stats_duckdb(
@@ -581,6 +695,8 @@ def _catalog_stats_duckdb(
                 "null_pct":      null_pct,   # 0–100
                 "min":           _get(row, "min"),
                 "max":           _get(row, "max"),
+                "avg":           _safe_float(_get(row, "avg")),
+                "std":           _safe_float(_get(row, "std")),
                 "q25":           _safe_float(_get(row, "q25")),
                 "q50":           _safe_float(_get(row, "q50")),
                 "q75":           _safe_float(_get(row, "q75")),
@@ -716,6 +832,9 @@ def build_table_profile(
     date_range: Optional[tuple] = None
     effective_date_range: Optional[tuple] = None
     freshness_lag_hours: Optional[float] = None
+    n_periods: Optional[int] = None
+    trailing_partial: bool = False
+    grain: Optional[str] = None
 
     qt = _qt(table)
     fast_stats = fast_stats or {}
@@ -844,6 +963,8 @@ def build_table_profile(
             # Robust dense-region bounds, ignoring sparse outlier rows that would
             # otherwise drag MAX(date) into a period with no real data.
             effective_date_range = _robust_date_range(conn, qt, _q(primary_timestamp))
+            # Data-derived grain + period count + incomplete-trailing detection.
+            grain, n_periods, trailing_partial = _period_density(conn, qt, _q(primary_timestamp), date_range)
 
     return TableProfile(
         table=table,
@@ -854,6 +975,9 @@ def build_table_profile(
         date_range=date_range,
         effective_date_range=effective_date_range,
         freshness_lag_hours=freshness_lag_hours,
+        n_periods=n_periods,
+        trailing_partial=trailing_partial,
+        time_grain=grain,
     )
 
 
@@ -889,6 +1013,7 @@ def build_column_profiles(
     # ── Drain catalog stats ───────────────────────────────────────────────────
     raw_stats: dict[str, dict] = {}       # col → {non_null, distinct}
     value_ranges: dict[str, tuple] = {}   # col → (lo, hi)
+    dist_map: dict[str, dict] = {}        # col → {mean, stddev, p25, p50, p75}
     top_values_map: dict[str, list[str]] = {}
 
     for col, dtype in columns:
@@ -930,6 +1055,18 @@ def build_column_profiles(
             hi = _safe_float(mx)
             if lo is not None and hi is not None:
                 value_ranges[col] = (lo, hi)
+
+        # distribution shape from catalog (DuckDB SUMMARIZE already computes these)
+        if _NUMERIC_TYPES.search(dtype) and not _KEY_PATTERN.search(col.lower()):
+            d = {
+                "mean":   cs.get("avg"),
+                "stddev": cs.get("std"),
+                "p25":    cs.get("q25"),
+                "p50":    cs.get("q50"),
+                "p75":    cs.get("q75"),
+            }
+            if any(v is not None for v in d.values()):
+                dist_map[col] = d
 
         # top values from pg most_common_vals (already parsed)
         tvs = cs.get("top_vals")
@@ -1029,6 +1166,7 @@ def build_column_profiles(
         if sem_type == "measure":
             interp, unit = _value_interpretation(col, vrange)
 
+        dist = dist_map.get(col, {})
         profiles.append(ColumnProfile(
             table=table,
             column=col,
@@ -1042,6 +1180,11 @@ def build_column_profiles(
             unit=unit,
             top_values=top_values_map.get(col),
             is_fk=is_fk,
+            mean=dist.get("mean"),
+            stddev=dist.get("stddev"),
+            p25=dist.get("p25"),
+            p50=dist.get("p50"),
+            p75=dist.get("p75"),
         ))
 
     return profiles
@@ -1249,9 +1392,18 @@ def render_profile_annotations(
         stale_warn = ""
         if tp.freshness_lag_hours is not None and tp.freshness_lag_hours > 72:
             stale_warn = f" ⚠ stale ({tp.freshness_lag_hours:.0f}h ago)"
+        tg = getattr(tp, "time_grain", None)
+        partial_warn = ""
+        if getattr(tp, "trailing_partial", False):
+            partial_warn = f" ⚠ last {tg or 'period'} PARTIAL (incomplete — exclude from trend/PoP)"
+        period_str = ""
+        if tg and tp.n_periods:
+            period_str = f" · {tp.n_periods} {tg}{'s' if tp.n_periods != 1 else ''} of history"
+        elif tp.date_range and tg is None:
+            period_str = " · too few periods for a trend → analyse cross-sectionally"
 
         lines.append(
-            f"  [PROFILE] {table} — {tp.row_count:,} rows{grain_str}{date_str}{stale_warn}"
+            f"  [PROFILE] {table} — {tp.row_count:,} rows{grain_str}{date_str}{period_str}{stale_warn}{partial_warn}"
         )
 
         # Column detail (only for relevant tables)
@@ -1282,6 +1434,17 @@ def render_profile_annotations(
             if cp.value_range and cp.value_interpretation:
                 lo, hi = cp.value_range
                 parts.append(f"| range {lo:.2g}–{hi:.2g}")
+
+            # Distribution shape (the "shape of the numbers") for measures — so the
+            # agent can reason about typical-vs-extreme, outliers, and skew.
+            if cp.semantic_type == "measure" and (getattr(cp, "p50", None) is not None or getattr(cp, "mean", None) is not None):
+                dparts = []
+                if cp.p50 is not None:  dparts.append(f"median {cp.p50:.3g}")
+                if cp.mean is not None: dparts.append(f"avg {cp.mean:.3g}")
+                if cp.p25 is not None and cp.p75 is not None:
+                    dparts.append(f"IQR {cp.p25:.3g}–{cp.p75:.3g}")
+                if dparts:
+                    parts.append("| " + " · ".join(dparts))
 
             lines.append(" ".join(parts))
 
