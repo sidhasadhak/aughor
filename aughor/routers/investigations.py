@@ -478,9 +478,14 @@ async def _stream_chat(
         # question needs only via a join are present.
         try:
             from aughor.tools.data_catalog import build_data_catalog
-            from aughor.tools.schema import _parse_schema_tables, fk_neighbor_expand
+            from aughor.tools.schema import _parse_schema_tables, fk_neighbor_expand, temporal_dimension_tables
             linked_tables = list(_parse_schema_tables(schema).keys())
             if linked_tables:
+                # Add the date/time dimension first (before FK expansion + the
+                # 10-table cap) so a temporal question keeps it.
+                for _dt in temporal_dimension_tables(_full_schema, linked_tables, question):
+                    if _dt not in linked_tables:
+                        linked_tables.append(_dt)
                 linked_tables = fk_neighbor_expand(_full_schema, linked_tables, cap=10)
                 data_catalog = await asyncio.to_thread(
                     lambda: build_data_catalog(db, linked_tables)

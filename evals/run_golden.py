@@ -182,9 +182,14 @@ def generate_sql_full_pipeline(question: str, connection_id: str, db) -> str:
         pass
     try:
         from aughor.tools.data_catalog import build_data_catalog
-        from aughor.tools.schema import _parse_schema_tables, fk_neighbor_expand
+        from aughor.tools.schema import _parse_schema_tables, fk_neighbor_expand, temporal_dimension_tables
         linked_tables = list(_parse_schema_tables(schema).keys())
         if linked_tables:
+            # Add the date/time dimension first (before FK expansion + the 10-table
+            # cap) so a temporal question keeps it; then pull in FK neighbours.
+            for _dt in temporal_dimension_tables(full_schema, linked_tables, question):
+                if _dt not in linked_tables:
+                    linked_tables.append(_dt)
             linked_tables = fk_neighbor_expand(full_schema, linked_tables, cap=10)
             catalog = build_data_catalog(db, linked_tables)
             if catalog:

@@ -241,6 +241,43 @@ def fk_neighbor_expand(full_schema: str, tables: list[str], cap: int = 10) -> li
     return out
 
 
+_TEMPORAL_HINT = re.compile(
+    r"\b(year|month|quarter|week|day|daily|monthly|quarterly|weekly|annual|annually|"
+    r"ytd|mtd|qtd|hour|minute|date|jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|jun(e)?|"
+    r"jul(y)?|aug(ust)?|sep(tember)?|oct(ober)?|nov(ember)?|dec(ember)?|\b\d{4}\b)\b",
+    re.IGNORECASE,
+)
+_DT_SURROGATE = re.compile(r"_(date|time)_(sk|key|id)$", re.IGNORECASE)
+_DT_DIM_NAME = re.compile(r"(date|time|calendar|day)", re.IGNORECASE)
+
+
+def temporal_dimension_tables(full_schema: str, linked_tables: list[str], question: str) -> list[str]:
+    """Date/time DIMENSION tables to add to context for a temporal question.
+
+    A star schema filters time through a date_dim/time_dim joined on a surrogate
+    key (fact._date_sk = date_dim.d_date_sk); the schema-linker misses it because
+    "November 2000" names no table. Returns the dimension table(s) when the
+    question is temporal AND a linked fact carries a *_date_sk / *_time_sk key.
+    Empty otherwise (e.g. schemas with plain DATE columns need nothing)."""
+    if not question or not _TEMPORAL_HINT.search(question):
+        return []
+    try:
+        tcols = _parse_schema_tables(full_schema)
+    except Exception:
+        return []
+    linked = set(linked_tables)
+    if not any(any(_DT_SURROGATE.search(c) for c in tcols.get(t, [])) for t in linked):
+        return []
+    dims: list[str] = []
+    for t, cols in tcols.items():
+        if t in linked:
+            continue
+        base = t.split(".")[-1].lower()
+        if _DT_DIM_NAME.search(base) and any(_DT_SURROGATE.search(c) for c in cols):
+            dims.append(t)
+    return dims
+
+
 def infer_joins(schema_str: str) -> str:
     """
     Return a JOIN HINTS text block to append to the schema context, or "".

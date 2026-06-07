@@ -114,6 +114,24 @@ def build_data_catalog(conn: "DatabaseConnection", tables: list[str]) -> str:
     except Exception:
         pass
 
+    # Surrogate-key guidance: if any table exposes a *_date_sk / *_time_sk column,
+    # tell the model these are DIMENSION keys, not literal dates. Without this the
+    # model writes `ss_sold_date_sk = 2451843` or treats a time key as seconds
+    # (verified on TPC-DS Q52/Q55/Q96).
+    try:
+        import re as _re
+        _dt = _re.compile(r"_(date|time)_(sk|key|id)$", _re.IGNORECASE)
+        if any(_dt.search(c) for cols in catalog_cols.values() for c in cols):
+            catalog += (
+                "\n\nNOTE: columns ending in _date_sk / _time_sk are SURROGATE KEYS into a "
+                "date/time dimension (e.g. date_dim, time_dim). To filter or group by calendar "
+                "values, JOIN that dimension on the key (fact._date_sk = date_dim.d_date_sk) and "
+                "use its columns (year, month, day, hour) — NEVER compare a _sk column to a "
+                "literal date, timestamp, or number."
+            )
+    except Exception:
+        pass
+
     _cache[key] = (time.time(), catalog)
     return catalog
 
