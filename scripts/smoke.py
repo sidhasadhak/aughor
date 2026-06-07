@@ -144,6 +144,17 @@ def main():
     ap.add_argument("--diff", default=None, help="compare against a prior snapshot")
     args = ap.parse_args()
 
+    # Load the diff baseline BEFORE running/writing. Otherwise, when --out and
+    # --diff point at the same file (the common case, since --out defaults to the
+    # baseline path), the snapshot write below clobbers the baseline and the diff
+    # ends up comparing the run against itself — always "0 regressions".
+    prev_results = None
+    if args.diff:
+        try:
+            prev_results = json.loads(Path(args.diff).read_text()).get("results", {})
+        except Exception:
+            print(f"(could not read diff baseline {args.diff})")
+
     spec = _json("GET", "/openapi.json")
     if not spec:
         print("FATAL: API not reachable at", BASE)
@@ -191,21 +202,19 @@ def main():
         print(f"  {c:26} {n}")
     print(f"written → {args.out}")
 
-    if args.diff:
-        try:
-            prev = json.loads(Path(args.diff).read_text())["results"]
-        except Exception:
-            print(f"(could not read diff baseline {args.diff})")
-            return 0
+    if args.diff and prev_results is not None:
+        prev = prev_results
         regressions = [k for k, v in results.items()
                        if k in prev and prev[k]["ok"] and not v["ok"]]
         newpass = [k for k, v in results.items()
                    if k in prev and not prev[k]["ok"] and v["ok"]]
-        print(f"\n=== DIFF vs {args.diff} ===")
+        print(f"\n=== DIFF vs {args.diff} (baseline loaded pre-write) ===")
         print(f"  regressions (was ok → now fail): {len(regressions)}")
         for k in regressions:
             print(f"    ✗ {k}  {prev[k]['status']} → {results[k]['status']}")
         print(f"  newly passing: {len(newpass)}")
+        for k in newpass:
+            print(f"    ✓ {k}  {prev[k]['status']} → {results[k]['status']}")
         if not regressions:
             print("  ✓ no regressions")
     return 0

@@ -134,7 +134,7 @@ def get_canvas_history(canvas_id: str, limit: int = 20):
 
 
 @router.get("/canvases/{canvas_id}/suggestions")
-def get_canvas_suggestions(canvas_id: str):
+async def get_canvas_suggestions(canvas_id: str):
     from aughor.canvas.store import get_canvas
     from aughor.routers.system import get_suggestions
     canvas = get_canvas(canvas_id)
@@ -143,7 +143,9 @@ def get_canvas_suggestions(canvas_id: str):
     conn_id = canvas.scopes[0].connection_id if canvas.scopes else None
     if not conn_id:
         return {"suggestions": [], "cached": False}
-    return get_suggestions(connection_id=conn_id)
+    # get_suggestions is async — must be awaited, else a coroutine object leaks
+    # to the serializer ("'coroutine' object is not iterable" → HTTP 500).
+    return await get_suggestions(connection_id=conn_id)
 
 
 @router.get("/canvases/{canvas_id}/recents")
