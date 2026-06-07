@@ -2293,4 +2293,23 @@ Two connected pieces of work that make the **Canvas** — not the raw connection
 
 ---
 
-*Last updated: 2026-06-07 · 75 features — all shipped. See `ROADMAP.md` for upcoming milestones.*
+## 76. Reusable Component Architecture, Shared Primitives & Exhaustive Test Pass ✅ Shipped
+
+**What it does.** Rebuilds ERD, Ontology, Charts, and Tables as **single-source-of-truth components on canonical contracts**, backed by shared primitives, so a fix lands once and propagates everywhere — then verifies every feature, endpoint, background process, and vector collection end-to-end against a regression baseline.
+
+**Why it exists.** The same qualified-vs-bare table-name bug had been fixed **three separate times** (ontology relationships, Workspace `search_path`, Catalog ERD) because there was no shared primitive — 20+ ad-hoc `.split(".")` sites — and the UI carried three chart implementations, six copies of cell-formatting, and three colour palettes. That drift is how platforms rot. This consolidates the duplication into one of each and proves the platform still works everywhere.
+
+**How it works.**
+- **Canonical table-name layer (`aughor/tools/table_names.py` + `web/lib/tableName.ts`).** One primitive — `bare` / `leaf` / `schema_of` / `same_table` / `resolve_in` / `TableRef` — is the *only* place table names are split, compared, or qualified, on both backend and frontend. The qualified-vs-bare bug class is now impossible to recur. 15 backend comparison sites + the CatalogScreen ERD filter migrated onto it; pinned by `tests/unit/test_table_names.py`.
+- **Frontend shared primitives.** `web/lib/format.ts` is the single formatting home — `compactNumber` / `formatMetricValue` / `formatPercent` / `pct` / `cleanLabel` / `verbLabel` + the full date/granularity suite — folding 8 large-number, 5 percent, 3 label, and 2 date implementations into one. `web/lib/palette.ts` consolidates `AUG_PALETTE` / `TABLE_PALETTES` / `H_PALETTES` (was copy-pasted ×3). 17 components migrated.
+- **One of each component.** A single **`<Chart>`** engine (16 view types — bar / line / multi-line / stacked / pie / heatmap / scatter / combo / treemap / matrix / change-metric) extracted from a 2,200-line `ChatMessage`; **`<ERDiagram>`**, **`<OntologyGraph>`**, **`<DataTable>`** each on a canonical contract. `InvestigationChart` became a thin toggle-wrapper that delegates to `<Chart>` — the three-implementation chart sprawl is gone. **~1,500 lines of duplication removed.**
+- **Regression oracle + write-flow exerciser (`scripts/smoke.py`, `scripts/flows.py`).** smoke drives every GET endpoint off the live OpenAPI spec + checks the 8 Qdrant collections + diffs against a baseline; flows drives the write/background side (metric validate, monitor create+trigger, knowledge, document upload). Both repeatable and baseline-diffable.
+- **Exhaustive verification (`TEST_REPORT.md`).** 16 UI surfaces walked (zero console errors); the four components verified rendering with real data (bakehouse ERD joins, a live Insight chart, the analytics ontology at 20 entities / 38 relationships); a full Deep-Analysis investigation driven to completion (31.5s, a grounded "not measurable" verdict — it hit a real data gap and refused to hallucinate); and the write / Qdrant flows confirmed.
+
+**Bugs found and fixed by the test pass (0 regressions across the whole refactor — 5 fixes).** `/ontology/skills` + `/ontology/autonomy` 500 (a referenced-but-unbuilt `aughor.memory` subsystem → minimal inert package); `/canvases/{id}/suggestions` 500 (a sync handler invoking an async function without `await`); `/monitors` 500→422 (a permissive request model vs the domain model's strict `Literal`s); `/ontology/rebuild` 500→422 (in-memory file uploads can't be re-opened for a rebuild); and a self-defeating bug in the smoke oracle itself (`--out` clobbering the diff baseline before comparison).
+
+**Key files.** `aughor/tools/table_names.py`, `aughor/memory/`, `aughor/routers/{canvas,monitors,ontology}.py`; `web/lib/{format,palette,tableName}.ts`, `web/components/{Chart,InvestigationChart,ERDiagram,OntologyCanvas,AugTable}.tsx` (+ 17 migrated components); `scripts/{smoke,flows}.py`, `tests/unit/test_table_names.py`, `TEST_REPORT.md`.
+
+---
+
+*Last updated: 2026-06-07 · 76 features — all shipped. See `ROADMAP.md` for upcoming milestones.*

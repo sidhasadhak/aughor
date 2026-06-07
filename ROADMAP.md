@@ -6,6 +6,22 @@
 
 ---
 
+## 🧩 Latest — Reusable Component Architecture + Exhaustive Test Pass
+
+The same qualified-vs-bare table-name bug was fixed **three** times because there was no shared primitive; the UI carried three chart implementations, six copies of cell-formatting, and three colour palettes. This program rebuilt ERD, Ontology, Charts, and Tables as **single-source-of-truth components on canonical contracts**, backed by shared primitives — so a fix lands once and propagates everywhere — then verified every feature, endpoint, process, and vector collection end-to-end. **~1,500 lines of duplication removed · 0 regressions · 5 bugs fixed.**
+
+| Phase | What shipped | Key files |
+|---|---|---|
+| **1 — Canonical table-name layer** | One primitive (`bare`/`leaf`/`same_table`/`resolve_in`/`TableRef`) is the only place table names are split, compared, or qualified — backend *and* frontend; 15 backend sites + the Catalog ERD filter migrated; the qualified-vs-bare bug class can't recur | `aughor/tools/table_names.py`, `web/lib/tableName.ts`, `tests/unit/test_table_names.py` |
+| **2 — Frontend primitives** | `format.ts` folds 8 large-number + 5 percent + 3 label + 2 date impls into one home; `palette.ts` consolidates 3 palettes; 17 components migrated | `web/lib/{format,palette,tableName}.ts` |
+| **3 — One of each component** | Single `<Chart>` engine (16 view types) extracted from a 2,200-line `ChatMessage`; `InvestigationChart` → a thin toggle-wrapper delegating to it; `<ERDiagram>` / `<OntologyGraph>` / `<DataTable>` on canonical contracts | `web/components/{Chart,InvestigationChart,ERDiagram,OntologyCanvas,AugTable}.tsx` |
+| **4 — Exhaustive test pass** | `smoke.py` (every GET endpoint + 8 Qdrant collections, baseline-diffed) + `flows.py` (write/background flows); 16 UI surfaces walked (0 console errors); a Deep-Analysis investigation driven to completion; `TEST_REPORT.md` maps all 76 features | `scripts/{smoke,flows}.py`, `TEST_REPORT.md` |
+| **Bugs fixed (0 regressions)** | `/ontology/skills`+`/autonomy` 500 (inert `aughor.memory` package), `/canvases/{id}/suggestions` 500 (sync→async `await`), `/monitors` 500→422, `/ontology/rebuild` 500→422, smoke-oracle self-comparison | `aughor/memory/`, `aughor/routers/{canvas,monitors,ontology}.py`, `scripts/smoke.py` |
+
+**Next:** a subtle **motion / animation pass** — tasteful transitions throughout the platform.
+
+---
+
 ## 🚀 Latest — `genie-revamp` (Grounded NL2SQL + Eval Suite + Trusted Templates)
 
 A focused effort to make NL2SQL **SOTA and plug-and-play** — correct on real, unseen schemas — measured against real benchmarks at every step.
