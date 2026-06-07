@@ -38,7 +38,9 @@ _KEY_COL = re.compile(
 # Strips these suffixes (longest first) to get the semantic "root" of a column.
 # customer_id → customer,  order_key → order,  cust_num → cust
 _ROOT_SUFFIXES = sorted(
-    ["_identifier", "_number", "_pseudonym", "_code", "_num", "_key", "_id"],
+    # _sk = surrogate key (standard star/snowflake warehouse convention, e.g.
+    # TPC-DS ss_item_sk ↔ i_item_sk; also _key/_id for natural keys).
+    ["_identifier", "_number", "_pseudonym", "_code", "_num", "_key", "_id", "_sk"],
     key=len, reverse=True,
 )
 
@@ -84,13 +86,21 @@ def _fk_root(col: str) -> str | None:
     for non-key columns (e.g. c_acctbal / s_acctbal stay un-joined)."""
     c = col.lower()
     stripped = _TABLE_PREFIX.sub("", c, count=1)
-    for suffix in _ROOT_SUFFIXES:  # _id, _key, _number, _code, …
+    root = None
+    for suffix in _ROOT_SUFFIXES:  # _id, _key, _number, _code, _sk, …
         if stripped.endswith(suffix):
             root = stripped[: -len(suffix)]
-            return root if len(root) >= 3 else None
-    if stripped.endswith("key") and len(stripped) > 3:  # fused: custkey, orderkey
-        return stripped[:-3]
-    return None
+            break
+    if root is None and stripped.endswith("key") and len(stripped) > 3:  # fused: custkey
+        root = stripped[:-3]
+    if root is None or len(root) < 3:
+        return None
+    # Role-played date dimension: order_date / ship_date / sold_date all FK to the
+    # one date_dim (d_date_sk → 'date'). Common in every star schema — collapse the
+    # role prefix so the join is detected.
+    if root.endswith("_date"):
+        return "date"
+    return root
 
 
 _SECTION_STOP = re.compile(
