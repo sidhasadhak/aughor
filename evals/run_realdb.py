@@ -73,6 +73,24 @@ def generate_questions(schema: str, n: int):
     return res.questions[:n]
 
 
+def _referenced_tables_block(sql: str, schema: str) -> str:
+    """Explicit 'these tables exist with these columns' block for the tables the
+    SQL references — prevents the judge from hallucinating that a real table or
+    column is missing (it wrongly failed Q9 on `impressions`/`viewable`)."""
+    from aughor.tools.schema import _parse_schema_tables
+    import re
+    tcols = _parse_schema_tables(schema)
+    bare = {t.split(".")[-1].lower(): (t, cols) for t, cols in tcols.items()}
+    refs = {m.lower() for m in re.findall(r"(?:FROM|JOIN)\s+(?:\w+\.)?(\w+)", sql, re.IGNORECASE)}
+    lines = []
+    for r in sorted(refs):
+        if r in bare:
+            t, cols = bare[r]
+            lines.append(f"  {t}: {', '.join(cols)}")
+    return ("THESE TABLES EXIST with these exact columns (trust this over your memory):\n"
+            + "\n".join(lines)) if lines else ""
+
+
 def judge(question: str, sql: str, columns, rows, schema: str) -> _Judgment:
     """Cross-model judge: is this SQL a correct, complete answer to the question?"""
     from aughor.llm.provider import get_provider
@@ -81,12 +99,14 @@ def judge(question: str, sql: str, columns, rows, schema: str) -> _Judgment:
         "You are a meticulous SQL reviewer. Given a business question, the database schema, "
         "the SQL that was generated, and a sample of its result, judge whether the SQL "
         "correctly and completely answers the question. Check: correct tables/columns, correct "
-        "joins, correct filters and aggregation, and a sensible result. "
+        "joins, correct filters and aggregation, and a sensible result. Do NOT claim a table or "
+        "column is missing unless it is absent from the explicit table list provided. "
         "Verdict CORRECT (right answer), PARTIAL (mostly right, a minor issue), or WRONG "
         "(wrong table/column/join/filter, or misreads the question). One-sentence reason."
     )
     user = (
-        f"SCHEMA (excerpt):\n{schema[:5000]}\n\n"
+        f"{_referenced_tables_block(sql, schema)}\n\n"
+        f"FULL SCHEMA:\n{schema}\n\n"
         f"QUESTION: {question}\n\nGENERATED SQL:\n{sql}\n\n"
         f"RESULT COLUMNS: {', '.join(columns)}\nRESULT SAMPLE:\n{sample}"
     )
