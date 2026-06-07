@@ -582,6 +582,22 @@ async def _stream_chat(
             except Exception:
                 pass
 
+        # Trusted query templates (authoritative, data-team-reviewed). When the
+        # question matches a verified pattern, inject it at the top so the model
+        # reuses its exact structure — fixes model-reasoning gaps (fan-out, grain)
+        # that prompt rules can't. Surfaced to the user via `trusted` SSE below.
+        _trusted_used = []
+        try:
+            from aughor.semantic.trusted_queries import retrieve_trusted, build_trusted_block
+            _tmatches = retrieve_trusted(question, connection_id)
+            _tblk = build_trusted_block(_tmatches)
+            if _tblk:
+                prompt = _tblk + "\n" + prompt
+                _trusted_used = [{"question": tq.question, "note": tq.note, "score": sc}
+                                 for tq, sc in _tmatches]
+        except Exception:
+            _trusted_used = []
+
         # Run the (blocking) LLM call in a worker thread so the event loop stays
         # free to serve other pages (catalog/inbox/home) while the query runs.
         answer: _ChatAnswer = await asyncio.to_thread(
@@ -670,6 +686,8 @@ async def _stream_chat(
             yield _sse("analysis", {"intent": answer.intent, "steps": answer.approach})
         if pb_entries:
             yield _sse("playbook_refs", {"items": _pb_serialize(pb_entries)})
+        if _trusted_used:
+            yield _sse("trusted", {"items": _trusted_used})
 
         # Persist, then mark DONE the moment the answer is ready — so the
         # "Completed in …" time reflects when the user got their answer, not when

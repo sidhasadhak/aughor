@@ -225,6 +225,15 @@ def generate_sql_full_pipeline(question: str, connection_id: str, db) -> str:
                 prompt = _pbsec + "\n" + prompt
         except Exception:
             pass
+    # Trusted query templates (authoritative) — prepended last so they sit at the
+    # very top. Verified patterns the model reuses to avoid fan-out/grain errors.
+    try:
+        from aughor.semantic.trusted_queries import retrieve_trusted, build_trusted_block
+        _tblk = build_trusted_block(retrieve_trusted(question, connection_id))
+        if _tblk:
+            prompt = _tblk + "\n" + prompt
+    except Exception:
+        pass
 
     from pydantic import field_validator
 
