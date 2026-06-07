@@ -26,20 +26,39 @@ TASK: Parse this question into a precise investigation specification.
 1. CORE METRIC — What single metric is the user asking about?
    Infer it from the question and schema. Use the exact SQL expression (e.g. SUM(final_price_usd)).
    Also name it (e.g. "net revenue", "order count", "average order value").
+   INTENT GUARD (critical): if the question is about money / profitability / "losing money" /
+   cost / margin / revenue / sales, the metric MUST be a financial measure (revenue, sales,
+   profit, margin, cost, or spend) — NEVER a proxy such as review count, star rating, sentiment,
+   or NPS. If the question names no explicit metric and asks where/what is weakest, underperforming,
+   or losing money, default to the primary revenue / value measure in the schema. A money question
+   must never resolve to a sentiment or review metric.
 
 2. OBSERVATION PERIOD — What time period is in question?
    Extract explicit dates or infer from question language ("February 2026" → 2026-02-01 to 2026-02-28).
-   If ambiguous, use the most recent full month/week/quarter visible in the schema date range.
+   GRAIN: the PROFILE states the analytical grain and how much history exists (e.g. "53 weeks of
+   history"). Use THAT grain for the observation and comparison periods — do NOT default to months.
+   If ambiguous, use the most recent COMPLETE period at that grain.
+   CROSS-SECTIONAL: if the PROFILE says "analyse cross-sectionally" (too few periods for a trend) OR
+   the metric table has no date column OR the question asks where/which/what is weakest / losing money
+   / underperforming, there is no usable time axis — set cross_sectional=true, use the full data range
+   as the observation, and plan to compare across DIMENSIONS (segments / regions / products), not periods.
 
 3. COMPARISON BASIS — What is the baseline for comparison?
    Default: both PoP (prior period of same length) AND YoY (same period prior year).
-   CRITICAL — check data availability BEFORE picking YoY:
-   - Read the PROFILE CONTEXT to find the earliest date in the dataset.
-   - If the earliest date in the data is AFTER the YoY period end date (e.g. data starts
-     2025-01-01 but YoY would need 2024-06-01), there is NO 2024 data — do NOT set yoy_start/yoy_end.
-     Use PoP only and note this in intake_notes.
+   CRITICAL — every comparison window MUST contain data. Read the PROFILE CONTEXT date range
+   (e.g. "2024-05-01 → 2024-05-31") and period count FIRST:
+   - PoP guard: the prior period must fall INSIDE the data's date range. If the prior period is
+     before the earliest date (e.g. data starts 2024-05-01 but PoP would need April 2024), there
+     is NO prior-period data — do NOT invent it. Either pick the most recent PRIOR period that
+     actually has data, or set comparison_start/comparison_end equal to observation_start/end and
+     state in intake_notes "no prior period available — only N period(s) of data".
+   - YoY guard: if the earliest date is AFTER the YoY period end (e.g. data starts 2025-01-01 but
+     YoY needs 2024-06-01), there is NO prior-year data — do NOT set yoy_start/yoy_end. Note it.
    - If the schema date range covers less than 13 months total, use PoP only.
-   - Only set yoy_start/yoy_end when the data actually covers the YoY period.
+   - PARTIAL trailing period: if the profile marks the last month "PARTIAL (incomplete)", do NOT
+     use it as the observation period or read its low value as a decline — use the last COMPLETE
+     period instead and note the partial month in intake_notes.
+   - Only set windows the data actually covers. Never compare against an empty period.
 
 4. DATE COLUMN — Which table.column holds the primary transaction timestamp?
    Rules (all mandatory):
@@ -137,7 +156,8 @@ Interpret these results clearly and honestly.
 
 For EACH query result, write:
   - title: short descriptive label
-  - interpretation: 2–3 sentences. Cite actual numbers from the data.
+  - interpretation: 2–3 tight sentences that lead with the finding. Cite actual numbers from
+    the data and wrap the single most important number in **double asterisks** for bold.
     State whether the observed change is statistically significant.
     If a business calendar event may explain the anomaly, note it.
   - key_numbers: the 1–3 most important values (label, value, delta, context)
@@ -145,7 +165,7 @@ For EACH query result, write:
   - stat_note: if z-score is available, format as "z = X.X — [significant/within normal range]"
   - is_significant: true if |z| > {z_threshold} OR absolute change > {pct_threshold}% of prior period value
 
-phase_summary: one sentence — the most important finding from this phase.
+phase_summary: one sentence that leads with the key number (bold it with **double asterisks**) — the most important finding from this phase.
 Do NOT fabricate numbers. If a query errored or returned no rows, say so honestly.
 """
 
@@ -208,9 +228,9 @@ For each query, interpret what sub-metric drove the overall change.
   - Was it new customers, returning customers, or both?
   - Which component explains the largest share of the total change?
 
-Write clear, number-anchored interpretations. Cite values from the data.
+Write clear, number-anchored interpretations; bold the decisive number in each with **double asterisks**. Cite values from the data.
 State the key_numbers that demonstrate the decomposition.
-phase_summary: "The decline was driven by X (Y%), not Z" — be definitive if the data supports it.
+phase_summary: "The decline was driven by X (**Y%**), not Z" — bold the share; be definitive if the data supports it.
 """
 
 # ── Phase 4: Dimensional drill-down ──────────────────────────────────────────
@@ -274,9 +294,9 @@ For each dimension analysed, interpret the contribution analysis:
   - Is the decline concentrated (1–2 values driving 60%+ of change) or diffuse (uniform across all)?
   - Any dimension where one value has > 50% relative decline, even if small absolute? (severity alert)
 
-Write dimension-by-dimension findings with specific numbers.
+Write dimension-by-dimension findings with specific numbers; bold the decisive number in each with **double asterisks**.
 Highlight the SINGLE most actionable finding across all dimensions.
-phase_summary: "X% of the total decline came from [dimension: value]" — if concentration exists.
+phase_summary: "**X%** of the total decline came from [dimension: value]" — bold the share; if concentration exists.
 """
 
 # ── Phase 5: Behavioral & operational ────────────────────────────────────────
@@ -352,7 +372,7 @@ For operational findings:
   - If so, does the magnitude explain any portion of the overall revenue change?
 
 For untestable checks (missing data), note them as data gaps.
-phase_summary: "Behaviorally, [X]. Operationally, [Y]." — two-part finding.
+phase_summary: "Behaviorally, [X]. Operationally, [Y]." — two-part finding; bold the decisive number in each part with **double asterisks**.
 """
 
 # ── Phase 6: Synthesis — attribution waterfall ────────────────────────────────
@@ -380,6 +400,14 @@ FULL EVIDENCE (query results by phase):
 
 Write a complete, honest investigation report.
 
+WRITING STYLE (clean published brief):
+  • headline: one sentence, max 16 words, lead with the answer. No "Investigation into…" preamble.
+  • executive_summary: 2–4 tight sentences that lead with the finding. Wrap each decisive number
+    in **double asterisks** for bold (e.g. **$2.1M**, **-18%**, **42%**). Drop hedging words
+    ("appears", "seems") when the evidence is strong, and cut "as we can see" scaffolding.
+  • recommendations[].action: start with an imperative verb; bold the key lever or number.
+  Bold marks numbers already traceable to the evidence — it never licenses inventing precision.
+
 IMPORTANT — ANSWER THE QUESTION ASKED:
   If the user asked "which channel/region/product/segment had most influence", answer that question
   directly in the headline and executive summary — even if the overall metric change is within
@@ -388,6 +416,17 @@ IMPORTANT — ANSWER THE QUESTION ASKED:
   • Lead with the key dimensional finding (e.g. "Channel X accounts for 42% of February orders")
   • Then contextualise the baseline (e.g. "the MoM volume decline is calendar-driven, not a signal")
   • Still populate the attribution waterfall with dimensional contributors
+
+SIGN CONVENTION (critical — keep signs consistent EVERYWHERE):
+  Losses and declines are NEGATIVE; gains and improvements are POSITIVE. This applies to
+  total_change_label AND every attribution_waterfall entry AND every number in executive_summary.
+  • total_change_label: signed by the direction of the overall change (e.g. "-$330K" for a
+    decline, "+$120K" for growth).
+  • Within each waterfall entry, amount_label and pct_of_total MUST share the SAME sign: a cause
+    that pushed the metric DOWN is negative in both; a cause that pushed it UP (a partial offset)
+    is positive in both. Never pair a positive pct with a negative amount or vice versa.
+  • The signed waterfall contributions must net to the direction of total_change_label.
+  The SAME quantity must never read positive in one place and negative in another.
 
 ATTRIBUTION WATERFALL:
   Build a waterfall that accounts for the total observed change.
@@ -444,6 +483,7 @@ class IntakeOutput(BaseModel):
     date_column: str = Field(description="Fully qualified: table.column")
     metric_table: str
     dimensions: list[str] = Field(description="List of 'table.column' pairs available for drill-down")
+    cross_sectional: bool = Field(default=False, description="True when the question asks where/which/what is weakest / losing money / underperforming, OR the data has too few periods for a trend — analyse across DIMENSIONS, not time.")
     intake_notes: str = Field(description="Any caveats about the schema or question interpretation")
 
 
@@ -482,8 +522,8 @@ class PhaseInterpretation(BaseModel):
 
 class WaterfallEntryModel(BaseModel):
     cause: str
-    amount_label: str
-    pct_of_total: float
+    amount_label: str = Field(description="Signed magnitude, e.g. '-$287K' for a loss/decline contributor, '+$120K' for a gain. The leading sign MUST match pct_of_total.")
+    pct_of_total: float = Field(description="Share of the total change, SIGNED: negative if this cause reduced the metric (a loss driver), positive if it increased it. Same sign as amount_label.")
     controllable: bool
     structural: bool
 

@@ -316,7 +316,7 @@ class _FollowUpBase(BaseModel):
 
 class _InsightResult(BaseModel):
     """Rich analytical insight generated from SQL results — anomaly detection, trend, comparison."""
-    narrative: str = Field(default="", description="2-3 sentence analytical interpretation of the data.")
+    narrative: str = Field(default="", description="2-3 tight sentences that lead with the answer and wrap decisive numbers in **bold**.")
     anomalies: list[str] = Field(default_factory=list, description="List of detected anomalies or unexpected patterns.")
     trend: str = Field(default="stable", description="One of: up, down, stable, mixed.")
     confidence: str = Field(default="medium", description="One of: high, medium, low.")
@@ -759,10 +759,15 @@ async def _stream_chat(
             )
             if _insight_worth_it:
                 _system = (
-                    "You are an analytical data interpreter. Given a user question, the SQL that answered it, "
-                    "and a sample of the results: (1) produce a concise analytical insight — detect anomalies "
-                    "(unexpected values, spikes, drops, outliers), describe the overall trend, state your "
-                    "confidence; and (2) suggest exactly 3 concise follow-up data questions (max 12 words each)."
+                    "You are an analytical data interpreter writing for a clean published brief. "
+                    "Given a user question, the SQL that answered it, and a sample of the results: "
+                    "(1) produce a tight analytical insight (2-3 sentences) that LEADS WITH THE ANSWER, "
+                    "wraps each decisive number in **double asterisks** for bold (e.g. **$2,112**, **+18%**), "
+                    "names any genuine anomaly (unexpected value, spike, drop, outlier) in plain words, and "
+                    "states the overall trend and your confidence. Start with the finding — no preamble, no "
+                    "hedging, no 'the data shows' scaffolding. Use ONLY numbers present in the results; never "
+                    "invent values, and bold never licenses invented precision. "
+                    "Then (2) suggest exactly 3 concise follow-up data questions (max 12 words each)."
                 )
             else:
                 _system = (

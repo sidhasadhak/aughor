@@ -719,6 +719,34 @@ def _phases_evidence(phases: list[InvestigationPhaseResult]) -> str:
 
 # ── Phase nodes ───────────────────────────────────────────────────────────────
 
+def _extract_data_date_range(scan_context: str) -> tuple:
+    """Pull the overall (min, max) date the data actually covers from the DATA
+    PORTRAIT text — the [PROFILE] lines carry 'YYYY-MM-DD → YYYY-MM-DD'."""
+    dates = re.findall(r"\d{4}-\d{2}-\d{2}", scan_context or "")
+    if not dates:
+        return None, None
+    return min(dates), max(dates)
+
+
+def _validate_intake_windows(intake, dmin, dmax):
+    """Reject a comparison window that falls entirely OUTSIDE the data's real date
+    range — the #1 cause of 'compared against an empty period' (e.g. 'May vs April'
+    when only May exists). Returns a correction string, or None if the window is OK."""
+    if not dmin or not dmax:
+        return None
+    cs = (getattr(intake, "comparison_start", "") or "")[:10]
+    ce = (getattr(intake, "comparison_end", "") or "")[:10]
+    if cs and ce and (ce < dmin or cs > dmax):
+        return (
+            f"The comparison period {intake.comparison_label} ({cs} → {ce}) falls OUTSIDE the "
+            f"data range [{dmin} → {dmax}] — there is no data there, so the baseline would be empty. "
+            f"Pick the most recent prior period that lies within [{dmin} → {dmax}]; if no prior "
+            f"period exists, set comparison_start/comparison_end equal to observation_start/"
+            f"observation_end and explain in intake_notes that there is no prior period to compare against."
+        )
+    return None
+
+
 @_telemetry.node_span("ada_intake")
 def ada_intake(state: AgentState) -> dict:
     """
@@ -779,6 +807,25 @@ def ada_intake(state: AgentState) -> dict:
                 prompt
                 + f"\n\nCORRECTION REQUIRED: {mt_error}\n"
                 "Re-examine the schema, pick a table that actually exists, and return the fixed spec."
+            )
+            try:
+                intake = _provider("coder").complete(
+                    system="You are a precise data analyst parsing a business question. Return a structured investigation specification.",
+                    user=retry_prompt,
+                    response_model=IntakeOutput,
+                )
+            except Exception:
+                pass
+
+    # Code-level validation: reject and retry if the comparison window is outside the data range
+    if intake is not None:
+        _dmin, _dmax = _extract_data_date_range(scan)
+        win_error = _validate_intake_windows(intake, _dmin, _dmax)
+        if win_error:
+            retry_prompt = (
+                prompt
+                + f"\n\nCORRECTION REQUIRED: {win_error}\n"
+                "Return the fixed spec with a comparison window that actually contains data."
             )
             try:
                 intake = _provider("coder").complete(
@@ -1598,9 +1645,11 @@ def ada_synthesize(state: AgentState) -> dict:
             f"\n\nNOTE: The investigation stopped at Tier 0{sigma_str}. "
             "The observed change is within normal historical variance — no anomaly was detected. "
             "Your headline, executive_summary, and waterfall should reflect this: "
-            "explain that the decline is consistent with typical fluctuation, not a new problem. "
-            "confidence should be HIGH (we're confident there is no anomaly). "
-            "recommendations should be empty or advisory only."
+            "explain that the change is consistent with typical fluctuation, not a new problem. "
+            "Set confidence by EVIDENCE QUALITY, not by the fact that you stopped early: HIGH only "
+            "if the baseline queries actually returned data across the comparison periods; if "
+            "queries errored or returned zero rows, you could not measure anything and confidence "
+            "must be LOW. recommendations should be empty or advisory only."
         )
 
     phases_summary = _phases_summary(phases)
@@ -1715,11 +1764,33 @@ def ada_synthesize(state: AgentState) -> dict:
         except Exception:
             pass
 
+    # ── Honest confidence floor ───────────────────────────────────────────────
+    # A run that gathered no usable data can never be HIGH/MEDIUM confidence,
+    # regardless of what the synthesis LLM claimed.
+    if synth:
+        _all_f = [f for p in phases for f in (p.get("findings") or [])]
+        _with_data = [f for f in _all_f if not f.get("error") and (f.get("columns") or [])]
+        if not _with_data:
+            synth.confidence = "LOW"
+            synth.confidence_justification = (
+                "No usable data was gathered — every query errored or returned zero rows, so no "
+                "finding can be confirmed. " + (synth.confidence_justification or "")
+            ).strip()
+
+    def _coerce_amount_sign(label: str, pct: float) -> str:
+        """Keep a waterfall amount_label's leading sign in agreement with its
+        pct_of_total, so the two never render with opposite directions."""
+        s = (label or "").strip()
+        if not s:
+            return s
+        core = re.sub(r"^[+\-]\s*", "", s)
+        return ("-" + core) if pct < 0 else core
+
     if synth:
         waterfall = [
             WaterfallEntry(
                 cause=w.cause,
-                amount_label=w.amount_label,
+                amount_label=_coerce_amount_sign(w.amount_label, w.pct_of_total),
                 pct_of_total=w.pct_of_total,
                 controllable=w.controllable,
                 structural=w.structural,
