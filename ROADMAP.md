@@ -18,7 +18,25 @@ The same qualified-vs-bare table-name bug was fixed **three** times because ther
 | **4 — Exhaustive test pass** | `smoke.py` (every GET endpoint + 8 Qdrant collections, baseline-diffed) + `flows.py` (write/background flows); 16 UI surfaces walked (0 console errors); a Deep-Analysis investigation driven to completion; `TEST_REPORT.md` maps all 76 features | `scripts/{smoke,flows}.py`, `TEST_REPORT.md` |
 | **Bugs fixed (0 regressions)** | `/ontology/skills`+`/autonomy` 500 (inert `aughor.memory` package), `/canvases/{id}/suggestions` 500 (sync→async `await`), `/monitors` 500→422, `/ontology/rebuild` 500→422, smoke-oracle self-comparison | `aughor/memory/`, `aughor/routers/{canvas,monitors,ontology}.py`, `scripts/smoke.py` |
 
-**Next:** a subtle **motion / animation pass** — tasteful transitions throughout the platform.
+**Next:** a subtle **motion / animation pass** (planned — see below).
+
+---
+
+## 🎬 Planned — Motion & Animation Pass
+
+A subtle, **performance-conscious** motion layer that makes the platform feel alive without getting in the way — and, true to the component-architecture work above, driven by **one shared motion system, not scattered transitions**.
+
+**Approach**
+- **Motion tokens in `tokens.css`** — a single source for duration + easing (`--motion-fast ~120ms`, `--motion-base ~200ms`, `--motion-slow ~320ms`, `--ease-out`, `--ease-spring`) so timing is consistent and tunable in one place.
+- **Targets** — tab/panel transitions, list & card stagger-in, chart / ERD / Ontology mount fade+grow, hover/press micro-interactions, skeleton → content cross-fades, toast/drawer slides, number count-ups on stat cards.
+- **Accessibility** — honour `prefers-reduced-motion` globally (motion collapses to instant).
+- **CSS-first** — transforms + opacity only (GPU-friendly), no layout thrash; reach for a library only where layout animations genuinely need it.
+
+**Open decisions (at sprint start)**
+- **Scope** — broad-but-subtle global token pass vs. a focused 2–3 spot showcase first to set the vocabulary, then roll out.
+- **Library** — pure CSS / Tailwind transitions vs. Framer Motion (only if layout / shared-element animations justify the dependency).
+
+**Likely files:** `web/styles/tokens.css` (motion tokens), a small `web/lib/motion.ts` or a shared `<Reveal>` / transition helper, then incremental adoption across the reusable components and tabs.
 
 ---
 
