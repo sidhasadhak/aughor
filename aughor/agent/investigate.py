@@ -87,6 +87,14 @@ def _question_asks_for_dimension(question: str) -> bool:
     return False
 
 
+def route_after_intake(state: AgentState) -> str:
+    """Diagnostic / cross-sectional questions (where-which-is-weakest, or no usable
+    time axis) skip the temporal baseline and go straight to the dimensional
+    weakness scan; everything else takes the normal temporal path."""
+    intake = state.get("_ada_intake") or {}
+    return "ada_cross_section" if intake.get("cross_sectional") else "ada_baseline"
+
+
 def route_after_baseline(state: AgentState) -> str:
     """
     Tier 0 gate: if the decline is within normal variance, skip straight to
@@ -747,6 +755,19 @@ def _validate_intake_windows(intake, dmin, dmax):
     return None
 
 
+_DIAGNOSTIC_RE = re.compile(
+    r"where are we losing|losing money|\b(where|which|what)\b[^?]*\b(losing|lose|lost|leak\w*|"
+    r"weak\w*|worst|lowest|underperform\w*|hurting|dragging|bleeding|inefficien\w*)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_diagnostic_question(q: str) -> bool:
+    """Cross-sectional 'where/which is weakest / where are we losing money' questions —
+    these have no useful time axis and should run a dimensional weakness scan."""
+    return bool(_DIAGNOSTIC_RE.search(q or ""))
+
+
 @_telemetry.node_span("ada_intake")
 def ada_intake(state: AgentState) -> dict:
     """
@@ -836,6 +857,16 @@ def ada_intake(state: AgentState) -> dict:
             except Exception:
                 pass
 
+    # Deterministic cross-sectional trigger — the intake LLM is unreliable at
+    # setting the flag, so force it for diagnostic "where/which is weakest / where
+    # are we losing money" questions OR when there is no usable time axis (no date
+    # column). This routes to the dimensional weakness scan instead of a temporal
+    # baseline (also fewer phases → faster).
+    if intake is not None:
+        no_time = (intake.date_column or "").strip().upper() in ("", "NONE")
+        if _is_diagnostic_question(question) or no_time:
+            intake.cross_sectional = True
+
     # Post-process: ensure all table references are fully-qualified when the schema uses them
     if intake is not None:
         _qualify_intake_table_names(intake, schema)
@@ -857,17 +888,26 @@ def ada_intake(state: AgentState) -> dict:
         title="Investigation Specification",
         sql="",
         columns=["field", "value"],
-        rows=[
+        rows=([
+            ["Metric", f"{intake.metric_label} ({intake.metric_sql})"],
+            ["Approach", "Cross-sectional — rank the metric across dimensions to find where value is weakest (no time comparison)"],
+            ["Primary table", intake.metric_table],
+            ["Dimensions", ", ".join(intake.dimensions[:8])],
+        ] if intake.cross_sectional else [
             ["Metric", f"{intake.metric_label} ({intake.metric_sql})"],
             ["Observation", f"{intake.observation_label} ({intake.observation_start} → {intake.observation_end})"],
             ["Comparison", f"{intake.comparison_label} ({intake.comparison_start} → {intake.comparison_end})"],
             ["Date column", intake.date_column],
             ["Primary table", intake.metric_table],
             ["Dimensions", ", ".join(intake.dimensions[:8])],
-        ],
+        ]),
         row_count=6,
         error=None,
-        interpretation=intake.intake_notes or f"Investigating {intake.metric_label} in {intake.observation_label}.",
+        interpretation=intake.intake_notes or (
+            f"Cross-sectional scan of {intake.metric_label} across dimensions."
+            if intake.cross_sectional else
+            f"Investigating {intake.metric_label} in {intake.observation_label}."
+        ),
         key_numbers=[],
         chart_type="none",
         stat_note=None,
@@ -875,7 +915,11 @@ def ada_intake(state: AgentState) -> dict:
     )
     phase = _phase_result(
         "intake", "Question Intake", "🔍", "complete",
-        f"Measuring {intake.metric_label} in {intake.observation_label} vs {intake.comparison_label}.",
+        (
+            f"Scanning {intake.metric_label} across {len(intake.dimensions)} dimensions to find where value is weakest."
+            if intake.cross_sectional else
+            f"Measuring {intake.metric_label} in {intake.observation_label} vs {intake.comparison_label}."
+        ),
         [finding],
     )
     # Build a filtered schema containing only the tables intake identified
@@ -1618,6 +1662,96 @@ def ada_behavioral(state: AgentState, conn: "DatabaseConnection") -> dict:
     }
 
 
+@_telemetry.node_span("ada_cross_section")
+def ada_cross_section(state: AgentState, conn: "DatabaseConnection") -> dict:
+    """Cross-sectional WEAKNESS SCAN — for diagnostic questions ("where are we
+    losing money / which X is weakest") the metric has no usable time axis, so we
+    rank the money metric across each available dimension to surface the lowest /
+    most-concentrated values, instead of a temporal baseline."""
+    from aughor.agent.prompts_investigate import (
+        CROSS_SECTION_PLAN_PROMPT, CROSS_SECTION_INTERPRET_PROMPT,
+        PhasePlan, PhaseInterpretation,
+    )
+    question = state["question"]
+    phases = state.get("investigation_phases", [])
+    intake_data = state.get("_ada_intake") or {}
+    schema = _with_ledger(state, intake_data.get("filtered_schema") or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT))
+    metric_label = intake_data.get("metric_label", "the metric")
+    metric_sql = intake_data.get("metric_sql", "SUM(revenue)")
+    metric_table = intake_data.get("metric_table", "")
+    dimensions = intake_data.get("dimensions", [])
+
+    prioritized = _prioritize_dimensions(dimensions)
+    dimensions_list = "\n".join(f"  - {d}" for d in prioritized[:6]) if prioritized else "  (none identified)"
+
+    try:
+        plan: PhasePlan = _provider("coder").complete(
+            system="Write one ranking query per dimension. Rank the metric ascending (weakest first). No time filters.",
+            user=CROSS_SECTION_PLAN_PROMPT.format(
+                question=question, metric_label=metric_label, metric_sql=metric_sql,
+                metric_table=metric_table, schema=schema, dimensions_list=dimensions_list,
+            ),
+            response_model=PhasePlan,
+        )
+    except Exception as e:
+        phase = _phase_result(
+            "cross_section", "Cross-Sectional Scan", "🧭", "error",
+            "Cross-sectional planning failed.",
+            [_skipped_finding("cross_section", str(e))],
+        )
+        return {"investigation_phases": phases + [phase]}
+
+    results = _parallel_execute_safe(conn, "cross_section", plan.queries, cap=5)
+    if not results:
+        phase = _phase_result(
+            "cross_section", "Cross-Sectional Scan", "🧭", "error",
+            "Cross-sectional queries failed.",
+            [_skipped_finding("cross_section", "No results.")],
+        )
+        return {"investigation_phases": phases + [phase]}
+
+    results_text = _results_to_text([r for _, r in results])
+    try:
+        interpretation: PhaseInterpretation = _provider("narrator").complete(
+            system="Interpret a cross-sectional weakness scan. Name the weakest values and any concentration; be honest about healthy areas.",
+            user=CROSS_SECTION_INTERPRET_PROMPT.format(
+                question=question, metric_label=metric_label, results_text=results_text,
+            ),
+            response_model=PhaseInterpretation,
+        )
+    except Exception:
+        interpretation = None
+
+    if interpretation and interpretation.findings:
+        findings = [
+            _finding_from_result_and_model(
+                f"xsec_{i}", r,
+                interpretation.findings[min(i, len(interpretation.findings) - 1)],
+                q.chart_type,
+            )
+            for i, (q, r) in enumerate(results)
+        ]
+        summary = interpretation.phase_summary
+    else:
+        findings = [
+            InvestigationFinding(
+                finding_id=f"xsec_{i}", title=q.title, sql=r.sql,
+                columns=r.columns, rows=r.rows[:50], row_count=r.row_count,
+                error=r.error, interpretation="Query executed.",
+                key_numbers=[], chart_type=q.chart_type, stat_note=None, is_significant=False,
+            )
+            for i, (q, r) in enumerate(results)
+        ]
+        summary = "Cross-sectional scan complete."
+
+    phase = _phase_result(
+        "cross_section", "Cross-Sectional Scan", "🧭",
+        "complete" if any(not f["error"] for f in findings) else "partial",
+        summary, findings,
+    )
+    return {"investigation_phases": phases + [phase], "_cross_section_summary": summary}
+
+
 @_telemetry.node_span("ada_synthesize")
 def ada_synthesize(state: AgentState) -> dict:
     """
@@ -1661,6 +1795,19 @@ def ada_synthesize(state: AgentState) -> dict:
     # "no segment deviates from baseline" — the synthesizer must not silently paper
     # over this.  We inject any contradictions as a hard instruction in the prompt.
     contradiction_section = _detect_phase_contradictions(phases)
+
+    # Cross-sectional runs have no temporal "change" — tell synthesis to frame the
+    # report as a where-is-value-weakest diagnostic, not a period-over-period decline.
+    cross_section_note = ""
+    if "cross_section" in phase_ids or intake_data.get("cross_sectional"):
+        cross_section_note = (
+            "\n\nNOTE: This is a CROSS-SECTIONAL diagnostic (where/which is weakest), not a temporal "
+            "change. Do NOT frame it as a period-over-period decline. Lead with WHERE value is lowest "
+            "or most concentrated across the dimensions scanned; total_change_label should be the "
+            "metric total or 'N/A'; the attribution_waterfall should attribute the weakness across "
+            "those dimensions (signed negative as loss contributors); recommendations target the "
+            "weakest areas. Be honest about which areas are healthy and NOT a problem."
+        )
 
     # Build metric targets block for synthesis guidance
     metric_targets_section = ""
@@ -1728,7 +1875,7 @@ def ada_synthesize(state: AgentState) -> dict:
         playbook_section=playbook_section,
         org_intelligence_section=org_intelligence_section,
         external_context_section=external_context_section,
-    ) + contradiction_section + early_stop_note
+    ) + contradiction_section + early_stop_note + cross_section_note
     try:
         synth: ADASynthesisModel = _provider("narrator").complete(
             system=(

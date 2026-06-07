@@ -299,6 +299,60 @@ Highlight the SINGLE most actionable finding across all dimensions.
 phase_summary: "**X%** of the total decline came from [dimension: value]" — bold the share; if concentration exists.
 """
 
+# ── Cross-sectional weakness scan (non-temporal diagnostic) ───────────────────
+
+CROSS_SECTION_PLAN_PROMPT = """\
+DIAGNOSTIC QUESTION: "{question}"
+
+This is a CROSS-SECTIONAL question — "where / which is weakest", "where are we losing money".
+There is NO useful time axis; do NOT compare periods. Instead rank the metric across each
+dimension to find WHERE value is lowest or most concentrated.
+
+METRIC: {metric_label} → {metric_sql}
+PRIMARY TABLE: {metric_table}
+
+SCHEMA:
+{schema}
+
+DIMENSIONS (categorical columns to slice by, priority order):
+{dimensions_list}
+
+Write 1 SQL query per dimension (up to 5). Each query MUST:
+  1. GROUP BY the dimension value.
+  2. Compute the metric ({metric_sql}) per value, plus COUNT(*) AS n.
+  3. Compute each value's share of the metric total:
+     ROUND(100.0 * <metric> / NULLIF(SUM(<metric>) OVER (), 0), 1) AS pct_of_total
+  4. ORDER BY the metric ASC (weakest first) so the worst performers surface.
+  5. LIMIT 15.
+
+SQL RULES: DuckDB. NULLIF before every division. Use table names EXACTLY as in SCHEMA. If the
+dimension lives in another table, JOIN to reach it. NO date filters and NO status/price/other
+filters — every row counts. Alias columns with human-readable names. chart_type: "bar_horizontal".
+"""
+
+CROSS_SECTION_INTERPRET_PROMPT = """\
+DIAGNOSTIC QUESTION: "{question}"
+METRIC: {metric_label}
+PHASE: Cross-Sectional Weakness Scan
+
+QUERY RESULTS (the metric ranked across each dimension, weakest first):
+{results_text}
+
+For EACH dimension, write a finding:
+  - title: the dimension (e.g. "By franchise", "By region", "By product").
+  - interpretation: 2–3 tight sentences naming the WEAKEST values and any concentration
+    (e.g. "11 franchises generate under $1,000; the worst three are X (**$177**), Y ($195),
+    Z ($225)"). Bold the decisive number with **double asterisks**. Cite real values only.
+  - key_numbers: the 1–3 most telling values (worst value, count below a threshold, bottom share).
+  - chart_type: "bar_horizontal".
+  - is_significant: true when this dimension reveals a clear, actionable weak spot.
+
+Be honest: if a dimension is healthy or evenly spread, say it is NOT a problem area.
+
+phase_summary: one sentence naming where value is most concentrated or weakest — lead with the
+decisive number (bold it), e.g. "Losses concentrate in **11** underperforming franchises (< $1,000 each)."
+"""
+
 # ── Phase 5: Behavioral & operational ────────────────────────────────────────
 
 BEHAVIORAL_PLAN_PROMPT = """\
