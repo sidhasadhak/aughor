@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from aughor.monitors.models import Monitor, MonitorAlert
 from aughor.monitors.store import (
@@ -81,7 +81,14 @@ def get_monitor_route(monitor_id: str) -> dict:
 
 @router.post("/monitors", status_code=201)
 def create_monitor(req: CreateMonitorRequest) -> dict:
-    monitor = Monitor(**req.model_dump())
+    # CreateMonitorRequest is permissive (str fields); Monitor enforces strict
+    # Literals (alert_on, threshold_direction, …). Translate a domain-model
+    # validation failure into a clean 422 instead of leaking a 500.
+    try:
+        monitor = Monitor(**req.model_dump())
+    except ValidationError as e:
+        detail = "; ".join(f"{er['loc'][-1]}: {er['msg']}" for er in e.errors())
+        raise HTTPException(status_code=422, detail=f"Invalid monitor configuration — {detail}")
     saved = upsert_monitor(monitor)
     # Schedule it
     try:
