@@ -65,6 +65,7 @@ const PURPOSE_ICON: Record<string, string> = {
 const PHASE_ACTION: Record<string, string> = {
   intake:      "Understanding the question",
   baseline:    "Establishing the baseline & scanning for anomalies",
+  cross_section: "Scanning dimensions for where value is weakest",
   decompose:   "Breaking the metric into its drivers",
   dimensional: "Comparing across regions, products & segments",
   behavioral:  "Checking customer & operational behavior",
@@ -183,7 +184,7 @@ function deriveSteps(state: InvestigationState): Step[] {
     if (!hasSynthPhase) {
       steps.push({
         id: "synthesize",
-        label: "Writing the report",
+        label: adaReport ? "Report ready" : "Analysing the data…",
         status: adaReport ? "done" : isRunning ? "running" : "pending",
       });
     }
