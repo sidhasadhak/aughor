@@ -1,11 +1,34 @@
 "use client";
 
+/**
+ * Deep Analysis report, rendered as a clean Brief.
+ *
+ * Same vocabulary as the Insight answer (headline → prose → framed figures →
+ * one quiet details disclosure) — Deep Analysis is just the LONG version.
+ * The old accordion-in-accordion, the confidence/total/controllable pills, and
+ * the border-on-every-section are gone: phases are flat narrative sections, the
+ * machinery (attribution, confidence factors, data gaps, intake, per-finding
+ * SQL/data) folds into <BriefDetails>.
+ */
+
 import React, { useState } from "react";
-import { InvestigationChart } from "@/components/InvestigationChart";
+import { Chart } from "@/components/Chart";
 import { SqlResultTable } from "@/components/AugTable";
 import ChevronDownIcon  from "@atlaskit/icon/core/chevron-down";
 import ChevronRightIcon from "@atlaskit/icon/core/chevron-right";
 import RetryIcon        from "@atlaskit/icon/core/retry";
+import {
+  Brief,
+  BriefHeadline,
+  BriefProse,
+  BriefSection,
+  BriefMeta,
+  BriefMetrics,
+  BriefFigure,
+  BriefDetails,
+  BriefDetailBlock,
+  renderEmphasis,
+} from "@/components/brief/Brief";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -71,36 +94,19 @@ export interface ADAReport {
   data_gaps: string[];
 }
 
-// ── Number-coloured rich text ─────────────────────────────────────────────────
+const CONF_TXT: Record<ADAReport["confidence"], string> = {
+  HIGH:   "text-emerald-400",
+  MEDIUM: "text-amber-400",
+  LOW:    "text-red-400",
+};
 
-function RichText({ text, className = "" }: { text: string; className?: string }) {
-  const parts = text.split(
-    /(\*\*[^*]+\*\*|[+]\$?[\d,]+(?:\.\d+)?[KMBk]?%?|-\$?[\d,]+(?:\.\d+)?[KMBk]?%?|\$[\d,]+(?:\.\d+)?[KMBk]?|\d+(?:\.\d+)?%|\b\d{4,}(?:,\d{3})*\b)/g
-  );
-  return (
-    <span className={className}>
-      {parts.map((part, i) => {
-        if (part.startsWith("**") && part.endsWith("**"))
-          return <span key={i} className="text-zinc-200">{part.slice(2, -2)}</span>;
-        if (/^[+]/.test(part))
-          return <span key={i} className="font-mono text-emerald-400">{part}</span>;
-        if (/^-/.test(part) && /\d/.test(part))
-          return <span key={i} className="font-mono text-red-400">{part}</span>;
-        if (/\$[\d,]+|\d+%|\b\d{4,}/.test(part))
-          return <span key={i} className="font-mono text-zinc-200">{part}</span>;
-        return part;
-      })}
-    </span>
-  );
-}
-
-// ── Collapsible SQL block ──────────────────────────────────────────────────────
+// ── Collapsible SQL block — quiet, per finding ─────────────────────────────────
 
 function SqlToggle({ sql }: { sql: string }) {
   const [open, setOpen] = useState(false);
   if (!sql) return null;
   return (
-    <div className="mt-2">
+    <div>
       <button
         onClick={() => setOpen(v => !v)}
         className="flex items-center gap-1 text-[11px] text-zinc-700 hover:text-zinc-500 transition-colors"
@@ -117,13 +123,13 @@ function SqlToggle({ sql }: { sql: string }) {
   );
 }
 
-// ── Data table ─────────────────────────────────────────────────────────────────
+// ── Collapsible data table — quiet, only when a finding has no chart ───────────
 
-function DataTable({ columns, rows, label }: { columns: string[]; rows: (string | number | null)[][]; label: string }) {
+function FindingTable({ columns, rows, label }: { columns: string[]; rows: (string | number | null)[][]; label: string }) {
   const [open, setOpen] = useState(false);
   if (!columns.length || !rows.length) return null;
   return (
-    <div className="mt-2">
+    <div>
       <button
         onClick={() => setOpen(v => !v)}
         className="flex items-center gap-1 text-[11px] text-zinc-700 hover:text-zinc-500 transition-colors"
@@ -140,62 +146,40 @@ function DataTable({ columns, rows, label }: { columns: string[]; rows: (string 
   );
 }
 
-// ── Single finding — evidence block (no title, flows inside phase) ─────────────
+// ── Single finding — evidence block (flows inside a phase section) ─────────────
 
 function EvidenceBlock({ finding }: { finding: InvestigationFinding }) {
   const hasData = finding.columns.length > 0 && finding.rows.length > 0;
   const hasChart = hasData && finding.chart_type !== "none" && finding.rows.length >= 2;
 
   return (
-    <div className="space-y-2.5">
-      {/* Chart — first, most prominent */}
+    <div className="flex flex-col gap-2.5">
+      {/* Chart — the framed figure */}
       {hasChart && (
-        <div className="rounded-md border border-zinc-800/60 overflow-hidden p-3" style={{ background: "var(--bg-0)" }}>
-          <p className="text-[11px] text-zinc-500 mb-2">{finding.title}</p>
-          <InvestigationChart columns={finding.columns} rows={finding.rows as unknown[][]} />
-        </div>
+        <BriefFigure caption={finding.title}>
+          <Chart columns={finding.columns} rows={finding.rows as unknown[][]} title={finding.title} />
+        </BriefFigure>
       )}
 
-      {/* Key numbers — inline stats */}
-      {finding.key_numbers.length > 0 && (
-        <div className="flex flex-wrap gap-x-5 gap-y-2 pt-0.5">
-          {finding.key_numbers.map((n, i) => (
-            <div key={i} className="space-y-0.5">
-              <p className="text-[11px] text-zinc-500">{n.label}</p>
-              <p className="text-[13px] font-mono tabular-nums text-zinc-200">
-                {n.value}
-                {n.delta && (
-                  <span className={`text-[11px] ml-1.5 ${n.delta.startsWith("-") ? "text-red-400" : "text-emerald-400"}`}>
-                    {n.delta}
-                  </span>
-                )}
-              </p>
-              {n.context && <p className="text-[11px] text-zinc-600">{n.context}</p>}
-            </div>
-          ))}
-        </div>
-      )}
+      {/* Key numbers — inline metrics, no card */}
+      {finding.key_numbers.length > 0 && <BriefMetrics metrics={finding.key_numbers} />}
 
       {/* Interpretation narrative */}
-      {finding.interpretation && (
-        <p className="text-[12px] text-zinc-400 leading-relaxed">
-          <RichText text={finding.interpretation} />
-        </p>
-      )}
+      {finding.interpretation && <BriefProse text={finding.interpretation} muted />}
 
       {/* Stat note — z-score etc */}
       {finding.stat_note && (
-        <p className="text-[11px] text-zinc-600 font-mono bg-zinc-900/50 px-2 py-1 rounded inline-block">{finding.stat_note}</p>
+        <p className="aug-text-xs text-zinc-600 font-mono">{finding.stat_note}</p>
       )}
 
       {/* Error */}
       {finding.error && (
-        <p className="text-[11px] text-red-400 font-mono bg-red-950/20 border border-red-500/20 px-2 py-1.5 rounded">{finding.error}</p>
+        <p className="aug-text-xs text-red-400 font-mono">{finding.error}</p>
       )}
 
       {/* Data table (collapsed) — only when no chart */}
       {hasData && !hasChart && (
-        <DataTable columns={finding.columns} rows={finding.rows} label="Data" />
+        <FindingTable columns={finding.columns} rows={finding.rows} label="Data" />
       )}
 
       {/* SQL toggle */}
@@ -204,195 +188,89 @@ function EvidenceBlock({ finding }: { finding: InvestigationFinding }) {
   );
 }
 
-// ── Phase section — collapsible, groups all findings under one header ───────────
+// ── Phase — a flat narrative section (no accordion, no chevron, no indent) ─────
 
-function PhaseSection({
-  phase,
-  defaultOpen = true,
-}: {
-  phase: InvestigationPhase;
-  defaultOpen?: boolean;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-  const isSkipped = phase.status === "skipped";
-  const isError   = phase.status === "error";
-
-  // Filter out intake spec rows — shown in the phase but in a simpler way
-  const isIntake = phase.phase_id === "intake";
-
-  // Only show findings that have actual content
-  const findings = phase.findings.filter(f =>
-    f.interpretation || f.columns.length > 0 || f.error
-  );
-
-  const statusColor = isSkipped ? "text-zinc-700" : isError ? "text-red-500/70" : "text-zinc-400";
+function PhaseSection({ phase }: { phase: InvestigationPhase }) {
+  if (phase.status === "skipped") return null;
+  const findings = phase.findings.filter(f => f.interpretation || f.columns.length > 0 || f.error);
+  if (!phase.summary && findings.length === 0) return null;
 
   return (
-    <div className="space-y-0">
-      {/* Phase header row */}
-      <button
-        onClick={() => setOpen(v => !v)}
-        className="w-full flex items-start gap-2.5 py-2 group"
-      >
-        <span className="mt-0.5 shrink-0">
-          {open
-            ? <ChevronDownIcon label="" size="small" />
-            : <ChevronRightIcon label="" size="small" />}
-        </span>
-        <div className="flex-1 text-left space-y-0.5">
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] font-medium text-zinc-300 uppercase tracking-wide">
-              {phase.phase_name}
-            </span>
-            {isSkipped && (
-              <span className="text-[11px] text-zinc-600 border border-zinc-800 px-1.5 py-0.5 rounded-full">skipped</span>
-            )}
-          </div>
-          {/* Phase summary — the one-sentence takeaway */}
-          {phase.summary && !isSkipped && (
-            <p className={`text-[12px] leading-relaxed ${statusColor}`}>
-              <RichText text={phase.summary} />
-            </p>
-          )}
-          {isSkipped && phase.skipped_reason && (
-            <p className="text-[11px] text-zinc-700 leading-relaxed">{phase.skipped_reason}</p>
-          )}
-        </div>
-      </button>
-
-      {/* Findings body */}
-      {open && !isSkipped && findings.length > 0 && (
-        <div className={`ml-6 mt-1 space-y-5 pb-2 ${isIntake ? "opacity-70" : ""}`}>
-          {isIntake ? (
-            // Intake: render as a compact key-value block
-            <div className="rounded-md border border-zinc-800/50 overflow-hidden" style={{ background: "var(--bg-0)" }}>
-              <table className="w-full text-[11px]">
-                <tbody>
-                  {findings[0]?.rows?.map((row, i) => (
-                    <tr key={i} className="border-b border-zinc-900/50 last:border-0">
-                      <td className="py-1.5 px-3 text-zinc-500 whitespace-nowrap w-28">{String(row[0])}</td>
-                      <td className="py-1.5 px-3 text-zinc-300 font-mono text-[11px] leading-relaxed">{String(row[1])}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {findings[0]?.interpretation && (
-                <p className="text-[11px] text-zinc-500 px-3 py-2 border-t border-zinc-900/50 leading-relaxed">
-                  {findings[0].interpretation}
-                </p>
-              )}
-            </div>
-          ) : (
-            // Analysis phases: render findings as sequential evidence blocks
-            findings.map((finding, i) => (
-              <React.Fragment key={finding.finding_id}>
-                {i > 0 && <div className="border-t border-zinc-800/40" />}
-                <EvidenceBlock finding={finding} />
-              </React.Fragment>
-            ))
-          )}
-        </div>
-      )}
-    </div>
+    <BriefSection label={phase.phase_name}>
+      {phase.summary && <BriefProse text={phase.summary} />}
+      {findings.map(f => <EvidenceBlock key={f.finding_id} finding={f} />)}
+    </BriefSection>
   );
 }
 
-// ── Attribution waterfall ──────────────────────────────────────────────────────
+// ── Attribution waterfall — plain rows + bars (lives in details) ──────────────
 
-function WaterfallSection({ entries, totalLabel }: { entries: WaterfallEntry[]; totalLabel: string }) {
+function WaterfallSection({ entries }: { entries: WaterfallEntry[] }) {
   if (!entries.length) return null;
   const maxAbs = Math.max(...entries.map(e => Math.abs(e.pct_of_total)), 1);
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-2">
-        {totalLabel && (() => {
-          // Colour the total label by the sign of the net change
-          const netPos = entries.reduce((s, e) => s + (e.pct_of_total ?? 0), 0) >= 0;
-          return (
-            <span className={`text-[12px] font-mono px-2 py-0.5 rounded-full border ${
-              netPos
-                ? "text-emerald-400 bg-emerald-950/20 border-emerald-900/30"
-                : "text-red-400 bg-red-950/20 border-red-900/30"
-            }`}>
-              {totalLabel}
-            </span>
-          );
-        })()}
-      </div>
-      <div className="space-y-2.5">
-        {entries.map((entry, i) => {
-          const isNeg = entry.pct_of_total < 0;   // fixed: negative when pct < 0
-          const barW = Math.abs(entry.pct_of_total) / maxAbs * 100;
-          return (
-            <div key={i} className="space-y-1">
-              <div className="flex items-center justify-between text-[11px]">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="text-zinc-300 truncate max-w-[220px]">{entry.cause}</span>
-                  {entry.controllable && (
-                    <span className="text-[11px] bg-amber-900/40 text-amber-400 border border-amber-800/40 px-1.5 py-0.5 rounded-full shrink-0">controllable</span>
-                  )}
-                  {!entry.structural && (
-                    <span className="text-[11px] bg-sky-900/40 text-sky-400 border border-sky-800/40 px-1.5 py-0.5 rounded-full shrink-0">transient</span>
-                  )}
-                </div>
-                <div className="flex items-center gap-3 shrink-0 ml-2">
-                  <span className="text-zinc-600 font-mono">{entry.amount_label}</span>
-                  <span className={`font-mono w-10 text-right ${isNeg ? "text-red-400" : "text-emerald-400"}`}>
-                    {entry.pct_of_total > 0 ? "+" : ""}{entry.pct_of_total.toFixed(0)}%
-                  </span>
-                </div>
-              </div>
-              <div className="h-1 bg-zinc-800 rounded-full overflow-hidden">
-                <div
-                  className={`h-full rounded-full ${isNeg ? "bg-red-500/60" : "bg-emerald-500/60"}`}
-                  style={{ width: `${barW}%` }}
-                />
-              </div>
+    <div className="flex flex-col gap-2.5">
+      {entries.map((entry, i) => {
+        const isNeg = entry.pct_of_total < 0;
+        const barW = Math.abs(entry.pct_of_total) / maxAbs * 100;
+        const tags = [entry.controllable && "controllable", !entry.structural && "transient"]
+          .filter(Boolean).join(" · ");
+        return (
+          <div key={i} className="flex flex-col gap-1">
+            <div className="flex items-center justify-between aug-text-xs gap-2">
+              <span className="text-zinc-400 truncate min-w-0">
+                {entry.cause}
+                {tags && <span className="text-zinc-600"> · {tags}</span>}
+              </span>
+              <span className="flex items-center gap-3 shrink-0">
+                <span className="text-zinc-600 font-mono">{entry.amount_label}</span>
+                <span className={`font-mono w-10 text-right ${isNeg ? "text-red-400" : "text-emerald-400"}`}>
+                  {entry.pct_of_total > 0 ? "+" : ""}{entry.pct_of_total.toFixed(0)}%
+                </span>
+              </span>
             </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// ── Recommendations ────────────────────────────────────────────────────────────
-
-function RecommendationsSection({ recs }: { recs: ADARecommendation[] }) {
-  if (!recs.length) return null;
-  return (
-    <div className="space-y-3">
-      {recs.map((rec, i) => (
-        <div key={i} className="flex items-start gap-3">
-          <span className="shrink-0 mt-0.5 w-5 h-5 rounded-full border border-emerald-700/50 bg-emerald-900/20 flex items-center justify-center text-[11px] text-emerald-400 font-mono">{i + 1}</span>
-          <div className="space-y-0.5 min-w-0">
-            <p className="text-[12px] text-zinc-300 leading-snug">{rec.action}</p>
-            <div className="flex flex-wrap gap-3 text-[11px] text-zinc-600">
-              {rec.expected_impact && <span>Impact: <span className="text-zinc-500">{rec.expected_impact}</span></span>}
-              {rec.owner && <span>Owner: <span className="text-zinc-500">{rec.owner}</span></span>}
-              {rec.timeline && <span>Timeline: <span className="text-zinc-500">{rec.timeline}</span></span>}
+            <div className="h-1 bg-zinc-800 rounded-full overflow-hidden">
+              <div className={`h-full rounded-full ${isNeg ? "bg-red-500/60" : "bg-emerald-500/60"}`} style={{ width: `${barW}%` }} />
             </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
 
-// ── Confidence badge with expandable breakdown ────────────────────────────────
+// ── Recommended actions — numbered, bold-lead, muted trailing meta ─────────────
 
-function ConfidencePill({ report }: { report: ADAReport }) {
-  const [open, setOpen] = useState(false);
-  const { confidence, confidence_justification, phases, attribution_waterfall, data_gaps } = report;
+function RecommendationsList({ recs }: { recs: ADARecommendation[] }) {
+  if (!recs.length) return null;
+  return (
+    <ol className="flex flex-col gap-2.5">
+      {recs.map((rec, i) => (
+        <li key={i} className="flex gap-2.5">
+          <span className="shrink-0 aug-text-sm font-mono text-zinc-600 mt-0.5">{i + 1}.</span>
+          <div className="flex flex-col gap-0.5 min-w-0">
+            <span className="aug-text-ui text-zinc-200 leading-relaxed">{renderEmphasis(rec.action)}</span>
+            {(rec.expected_impact || rec.owner || rec.timeline) && (
+              <span className="aug-text-xs text-zinc-500 flex flex-wrap gap-x-3 gap-y-0.5">
+                {rec.expected_impact && <span>Impact: {rec.expected_impact}</span>}
+                {rec.owner && <span>Owner: {rec.owner}</span>}
+                {rec.timeline && <span>Timeline: {rec.timeline}</span>}
+              </span>
+            )}
+          </div>
+        </li>
+      ))}
+    </ol>
+  );
+}
 
-  const styles = {
-    HIGH:   { pill: "bg-emerald-900/30 text-emerald-400 border-emerald-800/40", dot: "bg-emerald-400" },
-    MEDIUM: { pill: "bg-amber-900/30 text-amber-400 border-amber-800/40",       dot: "bg-amber-400"   },
-    LOW:    { pill: "bg-red-900/30 text-red-400 border-red-800/40",             dot: "bg-red-400"     },
-  };
+// ── Confidence breakdown (lives in details) ────────────────────────────────────
 
-  // Compute structured factors from the report
+type ConfTone = "good" | "warn" | "neutral";
+
+function buildConfidenceFactors(report: ADAReport): { label: string; value: string; tone: ConfTone }[] {
+  const { phases, attribution_waterfall, data_gaps } = report;
   const completedPhases = phases.filter(p => p.status === "complete" || p.status === "partial");
   const skippedPhases   = phases.filter(p => p.status === "skipped");
   const allFindings     = phases.flatMap(p => p.findings);
@@ -401,8 +279,7 @@ function ConfidencePill({ report }: { report: ADAReport }) {
   const sigFindings     = allFindings.filter(f => f.is_significant);
   const waterfallPct    = attribution_waterfall.reduce((s, e) => s + (e.pct_of_total ?? 0), 0);
 
-  type Tone = "good" | "warn" | "neutral";
-  const factors: { label: string; value: string; tone: Tone }[] = [
+  return [
     {
       label: "Phases run",
       value: skippedPhases.length > 0
@@ -415,62 +292,101 @@ function ConfidencePill({ report }: { report: ADAReport }) {
       value: queriesErrored.length > 0
         ? `${queriesWithData.length} succeeded, ${queriesErrored.length} errored`
         : `${queriesWithData.length}`,
-      tone: queriesErrored.length === 0 ? "good" : queriesWithData.length > queriesErrored.length ? "warn" : "warn",
+      tone: queriesErrored.length === 0 ? "good" : "warn",
     },
     ...(sigFindings.length > 0 ? [{
       label: "Significant findings",
       value: `${sigFindings.length} statistically significant`,
-      tone: "good" as Tone,
+      tone: "good" as ConfTone,
     }] : []),
     ...(attribution_waterfall.length > 0 ? [{
       label: "Attribution explained",
       value: `${Math.round(waterfallPct)}% of change accounted for`,
-      tone: (waterfallPct >= 80 ? "good" : waterfallPct >= 50 ? "warn" : "warn") as Tone,
+      tone: (waterfallPct >= 80 ? "good" : "warn") as ConfTone,
     }] : []),
     ...(data_gaps.length > 0 ? [{
       label: "Data gaps",
       value: `${data_gaps.length} gap${data_gaps.length > 1 ? "s" : ""} noted`,
-      tone: "warn" as Tone,
+      tone: "warn" as ConfTone,
     }] : []),
   ];
+}
 
-  const dotColor = { good: "bg-emerald-400", warn: "bg-amber-400", neutral: "bg-zinc-500" };
-
+function ConfidenceDetail({ report }: { report: ADAReport }) {
+  const dotColor: Record<ConfTone, string> = { good: "bg-emerald-400", warn: "bg-amber-400", neutral: "bg-zinc-500" };
+  const factors = buildConfidenceFactors(report);
   return (
-    <div>
-      <button
-        onClick={() => setOpen(v => !v)}
-        className={`flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-full border transition-opacity hover:opacity-80 ${styles[confidence].pill}`}
-      >
-        {confidence} CONFIDENCE
-        <span className={`transition-transform duration-150 ${open ? "rotate-180" : ""}`}>
-          <ChevronDownIcon label="" size="small" />
-        </span>
-      </button>
-
-      {open && (
-        <div className="mt-2 rounded-md border border-zinc-800 bg-zinc-900/60 p-3 space-y-2.5 text-[11px]">
-          {confidence_justification && (
-            <p className="text-zinc-400 leading-relaxed border-b border-zinc-800 pb-2.5">
-              {confidence_justification}
-            </p>
-          )}
-          <div className="space-y-1.5">
-            {factors.map(f => (
-              <div key={f.label} className="flex items-start gap-2">
-                <span className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${dotColor[f.tone]}`} />
-                <span className="text-zinc-500 shrink-0 w-36">{f.label}</span>
-                <span className="text-zinc-300">{f.value}</span>
-              </div>
-            ))}
-          </div>
-        </div>
+    <div className="flex flex-col gap-2.5 aug-text-xs">
+      {report.confidence_justification && (
+        <p className="text-zinc-400 leading-relaxed">{report.confidence_justification}</p>
       )}
+      <div className="flex flex-col gap-1.5">
+        {factors.map(f => (
+          <div key={f.label} className="flex items-start gap-2">
+            <span className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${dotColor[f.tone]}`} />
+            <span className="text-zinc-500 shrink-0 w-36">{f.label}</span>
+            <span className="text-zinc-300">{f.value}</span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
 
-// ── Streaming phase card (shown while investigation is running) ────────────────
+// ── Investigation machinery — one quiet disclosure ─────────────────────────────
+
+function InvestigationDetails({ report, intakePhase }: { report: ADAReport; intakePhase?: InvestigationPhase }) {
+  const hasWaterfall = (report.attribution_waterfall?.length ?? 0) > 0;
+  const hasGaps = (report.data_gaps?.length ?? 0) > 0;
+  const intakeRows = intakePhase?.findings?.[0]?.rows ?? [];
+  const hasIntake = intakeRows.length > 0;
+
+  return (
+    <BriefDetails>
+      <BriefDetailBlock label="Confidence">
+        <ConfidenceDetail report={report} />
+      </BriefDetailBlock>
+
+      {hasWaterfall && (
+        <BriefDetailBlock label="Attribution">
+          <WaterfallSection entries={report.attribution_waterfall} />
+        </BriefDetailBlock>
+      )}
+
+      {hasGaps && (
+        <BriefDetailBlock label="Data gaps">
+          <ul className="flex flex-col gap-1.5">
+            {report.data_gaps.map((gap, i) => (
+              <li key={i} className="aug-text-sm text-zinc-500 flex items-start gap-2 leading-relaxed">
+                <span className="shrink-0 text-zinc-600">—</span>
+                {gap}
+              </li>
+            ))}
+          </ul>
+        </BriefDetailBlock>
+      )}
+
+      {hasIntake && (
+        <BriefDetailBlock label="Question intake">
+          <div className="rounded-md border border-zinc-800/60 overflow-hidden" style={{ background: "var(--bg-0)" }}>
+            <table className="w-full text-[11px]">
+              <tbody>
+                {intakeRows.map((row, i) => (
+                  <tr key={i} className="border-b border-zinc-900/50 last:border-0">
+                    <td className="py-1.5 px-3 text-zinc-500 whitespace-nowrap w-28">{String(row[0])}</td>
+                    <td className="py-1.5 px-3 text-zinc-300 font-mono text-[11px] leading-relaxed">{String(row[1])}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </BriefDetailBlock>
+      )}
+    </BriefDetails>
+  );
+}
+
+// ── Streaming phase card (live, while the investigation runs) ──────────────────
 
 function StreamingPhaseCard({ phase }: { phase: InvestigationPhase }) {
   const isRunning = phase.status === "running";
@@ -492,13 +408,13 @@ function StreamingPhaseCard({ phase }: { phase: InvestigationPhase }) {
         {isSkipped && <span className="text-[11px] text-zinc-600 italic">{phase.skipped_reason}</span>}
       </div>
       {phase.summary && !isSkipped && (
-        <p className="text-[11px] text-zinc-500 leading-relaxed"><RichText text={phase.summary} /></p>
+        <div className="text-[11px] text-zinc-500 leading-relaxed">{renderEmphasis(phase.summary)}</div>
       )}
       {findings.map(f => (
         <div key={f.finding_id} className="space-y-1.5 pl-2">
           {f.columns.length > 0 && f.rows.length >= 2 && f.chart_type !== "none" && (
             <div className="rounded-md border border-zinc-800/60 overflow-hidden p-2" style={{ background: "var(--bg-0)" }}>
-              <InvestigationChart columns={f.columns} rows={f.rows as unknown[][]} />
+              <Chart columns={f.columns} rows={f.rows as unknown[][]} title={f.title} chrome={false} />
             </div>
           )}
         </div>
@@ -516,105 +432,51 @@ export function InvestigationReportView({
   report?: ADAReport;
   streamingPhases?: InvestigationPhase[];
 }) {
-  // While streaming: show progressive phase cards
+  // While streaming: progressive phase cards (the live state, unchanged)
   if (!report) {
     const phases = streamingPhases ?? [];
     if (!phases.length) return null;
     return (
-      <div className="space-y-4 pt-1">
-        {phases.map(phase => (
-          <StreamingPhaseCard key={phase.phase_id} phase={phase} />
-        ))}
+      <div className="flex flex-col gap-4 pt-1">
+        {phases.map(phase => <StreamingPhaseCard key={phase.phase_id} phase={phase} />)}
       </div>
     );
   }
 
-  const hasWaterfall = (report.attribution_waterfall?.length ?? 0) > 0;
-  const hasRecs = (report.recommendations?.length ?? 0) > 0;
-  const hasGaps = (report.data_gaps?.length ?? 0) > 0;
-
-  // Separate intake from analysis phases
   const intakePhase = report.phases.find(p => p.phase_id === "intake");
-  const analysisPhases = report.phases.filter(p => p.phase_id !== "intake");
+  const analysisPhases = report.phases.filter(p => p.phase_id !== "intake" && p.status !== "skipped");
+
+  const periodStr = [
+    report.observation_period,
+    report.comparison_basis ? `vs ${report.comparison_basis}` : "",
+  ].filter(Boolean).join(" ");
 
   return (
-    <div className="space-y-6 text-sm">
+    <Brief>
+      <BriefHeadline>{report.headline}</BriefHeadline>
+      {report.executive_summary && <BriefProse text={report.executive_summary} />}
 
-      {/* ── Headline ── */}
-      <div className="space-y-2">
-        <h2 className="text-[14px] font-medium text-zinc-200 leading-snug">{report.headline}</h2>
-        <p className="text-[12px] text-zinc-400 leading-relaxed">
-          <RichText text={report.executive_summary} />
-        </p>
-        <div className="flex items-center flex-wrap gap-2 pt-1">
-          <ConfidencePill report={report} />
-          {report.total_change_label && (
-            <span className="text-[12px] font-mono text-red-400 bg-red-950/20 border border-red-900/30 px-2.5 py-1 rounded-full">
-              {report.total_change_label}
-            </span>
-          )}
-          {report.comparison_basis && (
-            <span className="text-[11px] text-zinc-600">vs {report.comparison_basis}</span>
-          )}
-        </div>
-      </div>
+      <BriefMeta
+        items={[
+          report.total_change_label
+            ? <span key="tc" className={`font-mono ${!/\d/.test(report.total_change_label) ? "text-zinc-400" : report.total_change_label.trim().startsWith("-") ? "text-red-400" : "text-emerald-400"}`}>{report.total_change_label}</span>
+            : null,
+          periodStr || null,
+          report.confidence
+            ? <span key="conf" className={CONF_TXT[report.confidence]}>{report.confidence.charAt(0) + report.confidence.slice(1).toLowerCase()} confidence</span>
+            : null,
+        ]}
+      />
 
-      {/* ── Investigation phases — chronological narrative ── */}
-      {(intakePhase || analysisPhases.length > 0) && (
-        <div className="border-t border-zinc-800/60 pt-4 space-y-1">
-          {/* Intake collapsed by default (it's metadata) */}
-          {intakePhase && (
-            <PhaseSection phase={intakePhase} defaultOpen={false} />
-          )}
-          {/* Analysis phases open by default */}
-          {analysisPhases.map(phase => (
-            <React.Fragment key={phase.phase_id}>
-              <div className="border-t border-zinc-800/30" />
-              <PhaseSection phase={phase} defaultOpen={true} />
-            </React.Fragment>
-          ))}
-        </div>
+      {analysisPhases.map(phase => <PhaseSection key={phase.phase_id} phase={phase} />)}
+
+      {report.recommendations?.length > 0 && (
+        <BriefSection label="Recommended actions">
+          <RecommendationsList recs={report.recommendations} />
+        </BriefSection>
       )}
 
-      {/* ── Attribution waterfall ── */}
-      {hasWaterfall && (
-        <>
-          <div className="border-t border-zinc-800/60" />
-          <div className="space-y-2">
-            <p className="text-[11px] text-zinc-500 uppercase tracking-wide">Attribution</p>
-            <WaterfallSection entries={report.attribution_waterfall} totalLabel={report.total_change_label} />
-          </div>
-        </>
-      )}
-
-      {/* ── Recommended actions ── */}
-      {hasRecs && (
-        <>
-          <div className="border-t border-zinc-800/60" />
-          <div className="space-y-3">
-            <p className="text-[11px] text-zinc-500 uppercase tracking-wide">Recommended Actions</p>
-            <RecommendationsSection recs={report.recommendations} />
-          </div>
-        </>
-      )}
-
-      {/* ── Data gaps ── */}
-      {hasGaps && (
-        <>
-          <div className="border-t border-zinc-800/60" />
-          <div className="space-y-2">
-            <p className="text-[11px] text-zinc-500 uppercase tracking-wide">Data Gaps</p>
-            <ul className="space-y-1.5">
-              {report.data_gaps.map((gap, i) => (
-                <li key={i} className="text-[11px] text-zinc-600 flex items-start gap-2 leading-relaxed">
-                  <span className="shrink-0 mt-0.5">—</span>
-                  {gap}
-                </li>
-              ))}
-            </ul>
-          </div>
-        </>
-      )}
-    </div>
+      <InvestigationDetails report={report} intakePhase={intakePhase} />
+    </Brief>
   );
 }

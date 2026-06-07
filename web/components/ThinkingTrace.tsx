@@ -60,8 +60,20 @@ const PURPOSE_ICON: Record<string, string> = {
   synthesis:    "✦",
 };
 
+// Present-tense, plain-language labels for the ADA investigation phases — what the
+// agent is doing right now, not internal phase jargon. Falls back to phase_name.
+const PHASE_ACTION: Record<string, string> = {
+  intake:      "Understanding the question",
+  baseline:    "Establishing the baseline & scanning for anomalies",
+  decompose:   "Breaking the metric into its drivers",
+  dimensional: "Comparing across regions, products & segments",
+  behavioral:  "Checking customer & operational behavior",
+  synthesis:   "Writing the report",
+  synthesize:  "Writing the report",
+};
+
 function deriveSteps(state: InvestigationState): Step[] {
-  const { queryMode, hypotheses, status, queriesExecuted, routeReasoning, routeConfidence, subQuestions, subqAnswers, exploreReport } = state;
+  const { queryMode, hypotheses, status, queriesExecuted, routeReasoning, routeConfidence, subQuestions, subqAnswers, exploreReport, investigationPhases, adaReport } = state;
   const isRunning = status === "running";
   const isDone = status === "done" || status === "paused";
   const steps: Step[] = [];
@@ -143,7 +155,42 @@ function deriveSteps(state: InvestigationState): Step[] {
     return steps;
   }
 
-  // Investigate mode
+  // ── Investigate mode (ADA) — render the streamed phases as the live trace. ──
+  // The ADA flow populates investigationPhases (and finally adaReport), NOT the
+  // legacy `hypotheses` list, so derive the trace from the phases as they stream.
+  const phases = (adaReport?.phases ?? investigationPhases ?? []);
+  if (phases.length > 0) {
+    for (const p of phases) {
+      const skipped = p.status === "skipped";
+      const errored = p.status === "error";
+      const done = p.status === "complete" || p.status === "partial" || skipped;
+      const running = p.status === "running";
+      const summary = (p.summary || "").trim();
+      steps.push({
+        id: `ph-${p.phase_id}`,
+        label: PHASE_ACTION[p.phase_id] ?? p.phase_name,
+        sublabel: skipped
+          ? "skipped — not needed"
+          : done
+            ? (summary ? (summary.length > 64 ? summary.slice(0, 64) + "…" : summary) : undefined)
+            : running ? "working…" : undefined,
+        status: errored ? "error" : done ? "done" : running ? "running" : "pending",
+      });
+    }
+    // Trailing report step — the synthesis node isn't streamed as a phase, so show
+    // it explicitly: running until the final report materialises.
+    const hasSynthPhase = phases.some(p => /synth/.test(p.phase_id));
+    if (!hasSynthPhase) {
+      steps.push({
+        id: "synthesize",
+        label: "Writing the report",
+        status: adaReport ? "done" : isRunning ? "running" : "pending",
+      });
+    }
+    return steps;
+  }
+
+  // Fallback: legacy hypothesis-based investigate trace (pre-ADA flows).
   const hasHypotheses = hypotheses.length > 0;
   steps.push({
     id: "decompose",

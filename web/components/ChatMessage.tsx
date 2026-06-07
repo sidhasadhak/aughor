@@ -2,7 +2,6 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { SqlResultTable } from "@/components/AugTable";
-import { VegaChart, type VLSpec } from "@/components/VegaChart";
 import TableIcon         from "@atlaskit/icon/core/table";
 import DownloadIcon      from "@atlaskit/icon/core/download";
 import CloseIcon         from "@atlaskit/icon/core/close";
@@ -13,20 +12,29 @@ import AngleBracketsIcon from "@atlaskit/icon/core/angle-brackets";
 import InformationIcon   from "@atlaskit/icon/core/information";
 import WarningIcon       from "@atlaskit/icon/core/warning";
 import ArrowRightIcon    from "@atlaskit/icon/core/arrow-right";
-import { Lightbulb } from "lucide-react";
+import {
+  Brief,
+  BriefHeadline,
+  BriefProse,
+  BriefBullets,
+  BriefMetrics,
+  BriefFigure,
+  BriefDetails,
+  BriefDetailBlock,
+  BriefSection,
+  BriefMeta,
+  type BriefMetric,
+} from "@/components/brief/Brief";
 import { ChatTurn } from "@/lib/useChat";
-import type { ADAReport } from "@/lib/types";
 import { InvestigationReportView } from "@/components/InvestigationReport";
 import { ExplorationReportView } from "@/components/ExplorationReport";
 import { ThinkingTrace, turnToTraceState } from "@/components/ThinkingTrace";
 import { deletePlaybookEntry, editPlaybookRecommendation, type PlaybookRef } from "@/lib/api";
 import {
   type Gran,
-  normDateStr,
   granFromName,
   detectGranularity,
   fmtDate,
-  chartDateFormat,
   cleanLabel,
   GRAN_WORD,
 } from "@/lib/format";
@@ -155,47 +163,18 @@ function fmt(col: string, val: unknown, gran?: Gran): string {
   return s;
 }
 
-// ── KPI cards (single-row numeric result) ────────────────────────────────────
-// KPI values — inline typography, no box, no border.
-// Single metric: just the value (headline already names it).
-// Multi-metric: compact label + value pairs side by side.
-function KPICards({ columns, rows }: { columns: string[]; rows: unknown[][] }) {
+// ── Single-row numeric result → inline metrics (label/value pairs) ────────────
+// Mirrors the old KPICards column selection; rendering goes through <BriefMetrics>.
+function columnsToMetrics(columns: string[], rows: unknown[][]): BriefMetric[] {
   const row = rows[0];
-  const numericCols = columns.filter(
-    (c, i) => isNumeric(row[i]) && !ORDINAL_COL.test(c)
-  );
-  if (!numericCols.length) return null;
+  if (!row) return [];
+  const numericCols = columns.filter((c, i) => isNumeric(row[i]) && !ORDINAL_COL.test(c));
   const isSingle = numericCols.length === 1;
-  return (
-    <div className={`flex flex-wrap mt-1.5 ${isSingle ? "" : "gap-6"}`}>
-      {numericCols.map((col) => {
-        const idx = columns.indexOf(col);
-        return (
-          <div key={col}>
-            {!isSingle && (
-              <p className="text-[12px] text-zinc-500 mb-0.5">
-                {cleanLabel(col)}
-              </p>
-            )}
-            <p className="text-[12px] font-bold tabular-nums text-zinc-100">
-              {fmt(col, row[idx])}
-            </p>
-          </div>
-        );
-      })}
-    </div>
-  );
+  return numericCols.map((col) => {
+    const idx = columns.indexOf(col);
+    return { label: isSingle ? "" : cleanLabel(col), value: fmt(col, row[idx]) };
+  });
 }
-
-// ── Mini table — Ant Design via AugTable ─────────────────────────────────────
-function MiniTable({ columns, rows }: { columns: string[]; rows: unknown[][] }) {
-  return (
-    <div className="mt-2 rounded-lg overflow-hidden">
-      <SqlResultTable columns={columns} rows={rows} maxHeight={320} />
-    </div>
-  );
-}
-
 
 // ── Data summary ──────────────────────────────────────────────────────────────
 // Computes a 1-2 sentence actionable insight from the result rows.
@@ -283,8 +262,10 @@ function computeSummary(columns: string[], rows: unknown[][]): string | null {
   return parts.slice(0, 2).join(" ") || null;
 }
 
-// ── Result body ───────────────────────────────────────────────────────────────
-function ResultBody({
+// ── Result figure — the framed block: inline metrics, a chart, or a table ─────
+// The ONLY framed object in an Insight brief. Single-row numbers render inline
+// (no frame); a chartable / tabular result renders inside one <BriefFigure>.
+function ResultFigure({
   turn, onShowSource,
 }: {
   turn: ChatTurn;
@@ -303,7 +284,6 @@ function ResultBody({
     ? hasNum
     : rows.length >= 3 && hasNum && (hasDate || hasCat);
 
-  const summary     = computeSummary(columns, rows);
   const sourceTitle = inferSourceTitle(columns, rows);
 
   function handleSourceClick() {
@@ -315,38 +295,33 @@ function ResultBody({
     });
   }
 
-  return (
-    <>
-      {isSingleRow && hasNum ? (
-        <KPICards columns={columns} rows={rows} />
-      ) : showChart ? (
-        /* Chart card — source panel is a top-level drawer in ChatPanel, not inlined here */
-        <div className="mt-2 rounded-md border border-zinc-700/50 overflow-hidden p-3" style={{ background: '#13151a' }}>
-          {/* Summary above the chart so it's seen first */}
-          {summary && (
-            <p className="text-[12px] italic text-zinc-400 mb-2 leading-relaxed">{summary}</p>
-          )}
+  if (isSingleRow && hasNum) {
+    return <BriefMetrics metrics={columnsToMetrics(columns, rows)} />;
+  }
+
+  if (showChart) {
+    return (
+      <div className="flex flex-col gap-1.5">
+        <BriefFigure caption={sourceTitle}>
           <Chart columns={columns} rows={rows} chartType={chartType} chartConfig={turn.chartConfig} title={sourceTitle} />
-          {/* Source chip — bottom-right, opens the global source drawer */}
-          <div className="flex justify-end mt-2">
-            <button
-              onClick={handleSourceClick}
-              className="flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded-md border border-zinc-700/40 text-zinc-500 hover:text-zinc-300 hover:border-zinc-600 transition-colors"
-            >
-              <TableIcon label="Table" size="small" />
-              Source: {sourceTitle}
-            </button>
-          </div>
-        </div>
-      ) : (
-        <>
-          <MiniTable columns={columns} rows={rows} />
-          {summary && (
-            <p className="text-[12px] italic text-zinc-500 mt-2 leading-relaxed">{summary}</p>
-          )}
-        </>
-      )}
-    </>
+        </BriefFigure>
+        {onShowSource && (
+          <button
+            onClick={handleSourceClick}
+            className="self-end flex items-center gap-1.5 aug-text-xs text-zinc-500 hover:text-zinc-300 transition-colors"
+          >
+            <TableIcon label="Table" size="small" />
+            Source data
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <BriefFigure caption={sourceTitle}>
+      <SqlResultTable columns={columns} rows={rows} maxHeight={320} />
+    </BriefFigure>
   );
 }
 
@@ -542,62 +517,6 @@ function Section({
   );
 }
 
-// ── Table icon chip ───────────────────────────────────────────────────────────
-function TableChip({ name }: { name: string }) {
-  return (
-    <span className="inline-flex items-center gap-1 text-[12px] font-mono px-2 py-0.5 rounded-md border border-zinc-700/60 text-zinc-400" style={{ background: "#1e2d3d" }}>
-      <span className="shrink-0 text-zinc-500">
-        <TableIcon label="Table" size="small" />
-      </span>
-      {name}
-    </span>
-  );
-}
-
-// ── Analysis section — collapsible "how I approached this" block ──────────────
-function AnalysisSection({ intent, steps }: { intent: string; steps: string[] }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="mb-3 rounded-md border border-zinc-800/60 overflow-hidden" style={{ background: "#0f1520" }}>
-      {/* Header — always visible, click to toggle */}
-      <button
-        onClick={() => setOpen(v => !v)}
-        className="w-full flex items-center justify-between px-3 py-2 text-left hover:bg-zinc-800/30 transition-colors"
-      >
-        <span className="flex items-center gap-2 text-[12px] text-zinc-400 font-medium">
-          <span className="text-zinc-600">◎</span>
-          Analysis
-        </span>
-        <span className={`text-zinc-600 transition-transform duration-150 ${open ? "rotate-180" : ""}`}>
-          <ChevronDownIcon label="" size="small" />
-        </span>
-      </button>
-
-      {/* Body */}
-      {open && (
-        <div className="px-3 pb-3 space-y-2 border-t border-zinc-800/60">
-          {intent && (
-            <p className="text-[12px] text-zinc-400 leading-relaxed pt-2">{intent}</p>
-          )}
-          {steps.length > 0 && (
-            <div>
-              <p className="text-[11px] text-zinc-600 uppercase tracking-wide font-medium mt-1 mb-1.5">Calculated based on these steps</p>
-              <ol className="space-y-1">
-                {steps.map((s, i) => (
-                  <li key={i} className="flex gap-2 text-[12px] text-zinc-400 leading-snug">
-                    <span className="shrink-0 text-zinc-600 font-mono">{i + 1}.</span>
-                    <span>{s}</span>
-                  </li>
-                ))}
-              </ol>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ── Investigate body — delegates to the appropriate rich report view ──────────
 function InvestigateBody({
   turn, onShowSource,
@@ -634,7 +553,7 @@ function InvestigateBody({
     return (
       <>
         {headline && <p className="text-[12px] text-zinc-300 leading-relaxed mb-2">{headline}</p>}
-        <ResultBody turn={turn} onShowSource={onShowSource} />
+        <ResultFigure turn={turn} onShowSource={onShowSource} />
       </>
     );
   }
@@ -648,38 +567,6 @@ function Chevron({ open }: { open: boolean }) {
     <span className={`text-zinc-500 transition-transform duration-150 inline-block ${open ? "rotate-180" : ""}`}>
       <ChevronDownIcon label="" size="small" />
     </span>
-  );
-}
-
-// ── Inspect warning banner ────────────────────────────────────────────────────
-function InspectWarningBanner({ issues, suggestedFix }: { issues: string[]; suggestedFix: string }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="mb-4 px-3 py-2 rounded-lg bg-amber-950/30 border border-amber-700/50 text-[11px] text-amber-300 leading-snug">
-      <button
-        className="flex items-start gap-2 w-full text-left"
-        onClick={() => setOpen(v => !v)}
-      >
-        <span className="shrink-0 mt-0.5 text-amber-400">
-          <WarningIcon label="Warning" size="small" />
-        </span>
-        <span className="flex-1">
-          <span className="text-amber-200 font-medium">Result may be incomplete</span>
-          <span className="text-amber-400/70 ml-1">— Semantic inspector flagged a potential issue.</span>
-        </span>
-        <span className="shrink-0 text-amber-600 mt-0.5">{open ? "▲" : "▼"}</span>
-      </button>
-      {open && (
-        <div className="mt-2 ml-6 space-y-1">
-          {issues.map((issue, i) => (
-            <p key={i} className="text-amber-300/80">• {issue}</p>
-          ))}
-          {suggestedFix && (
-            <p className="mt-1.5 text-amber-400/60 italic">Suggestion: {suggestedFix}</p>
-          )}
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -809,7 +696,7 @@ function InlineAgentTrace({ turn }: { turn: ChatTurn }) {
           )}
           Agent trace
           {!running && !open && (
-            <span className="text-zinc-600 normal-case tracking-normal font-normal">· {traceState.subQuestions?.length || traceState.hypotheses?.length || 0} steps</span>
+            <span className="text-zinc-600 normal-case tracking-normal font-normal">· {traceState.investigationPhases?.length || traceState.subQuestions?.length || traceState.hypotheses?.length || 0} steps</span>
           )}
         </span>
         <Chevron open={open} />
@@ -824,33 +711,6 @@ function InlineAgentTrace({ turn }: { turn: ChatTurn }) {
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-// ── Insight narrative (Genie-style analytical interpretation) ─────────────────
-function InsightSection({ insight }: { insight: { narrative: string; anomalies: string[]; trend: string; confidence: string } }) {
-  if (!insight || !insight.narrative) return null;
-  const trendColor = insight.trend === 'up' ? 'text-emerald-400' : insight.trend === 'down' ? 'text-rose-400' : 'text-zinc-400';
-  const trendLabel = insight.trend === 'up' ? 'Trending up' : insight.trend === 'down' ? 'Trending down' : insight.trend === 'mixed' ? 'Mixed trend' : 'Stable';
-  const confColor = insight.confidence === 'high' ? 'text-emerald-400' : insight.confidence === 'low' ? 'text-amber-400' : 'text-zinc-400';
-  return (
-    <div className="mt-3 mb-3 rounded-lg border border-zinc-700/40 p-3" style={{ background: '#13151a' }}>
-      <div className="flex items-center gap-2 mb-2">
-        <span className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">Insight</span>
-        <span className={`text-[11px] font-medium ${trendColor}`}>{trendLabel}</span>
-        <span className={`text-[11px] ${confColor}`}>{insight.confidence} confidence</span>
-      </div>
-      <p className="text-[12px] text-zinc-300 leading-relaxed">{insight.narrative}</p>
-      {insight.anomalies.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {insight.anomalies.map((a, i) => (
-            <span key={i} className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full border border-purple-700/40 text-purple-300" style={{ background: 'color-mix(in srgb, #a855f7 8%, transparent)' }}>
-              <Lightbulb size={10} strokeWidth={2.5} />
-              {a}
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
 
 // ── Clarifying questions surfaced before deep analysis ───────────────────────
 function ClarifyingQuestionsBanner({ questions, contextNote }: { questions: string[]; contextNote: string }) {
@@ -867,6 +727,140 @@ function ClarifyingQuestionsBanner({ questions, contextNote }: { questions: stri
         ))}
       </div>
     </div>
+  );
+}
+
+// ── Insight answer, rendered as a clean Brief ─────────────────────────────────
+// Headline + interpretation prose + the one framed result (chart / table /
+// metrics) + folded-away machinery. No purple card, no badges, no stacked banners.
+function InsightBrief({
+  turn, onShowSource, onFollowUp, onRunFresh,
+}: {
+  turn: ChatTurn;
+  onShowSource?: (data: SourcePanelData) => void;
+  onFollowUp?: (q: string) => void;
+  onRunFresh?: (q: string) => void;
+}) {
+  const proseText = turn.insight?.narrative?.trim() || computeSummary(turn.columns, turn.rows) || "";
+  const anomalies = (turn.insight?.anomalies ?? []).filter(Boolean);
+  const inspect = turn.inspectWarning;
+
+  return (
+    <Brief>
+      {turn.fromCache && (
+        <BriefMeta
+          items={[
+            "From a similar past investigation",
+            turn.cachedQuestion && turn.cachedQuestion !== turn.question
+              ? <span key="cq" className="italic">originally: &ldquo;{turn.cachedQuestion}&rdquo;</span>
+              : null,
+            onRunFresh
+              ? <button key="rf" onClick={() => onRunFresh(turn.question)} className="text-zinc-400 hover:text-zinc-200 hover:underline underline-offset-2 transition-colors">Run fresh</button>
+              : null,
+          ]}
+        />
+      )}
+
+      {turn.headline && <BriefHeadline>{turn.headline}</BriefHeadline>}
+      {proseText && <BriefProse text={proseText} />}
+
+      {inspect && inspect.issues.length > 0 && (
+        <p className="aug-text-sm text-amber-400/90 leading-relaxed flex items-start gap-1.5">
+          <span className="shrink-0 mt-0.5"><WarningIcon label="Warning" size="small" /></span>
+          <span>
+            Result may be incomplete — {inspect.issues.join("; ")}
+            {inspect.suggestedFix ? `. ${inspect.suggestedFix}` : ""}
+          </span>
+        </p>
+      )}
+
+      <ResultFigure turn={turn} onShowSource={onShowSource} />
+
+      {anomalies.length > 0 && <BriefBullets items={anomalies} />}
+
+      {turn.followups.length > 0 && (
+        <BriefSection label="Follow-ups">
+          <div className="flex flex-col gap-1">
+            {turn.followups.map((q, i) => (
+              <button
+                key={i}
+                onClick={() => onFollowUp?.(q)}
+                className="text-left flex items-start gap-1.5 aug-text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
+              >
+                <span className="shrink-0 text-zinc-600 mt-0.5"><ArrowRightIcon label="" size="small" /></span>
+                <span>{q}</span>
+              </button>
+            ))}
+          </div>
+        </BriefSection>
+      )}
+
+      <InsightDetails turn={turn} onShowSource={onShowSource} />
+    </Brief>
+  );
+}
+
+// ── Insight machinery — folded into one quiet disclosure ──────────────────────
+function InsightDetails({
+  turn, onShowSource,
+}: {
+  turn: ChatTurn;
+  onShowSource?: (data: SourcePanelData) => void;
+}) {
+  const hasAnalysis = !!turn.analysis && (!!turn.analysis.intent || turn.analysis.steps.length > 0);
+  const hasTables   = turn.tablesUsed.length > 0;
+  const hasSource   = turn.columns.length > 0;
+  const hasPlaybook = turn.playbookRefs.length > 0;
+  const hasElapsed  = turn.elapsedMs != null;
+  if (!(hasAnalysis || hasTables || hasSource || hasPlaybook || hasElapsed)) return null;
+
+  return (
+    <BriefDetails>
+      {hasAnalysis && (
+        <BriefDetailBlock label="How this was computed">
+          {turn.analysis!.intent && (
+            <p className="aug-text-sm text-zinc-400 leading-relaxed">{turn.analysis!.intent}</p>
+          )}
+          {turn.analysis!.steps.length > 0 && (
+            <ol className="flex flex-col gap-1">
+              {turn.analysis!.steps.map((s, i) => (
+                <li key={i} className="flex gap-2 aug-text-sm text-zinc-400 leading-snug">
+                  <span className="shrink-0 text-zinc-600 font-mono">{i + 1}.</span>
+                  <span>{s}</span>
+                </li>
+              ))}
+            </ol>
+          )}
+        </BriefDetailBlock>
+      )}
+
+      {hasTables && (
+        <BriefDetailBlock label="Tables used">
+          <p className="aug-text-sm font-mono text-zinc-400">{turn.tablesUsed.join("  ·  ")}</p>
+        </BriefDetailBlock>
+      )}
+
+      {hasSource && onShowSource && (
+        <button
+          onClick={() => onShowSource({
+            columns: turn.columns,
+            rows: sortRowsForDisplay(turn.columns, turn.rows),
+            sql: turn.sql,
+            title: inferSourceTitle(turn.columns, turn.rows),
+          })}
+          className="self-start flex items-center gap-1.5 aug-text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
+        >
+          <TableIcon label="Table" size="small" />
+          View source data &amp; SQL
+        </button>
+      )}
+
+      {hasPlaybook && <PlaybookRefs refs={turn.playbookRefs} />}
+
+      {hasElapsed && (
+        <p className="aug-text-xs text-zinc-600">Completed in {formatElapsed(turn.elapsedMs!)}</p>
+      )}
+    </BriefDetails>
   );
 }
 
@@ -961,23 +955,37 @@ export function ChatMessage({
         <p className="text-[12px] text-red-400 py-1">{turn.error}</p>
       )}
 
-      {/* ── Always-visible table chips (outside collapsible) ── */}
-      {isDone && turn.tablesUsed.length > 0 && (
+      {/* ── Tables used + timing — Deep Analysis keeps these here for now; the
+           Insight brief folds them into its own details. (Phase C moves these
+           into the report itself.) ── */}
+      {isDone && isInvestigate && turn.tablesUsed.length > 0 && (
         <div className="flex items-center gap-2 flex-wrap mb-3">
           <span className="text-[12px] text-zinc-600">Found relevant data</span>
-          {turn.tablesUsed.map(t => <TableChip key={t} name={t} />)}
+          {turn.tablesUsed.map(t => (
+            <span key={t} className="inline-flex items-center gap-1 text-[12px] font-mono px-2 py-0.5 rounded-md border border-zinc-700/60 text-zinc-400" style={{ background: "#1e2d3d" }}>
+              <span className="shrink-0 text-zinc-500"><TableIcon label="Table" size="small" /></span>
+              {t}
+            </span>
+          ))}
         </div>
       )}
-
-      {/* ── Elapsed time (all modes incl. Quick) ── */}
-      {isDone && turn.elapsedMs != null && (
+      {isDone && isInvestigate && turn.elapsedMs != null && (
         <p className="text-[11px] text-zinc-600 mb-3">Completed in {formatElapsed(turn.elapsedMs)}</p>
       )}
 
-      {/* ── Body ── */}
-      {!collapsed && isDone && (
+      {/* ── Insight — the final answer as a clean Brief ── */}
+      {!collapsed && isDone && !isInvestigate && (
+        <InsightBrief
+          turn={turn}
+          onShowSource={onShowSource}
+          onFollowUp={onFollowUp}
+          onRunFresh={onRunFresh}
+        />
+      )}
+
+      {/* ── Deep Analysis — interim wrapping (Phase C rebuilds this on the Brief) ── */}
+      {!collapsed && isDone && isInvestigate && (
         <>
-          {/* Cache provenance banner — shown when result came from a semantically similar past investigation */}
           {turn.fromCache && (
             <div className="flex items-start gap-2 mb-4 px-3 py-2 rounded-lg bg-amber-950/30 border border-amber-800/40 text-[11px] text-amber-400 leading-snug">
               <span className="shrink-0 mt-0.5 text-amber-500">
@@ -999,39 +1007,10 @@ export function ChatMessage({
               )}
             </div>
           )}
-
-          {/* Semantic inspect warning — shown when post-execution validator finds a logical issue */}
-          {turn.inspectWarning && turn.inspectWarning.issues.length > 0 && (
-            <InspectWarningBanner
-              issues={turn.inspectWarning.issues}
-              suggestedFix={turn.inspectWarning.suggestedFix}
-            />
-          )}
-
-          {/* Analysis section — collapsed by default */}
-          {turn.analysis && (turn.analysis.intent || turn.analysis.steps.length > 0) && (
-            <AnalysisSection intent={turn.analysis.intent} steps={turn.analysis.steps} />
-          )}
-
-          {/* Main answer */}
           <div className="mb-1">
-            {isInvestigate ? (
-              <InvestigateBody turn={turn} onShowSource={onShowSource} />
-            ) : (
-              <>
-                {turn.headline && (
-                  <p className="text-[12px] text-zinc-300 leading-relaxed mb-2">{turn.headline}</p>
-                )}
-                {turn.insight && <InsightSection insight={turn.insight} />}
-                <ResultBody turn={turn} onShowSource={onShowSource} />
-              </>
-            )}
+            <InvestigateBody turn={turn} onShowSource={onShowSource} />
           </div>
-
-          {/* Referenced playbook items — keep / edit / remove */}
           {turn.playbookRefs.length > 0 && <PlaybookRefs refs={turn.playbookRefs} />}
-
-          {/* Follow-up chips */}
           {turn.followups.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mt-4">
               {turn.followups.map((q, i) => (
