@@ -773,6 +773,17 @@ class DuckDBConnection(DatabaseConnection):
                         pass
                 else:
                     _st.inc("enrichment_cache_hits")
+                # M24c: self-validate enriched semantics against the live DB once
+                # per fingerprint, persisting the verified flags. Only verified
+                # formulas reach the NL2SQL prompt with authority.
+                from aughor.ontology.validator import VALIDATION_VERSION
+                if not graph.validated or graph.validation_version < VALIDATION_VERSION:
+                    try:
+                        from aughor.ontology.validator import validate_semantics
+                        graph = validate_semantics(graph, self)
+                        save_ontology(graph.connection_id, graph.schema_name, graph.schema_fingerprint, graph)
+                    except Exception:
+                        pass  # validation is best-effort — never block schema loading
                 _apply_explorer_to_ontology(graph, self._connection_id or "fixture")
                 self._ontology = graph
                 onto_block = render_ontology_annotations(graph)
@@ -1052,6 +1063,16 @@ class PostgresConnection(DatabaseConnection):
                         pass  # structural ontology still works
                 else:
                     _st.inc("enrichment_cache_hits")
+                # M24c: self-validate enriched semantics against the live DB once
+                # per fingerprint, persisting the verified flags.
+                from aughor.ontology.validator import VALIDATION_VERSION
+                if not graph.validated or graph.validation_version < VALIDATION_VERSION:
+                    try:
+                        from aughor.ontology.validator import validate_semantics
+                        graph = validate_semantics(graph, self)
+                        save_ontology(graph.connection_id, graph.schema_name, graph.schema_fingerprint, graph)
+                    except Exception:
+                        pass
                 # Merge verified exploration findings (lifecycle + join confidence)
                 _apply_explorer_to_ontology(graph, self._connection_id or "postgres")
                 self._ontology = graph

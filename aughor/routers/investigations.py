@@ -459,7 +459,7 @@ async def _stream_chat(
         metrics_section = ""
         try:
             from aughor.semantic.metrics import build_metrics_block
-            _mb = build_metrics_block(schema_text=schema)
+            _mb = build_metrics_block(schema_text=schema, connection_id=connection_id)
             metrics_section = (_mb + "\n\n") if _mb else ""
         except Exception:
             metrics_section = ""
@@ -476,6 +476,7 @@ async def _stream_chat(
         # Build structured Data Catalog from linked tables (MindsDB-style),
         # expanded with FK neighbours so bridge/output tables a multi-table
         # question needs only via a join are present.
+        semantic_layer_section = ""
         try:
             from aughor.tools.data_catalog import build_data_catalog
             from aughor.tools.schema import _parse_schema_tables, fk_neighbor_expand, temporal_dimension_tables
@@ -487,6 +488,16 @@ async def _stream_chat(
                     if _dt not in linked_tables:
                         linked_tables.append(_dt)
                 linked_tables = fk_neighbor_expand(_full_schema, linked_tables, cap=10)
+                # M24c: verified semantic layer (object sets + computed properties)
+                # for the linked entities — only items validated against the live DB.
+                try:
+                    from aughor.ontology.store import load_latest_ontology
+                    from aughor.ontology.semantic_block import render_semantic_layer
+                    semantic_layer_section = render_semantic_layer(
+                        load_latest_ontology(connection_id), linked_tables
+                    )
+                except Exception:
+                    semantic_layer_section = ""
                 data_catalog = await asyncio.to_thread(
                     lambda: build_data_catalog(db, linked_tables)
                 )
@@ -582,6 +593,12 @@ async def _stream_chat(
             except Exception:
                 pass
 
+        # M24c: verified semantic layer — object sets (named WHERE filters) and
+        # computed properties for the linked entities, all executed against the
+        # live DB. Prepended below the trusted block so trusted patterns stay on top.
+        if semantic_layer_section:
+            prompt = semantic_layer_section + "\n\n" + prompt
+
         # Trusted query templates (authoritative, data-team-reviewed). When the
         # question matches a verified pattern, inject it at the top so the model
         # reuses its exact structure — fixes model-reasoning gaps (fan-out, grain)
@@ -620,6 +637,22 @@ async def _stream_chat(
         except Exception:
             pass
 
+        # ── Fan-out detection (M24d) — multi-fact join amplification ───────────
+        # Conservative, zero-false-positive detector (validated on 121 official
+        # TPC-H/TPC-DS queries). When ≥2 satellites of a shared hub are aggregated
+        # across a direct join, the totals over-count; the hint drives a directed
+        # pre-aggregate rewrite below (adopted only if it re-executes cleanly).
+        _fanout_fix_hint = ""
+        try:
+            from aughor.sql.fanout import detect_fanout
+            from aughor.tools.schema import _parse_schema_tables as _pst
+            _ff = detect_fanout(final_sql, _pst(_full_schema), dialect=db.dialect)
+            if _ff:
+                _fanout_fix_hint = _ff.to_prompt_text()
+                yield _sse("fanout", {"hub": _ff.hub_root, "satellites": _ff.satellites})
+        except Exception:
+            pass
+
         # ── Lint before execution — catch known anti-patterns in code, not prompts ──
         from aughor.sql.lint import lint as _lint_sql, error_hint as _lint_hint, has_errors as _lint_has_errors
         from aughor.sql.writer import SqlWriter
@@ -650,21 +683,22 @@ async def _stream_chat(
 
         # Also trigger a rewrite when semantic column warnings exist, even if
         # the SQL executed successfully (wrong columns produce wrong results silently).
-        if result.error or _chat_zero_diag or _semantic_fix_hint:
+        if result.error or _chat_zero_diag or _semantic_fix_hint or _fanout_fix_hint:
             _writer2 = SqlWriter(db, schema_str=schema)
             _fix_error = (
                 result.error or
                 (_semantic_fix_hint if _semantic_fix_hint else None) or
+                (_fanout_fix_hint if _fanout_fix_hint else None) or
                 "Query returned 0 rows — the SQL logic is likely wrong."
             )
-            _combined_hint = " | ".join(filter(None, [_chat_zero_diag or "", _semantic_fix_hint]))
+            _combined_hint = " | ".join(filter(None, [_chat_zero_diag or "", _semantic_fix_hint, _fanout_fix_hint]))
             try:
                 fix = await asyncio.to_thread(
                     lambda: _writer2.fix(final_sql, _fix_error, hint=_combined_hint, max_retries=1)
                 )
                 if fix.ok:
                     retry = await asyncio.to_thread(db.execute, "chat", fix.sql)
-                    if not retry.error and (retry.row_count > 0 or not _chat_zero_diag or _semantic_fix_hint):
+                    if not retry.error and (retry.row_count > 0 or not _chat_zero_diag or _semantic_fix_hint or _fanout_fix_hint):
                         final_sql = fix.sql
                         result = retry
                         yield _sse("sql", {"sql": final_sql})

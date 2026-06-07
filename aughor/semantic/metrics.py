@@ -243,7 +243,51 @@ def _metric_matches_schema(metric, tables: set[str], cols: set[str]) -> bool:
     return True
 
 
-def build_metrics_block(path: Path | None = None, schema_text: str = "") -> str:
+def _apply_ontology_overlay(
+    metrics: list[MetricDefinition], connection_id: str
+) -> list[MetricDefinition]:
+    """M24c — unify metrics through the connection's validated ontology.
+
+    The ontology lifts every metrics.json formula into an OntologyMetric, the
+    enricher may *correct* the formula, and the validator executes it against the
+    live DB. Here we overlay that result onto the global catalog so the generator
+    receives the corrected formula — and never receives a formula the validator
+    proved wrong on this connection (e.g. the SUM(a)*SUM(b) product-of-sums bug).
+
+    Only applied when the ontology has actually been validated; otherwise the
+    global catalog is returned unchanged (conservative — never drop blindly).
+    """
+    try:
+        from aughor.ontology.store import load_latest_ontology
+        graph = load_latest_ontology(connection_id)
+    except Exception:
+        graph = None
+    if graph is None or not getattr(graph, "validated", False) or not graph.metrics:
+        return metrics
+
+    onto: dict[str, object] = {}
+    for om in graph.metrics.values():
+        onto[re.sub(r"[^\w]", "_", (om.display_name or om.id).lower())] = om
+        onto[om.id] = om
+
+    out: list[MetricDefinition] = []
+    for m in metrics:
+        om = onto.get(re.sub(r"[^\w]", "_", m.name.lower()))
+        if om is None:
+            out.append(m)
+            continue
+        if not getattr(om, "verified", False):
+            continue  # validator proved this formula wrong on this connection — drop it
+        new_sql = getattr(om, "formula_sql", "") or ""
+        if new_sql.strip() and new_sql.strip() != (m.sql or "").strip():
+            m = m.model_copy(update={"sql": new_sql})  # corrected formula
+        out.append(m)
+    return out
+
+
+def build_metrics_block(
+    path: Path | None = None, schema_text: str = "", connection_id: str = ""
+) -> str:
     """
     Return a METRICS CATALOG block to append to the schema context string.
     Returns "" if no metrics are defined.
@@ -255,12 +299,18 @@ def build_metrics_block(path: Path | None = None, schema_text: str = "") -> str:
     When ``schema_text`` is supplied, metrics whose declared tables/columns are
     absent from that schema are filtered out — metrics are global, so this stops
     one connection's metric from polluting another connection's prompt.
+
+    When ``connection_id`` is supplied, formulas are unified through that
+    connection's validated ontology (M24c): corrected formulas are used and
+    formulas the validator proved wrong are dropped.
     """
     metrics = list_metrics(path)
     if schema_text:
         _tables, _cols = _schema_tables_and_columns(schema_text)
         if _tables:  # only filter when a schema actually parsed (else keep all)
             metrics = [m for m in metrics if _metric_matches_schema(m, _tables, _cols)]
+    if connection_id:
+        metrics = _apply_ontology_overlay(metrics, connection_id)
     if not metrics:
         return ""
 

@@ -712,7 +712,7 @@ def build_schema_context(
     # Filter metrics against THIS schema so a globally-stored metric that
     # references columns absent here (another connection's metric) doesn't leak
     # a wrong formula into the prompt.
-    metrics_block = build_metrics_block(schema_text=enriched)
+    metrics_block = build_metrics_block(schema_text=enriched, connection_id=connection_id or "")
     if metrics_block:
         enriched += "\n\n" + metrics_block
     if profile_annotation:

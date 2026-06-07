@@ -132,7 +132,7 @@ def generate_sql_full_pipeline(question: str, connection_id: str, db) -> str:
 
     def _metrics(schema_text: str) -> str:
         from aughor.semantic.metrics import build_metrics_block
-        s = build_metrics_block(schema_text=schema_text)
+        s = build_metrics_block(schema_text=schema_text, connection_id=connection_id)
         return (s + "\n\n") if s else ""
 
     def _expl() -> str:
@@ -180,6 +180,7 @@ def generate_sql_full_pipeline(question: str, connection_id: str, db) -> str:
         schema = link_schema_for_prompt(question, schema, top_k_tables=8, top_k_cols=8, connection_id=connection_id)
     except Exception:
         pass
+    linked_tables: list[str] = []
     try:
         from aughor.tools.data_catalog import build_data_catalog
         from aughor.tools.schema import _parse_schema_tables, fk_neighbor_expand, temporal_dimension_tables
@@ -196,6 +197,18 @@ def generate_sql_full_pipeline(question: str, connection_id: str, db) -> str:
                 schema = catalog
     except Exception:
         pass
+
+    # M24c: verified semantic layer (object sets + computed properties) for the
+    # linked entities — mirrors the chat path so the eval measures the same lift.
+    semantic_layer_section = ""
+    try:
+        from aughor.ontology.store import load_latest_ontology
+        from aughor.ontology.semantic_block import render_semantic_layer
+        semantic_layer_section = render_semantic_layer(
+            load_latest_ontology(connection_id), linked_tables
+        )
+    except Exception:
+        semantic_layer_section = ""
     try:
         from aughor.tools.data_catalog import enforce_context_cap
         schema = enforce_context_cap(schema, max_tables=10)
@@ -225,6 +238,9 @@ def generate_sql_full_pipeline(question: str, connection_id: str, db) -> str:
                 prompt = _pbsec + "\n" + prompt
         except Exception:
             pass
+    # M24c: verified semantic layer (object sets + computed properties), below trusted.
+    if semantic_layer_section:
+        prompt = semantic_layer_section + "\n\n" + prompt
     # Trusted query templates (authoritative) — prepended last so they sit at the
     # very top. Verified patterns the model reuses to avoid fan-out/grain errors.
     try:
@@ -278,6 +294,17 @@ def generate_sql_full_pipeline(question: str, connection_id: str, db) -> str:
     except Exception:
         pass
 
+    # ── Fan-out detection (M24d) — multi-fact join amplification ─────────────
+    _fanout_fix_hint = ""
+    try:
+        from aughor.sql.fanout import detect_fanout
+        from aughor.tools.schema import _parse_schema_tables as _pst
+        _ff = detect_fanout(final_sql, _pst(full_schema), dialect=db.dialect)
+        if _ff:
+            _fanout_fix_hint = _ff.to_prompt_text()
+    except Exception:
+        pass
+
     # ── Lint → fix before execution ──────────────────────────────────────────
     from aughor.sql.writer import SqlWriter
     try:
@@ -302,16 +329,17 @@ def generate_sql_full_pipeline(question: str, connection_id: str, db) -> str:
     except Exception:
         _zero_diag = None
 
-    if result.error or _zero_diag or _semantic_fix_hint:
+    if result.error or _zero_diag or _semantic_fix_hint or _fanout_fix_hint:
         try:
             _writer2 = SqlWriter(db, schema_str=schema)
             _fix_error = (result.error or (_semantic_fix_hint or None) or
+                          (_fanout_fix_hint or None) or
                           "Query returned 0 rows — the SQL logic is likely wrong.")
-            _combined_hint = " | ".join(filter(None, [_zero_diag or "", _semantic_fix_hint]))
+            _combined_hint = " | ".join(filter(None, [_zero_diag or "", _semantic_fix_hint, _fanout_fix_hint]))
             fix = _writer2.fix(final_sql, _fix_error, hint=_combined_hint, max_retries=1)
             if fix.ok:
                 retry = db.execute("__eval_full__", fix.sql)
-                if not retry.error and (retry.row_count > 0 or not _zero_diag or _semantic_fix_hint):
+                if not retry.error and (retry.row_count > 0 or not _zero_diag or _semantic_fix_hint or _fanout_fix_hint):
                     final_sql = fix.sql
         except Exception:
             pass
