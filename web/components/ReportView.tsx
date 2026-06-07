@@ -15,7 +15,8 @@ import {
 import type { DataQualityNote, Finding, Hypothesis, QueryCitation, Report, StatResult, Verdict } from "@/lib/types";
 import { logOutcome, getInvestigationOutcomes, type RecOutcome, type RecStatus } from "@/lib/api";
 import { InvestigationChart } from "@/components/InvestigationChart";
-import { SHARE_COL_PATTERN, buildColumnFormatter } from "@/lib/formatCell";
+import { SHARE_COL_PATTERN, buildColumnFormatter, compactNumber, pct } from "@/lib/format";
+import { H_PALETTES } from "@/lib/palette";
 
 interface Props {
   report: Report;
@@ -25,16 +26,6 @@ interface Props {
   hypotheses?: Hypothesis[];
   invId?: string | null;
 }
-
-// ── Palette definitions ──────────────────────────────────────────────────────
-
-const H_PALETTES = [
-  { ring: "border-violet-500/40", dimBg: "bg-violet-500/5",  badge: "bg-violet-500/20 text-violet-300 border-violet-500/30",  divider: "divide-violet-500/10"  },
-  { ring: "border-blue-500/40",   dimBg: "bg-blue-500/5",    badge: "bg-blue-500/20 text-blue-300 border-blue-500/30",        divider: "divide-blue-500/10"    },
-  { ring: "border-emerald-500/40",dimBg: "bg-emerald-500/5", badge: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",divider: "divide-emerald-500/10" },
-  { ring: "border-amber-500/40",  dimBg: "bg-amber-500/5",   badge: "bg-amber-500/20 text-amber-300 border-amber-500/30",     divider: "divide-amber-500/10"   },
-  { ring: "border-rose-500/40",   dimBg: "bg-rose-500/5",    badge: "bg-rose-500/20 text-rose-300 border-rose-500/30",        divider: "divide-rose-500/10"    },
-];
 
 const VERDICT_STYLE: Record<Verdict, { label: string; chip: string; bar: string }> = {
   confirmed:    { label: "Confirmed",    chip: "border-emerald-500/30 bg-emerald-500/10 text-emerald-400", bar: "bg-emerald-500" },
@@ -691,11 +682,9 @@ function KPIHighlight({ table }: { table: QueryCitation }) {
 
   const fmt = (col: string, v: unknown) => {
     const n = Number(v);
-    if (SHARE_COL_PATTERN.test(col) && n >= 0 && n <= 1) return `${(n * 100).toFixed(2)}%`;
-    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
-    if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-    if (n % 1 !== 0) return n.toFixed(2);
-    return n.toLocaleString();
+    if (SHARE_COL_PATTERN.test(col) && n >= 0 && n <= 1) return pct(n, 2);
+    // KPI headline — compact abbreviation (2dp preserves precision on small values).
+    return compactNumber(n, 2);
   };
 
   return (

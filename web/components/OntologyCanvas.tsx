@@ -10,6 +10,7 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
+import { verbLabel } from "@/lib/format";
 import { useWheelZoom } from "@/lib/useWheelZoom";
 import type {
   OntologyGraph,
@@ -686,7 +687,7 @@ function FlowEdges({
             {/* Verb label — shown in expanded view (or on hover in compact, to
                 keep the multi-schema org overview from drowning in pills) */}
             {(showLabels || isHovered || isActive) && (() => {
-              const verbText = rel.verb.toLowerCase().replace(/_/g, " ");
+              const verbText = verbLabel(rel.verb);
               const verbW = Math.max(40, verbText.length * 5.4 + 16);
               return (
                 <g transform={`translate(${mx},${my})`}>

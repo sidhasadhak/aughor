@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { getHealthScorecard, getPlatformMetrics, getAuditStats, type ScorecardItem, type HealthStatus, type PlatformMetrics, type AuditStats } from "@/lib/api";
+import { compactNumber, formatVariance } from "@/lib/format";
 
 const STATUS_COLORS: Record<HealthStatus, { bg: string; border: string; dot: string; text: string; label: string }> = {
   green:   { bg: "var(--grn1)", border: "var(--grn2)", dot: "var(--grn4)", text: "var(--grn4)", label: "On target" },
@@ -14,8 +15,7 @@ function fmtValue(v: number | null, unit: string | null): string {
   if (v === null) return "—";
   const num = Math.abs(v);
   let formatted: string;
-  if (num >= 1_000_000) formatted = (v / 1_000_000).toFixed(2) + "M";
-  else if (num >= 1_000) formatted = (v / 1_000).toFixed(1) + "K";
+  if (num >= 1_000) formatted = compactNumber(v, 1);
   else if (num < 1 && num > 0 && unit === "%") formatted = (v * 100).toFixed(1);
   else formatted = v.toFixed(num < 10 ? 2 : 0);
   return unit ? `${formatted}${unit === "$" ? "" : " "}${unit === "$" ? "" : unit}` : formatted;
@@ -23,8 +23,7 @@ function fmtValue(v: number | null, unit: string | null): string {
 
 function fmtVariance(v: number | null): string {
   if (v === null) return "";
-  const pct = (v * 100).toFixed(1);
-  return v >= 0 ? `+${pct}%` : `${pct}%`;
+  return formatVariance(v, 1);
 }
 
 function MetricHealthCard({

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { compactNumber, pct } from "@/lib/format";
 import {
   getExplorationStatus,
   getExplorationFindings,
@@ -103,7 +104,7 @@ function NullMeaningsSection({ nullMeanings }: { nullMeanings: ExplorationFindin
               <p className="text-[11px] text-zinc-500 mt-1 font-mono">{nm.business_rule}</p>
             )}
             {nm.null_rate != null && (
-              <p className="text-[11px] text-zinc-500 mt-0.5">{(nm.null_rate * 100).toFixed(1)}% null rate</p>
+              <p className="text-[11px] text-zinc-500 mt-0.5">{pct(nm.null_rate, 1)} null rate</p>
             )}
           </div>
         );
@@ -172,9 +173,7 @@ function miniBarHeights(shape: string): number[] {
 
 function fmtNum(n: number | null | undefined): string {
   if (n == null) return "—";
-  if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (Math.abs(n) >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return n.toFixed(2);
+  return compactNumber(n, 1);
 }
 
 function DistributionsSection({ distributions }: { distributions: ExplorationFindings["distributions"] }) {
@@ -329,7 +328,7 @@ function InsightsSection({ insights }: { insights: ExplorationFindings["insights
               {ins.entities_involved.join(" × ")}
             </span>
             <span className="text-[11px] text-emerald-500/70 ml-auto">
-              {(ins.confidence * 100).toFixed(0)}% confidence
+              {pct(ins.confidence, 0)} confidence
             </span>
           </div>
         </div>

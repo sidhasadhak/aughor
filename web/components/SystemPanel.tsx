@@ -2,15 +2,14 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { getDevStats, resetDevStats, type DevStats } from "@/lib/api";
+import { formatCount, pct as fmtPct } from "@/lib/format";
 
 function fmt(n: number | undefined | null): string {
-  if (n == null) return "—";
-  return n.toLocaleString();
+  return n == null ? "—" : formatCount(n);
 }
 
 function pct(n: number | null | undefined): string {
-  if (n == null) return "—";
-  return `${(n * 100).toFixed(1)}%`;
+  return n == null ? "—" : fmtPct(n, 1);
 }
 
 function ms(n: number | null | undefined): string {

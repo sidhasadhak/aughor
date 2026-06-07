@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { getProcessMap, type ProcessMap, type ProcessNode, type ProcessEdge } from "@/lib/api";
+import { compactNumber } from "@/lib/format";
 
 // ── Layout constants ──────────────────────────────────────────────────────────
 
@@ -31,9 +32,7 @@ function nodeRing(state: string, edges: ProcessEdge[], isTerminal: boolean): str
 }
 
 function fmt(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000)     return `${(n / 1_000).toFixed(1)}k`;
-  return String(n);
+  return compactNumber(n, 1);
 }
 
 // ── Layout engine ─────────────────────────────────────────────────────────────

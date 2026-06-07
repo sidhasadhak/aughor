@@ -19,6 +19,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { SqlResultTable } from "@/components/AugTable";
 import { useSchema } from "@/lib/schema-context";
+import { compactNumber } from "@/lib/format";
+import { bare, schemaOf } from "@/lib/tableName";
 import {
   getCatalogTree, getConnections, addConnection, deleteConnection,
   testConnection, sampleTable, getSchemaRich, getTableColumns, getExplorationFindings,
@@ -40,9 +42,7 @@ function fmtRows(n: number | string | null | undefined): string {
   if (n == null) return "—";
   const num = Number(n);
   if (isNaN(num)) return "—";
-  if (num >= 1_000_000) return (num / 1_000_000).toFixed(1) + "M";
-  if (num >= 1_000)     return Math.round(num / 1_000) + "K";
-  return num.toLocaleString();
+  return compactNumber(num, 1);
 }
 
 const TYPE_OPTIONS = [
@@ -89,9 +89,7 @@ function miniBarHeights(shape: string): number[] {
 
 function fmtNum(n: number | null | undefined): string {
   if (n == null) return "—";
-  if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (Math.abs(n) >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return Number.isInteger(n) ? String(n) : n.toFixed(2);
+  return compactNumber(n, 1);
 }
 
 /** Compact per-column distribution strip shown under a column row in Catalog. */
@@ -542,14 +540,13 @@ function TableDetailPanel({ sel, onAsk }: {
         // The explorer keys distributions as "<table>:<column>", where <table>
         // may be schema-qualified (e.g. "public.orders") while the catalog tree
         // exposes the bare table name. Match leniently on the final segment.
-        const leaf = (s: string) => (s || "").split(".").pop()!.toLowerCase();
-        const target = leaf(sel.table.name);
+        const target = bare(sel.table.name);
         for (const [key, d] of Object.entries(f.distributions ?? {})) {
           const sep = key.lastIndexOf(":");
           if (sep < 0) continue;
           const tbl = key.slice(0, sep);
           const col = key.slice(sep + 1);
-          if (leaf(tbl) === target && col && d.shape !== "unknown") m[col] = d;
+          if (bare(tbl) === target && col && d.shape !== "unknown") m[col] = d;
         }
         setDistMap(m);
       })
@@ -755,13 +752,10 @@ function SchemaDetailPanel({ sel, onSelectTable, onAsk, connName }: {
         // ("No tables found"). Match on the bare last segment, scoped to this
         // schema, and keep the original qualified names so the diagram's internal
         // table↔join matching stays consistent.
-        const bare = (n: string) => n.split(".").pop()!.toLowerCase();
         const allowed = new Set(entry.tables.map(t => bare(t.name)));
         const inSchema = (n: string) => {
-          const parts = n.split(".");
-          const schemaOk =
-            parts.length < 2 ||
-            parts[parts.length - 2].toLowerCase() === entry.name.toLowerCase();
+          const s = schemaOf(n);
+          const schemaOk = !s || s === entry.name.toLowerCase();
           return schemaOk && allowed.has(bare(n));
         };
         const filtered: RichSchema = {

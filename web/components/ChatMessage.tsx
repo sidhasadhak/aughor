@@ -20,6 +20,16 @@ import { InvestigationReportView } from "@/components/InvestigationReport";
 import { ExplorationReportView } from "@/components/ExplorationReport";
 import { ThinkingTrace, turnToTraceState } from "@/components/ThinkingTrace";
 import { deletePlaybookEntry, editPlaybookRecommendation, type PlaybookRef } from "@/lib/api";
+import {
+  type Gran,
+  normDateStr,
+  granFromName,
+  detectGranularity,
+  fmtDate,
+  chartDateFormat,
+  cleanLabel,
+  GRAN_WORD,
+} from "@/lib/format";
 
 // Format a wall-clock duration for the "Completed in …" line.
 function formatElapsed(ms: number): string {
@@ -70,95 +80,8 @@ function firstNonNull(rows: unknown[][], colIdx: number): unknown {
   return rows[0]?.[colIdx as number];
 }
 
-// "2024-01-01 00:00:00" or "2024-01-01T00:00:00Z" → "Jan 2024"
-// Returns the original string unchanged if it doesn't look like a timestamp
-function normDateStr(v: string): string {
-  // DuckDB returns "2024-01-01 00:00:00" — normalize space separator to T for Date parsing
-  let s = v.replace(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})/, "$1T$2");
-  // Handle DATE_TRUNC month output "2018-01" by appending day
-  if (/^\d{4}-\d{2}$/.test(s)) s += "-01";
-  return s;
-}
-
-// ── Granularity-aware date handling ───────────────────────────────────────────
-// A date column produced by DATE_TRUNC('week'/'day'/'month'/…) is ALREADY
-// aggregated. Best practice (and Vega-Lite's guidance for pre-binned data) is to
-// match the label/axis granularity to the data and NOT re-bin it. We infer the
-// grain from the column name first, then from the median spacing of distinct dates.
-type Gran = "day" | "week" | "month" | "quarter" | "year";
-
-function granFromName(col: string): Gran | null {
-  const n = (col || "").toLowerCase();
-  if (/\bweek\b|wk\b|_week|iso_week|week_/.test(n)) return "week";
-  if (/\bquarter\b|\bqtr\b|_q$|fiscal_q/.test(n)) return "quarter";
-  if (/\bmonth\b|_month|yyyymm/.test(n)) return "month";
-  if (/\byear\b|_year|yyyy$/.test(n)) return "year";
-  if (/\bday\b|_day|\bdate\b|_date$|^date$/.test(n)) return "day";
-  return null;
-}
-
-const _DAY_MS = 86_400_000;
-function detectGranularity(col: string, values: unknown[]): Gran {
-  const named = granFromName(col);
-  if (named) return named;
-  // Fall back to spacing between distinct parseable date values.
-  const ts = Array.from(new Set(
-    values.map(v => String(v ?? "")).filter(s => /^\d{4}-\d{2}(-\d{2})?/.test(s)),
-  )).map(s => new Date(normDateStr(s)).getTime()).filter(t => !isNaN(t)).sort((a, b) => a - b);
-  if (ts.length >= 2) {
-    const deltas = ts.slice(1).map((t, i) => t - ts[i]).sort((a, b) => a - b);
-    const med = deltas[Math.floor(deltas.length / 2)];
-    if (med <= 1.5 * _DAY_MS) return "day";
-    if (med <= 10 * _DAY_MS) return "week";
-    if (med <= 45 * _DAY_MS) return "month";
-    if (med <= 135 * _DAY_MS) return "quarter";
-    return "year";
-  }
-  return "day";  // single raw date → show the actual date, not a collapsed month
-}
-
-// Human label for a single date value at the detected grain. Always carries the
-// year for day/week — a data table must be unambiguous across years ("19 Sep 2017"),
-// never a bare "19 Sep".
-function fmtDate(v: string, gran: Gran): string {
-  if (!/^\d{4}-\d{2}(-\d{2})?/.test(v)) return v;
-  const d = new Date(normDateStr(v));
-  if (isNaN(d.getTime())) return v;
-  switch (gran) {
-    case "day":
-    case "week":    return d.toLocaleString("default", { day: "numeric", month: "short", year: "numeric" }); // "19 Sep 2017"
-    case "quarter": return `Q${Math.floor(d.getUTCMonth() / 3) + 1} ${d.getUTCFullYear()}`;                    // "Q1 2026"
-    case "year":    return String(d.getUTCFullYear());                                                          // "2026"
-    case "month":
-    default:        return d.toLocaleString("default", { month: "short", year: "numeric" });                   // "Jan 2026"
-  }
-}
-
-// d3-time-format spec for a temporal (continuous) axis at the detected grain.
-// Axes avoid repeating the year on every tick when the data sits in one year,
-// but MUST show the year when the range spans multiple years.
-function chartDateFormat(gran: Gran, multiYear: boolean): string {
-  switch (gran) {
-    case "day":
-    case "week":    return multiYear ? "%b %Y" : "%b %d";   // "Jan 2017" across years · "Jan 05" within one
-    case "year":    return "%Y";                            // 2026
-    case "quarter":
-    case "month":
-    default:        return "%b %Y";                         // Jan 2026
-  }
-}
-
-const _GRAN_WORD: Record<Gran, string> = {
-  day: "Daily", week: "Weekly", month: "Monthly", quarter: "Quarterly", year: "Yearly",
-};
-
-// ── Human-readable label: "revenue_usd" → "Revenue USD", "payment_method" → "Payment Method" ──
-const ABBREVS = /^(usd|id|uk|us|eu|vat|sku|url|api|crm|gmv|mrr|arr|ltv|cac|ctr|aov|roi|pnl|gp|kpi)$/i;
-function cleanLabel(s: string): string {
-  return s
-    .replace(/_/g, " ")
-    .replace(/\b\w+/g, w => ABBREVS.test(w) ? w.toUpperCase() : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
-}
+// Date normalization, granularity detection, date/label formatting, and the
+// Gran type now live in @/lib/format (imported above) — the single formatting home.
 
 // ── Smart source-panel title derived from column semantics ────────────────────
 const DATE_VALUE_RE = /^\d{4}-\d{2}(-\d{2})?/;
@@ -177,7 +100,7 @@ function inferSourceTitle(columns: string[], rows: unknown[][]): string {
   const hasDate = dateColIdx >= 0;
   // Use the actual time grain ("Weekly"/"Daily"/…) instead of assuming monthly.
   const grainWord = hasDate
-    ? _GRAN_WORD[detectGranularity(columns[dateColIdx], rows.map(r => (r as unknown[])[dateColIdx]))]
+    ? GRAN_WORD[detectGranularity(columns[dateColIdx], rows.map(r => (r as unknown[])[dateColIdx]))]
     : "";
 
   if (measure && dim && hasDate) return `${grainWord} ${measure} by ${dim}`;

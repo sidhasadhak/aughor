@@ -5,6 +5,7 @@ import { VegaChart, timeseriesSpec, barSpec } from "@/components/VegaChart";
 import { ChartWrapper }        from "@/components/charts/ChartWrapper";
 import { ChartTypeToggle }     from "@/components/charts/ChartTypeToggle";
 import { inferChartType, isShareColumn, type ChartType } from "@/components/charts/chartTypeInference";
+import { normDateStr, cleanLabel as cleanTitle } from "@/lib/format";
 
 interface Props {
   columns: string[];
@@ -25,16 +26,6 @@ function rowsToRecords(columns: string[], rows: unknown[][]): Record<string, unk
       return [col, v];
     })),
   );
-}
-
-function normDateStr(v: string): string {
-  return v.replace(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})/, "$1T$2");
-}
-
-// Humanize a raw column name for axis/legend titles: "payment_type" → "Payment type".
-function cleanTitle(s: string): string {
-  const t = (s ?? "").replace(/_/g, " ").trim();
-  return t ? t.charAt(0).toUpperCase() + t.slice(1) : t;
 }
 
 // Aggregate rows for bar charts (avg for share columns, sum otherwise)

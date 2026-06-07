@@ -24,6 +24,7 @@ import { OntologyCanvas } from "./OntologyCanvas";
 import { OntologyOrgCanvas } from "./OntologyOrgCanvas";
 import { ProcessMapper } from "./ProcessMapper";
 import { cn } from "@/lib/utils";
+import { verbLabel } from "@/lib/format";
 
 // ── Small reusable bits ───────────────────────────────────────────────────────
 
@@ -520,7 +521,7 @@ function RelationshipRow({
           </>
         )}
         <span className="text-[11px] text-violet-400 font-mono">
-          {rel.verb.toLowerCase().replace(/_/g, " ")}
+          {verbLabel(rel.verb)}
         </span>
         <span className="text-[11px] font-mono text-zinc-500 border border-zinc-600 rounded px-1 py-0.5">
           {rel.cardinality}
@@ -656,7 +657,7 @@ function EdgeSqlPanel({
     });
   };
 
-  const investigateQ = `Analyse the join between ${fromEntity?.display_name ?? rel.from_entity} and ${toEntity?.display_name ?? rel.to_entity}: what does this ${rel.verb.toLowerCase().replace(/_/g, " ")} relationship reveal?`;
+  const investigateQ = `Analyse the join between ${fromEntity?.display_name ?? rel.from_entity} and ${toEntity?.display_name ?? rel.to_entity}: what does this ${verbLabel(rel.verb)} relationship reveal?`;
 
   return (
     <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-30 w-[480px] max-w-[90vw] bg-zinc-900 border border-zinc-700/70 rounded-md shadow-2xl shadow-black/60 overflow-hidden">
@@ -665,7 +666,7 @@ function EdgeSqlPanel({
           {fromEntity?.display_name ?? rel.from_entity}
           <span className="text-zinc-600 mx-1.5">→</span>
           {toEntity?.display_name ?? rel.to_entity}
-          <span className="text-zinc-600 ml-2 font-sans font-normal">{rel.verb.toLowerCase().replace(/_/g, " ")}</span>
+          <span className="text-zinc-600 ml-2 font-sans font-normal">{verbLabel(rel.verb)}</span>
         </span>
         <span className="text-[8px] font-mono text-zinc-500 border border-zinc-700 rounded px-1.5 py-0.5">{rel.cardinality}</span>
         <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300 transition ml-1">

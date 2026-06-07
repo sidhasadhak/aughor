@@ -12,28 +12,20 @@
  */
 
 import { useEffect, useRef, useState } from "react";
+import { AUG_PALETTE } from "@/lib/palette";
 
 // Minimal type alias — avoids importing the full heavy vega-lite types at component load time.
 export type VLSpec = Record<string, unknown>;
 
+// Re-export so existing `import { AUG_PALETTE } from "@/components/VegaChart"` keeps working.
+export { AUG_PALETTE };
+
 // ── Aughor Vega-Lite config (dark theme) ────────────────────────────────────
 
-const C1 = "#4C8EEE";
-const C2 = "#2EC87B";
-const C3 = "#E0AD00";
-const C4 = "#8B68D8";
-const C5 = "#E64848";
-const C6 = "#30B8E0";
+const C1 = AUG_PALETTE[0];   // primary brand colour — default single-series fill
 const AXIS_LINE  = "#363940";
 const AXIS_GRID  = "#292b2f";
 const AXIS_TICK  = "#9AA0A8";
-
-export const AUG_PALETTE = [
-  C1, C2, C3, C4, C5, C6,
-  "#F97316", "#EC4899", "#10B981", "#6366F1", "#F59E0B", "#14B8A6",
-  "#A855F7", "#22D3EE", "#84CC16", "#E879F9", "#34D399", "#FB923C",
-  "#818CF8", "#4ADE80",
-];
 
 const AUG_CONFIG = {
   background: "transparent",
