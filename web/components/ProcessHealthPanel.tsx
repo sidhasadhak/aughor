@@ -1,13 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getHealthScorecard, type ScorecardItem, type HealthStatus } from "@/lib/api";
+import { getHealthScorecard, getPlatformMetrics, getAuditStats, type ScorecardItem, type HealthStatus, type PlatformMetrics, type AuditStats } from "@/lib/api";
 
 const STATUS_COLORS: Record<HealthStatus, { bg: string; border: string; dot: string; text: string; label: string }> = {
-  green:   { bg: "#0a1a10", border: "#1a3a20", dot: "#4ade80", text: "#4ade80", label: "On target" },
-  yellow:  { bg: "#1a1500", border: "#3a2e00", dot: "#fbbf24", text: "#fbbf24", label: "Warning" },
-  red:     { bg: "#1a0a0a", border: "#3a1515", dot: "#f87171", text: "#f87171", label: "Off target" },
-  unknown: { bg: "#13141a", border: "#1e1f24", dot: "#5a5b62", text: "#5a5b62", label: "No data" },
+  green:   { bg: "var(--grn1)", border: "var(--grn2)", dot: "var(--grn4)", text: "var(--grn4)", label: "On target" },
+  yellow:  { bg: "var(--amb1)", border: "var(--amb2)", dot: "var(--amb4)", text: "var(--amb4)", label: "Warning" },
+  red:     { bg: "var(--red1)", border: "var(--red2)", dot: "var(--red4)", text: "var(--red4)", label: "Off target" },
+  unknown: { bg: "var(--bg-1)", border: "var(--b1)", dot: "var(--t3)", text: "var(--t3)", label: "No data" },
 };
 
 function fmtValue(v: number | null, unit: string | null): string {
@@ -123,7 +123,12 @@ export function ProcessHealthPanel({ connectionId, onInvestigate }: ProcessHealt
     );
   }
 
-  if (items.length === 0) return null;
+  if (items.length === 0) return (
+    <div style={{ padding: "24px 16px", textAlign: "center", color: "var(--t3)" }}>
+      <p style={{ fontSize: 14, fontWeight: 500, marginBottom: 8 }}>No health metrics configured</p>
+      <p style={{ fontSize: 12, opacity: 0.7 }}>Define metrics with targets in the Metrics panel to see a health scorecard here.</p>
+    </div>
+  );
 
   const redYellow = items.filter(i => i.status === "red" || i.status === "yellow");
   const green     = items.filter(i => i.status === "green");

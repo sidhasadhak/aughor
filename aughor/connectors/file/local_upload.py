@@ -440,32 +440,84 @@ class LocalUploadConnection(Connector):
         elapsed_ms = (time.monotonic() - _t0) * 1000
         return _security_post(self._connection_id, hypothesis_id, sql, result, elapsed_ms)
 
+    def make_reader(self) -> "LocalUploadConnection":
+        """Return a fresh clone safe for use in a parallel thread."""
+        clone = LocalUploadConnection.__new__(LocalUploadConnection)
+        clone._connection_id = self._connection_id
+        clone._schema_name = self._schema_name
+        clone._upload_dir = self._upload_dir
+        clone._duckdb = duckdb.connect(":memory:")
+        clone._seed_path = self._seed_path
+        clone._seeded = set()
+        clone._seed_from_duckdb()
+        clone._reload_existing_files()
+        return clone
+
     def dry_run(self, sql: str) -> tuple[bool, str]:
         try:
-            self._duckdb.execute(f"EXPLAIN {sql.rstrip(';')}")
+            self._duckdb.execute(f"EXPLAIN {sql.rstrip(chr(59))}")
             return True, ""
         except Exception as e:
             return False, str(e)
 
+    def raw_execute(self, sql: str) -> tuple[list[str], list, list[str]]:
+        """Execute a raw SQL query bypassing validation and security checks.
+        Returns (column_names, rows, types)."""
+        self._duckdb.execute(sql)
+        rows = self._duckdb.fetchall()
+        desc = self._duckdb.description or []
+        columns = [d[0] for d in desc]
+        types = [str(d[1]) for d in desc]
+        return columns, rows, types
+
     def get_schema(self) -> str:
-        lines: list[str] = []
+        parts: list[str] = []
         try:
-            self._duckdb.execute(
-                "SELECT table_schema, table_name, column_name, data_type "
-                "FROM information_schema.columns "
-                "WHERE table_schema NOT IN ('information_schema', 'pg_catalog') "
-                "ORDER BY table_schema, table_name, ordinal_position"
-            )
-            rows = self._duckdb.fetchall()
-            table_cols: dict[tuple[str, str], list[str]] = defaultdict(list)
-            for tschema, tname, col, dtype in rows:
-                table_cols[(tschema, tname)].append(f"{col} {dtype}")
-            for (tschema, tname), cols in table_cols.items():
-                qualified = tname if tschema == DEFAULT_SCHEMA else f"{tschema}.{tname}"
-                lines.append(f"TABLE: {qualified} [{', '.join(cols)}]")
+            # Respect schema_name filter if set; otherwise list all non-system schemas.
+            if self._schema_name:
+                self._duckdb.execute(
+                    "SELECT table_schema, table_name FROM information_schema.tables "
+                    "WHERE table_schema = ? AND table_type = 'BASE TABLE' "
+                    "ORDER BY table_name",
+                    [self._schema_name],
+                )
+            else:
+                self._duckdb.execute(
+                    "SELECT table_schema, table_name FROM information_schema.tables "
+                    "WHERE table_schema NOT IN ('information_schema', 'pg_catalog', 'temp') "
+                    "AND table_type = 'BASE TABLE' ORDER BY table_schema, table_name"
+                )
+            schema_table_rows = self._duckdb.fetchall()
+            schemas_present = {s for s, _ in schema_table_rows}
+            multi_schema = len(schemas_present) > 1
+            for tschema, tname in schema_table_rows:
+                try:
+                    count = self._duckdb.execute(
+                        f'SELECT COUNT(*) FROM "{tschema}"."{tname}"'
+                    ).fetchone()[0]
+                except Exception:
+                    count = "?"
+                # Emit schema-qualified names when there are multiple schemas or
+                # the table lives outside the default schema so the LLM always
+                # references the correct table.
+                display_name = f"{tschema}.{tname}" if (multi_schema or tschema != DEFAULT_SCHEMA) else tname
+                parts.append(f"TABLE: {display_name}  ({count:,} rows)")
+                try:
+                    cols = self._duckdb.execute(
+                        f'DESCRIBE "{tschema}"."{tname}"'
+                    ).fetchall()
+                    from aughor.db.type_overrides import get_table_overrides
+                    _overrides = get_table_overrides(self._connection_id or "", tname)
+                    for col in cols:
+                        col_name, col_type = col[0], col[1]
+                        if col_name in _overrides:
+                            col_type = _overrides[col_name]
+                        parts.append(f"  {col_name}  {col_type}")
+                except Exception:
+                    parts.append("  # column info unavailable")
         except Exception as e:
-            lines.append(f"# Schema introspection failed: {e}")
-        return "\n".join(lines) or "(no files uploaded yet)"
+            parts.append(f"# Schema introspection failed: {e}")
+        return "\n".join(parts) or "(no files uploaded yet)"
 
     def test(self) -> tuple[bool, str]:
         files = self.list_files()

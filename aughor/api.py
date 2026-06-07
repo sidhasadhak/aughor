@@ -223,16 +223,14 @@ async def _boot_canvas_explorers() -> None:
 @app.on_event("startup")
 async def _start_explorers() -> None:
     """
-    Fire one background boot-task per connection and return immediately.
-    Each _boot_explorer() opens the DB in a thread-pool (never blocking the
-    event loop), tests the connection, and retries if it isn't up yet.
-    The server is ready to serve HTTP before any DB has been touched.
+    Explorer boot is now manual — no auto-start on server startup.
+    Users (or the UI) must trigger exploration via
+    POST /exploration/{conn_id}/start or /restart.
+    Canvas explorers from saved state are still resumed automatically.
     """
-    for conn_info in list_connections():
-        asyncio.create_task(
-            _boot_explorer(conn_info["id"]),
-            name=f"boot-{conn_info['id']}",
-        )
+    # NOTE: Connection explorers are no longer auto-started to prevent
+    # heavy background work from cascading into connection failures.
+    # Only canvas explorers with saved state are resumed.
     asyncio.create_task(_boot_canvas_explorers(), name="boot-canvas-explorers")
 
 

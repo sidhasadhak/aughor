@@ -3,8 +3,15 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { API_BASE } from "@/lib/config";
 import { ActivityLog } from "@/components/ActivityLog";
+import { getConnections } from "@/lib/api";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
+
+interface ConnectionItem {
+  id: string;
+  name: string;
+  conn_type: string;
+}
 
 interface AuditRecord {
   id: string;
@@ -376,6 +383,8 @@ export function SecurityAuditPanel({
   const [showBudget, setShowBudget]       = useState(false);
   const [sortCol, setSortCol]   = useState<SecSortCol>("ts");
   const [sortDir, setSortDir]   = useState<"asc" | "desc">("desc");
+  const [connections, setConnections] = useState<ConnectionItem[]>([]);
+  const [filterConnId, setFilterConnId] = useState<string | undefined>(connId);
 
   function handleSort(col: SecSortCol) {
     if (col === sortCol) setSortDir(d => d === "asc" ? "desc" : "asc");
@@ -388,8 +397,8 @@ export function SecurityAuditPanel({
     try {
       const verdict = verdictFilter === "all" ? undefined : verdictFilter;
       const [s, r] = await Promise.all([
-        fetchAuditStats(connId),
-        fetchAuditLog(connId, verdict, 200),
+        fetchAuditStats(filterConnId),
+        fetchAuditLog(filterConnId, verdict, 200),
       ]);
       setStats(s);
       setRecords(r);
@@ -398,9 +407,17 @@ export function SecurityAuditPanel({
     } finally {
       setLoading(false);
     }
-  }, [connId, verdictFilter]);
+  }, [filterConnId, verdictFilter]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    getConnections().then(cs => setConnections(cs.map(c => ({ id: c.id, name: c.name, conn_type: c.conn_type }))));
+  }, []);
+
+  useEffect(() => {
+    setFilterConnId(connId);
+  }, [connId]);
 
   const sortedRecords = useMemo(() => sortRecords(records, sortCol, sortDir), [records, sortCol, sortDir]);
 
@@ -525,7 +542,18 @@ export function SecurityAuditPanel({
 
         {/* Filters */}
         <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          <span style={{ fontSize: 11, color: "var(--t3)", marginRight: 4 }}>Verdict</span>
+          <span style={{ fontSize: 11, color: "var(--t3)", marginRight: 4 }}>Connection</span>
+          <select
+            value={filterConnId || ""}
+            onChange={e => setFilterConnId(e.target.value || undefined)}
+            style={{ fontSize: 11, color: "var(--t1)", background: "var(--bg-1)", border: "1px solid var(--bg-3)", borderRadius: 4, padding: "3px 8px", cursor: "pointer" }}
+          >
+            <option value="">All connections</option>
+            {connections.map(c => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </select>
+          <span style={{ fontSize: 11, color: "var(--t3)", marginRight: 4, marginLeft: 8 }}>Verdict</span>
           {VERDICT_FILTERS.map(v => (
             <button
               key={v}
@@ -627,8 +655,9 @@ export function SecurityAuditPanel({
                     <td style={{ padding: "8px 12px", color: "var(--t3)", whiteSpace: "nowrap" }}>
                       {rec.ts.replace("T", " ").replace("Z", "")}
                     </td>
-                    <td style={{ padding: "8px 12px", color: "var(--t2)", fontFamily: "monospace", whiteSpace: "nowrap" }}>
-                      {rec.connection_id.slice(0, 8)}
+                    <td style={{ padding: "8px 12px", color: "var(--t2)", whiteSpace: "nowrap" }}>
+                      <span style={{ fontFamily: "monospace" }}>{rec.connection_id.slice(0, 8)}</span>
+                      <span style={{ fontSize: 10, color: "var(--t3)", marginLeft: 4 }}>{connections.find(c => c.id === rec.connection_id)?.name || rec.connection_id}</span>
                       {rec.hypothesis_id && (
                         <span style={{ marginLeft: 4, fontSize: 10, color: "var(--t3)" }}>
                           {rec.hypothesis_id}

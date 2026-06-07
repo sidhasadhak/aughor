@@ -84,7 +84,7 @@ CHAT_SQL_SYSTEM = (
     "Do NOT conflate unrelated metrics: a question about revenue must not return retry rates; "
     "a question about traffic source must not return payment method breakdowns. "
     "Return a short headline (one sentence) describing what the result will show. "
-    "Also return chart_type — one of: 'auto', 'bar', 'bar_horizontal', 'bar_vertical', 'line', 'multi_line', 'area', 'stacked_bar', 'scatter', 'pie', 'treemap', 'heatmap'. "
+    "Also return chart_type — one of: 'auto', 'bar', 'bar_horizontal', 'bar_vertical', 'line', 'multi_line', 'area', 'stacked_bar', 'scatter', 'pie', 'treemap', 'heatmap', 'combo'. "
     "Also return intent — one sentence starting with 'You want to see' that restates the user's goal in plain English (no SQL, no jargon). "
     "Also return approach — a list of 3-6 concise plain-English steps (max 15 words each) describing how the answer is calculated. "
     "Steps describe the logic, not the SQL syntax. Example step: 'Calculate total revenue per state per month by summing price and freight.' "
@@ -109,6 +109,12 @@ CHAT_SQL_SYSTEM = (
     "    Example: MoM % change by state (27 states) → multi_line, X=month, Y=mom_change_pct, color=state. "
     "  'area' — same as line but fills below the curve. Use when cumulative volume is the point (e.g. total users over time). "
     ""
+"MULTIPLE METRICS (two different measures for the same categories): "
+"  'combo' — 1 categorical + 2 numerics with DIFFERENT units or scales. Renders bars for the primary metric and a line for the secondary metric on a separate y-axis. "
+"    Example: state-wise sales AND AOV → combo, bars=sales (left axis), line=AOV (right axis). "
+"    Use ONLY when the metrics have different units or wildly different scales. Do NOT use for two counts or two monetary values of similar magnitude. "
+"    SQL shape: SELECT category_col, metric1_col, metric2_col — exactly 3 columns. "
+""
     "COMPOSITION (how parts make up a whole): "
     "  'pie' — 1 categorical + 1 numeric, STRICTLY ≤ 6 categories summing to a meaningful whole. Use for share/proportion questions. "
     "  'treemap' — 1 categorical + 1 numeric, > 6 categories. Proportional area tiles — better than pie when there are many slices. "
@@ -178,8 +184,12 @@ DATABASE SCHEMA:
 Write a single SELECT query using ONLY tables and columns that are explicitly listed in the schema above.
 NEVER invent column names — if a column is not in the schema, it does not exist.
 If a table is annotated "⚠ No date/timestamp columns", do NOT reference any date column on it — join to a table that has one.
-IMPORTANT: Always qualify every table name with its schema prefix: {schema_qualifier}.table_name (e.g. {schema_qualifier}.orders, not just orders). This is required for correct resolution.
+IMPORTANT: Always use the exact table names as shown in the DATABASE SCHEMA above. When a table name includes a schema prefix (e.g. ecommerce.orders), use the full qualified name. When no schema prefix is shown, use the bare name.
 IMPORTANT: Wrap any computed decimal/rate/ratio column with ROUND(..., 2). Never return raw floats from division or aggregation.
+MULTIPLE METRICS: when the user asks for two or more metrics in the same question (e.g. "order count AND average delivery time"), 
+return BOTH metrics as separate numeric columns in the same SELECT. Do NOT pick only one.
+NUMBER FORMATTING: return all numeric values as raw numbers (e.g. 0.15, 15.2). NEVER format them as strings with % signs (e.g. "15.2%") 
+in the SQL — formatting belongs in the headline, not the query result. String-formatted numbers break charts and aggregation.
 Use the detected join paths when joining tables.
 If the question references previous results ("also", "add", "filter by", "compare to", "instead of", "show X instead", "change to", "replace with", "for a month", "for any month", "for a single month", "in [month/year]", "last month", "this year", "show only", "narrow to", "just for"), start from the previous SQL and modify it — do NOT write a new query from scratch.
 TEMPORAL NARROWING — CRITICAL: when the user asks to restrict the time period ("for a single month", "for any month", "in [period]", "last month", "this year", "show it for [period]"), that is a TIME FILTER — NOT a new aggregation. You MUST:
@@ -212,6 +222,13 @@ TREND OVER TIME:
                             SQL must return the change metric explicitly (mom_change_pct, yoy_delta, etc).
                             Example: MoM revenue change by state → multi_line, X=month, Y=mom_change_pct.
   area                  →  Like line but shaded fill; best for cumulative volume over time.
+
+MULTIPLE METRICS (two different measures for the same categories):
+  combo                 →  1 categorical + 2 numerics with DIFFERENT units or scales.
+                            Bars for the primary metric (left y-axis), line for the secondary (right y-axis).
+                            Use ONLY when metrics have different units or wildly different scales.
+                            Example: state-wise sales AND AOV → combo, bars=sales, line=AOV.
+                            SQL shape: SELECT category_col, metric1_col, metric2_col.
 
 COMPOSITION (parts of a whole):
   pie                   →  ≤ 6 categories summing to 100%. Use ONLY for share/proportion with very few slices.
@@ -294,6 +311,7 @@ INVESTIGATION CONTEXT (queries run for other hypotheses this session):
 STEP 1 — DECLARE TABLES (mandatory):
 List every table you plan to touch in the `tables` field.
 - Every table must appear verbatim in the SCHEMA above — do NOT invent table names.
+- IMPORTANT: use the exact table names as shown in the SCHEMA. When a table name includes a schema prefix (e.g. ecommerce.orders), use the full qualified name. When no schema prefix is shown, use the bare name.
 - If you need to join two tables, verify a join path exists in DETECTED JOIN PATHS.
 - If no direct join path exists between two tables, find an intermediate table or revise the approach.
 
@@ -352,6 +370,7 @@ SCHEMA:
 {pitfall_section}{sql_examples_section}{ontology_actions_section}RULES:
 1. Write exactly ONE SELECT statement. No DDL, no DML.
 2. Use ONLY tables and columns listed in the SCHEMA above. NEVER invent column names.
+   IMPORTANT: use the exact table names as shown in the SCHEMA. When a table name includes a schema prefix (e.g. ecommerce.orders), use the full qualified name. When no schema prefix is shown, use the bare name.
 3. Qualify every column with a table alias when joining multiple tables.
 4. Use the target dialect's date/time functions. Common differences:
    - DuckDB: DATE_DIFF('day', a, b), DATE_TRUNC('month', col), CURRENT_DATE, strftime('%Y-%m', col)
@@ -392,6 +411,7 @@ CRITICAL RULES (violating these causes repeated failures):
 1. NEVER invent column names. Every column in your fixed query MUST appear verbatim in the SCHEMA above.
    If the original query used a column like `invoice_date` that is NOT in the schema, do NOT keep it —
    find the correct column from the schema, or join to another table that has it.
+   IMPORTANT: use the exact table names as shown in the SCHEMA. When a table name includes a schema prefix (e.g. ecommerce.orders), use the full qualified name. When no schema prefix is shown, use the bare name.
 2. If the error is "does not have a column named X", look up X in the SCHEMA and use the real name.
    If no equivalent column exists anywhere, rewrite the query to avoid needing it.
 3. If a table has "⚠ No date/timestamp columns" in its schema comment, do NOT add a date filter on

@@ -10,32 +10,51 @@
  *   <AugTable<MyRow> columns={antColumns} dataSource={data} />
  */
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Table, ConfigProvider, theme } from "antd";
 import type { TableProps, TableColumnsType } from "antd";
 
+// ── Theme-mode hook ──────────────────────────────────────────────────────────
+// Ant Design's theme tokens must be real colors (it derives shades), so we can't
+// feed it CSS vars. Instead we watch <html data-theme> and hand Ant a matching
+// dark/light token set so tables flip with the rest of the app.
+function useThemeMode(): "light" | "dark" {
+  const [mode, setMode] = useState<"light" | "dark">(() =>
+    typeof document !== "undefined" && document.documentElement.getAttribute("data-theme") === "light"
+      ? "light" : "dark");
+  useEffect(() => {
+    const el = document.documentElement;
+    const sync = () => setMode(el.getAttribute("data-theme") === "light" ? "light" : "dark");
+    sync();
+    const obs = new MutationObserver(sync);
+    obs.observe(el, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => obs.disconnect();
+  }, []);
+  return mode;
+}
+
 // ── Aughor dark tokens for Ant Design ───────────────────────────────────────
 
-const AUG_THEME: Parameters<typeof ConfigProvider>[0]["theme"] = {
+const AUG_THEME_DARK: Parameters<typeof ConfigProvider>[0]["theme"] = {
   algorithm: theme.darkAlgorithm,
   token: {
     // Backgrounds
-    colorBgBase:         "#0C0D0E",   // --bg-0
-    colorBgContainer:    "#161719",   // --bg-2
-    colorBgElevated:     "#1C1D1F",   // --bg-3
-    colorBgLayout:       "#0C0D0E",
+    colorBgBase:         "#0D1117",   // --bg-0
+    colorBgContainer:    "#111418",   // --bg-1
+    colorBgElevated:     "#161A20",   // --bg-2
+    colorBgLayout:       "#0D1117",
     // Borders
-    colorBorder:         "#212325",   // --b1
-    colorBorderSecondary:"#161719",   // --b0
-    colorSplit:          "#161719",
+    colorBorder:         "#1E2329",   // --b1
+    colorBorderSecondary:"#161A20",   // --b0
+    colorSplit:          "#161A20",
     // Text
-    colorText:           "#E3E5E9",   // --t1
-    colorTextSecondary:  "#9DA1A8",   // --t2
-    colorTextDescription:"#5E626A",   // --t3
-    colorTextDisabled:   "#393D44",   // --t4
+    colorText:           "#E2E4E9",   // --t1
+    colorTextSecondary:  "#8B929D",   // --t2
+    colorTextDescription:"#5A6270",   // --t3
+    colorTextDisabled:   "#3A414D",   // --t4
     // Brand
-    colorPrimary:        "#4C8EEE",   // --blue4
-    colorPrimaryHover:   "#88BAFF",   // --blue5
+    colorPrimary:        "#0C8CE9",   // --blue3
+    colorPrimaryHover:   "#4BA3F5",   // --blue4
     // Misc
     fontSize:            12,
     fontFamily:          "'DM Sans', system-ui, sans-serif",
@@ -47,35 +66,80 @@ const AUG_THEME: Parameters<typeof ConfigProvider>[0]["theme"] = {
   components: {
     Table: {
       // Header
-      headerBg:             "#1C1D1F",   // --bg-3
-      headerColor:          "#5E626A",   // --t3 — same as aug-label
-      headerSortActiveBg:   "#1C1D1F",
-      headerSortHoverBg:    "#26282B",   // --bg-4
-      headerSplitColor:     "#212325",   // --b1
+      headerBg:             "#161A20",   // --bg-2
+      headerColor:          "#5A6270",   // --t3
+      headerSortActiveBg:   "#161A20",
+      headerSortHoverBg:    "#1C2128",   // --bg-3
+      headerSplitColor:     "#1E2329",   // --b1
       // Rows
-      rowHoverBg:           "rgba(255, 255, 255, 0.04)",   // --bg-hover
-      rowSelectedBg:        "rgba(45, 114, 210, 0.15)",    // --bg-sel
-      rowSelectedHoverBg:   "rgba(45, 114, 210, 0.20)",
-      bodySortBg:           "#161719",
+      rowHoverBg:           "rgba(255, 255, 255, 0.035)",
+      rowSelectedBg:        "rgba(12, 140, 233, 0.10)",    // --bg-sel
+      rowSelectedHoverBg:   "rgba(12, 140, 233, 0.18)",
+      bodySortBg:           "#111418",
       // Borders
-      borderColor:          "#161719",   // --b0
+      borderColor:          "#161A20",   // --b0
       // Cell sizing
       cellFontSize:         12,
       cellPaddingInline:    14,
       cellPaddingBlock:     9,
-      // Sort icon
-      // filterDropdownBg: "#1C2839",
     },
     Pagination: {
-      colorBgContainer:    "#161719",
-      itemActiveBg:        "rgba(45, 114, 210, 0.15)",
+      colorBgContainer:    "#111418",
+      itemActiveBg:        "rgba(12, 140, 233, 0.12)",
+    },
+  },
+};
+
+// ── Aughor light tokens for Ant Design (mirrors the light palette in tokens.css) ──
+const AUG_THEME_LIGHT: Parameters<typeof ConfigProvider>[0]["theme"] = {
+  algorithm: theme.defaultAlgorithm,
+  token: {
+    colorBgBase:          "#F2F5FA",   // --bg-0
+    colorBgContainer:     "#FFFFFF",   // --bg-1
+    colorBgElevated:      "#F7F9FC",   // --bg-2
+    colorBgLayout:        "#F2F5FA",
+    colorBorder:          "#D2DCEB",   // --b1
+    colorBorderSecondary: "#E5ECF5",   // --b0
+    colorSplit:           "#E5ECF5",
+    colorText:            "#1A2535",   // --t1
+    colorTextSecondary:   "#3C5270",   // --t2
+    colorTextDescription: "#6E8EA8",   // --t3
+    colorTextDisabled:    "#A8BDD0",   // --t4
+    colorPrimary:         "#2D72D2",   // --blue3
+    colorPrimaryHover:    "#1A56B0",   // --blue4
+    fontSize:             12,
+    fontFamily:           "'DM Sans', system-ui, sans-serif",
+    borderRadius:         3,
+    borderRadiusSM:       2,
+    controlHeight:        30,
+    lineWidth:            1,
+  },
+  components: {
+    Table: {
+      headerBg:           "#F7F9FC",   // --bg-2
+      headerColor:        "#6E8EA8",   // --t3
+      headerSortActiveBg: "#ECF0F8",   // --bg-3
+      headerSortHoverBg:  "#ECF0F8",   // --bg-3
+      headerSplitColor:   "#D2DCEB",   // --b1
+      rowHoverBg:         "rgba(45, 114, 210, 0.045)",
+      rowSelectedBg:      "rgba(45, 114, 210, 0.10)",
+      rowSelectedHoverBg: "rgba(45, 114, 210, 0.16)",
+      bodySortBg:         "#FFFFFF",
+      borderColor:        "#E5ECF5",   // --b0
+      cellFontSize:       12,
+      cellPaddingInline:  14,
+      cellPaddingBlock:   9,
+    },
+    Pagination: {
+      colorBgContainer:   "#FFFFFF",
+      itemActiveBg:       "rgba(45, 114, 210, 0.12)",
     },
   },
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-const ORDINAL_COL = /\bid\b|_id$|^id$/i;
+const ORDINAL_COL = /\bid\b|_id$|^id$|id$|Id$|ID$/i;
 const SHARE_COL   = /pct|percent|share|rate|ratio|proportion/i;
 
 function isNumericValue(v: unknown): boolean {
@@ -122,8 +186,9 @@ function fmt(col: string, v: unknown): React.ReactNode {
 export function AugTable<T extends object = Record<string, unknown>>(
   props: TableProps<T>,
 ) {
+  const antTheme = useThemeMode() === "light" ? AUG_THEME_LIGHT : AUG_THEME_DARK;
   return (
-    <ConfigProvider theme={AUG_THEME}>
+    <ConfigProvider theme={antTheme}>
       <Table<T>
         size="small"
         showSorterTooltip={false}

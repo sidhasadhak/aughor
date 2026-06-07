@@ -6,6 +6,23 @@
 
 ---
 
+## 🚀 Latest — `genie-revamp` (Grounded NL2SQL + Eval Suite + Trusted Templates)
+
+A focused effort to make NL2SQL **SOTA and plug-and-play** — correct on real, unseen schemas — measured against real benchmarks at every step.
+
+| Area | What shipped | Key files |
+|---|---|---|
+| **Grounded generation** | De-hardwired, schema-agnostic schema-linker (safety floor, never empty); MindsDB-style Data Catalog (columns + samples + FK joins); FK & star-schema join grounding (prefixed/fused/surrogate `_sk` keys, fact→dimension routing, FK-neighbour expansion, role-played date dims); temporal/dimension grounding for surrogate date/time keys | `tools/schema_linker.py`, `tools/data_catalog.py`, `tools/schema.py`, `routers/investigations.py` |
+| **Dialect & retry** | SQLGlot dialect-aware validation; DuckDB-specific fix hints (`to_char`→strftime, `date_part` on date subtraction) feeding the self-correcting retry | `sql/writer.py`, `db/connection.py` |
+| **Trusted query templates** | Databricks-style verified assets: curated SQL patterns injected authoritatively; fixes reasoning gaps (multi-fact **fan-out**, grain) that prompt rules can't; `trusted` SSE provenance | `semantic/trusted_queries.py` |
+| **Eval suite** | Full-pipeline harness + real-scale TPC-H (5/7) / TPC-DS (4/5, via temporal lever) / ClickBench (10/10) harnesses (DuckDB-generated, execution-validated) + reference-free real-DB harness (self-consistency + cross-model LLM-judge) | `evals/run_{tpch,tpcds,clickbench,golden,realdb}.py` |
+| **Bug fixes found by the eval** | Spurious GROUP-BY rewriter (semantic_validator false positives); cross-connection metric leak (schema-aware filtering); measure-based scorer false-negatives | `tools/semantic_validator.py`, `semantic/metrics.py`, `evals/run_tpch.py` |
+| **Platform hardening** | Connection pooling (reuse, TTL, health, opt-out); Google Sheets connector (gviz CSV + cache); Anthropic (Opus) fallback on primary-backend failure; explorer auto-start on new connections; light-mode fix; audit-log noise reduction; batched post-answer LLM calls | `db/pool.py`, `connectors/api/gsheets.py`, `llm/provider.py`, `routers/_shared.py` |
+
+**Key insight:** model-invariant failures (qwen vs kimi fail the same queries) → the ceiling is *grounding*, not the model. Fixes target context, and the eval proves each lever's lift.
+
+---
+
 ## ✅ Shipped
 
 | Feature | Key files | Notes |

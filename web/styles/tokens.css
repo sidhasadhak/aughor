@@ -13,29 +13,29 @@
   /* ── Backgrounds ──
      Databricks Genie near-black: flat, deep, very slightly cool — NOT charcoal.
      Tight steps so panels barely lift off the page (Databricks reads borderless). */
-  --bg-0: #11171D;
-  --bg-1: #141517;
-  --bg-2: #161719;
-  --bg-3: #1C1D1F;
-  --bg-4: #26282B;
+  --bg-0: #0D1117;
+  --bg-1: #111418;
+  --bg-2: #161A20;
+  --bg-3: #1C2128;
+  --bg-4: #222A33;
   --bg-hover: rgba(255, 255, 255, 0.04);
-  --bg-sel:   rgba(45, 114, 210, 0.15);
+  --bg-sel:   rgba(12, 140, 233, 0.12);
 
   /* ── Borders ──  hairline, near-invisible (Databricks) */
-  --b0: #161719;
-  --b1: #212325;
-  --b2: #2A2C2F;
-  --b3: #393B3F;
-  --bfocus: #2D72D2;
+  --b0: #161A20;
+  --b1: #1E2329;
+  --b2: #252B33;
+  --b3: #2E3540;
+  --bfocus: #0C8CE9;
 
-  /* ── Text ──  bright near-white primary, neutral muted greys */
-  --t1: #E3E5E9;
-  --t2: #9DA1A8;
-  --t3: #5E626A;
-  --t4: #393D44;
+  /* ── Text ──  cool greys, Databricks hierarchy */
+  --t1: #E2E4E9;
+  --t2: #8B929D;
+  --t3: #5A6270;
+  --t4: #3A414D;
 
   /* ── Intent palette — dark ── */
-  --blue1: #152B50; --blue2: #1A3A6E; --blue3: #2D72D2; --blue4: #4C8EEE; --blue5: #88BAFF;
+  --blue1: #0A2540; --blue2: #0C3A5C; --blue3: #0C8CE9; --blue4: #4BA3F5; --blue5: #A8D4FF;
   --grn1:  #0C2B1A; --grn2:  #10522E; --grn3:  #18985A; --grn4:  #2EC87B; --grn5:  #68E0A8;
   --amb1:  #2A1D00; --amb2:  #583C00; --amb3:  #BD8800; --amb4:  #E0AD00; --amb5:  #FFD44D;
   --red1:  #2A0E0E; --red2:  #561A1A; --red3:  #C42A2A; --red4:  #E64848; --red5:  #FF8585;

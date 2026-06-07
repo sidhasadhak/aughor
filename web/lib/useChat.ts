@@ -32,6 +32,8 @@ export interface ChatTurn {
   rows: unknown[][];
   headline: string | null;
   chartType: string | null;
+  // MindsDB-style: chart config from backend (Vega-Lite spec subset)
+  chartConfig?: Record<string, unknown> | null;
 
   // Investigate mode — ADA phases stream in progressively
   statusText: string | null;
@@ -70,6 +72,18 @@ export interface ChatTurn {
 
   // Org-playbook items referenced for this turn (user can keep/modify/remove)
   playbookRefs: PlaybookRef[];
+
+  // Insight narrative — analytical interpretation streamed post-answer (Genie-style)
+  insight: {
+    narrative: string;
+    anomalies: string[];
+    trend: string;
+    confidence: string;
+  } | null;
+
+  // Clarifying questions surfaced before deep analysis starts
+  clarifyingQuestions: string[];
+  clarifyingContext: string;
 }
 
 interface ChatHistoryTurn {
@@ -93,6 +107,7 @@ type ChatAction =
   | { type: "ROWS";         rows: unknown[][] }
   | { type: "HEADLINE";     headline: string }
   | { type: "CHART_TYPE";   chartType: string }
+  | { type: "CHART_CONFIG"; chartConfig: Record<string, unknown> }
   | { type: "STATUS_TEXT";  text: string }
   | { type: "PHASE";        phase: InvestigationPhase }
   | { type: "ADA_REPORT";   report: ADAReport; queryMode: string; investigationId: string | null }
@@ -109,6 +124,8 @@ type ChatAction =
   | { type: "INSPECT_WARNING";  issues: string[]; suggestedFix: string }
   | { type: "PLAYBOOK_REFS";    items: PlaybookRef[] }
   | { type: "ERROR";            message: string }
+  | { type: "INSIGHT";           narrative: string; anomalies: string[]; trend: string; confidence: string }
+  | { type: "CLARIFYING_QUESTIONS"; questions: string[]; contextNote: string }
   | { type: "DONE" }
   | { type: "CLEAR" }
   | { type: "RESTORE";          turns: ChatTurn[] };
@@ -133,6 +150,9 @@ const EMPTY_TURN: Omit<ChatTurn, "id" | "question" | "mode"> = {
   fromCache: false, cachedQuestion: null,
   inspectWarning: null,
   playbookRefs: [],
+  insight: null,
+  clarifyingQuestions: [],
+  clarifyingContext: '',
 };
 
 // Freeze the elapsed wall-time the first time a turn reaches a terminal state.
@@ -152,6 +172,7 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
     case "ROWS":       return updateLast(state, t => ({ ...t, rows: action.rows }));
     case "HEADLINE":   return updateLast(state, t => ({ ...t, headline: action.headline }));
     case "CHART_TYPE": return updateLast(state, t => ({ ...t, chartType: action.chartType }));
+    case "CHART_CONFIG": return updateLast(state, t => ({ ...t, chartConfig: action.chartConfig }));
     case "STATUS_TEXT":return updateLast(state, t => ({ ...t, statusText: action.text }));
     case "TABLES_USED":return updateLast(state, t => ({ ...t, tablesUsed: action.tables }));
     case "FOLLOWUPS":  return updateLast(state, t => ({ ...t, followups: action.questions }));
@@ -181,6 +202,10 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
       }));
     case "PLAYBOOK_REFS":
       return updateLast(state, t => ({ ...t, playbookRefs: action.items }));
+    case "CLARIFYING_QUESTIONS":
+      return updateLast(state, t => ({ ...t, clarifyingQuestions: action.questions, clarifyingContext: action.contextNote }));
+    case "INSIGHT":
+      return updateLast(state, t => ({ ...t, insight: { narrative: action.narrative, anomalies: action.anomalies, trend: action.trend, confidence: action.confidence } }));
     case "PHASE":
       return updateLast(state, t => ({ ...t, phases: [...t.phases, action.phase], statusText: `Analyzing ${action.phase.phase_id}…` }));
     case "ADA_REPORT":
@@ -213,6 +238,8 @@ function summarisePayload(type: string, p: Record<string, unknown>): string {
     case "explore_report": return `narrative: ${String((p.explore_report as { narrative?: string })?.narrative ?? "").slice(0, 60)}`;
     case "report":         return `mode: ${p.query_mode ?? "?"}`;
     case "error":          return `message: ${p.message}`;
+    case "insight":        return String(p.narrative ?? "").slice(0, 40);
+    case "clarifying_questions": return String((p.questions as string[])?.length ?? 0) + " questions";
     case "start":          return `inv: ${p.investigation_id ?? "new"}`;
     default:               return Object.keys(p).slice(0, 3).join(", ");
   }
@@ -249,7 +276,9 @@ async function consumeStream(
             case "columns":      dispatch({ type: "COLUMNS",    columns:   p.columns as string[] }); break;
             case "rows":         dispatch({ type: "ROWS",       rows:      p.rows as unknown[][] }); break;
             case "headline":     dispatch({ type: "HEADLINE",   headline:  p.headline as string }); break;
+            case "answer":       dispatch({ type: "HEADLINE",   headline:  (p.text ?? p.answer) as string }); break;
             case "chart_type":   dispatch({ type: "CHART_TYPE", chartType: p.chart_type as string }); break;
+            case "chart_config": dispatch({ type: "CHART_CONFIG", chartConfig: p.chart_config as Record<string, unknown> }); break;
             case "tables_used":  dispatch({ type: "TABLES_USED",tables:    p.tables as string[] }); break;
             case "followups":    dispatch({ type: "FOLLOWUPS",  questions: p.questions as string[] }); break;
             case "analysis":     dispatch({ type: "ANALYSIS",   intent:    p.intent as string, steps: p.steps as string[] }); break;
@@ -306,6 +335,8 @@ async function consumeStream(
               });
               break;
             case "playbook_refs": dispatch({ type: "PLAYBOOK_REFS", items: (p.items as PlaybookRef[]) ?? [] }); break;
+            case "insight":      dispatch({ type: "INSIGHT", narrative: (p.narrative as string) ?? "", anomalies: (p.anomalies as string[]) ?? [], trend: (p.trend as string) ?? "stable", confidence: (p.confidence as string) ?? "medium" }); break;
+            case "clarifying_questions": dispatch({ type: "CLARIFYING_QUESTIONS", questions: (p.questions as string[]) ?? [], contextNote: (p.context_note as string) ?? "" }); break;
             case "error":        dispatch({ type: "ERROR", message: p.message as string }); break;
             case "done":         dispatch({ type: "DONE" }); break;
           }

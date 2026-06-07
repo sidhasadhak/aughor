@@ -95,9 +95,13 @@ SCHEMA:
 
 {pitfall_section}
 {events_section}
+DATA PORTRAIT for this sub-question (discovered cardinalities, ranges, distinct values):
+{data_portrait}
+
 Write 1–2 SQL SELECT queries that directly answer this sub-question.
 Rules:
 - Only SELECT statements, only tables and columns from the schema
+- IMPORTANT: use the exact table names as shown in the SCHEMA. When a table name includes a schema prefix (e.g. ecommerce.orders), use the full qualified name. When no schema prefix is shown, use the bare name.
 - CONSISTENCY: use the canonical identifiers and metric definitions above verbatim
   (e.g. the same column for "unique customer", the same revenue expression). Never switch
   to a different identifier or definition than an earlier step used for the same concept.

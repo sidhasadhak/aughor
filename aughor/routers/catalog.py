@@ -7,6 +7,7 @@ import logging
 from fastapi import APIRouter
 
 from aughor.db.connection import open_connection_for
+from aughor.db.registry import get_meta
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["catalog"])
@@ -20,19 +21,49 @@ async def get_catalog_tree():
     def _quick_schemas(conn_id: str, conn_type: str) -> list[dict]:
         try:
             db = open_connection_for(conn_id)
+            meta = get_meta(conn_id)
+            schema_filter = meta.get("schema_name")
             # local_upload (the Workspace) is DuckDB-backed in memory, so it uses
             # the DuckDB introspection path, not the Postgres one.
             if conn_type in ("duckdb", "local_upload") or getattr(db, "dialect", "") == "duckdb":
-                rows = db.execute(
-                    "__catalog__",
-                    """
-                    SELECT schema_name, table_name, estimated_size
-                    FROM duckdb_tables()
-                    WHERE internal = false
-                      AND schema_name NOT IN ('information_schema','temp','pg_catalog')
-                    ORDER BY schema_name, table_name
-                    """,
-                ).rows
+                # Primary: information_schema.tables is the only reliable cross-database
+                # view in MotherDuck — duckdb_tables() leaks tables from ALL attached DBs.
+                # We filter by the current database so the catalog matches the connection scope.
+                rows: list = []
+                current_db = ""
+                try:
+                    # Use db.execute (not db._conn) so this works for LocalUploadConnection too.
+                    res = db.execute("__catalog__", "SELECT current_database()")
+                    if res.rows:
+                        current_db = str(res.rows[0][0])
+                except Exception:
+                    pass
+                if current_db:
+                    safe_db = current_db.replace("'", "''")
+                    rows = db.execute(
+                        "__catalog__",
+                        f"""
+                        SELECT table_schema, table_name, 0
+                        FROM information_schema.tables
+                        WHERE table_type = 'BASE TABLE'
+                          AND table_schema NOT IN ('information_schema','temp','pg_catalog')
+                          AND table_catalog = '{safe_db}'
+                        ORDER BY table_schema, table_name
+                        """,
+                    ).rows
+                # Fallback to duckdb_tables() for local DuckDB files when information_schema
+                # is somehow unavailable.
+                if not rows:
+                    rows = db.execute(
+                        "__catalog__",
+                        """
+                        SELECT schema_name, table_name, estimated_size
+                        FROM duckdb_tables()
+                        WHERE internal = false
+                          AND schema_name NOT IN ('information_schema','temp','pg_catalog')
+                        ORDER BY schema_name, table_name
+                        """,
+                    ).rows
             else:
                 rows = db.execute(
                     "__catalog__",
@@ -51,6 +82,9 @@ async def get_catalog_tree():
                     ORDER BY t.table_schema, t.table_name
                     """,
                 ).rows
+            # If schema_name is configured for this connection, filter to that schema only.
+            if schema_filter and rows:
+                rows = [r for r in rows if r[0] == schema_filter]
             db.close()
         except Exception as exc:
             logger.debug("catalog tree: schema query failed for %s: %s", conn_id, exc)

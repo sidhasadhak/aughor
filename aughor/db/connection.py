@@ -18,8 +18,36 @@ import sqlglot
 from aughor.agent.state import QueryResult
 
 # Security baseline — imported lazily to avoid circular imports at module load
+
+# Internal/metadata queries the platform issues to inspect its OWN plumbing
+# (catalog browse, schema filter, column probes, freshness checks, profiler scans).
+# These are not user activity and must NOT be safety-scored or audit-logged —
+# otherwise the audit trail is flooded with `current_database()` /
+# `information_schema` noise flagged SUSPICIOUS, drowning out real user queries.
+# Two shapes: dunder labels (`__catalog__`, `__profiler__`, …) and a small
+# allowlist of bare metadata labels used at older call sites.
+_INTERNAL_HYPO_IDS = frozenset({
+    "scan", "_catalog", "sample", "freshness", "columns", "alter_column",
+    "skill_dry_run", "benchmark", "process_map_nodes", "process_map_edges",
+    "lifecycle_counts", "list_schemas",
+})
+
+
+def _is_internal_query(hypothesis_id: str | None) -> bool:
+    """True for platform-internal/metadata queries that should bypass the
+    security audit (dunder labels like ``__catalog__`` or a known metadata id)."""
+    if not hypothesis_id:
+        return False
+    h = hypothesis_id.strip()
+    if len(h) >= 4 and h.startswith("__") and h.endswith("__"):
+        return True
+    return h in _INTERNAL_HYPO_IDS
+
+
 def _security_pre(connection_id: str, hypothesis_id: str, sql: str) -> QueryResult | None:
     """Run safety check. Returns a blocked QueryResult if the query is not allowed, else None."""
+    if _is_internal_query(hypothesis_id):
+        return None  # platform plumbing — never block or audit
     try:
         from aughor.security.safety import SafetyChecker, SafetyVerdict
         from aughor.security.audit  import AuditLogger
@@ -62,6 +90,8 @@ def _security_post(
 ) -> QueryResult:
     """PII redaction + audit logging + budget enforcement. Returns (possibly modified) result."""
     import time as _time
+    if _is_internal_query(hypothesis_id):
+        return result  # platform plumbing — skip PII/audit, but still return rows
     try:
         from aughor.security.pii     import PiiScanner
         from aughor.security.audit   import AuditLogger
@@ -216,12 +246,14 @@ _FORBIDDEN = re.compile(
 MAX_ROWS = 500
 
 
-def _validate(sql: str) -> tuple[bool, str]:
+def _validate(sql: str, dialect: str = "duckdb") -> tuple[bool, str]:
     sql = sql.strip().rstrip(";")
     if _FORBIDDEN.search(sql):
         return False, "Only SELECT statements are permitted"
     try:
-        parsed = sqlglot.parse_one(sql, error_level=sqlglot.ErrorLevel.RAISE)
+        # Parse in the connection's own dialect — a Postgres connection must not
+        # be validated as DuckDB, or valid Postgres-only syntax gets rejected.
+        parsed = sqlglot.parse_one(sql, read=dialect or "duckdb", error_level=sqlglot.ErrorLevel.RAISE)
     except Exception as e:
         return False, f"SQL parse error: {e}"
     if not isinstance(parsed, (sqlglot.exp.Select, sqlglot.exp.Union)):
@@ -405,8 +437,23 @@ def _apply_explorer_to_ontology(graph, connection_id: str) -> None:
 
 # ── Base class ────────────────────────────────────────────────────────────────
 
+_PG_OID_MAP: dict[int, str] = {
+    16: "BOOLEAN", 21: "SMALLINT", 23: "INTEGER", 20: "BIGINT",
+    700: "REAL", 701: "DOUBLE PRECISION", 1700: "NUMERIC",
+    1082: "DATE", 1083: "TIME", 1266: "TIMETZ",
+    1114: "TIMESTAMP", 1184: "TIMESTAMPTZ", 1186: "INTERVAL",
+    25: "TEXT", 1042: "CHAR", 1043: "VARCHAR",
+    18: "CHAR", 19: "NAME", 114: "JSON", 3802: "JSONB",
+    17: "BYTEA", 2950: "UUID",
+}
+
+
+def _pg_type_name(oid: int) -> str:
+    return _PG_OID_MAP.get(oid, f"TYPE({oid})")
+
 class DatabaseConnection(ABC):
     dialect: str = "duckdb"
+    poolable: bool = True  # may this connection be reused via the pool? (see db/pool.py)
     _ontology = None  # Optional[OntologyGraph] — set by get_schema()
 
     @abstractmethod
@@ -480,7 +527,7 @@ class DatabaseConnection(ABC):
         override with a real EXPLAIN query against the live engine so column
         and table names are checked, not just syntax.
         """
-        ok, reason = _validate(sql)
+        ok, reason = _validate(sql, getattr(self, "dialect", "duckdb"))
         return ok, reason
 
     def translate(self, sql: str) -> str:
@@ -504,15 +551,39 @@ class DatabaseConnection(ABC):
 
 # ── DuckDB ────────────────────────────────────────────────────────────────────
 
+def _duckdb_motherduck_db(dsn: str) -> str | None:
+    """Extract the database name from a MotherDuck DSN, e.g. 'md:my_database' -> 'my_database'."""
+    d = str(dsn).strip()
+    if d.lower().startswith("md:"):
+        db = d[3:].strip().split("/")[0]
+        return db if db else None
+    return None
+
+
+def _duckdb_is_local(path: str | Path) -> bool:
+    """Return True if the DuckDB path is a local file, False for remote URLs."""
+    p = str(path).lower()
+    return not any(p.startswith(prefix) for prefix in ("md:", "s3://", "http://", "https://", "gs://", "azure://", "memory:"))
+
 class DuckDBConnection(DatabaseConnection):
     dialect = "duckdb"
 
     def __init__(self, path: str | Path, schema_name: str | None = None, connection_id: str = ""):
         self._path = Path(path)
-        self._conn = duckdb.connect(str(self._path), read_only=True)
+        # Remote DuckDB backends (MotherDuck, S3, etc.) often fail with read_only=True.
+        _is_local = _duckdb_is_local(self._path)
+        self._conn = duckdb.connect(str(self._path), read_only=_is_local)
         self._connection_id = connection_id
         self._schema_name = schema_name or None
-        if schema_name:
+        # For MotherDuck, explicitly switch to the target database so that
+        # SHOW TABLES and duckdb_tables() return tables from that DB, not the default.
+        _md_db = _duckdb_motherduck_db(str(self._path))
+        if _md_db:
+            try:
+                self._conn.execute(f'USE "{_md_db}"')
+            except Exception:
+                pass  # best-effort
+        if schema_name and not _md_db:
             # Point the execution context at the requested schema so queries
             # land in the right namespace without requiring fully-qualified names.
             try:
@@ -532,18 +603,34 @@ class DuckDBConnection(DatabaseConnection):
         clone._schema_name = self._schema_name
         clone._connection_id = self._connection_id
         clone._ontology = self._ontology
-        clone._conn = duckdb.connect(str(self._path), read_only=True)
-        if self._schema_name:
+        clone._conn = duckdb.connect(str(self._path), read_only=_duckdb_is_local(self._path))
+        _md_db = _duckdb_motherduck_db(str(self._path))
+        if _md_db:
+            try:
+                clone._conn.execute(f'USE "{_md_db}"')
+            except Exception:
+                pass
+        if self._schema_name and not _md_db:
             try:
                 clone._conn.execute(f"SET search_path = '{self._schema_name}'")
             except Exception:
                 pass
         return clone
 
+    def raw_execute(self, sql: str) -> tuple[list[str], list, list[str]]:
+        """Execute a raw SQL query bypassing validation and security checks.
+        For metadata queries only. Returns (column_names, rows, types)."""
+        self._conn.execute(sql)
+        rows = self._conn.fetchall()
+        desc = self._conn.description or []
+        columns = [d[0] for d in desc]
+        types = [str(d[1]) for d in desc]
+        return columns, rows, types
+
     def dry_run(self, sql: str) -> tuple[bool, str]:
         """Run EXPLAIN against DuckDB — catches bad column/table names without returning rows."""
         sql = sql.strip().rstrip(";")
-        ok, reason = _validate(sql)
+        ok, reason = _validate(sql, getattr(self, "dialect", "duckdb"))
         if not ok:
             return False, reason
         sql = self._normalize_to_duckdb(sql)
@@ -557,7 +644,7 @@ class DuckDBConnection(DatabaseConnection):
     def _normalize_to_duckdb(sql: str) -> str:
         """Transpile any-dialect SQL to DuckDB syntax via SQLGlot. Silent no-op on failure."""
         try:
-            result = sqlglot.transpile(sql, write="duckdb", error_level=sqlglot.ErrorLevel.IGNORE)
+            result = sqlglot.transpile(sql, read="duckdb", write="duckdb", error_level=sqlglot.ErrorLevel.IGNORE)
             return result[0] if result and result[0] else sql
         except Exception:
             return sql
@@ -565,7 +652,7 @@ class DuckDBConnection(DatabaseConnection):
     def execute(self, hypothesis_id: str, sql: str) -> QueryResult:
         import time as _time
         sql = sql.strip().rstrip(";")
-        ok, reason = _validate(sql)
+        ok, reason = _validate(sql, getattr(self, "dialect", "duckdb"))
         if not ok:
             return QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[], row_count=0, error=reason)
 
@@ -594,18 +681,39 @@ class DuckDBConnection(DatabaseConnection):
         return _security_post(conn_id, hypothesis_id, sql, result, elapsed_ms)
 
     def get_schema(self) -> str:
-        from aughor.tools.schema import build_schema_context, _compute_join_map, _parse_schema_tables
-        from aughor.tools.profile_cache import get_or_build_profiles
-        from aughor.tools.profiler import render_profile_annotations
+        """Fast schema introspection — returns immediately. Never blocks on profiles, ontology, or LLM calls."""
+        from aughor.tools.schema import build_schema_context
 
-        # Build base schema string first (needed for join inference + fk_hints)
         base = build_schema_context(
             self._conn,
             schema_name=self._schema_name,
             connection_id=self._connection_id or "fixture",
         )
 
-        # Extract table list and fk hints from the join map — filter by schema if known
+        # Append exploration intelligence block (reads from disk — no DB calls)
+        try:
+            from aughor.explorer.store import render_exploration_annotations
+            expl_block = render_exploration_annotations(self._connection_id or "fixture")
+            if expl_block:
+                base += "\n\n" + expl_block
+        except Exception:
+            pass
+
+        return base
+
+    def build_intelligence(self) -> str:
+        """Heavy path: profiles + ontology + enrichment. Call this from a background task, never on the hot path."""
+        from aughor.tools.schema import build_schema_context, _compute_join_map, _parse_schema_tables
+        from aughor.tools.profile_cache import get_or_build_profiles
+        from aughor.tools.profiler import render_profile_annotations
+
+        base = build_schema_context(
+            self._conn,
+            schema_name=self._schema_name,
+            connection_id=self._connection_id or "fixture",
+        )
+
+        # Extract table list and fk hints from the join map
         if self._schema_name:
             tables = [
                 row[0] for row in self._conn.execute(
@@ -615,8 +723,6 @@ class DuckDBConnection(DatabaseConnection):
                 ).fetchall()
             ]
         else:
-            # No schema configured — scan all user schemas (handles multi-schema
-            # DuckDB files like samples.duckdb where tables are in 'ecommerce').
             tables = [
                 row[0] for row in self._conn.execute(
                     "SELECT table_name FROM information_schema.tables "
@@ -625,12 +731,10 @@ class DuckDBConnection(DatabaseConnection):
                 ).fetchall()
             ]
         table_cols = _parse_schema_tables(base)
-        from aughor.tools.schema import _compute_join_map
         jmap = _compute_join_map(table_cols)
         fk_hints: dict[str, set[str]] = {t: set() for t in tables}
         for j in jmap.get("joins", []):
             fk_hints.setdefault(j["t1"], set()).add(j["c1"])
-            # t2.c2 is the PK target — do NOT mark it as FK
 
         try:
             tp, cp = get_or_build_profiles(self, self._connection_id or "fixture", tables, fk_hints)
@@ -640,7 +744,6 @@ class DuckDBConnection(DatabaseConnection):
             if annotation:
                 base += "\n\n" + annotation
 
-            # Build structural ontology from profiles + join map + glossary
             from aughor.ontology.store import get_or_build_ontology, save_ontology
             from aughor.ontology.builder import render_ontology_annotations
             from aughor.semantic.glossary import load_merged_glossary
@@ -655,7 +758,6 @@ class DuckDBConnection(DatabaseConnection):
                 glossary=_glossary,
             )
             if graph is not None:
-                # M12b: semantic enrichment — re-run when prompt/schema version changes
                 from aughor.ontology.enricher import ENRICHMENT_VERSION
                 from aughor.stats import stats as _st
                 if not graph.enriched or graph.enrichment_version < ENRICHMENT_VERSION:
@@ -668,19 +770,18 @@ class DuckDBConnection(DatabaseConnection):
                         )
                         save_ontology(graph.connection_id, graph.schema_name, graph.schema_fingerprint, graph)
                     except Exception:
-                        pass  # structural ontology still works
+                        pass
                 else:
                     _st.inc("enrichment_cache_hits")
-                # Merge verified exploration findings (lifecycle + join confidence)
                 _apply_explorer_to_ontology(graph, self._connection_id or "fixture")
                 self._ontology = graph
                 onto_block = render_ontology_annotations(graph)
                 if onto_block:
                     base += "\n\n" + onto_block
         except Exception:
-            pass  # profiler + ontology are best-effort — never block schema loading
+            pass
 
-        # Append exploration intelligence block (null meanings, insights, broken joins)
+        # Append exploration intelligence block
         try:
             from aughor.explorer.store import render_exploration_annotations
             expl_block = render_exploration_annotations(self._connection_id or "fixture")
@@ -753,10 +854,20 @@ class PostgresConnection(DatabaseConnection):
         clone._connect()
         return clone
 
+    def raw_execute(self, sql: str) -> tuple[list[str], list, list[str]]:
+        """Execute a raw SQL query bypassing validation and security checks.
+        For metadata queries only. Returns (column_names, rows, types)."""
+        self._conn.execute(sql)
+        rows = self._conn.fetchall()
+        desc = self._conn.description or []
+        columns = [d[0] for d in desc]
+        types = [_pg_type_name(d[1]) for d in desc]
+        return columns, rows, types
+
     def dry_run(self, sql: str) -> tuple[bool, str]:
         """Run EXPLAIN against Postgres — catches bad column/table names without returning rows."""
         sql = sql.strip().rstrip(";")
-        ok, reason = _validate(sql)
+        ok, reason = _validate(sql, getattr(self, "dialect", "duckdb"))
         if not ok:
             return False, reason
         sql = self.translate(sql)
@@ -786,7 +897,7 @@ class PostgresConnection(DatabaseConnection):
     def execute(self, hypothesis_id: str, sql: str) -> QueryResult:
         import time as _time
         sql = sql.strip().rstrip(";")
-        ok, reason = _validate(sql)
+        ok, reason = _validate(sql, getattr(self, "dialect", "duckdb"))
         if not ok:
             return QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[], row_count=0, error=reason)
 
@@ -1078,6 +1189,18 @@ class PostgresConnection(DatabaseConnection):
         except Exception:
             pass
 
+    def is_healthy(self) -> bool:
+        """Cheap liveness probe so the pool never hands out a dropped connection."""
+        try:
+            if self._conn is None or getattr(self._conn, "closed", 1):
+                return False
+            with self._conn.cursor() as cur:
+                cur.execute("SELECT 1")
+                cur.fetchone()
+            return True
+        except Exception:
+            return False
+
 
 # ── Factory ───────────────────────────────────────────────────────────────────
 
@@ -1105,13 +1228,37 @@ def open_connection(
 
 
 def open_connection_for(conn_id: str) -> DatabaseConnection:
-    """Open a registered connection with all stored metadata applied (schema_name, connection_id etc.)."""
+    """Open (or reuse a pooled) registered connection with stored metadata applied."""
     from aughor.db.registry import get_dsn, get_meta
+    from aughor.db import pool
     conn_type, dsn = get_dsn(conn_id)
     meta = get_meta(conn_id)
-    return open_connection(
+    schema_name = meta.get("schema_name")
+    key = f"{conn_id}|{schema_name or ''}"
+    return pool.acquire(key, lambda: open_connection(
         conn_type, dsn,
-        schema_name=meta.get("schema_name"),
+        schema_name=schema_name,
         connection_id=conn_id,
         meta=meta,
-    )
+    ))
+
+
+def open_connection_for_with_schema(conn_id: str, schema_name: str | None = None) -> DatabaseConnection:
+    """Open a registered connection with an optional schema override.
+
+    Used by Canvas-scoped flows so that the connection resolves tables in the
+    Canvas's selected schema even when the underlying connection was registered
+    without one.
+    """
+    from aughor.db.registry import get_dsn, get_meta
+    from aughor.db import pool
+    conn_type, dsn = get_dsn(conn_id)
+    meta = get_meta(conn_id)
+    eff_schema = schema_name or meta.get("schema_name")
+    key = f"{conn_id}|{eff_schema or ''}"
+    return pool.acquire(key, lambda: open_connection(
+        conn_type, dsn,
+        schema_name=eff_schema,
+        connection_id=conn_id,
+        meta=meta,
+    ))

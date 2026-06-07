@@ -199,6 +199,12 @@ def update_connection_settings(conn_id: str, updates: dict) -> dict:
     existing.update(updates)
     settings[conn_id] = existing
     _save_settings(settings)
+    # Settings can change schema/DSN behaviour — drop pooled connections.
+    try:
+        from aughor.db.pool import evict_conn
+        evict_conn(conn_id)
+    except Exception:
+        pass
     return existing
 
 
@@ -245,6 +251,12 @@ def delete_connection(conn_id: str) -> None:
     try:
         from aughor.tools.profile_cache import invalidate
         invalidate(conn_id)
+    except Exception:
+        pass
+    # Evict pooled physical connections — the connection no longer exists.
+    try:
+        from aughor.db.pool import evict_conn
+        evict_conn(conn_id)
     except Exception:
         pass
 

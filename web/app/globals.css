@@ -86,7 +86,7 @@ a { color: var(--blue4); text-decoration: none; }
   padding: 0 20px;
   gap: 12px;
   flex-shrink: 0;
-  background: var(--bg-1);
+  background: var(--bg-2);
 }
 
 /* ── Nav ─────────────────────────────────────────────────────────────────── */
@@ -195,7 +195,7 @@ a { color: var(--blue4); text-decoration: none; }
 
 /* ── Inputs ──────────────────────────────────────────────────────────────── */
 .aug-input {
-  background: var(--bg-1);
+  background: var(--bg-2);
   border: 1px solid var(--b2);
   border-radius: var(--r2);
   color: var(--t1);

@@ -6,6 +6,27 @@ import re
 import duckdb
 
 from aughor.semantic.glossary import apply_glossary
+from aughor.db.type_overrides import get_table_overrides
+
+# Normalise verbose type names (PostgreSQL information_schema, DuckDB DESCRIBE).
+_TYPE_MAP: dict[str, str] = {
+    "character varying": "VARCHAR",
+    "character":         "CHAR",
+    "double precision":  "DOUBLE",
+    "numeric":           "NUMERIC",
+    "integer":           "INTEGER",
+    "bigint":            "BIGINT",
+    "smallint":          "SMALLINT",
+    "real":              "FLOAT",
+    "boolean":           "BOOLEAN",
+    "timestamp without time zone": "TIMESTAMP",
+    "timestamp with time zone":    "TIMESTAMPTZ",
+}
+
+
+def _norm_type(t: str) -> str:
+    t_clean = t.strip().lower()
+    return _TYPE_MAP.get(t_clean, t.strip())
 
 # Columns whose names indicate they are IDs/keys — skip value sampling for these.
 _KEY_COL = re.compile(
@@ -17,7 +38,9 @@ _KEY_COL = re.compile(
 # Strips these suffixes (longest first) to get the semantic "root" of a column.
 # customer_id → customer,  order_key → order,  cust_num → cust
 _ROOT_SUFFIXES = sorted(
-    ["_identifier", "_number", "_pseudonym", "_code", "_num", "_key", "_id"],
+    # _sk = surrogate key (standard star/snowflake warehouse convention, e.g.
+    # TPC-DS ss_item_sk ↔ i_item_sk; also _key/_id for natural keys).
+    ["_identifier", "_number", "_pseudonym", "_code", "_num", "_key", "_id", "_sk"],
     key=len, reverse=True,
 )
 
@@ -45,6 +68,44 @@ def _col_root(col: str) -> str:
     return col
 
 
+# Short table-name alias prefix used by some schemas on every column
+# (TPC-H: c_custkey, o_orderkey, l_partkey). 1–3 letters + underscore so it
+# strips c_/o_/ps_ but never a word-prefix like ship_/bill_.
+_TABLE_PREFIX = re.compile(r"^[a-z]{1,3}_")
+
+
+def _fk_root(col: str) -> str | None:
+    """Normalised foreign-key root for a *key-like* column, else None.
+
+    Handles the convention where every column carries a short table prefix and
+    the key suffix is fused: ``c_custkey`` and ``o_custkey`` both → ``cust`` so
+    the customer↔orders FK is detected. Standard ``customer_id`` style still
+    maps to ``customer`` (prefix regex doesn't fire, ``_id`` suffix strips).
+    Returns None for non-key columns so the caller can fall back to legacy
+    behaviour — this is purely additive and introduces no new join candidates
+    for non-key columns (e.g. c_acctbal / s_acctbal stay un-joined)."""
+    c = col.lower()
+    stripped = _TABLE_PREFIX.sub("", c, count=1)
+    root = None
+    for suffix in _ROOT_SUFFIXES:  # _id, _key, _number, _code, _sk, …
+        if stripped.endswith(suffix):
+            root = stripped[: -len(suffix)]
+            break
+    if root is None and stripped.endswith("key") and len(stripped) > 3:  # fused: custkey
+        root = stripped[:-3]
+    if root is None or len(root) < 3:
+        return None
+    # Skip date/time surrogate keys. In a star schema every fact carries a
+    # *_date_sk / *_time_sk pointing at the shared date_dim/time_dim, so plain
+    # root-matching would wrongly join the facts to EACH OTHER (ss_sold_date_sk =
+    # cs_sold_date_sk). Modelling FK→dimension-PK needs ownership detection we
+    # don't have here; staying silent beats emitting false joins. (The model still
+    # joins date_dim from column naming; a temporal-grounding lever is future work.)
+    if root == "date" or root == "time" or root.endswith("date") or root.endswith("time"):
+        return None
+    return root
+
+
 _SECTION_STOP = re.compile(
     r"^(DETECTED JOIN|NO DIRECT JOIN|METRICS CATALOG|Date range|GLOSSARY|JOIN HINTS|RELEVANT|--)"
 )
@@ -57,7 +118,7 @@ def _parse_schema_tables(schema_str: str) -> dict[str, list[str]]:
         if _SECTION_STOP.match(line):
             current = None
             continue
-        m = re.match(r"^TABLE:\s+(\w+)", line)
+        m = re.match(r"^TABLE:\s+([\w.]+)", line)
         if m:
             current = m.group(1)
             table_cols[current] = []
@@ -68,18 +129,49 @@ def _parse_schema_tables(schema_str: str) -> dict[str, list[str]]:
     return table_cols
 
 
+def _table_base(t: str) -> str:
+    """Bare table name for owner matching: last path segment, lowercased, with
+    dim_/fact_/_dim wrappers and a trailing plural 's' removed."""
+    base = t.split(".")[-1].lower()
+    base = re.sub(r"^(dim|fact|tbl|stg)_", "", base)
+    base = re.sub(r"_(dim|fact|tbl)$", "", base)
+    return base.rstrip("s")
+
+
+def _find_dim_owner(root: str, entries: list[tuple[str, str]]) -> int | None:
+    """Index of the table that OWNS this key (the dimension), or None. The owner
+    is the table whose bare name matches the key root (item→item, customer→
+    customers, date→date_dim, cust→customer)."""
+    rk = root.rstrip("s")
+    for idx, (t, _c) in enumerate(entries):
+        tb = _table_base(t)
+        if tb == rk or (len(rk) >= 4 and (tb.startswith(rk) or rk.startswith(tb))):
+            return idx
+    return None
+
+
 def _compute_join_map(table_cols: dict[str, list[str]]) -> dict:
     """
     Compute join candidates across tables using root-normalised column names.
     Returns {"joins": [...], "no_join": [...]} — same shape as talonsight's get_join_map.
     """
+    # Two rooting passes, merged. A column is treated as a join key if EITHER:
+    #   • key-aware: it ends in a key/id suffix (incl. fused/prefixed forms like
+    #     c_custkey) → high-confidence FK, never blocklisted; or
+    #   • legacy: its plain root (suffix-stripped, no prefix strip) is shared and
+    #     not a generic attribute (preserves prior behaviour for non-key columns).
     root_map: dict[str, list[tuple[str, str]]] = {}
+    key_roots: set[str] = set()
     for table, cols in table_cols.items():
         for col in cols:
-            root = _col_root(col)
-            if len(root) < 3:
+            kroot = _fk_root(col)
+            if kroot and len(kroot) >= 3:
+                root_map.setdefault(kroot, []).append((table, col))
+                key_roots.add(kroot)
                 continue
-            root_map.setdefault(root, []).append((table, col))
+            oroot = _col_root(col)
+            if len(oroot) >= 3 and oroot not in _NON_KEY_ROOTS:
+                root_map.setdefault(oroot, []).append((table, col))
 
     joined_pairs: set[frozenset[str]] = set()
     joins: list[dict] = []
@@ -87,20 +179,28 @@ def _compute_join_map(table_cols: dict[str, list[str]]) -> dict:
     for root, entries in root_map.items():
         if len(entries) < 2:
             continue
-        if root in _NON_KEY_ROOTS:
-            continue  # skip generic attribute columns — not join keys
-        for i in range(len(entries)):
-            for j in range(i + 1, len(entries)):
-                t1, c1 = entries[i]
-                t2, c2 = entries[j]
-                if t1 == t2:
-                    continue
-                pair = frozenset([t1, t2])
-                if pair in joined_pairs:
-                    continue
-                match = "exact" if (c1 == c2 or c1.endswith("_id") or c2.endswith("_id")) else "inferred"
-                joins.append({"t1": t1, "c1": c1, "t2": t2, "c2": c2, "match": match})
-                joined_pairs.add(pair)
+        is_key = root in key_roots
+        # Star-schema routing: when ≥3 tables share a key, they are facts pointing
+        # at a DIMENSION (the eponymous table, e.g. root 'item' → table `item`).
+        # Join each fact to the dimension (FK→PK), NOT fact-to-fact — otherwise
+        # store_sales and catalog_sales get falsely joined just for both having
+        # an item key. With no eponymous owner, fall back to all-pairs.
+        owner = _find_dim_owner(root, entries) if len(entries) >= 3 else None
+        if owner is not None:
+            pairs = [(owner, j) for j in range(len(entries)) if j != owner]
+        else:
+            pairs = [(i, j) for i in range(len(entries)) for j in range(i + 1, len(entries))]
+        for a, b in pairs:
+            t1, c1 = entries[a]
+            t2, c2 = entries[b]
+            if t1 == t2:
+                continue
+            pair = frozenset([t1, t2])
+            if pair in joined_pairs:
+                continue
+            match = "exact" if (is_key or c1 == c2 or c1.endswith("_id") or c2.endswith("_id")) else "inferred"
+            joins.append({"t1": t1, "c1": c1, "t2": t2, "c2": c2, "match": match})
+            joined_pairs.add(pair)
 
     all_tables = list(table_cols.keys())
     no_join = [
@@ -110,6 +210,72 @@ def _compute_join_map(table_cols: dict[str, list[str]]) -> dict:
         if frozenset([all_tables[i], all_tables[j]]) not in joined_pairs
     ]
     return {"joins": joins, "no_join": no_join}
+
+
+def fk_neighbor_expand(full_schema: str, tables: list[str], cap: int = 10) -> list[str]:
+    """Expand a set of schema-linked tables with their direct FK neighbours.
+
+    The schema-linker picks tables by keyword relevance, so it misses BRIDGE and
+    OUTPUT tables that a multi-table question needs only via a join (e.g. TPC-H Q5
+    needs `lineitem` for revenue, Q10 needs `nation` for the nation name — neither
+    is named in the question). Adding 1-hop FK neighbours (bounded by ``cap``)
+    completes the join paths without dumping the whole schema. Order-preserving:
+    the originally linked tables stay first."""
+    try:
+        jmap = _compute_join_map(_parse_schema_tables(full_schema))
+    except Exception:
+        return tables
+    adj: dict[str, set[str]] = {}
+    for j in jmap.get("joins", []):
+        adj.setdefault(j["t1"], set()).add(j["t2"])
+        adj.setdefault(j["t2"], set()).add(j["t1"])
+    out = list(tables)
+    seen = set(tables)
+    for t in tables:
+        for nb in sorted(adj.get(t, ())):
+            if len(out) >= cap:
+                break
+            if nb not in seen:
+                out.append(nb)
+                seen.add(nb)
+    return out
+
+
+_TEMPORAL_HINT = re.compile(
+    r"\b(year|month|quarter|week|day|daily|monthly|quarterly|weekly|annual|annually|"
+    r"ytd|mtd|qtd|hour|minute|date|jan(uary)?|feb(ruary)?|mar(ch)?|apr(il)?|may|jun(e)?|"
+    r"jul(y)?|aug(ust)?|sep(tember)?|oct(ober)?|nov(ember)?|dec(ember)?|\b\d{4}\b)\b",
+    re.IGNORECASE,
+)
+_DT_SURROGATE = re.compile(r"_(date|time)_(sk|key|id)$", re.IGNORECASE)
+_DT_DIM_NAME = re.compile(r"(date|time|calendar|day)", re.IGNORECASE)
+
+
+def temporal_dimension_tables(full_schema: str, linked_tables: list[str], question: str) -> list[str]:
+    """Date/time DIMENSION tables to add to context for a temporal question.
+
+    A star schema filters time through a date_dim/time_dim joined on a surrogate
+    key (fact._date_sk = date_dim.d_date_sk); the schema-linker misses it because
+    "November 2000" names no table. Returns the dimension table(s) when the
+    question is temporal AND a linked fact carries a *_date_sk / *_time_sk key.
+    Empty otherwise (e.g. schemas with plain DATE columns need nothing)."""
+    if not question or not _TEMPORAL_HINT.search(question):
+        return []
+    try:
+        tcols = _parse_schema_tables(full_schema)
+    except Exception:
+        return []
+    linked = set(linked_tables)
+    if not any(any(_DT_SURROGATE.search(c) for c in tcols.get(t, [])) for t in linked):
+        return []
+    dims: list[str] = []
+    for t, cols in tcols.items():
+        if t in linked:
+            continue
+        base = t.split(".")[-1].lower()
+        if _DT_DIM_NAME.search(base) and any(_DT_SURROGATE.search(c) for c in cols):
+            dims.append(t)
+    return dims
 
 
 def infer_joins(schema_str: str) -> str:
@@ -143,7 +309,10 @@ def infer_joins(schema_str: str) -> str:
         parts.append("DETECTED JOIN PATHS (use these to write correct JOINs):")
         parts.extend(join_lines)
     if no_join_lines:
-        parts.append("NO DIRECT JOIN DETECTED — do not hallucinate a JOIN path between:")
+        parts.append(
+            "NO DIRECT FOREIGN KEY between these table pairs — join them through an "
+            "intermediate table if the question needs both; do not invent a shared key:"
+        )
         parts.extend(no_join_lines)
     return "\n".join(parts)
 
@@ -167,7 +336,7 @@ def build_mermaid_er(schema_str: str) -> str:
         if _SECTION_STOP.match(line):
             current = None
             continue
-        m = re.match(r"^TABLE:\s+(\w+)", line)
+        m = re.match(r"^TABLE:\s+([\w.]+)", line)
         if m:
             current = m.group(1)
             table_col_types[current] = []
@@ -228,7 +397,7 @@ def build_rich_schema(schema_str: str) -> dict:
         if _SECTION_STOP.match(line):
             current = None
             continue
-        m = re.match(r"^TABLE:\s+(\w+)\s*\(?([\d,?]+)?\s*rows?\)?", line)
+        m = re.match(r"^TABLE:\s+([\w.]+)\s*\(([\d,?]+|\?)?\s*rows?\)?", line)
         if m:
             current = m.group(1)
             if current not in table_col_types:
@@ -366,7 +535,7 @@ def inject_value_annotations(schema_str: str, column_profiles: dict) -> str:
     current_table: str | None = None
 
     for line in lines:
-        tm = re.match(r'^TABLE:\s+(\w+)', line)
+        tm = re.match(r'^TABLE:\s+([\w.]+)', line)
         if tm:
             current_table = tm.group(1)
             result.append(line)
@@ -425,13 +594,35 @@ def build_schema_context(
     multi-schema files don't bleed tables from other schemas into this context.
     """
     if schema_name:
-        tables = [
-            row[0] for row in conn.execute(
-                "SELECT table_name FROM information_schema.tables "
-                "WHERE table_schema = ? AND table_type = 'BASE TABLE' ORDER BY table_name",
-                [schema_name],
-            ).fetchall()
-        ]
+        # For MotherDuck (multi-database DuckDB), restrict to the current database
+        # so we don't bleed tables from other attached databases that share the schema.
+        current_db = ""
+        try:
+            current_db = conn.execute("SELECT current_database()").fetchone()[0]
+        except Exception:
+            pass
+        if current_db:
+            tables = [
+                row[0] for row in conn.execute(
+                    "SELECT table_name FROM information_schema.tables "
+                    "WHERE table_schema = ? AND table_type = 'BASE TABLE' "
+                    "AND table_catalog = ? ORDER BY table_name",
+                    [schema_name, current_db],
+                ).fetchall()
+            ]
+        else:
+            tables = [
+                row[0] for row in conn.execute(
+                    "SELECT table_name FROM information_schema.tables "
+                    "WHERE table_schema = ? AND table_type = 'BASE TABLE' ORDER BY table_name",
+                    [schema_name],
+                ).fetchall()
+            ]
+        # Fallback: the user may have set schema_name to a database name
+        # (common with MotherDuck) rather than a DuckDB schema. In that case,
+        # information_schema.tables returns nothing — fall back to SHOW TABLES.
+        if not tables:
+            tables = [row[0] for row in conn.execute("SHOW TABLES").fetchall()]
     else:
         tables = [row[0] for row in conn.execute("SHOW TABLES").fetchall()]
     parts: list[str] = []
@@ -452,13 +643,16 @@ def build_schema_context(
         except Exception:
             count = "?"
 
-        parts.append(f"TABLE: {table}  ({count:,} rows)")
+        parts.append(f"TABLE: {fqn}  ({count:,} rows)")
         if _annotations:
             inject_into_schema_parts(parts, table, None, _annotations)
 
         cols = conn.execute(f"DESCRIBE {fqn}").fetchall()
+        _overrides = get_table_overrides(connection_id or "", table) if connection_id else {}
         for col in cols:
             col_name, col_type = col[0], col[1]
+            if col_name in _overrides:
+                col_type = _overrides[col_name]
             parts.append(f"  {col_name}  {col_type}")
             if _annotations:
                 inject_into_schema_parts(parts, table, col_name, _annotations)
@@ -515,7 +709,10 @@ def build_schema_context(
     join_hints = infer_joins(enriched)
     if join_hints:
         enriched += "\n\n" + join_hints
-    metrics_block = build_metrics_block()
+    # Filter metrics against THIS schema so a globally-stored metric that
+    # references columns absent here (another connection's metric) doesn't leak
+    # a wrong formula into the prompt.
+    metrics_block = build_metrics_block(schema_text=enriched)
     if metrics_block:
         enriched += "\n\n" + metrics_block
     if profile_annotation:
@@ -533,12 +730,18 @@ def get_schema_for_tables(full_schema: str, tables: list[str]) -> str:
     and metrics blocks that follow the TABLE: sections (everything after the
     last table block is kept verbatim).
 
+    Matches both bare table names ("orders") and qualified names ("ecommerce.orders")
+    so Canvas table filters work regardless of how the schema context formats
+    table headers.
+
     If `tables` is empty, returns the full schema unchanged.
     """
     if not tables:
         return full_schema
 
     include = {t.lower() for t in tables}
+    # Also build a set of bare-only names for cross-matching qualified <-> bare
+    include_bare = {t.split(".")[-1].lower() for t in tables}
     lines = full_schema.splitlines(keepends=True)
     out: list[str] = []
     in_table_block = False
@@ -549,9 +752,10 @@ def get_schema_for_tables(full_schema: str, tables: list[str]) -> str:
         if line.startswith("TABLE:"):
             past_tables = True
             in_table_block = True
-            # Extract table name from "TABLE: orders  (99,441 rows)"
-            table_name = line.split()[1].lower() if len(line.split()) > 1 else ""
-            keep_block = table_name in include
+            # Extract table name from "TABLE: orders  (99,441 rows)" or "TABLE: ecommerce.orders"
+            raw_name = line.split()[1].lower() if len(line.split()) > 1 else ""
+            bare_name = raw_name.split(".")[-1]
+            keep_block = raw_name in include or bare_name in include or raw_name in include_bare or bare_name in include_bare
             if keep_block:
                 out.append(line)
         elif in_table_block:
@@ -583,14 +787,14 @@ def build_canvas_schema_context(canvas: "Canvas") -> str:  # type: ignore[name-d
     Falls back to the full schema if the Canvas has no table filter or if
     anything goes wrong — never raises.
     """
-    from aughor.db.connection import open_connection_for
+    from aughor.db.connection import open_connection_for_with_schema
 
     if not canvas.scopes:
         return ""
 
     scope = canvas.scopes[0]
     try:
-        db = open_connection_for(scope.connection_id)
+        db = open_connection_for_with_schema(scope.connection_id, schema_name=scope.schema_name)
         full_schema = db.get_schema()
     except Exception:
         return ""

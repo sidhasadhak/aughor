@@ -233,3 +233,33 @@ async def suggest_canvas_name(req: SuggestNameRequest):
         # Graceful fallback — never block Canvas creation on the LLM.
         fallback = req.tables[0] if req.tables else "New Canvas"
         return {"name": fallback, "description": ""}
+
+
+# ── Canvas Artifacts ─────────────────────────────────────────────────────────
+
+class CreateArtifactRequest(BaseModel):
+    kind: str
+    title: str
+    description: str = ""
+    sql: str = ""
+    question: str = ""
+
+@router.get("/canvases/{canvas_id}/artifacts")
+def get_artifacts(canvas_id: str):
+    from aughor.canvas.store import list_artifacts
+    return {"artifacts": [a.model_dump() for a in list_artifacts(canvas_id)]}
+
+@router.post("/canvases/{canvas_id}/artifacts", status_code=201)
+def create_artifact_endpoint(canvas_id: str, req: CreateArtifactRequest):
+    from aughor.canvas.store import create_artifact
+    artifact = create_artifact(
+        canvas_id=canvas_id, kind=req.kind, title=req.title,
+        description=req.description, sql=req.sql, question=req.question,
+    )
+    return artifact.model_dump()
+
+@router.delete("/canvases/{canvas_id}/artifacts/{artifact_id}", status_code=204)
+def delete_artifact_endpoint(artifact_id: str):
+    from aughor.canvas.store import delete_artifact
+    if not delete_artifact(artifact_id):
+        raise HTTPException(status_code=404, detail="Artifact not found")

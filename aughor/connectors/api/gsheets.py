@@ -7,20 +7,23 @@ DSN format:  gsheet://<spreadsheet_id>
 Meta fields: {
     "spreadsheet_id": "1AbC...",     # or full /spreadsheets/d/<id>/ URL
     "sheets": "Sheet1,Sheet2",        # optional; comma-separated tab names
-    "api_key": "AIza...",             # optional; for private sheets via API
 }
 
-For public ("anyone with the link can view") sheets no credentials are needed —
-each worksheet is fetched through its CSV export endpoint. DuckDB's httpfs
-extension handles the HTTP fetch.
+The sheet must be shared "Anyone with the link can view" — each worksheet is
+fetched through its public CSV (gviz) export endpoint, handled by DuckDB's
+httpfs extension. No credentials are used; private sheets require OAuth, which
+this connector intentionally does not claim to support.
 
 Optional dep:
   uv pip install 'duckdb>=0.10.0'   (already a core Aughor dependency)
 """
 from __future__ import annotations
 
+import hashlib
+import os
 import re
 import time
+from pathlib import Path
 
 import duckdb
 
@@ -28,6 +31,34 @@ from aughor.connectors.base import Connector
 from aughor.agent.state import QueryResult
 
 MAX_ROWS = 2000
+
+# ── Cross-request worksheet cache ─────────────────────────────────────────────
+# A fresh connector is built per request; without this, every single query would
+# re-download every worksheet over HTTP (slow + hammers Google's rate limits).
+# We materialise the fetched worksheets into a temp DuckDB file keyed by
+# (spreadsheet, sheets) with a short TTL; subsequent connectors READ_ONLY-attach
+# it and copy the tables in — no HTTP, full type fidelity, no pyarrow dependency.
+import tempfile as _tempfile
+
+_SHEET_TTL_SECONDS = 300
+_CACHE_DIR = Path(_tempfile.gettempdir()) / "aughor_gsheets_cache"
+# key -> (timestamp, duckdb_file_path, [table_names])
+_sheet_cache: dict[str, tuple[float, str, list[str]]] = {}
+
+
+def invalidate_sheet_cache(spreadsheet_id: str | None = None) -> None:
+    """Drop cached worksheets (call to force a re-fetch). None = clear all."""
+    keys = list(_sheet_cache) if spreadsheet_id is None else [
+        k for k in _sheet_cache if k.startswith(f"{spreadsheet_id}|")
+    ]
+    for k in keys:
+        entry = _sheet_cache.pop(k, None)
+        if entry:
+            try:
+                os.remove(entry[1])
+            except Exception:
+                pass
+
 
 _ID_RE = re.compile(r"/spreadsheets/d/([a-zA-Z0-9-_]+)")
 
@@ -78,20 +109,67 @@ class GoogleSheetsConnector(Connector):
             params += f"&sheet={sheet}"
         return f"{base}?{params}"
 
+    def _cache_key(self) -> str:
+        return f"{self._spreadsheet_id}|{','.join(self._sheets)}"
+
+    def _load_from_cache(self) -> bool:
+        """Copy worksheets from a fresh temp-DB cache (no HTTP). True on hit."""
+        cached = _sheet_cache.get(self._cache_key())
+        if not cached or (time.time() - cached[0]) >= _SHEET_TTL_SECONDS:
+            return False
+        _, fpath, tables = cached
+        if not os.path.exists(fpath):
+            return False
+        try:
+            self._duckdb.execute(f"ATTACH '{fpath}' AS _cache (READ_ONLY)")
+            for table in tables:
+                self._duckdb.execute(f'CREATE TABLE "{table}" AS SELECT * FROM _cache."{table}"')
+            self._duckdb.execute("DETACH _cache")
+            return True
+        except Exception:
+            try:
+                self._duckdb.execute("DETACH _cache")
+            except Exception:
+                pass
+            return False
+
+    def _save_to_cache(self, tables: list[str]) -> None:
+        """Persist the just-fetched worksheets to a temp DuckDB file (best-effort)."""
+        if not tables:
+            return
+        try:
+            _CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            fpath = str(_CACHE_DIR / (hashlib.md5(self._cache_key().encode()).hexdigest() + ".duckdb"))
+            tmp = f"{fpath}.{os.getpid()}.{int(time.time()*1000)}.tmp"
+            self._duckdb.execute(f"ATTACH '{tmp}' AS _cache")
+            for table in tables:
+                self._duckdb.execute(f'CREATE TABLE _cache."{table}" AS SELECT * FROM "{table}"')
+            self._duckdb.execute("DETACH _cache")
+            os.replace(tmp, fpath)  # atomic; existing READ_ONLY readers keep old inode
+            _sheet_cache[self._cache_key()] = (time.time(), fpath, list(tables))
+        except Exception:
+            pass
+
     def _load_sheets(self) -> None:
+        if self._load_from_cache():
+            return
+
         targets = self._sheets or [""]  # empty string = first/default sheet
+        loaded: list[str] = []
         for sheet in targets:
             table = _safe_table_name(sheet) if sheet else "sheet1"
             url = self._export_url(sheet or None)
             try:
-                self._duckdb.execute(f"DROP TABLE IF EXISTS {table}")
+                self._duckdb.execute(f'DROP TABLE IF EXISTS "{table}"')
                 self._duckdb.execute(
-                    f"CREATE TABLE {table} AS "
+                    f'CREATE TABLE "{table}" AS '
                     f"SELECT * FROM read_csv_auto('{url}', header=true, all_varchar=false)"
                 )
+                loaded.append(table)
             except Exception:
                 # Skip sheets that fail to load rather than break the whole connection.
                 pass
+        self._save_to_cache(loaded)
 
     def execute(self, hypothesis_id: str, sql: str) -> QueryResult:
         from aughor.db.connection import _security_pre, _security_post
@@ -129,6 +207,10 @@ class GoogleSheetsConnector(Connector):
             return False, str(e)
 
     def get_schema(self) -> str:
+        # Canonical Aughor schema format: `TABLE: name  (N rows)` followed by
+        # 2-space-indented `  col  TYPE` lines. This is what build_rich_schema,
+        # the schema-linker and the data catalog all parse — emitting the older
+        # bracketed one-liner would hide every column from those layers.
         lines: list[str] = []
         try:
             self._duckdb.execute(
@@ -137,15 +219,33 @@ class GoogleSheetsConnector(Connector):
                 "ORDER BY table_name, ordinal_position"
             )
             rows = self._duckdb.fetchall()
-            from collections import defaultdict
-            table_cols: dict[str, list[str]] = defaultdict(list)
+            from collections import OrderedDict
+            table_cols: "OrderedDict[str, list[tuple[str, str]]]" = OrderedDict()
             for tname, col, dtype in rows:
-                table_cols[tname].append(f"{col} {dtype}")
+                table_cols.setdefault(tname, []).append((col, dtype))
             for tname, cols in table_cols.items():
-                lines.append(f"TABLE: {tname} [{', '.join(cols)}]")
+                try:
+                    self._duckdb.execute(f'SELECT COUNT(*) FROM "{tname}"')
+                    n = int(self._duckdb.fetchone()[0])
+                except Exception:
+                    n = 0
+                lines.append(f"TABLE: {tname}  ({n:,} rows)")
+                for col, dtype in cols:
+                    lines.append(f"  {col}  {dtype}")
+                lines.append("")
         except Exception as e:
             lines.append(f"# Schema introspection failed: {e}")
-        return "\n".join(lines) or "(no worksheets loaded)"
+        return "\n".join(lines).strip() or "(no worksheets loaded)"
+
+    def raw_execute(self, sql: str) -> tuple[list[str], list, list[str]]:
+        """Run a raw query bypassing the SELECT-only validator — for metadata
+        (DESCRIBE/PRAGMA) used by the catalog + columns endpoints."""
+        self._duckdb.execute(sql)
+        rows = self._duckdb.fetchall()
+        desc = self._duckdb.description or []
+        columns = [d[0] for d in desc]
+        types = [str(d[1]) if len(d) > 1 and d[1] is not None else "" for d in desc]
+        return columns, rows, types
 
     def test(self) -> tuple[bool, str]:
         try:

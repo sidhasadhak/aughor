@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import type { Canvas, Connection, CanvasHistoryItem as HistoryItem } from "@/lib/api";
-import { getCanvasHistory, updateCanvas, deleteInvestigation } from "@/lib/api";
+import { getCanvasHistory, updateCanvas, deleteInvestigation, getCanvasArtifacts, deleteCanvasArtifact, type CanvasArtifact } from "@/lib/api";
 import { ConfigurePanel } from "@/components/ConfigurePanel";
 import { ChatPanel } from "@/components/ChatPanel";
 import { HistoryDetailPanel } from "@/components/HistoryDetailPanel";
@@ -36,7 +36,7 @@ function Icon({ name, size = 14, color = "currentColor" }: { name: string; size?
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type WsTab = "chat" | "history" | "intel";
+type WsTab = "chat" | "history" | "intel" | "artifacts";
 
 // ── History tab ───────────────────────────────────────────────────────────────
 
@@ -54,7 +54,7 @@ function timeAgo(iso: string): string {
 function statusColor(s: string): string {
   if (s === "complete" || s === "completed") return "var(--grn4)";
   if (s === "failed" || s === "timed_out") return "var(--red4)";
-  if (s === "running") return "var(--amber4, #f59e0b)";
+  if (s === "running") return "var(--amber4, var(--amb4))";
   return "var(--t4)";
 }
 
@@ -163,7 +163,7 @@ function CanvasHistory({
               background: "transparent", border: "1px solid var(--b1)", color: "var(--t4)",
               cursor: isRemoving ? "default" : "pointer",
             }}
-            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = "#f87171"; (e.currentTarget as HTMLButtonElement).style.borderColor = "#f87171"; }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = "var(--red4)"; (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--red4)"; }}
             onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = "var(--t4)"; (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--b1)"; }}
           >
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M3 4h10M6.5 4V2.5h3V4M5 4l.5 9h5l.5-9" /></svg>
@@ -445,6 +445,97 @@ function CapabilitiesBlock({
   );
 }
 
+// ── Artifacts tab ─────────────────────────────────────────────────────────────
+
+function ArtifactsPanel({ canvasId }: { canvasId: string }) {
+  const [items, setItems] = React.useState<CanvasArtifact[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [removing, setRemoving] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    setLoading(true);
+    getCanvasArtifacts(canvasId)
+      .then(setItems)
+      .catch(() => setItems([]))
+      .finally(() => setLoading(false));
+  }, [canvasId]);
+
+  async function handleRemove(id: string) {
+    setRemoving(id);
+    const prev = items;
+    setItems(list => list.filter(it => it.id !== id));
+    try { await deleteCanvasArtifact(canvasId, id); }
+    catch { setItems(prev); }
+    finally { setRemoving(null); }
+  }
+
+  if (loading) {
+    return (
+      <div style={{ padding: "40px 32px", color: "var(--t4)", fontSize: 12 }}>
+        Loading artifacts…
+      </div>
+    );
+  }
+
+  if (items.length === 0) {
+    return (
+      <div style={{ padding: "72px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+        <Icon name="table" size={28} color="var(--t4)" />
+        <div style={{ fontSize: 13, color: "var(--t3)" }}>No artifacts saved yet in this Data Canvas.</div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ flex: 1, overflowY: "auto", padding: "16px 32px" }}>
+      {items.map(item => (
+        <div
+          key={item.id}
+          style={{
+            width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 12,
+            padding: "10px 14px", marginBottom: 6,
+            background: "var(--bg-2)", border: "1px solid var(--b1)",
+            borderRadius: "var(--r2)",
+            transition: "border-color .1s, background .1s",
+            opacity: removing === item.id ? 0.4 : 1,
+          }}
+          onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "var(--b2)"; (e.currentTarget as HTMLDivElement).style.background = "var(--bg-3)"; }}
+          onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "var(--b1)"; (e.currentTarget as HTMLDivElement).style.background = "var(--bg-2)"; }}
+        >
+          <span style={{
+            display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0,
+            padding: "1px 6px", borderRadius: 3, fontSize: 10,
+            background: "var(--bg-3)", border: "1px solid var(--b1)", color: "var(--t4)",
+          }}>
+            {item.kind}
+          </span>
+          <span style={{ flex: 1, fontSize: 12, color: "var(--t1)", lineHeight: 1.4, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {item.title}
+          </span>
+          <span style={{ fontSize: 11, color: "var(--t4)", whiteSpace: "nowrap", flexShrink: 0 }}>
+            {item.created_at ? new Date(item.created_at).toLocaleDateString() : ""}
+          </span>
+          <button
+            title="Remove artifact"
+            disabled={removing === item.id}
+            onClick={e => { e.stopPropagation(); handleRemove(item.id); }}
+            style={{
+              flexShrink: 0, width: 24, height: 24, borderRadius: 4, display: "flex",
+              alignItems: "center", justifyContent: "center",
+              background: "transparent", border: "1px solid var(--b1)", color: "var(--t4)",
+              cursor: removing === item.id ? "default" : "pointer",
+            }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = "var(--red4)"; (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--red4)"; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = "var(--t4)"; (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--b1)"; }}
+          >
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M3 4h10M6.5 4V2.5h3V4M5 4l.5 9h5l.5-9" /></svg>
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── CanvasWorkspace ───────────────────────────────────────────────────────────
 
 interface Props {
@@ -452,9 +543,11 @@ interface Props {
   connections: Connection[];
   onClose: () => void;
   onCanvasUpdate: (canvas: Canvas) => void;
+  initialOpenInvId?: string | null;
+  initialRestoreSessionId?: string | null;
 }
 
-export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate }: Props) {
+export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, initialOpenInvId, initialRestoreSessionId }: Props) {
   const [wsTab, setWsTab] = useState<WsTab>("chat");
   const [chatKey, setChatKey] = useState(0);
   const [openInvId, setOpenInvId] = useState<string | null>(null);
@@ -470,13 +563,25 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate }
     ? (connection.conn_type === "duckdb" ? "DuckDB" : connection.conn_type === "postgres" ? "PostgreSQL" : connection.conn_type)
     : null;
 
-  // When canvas changes, reset to chat tab
+  // When canvas changes, reset to chat tab, but honour initial props
   useEffect(() => {
-    setWsTab("chat");
-    setChatKey(k => k + 1);
-    setOpenInvId(null);
-    setRestoreSessionId(null);
-  }, [canvas.id]);
+    if (initialOpenInvId) {
+      setWsTab("history");
+      setOpenInvId(initialOpenInvId);
+      setRestoreSessionId(null);
+      setChatKey(k => k + 1);
+    } else if (initialRestoreSessionId) {
+      setWsTab("chat");
+      setRestoreSessionId(initialRestoreSessionId);
+      setOpenInvId(null);
+      setChatKey(k => k + 1);
+    } else {
+      setWsTab("chat");
+      setChatKey(k => k + 1);
+      setOpenInvId(null);
+      setRestoreSessionId(null);
+    }
+  }, [canvas.id, initialOpenInvId, initialRestoreSessionId]);
 
   // History line-item → navigate.  Investigations open the detail report in the
   // History tab; chat sessions restore the conversation in the Chat tab (passing
@@ -636,6 +741,7 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate }
         <TabPill icon="chat"    label="Chat"          active={wsTab === "chat"}    onClick={() => { setWsTab("chat"); setOpenInvId(null); }} />
         <TabPill icon="clock"   label="History"       active={wsTab === "history"} onClick={() => { setWsTab("history"); setOpenInvId(null); }} />
         <TabPill icon="process" label="Intelligence"  active={wsTab === "intel"}   onClick={() => setWsTab("intel")} />
+        <TabPill icon="table"  label="Artifacts"     active={wsTab === "artifacts"} onClick={() => setWsTab("artifacts")} />
       </div>
 
       {/* ── Content ── */}
@@ -724,6 +830,14 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate }
             canvasId={canvas.id}
             isActive={wsTab === "intel"}
           />
+        </div>
+
+        {/* Artifacts — always mounted, hidden when not active */}
+        <div style={{
+          display: wsTab === "artifacts" ? "flex" : "none",
+          flex: 1, flexDirection: "column", overflow: "hidden",
+        }}>
+          <ArtifactsPanel canvasId={canvas.id} />
         </div>
 
       </div>

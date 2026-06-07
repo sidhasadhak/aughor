@@ -23,7 +23,7 @@ interface PlaybookEntry {
 
 const STATUS_CHIP: Record<string, { bg: string; color: string; label: string }> = {
   active:     { bg: "#0a1a10", color: "#4ade80", label: "active" },
-  draft:      { bg: "#13141a", color: "#5a5b62", label: "draft" },
+  draft:      { bg: "var(--bg-1)", color: "#5a5b62", label: "draft" },
   deprecated: { bg: "#1a0a0a", color: "#f87171", label: "deprecated" },
 };
 
@@ -108,17 +108,17 @@ export function PlaybookPanel() {
     <div className="flex h-full gap-0" style={{ background: "var(--bg-0)" }}>
 
       {/* ── Left list ── */}
-      <div className="flex flex-col border-r" style={{ width: "340px", flexShrink: 0, borderColor: "#1e1f24" }}>
+      <div className="flex flex-col border-r" style={{ width: "340px", flexShrink: 0, borderColor: "var(--b2)" }}>
 
         {/* Header */}
-        <div className="px-4 pt-4 pb-3 shrink-0" style={{ borderBottom: "0.5px solid #1e1f24" }}>
+        <div className="px-4 pt-4 pb-3 shrink-0" style={{ borderBottom: "0.5px solid var(--b2)" }}>
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-[13.5px] font-medium" style={{ color: "#e8e6e1" }}>Playbook</h2>
             <button
               onClick={handleReseed}
               disabled={seeding}
               className="text-[11px] px-2 py-1 rounded-[4px] transition-all"
-              style={{ border: "0.5px solid #2a2b30", background: "#13141a", color: "#5a5b62" }}
+              style={{ border: "0.5px solid #2a2b30", background: "var(--bg-1)", color: "#5a5b62" }}
               onMouseEnter={e => e.currentTarget.style.color = "#9a9ba4"}
               onMouseLeave={e => e.currentTarget.style.color = "#5a5b62"}
             >
@@ -135,7 +135,7 @@ export function PlaybookPanel() {
             onChange={e => setFilter(e.target.value)}
             placeholder="Search recommendations…"
             className="w-full text-[11px] rounded-md px-2.5 py-1.5 focus:outline-none mb-2"
-            style={{ background: "#13141a", border: "0.5px solid #1e1f24", color: "#6e6f78" }}
+            style={{ background: "var(--bg-1)", border: "0.5px solid var(--b2)", color: "#6e6f78" }}
           />
           <div className="flex gap-1">
             {(["all", "active", "draft", "deprecated"] as const).map(s => (
@@ -160,7 +160,7 @@ export function PlaybookPanel() {
           {loading && (
             <div className="space-y-1.5 px-3">
               {[1, 2, 3, 4, 5].map(i => (
-                <div key={i} className="h-14 rounded-lg animate-pulse" style={{ background: "#13141a" }} />
+                <div key={i} className="h-14 rounded-lg animate-pulse" style={{ background: "var(--bg-1)" }} />
               ))}
             </div>
           )}
@@ -175,7 +175,7 @@ export function PlaybookPanel() {
               onClick={() => setSelected(selected === e.id ? null : e.id)}
               className="w-full text-left px-4 py-2.5 transition-colors"
               style={{
-                background: selected === e.id ? "#13141a" : "transparent",
+                background: selected === e.id ? "var(--bg-1)" : "transparent",
                 borderLeft: selected === e.id ? "2px solid #3d6bff" : "2px solid transparent",
               }}
               onMouseEnter={ev => { if (selected !== e.id) ev.currentTarget.style.background = "#0f1014"; }}
@@ -233,7 +233,7 @@ function PlaybookDetail({
       <div>
         <div className="flex items-center gap-2 mb-1">
           <span className="text-[11px] font-mono px-2 py-0.5 rounded-[3px]"
-            style={{ background: "#13141a", border: "0.5px solid #2a2b30", color: "#5a5b62" }}>
+            style={{ background: "var(--bg-1)", border: "0.5px solid #2a2b30", color: "#5a5b62" }}>
             {entry.trigger_metric}
           </span>
           <StatusChip status={entry.status} />
@@ -287,7 +287,7 @@ function PlaybookDetail({
         <div className="flex flex-wrap gap-1.5">
           {entry.tags.map(t => (
             <span key={t} className="text-[11px] px-2 py-0.5 rounded-full font-mono"
-              style={{ background: "#13141a", border: "0.5px solid #2a2b30", color: "var(--t4)" }}>
+              style={{ background: "var(--bg-1)", border: "0.5px solid #2a2b30", color: "var(--t4)" }}>
               {t}
             </span>
           ))}
@@ -295,7 +295,7 @@ function PlaybookDetail({
       )}
 
       {/* Promote / deprecate */}
-      <div className="flex gap-2 pt-2" style={{ borderTop: "0.5px solid #1e1f24" }}>
+      <div className="flex gap-2 pt-2" style={{ borderTop: "0.5px solid var(--b2)" }}>
         {entry.status !== "active" && (
           <button
             onClick={() => onStatusChange("active")}
@@ -311,7 +311,7 @@ function PlaybookDetail({
           <button
             onClick={() => onStatusChange("deprecated")}
             className="text-[11px] px-3 py-1.5 rounded-[5px] transition-all"
-            style={{ background: "#13141a", border: "0.5px solid #2a2b30", color: "#5a5b62" }}
+            style={{ background: "var(--bg-1)", border: "0.5px solid #2a2b30", color: "#5a5b62" }}
             onMouseEnter={e => { e.currentTarget.style.borderColor = "#f87171"; e.currentTarget.style.color = "#f87171"; }}
             onMouseLeave={e => { e.currentTarget.style.borderColor = "#2a2b30"; e.currentTarget.style.color = "#5a5b62"; }}
           >
@@ -322,7 +322,7 @@ function PlaybookDetail({
           <button
             onClick={() => onStatusChange("draft")}
             className="text-[11px] px-3 py-1.5 rounded-[5px] transition-all"
-            style={{ background: "#13141a", border: "0.5px solid #2a2b30", color: "#5a5b62" }}
+            style={{ background: "var(--bg-1)", border: "0.5px solid #2a2b30", color: "#5a5b62" }}
           >
             Restore to draft
           </button>

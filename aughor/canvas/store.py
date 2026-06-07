@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 
-from aughor.canvas.models import Canvas, CanvasScope
+from aughor.canvas.models import Canvas, CanvasScope, CanvasArtifact
 
 _DB_PATH = Path(__file__).parent.parent.parent / "data" / "canvases.db"
 
@@ -175,6 +175,75 @@ def migrate_connections_to_legacy_canvases() -> int:
     """
     return 0
 
+
+
+# ── Artifact store ───────────────────────────────────────────────────────────
+
+_ARTIFACT_DB_PATH = Path(__file__).parent.parent.parent / "data" / "artifacts.db"
+
+def _artifact_conn() -> sqlite3.Connection:
+    c = sqlite3.connect(_ARTIFACT_DB_PATH)
+    c.row_factory = sqlite3.Row
+    return c
+
+def _ensure_artifact_schema(c: sqlite3.Connection) -> None:
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS artifacts (
+            id          TEXT PRIMARY KEY,
+            canvas_id   TEXT NOT NULL,
+            kind        TEXT NOT NULL,
+            title       TEXT NOT NULL,
+            description TEXT DEFAULT '',
+            sql         TEXT DEFAULT '',
+            question    TEXT DEFAULT '',
+            created_at  TEXT NOT NULL
+        )
+    """)
+    c.execute("CREATE INDEX IF NOT EXISTS idx_artifacts_canvas ON artifacts(canvas_id)")
+    c.commit()
+
+def create_artifact(
+    canvas_id: str,
+    kind: str,
+    title: str,
+    description: str = "",
+    sql: str = "",
+    question: str = "",
+    artifact_id: Optional[str] = None,
+) -> CanvasArtifact:
+    aid = artifact_id or uuid.uuid4().hex[:8]
+    now = _now()
+    c = _artifact_conn()
+    _ensure_artifact_schema(c)
+    c.execute(
+        "INSERT INTO artifacts (id, canvas_id, kind, title, description, sql, question, created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (aid, canvas_id, kind, title, description, sql, question, now),
+    )
+    c.commit()
+    return CanvasArtifact(
+        id=aid, canvas_id=canvas_id, kind=kind, title=title,
+        description=description, sql=sql, question=question, created_at=now,
+    )
+
+def list_artifacts(canvas_id: str) -> List[CanvasArtifact]:
+    c = _artifact_conn()
+    _ensure_artifact_schema(c)
+    rows = c.execute("SELECT * FROM artifacts WHERE canvas_id = ? ORDER BY created_at DESC", (canvas_id,)).fetchall()
+    return [
+        CanvasArtifact(
+            id=r["id"], canvas_id=r["canvas_id"], kind=r["kind"], title=r["title"],
+            description=r["description"] or "", sql=r["sql"] or "", question=r["question"] or "", created_at=r["created_at"],
+        )
+        for r in rows
+    ]
+
+def delete_artifact(artifact_id: str) -> bool:
+    c = _artifact_conn()
+    _ensure_artifact_schema(c)
+    affected = c.execute("DELETE FROM artifacts WHERE id = ?", (artifact_id,)).rowcount
+    c.commit()
+    return bool(affected and affected > 0)
 
 # ── Module-level singleton (lazy init) ───────────────────────────────────────
 

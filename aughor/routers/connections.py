@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from aughor.db.connection import open_connection, open_connection_for
 from aughor.db.registry import (
+    get_dsn,
     BUILTIN_ID,
     add_connection,
     delete_connection,
@@ -25,7 +26,9 @@ from aughor.routers._shared import (
     explorer_tasks as _explorer_tasks,
     get_schema_cached as _get_schema_cached,
     invalidate_schema_cache as _invalidate_schema_cache,
+    kickoff_exploration as _kickoff_exploration,
 )
+from aughor.tools.schema import _norm_type
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["connections"])
@@ -85,15 +88,22 @@ async def create_connection(req: AddConnectionRequest):
 
     conn_id = add_connection(name=req.name, conn_type=req.conn_type, dsn=req.dsn, meta=combined_meta)
 
-    # Fire explorer as a non-blocking background task — same pattern as startup.
-    # Returns immediately; DB open + explore() run off the event loop.
+    # Auto-onboarding: kick off schema exploration in the background so a brand-new
+    # connection becomes intelligent without a manual step. It's non-blocking (the
+    # heavy work runs as a background task), visible via GET /exploration/{id}/status,
+    # and cancellable via POST /exploration/{id}/stop.
+    explorer_started = False
     try:
-        from aughor.api import _boot_explorer
-        asyncio.create_task(_boot_explorer(conn_id, retry_interval=10, max_retries=3), name=f"boot-{conn_id}")
-    except Exception as exc:
-        logger.warning("Could not start explorer for new connection %s: %s", conn_id, exc)
+        explorer_started = _kickoff_exploration(conn_id)
+    except Exception:
+        logger.warning("create_connection: explorer kickoff failed for %s", conn_id, exc_info=True)
 
-    return {"id": conn_id, "message": "Connection added", "test_result": msg}
+    return {
+        "id": conn_id,
+        "message": "Connection added",
+        "test_result": msg,
+        "exploring": explorer_started,
+    }
 
 
 @router.post("/connections/{conn_id}/test")
@@ -140,8 +150,11 @@ async def connection_schema(conn_id: str):
     except KeyError:
         raise HTTPException(status_code=404, detail="Connection not found")
     try:
-        schema = await loop.run_in_executor(None, lambda: _get_schema_cached(conn_id, db))
-        db.close()
+        def _work():
+            s = _get_schema_cached(conn_id, db)
+            db.close()
+            return s
+        schema = await loop.run_in_executor(None, _work)
         return {"schema": schema}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -157,8 +170,11 @@ async def refresh_schema_cache(conn_id: str):
     except KeyError:
         raise HTTPException(status_code=404, detail="Connection not found")
     try:
-        schema = await loop.run_in_executor(None, lambda: _get_schema_cached(conn_id, db))
-        db.close()
+        def _work():
+            s = _get_schema_cached(conn_id, db)
+            db.close()
+            return s
+        schema = await loop.run_in_executor(None, _work)
         return {"ok": True, "schema": schema}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -173,10 +189,20 @@ async def connection_schema_rich(conn_id: str):
         raise HTTPException(status_code=404, detail="Connection not found")
     try:
         from aughor.tools.schema import build_rich_schema
+        from aughor.db.type_overrides import get_table_overrides
         def _work():
             s = _get_schema_cached(conn_id, db)
             db.close()
-            return build_rich_schema(s)
+            result = build_rich_schema(s)
+            # Apply user type overrides so the rich schema stays in sync
+            for table in result.get("tables", []):
+                tname = table.get("name", "")
+                overrides = get_table_overrides(conn_id, tname)
+                if overrides:
+                    for col in table.get("columns", []):
+                        if col.get("name") in overrides:
+                            col["type"] = overrides[col["name"]]
+            return result
         return await loop.run_in_executor(None, _work)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -219,7 +245,9 @@ async def connection_schema_profile(conn_id: str):
             table_cols = _parse_schema_tables(schema_str)
             col_counts = {t: len(cols) for t, cols in table_cols.items()}
             fingerprint = compute_schema_fingerprint(col_counts)
-            return load_profiles(conn_id, fingerprint)
+            result = load_profiles(conn_id, fingerprint)
+            db.close()
+            return result
 
         cached = await loop.run_in_executor(None, _work)
         if cached is None:
@@ -232,8 +260,6 @@ async def connection_schema_profile(conn_id: str):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        db.close()
 
 
 # ── Freshness ─────────────────────────────────────────────────────────────────
@@ -294,21 +320,24 @@ async def table_sample(conn_id: str, table: str, limit: int = 100, schema: str =
     _limit = int(limit)
 
     def _work():
+        db = None
+        try:
+            db = open_connection_for(conn_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Connection not found")
         try:
             result = db.execute("sample", f"SELECT * FROM {ref} LIMIT {_limit}")
             columns = result.columns
             rows = [[str(v) if v is not None else None for v in row] for row in result.rows]
             return {"columns": columns, "rows": rows}
         finally:
-            try:
-                db.close()
-            except Exception:
-                pass
+            if db:
+                try:
+                    db.close()
+                except Exception:
+                    pass
 
-    try:
-        return await loop.run_in_executor(None, _work)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    return await loop.run_in_executor(None, _work)
 
 
 @router.get("/connections/{conn_id}/tables/{table}/columns")
@@ -317,44 +346,233 @@ async def table_columns(conn_id: str, table: str, schema: str = ""):
     same lightweight path as the sample reader, so Overview and Sample Data stay
     in sync even when the heavy whole-connection rich schema is unavailable."""
     loop = asyncio.get_event_loop()
+    safe_table = table.replace('"', "").replace(";", "")
+    safe_schema = schema.replace('"', "").replace(";", "") if schema else ""
+    ref = f'"{safe_schema}"."{safe_table}"' if safe_schema else f'"{safe_table}"'
+
+    def _work():
+        db = None
+        try:
+            db = open_connection_for(conn_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Connection not found")
+        try:
+            # For DuckDB we can use raw_execute to bypass _validate (which rejects
+            # DESCRIBE / PRAGMA) and avoid thread-safety issues by creating db in-thread.
+            from aughor.db.type_overrides import apply_overrides
+            # DuckDB-like connectors (including LocalUploadConnection) have dialect=duckdb
+            # and raw_execute to bypass validation for DESCRIBE / PRAGMA.
+            if getattr(db, 'dialect', '') == 'duckdb' and hasattr(db, 'raw_execute'):
+                # 1. DESCRIBE is the most reliable path for DuckDB/MotherDuck — it always
+                # returns concrete types (INTEGER, VARCHAR, TIMESTAMP, etc.) and works
+                # across attached databases, in-memory, and remote MotherDuck.
+                try:
+                    columns, rows, _ = db.raw_execute(f"DESCRIBE {ref}")
+                    if rows:
+                        cols = [{"name": r[0], "type": _norm_type(str(r[1]))} for r in rows]
+                        return {"columns": apply_overrides(conn_id, safe_table, cols)}
+                except Exception:
+                    pass
+                # 2. PRAGMA table_info — SQLite-native, works everywhere DuckDB works.
+                try:
+                    columns, rows, _ = db.raw_execute(f"PRAGMA table_info({ref})")
+                    if rows:
+                        cols = [{"name": r[1], "type": _norm_type(str(r[2]))} for r in rows]
+                        return {"columns": apply_overrides(conn_id, safe_table, cols)}
+                except Exception:
+                    pass
+                # 3. information_schema.columns with current_database filter — standard SQL,
+                # but MotherDuck sometimes returns empty data_type here, so we only use it
+                # if it actually yields types.
+                try:
+                    where = f"table_name = '{safe_table}'"
+                    if safe_schema:
+                        where += f" AND table_schema = '{safe_schema}'"
+                    _, db_rows, _ = db.raw_execute("SELECT current_database()")
+                    if db_rows:
+                        current_db = str(db_rows[0][0]).replace("'", "''")
+                        where += f" AND table_catalog = '{current_db}'"
+                    columns, rows, _ = db.raw_execute(
+                        "SELECT column_name, data_type FROM information_schema.columns "
+                        f"WHERE {where} ORDER BY ordinal_position"
+                    )
+                    if rows:
+                        cols = [{"name": r[0], "type": _norm_type(str(r[1]) if r[1] is not None else "")} for r in rows]
+                        if any(c["type"] for c in cols):
+                            return {"columns": apply_overrides(conn_id, safe_table, cols)}
+                except Exception:
+                    pass
+                # 3b. information_schema.columns WITHOUT table_catalog filter.
+                try:
+                    where = f"table_name = '{safe_table}'"
+                    if safe_schema:
+                        where += f" AND table_schema = '{safe_schema}'"
+                    columns, rows, _ = db.raw_execute(
+                        "SELECT column_name, data_type FROM information_schema.columns "
+                        f"WHERE {where} ORDER BY ordinal_position"
+                    )
+                    if rows:
+                        cols = [{"name": r[0], "type": _norm_type(str(r[1]) if r[1] is not None else "")} for r in rows]
+                        if any(c["type"] for c in cols):
+                            return {"columns": apply_overrides(conn_id, safe_table, cols)}
+                except Exception:
+                    pass
+                # 4. Final fallback: empty SELECT — use cursor description to recover types.
+                try:
+                    columns, rows, types = db.raw_execute(f"SELECT * FROM {ref} LIMIT 0")
+                    cols = [{"name": c, "type": _norm_type(t) or ""} for c, t in zip(columns, types)]
+                    return {"columns": apply_overrides(conn_id, safe_table, cols)}
+                except Exception:
+                    pass
+            else:
+                # Non-DuckDB path: use standard execute (which validates SQL)
+                try:
+                    where = f"table_name = '{safe_table}'"
+                    if safe_schema:
+                        where += f" AND table_schema = '{safe_schema}'"
+                    res = db.execute(
+                        "columns",
+                        "SELECT column_name, data_type FROM information_schema.columns "
+                        f"WHERE {where} ORDER BY ordinal_position",
+                    )
+                    if res.rows:
+                        cols = [{"name": r[0], "type": _norm_type(str(r[1]))} for r in res.rows]
+                        return {"columns": apply_overrides(conn_id, safe_table, cols)}
+                except Exception:
+                    pass
+                try:
+                    res = db.execute("columns", f"SELECT * FROM {ref} LIMIT 0")
+                    cols = [{"name": c, "type": ""} for c in res.columns]
+                    return {"columns": apply_overrides(conn_id, safe_table, cols)}
+                except Exception:
+                    pass
+            return {"columns": []}
+        finally:
+            if db:
+                try:
+                    db.close()
+                except Exception:
+                    pass
+
+    return await loop.run_in_executor(None, _work)
+
+
+
+
+class _AlterColumnRequest(BaseModel):
+    column: str
+    new_type: str
+
+
+@router.post("/connections/{conn_id}/tables/{table}/alter-column")
+async def alter_table_column(conn_id: str, table: str, body: _AlterColumnRequest, schema: str = ""):
+    """Alter the type of a single column. Best-effort for DuckDB/SQLite connectors."""
+    loop = asyncio.get_event_loop()
     try:
         db = open_connection_for(conn_id)
     except KeyError:
         raise HTTPException(status_code=404, detail="Connection not found")
     safe_table = table.replace('"', "").replace(";", "")
     safe_schema = schema.replace('"', "").replace(";", "") if schema else ""
+    safe_col = body.column.replace('"', "").replace(";", "")
+    safe_type = body.new_type.replace(";", "")  # basic sanitisation
     ref = f'"{safe_schema}"."{safe_table}"' if safe_schema else f'"{safe_table}"'
+
+    from aughor.db.type_overrides import set_override
+    set_override(conn_id, safe_table, safe_col, safe_type)
+    _invalidate_schema_cache(conn_id)
+
+    # Invalidate Qdrant investigation cache for this connection so old cached
+    # SQL (generated before the type change) is not replayed.
+    try:
+        from aughor.tools.prior_analyses import INVESTIGATIONS_COLLECTION
+        from aughor.semantic.vector_store import delete_by_filter
+        from qdrant_client.models import Filter, FieldCondition, MatchValue
+        filt = Filter(
+            must=[FieldCondition(key="connection_id", match=MatchValue(value=conn_id))]
+        )
+        deleted = delete_by_filter(INVESTIGATIONS_COLLECTION, filt)
+        if deleted:
+            print(f"[alter_column] cleared {deleted} cached investigations for {conn_id}")
+    except Exception:
+        pass
+
+    # For local_upload connections, update the sidecar so the type is applied
+    # on next load (each request creates a fresh in-memory DB from sidecars).
+    conn_type, _ = get_dsn(conn_id)
+    if conn_type == "local_upload":
+        from aughor.connectors.file.local_upload import _UPLOAD_ROOT, _SIDECAR_SUFFIX, _safe_ident
+        upload_dir = _UPLOAD_ROOT / (conn_id or "default")
+        schema_dir = upload_dir / _safe_ident(safe_schema or "main", "main")
+        if schema_dir.exists():
+            for f in schema_dir.iterdir():
+                if not f.is_file() or f.name.endswith(_SIDECAR_SUFFIX):
+                    continue
+                sc = f.with_name(f"{f.name}{_SIDECAR_SUFFIX}")
+                if sc.exists():
+                    try:
+                        cfg = json.loads(sc.read_text())
+                        if cfg.get("table_name") == safe_table:
+                            cfg.setdefault("column_types", {})[safe_col] = safe_type
+                            sc.write_text(json.dumps(cfg, indent=2))
+                            break
+                    except Exception:
+                        pass
 
     def _work():
         try:
-            # Preferred: information_schema gives column types and order.
-            where = f"table_name = '{safe_table}'"
-            if safe_schema:
-                where += f" AND table_schema = '{safe_schema}'"
-            try:
-                res = db.execute(
-                    "columns",
-                    "SELECT column_name, data_type FROM information_schema.columns "
-                    f"WHERE {where} ORDER BY ordinal_position",
-                )
-                if res.rows:
-                    return {"columns": [{"name": r[0], "type": str(r[1])} for r in res.rows]}
-            except Exception:
-                pass
-            # Fallback: an empty SELECT still yields the column names.
-            res = db.execute("columns", f"SELECT * FROM {ref} LIMIT 0")
-            return {"columns": [{"name": c, "type": ""} for c in res.columns]}
+            # DuckDB syntax (best-effort; many connectors don't support ALTER COLUMN TYPE)
+            sql = f'ALTER TABLE {ref} ALTER COLUMN "{safe_col}" TYPE {safe_type}'
+            db.execute("alter_column", sql)
+            return {
+                "ok": True, "applied": True, "override_only": False, "sql": sql,
+                "message": f"Column {safe_col} changed to {safe_type}.",
+            }
+        except Exception as e:
+            # For local_upload, the sidecar column_types were updated above, so the
+            # table is genuinely recreated with the new type on the next connection
+            # open. Re-register the file in the current ephemeral DB so it takes
+            # effect immediately too. This is a REAL type change.
+            if conn_type == "local_upload":
+                try:
+                    from aughor.connectors.file.local_upload import LocalUploadConnection
+                    if isinstance(db, LocalUploadConnection):
+                        schema_dir = db._schema_dir(safe_schema or "main")
+                        for f in schema_dir.iterdir():
+                            if not f.is_file() or f.name.endswith(_SIDECAR_SUFFIX):
+                                continue
+                            sc = f.with_name(f"{f.name}{_SIDECAR_SUFFIX}")
+                            if sc.exists():
+                                cfg = json.loads(sc.read_text())
+                                if cfg.get("table_name") == safe_table:
+                                    db._register_file(f, safe_table, safe_schema or "main", cfg.get("column_types", {}))
+                                    break
+                    return {
+                        "ok": True, "applied": True, "override_only": False, "sql": None,
+                        "message": f"Column {safe_col} changed to {safe_type} (applied on reload).",
+                    }
+                except Exception:
+                    logger.warning("local_upload type recreation failed for %s.%s", safe_table, safe_col, exc_info=True)
+            # Other connectors: ALTER is unsupported and we cannot rewrite the source.
+            # We saved a DISPLAY-ONLY override (catalog shows the new type) but the
+            # underlying column type is unchanged and queries still use the real type.
+            # Be honest about this — do NOT claim the column was changed.
+            return {
+                "ok": True, "applied": False, "override_only": True, "sql": None,
+                "error": str(e),
+                "message": (
+                    f"Saved a display override: the catalog will show {safe_col} as {safe_type}, "
+                    f"but this connector does not support changing the column type, so the database "
+                    f"column is unchanged and queries still use its real type."
+                ),
+            }
         finally:
             try:
                 db.close()
             except Exception:
                 pass
 
-    try:
-        return await loop.run_in_executor(None, _work)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
+    return await loop.run_in_executor(None, _work)
 
 # ── Instructions ──────────────────────────────────────────────────────────────
 
@@ -490,24 +708,31 @@ async def list_connection_files(conn_id: str):
 @router.delete("/connections/{conn_id}/files/{filename}", status_code=200)
 async def delete_connection_file(conn_id: str, filename: str, schema: str = "main"):
     loop = asyncio.get_event_loop()
-    try:
-        db = open_connection_for(conn_id)
-    except KeyError:
-        raise HTTPException(status_code=404, detail="Connection not found")
-    if not hasattr(db, "delete_file"):
-        raise HTTPException(status_code=400, detail="Not a file connector")
-    try:
-        await loop.run_in_executor(None, lambda: db.delete_file(filename, schema))
-    except TypeError:
-        await loop.run_in_executor(None, lambda: db.delete_file(filename))
+    def _delete():
+        try:
+            db = open_connection_for(conn_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Connection not found")
+        if not hasattr(db, "delete_file"):
+            raise HTTPException(status_code=400, detail="Not a file connector")
+        try:
+            db.delete_file(filename, schema)
+        except TypeError:
+            db.delete_file(filename)
+        db.close()
+    await loop.run_in_executor(None, _delete)
     return {"message": f"File '{filename}' removed"}
 
 
 @router.get("/connections/{conn_id}/schemas")
 async def list_connection_schemas(conn_id: str):
     loop = asyncio.get_event_loop()
-    db = _open_file_connector(conn_id, "list_schemas")
-    return {"schemas": await loop.run_in_executor(None, db.list_schemas)}
+    def _work():
+        db = _open_file_connector(conn_id, "list_schemas")
+        result = db.list_schemas()
+        db.close()
+        return result
+    return {"schemas": await loop.run_in_executor(None, _work)}
 
 
 class _SchemaCreate(BaseModel):

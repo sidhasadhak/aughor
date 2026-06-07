@@ -180,6 +180,7 @@ def save_chat_turn(
     intent: str = "",
     approach: list | None = None,
     canvas_id: str | None = None,
+    insight: dict | None = None,
 ) -> str:
     """Persist a completed chat turn as a history row, linked to a session and
     (when run inside a Canvas) tagged with its canvas_id so Canvas history can
@@ -198,6 +199,7 @@ def save_chat_turn(
         "tables_used": tables_used or [],
         "intent":      intent or "",
         "approach":    approach or [],
+        "insight":     insight or None,
     }
     c.execute(
         """INSERT INTO investigations
@@ -214,6 +216,29 @@ def save_chat_turn(
     c.close()
     return inv_id
 
+
+def update_chat_turn_insight(inv_id: str, insight: dict | None) -> bool:
+    """Merge an insight dict into an existing chat turn's report_json."""
+    if not insight:
+        return False
+    c = _conn()
+    _ensure_schema(c)
+    row = c.execute(
+        "SELECT report_json FROM investigations WHERE id = ? AND kind = 'chat'",
+        (inv_id,),
+    ).fetchone()
+    if not row:
+        c.close()
+        return False
+    report = json.loads(row["report_json"] or "{}")
+    report["insight"] = insight
+    c.execute(
+        "UPDATE investigations SET report_json = ? WHERE id = ?",
+        (json.dumps(report), inv_id),
+    )
+    c.commit()
+    c.close()
+    return True
 
 def last_activity_by_canvas() -> dict[str, str]:
     """Return {canvas_id: most-recent investigation started_at} for ranking
@@ -281,6 +306,7 @@ def get_session_turns(session_id: str) -> list[dict]:
         d["tables_used"] = report.get("tables_used", [])
         d["intent"]      = report.get("intent", "")
         d["approach"]    = report.get("approach", [])
+        d["insight"]     = report.get("insight", None)
         result.append(d)
     return result
 

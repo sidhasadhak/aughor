@@ -166,6 +166,28 @@ def _make_diagnosis(error: str, sql: str, table_cols: dict[str, list[str]]) -> s
             "E.g. instead of HAVING converted = 1, use HAVING SUM(CASE WHEN ... THEN 1 ELSE 0 END) = 1."
         )
 
+    # DuckDB: to_char (Postgres/Oracle date-formatting fn) does not exist
+    if "to_char" in err_lower:
+        return (
+            "DIAGNOSIS: to_char() is a Postgres/Oracle function — DuckDB doesn't have it. "
+            "To format a date/timestamp as text use strftime(col, '%Y-%m') for month, "
+            "'%Y-%m-%d' for day, or '%Y' for year. To bucket rows by month use "
+            "date_trunc('month', col). Do NOT use to_char."
+        )
+
+    # DuckDB: date_part/EXTRACT applied to a date subtraction. (date - date)
+    # returns an INTEGER number of days, so date_part('day', a - b) fails with
+    # 'No function matches date_part(VARCHAR, BIGINT)'.
+    if "date_part" in err_lower and (
+        "bigint" in err_lower or "integer" in err_lower or "no function matches" in err_lower
+    ):
+        return (
+            "DIAGNOSIS: date_part('day', a - b) fails because in DuckDB (date - date) "
+            "already returns an INTEGER number of days, not an interval. "
+            "Use date_diff('day', b, a) for the day difference between two dates/timestamps, "
+            "or just (a - b) when both are DATE. Remove the date_part/EXTRACT wrapper."
+        )
+
     return ""
 
 

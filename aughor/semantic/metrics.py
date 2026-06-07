@@ -16,6 +16,7 @@ Relationship to the Business Glossary:
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -67,6 +68,12 @@ def _save_raw(metrics: list[dict], path: Path | None = None) -> None:
     p.parent.mkdir(parents=True, exist_ok=True)
     with open(p, "w") as f:
         json.dump(metrics, f, indent=2)
+    # Metrics feed the schema-linker's table/column hints — refresh that cache.
+    try:
+        from aughor.tools.schema_linker import invalidate_hints
+        invalidate_hints()  # metrics are global → clear all connections
+    except Exception:
+        pass
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -205,7 +212,38 @@ def check_freshness(metric: MetricDefinition, conn) -> FreshnessResult:
 
 # ── Schema injection ──────────────────────────────────────────────────────────
 
-def build_metrics_block(path: Path | None = None) -> str:
+def _schema_tables_and_columns(schema_text: str) -> tuple[set[str], set[str]]:
+    """Parse a schema string into its real (table-name, column-name) sets.
+    Uses the schema parser so we match against ACTUAL columns, not arbitrary
+    text — a metric/description that merely mentions a column name in prose must
+    not count as that column being present."""
+    try:
+        from aughor.tools.schema import _parse_schema_tables
+        parsed = _parse_schema_tables(schema_text)
+        tables = {t.split(".")[-1].lower() for t in parsed}
+        cols = {c.lower() for cols in parsed.values() for c in cols}
+        return tables, cols
+    except Exception:
+        return set(), set()
+
+
+def _metric_matches_schema(metric, tables: set[str], cols: set[str]) -> bool:
+    """True if every table and dimension the metric declares is present in the
+    target connection's schema. Metrics are stored globally, so without this a
+    metric authored for one connection (e.g. SALES on `final_price_usd`) leaks a
+    wrong, column-mismatched formula into every other connection's prompt — a
+    real NL2SQL-corrupting bug surfaced by the golden-SQL eval. Conservative:
+    only drops a metric when a declared table/dimension is genuinely absent."""
+    for tbl in (metric.tables or []):
+        if tbl.split(".")[-1].lower() not in tables:
+            return False
+    for dim in (metric.dimensions or []):
+        if dim.split(".")[-1].lower() not in cols:
+            return False
+    return True
+
+
+def build_metrics_block(path: Path | None = None, schema_text: str = "") -> str:
     """
     Return a METRICS CATALOG block to append to the schema context string.
     Returns "" if no metrics are defined.
@@ -213,8 +251,16 @@ def build_metrics_block(path: Path | None = None) -> str:
     M21: now includes governance context — approved-by badge, freshness lag
     warnings, lineage, and NEVER rules from wrong_usage_examples so the LLM
     can't accidentally use a known-bad formula.
+
+    When ``schema_text`` is supplied, metrics whose declared tables/columns are
+    absent from that schema are filtered out — metrics are global, so this stops
+    one connection's metric from polluting another connection's prompt.
     """
     metrics = list_metrics(path)
+    if schema_text:
+        _tables, _cols = _schema_tables_and_columns(schema_text)
+        if _tables:  # only filter when a schema actually parsed (else keep all)
+            metrics = [m for m in metrics if _metric_matches_schema(m, _tables, _cols)]
     if not metrics:
         return ""
 

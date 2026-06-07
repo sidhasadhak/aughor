@@ -2,7 +2,8 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import {
-  getConnections, getSchemaRich, getMetrics, runDirectQuery, getCatalogTree,
+  getConnections, getSchemaRich, getTableColumns, getMetrics, runDirectQuery, getCatalogTree,
+  createCanvas, suggestCanvasName,
   type Connection, type SchemaColumn, type SchemaJoin, type Metric, type DirectQueryResult,
   type CatalogEntry,
 } from "@/lib/api";
@@ -45,7 +46,7 @@ type FilterOp = "=" | "!=" | ">" | ">=" | "<" | "<=" | "LIKE" | "ILIKE" | "IN" |
 const FILTER_OPS: FilterOp[] = ["=","!=",">",">=","<","<=","LIKE","ILIKE","IN","IS NULL","IS NOT NULL"];
 const NO_VAL_OPS: FilterOp[] = ["IS NULL","IS NOT NULL"];
 
-interface DimItem     { id: string; col: string; table: string }
+interface DimItem     { id: string; col: string; table: string; transform?: "date" | "month" | "year" | "quarter" | "hour" | "minute" }
 interface MeasureItem { id: string; col: string; table: string; agg: AggFn; customExpr: string; alias: string; fromMetric?: string }
 interface FilterItem  { id: string; col: string; table: string; op: FilterOp; val: string }
 
@@ -104,10 +105,14 @@ function findJoin(from: string, to: string, joins: SchemaJoin[]): SchemaJoin | n
   return joins.find(j => (j.t1===from&&j.t2===to)||(j.t2===from&&j.t1===to)) ?? null;
 }
 
-function joinClause(join: SchemaJoin, pivot: string) {
+function joinClause(join: SchemaJoin, pivot: string, tableSchemas?: Record<string, string>) {
   const fwd = join.t1 === pivot;
   const [lt,lc,rt,rc] = fwd ? [join.t1,join.c1,join.t2,join.c2] : [join.t2,join.c2,join.t1,join.c1];
-  return `LEFT JOIN ${rt} ON ${lt}.${lc} = ${rt}.${rc}`;
+  const qTable = (t: string) => {
+    const s = tableSchemas?.[t];
+    return s && s !== "main" && s !== "public" ? `"${s}"."${t}"` : `"${t}"`;
+  };
+  return `LEFT JOIN ${qTable(rt)} ON ${qTable(lt)}.${lc} = ${qTable(rt)}.${rc}`;
 }
 
 // Adjacency list over the studied join graph (undirected).
@@ -170,17 +175,34 @@ function buildSql(
   primary: string, joined: string[], schemaJoins: SchemaJoin[],
   dims: DimItem[], measures: MeasureItem[], filters: FilterItem[],
   orderBy: string, limit: number,
+  tableSchemas?: Record<string, string>,
 ) {
+  const qTable = (t: string) => {
+    const s = tableSchemas?.[t];
+    return s && s !== "main" && s !== "public" ? `"${s}"."${t}"` : `"${t}"`;
+  };
   const multi = joined.length > 0;
+  const dimExpr = (d: DimItem) => {
+    const base = qualify(d.col, d.table, multi);
+    switch (d.transform) {
+      case "date":     return `DATE_TRUNC('day', ${base})`;
+      case "month":    return `DATE_TRUNC('month', ${base})`;
+      case "year":     return `DATE_TRUNC('year', ${base})`;
+      case "quarter":  return `DATE_TRUNC('quarter', ${base})`;
+      case "hour":     return `DATE_TRUNC('hour', ${base})`;
+      case "minute":   return `DATE_TRUNC('minute', ${base})`;
+      default:         return base;
+    }
+  };
   const selParts = [
-    ...dims.map(d => qualify(d.col, d.table, multi)),
+    ...dims.map(d => `${dimExpr(d)} AS ${d.col}_grouped`),
     ...measures.map(m => `${measureExpr(m,multi)} AS ${m.alias || autoAlias(m.agg,m.col,m.customExpr)}`),
   ];
   const joinLines = resolveJoins(primary, joined, schemaJoins).map(
-    ({ table, join, pivot }) => join ? joinClause(join, pivot) : `-- TODO: no join found for "${table}"`,
+    ({ table, join, pivot }) => join ? joinClause(join, pivot, tableSchemas) : `-- TODO: no join found for "${table}"`,
   );
   const hasAgg = measures.some(m => m.agg !== "CUSTOM" || /\b(SUM|COUNT|AVG|MIN|MAX|STDDEV|VARIANCE|MEDIAN)\s*\(/i.test(m.customExpr));
-  const groupCols = dims.map(d => qualify(d.col,d.table,multi));
+  const groupCols = dims.map(d => dimExpr(d));
   const groupBy   = groupCols.length && hasAgg ? `GROUP BY ${groupCols.join(", ")}` : "";
   const whereItems = filters.flatMap(f => {
     const qc = qualify(f.col,f.table,multi);
@@ -189,7 +211,7 @@ function buildSql(
   });
   return [
     "SELECT", `  ${selParts.length ? selParts.join(",\n  ") : "*"}`,
-    `FROM ${primary}`, ...joinLines,
+    `FROM ${qTable(primary)}`, ...joinLines,
     ...(whereItems.length ? [`WHERE ${whereItems.join("\n  AND ")}`] : []),
     ...(groupBy ? [groupBy] : []),
     ...(orderBy.trim() ? [`ORDER BY ${orderBy}`] : []),
@@ -376,8 +398,25 @@ function AcDropdown({ items, active, setActive, onSelect, onClose, pos }: {
   );
 }
 
-function ResultsPane({ result }: { result: DirectQueryResult }) {
-  const [view, setView] = useState<"chart" | "table">("chart");
+function ResultsPane({
+  result,
+  connId,
+  sql,
+  primaryTable,
+  joinedTables,
+  onStartCanvas,
+  tableSchemas,
+}: {
+  result: DirectQueryResult;
+  connId: string;
+  sql: string;
+  primaryTable: string | null;
+  joinedTables: string[];
+  onStartCanvas?: (canvasId: string) => void;
+  tableSchemas?: Record<string, string>;
+}) {
+  const [view, setView] = useState<"chart" | "matrix" | "table">("chart");
+  const [creatingCanvas, setCreatingCanvas] = useState(false);
 
   if (result.error) {
     return (
@@ -397,6 +436,13 @@ function ResultsPane({ result }: { result: DirectQueryResult }) {
 
   const rows = result.rows as unknown[][];
   const chartable = inferChartType(result.columns, rows);
+  const hasTwoCats =
+    chartable &&
+    chartable.colorCol !== undefined &&
+    result.columns.filter((_, i) => {
+      const firstVal = rows.find(r => r[i] != null)?.[i];
+      return firstVal != null && isNaN(Number(firstVal));
+    }).length >= 2;
 
   const meta = [
     `${result.row_count ?? result.rows.length} rows`,
@@ -404,33 +450,78 @@ function ResultsPane({ result }: { result: DirectQueryResult }) {
     result.cached ? "cached" : null,
   ].filter(Boolean).join(" · ");
 
+  const handleCreateCanvas = async () => {
+    if (!connId || !primaryTable) return;
+    setCreatingCanvas(true);
+    try {
+      const tables = [primaryTable, ...joinedTables];
+      // Use the primary table's schema as the canvas scope schema so multi-schema
+      // DuckDB connections resolve bare table names correctly.
+      const scopeSchema = tableSchemas?.[primaryTable] || null;
+      let name = "Query Canvas";
+      let description = `Canvas from Query Builder: ${tables.join(", ")}`;
+      try {
+        const suggested = await suggestCanvasName(connId, tables);
+        name = suggested.name;
+        description = suggested.description;
+      } catch {}
+      const canvas = await createCanvas(name, description, [
+        { connection_id: connId, schema_name: scopeSchema, tables },
+      ]);
+      onStartCanvas?.(canvas.id);
+    } catch (e) {
+      alert((e as Error).message || "Failed to create canvas");
+    } finally {
+      setCreatingCanvas(false);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-3">
-      {/* View toggle */}
-      {chartable && (
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setView("chart")}
-            className={`text-[11px] px-2 py-0.5 rounded border transition-colors ${view === "chart" ? "border-blue-500/40 bg-blue-500/10 text-blue-300" : "border-zinc-700 text-zinc-500 hover:text-zinc-300"}`}
-          >
-            ◈ Chart
-          </button>
-          <button
-            onClick={() => setView("table")}
-            className={`text-[11px] px-2 py-0.5 rounded border transition-colors ${view === "table" ? "border-blue-500/40 bg-blue-500/10 text-blue-300" : "border-zinc-700 text-zinc-500 hover:text-zinc-300"}`}
-          >
-            ≡ Table
-          </button>
-          <span className="text-[11px] ml-auto" style={{ color: "var(--t3)" }}>{meta}</span>
-        </div>
-      )}
+      {/* View toggle + actions */}
+      <div className="flex items-center gap-2">
+        {chartable && (
+          <>
+            <button
+              onClick={() => setView("chart")}
+              className={`text-[11px] px-2 py-0.5 rounded border transition-colors ${view === "chart" ? "border-blue-500/40 bg-blue-500/10 text-blue-300" : "border-zinc-700 text-zinc-500 hover:text-zinc-300"}`}
+            >
+              ◈ Chart
+            </button>
+            {hasTwoCats && (
+              <button
+                onClick={() => setView("matrix")}
+                className={`text-[11px] px-2 py-0.5 rounded border transition-colors ${view === "matrix" ? "border-blue-500/40 bg-blue-500/10 text-blue-300" : "border-zinc-700 text-zinc-500 hover:text-zinc-300"}`}
+              >
+                ⊞ Matrix
+              </button>
+            )}
+          </>
+        )}
+        <button
+          onClick={() => setView("table")}
+          className={`text-[11px] px-2 py-0.5 rounded border transition-colors ${view === "table" ? "border-blue-500/40 bg-blue-500/10 text-blue-300" : "border-zinc-700 text-zinc-500 hover:text-zinc-300"}`}
+        >
+          ≡ Table
+        </button>
+        <span className="text-[11px] ml-auto" style={{ color: "var(--t3)" }}>{meta}</span>
+      </div>
 
       {/* Chart */}
       {view === "chart" && chartable && (
-        <InvestigationChart columns={result.columns} rows={rows} />
+        <div className="overflow-x-auto overflow-y-auto" style={{ maxHeight: 520 }}>
+          <InvestigationChart columns={result.columns} rows={rows} />
+        </div>
       )}
 
-      {/* Table — shared AugTable (sortable, themed, Σ Totals toggle) */}
+      {/* Matrix */}
+      {view === "matrix" && chartable && (
+        <div className="overflow-x-auto overflow-y-auto" style={{ maxHeight: 520 }}>
+          <InvestigationChart columns={result.columns} rows={rows} title="Matrix" />
+        </div>
+      )}
+
+      {/* Table */}
       {(view === "table" || !chartable) && (
         <>
           {!chartable && (
@@ -438,6 +529,34 @@ function ResultsPane({ result }: { result: DirectQueryResult }) {
           )}
           <SqlResultTable columns={result.columns} rows={rows} maxHeight={420} />
         </>
+      )}
+
+      {/* Start Canvas */}
+      {primaryTable && (
+        <div className="flex justify-end pt-2">
+          <button
+            onClick={handleCreateCanvas}
+            disabled={creatingCanvas}
+            className="text-[11px] px-3 py-1.5 rounded border border-violet-500/40 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20 transition disabled:opacity-50 flex items-center gap-1.5"
+          >
+            {creatingCanvas ? (
+              <>
+                <span className="w-3 h-3 border border-violet-400 border-t-transparent rounded-full animate-spin" />
+                Creating…
+              </>
+            ) : (
+              <>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <rect x="3" y="3" width="7" height="7" rx="1"/>
+                  <rect x="14" y="3" width="7" height="7" rx="1"/>
+                  <rect x="14" y="14" width="7" height="7" rx="1"/>
+                  <rect x="3" y="14" width="7" height="7" rx="1"/>
+                </svg>
+                Start Canvas
+              </>
+            )}
+          </button>
+        </div>
       )}
     </div>
   );
@@ -455,6 +574,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
   const [isolated,      setIsolated]      = useState<string[]>([]);
   const [loadingTree,   setLoadingTree]   = useState(false);  // fast: catalog tree
   const [loadingCols,   setLoadingCols]   = useState(false);  // slow: columns/joins/rowcounts
+  const [loadingTableCols, setLoadingTableCols] = useState<Set<string>>(new Set());
   const [joinHint,      setJoinHint]      = useState<string|null>(null);
 
   const [primaryTable, setPrimaryTable] = useState<string|null>(null);
@@ -463,18 +583,35 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
   const [expandedTables, setExpandedTables] = useState<Record<string,boolean>>({});
   const [expandedSchemas, setExpandedSchemas] = useState<Record<string,boolean>>({});
   const [catEntry, setCatEntry] = useState<CatalogEntry|null>(null);
+  const [tableSchemas, setTableSchemas] = useState<Record<string, string>>({});
   const [allEntries, setAllEntries] = useState<CatalogEntry[]>([]);
   const [expandedConns, setExpandedConns] = useState<Record<string,boolean>>({});
   const [colSearch, setColSearch] = useState("");
 
   const [metrics,         setMetrics]         = useState<Metric[]>([]);
+
+  // Fetch columns for a single table on-demand (fallback when rich schema is empty)
+  const fetchTableColumns = useCallback(async (table: string, schemaName?: string) => {
+    if (!connId || loadingTableCols.has(table)) return;
+    setLoadingTableCols(p => { const n = new Set(p); n.add(table); return n; });
+    try {
+      const cols = await getTableColumns(connId, table, schemaName);
+      if (cols.length > 0) {
+        setTableCols(prev => ({ ...prev, [table]: cols.map(c => ({ ...c, is_fk: false } as SchemaColumn)) }));
+      }
+    } catch (e) {
+      console.error(`[QueryBuilder] failed to load columns for ${table}:`, e);
+    } finally {
+      setLoadingTableCols(p => { const n = new Set(p); n.delete(table); return n; });
+    }
+  }, [connId, loadingTableCols]);
   const [showMetricsCatalog, setShowMetricsCatalog] = useState(false);
 
   const [dims,     setDims]     = useState<DimItem[]>([]);
   const [measures, setMeasures] = useState<MeasureItem[]>([]);
   const [filters,  setFilters]  = useState<FilterItem[]>([]);
   const [orderBy,  setOrderBy]  = useState("");
-  const [limit,    setLimit]    = useState(1000);
+  const [limit,    setLimit]    = useState(0);
 
   const [aggInfo,     setAggInfo]     = useState<{col:SchemaColumn;table:string}|null>(null);
   const [overDims,    setOverDims]    = useState(false);
@@ -519,6 +656,9 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
         setAllEntries(entries);
         const entry = entries.find(e => e.conn_id === connId) ?? null;
         setCatEntry(entry);
+      const ts: Record<string, string> = {};
+      entry?.schemas.forEach(s => s.tables.forEach(t => { ts[t.name] = s.name; }));
+      setTableSchemas(ts);
         // Active connection expanded by default; others collapsed.
         setExpandedConns(prev => ({ ...Object.fromEntries(entries.map(e => [e.conn_id, false])), ...prev, [connId]: true }));
         if (entry) {
@@ -538,12 +678,12 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
       rich.tables.forEach(t => { cols[t.name] = t.columns; rc[t.name] = t.row_count; });
       setTableNames(names); setTableCols(cols); setRowCounts(rc);
       setSchemaJoins(rich.joins); setIsolated(rich.isolated ?? []);
-    }).catch(()=>{}).finally(()=>setLoadingCols(false));
+    }).catch(err => { console.error("[QueryBuilder] getSchemaRich failed:", err); }).finally(()=>setLoadingCols(false));
   }, [connId]);
 
   useEffect(() => {
     if (!autoSql || !primaryTable) return;
-    setSql(buildSql(primaryTable, joinedTables, schemaJoins, dims, measures, filters, orderBy, limit));
+    setSql(buildSql(primaryTable, joinedTables, schemaJoins, dims, measures, filters, orderBy, limit, tableSchemas));
   }, [autoSql, primaryTable, joinedTables, schemaJoins, dims, measures, filters, orderBy, limit]);
 
   const allTables = primaryTable ? [primaryTable, ...joinedTables] : [];
@@ -572,19 +712,24 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
     window.setTimeout(() => setJoinHint(h => (h === msg ? null : h)), 4500);
   }, []);
 
-  const selectPrimary = useCallback((name: string) => {
+  const selectPrimary = useCallback((name: string, schema?: string) => {
     if (!name) return;
+    if (schema) setTableSchemas(prev => ({ ...prev, [name]: schema }));
     setPrimaryTable(name); setJoinedTables([]); setExpandedTables({[name]: true});
     setDims([]); setMeasures([]); setFilters([]); setOrderBy("");
     setResult(null); setRunError(null); setAutoSql(true); setColSearch("");
-    setSql(`SELECT *\nFROM ${name}\nLIMIT ${limit}`);
+    const qTable = schema && schema !== "main" && schema !== "public" ? `"${schema}"."${name}"` : `"${name}"`;
+    setSql(limit > 0 ? `SELECT *\nFROM ${qTable}\nLIMIT ${limit}` : `SELECT *\nFROM ${qTable}`);
   }, [limit]);
 
   // Make `table` part of the query, auto-resolving a multi-hop join path through
   // the studied join graph. Returns true if the table is now reachable.
-  const ensureTable = useCallback((table: string): boolean => {
+  const ensureTable = useCallback((table: string, schema?: string): boolean => {
     if (!table) return false;
-    if (!primaryTable) { selectPrimary(table); return true; }
+    // Auto-lookup schema from catalog tree if not explicitly passed
+    const resolvedSchema = schema ?? catEntry?.schemas.find(s => s.tables.some(t => t.name === table))?.name;
+    if (resolvedSchema) setTableSchemas(prev => ({ ...prev, [table]: resolvedSchema }));
+    if (!primaryTable) { selectPrimary(table, resolvedSchema); return true; }
     if (table === primaryTable || joinedTables.includes(table)) return true;
     const resolved = new Set([primaryTable, ...joinedTables]);
     const path = findJoinPath(resolved, table, schemaJoins);
@@ -906,7 +1051,15 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                           return (
                             <div key={tbl} className={isResolved ? "bg-zinc-800/20" : ""}>
                               <div className="group/tbl w-full flex items-center gap-2 pl-7 pr-2 py-1.5 hover:bg-zinc-800/40 transition">
-                                <button onClick={()=>setExpandedTables(p=>({...p,[tbl]: !(p[tbl] ?? isResolved)}))}
+                                <button onClick={()=> {
+                                    const willOpen = !(expandedTables[tbl] ?? isResolved);
+                                    setExpandedTables(p=>({...p,[tbl]: willOpen}));
+                                    if (willOpen && !(tableCols[tbl]?.length > 0) && !loadingTableCols.has(tbl)) {
+                                      // Try to infer schema name from catalog tree
+                                      const schemaName = catEntry?.schemas.find(s => s.tables.some(t => t.name === tbl))?.name;
+                                      fetchTableColumns(tbl, schemaName);
+                                    }
+                                  }}
                                   className="flex items-center gap-2 min-w-0 flex-1">
                                   <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="var(--t3)" strokeWidth="1.5" strokeLinecap="round"
                                     className={`shrink-0 transition-transform duration-150 ${open?"rotate-90":""}`}>
@@ -931,7 +1084,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                                 ) : iso ? (
                                   <span title="No detected joins to other tables" className="text-[10px] text-zinc-500 shrink-0">isolated</span>
                                 ) : (
-                                  <button onClick={()=>ensureTable(tbl)} title="Add to query (auto-join)"
+                                  <button onClick={()=>ensureTable(tbl, schema.name)} title="Add to query (auto-join)"
                                     className="opacity-0 group-hover/tbl:opacity-100 text-[11px] text-zinc-500 hover:text-blue-400 border border-zinc-700 hover:border-blue-500/50 rounded px-1.5 leading-tight transition shrink-0">
                                     + add
                                   </button>
@@ -940,14 +1093,20 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                               {open && (
                                 loadingCols && cols.length === 0
                                   ? <div className="pl-11 py-1.5"><span className="text-[11px] text-zinc-500 animate-pulse">Loading columns…</span></div>
-                                  : cols.map(col => (
-                                    <div key={col.name} className="pl-4">
-                                      <ColRow col={col} tableName={tbl}
-                                        onAddDim={()=>addDim(col.name, tbl)}
-                                        onAddMeasure={()=>openMeasure(col, tbl)}
-                                      />
+                                  : cols.length > 0
+                                    ? cols.map(col => (
+                                      <div key={col.name} className="pl-4">
+                                        <ColRow col={col} tableName={tbl}
+                                          onAddDim={()=>addDim(col.name, tbl)}
+                                          onAddMeasure={()=>openMeasure(col, tbl)}
+                                        />
+                                      </div>
+                                    ))
+                                    : <div className="pl-11 py-1.5">
+                                      <span className="text-[11px] text-zinc-500">
+                                        {loadingTableCols.has(tbl) ? "Loading columns…" : "No columns available — schema may need refresh"}
+                                      </span>
                                     </div>
-                                  ))
                               )}
                             </div>
                           );
@@ -1128,9 +1287,30 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                       </div>
                     )}
                     {dims.map(d => (
-                      <span key={d.id} className="inline-flex items-center gap-1.5 text-[12px] font-mono px-2.5 py-1 rounded-lg border bg-blue-500/10 border-blue-500/30 text-blue-300">
+                      <span key={d.id} className="inline-flex items-center gap-1 text-[12px] font-mono px-2 py-1 rounded-lg border bg-blue-500/10 border-blue-500/30 text-blue-300">
                         {isMulti ? `${d.table}.${d.col}` : d.col}
-                        <button onClick={()=>setDims(p=>p.filter(x=>x.id!==d.id))} className="opacity-50 hover:opacity-100 text-sm leading-none">×</button>
+                        {/* Date transform dropdown */}
+                        {(tableCols[d.table]?.find(c=>c.name===d.col)?.type?.toLowerCase().includes("date") ||
+                          tableCols[d.table]?.find(c=>c.name===d.col)?.type?.toLowerCase().includes("time")) && (
+                          <select
+                            value={d.transform || ""}
+                            onChange={e=> {
+                              const t = e.target.value as DimItem["transform"];
+                              setDims(p => p.map(x => x.id === d.id ? { ...x, transform: t || undefined } : x));
+                            }}
+                            className="text-[10px] bg-zinc-800 border border-zinc-700 rounded px-1 py-0.5 text-zinc-300 outline-none ml-1"
+                            onClick={e=> e.stopPropagation()}
+                          >
+                            <option value="">raw</option>
+                            <option value="date">DATE</option>
+                            <option value="month">MONTH</option>
+                            <option value="quarter">QUARTER</option>
+                            <option value="year">YEAR</option>
+                            <option value="hour">HOUR</option>
+                            <option value="minute">MIN</option>
+                          </select>
+                        )}
+                        <button onClick={()=>setDims(p=>p.filter(x=>x.id!==d.id))} className="opacity-50 hover:opacity-100 text-sm leading-none ml-0.5">×</button>
                       </span>
                     ))}
                   </div>
@@ -1266,7 +1446,11 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                 </div>
                 <div>
                   <p className="text-[12px] text-zinc-500 mb-2">LIMIT</p>
-                  <input type="number" min={1} max={50000} value={limit} onChange={e=>setLimit(parseInt(e.target.value)||1000)}
+                  <input type="number" min={0} max={50000} value={limit || ""} onChange={e=>{
+                      const v = e.target.value;
+                      setLimit(v === "" ? 0 : Math.max(0, parseInt(v) || 0));
+                    }}
+                    placeholder="∞"
                     className="text-[12px] font-mono bg-zinc-800/60 border border-zinc-700 rounded-md px-3 py-2 text-zinc-200 outline-none focus:border-zinc-500 w-24 transition" />
                 </div>
               </div>
@@ -1327,7 +1511,20 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                       <p className="text-[12px] font-mono text-red-400">{runError}</p>
                     </div>
                   )}
-                  {result && !running && <ResultsPane result={result} />}
+                  {result && !running && (
+                    <ResultsPane
+                      result={result}
+                      connId={connId}
+                      sql={sql}
+                      primaryTable={primaryTable}
+                      joinedTables={joinedTables}
+                      tableSchemas={tableSchemas}
+                      onStartCanvas={(id) => {
+                        // Navigate to canvas workspace
+                        window.location.href = `/?canvas=${id}`;
+                      }}
+                    />
+                  )}
                 </div>
               )}
               {!result && !running && !runError && (

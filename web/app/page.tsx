@@ -7,6 +7,7 @@ import dynamic from "next/dynamic";
 import { ChatPanel } from "@/components/ChatPanel";
 import { ExplorationBadge } from "@/components/ExplorationBadge";
 import { SchemaProvider } from "@/lib/schema-context";
+import { getCanvases } from "@/lib/api";
 import { CommandPalette } from "@/components/CommandPalette";
 import type { IntelLayer } from "@/components/IntelligenceWorkspace";
 
@@ -361,12 +362,12 @@ function Topbar({
       <div style={{ display: "flex", alignItems: "center", gap: 9, width: 224, flexShrink: 0 }}>
         <AughorLogo />
         <div>
-          <div style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)", letterSpacing: ".01em" }}>
+          <div style={{ fontSize: 16, fontWeight: 600, color: "var(--t1)", letterSpacing: ".01em" }}>
             Aughor
           </div>
-          <div style={{ fontSize: 11, color: "var(--t4)", letterSpacing: ".06em", textTransform: "uppercase", marginTop: -1 }}>
+          {/* <div style={{ fontSize: 11, color: "var(--t4)", letterSpacing: ".06em", textTransform: "uppercase", marginTop: -1 }}>
             Intelligence Platform
-          </div>
+          </div> */}
         </div>
       </div>
 
@@ -479,9 +480,7 @@ function Sidebar({
     >
       <NavIcon name={item.icon} size={14} color={tab === item.id ? "var(--blue4)" : "currentColor"} />
       <span>{item.label}</span>
-      {item.id === "catalog" && selectedConn && (
-        <ExplorationBadge connectionId={selectedConn} />
-      )}
+      {/* Catalog is a catalog, not a monitor — no exploration badge here */}
     </button>
   );
 
@@ -654,7 +653,7 @@ function StatCard({ value, label, accent, sub, onClick }: {
 
 // ── Home screen ────────────────────────────────────────────────────────────────
 
-type RecentInv = { id: string; question: string; started_at: string; status: string; headline: string | null };
+type RecentInv = { id: string; question: string; started_at: string; status: string; headline: string | null; connection_id?: string; canvas_id?: string | null };
 
 function HomeScreen({
   connections,
@@ -667,7 +666,7 @@ function HomeScreen({
   selectedConn: string;
   onGoToChat: (q?: string, mode?: AskMode) => void;
   onNavigate: (t: NavTab) => void;
-  onOpenInvestigation: (id: string) => void;
+  onOpenInvestigation: (id: string, kind?: "investigation" | "chat", connectionId?: string, canvasId?: string | null) => void;
 }) {
   const [recentInvs, setRecentInvs] = useState<RecentInv[]>([]);
   const [exploration, setExploration] = useState<ExplorationStatus | null>(null);
@@ -761,7 +760,7 @@ function HomeScreen({
                 </thead>
                 <tbody>
                   {recentInvs.slice(0, 5).map((inv) => (
-                    <tr key={inv.id} style={{ cursor: "pointer" }} onClick={() => onOpenInvestigation(inv.id)}>
+                    <tr key={inv.id} style={{ cursor: "pointer" }} onClick={() => onOpenInvestigation(inv.id, "investigation", inv.connection_id, inv.canvas_id)}>
                       <td style={{ maxWidth: 400 }}>
                         <div style={{ fontSize: 12, color: "var(--t1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "var(--font-ui)" }}>{inv.question}</div>
                         {inv.headline && <div style={{ fontSize: 10, color: "var(--t3)", marginTop: 2 }}>{inv.headline}</div>}
@@ -788,8 +787,8 @@ function HomeScreen({
 
 // ── Recents screen ─────────────────────────────────────────────────────────────
 
-function RecentsScreen({ onGoToChat, onOpenInvestigation }: { onGoToChat: (q?: string) => void; onOpenInvestigation: (id: string, kind: "investigation" | "chat") => void }) {
-  const [activities, setActivities] = useState<Array<{ id: string; question: string; started_at: string; status: string; headline: string | null; kind?: string }>>([]);
+function RecentsScreen({ onGoToChat, onOpenInvestigation }: { onGoToChat: (q?: string) => void; onOpenInvestigation: (id: string, kind: "investigation" | "chat", connectionId?: string, canvasId?: string | null) => void }) {
+  const [activities, setActivities] = useState<Array<{ id: string; question: string; started_at: string; status: string; headline: string | null; kind?: string; connection_id?: string; canvas_id?: string | null }>>([]);
   const [filter, setFilter] = useState<"all" | "investigation" | "chat">("all");
 
   useEffect(() => {
@@ -840,7 +839,7 @@ function RecentsScreen({ onGoToChat, onOpenInvestigation }: { onGoToChat: (q?: s
               </thead>
               <tbody>
                 {shown.map(a => (
-                  <tr key={a.id} onClick={() => onOpenInvestigation(a.id, a.kind === "chat" ? "chat" : "investigation")} style={{ cursor: "pointer" }}>
+                  <tr key={a.id} onClick={() => onOpenInvestigation(a.id, a.kind === "chat" ? "chat" : "investigation", a.connection_id, a.canvas_id)} style={{ cursor: "pointer" }}>
                     <td style={{ maxWidth: 420 }}>
                       <div style={{ fontSize: 12, color: "var(--t1)", fontFamily: "var(--font-ui)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.question}</div>
                       {a.headline && <div style={{ fontSize: 10, color: "var(--t3)", marginTop: 2 }}>{a.headline}</div>}
@@ -1187,7 +1186,7 @@ function AddConnectionForm({
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.65)", backdropFilter: "blur(3px)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div style={{ width: "100%", maxWidth: 460, background: "var(--bg-3)", border: "1px solid var(--b2)", borderRadius: "var(--r3)", padding: 24, display: "flex", flexDirection: "column", gap: 16, maxHeight: "90vh", overflowY: "auto" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <span style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)" }}>Add Connection</span>
+          <span style={{ fontSize: 16, fontWeight: 600, color: "var(--t1)" }}>Add Connection</span>
           <button onClick={onCancel} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--t3)" }}>
             <NavIcon name="close" size={14} />
           </button>
@@ -1309,7 +1308,7 @@ function DeleteConnModal({
             <NavIcon name="trash" size={14} color="var(--red4)" />
           </div>
           <div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)" }}>Remove connection</div>
+            <div style={{ fontSize: 16, fontWeight: 600, color: "var(--t1)" }}>Remove connection</div>
             <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 3, lineHeight: 1.5 }}>
               This removes <span style={{ color: "var(--t2)" }}>{conn.name}</span> from Aughor. The database is not affected.
             </div>
@@ -1359,6 +1358,8 @@ export default function Home() {
   const [theme, setThemeState] = useState<Theme>("dark");
   const [selectedConn, setSelectedConn] = useState("");
   const [activeCanvas, setActiveCanvas] = useState<Canvas | null>(null);
+  const [initialCanvasInvId, setInitialCanvasInvId] = useState<string | null>(null);
+  const [initialCanvasChatId, setInitialCanvasChatId] = useState<string | null>(null);
   const [showCanvasCreator, setShowCanvasCreator] = useState(false);
   const [selectedHistoryInvId, setSelectedHistoryInvId] = useState<string | null>(null);
   const [selectedChatSessionId, setSelectedChatSessionId] = useState<string | null>(null);
@@ -1452,13 +1453,39 @@ export default function Home() {
   /** Open an existing investigation (or chat session) by ID — goes straight to the report.
    *  Always clears chatInitialQuestion so no stale question fires if the user
    *  subsequently presses "New" while viewing history. */
-  const openInvestigation = (id: string, kind: "investigation" | "chat" = "investigation") => {
-    setChatInitialQuestion(undefined);   // ← prevent stale question re-firing on next New
+  const openInvestigation = async (id: string, kind: "investigation" | "chat" = "investigation", connectionId?: string, canvasId?: string | null) => {
+    setChatInitialQuestion(undefined);
     setChatInitialMode("investigate");
+    setInitialCanvasInvId(null);
+    setInitialCanvasChatId(null);
+
+    // Try to resolve a canvas for this investigation
+    let targetCanvas: Canvas | null = null;
+    try {
+      const allCanvases = await getCanvases();
+      if (canvasId) {
+        targetCanvas = allCanvases.find(c => c.id === canvasId) ?? null;
+      }
+      if (!targetCanvas && connectionId) {
+        targetCanvas = allCanvases.find(c => c.scopes[0]?.connection_id === connectionId) ?? null;
+      }
+    } catch {
+      // ignore canvas fetch errors
+    }
+
+    if (targetCanvas) {
+      setActiveCanvas(targetCanvas);
+      setTab("canvas-workspace");
+      if (kind === "investigation") setInitialCanvasInvId(id);
+      else setInitialCanvasChatId(id);
+      return;
+    }
+
+    // Fallback: open the old chat module
     if (kind === "chat") {
       setSelectedHistoryInvId(null);
       setSelectedChatSessionId(id);
-      setChatKey(k => k + 1);            // ← fresh mount so restore doesn't layer on live state
+      setChatKey(k => k + 1);
     } else {
       setSelectedChatSessionId(null);
       setSelectedHistoryInvId(id);
@@ -1513,6 +1540,8 @@ export default function Home() {
 
   const handleCanvasSelect = (canvas: Canvas) => {
     setActiveCanvas(canvas);
+    setInitialCanvasInvId(null);
+    setInitialCanvasChatId(null);
     const primaryConn = canvas.scopes[0]?.connection_id;
     if (primaryConn) setSelectedConn(primaryConn);
     setSelectedHistoryInvId(null);
@@ -1617,8 +1646,10 @@ export default function Home() {
               <CanvasWorkspace
                 canvas={activeCanvas}
                 connections={wsConnections}
-                onClose={() => { setActiveCanvas(null); setTab("canvases"); }}
+                onClose={() => { setActiveCanvas(null); setTab("canvases"); setInitialCanvasInvId(null); setInitialCanvasChatId(null); }}
                 onCanvasUpdate={updated => setActiveCanvas(updated)}
+                initialOpenInvId={initialCanvasInvId}
+                initialRestoreSessionId={initialCanvasChatId}
               />
             )}
 

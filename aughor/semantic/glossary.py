@@ -162,7 +162,7 @@ def apply_glossary(schema_str: str, path: Path | None = None) -> str:
 
     for line in lines:
         # Detect TABLE: header
-        table_match = re.match(r"^TABLE:\s+(\w+)", line)
+        table_match = re.match(r"^TABLE:\s+([\w.]+)", line)
         if table_match:
             current_table = table_match.group(1)
             out.append(line)

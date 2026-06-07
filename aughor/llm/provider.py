@@ -16,10 +16,23 @@ Env vars:
 """
 from __future__ import annotations
 
+import logging
 import os
 from typing import Literal, Type, TypeVar
 
 import instructor
+
+logger = logging.getLogger(__name__)
+
+
+def _flag(name: str, default: str = "") -> bool:
+    return os.getenv(name, default).strip().lower() in ("1", "true", "yes", "on")
+
+
+def _fallback_model() -> str:
+    """Anthropic model used when the primary backend fails. Defaults to the
+    latest Opus; override with AUGHOR_FALLBACK_MODEL (e.g. claude-opus-4-6)."""
+    return os.getenv("AUGHOR_FALLBACK_MODEL", "claude-opus-4-8")
 from openai import OpenAI
 from pydantic import BaseModel
 
@@ -114,24 +127,57 @@ class LLMProvider:
         response_model: Type[T],
         temperature: float = 0.1,
     ) -> T:
-        if self.backend == "anthropic":
-            return self._client.messages.create(
-                model=self._model,
-                max_tokens=4096,
-                system=system,
+        try:
+            return self._complete_on(self._client, self.backend, self._model,
+                                     system, user, response_model, temperature)
+        except Exception as primary_exc:
+            # Resilience: if the primary backend (e.g. local/cloud Ollama) is
+            # unreachable or erroring, transparently fall back to Anthropic when
+            # a key is configured. Enabled by default; disable with
+            # AUGHOR_FALLBACK_DISABLED=1. Model via AUGHOR_FALLBACK_MODEL
+            # (default claude-opus-4-8 — the latest Opus).
+            fb = self._fallback_client()
+            if fb is None:
+                raise
+            logger.warning("provider: %s backend failed (%s); falling back to Anthropic %s",
+                           self.backend, str(primary_exc)[:120], _fallback_model())
+            try:
+                return self._complete_on(fb, "anthropic", _fallback_model(),
+                                         system, user, response_model, temperature)
+            except Exception:
+                raise primary_exc  # surface the original failure if fallback also fails
+
+    @staticmethod
+    def _complete_on(client, backend, model, system, user, response_model, temperature):
+        if backend == "anthropic":
+            return client.messages.create(
+                model=model, max_tokens=4096, system=system,
                 messages=[{"role": "user", "content": user}],
                 response_model=response_model,
             )
-
-        return self._client.chat.completions.create(
-            model=self._model,
-            temperature=temperature,
-            response_model=response_model,
+        return client.chat.completions.create(
+            model=model, temperature=temperature, response_model=response_model,
             messages=[
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
         )
+
+    def _fallback_client(self):
+        """Lazily build (and cache) an Anthropic client for fallback, or None when
+        unavailable (already on anthropic, disabled, or no ANTHROPIC_API_KEY)."""
+        if self.backend == "anthropic":
+            return None
+        if _flag("AUGHOR_FALLBACK_DISABLED"):
+            return None
+        if not os.getenv("ANTHROPIC_API_KEY"):
+            return None
+        if getattr(self, "_fb_client", None) is None:
+            try:
+                self._fb_client = _build_anthropic_client()
+            except Exception:
+                self._fb_client = None
+        return self._fb_client
 
 
 # Per-role provider cache — one client per role per process

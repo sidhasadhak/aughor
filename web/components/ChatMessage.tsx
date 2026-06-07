@@ -13,6 +13,7 @@ import AngleBracketsIcon from "@atlaskit/icon/core/angle-brackets";
 import InformationIcon   from "@atlaskit/icon/core/information";
 import WarningIcon       from "@atlaskit/icon/core/warning";
 import ArrowRightIcon    from "@atlaskit/icon/core/arrow-right";
+import { Lightbulb } from "lucide-react";
 import { ChatTurn } from "@/lib/useChat";
 import type { ADAReport } from "@/lib/types";
 import { InvestigationReportView } from "@/components/InvestigationReport";
@@ -73,7 +74,10 @@ function firstNonNull(rows: unknown[][], colIdx: number): unknown {
 // Returns the original string unchanged if it doesn't look like a timestamp
 function normDateStr(v: string): string {
   // DuckDB returns "2024-01-01 00:00:00" — normalize space separator to T for Date parsing
-  return v.replace(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})/, "$1T$2");
+  let s = v.replace(/^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})/, "$1T$2");
+  // Handle DATE_TRUNC month output "2018-01" by appending day
+  if (/^\d{4}-\d{2}$/.test(s)) s += "-01";
+  return s;
 }
 
 // ── Granularity-aware date handling ───────────────────────────────────────────
@@ -99,7 +103,7 @@ function detectGranularity(col: string, values: unknown[]): Gran {
   if (named) return named;
   // Fall back to spacing between distinct parseable date values.
   const ts = Array.from(new Set(
-    values.map(v => String(v ?? "")).filter(s => /^\d{4}-\d{2}-\d{2}/.test(s)),
+    values.map(v => String(v ?? "")).filter(s => /^\d{4}-\d{2}(-\d{2})?/.test(s)),
   )).map(s => new Date(normDateStr(s)).getTime()).filter(t => !isNaN(t)).sort((a, b) => a - b);
   if (ts.length >= 2) {
     const deltas = ts.slice(1).map((t, i) => t - ts[i]).sort((a, b) => a - b);
@@ -117,7 +121,7 @@ function detectGranularity(col: string, values: unknown[]): Gran {
 // year for day/week — a data table must be unambiguous across years ("19 Sep 2017"),
 // never a bare "19 Sep".
 function fmtDate(v: string, gran: Gran): string {
-  if (!/^\d{4}-\d{2}-\d{2}/.test(v)) return v;
+  if (!/^\d{4}-\d{2}(-\d{2})?/.test(v)) return v;
   const d = new Date(normDateStr(v));
   if (isNaN(d.getTime())) return v;
   switch (gran) {
@@ -157,7 +161,7 @@ function cleanLabel(s: string): string {
 }
 
 // ── Smart source-panel title derived from column semantics ────────────────────
-const DATE_VALUE_RE = /^\d{4}-\d{2}-\d{2}/;
+const DATE_VALUE_RE = /^\d{4}-\d{2}(-\d{2})?/;
 function inferSourceTitle(columns: string[], rows: unknown[][]): string {
   if (!columns.length) return "Query result";
 
@@ -298,19 +302,22 @@ function InlineChart({
   columns,
   rows,
   chartType = "auto",
+  chartConfig = null,
   title = "chart",
 }: {
   columns: string[];
   rows: unknown[][];
   chartType?: string | null;
+  chartConfig?: Record<string, unknown> | null;
   title?: string;
 }) {
   const outerRef  = useRef<HTMLDivElement>(null);
   const chartRef  = useRef<HTMLDivElement>(null);
   // userH = null means "use computed default height". Set by drag handle.
   const [userH, setUserH] = useState<number | null>(null);
-  // expanded = false caps chart height to CLIP_H; true shows full chart
-  const [expanded, setExpanded] = useState(false);
+
+  // showLabels = true renders data values on top of bars/points
+  const [showLabels, setShowLabels] = useState(false);
 
   function startDrag(e: React.MouseEvent) {
     e.preventDefault();
@@ -377,7 +384,7 @@ function InlineChart({
     Object.fromEntries(columns.map((c, i) => [c, (r as unknown[])[i]])),
   );
 
-  const DATE_VALUE_RE = /^\d{4}-\d{2}-\d{2}/;
+  const DATE_VALUE_RE = /^\d{4}-\d{2}(-\d{2})?/;
   const looksLikeDate = (colIdx: number) => {
     const v = firstNonNull(rows, colIdx);
     return typeof v === "string" && DATE_VALUE_RE.test(v);
@@ -396,14 +403,31 @@ function InlineChart({
   // These are COMPARISON questions — heatmap/stacked-bar are inappropriate.
   const _isChangeMetric = numericCols.some(c => CHANGE_METRIC_COL.test(c));
   // For change metrics, prefer the change column as the primary numeric
-  const CHANGE_PREFER_COL = /(change|delta|growth|pct_change|percent_change|_chg$|_diff$)/i;
-  const numCol  = _isChangeMetric
-    ? (numericCols.find(c => CHANGE_PREFER_COL.test(c)) ?? numericCols.find(c => PREFER_COL.test(c)) ?? numericCols[0])
-    : (numericCols.find(c => PREFER_COL.test(c)) ?? numericCols[0]);
+  // ONLY when there is a categorical column (series dimension).
+  // When no catCol exists, plot the base metric (AOV, revenue) not the change %.
   const catCol  = catCols[0];
   const catCol2 = catCols[1];
+  const CHANGE_PREFER_COL = /(change|delta|growth|pct_change|percent_change|_chg$|_diff$)/i;
+  const baseNumCol = numericCols.find(c => PREFER_COL.test(c)) ?? numericCols.find(c => !CHANGE_METRIC_COL.test(c)) ?? numericCols[0];
+  const changeNumCol = numericCols.find(c => CHANGE_PREFER_COL.test(c)) ?? numericCols.find(c => PREFER_COL.test(c)) ?? numericCols[0];
+  const numCol  = (_isChangeMetric && catCol) ? changeNumCol : baseNumCol;
   const hint    = (chartType ?? "auto").toLowerCase();
   const isTimeLabel = catCol ? TIME_LABEL_COL.test(catCol) : false;
+
+  // ── Backend-provided chart config (MindsDB-style) ───────────────────────────
+  // When the LLM generated a chart_config alongside SQL, use it directly.
+  // chartConfig = {type, x_field, y_field, y_field_2, color_field, title, format}
+  const cc = chartConfig;
+  const ccType = cc?.type as string | undefined;
+  const ccX = cc?.x_field as string | undefined;
+  const ccY = cc?.y_field as string | undefined;
+  const ccY2 = cc?.y_field_2 as string | undefined;
+  const ccColor = cc?.color_field as string | undefined;
+  const ccFmt = cc?.format as string | undefined;
+  const hasBackendConfig = cc && ccType && ccX && ccY;
+
+  // Map backend config types to our hint system
+  const backendHint = hasBackendConfig ? ccType.toLowerCase() : null;
 
   if (!numCol) return null;
 
@@ -433,8 +457,114 @@ function InlineChart({
   let vegaData: Record<string, unknown>[] = data;
   let defaultH = 220;
 
+  // ── BACKEND CHART CONFIG (MindsDB-style) ──────────────────────────────────
+  // If the LLM provided a chart_config, build the spec directly from it.
+  if (hasBackendConfig && backendHint) {
+    const bType = backendHint;
+    const xF = ccX!;
+    const yF = ccY!;
+    const y2F = ccY2;
+    const cF = ccColor;
+    const bFmt = ccFmt ?? "~s";
+    const bTitle = cc?.title as string | undefined;
+
+    if (bType === "combo" && y2F) {
+      spec = {
+        layer: [
+          {
+            mark: { type: "bar", color: "#818cf8", opacity: 0.8, cornerRadiusEnd: 2 },
+            encoding: {
+              y: { field: yF, type: "quantitative", axis: { format: bFmt, grid: true, title: cleanLabel(yF) } },
+              tooltip: [
+                { field: xF, type: "nominal" },
+                { field: yF, type: "quantitative", format: bFmt, title: cleanLabel(yF) },
+              ],
+            },
+          },
+          {
+            mark: { type: "line", color: "#E64848", strokeWidth: 2, point: { size: 30, filled: true, opacity: 0.9 } },
+            encoding: {
+              y: { field: y2F, type: "quantitative", axis: { format: bFmt, title: cleanLabel(y2F) } },
+              tooltip: [
+                { field: xF, type: "nominal" },
+                { field: y2F, type: "quantitative", format: bFmt, title: cleanLabel(y2F) },
+              ],
+            },
+          },
+        ],
+        encoding: {
+          x: { field: xF, type: "ordinal", axis: { labelLimit: 160, labelAngle: 0, labelOverlap: true, title: cleanLabel(xF) } },
+        },
+        resolve: { scale: { y: "independent" } },
+        config: { axisX: { labelAngle: 0, labelOverlap: "parity" } },
+      };
+      defaultH = 350;
+    } else if (bType === "line" || bType === "multi_line") {
+      const xEnc: Record<string, unknown> = { field: xF, type: "temporal", axis: { labelAngle: 0, title: cleanLabel(xF) } };
+      const yEnc: Record<string, unknown> = { field: yF, type: "quantitative", axis: { format: bFmt, grid: true, title: cleanLabel(yF) } };
+      spec = {
+        mark: { type: "line", strokeWidth: 1.5 },
+        encoding: xEnc,
+        ...(cF ? {
+          layer: [
+            { mark: { type: "line" }, encoding: { x: xEnc, y: yEnc, color: { field: cF, type: "nominal" } } },
+            { mark: { type: "point", filled: true, size: 30 }, encoding: { x: xEnc, y: yEnc, color: { field: cF, type: "nominal" }, tooltip: [{ field: xF, type: "temporal" }, { field: cF, type: "nominal" }, { field: yF, type: "quantitative", format: bFmt }] } },
+          ],
+        } : {
+          layer: [
+            { mark: { type: "line" }, encoding: { x: xEnc, y: yEnc } },
+            { mark: { type: "point", filled: true, size: 30 }, encoding: { x: xEnc, y: yEnc, tooltip: [{ field: xF, type: "temporal" }, { field: yF, type: "quantitative", format: bFmt }] } },
+          ],
+        }),
+      };
+      defaultH = 350;
+    } else if (bType === "bar" || bType === "bar_horizontal") {
+      spec = {
+        mark: { type: "bar", color: "#818cf8", opacity: 0.85, cornerRadiusEnd: 2 },
+        encoding: {
+          x: { field: xF, type: "ordinal", sort: { field: yF, order: "descending" }, axis: { labelLimit: 160, labelAngle: 0, labelOverlap: true, title: cleanLabel(xF) } },
+          y: { field: yF, type: "quantitative", axis: { format: bFmt, grid: true, title: cleanLabel(yF) } },
+          tooltip: [
+            { field: xF, type: "nominal", title: cleanLabel(xF) },
+            { field: yF, type: "quantitative", format: bFmt, title: cleanLabel(yF) },
+          ],
+        },
+      };
+      defaultH = 350;
+    } else if (bType === "scatter") {
+      spec = {
+        mark: { type: "point", filled: true, size: 60, opacity: 0.7 },
+        encoding: {
+          x: { field: xF, type: "quantitative", axis: { title: cleanLabel(xF) } },
+          y: { field: yF, type: "quantitative", axis: { format: bFmt, grid: true, title: cleanLabel(yF) } },
+          tooltip: [
+            { field: xF, type: "quantitative", title: cleanLabel(xF) },
+            { field: yF, type: "quantitative", format: bFmt, title: cleanLabel(yF) },
+          ],
+        },
+      };
+      defaultH = 350;
+    } else if (bType === "pie") {
+      const pieAgg = new Map<string, number>();
+      data.forEach(d => { pieAgg.set(String(d[xF]), (pieAgg.get(String(d[xF])) ?? 0) + Number(d[yF])); });
+      vegaData = [...pieAgg.entries()].sort((a, b) => b[1] - a[1]).map(([label, value]) => ({ label, value }));
+      spec = {
+        mark: { type: "arc", innerRadius: 44, outerRadius: 100 },
+        encoding: {
+          theta: { field: "value", type: "quantitative" },
+          color: { field: "label", type: "nominal", legend: { title: cleanLabel(xF), orient: "right" } },
+          tooltip: [
+            { field: "label", type: "nominal", title: cleanLabel(xF) },
+            { field: "value", type: "quantitative", format: bFmt, title: cleanLabel(yF) },
+          ],
+        },
+      };
+      defaultH = 350;
+    }
+  }
+
   // ── PIE / DONUT ─────────────────────────────────────────────────────────────
-  if (hint === "pie" && catCol) {
+  if (!spec && hint === "pie" && catCol) {
     const agg = new Map<string, number>();
     data.forEach(d => {
       const k = String(d[catCol]);
@@ -465,7 +595,7 @@ function InlineChart({
   // even on explicit hint (period-over-period is comparison, not distribution).
   const _stackUnique = catCol ? new Set(data.map(d => d[catCol])).size : 0;
 
-  if (hint === "heatmap" && !_isChangeMetric) {
+  if (!spec && hint === "heatmap" && !_isChangeMetric) {
     const xSrc = dateCol ?? catCol2 ?? "";
 
     // Build raw key→value map first, then fill the FULL grid so every
@@ -504,7 +634,7 @@ function InlineChart({
       encoding: {
         x: {
           field: "group", type: "ordinal", sort: heatGroupOrder,
-          axis: { labelAngle: -40, title: cleanLabel(xSrc), labelLimit: 80 },
+          axis: { labelAngle: 0, title: cleanLabel(xSrc), labelLimit: 80 },
         },
         y: {
           field: "stack", type: "ordinal",
@@ -528,7 +658,7 @@ function InlineChart({
 
   // ── MULTI-LINE (one line per category over time) ──────────────────────────────
   // Triggered explicitly with hint="multi_line"
-  else if (hint === "multi_line" && catCol && dateCol) {
+  else if (!spec && hint === "multi_line" && catCol && dateCol) {
     // Drop rows where the value is null/NaN — LAG/LEAD queries produce null for the
     // first partition row; Number(null)=0 would create a false zero spike.
     vegaData = data
@@ -554,7 +684,7 @@ function InlineChart({
           title: cleanLabel(catCol), titleLimit: 160 };
     const mlStrokeW = mlSeriesCount > 20 ? 0.9 : mlSeriesCount > 10 ? 1.1 : 1.5;
 
-    const mlXEnc = { field: "date", type: "temporal", axis: { tickCount: 12, format: xDateFmt, labelAngle: -40, title: cleanLabel(dateCol) } };
+    const mlXEnc = { field: "date", type: "temporal", axis: { tickCount: 12, format: xDateFmt, labelAngle: 0, title: cleanLabel(dateCol) } };
     const mlYEnc = { field: "val",  type: "quantitative", axis: { format: mlYFmt, grid: true, title: mlYTitle } };
     const mlColorEnc = { field: "series", type: "nominal", legend: mlLegend };
     const mlTooltip = [
@@ -588,7 +718,7 @@ function InlineChart({
 
   // ── TREEMAP ───────────────────────────────────────────────────────────────────
   // Aggregates catCol → shows proportional area tiles
-  else if (hint === "treemap" && catCol) {
+  else if (!spec && hint === "treemap" && catCol) {
     const tmAgg = new Map<string, number>();
     data.forEach(d => {
       const k = String(d[catCol]);
@@ -704,7 +834,7 @@ function InlineChart({
           title: cleanLabel(catCol), titleLimit: 160 };
     const strokeW = seriesCount > 20 ? 0.9 : seriesCount > 10 ? 1.1 : 1.5;
 
-    const chgXEnc = { field: "date", type: "temporal", axis: { tickCount: 12, format: xDateFmt, labelAngle: -40, title: cleanLabel(dateCol) } };
+    const chgXEnc = { field: "date", type: "temporal", axis: { tickCount: 12, format: xDateFmt, labelAngle: 0, title: cleanLabel(dateCol) } };
     const chgYEnc = { field: "val",  type: "quantitative", axis: { format: changeYFmt, grid: true, title: changeYTitle } };
     const chgColorEnc = { field: "series", type: "nominal", legend: manyLegend };
     const chgTooltip = [
@@ -771,7 +901,7 @@ function InlineChart({
         x: {
           field: "group", type: "ordinal", sort: groupOrder,
           axis: {
-            labelAngle: groupOrder.length > 8 ? -40 : -20,
+            labelAngle: 0, labelOverlap: true,
             title: isTemporalStack ? cleanLabel(dateCol ?? "") : cleanLabel(catCol),
           },
         },
@@ -814,7 +944,7 @@ function InlineChart({
           title: cleanLabel(catCol), titleLimit: 160 };
     const tmStrokeW = tmSeriesCount > 20 ? 0.9 : tmSeriesCount > 10 ? 1.1 : 1.5;
 
-    const tmXEnc = { field: "date", type: "temporal", axis: { tickCount: 12, format: xDateFmt, labelAngle: -40, title: cleanLabel(dateCol) } };
+    const tmXEnc = { field: "date", type: "temporal", axis: { tickCount: 12, format: xDateFmt, labelAngle: 0, title: cleanLabel(dateCol) } };
     const tmYEnc = { field: "val",  type: "quantitative", axis: { format: yFmt, grid: true, title: yTitle } };
     const tmColorEnc = { field: "series", type: "nominal", legend: tmLegend };
     const tmTooltip = [
@@ -869,7 +999,7 @@ function InlineChart({
       encoding: {
         x: {
           field: "bucket", type: "ordinal", sort: bucketOrder,
-          axis: { labelAngle: -30, title: cleanLabel(dateCol), labelOverlap: true },
+          axis: { labelAngle: 0, title: cleanLabel(dateCol), labelOverlap: true },
         },
         y: { field: "val", type: "quantitative", axis: { format: yFmt, grid: true, title: yTitle } },
         tooltip: [
@@ -906,7 +1036,7 @@ function InlineChart({
       encoding: {
         x: {
           field: dateCol, type: "temporal",
-          axis: { format: xDateFmt, labelAngle: -30, title: cleanLabel(dateCol) },
+          axis: { format: xDateFmt, labelAngle: 0, title: cleanLabel(dateCol) },
         },
         y: {
           field: numCol, type: "quantitative",
@@ -945,7 +1075,7 @@ function InlineChart({
         x: {
           field: "cat", type: "ordinal",
           sort: isTimeLabel ? null : { field: "val", order: "descending" },
-          axis: { labelAngle: vegaData.length > 10 ? -40 : -20, title: xTitle },
+          axis: { labelAngle: 0, labelOverlap: true, title: xTitle },
         },
         y: {
           field: "val", type: "quantitative",
@@ -995,15 +1125,60 @@ function InlineChart({
       agg.set(k, (agg.get(k) ?? 0) + Number(d[numCol]));
     });
 
-    if (_isChangeMetric) {
+    // ── COMBO CHART — multiple metrics with different mark types ───────────
+    if (numericCols.length >= 2 && catCols.length === 1) {
+      const primary   = numericCols[0];  // bars
+      const secondary = numericCols[1];  // line
+      vegaData = data;
+      spec = {
+        layer: [
+          {
+            mark: { type: "bar", color: "#818cf8", opacity: 0.8, cornerRadiusEnd: 2 },
+            encoding: {
+              y: {
+                field: primary, type: "quantitative",
+                axis: { format: yFmt, grid: true, title: cleanLabel(primary) },
+              },
+              tooltip: [
+                { field: catCol, type: "nominal" },
+                { field: primary, type: "quantitative", format: lblFmt, title: cleanLabel(primary) },
+              ],
+            },
+          },
+          {
+            mark: { type: "line", color: "#E64848", strokeWidth: 2, point: { size: 30, filled: true, opacity: 0.9 } },
+            encoding: {
+              y: {
+                field: secondary, type: "quantitative",
+                axis: { format: yFmt, title: cleanLabel(secondary) },
+              },
+              tooltip: [
+                { field: catCol, type: "nominal" },
+                { field: secondary, type: "quantitative", format: lblFmt, title: cleanLabel(secondary) },
+              ],
+            },
+          },
+        ],
+        encoding: {
+          x: {
+            field: catCol, type: "ordinal",
+            sort: { field: primary, order: "descending" },
+            axis: { labelLimit: 160, labelAngle: 0, labelOverlap: true, title: cleanLabel(catCol) },
+          },
+        },
+        resolve: { scale: { y: "independent" } },
+        config: { axisX: { labelAngle: 0, labelOverlap: "parity" } },
+      };
+      const groupCount = new Set(data.map(d => String(d[catCol]))).size;
+      defaultH = 350;
+    } else if (!spec && _isChangeMetric) {
       // ── CHANGE METRIC BAR ──────────────────────────────────────────────────
       // Sort by absolute magnitude so biggest movers (positive OR negative) appear first.
       // Use a symmetric x domain so negative bars extend to the left.
       // Diverging colours: green = growth, red = decline.
       vegaData = [...agg.entries()]
         .map(([cat, val]) => ({ cat, val }))
-        .sort((a, b) => Math.abs(b.val as number) - Math.abs(a.val as number))
-        .slice(0, 20);
+        .sort((a, b) => Math.abs(b.val as number) - Math.abs(a.val as number));
 
       const maxAbsVal = Math.max(...vegaData.map(d => Math.abs(d.val as number)), 1);
       // Format: if values look like stored-as-100x percentages (e.g. 15.2 for 15.2%)
@@ -1022,7 +1197,7 @@ function InlineChart({
           y: {
             field: "cat", type: "ordinal",
             sort: { field: "val", op: "sum", order: "descending" },
-            axis: { labelLimit: 160, title: cleanLabel(catCol) },
+            axis: { labelLimit: 160, labelAngle: 0, labelOverlap: true, title: cleanLabel(catCol) },
           },
           color: {
             condition: { test: "datum.val >= 0", value: "#2EC87B" },
@@ -1034,17 +1209,16 @@ function InlineChart({
           ],
         },
       };
-      defaultH = Math.max(160, vegaData.length * 28 + 60);
+      defaultH = Math.max(350, vegaData.length * 28 + 60);
 
-    } else {
+    } else if (!spec) {
       // ── STANDARD BAR ──────────────────────────────────────────────────────
       vegaData = (isTimeLabel
         ? [...agg.entries()]
         : [...agg.entries()].sort((a, b) => b[1] - a[1])
       ).map(([cat, val]) => ({ cat, val }));
 
-      // cap at 15 bars
-      if (vegaData.length > 15) vegaData = vegaData.slice(0, 15);
+      // Show all bars — container scrolls when needed
 
       // Extend x domain 14% past the max so the label of the widest bar has room.
       const maxBarVal = Math.max(...vegaData.map(d => d.val as number), 1);
@@ -1064,7 +1238,7 @@ function InlineChart({
           y: {
             field: "cat", type: "ordinal",
             sort: isTimeLabel ? null : { field: "val", order: "descending" },
-            axis: { labelLimit: 160, title: cleanLabel(catCol) },
+            axis: { labelLimit: 160, labelAngle: 0, labelOverlap: true, title: cleanLabel(catCol) },
           },
           x: {
             field: "val", type: "quantitative",
@@ -1077,21 +1251,70 @@ function InlineChart({
           ],
         },
       };
-      defaultH = Math.max(120, vegaData.length * 28 + 60);
+      defaultH = Math.max(350, vegaData.length * 28 + 60);
     }
+  }
+
+  // ── FINAL FALLBACK: simple line chart when we have a date + number but
+  // no other branch matched (e.g. period-over-period with a single series).
+  else if (!spec && dateCol && numCol) {
+    vegaData = data
+      .filter(d => { const v = d[numCol]; return v !== null && v !== undefined && v !== "" && !isNaN(Number(v)); })
+      .map(d => ({
+        ...d,
+        [dateCol]: normDateStr(String(d[dateCol])),
+        [numCol]:  Number(d[numCol]),
+      }));
+    const fbColor = "#818cf8";
+    spec = {
+      layer: [
+        { mark: { type: "line", color: fbColor, strokeWidth: 1.5 } },
+        {
+          mark: { type: "point", color: fbColor, size: 30, filled: true, opacity: 0.9 },
+          encoding: {
+            tooltip: [
+              { field: dateCol, type: "temporal",     title: cleanLabel(dateCol) },
+              { field: numCol,  type: "quantitative", format: lblFmt, title: yTitle },
+            ],
+          },
+        },
+      ],
+      encoding: {
+        x: {
+          field: dateCol, type: "temporal",
+          axis: { format: xDateFmt, labelAngle: 0, title: cleanLabel(dateCol) },
+        },
+        y: {
+          field: numCol, type: "quantitative",
+          axis: { format: yFmt, grid: true, title: yTitle },
+        },
+      },
+    };
+    defaultH = 350;
   }
 
   if (!spec) return null;
 
-  // Cap chart height to ~60% of typical panel height unless user has dragged or expanded
-  const CLIP_H  = 400;
-  const isLong  = defaultH > CLIP_H && !userH;
-  const chartH  = userH ?? (expanded ? defaultH : Math.min(defaultH, CLIP_H));
+  // Base chart height fills the 350px component; grows only if y-axis labels would overlap.
+  const chartH  = userH ?? defaultH;
 
   return (
     <div className="mt-2 w-full group/chart">
-      {/* Header row: download button appears on hover, sits above the chart */}
-      <div className="flex justify-end h-6 mb-0.5 opacity-0 group-hover/chart:opacity-100 transition-opacity">
+      {/* Header row: download + labels toggle buttons appear on hover */}
+      <div className="flex justify-end h-6 mb-0.5 opacity-0 group-hover/chart:opacity-100 transition-opacity gap-1">
+        <button
+          onClick={() => setShowLabels(s => !s)}
+          title={showLabels ? "Hide data labels" : "Show data labels"}
+          className={`w-6 h-6 flex items-center justify-center rounded transition-colors ${showLabels ? "bg-blue-500/20 text-blue-300" : "bg-zinc-800/80 hover:bg-zinc-700 text-zinc-500 hover:text-zinc-200"}`}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M4 7V4h3" />
+            <path d="M4 17v3h3" />
+            <path d="M20 7V4h-3" />
+            <path d="M20 17v3h-3" />
+            <path d="M9 9h6v6H9z" />
+          </svg>
+        </button>
         <button
           onClick={handleDownloadPng}
           title="Download chart as PNG"
@@ -1101,25 +1324,13 @@ function InlineChart({
         </button>
       </div>
 
-      {/* Chart — no overflow:hidden so axes are never clipped */}
-      <div ref={outerRef}>
+      {/* Chart viewport — fixed 350px with internal scroll; Vega renders at full natural height */}
+      <div ref={outerRef} style={{ maxHeight: 350, overflowY: 'auto', overflowX: 'auto', width: '100%' }}>
         <div ref={chartRef}>
-          <VegaChart spec={spec} data={vegaData} height={chartH} />
+          <VegaChart spec={spec} data={vegaData} height={chartH} showLabels={showLabels} />
         </div>
       </div>
 
-      {/* Expand / Collapse when chart is taller than CLIP_H */}
-      {isLong && (
-        <button
-          onClick={() => setExpanded(e => !e)}
-          className="mt-1 flex items-center gap-1 text-[11px] text-zinc-600 hover:text-zinc-300 transition-colors"
-        >
-          <span style={{ display: "inline-flex", transform: expanded ? "rotate(180deg)" : "none", transition: "transform .2s" }}>
-            <ChevronDownIcon label="" size="small" />
-          </span>
-          {expanded ? "Collapse chart" : "Show full chart"}
-        </button>
-      )}
 
       {/* Drag-to-resize handle */}
       <div
@@ -1143,10 +1354,10 @@ function computeSummary(columns: string[], rows: unknown[][]): string | null {
     (c, i) => !ORDINAL_COL.test(c) && rows.slice(0, 5).every((r) => isNumeric((r as unknown[])[i]))
   );
   const catIdx = columns.findIndex(
-    (c, i) => i !== numIdx && !isNumeric(rows[0]?.[i as number]) && !ORDINAL_COL.test(c)
+    (c, i) => i !== numIdx && !isNumeric(firstNonNull(rows, i)) && !ORDINAL_COL.test(c)
   );
   const cat2Idx = columns.findIndex(
-    (c, i) => i !== numIdx && i !== catIdx && !isNumeric(rows[0]?.[i as number]) && !ORDINAL_COL.test(c)
+    (c, i) => i !== numIdx && i !== catIdx && !isNumeric(firstNonNull(rows, i)) && !ORDINAL_COL.test(c)
   );
 
   if (numIdx === -1) {
@@ -1261,7 +1472,7 @@ function ResultBody({
           {summary && (
             <p className="text-[12px] italic text-zinc-400 mb-2 leading-relaxed">{summary}</p>
           )}
-          <InlineChart columns={columns} rows={rows} chartType={chartType} title={sourceTitle} />
+          <InlineChart columns={columns} rows={rows} chartType={chartType} chartConfig={turn.chartConfig} title={sourceTitle} />
           {/* Source chip — bottom-right, opens the global source drawer */}
           <div className="flex justify-end mt-2">
             <button
@@ -1298,7 +1509,7 @@ function SqlBlock({ sql }: { sql: string }) {
 
   return (
     <div className="relative group/sql">
-      <pre className="text-[12px] font-mono text-zinc-400 rounded p-2.5 pr-10 overflow-x-auto whitespace-pre-wrap leading-relaxed" style={{ background: "#0d131a" }}>
+      <pre className="text-[12px] font-mono text-zinc-400 rounded p-2.5 pr-10 overflow-x-auto whitespace-pre-wrap leading-relaxed" style={{ background: "var(--code-bg)" }}>
         {sql}
       </pre>
       <button
@@ -1448,7 +1659,7 @@ export function SourcePanel({
             </span>
           </button>
           {showCode && (
-            <div className="border-t border-zinc-700/40 overflow-x-auto" style={{ background: "#0a1018" }}>
+            <div className="border-t border-zinc-700/40 overflow-auto" style={{ background: "#0a1018", maxHeight: 320 }}>
               <FormattedSql sql={sql} />
             </div>
           )}
@@ -1624,6 +1835,7 @@ function PlaybookRefs({ refs }: { refs: PlaybookRef[] }) {
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
   useEffect(() => { setItems(refs); }, [refs]);
   if (items.length === 0) return null;
 
@@ -1649,10 +1861,18 @@ function PlaybookRefs({ refs }: { refs: PlaybookRef[] }) {
 
   return (
     <div className="mt-4 rounded-md border border-amber-700/30" style={{ background: "color-mix(in srgb, #f59e0b 5%, var(--bg-0))" }}>
-      <div className="px-3 py-2 border-b border-amber-700/20 flex items-center gap-2">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="w-full px-3 py-2 border-b border-amber-700/20 flex items-center gap-2 text-left"
+      >
+        <span className="shrink-0 text-amber-400/90">
+          <WarningIcon label="Playbook" size="small" />
+        </span>
         <span className="text-[11px] font-medium uppercase tracking-wide text-amber-400/90">Playbook referenced</span>
-        <span className="text-[11px] text-zinc-500">— these org playbook items informed this answer. Keep, edit, or remove.</span>
-      </div>
+        <span className="text-[11px] text-zinc-500">— {items.length} item{items.length !== 1 ? "s" : ""}</span>
+        <span className="ml-auto shrink-0 text-amber-600">{open ? "▲" : "▼"}</span>
+      </button>
+      {open && (
       <div className="divide-y divide-amber-700/15">
         {items.map(item => (
           <div key={item.id} className="px-3 py-2.5 group/pb">
@@ -1700,6 +1920,7 @@ function PlaybookRefs({ refs }: { refs: PlaybookRef[] }) {
           </div>
         ))}
       </div>
+      )}
     </div>
   );
 }
@@ -1749,6 +1970,52 @@ function InlineAgentTrace({ turn }: { turn: ChatTurn }) {
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
+// ── Insight narrative (Genie-style analytical interpretation) ─────────────────
+function InsightSection({ insight }: { insight: { narrative: string; anomalies: string[]; trend: string; confidence: string } }) {
+  if (!insight || !insight.narrative) return null;
+  const trendColor = insight.trend === 'up' ? 'text-emerald-400' : insight.trend === 'down' ? 'text-rose-400' : 'text-zinc-400';
+  const trendLabel = insight.trend === 'up' ? 'Trending up' : insight.trend === 'down' ? 'Trending down' : insight.trend === 'mixed' ? 'Mixed trend' : 'Stable';
+  const confColor = insight.confidence === 'high' ? 'text-emerald-400' : insight.confidence === 'low' ? 'text-amber-400' : 'text-zinc-400';
+  return (
+    <div className="mt-3 mb-3 rounded-lg border border-zinc-700/40 p-3" style={{ background: '#13151a' }}>
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-[11px] font-medium uppercase tracking-wide text-zinc-500">Insight</span>
+        <span className={`text-[11px] font-medium ${trendColor}`}>{trendLabel}</span>
+        <span className={`text-[11px] ${confColor}`}>{insight.confidence} confidence</span>
+      </div>
+      <p className="text-[12px] text-zinc-300 leading-relaxed">{insight.narrative}</p>
+      {insight.anomalies.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {insight.anomalies.map((a, i) => (
+            <span key={i} className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full border border-purple-700/40 text-purple-300" style={{ background: 'color-mix(in srgb, #a855f7 8%, transparent)' }}>
+              <Lightbulb size={10} strokeWidth={2.5} />
+              {a}
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Clarifying questions surfaced before deep analysis ───────────────────────
+function ClarifyingQuestionsBanner({ questions, contextNote }: { questions: string[]; contextNote: string }) {
+  if (!questions || questions.length === 0) return null;
+  return (
+    <div className="mt-3 mb-3 rounded-lg border border-blue-700/30 p-3" style={{ background: 'color-mix(in srgb, #3b82f6 6%, transparent)' }}>
+      <div className="flex items-center gap-2 mb-1.5">
+        <span className="text-[11px] font-medium uppercase tracking-wide text-blue-400">Clarifying questions</span>
+      </div>
+      {contextNote && <p className="text-[11px] text-blue-300/70 mb-2">{contextNote}</p>}
+      <div className="flex flex-wrap gap-1.5">
+        {questions.map((q, i) => (
+          <span key={i} className="text-[11px] px-2 py-0.5 rounded-full border border-blue-700/40 text-blue-300">{q}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function ChatMessage({
   turn,
   onFollowUp,
@@ -1813,6 +2080,10 @@ export function ChatMessage({
       {/* ── Loading state ── */}
       {turn.status === "loading" && (
         <div>
+          {/* Clarifying questions surface early in deep analysis */}
+          {isInvestigate && turn.clarifyingQuestions.length > 0 && (
+            <ClarifyingQuestionsBanner questions={turn.clarifyingQuestions} contextNote={turn.clarifyingContext} />
+          )}
           {/* Quick (ask) mode has no multi-step trace — show the simple thinking dots */}
           {!isInvestigate && (
             <div className="flex items-center gap-3 py-2">
@@ -1897,6 +2168,7 @@ export function ChatMessage({
                 {turn.headline && (
                   <p className="text-[12px] text-zinc-300 leading-relaxed mb-2">{turn.headline}</p>
                 )}
+                {turn.insight && <InsightSection insight={turn.insight} />}
                 <ResultBody turn={turn} onShowSource={onShowSource} />
               </>
             )}

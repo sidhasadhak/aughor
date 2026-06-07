@@ -148,13 +148,13 @@ function LifecycleMapsSection({ maps }: { maps: ExplorationFindings["lifecycle_m
 // ── Distributions ─────────────────────────────────────────────────────────────
 
 const DIST_SHAPE_PILL: Record<string, { label: string; bg: string; text: string; border: string; barColor: string }> = {
-  fraction_0_1:  { label: "0–1 ratio",    bg: "#1e2a1e", text: "#4ade80", border: "#2a4a2a", barColor: "#2a4a2a" },
-  normal:        { label: "Normal",        bg: "#1a1e2e", text: "#7ba8f7", border: "#2a3050", barColor: "#2a3050" },
-  concentrated:  { label: "Concentrated", bg: "#2a1a2e", text: "#c084fc", border: "#3e2a50", barColor: "#4a4b5a" },
-  skewed_right:  { label: "Right-skewed", bg: "#2a1e14", text: "#f97316", border: "#3e2a1e", barColor: "#3e2a1e" },
-  skewed_left:   { label: "Left-skewed",  bg: "#2a1e14", text: "#f97316", border: "#3e2a1e", barColor: "#3e2a1e" },
-  uniform:       { label: "Uniform",      bg: "#1a2a1e", text: "#4ade80", border: "#2a4a2a", barColor: "#2a4a2a" },
-  bimodal:       { label: "Bimodal",      bg: "#2a1a1a", text: "#f87171", border: "#3e2a2a", barColor: "#3e2a2a" },
+  fraction_0_1:  { label: "0–1 ratio",    bg: "var(--grn1)", text: "var(--grn4)", border: "var(--grn2)", barColor: "var(--grn2)" },
+  normal:        { label: "Normal",        bg: "var(--blue1)", text: "var(--blue4)", border: "var(--blue2)", barColor: "var(--blue2)" },
+  concentrated:  { label: "Concentrated", bg: "var(--vio1)", text: "var(--vio4)", border: "var(--vio2)", barColor: "var(--b3)" },
+  skewed_right:  { label: "Right-skewed", bg: "var(--amb1)", text: "var(--amb4)", border: "var(--amb2)", barColor: "var(--amb2)" },
+  skewed_left:   { label: "Left-skewed",  bg: "var(--amb1)", text: "var(--amb4)", border: "var(--amb2)", barColor: "var(--amb2)" },
+  uniform:       { label: "Uniform",      bg: "#1a2a1e", text: "var(--grn4)", border: "var(--grn2)", barColor: "var(--grn2)" },
+  bimodal:       { label: "Bimodal",      bg: "var(--red1)", text: "var(--red4)", border: "var(--red2)", barColor: "var(--red2)" },
 };
 
 function miniBarHeights(shape: string): number[] {
@@ -198,12 +198,12 @@ function DistributionsSection({ distributions }: { distributions: ExplorationFin
       {/* Summary cards */}
       <div className="grid grid-cols-4 gap-1.5">
         {([
-          { label: "Normal",       count: normalCount, color: "#7ba8f7" },
-          { label: "0–1 Ratio",    count: ratioCount,  color: "#4ade80" },
-          { label: "Concentrated", count: concCount,   color: "#c084fc" },
-          { label: "Other",        count: otherCount,  color: "#9a9ba4" },
+          { label: "Normal",       count: normalCount, color: "var(--blue4)" },
+          { label: "0–1 Ratio",    count: ratioCount,  color: "var(--grn4)" },
+          { label: "Concentrated", count: concCount,   color: "var(--vio4)" },
+          { label: "Other",        count: otherCount,  color: "var(--t2)" },
         ] as const).map(({ label, count, color }) => (
-          <div key={label} className="rounded-md p-2.5" style={{ background: "#13141a", border: "0.5px solid #1e1f24" }}>
+          <div key={label} className="rounded-md p-2.5" style={{ background: "var(--bg-1)", border: "0.5px solid var(--b1)" }}>
             <p className="text-[11px] uppercase tracking-widest mb-1" style={{ color: "var(--t4)" }}>{label}</p>
             <p className="text-xl font-medium font-mono" style={{ color, letterSpacing: "-0.02em" }}>{count}</p>
           </div>
@@ -212,14 +212,14 @@ function DistributionsSection({ distributions }: { distributions: ExplorationFin
 
       {/* Filter row */}
       <div className="flex items-center justify-between">
-        <span className="text-[11px]" style={{ color: "#5a5b62" }}>{allEntries.length} columns profiled</span>
+        <span className="text-[11px]" style={{ color: "var(--t3)" }}>{allEntries.length} columns profiled</span>
         <input
           type="text"
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="Filter columns…"
           className="text-[11px] rounded-md px-2.5 py-1 focus:outline-none w-32"
-          style={{ background: "#13141a", border: "0.5px solid #1e1f24", color: "#9a9ba4" }}
+          style={{ background: "var(--bg-1)", border: "0.5px solid var(--b1)", color: "var(--t2)" }}
         />
       </div>
 
@@ -243,19 +243,19 @@ function DistributionsSection({ distributions }: { distributions: ExplorationFin
             <div
               key={key}
               className="flex items-center gap-2 px-3 py-2.5 rounded-md cursor-pointer transition-all"
-              style={{ background: "#13141a", border: "0.5px solid transparent" }}
+              style={{ background: "var(--bg-1)", border: "0.5px solid transparent" }}
               onMouseEnter={e => (e.currentTarget.style.borderColor = "#2a2b30")}
               onMouseLeave={e => (e.currentTarget.style.borderColor = "transparent")}
             >
               {/* Column name + type */}
               <div style={{ flex: "0 0 180px", minWidth: 0 }}>
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[11px] font-mono" style={{ color: "#5a5b62" }}>{table}</span>
+                  <span className="text-[11px] font-mono" style={{ color: "var(--t3)" }}>{table}</span>
                   {d.col_type && (
                     <span className="text-[11px] font-mono" style={{ color: "var(--t4)" }}>{d.col_type}</span>
                   )}
                   {d.col_type === "BIGINT" && /(^ts$|_ts$|_at$|timestamp|time)/i.test(col) && (
-                    <span className="text-[8.5px] px-1 py-0 rounded" style={{ background: "#2a1a2e", color: "#c084fc", border: "0.5px solid #3e2a50" }}>unix ts</span>
+                    <span className="text-[8.5px] px-1 py-0 rounded" style={{ background: "var(--vio1)", color: "var(--vio4)", border: "0.5px solid var(--vio2)" }}>unix ts</span>
                   )}
                 </div>
                 <div className="text-[12.5px] font-medium font-mono mt-0.5" style={{ color: "#c8c7c3" }}>{col}</div>
@@ -271,7 +271,7 @@ function DistributionsSection({ distributions }: { distributions: ExplorationFin
                 ] as const).map(({ label, value }) => (
                   <div key={label} className="flex-1 flex flex-col items-center">
                     <span className="text-[11px] mb-0.5" style={{ color: "var(--b0)", letterSpacing: "0.04em" }}>{label}</span>
-                    <span style={{ color: label === "p50" || label === "mean" ? "#9a9ba4" : "#6e6f78" }}>
+                    <span style={{ color: label === "p50" || label === "mean" ? "var(--t2)" : "#6e6f78" }}>
                       {fmtNum(value as number | null | undefined)}
                     </span>
                   </div>

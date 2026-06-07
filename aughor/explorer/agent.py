@@ -304,7 +304,7 @@ class SchemaExplorer:
                     self.connection_id,
                 )
                 try:
-                    await _loop.run_in_executor(None, self._conn.get_schema)
+                    await _loop.run_in_executor(None, self._conn.build_intelligence)
                     logger.info(
                         "[explorer:%s] Ontology build complete, proceeding to Phase 8",
                         self.connection_id,
@@ -372,18 +372,30 @@ class SchemaExplorer:
                 schema_filter = f"= '{schema or 'public'}'"
             r = self._conn.execute(
                 "__explorer__",
-                f"SELECT table_name FROM information_schema.tables "
+                f"SELECT table_schema, table_name FROM information_schema.tables "
                 f"WHERE table_schema {schema_filter} "
-                f"AND table_type = 'BASE TABLE' ORDER BY table_name",
+                f"AND table_type = 'BASE TABLE' ORDER BY table_schema, table_name",
             )
-            tables = [row[0] for row in (r.rows or [])] if not r.error else []
+            raw_tables = [(row[0], row[1]) for row in (r.rows or [])] if not r.error else []
+            # When multiple schemas exist, fully-qualify table names so generated
+            # SQL resolves correctly (e.g. bakehouse.sales_franchises).
+            schemas_seen = {s for s, _ in raw_tables}
+            if len(schemas_seen) > 1 or (schema and schema not in schemas_seen and len(raw_tables) > 0):
+                tables = [f'{s}.{t}' for s, t in raw_tables]
+            elif len(schemas_seen) == 1 and not schema:
+                # Single schema, no explicit schema configured — still qualify to be safe
+                single_schema = next(iter(schemas_seen))
+                tables = [f'{single_schema}.{t}' for s, t in raw_tables]
+            else:
+                tables = [t for _, t in raw_tables]
 
             if not tables:
                 return {}, {}, {}
 
             # Filter tables to canvas scope when set
             if self.tables_filter:
-                tables = [t for t in tables if t in self.tables_filter]
+                filter_set = set(self.tables_filter)
+                tables = [t for t in tables if t in filter_set or t.split('.')[-1] in filter_set]
             if not tables:
                 return {}, {}, {}
 

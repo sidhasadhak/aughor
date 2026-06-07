@@ -80,6 +80,7 @@
 71. [Agentic Investigation Polish — Coherence, Trace, Report, Timing](#71-agentic-investigation-polish--coherence-trace-report-timing)
 72. [Canvas Optimisation — Scope Editing & History Management](#72-canvas-optimisation--scope-editing--history-management)
 73. [Data Canvas — List Ranking, Recents & Rename](#73-data-canvas--list-ranking-recents--rename)
+74. [Grounded NL2SQL, Trusted Templates & the Eval Suite](#74-grounded-nl2sql-trusted-templates--the-eval-suite)
 
 ---
 
@@ -2244,4 +2245,33 @@ Two connected pieces of work that make the **Canvas** — not the raw connection
 
 ---
 
-*Last updated: 2026-06-04 · 73 features — all shipped. See `ROADMAP.md` for upcoming milestones.*
+## 74. Grounded NL2SQL, Trusted Templates & the Eval Suite
+
+**What it does.** Makes natural-language → SQL **correct on real, unseen schemas** — the core of the "plug-and-play data intelligence platform" thesis — and proves it with an execution-validated eval suite rather than vibes.
+
+**Why it exists.** A bare LLM handed a raw schema hallucinates joins, mis-defines metrics, and fans out multi-table aggregations. Aughor competes with the best (Databricks Genie, Palantir Foundry/AIP) by *grounding* generation in structured, verified context and *measuring* every lever against real benchmarks.
+
+**How it works — the grounding pipeline.** Each question flows through:
+1. **Schema-linking** (`tools/schema_linker.py`) — narrows the schema to the relevant tables/columns, schema-agnostic (de-hardwired from any one schema), with a safety floor that never returns an empty schema.
+2. **Data Catalog** (`tools/data_catalog.py`) — a MindsDB-style structured catalog: exact columns, types, sample rows, and detected foreign-key joins for the linked tables.
+3. **Join grounding** (`tools/schema.py`) — FK detection that handles prefixed/fused keys (`c_custkey ↔ o_custkey`), surrogate keys (`ss_item_sk ↔ i_item_sk`), and role-played date dimensions; **star-schema routing** joins facts → dimensions (not fact↔fact); FK-neighbour expansion pulls in bridge tables a question needs only via a join.
+4. **Temporal/dimension grounding** — for star schemas, brings `date_dim`/`time_dim` into context and tells the model `*_date_sk` columns are surrogate keys to join, not literals.
+5. **Trusted query templates** (`semantic/trusted_queries.py`) — curated, data-team-reviewed verified SQL patterns, injected authoritatively when a question matches; fixes reasoning gaps prompt rules can't (e.g. multi-fact **fan-out** row multiplication). Emits a `trusted` SSE event for provenance / a "Verified" badge.
+6. **Dialect normalization + self-correcting retry** (`sql/writer.py`) — SQLGlot transpiles to the target dialect; on error, a diagnosis (DuckDB-specific hints for `to_char`, `date_part`, …) drives a rewrite.
+
+**The eval suite** (`evals/`) — execution-validated on real, unseen schemas:
+- `run_tpch.py` — TPC-H (6M rows, joins) vs DuckDB's bundled official queries → **5/7**.
+- `run_tpcds.py` — TPC-DS (24-table snowflake) vs `tpcds_queries()` → **4/5** (1/5 → 4/5 via the temporal lever).
+- `run_clickbench.py` — ClickBench (105-col wide table) vs verbatim reference → **10/10**.
+- `run_golden.py` — the full intelligence-injected pipeline on a golden set, measure-based scoring.
+- `run_realdb.py` — **reference-free** on any live connection: auto-generates business questions from the schema, scores by executes-clean + **self-consistency** (two generations agree) + cross-model **LLM-as-judge** — the plug-and-play test and the basis for a per-answer confidence score.
+
+**What the eval found (and fixed).** Model-invariant failures (qwen and kimi fail the *same* queries) proved the ceiling is *grounding*, not the model. Along the way the eval surfaced and fixed real bugs: a spurious-GROUP-BY rewriter (semantic_validator false positives corrupting correct SQL), a cross-connection metric leak (a wrong revenue formula injected into every connection), and a measure-comparator false-negative on large result sets.
+
+**Platform hardening shipped alongside.** Connection pooling, Google Sheets connector, Anthropic (Opus) fallback when the primary LLM backend fails, explorer auto-start on new connections, audit-log noise reduction, and batched post-answer LLM calls.
+
+**Key files.** `aughor/tools/{schema_linker,data_catalog,schema,semantic_validator}.py`, `aughor/semantic/{trusted_queries,metrics}.py`, `aughor/sql/writer.py`, `aughor/llm/provider.py`, `aughor/db/pool.py`, `aughor/routers/investigations.py`; `evals/run_{tpch,tpcds,clickbench,golden,realdb}.py`.
+
+---
+
+*Last updated: 2026-06-07 · 74 features — all shipped. See `ROADMAP.md` for upcoming milestones.*

@@ -9,6 +9,7 @@ import duckdb
 from langgraph.graph import END, StateGraph
 
 from aughor.agent.nodes import (
+    answer_text_only,
     decompose_question,
     exploratory_scan,
     plan_and_execute,
@@ -35,6 +36,7 @@ from aughor.agent.investigate import (
 )
 from aughor.agent.explore import (
     decompose_exploration,
+    exploratory_scan_subq,
     plan_and_execute_subq,
     reason_over_result,
     route_after_reason,
@@ -53,7 +55,7 @@ def _checkpointer():
     return SqliteSaver(conn)
 
 
-def _compile(execute_node, scan_node, explore_execute_node, ada_nodes: dict = None, hitl: bool = False):
+def _compile(execute_node, scan_node, explore_execute_node, explore_scan_subq_node=None, ada_nodes: dict = None, hitl: bool = False):
     graph = StateGraph(AgentState)
 
     # ── Shared entry ──────────────────────────────────────────────────────────
@@ -93,12 +95,14 @@ def _compile(execute_node, scan_node, explore_execute_node, ada_nodes: dict = No
     graph.add_edge("ada_synthesize",    END)
 
     # ── Direct query branch (plan-then-SQL) ───────────────────────────────────
+    graph.add_node("answer_text_only", answer_text_only)  # KB-only, no SQL
     graph.add_node("plan_queries", plan_queries)          # no conn — pure LLM planning
     graph.add_node("execute_planned_queries", execute_node)  # conn via partial
     graph.add_node("score_evidence", score_evidence)
     graph.add_node("replan", replan)
     graph.add_node("synthesize", synthesize_report)
 
+    graph.add_edge("answer_text_only", END)
     graph.add_edge("plan_queries", "execute_planned_queries")
     graph.add_edge("execute_planned_queries", "score_evidence")
     graph.add_edge("score_evidence", "replan")
@@ -112,12 +116,19 @@ def _compile(execute_node, scan_node, explore_execute_node, ada_nodes: dict = No
     # ── Explore branch ────────────────────────────────────────────────────────
     graph.add_node("exploratory_scan_explore", scan_node)
     graph.add_node("decompose_exploration", decompose_exploration)
-    graph.add_node("plan_and_execute_subq", explore_execute_node)
+    graph.add_node("plan_and_execute_subq", explore_execute_node)  # real SQL planner/executor
     graph.add_node("reason_over_result", reason_over_result)
     graph.add_node("synthesize_exploration", synthesize_exploration)
 
     graph.add_edge("exploratory_scan_explore", "decompose_exploration")
-    graph.add_edge("decompose_exploration", "plan_and_execute_subq")
+    # Optional mid-chain discovery scan before the planner. When provided, it
+    # produces the per-sub-question Data Portrait; otherwise we plan directly.
+    if explore_scan_subq_node is not None:
+        graph.add_node("exploratory_scan_subq", explore_scan_subq_node)
+        graph.add_edge("decompose_exploration", "exploratory_scan_subq")
+        graph.add_edge("exploratory_scan_subq", "plan_and_execute_subq")
+    else:
+        graph.add_edge("decompose_exploration", "plan_and_execute_subq")
     graph.add_edge("plan_and_execute_subq", "reason_over_result")
     graph.add_conditional_edges(
         "reason_over_result",
@@ -134,6 +145,7 @@ def _compile(execute_node, scan_node, explore_execute_node, ada_nodes: dict = No
             "exploratory_scan": "exploratory_scan",
             "exploratory_scan_explore": "exploratory_scan_explore",
             "plan_queries": "plan_queries",
+            "answer_text_only": "answer_text_only",
         },
     )
 
@@ -157,7 +169,8 @@ def build_graph(conn: duckdb.DuckDBPyConnection):
     return _compile(
         partial(execute_planned_queries, conn=db),
         partial(exploratory_scan, conn=db),
-        partial(plan_and_execute_subq, conn=db),
+        partial(plan_and_execute_subq, conn=db),   # real per-sub-question SQL planner
+        partial(exploratory_scan_subq, conn=db),   # mid-chain discovery scan
         ada_nodes=ada_nodes,
     )
 
@@ -173,7 +186,8 @@ def build_graph_generic(db, hitl: bool = False):
     return _compile(
         partial(execute_planned_queries, conn=db),
         partial(exploratory_scan, conn=db),
-        partial(plan_and_execute_subq, conn=db),
+        partial(plan_and_execute_subq, conn=db),   # real per-sub-question SQL planner
+        partial(exploratory_scan_subq, conn=db),   # mid-chain discovery scan
         ada_nodes=ada_nodes,
         hitl=hitl,
     )
@@ -224,6 +238,9 @@ def run_investigation(
         "ada_report": None,
         "_ada_intake": None,
         "current_plan": None,
+        "data_catalog": "",
+        "subq_data_portrait": {},
+        "final_text_answer": "",
     }
 
     final_state = initial_state.copy()

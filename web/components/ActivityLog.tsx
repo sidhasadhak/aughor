@@ -21,7 +21,7 @@ import {
 // ── Phase metadata ────────────────────────────────────────────────────────────
 
 const PHASE_META: Record<string, { label: string; color: string; bg: string }> = {
-  exploration:       { label: "schema",    color: "#9a9ba4", bg: "#1e1f24" },
+  exploration:       { label: "schema",    color: "#9a9ba4", bg: "var(--bg-3)" },
   null_meaning:      { label: "nulls",     color: "#7ba8f7", bg: "#1a1e2e" },
   join_verification: { label: "joins",     color: "#f97316", bg: "#2a1e14" },
   lifecycle_mapping: { label: "lifecycle", color: "#4ade80", bg: "#1a2820" },
@@ -29,7 +29,7 @@ const PHASE_META: Record<string, { label: string; color: string; bg: string }> =
   cross_table:       { label: "patterns",  color: "#f87171", bg: "#2a1a1a" },
   domain_intel:      { label: "intel",     color: "#60a5fa", bg: "#1a2030" },
   // Chat-initiated query types
-  ask:               { label: "quick",     color: "#9a9ba4", bg: "#1e1f24" },
+  ask:               { label: "quick",     color: "#9a9ba4", bg: "var(--bg-3)" },
   investigate:       { label: "agentic",   color: "#c084fc", bg: "#22182e" },
 };
 
@@ -143,9 +143,9 @@ function StatusBar({ status, stopped, onStop, onResume, onRestart, stopping, res
   const isStopped = stopped || status.paused || status.phase === "pending";
   const meta = phaseMeta(status.phase);
   return (
-    <div className="flex items-center gap-3 px-4 py-2 border-b shrink-0" style={{ borderColor: "#1e1f24", background: "var(--bg-0)" }}>
+    <div className="flex items-center gap-3 px-4 py-2 border-b shrink-0" style={{ borderColor: "var(--b2)", background: "var(--bg-0)" }}>
       <span className="flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded font-medium"
-        style={isStopped && !isRunning ? { background: "#1e1f24", color: "#5a5b62" } : { background: meta.bg, color: meta.color }}>
+        style={isStopped && !isRunning ? { background: "var(--bg-3)", color: "#5a5b62" } : { background: meta.bg, color: meta.color }}>
         {isRunning && <span className="inline-block w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: meta.color }} />}
         {isStopped && !isRunning ? "stopped" : status.phase === "complete" ? "complete" : status.phase === "pending" ? "idle" : meta.label}
       </span>
@@ -213,7 +213,7 @@ function RetryPanel({ ep, connectionId, errorMsg }: { ep: ExplorationEpisode; co
           onKeyDown={e => e.key === "Enter" && !loading && handleRetry()}
           placeholder="e.g. use click_ts instead of click_id…"
           className="flex-1 text-[11px] rounded px-2.5 py-1.5 focus:outline-none"
-          style={{ background: "#13141a", border: "0.5px solid #2a2b35", color: "#9a9ba4" }} />
+          style={{ background: "var(--bg-1)", border: "0.5px solid #2a2b35", color: "#9a9ba4" }} />
         <button onClick={handleRetry} disabled={loading}
           className="text-[11px] px-3 py-1.5 rounded disabled:opacity-40 shrink-0"
           style={{ background: "#1a2030", color: "#60a5fa", border: "0.5px solid #2a3a50" }}>
@@ -234,7 +234,7 @@ function RetryPanel({ ep, connectionId, errorMsg }: { ep: ExplorationEpisode; co
               <table className="text-[11px] font-mono w-full">
                 <thead><tr>{result.columns.map(c => (
                   <th key={c} className="px-2 py-1 text-left font-medium"
-                    style={{ color: "#4a4b57", borderBottom: "0.5px solid #1e1f24" }}>{c}</th>
+                    style={{ color: "#4a4b57", borderBottom: "0.5px solid var(--b2)" }}>{c}</th>
                 ))}</tr></thead>
                 <tbody>{result.rows.slice(0, 15).map((row, i) => (
                   <tr key={i} style={{ borderBottom: "0.5px solid #111115" }}>
@@ -321,7 +321,7 @@ function LogTable({ items, connectionId, sortCol, sortDir, onSort }: LogTablePro
     textAlign: "left", fontSize: 9,
     fontFamily: "var(--font-mono)", color: "var(--t4)",
     textTransform: "uppercase", letterSpacing: "0.07em",
-    borderBottom: "1px solid #1e1f24", fontWeight: 500,
+    borderBottom: "1px solid var(--b2)", fontWeight: 500,
     whiteSpace: "nowrap",
     userSelect: "none",
     cursor: "pointer",
@@ -617,9 +617,9 @@ export function ActivityLog({ connectionId, isActive, canvasId }: Props) {
         {filtered.length > DEFAULT_LIMIT && (
           <button onClick={() => setShowAll(v => !v)} style={{
             fontSize: 10, padding: "3px 8px", borderRadius: 4, cursor: "pointer",
-            background: showAll ? "#1a2030" : "#13141a",
+            background: showAll ? "#1a2030" : "var(--bg-1)",
             color: showAll ? "#60a5fa" : "#5a5b62",
-            border: `0.5px solid ${showAll ? "#2a3a50" : "#1e1f24"}`,
+            border: `0.5px solid ${showAll ? "#2a3a50" : "var(--bg-3)"}`,
           }}>
             {showAll ? "Show less" : `Show all ${filtered.length}`}
           </button>

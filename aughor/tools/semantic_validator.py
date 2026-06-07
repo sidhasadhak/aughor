@@ -74,6 +74,28 @@ _PARTITION_BY_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
+# Markers that signal a per-entity BREAKDOWN (one row per entity) rather than a
+# single aggregate. Step 3 (demand an entity column in GROUP BY) only fires when
+# one of these is tied to the entity noun — a bare mention ("how many items in
+# total", "revenue for cancelled orders") must NOT demand grouping.
+_BREAKDOWN_MARKER = r'\b(?:by|per|each|every|which|for\s+each|top|bottom|rank(?:ed|ing)?)\b'
+
+
+def _wants_entity_breakdown(question_lower: str, entity_kws: list[str]) -> bool:
+    """True only if the question asks for a per-entity breakdown of THIS entity,
+    e.g. 'by product', 'per seller', 'which 5 customers', 'top 10 orders',
+    'seller-wise', 'customer level'. A bare noun mention returns False."""
+    nouns = [kw for kw in entity_kws if " " not in kw and "-" not in kw]
+    for noun in nouns:
+        n = re.escape(noun)
+        # "<marker> [0-3 words] <noun>"  → by product · which 5 customers · top 10 sellers
+        if re.search(_BREAKDOWN_MARKER + r'(?:\s+\w+){0,3}\s+' + n + r'\b', question_lower):
+            return True
+        # "<noun>-wise" / "<noun> level"
+        if re.search(n + r'[\s-]+(?:wise|level)\b', question_lower):
+            return True
+    return False
+
 
 @dataclass
 class SemanticColumnWarning:
@@ -184,7 +206,15 @@ def check_entity_column_alignment(
             if groupby_matched:
                 continue  # correct entity columns in GROUP BY — clean
 
-            # ── Step 3: no entity columns in GROUP BY at all → warn
+            # ── Step 3: SQL groups by the WRONG entity column → warn.
+            # Two guards kill the dominant false-positive class (verified via the
+            # golden-SQL eval): never demand grouping on a flat aggregate (no
+            # GROUP BY at all), and never treat a bare noun mention as a breakdown
+            # request. Only flag a query that IS grouping but by the wrong column.
+            if not groupby_tokens:
+                continue  # flat aggregate — nothing to validate
+            if not _wants_entity_breakdown(question_lower, question_kws):
+                continue  # noun mentioned but no per-entity breakdown requested
             msg = (
                 f"SEMANTIC MISMATCH: the question asks for {entity_name}-level analysis "
                 f"but none of the expected {entity_name} identifier columns "

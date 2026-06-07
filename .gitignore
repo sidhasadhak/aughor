@@ -52,3 +52,13 @@ web/.env.local
 # IDEs
 .idea/
 .vscode/
+
+# Generated workspace data
+data/*.db
+data/*.json
+data/*.duckdb
+# DuckDB write-ahead logs / sidecars (transient — never version these)
+data/*.duckdb.wal
+data/*.duckdb-wal
+data/*.duckdb.tmp
+*.duckdb.wal

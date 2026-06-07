@@ -43,3 +43,15 @@ class Canvas(BaseModel):
     def table_filter(self) -> List[str]:
         """Tables selected in the first scope. Empty = full schema."""
         return self.scopes[0].tables if self.scopes else []
+
+
+class CanvasArtifact(BaseModel):
+    """Saved artifact from a Canvas conversation — query, report, or monitor seed."""
+    id: str
+    canvas_id: str
+    kind: str  # "query" | "report" | "insight" | "monitor"
+    title: str
+    description: str = ""
+    sql: str = ""
+    question: str = ""
+    created_at: str = ""
