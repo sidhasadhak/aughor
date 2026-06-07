@@ -24,6 +24,10 @@ class ComputedProperty(BaseModel):
     label: str               # human-readable: "Days Since Last Order"
     formula_sql: str         # SELECT-clause expression, e.g. "DATEDIFF('day', MAX(created_at), NOW())"
     unit: str = ""           # "days", "%", "$", etc.
+    # Self-validation (M24c): executed against the live DB by ontology.validator.
+    # Only verified formulas are injected into the NL2SQL prompt with authority.
+    verified: bool = False
+    verification_note: str = ""   # why it failed, when not verified
 
 
 class ObjectSet(BaseModel):
@@ -44,6 +48,10 @@ class ObjectSet(BaseModel):
     filter_sql: str = ""         # WHERE-clause fragment; empty string = all rows
     is_default: bool = False     # the primary view; filter_sql mirrors entity.active_filter
     source: Literal["lifecycle", "exploration", "manual"] = "manual"
+    # Self-validation (M24c): filter_sql executed as WHERE against the live DB.
+    # Empty filter_sql (all rows) is trivially verified.
+    verified: bool = False
+    verification_note: str = ""
 
 
 class EntityProperty(BaseModel):
@@ -179,6 +187,10 @@ class OntologyMetric(BaseModel):
     critical_threshold: Optional[float] = None  # red zone boundary
     target_period: Optional[str] = None         # "monthly", "quarterly", "ytd"
     benchmark_source: Optional[str] = None      # "internal: FY2025 plan", "industry: ecommerce"
+    # Self-validation (M24c): formula_sql executed against the live DB. Unverified
+    # formulas are demoted (never injected with "use this exact expression").
+    verified: bool = False
+    verification_note: str = ""
 
 
 class ActionParameter(BaseModel):
@@ -228,6 +240,8 @@ class OntologyGraph(BaseModel):
     )
     enriched: bool = False                     # True after M12b LLM enrichment pass
     enrichment_version: int = 0               # bump when enrichment prompt/schema changes
+    validated: bool = False                    # True after M24c semantic self-validation pass
+    validation_version: int = 0               # bump when validator logic changes
 
     entities: dict[str, OntologyEntity] = Field(default_factory=dict)
     relationships: dict[str, OntologyRelationship] = Field(default_factory=dict)
