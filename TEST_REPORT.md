@@ -81,10 +81,16 @@ Coverage is layered: backend features by Part A (smoke + flows), UI features by 
 
 - **Verified rendering / responding (≈55 of 75):** all 16 UI surfaces in Part B (features cross-referenced inline), the four refactored components with real data, every GET endpoint, and the write flows in Part A (metric validate, monitor create+trigger, knowledge, document upload).
 - **Verified by construction (refactor):** #10 vector search (`aughor_schema` 1650), #11 prior-investigations RAG, #21 SQL KB (252), #27 KB enrichment, #41 suggestions cache (150) — all Qdrant-backed, counts confirmed.
-- **LLM-flow-dependent, not exhaustively driven this pass (kick-off verified, full completion needs a live model run):** #1 Autonomous Investigative Loop, #2 SQL self-correction, #3 statistical evidence, #42 background explorer, #43/#44 ontology+domain build, #71 agentic polish. These run through the same chat path whose **Insight-mode happy path is confirmed** (Part B Chart). Driving each to completion (Deep Analysis mode) is the natural next coverage step.
-- **Feature-gated (no applicable data here, not failures):** #57 doc ingestion collection populates on upload ✅; `aughor_connection_kb` needs a knowledge connector; `org_intelligence` needs a promoted insight.
+- **LLM flows — focused driven pass:**
+  - **#43 Business Ontology (auto-built)** — **VERIFIED**: rebuilt the analytics ontology fresh → **20 entities + 38 relationships** (HTTP 200). The LLM ontology build works end-to-end on a persistent connection.
+  - **#1 Autonomous Investigative Loop — VERIFIED end-to-end.** Drove a Deep-Analysis investigation ("why do some franchises sell much more?") on the bakehouse canvas → **completed in 31.5s** with a full report: streaming AGENT TRACE (#18), question intake, baseline/anomaly assessment, collapsible SQL/evidence (#23), confidence + verdict. The agent ran 3 queries, hit a real data limitation (`sales_franchises` has no date column — `Binder Error: order_ts not found, candidate: zipcode`), **self-corrected (#2), and honestly returned "Not measurable (data gap)" at HIGH CONFIDENCE rather than hallucinating** — exactly the grounded behavior of #34 / #74. Baseline/statistical assessment (#3) ran.
+  - **#42 background explorer / #47 state persistence** — workspace shows a persisted complete run (11 tables, 71 queries).
+  - Still not separately driven: #44 domain build (rides the same loop, exercised partially by the above).
+- **Feature-gated (no applicable data here, not failures):** #57 doc ingestion populates on upload ✅; `aughor_connection_kb` needs a knowledge connector; `org_intelligence` needs a promoted insight.
 
-**Bugs found & fixed this pass:** 3 endpoint 500s (`1a424a5`), monitor-config 500→422 (`d62241a`), smoke-oracle self-comparison (`1a424a5`). **Net: 0 regressions, 4 fixes.**
+**Bug found & fixed in this focused pass:** `/ontology/rebuild` returned a confusing **500** for an in-memory `local_upload` connection (the build re-opens the connection, which is empty for `local://` uploads, while the ERD works off cached schema). Now a graceful **422** with guidance ("re-upload to refresh"); persistent connections (analytics) unaffected → still 200.
+
+**Bugs found & fixed across Phase 4:** 3 endpoint 500s (`1a424a5`), monitor-config 500→422 (`d62241a`), smoke-oracle self-comparison (`1a424a5`), ontology-rebuild 500→422 (uncommitted). **Net: 0 regressions, 5 fixes.**
 
 ---
 

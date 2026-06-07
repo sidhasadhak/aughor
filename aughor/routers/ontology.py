@@ -325,7 +325,23 @@ def rebuild_ontology(
     _invalidate_schema_cache(connection_id)
     graph = _get_ontology_graph(connection_id, effective)
     if graph is None:
-        raise HTTPException(status_code=500, detail="Ontology rebuild failed")
+        # The build re-opens the connection; in-memory file uploads (local_upload,
+        # dsn local://…) are empty on re-open, so no graph is produced. That's a
+        # client-actionable condition, not a server fault — return a clear 422
+        # rather than a confusing 500.
+        from aughor.db.registry import get_dsn
+        try:
+            conn_type, dsn = get_dsn(connection_id)
+        except Exception:
+            conn_type, dsn = "", ""
+        in_memory = conn_type == "local_upload" or str(dsn).startswith("local://")
+        detail = (
+            "Ontology can't be rebuilt for an in-memory file upload — its data isn't "
+            "re-readable on rebuild. Re-upload the data to refresh."
+            if in_memory else
+            "Ontology could not be built for this connection (no schema returned)."
+        )
+        raise HTTPException(status_code=422, detail=detail)
     return {
         "ok": True,
         "schema_name": graph.schema_name,
