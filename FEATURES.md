@@ -2312,4 +2312,21 @@ Two connected pieces of work that make the **Canvas** — not the raw connection
 
 ---
 
-*Last updated: 2026-06-07 · 76 features — all shipped. See `ROADMAP.md` for upcoming milestones.*
+## 77. The Brief — Answer Surface, Agent Reasoning Quality & Data-Shape Intelligence ✅ Shipped
+
+**What it does.** Re-grounds both answer modes in *how the data is actually shaped*, rebuilds them to read like a published analytical brief, and gives the agent a cross-sectional path for "where are we losing money" questions that have no time axis.
+
+**Why it exists.** Insight and Deep Analysis rendered as stacks of cards, badges and banners (the opposite of the Databricks/Palantir reference); the agent forced a temporal frame on every question (wrong metric, an empty comparison window, "HIGH confidence" on zero data), and its profile saw only date min/max — never the distributions, grain, or partial periods needed to reason about the data's shape.
+
+**How it works.**
+- **The Brief.** One flat rendering vocabulary (`web/components/brief/`): `Brief` / `BriefHeadline` / `BriefProse` / `BriefSection` / `BriefMetrics` / `BriefFigure` / `BriefDetails`. Prose carries the analysis with real **bold** on key numbers; charts and tables are the only framed blocks; SQL, confidence factors, attribution and data gaps fold into one quiet disclosure. Insight = a short brief, Deep Analysis = a long one. The purple Insight card, trend/confidence pills, anomaly chips, amber banners and accordion-in-accordion are gone.
+- **Agent reasoning quality.** A single sign convention (losses negative everywhere) is mandated in the synthesis prompt + model docs + a backend coercion, so no quantity renders +green in one component and −red in another. A deterministic confidence floor forces LOW when no usable data was gathered. Narrative prompts lead with the answer and bold decisive numbers.
+- **Data-shape intelligence.** The profiler captures numeric distributions (mean/median/stddev/p25–p75 — DuckDB `SUMMARIZE` already computed them and they were discarded), derives the analytical grain from span + cadence (`_choose_grain`), flags an incomplete trailing period, and intake clamps comparison windows to the real date range (no empty-period comparisons).
+- **Cross-sectional diagnostics.** An `_is_diagnostic_question()` trigger (or no date column) routes "where/which is weakest / where are we losing money" to a new `ada_cross_section` node — a dimensional weakness scan that ranks the money metric across each dimension — instead of the temporal baseline.
+- **Live trace.** The Deep-Analysis trace renders the real phases with plain-language, present-tense labels and live status.
+
+**Key files.** `web/components/brief/`, `web/components/{ChatMessage,InvestigationReport,ThinkingTrace}.tsx`; `aughor/tools/{profiler,profile_cache}.py`; `aughor/agent/{investigate,graph,prompts_investigate,prompts_explore}.py`, `aughor/routers/investigations.py`; `scripts/answer_sweep.py`.
+
+---
+
+*Last updated: 2026-06-07 · 77 features — all shipped. See `ROADMAP.md` for upcoming milestones.*

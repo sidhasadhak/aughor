@@ -82,6 +82,12 @@ For complex questions ("Why did revenue drop 8% last month?"), Aughor runs a ful
 
 Investigations are resumable — pause mid-run, switch tabs, come back later.
 
+**Cross-sectional diagnostics.** Vague-but-critical questions ("where are we losing money?", "which region is weakest?") have no time axis — Aughor detects these and runs a **dimensional weakness scan** (rank the money metric across franchise / region / product / segment, surface the lowest and most-concentrated values) instead of forcing a temporal anomaly frame.
+
+**Data-shape aware.** Framing reads the data's actual shape — numeric distributions (median/IQR), an auto-derived time grain (daily vs weekly vs quarterly from span + cadence), incomplete-trailing-period detection, and comparison windows clamped to data that actually exists — so it never compares against an empty period or reports a partial month as a crash.
+
+**The Brief.** Both Insight and Deep Analysis render as a clean single-column analytical brief — prose leads with the answer and bolds the key numbers, charts/tables are the only framed blocks, and the SQL/confidence/attribution machinery folds into one quiet "details" disclosure.
+
 ### Grounded NL2SQL — Trustworthy Generation
 
 Aughor doesn't just hand the schema to an LLM and hope. Every question runs through a grounding pipeline that narrows, structures, and verifies context so the model generates correct SQL on schemas it has never seen:

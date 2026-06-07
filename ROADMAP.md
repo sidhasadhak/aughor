@@ -6,6 +6,20 @@
 
 ---
 
+## 🧠 Latest — The Brief: Answer Surface + Agent Reasoning + Data-Shape Intelligence
+
+Both answer modes were rebuilt to read like a published analytical brief, and both were re-grounded in *how the data is actually shaped*.
+
+| Area | What shipped | Key files |
+|---|---|---|
+| **The Brief (answer surface)** | Insight + Deep Analysis converge on ONE flat, document-style vocabulary (`Brief`/`BriefProse`/`BriefSection`/`BriefMetrics`/`BriefFigure`/`BriefDetails`) — prose carries the analysis with **bold** key numbers, charts/tables are the only framed blocks, machinery folds into one quiet disclosure. The purple cards, badge pills, and accordion-in-accordion are gone. | `web/components/brief/`, `ChatMessage.tsx`, `InvestigationReport.tsx` |
+| **Agent reasoning quality** | One sign convention (losses negative everywhere) end-to-end so a quantity can't read +green here and −red there; honest confidence (a no-data run is forced to LOW, not "HIGH — no anomaly"); prose tuned to lead with the answer and bold decisive numbers. | `aughor/agent/{investigate,prompts_investigate,prompts_explore}.py`, `aughor/routers/investigations.py` |
+| **Data-shape intelligence** | The profiler captures numeric **distributions** (mean/median/stddev/p25–p75, from DuckDB `SUMMARIZE`), derives the analytical **time grain** from span + cadence (`_choose_grain`: 1mo daily → day, 5yr monthly → quarter, snapshot / no-date → cross-sectional), flags an **incomplete trailing period**, and intake **clamps comparison windows to real data** (no "May vs April" when only May exists). | `aughor/tools/profiler.py`, `aughor/agent/investigate.py` |
+| **Cross-sectional diagnostics** | "Where are we losing money / which X is weakest" routes (deterministically) to a **dimensional weakness scan** — rank the money metric across franchise/region/product/segment, surface the lowest / most-concentrated values — instead of forcing a temporal anomaly frame (3 phases vs 6). | `aughor/agent/{investigate,graph,prompts_investigate}.py` |
+| **Live agent trace** | The Deep-Analysis trace renders the real phases with plain-language labels ("Understanding the question", "Scanning dimensions for where value is weakest", "Analysing the data…") and live status — was stuck at "0 steps". | `web/components/ThinkingTrace.tsx` |
+
+---
+
 ## 🧩 Latest — Reusable Component Architecture + Exhaustive Test Pass
 
 The same qualified-vs-bare table-name bug was fixed **three** times because there was no shared primitive; the UI carried three chart implementations, six copies of cell-formatting, and three colour palettes. This program rebuilt ERD, Ontology, Charts, and Tables as **single-source-of-truth components on canonical contracts**, backed by shared primitives — so a fix lands once and propagates everywhere — then verified every feature, endpoint, process, and vector collection end-to-end. **~1,500 lines of duplication removed · 0 regressions · 5 bugs fixed.**
