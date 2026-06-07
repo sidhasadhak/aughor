@@ -93,20 +93,22 @@ Rules:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 TASK 8 — COMPUTED PROPERTIES  (entity_computed_properties)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-For each entity, define at most 3 per-entity computed KPIs derived from that entity's
-own table. These are scalar expressions a analyst would want per-record or in aggregate.
-Rules:
-  • formula_sql: SELECT-clause expression only (no FROM, no WHERE, no semicolons)
-  • Use only columns that appear in the SCHEMA for this entity's source table(s)
+Define per-entity computed KPIs derived from a single entity's own table — scalar
+expressions an analyst would want per-record or in aggregate.
+Return a FLAT LIST of objects (NOT a nested object). Each list item MUST have:
+  • entity: the entity id (PascalCase) this property belongs to — exactly as in the
+    structural ontology above
   • id: snake_case, descriptive (e.g. "days_since_order", "lifetime_value")
+  • label: human-readable label
+  • formula_sql: SELECT-clause expression only (no FROM, no WHERE, no semicolons)
   • unit: "$", "%", "days", "count", or "" if dimensionless
-  • Skip entities where no meaningful computed property is possible (e.g. pure lookup tables)
-Good examples:
-  Customer: avg_order_value ($), total_orders (count), days_since_last_order (days)
-  Order: order_line_count (count), discount_rate (%)
-  Product: margin_pct (%)
-Bad examples (reject):
-  id counts, PK columns, any formula requiring a JOIN to another table
+Rules:
+  • At most 3 per entity; use only columns in the SCHEMA for that entity's source table(s)
+  • Skip entities where no meaningful computed property is possible (pure lookup tables)
+  • Reject: id counts, PK columns, any formula requiring a JOIN to another table
+Example (flat list — note the repeated entity key):
+  [{{"entity":"Customer","id":"avg_order_value","label":"Avg Order Value","formula_sql":"SUM(amount)/COUNT(*)","unit":"$"}},
+   {{"entity":"Order","id":"discount_rate","label":"Discount Rate","formula_sql":"SUM(discount)/NULLIF(SUM(gross),0)","unit":"%"}}]
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STRUCTURAL ONTOLOGY (auto-derived — enrich this):

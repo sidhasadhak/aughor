@@ -9,16 +9,37 @@ so the structural ontology continues to work normally.
 """
 from __future__ import annotations
 
+import json
 from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from aughor.ontology.models import OntologyAction, OntologyGraph
+
+
+def _coerce_json(v: Any) -> Any:
+    """Local models intermittently emit a nested object/array field as a
+    JSON-encoded STRING rather than a native structure (especially the deeply
+    nested dict[str, list[...]] fields). When that happens Pydantic rejects the
+    whole field and we silently lose every computed property / action. Parse the
+    string back so the structured data survives. Best-effort: a value that won't
+    parse is returned unchanged so normal validation still applies."""
+    if isinstance(v, str):
+        s = v.strip()
+        if not s:
+            return v
+        try:
+            return json.loads(s)
+        except Exception:
+            return v  # unparseable — let normal validation handle/skip it
+    return v
 
 # Bump this whenever the enrichment prompt or output schema changes meaningfully.
 # Cached graphs with a lower version will be re-enriched automatically.
 # v4 — OE-5: relationship verbs heuristic baseline + prompt Task 3 active
-ENRICHMENT_VERSION = 4
+# v5 — M24c: flat computed-properties list + tolerant JSON coercion (robust to
+#      local-model stringification/malformation of the old nested dict form)
+ENRICHMENT_VERSION = 5
 
 
 # ── Pydantic models for structured LLM output ────────────────────────────────
@@ -36,6 +57,7 @@ class _ActionDef(BaseModel):
 
 
 class _ComputedPropDef(BaseModel):
+    entity: str = ""  # entity id this property belongs to (flat-list form)
     id: str        # snake_case
     label: str     # human label
     formula_sql: str  # SELECT-clause expression only
@@ -61,14 +83,47 @@ class EnrichmentOutput(BaseModel):
     # One-sentence business descriptions keyed by entity_id
     entity_descriptions: dict[str, str] = {}
 
-    # Per-entity computed properties (at most 3 per entity)
-    entity_computed_properties: dict[str, list[_ComputedPropDef]] = {}
+    # Per-entity computed properties as a FLAT list (each item names its entity).
+    # A flat list of flat objects is emitted far more reliably by local models than
+    # a deeply nested dict[str, list[...]], which they intermittently stringify or
+    # malform — silently dropping every computed property. The before-validator
+    # below still accepts the legacy dict form and flattens it.
+    entity_computed_properties: list[_ComputedPropDef] = []
 
     # New compute / traverse actions (at most 2 per entity)
     action_definitions: list[_ActionDef] = []
 
     # Canonical SQL for metric formulas keyed by metric_id
     metric_formulas: dict[str, str] = {}
+
+    # Local models intermittently stringify these nested fields — coerce a
+    # JSON-encoded string back to its structure so we don't lose the data.
+    @field_validator(
+        "entity_display_names", "entity_types", "entity_domains",
+        "relationship_verbs", "entity_descriptions",
+        "action_definitions", "metric_formulas",
+        mode="before",
+    )
+    @classmethod
+    def _coerce_nested(cls, v: Any) -> Any:
+        return _coerce_json(v)
+
+    # Computed properties: coerce a stringified value AND flatten the legacy
+    # dict[entity -> [props]] form into the flat list, so both shapes survive.
+    @field_validator("entity_computed_properties", mode="before")
+    @classmethod
+    def _flatten_computed_props(cls, v: Any) -> Any:
+        v = _coerce_json(v)
+        if isinstance(v, dict):
+            flat: list = []
+            for ent, props in v.items():
+                props = _coerce_json(props)
+                if isinstance(props, list):
+                    for p in props:
+                        if isinstance(p, dict):
+                            flat.append({**p, "entity": p.get("entity") or ent})
+            return flat
+        return v
 
 
 # ── Internal rendering helpers ────────────────────────────────────────────────
@@ -157,6 +212,11 @@ def enrich_ontology_semantics(
     glossary_excerpt = _render_glossary_excerpt(glossary)
     schema_truncated = schema_context[:6000] if len(schema_context) > 6000 else schema_context
 
+    # M24c: enrichment is a structural/extraction task, not a creative one — run it
+    # at temperature 0 so the derived semantic layer (computed properties, metric
+    # formulas, classifications) is as reproducible as the backend allows. Cloud
+    # models aren't fully deterministic even at 0, so the validator + verified-
+    # accretion (below) are what actually keep the layer stable build-to-build.
     enrichment: EnrichmentOutput = coder_llm.complete(
         system=(
             "You are a data ontology specialist. "
@@ -168,6 +228,7 @@ def enrich_ontology_semantics(
             schema=schema_truncated,
         ),
         response_model=EnrichmentOutput,
+        temperature=0.0,
     )
 
     _VALID_TYPES = {"reference_data", "business_object", "event", "standalone"}
@@ -209,15 +270,20 @@ def enrich_ontology_semantics(
                 update={"domain": domain.strip()}
             )
 
-    # Apply computed properties (replace wholesale — enrichment is authoritative)
+    # Apply computed properties (flat list grouped by entity; replace wholesale)
+    from collections import defaultdict
     from aughor.ontology.models import ComputedProperty
-    for entity_id, props in enrichment.entity_computed_properties.items():
-        if entity_id in graph.entities and props:
+    _by_entity: dict[str, list] = defaultdict(list)
+    for p in enrichment.entity_computed_properties:
+        if p.entity and p.id and p.formula_sql.strip():
+            _by_entity[p.entity].append(p)
+    for entity_id, props in _by_entity.items():
+        if entity_id in graph.entities:
             computed = [
                 ComputedProperty(
                     id=p.id, label=p.label, formula_sql=p.formula_sql, unit=p.unit
                 )
-                for p in props if p.id and p.formula_sql.strip()
+                for p in props
             ]
             if computed:
                 graph.entities[entity_id] = graph.entities[entity_id].model_copy(
