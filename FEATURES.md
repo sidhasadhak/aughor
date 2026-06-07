@@ -2274,4 +2274,23 @@ Two connected pieces of work that make the **Canvas** — not the raw connection
 
 ---
 
-*Last updated: 2026-06-07 · 74 features — all shipped. See `ROADMAP.md` for upcoming milestones.*
+## 75. Self-Validating Semantic Layer, Fan-Out Guard & Multi-Schema Repairs ✅ Shipped
+
+**What it does.** Wires the ontology's semantic richness into NL2SQL generation — guaranteed correct by executing every formula against the live DB first — adds a foolproof guard against multi-fact **fan-out** (the #1 model-invariant correctness failure), and repairs the runtime surfacing of Ontology, Briefings, Domain Intelligence, and Schema ERDs.
+
+**Why it exists.** Aughor had a Palantir-grade ontology (entities, metrics, object sets, computed properties) but only ~20% of it reached the generator, and several runtime endpoints were silently broken so the intelligence never surfaced in the UI. Borrowing from **Cube.dev** (declarative semantic layer, symmetric aggregates) and **MindsDB** (knowledge bases, agent loop), this closes the gap between "knowledge computed" and "knowledge used."
+
+**How it works.**
+- **Self-validating ontology (Lever B — `ontology/validator.py`).** Executes every metric / computed-property / object-set against the live database and marks each `verified`. Conservative drop rules: SQL error, non-finite / overflow value, or the product-of-aggregates anti-pattern `AGG(...) * AGG(...)` (the `SUM(fp)*SUM(qty)` → $3T class). Runs once per schema fingerprint inside `build_intelligence`, persisted. Caught the $3T formula plus hallucinated column refs across three schemas.
+- **Semantic-layer injection (Lever A — `ontology/semantic_block.py`, `semantic/metrics.py`).** Question-scoped, **verified-only** injection of named object sets (NL "active orders" → the verified `WHERE`), computed properties, and unified metric formulas into the chat + eval prompts. Connection-scoped + verified-gated → a literal no-op for any connection without a validated ontology, so the benchmarks are unaffected (ClickBench held 10/10).
+- **Fan-out guard (M24d — `sql/fanout.py`).** A conservative, high-precision static detector (sqlglot scope analysis + FK-root cardinality) flags only when ≥2 raw satellite tables of a shared hub are aggregated across a direct join — the campaigns→{clicks, impressions} chasm trap. **Validated to zero false positives across 121 official TPC-H/TPC-DS queries** before wiring. On a hit it drives a directed pre-aggregate rewrite (each satellite in its own CTE), adopted only if it re-executes clean — the principled, schema-wide replacement for the trusted-template fan-out band-aid, borrowed from Cube's primary-key symmetric aggregates.
+- **Robust enrichment (`ontology/enricher.py`).** Root-caused the intermittent total loss of computed properties to local models stringifying/malforming a deeply nested structured-output field; flattened it to a list, added tolerant JSON coercion, and ran enrichment at temperature 0. Eliminated the "0 computed properties" collapse (now reliably 7–9 per run).
+- **Runtime repairs.** Ontology endpoints 404'd (now read the cached graph rather than the no-longer-building fast `get_schema`); the briefing hung on integer citation refs (coerced to string); the ontology ERD was empty because the join map carried schema-qualified names while `table_to_entity` was bare (**0 → 38 relationships**); the built-in Workspace's multi-schema in-memory DuckDB failed every bare-name query (set `search_path` across all user schemas — **~1875 errors → 0**); the Catalog schema ERD filtered qualified rich-schema names against bare catalog names (now matches on the bare segment scoped to the schema — **0 → 6 tables + 9 joins** on the bakehouse schema).
+
+**Key files.** `aughor/ontology/{validator,semantic_block,enricher,builder,models}.py`, `aughor/semantic/metrics.py`, `aughor/sql/fanout.py`, `aughor/knowledge/briefing.py`, `aughor/routers/{ontology,investigations}.py`, `aughor/connectors/file/local_upload.py`, `evals/run_golden.py`, `web/components/CatalogScreen.tsx`.
+
+**Borrow study.** Cube.dev (declarative semantic layer, PK-keyed symmetric aggregates, measure additivity, pre-aggregations) + MindsDB (KB embed→rerank→threshold, plan→execute→correct agent loop). Top lever = symmetric aggregates for fan-out; the convergence is a stable, declarative, governed semantic layer the LLM *augments*, never regenerates.
+
+---
+
+*Last updated: 2026-06-07 · 75 features — all shipped. See `ROADMAP.md` for upcoming milestones.*
