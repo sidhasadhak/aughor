@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 _CACHE_PATH = Path(__file__).parent.parent.parent / "data" / "briefing_cache.json"
 _CACHE_TTL_HOURS = 2
@@ -32,6 +32,16 @@ class BriefingCitation(BaseModel):
     domain: str = Field(description="Domain the insight belongs to")
     angle: str = Field(default="", description="Analytical angle of the insight")
     finding: str = Field(description="The finding text being cited")
+
+    # Local models routinely return ref / insight_id as integers (6, not "6"),
+    # which fails str validation and made the whole briefing retry until timeout.
+    # Coerce scalars to strings so a numeric citation marker no longer breaks it.
+    @field_validator("ref", "insight_id", "domain", "angle", "finding", mode="before")
+    @classmethod
+    def _coerce_str(cls, v: Any) -> Any:
+        if v is None:
+            return ""
+        return v if isinstance(v, str) else str(v)
 
 
 class BriefingNarrative(BaseModel):

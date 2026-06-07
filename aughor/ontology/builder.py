@@ -915,8 +915,12 @@ def extract_structural_ontology(
         t2, c2 = join["t2"], join["c2"]
         confidence = "exact" if join.get("match") == "exact" else "inferred"
 
-        from_entity = table_to_entity.get(t1)
-        to_entity = table_to_entity.get(t2)
+        # Resolve to an entity tolerant of qualified-vs-bare table names: the join
+        # map can carry schema-qualified names (analytics.order_items) while
+        # table_to_entity is keyed by bare names (order_items) — without the bare
+        # fallback every join is silently skipped and the ERD comes out empty.
+        from_entity = table_to_entity.get(t1) or table_to_entity.get(t1.split(".")[-1])
+        to_entity = table_to_entity.get(t2) or table_to_entity.get(t2.split(".")[-1])
 
         # Both sides must resolve to a known entity
         if not from_entity or not to_entity or from_entity == to_entity:

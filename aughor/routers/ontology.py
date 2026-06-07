@@ -49,6 +49,21 @@ def _get_ontology_graph(connection_id: str, schema_name: Optional[str] = None):
     the connection is opened against that specific schema.  Otherwise the connection's
     registered schema is used.
     """
+    # Fast path: return the cached graph built by exploration / build_intelligence.
+    # get_schema() is the lightweight introspection path and (since the schema
+    # fast/slow split) does NOT build the ontology, so db.get_ontology() would be
+    # None here — we must read the ontology store directly.
+    try:
+        from aughor.ontology.store import load_latest_ontology
+        graph = load_latest_ontology(connection_id, schema_name or None)
+        if graph is None and schema_name:
+            graph = load_latest_ontology(connection_id, None)
+        if graph is not None:
+            return graph
+    except Exception:
+        pass
+
+    # Not cached yet — build it (heavier: profiles + enrichment + validation).
     try:
         if schema_name:
             # Open against the requested schema explicitly so multi-schema
@@ -67,10 +82,9 @@ def _get_ontology_graph(connection_id: str, schema_name: Optional[str] = None):
             )
         else:
             db = open_connection_for(connection_id)
-        db.get_schema()
-        # Learned-skill overlay happens universally inside get_or_build_ontology
-        # (aughor.ontology.store), so both this HTTP path and the agent's planner
-        # path see crystallized skills from one seam — nothing to do here.
+        # build_intelligence() (not get_schema()) is what builds + caches + sets
+        # the OntologyGraph. Learned-skill overlay happens inside the store seam.
+        db.build_intelligence()
         return db.get_ontology()
     except Exception:
         return None
