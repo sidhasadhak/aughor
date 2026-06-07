@@ -23,11 +23,14 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import concurrent.futures as cf
 import json
 import os
 import sys
 import time
 from pathlib import Path
+
+_QUESTION_TIMEOUT = 240  # seconds; legit hard questions ran ≤176s, true hangs are minutes+
 
 _REPO = Path(__file__).parent.parent
 if str(_REPO) not in sys.path:
@@ -125,35 +128,68 @@ def main():
     questions = generate_questions(schema, args.n)
     print(f"[setup] got {len(questions)} questions\n")
 
+    def _process(q):
+        sql1 = generate_sql_full_pipeline(q, cid, db)
+        sql2 = generate_sql_full_pipeline(q, cid, db)
+        c1, r1, e1 = _run_sql(db, sql1)
+        c2, r2, e2 = _run_sql(db, sql2)
+        executes = e1 is None and bool(sql1)
+        consistent = (e1 is None and e2 is None and _equiv(r1, r2) and _equiv(r2, r1)) or \
+                     (e1 is not None and e2 is not None)
+        jm = judge(q, sql1, c1, r1, schema) if executes else _Judgment(verdict="WRONG", reason=e1 or "no SQL")
+        return dict(generated_sql=sql1, executes=executes, exec_error=e1,
+                    row_count=len(r1), self_consistent=bool(consistent),
+                    judge_verdict=jm.verdict.upper().strip(), judge_reason=jm.reason)
+
+    def _flush():
+        if not args.output:
+            return
+        ex = sum(1 for r in results if r.get("executes"))
+        json.dump({"results": results, "summary": {
+            "total": len(results), "executes": ex,
+            "self_consistent": sum(1 for r in results if r.get("self_consistent")),
+            "judge_correct": sum(1 for r in results if r.get("judge_verdict") == "CORRECT"),
+            "judge_partial": sum(1 for r in results if r.get("judge_verdict") == "PARTIAL")}},
+            open(args.output, "w"), indent=2, default=str)
+
     results = []
+    pool = cf.ThreadPoolExecutor(max_workers=1)
     for i, gq in enumerate(questions, 1):
-        q = gq.question
-        rec = {"n": i, "question": q, "difficulty": gq.difficulty}
+        rec = {"n": i, "question": gq.question, "difficulty": gq.difficulty}
         t0 = time.time()
+        fut = pool.submit(_process, gq.question)
         try:
-            sql1 = generate_sql_full_pipeline(q, cid, db)
-            sql2 = generate_sql_full_pipeline(q, cid, db)
-            c1, r1, e1 = _run_sql(db, sql1)
-            c2, r2, e2 = _run_sql(db, sql2)
-            executes = e1 is None and bool(sql1)
-            consistent = (e1 is None and e2 is None and _equiv(r1, r2) and _equiv(r2, r1)) or \
-                         (e1 is not None and e2 is not None)
-            jm = judge(q, sql1, c1, r1, schema) if executes else _Judgment(verdict="WRONG", reason=e1 or "no SQL")
-            rec.update(
-                generated_sql=sql1, executes=executes, exec_error=e1,
-                row_count=len(r1), self_consistent=bool(consistent),
-                judge_verdict=jm.verdict.upper().strip(), judge_reason=jm.reason,
-            )
+            # Hard per-question timeout: a runaway generated query (e.g. a
+            # cartesian join on a 10M-row table) or a hung model call must not
+            # stall the whole run. On timeout, interrupt the DuckDB connection to
+            # cancel any in-flight query, then reconnect for the next question.
+            rec.update(fut.result(timeout=_QUESTION_TIMEOUT))
+        except cf.TimeoutError:
+            try:
+                raw = getattr(db, "_conn", None)
+                if raw is not None:
+                    raw.interrupt()
+            except Exception:
+                pass
+            try:
+                db = open_connection_for(cid)  # fresh connection — old one may be wedged
+            except Exception:
+                pass
+            rec.update(executes=False, exec_error=f"timeout >{_QUESTION_TIMEOUT}s",
+                       judge_verdict="TIMEOUT", judge_reason="exceeded per-question timeout",
+                       self_consistent=False)
         except Exception as e:
             rec.update(executes=False, exec_error=str(e)[:200],
                        judge_verdict="WRONG", judge_reason="pipeline error", self_consistent=False)
         rec["latency_s"] = round(time.time() - t0, 1)
         results.append(rec)
+        _flush()  # incremental — partial results survive a later hang
         v = rec.get("judge_verdict", "?")
         flags = ("ok" if rec.get("executes") else "ERR") + ("/consistent" if rec.get("self_consistent") else "/varies")
-        print(f"  [{i:2}] {v:8} {flags:16} ({rec['latency_s']}s) {gq.difficulty:6} {q[:54]}…")
+        print(f"  [{i:2}] {v:8} {flags:16} ({rec['latency_s']}s) {gq.difficulty:6} {gq.question[:54]}…")
         if not rec.get("executes"):
-            print(f"        exec error: {rec.get('exec_error')}")
+            print(f"        {rec.get('exec_error')}")
+    pool.shutdown(wait=False)
 
     n = len(results)
     ex = sum(1 for r in results if r.get("executes"))
