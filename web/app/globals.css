@@ -300,6 +300,24 @@ a { color: var(--blue4); text-decoration: none; }
   animation: aug-shimmer 1.4s infinite;
 }
 
+/* ── Deep-Analysis trace (ThinkingTrace) step transitions ────────────────── */
+@keyframes aug-step-in  { from { opacity: 0; transform: translateY(5px) } to { opacity: 1; transform: none } }
+@keyframes aug-check-pop { 0% { transform: scale(0); opacity: 0 } 60% { transform: scale(1.3) } 100% { transform: scale(1); opacity: 1 } }
+@keyframes aug-pulse-dot { 0%, 100% { transform: scale(1); opacity: 1 } 50% { transform: scale(0.78); opacity: 0.85 } }
+@keyframes aug-flow-y   { from { background-position: 0 0 } to { background-position: 0 10px } }
+
+.aug-step-in   { animation: aug-step-in 0.34s ease-out both; }
+.aug-check-pop { animation: aug-check-pop 0.32s cubic-bezier(.34,1.56,.64,1); }
+.aug-pulse-dot { animation: aug-pulse-dot 1.15s ease-in-out infinite; }
+.aug-flow-y {
+  background-image: linear-gradient(to bottom, var(--amb4) 0 50%, transparent 50% 100%);
+  background-size: 100% 10px;
+  animation: aug-flow-y 0.65s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .aug-step-in, .aug-check-pop, .aug-pulse-dot, .aug-flow-y { animation: none; }
+}
+
 /* ── Ontology canvas edge animations ─────────────────────────────────────── */
 @keyframes edge-flow         { to { stroke-dashoffset: -12; } }
 @keyframes edge-flow-verified { to { stroke-dashoffset: -33; } }
