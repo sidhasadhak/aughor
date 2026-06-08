@@ -29,6 +29,7 @@ Returns a FanoutFinding or None. Pure static analysis; no DB calls.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 from aughor.tools.schema import _fk_root
@@ -39,8 +40,20 @@ class FanoutFinding:
     hub_root: str                      # the shared FK root the satellites fan out across
     satellites: list[str]              # base tables aggregated across the fan-out
     aggregates: list[str] = field(default_factory=list)  # offending aggregate exprs (text)
+    kind: str = "chasm"                # "chasm" (≥2 satellites) | "parent_fanout" (one-to-many)
+    children: list[str] = field(default_factory=list)    # for parent_fanout: the many-side tables
 
     def to_prompt_text(self) -> str:
+        if self.kind == "parent_fanout":
+            parent = self.satellites[0] if self.satellites else "the parent table"
+            kids = ", ".join(self.children) or "a finer-grained child"
+            return (
+                f"FAN-OUT RISK: aggregating {parent}'s measure across the join to {kids} "
+                f"duplicates {parent} rows (each {parent} row repeats per matching {kids} row), "
+                f"so SUM/AVG over-counts. Pre-aggregate {parent} to its own grain — or aggregate "
+                f"{kids} in a CTE keyed by '{self.hub_root}' first — then join; never SUM "
+                f"{parent}'s measure directly across this join."
+            )
         sats = ", ".join(self.satellites)
         return (
             f"FAN-OUT RISK: {sats} are each on the many-side of '{self.hub_root}' and are "
@@ -149,5 +162,28 @@ def detect_fanout(sql: str, table_cols: dict[str, list[str]], dialect: str = "du
         if len(aggregated) >= 2:
             aggs = sorted({a for t in aggregated for a in agg_tables[t]})
             return FanoutFinding(hub_root=r, satellites=sorted(aggregated), aggregates=aggs[:6])
+
+    # ── Single parent-measure fan-out (the one-to-many case the multi-satellite
+    # check above misses): SUM/AVG of a PARENT's measure across a join to a finer-
+    # grained child duplicates the parent's rows. Conservative — only when we can
+    # confidently name the parent (its singularized table stem == the shared root)
+    # and that parent, not the child, carries a non-distinct SUM/AVG.
+    def _singular(t: str) -> str:
+        return t[:-1] if t.endswith("s") else t
+
+    for r, sats in shared.items():
+        parents = [t for t in sats if _singular(t) == r or t == r]
+        if len(parents) != 1:
+            continue  # can't confidently identify the single parent → stay silent
+        parent = parents[0]
+        children = [t for t in sats if t != parent]
+        if not children:
+            continue
+        parent_aggs = [a for a in agg_tables.get(parent, []) if re.search(r"\b(?:SUM|AVG)\b", a, re.I)]
+        if parent_aggs:
+            return FanoutFinding(
+                hub_root=r, satellites=[parent], children=sorted(children),
+                aggregates=sorted(set(parent_aggs))[:6], kind="parent_fanout",
+            )
 
     return None
