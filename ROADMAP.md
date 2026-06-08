@@ -6,7 +6,24 @@
 
 ---
 
-## 🧠 Latest — The Brief: Answer Surface + Agent Reasoning + Data-Shape Intelligence
+## 🧠 Latest — Intelligence-Surface Trust: Scope-Consistent + Self-Explaining Intelligence
+
+The intelligence surfaces (Briefing / Domains) and the Deep-Analysis path were hardened so the platform **reassures users of intelligence quality** — every surface is scoped consistently, never silently empty, and every user-facing number is grounded in the actual result rows.
+
+| Area | What shipped | Key files |
+|---|---|---|
+| **Scope-consistent Briefing** | The Briefing now scopes to Workspace → Connection → {Schema \| Canvas} like the Domains panel — a scope-keyed cache + a canvas-scoped endpoint, threaded through the UI so a Canvas's Intelligence tab briefs *its* curated tables, stacked above the canvas Domain panel. | `aughor/knowledge/briefing.py`, `aughor/routers/exploration.py`, `web/components/{BriefingPanel,IntelligenceWorkspace,CanvasWorkspace}.tsx` |
+| **Self-explaining empty state** | Intelligence is **never silently empty**: the Briefing diagnoses *why* — never-explored / exploration running (live counts) / failed / completed-but-no-domain-intelligence (ontology-gated or sparse schema) — and offers the matching one-click action (Start exploration / Generate domain intelligence / Restart). This was the exact thing that made intelligence look "missing". | `web/components/BriefingPanel.tsx` |
+| **ADA correctness — cross-sectional path** | Narrator↔query findings bind by **identity (token overlap), not list position** (fixes "says city, charts show country"); the category axis plots the **metric, not the share**; an **average / per-record lens** was added for cross-sectional reads. Regression-locked. | `aughor/agent/{investigate,prompts_investigate}.py`, `web/components/Chart.tsx`, `tests/unit/test_cross_section_binding.py` |
+| **ADA grounding (/chat parity)** | Headlines/numbers are **grounded in the result rows** (replaced only on contradiction); a **SQL self-repair loop** turns binder "missing column" errors into JOIN hints; a **fan-out metric guard** blocks product-of-aggregates ($3T-class); the ADA SQL plan gets a **join-complete schema** (FK neighbours + temporal dims + detected join paths) with strict `table.column` fidelity. | `aughor/agent/investigate.py`, `aughor/routers/investigations.py`, `aughor/agent/prompts_investigate.py` |
+| **Deep-Analysis latency** | Consolidated 3 sequential intake retries into one, skipped the narrator on dead (empty/failed) phases, and added an opt-in **fast narrator tier** — synthesis **117s→18s**, interpret **117s→20s**, worst-case early-stop **~278s→~150s** (all-qwen). | `aughor/agent/{investigate,graph}.py`, `aughor/llm/provider.py` |
+| **Trusted data-context glossary** | A curated `glossary.yaml` (table grains, canonical joins, column semantics) feeding trusted, parameterized generation. | `data/glossary.yaml` |
+
+**Next:** IntelligenceHub canvas-awareness; one progressive Brief→Synthesis→Evidence surface with push/actionability (see `docs/INTELLIGENCE_UNIFICATION.md`).
+
+---
+
+## 🧩 Recent — The Brief: Answer Surface + Agent Reasoning + Data-Shape Intelligence
 
 Both answer modes were rebuilt to read like a published analytical brief, and both were re-grounded in *how the data is actually shaped*.
 
@@ -20,7 +37,7 @@ Both answer modes were rebuilt to read like a published analytical brief, and bo
 
 ---
 
-## 🧩 Latest — Reusable Component Architecture + Exhaustive Test Pass
+## 🧩 Recent — Reusable Component Architecture + Exhaustive Test Pass
 
 The same qualified-vs-bare table-name bug was fixed **three** times because there was no shared primitive; the UI carried three chart implementations, six copies of cell-formatting, and three colour palettes. This program rebuilt ERD, Ontology, Charts, and Tables as **single-source-of-truth components on canonical contracts**, backed by shared primitives — so a fix lands once and propagates everywhere — then verified every feature, endpoint, process, and vector collection end-to-end. **~1,500 lines of duplication removed · 0 regressions · 5 bugs fixed.**
 

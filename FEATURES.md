@@ -2329,4 +2329,24 @@ Two connected pieces of work that make the **Canvas** — not the raw connection
 
 ---
 
-*Last updated: 2026-06-07 · 77 features — all shipped. See `ROADMAP.md` for upcoming milestones.*
+## 78. Intelligence-Surface Trust — Scope Consistency, Self-Explaining Intelligence & ADA Correctness ✅ Shipped
+
+**What it does.** Makes the intelligence surfaces trustworthy: the Briefing scopes consistently across connection / schema / canvas, is **never silently empty** (it explains *why* and offers the fix), the Deep-Analysis (ADA) path grounds every user-facing number in the actual result rows, and worst-case latency is roughly halved.
+
+**Why it exists.** Intelligence *looked missing* even when the platform was working: an empty Briefing said only "No intelligence to brief yet" — never that the connection had simply never been explored, or that exploration finished but Phase-8 domain intelligence was ontology-gated to empty. The Briefing also briefed the whole connection while the Domains panel beside it was canvas-scoped, so the two disagreed. And the ADA path could emit a headline number that contradicted its own chart ("says city, shows country"), build a fan-out metric that read in the billions, or fail outright on a missing-column bind — the opposite of *reassuring users of intelligence quality*.
+
+**How it works.**
+- **Scope-consistent Briefing.** A scope-keyed briefing cache (`get_briefing(..., scope_key)`) plus a canvas-scoped endpoint (`POST /exploration/canvas/{id}/briefing`) let the Briefing scope to Workspace → Connection → {Schema | Canvas}. The `canvasId` prop threads `CanvasWorkspace → IntelligenceWorkspace → BriefingPanel`, so a Canvas's **Intelligence** tab briefs *its* curated tables and renders stacked above the canvas Domain panel.
+- **Self-explaining empty state.** `BriefingEmpty` is now cause-aware off the explorer lifecycle (`emptyReason(status)`), with four states mapped 1:1 to the explorer phases: *never run* → **Start exploration**; *running* → live phase/query/insight counts + spinner; *failed* → the error + **Restart**; *complete but no domain intelligence* (the silent-empty case — Phase-8 is ontology-gated and can legitimately be 0 after a complete run) → the ontology/sparse-schema *why* + **Generate domain intelligence**. Shared `runExplorer` / `runTriggerIntel` actions back both the control bar and the empty-state CTA, and an auto-reload on phase→complete surfaces fresh intelligence without a manual reload.
+- **ADA correctness (cross-sectional path).** Narrator findings bind to their queries by **identity (token overlap), not list index**, killing the position-desync that made a card say "city" while its chart plotted "country"; the chart category axis selects the **metric over the share** and prefers **name columns over id columns**; a per-record / **average lens** is added for cross-sectional questions. Locked by `tests/unit/test_cross_section_binding.py`.
+- **ADA grounding (/chat parity).** Headlines are **grounded against the result rows** and replaced only on contradiction (column sums/means accepted); a **SQL self-repair loop** converts a binder "missing column" error into a JOIN hint and retries; a **fan-out metric guard** rejects product-of-aggregates / subquery-in-aggregate (the $3T class) and falls back to a safe `SUM(measure)`; the ADA SQL plan is handed a **join-complete schema** (FK neighbours + temporal-dimension tables + detected join paths) with a strict "use the exact `table.column`, never re-qualify" instruction.
+- **Latency.** Three sequential intake validation retries became one combined retry; the narrator is skipped entirely on dead (all-empty / all-failed) phases; an opt-in **fast narrator tier** (`AUGHOR_FAST_NARRATOR_MODEL`, falls back to the narrator) runs per-phase interpretation. Net: synthesis **117s→18s**, interpret **117s→20s**, worst-case early-stop **~278s→~150s** on all-qwen.
+- **Trusted data-context glossary.** A curated `data/glossary.yaml` captures table grains, canonical joins, and column semantics for trusted, parameterized generation.
+
+**Verified live.** Empty-state paths confirmed in the running UI — a *complete*-but-zero-insight connection shows "No domain intelligence yet" + Generate CTA, a *pending* connection shows "No exploration has run yet" + Start CTA, and a Canvas's Intelligence tab renders the canvas-scoped Briefing ("…for this canvas's tables…") stacked over its Domain panel. The ADA grounding fix took "why did revenue change recently?" from a total failure ("unknown") to a correct monthly trend with a real z-score. 75 unit tests green.
+
+**Key files.** `web/components/{BriefingPanel,IntelligenceWorkspace,CanvasWorkspace,Chart}.tsx`; `aughor/knowledge/briefing.py`, `aughor/routers/{exploration,investigations}.py`; `aughor/agent/{investigate,graph,prompts_investigate}.py`, `aughor/llm/provider.py`; `data/glossary.yaml`; `tests/unit/{test_cross_section_binding,test_quality_fixes}.py`; `docs/{PIPELINE_QUALITY_ASSESSMENT,INTELLIGENCE_UNIFICATION}.md`.
+
+---
+
+*Last updated: 2026-06-08 · 78 features — all shipped. See `ROADMAP.md` for upcoming milestones.*
