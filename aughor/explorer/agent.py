@@ -114,6 +114,32 @@ def _table_has_measure(cols) -> bool:
     return any(_profile_field(c, "semantic_type") == "measure" for c in vals)
 
 
+def _days_between(a: str, b: str) -> int:
+    """Absolute day gap between two ISO date strings; 0 on parse error."""
+    try:
+        return abs((datetime.fromisoformat(b[:10]) - datetime.fromisoformat(a[:10])).days)
+    except (ValueError, TypeError):
+        return 0
+
+
+def _anchor_activity(tp, cp=None):
+    """Return ``(table, recency, is_effective)`` for the measure-bearing activity table
+    with the latest sentinel-filtered recency — the table whose trailing edge defines the
+    window. Falls back to all dated tables when no measures are detected. Returns
+    ``(None, None, False)`` when nothing is usable."""
+    activity, spine = [], []   # each: (recency, is_effective, table)
+    for table, prof in (tp or {}).items():
+        rec, is_eff = _table_recency(prof)
+        if rec is None:
+            continue
+        (activity if _table_has_measure((cp or {}).get(table)) else spine).append((rec, is_eff, table))
+    pool = activity or spine
+    if not pool:
+        return None, None, False
+    rec, is_eff, table = max(pool, key=lambda r: r[0])
+    return table, rec, is_eff
+
+
 def _role_aware_time_window(tp, cp=None, jmap=None, months: int = 12):
     """Choose the analytical window by anchoring recency on *activity* tables.
 
@@ -126,25 +152,13 @@ def _role_aware_time_window(tp, cp=None, jmap=None, months: int = 12):
     """
     from datetime import timedelta as _td
 
-    activity, spine = [], []   # each: (recency, is_effective, table)
-    for table, prof in (tp or {}).items():
-        rec, is_eff = _table_recency(prof)
-        if rec is None:
-            continue
-        if _table_has_measure((cp or {}).get(table)):
-            activity.append((rec, is_eff, table))
-        else:
-            spine.append((rec, is_eff, table))
-
-    # Fallback: if column semantics never flagged a measure (profiler ran without them),
-    # don't regress — anchor on every dated table, still sentinel-filtered.
-    pool = activity or spine
-    if not pool:
+    _anchor, best_rec, best_eff = _anchor_activity(tp, cp)
+    if best_rec is None:
         return None, None, []
 
-    best_rec, best_eff, _ = max(pool, key=lambda r: r[0])
     discrepancy = sorted(
-        ((t, r) for (r, _e, t) in spine if r > best_rec),
+        ((t, _table_recency(p)[0]) for t, p in (tp or {}).items()
+         if not _table_has_measure((cp or {}).get(t)) and (_table_recency(p)[0] or "") > best_rec),
         key=lambda x: x[1], reverse=True,
     )
 
@@ -277,9 +291,60 @@ class SchemaExplorer:
                 "anchoring on observed activity, not the calendar.",
                 self.connection_id, end, spines,
             )
-        if start and end:
-            return start, end
-        return None
+        if not (start and end):
+            return None
+
+        # Tier 1: narrow to the CURRENT regime when one is clearly present. Regime-narrows-
+        # only — we move the window start forward to a recent structural break, never widen
+        # or weaken the Tier-0 result; any failure falls back to the fixed window.
+        try:
+            anchor, _rec, _eff = _anchor_activity(tp, cp)
+            if anchor:
+                regime_start = self._regime_window_start(anchor, tp, start)
+                # Floor: never narrow below ~a quarter of data — guards against a recent
+                # daily/weekly spike collapsing the window to days.
+                if regime_start and regime_start > start and _days_between(regime_start, end) >= 90:
+                    logger.info(
+                        "[explorer:%s] Tier 1: narrowing window to current regime (start %s → %s)",
+                        self.connection_id, start, regime_start,
+                    )
+                    start = regime_start
+        except Exception:
+            logger.debug("[explorer:%s] Tier 1 regime refinement skipped", self.connection_id, exc_info=True)
+
+        return start, end
+
+    def _regime_window_start(self, table: str, tp: dict, win_start: str) -> Optional[str]:
+        """Query the activity density series (rows per period) for ``table`` and return the
+        current-regime start date when a structural break falls *inside* the window
+        (``> win_start``), else None. Best-effort; never raises into the pipeline.
+        Tier 1 of docs/ADAPTIVE_TEMPORAL_SCOPE.md."""
+        prof = tp.get(table)
+        ts_col = getattr(prof, "primary_timestamp", None) if prof else None
+        if not ts_col:
+            return None
+        grain = (getattr(prof, "time_grain", None) or "month")
+        unit = {"day": "day", "week": "week", "month": "month",
+                "quarter": "quarter", "year": "year"}.get(grain, "month")
+        sql = (
+            f"SELECT date_trunc('{unit}', {ts_col})::VARCHAR AS p, COUNT(*) AS c "
+            f"FROM {table} WHERE {ts_col} IS NOT NULL GROUP BY 1 ORDER BY 1"
+        )
+        try:
+            r = self._conn.execute("__explorer__", sql)
+        except Exception:
+            return None
+        rows = (r.rows or []) if not getattr(r, "error", None) else []
+        if len(rows) < 12:   # need enough periods for a meaningful regime
+            return None
+        periods = [str(row[0])[:10] for row in rows]
+        counts = [row[1] for row in rows]
+        try:
+            from aughor.explorer.regime import adaptive_window
+            rstart, _rend, _reason = adaptive_window(periods, counts)
+        except Exception:
+            return None
+        return rstart if (rstart and rstart > win_start) else None
 
     def _time_filter(self, table: str, tp: dict) -> str:
         """

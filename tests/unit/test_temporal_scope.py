@@ -78,3 +78,19 @@ def test_no_dated_tables_returns_none():
     cp = _cp(lookup=False)
     start, end, discrepancy = _role_aware_time_window(tp, cp)
     assert (start, end, discrepancy) == (None, None, [])
+
+
+def test_anchor_activity_picks_latest_measure_bearing_table():
+    from aughor.explorer.agent import _anchor_activity
+    tp = _tp(sales=("2019-01-01", "2023-06-30"), orders=("2019-01-01", "2023-09-30"),
+             date_dim=("2015-01-01", "2025-12-31"))
+    cp = _cp(sales=True, orders=True, date_dim=False)
+    table, rec, _eff = _anchor_activity(tp, cp)
+    assert table == "orders" and rec.startswith("2023-09")   # latest activity, not the calendar
+
+
+def test_days_between_helper():
+    from aughor.explorer.agent import _days_between
+    assert _days_between("2025-11-17", "2026-05-17") == 181
+    assert _days_between("2026-05-17", "2025-11-17") == 181   # absolute
+    assert _days_between("bad", "2026-01-01") == 0            # parse-safe
