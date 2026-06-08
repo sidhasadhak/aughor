@@ -16,6 +16,7 @@ const BriefingPanel    = dynamic(() => import("@/components/BriefingPanel").then
 const OntologyPanel    = dynamic(() => import("@/components/OntologyPanel").then(m => ({ default: m.OntologyPanel })),       { ssr: false, loading });
 const IntelligenceHub  = dynamic(() => import("@/components/IntelligenceHub").then(m => ({ default: m.IntelligenceHub })),  { ssr: false, loading });
 const ExplorationPanel = dynamic(() => import("@/components/ExplorationPanel").then(m => ({ default: m.ExplorationPanel })),{ ssr: false, loading });
+const DomainIntelPanel = dynamic(() => import("@/components/DomainIntelPanel").then(m => ({ default: m.DomainIntelPanel })),{ ssr: false, loading });
 const OrgIntelPanel    = dynamic(() => import("@/components/OrgIntelPanel").then(m => ({ default: m.OrgIntelPanel })),      { ssr: false, loading });
 
 // Minimal inline icon set — mirrors NavIcon paths used elsewhere in the shell.
@@ -142,12 +143,16 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
         )}
         {visited.has("hub") && (
           <Layer show={layer === "hub"}>
-            <IntelligenceHub connectionId={connectionId} />
+            <IntelligenceHub connectionId={connectionId} canvasId={canvasId} />
           </Layer>
         )}
         {visited.has("domains") && (
           <Layer show={layer === "domains"}>
-            <ExplorationPanel connectionId={connectionId} initialSection={domainSection} />
+            {/* Canvas scope → the canvas-aware domain-intel panel (curated tables);
+                connection scope → the full exploration profile. */}
+            {canvasId
+              ? <DomainIntelPanel connectionId={connectionId} canvasId={canvasId} isActive={layer === "domains"} />
+              : <ExplorationPanel connectionId={connectionId} initialSection={domainSection} />}
           </Layer>
         )}
         {visited.has("org") && (

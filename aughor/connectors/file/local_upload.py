@@ -105,6 +105,10 @@ class LocalUploadConnection(Connector):
         self._upload_dir.mkdir(parents=True, exist_ok=True)
         (self._upload_dir / DEFAULT_SCHEMA).mkdir(exist_ok=True)
         self._duckdb = duckdb.connect(":memory:")
+        # Alias the handle under the name the DuckDB intelligence-build path expects
+        # (build_intelligence / profilers read ._conn). LocalUpload is DuckDB-backed,
+        # so this lets it reuse DuckDBConnection.build_intelligence (see below).
+        self._conn = self._duckdb
         # Tables materialized from a read-only seed DB (e.g. the sample catalog).
         self._seed_path = (meta or {}).get("seed_duckdb")
         self._seeded: set[tuple[str, str]] = set()
@@ -134,6 +138,18 @@ class LocalUploadConnection(Connector):
                 self._duckdb.execute(f"SET search_path = '{','.join(schemas)}'")
         except Exception:
             pass  # best-effort — never block the Workspace on schema routing
+
+    def build_intelligence(self) -> str:
+        """Build the heavy intelligence (profiles + ontology + enrichment) for this
+        uploaded/seeded Workspace.
+
+        `build_intelligence` lives only on DuckDBConnection, not the Connector base,
+        so without this override the explorer's Phase-8 ontology gate raises
+        AttributeError and domain intelligence is silently skipped for every
+        file/connector-framework connection. LocalUpload is DuckDB-backed (._conn is
+        our in-memory handle), so we reuse the DuckDB implementation directly."""
+        from aughor.db.connection import DuckDBConnection
+        return DuckDBConnection.build_intelligence(self)
 
     def _seed_from_duckdb(self) -> None:
         """Materialize tables from a read-only seed DuckDB file into this

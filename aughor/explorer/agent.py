@@ -319,6 +319,8 @@ class SchemaExplorer:
             # and to allow the user to stop between queries if needed
             self._rate_seconds = _RATE_SECONDS_INTEL
             self._status.phase = ExplorationPhase.DOMAIN_INTEL
+            self._status.domain_intel_skipped = False   # cleared; set by Phase 8 if it bails
+            self._status.domain_intel_note = None
             await self._phase8_domain_intelligence(cp, tp)
 
             # Done — persist runtime counters so the status fallback can restore them
@@ -330,6 +332,8 @@ class SchemaExplorer:
             self._state["queries_executed"] = self._status.queries_executed
             self._state["started_at"] = self._status.started_at
             self._state["completed_at"] = self._status.completed_at
+            self._state["domain_intel_skipped"] = self._status.domain_intel_skipped
+            self._state["domain_intel_note"] = self._status.domain_intel_note
             self._save_state()
             logger.info(
                 f"[explorer:{self.connection_id}] Complete — "
@@ -917,6 +921,11 @@ class SchemaExplorer:
                 "[explorer:%s] Phase 8: ontology still not available after build attempt — skipping domain intelligence",
                 self.connection_id,
             )
+            self._status.domain_intel_skipped = True
+            self._status.domain_intel_note = (
+                "Ontology unavailable — the object model that domain intelligence is "
+                "derived from could not be built (the schema may be too sparse to model)."
+            )
             return
 
         # Group entities by domain
@@ -926,6 +935,10 @@ class SchemaExplorer:
             domain_entities.setdefault(d, []).append(entity)
 
         if not domain_entities:
+            self._status.domain_intel_skipped = True
+            self._status.domain_intel_note = (
+                "Ontology built, but produced no entities to reason about."
+            )
             return
 
         # ── Pydantic models for structured LLM output ──────────────────────────

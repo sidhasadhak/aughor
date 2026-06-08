@@ -1743,6 +1743,14 @@ export async function getPatterns(connectionId: string, refresh = false, schema?
   return res.json();
 }
 
+/** Patterns scoped to a Canvas's curated tables (Hub scope consistency). */
+export async function getCanvasPatterns(canvasId: string, refresh = false): Promise<PatternsResponse> {
+  const qs = refresh ? "?refresh=true" : "";
+  const res = await fetch(`${BASE}/exploration/canvas/${encodeURIComponent(canvasId)}/patterns${qs}`);
+  if (!res.ok) throw new Error("Failed to fetch canvas patterns");
+  return res.json();
+}
+
 // ── Briefing Narrative (M24b) ─────────────────────────────────────────────────
 
 export interface BriefingCitation {
@@ -1808,6 +1816,10 @@ export interface ExplorerStatus {
   started_at: string | null;
   completed_at: string | null;
   error: string | null;
+  /** True when Phase-8 domain intelligence was skipped because its prerequisite
+   *  ontology could not be built — distinguishes "couldn't generate" from "never ran". */
+  domain_intel_skipped?: boolean;
+  domain_intel_note?: string | null;
 }
 
 export async function getExplorerStatus(connectionId: string): Promise<ExplorerStatus> {

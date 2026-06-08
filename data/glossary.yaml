@@ -5001,3 +5001,182 @@ tables:
           indicates debt).
       s_comment:
         description: Free-text comment or notes about the supplier.
+  media_customer_reviews:
+    description: Customer reviews associated with specific franchises, including the
+      review text, timestamp, and identifiers.
+    grain: one row per customer review
+    auto_generated: true
+    columns:
+      review:
+        description: Text content of the customer review
+      franchiseID:
+        description: Identifier for the franchise being reviewed
+      review_date:
+        description: Date and time when the review was submitted
+      new_id:
+        description: Identifier for the review (possibly a surrogate key or external
+          ID)
+  media_gold_reviews_chunked:
+    description: Table storing text chunks from movie or entertainment reviews, likely
+      used for natural language processing or search indexing, with each review split
+      into multiple chunks.
+    grain: one row per chunk of text from a review (a single review may have multiple
+      rows if it was split into multiple chunks)
+    auto_generated: true
+    columns:
+      franchiseID:
+        description: Identifier for the media franchise (e.g., a movie series or TV
+          show franchise) to which the review belongs
+      review_date:
+        description: Date and time when the original review was published
+      chunked_text:
+        description: A segment or chunk of the full review text, typically a portion
+          of the original review split for processing
+      chunk_id:
+        description: Unique identifier for this specific chunk within the review
+      review_uri:
+        description: Amazon S3 URI pointing to the original review file or source
+  sales_customers:
+    description: Contains detailed customer information used for sales reporting and
+      analysis, including personal details and location data.
+    grain: One row per unique customer, identified by customerID.
+    auto_generated: true
+    columns:
+      customerID:
+        description: Unique identifier for each customer.
+      first_name:
+        description: Customer's first name.
+      last_name:
+        description: Customer's last name.
+      email_address:
+        description: Customer's email address.
+      phone_number:
+        description: Customer's phone number.
+      address:
+        description: Customer's street address.
+      city:
+        description: City where the customer resides.
+      state:
+        description: State or province where the customer resides.
+      country:
+        description: Country where the customer resides.
+        values: Australia, USA, Japan
+      continent:
+        description: Continent corresponding to the customer's country.
+        values: Oceania, North America, Asia
+      postal_zip_code:
+        description: Postal or ZIP code for the customer's address.
+      gender:
+        description: Customer's gender.
+        values: female, male
+  sales_franchises:
+    description: Lists company-owned or operated sales franchises, including their
+      geographic and operational details such as location, size category, and associated
+      supplier.
+    grain: one row per franchise (identified by franchiseID)
+    auto_generated: true
+    columns:
+      franchiseID:
+        description: Unique identifier for each franchise location
+      name:
+        description: Brand or store name of the franchise
+      city:
+        description: City where the franchise is located
+      district:
+        description: District or neighborhood within the city
+      zipcode:
+        description: Postal code for the franchise location
+      country:
+        description: Country where the franchise operates
+      size:
+        description: Operational size category of the franchise (e.g., store footprint
+          or capacity tier)
+      longitude:
+        description: Geographic longitude coordinate of the franchise
+      latitude:
+        description: Geographic latitude coordinate of the franchise
+      supplierID:
+        description: Identifier for the supplier associated with this franchise
+  sales_suppliers:
+    description: Lists approved suppliers of food ingredients, including their geographic
+      and organizational details.
+    grain: one row per supplier (identified by supplierID)
+    auto_generated: true
+    columns:
+      supplierID:
+        description: Unique identifier for the supplier
+      name:
+        description: Name of the supplier company
+        values: Coffee Collective, Sesame Seeds, Cocoa Crops, Maple Monarch, Vanilla
+          Valley, Pecan Pleasures, Honey Hives, Peanut Plantation, Poppy Peaks, Mace
+          Meadows, Oat Oasis, Raisin Ranch, Cashew Corner, Nutmeg Nirvana, Cacao Wonders,
+          Sugar Cane Harvest, Cardamom Cove, Clove Cliffs, Coconut Grove, Almond Delights,
+          Hazelnut Haven, Pistachio Palace, Molasses Mills, Fennel Fields, Anise Acres,
+          Cinnamon Spice, Ginger Gems
+      ingredient:
+        description: Primary ingredient supplied by this supplier
+        values: cacao, pistachios, hazelnuts, poppy seeds, vanilla, oats, raisins,
+          cardamom, almonds, cane sugar, pecans, ginger, honey, cashews, molasses,
+          nutmeg, sesame seeds, cocoa butter, mace, maple syrup, fennel seeds, coffee,
+          anise, coconut, cinnamon, peanuts, cloves
+      continent:
+        description: Continent where the supplier is located
+        values: Asia, Europe, South America, Africa, North America, Central America
+      city:
+        description: City where the supplier is located
+        values: Colombo, Tehran, Medellin, Valencia, Florence, Ambon, Guayaquil, Caracas,
+          Goa, Montreal, Atlanta, Yangon, Kabul, Kano, Krakow, Addis Ababa, Mexico
+          City, Edinburgh, Zanzibar, Manila, Havana, Kozhikode, Izmir, Banda Aceh,
+          Istanbul, Sao Paulo, Chennai
+      district:
+        description: District or neighborhood within the city where the supplier is
+          located
+        values: Chinatown, Alsancak, Mylapore, Kazimierz, Ruzafa, Stone Town, El Poblado,
+          Las Mercedes, Namalatu, Galle Face Green, Chicken Street, Peunayong, Vedado,
+          Anjuna Beach, Tajrish Bazaar, Piazza, Santo Spirito, Vila Madalena, Virginia-Highland,
+          Mappila Bay, Las Peñas, Intramuros, Kadıköy, Roma Norte, Plateau Mont-Royal,
+          Stockbridge, Kurmi Market
+      size:
+        description: Size category of the supplier (likely based on capacity or scale)
+        values: M, S, L, XL, XXL
+      longitude:
+        description: Longitude coordinate of the supplier's location
+      latitude:
+        description: Latitude coordinate of the supplier's location
+      approved:
+        description: Whether the supplier is approved for use
+        values: 'True'
+        caveats: All current rows are approved; no unapproved or pending suppliers
+          visible in this sample
+  sales_transactions:
+    description: Records individual sales transactions, capturing details about the
+      customer, franchise, product, quantity, pricing, and payment method for each
+      purchase.
+    grain: one row per transaction (identified by transactionID)
+    auto_generated: true
+    columns:
+      transactionID:
+        description: Unique identifier for each transaction
+      customerID:
+        description: Identifier for the customer who made the purchase
+      franchiseID:
+        description: Identifier for the franchise location where the transaction occurred
+      dateTime:
+        description: Timestamp indicating when the transaction occurred
+      product:
+        description: Name of the product sold in the transaction
+        values: Golden Gate Ginger, Tokyo Tidbits, Outback Oatmeal, Pearly Pies, Austin
+          Almond Biscotti, Orchard Oasis
+      quantity:
+        description: Number of units of the product sold in this transaction
+      unitPrice:
+        description: Price per unit of the product in cents (BIGINT)
+      totalPrice:
+        description: Total price for the transaction in cents (BIGINT)
+      paymentMethod:
+        description: Payment method used for the transaction
+        values: mastercard, amex, visa
+      cardNumber:
+        description: Last four digits or masked version of the card number used for
+          payment
+        caveats: May be null or partially masked for security/compliance

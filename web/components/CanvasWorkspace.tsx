@@ -6,8 +6,7 @@ import { getCanvasHistory, updateCanvas, deleteInvestigation, getCanvasArtifacts
 import { ConfigurePanel } from "@/components/ConfigurePanel";
 import { ChatPanel } from "@/components/ChatPanel";
 import { HistoryDetailPanel } from "@/components/HistoryDetailPanel";
-import { DomainIntelPanel } from "@/components/DomainIntelPanel";
-import { BriefingPanel } from "@/components/BriefingPanel";
+import { IntelligenceWorkspace, type IntelLayer } from "@/components/IntelligenceWorkspace";
 
 // ── Icon helper ───────────────────────────────────────────────────────────────
 
@@ -550,6 +549,7 @@ interface Props {
 
 export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, initialOpenInvId, initialRestoreSessionId }: Props) {
   const [wsTab, setWsTab] = useState<WsTab>("chat");
+  const [intelLayer, setIntelLayer] = useState<IntelLayer>("briefing");
   const [chatKey, setChatKey] = useState(0);
   const [openInvId, setOpenInvId] = useState<string | null>(null);
   const [restoreSessionId, setRestoreSessionId] = useState<string | null>(null);
@@ -821,23 +821,20 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
           }
         </div>
 
-        {/* Intelligence — always mounted, hidden when not active. Canvas-scoped Brief
-            (narrative) above canvas-scoped Domains (evidence) — both reflect this canvas's
-            curated tables, keeping the surfaces scope-consistent. */}
+        {/* Intelligence — the SAME unified workspace as the connection-level Intelligence
+            nav, but scoped to this canvas's curated tables. One surface, all layers
+            (Briefing · Hub · Ontology · Domains · Org), consistent scope. */}
         <div style={{
           display: wsTab === "intel" ? "flex" : "none",
-          flexDirection: "column", gap: 24,
-          flex: 1, overflowY: "auto", padding: "16px 24px",
+          flexDirection: "column",
+          flex: 1, overflow: "hidden",
         }}>
-          <BriefingPanel
+          <IntelligenceWorkspace
             connectionId={connectionId}
             canvasId={canvas.id}
+            layer={intelLayer}
+            onLayerChange={setIntelLayer}
             onInvestigate={() => setWsTab("chat")}
-          />
-          <DomainIntelPanel
-            connectionId={connectionId}
-            canvasId={canvas.id}
-            isActive={wsTab === "intel"}
           />
         </div>
 
