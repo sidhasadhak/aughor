@@ -49,6 +49,21 @@ def _get_ontology_graph(connection_id: str, schema_name: Optional[str] = None):
     the connection is opened against that specific schema.  Otherwise the connection's
     registered schema is used.
     """
+    # Fast path: return the cached graph built by exploration / build_intelligence.
+    # get_schema() is the lightweight introspection path and (since the schema
+    # fast/slow split) does NOT build the ontology, so db.get_ontology() would be
+    # None here — we must read the ontology store directly.
+    try:
+        from aughor.ontology.store import load_latest_ontology
+        graph = load_latest_ontology(connection_id, schema_name or None)
+        if graph is None and schema_name:
+            graph = load_latest_ontology(connection_id, None)
+        if graph is not None:
+            return graph
+    except Exception:
+        pass
+
+    # Not cached yet — build it (heavier: profiles + enrichment + validation).
     try:
         if schema_name:
             # Open against the requested schema explicitly so multi-schema
@@ -67,10 +82,9 @@ def _get_ontology_graph(connection_id: str, schema_name: Optional[str] = None):
             )
         else:
             db = open_connection_for(connection_id)
-        db.get_schema()
-        # Learned-skill overlay happens universally inside get_or_build_ontology
-        # (aughor.ontology.store), so both this HTTP path and the agent's planner
-        # path see crystallized skills from one seam — nothing to do here.
+        # build_intelligence() (not get_schema()) is what builds + caches + sets
+        # the OntologyGraph. Learned-skill overlay happens inside the store seam.
+        db.build_intelligence()
         return db.get_ontology()
     except Exception:
         return None
@@ -311,7 +325,23 @@ def rebuild_ontology(
     _invalidate_schema_cache(connection_id)
     graph = _get_ontology_graph(connection_id, effective)
     if graph is None:
-        raise HTTPException(status_code=500, detail="Ontology rebuild failed")
+        # The build re-opens the connection; in-memory file uploads (local_upload,
+        # dsn local://…) are empty on re-open, so no graph is produced. That's a
+        # client-actionable condition, not a server fault — return a clear 422
+        # rather than a confusing 500.
+        from aughor.db.registry import get_dsn
+        try:
+            conn_type, dsn = get_dsn(connection_id)
+        except Exception:
+            conn_type, dsn = "", ""
+        in_memory = conn_type == "local_upload" or str(dsn).startswith("local://")
+        detail = (
+            "Ontology can't be rebuilt for an in-memory file upload — its data isn't "
+            "re-readable on rebuild. Re-upload the data to refresh."
+            if in_memory else
+            "Ontology could not be built for this connection (no schema returned)."
+        )
+        raise HTTPException(status_code=422, detail=detail)
     return {
         "ok": True,
         "schema_name": graph.schema_name,

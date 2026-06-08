@@ -13,6 +13,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Table, ConfigProvider, theme } from "antd";
 import type { TableProps, TableColumnsType } from "antd";
+import { cleanLabel, formatMetricValue, formatPercent } from "@/lib/format";
 
 // ── Theme-mode hook ──────────────────────────────────────────────────────────
 // Ant Design's theme tokens must be real colors (it derives shades), so we can't
@@ -147,36 +148,22 @@ function isNumericValue(v: unknown): boolean {
   return !isNaN(Number(v));
 }
 
-function cleanLabel(col: string): string {
-  return col
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, c => c.toUpperCase());
-}
-
 function fmt(col: string, v: unknown): React.ReactNode {
   if (v == null) {
     return <span style={{ color: "#2B3B52", userSelect: "none" }}>—</span>;
   }
   const s = String(v);
-  // Percentage columns: if value is in (-1, 1) it's a stored ratio → multiply ×100
-  // Values outside that range are already percentages (e.g. 11.8 = 11.8%, -60.89 = -60.89%)
+  // Percentage columns: stored ratio (|v|≤1) ×100, else already a percentage.
   if (SHARE_COL.test(col)) {
     const n = Number(v);
     if (!isNaN(n)) {
-      const pct = Math.abs(n) <= 1 ? n * 100 : n;
-      return <span style={{ fontVariantNumeric: "tabular-nums" }}>{pct.toFixed(1)}%</span>;
+      return <span style={{ fontVariantNumeric: "tabular-nums" }}>{formatPercent(n, 1)}</span>;
     }
   }
-  // Large numbers
+  // Large / numeric cells — canonical data-table value formatting.
   const n = Number(v);
   if (!isNaN(n) && !ORDINAL_COL.test(col) && s.trim() !== "") {
-    const formatted =
-      Math.abs(n) >= 1e9 ? `${(n / 1e9).toFixed(2)}B` :
-      Math.abs(n) >= 1e6 ? `${(n / 1e6).toFixed(2)}M` :
-      Math.abs(n) >= 1e3 ? n.toLocaleString("en-US", { maximumFractionDigits: 2 }) :
-      Number.isInteger(n) ? String(n) :
-      n.toFixed(4).replace(/\.?0+$/, "");
-    return <span style={{ fontVariantNumeric: "tabular-nums" }}>{formatted}</span>;
+    return <span style={{ fontVariantNumeric: "tabular-nums" }}>{formatMetricValue(n)}</span>;
   }
   return s;
 }

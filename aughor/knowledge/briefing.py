@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 _CACHE_PATH = Path(__file__).parent.parent.parent / "data" / "briefing_cache.json"
 _CACHE_TTL_HOURS = 2
@@ -32,6 +32,16 @@ class BriefingCitation(BaseModel):
     domain: str = Field(description="Domain the insight belongs to")
     angle: str = Field(default="", description="Analytical angle of the insight")
     finding: str = Field(description="The finding text being cited")
+
+    # Local models routinely return ref / insight_id as integers (6, not "6"),
+    # which fails str validation and made the whole briefing retry until timeout.
+    # Coerce scalars to strings so a numeric citation marker no longer breaks it.
+    @field_validator("ref", "insight_id", "domain", "angle", "finding", mode="before")
+    @classmethod
+    def _coerce_str(cls, v: Any) -> Any:
+        if v is None:
+            return ""
+        return v if isinstance(v, str) else str(v)
 
 
 class BriefingNarrative(BaseModel):
@@ -204,13 +214,20 @@ def get_briefing(
     domain_data: dict[str, list[dict]],
     patterns: list[dict],
     force_refresh: bool = False,
+    scope_key: str | None = None,
 ) -> dict[str, Any]:
-    """Return cached briefing narrative if fresh, otherwise generate and cache."""
+    """Return cached briefing narrative if fresh, otherwise generate and cache.
+
+    `scope_key` is the cache key (defaults to `connection_id` for backward compatibility).
+    A Canvas passes e.g. ``f"canvas:{canvas_id}"`` so a canvas-scoped briefing — built from
+    the canvas's curated tables — never collides with the connection-wide one.
+    """
+    key = scope_key or connection_id
     if not force_refresh:
         try:
             if _CACHE_PATH.exists():
                 cache = json.loads(_CACHE_PATH.read_text())
-                entry = cache.get(connection_id)
+                entry = cache.get(key)
                 if entry and _age_hours(entry.get("generated_at", "")) < _CACHE_TTL_HOURS:
                     return entry
         except Exception:
@@ -226,7 +243,7 @@ def get_briefing(
                 existing = json.loads(_CACHE_PATH.read_text())
             except Exception:
                 pass
-        existing[connection_id] = briefing
+        existing[key] = briefing
         _CACHE_PATH.write_text(json.dumps(existing, indent=2))
     except Exception:
         pass

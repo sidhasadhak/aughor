@@ -24,6 +24,7 @@ from aughor.agent.state import (
 )
 from aughor.tools.executor import format_result_for_llm
 from aughor.tools.stats import analyze_query_result
+from aughor.tools.table_names import bare as _bare  # aliased — local vars named `bare` shadow it
 from aughor import telemetry as _telemetry
 
 if TYPE_CHECKING:
@@ -84,6 +85,14 @@ def _question_asks_for_dimension(question: str) -> bool:
     if re.search(r'\b(breakdown|split|breakdown|segment)\s+(by|across|per)\b', q):
         return True
     return False
+
+
+def route_after_intake(state: AgentState) -> str:
+    """Diagnostic / cross-sectional questions (where-which-is-weakest, or no usable
+    time axis) skip the temporal baseline and go straight to the dimensional
+    weakness scan; everything else takes the normal temporal path."""
+    intake = state.get("_ada_intake") or {}
+    return "ada_cross_section" if intake.get("cross_sectional") else "ada_baseline"
 
 
 def route_after_baseline(state: AgentState) -> str:
@@ -233,7 +242,7 @@ def _filter_schema(schema: str, table_names: list[str]) -> str:
         return schema
 
     # Normalise: extract bare table names (strip schema prefix like analytics.)
-    bare = {t.split(".")[-1].lower() for t in table_names if t}
+    bare = {_bare(t) for t in table_names if t}
 
     # Build a single regex that matches any bare name at a word boundary
     pattern = re.compile(
@@ -262,6 +271,122 @@ def _filter_schema(schema: str, table_names: list[str]) -> str:
     return filtered if filtered.strip() else schema
 
 
+def _build_grounded_schema(full_schema: str, metric_table: str, dimensions, date_column: str, question: str) -> str:
+    """A JOIN-COMPLETE filtered schema for the ADA coder. Keeping only the metric +
+    dimension tables drops the table that holds the date/join columns (revenue on
+    `invoices`, the timestamp on `orders`), so the coder hallucinates a date column on
+    the metric table. This keeps the metric + dimension tables, the date column's host
+    table, FK-joinable neighbours, and temporal dimension tables, then appends the
+    DETECTED JOIN PATHS hints (which _filter_schema strips) — what the /chat path does."""
+    try:
+        from aughor.tools.schema import _parse_schema_tables
+        # If the schema isn't TABLE:-format (e.g. an already-scoped Data Catalog from the
+        # /investigate route), don't re-filter it — that would drop the FK-neighbour tables
+        # the route already added. The route owns scoping in that case.
+        if not _parse_schema_tables(full_schema):
+            return full_schema
+    except Exception:
+        pass
+    relevant = [metric_table] + [d.rsplit(".", 1)[0] for d in (dimensions or []) if "." in d]
+    if date_column and "." in date_column:
+        relevant.append(date_column.rsplit(".", 1)[0])
+    relevant = list(dict.fromkeys(t for t in relevant if t))
+    try:
+        from aughor.tools.schema import fk_neighbor_expand, temporal_dimension_tables, infer_joins
+        for dt in temporal_dimension_tables(full_schema, relevant, question or ""):
+            if dt not in relevant:
+                relevant.append(dt)
+        relevant = fk_neighbor_expand(full_schema, relevant, cap=10)
+        sch = _filter_schema(full_schema, relevant)
+        hints = infer_joins(sch)
+        return sch + "\n\n" + hints if hints else sch
+    except Exception:
+        return _filter_schema(full_schema, relevant)
+
+
+_DATE_TYPE_RE = re.compile(r"\b(date|timestamp|datetime|time)\b", re.I)
+_DATE_NAME_RE = re.compile(r"(_ts$|_at$|_date$|date|timestamp|created|updated|ordered|invoiced|shipped)", re.I)
+_KEYISH_RE = re.compile(r"(_id|_key|_sk|_code|_num|_no)$", re.I)
+
+
+def _typed_columns(schema: str) -> dict:
+    """Parse a schema into {qualified_table: [(col, type), ...]}. Handles BOTH the
+    TABLE: format and the Data Catalog markdown (## headers, `| col | type |` rows).
+    Stops at each table's "Sample (N rows)" block so data rows aren't read as columns."""
+    out: dict = {}
+    cur = None
+    for line in (schema or "").splitlines():
+        h = re.match(r"^(?:TABLE:\s+|##\s+)([\w.]+)", line)
+        if h:
+            cur = h.group(1)
+            out[cur] = []
+            continue
+        if cur is None:
+            continue
+        s = line.strip()
+        if s.lower().startswith("sample"):   # data-sample table — stop collecting columns
+            cur = None
+            continue
+        mc = re.match(r"^\|\s*([A-Za-z_]\w*)\s*\|\s*([A-Za-z]\w*)", line)   # | col | TYPE | ...
+        if mc:
+            if mc.group(1).lower() != "column":
+                out[cur].append((mc.group(1), mc.group(2)))
+            continue
+        cm = re.match(r"^\s{2}(\S+)\s{2,}(\S+)", line)                       # TABLE: "  col  TYPE"
+        if cm and not s.startswith("--"):
+            out[cur].append((cm.group(1), cm.group(2)))
+    return out
+
+
+def _resolve_date_column(date_column: str, metric_table: str, full_schema: str, dimensions):
+    """Ensure date_column is a REAL date/timestamp column present in the schema. The intake
+    can pin a hallucinated one (e.g. `invoices.invoice_date` when invoices has no date — the
+    timestamp lives on `orders`). Find the actual date column, preferring the metric table
+    then FK-joinable neighbours, and return (qualified_name, changed)."""
+    typed = _typed_columns(full_schema)
+    if not typed:
+        return date_column, False
+
+    def _is_date(col, ty):
+        return bool(_DATE_TYPE_RE.search(ty) or (_DATE_NAME_RE.search(col) and not _KEYISH_RE.search(col)))
+
+    # Already valid? (exists as a real date/timestamp column)
+    if date_column and "." in date_column:
+        tbl, col = date_column.rsplit(".", 1)
+        for t, cols in typed.items():
+            if _bare(t) == _bare(tbl):
+                for c, ty in cols:
+                    if c.lower() == col.lower() and _is_date(c, ty):
+                        return date_column, False
+
+    # Resolve: search the metric table + FK neighbours first, then EVERY table in scope
+    # (the catalog is already narrowed to relevant tables, so a date column on any of them
+    # is fair game — this is what finds orders.order_ts when the metric sits on invoices).
+    seeds = list(dict.fromkeys(
+        [metric_table] + [d.rsplit(".", 1)[0] for d in (dimensions or []) if "." in d]
+    ))
+    try:
+        from aughor.tools.schema import fk_neighbor_expand
+        seeds = fk_neighbor_expand(full_schema, seeds, cap=10)
+    except Exception:
+        pass
+    ordered: list = []
+    seen: set = set()
+    for group in (seeds, list(typed.keys())):
+        for s in group:
+            for t in typed:
+                if _bare(t) == _bare(s) and t not in seen:
+                    ordered.append(t)
+                    seen.add(t)
+    for type_first in (True, False):
+        for t in ordered:
+            for c, ty in typed[t]:
+                hit = _DATE_TYPE_RE.search(ty) if type_first else (_DATE_NAME_RE.search(c) and not _KEYISH_RE.search(c))
+                if hit:
+                    return f"{t}.{c}", True
+    return date_column, False
+
+
 def _provider(role="coder"):
     from aughor.llm.provider import get_provider
     return get_provider(role)
@@ -277,7 +402,7 @@ def _validate_intake_date_column(date_column: str) -> str | None:
     """
     if not date_column or date_column.upper() == "NONE":
         return None  # explicitly set to NONE is valid (no date column found)
-    col_part = date_column.split(".")[-1].lower() if "." in date_column else date_column.lower()
+    col_part = _bare(date_column)
     if any(col_part.endswith(s) for s in _ID_COLUMN_SUFFIXES):
         return (
             f"date_column '{date_column}' ends with an identifier suffix ({col_part}) — "
@@ -303,12 +428,12 @@ def _extract_qualified_tables(schema: str) -> dict[str, str]:
     mapping: dict[str, str] = {}
     for m in table_pattern.finditer(schema):
         qualified = m.group(1)
-        bare = qualified.split(".")[-1].lower()
+        bare = _bare(qualified)
         if bare not in mapping or len(qualified) < len(mapping[bare]):
             mapping[bare] = qualified
     for m in catalog_pattern.finditer(schema):
         qualified = m.group(1)
-        bare = qualified.split(".")[-1].lower()
+        bare = _bare(qualified)
         if bare not in mapping or len(qualified) < len(mapping[bare]):
             mapping[bare] = qualified
     return mapping
@@ -322,7 +447,7 @@ def _qualify_intake_table_names(intake, schema: str) -> None:
 
     # metric_table
     if intake.metric_table:
-        bare = intake.metric_table.split(".")[-1].lower()
+        bare = _bare(intake.metric_table)
         if bare in mapping and intake.metric_table != mapping[bare]:
             intake.metric_table = mapping[bare]
 
@@ -356,8 +481,8 @@ def _validate_intake_metric_table(metric_table: str, schema: str) -> str | None:
     table_pattern = re.compile(r'^TABLE:\s+([\w.]+)', re.MULTILINE)
     catalog_pattern = re.compile(r'^##\s+([\w.]+)', re.MULTILINE)
     found_qualified = [m.group(1) for m in table_pattern.finditer(schema)] + [m.group(1) for m in catalog_pattern.finditer(schema)]
-    found_bare = [t.split(".")[-1].lower() for t in found_qualified]
-    bare = metric_table.split(".")[-1].lower()
+    found_bare = [_bare(t) for t in found_qualified]
+    bare = _bare(metric_table)
 
     if bare not in found_bare:
         return (
@@ -369,7 +494,7 @@ def _validate_intake_metric_table(metric_table: str, schema: str) -> str | None:
     # If schema uses qualified names, require the intake to also use them
     has_qualified = any('.' in t for t in found_qualified)
     if has_qualified and '.' not in metric_table:
-        qualified_match = next((t for t in found_qualified if t.split(".")[-1].lower() == bare), None)
+        qualified_match = next((t for t in found_qualified if _bare(t) == bare), None)
         if qualified_match:
             return (
                 f"metric_table '{metric_table}' is missing the schema prefix. "
@@ -399,6 +524,30 @@ def _zero_row_suspicious(sql: str) -> str | None:
     return None
 
 
+def _missing_column_hint(err: str):
+    """Turn a binder/missing-column error into a strong, specific repair diagnosis.
+    Extracts the missing column + the engine's candidate bindings and tells the coder to
+    JOIN to the table that actually has the column instead of dropping/renaming it — the
+    exact recovery the ADA baseline missed for `invoices.order_ts` (lives in `orders`)."""
+    if not err:
+        return None
+    low = err.lower()
+    if "column" not in low and "binder" not in low:
+        return None
+    m = (re.search(r'does not have a column named\s+"?([A-Za-z0-9_.]+)"?', err, re.I)
+         or re.search(r'Referenced column\s+"?([A-Za-z0-9_.]+)"?', err, re.I)
+         or re.search(r'column\s+"?([A-Za-z0-9_.]+)"?\s+(?:not found|does not exist)', err, re.I))
+    col = m.group(1) if m else "the referenced column"
+    cands = re.findall(r'"([A-Za-z0-9_]+\.[A-Za-z0-9_]+)"', err)
+    cand_txt = f" The engine offered candidate bindings: {', '.join(dict.fromkeys(cands))[:200]}." if cands else ""
+    return (
+        f"DIAGNOSIS: column '{col}' is not in the table(s) currently in the FROM/JOIN clause.{cand_txt} "
+        f"Find which table in the SCHEMA actually contains '{col}' and JOIN to it using a shared key "
+        f"(an *_id column). The timestamp/metric you need likely lives in a parent table (e.g. an orders "
+        f"table) that must be joined — do NOT drop the column, rename it, or substitute a different one.\n"
+    )
+
+
 def _execute_safe(conn: "DatabaseConnection", phase_id: str, sql: str):
     """Execute SQL with one self-correction retry. Returns QueryResult.
 
@@ -425,14 +574,11 @@ def _execute_safe(conn: "DatabaseConnection", phase_id: str, sql: str):
         try:
             _err = result.error or ""
             # Build targeted diagnosis for the fix LLM
+            _col_hint = _missing_column_hint(_err)
             if _zero_diag:
                 _diag = f"DIAGNOSIS: {_zero_diag}\n"
-            elif "does not have a column named" in _err or ("column" in _err.lower() and "not" in _err.lower()):
-                _diag = (
-                    "DIAGNOSIS: A column name in the query does not exist. "
-                    "Use ONLY the exact column names listed in the SCHEMA. "
-                    "Do NOT invent or rename columns — find the correct column or join to a table that has it.\n"
-                )
+            elif _col_hint:
+                _diag = _col_hint
             elif "does not exist" in _err and "table" in _err.lower():
                 _diag = (
                     "DIAGNOSIS: A table name in the query does not exist. "
@@ -578,6 +724,123 @@ def _finding_from_result_and_model(
     )
 
 
+# ── Robust narrator↔query binding ─────────────────────────────────────────────
+# The narrator returns one finding per query, but as a free-form LIST it can
+# reorder, merge, or drop entries. Binding by list position (the old
+# `findings[min(i, len-1)]`) then pairs a finding describing dimension A with the
+# query/data for dimension B — the "card says city but the chart shows country"
+# bug. We instead bind each executed query to the narrator finding that names its
+# SAME dimension (token overlap), and ground the displayed title in the query that
+# actually produced the rows whenever that match is dimension-certain.
+
+_LABEL_STOP = frozenset({
+    "by", "per", "across", "of", "the", "a", "an", "and", "or", "for", "in", "on",
+    "to", "vs", "versus", "with", "each", "every", "from",
+    "total", "net", "gross", "sum", "avg", "average", "mean", "median", "count",
+    "number", "num", "share", "pct", "percent", "proportion", "ratio", "rate",
+    "value", "values", "amount", "amounts", "metric", "level",
+    "revenue", "sales", "sale", "profit", "margin", "cost", "costs", "spend", "gmv",
+    "income", "orders", "order", "units", "unit", "quantity", "qty", "price",
+    "prices", "earnings", "loss", "losses", "money",
+    "monthly", "weekly", "daily", "yearly", "quarterly", "trend", "trends", "time",
+    "over", "period", "periods", "mom", "yoy", "pop", "wow", "qoq", "change",
+    "growth", "delta", "scan", "ranked", "weakest", "lowest", "top", "bottom",
+    "breakdown", "analysis", "distribution", "contribution",
+})
+
+
+def _label_tokens(label: str, extra_stop=frozenset()) -> set:
+    """Reduce a label to its distinctive (dimension) tokens, dropping structural and
+    measure words so 'Net revenue by city' and 'By City' both collapse to {'city'}."""
+    return {
+        t for t in re.findall(r"[a-z0-9]+", (label or "").lower())
+        if len(t) > 1 and t not in _LABEL_STOP and t not in extra_stop
+    }
+
+
+def _align_narrator_findings(queries, narrator_findings, extra_stop=frozenset()):
+    """Bind each query to the narrator finding describing its SAME dimension.
+    Returns (aligned, by_token): aligned[i] is the finding model for queries[i] (or
+    None when no trustworthy match exists); by_token[i] is True when the match was
+    made on a shared dimension token (so the query's own title is authoritative)."""
+    n, m = len(queries), len(narrator_findings)
+    aligned = [None] * n
+    by_token = [False] * n
+    if m == 0:
+        return aligned, by_token
+    q_tok = [_label_tokens(getattr(q, "title", ""), extra_stop) for q in queries]
+    f_tok = [_label_tokens(getattr(f, "title", ""), extra_stop) for f in narrator_findings]
+    used = set()
+    cands = sorted(
+        ((len(q_tok[qi] & f_tok[fi]), qi, fi)
+         for qi in range(n) for fi in range(m) if q_tok[qi] & f_tok[fi]),
+        key=lambda c: (-c[0], c[1], c[2]),
+    )
+    for _ov, qi, fi in cands:
+        if aligned[qi] is None and fi not in used:
+            aligned[qi] = narrator_findings[fi]
+            by_token[qi] = True
+            used.add(fi)
+    # Positional fallback: fill a leftover query from the SAME-index narrator finding
+    # only when that finding is still unused. Never clamp to the last one (old bug).
+    for qi in range(n):
+        if aligned[qi] is None and qi < m and qi not in used:
+            aligned[qi] = narrator_findings[qi]
+            used.add(qi)
+    return aligned, by_token
+
+
+def _has_usable_data(results) -> bool:
+    """True if at least one query in the phase returned rows without error. Used to skip the
+    narrator interpret call (a 30-80s LLM round-trip) when every query failed or came back
+    empty — there is nothing to interpret, and the phase falls back to data-only findings."""
+    return any((not r.error and (r.row_count or 0) > 0) for _, r in (results or []))
+
+
+def _assemble_phase_findings(results, narrator_findings, id_prefix, metric_label=""):
+    """Build phase findings by binding each (query, result) to the narrator finding for
+    its OWN dimension — never by list position. The displayed title is grounded in the
+    query that produced the rows whenever the match is dimension-certain, so a card can
+    never describe a different slice than its chart."""
+    extra = _label_tokens(metric_label)
+    aligned, by_token = _align_narrator_findings([q for q, _ in results], narrator_findings, extra)
+    out: list[InvestigationFinding] = []
+    for i, (q, r) in enumerate(results):
+        model = aligned[i]
+        if model is not None:
+            f = _finding_from_result_and_model(f"{id_prefix}_{i}", r, model, q.chart_type)
+            if by_token[i]:
+                f["title"] = q.title  # ground the label to the query that produced the rows
+        else:
+            f = InvestigationFinding(
+                finding_id=f"{id_prefix}_{i}", title=q.title, sql=r.sql,
+                columns=r.columns, rows=r.rows[:50], row_count=r.row_count,
+                error=r.error, interpretation=(r.error or "Query executed."),
+                key_numbers=[], chart_type=q.chart_type, stat_note=None, is_significant=False,
+            )
+        out.append(f)
+    return out
+
+
+_SHARE_COL_RE = re.compile(r"(pct|percent|share|proportion|_of_total)", re.I)
+
+
+def _chart_primary_is_metric(finding) -> None:
+    """Drop share/percent columns from a finding's rendered table+chart so the bar plots
+    the metric MAGNITUDE, not its share-of-total. The web chart prefers any pct/share
+    column as the primary axis (PREFER_COL), which made the chart show a % while the
+    narrative cited absolute dollars — the 'says X but shows Y' bug. The narrator still
+    saw the share via results_text; only the rendered view is cleaned."""
+    cols = finding.get("columns") or []
+    if len(cols) <= 2:
+        return
+    keep = [i for i, c in enumerate(cols) if not _SHARE_COL_RE.search(c)]
+    if len(keep) == len(cols) or len(keep) < 2:
+        return
+    finding["columns"] = [cols[i] for i in keep]
+    finding["rows"] = [[row[i] for i in keep] for row in (finding.get("rows") or [])]
+
+
 def _skipped_finding(phase_id: str, reason: str) -> InvestigationFinding:
     return InvestigationFinding(
         finding_id=f"{phase_id}_skip",
@@ -718,6 +981,97 @@ def _phases_evidence(phases: list[InvestigationPhaseResult]) -> str:
 
 # ── Phase nodes ───────────────────────────────────────────────────────────────
 
+def _extract_data_date_range(scan_context: str) -> tuple:
+    """Pull the overall (min, max) date the data actually covers from the DATA
+    PORTRAIT text — the [PROFILE] lines carry 'YYYY-MM-DD → YYYY-MM-DD'."""
+    dates = re.findall(r"\d{4}-\d{2}-\d{2}", scan_context or "")
+    if not dates:
+        return None, None
+    return min(dates), max(dates)
+
+
+def _validate_intake_windows(intake, dmin, dmax):
+    """Reject a comparison window that falls entirely OUTSIDE the data's real date
+    range — the #1 cause of 'compared against an empty period' (e.g. 'May vs April'
+    when only May exists). Returns a correction string, or None if the window is OK."""
+    if not dmin or not dmax:
+        return None
+    cs = (getattr(intake, "comparison_start", "") or "")[:10]
+    ce = (getattr(intake, "comparison_end", "") or "")[:10]
+    if cs and ce and (ce < dmin or cs > dmax):
+        return (
+            f"The comparison period {intake.comparison_label} ({cs} → {ce}) falls OUTSIDE the "
+            f"data range [{dmin} → {dmax}] — there is no data there, so the baseline would be empty. "
+            f"Pick the most recent prior period that lies within [{dmin} → {dmax}]; if no prior "
+            f"period exists, set comparison_start/comparison_end equal to observation_start/"
+            f"observation_end and explain in intake_notes that there is no prior period to compare against."
+        )
+    return None
+
+
+_DIAGNOSTIC_RE = re.compile(
+    r"where are we losing|losing money|\b(where|which|what)\b[^?]*\b(losing|lose|lost|leak\w*|"
+    r"weak\w*|worst|lowest|underperform\w*|hurting|dragging|bleeding|inefficien\w*)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_diagnostic_question(q: str) -> bool:
+    """Cross-sectional 'where/which is weakest / where are we losing money' questions —
+    these have no useful time axis and should run a dimensional weakness scan."""
+    return bool(_DIAGNOSTIC_RE.search(q or ""))
+
+
+_AGG_RE = r"(?:SUM|AVG|COUNT|MIN|MAX|MEDIAN|STDDEV|VARIANCE)"
+
+# Shared grounding rule appended to every ADA plan node's terse system prompt so the
+# coder treats the SCHEMA as authoritative and JOINs to reach columns on other tables
+# (e.g. a timestamp on `orders` when the metric is on `invoices`) instead of inventing one.
+_ADA_SQL_GROUNDING = (
+    " SCHEMA FIDELITY: use ONLY table and column names that appear EXPLICITLY in the SCHEMA — "
+    "never invent or rename a column. If a column you need (a date/timestamp, a dimension, or a "
+    "key) is not on the metric table, find the table in the SCHEMA that HAS it and JOIN to it "
+    "using the DETECTED JOIN PATHS; never attach a date column to a table that lacks one. "
+    "CRITICAL: when a column is given as table.column (e.g. orders.order_ts), reference it with "
+    "THAT EXACT table qualifier everywhere (SELECT, WHERE, GROUP BY) — do NOT re-qualify it to the "
+    "metric table. Writing `invoices.order_ts` when the column lives on `orders` is the #1 error; "
+    "join orders and write `orders.order_ts`."
+)
+
+
+def _unsafe_metric_sql(sql: str):
+    """Flag a metric EXPRESSION that will over-count / inflate. A metric is a single
+    aggregate over columns — it must NOT embed a subquery (the global-scalar-subquery-
+    in-SUM that produced -$3.1B/dimension) or multiply/nest aggregates. Returns a reason
+    string or None. High-precision: stays silent on clean metrics like SUM(price*qty)."""
+    if not sql:
+        return None
+    s = sql.strip()
+    if re.search(r"\bSELECT\b", s, re.I):
+        return "the metric embeds a subquery (a SELECT inside the aggregate) — a global value subtracted per row over-counts massively"
+    if re.search(rf"{_AGG_RE}\s*\([^()]*\)\s*\*\s*{_AGG_RE}\s*\(", s, re.I):
+        return "the metric multiplies two aggregates (product-of-aggregates) — this over-counts; use SUM(a*b), not SUM(a)*SUM(b)"
+    if re.search(rf"{_AGG_RE}\s*\((?:[^()]*)\b{_AGG_RE}\s*\(", s, re.I):
+        return "the metric nests an aggregate inside another aggregate"
+    return None
+
+
+def _safe_metric_fallback(sql: str) -> str:
+    """Deterministically reduce an unsafe metric to a clean single aggregate: SUM of the
+    first measure-looking column referenced (revenue/margin/sales/...), else SUM of the
+    first aggregated column, else COUNT(*)."""
+    measure = re.search(
+        r"\b([a-z_][a-z0-9_]*(?:revenue|sales|margin|price|amount|spend|cost|profit|value|gmv|paid|net)[a-z0-9_]*)\b",
+        (sql or "").lower(),
+    )
+    if measure:
+        return f"SUM({measure.group(1)})"
+    m = re.search(r"\b(?:SUM|AVG)\s*\(\s*([a-z_][a-z0-9_.]*)", sql or "", re.I)
+    if m:
+        return f"SUM({m.group(1)})"
+    return "COUNT(*)"
+
+
 @_telemetry.node_span("ada_intake")
 def ada_intake(state: AgentState) -> dict:
     """
@@ -751,33 +1105,26 @@ def ada_intake(state: AgentState) -> dict:
         intake = None
         intake_error = str(e)
 
-    # Code-level validation: reject and retry if date_column is obviously an ID column
+    # Code-level validation: collect ALL spec errors and fix them in ONE combined LLM retry
+    # (was up to 3 sequential round-trips on the critical path of every investigation). The
+    # date column needs no LLM retry — the deterministic _resolve_date_column below fixes an
+    # ID-like / non-date column far more reliably.
     if intake is not None:
-        dc_error = _validate_intake_date_column(intake.date_column)
-        if dc_error:
-            retry_prompt = (
-                prompt
-                + f"\n\nCORRECTION REQUIRED: {dc_error}\n"
-                "Re-examine the schema, find the correct DATE/TIMESTAMP column, and return the fixed spec."
-            )
-            try:
-                intake = _provider("coder").complete(
-                    system="You are a precise data analyst parsing a business question. Return a structured investigation specification.",
-                    user=retry_prompt,
-                    response_model=IntakeOutput,
-                )
-            except Exception as e2:
-                # Keep the original (even if bad) rather than crashing
-                pass
-
-    # Code-level validation: reject and retry if metric_table does not exist in schema
-    if intake is not None:
+        _errs = []
         mt_error = _validate_intake_metric_table(intake.metric_table, schema)
         if mt_error:
+            _errs.append(mt_error)
+        _dmin, _dmax = _extract_data_date_range(scan)
+        win_error = _validate_intake_windows(intake, _dmin, _dmax)
+        if win_error:
+            _errs.append(win_error)
+        if _errs:
             retry_prompt = (
                 prompt
-                + f"\n\nCORRECTION REQUIRED: {mt_error}\n"
-                "Re-examine the schema, pick a table that actually exists, and return the fixed spec."
+                + "\n\nCORRECTION REQUIRED — fix ALL of the following:\n- "
+                + "\n- ".join(_errs)
+                + "\nReturn the corrected spec (use only tables that exist in the schema, and a "
+                "comparison window that actually contains data)."
             )
             try:
                 intake = _provider("coder").complete(
@@ -788,9 +1135,62 @@ def ada_intake(state: AgentState) -> dict:
             except Exception:
                 pass
 
+    # Deterministic cross-sectional trigger — the intake LLM is unreliable at
+    # setting the flag, so force it for diagnostic "where/which is weakest / where
+    # are we losing money" questions OR when there is no usable time axis (no date
+    # column). This routes to the dimensional weakness scan instead of a temporal
+    # baseline (also fewer phases → faster).
+    if intake is not None:
+        no_time = (intake.date_column or "").strip().upper() in ("", "NONE")
+        if _is_diagnostic_question(question) or no_time:
+            intake.cross_sectional = True
+
     # Post-process: ensure all table references are fully-qualified when the schema uses them
     if intake is not None:
         _qualify_intake_table_names(intake, schema)
+
+    # Code-level validation: neutralise an over-counting metric (subquery-in-aggregate /
+    # product-of-aggregates) — the class that produced -$3.1B per dimension. Retry once for
+    # a clean single aggregate, then deterministically simplify and note it.
+    _metric_note = None
+    if intake is not None:
+        _unsafe = _unsafe_metric_sql(intake.metric_sql)
+        if _unsafe:
+            retry_prompt = (
+                prompt
+                + f"\n\nCORRECTION REQUIRED: {_unsafe}. Re-express metric_sql as a SINGLE safe aggregate "
+                "(e.g. SUM(column), SUM(col_a*col_b), or SUM(a)-SUM(b)) over ONE table. NEVER put a SELECT "
+                "subquery inside an aggregate and NEVER multiply two aggregates. If the true metric needs "
+                "another table, pick the closest single-column proxy instead. Return the fixed spec."
+            )
+            try:
+                _retry = _provider("coder").complete(
+                    system="You are a precise data analyst parsing a business question. Return a structured investigation specification.",
+                    user=retry_prompt,
+                    response_model=IntakeOutput,
+                )
+                if _retry is not None and not _unsafe_metric_sql(_retry.metric_sql):
+                    intake = _retry
+                    _qualify_intake_table_names(intake, schema)
+                    _unsafe = None
+            except Exception:
+                pass
+        if _unsafe:
+            _safe = _safe_metric_fallback(intake.metric_sql)
+            _metric_note = (
+                f"Metric adjusted for safety: the parsed metric would over-count ({_unsafe}); "
+                f"ranking instead by {_safe} for a trustworthy magnitude."
+            )
+            intake.metric_sql = _safe
+
+    # Resolve a hallucinated / non-date `date_column` to a REAL date/timestamp column —
+    # often on a joinable table (orders.order_ts) rather than the metric table (invoices).
+    if intake is not None and intake.date_column and intake.date_column.upper() != "NONE":
+        _resolved_dc, _dc_changed = _resolve_date_column(
+            intake.date_column, intake.metric_table, state["schema_context"], intake.dimensions
+        )
+        if _dc_changed:
+            intake.date_column = _resolved_dc
 
     if intake is None:
         phase = _phase_result(
@@ -809,35 +1209,59 @@ def ada_intake(state: AgentState) -> dict:
         title="Investigation Specification",
         sql="",
         columns=["field", "value"],
-        rows=[
+        rows=([
+            ["Metric", f"{intake.metric_label} ({intake.metric_sql})"],
+            ["Approach", "Cross-sectional — rank the metric across dimensions to find where value is weakest (no time comparison)"],
+            ["Primary table", intake.metric_table],
+            ["Dimensions", ", ".join(intake.dimensions[:8])],
+        ] if intake.cross_sectional else [
             ["Metric", f"{intake.metric_label} ({intake.metric_sql})"],
             ["Observation", f"{intake.observation_label} ({intake.observation_start} → {intake.observation_end})"],
             ["Comparison", f"{intake.comparison_label} ({intake.comparison_start} → {intake.comparison_end})"],
             ["Date column", intake.date_column],
             ["Primary table", intake.metric_table],
             ["Dimensions", ", ".join(intake.dimensions[:8])],
-        ],
+        ]),
         row_count=6,
         error=None,
-        interpretation=intake.intake_notes or f"Investigating {intake.metric_label} in {intake.observation_label}.",
+        interpretation=intake.intake_notes or (
+            f"Cross-sectional scan of {intake.metric_label} across dimensions."
+            if intake.cross_sectional else
+            f"Investigating {intake.metric_label} in {intake.observation_label}."
+        ),
         key_numbers=[],
         chart_type="none",
         stat_note=None,
         is_significant=False,
     )
+    if _metric_note:
+        finding["rows"].append(["Data quality", _metric_note])
+        finding["row_count"] = len(finding["rows"])
+        finding["interpretation"] = _metric_note + " " + (finding["interpretation"] or "")
     phase = _phase_result(
         "intake", "Question Intake", "🔍", "complete",
-        f"Measuring {intake.metric_label} in {intake.observation_label} vs {intake.comparison_label}.",
+        (
+            f"Scanning {intake.metric_label} across {len(intake.dimensions)} dimensions to find where value is weakest."
+            if intake.cross_sectional else
+            f"Measuring {intake.metric_label} in {intake.observation_label} vs {intake.comparison_label}."
+        ),
         [finding],
     )
-    # Build a filtered schema containing only the tables intake identified
-    relevant_tables = [intake.metric_table] + [
-        d.split(".")[0] for d in intake.dimensions if "." in d
-    ]
-    filtered_schema = _filter_schema(state["schema_context"], relevant_tables)
+    # Build a JOIN-COMPLETE filtered schema. Keeping only the metric + dimension tables
+    # (the old behaviour) drops the table that actually holds the date/join columns — e.g.
+    # revenue on `invoices` but the timestamp on `orders` — so the coder can't see it and
+    # hallucinates a date column on the metric table. Include the date column's host table,
+    # FK-joinable neighbours, and temporal dimension tables, then re-attach the DETECTED JOIN
+    # PATHS hints (which _filter_schema strips, being TABLE-block-only) — what the /chat path does.
+    filtered_schema = _build_grounded_schema(
+        state["schema_context"], intake.metric_table, intake.dimensions,
+        intake.date_column, question,
+    )
 
     intake_dict = intake.model_dump()
     intake_dict["filtered_schema"] = filtered_schema
+    if _metric_note:
+        intake_dict["metric_safety_note"] = _metric_note
 
     # Enrich with ontology entity context (best-effort — never crash ada_intake)
     try:
@@ -961,7 +1385,7 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
         plan_prompt += "\n".join(lines)
     try:
         plan: PhasePlan = _provider("coder").complete(
-            system="Write SQL queries for baseline anomaly detection. Return a JSON object with a 'queries' list.",
+            system="Write SQL queries for baseline anomaly detection. Return a JSON object with a 'queries' list." + _ADA_SQL_GROUNDING,
             user=plan_prompt,
             response_model=PhasePlan,
         )
@@ -994,7 +1418,8 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
         pct_threshold=10,
     )
     try:
-        interpretation: PhaseInterpretation = _provider("narrator").complete(
+        if not _has_usable_data(results): raise RuntimeError("skip narrator — no usable data")
+        interpretation: PhaseInterpretation = _provider("fast").complete(
             system="You are a senior data analyst interpreting query results. Be precise. Cite real numbers.",
             user=interpret_prompt,
             response_model=PhaseInterpretation,
@@ -1021,13 +1446,7 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
             break  # first successful result is enough
 
     if interpretation and interpretation.findings:
-        findings = [
-            _finding_from_result_and_model(
-                f"baseline_{i}", r, interpretation.findings[min(i, len(interpretation.findings) - 1)],
-                q.chart_type,
-            )
-            for i, (q, r) in enumerate(results)
-        ]
+        findings = _assemble_phase_findings(results, interpretation.findings, "baseline")
         summary = interpretation.phase_summary
         passes_to_next = interpretation.passes_to_next
         # If stats.py couldn't compute sigma, fall back to LLM's is_significant flags
@@ -1235,7 +1654,7 @@ def ada_decompose(state: AgentState, conn: "DatabaseConnection") -> dict:
     )
     try:
         plan: PhasePlan = _provider("coder").complete(
-            system="Write SQL for metric decomposition. Decompose the metric into additive sub-drivers.",
+            system="Write SQL for metric decomposition. Decompose the metric into additive sub-drivers." + _ADA_SQL_GROUNDING,
             user=plan_prompt,
             response_model=PhasePlan,
         )
@@ -1265,7 +1684,8 @@ def ada_decompose(state: AgentState, conn: "DatabaseConnection") -> dict:
         results_text=results_text,
     )
     try:
-        interpretation: PhaseInterpretation = _provider("narrator").complete(
+        if not _has_usable_data(results): raise RuntimeError("skip narrator — no usable data")
+        interpretation: PhaseInterpretation = _provider("fast").complete(
             system="Interpret metric decomposition results. State clearly whether volume or value drove the change.",
             user=interpret_prompt,
             response_model=PhaseInterpretation,
@@ -1365,7 +1785,7 @@ def ada_dimensional(state: AgentState, conn: "DatabaseConnection") -> dict:
     )
     try:
         plan: PhasePlan = _provider("coder").complete(
-            system="Write contribution-analysis SQL for each dimension. Sort by absolute_change ASC.",
+            system="Write contribution-analysis SQL for each dimension. Sort by absolute_change ASC." + _ADA_SQL_GROUNDING,
             user=plan_prompt,
             response_model=PhasePlan,
         )
@@ -1394,7 +1814,8 @@ def ada_dimensional(state: AgentState, conn: "DatabaseConnection") -> dict:
         results_text=results_text,
     )
     try:
-        interpretation: PhaseInterpretation = _provider("narrator").complete(
+        if not _has_usable_data(results): raise RuntimeError("skip narrator — no usable data")
+        interpretation: PhaseInterpretation = _provider("fast").complete(
             system="Interpret contribution analysis. Identify concentrated vs. diffuse decline.",
             user=interpret_prompt,
             response_model=PhaseInterpretation,
@@ -1403,13 +1824,7 @@ def ada_dimensional(state: AgentState, conn: "DatabaseConnection") -> dict:
         interpretation = None
 
     if interpretation and interpretation.findings:
-        findings = [
-            _finding_from_result_and_model(
-                f"dim_{i}", r, interpretation.findings[min(i, len(interpretation.findings) - 1)],
-                q.chart_type,
-            )
-            for i, (q, r) in enumerate(results)
-        ]
+        findings = _assemble_phase_findings(results, interpretation.findings, "dim")
         summary = interpretation.phase_summary
         passes_to_next = interpretation.passes_to_next
     else:
@@ -1500,7 +1915,7 @@ def ada_behavioral(state: AgentState, conn: "DatabaseConnection") -> dict:
     )
     try:
         plan: PhasePlan = _provider("coder").complete(
-            system="Write SQL for behavioral and operational diagnostics.",
+            system="Write SQL for behavioral and operational diagnostics." + _ADA_SQL_GROUNDING,
             user=plan_prompt,
             response_model=PhasePlan,
         )
@@ -1529,7 +1944,8 @@ def ada_behavioral(state: AgentState, conn: "DatabaseConnection") -> dict:
         results_text=results_text,
     )
     try:
-        interpretation: PhaseInterpretation = _provider("narrator").complete(
+        if not _has_usable_data(results): raise RuntimeError("skip narrator — no usable data")
+        interpretation: PhaseInterpretation = _provider("fast").complete(
             system="Interpret behavioral and operational findings. Be specific about what changed.",
             user=interpret_prompt,
             response_model=PhaseInterpretation,
@@ -1538,13 +1954,7 @@ def ada_behavioral(state: AgentState, conn: "DatabaseConnection") -> dict:
         interpretation = None
 
     if interpretation and interpretation.findings:
-        findings = [
-            _finding_from_result_and_model(
-                f"beh_{i}", r, interpretation.findings[min(i, len(interpretation.findings) - 1)],
-                q.chart_type,
-            )
-            for i, (q, r) in enumerate(results)
-        ]
+        findings = _assemble_phase_findings(results, interpretation.findings, "beh")
         summary = interpretation.phase_summary
     else:
         findings = [
@@ -1568,6 +1978,94 @@ def ada_behavioral(state: AgentState, conn: "DatabaseConnection") -> dict:
         "investigation_phases": phases + [phase],
         "_behavioral_summary": summary,
     }
+
+
+@_telemetry.node_span("ada_cross_section")
+def ada_cross_section(state: AgentState, conn: "DatabaseConnection") -> dict:
+    """Cross-sectional WEAKNESS SCAN — for diagnostic questions ("where are we
+    losing money / which X is weakest") the metric has no usable time axis, so we
+    rank the money metric across each available dimension to surface the lowest /
+    most-concentrated values, instead of a temporal baseline."""
+    from aughor.agent.prompts_investigate import (
+        CROSS_SECTION_PLAN_PROMPT, CROSS_SECTION_INTERPRET_PROMPT,
+        PhasePlan, PhaseInterpretation,
+    )
+    question = state["question"]
+    phases = state.get("investigation_phases", [])
+    intake_data = state.get("_ada_intake") or {}
+    schema = _with_ledger(state, intake_data.get("filtered_schema") or _trim(state["schema_context"], _SCHEMA_CHAR_LIMIT))
+    metric_label = intake_data.get("metric_label", "the metric")
+    metric_sql = intake_data.get("metric_sql", "SUM(revenue)")
+    metric_table = intake_data.get("metric_table", "")
+    dimensions = intake_data.get("dimensions", [])
+
+    prioritized = _prioritize_dimensions(dimensions)
+    dimensions_list = "\n".join(f"  - {d}" for d in prioritized[:6]) if prioritized else "  (none identified)"
+
+    try:
+        plan: PhasePlan = _provider("coder").complete(
+            system="Write one ranking query per dimension. Rank the metric ascending (weakest first). No time filters." + _ADA_SQL_GROUNDING,
+            user=CROSS_SECTION_PLAN_PROMPT.format(
+                question=question, metric_label=metric_label, metric_sql=metric_sql,
+                metric_table=metric_table, schema=schema, dimensions_list=dimensions_list,
+            ),
+            response_model=PhasePlan,
+        )
+    except Exception as e:
+        phase = _phase_result(
+            "cross_section", "Cross-Sectional Scan", "🧭", "error",
+            "Cross-sectional planning failed.",
+            [_skipped_finding("cross_section", str(e))],
+        )
+        return {"investigation_phases": phases + [phase]}
+
+    results = _parallel_execute_safe(conn, "cross_section", plan.queries, cap=5)
+    if not results:
+        phase = _phase_result(
+            "cross_section", "Cross-Sectional Scan", "🧭", "error",
+            "Cross-sectional queries failed.",
+            [_skipped_finding("cross_section", "No results.")],
+        )
+        return {"investigation_phases": phases + [phase]}
+
+    results_text = _results_to_text([r for _, r in results])
+    try:
+        if not _has_usable_data(results): raise RuntimeError("skip narrator — no usable data")
+        interpretation: PhaseInterpretation = _provider("fast").complete(
+            system="Interpret a cross-sectional weakness scan. Name the weakest values and any concentration; be honest about healthy areas.",
+            user=CROSS_SECTION_INTERPRET_PROMPT.format(
+                question=question, metric_label=metric_label, results_text=results_text,
+            ),
+            response_model=PhaseInterpretation,
+        )
+    except Exception:
+        interpretation = None
+
+    if interpretation and interpretation.findings:
+        findings = _assemble_phase_findings(results, interpretation.findings, "xsec", metric_label=metric_label)
+        summary = interpretation.phase_summary
+    else:
+        findings = [
+            InvestigationFinding(
+                finding_id=f"xsec_{i}", title=q.title, sql=r.sql,
+                columns=r.columns, rows=r.rows[:50], row_count=r.row_count,
+                error=r.error, interpretation="Query executed.",
+                key_numbers=[], chart_type=q.chart_type, stat_note=None, is_significant=False,
+            )
+            for i, (q, r) in enumerate(results)
+        ]
+        summary = "Cross-sectional scan complete."
+
+    # Make the bar plot the metric magnitude, not its share-of-total (see helper).
+    for f in findings:
+        _chart_primary_is_metric(f)
+
+    phase = _phase_result(
+        "cross_section", "Cross-Sectional Scan", "🧭",
+        "complete" if any(not f["error"] for f in findings) else "partial",
+        summary, findings,
+    )
+    return {"investigation_phases": phases + [phase], "_cross_section_summary": summary}
 
 
 @_telemetry.node_span("ada_synthesize")
@@ -1597,9 +2095,11 @@ def ada_synthesize(state: AgentState) -> dict:
             f"\n\nNOTE: The investigation stopped at Tier 0{sigma_str}. "
             "The observed change is within normal historical variance — no anomaly was detected. "
             "Your headline, executive_summary, and waterfall should reflect this: "
-            "explain that the decline is consistent with typical fluctuation, not a new problem. "
-            "confidence should be HIGH (we're confident there is no anomaly). "
-            "recommendations should be empty or advisory only."
+            "explain that the change is consistent with typical fluctuation, not a new problem. "
+            "Set confidence by EVIDENCE QUALITY, not by the fact that you stopped early: HIGH only "
+            "if the baseline queries actually returned data across the comparison periods; if "
+            "queries errored or returned zero rows, you could not measure anything and confidence "
+            "must be LOW. recommendations should be empty or advisory only."
         )
 
     phases_summary = _phases_summary(phases)
@@ -1611,6 +2111,19 @@ def ada_synthesize(state: AgentState) -> dict:
     # "no segment deviates from baseline" — the synthesizer must not silently paper
     # over this.  We inject any contradictions as a hard instruction in the prompt.
     contradiction_section = _detect_phase_contradictions(phases)
+
+    # Cross-sectional runs have no temporal "change" — tell synthesis to frame the
+    # report as a where-is-value-weakest diagnostic, not a period-over-period decline.
+    cross_section_note = ""
+    if "cross_section" in phase_ids or intake_data.get("cross_sectional"):
+        cross_section_note = (
+            "\n\nNOTE: This is a CROSS-SECTIONAL diagnostic (where/which is weakest), not a temporal "
+            "change. Do NOT frame it as a period-over-period decline. Lead with WHERE value is lowest "
+            "or most concentrated across the dimensions scanned; total_change_label should be the "
+            "metric total or 'N/A'; the attribution_waterfall should attribute the weakness across "
+            "those dimensions (signed negative as loss contributors); recommendations target the "
+            "weakest areas. Be honest about which areas are healthy and NOT a problem."
+        )
 
     # Build metric targets block for synthesis guidance
     metric_targets_section = ""
@@ -1678,7 +2191,7 @@ def ada_synthesize(state: AgentState) -> dict:
         playbook_section=playbook_section,
         org_intelligence_section=org_intelligence_section,
         external_context_section=external_context_section,
-    ) + contradiction_section + early_stop_note
+    ) + contradiction_section + early_stop_note + cross_section_note
     try:
         synth: ADASynthesisModel = _provider("narrator").complete(
             system=(
@@ -1714,11 +2227,33 @@ def ada_synthesize(state: AgentState) -> dict:
         except Exception:
             pass
 
+    # ── Honest confidence floor ───────────────────────────────────────────────
+    # A run that gathered no usable data can never be HIGH/MEDIUM confidence,
+    # regardless of what the synthesis LLM claimed.
+    if synth:
+        _all_f = [f for p in phases for f in (p.get("findings") or [])]
+        _with_data = [f for f in _all_f if not f.get("error") and (f.get("columns") or [])]
+        if not _with_data:
+            synth.confidence = "LOW"
+            synth.confidence_justification = (
+                "No usable data was gathered — every query errored or returned zero rows, so no "
+                "finding can be confirmed. " + (synth.confidence_justification or "")
+            ).strip()
+
+    def _coerce_amount_sign(label: str, pct: float) -> str:
+        """Keep a waterfall amount_label's leading sign in agreement with its
+        pct_of_total, so the two never render with opposite directions."""
+        s = (label or "").strip()
+        if not s:
+            return s
+        core = re.sub(r"^[+\-]\s*", "", s)
+        return ("-" + core) if pct < 0 else core
+
     if synth:
         waterfall = [
             WaterfallEntry(
                 cause=w.cause,
-                amount_label=w.amount_label,
+                amount_label=_coerce_amount_sign(w.amount_label, w.pct_of_total),
                 pct_of_total=w.pct_of_total,
                 controllable=w.controllable,
                 structural=w.structural,

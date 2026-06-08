@@ -38,7 +38,7 @@ from pydantic import BaseModel
 
 T = TypeVar("T", bound=BaseModel)
 
-Role = Literal["coder", "narrator"]
+Role = Literal["coder", "narrator", "fast"]
 
 OLLAMA_BASE_URL    = os.getenv("OLLAMA_BASE_URL",    "http://localhost:11434/v1")
 LMSTUDIO_BASE_URL  = os.getenv("LMSTUDIO_BASE_URL",  "http://localhost:1234/v1")
@@ -55,10 +55,17 @@ _DEFAULT_MODELS: dict[str, dict[Role, str]] = {
 
 def _model_for_role(backend: str, role: Role) -> str:
     defaults = _DEFAULT_MODELS.get(backend, _DEFAULT_MODELS["ollama"])
-    fallback = os.getenv("AUGHOR_MODEL", defaults[role])
+    # "fast" is a narrator sub-tier — a cheaper/quicker model for the simpler per-phase
+    # interpret calls. It shares the narrator default and falls back to the narrator model
+    # when AUGHOR_FAST_NARRATOR_MODEL is unset → no behaviour change until it is configured.
+    base_role = "narrator" if role in ("narrator", "fast") else role
+    fallback = os.getenv("AUGHOR_MODEL", defaults[base_role])
     if role == "coder":
         return os.getenv("AUGHOR_CODER_MODEL", fallback)
-    return os.getenv("AUGHOR_NARRATOR_MODEL", fallback)
+    narrator_model = os.getenv("AUGHOR_NARRATOR_MODEL", fallback)
+    if role == "fast":
+        return os.getenv("AUGHOR_FAST_NARRATOR_MODEL", narrator_model)
+    return narrator_model
 
 
 def _build_ollama_client(model: str = "") -> instructor.Instructor:

@@ -1,18 +1,8 @@
 "use client";
 
 import { RichSchema, SchemaTable, SchemaJoin, SchemaWarning } from "@/lib/api";
-
-// ── Color palette cycling per table ──────────────────────────────────────────
-const TABLE_PALETTES = [
-  { border: "border-violet-500/30", header: "bg-violet-500/10", badge: "bg-violet-500/20 text-violet-300", dot: "bg-violet-400" },
-  { border: "border-blue-500/30",   header: "bg-blue-500/10",   badge: "bg-blue-500/20 text-blue-300",   dot: "bg-blue-400"   },
-  { border: "border-emerald-500/30",header: "bg-emerald-500/10",badge: "bg-emerald-500/20 text-emerald-300",dot:"bg-emerald-400"},
-  { border: "border-amber-500/30",  header: "bg-amber-500/10",  badge: "bg-amber-500/20 text-amber-300", dot: "bg-amber-400"  },
-  { border: "border-rose-500/30",   header: "bg-rose-500/10",   badge: "bg-rose-500/20 text-rose-300",   dot: "bg-rose-400"   },
-  { border: "border-cyan-500/30",   header: "bg-cyan-500/10",   badge: "bg-cyan-500/20 text-cyan-300",   dot: "bg-cyan-400"   },
-  { border: "border-indigo-500/30", header: "bg-indigo-500/10", badge: "bg-indigo-500/20 text-indigo-300",dot:"bg-indigo-400" },
-  { border: "border-teal-500/30",   header: "bg-teal-500/10",   badge: "bg-teal-500/20 text-teal-300",   dot: "bg-teal-400"   },
-];
+import { TABLE_PALETTES, type TablePalette } from "@/lib/palette";
+import { formatCount } from "@/lib/format";
 
 // ── Column type → colour chip ─────────────────────────────────────────────────
 // Strip precision/length from type names so chips stay compact (VARCHAR(255) → VARCHAR)
@@ -31,7 +21,7 @@ function typeChip(rawType: string): { label: string; cls: string } {
 }
 
 // ── Table card ────────────────────────────────────────────────────────────────
-function TableCard({ table, palette }: { table: SchemaTable; palette: typeof TABLE_PALETTES[0] }) {
+function TableCard({ table, palette }: { table: SchemaTable; palette: TablePalette }) {
   const totalCols = table.columns.length;
 
   return (
@@ -45,7 +35,7 @@ function TableCard({ table, palette }: { table: SchemaTable; palette: typeof TAB
         <div className="flex items-center gap-1 shrink-0">
           {table.row_count && (
             <span className={`text-[11px] px-1 py-px rounded font-mono ${palette.badge}`}>
-              {Number(table.row_count).toLocaleString()}r
+              {formatCount(Number(table.row_count))}r
             </span>
           )}
           <span className="text-[11px] px-1 py-px rounded bg-zinc-800/80 text-zinc-500 font-mono">

@@ -214,6 +214,42 @@ def generate_briefing(conn_id: str, refresh: bool = False, schema: str | None = 
     return {**result, "available": bool(result.get("narrative"))}
 
 
+@router.post("/exploration/canvas/{canvas_id}/briefing")
+def generate_canvas_briefing(canvas_id: str, refresh: bool = False):
+    """Generate (or return cached) a briefing scoped to a Canvas's curated tables — so the
+    brief reflects only the canvas's tables, not the whole connection (scope consistency:
+    Domains is already canvas-scoped; this brings Briefing in line)."""
+    from aughor.explorer import store as _expl_store
+    from aughor.knowledge.patterns import get_patterns
+    from aughor.knowledge.briefing import get_briefing
+    from aughor.canvas.store import get_canvas
+
+    canvas = get_canvas(canvas_id)
+    if not canvas:
+        raise HTTPException(status_code=404, detail="Canvas not found")
+
+    by_domain = _expl_store.get_domain_insights_canvas(canvas_id)
+    if not by_domain:
+        return {
+            "narrative": "",
+            "headline_theme": "",
+            "citations": [],
+            "generated_at": None,
+            "available": False,
+        }
+
+    conn_id = canvas.primary_connection_id or ""
+    patterns = get_patterns(conn_id, by_domain, force_refresh=False)
+    result = get_briefing(
+        connection_id=conn_id,
+        domain_data=by_domain,
+        patterns=patterns,
+        force_refresh=refresh,
+        scope_key=f"canvas:{canvas_id}",
+    )
+    return {**result, "available": bool(result.get("narrative"))}
+
+
 @router.post("/exploration/{conn_id}/domains/{domain}/extend")
 async def extend_domain_budget(conn_id: str, domain: str):
     from aughor.explorer import store as _expl_store

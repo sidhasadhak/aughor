@@ -15,12 +15,14 @@
  *   • generateBriefingNarrative() — LLM prose with citation links (M24b)
  */
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import {
   getDomainInsights,
+  getCanvasDomainInsights,
   getPatterns,
   getOrgIntelligence,
   generateBriefingNarrative,
+  generateCanvasBriefingNarrative,
   getCatalogTree,
   getExplorerStatus,
   startExplorer,
@@ -588,8 +590,85 @@ function OrgSignalRow({ insight }: { insight: OrgInsight }) {
 }
 
 // ── Empty state ────────────────────────────────────────────────────────────────
+//
+// "Empty" is never silent: we diagnose *why* the briefing has no domain
+// intelligence from the explorer status and offer the matching next action.
+// The four causes map 1:1 to the explorer lifecycle:
+//   never        → no exploration has run (phase pending / no status)   → Start
+//   running      → explorer mid-flight (phases 3-8 in progress)         → wait
+//   failed       → the run errored out                                  → Restart
+//   completeEmpty→ run finished but Phase-8 domain intel is empty        → Trigger
+//                  (ontology gate skipped it, or the schema is too sparse)
 
-function BriefingEmpty() {
+type EmptyReason =
+  | { kind: "never" }
+  | { kind: "running"; queries: number; insights: number; phase: string }
+  | { kind: "failed"; error: string | null }
+  | { kind: "completeEmpty"; insights: number };
+
+function emptyReason(status: ExplorerStatus | null): EmptyReason {
+  const phase = status?.phase;
+  if (!status || !phase || phase === "pending") return { kind: "never" };
+  if (phase === "failed")   return { kind: "failed", error: status.error };
+  if (phase === "complete") return { kind: "completeEmpty", insights: status.insights_found };
+  return { kind: "running", queries: status.queries_executed, insights: status.insights_found, phase };
+}
+
+const PHASE_LABELS: Record<string, string> = {
+  null_meaning:      "resolving null meanings",
+  join_verification: "verifying joins",
+  lifecycle_mapping: "mapping lifecycles",
+  distribution:      "profiling distributions",
+  cross_table:       "finding cross-table patterns",
+  domain_intel:      "synthesising domain intelligence",
+};
+
+function BriefingEmpty({
+  status,
+  busy,
+  onStart,
+  onTrigger,
+  canvasId,
+}: {
+  status: ExplorerStatus | null;
+  busy: boolean;
+  onStart: () => void;
+  onTrigger: () => void;
+  canvasId?: string;
+}) {
+  const reason = emptyReason(status);
+  const scope = canvasId ? "this canvas's tables" : "this connection";
+
+  let title: string;
+  let body: string;
+  let cta: { label: string; onClick: () => void } | null = null;
+  let spinning = false;
+
+  switch (reason.kind) {
+    case "never":
+      title = "No exploration has run yet";
+      body  = `Briefings synthesise the domain intelligence discovered by the autonomous explorer. Run an exploration on ${scope} to surface findings — they'll appear here automatically.`;
+      cta   = { label: "Start exploration", onClick: onStart };
+      break;
+    case "running":
+      spinning = true;
+      title = "Exploration in progress";
+      body  = `The explorer is ${PHASE_LABELS[reason.phase] ?? reason.phase} — ${reason.queries} ${reason.queries === 1 ? "query" : "queries"} run, ${reason.insights} raw finding${reason.insights === 1 ? "" : "s"} so far. Domain intelligence appears here once the run completes.`;
+      break;
+    case "failed":
+      title = "Exploration failed";
+      body  = reason.error
+        ? `The last run stopped: ${reason.error}. Restart to try discovering domain intelligence again.`
+        : "The last exploration run did not complete. Restart to try again.";
+      cta   = { label: "Restart exploration", onClick: onStart };
+      break;
+    case "completeEmpty":
+      title = "No domain intelligence yet";
+      body  = `Exploration completed${reason.insights > 0 ? ` with ${reason.insights} raw finding${reason.insights === 1 ? "" : "s"}` : ""}, but no domain intelligence has been synthesised for ${scope} — that's the layer briefings are built from. Generate it now; if it stays empty, the schema may be too sparse to build an ontology (you can still Ask or Investigate the data directly).`;
+      cta   = { label: "Generate domain intelligence", onClick: onTrigger };
+      break;
+  }
+
   return (
     <div style={{
       flex: 1, display: "flex", flexDirection: "column" as const,
@@ -600,20 +679,57 @@ function BriefingEmpty() {
         background: "var(--bg-2)", border: "1px solid var(--b1)",
         display: "flex", alignItems: "center", justifyContent: "center",
       }}>
-        {/* Brief icon */}
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
-          stroke="var(--t4)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M3 5h18M3 9h18M3 13h12M3 17h8" />
-        </svg>
+        {spinning ? (
+          <div style={{
+            width: 22, height: 22, border: "2px solid var(--b2)",
+            borderTop: "2px solid var(--blue4)", borderRadius: "50%",
+            animation: "spin 1s linear infinite",
+          }} />
+        ) : (
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
+            stroke="var(--t4)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 5h18M3 9h18M3 13h12M3 17h8" />
+          </svg>
+        )}
       </div>
-      <div style={{ textAlign: "center" as const }}>
+      <div style={{ textAlign: "center" as const, maxWidth: 400 }}>
         <div style={{ fontSize: 14, fontWeight: 500, color: "var(--t2)", marginBottom: 6 }}>
-          No intelligence to brief yet
+          {title}
         </div>
-        <div style={{ fontSize: 12, color: "var(--t3)", maxWidth: 340, lineHeight: 1.6 }}>
-          Briefings synthesise domain intelligence into a daily brief. Run an exploration on a connection — findings will appear here automatically.
+        <div style={{ fontSize: 12, color: "var(--t3)", lineHeight: 1.6 }}>
+          {body}
         </div>
       </div>
+      {cta && (
+        <button
+          onClick={cta.onClick}
+          disabled={busy}
+          style={{
+            display: "inline-flex", alignItems: "center", gap: 7,
+            padding: "8px 18px", borderRadius: "var(--r2)", fontSize: 12, fontWeight: 500,
+            background: busy ? "var(--bg-2)" : "color-mix(in srgb, var(--blue4) 14%, var(--bg-2))",
+            border: `1px solid ${busy ? "var(--b1)" : "color-mix(in srgb, var(--blue4) 32%, var(--b1))"}`,
+            color: busy ? "var(--t3)" : "var(--blue4)",
+            cursor: busy ? "not-allowed" : "pointer", transition: "all .15s",
+          }}
+          onMouseEnter={e => { if (!busy) e.currentTarget.style.background = "color-mix(in srgb, var(--blue4) 22%, var(--bg-2))"; }}
+          onMouseLeave={e => { if (!busy) e.currentTarget.style.background = "color-mix(in srgb, var(--blue4) 14%, var(--bg-2))"; }}
+        >
+          {busy ? (
+            <>
+              <span style={{ width: 12, height: 12, border: "2px solid var(--b2)", borderTop: "2px solid var(--blue4)", borderRadius: "50%", animation: "spin 1s linear infinite", flexShrink: 0 }} />
+              Working…
+            </>
+          ) : (
+            <>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6L12 2z" />
+              </svg>
+              {cta.label}
+            </>
+          )}
+        </button>
+      )}
     </div>
   );
 }
@@ -644,9 +760,13 @@ function BriefingLoading() {
 export function BriefingPanel({
   connectionId,
   onInvestigate,
+  canvasId,
 }: {
   connectionId: string;
   onInvestigate: (q: string) => void;
+  /** When set, the briefing is scoped to this Canvas's curated tables (not the whole
+   *  connection) — keeps Briefing consistent with the already-canvas-scoped Domains. */
+  canvasId?: string;
 }) {
   const [briefing, setBriefing]             = useState<BriefingData | null>(null);
   const [loading, setLoading]               = useState(false);
@@ -660,14 +780,18 @@ export function BriefingPanel({
   const [explorerBusy, setExplorerBusy]       = useState(false);
 
   const load = useCallback(async () => {
-    if (!connectionId) return;
+    if (!canvasId && !connectionId) return;
     setLoading(true);
     setError(null);
     try {
       const schema = selectedSchema ?? undefined;
+      // Canvas scope: use the canvas's domain insights; patterns aren't computed per-canvas
+      // (the canvas briefing endpoint derives them internally for the narrative).
       const [domainRaw, patternsRes, orgInsights] = await Promise.all([
-        getDomainInsights(connectionId, schema),
-        getPatterns(connectionId, false, schema).catch(() => ({ patterns: [] as Pattern[], count: 0 })),
+        canvasId ? getCanvasDomainInsights(canvasId) : getDomainInsights(connectionId, schema),
+        canvasId
+          ? Promise.resolve({ patterns: [] as Pattern[], count: 0 })
+          : getPatterns(connectionId, false, schema).catch(() => ({ patterns: [] as Pattern[], count: 0 })),
         getOrgIntelligence().catch(() => [] as OrgInsight[]),
       ]);
       setBriefing(synthesize(domainRaw, patternsRes.patterns, orgInsights));
@@ -676,14 +800,16 @@ export function BriefingPanel({
     } finally {
       setLoading(false);
     }
-  }, [connectionId, selectedSchema]);
+  }, [connectionId, canvasId, selectedSchema]);
 
   const generateNarrative = useCallback(async (forceRefresh = false) => {
-    if (!connectionId) return;
+    if (!canvasId && !connectionId) return;
     setNarrativeLoading(true);
     setNarrativeError(null);
     try {
-      const result = await generateBriefingNarrative(connectionId, forceRefresh, selectedSchema ?? undefined);
+      const result = canvasId
+        ? await generateCanvasBriefingNarrative(canvasId, forceRefresh)
+        : await generateBriefingNarrative(connectionId, forceRefresh, selectedSchema ?? undefined);
       if (result.available) setNarrative(result);
       else setNarrativeError("No domain intelligence available — run an exploration first.");
     } catch (e) {
@@ -691,13 +817,28 @@ export function BriefingPanel({
     } finally {
       setNarrativeLoading(false);
     }
-  }, [connectionId, selectedSchema]);
+  }, [connectionId, canvasId, selectedSchema]);
+
+  // Shared explorer actions — used by both the control bar and the empty-state CTA.
+  const runExplorer = useCallback(async () => {
+    if (!connectionId) return;
+    setExplorerBusy(true);
+    try { await startExplorer(connectionId); } catch {}
+    setExplorerBusy(false);
+  }, [connectionId]);
+
+  const runTriggerIntel = useCallback(async () => {
+    if (!connectionId) return;
+    setExplorerBusy(true);
+    try { await triggerDomainIntelligence(connectionId); } catch {}
+    setExplorerBusy(false);
+  }, [connectionId]);
 
   useEffect(() => { load(); }, [load]);
 
-  // Fetch available schemas for this connection
+  // Fetch available schemas for this connection (N/A for a canvas — already scoped)
   useEffect(() => {
-    if (!connectionId) { setSchemas([]); setSelectedSchema(null); return; }
+    if (canvasId || !connectionId) { setSchemas([]); setSelectedSchema(null); return; }
     getCatalogTree()
       .then(tree => {
         const entry = tree.sections.flatMap(s => s.entries).find(e => e.conn_id === connectionId);
@@ -707,14 +848,14 @@ export function BriefingPanel({
         if (names.length === 1) setSelectedSchema(names[0]);
       })
       .catch(() => setSchemas([]));
-  }, [connectionId]);
+  }, [connectionId, canvasId]);
 
-  // Auto-fetch cached narrative (no force-refresh) on mount / schema change
+  // Auto-fetch cached narrative (no force-refresh) on mount / scope change
   useEffect(() => {
-    if (!connectionId || narrative !== null) return;
+    if ((!canvasId && !connectionId) || narrative !== null) return;
     generateNarrative(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connectionId, selectedSchema]);
+  }, [connectionId, canvasId, selectedSchema]);
 
   // Poll explorer status every 3 seconds
   useEffect(() => {
@@ -729,6 +870,18 @@ export function BriefingPanel({
     const iv = setInterval(poll, 3000);
     return () => { mounted = false; clearInterval(iv); };
   }, [connectionId]);
+
+  // Auto-refresh the briefing the moment an exploration run reaches "complete" —
+  // newly-synthesised domain intelligence would otherwise stay hidden until a manual Reload.
+  const prevPhaseRef = useRef<string | null>(null);
+  useEffect(() => {
+    const phase = explorerStatus?.phase ?? null;
+    if (prevPhaseRef.current && prevPhaseRef.current !== "complete" && phase === "complete") {
+      load();
+      setNarrative(null); // let the cached-narrative auto-fetch pick up fresh intel
+    }
+    prevPhaseRef.current = phase;
+  }, [explorerStatus?.phase, load]);
 
   if (loading)  return <BriefingLoading />;
 
@@ -780,21 +933,13 @@ export function BriefingPanel({
             <>
               <button
                 disabled={explorerBusy}
-                onClick={async () => {
-                  setExplorerBusy(true);
-                  try { await startExplorer(connectionId); } catch {}
-                  setExplorerBusy(false);
-                }}
+                onClick={runExplorer}
                 style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: "var(--grn2)", color: "var(--grn5)", border: "1px solid var(--grn3)", cursor: explorerBusy ? "default" : "pointer", opacity: explorerBusy ? 0.6 : 1 }}
               >Start</button>
               {explorerStatus?.phase === "complete" && (
                 <button
                   disabled={explorerBusy}
-                  onClick={async () => {
-                    setExplorerBusy(true);
-                    try { await triggerDomainIntelligence(connectionId); } catch {}
-                    setExplorerBusy(false);
-                  }}
+                  onClick={runTriggerIntel}
                   style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: "var(--blue2)", color: "var(--blue5)", border: "1px solid var(--blue3)", cursor: explorerBusy ? "default" : "pointer", opacity: explorerBusy ? 0.6 : 1 }}
                 >Trigger Intel</button>
               )}
@@ -825,7 +970,13 @@ export function BriefingPanel({
       </div>
 
       {isEmpty ? (
-        <BriefingEmpty />
+        <BriefingEmpty
+          status={explorerStatus}
+          busy={explorerBusy}
+          onStart={runExplorer}
+          onTrigger={runTriggerIntel}
+          canvasId={canvasId}
+        />
       ) : (
         <>
 

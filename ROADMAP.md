@@ -6,6 +6,71 @@
 
 ---
 
+## 🧠 Latest — Intelligence-Surface Trust: Scope-Consistent + Self-Explaining Intelligence
+
+The intelligence surfaces (Briefing / Domains) and the Deep-Analysis path were hardened so the platform **reassures users of intelligence quality** — every surface is scoped consistently, never silently empty, and every user-facing number is grounded in the actual result rows.
+
+| Area | What shipped | Key files |
+|---|---|---|
+| **Scope-consistent Briefing** | The Briefing now scopes to Workspace → Connection → {Schema \| Canvas} like the Domains panel — a scope-keyed cache + a canvas-scoped endpoint, threaded through the UI so a Canvas's Intelligence tab briefs *its* curated tables, stacked above the canvas Domain panel. | `aughor/knowledge/briefing.py`, `aughor/routers/exploration.py`, `web/components/{BriefingPanel,IntelligenceWorkspace,CanvasWorkspace}.tsx` |
+| **Self-explaining empty state** | Intelligence is **never silently empty**: the Briefing diagnoses *why* — never-explored / exploration running (live counts) / failed / completed-but-no-domain-intelligence (ontology-gated or sparse schema) — and offers the matching one-click action (Start exploration / Generate domain intelligence / Restart). This was the exact thing that made intelligence look "missing". | `web/components/BriefingPanel.tsx` |
+| **ADA correctness — cross-sectional path** | Narrator↔query findings bind by **identity (token overlap), not list position** (fixes "says city, charts show country"); the category axis plots the **metric, not the share**; an **average / per-record lens** was added for cross-sectional reads. Regression-locked. | `aughor/agent/{investigate,prompts_investigate}.py`, `web/components/Chart.tsx`, `tests/unit/test_cross_section_binding.py` |
+| **ADA grounding (/chat parity)** | Headlines/numbers are **grounded in the result rows** (replaced only on contradiction); a **SQL self-repair loop** turns binder "missing column" errors into JOIN hints; a **fan-out metric guard** blocks product-of-aggregates ($3T-class); the ADA SQL plan gets a **join-complete schema** (FK neighbours + temporal dims + detected join paths) with strict `table.column` fidelity. | `aughor/agent/investigate.py`, `aughor/routers/investigations.py`, `aughor/agent/prompts_investigate.py` |
+| **Deep-Analysis latency** | Consolidated 3 sequential intake retries into one, skipped the narrator on dead (empty/failed) phases, and added an opt-in **fast narrator tier** — synthesis **117s→18s**, interpret **117s→20s**, worst-case early-stop **~278s→~150s** (all-qwen). | `aughor/agent/{investigate,graph}.py`, `aughor/llm/provider.py` |
+| **Trusted data-context glossary** | A curated `glossary.yaml` (table grains, canonical joins, column semantics) feeding trusted, parameterized generation. | `data/glossary.yaml` |
+
+**Next:** IntelligenceHub canvas-awareness; one progressive Brief→Synthesis→Evidence surface with push/actionability (see `docs/INTELLIGENCE_UNIFICATION.md`).
+
+---
+
+## 🧩 Recent — The Brief: Answer Surface + Agent Reasoning + Data-Shape Intelligence
+
+Both answer modes were rebuilt to read like a published analytical brief, and both were re-grounded in *how the data is actually shaped*.
+
+| Area | What shipped | Key files |
+|---|---|---|
+| **The Brief (answer surface)** | Insight + Deep Analysis converge on ONE flat, document-style vocabulary (`Brief`/`BriefProse`/`BriefSection`/`BriefMetrics`/`BriefFigure`/`BriefDetails`) — prose carries the analysis with **bold** key numbers, charts/tables are the only framed blocks, machinery folds into one quiet disclosure. The purple cards, badge pills, and accordion-in-accordion are gone. | `web/components/brief/`, `ChatMessage.tsx`, `InvestigationReport.tsx` |
+| **Agent reasoning quality** | One sign convention (losses negative everywhere) end-to-end so a quantity can't read +green here and −red there; honest confidence (a no-data run is forced to LOW, not "HIGH — no anomaly"); prose tuned to lead with the answer and bold decisive numbers. | `aughor/agent/{investigate,prompts_investigate,prompts_explore}.py`, `aughor/routers/investigations.py` |
+| **Data-shape intelligence** | The profiler captures numeric **distributions** (mean/median/stddev/p25–p75, from DuckDB `SUMMARIZE`), derives the analytical **time grain** from span + cadence (`_choose_grain`: 1mo daily → day, 5yr monthly → quarter, snapshot / no-date → cross-sectional), flags an **incomplete trailing period**, and intake **clamps comparison windows to real data** (no "May vs April" when only May exists). | `aughor/tools/profiler.py`, `aughor/agent/investigate.py` |
+| **Cross-sectional diagnostics** | "Where are we losing money / which X is weakest" routes (deterministically) to a **dimensional weakness scan** — rank the money metric across franchise/region/product/segment, surface the lowest / most-concentrated values — instead of forcing a temporal anomaly frame (3 phases vs 6). | `aughor/agent/{investigate,graph,prompts_investigate}.py` |
+| **Live agent trace** | The Deep-Analysis trace renders the real phases with plain-language labels ("Understanding the question", "Scanning dimensions for where value is weakest", "Analysing the data…") and live status — was stuck at "0 steps". | `web/components/ThinkingTrace.tsx` |
+
+---
+
+## 🧩 Recent — Reusable Component Architecture + Exhaustive Test Pass
+
+The same qualified-vs-bare table-name bug was fixed **three** times because there was no shared primitive; the UI carried three chart implementations, six copies of cell-formatting, and three colour palettes. This program rebuilt ERD, Ontology, Charts, and Tables as **single-source-of-truth components on canonical contracts**, backed by shared primitives — so a fix lands once and propagates everywhere — then verified every feature, endpoint, process, and vector collection end-to-end. **~1,500 lines of duplication removed · 0 regressions · 5 bugs fixed.**
+
+| Phase | What shipped | Key files |
+|---|---|---|
+| **1 — Canonical table-name layer** | One primitive (`bare`/`leaf`/`same_table`/`resolve_in`/`TableRef`) is the only place table names are split, compared, or qualified — backend *and* frontend; 15 backend sites + the Catalog ERD filter migrated; the qualified-vs-bare bug class can't recur | `aughor/tools/table_names.py`, `web/lib/tableName.ts`, `tests/unit/test_table_names.py` |
+| **2 — Frontend primitives** | `format.ts` folds 8 large-number + 5 percent + 3 label + 2 date impls into one home; `palette.ts` consolidates 3 palettes; 17 components migrated | `web/lib/{format,palette,tableName}.ts` |
+| **3 — One of each component** | Single `<Chart>` engine (16 view types) extracted from a 2,200-line `ChatMessage`; `InvestigationChart` → a thin toggle-wrapper delegating to it; `<ERDiagram>` / `<OntologyGraph>` / `<DataTable>` on canonical contracts | `web/components/{Chart,InvestigationChart,ERDiagram,OntologyCanvas,AugTable}.tsx` |
+| **4 — Exhaustive test pass** | `smoke.py` (every GET endpoint + 8 Qdrant collections, baseline-diffed) + `flows.py` (write/background flows); 16 UI surfaces walked (0 console errors); a Deep-Analysis investigation driven to completion; `TEST_REPORT.md` maps all 76 features | `scripts/{smoke,flows}.py`, `TEST_REPORT.md` |
+| **Bugs fixed (0 regressions)** | `/ontology/skills`+`/autonomy` 500 (inert `aughor.memory` package), `/canvases/{id}/suggestions` 500 (sync→async `await`), `/monitors` 500→422, `/ontology/rebuild` 500→422, smoke-oracle self-comparison | `aughor/memory/`, `aughor/routers/{canvas,monitors,ontology}.py`, `scripts/smoke.py` |
+
+**Next:** a subtle **motion / animation pass** (planned — see below).
+
+---
+
+## 🎬 Planned — Motion & Animation Pass
+
+A subtle, **performance-conscious** motion layer that makes the platform feel alive without getting in the way — and, true to the component-architecture work above, driven by **one shared motion system, not scattered transitions**.
+
+**Approach**
+- **Motion tokens in `tokens.css`** — a single source for duration + easing (`--motion-fast ~120ms`, `--motion-base ~200ms`, `--motion-slow ~320ms`, `--ease-out`, `--ease-spring`) so timing is consistent and tunable in one place.
+- **Targets** — tab/panel transitions, list & card stagger-in, chart / ERD / Ontology mount fade+grow, hover/press micro-interactions, skeleton → content cross-fades, toast/drawer slides, number count-ups on stat cards.
+- **Accessibility** — honour `prefers-reduced-motion` globally (motion collapses to instant).
+- **CSS-first** — transforms + opacity only (GPU-friendly), no layout thrash; reach for a library only where layout animations genuinely need it.
+
+**Open decisions (at sprint start)**
+- **Scope** — broad-but-subtle global token pass vs. a focused 2–3 spot showcase first to set the vocabulary, then roll out.
+- **Library** — pure CSS / Tailwind transitions vs. Framer Motion (only if layout / shared-element animations justify the dependency).
+
+**Likely files:** `web/styles/tokens.css` (motion tokens), a small `web/lib/motion.ts` or a shared `<Reveal>` / transition helper, then incremental adoption across the reusable components and tabs.
+
+---
+
 ## 🚀 Latest — `genie-revamp` (Grounded NL2SQL + Eval Suite + Trusted Templates)
 
 A focused effort to make NL2SQL **SOTA and plug-and-play** — correct on real, unseen schemas — measured against real benchmarks at every step.
@@ -18,8 +83,12 @@ A focused effort to make NL2SQL **SOTA and plug-and-play** — correct on real, 
 | **Eval suite** | Full-pipeline harness + real-scale TPC-H (5/7) / TPC-DS (4/5, via temporal lever) / ClickBench (10/10) harnesses (DuckDB-generated, execution-validated) + reference-free real-DB harness (self-consistency + cross-model LLM-judge) | `evals/run_{tpch,tpcds,clickbench,golden,realdb}.py` |
 | **Bug fixes found by the eval** | Spurious GROUP-BY rewriter (semantic_validator false positives); cross-connection metric leak (schema-aware filtering); measure-based scorer false-negatives | `tools/semantic_validator.py`, `semantic/metrics.py`, `evals/run_tpch.py` |
 | **Platform hardening** | Connection pooling (reuse, TTL, health, opt-out); Google Sheets connector (gviz CSV + cache); Anthropic (Opus) fallback on primary-backend failure; explorer auto-start on new connections; light-mode fix; audit-log noise reduction; batched post-answer LLM calls | `db/pool.py`, `connectors/api/gsheets.py`, `llm/provider.py`, `routers/_shared.py` |
+| **Self-validating semantic layer (M24c)** | Ontology validator executes every metric / computed-property / object-set against the live DB (`verified` gate); verified-only injection of object sets + computed properties + unified metric formulas into the generator; catches the $3T product-of-aggregates + hallucinated columns. Connection-scoped no-op elsewhere (ClickBench held 10/10) | `ontology/validator.py`, `ontology/semantic_block.py`, `semantic/metrics.py`, `ontology/models.py` |
+| **Fan-out guard (M24d, Cube borrow)** | Conservative **zero-false-positive** detector (sqlglot scope + FK-root cardinality, validated on 121 official TPC-H/TPC-DS queries) → directed pre-aggregate rewrite, adopted only if it re-executes clean. The principled, schema-wide replacement for the trusted-template fan-out band-aid (Cube symmetric aggregates) | `sql/fanout.py`, `routers/investigations.py` |
+| **Robust enrichment** | Flat computed-property list + tolerant JSON coercion + temp 0 — fixes the local-model structured-output collapse that intermittently dropped *all* computed properties | `ontology/enricher.py`, `agent/prompts_ontology.py` |
+| **Runtime / UI repairs** | Ontology endpoints (read cached graph, not the fast `get_schema`); briefing int-citation coercion (was hanging to timeout); ontology ERD qualified/bare join fix (**0 → 38 relationships**); Workspace multi-schema `search_path` (**~1875 explorer errors → 0**); Catalog ERD bare/qualified name match (**0 → 6 tables**) | `routers/ontology.py`, `knowledge/briefing.py`, `ontology/builder.py`, `connectors/file/local_upload.py`, `web/components/CatalogScreen.tsx` |
 
-**Key insight:** model-invariant failures (qwen vs kimi fail the same queries) → the ceiling is *grounding*, not the model. Fixes target context, and the eval proves each lever's lift.
+**Key insight:** model-invariant failures (qwen vs kimi fail the same queries) → the ceiling is *grounding*, not the model. Fixes target context, and the eval proves each lever's lift. The semantic layer extends this: knowledge is computed once, *validated against the live DB*, and injected verified — borrowing Cube.dev's declarative-layer + symmetric-aggregate model and MindsDB's grounding patterns.
 
 ---
 

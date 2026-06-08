@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { API_BASE as BASE } from "@/lib/config";
+import { pct } from "@/lib/format";
 
 interface PlaybookEntry {
   id: string;
@@ -29,7 +30,7 @@ const STATUS_CHIP: Record<string, { bg: string; color: string; label: string }> 
 
 function fmtRate(r: number): string {
   if (r <= 0) return "—";
-  return `${(r * 100).toFixed(0)}%`;
+  return pct(r, 0);
 }
 
 function StatusChip({ status }: { status: string }) {

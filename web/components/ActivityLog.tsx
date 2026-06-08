@@ -17,6 +17,7 @@ import {
   type ExplorationStatus,
   type RetryQueryResult,
 } from "@/lib/api";
+import { formatCount } from "@/lib/format";
 
 // ── Phase metadata ────────────────────────────────────────────────────────────
 
@@ -423,7 +424,7 @@ function LogTable({ items, connectionId, sortCol, sortDir, onSort }: LogTablePro
                   </td>
                   {/* rows */}
                   <td style={{ padding: "7px 8px", fontSize: 10, fontFamily: "var(--font-mono)", color: "#4a4b57", textAlign: "right", whiteSpace: "nowrap" }}>
-                    {meta.rows !== null ? meta.rows.toLocaleString() : "—"}
+                    {formatCount(meta.rows)}
                   </td>
                   {/* object */}
                   <td style={{ padding: "7px 8px", fontSize: 10, fontFamily: "var(--font-mono)", color: "#6e6f78", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>

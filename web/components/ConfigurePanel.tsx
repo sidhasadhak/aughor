@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { SqlResultTable } from "@/components/AugTable";
+import { compactNumber } from "@/lib/format";
 import CloseIcon         from "@atlaskit/icon/core/close";
 import ChevronRightIcon  from "@atlaskit/icon/core/chevron-right";
 import TableIcon         from "@atlaskit/icon/core/table";
@@ -407,11 +408,7 @@ function DataTab({
             </button>
             <span className="w-12 text-right text-[--t3] shrink-0">{t.columns.length}</span>
             <span className="w-20 text-right text-[--t3] shrink-0 font-mono">
-              {Number(t.row_count) >= 1_000_000
-                ? `${(Number(t.row_count) / 1_000_000).toFixed(1)}M`
-                : Number(t.row_count) >= 1_000
-                ? `${(Number(t.row_count) / 1_000).toFixed(0)}k`
-                : t.row_count}
+              {compactNumber(Number(t.row_count), 1)}
             </span>
             <button onClick={() => setSelected(t)} className="text-[--t4] group-hover:text-[--t2] transition ml-1 shrink-0">
               <ChevronRightIcon label="" size="small" />

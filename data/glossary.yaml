@@ -406,8 +406,12 @@ tables:
         values: RETARGETING, CONVERSIONS, AWARENESS
       start_date:
         description: Date the campaign began
+        caveats: start_date and end_date do not align temporally with pnl_daily.date,
+          causing zero overlap across all 5,000 campaigns.
       end_date:
         description: Date the campaign ended or is scheduled to end
+        caveats: end_date and start_date do not align temporally with pnl_daily.date,
+          causing zero overlap across all 5,000 campaigns.
       daily_budget_usd:
         description: Allocated daily budget for the campaign in US dollars
       target_region:
@@ -697,6 +701,8 @@ tables:
         description: Whether the spend has been recognized (e.g., booked) in financial
           records
         values: true, false
+        caveats: The 'recognized' flag cannot be used to filter revenue for ROAS calculations
+          because no campaigns have date overlap with pnl_daily records.
       cost_center:
         description: The organizational cost center responsible for the marketing
           spend
@@ -752,6 +758,8 @@ tables:
     columns:
       date:
         description: The calendar day for which the financial metrics are reported
+        caveats: date values do not overlap with any campaign.start_date and campaign.end_date
+          ranges, preventing revenue attribution to campaigns.
       revenue:
         description: Total revenue generated on this day
       cogs:
@@ -1709,3 +1717,3287 @@ tables:
         description: Timestamp when the stockout was first detected (nanosecond precision)
       duration_hours:
         description: How long the stockout lasted, in hours
+  ecommerce.customers:
+    description: This table stores high-level customer information for an e-commerce
+      platform, including personal details, location, signup date, and lifetime purchase
+      metrics.
+    grain: one row per unique customer
+    auto_generated: true
+    columns:
+      customer_id:
+        description: Unique identifier for each customer
+      full_name:
+        description: Customer's full legal or preferred name
+      email:
+        description: Customer's email address used for account and order communications
+      city:
+        description: City where the customer resides
+        values: London, Paris, Berlin, Tokyo, Sao Paulo, Sydney, New York, Toronto,
+          Mumbai, Lagos
+      country:
+        description: Country where the customer resides, represented as ISO 3166-1
+          alpha-2 code
+        values: BR, GB, JP, US, AU, CA, DE, FR, NG, IN
+      signup_date:
+        description: Date the customer created their account
+      lifetime_orders:
+        description: Total number of orders placed by the customer since signup
+      lifetime_spend:
+        description: Total monetary value (in local currency) of all orders placed
+          by the customer since signup
+  ecommerce.order_items:
+    description: Contains individual line items from ecommerce orders, with details
+      about the product, quantity, and pricing for each item in an order.
+    grain: one row per order item (i.e., per product in an order)
+    auto_generated: true
+    columns:
+      item_id:
+        description: Unique identifier for each order item
+      order_id:
+        description: Identifier linking the item to its parent order
+      product_id:
+        description: Identifier for the product being purchased
+      quantity:
+        description: Number of units of the product ordered
+      unit_price:
+        description: Price per unit of the product at the time of order
+      line_total:
+        description: Total price for this line item (quantity × unit_price)
+  ecommerce.orders:
+    description: Stores individual e-commerce order records with details about the
+      order, customer, status, payment, and delivery timeline.
+    grain: One row per unique order_id
+    auto_generated: true
+    columns:
+      order_id:
+        description: Unique identifier for each order
+      customer_id:
+        description: Identifier for the customer who placed the order
+      status:
+        description: Current status of the order
+        values: delivered, shipped, cancelled, refunded, processing, pending
+      total_amount:
+        description: Total monetary value of the order in the local currency
+      order_date:
+        description: Date the order was placed
+      shipped_at:
+        description: Date the order was shipped (NULL if not yet shipped)
+        caveats: NULL for orders not yet shipped
+      delivered_at:
+        description: Date the order was delivered (NULL if not yet delivered)
+        caveats: NULL for orders not yet delivered
+      payment_method:
+        description: Method used to pay for the order
+        values: crypto, apple_pay, bank_transfer, paypal, card
+      item_count:
+        description: Total number of items in the order
+  ecommerce.products:
+    description: Contains static product catalog information for an e-commerce store,
+      including product details, pricing, and stock status.
+    grain: one row per product_id
+    auto_generated: true
+    columns:
+      product_id:
+        description: Unique identifier for each product
+      product_name:
+        description: Human-readable name of the product
+      category:
+        description: Product category (e.g., Electronics, Accessories, Office)
+        values: Electronics, Accessories, Office, Apparel, Kitchen, Fitness
+      price:
+        description: Current price of the product in USD
+      stock_quantity:
+        description: Number of units currently in stock
+      is_out_of_stock:
+        description: Flag indicating whether the product is currently out of stock
+        values: 'False'
+        caveats: All current rows have is_out_of_stock = False; may not reflect real-time
+          stock status
+  ecommerce.reviews:
+    description: Customer reviews for orders, including ratings, textual feedback,
+      and metadata such as date and associated order/customer IDs.
+    grain: one row per review_id
+    auto_generated: true
+    columns:
+      review_id:
+        description: Unique identifier for each review
+      order_id:
+        description: Reference to the order associated with the review
+      customer_id:
+        description: Identifier for the customer who submitted the review
+      rating:
+        description: Numerical rating given by the customer (likely on a scale such
+          as 1–5)
+      review_text:
+        description: Free-text feedback provided by the customer
+        values: Poor quality, Would not recommend, Not as described, Disappointed,
+          Average product, Decent but overpriced, OK, nothing special, Great product!,
+          Exactly as described, Exceeded expectations, Fast shipping, happy!, Very
+          satisfied, Would recommend
+      review_date:
+        description: Date when the review was submitted
+  lineitem:
+    description: Individual line items within customer orders, capturing product,
+      supplier, pricing, tax, discount, shipping details, and fulfillment status.
+    grain: one row per order line item (l_orderkey, l_linenumber)
+    auto_generated: true
+    columns:
+      l_orderkey:
+        description: Identifier of the parent order this line item belongs to.
+      l_partkey:
+        description: Identifier of the part ordered on this line item.
+      l_suppkey:
+        description: Identifier of the supplier fulfilling this line item.
+      l_linenumber:
+        description: Sequence number of this line item within the parent order.
+      l_quantity:
+        description: Number of units of the part ordered.
+      l_extendedprice:
+        description: Total base price for this line item before discount and tax.
+      l_discount:
+        description: Discount percentage applied to the extended price.
+      l_tax:
+        description: Tax percentage applied to the line item total after discount.
+      l_returnflag:
+        description: Flag indicating the return status of the line item.
+        values: N, R, A
+      l_linestatus:
+        description: Flag indicating whether the order line is open or fulfilled.
+        values: O, F
+      l_shipdate:
+        description: Date the line item was shipped to the customer.
+      l_commitdate:
+        description: Date the supplier committed to ship the line item.
+      l_receiptdate:
+        description: Date the line item was received by the customer.
+      l_shipinstruct:
+        description: Special delivery instructions for shipping this line item.
+        values: NONE, COLLECT COD, DELIVER IN PERSON, TAKE BACK RETURN
+      l_shipmode:
+        description: Transportation method used to ship the line item.
+        values: AIR, SHIP, MAIL, FOB, TRUCK, REG AIR, RAIL
+      l_comment:
+        description: Free-text comments or notes about this line item.
+  nation:
+    description: Reference dimension table of nations or countries, each mapped to
+      a region.
+    grain: one row per nation
+    auto_generated: true
+    columns:
+      n_nationkey:
+        description: Unique surrogate key identifying a nation.
+      n_name:
+        description: Official name of the nation.
+        values: ETHIOPIA|IRAQ|FRANCE|JAPAN|CANADA|JORDAN|ROMANIA|RUSSIA|MOROCCO|UNITED
+          KINGDOM|ALGERIA|ARGENTINA|INDIA|MOZAMBIQUE|SAUDI ARABIA|PERU|CHINA|VIETNAM|KENYA|GERMANY|EGYPT|INDONESIA|IRAN|BRAZIL|UNITED
+          STATES
+      n_regionkey:
+        description: Foreign key to the region table, grouping nations into regions.
+      n_comment:
+        description: Free-text commentary or notes about the nation.
+  part:
+    description: Catalog of parts showing physical attributes, manufacturer, brand,
+      and retail price. Contains no date columns; join to another table with timestamps
+      when a time range is needed.
+    grain: one row per p_partkey
+    auto_generated: true
+    columns:
+      p_partkey:
+        description: Unique identifier for a part.
+      p_name:
+        description: Descriptive name of the part.
+      p_mfgr:
+        description: Code representing the part's manufacturer.
+        values: Manufacturer#1, Manufacturer#2, Manufacturer#3, Manufacturer#4, Manufacturer#5
+      p_brand:
+        description: Code representing the part's brand.
+        values: Brand#11, Brand#12, Brand#13, Brand#14, Brand#15, Brand#21, Brand#22,
+          Brand#23, Brand#24, Brand#25, Brand#31, Brand#32, Brand#33, Brand#34, Brand#35,
+          Brand#41, Brand#42, Brand#43, Brand#44, Brand#45, Brand#51, Brand#52, Brand#53,
+          Brand#54, Brand#55
+      p_type:
+        description: Category or classification of the part.
+      p_size:
+        description: Numeric size or dimension of the part.
+      p_container:
+        description: Type of packaging container used for the part.
+        values: JUMBO BAG, JUMBO BOX, JUMBO CAN, JUMBO CASE, JUMBO DRUM, JUMBO JAR,
+          JUMBO PACK, JUMBO PKG, LG BAG, LG BOX, LG CAN, LG CASE, LG DRUM, LG JAR,
+          LG PACK, LG PKG, MED BAG, MED BOX, MED CAN, MED CASE, MED DRUM, MED JAR,
+          MED PACK, MED PKG, SM BAG, SM BOX, SM CAN, SM CASE, SM DRUM, SM JAR, SM
+          PACK, SM PKG, WRAP BAG, WRAP BOX, WRAP CAN, WRAP CASE, WRAP DRUM, WRAP JAR,
+          WRAP PACK, WRAP PKG
+      p_retailprice:
+        description: Retail selling price of the part.
+      p_comment:
+        description: Additional free-text notes about the part.
+  partsupp:
+    description: Bridge table that links parts to their suppliers, storing available
+      quantity, unit cost, and comments for each part-supplier relationship.
+    grain: one row per unique part-supplier combination (ps_partkey, ps_suppkey)
+    auto_generated: true
+    columns:
+      ps_partkey:
+        description: Foreign key identifying the part being supplied.
+      ps_suppkey:
+        description: Foreign key identifying the supplier providing the part.
+      ps_availqty:
+        description: Quantity of the part currently available from this supplier.
+      ps_supplycost:
+        description: Unit cost charged by the supplier for this part.
+      ps_comment:
+        description: Free-text comment or note about the part-supplier arrangement.
+  region:
+    description: Geographic region dimension table containing region names and comments.
+    grain: one row per region
+    auto_generated: true
+    columns:
+      r_regionkey:
+        description: Surrogate key uniquely identifying a geographic region.
+      r_name:
+        description: Name of the geographic region.
+        values: AFRICA, AMERICA, ASIA, EUROPE, MIDDLE EAST
+      r_comment:
+        description: Free-text comment or note describing the region.
+  supplier:
+    description: Master reference table for suppliers/vendors, storing contact information,
+      geographic nation key, account balance, and comments.
+    grain: one row per supplier
+    auto_generated: true
+    columns:
+      s_suppkey:
+        description: Unique identifier for the supplier.
+      s_name:
+        description: Name of the supplier.
+      s_address:
+        description: Street or mailing address of the supplier.
+      s_nationkey:
+        description: Foreign key referencing the nation where the supplier is located.
+      s_phone:
+        description: Contact phone number for the supplier.
+      s_acctbal:
+        description: Supplier's account balance in decimal currency.
+      s_comment:
+        description: Free-text comments or notes about the supplier.
+  call_center:
+    description: Dimension table storing information about call centers, including
+      their location, hours, manager, and marketing details.
+    grain: one row per call center identified by cc_call_center_id
+    auto_generated: true
+    columns:
+      cc_call_center_sk:
+        description: Surrogate key for the call center
+      cc_call_center_id:
+        description: Business identifier for the call center
+      cc_rec_start_date:
+        description: Effective start date for this record (likely for SCD Type 2)
+      cc_rec_end_date:
+        description: Effective end date for this record (likely for SCD Type 2)
+      cc_closed_date_sk:
+        description: Surrogate key referencing a date dimension for when the call
+          center was closed (if applicable)
+      cc_open_date_sk:
+        description: Surrogate key referencing a date dimension for when the call
+          center opened
+      cc_name:
+        description: Name of the call center
+        values: North Midwest, Mid Atlantic, NY Metro
+      cc_class:
+        description: Size classification of the call center
+        values: large, medium
+      cc_employees:
+        description: Number of employees at the call center
+      cc_sq_ft:
+        description: Square footage of the call center facility
+      cc_hours:
+        description: Operating hours of the call center
+        values: 8AM-4PM, 8AM-8AM
+      cc_manager:
+        description: Name of the call center manager
+        values: Larry Mccray, Felipe Perkins, Bob Belcher, Mark Hightower
+      cc_mkt_id:
+        description: Marketing segment identifier
+      cc_mkt_class:
+        description: Marketing classification (likely placeholder or corrupted data)
+        caveats: Values appear to be truncated or corrupted text fragments
+      cc_mkt_desc:
+        description: Marketing description (likely placeholder or corrupted data)
+        caveats: Values appear to be truncated or corrupted text fragments
+      cc_market_manager:
+        description: Name of the market manager overseeing the call center
+        values: Julius Durham, Gary Colburn, Matthew Clifton, Julius Tran
+      cc_division:
+        description: Division identifier
+      cc_division_name:
+        description: Name of the division (likely placeholder or corrupted data)
+        caveats: Values appear to be truncated or corrupted text fragments
+      cc_company:
+        description: Company identifier
+      cc_company_name:
+        description: Name of the company (likely placeholder or corrupted data)
+        caveats: Values appear to be truncated or corrupted text fragments
+      cc_street_number:
+        description: Street number of the call center address
+      cc_street_name:
+        description: Street name of the call center address
+        values: Franklin , 14th , Ash Hill
+      cc_street_type:
+        description: Type of street (e.g., Court, Boulevard)
+        values: Court, Wy, Boulevard
+      cc_suite_number:
+        description: Suite or unit number of the call center address
+      cc_city:
+        description: City where the call center is located
+        values: Midway, Fairview
+      cc_county:
+        description: County where the call center is located
+        values: Williamson County
+      cc_state:
+        description: State where the call center is located
+        values: TN
+      cc_zip:
+        description: ZIP code of the call center address
+        values: 31904, 35709
+      cc_country:
+        description: Country where the call center is located
+        values: United States
+      cc_gmt_offset:
+        description: GMT offset for the call center's local time zone
+      cc_tax_percentage:
+        description: Local tax percentage applicable to the call center
+  catalog_page:
+    description: Catalog page metadata describing individual pages in a catalog, including
+      identifiers, timing (via surrogate date keys), department, and descriptive attributes.
+    grain: one row per catalog page (identified by cp_catalog_page_id)
+    auto_generated: true
+    columns:
+      cp_catalog_page_sk:
+        description: Surrogate key for the catalog page
+      cp_catalog_page_id:
+        description: Business identifier for the catalog page
+      cp_start_date_sk:
+        description: Surrogate key referencing the start date dimension (likely date_sk
+          from a date dimension table)
+      cp_end_date_sk:
+        description: Surrogate key referencing the end date dimension (likely date_sk
+          from a date dimension table)
+      cp_department:
+        description: Department associated with the catalog page
+        values: DEPARTMENT
+      cp_catalog_number:
+        description: Catalog number identifying the catalog issue or edition
+      cp_catalog_page_number:
+        description: Page number within the catalog
+      cp_description:
+        description: Text description of the catalog page
+      cp_type:
+        description: Frequency or type of catalog publication
+        values: monthly, quarterly, bi-annual
+  catalog_returns:
+    description: Records individual catalog item returns, including financial details
+      and associated customer, demographic, and shipping information.
+    grain: one row per catalog return transaction
+    auto_generated: true
+    columns:
+      cr_returned_date_sk:
+        description: Surrogate key for the date on which the item was returned
+        caveats: This is a date dimension surrogate key, not a real date; join with
+          a date dimension table for calendar dates.
+      cr_returned_time_sk:
+        description: Surrogate key for the time of day when the return occurred
+        caveats: This is a time dimension surrogate key; join with a time dimension
+          table for actual time values.
+      cr_item_sk:
+        description: Surrogate key identifying the returned item
+        caveats: References the item dimension table.
+      cr_refunded_customer_sk:
+        description: Surrogate key for the customer who received the refund
+        caveats: May differ from returning customer if refund issued to a different
+          account.
+      cr_refunded_cdemo_sk:
+        description: Surrogate key for customer demographic attributes of the refunded
+          customer
+        caveats: References customer demographic dimension table.
+      cr_refunded_hdemo_sk:
+        description: Surrogate key for household demographic attributes of the refunded
+          customer
+        caveats: References household demographic dimension table.
+      cr_refunded_addr_sk:
+        description: Surrogate key for the address of the refunded customer
+        caveats: References address dimension table.
+      cr_returning_customer_sk:
+        description: Surrogate key for the customer who initiated or processed the
+          return
+        caveats: May be the same as refunded customer or differ (e.g., gift return).
+      cr_returning_cdemo_sk:
+        description: Surrogate key for customer demographic attributes of the returning
+          customer
+        caveats: References customer demographic dimension table.
+      cr_returning_hdemo_sk:
+        description: Surrogate key for household demographic attributes of the returning
+          customer
+        caveats: References household demographic dimension table.
+      cr_returning_addr_sk:
+        description: Surrogate key for the address of the returning customer
+        caveats: References address dimension table.
+      cr_call_center_sk:
+        description: Surrogate key for the call center that processed the return
+        caveats: References call center dimension table.
+      cr_catalog_page_sk:
+        description: Surrogate key for the catalog page where the original order originated
+        caveats: References catalog page dimension table.
+      cr_ship_mode_sk:
+        description: Surrogate key for the shipping method used for the return
+        caveats: References ship mode dimension table.
+      cr_warehouse_sk:
+        description: Surrogate key for the warehouse that received the returned item
+        caveats: References warehouse dimension table.
+      cr_reason_sk:
+        description: Surrogate key for the reason the item was returned
+        caveats: References reason dimension table (e.g., defective, wrong item).
+      cr_order_number:
+        description: Order number of the original sale that is being returned
+        caveats: Links to the original catalog order.
+      cr_return_quantity:
+        description: Number of units returned in this transaction
+      cr_return_amount:
+        description: Monetary value of the returned items before tax and fees
+      cr_return_tax:
+        description: Tax amount applied to the returned items
+      cr_return_amt_inc_tax:
+        description: Return amount including tax
+      cr_fee:
+        description: Processing fee associated with the return
+      cr_return_ship_cost:
+        description: Shipping cost incurred for returning the item
+      cr_refunded_cash:
+        description: Amount refunded in cash to the customer
+      cr_reversed_charge:
+        description: Amount reversed as a charge (e.g., credit card reversal)
+      cr_store_credit:
+        description: Amount credited to the customer’s store credit balance
+      cr_net_loss:
+        description: Net financial loss from the return (e.g., after refunds, fees,
+          and credits)
+  catalog_sales:
+    description: Records individual catalog sales transactions, including line-item
+      details, pricing, and financial metrics; used for analyzing sales performance,
+      profitability, and customer purchasing behavior in catalog channels.
+    grain: One row per catalog sales line item (i.e., one row per item sold in a catalog
+      order)
+    auto_generated: true
+    columns:
+      cs_sold_date_sk:
+        description: Surrogate key referencing the date on which the sale was made;
+          used to join with a date dimension table for time-based analysis.
+        caveats: NULLs may exist for legacy or unassigned records; not a real date
+          column—must join to a date dimension for calendar context.
+      cs_sold_time_sk:
+        description: Surrogate key referencing the time of day the sale was made;
+          used to join with a time dimension table.
+        caveats: Likely represents time of day in HHMMSS format or similar; must join
+          to a time dimension for interpretation.
+      cs_ship_date_sk:
+        description: Surrogate key referencing the date the item was shipped; used
+          to analyze shipping timelines.
+        caveats: May be NULL for items not yet shipped or for digital items.
+      cs_bill_customer_sk:
+        description: Surrogate key referencing the customer responsible for billing
+          the sale.
+        values: References a customer dimension table.
+      cs_bill_cdemo_sk:
+        description: Surrogate key referencing the customer demographics of the billing
+          customer.
+        values: References a customer demographics dimension table.
+      cs_bill_hdemo_sk:
+        description: Surrogate key referencing the household demographics of the billing
+          customer.
+        values: References a household demographics dimension table.
+      cs_bill_addr_sk:
+        description: Surrogate key referencing the billing address used for the sale.
+        values: References an address dimension table.
+      cs_ship_customer_sk:
+        description: Surrogate key referencing the customer to whom the item was shipped
+          (may differ from billing customer).
+        values: References a customer dimension table.
+      cs_ship_cdemo_sk:
+        description: Surrogate key referencing the customer demographics of the shipping
+          customer.
+        values: References a customer demographics dimension table.
+      cs_ship_hdemo_sk:
+        description: Surrogate key referencing the household demographics of the shipping
+          customer.
+        values: References a household demographics dimension table.
+      cs_ship_addr_sk:
+        description: Surrogate key referencing the shipping address used for the sale.
+        values: References an address dimension table.
+      cs_call_center_sk:
+        description: Surrogate key referencing the call center that processed the
+          catalog sale.
+        values: References a call center dimension table.
+      cs_catalog_page_sk:
+        description: Surrogate key referencing the catalog page where the item was
+          featured.
+        values: References a catalog page dimension table.
+      cs_ship_mode_sk:
+        description: Surrogate key referencing the shipping method used for the sale.
+        values: References a ship mode dimension table (e.g., 'STANDARD', 'EXPEDITED').
+      cs_warehouse_sk:
+        description: Surrogate key referencing the warehouse from which the item was
+          shipped.
+        values: References a warehouse dimension table.
+      cs_item_sk:
+        description: Surrogate key referencing the item sold.
+        values: References an item dimension table.
+      cs_promo_sk:
+        description: Surrogate key referencing the promotion applied to this sale.
+        values: References a promotion dimension table.
+      cs_order_number:
+        description: Unique identifier for the catalog order containing this line
+          item.
+        caveats: Multiple rows may share the same order number if the order contains
+          multiple items.
+      cs_quantity:
+        description: Number of units sold in this line item.
+        values: Positive integers only.
+      cs_wholesale_cost:
+        description: Cost per unit paid by the retailer to the supplier, in local
+          currency.
+        values: Decimal values representing unit cost.
+      cs_list_price:
+        description: Suggested retail price per unit before discounts, in local currency.
+        values: Decimal values representing list price.
+      cs_sales_price:
+        description: Actual selling price per unit after discounts, in local currency.
+        values: Decimal values representing final unit price.
+      cs_ext_discount_amt:
+        description: Total discount amount applied to this line item (quantity × (list_price
+          − sales_price)).
+        values: Non-negative decimal values.
+      cs_ext_sales_price:
+        description: Total revenue from this line item (quantity × sales_price), in
+          local currency.
+        values: Decimal values.
+      cs_ext_wholesale_cost:
+        description: Total cost to retailer for this line item (quantity × wholesale_cost),
+          in local currency.
+        values: Decimal values.
+      cs_ext_list_price:
+        description: Total list price for this line item (quantity × list_price),
+          in local currency.
+        values: Decimal values.
+      cs_ext_tax:
+        description: Total tax amount applied to this line item, in local currency.
+        values: Decimal values.
+      cs_coupon_amt:
+        description: Total coupon discount applied to this line item, in local currency.
+        values: Non-negative decimal values.
+      cs_ext_ship_cost:
+        description: Total shipping cost allocated to this line item, in local currency.
+        values: Decimal values.
+      cs_net_paid:
+        description: Net amount paid by customer for this line item (ext_sales_price
+          − coupon_amt), in local currency.
+        values: Decimal values.
+      cs_net_paid_inc_tax:
+        description: Net amount paid including tax (net_paid + ext_tax), in local
+          currency.
+        values: Decimal values.
+      cs_net_paid_inc_ship:
+        description: Net amount paid including shipping (net_paid + ext_ship_cost),
+          in local currency.
+        values: Decimal values.
+      cs_net_paid_inc_ship_tax:
+        description: Net amount paid including both shipping and tax, in local currency.
+        values: Decimal values.
+      cs_net_profit:
+        description: Profit for this line item (net_paid − ext_wholesale_cost − ext_ship_cost),
+          in local currency.
+        values: Can be negative (loss) or positive.
+  customer_address:
+    description: Stores customer address details, including street, city, state, zip,
+      country, and location type; used to link customers to physical locations.
+    grain: one row per unique address (identified by ca_address_id)
+    auto_generated: true
+    columns:
+      ca_address_sk:
+        description: Surrogate key for the address record
+      ca_address_id:
+        description: Business identifier for the address
+      ca_street_number:
+        description: House or building number on the street
+      ca_street_name:
+        description: Name of the street
+      ca_street_type:
+        description: Type of street (e.g., Avenue, Road, Boulevard)
+        values: Avenue, Ave, RD, Blvd, Street, Wy, Circle, Dr., Pkwy, Boulevard, Ct.,
+          Court, Parkway, Drive, Lane, Cir., ST, Way, Ln, Road
+      ca_suite_number:
+        description: Suite, unit, or apartment number if applicable
+      ca_city:
+        description: City name
+      ca_county:
+        description: County name
+      ca_state:
+        description: State or province abbreviation or name
+      ca_zip:
+        description: Postal or ZIP code
+      ca_country:
+        description: Country name
+        values: United States
+      ca_gmt_offset:
+        description: GMT time zone offset for the address location
+      ca_location_type:
+        description: Type of residential or commercial location
+        values: condo, single family, apartment
+  customer_demographics:
+    description: Customer demographic attributes used for segmentation and analysis,
+      including gender, marital status, education, estimated purchasing power, credit
+      rating, and dependency counts.
+    grain: one row per unique customer demographic profile (identified by cd_demo_sk)
+    auto_generated: true
+    columns:
+      cd_demo_sk:
+        description: Surrogate key uniquely identifying a customer demographic profile
+      cd_gender:
+        description: Customer's gender
+        values: F, M
+      cd_marital_status:
+        description: Customer's marital status
+        values: D, M, S, U, W
+      cd_education_status:
+        description: Customer's highest level of education attained
+        values: Unknown, 2 yr Degree, Advanced Degree, Primary, 4 yr Degree, Secondary,
+          College
+      cd_purchase_estimate:
+        description: Estimated annual purchasing power or spending capacity of the
+          customer
+      cd_credit_rating:
+        description: Customer's credit rating as assessed by the business
+        values: Unknown, Good, High Risk, Low Risk
+      cd_dep_count:
+        description: Total number of dependents claimed by the customer
+      cd_dep_employed_count:
+        description: Number of dependents who are employed
+      cd_dep_college_count:
+        description: Number of dependents currently enrolled in college
+  date_dim:
+    description: A date dimension table containing calendar and fiscal date attributes
+      for every date in the dataset's date range, used for time-based analysis and
+      joins to fact tables.
+    grain: one row per calendar date
+    auto_generated: true
+    columns:
+      d_date_sk:
+        description: Surrogate key for the date, used as a foreign key in fact tables.
+      d_date_id:
+        description: Unique identifier for the date, typically in YYYYMMDD format.
+      d_date:
+        description: Actual calendar date.
+      d_month_seq:
+        description: Sequential month number since a reference point (e.g., 1900-01
+          = 1).
+      d_week_seq:
+        description: Sequential week number since a reference point (e.g., ISO week
+          number sequence).
+      d_quarter_seq:
+        description: Sequential quarter number since a reference point.
+      d_year:
+        description: Calendar year of the date.
+      d_dow:
+        description: Day of week as a number (e.g., 1=Sunday, 2=Monday, ..., 7=Saturday).
+      d_moy:
+        description: Month of year as a number (1=January, ..., 12=December).
+      d_dom:
+        description: Day of month (1–31).
+      d_qoy:
+        description: Quarter of year (1–4).
+      d_fy_year:
+        description: Fiscal year of the date.
+      d_fy_quarter_seq:
+        description: Sequential fiscal quarter number since a reference point.
+      d_fy_week_seq:
+        description: Sequential fiscal week number since a reference point.
+      d_day_name:
+        description: Name of the day of the week.
+        values: Thursday, Tuesday, Monday, Friday, Sunday, Saturday, Wednesday
+      d_quarter_name:
+        description: Name of the quarter (e.g., Q1, Q2, etc.).
+      d_holiday:
+        description: Whether the date is a holiday.
+        values: N, Y
+      d_weekend:
+        description: Whether the date falls on a weekend (Saturday or Sunday).
+        values: N, Y
+      d_following_holiday:
+        description: Whether the next day is a holiday.
+        values: N, Y
+      d_first_dom:
+        description: Day of month of the first day of the current month.
+      d_last_dom:
+        description: Day of month of the last day of the current month.
+      d_same_day_ly:
+        description: Same day in the previous year (as a date_sk or date value).
+      d_same_day_lq:
+        description: Same day in the previous quarter (as a date_sk or date value).
+      d_current_day:
+        description: Flag indicating if the date is the current day (likely always
+          N in static historical data).
+        values: N
+      d_current_week:
+        description: Flag indicating if the date is in the current week (likely always
+          N in static historical data).
+        values: N
+      d_current_month:
+        description: Flag indicating if the date is in the current month.
+        values: N, Y
+      d_current_quarter:
+        description: Flag indicating if the date is in the current quarter.
+        values: N, Y
+      d_current_year:
+        description: Flag indicating if the date is in the current year.
+        values: N, Y
+  household_demographics:
+    description: Contains demographic and behavioral characteristics of households,
+      including income band, buying potential, number of dependents, and number of
+      vehicles.
+    grain: one row per household (identified by hd_demo_sk)
+    auto_generated: true
+    columns:
+      hd_demo_sk:
+        description: Unique identifier for the household demographic record
+      hd_income_band_sk:
+        description: Foreign key referencing the income band dimension table
+      hd_buy_potential:
+        description: Estimated purchasing power or spending capacity of the household
+        values: Unknown, 0-500, >10000, 501-1000, 1001-5000, 5001-10000
+      hd_dep_count:
+        description: Number of dependents in the household
+      hd_vehicle_count:
+        description: Number of vehicles owned by the household
+  income_band:
+    description: Income band definitions used to categorize customer income levels,
+      with each row representing a specific income range defined by a lower and upper
+      bound.
+    grain: one row per income band (identified by ib_income_band_sk)
+    auto_generated: true
+    columns:
+      ib_income_band_sk:
+        description: Surrogate key uniquely identifying an income band
+      ib_lower_bound:
+        description: Lower bound of the income range (inclusive)
+      ib_upper_bound:
+        description: Upper bound of the income range (inclusive)
+  inventory:
+    description: Snapshot of inventory quantities across items and warehouses; represents
+      stock levels at a point in time (no timestamp included — must be joined with
+      a date dimension for time-based analysis).
+    grain: one row per item-warehouse combination (inv_item_sk, inv_warehouse_sk)
+      at a specific inventory date (inv_date_sk)
+    auto_generated: true
+    columns:
+      inv_date_sk:
+        description: Surrogate key referencing the date dimension table; represents
+          the inventory snapshot date.
+        caveats: This is a date surrogate key, not a timestamp — join to a date dimension
+          for calendar context.
+      inv_item_sk:
+        description: Surrogate key referencing the item/product dimension table.
+      inv_warehouse_sk:
+        description: Surrogate key referencing the warehouse/distribution center dimension
+          table.
+      inv_quantity_on_hand:
+        description: Number of units of the item currently available in stock at the
+          warehouse.
+        values: Non-negative integers; 0 indicates out-of-stock.
+        caveats: May include negative values if returns or adjustments are not yet
+          processed; verify business rules.
+  item:
+    description: Dimension table describing items (products) in the catalog, including
+      their attributes, pricing, and categorization.
+    grain: one row per item (i_item_sk)
+    auto_generated: true
+    columns:
+      i_item_sk:
+        description: Surrogate key for the item
+      i_item_id:
+        description: Business identifier for the item
+      i_rec_start_date:
+        description: Effective start date for this item record
+      i_rec_end_date:
+        description: Effective end date for this item record
+      i_item_desc:
+        description: Text description of the item
+      i_current_price:
+        description: Current retail price of the item
+      i_wholesale_cost:
+        description: Wholesale cost of the item
+      i_brand_id:
+        description: Foreign key to brand dimension
+      i_brand:
+        description: Name of the brand
+      i_class_id:
+        description: Foreign key to class dimension
+      i_class:
+        description: Name of the class (e.g., 'T-Shirts', 'Laptops')
+      i_category_id:
+        description: Foreign key to category dimension
+      i_category:
+        description: Name of the category (e.g., 'Men', 'Electronics')
+        values: Music, Shoes, Electronics, Men, Home, Women, Children, Sports, Jewelry,
+          Books
+      i_manufact_id:
+        description: Foreign key to manufacturer dimension
+      i_manufact:
+        description: Name of the manufacturer
+      i_size:
+        description: Size of the item
+        values: N/A, medium, large, small, petite, extra large, economy
+      i_formulation:
+        description: Formulation details (e.g., for pharmaceuticals or cosmetics)
+      i_color:
+        description: Color of the item
+      i_units:
+        description: Unit of measure for the item
+        values: Cup, Carton, Oz, N/A, Dram, Ounce, Case, Ton, Dozen, Tsp, Pallet,
+          Unknown, Each, Bundle, Box, Bunch, Gross, Gram, Tbl, Pound, Lb
+      i_container:
+        description: Type of container (e.g., bottle, box)
+        values: Unknown
+      i_manager_id:
+        description: Foreign key to manager dimension (e.g., product manager)
+      i_product_name:
+        description: Name of the product
+  promotion:
+    description: Contains promotional campaign details including identifiers, date
+      ranges (as surrogate keys), associated items, costs, target response metrics,
+      and channel-specific flags.
+    grain: one row per promotion (p_promo_sk)
+    auto_generated: true
+    columns:
+      p_promo_sk:
+        description: Surrogate key uniquely identifying a promotion
+      p_promo_id:
+        description: Business identifier for the promotion
+      p_start_date_sk:
+        description: Surrogate key representing the start date of the promotion (join
+          to date dimension for actual date)
+      p_end_date_sk:
+        description: Surrogate key representing the end date of the promotion (join
+          to date dimension for actual date)
+      p_item_sk:
+        description: Surrogate key referencing the item(s) associated with the promotion
+      p_cost:
+        description: Monetary cost of the promotion
+      p_response_target:
+        description: Target number of responses expected from the promotion
+      p_promo_name:
+        description: Name of the promotion
+        values: anti, able, pri, n st, cally, eing, ation, ese, bar, ought
+      p_channel_dmail:
+        description: Flag indicating whether direct mail channel was used (Y/N)
+        values: Y, N
+      p_channel_email:
+        description: Flag indicating whether email channel was used (Y/N)
+        values: N
+      p_channel_catalog:
+        description: Flag indicating whether catalog channel was used (Y/N)
+        values: N
+      p_channel_tv:
+        description: Flag indicating whether TV channel was used (Y/N)
+        values: N
+      p_channel_radio:
+        description: Flag indicating whether radio channel was used (Y/N)
+        values: N
+      p_channel_press:
+        description: Flag indicating whether press channel was used (Y/N)
+        values: N
+      p_channel_event:
+        description: Flag indicating whether event channel was used (Y/N)
+        values: N
+      p_channel_demo:
+        description: Flag indicating whether demo channel was used (Y/N)
+        values: N
+      p_channel_details:
+        description: Free-text description of channel usage details
+      p_purpose:
+        description: Stated purpose of the promotion
+        values: Unknown
+      p_discount_active:
+        description: Flag indicating whether discount is active (Y/N)
+        values: N
+  reason:
+    description: A reference table storing reasons for customer returns or cancellations,
+      with a unique identifier and description for each reason.
+    grain: one row per unique return/cancellation reason
+    auto_generated: true
+    columns:
+      r_reason_sk:
+        description: Surrogate key for the reason; used as primary key
+      r_reason_id:
+        description: Business identifier for the reason (e.g., 'reason 23')
+      r_reason_desc:
+        description: Human-readable description of the reason
+        values: reason 31, reason 25, duplicate purchase, reason 29, Did not fit,
+          Package was damaged, Stopped working, Parts missing, its is a boy, Does
+          not work with a product that I have, Did not like the make, Found a better
+          price in a store, Not working any more, Wrong size, reason 33, Did not get
+          it on time, Gift exchange, Did not like the warranty, reason 26, Found a
+          better extended warranty in a store, reason 24, reason 32, Did not like
+          the model, Not the product that was ordred, Did not like the color, Lost
+          my job, reason 34, reason 27, reason 23, reason 35, it is a girl, No service
+          location in my area, unauthoized purchase, reason 28
+  ship_mode:
+    description: Dimension table describing different shipping methods available,
+      including their type, carrier, and contract details.
+    grain: one row per unique shipping method
+    auto_generated: true
+    columns:
+      sm_ship_mode_sk:
+        description: Surrogate key for the ship mode record
+      sm_ship_mode_id:
+        description: Business identifier for the ship mode
+      sm_type:
+        description: Category or service level of the shipping method (e.g., delivery
+          speed or purpose)
+        values: NEXT DAY, EXPRESS, TWO DAY, LIBRARY, OVERNIGHT, REGULAR
+      sm_code:
+        description: Short code representing the shipping method
+      sm_carrier:
+        description: Name of the logistics carrier used for the shipping method
+        values: USPS, LATVIAN, ORIENTAL, FEDEX, AIRBORNE, DHL, RUPEKSA, HARMSTORF,
+          BOXBUNDLES, ALLIANCE, BARIAN, GREAT EASTERN, DIAMOND, ZOUROS, MSC, GERMA,
+          UPS, ZHOU, TBS, PRIVATECARRIER
+      sm_contract:
+        description: Contract identifier associated with the shipping method
+  store:
+    description: Dimension table containing detailed information about physical retail
+      stores, including location, operational hours, manager, and organizational hierarchy.
+    grain: One row per unique store (identified by s_store_sk or s_store_id)
+    auto_generated: true
+    columns:
+      s_store_sk:
+        description: Surrogate key uniquely identifying each store
+      s_store_id:
+        description: Business identifier for the store
+      s_rec_start_date:
+        description: Effective start date for this store record (used in slowly changing
+          dimension context)
+      s_rec_end_date:
+        description: Effective end date for this store record (used in slowly changing
+          dimension context)
+      s_closed_date_sk:
+        description: Surrogate key referencing the date the store was closed (if applicable)
+        caveats: NULL indicates store is open or closure date is unknown
+      s_store_name:
+        description: Name of the store
+      s_number_employees:
+        description: Number of employees working at the store
+      s_floor_space:
+        description: Total floor space of the store in square feet
+      s_hours:
+        description: Operating hours of the store
+        values: 8AM-4PM, 8AM-12AM
+      s_manager:
+        description: Name of the store manager
+      s_market_id:
+        description: Identifier for the market region the store belongs to
+      s_geography_class:
+        description: Geographic classification of the store location
+        values: Unknown
+        caveats: All values appear to be 'Unknown' in sample
+      s_market_desc:
+        description: Description of the market region
+        caveats: Sample values appear to be placeholder or corrupted text
+      s_market_manager:
+        description: Name of the market manager overseeing the store
+      s_division_id:
+        description: Identifier for the division the store belongs to
+      s_division_name:
+        description: Name of the division the store belongs to
+        values: Unknown
+        caveats: All values appear to be 'Unknown' in sample
+      s_company_id:
+        description: Identifier for the company/organization that owns the store
+      s_company_name:
+        description: Name of the company that owns the store
+        values: Unknown
+        caveats: All values appear to be 'Unknown' in sample
+      s_street_number:
+        description: Street number of the store address
+      s_street_name:
+        description: Name of the street where the store is located
+      s_street_type:
+        description: Type of street (e.g., Road, Boulevard)
+        values: Court, Boulevard, Lane, Road, Ln, Dr., Circle, Wy
+      s_suite_number:
+        description: Suite or unit number of the store address
+      s_city:
+        description: City where the store is located
+      s_county:
+        description: County where the store is located
+      s_state:
+        description: State where the store is located
+      s_zip:
+        description: ZIP code of the store location
+      s_country:
+        description: Country where the store is located
+        values: United States
+      s_gmt_offset:
+        description: GMT time zone offset for the store location
+      s_tax_percentage:
+        description: Applicable tax percentage for the store location
+  store_returns:
+    description: Records of customer returns from stores, including return quantities,
+      monetary amounts, taxes, fees, and credits, linked to customers, items, stores,
+      and reasons via surrogate keys.
+    grain: one row per store return transaction
+    auto_generated: true
+    columns:
+      sr_returned_date_sk:
+        description: Surrogate key referencing the date when the item was returned;
+          join to a date dimension table for calendar details.
+        caveats: No actual date column exists in this table—must join to a date dimension
+          for date-based analysis.
+      sr_return_time_sk:
+        description: Surrogate key referencing the time of return; join to a time
+          dimension table for time-of-day details.
+        caveats: No actual timestamp column exists—must join to a time dimension for
+          time-of-day analysis.
+      sr_item_sk:
+        description: Surrogate key referencing the item that was returned.
+        values: Foreign key to item dimension.
+      sr_customer_sk:
+        description: Surrogate key referencing the customer who made the return.
+        values: Foreign key to customer dimension.
+      sr_cdemo_sk:
+        description: Surrogate key referencing the customer demographics at the time
+          of return.
+        values: Foreign key to customer demographics dimension.
+      sr_hdemo_sk:
+        description: Surrogate key referencing the household demographics at the time
+          of return.
+        values: Foreign key to household demographics dimension.
+      sr_addr_sk:
+        description: Surrogate key referencing the customer's address at the time
+          of return.
+        values: Foreign key to address dimension.
+      sr_store_sk:
+        description: Surrogate key referencing the store where the return occurred.
+        values: Foreign key to store dimension.
+      sr_reason_sk:
+        description: Surrogate key referencing the reason for the return.
+        values: Foreign key to reason dimension (e.g., 'Defective', 'Wrong Size',
+          'Changed Mind').
+      sr_ticket_number:
+        description: Ticket or transaction number associated with the original sale
+          that is being returned.
+        caveats: May be used to link returns to original sales records.
+      sr_return_quantity:
+        description: Number of units returned in this transaction.
+        values: Non-negative integer.
+      sr_return_amt:
+        description: Monetary amount of the returned items before tax and fees.
+        values: Decimal value, typically positive.
+      sr_return_tax:
+        description: Tax amount associated with the returned items.
+        values: Decimal value, typically positive.
+      sr_return_amt_inc_tax:
+        description: Total return amount including tax (sr_return_amt + sr_return_tax).
+        values: sr_return_amt + sr_return_tax.
+      sr_fee:
+        description: Fee charged for processing the return.
+        values: Decimal value, possibly zero or positive.
+      sr_return_ship_cost:
+        description: Shipping cost associated with returning the item.
+        values: Decimal value, possibly zero or positive.
+      sr_refunded_cash:
+        description: Cash amount refunded to the customer.
+        values: Decimal value, typically positive.
+      sr_reversed_charge:
+        description: Amount reversed from a previous charge (e.g., credit card reversal).
+        values: Decimal value, possibly positive.
+      sr_store_credit:
+        description: Store credit issued to the customer as part of the return.
+        values: Decimal value, possibly positive.
+      sr_net_loss:
+        description: Net financial loss incurred by the store due to this return (e.g.,
+          costs minus refunds/credits).
+        values: Decimal value, typically positive.
+  store_sales:
+    description: Store sales transaction records, capturing detailed financial and
+      contextual data for each item sold in a store.
+    grain: one row per sold item (i.e., per line item in a store sale transaction)
+    auto_generated: true
+    columns:
+      ss_sold_date_sk:
+        description: Surrogate key referencing the date on which the item was sold;
+          used to join with a date dimension table.
+        caveats: NULLs may exist for legacy or unassigned records; not a real date
+          column—requires join to date dimension for calendar interpretation.
+      ss_sold_time_sk:
+        description: Surrogate key referencing the time of day the item was sold;
+          used to join with a time dimension table.
+        caveats: Represents time of day only, not a full timestamp; requires join
+          to time dimension for interpretation.
+      ss_item_sk:
+        description: Surrogate key referencing the specific item (product) sold.
+        caveats: NULLs may indicate invalid or unassigned items.
+      ss_customer_sk:
+        description: Surrogate key referencing the customer who made the purchase.
+        caveats: NULL if the sale was anonymous or not linked to a customer.
+      ss_cdemo_sk:
+        description: Surrogate key referencing the customer demographics (e.g., income,
+          education) of the buyer.
+        caveats: May be NULL if demographics are unknown or not collected.
+      ss_hdemo_sk:
+        description: Surrogate key referencing the household demographics of the buyer.
+        caveats: May be NULL if household data is unavailable.
+      ss_addr_sk:
+        description: Surrogate key referencing the address of the customer or shipping/billing
+          location.
+        caveats: May be NULL for anonymous or in-store-only transactions.
+      ss_store_sk:
+        description: Surrogate key referencing the store where the sale occurred.
+        caveats: NULL if store context is missing or for test data.
+      ss_promo_sk:
+        description: Surrogate key referencing the promotion applied to this sale.
+        values: NULL if no promotion was applied.
+        caveats: May be NULL for non-promotional sales.
+      ss_ticket_number:
+        description: Transaction identifier grouping line items belonging to the same
+          sale (e.g., receipt number).
+        caveats: All items in one transaction share the same ticket_number.
+      ss_quantity:
+        description: Number of units of the item sold in this line item.
+        caveats: Always positive; zero or negative values may indicate data errors.
+      ss_wholesale_cost:
+        description: Cost per unit paid by the store to acquire the item.
+        caveats: May be NULL for items without cost data.
+      ss_list_price:
+        description: Suggested retail price per unit before discounts.
+        caveats: May be NULL if not applicable or missing.
+      ss_sales_price:
+        description: Actual price per unit charged to the customer after discounts
+          and promotions.
+        caveats: May be NULL for free items or errors.
+      ss_ext_discount_amt:
+        description: Total discount amount applied to this line item (quantity × discount
+          per unit).
+        caveats: May be 0 or NULL if no discount applied.
+      ss_ext_sales_price:
+        description: Total revenue from this line item (quantity × sales_price).
+        caveats: Calculated field; may differ slightly due to rounding.
+      ss_ext_wholesale_cost:
+        description: Total cost to the store for this line item (quantity × wholesale_cost).
+        caveats: Calculated field; may differ slightly due to rounding.
+      ss_ext_list_price:
+        description: Total list price for this line item (quantity × list_price).
+        caveats: Calculated field; may differ slightly due to rounding.
+      ss_ext_tax:
+        description: Tax amount applied to this line item.
+        caveats: May be 0 or NULL for tax-exempt items or jurisdictions.
+      ss_coupon_amt:
+        description: Discount amount applied via coupon for this line item.
+        caveats: May be 0 or NULL if no coupon used.
+      ss_net_paid:
+        description: Net amount paid by customer before tax (ext_sales_price − coupon_amt).
+        caveats: May be negative if coupon exceeds sale amount (e.g., overuse).
+      ss_net_paid_inc_tax:
+        description: Net amount paid by customer including tax (net_paid + ext_tax).
+        caveats: May be negative if coupon discount exceeds sale + tax.
+      ss_net_profit:
+        description: Profit for this line item (net_paid − ext_wholesale_cost).
+        caveats: May be negative if discounts or costs exceed revenue.
+  time_dim:
+    description: A time dimension table storing granular time-of-day attributes, used
+      for time-based analysis; each row represents a unique second of the day (86,400
+      total seconds).
+    grain: one row per second of the day (00:00:00 to 23:59:59)
+    auto_generated: true
+    columns:
+      t_time_sk:
+        description: Surrogate key for the time dimension; uniquely identifies each
+          second of the day
+      t_time_id:
+        description: Text-based identifier for the time (e.g., '00:00:00', '12:30:45')
+      t_time:
+        description: Time stored as total seconds since midnight (0 to 86399)
+      t_hour:
+        description: Hour of the day in 24-hour format (0 to 23)
+      t_minute:
+        description: Minute of the hour (0 to 59)
+      t_second:
+        description: Second of the minute (0 to 59)
+      t_am_pm:
+        description: 12-hour period indicator
+        values: AM, PM
+      t_shift:
+        description: Work shift classification
+        values: third, first, second
+      t_sub_shift:
+        description: More granular time-of-day classification
+        values: evening, night, morning, afternoon
+      t_meal_time:
+        description: Meal period classification
+        values: breakfast, lunch, dinner
+  warehouse:
+    description: Dimension table storing details about warehouses, including location
+      and physical characteristics.
+    grain: one row per warehouse
+    auto_generated: true
+    columns:
+      w_warehouse_sk:
+        description: Surrogate key uniquely identifying a warehouse
+      w_warehouse_id:
+        description: Business identifier for the warehouse
+      w_warehouse_name:
+        description: Human-readable name of the warehouse
+      w_warehouse_sq_ft:
+        description: Total square footage of the warehouse
+      w_street_number:
+        description: Street number of the warehouse address
+      w_street_name:
+        description: Street name of the warehouse address
+      w_street_type:
+        description: Type of street (e.g., Avenue, Drive)
+        values: Parkway, Dr., Avenue, Drive
+      w_suite_number:
+        description: Suite or unit number at the warehouse address
+      w_city:
+        description: City where the warehouse is located
+      w_county:
+        description: County where the warehouse is located
+      w_state:
+        description: State where the warehouse is located
+        values: TN
+      w_zip:
+        description: ZIP code of the warehouse location
+      w_country:
+        description: Country where the warehouse is located
+        values: United States
+      w_gmt_offset:
+        description: GMT time zone offset for the warehouse location
+  web_page:
+    description: Dimension table storing metadata about web pages, including their
+      identifiers, creation/access dates, type, and content characteristics like link
+      and image counts.
+    grain: one row per unique web page (wp_web_page_id)
+    auto_generated: true
+    columns:
+      wp_web_page_sk:
+        description: Surrogate key for the web page dimension
+      wp_web_page_id:
+        description: Business identifier for the web page
+      wp_rec_start_date:
+        description: Start date for which this web page record is valid
+      wp_rec_end_date:
+        description: End date for which this web page record is valid
+      wp_creation_date_sk:
+        description: Surrogate key referencing the creation date in the date dimension
+        caveats: May be NULL if creation date is unknown
+      wp_access_date_sk:
+        description: Surrogate key referencing the most recent access date in the
+          date dimension
+        caveats: May be NULL if access date is unknown
+      wp_autogen_flag:
+        description: Indicates whether the web page was auto-generated
+        values: N, Y
+      wp_customer_sk:
+        description: Surrogate key referencing the associated customer (if applicable)
+        caveats: NULL if page is not customer-specific
+      wp_url:
+        description: URL of the web page
+      wp_type:
+        description: Categorization of the web page's purpose or content type
+        values: general, protected, welcome, ad, dynamic, feedback, order
+      wp_char_count:
+        description: Total number of characters on the web page
+      wp_link_count:
+        description: Total number of hyperlinks on the web page
+      wp_image_count:
+        description: Total number of images on the web page
+      wp_max_ad_count:
+        description: Maximum number of advertisements allowed on the page
+  web_returns:
+    description: Records of web product returns, including financial details and associated
+      customer, demographic, address, and web page dimensions.
+    grain: one row per web return transaction
+    auto_generated: true
+    columns:
+      wr_returned_date_sk:
+        description: Surrogate key for the date the item was returned; references
+          a date dimension table.
+        caveats: No actual date column exists in this table — must join to a date
+          dimension for calendar dates.
+      wr_returned_time_sk:
+        description: Surrogate key for the time the return occurred; references a
+          time dimension table.
+        caveats: No actual timestamp column exists — must join to a time dimension
+          for time-of-day details.
+      wr_item_sk:
+        description: Surrogate key for the returned item; references an item dimension
+          table.
+      wr_refunded_customer_sk:
+        description: Surrogate key for the customer who received the refund.
+        caveats: May be NULL if refund was processed as store credit or reversed charge.
+      wr_refunded_cdemo_sk:
+        description: Surrogate key for the customer demographic of the refunded party.
+        caveats: May be NULL if demographic data is unavailable.
+      wr_refunded_hdemo_sk:
+        description: Surrogate key for the household demographic of the refunded party.
+        caveats: May be NULL if demographic data is unavailable.
+      wr_refunded_addr_sk:
+        description: Surrogate key for the address of the refunded party.
+        caveats: May be NULL if address data is unavailable.
+      wr_returning_customer_sk:
+        description: Surrogate key for the customer who initiated the return.
+        caveats: May differ from wr_refunded_customer_sk if return is for another
+          person.
+      wr_returning_cdemo_sk:
+        description: Surrogate key for the customer demographic of the returning party.
+      wr_returning_hdemo_sk:
+        description: Surrogate key for the household demographic of the returning
+          party.
+      wr_returning_addr_sk:
+        description: Surrogate key for the address of the returning party.
+      wr_web_page_sk:
+        description: Surrogate key for the web page where the return was processed.
+      wr_reason_sk:
+        description: Surrogate key for the reason the item was returned; references
+          a reason dimension table.
+      wr_order_number:
+        description: Order number associated with the original purchase.
+      wr_return_quantity:
+        description: Number of units returned.
+      wr_return_amt:
+        description: Monetary amount of the return before tax and fees.
+      wr_return_tax:
+        description: Tax amount applied to the return.
+      wr_return_amt_inc_tax:
+        description: Return amount including tax (wr_return_amt + wr_return_tax).
+      wr_fee:
+        description: Processing fee charged for the return.
+      wr_return_ship_cost:
+        description: Shipping cost associated with returning the item.
+      wr_refunded_cash:
+        description: Amount refunded in cash to the customer.
+      wr_reversed_charge:
+        description: Amount reversed as a charge (e.g., credit card reversal).
+      wr_account_credit:
+        description: Amount credited to the customer’s account.
+      wr_net_loss:
+        description: Net financial loss from the return (typically wr_return_amt +
+          wr_return_ship_cost + wr_fee - wr_refunded_cash - wr_reversed_charge - wr_account_credit).
+  web_sales:
+    description: Records individual web sales transactions, including line-item details,
+      pricing, and financial metrics; each row represents one item in a web order.
+    grain: one row per web sales line item (i.e., one item within one web order)
+    auto_generated: true
+    columns:
+      ws_sold_date_sk:
+        description: Surrogate key for the date the sale was made; references a date
+          dimension table.
+        caveats: NULLs may exist for orders where the sale date is unknown or not
+          recorded.
+      ws_sold_time_sk:
+        description: Surrogate key for the time the sale was made; references a time
+          dimension table.
+        caveats: NULLs may exist for orders where the sale time is unknown or not
+          recorded.
+      ws_ship_date_sk:
+        description: Surrogate key for the date the item was shipped; references a
+          date dimension table.
+        caveats: NULLs may exist for orders not yet shipped or where shipping date
+          is missing.
+      ws_item_sk:
+        description: Surrogate key for the item sold; references an item dimension
+          table.
+      ws_bill_customer_sk:
+        description: Surrogate key for the billing customer; references a customer
+          dimension table.
+      ws_bill_cdemo_sk:
+        description: Surrogate key for the billing customer's demographic profile;
+          references a customer demographic dimension table.
+      ws_bill_hdemo_sk:
+        description: Surrogate key for the billing household demographic profile;
+          references a household demographic dimension table.
+      ws_bill_addr_sk:
+        description: Surrogate key for the billing address; references an address
+          dimension table.
+      ws_ship_customer_sk:
+        description: Surrogate key for the shipping customer (may differ from billing
+          customer); references a customer dimension table.
+      ws_ship_cdemo_sk:
+        description: Surrogate key for the shipping customer's demographic profile;
+          references a customer demographic dimension table.
+      ws_ship_hdemo_sk:
+        description: Surrogate key for the shipping household demographic profile;
+          references a household demographic dimension table.
+      ws_ship_addr_sk:
+        description: Surrogate key for the shipping address; references an address
+          dimension table.
+      ws_web_page_sk:
+        description: Surrogate key for the web page where the sale originated; references
+          a web page dimension table.
+      ws_web_site_sk:
+        description: Surrogate key for the web site where the sale originated; references
+          a web site dimension table.
+      ws_ship_mode_sk:
+        description: Surrogate key for the shipping mode used; references a ship mode
+          dimension table.
+      ws_warehouse_sk:
+        description: Surrogate key for the warehouse that fulfilled the order; references
+          a warehouse dimension table.
+      ws_promo_sk:
+        description: Surrogate key for the promotion applied to this sale; references
+          a promotion dimension table.
+      ws_order_number:
+        description: Order identifier shared by all line items in the same order.
+      ws_quantity:
+        description: Number of units of the item sold in this line item.
+      ws_wholesale_cost:
+        description: Cost per unit at wholesale price.
+      ws_list_price:
+        description: List price per unit (standard retail price).
+      ws_sales_price:
+        description: Actual selling price per unit after discounts.
+      ws_ext_discount_amt:
+        description: Total discount amount applied to this line item (quantity × (list
+          price − sales price)).
+      ws_ext_sales_price:
+        description: Extended sales price (quantity × sales price per unit).
+      ws_ext_wholesale_cost:
+        description: Extended wholesale cost (quantity × wholesale cost per unit).
+      ws_ext_list_price:
+        description: Extended list price (quantity × list price per unit).
+      ws_ext_tax:
+        description: Tax amount applied to this line item.
+      ws_coupon_amt:
+        description: Discount amount applied via coupon for this line item.
+      ws_ext_ship_cost:
+        description: Shipping cost allocated to this line item.
+      ws_net_paid:
+        description: Net amount paid by customer for this line item (ext. sales price
+          − ext. discount − coupon − tax + ext. ship cost? Business definition may
+          vary).
+      ws_net_paid_inc_tax:
+        description: Net amount paid including tax for this line item.
+      ws_net_paid_inc_ship:
+        description: Net amount paid including shipping cost for this line item.
+      ws_net_paid_inc_ship_tax:
+        description: Net amount paid including both shipping and tax for this line
+          item.
+      ws_net_profit:
+        description: Profit for this line item (net paid − ext. wholesale cost).
+  web_site:
+    description: Dimension table describing web sites (e.g., e-commerce websites or
+      online storefronts), including their identifiers, operational dates, classification,
+      management, and physical address details.
+    grain: one row per unique web site (identified by web_site_id)
+    auto_generated: true
+    columns:
+      web_site_sk:
+        description: Surrogate key for the web site
+      web_site_id:
+        description: Business identifier for the web site
+      web_rec_start_date:
+        description: Effective start date for this web site record
+      web_rec_end_date:
+        description: Effective end date for this web site record (NULL if still active)
+      web_name:
+        description: Human-readable name of the web site
+        values: site_4, site_2, site_0, site_1, site_3
+      web_open_date_sk:
+        description: Surrogate key referencing the open date in a date dimension
+      web_close_date_sk:
+        description: Surrogate key referencing the close date in a date dimension
+      web_class:
+        description: Classification category of the web site
+        values: Unknown
+      web_manager:
+        description: Name of the manager responsible for the web site
+      web_mkt_id:
+        description: Marketing identifier associated with the web site
+      web_mkt_class:
+        description: Marketing classification (likely placeholder or corrupted text)
+        caveats: Values appear to be truncated or garbled text fragments
+      web_mkt_desc:
+        description: Marketing description (likely placeholder or corrupted text)
+        caveats: Values appear to be truncated or garbled text fragments
+      web_market_manager:
+        description: Name of the marketing manager for the web site
+      web_company_id:
+        description: Identifier for the parent company operating the web site
+      web_company_name:
+        description: Name of the parent company operating the web site
+      web_street_number:
+        description: Street number in the web site's physical address
+      web_street_name:
+        description: Street name in the web site's physical address
+      web_street_type:
+        description: Street type (e.g., Road, Avenue, Drive)
+        values: Wy, Dr., Drive, Road, Cir., Pkwy, Parkway, Ct., Boulevard, Blvd, Ln,
+          Avenue, ST, Way, Court
+      web_suite_number:
+        description: Suite or unit number in the web site's physical address
+      web_city:
+        description: City in the web site's physical address
+        values: Midway, Fairview
+      web_county:
+        description: County in the web site's physical address
+        values: Williamson County
+      web_state:
+        description: State in the web site's physical address
+        values: TN
+      web_zip:
+        description: ZIP code in the web site's physical address
+        values: 31904, 35709
+      web_country:
+        description: Country in the web site's physical address
+        values: United States
+      web_gmt_offset:
+        description: Time zone offset in hours from GMT
+      web_tax_percentage:
+        description: Applicable tax rate as a percentage
+  hits:
+    description: Table of web analytics hits (page views or events) collected from
+      users, including technical, behavioral, and campaign metadata for each hit.
+    grain: one row per hit (e.g., page view or event)
+    auto_generated: true
+    columns:
+      WatchID:
+        description: Unique identifier for a session or watch session
+      JavaEnable:
+        description: Whether Java is enabled in the user's browser (1 = yes, 0 = no)
+        values: 0, 1
+      Title:
+        description: Title of the web page at the time of the hit
+      GoodEvent:
+        description: Flag indicating whether the event was considered 'good' (1 =
+          yes, 0 = no)
+        values: 0, 1
+      EventTime:
+        description: Timestamp of the hit in microseconds since epoch (UTC)
+        caveats: Stored as BIGINT; not human-readable without conversion
+      EventDate:
+        description: Date of the hit encoded as a USMALLINT (likely YYYYMMDD)
+        caveats: Non-standard date encoding; not a standard date type
+      CounterID:
+        description: Identifier for the analytics counter (e.g., website or project)
+      ClientIP:
+        description: IPv4 address of the client, stored as an integer
+        caveats: IPv4 only; stored as INTEGER (not human-readable without conversion)
+      RegionID:
+        description: Geographic region ID of the user (likely administrative region)
+      UserID:
+        description: Unique identifier for the user (persistent across sessions)
+      CounterClass:
+        description: Class or type of the counter (e.g., standard, advanced)
+      OS:
+        description: Operating system of the user's device (encoded)
+      UserAgent:
+        description: Browser/user agent family (encoded)
+      URL:
+        description: Full URL of the page being viewed
+      Referer:
+        description: Referrer URL (where the user came from)
+      IsRefresh:
+        description: Whether the hit was caused by a page refresh (1 = yes, 0 = no)
+        values: 0, 1
+      RefererCategoryID:
+        description: Category ID of the referer (e.g., search engine, social network)
+      RefererRegionID:
+        description: Region ID of the referer (geographic)
+      URLCategoryID:
+        description: Category ID of the current URL
+      URLRegionID:
+        description: Region ID associated with the current URL
+      ResolutionWidth:
+        description: Screen width in pixels
+      ResolutionHeight:
+        description: Screen height in pixels
+      ResolutionDepth:
+        description: Color depth in bits per pixel
+      FlashMajor:
+        description: Major version of Adobe Flash
+      FlashMinor:
+        description: Minor version of Adobe Flash
+      FlashMinor2:
+        description: Patch or build version of Adobe Flash (string)
+        caveats: Mixed format; includes integers, decimals, and some invalid entries
+      NetMajor:
+        description: Major version of network protocol or plugin
+      NetMinor:
+        description: Minor version of network protocol or plugin
+      UserAgentMajor:
+        description: Major version of the browser/user agent
+      UserAgentMinor:
+        description: Minor version of the browser/user agent (string)
+        caveats: Contains non-printable or corrupted characters in many rows
+      CookieEnable:
+        description: Whether cookies are enabled (1 = yes, 0 = no)
+        values: 0, 1
+      JavascriptEnable:
+        description: Whether JavaScript is enabled (1 = yes, 0 = no)
+        values: 0, 1
+      IsMobile:
+        description: Whether the device is mobile (1 = yes, 0 = no)
+        values: 0, 1
+      MobilePhone:
+        description: Mobile phone identifier (encoded)
+      MobilePhoneModel:
+        description: Model of the mobile device
+        caveats: Includes partial or truncated models (e.g., 'iPho', 'GT-S')
+      Params:
+        description: Custom parameters passed with the hit
+        caveats: Mostly empty; sparse data
+      IPNetworkID:
+        description: Network ID (e.g., ISP or ASN) of the client IP
+      TraficSourceID:
+        description: Traffic source identifier (e.g., direct, search, social)
+      SearchEngineID:
+        description: ID of the search engine (if applicable)
+      SearchPhrase:
+        description: Search query string (if from search)
+      AdvEngineID:
+        description: ID of the advertising engine (if applicable)
+      IsArtifical:
+        description: Whether the hit is likely artificial/bot traffic (1 = yes, 0
+          = no)
+        values: 0, 1
+      WindowClientWidth:
+        description: Width of the browser window in pixels
+      WindowClientHeight:
+        description: Height of the browser window in pixels
+      ClientTimeZone:
+        description: Client's time zone offset in minutes
+      ClientEventTime:
+        description: Event timestamp as recorded by the client (microseconds since
+          epoch)
+        caveats: May differ from EventTime due to clock skew
+      SilverlightVersion1:
+        description: Major version of Microsoft Silverlight
+      SilverlightVersion2:
+        description: Minor version of Microsoft Silverlight
+      SilverlightVersion3:
+        description: Build version of Microsoft Silverlight
+      SilverlightVersion4:
+        description: Revision version of Microsoft Silverlight
+      PageCharset:
+        description: Character encoding of the page
+        caveats: Includes malformed or incomplete values (e.g., 'windows-1251;charset')
+      CodeVersion:
+        description: Version of the tracking code
+      IsLink:
+        description: Whether the hit was triggered by clicking a link (1 = yes, 0
+          = no)
+        values: 0, 1
+      IsDownload:
+        description: Whether the hit was triggered by a file download (1 = yes, 0
+          = no)
+        values: 0, 1
+      IsNotBounce:
+        description: Whether the hit is not a bounce (1 = yes, 0 = no)
+        values: 0, 1
+      FUniqID:
+        description: Unique identifier for the hit (likely used for deduplication)
+      OriginalURL:
+        description: Original URL before any redirects or normalization
+      HID:
+        description: Hit ID — unique identifier for the hit
+      IsOldCounter:
+        description: Whether the hit came from an older version of the tracking code
+          (1 = yes, 0 = no)
+        values: 0, 1
+      IsEvent:
+        description: Whether the hit is a custom event (1 = yes, 0 = no)
+        values: 0, 1
+      IsParameter:
+        description: Whether the hit includes custom parameters (1 = yes, 0 = no)
+        values: 0, 1
+      DontCountHits:
+        description: Whether the hit should be excluded from hit counts (1 = yes,
+          0 = no)
+        values: 0, 1
+      WithHash:
+        description: Whether the URL includes a hash fragment (1 = yes, 0 = no)
+        values: 0, 1
+      HitColor:
+        description: Color or type of hit (e.g., '5', 'g', '6')
+        caveats: Non-intuitive encoding; likely internal categorization
+      LocalEventTime:
+        description: Event timestamp in local time (microseconds since epoch)
+      Age:
+        description: User's age (if known)
+      Sex:
+        description: User's gender (1 = male, 2 = female)
+        values: 1, 2
+      Income:
+        description: User's income level (if known)
+      Interests:
+        description: User's interest category ID
+      Robotness:
+        description: Degree of robot-like behavior (0 = human, higher = more bot-like)
+      RemoteIP:
+        description: Remote IP address (possibly proxy or CDN IP)
+      WindowName:
+        description: Name of the browser window or frame
+      OpenerName:
+        description: Name of the window that opened the current one
+      HistoryLength:
+        description: Length of the browser history stack
+      BrowserLanguage:
+        description: Browser language code
+        caveats: Contains non-standard or corrupted values (e.g., 'S0', 'E3')
+      BrowserCountry:
+        description: Browser country code
+        caveats: Contains non-standard or corrupted values (e.g., '�', 'h1')
+      SocialNetwork:
+        description: Name of the social network (if applicable)
+        caveats: Mostly empty
+      SocialAction:
+        description: Type of social action (e.g., like, share)
+        caveats: Mostly empty
+      HTTPError:
+        description: HTTP error code (if any)
+      SendTiming:
+        description: Time taken to send the request (ms)
+      DNSTiming:
+        description: DNS lookup time (ms)
+      ConnectTiming:
+        description: TCP connection time (ms)
+      ResponseStartTiming:
+        description: Time to first byte (ms)
+      ResponseEndTiming:
+        description: Time to last byte (ms)
+      FetchTiming:
+        description: Total fetch time (ms)
+      SocialSourceNetworkID:
+        description: ID of the social network source
+      SocialSourcePage:
+        description: URL or identifier of the social source page
+        caveats: Includes full URLs and profile paths
+      ParamPrice:
+        description: Price parameter from the hit (e.g., for e-commerce)
+      ParamOrderID:
+        description: Order ID parameter (e.g., for e-commerce)
+        caveats: Mostly empty
+      ParamCurrency:
+        description: Currency code parameter
+        caveats: Mostly empty; sparse data
+      ParamCurrencyID:
+        description: Currency ID (numeric)
+      OpenstatServiceName:
+        description: Name of the Openstat service (e.g., Yandex Direct)
+        caveats: Includes partial or malformed entries
+      OpenstatCampaignID:
+        description: Campaign ID from Openstat
+      OpenstatAdID:
+        description: Ad ID from Openstat
+      OpenstatSourceID:
+        description: Source ID from Openstat
+        caveats: Includes malformed or extra characters
+      UTMSource:
+        description: UTM source parameter
+        caveats: Includes many variations of campaign names
+      UTMMedium:
+        description: UTM medium parameter
+        caveats: Includes numeric IDs and text values
+      UTMCampaign:
+        description: UTM campaign name
+      UTMContent:
+        description: UTM content identifier
+      UTMTerm:
+        description: UTM term (e.g., keyword)
+      FromTag:
+        description: Tag or identifier from the tracking system
+        caveats: Includes campaign codes and internal tags
+      HasGCLID:
+        description: Whether Google Click ID (gclid) is present (1 = yes, 0 = no)
+        values: 0, 1
+      RefererHash:
+        description: Hash of the referer URL
+      URLHash:
+        description: Hash of the current URL
+      CLID:
+        description: Click ID (e.g., advertising click identifier)
+  main.call_center:
+    description: Dimension table storing information about call centers, including
+      their location, operating hours, management, and market details.
+    grain: one row per call center
+    auto_generated: true
+    columns:
+      cc_call_center_sk:
+        description: Surrogate key for the call center
+      cc_call_center_id:
+        description: Business identifier for the call center
+      cc_rec_start_date:
+        description: Effective start date for this record version
+      cc_rec_end_date:
+        description: Effective end date for this record version
+      cc_closed_date_sk:
+        description: Surrogate key referencing the closed date dimension (if applicable)
+      cc_open_date_sk:
+        description: Surrogate key referencing the open date dimension
+      cc_name:
+        description: Name of the call center region or location
+        values: North Midwest, Mid Atlantic, NY Metro
+      cc_class:
+        description: Size classification of the call center
+        values: large, medium
+      cc_employees:
+        description: Number of employees at the call center
+      cc_sq_ft:
+        description: Square footage of the call center facility
+      cc_hours:
+        description: Operating hours of the call center
+        values: 8AM-4PM, 8AM-8AM
+      cc_manager:
+        description: Name of the call center manager
+        values: Larry Mccray, Felipe Perkins, Mark Hightower, Bob Belcher
+      cc_mkt_id:
+        description: Marketing segment identifier
+      cc_mkt_class:
+        description: Marketing classification description
+        values: Rational ways will cultivate significant a, Lips know to a units.
+          Open members ought to beat , Instead male prospects would make old images.
+          M, More than other authori, Nights may arrange below somewhat interest
+      cc_mkt_desc:
+        description: Marketing description or notes
+        values: Studies may not influence multiple coins. Consumers may raise, Wrong
+          members must get compatibl, Shared others could not count fully dollars.
+          New members ca, Nowhere certain tourists cannot help only. Retail terms
+          wake at a panels; largely blank years put s
+      cc_market_manager:
+        description: Name of the market manager responsible for the call center
+        values: Gary Colburn, Julius Durham, Julius Tran, Matthew Clifton
+      cc_division:
+        description: Division identifier
+      cc_division_name:
+        description: Name of the division
+        values: ese, anti, ought, pri
+      cc_company:
+        description: Company identifier
+      cc_company_name:
+        description: Name of the company
+        values: pri, able, cally, ought
+      cc_street_number:
+        description: Street number of the call center address
+      cc_street_name:
+        description: Street name of the call center address
+        values: Franklin , 14th , Ash Hill
+      cc_street_type:
+        description: Type of street (e.g., Court, Boulevard)
+        values: Court, Wy, Boulevard
+      cc_suite_number:
+        description: Suite or unit number of the call center address
+      cc_city:
+        description: City where the call center is located
+        values: Midway, Fairview
+      cc_county:
+        description: County where the call center is located
+        values: Williamson County
+      cc_state:
+        description: State where the call center is located
+        values: TN
+      cc_zip:
+        description: ZIP code of the call center location
+        values: 31904, 35709
+      cc_country:
+        description: Country where the call center is located
+        values: United States
+      cc_gmt_offset:
+        description: GMT time zone offset for the call center location
+      cc_tax_percentage:
+        description: Applicable tax percentage for the call center location
+  main.catalog_page:
+    description: Catalog page metadata, representing individual pages within catalogs
+      (e.g., print or digital catalogs), including their identification, timing, department,
+      and descriptive information.
+    grain: one row per catalog page (identified by cp_catalog_page_id)
+    auto_generated: true
+    columns:
+      cp_catalog_page_sk:
+        description: Surrogate key for the catalog page
+      cp_catalog_page_id:
+        description: Business identifier for the catalog page
+      cp_start_date_sk:
+        description: Surrogate key referencing the start date dimension (likely a
+          date_sk from a date dimension table)
+        caveats: NULLs may indicate pages without a defined start date
+      cp_end_date_sk:
+        description: Surrogate key referencing the end date dimension (likely a date_sk
+          from a date dimension table)
+        caveats: NULLs may indicate pages without a defined end date or ongoing pages
+      cp_department:
+        description: Department associated with the catalog page
+        values: DEPARTMENT
+      cp_catalog_number:
+        description: Catalog sequence number (e.g., catalog issue number)
+        caveats: May be used in combination with cp_catalog_page_number to uniquely
+          identify a page within a catalog issue
+      cp_catalog_page_number:
+        description: Page number within the catalog issue
+      cp_description:
+        description: Textual description of the catalog page content
+      cp_type:
+        description: Frequency or type of catalog publication
+        values: monthly, quarterly, bi-annual
+  main.catalog_returns:
+    description: Records catalog returns, including details about the returned item,
+      refund information, and financial impact for each return transaction.
+    grain: One row per catalog return transaction (i.e., one row per returned item
+      from a catalog order).
+    auto_generated: true
+    columns:
+      cr_returned_date_sk:
+        description: Surrogate key for the date the item was returned; references
+          a date dimension table.
+        caveats: No actual date column exists—must join to a date dimension table
+          to interpret calendar dates.
+      cr_returned_time_sk:
+        description: Surrogate key for the time the return occurred; references a
+          time dimension table.
+        caveats: No actual timestamp column exists—must join to a time dimension table
+          to interpret time of day.
+      cr_item_sk:
+        description: Surrogate key for the returned item; references an item dimension
+          table.
+      cr_refunded_customer_sk:
+        description: Surrogate key for the customer who received the refund (may differ
+          from returning customer in some cases).
+      cr_refunded_cdemo_sk:
+        description: Surrogate key for the customer demographics of the refunded customer.
+      cr_refunded_hdemo_sk:
+        description: Surrogate key for the household demographics of the refunded
+          customer.
+      cr_refunded_addr_sk:
+        description: Surrogate key for the address of the refunded customer.
+      cr_returning_customer_sk:
+        description: Surrogate key for the customer who initiated the return.
+      cr_returning_cdemo_sk:
+        description: Surrogate key for the customer demographics of the returning
+          customer.
+      cr_returning_hdemo_sk:
+        description: Surrogate key for the household demographics of the returning
+          customer.
+      cr_returning_addr_sk:
+        description: Surrogate key for the address of the returning customer.
+      cr_call_center_sk:
+        description: Surrogate key for the call center where the return was processed.
+      cr_catalog_page_sk:
+        description: Surrogate key for the catalog page from which the returned item
+          originated.
+      cr_ship_mode_sk:
+        description: Surrogate key for the shipping method used to return the item.
+      cr_warehouse_sk:
+        description: Surrogate key for the warehouse that received the returned item.
+      cr_reason_sk:
+        description: Surrogate key for the reason the item was returned; references
+          a reason dimension table.
+      cr_order_number:
+        description: Order number of the original catalog order from which this item
+          was returned.
+      cr_return_quantity:
+        description: Number of units returned in this transaction.
+      cr_return_amount:
+        description: Monetary value of the returned items before tax and fees.
+      cr_return_tax:
+        description: Tax amount associated with the returned items.
+      cr_return_amt_inc_tax:
+        description: Return amount including tax (i.e., cr_return_amount + cr_return_tax).
+      cr_fee:
+        description: Processing fee charged for the return.
+      cr_return_ship_cost:
+        description: Shipping cost incurred for returning the item.
+      cr_refunded_cash:
+        description: Amount refunded in cash to the customer.
+      cr_reversed_charge:
+        description: Amount reversed as a charge (e.g., reversal of a previous charge).
+      cr_store_credit:
+        description: Amount credited to the customer’s store credit account.
+      cr_net_loss:
+        description: Net financial loss from the return (typically total credit extended
+          minus refunds received).
+  main.catalog_sales:
+    description: Fact table recording individual catalog sales transactions, including
+      pricing details, customer and shipping dimensions, and financial metrics like
+      net profit and taxes.
+    grain: one row per catalog sale line item (i.e., one item in one catalog order)
+    auto_generated: true
+    columns:
+      cs_sold_date_sk:
+        description: Surrogate key referencing the date on which the sale was made
+        caveats: NULLs may exist for legacy or invalid entries
+      cs_sold_time_sk:
+        description: Surrogate key referencing the time of day the sale was made
+        caveats: NULLs may exist for legacy or invalid entries
+      cs_ship_date_sk:
+        description: Surrogate key referencing the date the item was shipped
+        caveats: NULLs may exist for unshipped or pending orders
+      cs_bill_customer_sk:
+        description: Surrogate key referencing the customer responsible for billing
+        caveats: NULLs may exist for invalid or missing customer references
+      cs_bill_cdemo_sk:
+        description: Surrogate key referencing the customer demographics of the billing
+          customer
+        caveats: NULLs may exist if demographics are missing
+      cs_bill_hdemo_sk:
+        description: Surrogate key referencing the household demographics of the billing
+          customer
+        caveats: NULLs may exist if demographics are missing
+      cs_bill_addr_sk:
+        description: Surrogate key referencing the billing address
+        caveats: NULLs may exist if address is missing
+      cs_ship_customer_sk:
+        description: Surrogate key referencing the customer to whom the item was shipped
+          (may differ from billing customer)
+        caveats: NULLs may exist if shipping customer is missing
+      cs_ship_cdemo_sk:
+        description: Surrogate key referencing the customer demographics of the shipping
+          customer
+        caveats: NULLs may exist if demographics are missing
+      cs_ship_hdemo_sk:
+        description: Surrogate key referencing the household demographics of the shipping
+          customer
+        caveats: NULLs may exist if demographics are missing
+      cs_ship_addr_sk:
+        description: Surrogate key referencing the shipping address
+        caveats: NULLs may exist if address is missing
+      cs_call_center_sk:
+        description: Surrogate key referencing the call center that processed the
+          order
+        caveats: NULLs may exist for non-call-center channels
+      cs_catalog_page_sk:
+        description: Surrogate key referencing the catalog page where the item was
+          listed
+        caveats: NULLs may exist for non-catalog channels
+      cs_ship_mode_sk:
+        description: Surrogate key referencing the shipping method used
+        caveats: NULLs may exist for unshipped or invalid entries
+      cs_warehouse_sk:
+        description: Surrogate key referencing the warehouse from which the item was
+          shipped
+        caveats: NULLs may exist for unassigned or invalid entries
+      cs_item_sk:
+        description: Surrogate key referencing the item sold
+        caveats: NULLs may exist for invalid or missing item references
+      cs_promo_sk:
+        description: Surrogate key referencing the promotion applied to this sale
+        caveats: NULL if no promotion was applied
+      cs_order_number:
+        description: Unique order identifier across the catalog sales system
+        values: positive integers
+      cs_quantity:
+        description: Number of units sold in this line item
+        values: positive integers
+      cs_wholesale_cost:
+        description: Cost per unit paid by the retailer to the supplier
+        values: non-negative decimal values
+      cs_list_price:
+        description: Suggested retail price per unit before discounts
+        values: non-negative decimal values
+      cs_sales_price:
+        description: Actual selling price per unit after discounts
+        values: non-negative decimal values
+      cs_ext_discount_amt:
+        description: Total discount amount applied to this line item (quantity × (list_price
+          − sales_price))
+        values: non-negative decimal values
+      cs_ext_sales_price:
+        description: Total revenue from this line item (quantity × sales_price)
+        values: non-negative decimal values
+      cs_ext_wholesale_cost:
+        description: Total cost to the retailer for this line item (quantity × wholesale_cost)
+        values: non-negative decimal values
+      cs_ext_list_price:
+        description: Total list price for this line item (quantity × list_price)
+        values: non-negative decimal values
+      cs_ext_tax:
+        description: Total tax amount applied to this line item
+        values: non-negative decimal values
+      cs_coupon_amt:
+        description: Total coupon discount amount applied to this line item
+        values: non-negative decimal values
+      cs_ext_ship_cost:
+        description: Total shipping cost for this line item
+        values: non-negative decimal values
+      cs_net_paid:
+        description: Net amount received after discounts and coupons, but before tax
+          and shipping
+        values: non-negative decimal values
+      cs_net_paid_inc_tax:
+        description: Net amount received including tax but excluding shipping
+        values: non-negative decimal values
+      cs_net_paid_inc_ship:
+        description: Net amount received including shipping but excluding tax
+        values: non-negative decimal values
+      cs_net_paid_inc_ship_tax:
+        description: Net amount received including both shipping and tax
+        values: non-negative decimal values
+      cs_net_profit:
+        description: Profit for this line item (net_paid_inc_ship_tax − ext_wholesale_cost
+          − ext_ship_cost)
+        values: can be negative for losses
+  main.customer:
+    description: Customer dimension table storing detailed demographic, contact, and
+      behavioral information for each customer.
+    grain: One row per unique customer, identified by c_customer_sk.
+    auto_generated: true
+    columns:
+      c_customer_sk:
+        description: Surrogate key uniquely identifying a customer.
+      c_customer_id:
+        description: Business identifier for the customer (e.g., external ID).
+      c_current_cdemo_sk:
+        description: Foreign key to current customer demographics (e.g., household
+          size, income range).
+      c_current_hdemo_sk:
+        description: Foreign key to current household demographics (e.g., home ownership,
+          vehicle ownership).
+      c_current_addr_sk:
+        description: Foreign key to current address details (e.g., street, city, ZIP).
+      c_first_shipto_date_sk:
+        description: Date key for the customer's first shipment (ship-to) date.
+      c_first_sales_date_sk:
+        description: Date key for the customer's first purchase (sales) date.
+      c_salutation:
+        description: Salutation used for the customer (e.g., honorific prefix).
+        values: Dr., Mr., Sir, Mrs., Ms., Miss
+      c_first_name:
+        description: Customer's first name.
+      c_last_name:
+        description: Customer's last name.
+      c_preferred_cust_flag:
+        description: Flag indicating whether the customer is a preferred customer.
+        values: N, Y
+      c_birth_day:
+        description: Day of the month the customer was born.
+      c_birth_month:
+        description: Month the customer was born.
+      c_birth_year:
+        description: Year the customer was born.
+      c_birth_country:
+        description: Country where the customer was born.
+      c_login:
+        description: Customer's login identifier (e.g., username or email used for
+          login).
+        caveats: Empty or NULL values may indicate legacy or non-digital customers.
+      c_email_address:
+        description: Customer's email address.
+      c_last_review_date_sk:
+        description: Date key for the customer's last profile or data review/update.
+  main.customer_address:
+    description: Stores physical address details for customers, linked via surrogate
+      key to the customer dimension.
+    grain: one row per unique address (identified by ca_address_sk)
+    auto_generated: true
+    columns:
+      ca_address_sk:
+        description: Surrogate key uniquely identifying this address record
+      ca_address_id:
+        description: Business identifier for the address (e.g., source system ID)
+      ca_street_number:
+        description: Street number of the address
+      ca_street_name:
+        description: Name of the street
+      ca_street_type:
+        description: Type of street (e.g., Avenue, Road, Boulevard)
+        values: Avenue, Ave, RD, Blvd, Street, Wy, Circle, Dr., Pkwy, Boulevard, Ct.,
+          Court, Parkway, Drive, Lane, ST, Cir., Way, Ln, Road
+      ca_suite_number:
+        description: Suite or apartment number if applicable
+      ca_city:
+        description: City name
+      ca_county:
+        description: County name
+      ca_state:
+        description: State abbreviation or name
+      ca_zip:
+        description: ZIP or postal code
+      ca_country:
+        description: Country name
+        values: United States
+      ca_gmt_offset:
+        description: GMT time zone offset for the address location
+      ca_location_type:
+        description: Type of residential or commercial location
+        values: condo, single family, apartment
+  main.customer_demographics:
+    description: Customer demographic attributes used for segmentation and analysis,
+      including gender, marital status, education, credit rating, and dependency information.
+    grain: one row per unique customer demographic profile (identified by cd_demo_sk)
+    auto_generated: true
+    columns:
+      cd_demo_sk:
+        description: Surrogate key uniquely identifying a customer demographic record
+      cd_gender:
+        description: Customer's gender
+        values: F, M
+      cd_marital_status:
+        description: Customer's marital status
+        values: D, M, S, U, W
+      cd_education_status:
+        description: Customer's highest level of education completed
+        values: Primary, 2 yr Degree, Advanced Degree, Unknown, College, Secondary,
+          4 yr Degree
+      cd_purchase_estimate:
+        description: Estimated annual purchase amount for the customer
+      cd_credit_rating:
+        description: Customer's credit rating classification
+        values: Good, Unknown, Low Risk, High Risk
+      cd_dep_count:
+        description: Total number of dependents claimed by the customer
+      cd_dep_employed_count:
+        description: Number of dependents who are employed
+      cd_dep_college_count:
+        description: Number of dependents currently enrolled in college
+  main.date_dim:
+    description: A date dimension table containing calendar and fiscal date attributes
+      for analytical reporting, likely used for time-based joins and filtering in
+      a data warehouse.
+    grain: One row per unique calendar date, spanning approximately 200 years (73,049
+      rows).
+    auto_generated: true
+    columns:
+      d_date_sk:
+        description: Surrogate key for the date; typically used as a foreign key in
+          fact tables.
+      d_date_id:
+        description: Alternate date identifier, likely in a standardized string format
+          (e.g., 'YYYYMMDD').
+      d_date:
+        description: The actual calendar date.
+      d_month_seq:
+        description: Sequential month number (e.g., 1, 2, 3...) starting from a fixed
+          point, useful for time series calculations.
+      d_week_seq:
+        description: Sequential week number (e.g., ISO week number or fiscal week),
+          useful for weekly aggregations.
+      d_quarter_seq:
+        description: Sequential quarter number (e.g., 1, 2, 3...) starting from a
+          fixed point, useful for quarterly time series.
+      d_year:
+        description: Calendar year of the date.
+      d_dow:
+        description: Day of the week as a number (e.g., 1=Sunday, 2=Monday, ..., 7=Saturday
+          or vice versa depending on convention).
+      d_moy:
+        description: Month of the year as a number (1–12).
+      d_dom:
+        description: Day of the month (1–31).
+      d_qoy:
+        description: Quarter of the year (1–4).
+      d_fy_year:
+        description: Fiscal year of the date.
+      d_fy_quarter_seq:
+        description: Sequential fiscal quarter number, useful for fiscal time series.
+      d_fy_week_seq:
+        description: Sequential fiscal week number, useful for fiscal weekly aggregations.
+      d_day_name:
+        description: Name of the day of the week (e.g., Monday, Tuesday).
+        values: Sunday, Monday, Tuesday, Wednesday, Thursday, Friday, Saturday
+      d_quarter_name:
+        description: Name of the quarter (e.g., Q1, Q2, etc.).
+      d_holiday:
+        description: Flag indicating whether the date is a holiday.
+        values: N, Y
+      d_weekend:
+        description: Flag indicating whether the date falls on a weekend (Saturday
+          or Sunday).
+        values: N, Y
+      d_following_holiday:
+        description: Flag indicating whether the next day is a holiday.
+        values: N, Y
+      d_first_dom:
+        description: Day of the month of the first day of the current month (typically
+          1).
+      d_last_dom:
+        description: Day of the month of the last day of the current month (e.g.,
+          28, 30, or 31).
+      d_same_day_ly:
+        description: Day of the month for the same date in the prior year (used for
+          year-over-year comparisons).
+      d_same_day_lq:
+        description: Day of the month for the same date in the prior quarter (used
+          for quarter-over-quarter comparisons).
+      d_current_day:
+        description: Flag indicating whether the date is the current day (likely always
+          'N' in static historical data).
+        values: N
+      d_current_week:
+        description: Flag indicating whether the date falls in the current week (likely
+          always 'N' in static historical data).
+        values: N
+      d_current_month:
+        description: Flag indicating whether the date falls in the current month.
+        values: N, Y
+      d_current_quarter:
+        description: Flag indicating whether the date falls in the current quarter.
+        values: N, Y
+      d_current_year:
+        description: Flag indicating whether the date falls in the current year.
+        values: N, Y
+  main.household_demographics:
+    description: Demographic and socioeconomic characteristics of households, including
+      income potential, dependency count, and vehicle ownership.
+    grain: One row per household (identified by hd_demo_sk)
+    auto_generated: true
+    columns:
+      hd_demo_sk:
+        description: Unique identifier for the household demographic record
+      hd_income_band_sk:
+        description: Foreign key referencing the income band dimension table
+      hd_buy_potential:
+        description: Estimated purchasing power category of the household
+        values: Unknown, 501-1000, 0-500, >10000, 1001-5000, 5001-10000
+      hd_dep_count:
+        description: Number of dependents in the household
+      hd_vehicle_count:
+        description: Number of vehicles owned by the household
+  main.income_band:
+    description: Income band definitions used to categorize customer income levels,
+      with each row representing a specific income range.
+    grain: one row per income band defined by a lower and upper bound
+    auto_generated: true
+    columns:
+      ib_income_band_sk:
+        description: Surrogate key uniquely identifying each income band
+      ib_lower_bound:
+        description: Lower limit of the income range (inclusive)
+      ib_upper_bound:
+        description: Upper limit of the income range (inclusive)
+  main.inventory:
+    description: Snapshot of inventory levels per item and warehouse on a specific
+      date (represented by inv_date_sk); used for tracking stock quantities across
+      warehouses.
+    grain: one row per inventory snapshot for a specific item at a specific warehouse
+      on a specific date (identified by inv_date_sk)
+    auto_generated: true
+    columns:
+      inv_date_sk:
+        description: Surrogate key representing the date of the inventory snapshot;
+          references a date dimension table.
+        caveats: This is a date surrogate key, not a timestamp — actual date values
+          must be joined from a date dimension.
+      inv_item_sk:
+        description: Surrogate key identifying the inventory item; references an item
+          dimension table.
+      inv_warehouse_sk:
+        description: Surrogate key identifying the warehouse where the inventory is
+          stored; references a warehouse dimension table.
+      inv_quantity_on_hand:
+        description: Number of units of the item currently available in stock at the
+          warehouse.
+  main.item:
+    description: Dimension table describing items (products) in the catalog, including
+      attributes like brand, category, size, and pricing.
+    grain: one row per unique item (i_item_sk)
+    auto_generated: true
+    columns:
+      i_item_sk:
+        description: Surrogate key uniquely identifying each item
+      i_item_id:
+        description: Business identifier for the item (e.g., SKU or external ID)
+      i_rec_start_date:
+        description: Effective start date for this item record (used for slowly changing
+          dimension tracking)
+      i_rec_end_date:
+        description: Effective end date for this item record; NULL typically means
+          current version
+        caveats: NULL indicates active/infinite validity period
+      i_item_desc:
+        description: Text description of the item
+      i_current_price:
+        description: Current retail price of the item
+      i_wholesale_cost:
+        description: Wholesale cost paid by the retailer for the item
+      i_brand_id:
+        description: Foreign key to brand dimension
+      i_brand:
+        description: Name of the brand
+      i_class_id:
+        description: Foreign key to class dimension
+      i_class:
+        description: Name of the class (e.g., 'T-Shirts', 'Laptops')
+      i_category_id:
+        description: Foreign key to category dimension
+      i_category:
+        description: Name of the category (e.g., 'Men', 'Electronics')
+        values: Music, Shoes, Electronics, Men, Home, Women, Children, Sports, Jewelry,
+          Books
+      i_manufact_id:
+        description: Foreign key to manufacturer dimension
+      i_manufact:
+        description: Name of the manufacturer
+      i_size:
+        description: Size of the item (e.g., clothing size, packaging size)
+        values: N/A, medium, large, small, petite, extra large, economy
+      i_formulation:
+        description: Formulation or variant description (e.g., for pharmaceuticals
+          or cosmetics)
+      i_color:
+        description: Color of the item
+      i_units:
+        description: Unit of measure for the item (e.g., per piece, per ounce)
+        values: Cup, Carton, Oz, N/A, Dram, Ounce, Case, Ton, Dozen, Tsp, Unknown,
+          Pallet, Each, Bundle, Box, Bunch, Gross, Gram, Tbl, Pound, Lb
+      i_container:
+        description: Type of container (e.g., bottle, box)
+        values: Unknown
+        caveats: Only one known value; likely placeholder or incomplete data
+      i_manager_id:
+        description: Foreign key to manager dimension (person responsible for the
+          item)
+      i_product_name:
+        description: Market name or product name of the item
+  main.promotion:
+    description: Contains promotional campaign details including identifiers, target
+      audience, cost, and channel usage for marketing analysis.
+    grain: one row per promotion (p_promo_sk)
+    auto_generated: true
+    columns:
+      p_promo_sk:
+        description: Surrogate key uniquely identifying a promotion
+      p_promo_id:
+        description: Business identifier for the promotion
+      p_start_date_sk:
+        description: Surrogate key representing the start date of the promotion (requires
+          join to date dimension for actual date)
+      p_end_date_sk:
+        description: Surrogate key representing the end date of the promotion (requires
+          join to date dimension for actual date)
+      p_item_sk:
+        description: Surrogate key referencing the item (product) associated with
+          the promotion
+      p_cost:
+        description: Total cost of the promotion
+      p_response_target:
+        description: Target number of customer responses expected from the promotion
+      p_promo_name:
+        description: Name or title of the promotion
+      p_channel_dmail:
+        description: Whether direct mail was used for the promotion ('Y' or 'N')
+      p_channel_email:
+        description: Whether email was used for the promotion ('Y' or 'N')
+      p_channel_catalog:
+        description: Whether catalog was used for the promotion ('Y' or 'N')
+      p_channel_tv:
+        description: Whether TV was used for the promotion ('Y' or 'N')
+      p_channel_radio:
+        description: Whether radio was used for the promotion ('Y' or 'N')
+      p_channel_press:
+        description: Whether press (print media) was used for the promotion ('Y' or
+          'N')
+      p_channel_event:
+        description: Whether events were used for the promotion ('Y' or 'N')
+      p_channel_demo:
+        description: Whether demos were used for the promotion ('Y' or 'N')
+      p_channel_details:
+        description: Additional details about the promotion channels used
+      p_purpose:
+        description: Stated purpose or objective of the promotion
+      p_discount_active:
+        description: Whether a discount was active during the promotion ('Y' or 'N')
+  main.reason:
+    description: A reference table containing reasons for returns or cancellations,
+      used to categorize why a customer returned or canceled an order.
+    grain: one row per unique return/cancellation reason
+    auto_generated: true
+    columns:
+      r_reason_sk:
+        description: Surrogate key for the reason; used as a foreign key in other
+          tables.
+      r_reason_id:
+        description: Business identifier for the reason (e.g., a code or label).
+      r_reason_desc:
+        description: Human-readable description of the reason (e.g., 'Did not fit',
+          'Package was damaged').
+        values: reason 31, reason 23, reason 35, Did not fit, reason 28, reason 29,
+          its is a boy, unauthoized purchase, Package was damaged, Stopped working,
+          Parts missing, Did not like the color, Lost my job, reason 34, No service
+          location in my area, reason 33, duplicate purchase, Did not get it on time,
+          Gift exchange, Did not like the warranty, reason 26, Found a better extended
+          warranty in a store, reason 24, reason 32, Did not like the model, Not the
+          product that was ordred, Does not work with a product that I have, Did not
+          like the make, Found a better price in a store, Not working any more, Wrong
+          size, reason 27, it is a girl, reason 25
+  main.ship_mode:
+    description: Dimension table storing shipping method details used in the business,
+      including carrier, contract, and shipping type information.
+    grain: one row per unique shipping method (identified by sm_ship_mode_id)
+    auto_generated: true
+    columns:
+      sm_ship_mode_sk:
+        description: Surrogate key for the shipping method dimension
+      sm_ship_mode_id:
+        description: Business identifier for the shipping method
+      sm_type:
+        description: Category or service level of the shipping method
+        values: NEXT DAY, EXPRESS, LIBRARY, OVERNIGHT, TWO DAY, REGULAR
+      sm_code:
+        description: Short code representing the shipping method
+      sm_carrier:
+        description: Name of the carrier used for shipping
+        values: USPS, LATVIAN, ORIENTAL, FEDEX, AIRBORNE, DHL, UPS, ZHOU, ZOUROS,
+          MSC, GERMA, TBS, PRIVATECARRIER, ALLIANCE, BARIAN, GREAT EASTERN, DIAMOND,
+          RUPEKSA, HARMSTORF, BOXBUNDLES
+      sm_contract:
+        description: Contract identifier associated with the shipping method
+  main.store:
+    description: Dimension table storing information about physical retail store locations,
+      including contact details, operational hours, manager, and geographic and organizational
+      hierarchy.
+    grain: one row per store (identified by s_store_sk and s_store_id)
+    auto_generated: true
+    columns:
+      s_store_sk:
+        description: Surrogate key uniquely identifying a store
+      s_store_id:
+        description: Business identifier for the store
+      s_rec_start_date:
+        description: Effective start date for this store record (used in SCD Type
+          2)
+      s_rec_end_date:
+        description: Effective end date for this store record (used in SCD Type 2)
+      s_closed_date_sk:
+        description: Surrogate key referencing the date when the store was closed
+          (NULL if still open)
+        caveats: NULL likely indicates the store is still open
+      s_store_name:
+        description: Name of the store
+      s_number_employees:
+        description: Number of employees working at the store
+      s_floor_space:
+        description: Total floor space of the store in square feet
+      s_hours:
+        description: Operating hours of the store
+        values: 8AM-4PM, 8AM-12AM
+      s_manager:
+        description: Name of the store manager
+      s_market_id:
+        description: Surrogate key identifying the market the store belongs to
+      s_geography_class:
+        description: Geographic classification of the store (e.g., urban, suburban)
+        values: Unknown
+        caveats: All sample values are 'Unknown'; likely placeholder or missing data
+      s_market_desc:
+        description: Free-text description of the market
+        caveats: Sample values appear to be placeholder or corrupted text
+      s_market_manager:
+        description: Name of the market manager overseeing the store
+      s_division_id:
+        description: Surrogate key identifying the division the store belongs to
+      s_division_name:
+        description: Name of the division
+        values: Unknown
+        caveats: All sample values are 'Unknown'; likely placeholder or missing data
+      s_company_id:
+        description: Surrogate key identifying the company/brand the store belongs
+          to
+      s_company_name:
+        description: Name of the company/brand
+        values: Unknown
+        caveats: All sample values are 'Unknown'; likely placeholder or missing data
+      s_street_number:
+        description: Street number of the store address
+      s_street_name:
+        description: Name of the street where the store is located
+      s_street_type:
+        description: Type of street (e.g., Road, Boulevard)
+        values: Court, Lane, Boulevard, Dr., Road, Ln, Circle, Wy
+      s_suite_number:
+        description: Suite or unit number if applicable
+      s_city:
+        description: City where the store is located
+        values: Midway, Fairview
+      s_county:
+        description: County where the store is located
+        values: Williamson County
+      s_state:
+        description: State where the store is located (2-letter abbreviation)
+        values: TN
+      s_zip:
+        description: ZIP code of the store location
+        values: 31904, 35709
+      s_country:
+        description: Country where the store is located
+        values: United States
+        caveats: All sample values are 'United States'; likely only US stores exist
+      s_gmt_offset:
+        description: GMT time zone offset for the store location
+      s_tax_percentage:
+        description: Sales tax percentage applicable to the store location
+  main.store_returns:
+    description: Records of customer returns from stores, including return quantities,
+      monetary amounts, taxes, fees, and credits applied.
+    grain: one row per store return transaction
+    auto_generated: true
+    columns:
+      sr_returned_date_sk:
+        description: Surrogate key referencing the date when the item was returned
+        caveats: This is a date dimension key, not a real date; join with a date dimension
+          table for calendar information.
+      sr_return_time_sk:
+        description: Surrogate key referencing the time when the return occurred
+        caveats: This is a time dimension key, not a real timestamp; join with a time
+          dimension table for time-of-day details.
+      sr_item_sk:
+        description: Surrogate key identifying the returned item
+        caveats: This is a foreign key to an item dimension table.
+      sr_customer_sk:
+        description: Surrogate key identifying the customer who made the return
+        caveats: This is a foreign key to a customer dimension table.
+      sr_cdemo_sk:
+        description: Surrogate key referencing the customer's demographic profile
+          at the time of return
+        caveats: This is a foreign key to a customer demographic dimension table.
+      sr_hdemo_sk:
+        description: Surrogate key referencing the household demographic profile at
+          the time of return
+        caveats: This is a foreign key to a household demographic dimension table.
+      sr_addr_sk:
+        description: Surrogate key referencing the customer's address at the time
+          of return
+        caveats: This is a foreign key to an address dimension table.
+      sr_store_sk:
+        description: Surrogate key identifying the store where the return occurred
+        caveats: This is a foreign key to a store dimension table.
+      sr_reason_sk:
+        description: Surrogate key identifying the reason for the return
+        caveats: This is a foreign key to a reason dimension table.
+      sr_ticket_number:
+        description: Ticket number associated with the original sale; used to link
+          the return to the original purchase
+        caveats: This is a transaction identifier, not a sequential ID.
+      sr_return_quantity:
+        description: Number of units returned
+        values: ≥0 integers
+      sr_return_amt:
+        description: Monetary amount of the return before tax
+        values: non-negative decimal values
+      sr_return_tax:
+        description: Tax amount applied to the return
+        values: non-negative decimal values
+      sr_return_amt_inc_tax:
+        description: Total return amount including tax
+        values: non-negative decimal values
+      sr_fee:
+        description: Fee charged for processing the return
+        values: non-negative decimal values
+      sr_return_ship_cost:
+        description: Shipping cost associated with the return
+        values: non-negative decimal values
+      sr_refunded_cash:
+        description: Cash amount refunded to the customer
+        values: non-negative decimal values
+      sr_reversed_charge:
+        description: Amount reversed on the customer's credit card
+        values: non-negative decimal values
+      sr_store_credit:
+        description: Store credit issued to the customer
+        values: non-negative decimal values
+      sr_net_loss:
+        description: Net financial loss from the return (typically revenue minus refunds
+          and costs)
+        values: non-negative decimal values
+  main.store_sales:
+    description: Fact table capturing individual store sales transactions, including
+      quantity, pricing details, and financial metrics per item sold.
+    grain: One row per item sold in a store transaction (i.e., per line item on a
+      sales receipt).
+    auto_generated: true
+    columns:
+      ss_sold_date_sk:
+        description: Surrogate key referencing the date on which the sale occurred
+          (likely joins to a date dimension table).
+        caveats: No actual date column exists; use this key to join to a date dimension
+          for calendar context.
+      ss_sold_time_sk:
+        description: Surrogate key referencing the time of day the sale occurred (likely
+          joins to a time dimension table).
+        caveats: No actual time column exists; use this key to join to a time dimension
+          for temporal context.
+      ss_item_sk:
+        description: Surrogate key referencing the item (product) sold.
+      ss_customer_sk:
+        description: Surrogate key referencing the customer who made the purchase.
+      ss_cdemo_sk:
+        description: Surrogate key referencing the customer demographics (e.g., age,
+          income, education) of the buyer.
+      ss_hdemo_sk:
+        description: Surrogate key referencing the household demographics of the buyer.
+      ss_addr_sk:
+        description: Surrogate key referencing the customer's address at the time
+          of purchase.
+      ss_store_sk:
+        description: Surrogate key referencing the store where the sale occurred.
+      ss_promo_sk:
+        description: Surrogate key referencing the promotion applied to this sale
+          (if any).
+      ss_ticket_number:
+        description: Transaction identifier grouping line items belonging to the same
+          receipt.
+      ss_quantity:
+        description: Number of units of the item sold in this line item.
+      ss_wholesale_cost:
+        description: Cost per unit paid by the store to the supplier, at the time
+          of sale.
+      ss_list_price:
+        description: Suggested retail price (MSRP) per unit at the time of sale.
+      ss_sales_price:
+        description: Actual price per unit charged to the customer after discounts.
+      ss_ext_discount_amt:
+        description: Total discount amount applied to this line item (quantity × (list
+          price − sales price) if discount is per-unit).
+      ss_ext_sales_price:
+        description: Total revenue from this line item (quantity × sales price).
+      ss_ext_wholesale_cost:
+        description: Total cost to the store for this line item (quantity × wholesale
+          cost).
+      ss_ext_list_price:
+        description: Total list price value for this line item (quantity × list price).
+      ss_ext_tax:
+        description: Total tax amount collected for this line item.
+      ss_coupon_amt:
+        description: Total discount amount applied via coupons for this line item.
+      ss_net_paid:
+        description: Net amount received from customer for this line item (ext. sales
+          price − tax − coupon_amt).
+      ss_net_paid_inc_tax:
+        description: Net amount received including tax (ext. sales price − coupon_amt).
+      ss_net_profit:
+        description: Gross profit for this line item (net paid inc. tax − ext. wholesale
+          cost).
+  main.time_dim:
+    description: Time dimension table storing granular time-of-day attributes for
+      each second of a 24-hour day (86,400 rows = 24*60*60), used for time-based analysis
+      without date context.
+    grain: one row per second of day (00:00:00 to 23:59:59)
+    auto_generated: true
+    columns:
+      t_time_sk:
+        description: Surrogate key for the time dimension row; uniquely identifies
+          each second of day
+      t_time_id:
+        description: Text identifier for the time (e.g., '00:00:00' to '23:59:59')
+      t_time:
+        description: Time represented as seconds since midnight (0 to 86399)
+      t_hour:
+        description: Hour of day in 24-hour format (0 to 23)
+      t_minute:
+        description: Minute of hour (0 to 59)
+      t_second:
+        description: Second of minute (0 to 59)
+      t_am_pm:
+        description: 12-hour period indicator
+        values: AM, PM
+      t_shift:
+        description: Work shift classification
+        values: third, second, first
+      t_sub_shift:
+        description: Subdivision of shift by time of day
+        values: evening, night, morning, afternoon
+      t_meal_time:
+        description: Designated meal period, if any
+        values: breakfast, dinner, lunch, (empty string for non-meal times)
+  main.warehouse:
+    description: Stores information about physical warehouse locations, including
+      identifiers, address details, and geographic metadata.
+    grain: one row per warehouse location
+    auto_generated: true
+    columns:
+      w_warehouse_sk:
+        description: Surrogate key uniquely identifying a warehouse
+      w_warehouse_id:
+        description: Business identifier for the warehouse
+      w_warehouse_name:
+        description: Human-readable name of the warehouse
+        values: Of course ot, Conventional childr, Social, royal laws m, Terms overcome
+          instr
+      w_warehouse_sq_ft:
+        description: Total square footage of the warehouse
+      w_street_number:
+        description: Street number of the warehouse address
+      w_street_name:
+        description: Name of the street where the warehouse is located
+        values: Ash Laurel, 6th , View First, Wilson Elm
+      w_street_type:
+        description: Type of street (e.g., Avenue, Drive)
+        values: Avenue, Parkway, Dr., Drive
+      w_suite_number:
+        description: Suite or unit number of the warehouse address
+      w_city:
+        description: City where the warehouse is located
+        values: Fairview
+      w_county:
+        description: County where the warehouse is located
+        values: Williamson County
+      w_state:
+        description: State where the warehouse is located
+        values: TN
+      w_zip:
+        description: ZIP code of the warehouse location
+        values: '35709'
+      w_country:
+        description: Country where the warehouse is located
+        values: United States
+      w_gmt_offset:
+        description: GMT time zone offset for the warehouse location
+  main.web_page:
+    description: This table stores metadata and characteristics of web pages, including
+      identifiers, creation/access dates, type, and content metrics like link and
+      image counts.
+    grain: one row per web page
+    auto_generated: true
+    columns:
+      wp_web_page_sk:
+        description: Surrogate key uniquely identifying a web page
+      wp_web_page_id:
+        description: Business identifier for the web page
+      wp_rec_start_date:
+        description: Start date for which this web page record is valid
+      wp_rec_end_date:
+        description: End date for which this web page record is valid
+      wp_creation_date_sk:
+        description: Surrogate key referencing the creation date of the web page
+      wp_access_date_sk:
+        description: Surrogate key referencing the last access date of the web page
+      wp_autogen_flag:
+        description: Indicates whether the web page was auto-generated
+        values: N, Y
+      wp_customer_sk:
+        description: Surrogate key linking to the customer associated with the web
+          page
+      wp_url:
+        description: URL of the web page
+      wp_type:
+        description: Category or functional type of the web page
+        values: general, welcome, protected, ad, dynamic, feedback, order
+      wp_char_count:
+        description: Number of characters in the web page content
+      wp_link_count:
+        description: Number of hyperlinks on the web page
+      wp_image_count:
+        description: Number of images on the web page
+      wp_max_ad_count:
+        description: Maximum number of advertisements allowed on the web page
+  main.web_returns:
+    description: Records individual product returns from web orders, including financial
+      details and customer demographics involved in the return process.
+    grain: one row per web return transaction
+    auto_generated: true
+    columns:
+      wr_returned_date_sk:
+        description: Surrogate key for the date the item was returned
+        caveats: No actual date column exists; join to a date dimension table for
+          calendar dates
+      wr_returned_time_sk:
+        description: Surrogate key for the time the item was returned
+        caveats: No actual time column exists; join to a time dimension table for
+          time details
+      wr_item_sk:
+        description: Surrogate key identifying the returned item
+      wr_refunded_customer_sk:
+        description: Surrogate key for the customer who received the refund
+      wr_refunded_cdemo_sk:
+        description: Surrogate key for the customer demographics of the refunded customer
+      wr_refunded_hdemo_sk:
+        description: Surrogate key for the household demographics of the refunded
+          customer
+      wr_refunded_addr_sk:
+        description: Surrogate key for the address of the refunded customer
+      wr_returning_customer_sk:
+        description: Surrogate key for the customer who initiated the return
+      wr_returning_cdemo_sk:
+        description: Surrogate key for the customer demographics of the returning
+          customer
+      wr_returning_hdemo_sk:
+        description: Surrogate key for the household demographics of the returning
+          customer
+      wr_returning_addr_sk:
+        description: Surrogate key for the address of the returning customer
+      wr_web_page_sk:
+        description: Surrogate key identifying the web page where the return was processed
+      wr_reason_sk:
+        description: Surrogate key for the reason the item was returned
+      wr_order_number:
+        description: Order number of the original web order
+      wr_return_quantity:
+        description: Number of items returned
+      wr_return_amt:
+        description: Monetary amount of the return before tax and fees
+      wr_return_tax:
+        description: Tax amount associated with the return
+      wr_return_amt_inc_tax:
+        description: Return amount including tax
+      wr_fee:
+        description: Fee charged for processing the return
+      wr_return_ship_cost:
+        description: Shipping cost associated with the return
+      wr_refunded_cash:
+        description: Amount refunded in cash
+      wr_reversed_charge:
+        description: Amount reversed from a previous charge
+      wr_account_credit:
+        description: Amount credited to the customer's account
+      wr_net_loss:
+        description: Net financial loss from the return (e.g., after refunds, fees,
+          and credits)
+  main.web_sales:
+    description: Records individual web sales transactions, including line-item details,
+      pricing, and financial metrics; used for analyzing e-commerce sales performance
+      and trends.
+    grain: One row per web sales line item (i.e., one product in one web order)
+    auto_generated: true
+    columns:
+      ws_sold_date_sk:
+        description: Surrogate key for the date the sale was made; references a date
+          dimension table.
+        caveats: NULLs may indicate sales without a valid date; not a real date column—must
+          join to a date table for calendar analysis.
+      ws_sold_time_sk:
+        description: Surrogate key for the time of day the sale was made; references
+          a time dimension table.
+      ws_ship_date_sk:
+        description: Surrogate key for the date the item was shipped; references a
+          date dimension table.
+        caveats: May be NULL for unshipped orders.
+      ws_item_sk:
+        description: Surrogate key for the product sold; references an item dimension
+          table.
+      ws_bill_customer_sk:
+        description: Surrogate key for the customer who placed the order (billing
+          customer); references a customer dimension table.
+      ws_bill_cdemo_sk:
+        description: Surrogate key for the demographic profile of the billing customer;
+          references a customer demographic table.
+      ws_bill_hdemo_sk:
+        description: Surrogate key for the household demographic profile of the billing
+          customer; references a household demographic table.
+      ws_bill_addr_sk:
+        description: Surrogate key for the billing address of the customer; references
+          an address dimension table.
+      ws_ship_customer_sk:
+        description: Surrogate key for the customer receiving the shipment (may differ
+          from billing customer); references a customer dimension table.
+      ws_ship_cdemo_sk:
+        description: Surrogate key for the demographic profile of the shipping customer;
+          references a customer demographic table.
+      ws_ship_hdemo_sk:
+        description: Surrogate key for the household demographic profile of the shipping
+          customer; references a household demographic table.
+      ws_ship_addr_sk:
+        description: Surrogate key for the shipping address; references an address
+          dimension table.
+      ws_web_page_sk:
+        description: Surrogate key for the web page where the sale originated; references
+          a web page dimension table.
+      ws_web_site_sk:
+        description: Surrogate key for the web site where the sale originated; references
+          a web site dimension table.
+      ws_ship_mode_sk:
+        description: Surrogate key for the shipping method used; references a ship
+          mode dimension table.
+      ws_warehouse_sk:
+        description: Surrogate key for the warehouse from which the item was shipped;
+          references a warehouse dimension table.
+      ws_promo_sk:
+        description: Surrogate key for the promotion applied to this sale; references
+          a promotion dimension table.
+      ws_order_number:
+        description: Unique identifier for the web order (order header level); multiple
+          rows share the same order number for multi-item orders.
+      ws_quantity:
+        description: Number of units of the item sold in this line item.
+      ws_wholesale_cost:
+        description: Cost per unit to the retailer (wholesale price) for this item.
+      ws_list_price:
+        description: Suggested retail price (list price) per unit for this item.
+      ws_sales_price:
+        description: Actual selling price per unit after discounts, for this line
+          item.
+      ws_ext_discount_amt:
+        description: Total discount amount applied to this line item (quantity × (list
+          price − sales price)).
+      ws_ext_sales_price:
+        description: Total revenue from this line item (quantity × sales price).
+      ws_ext_wholesale_cost:
+        description: Total cost to the retailer for this line item (quantity × wholesale
+          cost).
+      ws_ext_list_price:
+        description: Total list price value for this line item (quantity × list price).
+      ws_ext_tax:
+        description: Total tax amount collected for this line item.
+      ws_coupon_amt:
+        description: Total discount amount applied via coupon for this line item.
+      ws_ext_ship_cost:
+        description: Total shipping cost allocated to this line item.
+      ws_net_paid:
+        description: Net amount received from customer for this line item (ext_sales_price
+          − ext_discount_amt − coupon_amt).
+      ws_net_paid_inc_tax:
+        description: Net amount received including tax (net_paid + ext_tax).
+      ws_net_paid_inc_ship:
+        description: Net amount received including shipping (net_paid + ext_ship_cost).
+      ws_net_paid_inc_ship_tax:
+        description: Net amount received including both shipping and tax (net_paid
+          + ext_ship_cost + ext_tax).
+      ws_net_profit:
+        description: Profit for this line item (net_paid_inc_ship_tax − ext_wholesale_cost
+          − ext_ship_cost).
+  main.web_site:
+    description: Dimension table storing information about web sites (e.g., e-commerce
+      websites), including identifiers, operational dates, classification, management,
+      and physical address details.
+    grain: one row per web site (identified by web_site_id)
+    auto_generated: true
+    columns:
+      web_site_sk:
+        description: Surrogate key for the web site
+      web_site_id:
+        description: Business identifier for the web site
+      web_rec_start_date:
+        description: Effective start date for this web site record
+      web_rec_end_date:
+        description: Effective end date for this web site record
+      web_name:
+        description: Name of the web site
+        values: site_3, site_1, site_4, site_2, site_0
+      web_open_date_sk:
+        description: Surrogate key referencing the open date dimension
+      web_close_date_sk:
+        description: Surrogate key referencing the close date dimension
+      web_class:
+        description: Classification category of the web site
+        values: Unknown
+      web_manager:
+        description: Name of the web site manager
+      web_mkt_id:
+        description: Marketing identifier associated with the web site
+      web_mkt_class:
+        description: Marketing classification description (likely placeholder or corrupted
+          text)
+        caveats: Values appear to be truncated or corrupted text fragments
+      web_mkt_desc:
+        description: Marketing description (likely placeholder or corrupted text)
+        caveats: Values appear to be truncated or corrupted text fragments
+      web_market_manager:
+        description: Name of the market manager responsible for the web site
+      web_company_id:
+        description: Identifier for the parent company
+      web_company_name:
+        description: Name of the parent company
+        caveats: Values appear truncated or incomplete
+      web_street_number:
+        description: Street number in the address
+      web_street_name:
+        description: Street name in the address
+      web_street_type:
+        description: Type of street (e.g., Road, Avenue)
+        values: Wy, Dr., Drive, Boulevard, Ct., Cir., Road, Pkwy, Blvd, Parkway, Way,
+          Court, Ln, ST, Avenue
+      web_suite_number:
+        description: Suite or apartment number in the address
+      web_city:
+        description: City name in the address
+        values: Midway, Fairview
+      web_county:
+        description: County name in the address
+        values: Williamson County
+      web_state:
+        description: State abbreviation in the address
+        values: TN
+      web_zip:
+        description: ZIP code in the address
+        values: 31904, 35709
+      web_country:
+        description: Country name in the address
+        values: United States
+      web_gmt_offset:
+        description: GMT time zone offset for the web site location
+      web_tax_percentage:
+        description: Applicable tax percentage for the web site location
+  main.lineitem:
+    description: Contains detailed line-item data for orders, including pricing, shipping,
+      and status information for each item in an order.
+    grain: one row per line item in an order
+    auto_generated: true
+    columns:
+      l_orderkey:
+        description: Foreign key referencing the order to which this line item belongs
+      l_partkey:
+        description: Foreign key referencing the part (product) associated with this
+          line item
+      l_suppkey:
+        description: Foreign key referencing the supplier providing this line item
+      l_linenumber:
+        description: Sequence number of this line item within its order
+      l_quantity:
+        description: Number of units ordered for this line item
+      l_extendedprice:
+        description: Total price for this line item (quantity × unit price)
+      l_discount:
+        description: Discount applied to this line item (as a decimal, e.g., 0.05
+          = 5%)
+      l_tax:
+        description: Tax rate applied to this line item (as a decimal)
+      l_returnflag:
+        description: Indicates whether the item has been returned ('N' = not returned,
+          'R' = returned, 'A' = accepted after return)
+        values: N, R, A
+      l_linestatus:
+        description: Current status of the line item ('O' = open, 'F' = closed/finalized)
+        values: O, F
+      l_shipdate:
+        description: Date the item was shipped
+      l_commitdate:
+        description: Date the supplier committed to ship the item
+      l_receiptdate:
+        description: Date the item was received by the customer
+      l_shipinstruct:
+        description: Instructions for how the item should be shipped or delivered
+        values: NONE, COLLECT COD, DELIVER IN PERSON, TAKE BACK RETURN
+      l_shipmode:
+        description: Shipping method used for this line item
+        values: AIR, SHIP, MAIL, FOB, TRUCK, REG AIR, RAIL
+      l_comment:
+        description: Free-text comment associated with the line item
+  main.nation:
+    description: Lists nations with their associated region and a comment field, likely
+      used as a reference dimension table in a star schema.
+    grain: one row per nation
+    auto_generated: true
+    columns:
+      n_nationkey:
+        description: Unique identifier for each nation
+      n_name:
+        description: Name of the nation
+        values: ETHIOPIA, IRAQ, MOROCCO, UNITED KINGDOM, PERU, CHINA, VIETNAM, EGYPT,
+          INDONESIA, KENYA, FRANCE, JAPAN, GERMANY, IRAN, BRAZIL, UNITED STATES, CANADA,
+          JORDAN, ROMANIA, RUSSIA, ALGERIA, ARGENTINA, INDIA, MOZAMBIQUE, SAUDI ARABIA
+      n_regionkey:
+        description: Foreign key referencing the region to which the nation belongs
+      n_comment:
+        description: Free-text comment field with stylized or synthetic text (possibly
+          generated for testing purposes)
+        caveats: Comments appear to be placeholder or test data with repetitive, stylized
+          phrasing; not suitable for analytical use.
+  main.orders:
+    description: Stores order header information for each order placed by customers,
+      including status, pricing, priority, and associated clerk.
+    grain: one row per order (identified by o_orderkey)
+    auto_generated: true
+    columns:
+      o_orderkey:
+        description: Unique identifier for each order
+      o_custkey:
+        description: Identifier for the customer who placed the order
+      o_orderstatus:
+        description: Current status of the order
+        values: O (open), F (fulfilled), P (pending)
+      o_totalprice:
+        description: Total monetary value of the order
+      o_orderdate:
+        description: Date the order was placed
+      o_orderpriority:
+        description: Priority level assigned to the order
+        values: 5-LOW, 1-URGENT, 4-NOT SPECIFIED, 2-HIGH, 3-MEDIUM
+      o_clerk:
+        description: Name or ID of the clerk who processed the order
+      o_shippriority:
+        description: Priority level for shipping the order (higher = more urgent)
+      o_comment:
+        description: Free-text comment associated with the order
+  main.part:
+    description: Dimension table describing parts (products) in the database, including
+      their attributes such as manufacturer, brand, type, size, container, and retail
+      price.
+    grain: one row per unique part (identified by p_partkey)
+    auto_generated: true
+    columns:
+      p_partkey:
+        description: Unique identifier for each part
+      p_name:
+        description: Name of the part
+      p_mfgr:
+        description: Manufacturer of the part
+        values: Manufacturer#1, Manufacturer#2, Manufacturer#3, Manufacturer#4, Manufacturer#5
+      p_brand:
+        description: Brand of the part
+        values: Brand#11, Brand#12, Brand#13, Brand#14, Brand#15, Brand#21, Brand#22,
+          Brand#23, Brand#24, Brand#25, Brand#31, Brand#32, Brand#33, Brand#34, Brand#35,
+          Brand#41, Brand#42, Brand#43, Brand#44, Brand#45, Brand#51, Brand#52, Brand#53,
+          Brand#54, Brand#55
+      p_type:
+        description: Type or category of the part
+      p_size:
+        description: Numeric size of the part
+      p_container:
+        description: Type of container used for the part
+        values: SM DRUM, JUMBO JAR, LG JAR, LG BOX, LG PACK, MED CAN, MED JAR, MED
+          DRUM, MED CASE, JUMBO CAN, SM BOX, WRAP JAR, WRAP CASE, MED BOX, JUMBO BAG,
+          JUMBO PKG, WRAP BAG, JUMBO PACK, MED BAG, SM PACK, SM PKG, SM BAG, WRAP
+          CAN, JUMBO BOX, MED PACK, SM JAR, JUMBO CASE, MED PKG, WRAP DRUM, LG CASE,
+          LG PKG, WRAP BOX, SM CAN, WRAP PKG, LG CAN, WRAP PACK, JUMBO DRUM, LG BAG,
+          SM CASE, LG DRUM
+      p_retailprice:
+        description: Retail price of the part
+      p_comment:
+        description: Free-text comment or description about the part
+  main.partsupp:
+    description: Stores the relationship between parts and suppliers, including availability
+      quantity, supply cost, and comments; used to track which suppliers provide which
+      parts and at what cost and quantity.
+    grain: one row per part-supplier combination (i.e., each row represents a specific
+      supplier providing a specific part)
+    auto_generated: true
+    columns:
+      ps_partkey:
+        description: Foreign key referencing the part being supplied
+      ps_suppkey:
+        description: Foreign key referencing the supplier providing the part
+      ps_availqty:
+        description: Available quantity of the part that the supplier can provide
+      ps_supplycost:
+        description: Cost per unit for the part supplied by this supplier
+      ps_comment:
+        description: Free-text comment regarding the part-supplier relationship
+  main.region:
+    description: Dimension table storing geographic regions used for categorizing
+      and analyzing data across different parts of the world.
+    grain: One row per unique region, identified by r_regionkey.
+    auto_generated: true
+    columns:
+      r_regionkey:
+        description: Unique numeric identifier for each region.
+      r_name:
+        description: Name of the region (e.g., continent or large geographic area).
+        values: EUROPE, MIDDLE EAST, AMERICA, AFRICA, ASIA
+      r_comment:
+        description: Free-text comment or description associated with the region,
+          possibly for internal reference or metadata.
+        caveats: Contains placeholder or test text; may not reflect production-ready
+          content.
+  main.supplier:
+    description: Contains information about suppliers, including their identifiers,
+      contact details, account balance, and associated nation.
+    grain: One row per supplier, uniquely identified by s_suppkey.
+    auto_generated: true
+    columns:
+      s_suppkey:
+        description: Unique identifier for the supplier.
+      s_name:
+        description: Name of the supplier.
+      s_address:
+        description: Physical address of the supplier.
+      s_nationkey:
+        description: Foreign key referencing the nation to which the supplier belongs.
+      s_phone:
+        description: Phone number of the supplier.
+      s_acctbal:
+        description: Account balance of the supplier (positive indicates credit, negative
+          indicates debt).
+      s_comment:
+        description: Free-text comment or notes about the supplier.

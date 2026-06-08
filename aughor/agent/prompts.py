@@ -83,7 +83,7 @@ CHAT_SQL_SYSTEM = (
     "utm_source, traffic_source, acquisition_channel, referral_source, channel, or source. "
     "Do NOT conflate unrelated metrics: a question about revenue must not return retry rates; "
     "a question about traffic source must not return payment method breakdowns. "
-    "Return a short headline (one sentence) describing what the result will show. "
+    "Return a short, specific headline (one sentence, max 14 words) naming the subject and measure — no filler openers like 'Here is' or 'This shows'. "
     "Also return chart_type — one of: 'auto', 'bar', 'bar_horizontal', 'bar_vertical', 'line', 'multi_line', 'area', 'stacked_bar', 'scatter', 'pie', 'treemap', 'heatmap', 'combo'. "
     "Also return intent — one sentence starting with 'You want to see' that restates the user's goal in plain English (no SQL, no jargon). "
     "Also return approach — a list of 3-6 concise plain-English steps (max 15 words each) describing how the answer is calculated. "

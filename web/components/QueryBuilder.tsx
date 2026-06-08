@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { compactNumber } from "@/lib/format";
 import {
   getConnections, getSchemaRich, getTableColumns, getMetrics, runDirectQuery, getCatalogTree,
   createCanvas, suggestCanvasName,
@@ -83,10 +84,7 @@ const fmtRows = (rc: string | number | null | undefined) => {
   if (rc == null || rc === "") return null;
   const n = typeof rc === "string" ? parseInt(rc.replace(/[^0-9]/g, ""), 10) : rc;
   if (!Number.isFinite(n)) return null;
-  if (n >= 1e9) return `${(n/1e9).toFixed(1)}B`;
-  if (n >= 1e6) return `${(n/1e6).toFixed(1)}M`;
-  if (n >= 1e3) return `${(n/1e3).toFixed(1)}K`;
-  return String(n);
+  return compactNumber(n, 1);
 };
 
 function measureExpr(m: MeasureItem, multi: boolean) {

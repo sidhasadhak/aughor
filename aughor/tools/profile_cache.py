@@ -37,7 +37,9 @@ def compute_schema_fingerprint(table_col_counts: dict[str, int]) -> str:
     the next explicit re-profile). Adding/removing tables will invalidate.
     """
     parts = sorted(f"{t}:{n}" for t, n in table_col_counts.items())
-    raw = "|".join(parts)
+    # Version prefix — bump when the profile schema changes so stale caches that
+    # lack new stats (distributions, period density) are rebuilt.
+    raw = "v3-grain|" + "|".join(parts)
     return hashlib.md5(raw.encode()).hexdigest()[:16]
 
 

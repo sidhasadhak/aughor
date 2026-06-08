@@ -186,7 +186,8 @@ headline: One sentence directly answering the original question. Specific, not v
   Bad: "The optimal discount rate depends on multiple factors."
 
 conclusion: 2–3 sentences expanding the headline with the most important supporting evidence.
-  Must cite specific numbers from the chain above. No hedging.
+  Lead with the answer and wrap each decisive number in **double asterisks** for bold
+  (e.g. **15–18%**, **$1.2M**). Must cite specific numbers from the chain above. No hedging.
 
 narrative: A flowing paragraph (4–6 sentences) that walks through the investigation as a story:
   what we found first, what that led us to investigate next, what the data showed at each step,

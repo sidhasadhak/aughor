@@ -82,6 +82,12 @@ For complex questions ("Why did revenue drop 8% last month?"), Aughor runs a ful
 
 Investigations are resumable — pause mid-run, switch tabs, come back later.
 
+**Cross-sectional diagnostics.** Vague-but-critical questions ("where are we losing money?", "which region is weakest?") have no time axis — Aughor detects these and runs a **dimensional weakness scan** (rank the money metric across franchise / region / product / segment, surface the lowest and most-concentrated values) instead of forcing a temporal anomaly frame.
+
+**Data-shape aware.** Framing reads the data's actual shape — numeric distributions (median/IQR), an auto-derived time grain (daily vs weekly vs quarterly from span + cadence), incomplete-trailing-period detection, and comparison windows clamped to data that actually exists — so it never compares against an empty period or reports a partial month as a crash.
+
+**The Brief.** Both Insight and Deep Analysis render as a clean single-column analytical brief — prose leads with the answer and bolds the key numbers, charts/tables are the only framed blocks, and the SQL/confidence/attribution machinery folds into one quiet "details" disclosure.
+
 ### Grounded NL2SQL — Trustworthy Generation
 
 Aughor doesn't just hand the schema to an LLM and hope. Every question runs through a grounding pipeline that narrows, structures, and verifies context so the model generates correct SQL on schemas it has never seen:
@@ -153,6 +159,7 @@ NL2SQL quality is validated against real benchmarks with ground-truth, not vibes
 
 - Dark-first Palantir Blueprint design tokens throughout
 - CSS custom properties for all palette, chart, and spacing values — single source of truth
+- **Single-source components** — ERD, Chart, Ontology, and Table each exist once, on a canonical contract, callable anywhere; shared `web/lib/{format,palette,tableName}` primitives so a formatting, colour, or table-name fix lands once and propagates everywhere
 - Type scale utilities: `.aug-text-h1/h2/h3`, `.aug-text-ui/sm/xs`, `.aug-text-mono`
 - Command palette (⌘K) — fuzzy search across navigation, recent investigations, schema tables
 - Ask Hero — centered textarea with mode toggle, stat strip, and recent investigation cards
@@ -254,8 +261,10 @@ aughor/
 ├── web/
 │   ├── app/            # Next.js App Router — layout, page, globals
 │   ├── components/     # 30+ components: ChatPanel, OntologyCanvas, QueryBuilder, …
-│   ├── lib/            # api.ts, useChat.ts, hooks
+│   ├── lib/            # api.ts, useChat.ts; format/palette/tableName shared primitives
 │   └── styles/         # tokens.css, type.css — design token system
+├── scripts/            # smoke.py (GET + Qdrant regression oracle), flows.py (write flows)
+├── tests/              # pytest units (e.g. the canonical table-name primitive)
 └── data/               # Persisted state (connections, history, episodes, ontology cache)
 ```
 
@@ -293,11 +302,13 @@ aughor/
 | genie-revamp | **Eval suite** — full-pipeline harness + real-scale TPC-H / TPC-DS / ClickBench harnesses (DuckDB-generated, execution-validated) + reference-free real-DB harness (self-consistency + LLM-judge) |
 | genie-revamp | **Trusted query templates** — Databricks-style verified assets; authoritative injection fixes reasoning gaps (fan-out, grain) prompt rules can't |
 | genie-revamp | Connection pooling · Google Sheets connector · Anthropic (Opus) fallback · light-mode fix · audit-log noise reduction · LLM-call batching |
+| genie-revamp | **Reusable component architecture** — one `<ERDiagram>` / `<Chart>` / `<OntologyGraph>` / `<DataTable>` on canonical contracts; shared `format` / `palette` / `tableName` primitives (backend + frontend); `smoke.py` + `flows.py` test harnesses; ~1,500 lines of duplication removed; 5 bugs fixed, 0 regressions; full `TEST_REPORT.md` |
 
 ### Coming Next
 
 | Feature | Why |
 |---|---|
+| **Motion / animation pass** | Tasteful, performance-conscious transitions throughout — subtle micro-interactions that make the platform feel alive |
 | **Trusted-template productization** | UI/explorer flow to curate + review templates per connection; "Verified" trust badge; vector retrieval + typed parameterization |
 | **Sprint 48 — Enterprise Hardening** | OAuth2/OIDC, RBAC, workspace tenancy — multi-user ready |
 | **Production query timeouts** | Cancel runaway generated queries on real warehouses (a real plug-and-play hazard) |

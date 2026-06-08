@@ -26,10 +26,12 @@ from aughor.agent.nodes import (
 from aughor.agent.investigate import (
     ada_intake,
     ada_baseline,
+    ada_cross_section,
     ada_decompose,
     ada_dimensional,
     ada_behavioral,
     ada_synthesize,
+    route_after_intake,
     route_after_baseline,
     route_after_decompose,
     route_after_dimensional,
@@ -67,13 +69,18 @@ def _compile(execute_node, scan_node, explore_execute_node, explore_scan_subq_no
     graph.add_node("exploratory_scan", scan_node)
     graph.add_node("ada_intake",      ada.get("intake",      ada_intake))
     graph.add_node("ada_baseline",    ada.get("baseline",    lambda s: {"investigation_phases": s.get("investigation_phases", [])}))
+    graph.add_node("ada_cross_section", ada.get("cross_section", lambda s: {"investigation_phases": s.get("investigation_phases", [])}))
     graph.add_node("ada_decompose",   ada.get("decompose",   lambda s: {"investigation_phases": s.get("investigation_phases", [])}))
     graph.add_node("ada_dimensional", ada.get("dimensional", lambda s: {"investigation_phases": s.get("investigation_phases", [])}))
     graph.add_node("ada_behavioral",  ada.get("behavioral",  lambda s: {"investigation_phases": s.get("investigation_phases", [])}))
     graph.add_node("ada_synthesize",  ada_synthesize)
 
     graph.add_edge("exploratory_scan",  "ada_intake")
-    graph.add_edge("ada_intake",        "ada_baseline")
+    graph.add_conditional_edges(
+        "ada_intake",
+        route_after_intake,
+        {"ada_cross_section": "ada_cross_section", "ada_baseline": "ada_baseline"},
+    )
 
     graph.add_conditional_edges(
         "ada_baseline",
@@ -91,6 +98,7 @@ def _compile(execute_node, scan_node, explore_execute_node, explore_scan_subq_no
         {"ada_behavioral": "ada_behavioral", "ada_synthesize": "ada_synthesize"},
     )
 
+    graph.add_edge("ada_cross_section", "ada_synthesize")
     graph.add_edge("ada_behavioral",    "ada_synthesize")
     graph.add_edge("ada_synthesize",    END)
 
@@ -162,6 +170,7 @@ def build_graph(conn: duckdb.DuckDBPyConnection):
     db._connection_id = "cli"
     ada_nodes = {
         "baseline":   partial(ada_baseline,   conn=db),
+        "cross_section": partial(ada_cross_section, conn=db),
         "decompose":  partial(ada_decompose,  conn=db),
         "dimensional": partial(ada_dimensional, conn=db),
         "behavioral": partial(ada_behavioral,  conn=db),
@@ -179,6 +188,7 @@ def build_graph_generic(db, hitl: bool = False):
     """Build the graph bound to any DatabaseConnection instance."""
     ada_nodes = {
         "baseline":    partial(ada_baseline,    conn=db),
+        "cross_section": partial(ada_cross_section, conn=db),
         "decompose":   partial(ada_decompose,   conn=db),
         "dimensional": partial(ada_dimensional, conn=db),
         "behavioral":  partial(ada_behavioral,  conn=db),

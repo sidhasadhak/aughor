@@ -32,6 +32,7 @@ from aughor.ontology.models import (
     OntologyMetric,
     OntologyRelationship,
 )
+from aughor.tools.table_names import bare, leaf, resolve_in
 
 # ── Identifier helpers ────────────────────────────────────────────────────────
 
@@ -59,8 +60,8 @@ def _table_to_entity_name(table: str) -> str:
       bc_orders         → Order
       stg_product_catalog → ProductCatalog
     """
-    # Drop schema qualifier
-    base = table.rsplit(".", 1)[-1].strip()
+    # Drop schema qualifier (case-preserved leaf — feeds PascalCasing below)
+    base = leaf(table)
     # Strip DWH prefixes iteratively (some tables have two: stg_dim_customer)
     for _ in range(3):
         cleaned = _DWH_PREFIX.sub("", base)
@@ -111,7 +112,7 @@ def _infer_entity_type(
 
     Returns one of: reference_data | business_object | event | standalone
     """
-    base = table.rsplit(".", 1)[-1].lower()
+    base = bare(table)
     # fact_ / fct_ prefix always signals an event/measure table
     if _FACT_PREFIX.match(base):
         return "event"
@@ -915,8 +916,12 @@ def extract_structural_ontology(
         t2, c2 = join["t2"], join["c2"]
         confidence = "exact" if join.get("match") == "exact" else "inferred"
 
-        from_entity = table_to_entity.get(t1)
-        to_entity = table_to_entity.get(t2)
+        # Resolve to an entity tolerant of qualified-vs-bare table names (the join
+        # map can carry schema-qualified names while table_to_entity is keyed by
+        # bare names). Canonical resolution lives in tools.table_names so this can
+        # never silently skip joins again.
+        from_entity = resolve_in(table_to_entity, t1)
+        to_entity = resolve_in(table_to_entity, t2)
 
         # Both sides must resolve to a known entity
         if not from_entity or not to_entity or from_entity == to_entity:

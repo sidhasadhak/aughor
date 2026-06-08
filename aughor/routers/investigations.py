@@ -316,7 +316,7 @@ class _FollowUpBase(BaseModel):
 
 class _InsightResult(BaseModel):
     """Rich analytical insight generated from SQL results — anomaly detection, trend, comparison."""
-    narrative: str = Field(default="", description="2-3 sentence analytical interpretation of the data.")
+    narrative: str = Field(default="", description="2-3 tight sentences that lead with the answer and wrap decisive numbers in **bold**.")
     anomalies: list[str] = Field(default_factory=list, description="List of detected anomalies or unexpected patterns.")
     trend: str = Field(default="stable", description="One of: up, down, stable, mixed.")
     confidence: str = Field(default="medium", description="One of: high, medium, low.")
@@ -338,6 +338,111 @@ class _ClarifyingQuestions(BaseModel):
     questions: list[str] = Field(default_factory=list, description="1-2 concise clarifying questions (max 15 words each).")
     context_note: str = Field(default="", description="One sentence explaining why these questions matter.")
 # ── Chat streaming ────────────────────────────────────────────────────────────
+
+# ── Headline grounding ────────────────────────────────────────────────────────
+# The coder emits a headline alongside the SQL BEFORE execution (a prediction), so it
+# can name a leader/number the actual rows contradict ("AMERICA leading at $1.62B" when
+# the data shows EUROPE at $45.8B). We validate the emitted headline against the real
+# rows and replace it with a grounded one ONLY on a genuine contradiction.
+_HL_NUM_RE = re.compile(r"-?\$?\s?([\d][\d,]*(?:\.\d+)?)\s*([bmk])?\b", re.I)
+_LEADER_RE = re.compile(r"\b(lead|leads|leading|tops?|topping|highest|most|largest|biggest|#1)\b", re.I)
+_MONEY_COL_RE = re.compile(r"revenue|sales|price|value|spend|cost|profit|margin|gmv|income|amount|aov", re.I)
+
+
+def _hl_to_float(v):
+    try:
+        return float(str(v).replace(",", "").replace("$", "").strip())
+    except Exception:
+        return None
+
+
+def _headline_numbers(text):
+    out = []
+    for m in _HL_NUM_RE.finditer(text or ""):
+        try:
+            out.append(float(m.group(1).replace(",", "")) * {"b": 1e9, "m": 1e6, "k": 1e3}.get((m.group(2) or "").lower(), 1.0))
+        except Exception:
+            pass
+    return out
+
+
+def _col_is_numeric(rows, idx):
+    return any(idx < len(r) and _hl_to_float(r[idx]) is not None for r in rows[:8])
+
+
+def _approx_in(x, pool, tol=0.02):
+    return any((abs(x) < 1 if p == 0 else abs(x - p) / abs(p) <= tol) for p in pool)
+
+
+def _humanize_col(col):
+    return re.sub(r"_+", " ", str(col or "")).strip().title()
+
+
+def _fmt_value(col, v):
+    f = _hl_to_float(v)
+    if f is None:
+        return str(v)
+    money = bool(_MONEY_COL_RE.search(str(col or "")))
+    a = abs(f)
+    if a >= 1e9:
+        s = f"{f / 1e9:.2f}B"
+    elif a >= 1e6:
+        s = f"{f / 1e6:.2f}M"
+    elif f == int(f):
+        s = f"{int(f):,}"
+    else:
+        s = f"{f:,.2f}"
+    return ("$" + s) if money else s
+
+
+def _primary_num_idx(columns, rows):
+    fallback = None
+    for i, c in enumerate(columns):
+        if not _col_is_numeric(rows, i):
+            continue
+        cl = str(c).lower()
+        if re.search(r"(^|_)(id|key|sk|code|count|n)($|_)", cl) or re.search(r"pct|percent|share|_of_total", cl):
+            fallback = i if fallback is None else fallback
+            continue
+        return i
+    return fallback
+
+
+def _ground_headline(headline, columns, rows):
+    """Return the headline unchanged when it is consistent with the data; otherwise a
+    grounded replacement built from the actual top row. Conservative: only fires on a
+    clear contradiction (a sizable number matching nothing — not even a column sum/mean
+    — or a superlative naming a non-leader entity)."""
+    if not headline or not rows or not columns:
+        return headline
+    # pool of acceptable numbers: individual cell values (top rows) + each column's sum & mean
+    pool = [f for r in rows[:8] for f in (_hl_to_float(v) for v in r) if f is not None]
+    for ci in range(len(columns)):
+        vals = [_hl_to_float(r[ci]) for r in rows if ci < len(r)]
+        vals = [v for v in vals if v is not None]
+        if vals:
+            pool.append(sum(vals))
+            pool.append(sum(vals) / len(vals))
+    unmatched = [n for n in _headline_numbers(headline) if abs(n) >= 100 and not _approx_in(n, pool)]
+    cat_idx = next((i for i in range(len(columns)) if not _col_is_numeric(rows, i)), None)
+    leader_bad = False
+    if cat_idx is not None and _LEADER_RE.search(headline) and cat_idx < len(rows[0]):
+        leader = str(rows[0][cat_idx])
+        named = [str(r[cat_idx]) for r in rows[:8]
+                 if cat_idx < len(r) and str(r[cat_idx]) and str(r[cat_idx]).lower() in headline.lower()]
+        if named and leader.lower() not in headline.lower():
+            leader_bad = True
+    if not unmatched and not leader_bad:
+        return headline
+    num_idx = _primary_num_idx(columns, rows)
+    if num_idx is None or num_idx >= len(rows[0]):
+        return headline
+    fval = _fmt_value(columns[num_idx], rows[0][num_idx])
+    metric = _humanize_col(columns[num_idx])
+    if cat_idx is not None and len(rows) > 1 and cat_idx < len(rows[0]):
+        return f"{rows[0][cat_idx]} leads {metric.lower()} at {fval}"
+    return f"{metric}: {fval}"
+
 
 async def _stream_chat(
     question: str,
@@ -709,9 +814,12 @@ async def _stream_chat(
             yield _sse("error", {"message": result.error})
             return
 
+        # Ground the headline in the ACTUAL rows — the coder's headline is a pre-execution
+        # prediction and can contradict the data it ran on.
+        _grounded_headline = _ground_headline(answer.headline, result.columns, result.rows)
         yield _sse("columns", {"columns": result.columns})
         yield _sse("rows", {"rows": result.rows[:10000]})
-        yield _sse("headline", {"headline": answer.headline})
+        yield _sse("headline", {"headline": _grounded_headline})
         yield _sse("chart_type", {"chart_type": answer.chart_type})
         if answer.chart_config:
             yield _sse("chart_config", {"chart_config": answer.chart_config})
@@ -730,7 +838,7 @@ async def _stream_chat(
         try:
             _chat_inv_id = await asyncio.to_thread(
                 lambda: save_chat_turn(
-                    question=question, connection_id=connection_id, headline=answer.headline or question,
+                    question=question, connection_id=connection_id, headline=_grounded_headline or question,
                     sql=final_sql or "", session_id=session_id, columns=result.columns,
                     rows=result.rows, chart_type=answer.chart_type,
                     tables_used=_extract_tables(final_sql or ""),
@@ -759,10 +867,15 @@ async def _stream_chat(
             )
             if _insight_worth_it:
                 _system = (
-                    "You are an analytical data interpreter. Given a user question, the SQL that answered it, "
-                    "and a sample of the results: (1) produce a concise analytical insight — detect anomalies "
-                    "(unexpected values, spikes, drops, outliers), describe the overall trend, state your "
-                    "confidence; and (2) suggest exactly 3 concise follow-up data questions (max 12 words each)."
+                    "You are an analytical data interpreter writing for a clean published brief. "
+                    "Given a user question, the SQL that answered it, and a sample of the results: "
+                    "(1) produce a tight analytical insight (2-3 sentences) that LEADS WITH THE ANSWER, "
+                    "wraps each decisive number in **double asterisks** for bold (e.g. **$2,112**, **+18%**), "
+                    "names any genuine anomaly (unexpected value, spike, drop, outlier) in plain words, and "
+                    "states the overall trend and your confidence. Start with the finding — no preamble, no "
+                    "hedging, no 'the data shows' scaffolding. Use ONLY numbers present in the results; never "
+                    "invent values, and bold never licenses invented precision. "
+                    "Then (2) suggest exactly 3 concise follow-up data questions (max 12 words each)."
                 )
             else:
                 _system = (
@@ -931,9 +1044,18 @@ async def _stream_investigation(
         data_catalog = ""
         try:
             from aughor.tools.data_catalog import build_data_catalog
-            from aughor.tools.schema import _parse_schema_tables
+            from aughor.tools.schema import _parse_schema_tables, fk_neighbor_expand, temporal_dimension_tables
             linked_tables = list(_parse_schema_tables(schema).keys())
             if linked_tables:
+                # Complete the join paths BEFORE building the catalog (mirrors the /chat path):
+                # schema-linking picks ~4 tables by keyword, missing bridge/parent tables a join
+                # needs — e.g. the timestamp on `orders` when revenue is on `invoices`. Without
+                # this the ADA coder can't see the date column and hallucinates one on the metric
+                # table. Expand against the FULL schema, capped at 10 tables.
+                for _dt in temporal_dimension_tables(full_schema, linked_tables, question):
+                    if _dt not in linked_tables:
+                        linked_tables.append(_dt)
+                linked_tables = fk_neighbor_expand(full_schema, linked_tables, cap=10)
                 data_catalog = await asyncio.to_thread(
                     lambda: build_data_catalog(db, linked_tables)
                 )

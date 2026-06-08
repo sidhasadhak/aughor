@@ -110,6 +110,30 @@ class LocalUploadConnection(Connector):
         self._seeded: set[tuple[str, str]] = set()
         self._seed_from_duckdb()        # sample/demo tables (read-only)
         self._reload_existing_files()   # user uploads (override seeds on clash)
+        self._set_search_path()         # resolve bare names across user schemas
+
+    def _set_search_path(self) -> None:
+        """Point search_path at every user schema so bare table names resolve.
+
+        The Workspace is an in-memory DuckDB that can hold several schemas at once
+        (e.g. the seeded ``bakehouse`` + ``ecommerce`` sample schemas). With no
+        single ``schema_name`` set, DuckDB leaves search_path at the default and
+        every unqualified query the explorer/chat generates fails with
+        "table does not exist" — the source of the Workspace's runaway error count.
+        Including all user schemas lets ``SELECT … FROM order_items`` resolve to
+        ``ecommerce.order_items`` without fully-qualified names."""
+        try:
+            schemas = [
+                r[0] for r in self._duckdb.execute(
+                    "SELECT DISTINCT schema_name FROM duckdb_tables() WHERE internal = false"
+                ).fetchall()
+            ]
+            if "main" not in schemas:
+                schemas.append("main")
+            if schemas:
+                self._duckdb.execute(f"SET search_path = '{','.join(schemas)}'")
+        except Exception:
+            pass  # best-effort — never block the Workspace on schema routing
 
     def _seed_from_duckdb(self) -> None:
         """Materialize tables from a read-only seed DuckDB file into this
@@ -451,6 +475,7 @@ class LocalUploadConnection(Connector):
         clone._seeded = set()
         clone._seed_from_duckdb()
         clone._reload_existing_files()
+        clone._set_search_path()
         return clone
 
     def dry_run(self, sql: str) -> tuple[bool, str]:
