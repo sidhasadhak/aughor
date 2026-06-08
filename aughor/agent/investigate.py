@@ -1419,7 +1419,7 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
     )
     try:
         if not _has_usable_data(results): raise RuntimeError("skip narrator — no usable data")
-        interpretation: PhaseInterpretation = _provider("narrator").complete(
+        interpretation: PhaseInterpretation = _provider("fast").complete(
             system="You are a senior data analyst interpreting query results. Be precise. Cite real numbers.",
             user=interpret_prompt,
             response_model=PhaseInterpretation,
@@ -1685,7 +1685,7 @@ def ada_decompose(state: AgentState, conn: "DatabaseConnection") -> dict:
     )
     try:
         if not _has_usable_data(results): raise RuntimeError("skip narrator — no usable data")
-        interpretation: PhaseInterpretation = _provider("narrator").complete(
+        interpretation: PhaseInterpretation = _provider("fast").complete(
             system="Interpret metric decomposition results. State clearly whether volume or value drove the change.",
             user=interpret_prompt,
             response_model=PhaseInterpretation,
@@ -1815,7 +1815,7 @@ def ada_dimensional(state: AgentState, conn: "DatabaseConnection") -> dict:
     )
     try:
         if not _has_usable_data(results): raise RuntimeError("skip narrator — no usable data")
-        interpretation: PhaseInterpretation = _provider("narrator").complete(
+        interpretation: PhaseInterpretation = _provider("fast").complete(
             system="Interpret contribution analysis. Identify concentrated vs. diffuse decline.",
             user=interpret_prompt,
             response_model=PhaseInterpretation,
@@ -1945,7 +1945,7 @@ def ada_behavioral(state: AgentState, conn: "DatabaseConnection") -> dict:
     )
     try:
         if not _has_usable_data(results): raise RuntimeError("skip narrator — no usable data")
-        interpretation: PhaseInterpretation = _provider("narrator").complete(
+        interpretation: PhaseInterpretation = _provider("fast").complete(
             system="Interpret behavioral and operational findings. Be specific about what changed.",
             user=interpret_prompt,
             response_model=PhaseInterpretation,
@@ -2031,7 +2031,7 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection") -> dict:
     results_text = _results_to_text([r for _, r in results])
     try:
         if not _has_usable_data(results): raise RuntimeError("skip narrator — no usable data")
-        interpretation: PhaseInterpretation = _provider("narrator").complete(
+        interpretation: PhaseInterpretation = _provider("fast").complete(
             system="Interpret a cross-sectional weakness scan. Name the weakest values and any concentration; be honest about healthy areas.",
             user=CROSS_SECTION_INTERPRET_PROMPT.format(
                 question=question, metric_label=metric_label, results_text=results_text,
