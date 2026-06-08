@@ -604,13 +604,19 @@ type EmptyReason =
   | { kind: "never" }
   | { kind: "running"; queries: number; insights: number; phase: string }
   | { kind: "failed"; error: string | null }
+  | { kind: "ontologyFailed"; note: string | null }
   | { kind: "completeEmpty"; insights: number };
 
 function emptyReason(status: ExplorerStatus | null): EmptyReason {
   const phase = status?.phase;
   if (!status || !phase || phase === "pending") return { kind: "never" };
   if (phase === "failed")   return { kind: "failed", error: status.error };
-  if (phase === "complete") return { kind: "completeEmpty", insights: status.insights_found };
+  if (phase === "complete") {
+    // Phase-8 ran the gate but its prerequisite ontology couldn't be built — a
+    // specific, retryable failure, not just "nothing generated yet".
+    if (status.domain_intel_skipped) return { kind: "ontologyFailed", note: status.domain_intel_note ?? null };
+    return { kind: "completeEmpty", insights: status.insights_found };
+  }
   return { kind: "running", queries: status.queries_executed, insights: status.insights_found, phase };
 }
 
@@ -661,6 +667,11 @@ function BriefingEmpty({
         ? `The last run stopped: ${reason.error}. Restart to try discovering domain intelligence again.`
         : "The last exploration run did not complete. Restart to try again.";
       cta   = { label: "Restart exploration", onClick: onStart };
+      break;
+    case "ontologyFailed":
+      title = "Intelligence couldn't be built";
+      body  = `${reason.note || "Domain intelligence is derived from an ontology (object model) of your schema, and that build didn't succeed — usually the schema is too sparse to model."} Rebuild to try again, or query ${scope} directly via Ask or Investigate.`;
+      cta   = { label: "Rebuild & retry", onClick: onTrigger };
       break;
     case "completeEmpty":
       title = "No domain intelligence yet";

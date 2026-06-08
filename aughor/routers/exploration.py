@@ -114,6 +114,8 @@ def get_exploration_status(conn_id: str):
         "started_at":   state.get("started_at"),
         "completed_at": state.get("completed_at"),
         "error": None,
+        "domain_intel_skipped": state.get("domain_intel_skipped", False),
+        "domain_intel_note": state.get("domain_intel_note"),
     }
 
 
@@ -181,6 +183,24 @@ def get_connection_patterns(conn_id: str, refresh: bool = False, schema: str | N
     by_domain = _expl_store.get_domain_insights(conn_id)
     if schema:
         by_domain = _filter_by_schema(by_domain, conn_id, schema)
+    patterns = get_patterns(conn_id, by_domain, force_refresh=refresh)
+    return {"patterns": patterns, "count": len(patterns)}
+
+
+@router.get("/exploration/canvas/{canvas_id}/patterns")
+def get_canvas_patterns(canvas_id: str, refresh: bool = False):
+    """Return patterns extracted from a Canvas's curated-table domain intelligence —
+    canvas-scoped counterpart to the connection patterns endpoint (Hub scope consistency)."""
+    from aughor.explorer import store as _expl_store
+    from aughor.knowledge.patterns import get_patterns
+    from aughor.canvas.store import get_canvas
+
+    canvas = get_canvas(canvas_id)
+    if not canvas:
+        raise HTTPException(status_code=404, detail="Canvas not found")
+
+    by_domain = _expl_store.get_domain_insights_canvas(canvas_id)
+    conn_id = canvas.primary_connection_id or ""
     patterns = get_patterns(conn_id, by_domain, force_refresh=refresh)
     return {"patterns": patterns, "count": len(patterns)}
 
@@ -498,6 +518,8 @@ def get_canvas_exploration_status(canvas_id: str):
         "insights_found": len(state.get("insights", [])),
         "queries_executed": 0, "facts_discovered": 0,
         "started_at": None, "completed_at": None, "error": None,
+        "domain_intel_skipped": state.get("domain_intel_skipped", False),
+        "domain_intel_note": state.get("domain_intel_note"),
     }
 
 

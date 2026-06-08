@@ -136,6 +136,12 @@ class ExplorationStatus:
     completed_at: Optional[str] = None
     error: Optional[str] = None
 
+    # Phase 8 (domain intelligence) can be skipped when its prerequisite ontology
+    # fails to build — without this the run still completes with 0 insights and the
+    # UI can't tell "never generated" from "couldn't generate". Surface the reason.
+    domain_intel_skipped: bool = False
+    domain_intel_note: Optional[str] = None
+
     def to_dict(self) -> dict:
         return {
             "connection_id": self.connection_id,
@@ -157,4 +163,6 @@ class ExplorationStatus:
             "started_at": self.started_at,
             "completed_at": self.completed_at,
             "error": self.error,
+            "domain_intel_skipped": self.domain_intel_skipped,
+            "domain_intel_note": self.domain_intel_note,
         }

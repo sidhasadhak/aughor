@@ -3,9 +3,11 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import {
   getDomainInsights,
+  getCanvasDomainInsights,
   getOrgIntelligence,
   getSchemaProfile,
   getPatterns,
+  getCanvasPatterns,
   type DomainInsights,
   type ExplorationInsight,
   type OrgInsight,
@@ -217,9 +219,11 @@ function PatternCard({ pattern, domainFilter }: { pattern: Pattern; domainFilter
 
 function PatternsTab({
   connectionId,
+  canvasId,
   domain,
 }: {
   connectionId: string;
+  canvasId?: string;
   domain: string;
 }) {
   const [patterns, setPatterns] = useState<Pattern[]>([]);
@@ -230,7 +234,7 @@ function PatternsTab({
   const load = useCallback(async (refresh = false) => {
     if (refresh) setRefreshing(true); else setLoading(true);
     try {
-      const res = await getPatterns(connectionId, refresh);
+      const res = canvasId ? await getCanvasPatterns(canvasId, refresh) : await getPatterns(connectionId, refresh);
       setPatterns(res.patterns ?? []);
     } catch {
       setPatterns([]);
@@ -238,7 +242,7 @@ function PatternsTab({
       setLoading(false);
       setRefreshing(false);
     }
-  }, [connectionId]);
+  }, [connectionId, canvasId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -575,12 +579,14 @@ function DomainProfile({
   data,
   orgInsights,
   connectionId,
+  canvasId,
   onBack,
 }: {
   domain: string;
   data: DomainInsights;
   orgInsights: OrgInsight[];
   connectionId: string;
+  canvasId?: string;
   onBack: () => void;
 }) {
   const [tab, setTab] = useState<ProfileTab>("overview");
@@ -812,7 +818,7 @@ function DomainProfile({
 
         {/* ── PATTERNS ── */}
         {tab === "patterns" && (
-          <PatternsTab connectionId={connectionId} domain={domain} />
+          <PatternsTab connectionId={connectionId} canvasId={canvasId} domain={domain} />
         )}
 
         {/* ── ORG INTEL ── */}
@@ -1147,7 +1153,7 @@ function SynthesisHome({
 
 // ── Main panel ─────────────────────────────────────────────────────────────────
 
-export function IntelligenceHub({ connectionId }: { connectionId: string }) {
+export function IntelligenceHub({ connectionId, canvasId }: { connectionId: string; canvasId?: string }) {
   const [domainData, setDomainData] = useState<Record<string, DomainInsights>>({});
   const [orgInsights, setOrgInsights] = useState<OrgInsight[]>([]);
   const [hubPatterns, setHubPatterns] = useState<Pattern[]>([]);
@@ -1158,10 +1164,13 @@ export function IntelligenceHub({ connectionId }: { connectionId: string }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
+      // Canvas scope: brief/synthesise only the canvas's curated-table intelligence,
+      // keeping the Hub consistent with the canvas-scoped Briefing + Domains.
       const [domains, org, pat] = await Promise.all([
-        getDomainInsights(connectionId),
+        canvasId ? getCanvasDomainInsights(canvasId) : getDomainInsights(connectionId),
         getOrgIntelligence(),
-        getPatterns(connectionId).then(r => r.patterns ?? []).catch(() => [] as Pattern[]),
+        (canvasId ? getCanvasPatterns(canvasId) : getPatterns(connectionId))
+          .then(r => r.patterns ?? []).catch(() => [] as Pattern[]),
       ]);
       setDomainData(domains);
       setOrgInsights(org);
@@ -1173,7 +1182,7 @@ export function IntelligenceHub({ connectionId }: { connectionId: string }) {
     } finally {
       setLoading(false);
     }
-  }, [connectionId]);
+  }, [connectionId, canvasId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -1288,6 +1297,7 @@ export function IntelligenceHub({ connectionId }: { connectionId: string }) {
           data={domainData[selectedDomain]}
           orgInsights={orgInsights}
           connectionId={connectionId}
+          canvasId={canvasId}
           onBack={() => setSelectedDomain(null)}
         />
       ) : (
