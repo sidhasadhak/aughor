@@ -150,8 +150,14 @@ export function Chart({
   // For change metrics, prefer the change column as the primary numeric
   // ONLY when there is a categorical column (series dimension).
   // When no catCol exists, plot the base metric (AOV, revenue) not the change %.
-  const catCol  = catCols[0];
-  const catCol2 = catCols[1];
+  // Prefer a human-readable label over an opaque id for the category axis: "Top
+  // products" should plot the product NAME, not product_id, when both are present.
+  const ID_COL   = /(^|_)(id|key|sk|pk|code|uuid|guid|hash)$/i;
+  const NAME_COL = /(name|title|label|desc|description|channel|category|region|country|city|state|store|product|customer|item|page|segment|brand|merchant|franchise|email|url)/i;
+  const catCol  = catCols.find(c => NAME_COL.test(c) && !ID_COL.test(c))
+                ?? catCols.find(c => !ID_COL.test(c))
+                ?? catCols[0];
+  const catCol2 = catCols.find(c => c !== catCol) ?? catCols[1];
   const CHANGE_PREFER_COL = /(change|delta|growth|pct_change|percent_change|_chg$|_diff$)/i;
   const baseNumCol = numericCols.find(c => PREFER_COL.test(c)) ?? numericCols.find(c => !CHANGE_METRIC_COL.test(c)) ?? numericCols[0];
   const changeNumCol = numericCols.find(c => CHANGE_PREFER_COL.test(c)) ?? numericCols.find(c => PREFER_COL.test(c)) ?? numericCols[0];
