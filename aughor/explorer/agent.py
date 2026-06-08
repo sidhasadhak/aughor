@@ -67,6 +67,98 @@ _TERMINAL_SUBS = ("cancel", "fail", "reject", "expir", "close", "archiv", "delet
 _ACTIVE_SUBS   = ("pend", "process", "approv", "creat", "open", "activ", "run", "sched", "place", "accept", "new")
 
 
+# ── Temporal scope — Tier 0: role-aware recency ───────────────────────────────────
+# Anchor the analytical window's recency on the CONSENSUS TRAILING EDGE OF ACTIVITY
+# among measure-bearing event/fact tables — never MAX(any date column). A calendar /
+# date-dimension table holds one row per day far into the future and is uniformly dense
+# (so effective_date_range == its full span); anchoring on the global MAX would push the
+# window past the last real fact and every fact filter returns zero rows ("no data"
+# briefings). See docs/ADAPTIVE_TEMPORAL_SCOPE.md §3.
+
+_SENTINEL_MAX_YEAR = 9999
+_SENTINEL_MIN_YEAR = 1900
+_ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}")
+
+
+def _profile_field(prof, name):
+    """Read a field from a TableProfile/ColumnProfile that may be a dataclass or a dict."""
+    if isinstance(prof, dict):
+        return prof.get(name)
+    return getattr(prof, name, None)
+
+
+def _table_recency(prof):
+    """Sentinel-filtered recency for a table — (YYYY-MM-DD, is_effective) or (None, False).
+    Prefers the dense ``effective_date_range`` over the raw ``date_range``."""
+    for key, is_eff in (("effective_date_range", True), ("date_range", False)):
+        rng = _profile_field(prof, key)
+        if rng and len(rng) >= 2 and _ISO_DATE.match(str(rng[1])):
+            head = str(rng[1])[:10]
+            try:
+                year = int(head[:4])
+            except ValueError:
+                continue
+            if year >= _SENTINEL_MAX_YEAR or year <= _SENTINEL_MIN_YEAR:
+                continue  # 9999-12-31 / 1900-01-01 / epoch placeholder — not real activity
+            return head, is_eff
+    return None, False
+
+
+def _table_has_measure(cols) -> bool:
+    """True when the table has ≥1 additive measure column — what makes it an *activity*
+    (fact/event) table rather than a calendar/dimension spine. Tolerates ``cols`` as a
+    dict {name: profile} or a list of profiles, each a dataclass or a dict."""
+    if not cols:
+        return False
+    vals = cols.values() if isinstance(cols, dict) else cols
+    return any(_profile_field(c, "semantic_type") == "measure" for c in vals)
+
+
+def _role_aware_time_window(tp, cp=None, jmap=None, months: int = 12):
+    """Choose the analytical window by anchoring recency on *activity* tables.
+
+    Returns ``(start_iso, end_iso, discrepancy)`` where ``discrepancy`` is a list of
+    ``(table, recency)`` for non-activity tables (calendar / dimension spines) whose
+    dates extend *past* the chosen activity edge — a data-quality signal worth
+    surfacing. Returns ``(None, None, [])`` when no usable, non-sentinel date range
+    exists. ``jmap`` is accepted for a future join-graph in-degree refinement; the
+    measure signal (``cp``) is the primary catch today.
+    """
+    from datetime import timedelta as _td
+
+    activity, spine = [], []   # each: (recency, is_effective, table)
+    for table, prof in (tp or {}).items():
+        rec, is_eff = _table_recency(prof)
+        if rec is None:
+            continue
+        if _table_has_measure((cp or {}).get(table)):
+            activity.append((rec, is_eff, table))
+        else:
+            spine.append((rec, is_eff, table))
+
+    # Fallback: if column semantics never flagged a measure (profiler ran without them),
+    # don't regress — anchor on every dated table, still sentinel-filtered.
+    pool = activity or spine
+    if not pool:
+        return None, None, []
+
+    best_rec, best_eff, _ = max(pool, key=lambda r: r[0])
+    discrepancy = sorted(
+        ((t, r) for (r, _e, t) in spine if r > best_rec),
+        key=lambda x: x[1], reverse=True,
+    )
+
+    try:
+        max_d = datetime.fromisoformat(best_rec)
+        if best_eff:
+            # an effective max is month-truncated — nudge forward to cover the final month
+            max_d = max_d + _td(days=31)
+        start_d = max_d - _td(days=round(months * 30.4375))
+        return start_d.strftime("%Y-%m-%d"), max_d.strftime("%Y-%m-%d"), discrepancy
+    except (ValueError, TypeError):
+        return None, None, []
+
+
 class SchemaExplorer:
     """
     Background schema exploration agent.
@@ -167,61 +259,27 @@ class SchemaExplorer:
 
     # ── Time window helpers ───────────────────────────────────────────────────
 
-    def _compute_time_window(self, tp: dict) -> Optional[tuple[str, str]]:
+    def _compute_time_window(
+        self, tp: dict, cp: Optional[dict] = None, jmap: Optional[dict] = None,
+    ) -> Optional[tuple[str, str]]:
+        """Anchor the 12-month window's recency on the consensus trailing edge of
+        *activity* (measure-bearing event/fact tables), excluding calendar/dimension
+        spines — so a date dimension running into the future can't push the window past
+        the last real fact and yield empty ("no data") briefings. Sentinel dates
+        (9999/1900/epoch) are filtered, and the dense ``effective_date_range`` is
+        preferred over the raw ``date_range``. See docs/ADAPTIVE_TEMPORAL_SCOPE.md §3.
         """
-        Scan table profiles for the most recent DENSE timestamp across the schema.
-        Returns (start_iso, end_iso) where end anchors on the latest month that
-        actually holds data and start = end - 12 months, or None if no date range
-        info is available in any profile.
-
-        Crucially we prefer the profiler's ``effective_date_range`` (the dense
-        region) over the raw ``date_range``.  A table whose real data ends in 2018
-        but has 3 stray 2020 rows reports date_range=…2020 yet
-        effective_date_range=…2018 — anchoring on the latter means "last 12 months"
-        returns real rows instead of the empty 2019–2020 gap.
-        """
-        from datetime import timedelta
-        import re as _re
-
-        _ISO_PAT = _re.compile(r"^\d{4}-\d{2}-\d{2}")
-
-        def _field(prof, name):
-            if isinstance(prof, dict):
-                return prof.get(name)
-            return getattr(prof, name, None)
-
-        best_end: Optional[str] = None
-        best_is_effective = False
-
-        for tbl_profile in tp.values():
-            edr = _field(tbl_profile, "effective_date_range")
-            dr = _field(tbl_profile, "date_range")
-            use: Optional[str] = None
-            is_eff = False
-            if edr and len(edr) >= 2 and _ISO_PAT.match(str(edr[1])):
-                use, is_eff = str(edr[1]), True
-            elif dr and len(dr) >= 2 and _ISO_PAT.match(str(dr[1])):
-                use = str(dr[1])
-            if use is None:
-                continue
-            if best_end is None or use > best_end:
-                best_end, best_is_effective = use, is_eff
-
-        if not best_end:
-            return None
-
-        try:
-            # Parse to date — accept "YYYY-MM-DD..." (timestamps too)
-            max_d = datetime.fromisoformat(best_end[:10])
-            # An effective max is month-truncated (e.g. 2018-12-01); nudge forward
-            # ~1 month so the window covers the full final dense month.
-            if best_is_effective:
-                max_d = max_d + timedelta(days=31)
-            # Subtract 12 months by going back 365 days (simple, avoids calendar edge cases)
-            start_d = max_d - timedelta(days=365)
-            return start_d.strftime("%Y-%m-%d"), max_d.strftime("%Y-%m-%d")
-        except (ValueError, TypeError):
-            return None
+        start, end, discrepancy = _role_aware_time_window(tp, cp, jmap)
+        if discrepancy:
+            spines = ", ".join(f"{t} (→{r})" for t, r in discrepancy[:3])
+            logger.info(
+                "[explorer:%s] Date spine(s) extend past the last activity (%s): %s — "
+                "anchoring on observed activity, not the calendar.",
+                self.connection_id, end, spines,
+            )
+        if start and end:
+            return start, end
+        return None
 
     def _time_filter(self, table: str, tp: dict) -> str:
         """
@@ -260,8 +318,9 @@ class SchemaExplorer:
             self._status.columns_total = sum(len(v) for v in cp.values())
             self._status.joins_total = len(jmap.get("joins", []))
 
-            # Compute 12-month time window from MAX timestamp across schema
-            self._time_window = self._compute_time_window(tp)
+            # Compute the 12-month window — recency anchored on activity (fact) tables,
+            # not the calendar spine (Tier 0; docs/ADAPTIVE_TEMPORAL_SCOPE.md §3).
+            self._time_window = self._compute_time_window(tp, cp, jmap)
             if self._time_window:
                 logger.info(
                     "[explorer:%s] Time window: %s → %s",
