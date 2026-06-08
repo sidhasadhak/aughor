@@ -7,6 +7,7 @@ import { ConfigurePanel } from "@/components/ConfigurePanel";
 import { ChatPanel } from "@/components/ChatPanel";
 import { HistoryDetailPanel } from "@/components/HistoryDetailPanel";
 import { DomainIntelPanel } from "@/components/DomainIntelPanel";
+import { BriefingPanel } from "@/components/BriefingPanel";
 
 // ── Icon helper ───────────────────────────────────────────────────────────────
 
@@ -820,11 +821,19 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
           }
         </div>
 
-        {/* Intelligence — always mounted, hidden when not active */}
+        {/* Intelligence — always mounted, hidden when not active. Canvas-scoped Brief
+            (narrative) above canvas-scoped Domains (evidence) — both reflect this canvas's
+            curated tables, keeping the surfaces scope-consistent. */}
         <div style={{
           display: wsTab === "intel" ? "flex" : "none",
+          flexDirection: "column", gap: 24,
           flex: 1, overflowY: "auto", padding: "16px 24px",
         }}>
+          <BriefingPanel
+            connectionId={connectionId}
+            canvasId={canvas.id}
+            onInvestigate={() => setWsTab("chat")}
+          />
           <DomainIntelPanel
             connectionId={connectionId}
             canvasId={canvas.id}
