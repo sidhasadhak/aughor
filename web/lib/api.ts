@@ -1776,6 +1776,19 @@ export async function generateBriefingNarrative(
   return res.json();
 }
 
+/** Canvas-scoped briefing — reflects only the canvas's curated tables, not the whole
+ *  connection. Mirrors generateBriefingNarrative but hits the canvas endpoint. */
+export async function generateCanvasBriefingNarrative(
+  canvasId: string,
+  refresh = false,
+): Promise<BriefingNarrativeResponse> {
+  const qs = refresh ? "?refresh=true" : "";
+  const url = `${BASE}/exploration/canvas/${encodeURIComponent(canvasId)}/briefing${qs}`;
+  const res = await fetch(url, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to generate canvas briefing narrative");
+  return res.json();
+}
+
 // ── Explorer Control ────────────────────────────────────────────────────────────
 
 export interface ExplorerStatus {
