@@ -230,25 +230,35 @@ function deriveSteps(state: InvestigationState): Step[] {
   return steps;
 }
 
-function Dot({ status, verdict }: { status: StepStatus; verdict?: Verdict }) {
+function StepDot({ status, verdict }: { status: StepStatus; verdict?: Verdict }) {
   if (status === "running") {
     return (
-      <span className="relative flex h-2.5 w-2.5 shrink-0 mt-0.5">
-        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-60" />
-        <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-400" />
+      <span className="relative flex h-3.5 w-3.5 items-center justify-center shrink-0">
+        <span className="absolute inline-flex h-full w-full rounded-full bg-amber-400/50 animate-ping" />
+        <span className="relative inline-flex rounded-full h-3 w-3 bg-amber-400 aug-pulse-dot" />
       </span>
     );
   }
   if (status === "done") {
-    const color = verdict ? {
-      confirmed: "bg-emerald-500",
-      refuted: "bg-red-500",
-      inconclusive: "bg-amber-500",
-      untested: "bg-emerald-500",
-    }[verdict] : "bg-emerald-500";
-    return <span className={`h-2.5 w-2.5 rounded-full shrink-0 mt-0.5 ${color}`} />;
+    const tone = verdict === "refuted" ? "text-red-400 border-red-500/40"
+      : verdict === "inconclusive" ? "text-amber-400 border-amber-500/40"
+      : "text-emerald-400 border-emerald-500/40";
+    return (
+      <span className={`flex h-3.5 w-3.5 items-center justify-center rounded-full border bg-zinc-900 shrink-0 aug-check-pop ${tone}`}>
+        <svg viewBox="0 0 24 24" className="h-2.5 w-2.5" fill="none" stroke="currentColor"
+          strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 13l4 4L19 7" /></svg>
+      </span>
+    );
   }
-  return <span className="h-2.5 w-2.5 rounded-full shrink-0 mt-0.5 border border-zinc-600 bg-zinc-800" />;
+  if (status === "error") {
+    return (
+      <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full border border-red-500/40 bg-zinc-900 text-red-400 shrink-0">
+        <svg viewBox="0 0 24 24" className="h-2.5 w-2.5" fill="none" stroke="currentColor"
+          strokeWidth="3.5" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18" /></svg>
+      </span>
+    );
+  }
+  return <span className="h-3.5 w-3.5 rounded-full border border-zinc-600/70 bg-zinc-800/50 shrink-0" />;
 }
 
 interface Props {
@@ -257,27 +267,55 @@ interface Props {
 
 export function ThinkingTrace({ state }: Props) {
   const steps = deriveSteps(state);
+  const total = steps.length;
+  const doneCount = steps.filter(s => s.status === "done").length;
+  const hasRunning = steps.some(s => s.status === "running");
+  const pct = total ? Math.round((doneCount / total) * 100) : 0;
 
   return (
-    <div className="px-4 py-3 space-y-0.5">
-      <p className="text-xs text-violet-400/60 uppercase tracking-wide mb-3 font-mono">Progress</p>
-      <div className="relative">
-        <div className="absolute left-[4px] top-3 bottom-3 w-px bg-violet-500/20" />
+    <div className="px-4 py-3">
+      {/* Header — live position + animated progress bar */}
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-xs text-violet-400/70 uppercase tracking-wide font-mono">Analysis</p>
+        <span className="text-[10px] text-zinc-500 font-mono tabular-nums">
+          {hasRunning ? `step ${Math.min(doneCount + 1, total)} of ${total}` : `${doneCount} of ${total}`}
+        </span>
+      </div>
+      <div className="h-1 rounded-full bg-violet-500/10 overflow-hidden mb-3">
+        <div className="h-full rounded-full bg-gradient-to-r from-violet-500 to-emerald-400 transition-[width] duration-700 ease-out"
+          style={{ width: `${pct}%` }} />
+      </div>
 
-        <div className="space-y-3">
-          {steps.map(step => (
-            <div key={step.id} className="flex items-start gap-3 relative">
-              <Dot status={step.status} verdict={step.verdict} />
-              <div className="min-w-0">
-                <p className={`text-xs leading-snug ${
-                  step.status === "pending" ? "text-zinc-500" :
-                  step.status === "running" ? "text-amber-300 bg-amber-500/10 rounded px-1 -mx-1" :
-                  "text-zinc-300"
+      {/* Stepper rail */}
+      <div>
+        {steps.map((step, i) => {
+          const isLast = i === steps.length - 1;
+          return (
+            <div key={step.id} className="flex items-stretch gap-3 aug-step-in"
+              style={{ animationDelay: `${Math.min(i, 10) * 35}ms` }}>
+              {/* Rail: dot + connector segment to the next step */}
+              <div className="flex flex-col items-center w-3.5 shrink-0 pt-0.5">
+                <StepDot status={step.status} verdict={step.verdict} />
+                {!isLast && (
+                  <span className={`flex-1 w-0.5 my-0.5 min-h-[16px] rounded-full ${
+                    step.status === "done" ? "bg-emerald-500/40"
+                    : step.status === "running" ? "aug-flow-y"
+                    : "bg-violet-500/15"
+                  }`} />
+                )}
+              </div>
+              {/* Content */}
+              <div className="min-w-0 pb-3 flex-1">
+                <p className={`text-xs leading-snug transition-colors duration-300 ${
+                  step.status === "pending" ? "text-zinc-500"
+                  : step.status === "running" ? "text-amber-200 font-medium"
+                  : step.status === "error" ? "text-red-300"
+                  : "text-zinc-300"
                 }`}>
                   {step.label}
                 </p>
                 {step.sublabel && (
-                  <p className={`text-xs mt-0.5 ${
+                  <p className={`text-[11px] mt-0.5 leading-snug aug-anim-fade ${
                     step.verdict ? VERDICT_COLOR[step.verdict] : "text-zinc-500"
                   }`}>
                     {step.sublabel}
@@ -285,8 +323,8 @@ export function ThinkingTrace({ state }: Props) {
                 )}
               </div>
             </div>
-          ))}
-        </div>
+          );
+        })}
       </div>
     </div>
   );

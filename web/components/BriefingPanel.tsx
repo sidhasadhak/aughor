@@ -45,11 +45,19 @@ interface SynthesisSignal {
   domain: string;
 }
 
+interface DomainStat {
+  name:       string;
+  count:      number;
+  avgNovelty: number;
+  maxNovelty: number;
+}
+
 interface BriefingData {
   headline:      SynthesisSignal | null;
   signals:       SynthesisSignal[];
   patterns:      Pattern[];
   orgInsights:   OrgInsight[];
+  domains:       DomainStat[];
   domainCount:   number;
   totalInsights: number;
   synthesizedAt: string;
@@ -363,15 +371,74 @@ function synthesize(
     signals.push(s);
   }
 
+  // Per-domain stats for the coverage chart (where the intelligence concentrates).
+  const domains: DomainStat[] = Object.entries(domainData)
+    .map(([name, data]) => {
+      const ns = data.insights.map(i => i.novelty);
+      return {
+        name,
+        count: ns.length,
+        avgNovelty: ns.length ? ns.reduce((a, b) => a + b, 0) / ns.length : 0,
+        maxNovelty: ns.length ? Math.max(...ns) : 0,
+      };
+    })
+    .filter(d => d.count > 0)
+    .sort((a, b) => b.count - a.count || b.maxNovelty - a.maxNovelty);
+
   return {
     headline,
     signals,
     patterns:      patterns.slice(0, 5),
     orgInsights:   orgInsights.slice(0, 3),
-    domainCount:   Object.keys(domainData).length,
+    domains,
+    domainCount:   domains.length,
     totalInsights,
     synthesizedAt: new Date().toISOString(),
   };
+}
+
+// ── Visual primitives ────────────────────────────────────────────────────────
+
+/** A compact bar showing a finding's novelty/signal strength (0–10). */
+function NoveltyMeter({ novelty, width = 56, showValue = true }: { novelty: number; width?: number; showValue?: boolean }) {
+  const pct = Math.max(4, Math.min(100, (novelty / 10) * 100));
+  const color = noveltyColor(novelty);
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }} title={`Novelty ${novelty.toFixed(1)} / 10`}>
+      <span style={{ width, height: 5, borderRadius: 3, background: "var(--bg-3)", display: "inline-block", overflow: "hidden", flexShrink: 0 }}>
+        <span style={{ display: "block", height: "100%", width: `${pct}%`, background: color, borderRadius: 3, transition: "width .5s ease" }} />
+      </span>
+      {showValue && <span style={{ fontSize: 10, fontFamily: "var(--font-mono)", color, fontWeight: 600 }}>{novelty.toFixed(1)}</span>}
+    </span>
+  );
+}
+
+/** Horizontal bar chart of findings per domain — shows the *shape* of the intelligence
+ *  (which domains dominate) at a glance, with novelty driving bar opacity. */
+function DomainCoverageChart({ domains }: { domains: DomainStat[] }) {
+  const max = Math.max(1, ...domains.map(d => d.count));
+  return (
+    <div style={{ display: "flex", flexDirection: "column" as const, gap: 9 }}>
+      {domains.slice(0, 8).map(d => {
+        const color = domainColor(d.name);
+        const pct = Math.max(5, (d.count / max) * 100);
+        return (
+          <div key={d.name} style={{ display: "flex", flexDirection: "column" as const, gap: 3 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+              <span style={{ fontSize: 11, color: "var(--t2)", textTransform: "capitalize" as const, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{d.name}</span>
+              <span style={{ fontSize: 10, color: "var(--t4)", fontFamily: "var(--font-mono)", flexShrink: 0 }}>{d.count}</span>
+            </div>
+            <div style={{ height: 6, borderRadius: 3, background: "var(--bg-3)", overflow: "hidden" }}>
+              <div style={{
+                height: "100%", width: `${pct}%`, background: color, borderRadius: 3,
+                opacity: 0.45 + Math.min(0.55, d.maxNovelty / 13), transition: "width .5s ease",
+              }} />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 // ── Domain tag ─────────────────────────────────────────────────────────────────
@@ -427,14 +494,13 @@ function HeadlineCard({ signal, onInvestigate }: {
           border:     `1px solid color-mix(in srgb, ${nColor} 28%, transparent)`,
           color: nColor, textTransform: "uppercase" as const, letterSpacing: ".07em",
         }}>
-          {noveltyLabel(insight.novelty)} · {insight.novelty.toFixed(1)}
+          {noveltyLabel(insight.novelty)}
         </span>
         <DomainTag domain={domain} />
         {insight.angle && (
-          <span style={{ fontSize: 10, color: "var(--t4)", marginLeft: "auto" }}>
-            {insight.angle}
-          </span>
+          <span style={{ fontSize: 10, color: "var(--t4)" }}>{insight.angle}</span>
         )}
+        <span style={{ marginLeft: "auto" }}><NoveltyMeter novelty={insight.novelty} width={64} /></span>
       </div>
 
       {/* Finding */}
@@ -490,16 +556,11 @@ function SignalCard({ signal, onInvestigate }: {
       display: "flex", flexDirection: "column" as const, gap: 10,
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" as const }}>
-        <span style={{
-          fontSize: 10, fontWeight: 700, color: nColor,
-          fontFamily: "var(--font-mono)",
-        }}>
-          {insight.novelty.toFixed(1)}
-        </span>
         <DomainTag domain={domain} />
         {insight.angle && (
-          <span style={{ fontSize: 10, color: "var(--t4)", marginLeft: "auto" }}>{insight.angle}</span>
+          <span style={{ fontSize: 10, color: "var(--t4)" }}>{insight.angle}</span>
         )}
+        <span style={{ marginLeft: "auto" }}><NoveltyMeter novelty={insight.novelty} width={40} /></span>
       </div>
       <div style={{ fontSize: 12, color: "var(--t2)", lineHeight: 1.55, flex: 1 }}>
         {insight.finding.length > 160 ? insight.finding.slice(0, 160) + "…" : insight.finding}
@@ -1114,36 +1175,19 @@ export function BriefingPanel({
         {hasSidebar && (
           <div style={{ width: 272, flexShrink: 0, display: "flex", flexDirection: "column" as const, gap: 20 }}>
 
-            {/* Domain coverage */}
+            {/* Domain coverage — a bar chart of findings per domain (where intelligence concentrates) */}
             <div>
-              <div className="aug-label" style={{ marginBottom: 10 }}>Domain Coverage</div>
+              <div className="aug-label" style={{ marginBottom: 10, display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+                <span>Domain Coverage</span>
+                <span style={{ fontSize: 10, fontWeight: 400, color: "var(--t4)", fontFamily: "var(--font-mono)" }}>
+                  {briefing.domainCount} · {briefing.totalInsights} findings
+                </span>
+              </div>
               <div style={{
                 background: "var(--bg-2)", border: "1px solid var(--b1)",
                 borderRadius: "var(--r3)", padding: "14px 16px",
               }}>
-                <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-                  <span style={{
-                    fontSize: 28, fontWeight: 600, color: "var(--t1)",
-                    letterSpacing: "-.02em", lineHeight: 1, fontFamily: "var(--font-mono)",
-                  }}>
-                    {briefing.domainCount}
-                  </span>
-                  <span style={{ fontSize: 11, color: "var(--t3)" }}>domains</span>
-                </div>
-                <div style={{
-                  marginTop: 10, width: "100%", height: 3,
-                  background: "var(--bg-3)", borderRadius: 2, overflow: "hidden",
-                }}>
-                  <div style={{
-                    height: "100%",
-                    width: `${Math.min(100, briefing.domainCount * 12)}%`,
-                    background: "var(--blue4)", borderRadius: 2,
-                    transition: "width .4s ease",
-                  }} />
-                </div>
-                <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 6 }}>
-                  {briefing.totalInsights} total findings
-                </div>
+                <DomainCoverageChart domains={briefing.domains} />
               </div>
             </div>
 
