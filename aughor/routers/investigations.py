@@ -1074,6 +1074,18 @@ async def _stream_investigation(
         # Prefer structured Data Catalog as the primary schema context (MindsDB-style)
         schema_for_agent = data_catalog if data_catalog else schema
 
+        # Inject the CANONICAL METRIC formulas so ADA resolves a metric (e.g. "revenue")
+        # to the SAME approved SQL the /chat path uses — closing the "revenue means two
+        # different things" gap. Reconciles the curated catalog (data/metrics.json) with
+        # the ontology's verified OntologyMetric.formula_sql. No-op when none exist.
+        try:
+            from aughor.semantic.canonical import canonical_metrics_block
+            _canon = canonical_metrics_block(connection_id, canvas_scope_schema)
+            if _canon:
+                schema_for_agent = f"{schema_for_agent}\n\n{_canon}"
+        except Exception:
+            logger.warning("Canonical metrics injection failed (agentic path)", exc_info=True)
+
         from aughor.agent.graph import build_graph_generic
         agent = build_graph_generic(db, hitl=hitl)
 
