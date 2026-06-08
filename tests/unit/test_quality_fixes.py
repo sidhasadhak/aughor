@@ -161,3 +161,16 @@ def test_resolver_handles_data_catalog_markdown_format():
     assert "order_id" not in [c for c, _ in typed.get("analytics.orders", []) if c == "ORD-1"]  # sample rows ignored
     r, changed = _resolve_date_column("analytics.invoices.order_id", "analytics.invoices", _CATALOG, [])
     assert changed and r == "analytics.orders.order_ts"
+
+
+# ── Latency: skip narrator when a phase has no usable data ─────────────────────
+def test_has_usable_data():
+    from aughor.agent.investigate import _has_usable_data
+    class R:
+        def __init__(self, err, n): self.error=err; self.row_count=n
+    q=object()
+    assert _has_usable_data([(q, R(None, 5))]) is True
+    assert _has_usable_data([(q, R("boom", 0))]) is False
+    assert _has_usable_data([(q, R(None, 0))]) is False
+    assert _has_usable_data([(q, R("e", 0)), (q, R(None, 3))]) is True   # one good is enough
+    assert _has_usable_data([]) is False

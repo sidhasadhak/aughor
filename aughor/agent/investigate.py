@@ -790,6 +790,13 @@ def _align_narrator_findings(queries, narrator_findings, extra_stop=frozenset())
     return aligned, by_token
 
 
+def _has_usable_data(results) -> bool:
+    """True if at least one query in the phase returned rows without error. Used to skip the
+    narrator interpret call (a 30-80s LLM round-trip) when every query failed or came back
+    empty — there is nothing to interpret, and the phase falls back to data-only findings."""
+    return any((not r.error and (r.row_count or 0) > 0) for _, r in (results or []))
+
+
 def _assemble_phase_findings(results, narrator_findings, id_prefix, metric_label=""):
     """Build phase findings by binding each (query, result) to the narrator finding for
     its OWN dimension — never by list position. The displayed title is grounded in the
@@ -1098,52 +1105,26 @@ def ada_intake(state: AgentState) -> dict:
         intake = None
         intake_error = str(e)
 
-    # Code-level validation: reject and retry if date_column is obviously an ID column
+    # Code-level validation: collect ALL spec errors and fix them in ONE combined LLM retry
+    # (was up to 3 sequential round-trips on the critical path of every investigation). The
+    # date column needs no LLM retry — the deterministic _resolve_date_column below fixes an
+    # ID-like / non-date column far more reliably.
     if intake is not None:
-        dc_error = _validate_intake_date_column(intake.date_column)
-        if dc_error:
-            retry_prompt = (
-                prompt
-                + f"\n\nCORRECTION REQUIRED: {dc_error}\n"
-                "Re-examine the schema, find the correct DATE/TIMESTAMP column, and return the fixed spec."
-            )
-            try:
-                intake = _provider("coder").complete(
-                    system="You are a precise data analyst parsing a business question. Return a structured investigation specification.",
-                    user=retry_prompt,
-                    response_model=IntakeOutput,
-                )
-            except Exception as e2:
-                # Keep the original (even if bad) rather than crashing
-                pass
-
-    # Code-level validation: reject and retry if metric_table does not exist in schema
-    if intake is not None:
+        _errs = []
         mt_error = _validate_intake_metric_table(intake.metric_table, schema)
         if mt_error:
-            retry_prompt = (
-                prompt
-                + f"\n\nCORRECTION REQUIRED: {mt_error}\n"
-                "Re-examine the schema, pick a table that actually exists, and return the fixed spec."
-            )
-            try:
-                intake = _provider("coder").complete(
-                    system="You are a precise data analyst parsing a business question. Return a structured investigation specification.",
-                    user=retry_prompt,
-                    response_model=IntakeOutput,
-                )
-            except Exception:
-                pass
-
-    # Code-level validation: reject and retry if the comparison window is outside the data range
-    if intake is not None:
+            _errs.append(mt_error)
         _dmin, _dmax = _extract_data_date_range(scan)
         win_error = _validate_intake_windows(intake, _dmin, _dmax)
         if win_error:
+            _errs.append(win_error)
+        if _errs:
             retry_prompt = (
                 prompt
-                + f"\n\nCORRECTION REQUIRED: {win_error}\n"
-                "Return the fixed spec with a comparison window that actually contains data."
+                + "\n\nCORRECTION REQUIRED — fix ALL of the following:\n- "
+                + "\n- ".join(_errs)
+                + "\nReturn the corrected spec (use only tables that exist in the schema, and a "
+                "comparison window that actually contains data)."
             )
             try:
                 intake = _provider("coder").complete(
@@ -1437,6 +1418,7 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
         pct_threshold=10,
     )
     try:
+        if not _has_usable_data(results): raise RuntimeError("skip narrator — no usable data")
         interpretation: PhaseInterpretation = _provider("narrator").complete(
             system="You are a senior data analyst interpreting query results. Be precise. Cite real numbers.",
             user=interpret_prompt,
@@ -1702,6 +1684,7 @@ def ada_decompose(state: AgentState, conn: "DatabaseConnection") -> dict:
         results_text=results_text,
     )
     try:
+        if not _has_usable_data(results): raise RuntimeError("skip narrator — no usable data")
         interpretation: PhaseInterpretation = _provider("narrator").complete(
             system="Interpret metric decomposition results. State clearly whether volume or value drove the change.",
             user=interpret_prompt,
@@ -1831,6 +1814,7 @@ def ada_dimensional(state: AgentState, conn: "DatabaseConnection") -> dict:
         results_text=results_text,
     )
     try:
+        if not _has_usable_data(results): raise RuntimeError("skip narrator — no usable data")
         interpretation: PhaseInterpretation = _provider("narrator").complete(
             system="Interpret contribution analysis. Identify concentrated vs. diffuse decline.",
             user=interpret_prompt,
@@ -1960,6 +1944,7 @@ def ada_behavioral(state: AgentState, conn: "DatabaseConnection") -> dict:
         results_text=results_text,
     )
     try:
+        if not _has_usable_data(results): raise RuntimeError("skip narrator — no usable data")
         interpretation: PhaseInterpretation = _provider("narrator").complete(
             system="Interpret behavioral and operational findings. Be specific about what changed.",
             user=interpret_prompt,
@@ -2045,6 +2030,7 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection") -> dict:
 
     results_text = _results_to_text([r for _, r in results])
     try:
+        if not _has_usable_data(results): raise RuntimeError("skip narrator — no usable data")
         interpretation: PhaseInterpretation = _provider("narrator").complete(
             system="Interpret a cross-sectional weakness scan. Name the weakest values and any concentration; be honest about healthy areas.",
             user=CROSS_SECTION_INTERPRET_PROMPT.format(
