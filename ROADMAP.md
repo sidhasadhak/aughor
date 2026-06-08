@@ -19,7 +19,39 @@ The intelligence surfaces (Briefing / Domains) and the Deep-Analysis path were h
 | **Deep-Analysis latency** | Consolidated 3 sequential intake retries into one, skipped the narrator on dead (empty/failed) phases, and added an opt-in **fast narrator tier** — synthesis **117s→18s**, interpret **117s→20s**, worst-case early-stop **~278s→~150s** (all-qwen). | `aughor/agent/{investigate,graph}.py`, `aughor/llm/provider.py` |
 | **Trusted data-context glossary** | A curated `glossary.yaml` (table grains, canonical joins, column semantics) feeding trusted, parameterized generation. | `data/glossary.yaml` |
 
-**Next:** IntelligenceHub canvas-awareness; one progressive Brief→Synthesis→Evidence surface with push/actionability (see `docs/INTELLIGENCE_UNIFICATION.md`).
+**Next:** see the **Prioritized Backlog** below.
+
+---
+
+## 🎯 Prioritized Backlog — what to do next (impact × dependencies)
+
+The single source of truth for sequencing. Ranked by **impact**, then constrained by
+**dependencies**. Impact = trust/correctness + USP/scale + user-visible reach + how much it
+unblocks. Effort: S (≤ a day) / M (a few days) / L (a week+).
+
+| # | Item | Impact | Effort | Depends on | Why it's here |
+|---|---|---|---|---|---|
+| **1** | **Temporal Tier 0 — role-aware consensus recency + sentinel filter** (the calendar-table fix; rewrite `_compute_time_window`). `docs/ADAPTIVE_TEMPORAL_SCOPE.md` §3/§8-Stage-1 | **High** | S–M | — | Prevents empty-window / "no data" briefings on any schema with a date dimension; cheapest fix; **foundation for all temporal work**; surfaces the calendar↔fact discrepancy as a finding. |
+| **2** | **Metric unification** — one canonical metric; reconcile `OntologyMetric.formula_sql` + `data/metrics.json` | **High** | M | — | Kills "revenue means two different things"; affects every query; **prerequisite for the Semantic Compiler (#11)**. |
+| **3** | **Symmetric-aggregate fan-out guard (first-class)** — PK-keyed aggregation for multi-fact joins | **High** | M | — | The **#1 model-invariant correctness failure** (the $3T product-of-aggregates class), as a declarative guard not a regex. |
+| **4** | **Actionability + push** (#20) — finding-level Create Monitor / Promote to Org / Share; scheduled per-scope Brief delivery; Evidence-Ledger drill-through on claims | **High** | M–L | — (reuses Action Hub + Monitors + Evidence) | Makes intelligence **reach the user** ("heavy-duty actionable intel"); all parts exist, just unwired. |
+| **5** | **Temporal Tier 1 — regime / changepoint window inference** (`ruptures`/`scipy` on the coarse series) | **High** | M | #1 | The statistical heart of the USP — "analyze the current regime, not last 12 months." |
+| **6** | **Temporal Tier 2 — multi-resolution macro+micro** (cheap full-span rollups + bounded active-regime deep-dive) | **High** | M–L | #1 (#5) | Long-arc context juxtaposed with a bounded recent dive — a fixed window can't do this. |
+| **7** | **Canvas-explorer scoping** — Briefing in canvas mode polls + drives the *canvas* explorer, not the connection (needs canvas `start`/`trigger-intel` endpoints) | Med | M | canvas start/trigger endpoints | Fixes the scope bug found 2026-06-08; completes canvas-scoped intelligence. |
+| **8** | **Evidence peer layer** (#19 Step B) — `/investigations/evidence/recent?connection_id=&canvas_id=` join endpoint + `EvidencePanel` + new layer | Med | M | scope-join endpoint | Finishes Unification Wave 2; trust drill-through. |
+| **9** | **Delivery polish** — converge ADA + explore on one report contract; charts on the decomposition path; viz upgrades (Pareto, sparkline+distribution, choropleth, MoM% overlay, "within noise") | Med–High | M–L | — | "Reasoning outruns presentation" — the last-mile of trust. |
+| **10** | **Temporal Tier 3 — cost governor** (partition pruning, scan budget, sampling, incremental deltas) | High *(at real-warehouse scale)* | L | #1–#6 | The TB-scale hardening; matters most once a real warehouse connects. |
+| **11** | **Semantic Compiler** — typed Intent IR (`QueryPlanV2`→`QueryIntent`) + deterministic `synthesize_sql(intent, ontology, dialect)` for the 4 safest intents | High *(strategic)* | L | #2 | The biggest architectural bet — "LLM augments a declarative layer, not regenerates SQL." |
+| **12** | **Enterprise hardening** (Sprint 48) — OAuth2/OIDC, RBAC, workspace tenancy, query cancellation, secrets manager | High *(for deploy)* | L | — | Gates multi-user / deployment; otherwise independent. |
+| **13** | **Full-pipeline eval mode** — measure the lift the pipeline gives over raw schema-only generation | Med *(force-multiplier)* | M | — | Makes every other item measurable instead of vibes-based. |
+| **14** | **UX polish** — ontology legends-at-top, canvas History-tab empty bug, Configure panel (About/Data/Instructions), Recents-includes-Quick-chats, motion/animation pass | Low–Med | S each | — | Product-felt small wins (Configure panel is the most impactful). |
+
+**Dependency chains:** `#1 → #5 → #6 → #10` (temporal); `#2 → #11` (compiler); `#7` & `#8` each gated by a small new endpoint. Everything else is independent and can be slotted by capacity.
+
+**Recommended next three** (high impact, low dependency, mix of correctness + reach):
+**#1 Temporal Tier 0** (cheapest, prevents the worst failure, foundational) → **#2 Metric unification** (biggest trust lever, unblocks the compiler) → **#4 Actionability/push** *or* **#3 fan-out guard** (reach vs correctness — pick by mood).
+
+**Housekeeping (not a backlog item):** 10 files from Unification Waves 1+2A + the LocalUpload fix are committed-ready (tsc/py-compile clean, live-verified) and awaiting an explicit "commit" word.
 
 ---
 
