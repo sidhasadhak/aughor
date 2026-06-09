@@ -29,6 +29,8 @@ import {
   BriefDetailBlock,
   renderEmphasis,
 } from "@/components/brief/Brief";
+import { SignificanceBadge } from "@/components/brief/StatBadge";
+import { TrendStrip } from "@/components/brief/Sparkline";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -157,9 +159,12 @@ function EvidenceBlock({ finding }: { finding: InvestigationFinding }) {
       {/* Chart — the framed figure */}
       {hasChart && (
         <BriefFigure caption={finding.title}>
-          <Chart columns={finding.columns} rows={finding.rows as unknown[][]} title={finding.title} />
+          <Chart columns={finding.columns} rows={finding.rows as unknown[][]} title={finding.title} chartType={finding.chart_type} />
         </BriefFigure>
       )}
+
+      {/* Trend strip — sparkline + period-over-period % (time-series findings only) */}
+      <TrendStrip columns={finding.columns} rows={finding.rows} />
 
       {/* Key numbers — inline metrics, no card */}
       {finding.key_numbers.length > 0 && <BriefMetrics metrics={finding.key_numbers} />}
@@ -167,9 +172,9 @@ function EvidenceBlock({ finding }: { finding: InvestigationFinding }) {
       {/* Interpretation narrative */}
       {finding.interpretation && <BriefProse text={finding.interpretation} muted />}
 
-      {/* Stat note — z-score etc */}
-      {finding.stat_note && (
-        <p className="aug-text-xs text-zinc-600 font-mono">{finding.stat_note}</p>
+      {/* Significance verdict — "Significant" / "Within noise" + raw stat note */}
+      {(finding.stat_note || finding.is_significant) && (
+        <SignificanceBadge significant={finding.is_significant} note={finding.stat_note} />
       )}
 
       {/* Error */}

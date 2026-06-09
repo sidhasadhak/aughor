@@ -247,7 +247,7 @@ class OutcomeRequest(BaseModel):
     metric_after: Optional[float] = None
 
 
-_VALID_CHART_TYPES = {"auto", "bar", "bar_horizontal", "bar_vertical", "line", "area", "pie", "stacked_bar", "scatter",
+_VALID_CHART_TYPES = {"auto", "bar", "bar_horizontal", "bar_vertical", "line", "area", "pie", "pareto", "stacked_bar", "scatter",
                       "multi_line", "heatmap", "treemap", "combo"}
 
 

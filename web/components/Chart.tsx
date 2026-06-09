@@ -4,7 +4,7 @@
  * Chart — the reusable chart component, extracted verbatim from ChatMessage's
  * InlineChart. Given SQL-shaped { columns, rows } (+ optional backend chartConfig),
  * it infers the right Vega-Lite view (bar / line / multi-line / stacked / pie /
- * heatmap / scatter / combo / treemap / matrix / change-metric), builds the spec,
+ * heatmap / scatter / combo / treemap / matrix / pareto / change-metric), builds the spec,
  * and renders it via <VegaChart> with a download-PNG + drag-to-resize chrome.
  *
  * Lives independently of ChatMessage so any surface (chat, report, exploration,
@@ -164,6 +164,31 @@ export function Chart({
   const numCol  = (_isChangeMetric && catCol) ? changeNumCol : baseNumCol;
   const hint    = (chartType ?? "auto").toLowerCase();
   const isTimeLabel = catCol ? TIME_LABEL_COL.test(catCol) : false;
+
+  // ── Pareto detection ────────────────────────────────────────────────────────
+  // Explicit hint OR auto-detect. Models reliably COMPUTE a share/cumulative
+  // column for 80/20 questions but tag the chart "auto" (not "pareto"), so key
+  // off that column rather than the unreliable hint. Concentration-specific
+  // names only ("share"/"cumulative"/"of_total") — not generic growth/rate %.
+  const PARETO_SHARE = /(share|cumulative|cum_pct|pct_of_total|of_total|contribution)/i;
+  const paretoShareCol = columns.find(c => PARETO_SHARE.test(c));
+  // Category axis — fall back to an id column (often the only dimension and
+  // numeric, so it's absent from catCols) when there's no text category.
+  const paretoCat: string | null = catCol ?? columns.find(c => c !== paretoShareCol && ID_COL.test(c)) ?? null;
+  // Bars plot the BASE magnitude (revenue), never the share/pct/id column.
+  const paretoMeasure: string | null =
+    numericCols.find(c => c !== paretoShareCol && !PARETO_SHARE.test(c) && !SHARE_COL.test(c) && !ID_COL.test(c))
+    ?? (hint === "pareto" ? numCol : null);
+  // Models render concentration questions as auto/bar/treemap/pie (rarely the
+  // literal "pareto"). When a concentration column is present alongside a clean
+  // category+measure shape, upgrade any of those to Pareto — it strictly
+  // dominates them for 80/20 intent (adds the cumulative curve + threshold).
+  // Leave line/scatter/heatmap/stacked/combo/none alone — those signal a
+  // different intent than a single-measure ranking.
+  const PARETO_UPGRADE = new Set(["auto", "bar", "bar_horizontal", "bar_vertical", "treemap", "pie"]);
+  const wantPareto =
+    (hint === "pareto" || (PARETO_UPGRADE.has(hint) && !!paretoShareCol && rows.length >= 4))
+    && !!paretoCat && !!paretoMeasure && paretoCat !== paretoMeasure;
 
   // ── Backend-provided chart config (MindsDB-style) ───────────────────────────
   // When the LLM generated a chart_config alongside SQL, use it directly.
@@ -337,6 +362,61 @@ export function Chart({
       },
     };
     defaultH = 240;
+  }
+
+  // ── PARETO (80/20) ────────────────────────────────────────────────────────────
+  // Sorted bars (left axis) + cumulative-% line (right axis) + an 80% reference
+  // rule. Surfaces concentration — "which few categories drive most of the total".
+  if (!spec && wantPareto && paretoCat && paretoMeasure) {
+    const pTitle = cleanLabel(paretoMeasure);
+    const agg = new Map<string, number>();
+    data.forEach(d => {
+      const k = String(d[paretoCat]);
+      agg.set(k, (agg.get(k) ?? 0) + Number(d[paretoMeasure]));
+    });
+    const sorted = [...agg.entries()].sort((a, b) => b[1] - a[1]);
+    const total  = sorted.reduce((s, [, v]) => s + v, 0) || 1;
+    let running = 0;
+    vegaData = sorted.map(([label, value]) => {
+      running += value;
+      return { label, value, cum: running / total };
+    });
+
+    spec = {
+      layer: [
+        {
+          mark: { type: "bar", color: "#818cf8", opacity: 0.85, cornerRadiusEnd: 2 },
+          encoding: {
+            y: { field: "value", type: "quantitative", axis: { format: "~s", grid: true, title: pTitle } },
+            tooltip: [
+              { field: "label", type: "nominal", title: cleanLabel(paretoCat) },
+              { field: "value", type: "quantitative", format: ".3s", title: pTitle },
+              { field: "cum",   type: "quantitative", format: ".1%", title: "Cumulative" },
+            ],
+          },
+        },
+        {
+          mark: { type: "line", color: "#f59e0b", strokeWidth: 2, point: { size: 28, filled: true, color: "#f59e0b" } },
+          encoding: {
+            y: { field: "cum", type: "quantitative", scale: { domain: [0, 1] }, axis: { format: ".0%", title: "Cumulative %", grid: false } },
+            tooltip: [
+              { field: "label", type: "nominal", title: cleanLabel(paretoCat) },
+              { field: "cum",   type: "quantitative", format: ".1%", title: "Cumulative" },
+            ],
+          },
+        },
+        {
+          mark: { type: "rule", color: "#71717a", strokeDash: [4, 3], strokeWidth: 1 },
+          encoding: { y: { datum: 0.8, type: "quantitative", scale: { domain: [0, 1] } } },
+        },
+      ],
+      encoding: {
+        x: { field: "label", type: "nominal", sort: null, axis: { labelLimit: 140, labelAngle: 0, labelOverlap: true, title: cleanLabel(paretoCat) } },
+      },
+      resolve: { scale: { y: "independent" } },
+      config: { axisX: { labelAngle: 0, labelOverlap: "parity" } },
+    };
+    defaultH = 320;
   }
 
   // ── HEATMAP ───────────────────────────────────────────────────────────────────
