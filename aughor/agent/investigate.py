@@ -1321,6 +1321,62 @@ def _detect_question_direction(question: str) -> Optional[str]:
     return None
 
 
+class _PhaseRun:
+    """Outcome of the shared plan→execute→interpret skeleton. On failure `error_phase` is a
+    ready phase the caller returns; on success the caller proceeds with its bespoke tail."""
+    def __init__(self, ok, results=None, results_text="", interpretation=None, error_phase=None):
+        self.ok = ok
+        self.results = results or []
+        self.results_text = results_text
+        self.interpretation = interpretation
+        self.error_phase = error_phase
+
+
+def run_analysis_phase(
+    conn, *, phase_id: str, title: str, emoji: str,
+    plan_system: str, plan_user: str,
+    interpret_system: str, interpret_user_fn,
+    cap: int = 4,
+    plan_error_msg: str = "Could not plan queries.",
+    exec_error_msg: str = "Queries failed to execute.",
+    exec_status: str = "error",
+    exec_skipped_reason: str = "No results.",
+) -> "_PhaseRun":
+    """The plan(coder) → execute(parallel, safe) → interpret(fast) skeleton every ADA phase
+    shares. Returns a _PhaseRun; a planning or execution failure carries a ready error/skipped
+    phase for the caller to return. The interpret prompt is built by ``interpret_user_fn(
+    results_text)`` since it depends on the executed results."""
+    from aughor.agent.prompts_investigate import PhasePlan, PhaseInterpretation
+
+    # Step 1 — plan
+    try:
+        plan: PhasePlan = _provider("coder").complete(
+            system=plan_system, user=plan_user, response_model=PhasePlan)
+    except Exception as e:
+        return _PhaseRun(ok=False, error_phase=_phase_result(
+            phase_id, title, emoji, "error", plan_error_msg, [_skipped_finding(phase_id, str(e))]))
+
+    # Step 2 — execute (parallel — each query gets its own reader connection)
+    results = _parallel_execute_safe(conn, phase_id, plan.queries, cap=cap)
+    if not results:
+        return _PhaseRun(ok=False, error_phase=_phase_result(
+            phase_id, title, emoji, exec_status, exec_error_msg,
+            [_skipped_finding(phase_id, exec_skipped_reason)]))
+
+    # Step 3 — interpret
+    results_text = _results_to_text([r for _, r in results])
+    interpretation = None
+    try:
+        if not _has_usable_data(results):
+            raise RuntimeError("skip narrator — no usable data")
+        interpretation = _provider("fast").complete(
+            system=interpret_system, user=interpret_user_fn(results_text),
+            response_model=PhaseInterpretation)
+    except Exception:
+        interpretation = None
+    return _PhaseRun(ok=True, results=results, results_text=results_text, interpretation=interpretation)
+
+
 @_telemetry.node_span("ada_baseline")
 def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
     """
@@ -1383,49 +1439,21 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
                 f"{lifecycle_col} is in {terminal_states}."
             )
         plan_prompt += "\n".join(lines)
-    try:
-        plan: PhasePlan = _provider("coder").complete(
-            system="Write SQL queries for baseline anomaly detection. Return a JSON object with a 'queries' list." + _ADA_SQL_GROUNDING,
-            user=plan_prompt,
-            response_model=PhasePlan,
-        )
-    except Exception as e:
-        phase = _phase_result(
-            "baseline", "Baseline & Anomaly Assessment", "📊", "error",
-            "Could not plan baseline queries.",
-            [_skipped_finding("baseline", str(e))],
-        )
-        return {"investigation_phases": phases + [phase]}
-
-    # Step 2: Execute (parallel — each query gets its own reader connection)
-    results = _parallel_execute_safe(conn, "baseline", plan.queries, cap=4)
-
-    if not results:
-        phase = _phase_result(
-            "baseline", "Baseline & Anomaly Assessment", "📊", "error",
-            "All baseline queries failed to execute.",
-            [_skipped_finding("baseline", "No queries produced results.")],
-        )
-        return {"investigation_phases": phases + [phase]}
-
-    # Step 3: Interpret
-    results_text = _results_to_text([r for _, r in results])
-    interpret_prompt = BASELINE_INTERPRET_PROMPT.format(
-        question=question,
-        results_text=results_text,
-        events_section=events_section,
-        z_threshold=2.0,
-        pct_threshold=10,
+    _run = run_analysis_phase(
+        conn, phase_id="baseline", title="Baseline & Anomaly Assessment", emoji="📊",
+        plan_system="Write SQL queries for baseline anomaly detection. Return a JSON object with a 'queries' list." + _ADA_SQL_GROUNDING,
+        plan_user=plan_prompt,
+        interpret_system="You are a senior data analyst interpreting query results. Be precise. Cite real numbers.",
+        interpret_user_fn=lambda results_text: BASELINE_INTERPRET_PROMPT.format(
+            question=question, results_text=results_text, events_section=events_section,
+            z_threshold=2.0, pct_threshold=10),
+        plan_error_msg="Could not plan baseline queries.",
+        exec_error_msg="All baseline queries failed to execute.",
+        exec_skipped_reason="No queries produced results.",
     )
-    try:
-        if not _has_usable_data(results): raise RuntimeError("skip narrator — no usable data")
-        interpretation: PhaseInterpretation = _provider("fast").complete(
-            system="You are a senior data analyst interpreting query results. Be precise. Cite real numbers.",
-            user=interpret_prompt,
-            response_model=PhaseInterpretation,
-        )
-    except Exception as e:
-        interpretation = None
+    if not _run.ok:
+        return {"investigation_phases": phases + [_run.error_phase]}
+    results, results_text, interpretation = _run.results, _run.results_text, _run.interpretation
 
     # ── Stats.py: code-level significance check (runs before LLM interpretation) ──
     # Compute z-score on the baseline time series. The LLM is asked to compute
@@ -1652,46 +1680,19 @@ def ada_decompose(state: AgentState, conn: "DatabaseConnection") -> dict:
         metric_table=metric_table,
         schema=schema,
     )
-    try:
-        plan: PhasePlan = _provider("coder").complete(
-            system="Write SQL for metric decomposition. Decompose the metric into additive sub-drivers." + _ADA_SQL_GROUNDING,
-            user=plan_prompt,
-            response_model=PhasePlan,
-        )
-    except Exception as e:
-        phase = _phase_result(
-            "decomposition", "Metric Decomposition", "🧩", "error",
-            "Could not plan decomposition queries.",
-            [_skipped_finding("decomposition", str(e))],
-        )
-        return {"investigation_phases": phases + [phase]}
-
-    results = _parallel_execute_safe(conn, "decomposition", plan.queries, cap=4)
-
-    if not results:
-        phase = _phase_result(
-            "decomposition", "Metric Decomposition", "🧩", "error",
-            "Decomposition queries failed.",
-            [_skipped_finding("decomposition", "No results.")],
-        )
-        return {"investigation_phases": phases + [phase]}
-
-    results_text = _results_to_text([r for _, r in results])
-    prior_summary = f"Baseline: {baseline_summary}"
-    interpret_prompt = DECOMPOSE_INTERPRET_PROMPT.format(
-        question=question,
-        baseline_summary=baseline_summary,
-        results_text=results_text,
+    _run = run_analysis_phase(
+        conn, phase_id="decomposition", title="Metric Decomposition", emoji="🧩",
+        plan_system="Write SQL for metric decomposition. Decompose the metric into additive sub-drivers." + _ADA_SQL_GROUNDING,
+        plan_user=plan_prompt,
+        interpret_system="Interpret metric decomposition results. State clearly whether volume or value drove the change.",
+        interpret_user_fn=lambda results_text: DECOMPOSE_INTERPRET_PROMPT.format(
+            question=question, baseline_summary=baseline_summary, results_text=results_text),
+        plan_error_msg="Could not plan decomposition queries.",
+        exec_error_msg="Decomposition queries failed.",
     )
-    try:
-        if not _has_usable_data(results): raise RuntimeError("skip narrator — no usable data")
-        interpretation: PhaseInterpretation = _provider("fast").complete(
-            system="Interpret metric decomposition results. State clearly whether volume or value drove the change.",
-            user=interpret_prompt,
-            response_model=PhaseInterpretation,
-        )
-    except Exception:
-        interpretation = None
+    if not _run.ok:
+        return {"investigation_phases": phases + [_run.error_phase]}
+    results, results_text, interpretation = _run.results, _run.results_text, _run.interpretation
 
     if interpretation and interpretation.findings:
         findings = [
@@ -1783,45 +1784,19 @@ def ada_dimensional(state: AgentState, conn: "DatabaseConnection") -> dict:
         schema=schema,
         dimensions_list=dimensions_list,
     )
-    try:
-        plan: PhasePlan = _provider("coder").complete(
-            system="Write contribution-analysis SQL for each dimension. Sort by absolute_change ASC." + _ADA_SQL_GROUNDING,
-            user=plan_prompt,
-            response_model=PhasePlan,
-        )
-    except Exception as e:
-        phase = _phase_result(
-            "dimensional", "Dimensional Analysis", "🔬", "error",
-            "Could not plan dimensional queries.",
-            [_skipped_finding("dimensional", str(e))],
-        )
-        return {"investigation_phases": phases + [phase]}
-
-    results = _parallel_execute_safe(conn, "dimensional", plan.queries, cap=4)
-
-    if not results:
-        phase = _phase_result(
-            "dimensional", "Dimensional Analysis", "🔬", "error",
-            "Dimensional queries failed.",
-            [_skipped_finding("dimensional", "No results.")],
-        )
-        return {"investigation_phases": phases + [phase]}
-
-    results_text = _results_to_text([r for _, r in results])
-    interpret_prompt = DIMENSIONAL_INTERPRET_PROMPT.format(
-        question=question,
-        prior_summary=prior_summary,
-        results_text=results_text,
+    _run = run_analysis_phase(
+        conn, phase_id="dimensional", title="Dimensional Analysis", emoji="🔬",
+        plan_system="Write contribution-analysis SQL for each dimension. Sort by absolute_change ASC." + _ADA_SQL_GROUNDING,
+        plan_user=plan_prompt,
+        interpret_system="Interpret contribution analysis. Identify concentrated vs. diffuse decline.",
+        interpret_user_fn=lambda results_text: DIMENSIONAL_INTERPRET_PROMPT.format(
+            question=question, prior_summary=prior_summary, results_text=results_text),
+        plan_error_msg="Could not plan dimensional queries.",
+        exec_error_msg="Dimensional queries failed.",
     )
-    try:
-        if not _has_usable_data(results): raise RuntimeError("skip narrator — no usable data")
-        interpretation: PhaseInterpretation = _provider("fast").complete(
-            system="Interpret contribution analysis. Identify concentrated vs. diffuse decline.",
-            user=interpret_prompt,
-            response_model=PhaseInterpretation,
-        )
-    except Exception:
-        interpretation = None
+    if not _run.ok:
+        return {"investigation_phases": phases + [_run.error_phase]}
+    results, results_text, interpretation = _run.results, _run.results_text, _run.interpretation
 
     if interpretation and interpretation.findings:
         findings = _assemble_phase_findings(results, interpretation.findings, "dim")
@@ -1913,45 +1888,21 @@ def ada_behavioral(state: AgentState, conn: "DatabaseConnection") -> dict:
         schema=schema,
         events_section=events_section,
     )
-    try:
-        plan: PhasePlan = _provider("coder").complete(
-            system="Write SQL for behavioral and operational diagnostics." + _ADA_SQL_GROUNDING,
-            user=plan_prompt,
-            response_model=PhasePlan,
-        )
-    except Exception as e:
-        phase = _phase_result(
-            "behavioral", "Behavioral & Operational", "👥", "error",
-            "Could not plan behavioral queries.",
-            [_skipped_finding("behavioral", str(e))],
-        )
-        return {"investigation_phases": phases + [phase]}
-
-    results = _parallel_execute_safe(conn, "behavioral", plan.queries, cap=4)
-
-    if not results:
-        phase = _phase_result(
-            "behavioral", "Behavioral & Operational", "👥", "skipped",
-            "Behavioral/operational tables not available in this schema.",
-            [_skipped_finding("behavioral", "Required tables (sessions, refunds, etc.) not in schema.")],
-        )
-        return {"investigation_phases": phases + [phase]}
-
-    results_text = _results_to_text([r for _, r in results])
-    interpret_prompt = BEHAVIORAL_INTERPRET_PROMPT.format(
-        question=question,
-        prior_summary=prior_summary,
-        results_text=results_text,
+    _run = run_analysis_phase(
+        conn, phase_id="behavioral", title="Behavioral & Operational", emoji="👥",
+        plan_system="Write SQL for behavioral and operational diagnostics." + _ADA_SQL_GROUNDING,
+        plan_user=plan_prompt,
+        interpret_system="Interpret behavioral and operational findings. Be specific about what changed.",
+        interpret_user_fn=lambda results_text: BEHAVIORAL_INTERPRET_PROMPT.format(
+            question=question, prior_summary=prior_summary, results_text=results_text),
+        plan_error_msg="Could not plan behavioral queries.",
+        exec_status="skipped",
+        exec_error_msg="Behavioral/operational tables not available in this schema.",
+        exec_skipped_reason="Required tables (sessions, refunds, etc.) not in schema.",
     )
-    try:
-        if not _has_usable_data(results): raise RuntimeError("skip narrator — no usable data")
-        interpretation: PhaseInterpretation = _provider("fast").complete(
-            system="Interpret behavioral and operational findings. Be specific about what changed.",
-            user=interpret_prompt,
-            response_model=PhaseInterpretation,
-        )
-    except Exception:
-        interpretation = None
+    if not _run.ok:
+        return {"investigation_phases": phases + [_run.error_phase]}
+    results, results_text, interpretation = _run.results, _run.results_text, _run.interpretation
 
     if interpretation and interpretation.findings:
         findings = _assemble_phase_findings(results, interpretation.findings, "beh")
@@ -2002,44 +1953,21 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection") -> dict:
     prioritized = _prioritize_dimensions(dimensions)
     dimensions_list = "\n".join(f"  - {d}" for d in prioritized[:6]) if prioritized else "  (none identified)"
 
-    try:
-        plan: PhasePlan = _provider("coder").complete(
-            system="Write one ranking query per dimension. Rank the metric ascending (weakest first). No time filters." + _ADA_SQL_GROUNDING,
-            user=CROSS_SECTION_PLAN_PROMPT.format(
-                question=question, metric_label=metric_label, metric_sql=metric_sql,
-                metric_table=metric_table, schema=schema, dimensions_list=dimensions_list,
-            ),
-            response_model=PhasePlan,
-        )
-    except Exception as e:
-        phase = _phase_result(
-            "cross_section", "Cross-Sectional Scan", "🧭", "error",
-            "Cross-sectional planning failed.",
-            [_skipped_finding("cross_section", str(e))],
-        )
-        return {"investigation_phases": phases + [phase]}
-
-    results = _parallel_execute_safe(conn, "cross_section", plan.queries, cap=5)
-    if not results:
-        phase = _phase_result(
-            "cross_section", "Cross-Sectional Scan", "🧭", "error",
-            "Cross-sectional queries failed.",
-            [_skipped_finding("cross_section", "No results.")],
-        )
-        return {"investigation_phases": phases + [phase]}
-
-    results_text = _results_to_text([r for _, r in results])
-    try:
-        if not _has_usable_data(results): raise RuntimeError("skip narrator — no usable data")
-        interpretation: PhaseInterpretation = _provider("fast").complete(
-            system="Interpret a cross-sectional weakness scan. Name the weakest values and any concentration; be honest about healthy areas.",
-            user=CROSS_SECTION_INTERPRET_PROMPT.format(
-                question=question, metric_label=metric_label, results_text=results_text,
-            ),
-            response_model=PhaseInterpretation,
-        )
-    except Exception:
-        interpretation = None
+    _run = run_analysis_phase(
+        conn, phase_id="cross_section", title="Cross-Sectional Scan", emoji="🧭", cap=5,
+        plan_system="Write one ranking query per dimension. Rank the metric ascending (weakest first). No time filters." + _ADA_SQL_GROUNDING,
+        plan_user=CROSS_SECTION_PLAN_PROMPT.format(
+            question=question, metric_label=metric_label, metric_sql=metric_sql,
+            metric_table=metric_table, schema=schema, dimensions_list=dimensions_list),
+        interpret_system="Interpret a cross-sectional weakness scan. Name the weakest values and any concentration; be honest about healthy areas.",
+        interpret_user_fn=lambda results_text: CROSS_SECTION_INTERPRET_PROMPT.format(
+            question=question, metric_label=metric_label, results_text=results_text),
+        plan_error_msg="Cross-sectional planning failed.",
+        exec_error_msg="Cross-sectional queries failed.",
+    )
+    if not _run.ok:
+        return {"investigation_phases": phases + [_run.error_phase]}
+    results, results_text, interpretation = _run.results, _run.results_text, _run.interpretation
 
     if interpretation and interpretation.findings:
         findings = _assemble_phase_findings(results, interpretation.findings, "xsec", metric_label=metric_label)
