@@ -1761,7 +1761,11 @@ class SchemaExplorer:
                     "dimensions": [],
                     "measures": [],
                     "finding": interp.finding,
-                    "sql": nq.sql,
+                    # The query that ACTUALLY produced the result — after the self-repair
+                    # loop fixed column/binder errors (and any Tier-3 approx rewrite). Storing
+                    # nq.sql here showed a non-runnable draft as "the data behind this claim",
+                    # breaking the Evidence layer's provenance.
+                    "sql": sql,
                     "confidence": min(0.95, 0.4 + interp.novelty * 0.1),
                     "novelty": interp.novelty,
                     "generated_at": datetime.now(timezone.utc).isoformat(),
