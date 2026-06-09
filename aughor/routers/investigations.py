@@ -506,14 +506,23 @@ async def _stream_chat(
     session_id: str = "",
     canvas_id: Optional[str] = None,
 ) -> AsyncGenerator[str, None]:
-    # Resolve canvas schema override so table names resolve correctly
+    # Resolve canvas scope so table names resolve correctly AND the model only
+    # sees in-scope tables. Multi-dataset connections (local_upload) expose every
+    # dataset and carry schema_name=None with a table-list scope, so the
+    # schema_name override below constrains nothing — without an explicit table
+    # filter a Bakehouse canvas can answer from the ecommerce schema.
     canvas_scope_schema: str | None = None
+    canvas_scope_tables: list[str] = []
+    canvas_scope_full = True
     if canvas_id:
         try:
             from aughor.canvas.store import get_canvas
             canvas = get_canvas(canvas_id)
             if canvas and canvas.scopes:
-                canvas_scope_schema = canvas.scopes[0].schema_name
+                _scope = canvas.scopes[0]
+                canvas_scope_schema = _scope.schema_name
+                canvas_scope_tables = list(_scope.tables or [])
+                canvas_scope_full = _scope.is_full_schema
         except Exception:
             pass
     try:
@@ -610,6 +619,20 @@ async def _stream_chat(
             _safe(_kb), _safe(_ckb), _safe(_sqlex),
             _safe(_expl), _safe(_causal), _safe(_docs), _safe_list(_pb_match),
         )
+
+        # Restrict the schema to the canvas's scoped tables. Table-list scopes on
+        # multi-dataset connections have schema_name=None, so the schema_name
+        # override doesn't constrain anything — filter explicitly, mirroring the
+        # Deep Analysis path's build_canvas_schema_context. Falls back to the full
+        # schema if filtering yields nothing.
+        if canvas_scope_tables and not canvas_scope_full:
+            try:
+                from aughor.tools.schema import get_schema_for_tables
+                _scoped = get_schema_for_tables(schema, canvas_scope_tables)
+                if _scoped and _scoped.strip():
+                    schema = _scoped
+            except Exception:
+                logger.warning("Canvas table-scope filter failed; using full schema", exc_info=True)
 
         # Metrics built AFTER schema (needs the column set to filter out metrics
         # whose tables/columns aren't in THIS connection — metrics are global, so
@@ -722,6 +745,16 @@ async def _stream_chat(
                 f"DEFAULT SCHEMA: {canvas_scope_schema}\n"
                 "CRITICAL: Every table reference in SQL MUST include this schema prefix "
                 f"(e.g. {canvas_scope_schema}.table_name). Do NOT use bare table names.\n\n"
+                + schema
+            )
+        elif canvas_scope_tables and not canvas_scope_full:
+            # Table-list scope (multi-dataset connection, schema_name=None): name
+            # the allowed universe so the model can't wander into another dataset.
+            schema = (
+                "ALLOWED TABLES — this canvas is scoped to ONLY these tables:\n"
+                f"{chr(10).join('  - ' + t for t in canvas_scope_tables)}\n"
+                "CRITICAL: Query ONLY these tables, using the exact schema prefixes shown. "
+                "Do NOT reference any other schema or dataset.\n\n"
                 + schema
             )
 
