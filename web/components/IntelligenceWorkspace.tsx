@@ -18,6 +18,7 @@ const IntelligenceHub  = dynamic(() => import("@/components/IntelligenceHub").th
 const ExplorationPanel = dynamic(() => import("@/components/ExplorationPanel").then(m => ({ default: m.ExplorationPanel })),{ ssr: false, loading });
 const DomainIntelPanel = dynamic(() => import("@/components/DomainIntelPanel").then(m => ({ default: m.DomainIntelPanel })),{ ssr: false, loading });
 const OrgIntelPanel    = dynamic(() => import("@/components/OrgIntelPanel").then(m => ({ default: m.OrgIntelPanel })),      { ssr: false, loading });
+const EvidencePanel    = dynamic(() => import("@/components/EvidencePanel").then(m => ({ default: m.EvidencePanel })),      { ssr: false, loading });
 
 // Minimal inline icon set — mirrors NavIcon paths used elsewhere in the shell.
 const ICONS: Record<string, string> = {
@@ -26,6 +27,7 @@ const ICONS: Record<string, string> = {
   layers:  "M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5",
   process: "M3 6h4v12H3V6zm7-3h4v18h-4V3zm7 6h4v9h-4V9z",
   spark:   "M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6L12 2z",
+  check:   "M9 12l2 2 4-4M12 3a9 9 0 100 18 9 9 0 000-18z",
 };
 
 function Icon({ name, size = 14, color = "currentColor" }: { name: string; size?: number; color?: string }) {
@@ -37,13 +39,14 @@ function Icon({ name, size = 14, color = "currentColor" }: { name: string; size?
   );
 }
 
-export type IntelLayer = "briefing" | "hub" | "ontology" | "domains" | "org";
+export type IntelLayer = "briefing" | "hub" | "ontology" | "domains" | "evidence" | "org";
 
 const LAYERS: { id: IntelLayer; icon: string; label: string; blurb: string }[] = [
   { id: "briefing", icon: "brief",   label: "Briefing", blurb: "Cross-domain synthesis" },
   { id: "hub",      icon: "layers",  label: "Hub",      blurb: "Domain knowledge profiles" },
   { id: "ontology", icon: "node",    label: "Ontology", blurb: "Object model & relationships" },
   { id: "domains",  icon: "process", label: "Domains",  blurb: "Process & data intelligence" },
+  { id: "evidence", icon: "check",   label: "Evidence", blurb: "Claim ledger & feedback" },
   { id: "org",      icon: "spark",   label: "Org",      blurb: "Organizational knowledge" },
 ];
 
@@ -153,6 +156,11 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
             {canvasId
               ? <DomainIntelPanel connectionId={connectionId} canvasId={canvasId} isActive={layer === "domains"} />
               : <ExplorationPanel connectionId={connectionId} initialSection={domainSection} />}
+          </Layer>
+        )}
+        {visited.has("evidence") && (
+          <Layer show={layer === "evidence"}>
+            <EvidencePanel connectionId={connectionId} canvasId={canvasId} onInvestigate={q => onInvestigate(q, "investigate")} />
           </Layer>
         )}
         {visited.has("org") && (

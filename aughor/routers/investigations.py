@@ -1464,6 +1464,22 @@ class EvidenceFeedbackRequest(BaseModel):
     note: Optional[str] = None
 
 
+@router.get("/investigations/evidence/recent")
+def get_recent_evidence(connection_id: str, canvas_id: Optional[str] = None, limit: int = 50):
+    """Return recent evidence claims across a scope (connection, optionally a canvas),
+    newest-first — the scope-level Evidence layer. The ledger keys only by
+    investigation_id, so we resolve the scope to its investigation IDs first.
+
+    Registered before /investigations/{inv_id}/evidence so the literal 'evidence'
+    segment can't be captured as an investigation id.
+    """
+    from aughor.db.history import list_investigation_ids
+    from aughor.evidence import store as _ev_store
+    inv_ids = list_investigation_ids(connection_id, canvas_id)
+    claims = _ev_store.get_recent_claims_for_investigations(inv_ids, limit)
+    return [c.model_dump() for c in claims]
+
+
 @router.get("/investigations/{inv_id}/evidence")
 def get_investigation_evidence(inv_id: str):
     """Return all evidence claims for an investigation, ordered by confidence."""

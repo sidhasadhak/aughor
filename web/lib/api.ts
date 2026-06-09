@@ -1514,6 +1514,19 @@ export async function getEvidenceClaims(invId: string): Promise<EvidenceClaim[]>
   return res.json();
 }
 
+/** Recent evidence claims across a scope (connection, optionally a canvas), newest-first. */
+export async function getRecentEvidenceClaims(
+  connectionId: string,
+  canvasId?: string,
+  limit = 50,
+): Promise<EvidenceClaim[]> {
+  const params = new URLSearchParams({ connection_id: connectionId, limit: String(limit) });
+  if (canvasId) params.set("canvas_id", canvasId);
+  const res = await fetch(`${BASE}/investigations/evidence/recent?${params}`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
 export async function submitClaimFeedback(
   invId: string,
   claimId: string,
