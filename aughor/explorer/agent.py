@@ -41,6 +41,11 @@ from aughor.explorer.models import (
 )
 from aughor.explorer import store as _store
 from aughor.explorer.episodes import EpisodeCollector
+from aughor.explorer.grounding import (
+    GroundingResult,
+    numeric_cells_block,
+    verify_finding,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1710,11 +1715,15 @@ class SchemaExplorer:
 
                 # Step 3: Interpret the result — run in thread to keep event loop live
                 try:
+                    _cells_block = numeric_cells_block(rows)
                     _sys3 = (
                         "You are interpreting a SQL query result as a concise business insight. "
                         "Write 1-2 sentences maximum. Include specific numbers from the result. "
                         "Focus on what is actionable or surprising.\n\n"
                         "CRITICAL INTERPRETATION RULES:\n"
+                        "- Use ONLY numbers that appear in the result. Copy each value exactly as it "
+                        "is — never scale it or add a magnitude suffix (K/M/B) the value does not "
+                        "already have. If a cell is 2.49, write 2.49, never 2.49M.\n"
                         "- If a column is labelled 'distinct_X_count' in a grouped query, it is the "
                         "TOTAL distinct count of X across all rows in that group, NOT a per-row average. "
                         "Do NOT say 'X per Y' unless the SQL explicitly computed an average (AVG or ratio "
@@ -1728,6 +1737,7 @@ class SchemaExplorer:
                         f"QUESTION: {nq.question}\n"
                         f"SQL:\n{sql}\n\n"
                         f"SQL RESULT (first 20 rows):\n{result_text}\n\n"
+                        f"NUMERIC VALUES IN THE RESULT (cite these exactly):\n{_cells_block}\n\n"
                         f"{grain_block}"
                         f"EXISTING FINDINGS FOR CONTEXT:\n{existing_findings}\n\n"
                         "Interpret this result as a business insight. "
@@ -1748,6 +1758,55 @@ class SchemaExplorer:
                     logger.info(
                         "[explorer:%s] Phase 8: %s/%s — skipping degenerate (no-data) finding",
                         self.connection_id, domain, nq.angle,
+                    )
+                    continue
+
+                # Ground every magnitude-bearing number in the prose against the real
+                # result cells. The narrator sometimes fabricates a magnitude/unit
+                # ("2.49M" for a cell of 2.49 — off 1e6). Try one corrective rewrite that
+                # may only cite the exact values; if it still can't be grounded, drop the
+                # finding rather than headline a wrong number.
+                _g = verify_finding(interp.finding, rows)
+                if not _g.grounded:
+                    logger.info(
+                        "[explorer:%s] Phase 8: %s/%s — ungrounded number(s) %s; re-grounding",
+                        self.connection_id, domain, nq.angle, _g.ungrounded,
+                    )
+                    try:
+                        _sys_rg = (
+                            "Your previous business insight contained a number that does NOT "
+                            "appear in the data — a fabricated magnitude or unit. Rewrite it "
+                            "using ONLY values from the provided list. Copy each value exactly; "
+                            "never scale it or add a magnitude suffix (K/M/B) it does not already "
+                            "have. If a number cannot be supported by the list, drop it and "
+                            "describe the pattern qualitatively. 1-2 sentences. Keep the same "
+                            "novelty and angle_covered."
+                        )
+                        _usr_rg = (
+                            f"QUESTION: {nq.question}\n"
+                            f"SQL:\n{sql}\n\n"
+                            f"EXACT RESULT VALUES YOU MAY CITE:\n{numeric_cells_block(rows)}\n\n"
+                            f"YOUR PREVIOUS (UNGROUNDED) INSIGHT:\n{interp.finding}\n\n"
+                            f"Ungrounded number(s) to remove or fix: {', '.join(_g.ungrounded)}\n"
+                            "Rewrite it grounded strictly in the exact values above."
+                        )
+                        interp_rg: _Interpretation = await _loop.run_in_executor(
+                            None,
+                            lambda: llm.complete(system=_sys_rg, user=_usr_rg, response_model=_Interpretation),
+                        )
+                        if verify_finding(interp_rg.finding, rows).grounded:
+                            interp = interp_rg
+                            _g = GroundingResult(grounded=True)
+                    except Exception as e:
+                        logger.warning(
+                            "[explorer:%s] Phase 8: re-grounding failed for %s: %s",
+                            self.connection_id, domain, e,
+                        )
+                if not _g.grounded:
+                    logger.info(
+                        "[explorer:%s] Phase 8: %s/%s — dropping finding with unverifiable "
+                        "number(s) %s",
+                        self.connection_id, domain, nq.angle, _g.ungrounded,
                     )
                     continue
 
