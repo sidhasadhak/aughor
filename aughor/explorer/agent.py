@@ -235,6 +235,36 @@ def _role_aware_time_window(tp, cp=None, jmap=None, months: int = 12):
         return None, None, []
 
 
+# A "no data" finding — the query matched nothing (all-NULL row from an empty join/filter)
+# or the interpreter explicitly reported no data. These must not become insights: they're
+# noise in the Briefing and, worse, become broken monitors when a user clicks Create Monitor.
+_NO_DATA_RE = re.compile(
+    r"(returned no data|no data (found|available|to report|for)|0 \w+ (were |was )?found|"
+    r"null values for all|no rows (returned|found|matched)|query (failed|errored)|"
+    r"no matching (rows|records|data)|empty result set)",
+    re.I,
+)
+
+
+def _is_degenerate_result(rows, finding_text: str = "") -> bool:
+    """True when a Phase-8 result carries no real data — an all-NULL single/leading row
+    (the filter/join matched nothing) or an interpretation that explicitly says so.
+
+    High-precision by design: a legitimate ``COUNT(...) = 0`` returns 0 (not NULL), so
+    real "zero X" findings survive; only genuinely empty results are dropped."""
+    if rows:
+        total = non_null = 0
+        for r in rows[:5]:
+            cells = list(r.values()) if isinstance(r, dict) else list(r)
+            for c in cells:
+                total += 1
+                if c is not None:
+                    non_null += 1
+        if total > 0 and non_null == 0:
+            return True
+    return bool(finding_text and _NO_DATA_RE.search(finding_text))
+
+
 class SchemaExplorer:
     """
     Background schema exploration agent.
@@ -1599,6 +1629,15 @@ class SchemaExplorer:
                     )
                 except Exception as e:
                     logger.warning(f"[explorer:{self.connection_id}] Phase 8: LLM interpretation failed for {domain}: {e}")
+                    continue
+
+                # Drop "no data" findings — an empty/all-NULL result or an interpretation
+                # that says as much. They pollute the Briefing and turn into broken monitors.
+                if _is_degenerate_result(rows, interp.finding):
+                    logger.info(
+                        "[explorer:%s] Phase 8: %s/%s — skipping degenerate (no-data) finding",
+                        self.connection_id, domain, nq.angle,
+                    )
                     continue
 
                 # Step 4: Store the insight

@@ -482,6 +482,19 @@ function DomainTag({ domain }: { domain: string }) {
 // Create Monitor · Promote to Org · Share · Evidence — makes each finding
 // actionable so intelligence REACHES the user (backlog #4).
 
+// A "no data" finding (empty/all-NULL result) must not be actionable: monitoring,
+// promoting, or sharing it just propagates noise — and a monitor built from its SQL
+// fires "No condition met" forever. The explorer now drops these at the source; this
+// guards any that already exist or slip through. Investigate/Evidence stay enabled so
+// the user can still inspect *why* there's no data.
+const _NO_DATA_RE = /(returned no data|no data (found|available|to report|for)|0 \w+ (were |was )?found|null values for all|no rows (returned|found|matched)|query (failed|errored)|no matching (rows|records|data)|empty result set)/i;
+
+export function isDegenerateFinding(insight: ExplorationInsight): boolean {
+  const f = (insight.finding || "").trim();
+  if (!f) return true;
+  return _NO_DATA_RE.test(f);
+}
+
 type ActStatus = "idle" | "busy" | "done" | "error";
 
 function ActionButton({ label, title, status, color, onClick, disabled }: {
@@ -564,14 +577,22 @@ export function FindingActions({ insight, domain, connectionId, canvasId, trigge
   }, [insight, domain]);
 
   const btnColor = "var(--t3)";
+  // A "no data" finding isn't actionable — disable Monitor/Promote/Share (a monitor
+  // built from its query would fire "No condition met" forever). Investigate + Evidence
+  // stay enabled so the user can inspect why there's no data.
+  const degenerate = isDegenerateFinding(insight);
+  const noData = "This finding has no data — nothing to act on";
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" as const, position: "relative" }}>
-      <ActionButton label="Monitor" title={insight.sql ? "Create an anomaly monitor from this finding's query" : "No query available to monitor"}
-        status={monStatus} color={btnColor} onClick={handleMonitor} disabled={!insight.sql} />
-      <ActionButton label="Promote" title={promStatus === "done" ? "Promoted to org intelligence" : "Promote this finding to org-wide intelligence"}
-        status={promStatus} color={btnColor} onClick={handlePromote} />
+      <ActionButton label="Monitor"
+        title={degenerate ? noData : (insight.sql ? "Create an anomaly monitor from this finding's query" : "No query available to monitor")}
+        status={monStatus} color={btnColor} onClick={handleMonitor} disabled={!insight.sql || degenerate} />
+      <ActionButton label="Promote"
+        title={degenerate ? noData : (promStatus === "done" ? "Promoted to org intelligence" : "Promote this finding to org-wide intelligence")}
+        status={promStatus} color={btnColor} onClick={handlePromote} disabled={degenerate} />
       <div style={{ position: "relative" }}>
-        <ActionButton label="Share" title="Share this finding to a delivery channel" status="idle" color={btnColor}
+        <ActionButton label="Share" title={degenerate ? noData : "Share this finding to a delivery channel"} status="idle" color={btnColor}
+          disabled={degenerate}
           onClick={() => { if (triggers.length === 0) { onTriggersHint(); } else { setShareOpen(v => !v); } }} />
         {shareOpen && triggers.length > 0 && (
           <div style={{
@@ -600,6 +621,13 @@ export function FindingActions({ insight, domain, connectionId, canvasId, trigge
       </div>
       <ActionButton label="Evidence" title="Show the query + provenance behind this finding" status="idle"
         color={btnColor} onClick={() => onEvidence(insight)} />
+      {degenerate && (
+        <span title={noData} style={{
+          fontSize: 9, fontWeight: 600, letterSpacing: ".05em", textTransform: "uppercase" as const,
+          padding: "2px 6px", borderRadius: "var(--r1)", color: "var(--t4)",
+          background: "var(--bg-3)", border: "1px solid var(--b1)",
+        }}>no data</span>
+      )}
       {shareMsg && (
         <span style={{ fontSize: 10, color: shareMsg.includes("✓") ? "var(--green4, #2e8c63)" : "var(--t4)" }}>{shareMsg}</span>
       )}
