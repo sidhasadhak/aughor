@@ -46,6 +46,7 @@ logger = logging.getLogger(__name__)
 
 _RATE_SECONDS_SCHEMA = 0.0   # schema phases (3-7) run as fast as the DB allows
 _RATE_SECONDS_INTEL  = 5.0   # domain intel phase runs at 1 query per 5 seconds
+_COST_LARGE_ROWS     = 5_000_000  # Tier 3 — at/above this, prefer approximate aggregates
 
 # State-value vocabulary for lifecycle classification
 _TERMINAL = frozenset({
@@ -344,6 +345,8 @@ class SchemaExplorer:
         self._rate_seconds: float = _RATE_SECONDS_SCHEMA
         self._time_window: Optional[tuple[str, str]] = None  # (start_iso, end_iso) — 12-month window
         self._macro_context: Optional[dict] = None  # Tier 2 full-span long-arc rollup
+        self._cost_large: bool = False               # Tier 3 — connection big enough for approx
+        self._prev_watermark: Optional[str] = None   # Tier 3 — anchor edge at the last run
 
     # ── State persistence helpers ─────────────────────────────────────────────
 
@@ -581,6 +584,23 @@ class SchemaExplorer:
                     "[explorer:%s] Time window: %s → %s",
                     self.connection_id, self._time_window[0], self._time_window[1],
                 )
+
+            # Tier 3 cost governor: capture the activity high-water mark (for incremental
+            # re-exploration) and decide whether this connection is large enough that the
+            # curiosity loop should use approximate aggregates. Best-effort, never fatal.
+            try:
+                from aughor.explorer.watermark import get_watermark, set_watermark
+                _anchor, _rec, _ = _anchor_activity(tp, cp)
+                self._prev_watermark = get_watermark(self.connection_id, _anchor) if _anchor else None
+                if _anchor and _rec:
+                    set_watermark(self.connection_id, _anchor, _rec)
+                self._cost_large = any((_profile_field(p, "row_count") or 0) >= _COST_LARGE_ROWS
+                                       for p in (tp or {}).values())
+                if self._cost_large:
+                    logger.info("[explorer:%s] Tier 3: large connection — approximate aggregates on",
+                                self.connection_id)
+            except Exception:
+                self._cost_large = False
 
             # Tier 2: cheap full-span macro rollup over the anchor — the long arc that
             # briefings juxtapose against the recent-regime micro window. Best-effort.
@@ -1580,6 +1600,14 @@ class SchemaExplorer:
                 MAX_ATTEMPTS = 3
                 think_str = f"Domain {domain} | angle={nq.angle} | {nq.question}"
                 sql = nq.sql
+                # Tier 3: on a large connection, swap exact COUNT(DISTINCT) for the HLL
+                # approximation — orders of magnitude cheaper on big facts, ~1-3% off.
+                if self._cost_large:
+                    try:
+                        from aughor.sql.cost import approximate_aggregates
+                        sql = approximate_aggregates(sql, getattr(self._conn, "dialect", "duckdb"))
+                    except Exception:
+                        pass
                 rows = None
 
                 for attempt in range(MAX_ATTEMPTS):
