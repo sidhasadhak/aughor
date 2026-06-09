@@ -246,6 +246,49 @@ _NO_DATA_RE = re.compile(
 )
 
 
+# A connection can hold several UNRELATED uploaded datasets, each landing in its own
+# schema (e.g. a bakehouse CRM in `bakehouse.*` + an ecommerce store in `ecommerce.*`).
+# They share no real key, so any join across them is a hallucination — exactly the
+# `bakehouse.sales_customers ⋈ ecommerce.orders` garbage that produced a broken finding.
+# "Dataset" = the schema path (everything before the table name). The inferred join map
+# can't be trusted to separate them (it had a false-positive cross-schema edge), so the
+# schema is the reliable boundary.
+
+def _dataset_of(tbl: str) -> str:
+    """Schema path of a (possibly qualified) table name; '' when unqualified."""
+    parts = str(tbl).split(".")
+    return ".".join(parts[:-1]) if len(parts) > 1 else ""
+
+
+def _tables_in_sql(sql: str) -> set:
+    """Real (non-CTE) qualified table names referenced by a SQL string. Best-effort."""
+    try:
+        import sqlglot
+        from sqlglot import exp
+        tree = sqlglot.parse_one(sql)
+    except Exception:
+        return set()
+    cte_names = {(c.alias_or_name or "").lower() for c in tree.find_all(exp.CTE)}
+    out = set()
+    for t in tree.find_all(exp.Table):
+        if (t.name or "").lower() in cte_names:
+            continue
+        parts = [p for p in (t.catalog, t.db, t.name) if p]
+        if parts:
+            out.add(".".join(parts))
+    return out
+
+
+def _crosses_datasets(sql: str) -> bool:
+    """True when the SQL references real tables from ≥2 distinct schemas (datasets) — a
+    join across unrelated uploaded datasets. Operates on the generated SQL's *qualified*
+    table refs, so it works regardless of how the ontology stored source tables. Tables
+    with no schema qualifier are ignored (they can't be cross-dataset)."""
+    datasets = {_dataset_of(t) for t in _tables_in_sql(sql)}
+    datasets.discard("")
+    return len(datasets) > 1
+
+
 def _is_degenerate_result(rows, finding_text: str = "") -> bool:
     """True when a Phase-8 result carries no real data — an all-NULL single/leading row
     (the filter/join matched nothing) or an interpretation that explicitly says so.
@@ -1268,6 +1311,18 @@ class SchemaExplorer:
                 pass
             return "SQL execution failed"
 
+        # Dataset isolation: a connection may hold unrelated uploaded datasets in separate
+        # schemas (e.g. bakehouse + ecommerce). The generated SQL is schema-qualified, so a
+        # bare→dataset map lets us also restrict the table context the LLM sees. No-op for a
+        # single-schema connection.
+        _all_datasets = {_dataset_of(t) for t in (tp or {}) if _dataset_of(t)}
+        multi_dataset = len(_all_datasets) > 1
+        _bare2dataset = {str(q).split(".")[-1].lower(): _dataset_of(q)
+                         for q in (tp or {}) if _dataset_of(q)}
+        if multi_dataset:
+            logger.info("[explorer:%s] Phase 8: multi-dataset connection %s — isolating datasets",
+                        self.connection_id, sorted(_all_datasets))
+
         for domain, entities in domain_entities.items():
             await self._gate()
             if self._stopped:
@@ -1321,6 +1376,22 @@ class SchemaExplorer:
 
                 # Build compact schema for domain tables — grounding _NextQuestion SQL generation
                 domain_tables = {tbl for ent in entities for tbl in ent.source_tables}
+                # Dataset isolation: a domain's entities can span unrelated uploaded datasets
+                # (different schemas). Restrict each question to the dominant dataset so the
+                # LLM can't be tempted into a cross-dataset (hallucinated) join. Resolve each
+                # (possibly bare) entity table to its schema via the qualified table universe.
+                def _ds(tbl):
+                    return _dataset_of(tbl) or _bare2dataset.get(str(tbl).split(".")[-1].lower(), "")
+                if multi_dataset:
+                    from collections import Counter
+                    counts = Counter(_ds(t) for t in domain_tables if _ds(t))
+                    if len(counts) > 1:
+                        primary = max(sorted(counts), key=lambda d: counts[d])
+                        domain_tables = {t for t in domain_tables if _ds(t) == primary}
+                        logger.info(
+                            "[explorer:%s] Phase 8: %s domain spans %s — restricting to '%s'",
+                            self.connection_id, domain, sorted(counts), primary,
+                        )
                 domain_schema_lines: list[str] = []
                 for tbl in sorted(domain_tables):
                     cols = (
@@ -1492,6 +1563,18 @@ class SchemaExplorer:
                 except Exception as e:
                     logger.warning(f"[explorer:{self.connection_id}] Phase 8: LLM question gen failed for {domain}: {e}")
                     break
+
+                # Dataset-isolation guard: if the LLM still wrote a cross-dataset join,
+                # drop it — a hallucinated join between unrelated uploaded datasets that can
+                # only return garbage (the bakehouse ⋈ ecommerce class).
+                if multi_dataset and _crosses_datasets(nq.sql):
+                    logger.info(
+                        "[explorer:%s] Phase 8: %s/%s — skipping cross-dataset join: %s",
+                        self.connection_id, domain, nq.angle, sorted(_tables_in_sql(nq.sql)),
+                    )
+                    used += 1
+                    budgets[domain] = used
+                    continue
 
                 # Step 2: Execute SQL — repair loop: run → fail → fix with real error → repeat
                 MAX_ATTEMPTS = 3
