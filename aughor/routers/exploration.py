@@ -225,13 +225,15 @@ def generate_briefing(conn_id: str, refresh: bool = False, schema: str | None = 
         }
 
     patterns = get_patterns(conn_id, by_domain, force_refresh=False)
+    macro = _expl_store.load(conn_id).get("macro_context")
     result = get_briefing(
         connection_id=conn_id,
         domain_data=by_domain,
         patterns=patterns,
         force_refresh=refresh,
+        macro_context=macro,
     )
-    return {**result, "available": bool(result.get("narrative"))}
+    return {**result, "macro_context": macro, "available": bool(result.get("narrative"))}
 
 
 @router.post("/exploration/canvas/{canvas_id}/briefing")
@@ -260,14 +262,16 @@ def generate_canvas_briefing(canvas_id: str, refresh: bool = False):
 
     conn_id = canvas.primary_connection_id or ""
     patterns = get_patterns(conn_id, by_domain, force_refresh=False)
+    macro = _expl_store.load_canvas(canvas_id).get("macro_context")
     result = get_briefing(
         connection_id=conn_id,
         domain_data=by_domain,
         patterns=patterns,
         force_refresh=refresh,
         scope_key=f"canvas:{canvas_id}",
+        macro_context=macro,
     )
-    return {**result, "available": bool(result.get("narrative"))}
+    return {**result, "macro_context": macro, "available": bool(result.get("narrative"))}
 
 
 @router.post("/exploration/{conn_id}/domains/{domain}/extend")

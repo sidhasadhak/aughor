@@ -208,6 +208,7 @@ class SchemaExplorer:
         self._last_query_at: float = 0.0
         self._rate_seconds: float = _RATE_SECONDS_SCHEMA
         self._time_window: Optional[tuple[str, str]] = None  # (start_iso, end_iso) — 12-month window
+        self._macro_context: Optional[dict] = None  # Tier 2 full-span long-arc rollup
 
     # ── State persistence helpers ─────────────────────────────────────────────
 
@@ -346,6 +347,60 @@ class SchemaExplorer:
             return None
         return rstart if (rstart and rstart > win_start) else None
 
+    def _compute_macro_context(self, tp: dict, cp: dict) -> Optional[dict]:
+        """Tier 2: one coarse full-span rollup over the anchor activity table — the long
+        arc (secular trend / growth factor) the briefing juxtaposes against the recent
+        regime. Cheap (one GROUP BY year, ~N_years rows). Best-effort; returns None on
+        any failure. See aughor/explorer/temporal.py + docs/ADAPTIVE_TEMPORAL_SCOPE.md §5."""
+        anchor, _rec, _eff = _anchor_activity(tp, cp)
+        if not anchor:
+            return None
+        prof = tp.get(anchor)
+        ts_col = getattr(prof, "primary_timestamp", None) if prof else None
+        if not ts_col:
+            return None
+
+        # Roll up at year grain unless the full span is short (then quarter).
+        grain = "year"
+        # Pick one additive measure column on the anchor to roll up alongside row counts.
+        # Skip key/id-like columns the profiler mis-tags as measures — SUM(l_orderkey)
+        # is a meaningless aggregate of identifiers, not a business quantity.
+        def _looks_like_key(name: str) -> bool:
+            n = name.lower()
+            # _key/_id (snake) and ...key/...id (TPC-style concat: l_orderkey, partkey)
+            return (n in ("id", "key") or n.endswith(("_id", "_key", "_no", "_num", "_code", "_sk",
+                                                       "key", "id"))
+                    or n.startswith(("id_", "key_")))
+        measure_col = None
+        for col_name, col_p in (cp.get(anchor) or {}).items():
+            if _profile_field(col_p, "semantic_type") == "measure" and not _looks_like_key(col_name):
+                measure_col = col_name
+                break
+
+        measure_expr = f", SUM({measure_col}) AS m" if measure_col else ""
+        sql = (
+            f"SELECT date_trunc('{grain}', {ts_col})::VARCHAR AS p, COUNT(*) AS c{measure_expr} "
+            f"FROM {anchor} WHERE {ts_col} IS NOT NULL GROUP BY 1 ORDER BY 1"
+        )
+        try:
+            r = self._conn.execute("__explorer__", sql)
+        except Exception:
+            return None
+        rows = (r.rows or []) if not getattr(r, "error", None) else []
+        if len(rows) < 2:
+            return None
+
+        periods = [str(row[0])[:10] for row in rows]
+        counts = [row[1] for row in rows]
+        measures = [row[2] for row in rows] if measure_col else None
+
+        from aughor.explorer.temporal import build_macro_context
+        micro_start = self._time_window[0] if self._time_window else None
+        return build_macro_context(
+            periods, counts, measures=measures, measure_name=measure_col,
+            micro_start=micro_start, grain=grain, anchor=anchor,
+        )
+
     def _time_filter(self, table: str, tp: dict) -> str:
         """
         Return a SQL AND-clause fragment for the 12-month time window, e.g.
@@ -391,6 +446,22 @@ class SchemaExplorer:
                     "[explorer:%s] Time window: %s → %s",
                     self.connection_id, self._time_window[0], self._time_window[1],
                 )
+
+            # Tier 2: cheap full-span macro rollup over the anchor — the long arc that
+            # briefings juxtapose against the recent-regime micro window. Best-effort.
+            try:
+                self._macro_context = self._compute_macro_context(tp, cp)
+                if self._macro_context:
+                    self._state["macro_context"] = self._macro_context
+                    self._save_state()
+                    logger.info(
+                        "[explorer:%s] Macro context: %s %s→%s (%d %ss)",
+                        self.connection_id, self._macro_context.get("anchor"),
+                        self._macro_context.get("first_period"), self._macro_context.get("last_period"),
+                        self._macro_context.get("n_periods"), self._macro_context.get("grain"),
+                    )
+            except Exception:
+                logger.debug("[explorer:%s] Tier 2 macro context skipped", self.connection_id, exc_info=True)
 
             if not domain_intel_only:
                 # Phases 3-7: schema cartography — run as fast as the DB allows
