@@ -8,6 +8,7 @@ import {
   getSchemaProfile,
   getPatterns,
   getCanvasPatterns,
+  getActionTriggers,
   type DomainInsights,
   type ExplorationInsight,
   type OrgInsight,
@@ -15,7 +16,19 @@ import {
   type TableProfileData,
   type ColumnProfileData,
   type Pattern,
+  type ActionTrigger,
 } from "@/lib/api";
+import { FindingActions, EvidenceDrawer } from "./BriefingPanel";
+
+// Shared context for finding-level actions threaded Hub → DomainProfile → InsightRow.
+interface ActionsCtx {
+  connectionId: string;
+  canvasId?: string;
+  triggers: ActionTrigger[];
+  domain: string;
+  onEvidence: (ins: ExplorationInsight, domain: string) => void;
+  onTriggersHint: () => void;
+}
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -45,7 +58,7 @@ function fmtDate(iso: string): string {
 
 // ── Insight row ────────────────────────────────────────────────────────────────
 
-function InsightRow({ insight }: { insight: ExplorationInsight }) {
+function InsightRow({ insight, ctx }: { insight: ExplorationInsight; ctx?: ActionsCtx }) {
   const nov = noveltyLabel(insight.novelty);
   const [expanded, setExpanded] = useState(false);
   return (
@@ -86,6 +99,13 @@ function InsightRow({ insight }: { insight: ExplorationInsight }) {
               <span style={{ fontSize: 10, color: "var(--t4)" }}>
                 confidence {Math.round((insight.confidence ?? 0) * 100)}% · {fmtDate(insight.generated_at)}
               </span>
+            </div>
+          )}
+          {expanded && ctx && (
+            <div onClick={e => e.stopPropagation()} style={{ marginTop: 10 }}>
+              <FindingActions insight={insight} domain={ctx.domain}
+                connectionId={ctx.connectionId} canvasId={ctx.canvasId} triggers={ctx.triggers}
+                onEvidence={(ins) => ctx.onEvidence(ins, ctx.domain)} onTriggersHint={ctx.onTriggersHint} />
             </div>
           )}
         </div>
@@ -581,6 +601,9 @@ function DomainProfile({
   connectionId,
   canvasId,
   onBack,
+  triggers,
+  onEvidence,
+  onTriggersHint,
 }: {
   domain: string;
   data: DomainInsights;
@@ -588,9 +611,13 @@ function DomainProfile({
   connectionId: string;
   canvasId?: string;
   onBack: () => void;
+  triggers: ActionTrigger[];
+  onEvidence: (ins: ExplorationInsight, domain: string) => void;
+  onTriggersHint: () => void;
 }) {
   const [tab, setTab] = useState<ProfileTab>("overview");
   const [search, setSearch] = useState("");
+  const actionsCtx: ActionsCtx = { connectionId, canvasId, triggers, domain, onEvidence, onTriggersHint };
 
   const breakdown = noveltyBreakdown(data.insights);
   const pct = coveragePct(data);
@@ -807,7 +834,7 @@ function DomainProfile({
               <div style={{ padding: "40px", textAlign: "center", color: "var(--t3)", fontSize: 12 }}>
                 {search ? "No insights match your search." : "No insights yet."}
               </div>
-            ) : filtered.map(ins => <InsightRow key={ins.id} insight={ins} />)}
+            ) : filtered.map(ins => <InsightRow key={ins.id} insight={ins} ctx={actionsCtx} />)}
           </div>
         )}
 
@@ -1160,6 +1187,24 @@ export function IntelligenceHub({ connectionId, canvasId }: { connectionId: stri
   const [loading, setLoading] = useState(true);
   const [selectedDomain, setSelectedDomain] = useState<string | null>(null);
   const [search, setSearch] = useState("");
+  const [triggers, setTriggers] = useState<ActionTrigger[]>([]);
+  const [evidenceInsight, setEvidenceInsight] = useState<ExplorationInsight | null>(null);
+  const [evidenceDomain, setEvidenceDomain] = useState<string>("");
+  const [hint, setHint] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    getActionTriggers().then(t => { if (alive) setTriggers(t); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  const openEvidence = useCallback((ins: ExplorationInsight, domain: string) => {
+    setEvidenceDomain(domain); setEvidenceInsight(ins);
+  }, []);
+  const showTriggersHint = useCallback(() => {
+    setHint("No delivery channel yet — add a Slack/webhook trigger in Action Hub to share findings.");
+    setTimeout(() => setHint(null), 5000);
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1195,6 +1240,16 @@ export function IntelligenceHub({ connectionId, canvasId }: { connectionId: stri
 
   return (
     <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
+      {/* Evidence drill-through drawer + transient hint (finding actions, #4) */}
+      <EvidenceDrawer insight={evidenceInsight} domain={evidenceDomain} onClose={() => setEvidenceInsight(null)} />
+      {hint && (
+        <div style={{
+          position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)", zIndex: 70,
+          padding: "10px 16px", borderRadius: "var(--r2)", fontSize: 12,
+          background: "var(--bg-1)", border: "1px solid var(--b2)", color: "var(--t2)",
+          boxShadow: "0 6px 20px rgba(0,0,0,.18)", maxWidth: 420,
+        }}>{hint}</div>
+      )}
       {/* Left sidebar — domain list */}
       <div style={{
         width: 200, borderRight: "1px solid var(--b1)", display: "flex",
@@ -1299,6 +1354,9 @@ export function IntelligenceHub({ connectionId, canvasId }: { connectionId: stri
           connectionId={connectionId}
           canvasId={canvasId}
           onBack={() => setSelectedDomain(null)}
+          triggers={triggers}
+          onEvidence={openEvidence}
+          onTriggersHint={showTriggersHint}
         />
       ) : (
         <SynthesisHome

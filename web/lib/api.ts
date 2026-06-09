@@ -889,6 +889,15 @@ export async function promoteCanvasInsight(canvasId: string, insightId: string):
   return res.json();
 }
 
+export async function promoteConnectionInsight(connectionId: string, insightId: string): Promise<{ promoted: boolean }> {
+  const res = await fetch(
+    `${BASE}/exploration/${encodeURIComponent(connectionId)}/insights/${encodeURIComponent(insightId)}/promote`,
+    { method: "POST" }
+  );
+  if (!res.ok) throw new Error("Failed to promote insight");
+  return res.json();
+}
+
 export async function resumeCanvasExploration(canvasId: string): Promise<{ status: string }> {
   const res = await fetch(`${BASE}/exploration/canvas/${encodeURIComponent(canvasId)}/resume`, { method: "POST" });
   if (!res.ok) throw new Error("Failed to resume canvas exploration");
@@ -1643,6 +1652,116 @@ export async function acknowledgeAlert(alertId: string): Promise<MonitorAlert> {
 export async function getDigest(connId: string, period: "week" | "day" = "week"): Promise<DigestResult> {
   const res = await fetch(`${BASE}/monitors/digest?conn_id=${connId}&period=${period}`);
   if (!res.ok) throw new Error("Failed to fetch digest");
+  return res.json();
+}
+
+// ── Action Hub triggers + finding share ─────────────────────────────────────────
+
+export interface ActionTrigger {
+  id: string;
+  name: string;
+  type: "webhook" | "slack" | "jira";
+  url: string;
+  headers: Record<string, string>;
+  enabled: boolean;
+  channel?: string | null;
+  project?: string | null;
+  issue_type?: string | null;
+}
+
+export async function getActionTriggers(): Promise<ActionTrigger[]> {
+  const res = await fetch(`${BASE}/actions/triggers`);
+  if (!res.ok) throw new Error("Failed to fetch action triggers");
+  const data = await res.json();
+  return data.triggers ?? [];
+}
+
+export interface SendFindingResult {
+  status: "ok" | "failed" | "timeout";
+  http_status: number | null;
+  error: string | null;
+}
+
+/** Share a finding (Briefing/Hub insight) to a configured Action Hub trigger. */
+export async function sendFindingToTrigger(
+  triggerId: string,
+  body: { text: string; metric_name?: string; headline?: string; source_id?: string },
+): Promise<SendFindingResult> {
+  const res = await fetch(`${BASE}/actions/triggers/${encodeURIComponent(triggerId)}/send`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error("Failed to share finding");
+  return res.json();
+}
+
+// ── Scheduled Brief subscriptions ───────────────────────────────────────────────
+
+export interface BriefSubscription {
+  id: string;
+  conn_id: string;
+  name: string;
+  period: "week" | "day";
+  send_cron: string;
+  trigger_id: string;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+  last_sent_at: string | null;
+  last_status: string | null;
+  last_error: string | null;
+}
+
+export async function getBriefSubscriptions(connId?: string): Promise<BriefSubscription[]> {
+  const qs = connId ? `?conn_id=${encodeURIComponent(connId)}` : "";
+  const res = await fetch(`${BASE}/briefs/subscriptions${qs}`);
+  if (!res.ok) throw new Error("Failed to fetch brief subscriptions");
+  const data = await res.json();
+  return data.subscriptions ?? [];
+}
+
+export async function createBriefSubscription(
+  body: { conn_id: string; name: string; trigger_id: string; period?: "week" | "day"; send_cron?: string; enabled?: boolean },
+): Promise<BriefSubscription> {
+  const res = await fetch(`${BASE}/briefs/subscriptions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || "Failed to create brief subscription");
+  return res.json();
+}
+
+export async function updateBriefSubscription(
+  id: string,
+  body: { conn_id: string; name: string; trigger_id: string; period?: "week" | "day"; send_cron?: string; enabled?: boolean },
+): Promise<BriefSubscription> {
+  const res = await fetch(`${BASE}/briefs/subscriptions/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error("Failed to update brief subscription");
+  return res.json();
+}
+
+export async function deleteBriefSubscription(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/briefs/subscriptions/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to delete brief subscription");
+}
+
+export interface BriefDeliveryResult {
+  status: "ok" | "failed" | "timeout";
+  http_status: number | null;
+  error: string | null;
+  summary: string | null;
+  markdown: string | null;
+}
+
+export async function testBriefSubscription(id: string): Promise<BriefDeliveryResult> {
+  const res = await fetch(`${BASE}/briefs/subscriptions/${encodeURIComponent(id)}/test`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to test brief subscription");
   return res.json();
 }
 
