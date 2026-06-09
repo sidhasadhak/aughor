@@ -81,6 +81,13 @@
 72. [Canvas Optimisation — Scope Editing & History Management](#72-canvas-optimisation--scope-editing--history-management)
 73. [Data Canvas — List Ranking, Recents & Rename](#73-data-canvas--list-ranking-recents--rename)
 74. [Grounded NL2SQL, Trusted Templates & the Eval Suite](#74-grounded-nl2sql-trusted-templates--the-eval-suite)
+75. [Self-Validating Semantic Layer, Fan-Out Guard & Multi-Schema Repairs](#75-self-validating-semantic-layer-fan-out-guard--multi-schema-repairs--shipped)
+76. [Reusable Component Architecture, Shared Primitives & Exhaustive Test Pass](#76-reusable-component-architecture-shared-primitives--exhaustive-test-pass--shipped)
+77. [The Brief — Answer Surface, Agent Reasoning Quality & Data-Shape Intelligence](#77-the-brief--answer-surface-agent-reasoning-quality--data-shape-intelligence--shipped)
+78. [Intelligence-Surface Trust — Scope Consistency, Self-Explaining Intelligence & ADA Correctness](#78-intelligence-surface-trust--scope-consistency-self-explaining-intelligence--ada-correctness--shipped)
+79. [Adaptive Temporal Scope — Tier 0/1/2 + Anchor Tuning](#79-adaptive-temporal-scope--tier-012--anchor-tuning--shipped)
+80. [Finding Actionability & Scheduled Brief Delivery](#80-finding-actionability--scheduled-brief-delivery--shipped)
+81. [Evidence Peer Layer & Intelligence-Surface Visuals](#81-evidence-peer-layer--intelligence-surface-visuals--shipped)
 
 ---
 
@@ -2349,4 +2356,51 @@ Two connected pieces of work that make the **Canvas** — not the raw connection
 
 ---
 
-*Last updated: 2026-06-08 · 78 features — all shipped. See `ROADMAP.md` for upcoming milestones.*
+## 79. Adaptive Temporal Scope — Tier 0/1/2 + Anchor Tuning ✅ Shipped
+
+**What it does.** Replaces the naive "last 12 months" window with a system that *discovers when matters* — Aughor's temporal USP. It anchors analysis on the trailing edge of real activity, narrows to the current statistical regime, and juxtaposes that against the full-history long arc.
+
+**Why it exists.** A fixed window anchored on `MAX(any date column)` breaks the moment a schema has a calendar / date-dimension table: those run far into the future (TPC-DS `date_dim` → 2100), dragging the window past the last real fact so every fact filter returns zero rows ("no data" briefings). And a fixed window can't tell "revenue is down this quarter" from "revenue is down within a multi-year climb." The pitch: *we don't ask you when — we discover when matters.*
+
+**How it works.**
+- **Tier 0 — role-aware recency (`explorer/agent.py`).** The window's trailing edge is the consensus recency among **measure-bearing activity tables**, not any date column. Calendar/dimension spines are excluded — by zero-measures, by name (`date_dim`/`dim_date`/`calendar`/…), and by **shape** (≥70% of a table's "measure" columns are date-parts like `d_year`/`d_moy`/`d_qoy`, which the profiler mis-tags). Sentinel dates (9999/1900/epoch) are filtered, and the dense `effective_date_range` is preferred. The calendar↔fact gap is surfaced as a data-quality discrepancy.
+- **Tier 1 — current-regime narrowing (`explorer/regime.py`).** Queries the activity density series (rows per period at the profiler grain) and runs single-changepoint binary segmentation (minimise within-segment SSE) gated by a significance threshold; narrows the window start to a recent structural break only when it clears a ~90-day floor. Live on beautycommerce: a campaigns regime break narrowed a 12-month window to the active 6 months.
+- **Tier 2 — full-span macro context (`explorer/temporal.py`).** One cheap coarse rollup (`GROUP BY year`) over the anchor produces the long arc — growth factor, year-by-year series — gated to ≥3 year-buckets so a partial boundary year can't masquerade as YoY growth. Injected to lead the briefing narrator with a juxtaposition instruction ("activity grew 4× over 8 years, but the current regime is flat"). Live: TPC-H → 7-year arc on `lineitem` ("held roughly flat", `l_quantity` 19.3M→17.5M).
+- **Anchor tuning.** On a recency tie the **core fact** (most rows, within a 45-day tolerance) wins, so a 5K-row `campaigns` can't beat a 6.4M-row `order_items` that ends the same day. A measure-column key-name guard skips `SUM(l_orderkey)`-style nonsense in the macro rollup. Validated across beautycommerce / TPC-H / TPC-DS.
+
+**Key files.** `aughor/explorer/{agent,regime,temporal}.py`, `aughor/knowledge/briefing.py`, `aughor/routers/exploration.py`; `tests/unit/{test_temporal_scope,test_regime,test_macro_context}.py`; `docs/ADAPTIVE_TEMPORAL_SCOPE.md`.
+
+---
+
+## 80. Finding Actionability & Scheduled Brief Delivery ✅ Shipped
+
+**What it does.** Turns every passive intelligence finding into something the user can *act on* — and pushes intelligence to them without opening the app.
+
+**Why it exists.** Aughor computed rich findings (Briefing headlines, Hub insights) but they were read-only; the Monitors, Action Hub, and Evidence subsystems all existed but were unwired to the findings. This makes intelligence *reach* the user — "heavy-duty actionable intel."
+
+**How it works.**
+- **Finding-level actions (`web/components/{BriefingPanel,IntelligenceHub}.tsx`).** A compact toolbar on every Briefing card and expanded Hub insight: **Create Monitor** (builds an anomaly monitor from the finding's own SQL), **Promote to Org** (connection- *and* canvas-scoped — connection-level findings had no promotion path before), **Share** (fires the finding through a configured Slack/webhook/Jira Action Hub trigger), and **Evidence** (a drill-through drawer showing the source query + confidence/novelty/freshness behind the claim).
+- **Connection-scoped promote (`explorer/store.py`, `routers/exploration.py`).** `promote_insight_conn` + `POST /exploration/{conn}/insights/{id}/promote`, the counterpart to the canvas promote, pushing the finding into the org-intelligence vector store.
+- **Share to trigger (`routers/actions.py`).** `POST /actions/triggers/{id}/send` fires an arbitrary finding through the existing delivery + retry + logging path.
+- **Scheduled brief delivery (new `aughor/briefs/` subsystem).** A `BriefSubscription` (connection, cron, delivery trigger) persisted to JSON; an APScheduler job (mirroring the monitors scheduler) builds the Intelligence Digest on schedule and delivers it through an Action Hub trigger; `/briefs/subscriptions` CRUD + `/test`. Delivery is decoupled from channel mechanics by reusing triggers as the transport.
+
+**Key files.** `aughor/briefs/{models,store,delivery,scheduler}.py`, `aughor/routers/{briefs,actions,exploration}.py`, `aughor/explorer/store.py`; `web/components/{BriefingPanel,IntelligenceHub}.tsx`, `web/lib/api.ts`; `tests/unit/{test_actionability,test_briefs}.py`.
+
+---
+
+## 81. Evidence Peer Layer & Intelligence-Surface Visuals ✅ Shipped
+
+**What it does.** Makes the Evidence Ledger a first-class intelligence layer with a human validate/dispute loop, and makes the Deep-Analysis trace and the Briefing genuinely visual.
+
+**Why it exists.** Every Deep-Analysis claim was already logged with its source SQL and confidence (the Evidence Ledger, feature #65), but only reachable per-investigation — there was no way to see "what has Aughor claimed about this connection lately, and does it hold up?" And two surfaces leaned too hard on text: the agent trace was a static list, and the Briefing was a wall of prose.
+
+**How it works.**
+- **Evidence peer layer (`web/components/{EvidencePanel,IntelligenceWorkspace}.tsx`).** A new "Evidence" layer beside Briefing/Hub/Domains. Because the ledger keys only by `investigation_id`, scope resolves through `history.list_investigation_ids(conn, canvas)` → `evidence.get_recent_claims_for_investigations(ids, limit)`, exposed as `GET /investigations/evidence/recent` (registered before `/{inv_id}/evidence` so the literal segment can't be captured as an id). Each claim shows confidence, metric, freshness, an expandable source query, and **Validated / Disputed / Needs-context** feedback that persists — teaching Aughor which findings hold up. Live-verified: feedback round-trips to the ledger and the layer scopes correctly to a canvas.
+- **Deep-Analysis live stepper (`web/components/ThinkingTrace.tsx`, `app/globals.css`).** The agent trace renders as an animated stepper: a violet→emerald progress bar, a checkmark-pop as each step completes, a pulsing dot on the active step, a flowing connector rail, and staggered entry — with a `prefers-reduced-motion` guard. Rendering-only (the step derivation is untouched).
+- **Visual Briefing (`web/components/BriefingPanel.tsx`).** The Briefing leads with a domain-coverage bar chart (findings per domain, opacity by novelty) and per-finding novelty meters on the headline and signal cards, replacing single-number summaries.
+
+**Key files.** `aughor/{routers/investigations,evidence/store,db/history}.py`; `web/components/{EvidencePanel,IntelligenceWorkspace,ThinkingTrace,BriefingPanel}.tsx`, `web/app/globals.css`, `web/lib/api.ts`; `tests/unit/test_evidence_scope.py`.
+
+---
+
+*Last updated: 2026-06-09 · 81 features — all shipped. See `ROADMAP.md` for upcoming milestones.*
