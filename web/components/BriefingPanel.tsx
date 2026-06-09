@@ -547,6 +547,9 @@ export function FindingActions({ insight, domain, connectionId, canvasId, trigge
         name: `${domain}: ${insight.finding.slice(0, 48)}${insight.finding.length > 48 ? "…" : ""}`,
         custom_sql: insight.sql,
         alert_on: "anomaly",
+        // Re-anchor the finding's frozen date window to the live data edge at run time,
+        // so the monitor tracks a trailing window instead of going stale.
+        reanchor_window: true,
       });
       setMonStatus("done");
     } catch { setMonStatus("error"); }

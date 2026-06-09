@@ -1553,6 +1553,7 @@ export interface MonitorDef {
   name: string;
   metric_name: string | null;
   custom_sql: string | null;
+  reanchor_window: boolean;
   check_cron: string;
   alert_on: "threshold_cross" | "trend_reversal" | "anomaly" | "segment_drift" | "data_freshness" | "any_change";
   warning_threshold: number | null;

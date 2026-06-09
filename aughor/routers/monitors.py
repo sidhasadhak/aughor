@@ -27,6 +27,7 @@ class CreateMonitorRequest(BaseModel):
     name: str
     metric_name: Optional[str] = None
     custom_sql: Optional[str] = None
+    reanchor_window: bool = False
     check_cron: str = "0 * * * *"
     alert_on: str = "threshold_cross"
     warning_threshold: Optional[float] = None
