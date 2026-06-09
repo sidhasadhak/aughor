@@ -17,8 +17,7 @@ logger = logging.getLogger(__name__)
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+from aughor.util.time import now_iso as _now_iso
 
 
 def _query(db, sql: str) -> list:

@@ -7,8 +7,7 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+from aughor.util.time import now_iso_z as _now
 
 
 # Sensible default cadences keyed by period.

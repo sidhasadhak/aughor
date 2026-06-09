@@ -16,8 +16,7 @@ logger = logging.getLogger(__name__)
 _HEADLINE_CAP = 1500   # keep delivery payloads channel-friendly
 
 
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+from aughor.util.time import now_iso_z as _now
 
 
 def build_brief_payload(sub: BriefSubscription):

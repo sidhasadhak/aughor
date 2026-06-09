@@ -20,10 +20,7 @@ from pydantic import BaseModel, Field
 _PROPOSALS_PATH  = Path(__file__).parent.parent.parent / "data" / "causal_proposals.json"
 _CONFIRMED_PATH  = Path(__file__).parent.parent.parent / "data" / "causal_graph.json"
 
-
-def _now() -> str:
-    import datetime
-    return datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+from aughor.util.time import now_iso_z as _now
 
 
 def _edge_id(from_signal: str, to_signal: str) -> str:
@@ -58,17 +55,6 @@ class ConfirmedCausalEdge(BaseModel):
     conn_id: str
     created_at: str = Field(default_factory=_now)
     updated_at: str = Field(default_factory=_now)
-
-
-def _now() -> str:
-    import datetime
-    return datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
-
-
-def _edge_id(from_signal: str, to_signal: str) -> str:
-    import hashlib
-    raw = f"{from_signal.lower().strip()}→{to_signal.lower().strip()}"
-    return hashlib.md5(raw.encode()).hexdigest()[:12]
 
 
 # ── Persistence ───────────────────────────────────────────────────────────────

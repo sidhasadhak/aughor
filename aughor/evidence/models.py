@@ -7,8 +7,7 @@ import uuid
 from datetime import datetime, timezone
 
 
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+from aughor.util.time import now_iso as _now_iso
 
 
 def _new_id() -> str:

@@ -15,8 +15,7 @@ from aughor.briefs.models import BriefSubscription
 _PATH = Path("data/brief_subscriptions.json")
 
 
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+from aughor.util.time import now_iso_z as _now
 
 
 def _load() -> list[dict]:
