@@ -548,12 +548,16 @@ def _missing_column_hint(err: str):
     )
 
 
-def _execute_safe(conn: "DatabaseConnection", phase_id: str, sql: str):
+def _execute_safe(conn: "DatabaseConnection", phase_id: str, sql: str, schema: Optional[str] = None):
     """Execute SQL with one self-correction retry. Returns QueryResult.
 
     Retries on:
     - Hard SQL errors (syntax, missing column/table)
     - Suspicious zero-row results (e.g. CAST of identifier column as DATE)
+
+    `schema` is the canvas-scoped schema for the fix prompt; without it the fix
+    LLM would see the full connection schema (every dataset on a multi-dataset
+    connection) and could "fix" a query by switching to an out-of-scope table.
     """
     from aughor.agent.prompts import FIX_SQL_PROMPT
     from aughor.agent.prompts_investigate import PhasePlan
@@ -595,7 +599,7 @@ def _execute_safe(conn: "DatabaseConnection", phase_id: str, sql: str):
                 dialect=conn.dialect,
                 sql=sql,
                 error=fix_error,
-                schema=conn.get_schema(),
+                schema=schema if schema else conn.get_schema(),
                 kb_patterns_section="",
                 error_diagnosis=_diag,
             )
@@ -619,6 +623,7 @@ def _parallel_execute_safe(
     phase_id: str,
     plan_queries: list,
     cap: int = 4,
+    schema: Optional[str] = None,
 ) -> list[tuple]:
     """Run up to `cap` PhasePlan queries in parallel using per-thread reader connections.
 
@@ -636,14 +641,14 @@ def _parallel_execute_safe(
         return []
     if len(valid) == 1:
         q, sql = valid[0]
-        r = _execute_safe(conn, phase_id, sql)
+        r = _execute_safe(conn, phase_id, sql, schema=schema)
         r.hypothesis_id = phase_id
         return [(q, r)]
 
     def _run(item: tuple) -> tuple:
         q, sql = item
         reader = conn.make_reader()
-        r = _execute_safe(reader, phase_id, sql)
+        r = _execute_safe(reader, phase_id, sql, schema=schema)
         r.hypothesis_id = phase_id
         return (q, r)
 
@@ -658,7 +663,7 @@ def _parallel_execute_safe(
         # Serial fallback — never let parallelization break the investigation
         results = []
         for q, sql in valid:
-            r = _execute_safe(conn, phase_id, sql)
+            r = _execute_safe(conn, phase_id, sql, schema=schema)
             r.hypothesis_id = phase_id
             results.append((q, r))
         return results
@@ -1337,6 +1342,7 @@ def run_analysis_phase(
     plan_system: str, plan_user: str,
     interpret_system: str, interpret_user_fn,
     cap: int = 4,
+    schema: Optional[str] = None,
     plan_error_msg: str = "Could not plan queries.",
     exec_error_msg: str = "Queries failed to execute.",
     exec_status: str = "error",
@@ -1357,7 +1363,7 @@ def run_analysis_phase(
             phase_id, title, emoji, "error", plan_error_msg, [_skipped_finding(phase_id, str(e))]))
 
     # Step 2 — execute (parallel — each query gets its own reader connection)
-    results = _parallel_execute_safe(conn, phase_id, plan.queries, cap=cap)
+    results = _parallel_execute_safe(conn, phase_id, plan.queries, cap=cap, schema=schema)
     if not results:
         return _PhaseRun(ok=False, error_phase=_phase_result(
             phase_id, title, emoji, exec_status, exec_error_msg,
@@ -1440,7 +1446,7 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
             )
         plan_prompt += "\n".join(lines)
     _run = run_analysis_phase(
-        conn, phase_id="baseline", title="Baseline & Anomaly Assessment", emoji="📊",
+        conn, phase_id="baseline", title="Baseline & Anomaly Assessment", emoji="📊", schema=schema,
         plan_system="Write SQL queries for baseline anomaly detection. Return a JSON object with a 'queries' list." + _ADA_SQL_GROUNDING,
         plan_user=plan_prompt,
         interpret_system="You are a senior data analyst interpreting query results. Be precise. Cite real numbers.",
@@ -1545,7 +1551,7 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
             if active_filter:
                 three_way_sql += f" WHERE {active_filter}"
 
-            val_result = _execute_safe(conn, "premise_check", three_way_sql)
+            val_result = _execute_safe(conn, "premise_check", three_way_sql, schema=schema)
             if (not val_result.error and val_result.rows
                     and len(val_result.rows[0]) >= 3):
                 row = val_result.rows[0]
@@ -1681,7 +1687,7 @@ def ada_decompose(state: AgentState, conn: "DatabaseConnection") -> dict:
         schema=schema,
     )
     _run = run_analysis_phase(
-        conn, phase_id="decomposition", title="Metric Decomposition", emoji="🧩",
+        conn, phase_id="decomposition", title="Metric Decomposition", emoji="🧩", schema=schema,
         plan_system="Write SQL for metric decomposition. Decompose the metric into additive sub-drivers." + _ADA_SQL_GROUNDING,
         plan_user=plan_prompt,
         interpret_system="Interpret metric decomposition results. State clearly whether volume or value drove the change.",
@@ -1785,7 +1791,7 @@ def ada_dimensional(state: AgentState, conn: "DatabaseConnection") -> dict:
         dimensions_list=dimensions_list,
     )
     _run = run_analysis_phase(
-        conn, phase_id="dimensional", title="Dimensional Analysis", emoji="🔬",
+        conn, phase_id="dimensional", title="Dimensional Analysis", emoji="🔬", schema=schema,
         plan_system="Write contribution-analysis SQL for each dimension. Sort by absolute_change ASC." + _ADA_SQL_GROUNDING,
         plan_user=plan_prompt,
         interpret_system="Interpret contribution analysis. Identify concentrated vs. diffuse decline.",
@@ -1889,7 +1895,7 @@ def ada_behavioral(state: AgentState, conn: "DatabaseConnection") -> dict:
         events_section=events_section,
     )
     _run = run_analysis_phase(
-        conn, phase_id="behavioral", title="Behavioral & Operational", emoji="👥",
+        conn, phase_id="behavioral", title="Behavioral & Operational", emoji="👥", schema=schema,
         plan_system="Write SQL for behavioral and operational diagnostics." + _ADA_SQL_GROUNDING,
         plan_user=plan_prompt,
         interpret_system="Interpret behavioral and operational findings. Be specific about what changed.",
@@ -1954,7 +1960,7 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection") -> dict:
     dimensions_list = "\n".join(f"  - {d}" for d in prioritized[:6]) if prioritized else "  (none identified)"
 
     _run = run_analysis_phase(
-        conn, phase_id="cross_section", title="Cross-Sectional Scan", emoji="🧭", cap=5,
+        conn, phase_id="cross_section", title="Cross-Sectional Scan", emoji="🧭", cap=5, schema=schema,
         plan_system="Write one ranking query per dimension. Rank the metric ascending (weakest first). No time filters." + _ADA_SQL_GROUNDING,
         plan_user=CROSS_SECTION_PLAN_PROMPT.format(
             question=question, metric_label=metric_label, metric_sql=metric_sql,
