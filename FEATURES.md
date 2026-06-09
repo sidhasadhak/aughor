@@ -90,6 +90,9 @@
 81. [Evidence Peer Layer & Intelligence-Surface Visuals](#81-evidence-peer-layer--intelligence-surface-visuals--shipped)
 82. [Semantic Compiler — Typed Intent IR + Deterministic SQL](#82-semantic-compiler--typed-intent-ir--deterministic-sql--shipped)
 83. [Temporal Tier 3 — Query Cost Governor](#83-temporal-tier-3--query-cost-governor--shipped)
+84. [Finding Trust Guards — Numeral Grounding & Platform-Generic SQL Robustness](#84-finding-trust-guards--numeral-grounding--platform-generic-sql-robustness--shipped)
+85. [Angle-Feasibility Gate & Repair Intent-Preservation](#85-angle-feasibility-gate--repair-intent-preservation--shipped)
+86. [Fix-and-Save & Fix-All from the Activity Log](#86-fix-and-save--fix-all-from-the-activity-log--shipped)
 
 ---
 
@@ -2442,4 +2445,48 @@ Two connected pieces of work that make the **Canvas** — not the raw connection
 
 ---
 
-*Last updated: 2026-06-09 · 83 features — all shipped. See `ROADMAP.md` for upcoming milestones.*
+## 84. Finding Trust Guards — Numeral Grounding & Platform-Generic SQL Robustness ✅ Shipped
+
+**What it does.** Keeps *wrong numbers* out of the intelligence layer. A finding is only as good as the figure it reports; this is the set of deterministic guards that make Aughor's numbers trustworthy, not just plausible.
+
+**Why it exists.** A from-scratch rebuild watch over six connections surfaced trust bugs the eye misses: a finding that read "2.49M attribution credit" when the real cell was 2.49 (off 1e6, fabricated "M"), and recurring SQL failures that wasted the curiosity budget. Every fix is driven by the database engine's own error text / profiled types — no schema or connection specifics — so the learning transfers across DuckDB, Postgres and any connection.
+
+**How it works.**
+- **Numeral grounding** (`aughor/explorer/grounding.py`) — extracts every magnitude-bearing number a finding claims and verifies it against the actual result cells (rounding-window + 2% tolerance). A fabricated magnitude/unit is dropped or one corrective re-grounding pass is attempted; degenerate (all-NULL) results never become findings. Live: isolates exactly the fabricated `2.49M` while real cells pass.
+- **Timestamp typing** (`aughor/tools/profiler.py`) — `_select_timestamp_cols` excludes numeric-typed columns from the name-based primary-timestamp fallback (ClickBench `EventDate::USMALLINT` is epoch-days, not a date); `_NUMERIC_TYPES` broadened to DuckDB unsigned ints.
+- **Dead-reference memory** (`aughor/explorer/agent.py`) — harvests nonexistent column/table names from engine errors into a per-run set, fed back to the question generator so it stops re-proposing hallucinated columns. Live: workspace fix-failures 29→5 (−83%), repeated `region` hallucinations 4→0.
+- **Repair-diagnosis branches** (`aughor/sql/writer.py`, shared with chat/ADA) — missing-table → add-join/drop-ref; unexposed-column → select-out/qualify; ambiguous-ref → qualify-with-alias; non-inner-join-on-subquery → INNER/CTE rewrite. Live on beautycommerce: yield 18→27.
+
+**Key files.** `aughor/explorer/grounding.py`, `aughor/tools/profiler.py`, `aughor/explorer/agent.py`, `aughor/sql/writer.py`; `tests/unit/{test_grounding,test_profiler_timestamp,test_sql_repair_learnings}.py`.
+
+---
+
+## 85. Angle-Feasibility Gate & Repair Intent-Preservation ✅ Shipped
+
+**What it does.** Stops the autonomous explorer from asking a *time-based question of a table with no time*, and from silently *changing the meaning* of a question while repairing it.
+
+**Why it exists.** A live finding proposed "outstanding receivables by invoice age over the last 12 months" against an `invoices` table with no date column. The LLM invented `invoice_date`; the repair made it run by swapping in `invoice_delay_days` — but that is payment *delay*, not invoice *age*. A query that runs and answers a different question is more dangerous than one that fails.
+
+**How it works.**
+- **Angle-feasibility gate** — each domain table's `primary_timestamp` is computed; a dateless domain drops temporal coverage angles and gets a "NO TEMPORAL DATA" instruction, while a mixed domain names its dateless tables ("never apply dates/aging/windows to these"). Live: Finance now writes honest "invoice delay distribution" findings instead of inventing a date column; 0 misleading age/aging findings stored.
+- **Intent-preservation guard** — a repair that *substituted columns* and **de-temporalised** a query (the original computed over time, the repair no longer does) is dropped (explorer) or flagged unverified (user fix). A first attempt using an LLM faithfulness check **failed verification** (the model rated the drift "faithful"), so it is deterministic. A second drift mode — `DATE_DIFF(CURRENT_DATE, CURRENT_DATE)` faking a constant-0 "age" while keeping temporal SQL — is caught by a dedicated **vacuous-temporal** detector.
+
+**Key files.** `aughor/explorer/agent.py` (`_is_temporal_angle`, `_query_columns`, `_has_temporal_sql`, `_has_vacuous_temporal`); `tests/unit/test_phase8_feasibility.py`.
+
+---
+
+## 86. Fix-and-Save & Fix-All from the Activity Log ✅ Shipped
+
+**What it does.** Turns the Activity log's per-row "Run fix" from a disposable preview into a durable action — a successful repair is saved like any successful query — and adds a filter-scoped "Fix all" to clear a batch of errors at once.
+
+**Why it exists.** When a user makes the effort to fix an errored explorer query and it works, that result should be reflected and referenced, not thrown away on close. At the same time a bulk fixer must be safe — it must never trigger a fresh crawl of new questions.
+
+**How it works.** `aughor/explorer/fix_persist.py` → `persist_fixed_finding()`: repairs the query and on a clean run (1) **heals the episode** (appends a resolved turn — append-only, no history rewrite) and (2) for domain-intelligence queries **interprets + stores a finding** into Briefing/Hub/Domains, through the *same* Phase-8 guards (degenerate / grounding / de-temporalisation / vacuous-temporal). A guard-tripping fix is still stored but flagged **`unverified`** (low confidence, never auto-promotable) with a note; non-domain phases heal only.
+- **Endpoints** — `POST /exploration/{conn}/fix-episode` (one) and `/fix-all` (a batch). Fix-all repairs **only** the episodes the client sends — exactly the errored set visible under its current filter (all/today/yesterday/week) — so it never re-derives "all errors", never starts the explorer, and never generates new questions. Returns a per-batch summary.
+- **Frontend** (`web/components/ActivityLog.tsx`) — "Run fix" keeps its preview plus a "Save as finding" button with clear feedback; "Fix all (N)" sits in the toolbar scoped to the visible filter. Threaded through connection + canvas scope.
+
+**Key files.** `aughor/explorer/fix_persist.py`, `aughor/routers/exploration.py`, `web/{lib/api.ts,components/ActivityLog.tsx}`; `tests/unit/test_fix_persist.py`.
+
+---
+
+*Last updated: 2026-06-09 · 86 features — all shipped. See `ROADMAP.md` for upcoming milestones.*

@@ -6,7 +6,22 @@
 
 ---
 
-## 🧠 Latest — Adaptive Temporal Scope (USP) + Actionability + Evidence Trust Layer
+## 🛡 Latest — Finding Trust Guards + Save-Your-Fix (Activity Log)
+
+A full reset + from-scratch rebuild watch over six connections (TPC-H/DS, ClickBench, beautycommerce, a multi-dataset workspace) hardened the autonomous intelligence so the **numbers it reports are trustworthy, not just plausible** — and turned the Activity log's "Run fix" into a durable, guarded action.
+
+| Area | What shipped | Key files |
+|---|---|---|
+| **Numeral grounding** | Every magnitude-bearing number in a finding is verified against the actual result cells; a fabricated magnitude/unit (a finding read "2.49M" for a 2.49 cell — off 1e6) is dropped or re-grounded. | `aughor/explorer/grounding.py` |
+| **Platform-generic SQL robustness** | Date-named integer columns no longer pose as timestamps (ClickBench `EventDate::USMALLINT`); a per-run **dead-reference memory** stops the generator re-proposing hallucinated columns (workspace fix-failures **29→5**); shared **repair-diagnosis branches** (missing-table / unexposed-col / ambiguous / non-inner-join) lift yield (beautycommerce **18→27**). | `aughor/tools/profiler.py`, `aughor/explorer/agent.py`, `aughor/sql/writer.py` |
+| **Angle-feasibility + intent-preservation** | The explorer won't ask a time-based question of a *dateless* table (it had invented `invoice_date`); a repair that **de-temporalises** a query or **neuters** a time metric (`DATE_DIFF(CURRENT_DATE, CURRENT_DATE)` → constant 0) is dropped/flagged. An LLM faithfulness check **failed verification** and was replaced with deterministic signals. | `aughor/explorer/agent.py` |
+| **Fix-and-Save & Fix-All** | A successful "Run fix" is now saved like any successful query — the episode is healed and a finding stored through the *same* guards (flagged **`unverified`** on a guard trip, never auto-promotable); a filter-scoped **"Fix all"** repairs only the errored set visible under the current filter, never starting a fresh crawl. | `aughor/explorer/fix_persist.py`, `web/components/ActivityLog.tsx` |
+
+**Engineering note.** "Can't fail it" testing repeatedly caught the fixes' own gaps (the vacuous-temporal drift mode; an unreliable LLM-as-judge) before they shipped. Full rebuild + architecture-audit findings (wiring, DRY ~900–1,200 LOC, commercial feature-tiering) in `docs/REBUILD_ANOMALIES_AND_IMPROVEMENT_PLAN.md`.
+
+---
+
+## 🧠 Recent — Adaptive Temporal Scope (USP) + Actionability + Evidence Trust Layer
 
 Three big arcs landed: the **temporal USP** ("we don't ask you *when* — we discover *when matters*"), making intelligence **reach the user** (actionability + push), and making every claim **auditable** (Evidence layer). All on branch `backlog-next`.
 
@@ -62,13 +77,13 @@ unblocks. Effort: S (≤ a day) / M (a few days) / L (a week+).
 | **13** | **Full-pipeline eval mode** — measure the lift the pipeline gives over raw schema-only generation | Med *(force-multiplier)* | M | — | Makes every other item measurable instead of vibes-based. |
 | **14** | **UX polish** — ontology legends-at-top, canvas History-tab empty bug, Configure panel (About/Data/Instructions), Recents-includes-Quick-chats, motion/animation pass | Low–Med | S each | — | Product-felt small wins (Configure panel is the most impactful). |
 
-**Done so far:** #1–#6, #8, #10, #11 + Tier-1 tuning + the user-filed monitor/finding fixes. #1/#2/#3/#5 are on `main`; everything else (#4/#6/#8/#10/#11 + tuning + fixes) is on `backlog-next` (**15 commits, not yet pushed/merged**). Both big bets (#10 Tier 3, #11 Semantic Compiler) shipped.
+**Done so far:** #1–#6, #8, #10, #11 + Tier-1 tuning + the user-filed monitor/finding fixes + the **Finding Trust Guards** arc (numeral grounding, platform-generic SQL robustness, angle-feasibility + intent-preservation, Fix-and-Save / Fix-All). Both big bets (#10 Tier 3, #11 Semantic Compiler) shipped. **All merged to `main`.**
 
 **Dependency chains:** `#1 → #5 → #6 → #10` (temporal — all ✅); `#2 → #11` (compiler ✅); `#7` gated by a small new endpoint.
 
 **Recommended next** (of what remains): **#9 Delivery polish** (last-mile of trust — presentation lags the reasoning) → **#14 UX polish** (Configure panel; cheap product-felt wins). #12 (enterprise) and #13 (eval) slot by deployment/measurement need; #7 needs the canvas start/trigger endpoints.
 
-**Housekeeping:** `backlog-next` holds 15 verified commits (215 unit tests green, tsc clean) awaiting an explicit push/merge word — **no merge to `main` until the user says so.** Open follow-ups: Phase-8 number/unit hallucination (a finding's magnitudes were wrong; ground every numeral to a result cell), the compiler chat-path deploy-env verify, and the opt-in Tier-3 sampling/incremental rollout.
+**Housekeeping:** `backlog-next` (22 verified commits since the fork, **286 unit tests green, tsc clean**) **merged to `main` and pushed** (2026-06-09). Open follow-ups: non-temporal semantic drift in repairs (revenue↔cost — harder than the temporal class now covered), the compiler chat-path deploy-env verify, the opt-in Tier-3 sampling/incremental rollout, and the §-audit refactors (one `spawn_explorer`, `Scope` object, `KeyedJsonStore`, silent-ontology-gate→actionable-error) + the commercial feature-flag (`aughor/licensing/`) foundation.
 
 ---
 
