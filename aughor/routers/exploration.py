@@ -692,3 +692,32 @@ def promote_canvas_insight(canvas_id: str, insight_id: str):
         pass  # Qdrant unavailable — metadata flag is already set; non-critical
 
     return {"insight_id": insight_id, "promoted": True}
+
+
+@router.post("/exploration/{connection_id}/insights/{insight_id}/promote")
+def promote_connection_insight(connection_id: str, insight_id: str):
+    """Promote a connection-scoped Briefing/Hub finding to org-wide intelligence.
+
+    Counterpart to the canvas promote endpoint — connection-level findings (the
+    default Briefing scope) had no promotion path until now.
+    """
+    from aughor.explorer.store import promote_insight_conn
+    insight = promote_insight_conn(connection_id, insight_id)
+    if insight is None:
+        raise HTTPException(status_code=404, detail="Insight not found")
+
+    # Push the full insight text into the org_intelligence Qdrant collection.
+    try:
+        from aughor.knowledge.org_intelligence import promote_to_org
+        promote_to_org(
+            insight_id=insight_id,
+            text=insight.get("finding", ""),
+            domain=insight.get("domain", ""),
+            novelty=insight.get("novelty", 3),
+            canvas_id=f"conn:{connection_id}",
+            angle=insight.get("angle", ""),
+        )
+    except Exception:
+        pass  # Qdrant unavailable — metadata flag is already set; non-critical
+
+    return {"insight_id": insight_id, "promoted": True}

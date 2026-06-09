@@ -129,6 +129,42 @@ def execute_recommendation_action(inv_id: str, rec_index: int, body: dict):
     return fire_action(trigger, payload).to_dict()
 
 
+class _SendFindingBody(BaseModel):
+    text:        str                    # the finding / claim to share
+    metric_name: Optional[str] = None
+    headline:    Optional[str] = None   # context line (e.g. domain · angle)
+    source_id:   Optional[str] = None   # insight_id / canvas_id / conn_id for provenance
+
+
+@router.post("/actions/triggers/{trigger_id}/send")
+def send_finding_to_trigger(trigger_id: str, body: _SendFindingBody):
+    """Share an arbitrary finding (Briefing/Hub insight) to a configured trigger.
+
+    Powers the finding-level 'Share' action — fires the same Slack/webhook/Jira
+    delivery path as recommendation execution, but with a free-form finding payload
+    instead of an investigation recommendation.
+    """
+    import datetime
+    from aughor.actions.store    import get_trigger
+    from aughor.actions.models   import ActionPayload
+    from aughor.actions.executor import fire_action
+
+    if not (body.text or "").strip():
+        raise HTTPException(status_code=400, detail="text required")
+    trigger = get_trigger(trigger_id)
+    if not trigger:
+        raise HTTPException(status_code=404, detail="Trigger not found")
+
+    payload = ActionPayload(
+        investigation_id=body.source_id or "", rec_index=0,
+        recommendation=body.text,
+        metric_name=body.metric_name or "", headline=body.headline,
+        trigger_id=trigger_id,
+        triggered_at=datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"),
+    )
+    return fire_action(trigger, payload).to_dict()
+
+
 @router.get("/actions/logs")
 def list_action_logs(limit: int = 100, trigger_id: Optional[str] = None):
     from aughor.actions.store import list_logs
