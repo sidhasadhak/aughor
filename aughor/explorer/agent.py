@@ -114,6 +114,53 @@ def _table_has_measure(cols) -> bool:
     return any(_profile_field(c, "semantic_type") == "measure" for c in vals)
 
 
+# A date dimension / calendar table runs across the *whole* date axis (often into the
+# future, e.g. TPC-DS date_dim → 2100) and the profiler frequently mis-tags its integer
+# date-part columns (d_year, d_moy, d_qoy…) as "measures" — which would wrongly admit it
+# to the activity pool and push the window past all real facts. Catch it by name and by
+# shape (its "measures" are overwhelmingly date-parts). See docs/ADAPTIVE_TEMPORAL_SCOPE.md §3,§7.
+_CALENDAR_NAME_RE = re.compile(
+    r"(?:^|[._])(date_dim|dim_date|dim_day|day_dim|d_date|time_dim|dim_time|calendar|dates?)(?:$|[._])",
+    re.I,
+)
+_DATEPART_RE = re.compile(
+    r"(year|month|moy|day|dom|dow|doy|quarter|qoy|qtr|week|woy|seq|fiscal|fy|holiday|weekend|season|date_sk|julian)",
+    re.I,
+)
+
+
+def _col_name(c, key=None):
+    """Best-effort column name from a profile (dataclass/dict) or its dict key."""
+    return getattr(c, "column", None) or (c.get("column") if isinstance(c, dict) else None) or key
+
+
+def _is_calendar_spine(table, cols) -> bool:
+    """True when *table* is a calendar / date-dimension spine — by name (date_dim,
+    dim_date, calendar…) or by shape (≥70% of its measure-tagged columns are date-parts).
+    Such tables must be excluded from activity anchoring even when mis-tagged with measures."""
+    base = str(table).split(".")[-1].lower()
+    if _CALENDAR_NAME_RE.search(base):
+        return True
+    if not cols:
+        return False
+    items = cols.items() if isinstance(cols, dict) else [(None, c) for c in cols]
+    measure_names = [
+        _col_name(c, k) for k, c in items
+        if _profile_field(c, "semantic_type") == "measure"
+    ]
+    measure_names = [n for n in measure_names if n]
+    if len(measure_names) >= 4:
+        dateparts = sum(1 for n in measure_names if _DATEPART_RE.search(n))
+        if dateparts / len(measure_names) >= 0.7:
+            return True
+    return False
+
+
+def _is_activity_table(table, cols) -> bool:
+    """An *activity* (fact/event) table: measure-bearing and not a calendar spine."""
+    return _table_has_measure(cols) and not _is_calendar_spine(table, cols)
+
+
 def _days_between(a: str, b: str) -> int:
     """Absolute day gap between two ISO date strings; 0 on parse error."""
     try:
@@ -122,21 +169,36 @@ def _days_between(a: str, b: str) -> int:
         return 0
 
 
+# When two activity tables share (nearly) the same trailing edge, the *core fact*
+# (most rows) is the better anchor than a fresher-by-days peripheral table — a tiny
+# `campaigns` (5K rows) ending the same day as a 6.4M-row `order_items` should not win.
+_ANCHOR_RECENCY_TOLERANCE_DAYS = 45
+
+
 def _anchor_activity(tp, cp=None):
-    """Return ``(table, recency, is_effective)`` for the measure-bearing activity table
-    with the latest sentinel-filtered recency — the table whose trailing edge defines the
-    window. Falls back to all dated tables when no measures are detected. Returns
+    """Return ``(table, recency, is_effective)`` for the anchor activity table — the one
+    whose trailing edge defines the window. Among measure-bearing tables whose recency is
+    within ``_ANCHOR_RECENCY_TOLERANCE_DAYS`` of the latest, prefer the **core fact**
+    (largest row_count): recency ties shouldn't hand the window to a small peripheral
+    table. Falls back to all dated tables when no measures are detected. Returns
     ``(None, None, False)`` when nothing is usable."""
-    activity, spine = [], []   # each: (recency, is_effective, table)
+    activity, spine = [], []   # each: (recency, is_effective, table, row_count)
     for table, prof in (tp or {}).items():
         rec, is_eff = _table_recency(prof)
         if rec is None:
             continue
-        (activity if _table_has_measure((cp or {}).get(table)) else spine).append((rec, is_eff, table))
+        rows = _profile_field(prof, "row_count") or 0
+        (activity if _is_activity_table(table, (cp or {}).get(table)) else spine).append(
+            (rec, is_eff, table, rows))
     pool = activity or spine
     if not pool:
         return None, None, False
-    rec, is_eff, table = max(pool, key=lambda r: r[0])
+
+    latest = max(r[0] for r in pool)
+    # Tables effectively at the trailing edge (within tolerance of the latest recency).
+    fresh = [r for r in pool if _days_between(r[0], latest) <= _ANCHOR_RECENCY_TOLERANCE_DAYS]
+    # Among those, the core fact (most rows) wins; recency breaks any row-count tie.
+    rec, is_eff, table, _rows = max(fresh, key=lambda r: (r[3], r[0]))
     return table, rec, is_eff
 
 
@@ -158,7 +220,7 @@ def _role_aware_time_window(tp, cp=None, jmap=None, months: int = 12):
 
     discrepancy = sorted(
         ((t, _table_recency(p)[0]) for t, p in (tp or {}).items()
-         if not _table_has_measure((cp or {}).get(t)) and (_table_recency(p)[0] or "") > best_rec),
+         if not _is_activity_table(t, (cp or {}).get(t)) and (_table_recency(p)[0] or "") > best_rec),
         key=lambda x: x[1], reverse=True,
     )
 
