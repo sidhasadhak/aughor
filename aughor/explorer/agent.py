@@ -338,6 +338,52 @@ def _extract_dead_refs(error: str) -> set:
     return out
 
 
+# Coverage angles that inherently require a date/timestamp (aging, over-time, cohorts).
+# Offering one on a domain with NO real timestamp forces the generator to invent a date
+# column — the `invoice_date`-on-a-dateless-`invoices`-table hallucination. Substring-matched
+# so checklist wording can vary. See _phase8 temporal-feasibility gate (#1).
+_TEMPORAL_ANGLE_RE = re.compile(
+    r"(trend|season|retention|lifecycle|cohort|churn|aging|recency|lead.?time|"
+    r"growth|velocity|momentum|over.?time|time.?series|tenure)",
+    re.I,
+)
+
+
+def _is_temporal_angle(angle: str) -> bool:
+    """True when a coverage angle inherently needs a date/timestamp column."""
+    return bool(_TEMPORAL_ANGLE_RE.search(angle or ""))
+
+
+def _query_columns(sql: str) -> set:
+    """Lowercased bare column names referenced by a SQL string (best-effort, via sqlglot).
+    Used to tell a meaning-changing repair (one column SUBSTITUTED for another) apart from a
+    benign one (a join added, or an alias qualified) — both of which preserve the columns."""
+    try:
+        import sqlglot
+        from sqlglot import exp
+        tree = sqlglot.parse_one(sql)
+    except Exception:
+        return set()
+    return {(c.name or "").lower() for c in tree.find_all(exp.Column) if c.name}
+
+
+# SQL that computes OVER TIME — a date/time function, INTERVAL, or a date literal. Used to
+# catch a repair that silently DE-TEMPORALISES a time-based question (the invoice case: invoice
+# AGE via DATE_DIFF on a date + a date-range filter, "repaired" into a plain payment-delay
+# column). Deterministic and high-precision — no LLM judgement (an LLM rated that drift faithful).
+_TEMPORAL_SQL_RE = re.compile(
+    r"\b(date_?diff|datediff|date_?trunc|date_?part|date_?add|date_?sub|extract|strftime|"
+    r"julian_?day|current_date|current_timestamp|interval)\b"
+    r"|'\d{4}-\d{2}-\d{2}",   # a date literal like '2025-05-17'
+    re.I,
+)
+
+
+def _has_temporal_sql(sql: str) -> bool:
+    """True when SQL computes over time (date/time function, INTERVAL, or a date literal)."""
+    return bool(_TEMPORAL_SQL_RE.search(sql or ""))
+
+
 class SchemaExplorer:
     """
     Background schema exploration agent.
@@ -1442,6 +1488,38 @@ class SchemaExplorer:
                             "[explorer:%s] Phase 8: %s domain spans %s — restricting to '%s'",
                             self.connection_id, domain, sorted(counts), primary,
                         )
+
+                # ── Temporal-feasibility gate (#1) ──────────────────────────────
+                # A table with no real timestamp cannot support date filters, aging or
+                # trends; offering a time-based angle (or window) there forces the generator
+                # to invent a date column — the `invoice_date`-on-a-dateless-`invoices`
+                # hallucination. Drop temporal angles when the whole domain is dateless, and
+                # always name the dateless tables so the LLM never applies time logic to them.
+                def _tbl_ts(t):
+                    p = (tp or {}).get(t) or (tp or {}).get(t.lower())
+                    return getattr(p, "primary_timestamp", None) if p else None
+                dateless_tables = sorted(t for t in domain_tables if not _tbl_ts(t))
+                domain_has_dates = any(_tbl_ts(t) for t in domain_tables)
+                if not domain_has_dates:
+                    uncovered = [a for a in uncovered if not _is_temporal_angle(a)] or [
+                        "distribution", "composition", "ranking", "anomalies"]
+                    temporal_guard_block = (
+                        "NO TEMPORAL DATA: this domain has NO date or timestamp column. Do NOT use "
+                        "any date filter, time window, DATE_DIFF, aging buckets, trends, seasonality, "
+                        "growth or over-time analysis, and do NOT invent a date/timestamp column. "
+                        "Analyze only by category, status, distribution, ratio and rank.\n\n"
+                    )
+                elif dateless_tables:
+                    temporal_guard_block = (
+                        f"TABLES WITH NO DATE COLUMN: {', '.join(dateless_tables)}. For these you MUST "
+                        f"NOT use a date filter, time window, DATE_DIFF, aging bucket or over-time "
+                        f"analysis, and MUST NOT invent a date column for them — analyze them only by "
+                        f"category, status, distribution, ratio or rank. Time-based analysis is valid "
+                        f"only on tables that have a listed timestamp column.\n\n"
+                    )
+                else:
+                    temporal_guard_block = ""
+
                 domain_schema_lines: list[str] = []
                 for tbl in sorted(domain_tables):
                     cols = (
@@ -1621,6 +1699,7 @@ class SchemaExplorer:
                         f"{domain_schema_block}\n\n"
                         f"{grain_block}\n"
                         f"{join_safety_block}\n"
+                        f"{temporal_guard_block}"
                         f"{time_window_block}"
                         f"{dead_refs_block}"
                         f"{prior_phases_block}"
@@ -1701,6 +1780,26 @@ class SchemaExplorer:
                 if not rows or len(rows) == 0:
                     logger.debug(f"[explorer:{self.connection_id}] Phase 8: empty result for {nq.question}")
                     continue
+
+                # ── Intent-preservation gate (#2) ───────────────────────────────
+                # A repair can make a query RUN while silently changing its MEANING. The
+                # highest-confidence, deterministic case: the repair DE-TEMPORALISES a time-based
+                # question — the invoice case computed invoice AGE via DATE_DIFF on a date plus a
+                # date-range filter, and the "fix" swapped in a plain payment-delay column,
+                # stripping every temporal construct. When the repair substituted columns AND the
+                # original computed over time but the repaired query no longer does, the result
+                # answers a DIFFERENT question — drop it (a runnable-but-wrong finding is worse
+                # than none). No LLM judgement: an LLM rated this exact drift "faithful".
+                if sql != nq.sql:
+                    _removed = _query_columns(nq.sql) - _query_columns(sql)
+                    if _removed and _has_temporal_sql(nq.sql) and not _has_temporal_sql(sql):
+                        logger.info(
+                            "[explorer:%s] Phase 8: %s/%s — dropping finding; repair de-temporalised "
+                            "a time-based question (removed %s, added %s)",
+                            self.connection_id, domain, nq.angle, sorted(_removed),
+                            sorted(_query_columns(sql) - _query_columns(nq.sql)),
+                        )
+                        continue
 
                 # Format result for LLM interpretation (max 20 rows)
                 result_text = "\n".join(str(r) for r in rows[:20])
