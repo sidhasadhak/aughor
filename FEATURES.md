@@ -88,6 +88,8 @@
 79. [Adaptive Temporal Scope — Tier 0/1/2 + Anchor Tuning](#79-adaptive-temporal-scope--tier-012--anchor-tuning--shipped)
 80. [Finding Actionability & Scheduled Brief Delivery](#80-finding-actionability--scheduled-brief-delivery--shipped)
 81. [Evidence Peer Layer & Intelligence-Surface Visuals](#81-evidence-peer-layer--intelligence-surface-visuals--shipped)
+82. [Semantic Compiler — Typed Intent IR + Deterministic SQL](#82-semantic-compiler--typed-intent-ir--deterministic-sql--shipped)
+83. [Temporal Tier 3 — Query Cost Governor](#83-temporal-tier-3--query-cost-governor--shipped)
 
 ---
 
@@ -2403,4 +2405,41 @@ Two connected pieces of work that make the **Canvas** — not the raw connection
 
 ---
 
-*Last updated: 2026-06-09 · 81 features — all shipped. See `ROADMAP.md` for upcoming milestones.*
+## 82. Semantic Compiler — Typed Intent IR + Deterministic SQL ✅ Shipped
+
+**What it does.** For the safe, common analytical shapes, the LLM fills a small *typed intent* instead of hand-writing SQL — and the SQL is **assembled deterministically** from the verified ontology. "The LLM augments a declarative layer rather than regenerating SQL."
+
+**Why it exists.** Free-form LLM SQL hallucinates columns and fans out joins (a real finding in this codebase referenced four non-existent columns). For the shapes that map 1:1 to a grounded template, generation should be *compilation*, not guessing — the strategic endpoint of the metric-unification + ontology work.
+
+**How it works.** `aughor/semantic/compiler.py`:
+- **`QueryIntent`** — a typed IR: `intent_type` (scalar / timeseries / breakdown / ranking), entity/table, a named `metric` OR an `agg` over a measure column, dimension, time grain, object set, window, order/limit — all *symbolic* references.
+- **`synthesize_sql(intent, ontology, dialect)`** — resolves every reference against the verified ontology (measure/dimension columns, object-set filters, the canonical metric resolver), assembles a single-table SQL template, and dialect-transpiles with sqlglot. **Coverage-gated:** an unresolved reference, a multi-table metric, a `SUM` over a non-measure column, an unverified object set, or an unsupported intent → returns `None` and the caller falls back to the LLM path. Single-table only (joins are where free-form generation fans out, so they stay on the fallback path). It never guesses.
+- **`parse_intent` / `compile_question`** — one structured LLM call maps a question to a grounded intent (choosing only from a strict catalog of real names); `compile_question` runs the full NL → intent → SQL path.
+- **Chat fast-path** — `_stream_chat` injects the compiled SQL as a VERIFIED block and forces it as the executed query (gated `AUGHOR_COMPILER`, fully fallback-safe).
+
+**Verified.** End-to-end on beautycommerce: *"how many attributions"* → `scalar/count` → `COUNT(*)` → 6.9M; *"total weight by touchpoint type"* → `breakdown`; *"top 3 touchpoint types by weight"* → `ranking` — each parsed to a grounded intent and executed clean. 24 unit tests (grounding + every gate).
+
+**Key files.** `aughor/semantic/compiler.py`, `aughor/routers/investigations.py`; `tests/unit/test_compiler.py`.
+
+---
+
+## 83. Temporal Tier 3 — Query Cost Governor ✅ Shipped
+
+**What it does.** Lets intelligence build "without breaking sweat" against TB-scale warehouses, via two safe, high-value levers plus an incremental re-exploration watermark.
+
+**Why it exists.** Completes the Adaptive Temporal Scope arc (Tier 0/1/2). The curiosity loop leans on high-cardinality `COUNT(DISTINCT)` and full-table scans; at scale those need cost governance without throwing away correctness.
+
+**How it works.** `aughor/sql/cost.py`:
+- **`approximate_aggregates`** — `COUNT(DISTINCT x)` → `approx_count_distinct(x)`, median/quantile → `approx_quantile` (DuckDB; a no-op elsewhere). HLL is ~1–3% off for orders of magnitude less work (live: 2.88M vs exact 2.80M on a 6.9M-row table).
+- **`sample_aggregates`** — for a single-table scan, `USING SAMPLE p%` + scale `COUNT`/`SUM` by `100/p` (`AVG`/`MIN`/`MAX` unscaled). **Refuses joins and any distinct count** — sampling a distinct undercounts (a bug this caught: `approx_count_distinct` on a 10% sample reads 10× low). Live: 7.1M / 10.16 vs exact 7.0M / 10.0.
+- **`govern`** — approx on by default (safe); sampling opt-in + row-threshold gated; flags every approximation in a provenance note.
+- **`aughor/explorer/watermark.py`** — per-(connection, table) activity high-water mark + `delta_clause`, so a recurring re-run can scan only rows since last time (a Monday brief on a 10-yr warehouse scans last week).
+- **Explorer wiring** — detects a large connection (any table ≥ 5M rows) and applies the approx governor to the Phase-8 loop; records the anchor watermark each run. Live: beautycommerce → `cost_large=True` (carts 10M / attribution 6.9M), watermark `order_items` @ 2026-05-17.
+
+**Rollout note.** Sampling stays opt-in (scaled estimates in user-facing numbers want a per-surface decision) and the watermark-driven incremental re-run *mode* is captured but not yet used to skip partitions.
+
+**Key files.** `aughor/sql/cost.py`, `aughor/explorer/{watermark,agent}.py`; `tests/unit/{test_cost,test_watermark}.py`.
+
+---
+
+*Last updated: 2026-06-09 · 83 features — all shipped. See `ROADMAP.md` for upcoming milestones.*

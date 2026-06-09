@@ -56,19 +56,19 @@ unblocks. Effort: S (≤ a day) / M (a few days) / L (a week+).
 | **7** | **Canvas-explorer scoping** — Briefing in canvas mode polls + drives the *canvas* explorer, not the connection (needs canvas `start`/`trigger-intel` endpoints) | Med | M | canvas start/trigger endpoints | Fixes the scope bug found 2026-06-08; completes canvas-scoped intelligence. |
 | ✅ **8** | ~~**Evidence peer layer** — scope-recent endpoint + `EvidencePanel` + new layer~~ **DONE** (`backlog-next`) | Med | M | scope-join endpoint | Trust drill-through; closes the validate/dispute loop. |
 | **9** | **Delivery polish** — converge ADA + explore on one report contract; charts on the decomposition path; viz upgrades (Pareto, sparkline+distribution, choropleth, MoM% overlay, "within noise") | Med–High | M–L | — | "Reasoning outruns presentation" — the last-mile of trust. **← NEXT** |
-| **10** | **Temporal Tier 3 — cost governor** (partition pruning, scan budget, sampling, incremental deltas) | High *(at real-warehouse scale)* | L | #1–#6 | The TB-scale hardening; matters most once a real warehouse connects. |
-| **11** | **Semantic Compiler** — typed Intent IR (`QueryPlanV2`→`QueryIntent`) + deterministic `synthesize_sql(intent, ontology, dialect)` for the 4 safest intents | High *(strategic)* | L | #2 ✅ | The biggest architectural bet — "LLM augments a declarative layer, not regenerates SQL." |
+| ✅ **10** | ~~**Temporal Tier 3 — cost governor**~~ **DONE** (`backlog-next`) — approximate aggregates (COUNT(DISTINCT)→approx_count_distinct) + sampling-with-scaling + incremental watermark; wired into the explorer's large-connection curiosity loop | High *(at real-warehouse scale)* | L | #1–#6 ✅ | The TB-scale hardening. Sampling + incremental-delta re-run kept opt-in pending a per-surface rollout call. |
+| ✅ **11** | ~~**Semantic Compiler**~~ **DONE** (`backlog-next`) — typed `QueryIntent` IR + deterministic `synthesize_sql(intent, ontology, dialect)` for the 4 safe intents + NL→intent parser; wired as a fallback-safe fast-path in the chat SQL flow | High *(strategic)* | L | #2 ✅ | The biggest architectural bet. Live-verified NL→SQL→execute end-to-end on beautycommerce. |
 | **12** | **Enterprise hardening** (Sprint 48) — OAuth2/OIDC, RBAC, workspace tenancy, query cancellation, secrets manager | High *(for deploy)* | L | — | Gates multi-user / deployment; otherwise independent. |
 | **13** | **Full-pipeline eval mode** — measure the lift the pipeline gives over raw schema-only generation | Med *(force-multiplier)* | M | — | Makes every other item measurable instead of vibes-based. |
 | **14** | **UX polish** — ontology legends-at-top, canvas History-tab empty bug, Configure panel (About/Data/Instructions), Recents-includes-Quick-chats, motion/animation pass | Low–Med | S each | — | Product-felt small wins (Configure panel is the most impactful). |
 
-**Done so far:** #1–#6 + #8 (temporal Tier 0/1/2 + tuning, metric unification, fan-out guard, actionability, evidence layer). #1/#2/#3/#5 are on `main`; #4/#6/#8 + Tier-1 tuning are on `backlog-next` (7 commits, **not yet pushed/merged**).
+**Done so far:** #1–#6, #8, #10, #11 + Tier-1 tuning + the user-filed monitor/finding fixes. #1/#2/#3/#5 are on `main`; everything else (#4/#6/#8/#10/#11 + tuning + fixes) is on `backlog-next` (**15 commits, not yet pushed/merged**). Both big bets (#10 Tier 3, #11 Semantic Compiler) shipped.
 
-**Dependency chains:** `#1 → #5 → #6 → #10` (temporal — first three ✅); `#2 ✅ → #11` (compiler now unblocked); `#7` gated by a small new endpoint.
+**Dependency chains:** `#1 → #5 → #6 → #10` (temporal — all ✅); `#2 → #11` (compiler ✅); `#7` gated by a small new endpoint.
 
-**Recommended next three** (of what remains): **#9 Delivery polish** (last-mile of trust, presentation now lags the reasoning) → **#11 Semantic Compiler** (#2 dependency is satisfied — the strategic bet) → **#14 UX polish** (Configure panel; cheap product-felt wins). #12 (enterprise) and #13 (eval) slot by deployment/measurement need.
+**Recommended next** (of what remains): **#9 Delivery polish** (last-mile of trust — presentation lags the reasoning) → **#14 UX polish** (Configure panel; cheap product-felt wins). #12 (enterprise) and #13 (eval) slot by deployment/measurement need; #7 needs the canvas start/trigger endpoints.
 
-**Housekeeping:** `backlog-next` holds 7 verified commits (147 unit tests green, tsc clean) awaiting an explicit push/merge word — **no merge to `main` until the user says so.**
+**Housekeeping:** `backlog-next` holds 15 verified commits (215 unit tests green, tsc clean) awaiting an explicit push/merge word — **no merge to `main` until the user says so.** Open follow-ups: Phase-8 number/unit hallucination (a finding's magnitudes were wrong; ground every numeral to a result cell), the compiler chat-path deploy-env verify, and the opt-in Tier-3 sampling/incremental rollout.
 
 ---
 
