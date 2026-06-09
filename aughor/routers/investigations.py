@@ -720,6 +720,25 @@ async def _stream_chat(
         except Exception:
             _trusted_used = []
 
+        # Semantic Compiler fast-path (backlog #11): for the safe analytical shapes
+        # (scalar / timeseries / breakdown / ranking) assemble grounded SQL deterministically
+        # from the verified ontology instead of free-form generation. The LLM still writes the
+        # headline/chart/approach around it, but the executed SQL is the compiled one — which
+        # can't hallucinate columns or fan out. Coverage-gated + fallback-safe (None → no-op).
+        _compiled_sql = None
+        _compiled_intent = None
+        if os.getenv("AUGHOR_COMPILER", "1").strip().lower() in ("1", "true", "yes", "on"):
+            try:
+                from aughor.semantic.compiler import compile_question
+                _cc = compile_question(question, connection_id, dialect=db.dialect)
+                if _cc:
+                    _compiled_sql, _compiled_intent = _cc
+                    prompt = ("VERIFIED SQL (assembled from the verified semantic layer — this is "
+                              "the exact query to run; build your headline/chart around it):\n"
+                              f"{_compiled_sql}\n\n" + prompt)
+            except Exception:
+                _compiled_sql = None
+
         # Run the (blocking) LLM call in a worker thread so the event loop stays
         # free to serve other pages (catalog/inbox/home) while the query runs.
         answer: _ChatAnswer = await asyncio.to_thread(
@@ -729,6 +748,15 @@ async def _stream_chat(
         )
 
         final_sql = answer.sql
+        # Guarantee the deterministic, grounded SQL is what executes.
+        if _compiled_sql:
+            final_sql = _compiled_sql
+            yield _sse("compiled", {
+                "intent_type": _compiled_intent.intent_type,
+                "entity": _compiled_intent.entity or _compiled_intent.table,
+                "measure": _compiled_intent.measure or _compiled_intent.metric,
+                "dimension": _compiled_intent.dimension,
+            })
 
         # ── Semantic column alignment — deterministic pre-execution check ─────
         # Catches wrong entity column (e.g. product_id used for seller analysis)
@@ -1462,6 +1490,22 @@ def get_investigation_outcomes(inv_id: str):
 class EvidenceFeedbackRequest(BaseModel):
     feedback: str   # "validated" | "disputed" | "needs_context"
     note: Optional[str] = None
+
+
+@router.get("/investigations/evidence/recent")
+def get_recent_evidence(connection_id: str, canvas_id: Optional[str] = None, limit: int = 50):
+    """Return recent evidence claims across a scope (connection, optionally a canvas),
+    newest-first — the scope-level Evidence layer. The ledger keys only by
+    investigation_id, so we resolve the scope to its investigation IDs first.
+
+    Registered before /investigations/{inv_id}/evidence so the literal 'evidence'
+    segment can't be captured as an investigation id.
+    """
+    from aughor.db.history import list_investigation_ids
+    from aughor.evidence import store as _ev_store
+    inv_ids = list_investigation_ids(connection_id, canvas_id)
+    claims = _ev_store.get_recent_claims_for_investigations(inv_ids, limit)
+    return [c.model_dump() for c in claims]
 
 
 @router.get("/investigations/{inv_id}/evidence")

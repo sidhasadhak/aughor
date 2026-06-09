@@ -15,7 +15,7 @@
  *   • generateBriefingNarrative() — LLM prose with citation links (M24b)
  */
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, type ReactNode } from "react";
 import {
   getDomainInsights,
   getCanvasDomainInsights,
@@ -29,6 +29,11 @@ import {
   stopExplorer,
   restartExplorer,
   triggerDomainIntelligence,
+  promoteCanvasInsight,
+  promoteConnectionInsight,
+  createMonitor,
+  getActionTriggers,
+  sendFindingToTrigger,
   type DomainInsights,
   type ExplorationInsight,
   type Pattern,
@@ -36,6 +41,7 @@ import {
   type BriefingCitation,
   type BriefingNarrativeResponse,
   type ExplorerStatus,
+  type ActionTrigger,
 } from "@/lib/api";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -336,8 +342,12 @@ function synthesize(
   const allSignals: SynthesisSignal[] = [];
   let totalInsights = 0;
 
+  // Never surface a degenerate "no data" finding — it must not win the headline or a
+  // signal slot (the backend now drops these at the source; this also hides any that
+  // were stored before that fix). Such findings stay visible only in the full Hub ledger.
   for (const [domain, data] of Object.entries(domainData)) {
     for (const ins of data.insights) {
+      if (isDegenerateFinding(ins)) continue;
       allSignals.push({ insight: ins, domain });
       totalInsights++;
     }
@@ -374,7 +384,7 @@ function synthesize(
   // Per-domain stats for the coverage chart (where the intelligence concentrates).
   const domains: DomainStat[] = Object.entries(domainData)
     .map(([name, data]) => {
-      const ns = data.insights.map(i => i.novelty);
+      const ns = data.insights.filter(i => !isDegenerateFinding(i)).map(i => i.novelty);
       return {
         name,
         count: ns.length,
@@ -472,9 +482,252 @@ function DomainTag({ domain }: { domain: string }) {
 
 // ── Headline card ──────────────────────────────────────────────────────────────
 
-function HeadlineCard({ signal, onInvestigate }: {
+// ── Finding-level actions ────────────────────────────────────────────────────
+// Create Monitor · Promote to Org · Share · Evidence — makes each finding
+// actionable so intelligence REACHES the user (backlog #4).
+
+// A "no data" finding (empty/all-NULL result) must not be actionable: monitoring,
+// promoting, or sharing it just propagates noise — and a monitor built from its SQL
+// fires "No condition met" forever. The explorer now drops these at the source; this
+// guards any that already exist or slip through. Investigate/Evidence stay enabled so
+// the user can still inspect *why* there's no data.
+const _NO_DATA_RE = /(returned no data|no data (found|available|to report|for)|0 \w+ (were |was )?found|null values for all|no rows (returned|found|matched)|query (failed|errored)|no matching (rows|records|data)|empty result set)/i;
+
+export function isDegenerateFinding(insight: ExplorationInsight): boolean {
+  const f = (insight.finding || "").trim();
+  if (!f) return true;
+  return _NO_DATA_RE.test(f);
+}
+
+type ActStatus = "idle" | "busy" | "done" | "error";
+
+function ActionButton({ label, title, status, color, onClick, disabled }: {
+  label: string; title: string; status: ActStatus;
+  color?: string; onClick: () => void; disabled?: boolean;
+}) {
+  const c = color || "var(--t3)";
+  const txt = status === "busy" ? "…" : status === "done" ? "✓" : status === "error" ? "!" : label;
+  return (
+    <button
+      title={title}
+      onClick={onClick}
+      disabled={disabled || status === "busy" || status === "done"}
+      style={{
+        padding: "3px 9px", borderRadius: "var(--r2)", fontSize: 11, fontWeight: 500,
+        background: "transparent",
+        border: `1px solid ${status === "done" ? "var(--green3, #3aa676)" : "var(--b2)"}`,
+        color: status === "done" ? "var(--green4, #2e8c63)" : status === "error" ? "var(--red4)" : c,
+        cursor: disabled || status === "busy" || status === "done" ? "default" : "pointer",
+        opacity: disabled ? 0.45 : 1, transition: "all .12s", whiteSpace: "nowrap" as const,
+      }}
+      onMouseEnter={e => { if (!disabled && status === "idle") { e.currentTarget.style.borderColor = c; } }}
+      onMouseLeave={e => { if (status === "idle") { e.currentTarget.style.borderColor = "var(--b2)"; } }}
+    >
+      {status === "done" ? `${label} ${txt}` : `${label}${status === "busy" ? " " + txt : ""}`}
+    </button>
+  );
+}
+
+export function FindingActions({ insight, domain, connectionId, canvasId, triggers, onEvidence, onTriggersHint }: {
+  insight:       ExplorationInsight;
+  domain:        string;
+  connectionId:  string;
+  canvasId?:     string;
+  triggers:      ActionTrigger[];
+  onEvidence:    (insight: ExplorationInsight) => void;
+  onTriggersHint: () => void;
+}) {
+  const [monStatus, setMonStatus]   = useState<ActStatus>("idle");
+  const [promStatus, setPromStatus] = useState<ActStatus>(insight.promoted_to_org ? "done" : "idle");
+  const [shareOpen, setShareOpen]   = useState(false);
+  const [shareMsg, setShareMsg]     = useState<string | null>(null);
+
+  const handleMonitor = useCallback(async () => {
+    if (!insight.sql) return;
+    setMonStatus("busy");
+    try {
+      await createMonitor({
+        conn_id: connectionId,
+        name: `${domain}: ${insight.finding.slice(0, 48)}${insight.finding.length > 48 ? "…" : ""}`,
+        custom_sql: insight.sql,
+        alert_on: "anomaly",
+        // Re-anchor the finding's frozen date window to the live data edge at run time,
+        // so the monitor tracks a trailing window instead of going stale.
+        reanchor_window: true,
+      });
+      setMonStatus("done");
+    } catch { setMonStatus("error"); }
+  }, [insight, domain, connectionId]);
+
+  const handlePromote = useCallback(async () => {
+    setPromStatus("busy");
+    try {
+      if (canvasId) await promoteCanvasInsight(canvasId, insight.id);
+      else await promoteConnectionInsight(connectionId, insight.id);
+      setPromStatus("done");
+    } catch { setPromStatus("error"); }
+  }, [insight.id, canvasId, connectionId]);
+
+  const handleShareTo = useCallback(async (trigger: ActionTrigger) => {
+    setShareOpen(false);
+    setShareMsg("Sending…");
+    try {
+      const r = await sendFindingToTrigger(trigger.id, {
+        text: insight.finding,
+        metric_name: (insight.measures || []).join(", ") || undefined,
+        headline: `${domain}${insight.angle ? " · " + insight.angle : ""}`,
+        source_id: insight.id,
+      });
+      setShareMsg(r.status === "ok" ? `Sent to ${trigger.name} ✓` : `Failed: ${r.error || r.status}`);
+    } catch { setShareMsg("Share failed"); }
+    setTimeout(() => setShareMsg(null), 4000);
+  }, [insight, domain]);
+
+  const btnColor = "var(--t3)";
+  // A "no data" finding isn't actionable — disable Monitor/Promote/Share (a monitor
+  // built from its query would fire "No condition met" forever). Investigate + Evidence
+  // stay enabled so the user can inspect why there's no data.
+  const degenerate = isDegenerateFinding(insight);
+  const noData = "This finding has no data — nothing to act on";
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" as const, position: "relative" }}>
+      <ActionButton label="Monitor"
+        title={degenerate ? noData : (insight.sql ? "Create an anomaly monitor from this finding's query" : "No query available to monitor")}
+        status={monStatus} color={btnColor} onClick={handleMonitor} disabled={!insight.sql || degenerate} />
+      <ActionButton label="Promote"
+        title={degenerate ? noData : (promStatus === "done" ? "Promoted to org intelligence" : "Promote this finding to org-wide intelligence")}
+        status={promStatus} color={btnColor} onClick={handlePromote} disabled={degenerate} />
+      <div style={{ position: "relative" }}>
+        <ActionButton label="Share" title={degenerate ? noData : "Share this finding to a delivery channel"} status="idle" color={btnColor}
+          disabled={degenerate}
+          onClick={() => { if (triggers.length === 0) { onTriggersHint(); } else { setShareOpen(v => !v); } }} />
+        {shareOpen && triggers.length > 0 && (
+          <div style={{
+            position: "absolute", top: "calc(100% + 4px)", left: 0, zIndex: 20,
+            background: "var(--bg-1)", border: "1px solid var(--b2)", borderRadius: "var(--r2)",
+            boxShadow: "0 6px 20px rgba(0,0,0,.18)", minWidth: 160, overflow: "hidden",
+          }}>
+            <div style={{ padding: "6px 10px", fontSize: 9, color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".06em", borderBottom: "1px solid var(--b1)" }}>
+              Send to channel
+            </div>
+            {triggers.map(t => (
+              <button key={t.id} onClick={() => handleShareTo(t)}
+                style={{
+                  display: "block", width: "100%", textAlign: "left" as const,
+                  padding: "7px 10px", fontSize: 12, background: "transparent", border: "none",
+                  color: t.enabled ? "var(--t2)" : "var(--t4)", cursor: "pointer",
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = "var(--bg-3)"; }}
+                onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
+                <span style={{ fontFamily: "var(--font-mono)", fontSize: 9, color: "var(--t4)", marginRight: 6 }}>{t.type}</span>
+                {t.name}{!t.enabled && " (disabled)"}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <ActionButton label="Evidence" title="Show the query + provenance behind this finding" status="idle"
+        color={btnColor} onClick={() => onEvidence(insight)} />
+      {degenerate && (
+        <span title={noData} style={{
+          fontSize: 9, fontWeight: 600, letterSpacing: ".05em", textTransform: "uppercase" as const,
+          padding: "2px 6px", borderRadius: "var(--r1)", color: "var(--t4)",
+          background: "var(--bg-3)", border: "1px solid var(--b1)",
+        }}>no data</span>
+      )}
+      {shareMsg && (
+        <span style={{ fontSize: 10, color: shareMsg.includes("✓") ? "var(--green4, #2e8c63)" : "var(--t4)" }}>{shareMsg}</span>
+      )}
+    </div>
+  );
+}
+
+// ── Evidence drawer ──────────────────────────────────────────────────────────
+// Drill-through: the exact SQL + confidence/novelty/freshness behind a finding.
+
+export function EvidenceDrawer({ insight, domain, onClose }: {
+  insight: ExplorationInsight | null;
+  domain:  string;
+  onClose: () => void;
+}) {
+  if (!insight) return null;
+  const fresh = insight.generated_at ? new Date(insight.generated_at).toLocaleString() : "—";
+  const Stat = ({ label, value }: { label: string; value: string }) => (
+    <div style={{ display: "flex", flexDirection: "column" as const, gap: 2 }}>
+      <span style={{ fontSize: 9, color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".06em" }}>{label}</span>
+      <span style={{ fontSize: 13, color: "var(--t1)", fontWeight: 500 }}>{value}</span>
+    </div>
+  );
+  return (
+    <div onClick={onClose} style={{
+      position: "fixed", inset: 0, zIndex: 60, background: "rgba(0,0,0,.32)",
+      display: "flex", justifyContent: "flex-end",
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        width: "min(520px, 92vw)", height: "100%", background: "var(--bg-1)",
+        borderLeft: "1px solid var(--b2)", boxShadow: "-8px 0 28px rgba(0,0,0,.22)",
+        display: "flex", flexDirection: "column" as const, overflow: "hidden",
+      }}>
+        <div style={{ padding: "16px 20px", borderBottom: "1px solid var(--b1)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span className="aug-label">Evidence</span>
+            <DomainTag domain={domain} />
+          </div>
+          <button onClick={onClose} style={{ background: "transparent", border: "none", color: "var(--t3)", fontSize: 18, cursor: "pointer", lineHeight: 1 }}>×</button>
+        </div>
+        <div style={{ padding: "18px 20px", overflowY: "auto" as const, display: "flex", flexDirection: "column" as const, gap: 18 }}>
+          <div style={{ fontSize: 14, color: "var(--t1)", lineHeight: 1.6, fontWeight: 500 }}>{insight.finding}</div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14 }}>
+            <Stat label="Confidence" value={`${Math.round((insight.confidence ?? 0) * 100)}%`} />
+            <Stat label="Novelty" value={`${insight.novelty}/10`} />
+            <Stat label="Freshness" value={fresh} />
+          </div>
+
+          {(insight.entities_involved?.length > 0 || insight.measures?.length > 0) && (
+            <div style={{ display: "flex", flexDirection: "column" as const, gap: 10 }}>
+              {insight.entities_involved?.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 9, color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".06em", marginBottom: 5 }}>Entities</div>
+                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" as const }}>
+                    {insight.entities_involved.map(e => (
+                      <span key={e} style={{ padding: "2px 7px", borderRadius: "var(--r1)", fontSize: 10, background: "var(--bg-3)", border: "1px solid var(--b1)", color: "var(--t3)", fontFamily: "var(--font-mono)" }}>{e.replace(/_/g, " ")}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {insight.measures?.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 9, color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".06em", marginBottom: 5 }}>Measures</div>
+                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" as const }}>
+                    {insight.measures.map(m => (
+                      <span key={m} style={{ padding: "2px 7px", borderRadius: "var(--r1)", fontSize: 10, background: "var(--bg-3)", border: "1px solid var(--b1)", color: "var(--t3)", fontFamily: "var(--font-mono)" }}>{m}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div>
+            <div style={{ fontSize: 9, color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".06em", marginBottom: 6 }}>Source query — the data behind this claim</div>
+            <pre style={{
+              margin: 0, padding: "12px 14px", borderRadius: "var(--r2)",
+              background: "var(--bg-2)", border: "1px solid var(--b1)",
+              fontSize: 11.5, fontFamily: "var(--font-mono)", color: "var(--t2)",
+              whiteSpace: "pre-wrap" as const, wordBreak: "break-word" as const, lineHeight: 1.55,
+            }}>{insight.sql || "— no query recorded —"}</pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HeadlineCard({ signal, onInvestigate, actions }: {
   signal:       SynthesisSignal;
   onInvestigate: (q: string) => void;
+  actions?:      ReactNode;
 }) {
   const { insight, domain } = signal;
   const nColor = noveltyColor(insight.novelty);
@@ -535,15 +788,19 @@ function HeadlineCard({ signal, onInvestigate }: {
           Investigate →
         </button>
       </div>
+      {actions && (
+        <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--b1)" }}>{actions}</div>
+      )}
     </div>
   );
 }
 
 // ── Signal card ────────────────────────────────────────────────────────────────
 
-function SignalCard({ signal, onInvestigate }: {
+function SignalCard({ signal, onInvestigate, actions }: {
   signal:       SynthesisSignal;
   onInvestigate: (q: string) => void;
+  actions?:      ReactNode;
 }) {
   const { insight, domain } = signal;
   const nColor = noveltyColor(insight.novelty);
@@ -565,19 +822,21 @@ function SignalCard({ signal, onInvestigate }: {
       <div style={{ fontSize: 12, color: "var(--t2)", lineHeight: 1.55, flex: 1 }}>
         {insight.finding.length > 160 ? insight.finding.slice(0, 160) + "…" : insight.finding}
       </div>
-      <button
-        onClick={() => onInvestigate(`Investigate: ${insight.finding}`)}
-        style={{
-          alignSelf: "flex-start" as const,
-          padding: "4px 10px", borderRadius: "var(--r2)", fontSize: 11, fontWeight: 500,
-          background: "transparent", border: "1px solid var(--b2)",
-          color: "var(--t3)", cursor: "pointer", transition: "all .12s",
-        }}
-        onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--blue3)"; e.currentTarget.style.color = "var(--blue4)"; }}
-        onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--b2)"; e.currentTarget.style.color = "var(--t3)"; }}
-      >
-        Investigate →
-      </button>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" as const }}>
+        <button
+          onClick={() => onInvestigate(`Investigate: ${insight.finding}`)}
+          style={{
+            padding: "4px 10px", borderRadius: "var(--r2)", fontSize: 11, fontWeight: 500,
+            background: "transparent", border: "1px solid var(--b2)",
+            color: "var(--t3)", cursor: "pointer", transition: "all .12s",
+          }}
+          onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--blue3)"; e.currentTarget.style.color = "var(--blue4)"; }}
+          onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--b2)"; e.currentTarget.style.color = "var(--t3)"; }}
+        >
+          Investigate →
+        </button>
+        {actions}
+      </div>
     </div>
   );
 }
@@ -850,6 +1109,27 @@ export function BriefingPanel({
   const [selectedSchema, setSelectedSchema]   = useState<string | null>(null);
   const [explorerStatus, setExplorerStatus]   = useState<ExplorerStatus | null>(null);
   const [explorerBusy, setExplorerBusy]       = useState(false);
+  const [triggers, setTriggers]               = useState<ActionTrigger[]>([]);
+  const [evidenceInsight, setEvidenceInsight] = useState<ExplorationInsight | null>(null);
+  const [evidenceDomain, setEvidenceDomain]   = useState<string>("");
+  const [hint, setHint]                       = useState<string | null>(null);
+
+  // Available delivery channels for the Share action (Action Hub triggers).
+  useEffect(() => {
+    let alive = true;
+    getActionTriggers().then(t => { if (alive) setTriggers(t); }).catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
+  const openEvidence = useCallback((ins: ExplorationInsight, domain: string) => {
+    setEvidenceDomain(domain);
+    setEvidenceInsight(ins);
+  }, []);
+
+  const showTriggersHint = useCallback(() => {
+    setHint("No delivery channel yet — add a Slack/webhook trigger in Action Hub to share findings.");
+    setTimeout(() => setHint(null), 5000);
+  }, []);
 
   const load = useCallback(async () => {
     if (!canvasId && !connectionId) return;
@@ -903,6 +1183,16 @@ export function BriefingPanel({
     if (!connectionId) return;
     setExplorerBusy(true);
     try { await triggerDomainIntelligence(connectionId); } catch {}
+    setExplorerBusy(false);
+  }, [connectionId]);
+
+  // One-click refresh: clears stale findings and re-runs the full pipeline under the
+  // current (corrected) explorer — drops "no data" / cross-dataset findings, re-anchors
+  // the temporal window. The honest way to make a stale headline reliable + up to date.
+  const runRefresh = useCallback(async () => {
+    if (!connectionId) return;
+    setExplorerBusy(true);
+    try { await restartExplorer(connectionId); } catch {}
     setExplorerBusy(false);
   }, [connectionId]);
 
@@ -974,6 +1264,17 @@ export function BriefingPanel({
   return (
     <div style={{ flex: 1, overflowY: "auto", padding: "20px 28px" }}>
 
+      {/* Evidence drill-through drawer + transient hint toast (finding actions, #4) */}
+      <EvidenceDrawer insight={evidenceInsight} domain={evidenceDomain} onClose={() => setEvidenceInsight(null)} />
+      {hint && (
+        <div style={{
+          position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)", zIndex: 70,
+          padding: "10px 16px", borderRadius: "var(--r2)", fontSize: 12,
+          background: "var(--bg-1)", border: "1px solid var(--b2)", color: "var(--t2)",
+          boxShadow: "0 6px 20px rgba(0,0,0,.18)", maxWidth: 420,
+        }}>{hint}</div>
+      )}
+
       {/* ── Explorer control bar ── */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16, padding: "8px 12px", borderRadius: "var(--r2)", background: "var(--bg-2)", border: "1px solid var(--b1)" }}>
         <span style={{ fontSize: 11, color: "var(--t3)", fontFamily: "var(--font-mono)", textTransform: "uppercase" }}>
@@ -1014,6 +1315,14 @@ export function BriefingPanel({
                   onClick={runTriggerIntel}
                   style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: "var(--blue2)", color: "var(--blue5)", border: "1px solid var(--blue3)", cursor: explorerBusy ? "default" : "pointer", opacity: explorerBusy ? 0.6 : 1 }}
                 >Trigger Intel</button>
+              )}
+              {explorerStatus?.phase === "complete" && (
+                <button
+                  disabled={explorerBusy}
+                  onClick={runRefresh}
+                  title="Clear stale findings and re-run intelligence from scratch (drops 'no data' findings, re-anchors the window)"
+                  style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: "var(--bg-3)", color: "var(--t2)", border: "1px solid var(--b2)", cursor: explorerBusy ? "default" : "pointer", opacity: explorerBusy ? 0.6 : 1 }}
+                >↻ Refresh</button>
               )}
             </>
           ) : (
@@ -1149,7 +1458,12 @@ export function BriefingPanel({
                   Top signal
                 </span>
               </div>
-              <HeadlineCard signal={briefing.headline} onInvestigate={onInvestigate} />
+              <HeadlineCard signal={briefing.headline} onInvestigate={onInvestigate}
+                actions={
+                  <FindingActions insight={briefing.headline.insight} domain={briefing.headline.domain}
+                    connectionId={connectionId} canvasId={canvasId} triggers={triggers}
+                    onEvidence={(ins) => openEvidence(ins, briefing.headline!.domain)} onTriggersHint={showTriggersHint} />
+                } />
             </div>
           )}
 
@@ -1164,7 +1478,12 @@ export function BriefingPanel({
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12 }}>
                 {briefing.signals.map(s => (
-                  <SignalCard key={s.insight.id} signal={s} onInvestigate={onInvestigate} />
+                  <SignalCard key={s.insight.id} signal={s} onInvestigate={onInvestigate}
+                    actions={
+                      <FindingActions insight={s.insight} domain={s.domain}
+                        connectionId={connectionId} canvasId={canvasId} triggers={triggers}
+                        onEvidence={(ins) => openEvidence(ins, s.domain)} onTriggersHint={showTriggersHint} />
+                    } />
                 ))}
               </div>
             </div>

@@ -81,6 +81,18 @@
 72. [Canvas Optimisation — Scope Editing & History Management](#72-canvas-optimisation--scope-editing--history-management)
 73. [Data Canvas — List Ranking, Recents & Rename](#73-data-canvas--list-ranking-recents--rename)
 74. [Grounded NL2SQL, Trusted Templates & the Eval Suite](#74-grounded-nl2sql-trusted-templates--the-eval-suite)
+75. [Self-Validating Semantic Layer, Fan-Out Guard & Multi-Schema Repairs](#75-self-validating-semantic-layer-fan-out-guard--multi-schema-repairs--shipped)
+76. [Reusable Component Architecture, Shared Primitives & Exhaustive Test Pass](#76-reusable-component-architecture-shared-primitives--exhaustive-test-pass--shipped)
+77. [The Brief — Answer Surface, Agent Reasoning Quality & Data-Shape Intelligence](#77-the-brief--answer-surface-agent-reasoning-quality--data-shape-intelligence--shipped)
+78. [Intelligence-Surface Trust — Scope Consistency, Self-Explaining Intelligence & ADA Correctness](#78-intelligence-surface-trust--scope-consistency-self-explaining-intelligence--ada-correctness--shipped)
+79. [Adaptive Temporal Scope — Tier 0/1/2 + Anchor Tuning](#79-adaptive-temporal-scope--tier-012--anchor-tuning--shipped)
+80. [Finding Actionability & Scheduled Brief Delivery](#80-finding-actionability--scheduled-brief-delivery--shipped)
+81. [Evidence Peer Layer & Intelligence-Surface Visuals](#81-evidence-peer-layer--intelligence-surface-visuals--shipped)
+82. [Semantic Compiler — Typed Intent IR + Deterministic SQL](#82-semantic-compiler--typed-intent-ir--deterministic-sql--shipped)
+83. [Temporal Tier 3 — Query Cost Governor](#83-temporal-tier-3--query-cost-governor--shipped)
+84. [Finding Trust Guards — Numeral Grounding & Platform-Generic SQL Robustness](#84-finding-trust-guards--numeral-grounding--platform-generic-sql-robustness--shipped)
+85. [Angle-Feasibility Gate & Repair Intent-Preservation](#85-angle-feasibility-gate--repair-intent-preservation--shipped)
+86. [Fix-and-Save & Fix-All from the Activity Log](#86-fix-and-save--fix-all-from-the-activity-log--shipped)
 
 ---
 
@@ -2349,4 +2361,132 @@ Two connected pieces of work that make the **Canvas** — not the raw connection
 
 ---
 
-*Last updated: 2026-06-08 · 78 features — all shipped. See `ROADMAP.md` for upcoming milestones.*
+## 79. Adaptive Temporal Scope — Tier 0/1/2 + Anchor Tuning ✅ Shipped
+
+**What it does.** Replaces the naive "last 12 months" window with a system that *discovers when matters* — Aughor's temporal USP. It anchors analysis on the trailing edge of real activity, narrows to the current statistical regime, and juxtaposes that against the full-history long arc.
+
+**Why it exists.** A fixed window anchored on `MAX(any date column)` breaks the moment a schema has a calendar / date-dimension table: those run far into the future (TPC-DS `date_dim` → 2100), dragging the window past the last real fact so every fact filter returns zero rows ("no data" briefings). And a fixed window can't tell "revenue is down this quarter" from "revenue is down within a multi-year climb." The pitch: *we don't ask you when — we discover when matters.*
+
+**How it works.**
+- **Tier 0 — role-aware recency (`explorer/agent.py`).** The window's trailing edge is the consensus recency among **measure-bearing activity tables**, not any date column. Calendar/dimension spines are excluded — by zero-measures, by name (`date_dim`/`dim_date`/`calendar`/…), and by **shape** (≥70% of a table's "measure" columns are date-parts like `d_year`/`d_moy`/`d_qoy`, which the profiler mis-tags). Sentinel dates (9999/1900/epoch) are filtered, and the dense `effective_date_range` is preferred. The calendar↔fact gap is surfaced as a data-quality discrepancy.
+- **Tier 1 — current-regime narrowing (`explorer/regime.py`).** Queries the activity density series (rows per period at the profiler grain) and runs single-changepoint binary segmentation (minimise within-segment SSE) gated by a significance threshold; narrows the window start to a recent structural break only when it clears a ~90-day floor. Live on beautycommerce: a campaigns regime break narrowed a 12-month window to the active 6 months.
+- **Tier 2 — full-span macro context (`explorer/temporal.py`).** One cheap coarse rollup (`GROUP BY year`) over the anchor produces the long arc — growth factor, year-by-year series — gated to ≥3 year-buckets so a partial boundary year can't masquerade as YoY growth. Injected to lead the briefing narrator with a juxtaposition instruction ("activity grew 4× over 8 years, but the current regime is flat"). Live: TPC-H → 7-year arc on `lineitem` ("held roughly flat", `l_quantity` 19.3M→17.5M).
+- **Anchor tuning.** On a recency tie the **core fact** (most rows, within a 45-day tolerance) wins, so a 5K-row `campaigns` can't beat a 6.4M-row `order_items` that ends the same day. A measure-column key-name guard skips `SUM(l_orderkey)`-style nonsense in the macro rollup. Validated across beautycommerce / TPC-H / TPC-DS.
+
+**Key files.** `aughor/explorer/{agent,regime,temporal}.py`, `aughor/knowledge/briefing.py`, `aughor/routers/exploration.py`; `tests/unit/{test_temporal_scope,test_regime,test_macro_context}.py`; `docs/ADAPTIVE_TEMPORAL_SCOPE.md`.
+
+---
+
+## 80. Finding Actionability & Scheduled Brief Delivery ✅ Shipped
+
+**What it does.** Turns every passive intelligence finding into something the user can *act on* — and pushes intelligence to them without opening the app.
+
+**Why it exists.** Aughor computed rich findings (Briefing headlines, Hub insights) but they were read-only; the Monitors, Action Hub, and Evidence subsystems all existed but were unwired to the findings. This makes intelligence *reach* the user — "heavy-duty actionable intel."
+
+**How it works.**
+- **Finding-level actions (`web/components/{BriefingPanel,IntelligenceHub}.tsx`).** A compact toolbar on every Briefing card and expanded Hub insight: **Create Monitor** (builds an anomaly monitor from the finding's own SQL), **Promote to Org** (connection- *and* canvas-scoped — connection-level findings had no promotion path before), **Share** (fires the finding through a configured Slack/webhook/Jira Action Hub trigger), and **Evidence** (a drill-through drawer showing the source query + confidence/novelty/freshness behind the claim).
+- **Connection-scoped promote (`explorer/store.py`, `routers/exploration.py`).** `promote_insight_conn` + `POST /exploration/{conn}/insights/{id}/promote`, the counterpart to the canvas promote, pushing the finding into the org-intelligence vector store.
+- **Share to trigger (`routers/actions.py`).** `POST /actions/triggers/{id}/send` fires an arbitrary finding through the existing delivery + retry + logging path.
+- **Scheduled brief delivery (new `aughor/briefs/` subsystem).** A `BriefSubscription` (connection, cron, delivery trigger) persisted to JSON; an APScheduler job (mirroring the monitors scheduler) builds the Intelligence Digest on schedule and delivers it through an Action Hub trigger; `/briefs/subscriptions` CRUD + `/test`. Delivery is decoupled from channel mechanics by reusing triggers as the transport.
+
+**Key files.** `aughor/briefs/{models,store,delivery,scheduler}.py`, `aughor/routers/{briefs,actions,exploration}.py`, `aughor/explorer/store.py`; `web/components/{BriefingPanel,IntelligenceHub}.tsx`, `web/lib/api.ts`; `tests/unit/{test_actionability,test_briefs}.py`.
+
+---
+
+## 81. Evidence Peer Layer & Intelligence-Surface Visuals ✅ Shipped
+
+**What it does.** Makes the Evidence Ledger a first-class intelligence layer with a human validate/dispute loop, and makes the Deep-Analysis trace and the Briefing genuinely visual.
+
+**Why it exists.** Every Deep-Analysis claim was already logged with its source SQL and confidence (the Evidence Ledger, feature #65), but only reachable per-investigation — there was no way to see "what has Aughor claimed about this connection lately, and does it hold up?" And two surfaces leaned too hard on text: the agent trace was a static list, and the Briefing was a wall of prose.
+
+**How it works.**
+- **Evidence peer layer (`web/components/{EvidencePanel,IntelligenceWorkspace}.tsx`).** A new "Evidence" layer beside Briefing/Hub/Domains. Because the ledger keys only by `investigation_id`, scope resolves through `history.list_investigation_ids(conn, canvas)` → `evidence.get_recent_claims_for_investigations(ids, limit)`, exposed as `GET /investigations/evidence/recent` (registered before `/{inv_id}/evidence` so the literal segment can't be captured as an id). Each claim shows confidence, metric, freshness, an expandable source query, and **Validated / Disputed / Needs-context** feedback that persists — teaching Aughor which findings hold up. Live-verified: feedback round-trips to the ledger and the layer scopes correctly to a canvas.
+- **Deep-Analysis live stepper (`web/components/ThinkingTrace.tsx`, `app/globals.css`).** The agent trace renders as an animated stepper: a violet→emerald progress bar, a checkmark-pop as each step completes, a pulsing dot on the active step, a flowing connector rail, and staggered entry — with a `prefers-reduced-motion` guard. Rendering-only (the step derivation is untouched).
+- **Visual Briefing (`web/components/BriefingPanel.tsx`).** The Briefing leads with a domain-coverage bar chart (findings per domain, opacity by novelty) and per-finding novelty meters on the headline and signal cards, replacing single-number summaries.
+
+**Key files.** `aughor/{routers/investigations,evidence/store,db/history}.py`; `web/components/{EvidencePanel,IntelligenceWorkspace,ThinkingTrace,BriefingPanel}.tsx`, `web/app/globals.css`, `web/lib/api.ts`; `tests/unit/test_evidence_scope.py`.
+
+---
+
+## 82. Semantic Compiler — Typed Intent IR + Deterministic SQL ✅ Shipped
+
+**What it does.** For the safe, common analytical shapes, the LLM fills a small *typed intent* instead of hand-writing SQL — and the SQL is **assembled deterministically** from the verified ontology. "The LLM augments a declarative layer rather than regenerating SQL."
+
+**Why it exists.** Free-form LLM SQL hallucinates columns and fans out joins (a real finding in this codebase referenced four non-existent columns). For the shapes that map 1:1 to a grounded template, generation should be *compilation*, not guessing — the strategic endpoint of the metric-unification + ontology work.
+
+**How it works.** `aughor/semantic/compiler.py`:
+- **`QueryIntent`** — a typed IR: `intent_type` (scalar / timeseries / breakdown / ranking), entity/table, a named `metric` OR an `agg` over a measure column, dimension, time grain, object set, window, order/limit — all *symbolic* references.
+- **`synthesize_sql(intent, ontology, dialect)`** — resolves every reference against the verified ontology (measure/dimension columns, object-set filters, the canonical metric resolver), assembles a single-table SQL template, and dialect-transpiles with sqlglot. **Coverage-gated:** an unresolved reference, a multi-table metric, a `SUM` over a non-measure column, an unverified object set, or an unsupported intent → returns `None` and the caller falls back to the LLM path. Single-table only (joins are where free-form generation fans out, so they stay on the fallback path). It never guesses.
+- **`parse_intent` / `compile_question`** — one structured LLM call maps a question to a grounded intent (choosing only from a strict catalog of real names); `compile_question` runs the full NL → intent → SQL path.
+- **Chat fast-path** — `_stream_chat` injects the compiled SQL as a VERIFIED block and forces it as the executed query (gated `AUGHOR_COMPILER`, fully fallback-safe).
+
+**Verified.** End-to-end on beautycommerce: *"how many attributions"* → `scalar/count` → `COUNT(*)` → 6.9M; *"total weight by touchpoint type"* → `breakdown`; *"top 3 touchpoint types by weight"* → `ranking` — each parsed to a grounded intent and executed clean. 24 unit tests (grounding + every gate).
+
+**Key files.** `aughor/semantic/compiler.py`, `aughor/routers/investigations.py`; `tests/unit/test_compiler.py`.
+
+---
+
+## 83. Temporal Tier 3 — Query Cost Governor ✅ Shipped
+
+**What it does.** Lets intelligence build "without breaking sweat" against TB-scale warehouses, via two safe, high-value levers plus an incremental re-exploration watermark.
+
+**Why it exists.** Completes the Adaptive Temporal Scope arc (Tier 0/1/2). The curiosity loop leans on high-cardinality `COUNT(DISTINCT)` and full-table scans; at scale those need cost governance without throwing away correctness.
+
+**How it works.** `aughor/sql/cost.py`:
+- **`approximate_aggregates`** — `COUNT(DISTINCT x)` → `approx_count_distinct(x)`, median/quantile → `approx_quantile` (DuckDB; a no-op elsewhere). HLL is ~1–3% off for orders of magnitude less work (live: 2.88M vs exact 2.80M on a 6.9M-row table).
+- **`sample_aggregates`** — for a single-table scan, `USING SAMPLE p%` + scale `COUNT`/`SUM` by `100/p` (`AVG`/`MIN`/`MAX` unscaled). **Refuses joins and any distinct count** — sampling a distinct undercounts (a bug this caught: `approx_count_distinct` on a 10% sample reads 10× low). Live: 7.1M / 10.16 vs exact 7.0M / 10.0.
+- **`govern`** — approx on by default (safe); sampling opt-in + row-threshold gated; flags every approximation in a provenance note.
+- **`aughor/explorer/watermark.py`** — per-(connection, table) activity high-water mark + `delta_clause`, so a recurring re-run can scan only rows since last time (a Monday brief on a 10-yr warehouse scans last week).
+- **Explorer wiring** — detects a large connection (any table ≥ 5M rows) and applies the approx governor to the Phase-8 loop; records the anchor watermark each run. Live: beautycommerce → `cost_large=True` (carts 10M / attribution 6.9M), watermark `order_items` @ 2026-05-17.
+
+**Rollout note.** Sampling stays opt-in (scaled estimates in user-facing numbers want a per-surface decision) and the watermark-driven incremental re-run *mode* is captured but not yet used to skip partitions.
+
+**Key files.** `aughor/sql/cost.py`, `aughor/explorer/{watermark,agent}.py`; `tests/unit/{test_cost,test_watermark}.py`.
+
+---
+
+## 84. Finding Trust Guards — Numeral Grounding & Platform-Generic SQL Robustness ✅ Shipped
+
+**What it does.** Keeps *wrong numbers* out of the intelligence layer. A finding is only as good as the figure it reports; this is the set of deterministic guards that make Aughor's numbers trustworthy, not just plausible.
+
+**Why it exists.** A from-scratch rebuild watch over six connections surfaced trust bugs the eye misses: a finding that read "2.49M attribution credit" when the real cell was 2.49 (off 1e6, fabricated "M"), and recurring SQL failures that wasted the curiosity budget. Every fix is driven by the database engine's own error text / profiled types — no schema or connection specifics — so the learning transfers across DuckDB, Postgres and any connection.
+
+**How it works.**
+- **Numeral grounding** (`aughor/explorer/grounding.py`) — extracts every magnitude-bearing number a finding claims and verifies it against the actual result cells (rounding-window + 2% tolerance). A fabricated magnitude/unit is dropped or one corrective re-grounding pass is attempted; degenerate (all-NULL) results never become findings. Live: isolates exactly the fabricated `2.49M` while real cells pass.
+- **Timestamp typing** (`aughor/tools/profiler.py`) — `_select_timestamp_cols` excludes numeric-typed columns from the name-based primary-timestamp fallback (ClickBench `EventDate::USMALLINT` is epoch-days, not a date); `_NUMERIC_TYPES` broadened to DuckDB unsigned ints.
+- **Dead-reference memory** (`aughor/explorer/agent.py`) — harvests nonexistent column/table names from engine errors into a per-run set, fed back to the question generator so it stops re-proposing hallucinated columns. Live: workspace fix-failures 29→5 (−83%), repeated `region` hallucinations 4→0.
+- **Repair-diagnosis branches** (`aughor/sql/writer.py`, shared with chat/ADA) — missing-table → add-join/drop-ref; unexposed-column → select-out/qualify; ambiguous-ref → qualify-with-alias; non-inner-join-on-subquery → INNER/CTE rewrite. Live on beautycommerce: yield 18→27.
+
+**Key files.** `aughor/explorer/grounding.py`, `aughor/tools/profiler.py`, `aughor/explorer/agent.py`, `aughor/sql/writer.py`; `tests/unit/{test_grounding,test_profiler_timestamp,test_sql_repair_learnings}.py`.
+
+---
+
+## 85. Angle-Feasibility Gate & Repair Intent-Preservation ✅ Shipped
+
+**What it does.** Stops the autonomous explorer from asking a *time-based question of a table with no time*, and from silently *changing the meaning* of a question while repairing it.
+
+**Why it exists.** A live finding proposed "outstanding receivables by invoice age over the last 12 months" against an `invoices` table with no date column. The LLM invented `invoice_date`; the repair made it run by swapping in `invoice_delay_days` — but that is payment *delay*, not invoice *age*. A query that runs and answers a different question is more dangerous than one that fails.
+
+**How it works.**
+- **Angle-feasibility gate** — each domain table's `primary_timestamp` is computed; a dateless domain drops temporal coverage angles and gets a "NO TEMPORAL DATA" instruction, while a mixed domain names its dateless tables ("never apply dates/aging/windows to these"). Live: Finance now writes honest "invoice delay distribution" findings instead of inventing a date column; 0 misleading age/aging findings stored.
+- **Intent-preservation guard** — a repair that *substituted columns* and **de-temporalised** a query (the original computed over time, the repair no longer does) is dropped (explorer) or flagged unverified (user fix). A first attempt using an LLM faithfulness check **failed verification** (the model rated the drift "faithful"), so it is deterministic. A second drift mode — `DATE_DIFF(CURRENT_DATE, CURRENT_DATE)` faking a constant-0 "age" while keeping temporal SQL — is caught by a dedicated **vacuous-temporal** detector.
+
+**Key files.** `aughor/explorer/agent.py` (`_is_temporal_angle`, `_query_columns`, `_has_temporal_sql`, `_has_vacuous_temporal`); `tests/unit/test_phase8_feasibility.py`.
+
+---
+
+## 86. Fix-and-Save & Fix-All from the Activity Log ✅ Shipped
+
+**What it does.** Turns the Activity log's per-row "Run fix" from a disposable preview into a durable action — a successful repair is saved like any successful query — and adds a filter-scoped "Fix all" to clear a batch of errors at once.
+
+**Why it exists.** When a user makes the effort to fix an errored explorer query and it works, that result should be reflected and referenced, not thrown away on close. At the same time a bulk fixer must be safe — it must never trigger a fresh crawl of new questions.
+
+**How it works.** `aughor/explorer/fix_persist.py` → `persist_fixed_finding()`: repairs the query and on a clean run (1) **heals the episode** (appends a resolved turn — append-only, no history rewrite) and (2) for domain-intelligence queries **interprets + stores a finding** into Briefing/Hub/Domains, through the *same* Phase-8 guards (degenerate / grounding / de-temporalisation / vacuous-temporal). A guard-tripping fix is still stored but flagged **`unverified`** (low confidence, never auto-promotable) with a note; non-domain phases heal only.
+- **Endpoints** — `POST /exploration/{conn}/fix-episode` (one) and `/fix-all` (a batch). Fix-all repairs **only** the episodes the client sends — exactly the errored set visible under its current filter (all/today/yesterday/week) — so it never re-derives "all errors", never starts the explorer, and never generates new questions. Returns a per-batch summary.
+- **Frontend** (`web/components/ActivityLog.tsx`) — "Run fix" keeps its preview plus a "Save as finding" button with clear feedback; "Fix all (N)" sits in the toolbar scoped to the visible filter. Threaded through connection + canvas scope.
+
+**Key files.** `aughor/explorer/fix_persist.py`, `aughor/routers/exploration.py`, `web/{lib/api.ts,components/ActivityLog.tsx}`; `tests/unit/test_fix_persist.py`.
+
+---
+
+*Last updated: 2026-06-09 · 86 features — all shipped. See `ROADMAP.md` for upcoming milestones.*

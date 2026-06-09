@@ -889,6 +889,15 @@ export async function promoteCanvasInsight(canvasId: string, insightId: string):
   return res.json();
 }
 
+export async function promoteConnectionInsight(connectionId: string, insightId: string): Promise<{ promoted: boolean }> {
+  const res = await fetch(
+    `${BASE}/exploration/${encodeURIComponent(connectionId)}/insights/${encodeURIComponent(insightId)}/promote`,
+    { method: "POST" }
+  );
+  if (!res.ok) throw new Error("Failed to promote insight");
+  return res.json();
+}
+
 export async function resumeCanvasExploration(canvasId: string): Promise<{ status: string }> {
   const res = await fetch(`${BASE}/exploration/canvas/${encodeURIComponent(canvasId)}/resume`, { method: "POST" });
   if (!res.ok) throw new Error("Failed to resume canvas exploration");
@@ -994,6 +1003,69 @@ export async function retryQuery(
     const err = await res.json();
     throw new Error(err.detail ?? "Retry failed");
   }
+  return res.json();
+}
+
+// ── Fix-and-save (persist a repaired errored query) ────────────────────────────
+
+export interface FixSaveResult {
+  ok: boolean;
+  stored: boolean;
+  corrected_sql: string;
+  explanation?: string;
+  rows?: string[][];
+  columns?: string[];
+  reason?: string;
+  error?: string;
+  insight?: { id: string; domain: string; angle: string; finding: string; unverified: boolean; verification_note: string };
+}
+
+export interface FixEpisodeInput {
+  sql: string;
+  error: string;
+  think?: string;
+  phase?: string;
+}
+
+export interface FixAllResult {
+  summary: { total: number; fixed: number; saved: number; flagged: number; failed: number };
+  results: Array<FixSaveResult & { sql: string }>;
+}
+
+/** Repair an errored episode and, on success, SAVE it (heal episode + store a finding
+ *  through the same Phase-8 guards). Unlike retryQuery this persists. */
+export async function fixEpisode(
+  connectionId: string,
+  ep: FixEpisodeInput,
+  hint = "",
+  canvasId = "",
+): Promise<FixSaveResult> {
+  const res = await fetch(`${BASE}/exploration/${encodeURIComponent(connectionId)}/fix-episode`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sql: ep.sql, error: ep.error, think: ep.think ?? "", phase: ep.phase ?? "domain_intel", hint, canvas_id: canvasId }),
+  });
+  if (!res.ok) { const e = await res.json(); throw new Error(e.detail ?? "fix-and-save failed"); }
+  return res.json();
+}
+
+/** Repair-and-save a batch — ONLY the episodes provided (the client passes the set
+ *  currently visible under its filter). Never starts the explorer or generates new queries. */
+export async function fixAll(
+  connectionId: string,
+  episodes: FixEpisodeInput[],
+  hint = "",
+  canvasId = "",
+): Promise<FixAllResult> {
+  const res = await fetch(`${BASE}/exploration/${encodeURIComponent(connectionId)}/fix-all`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      episodes: episodes.map(e => ({ sql: e.sql, error: e.error, think: e.think ?? "", phase: e.phase ?? "domain_intel" })),
+      hint, canvas_id: canvasId,
+    }),
+  });
+  if (!res.ok) { const e = await res.json(); throw new Error(e.detail ?? "fix-all failed"); }
   return res.json();
 }
 
@@ -1505,6 +1577,19 @@ export async function getEvidenceClaims(invId: string): Promise<EvidenceClaim[]>
   return res.json();
 }
 
+/** Recent evidence claims across a scope (connection, optionally a canvas), newest-first. */
+export async function getRecentEvidenceClaims(
+  connectionId: string,
+  canvasId?: string,
+  limit = 50,
+): Promise<EvidenceClaim[]> {
+  const params = new URLSearchParams({ connection_id: connectionId, limit: String(limit) });
+  if (canvasId) params.set("canvas_id", canvasId);
+  const res = await fetch(`${BASE}/investigations/evidence/recent?${params}`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
 export async function submitClaimFeedback(
   invId: string,
   claimId: string,
@@ -1531,6 +1616,7 @@ export interface MonitorDef {
   name: string;
   metric_name: string | null;
   custom_sql: string | null;
+  reanchor_window: boolean;
   check_cron: string;
   alert_on: "threshold_cross" | "trend_reversal" | "anomaly" | "segment_drift" | "data_freshness" | "any_change";
   warning_threshold: number | null;
@@ -1643,6 +1729,116 @@ export async function acknowledgeAlert(alertId: string): Promise<MonitorAlert> {
 export async function getDigest(connId: string, period: "week" | "day" = "week"): Promise<DigestResult> {
   const res = await fetch(`${BASE}/monitors/digest?conn_id=${connId}&period=${period}`);
   if (!res.ok) throw new Error("Failed to fetch digest");
+  return res.json();
+}
+
+// ── Action Hub triggers + finding share ─────────────────────────────────────────
+
+export interface ActionTrigger {
+  id: string;
+  name: string;
+  type: "webhook" | "slack" | "jira";
+  url: string;
+  headers: Record<string, string>;
+  enabled: boolean;
+  channel?: string | null;
+  project?: string | null;
+  issue_type?: string | null;
+}
+
+export async function getActionTriggers(): Promise<ActionTrigger[]> {
+  const res = await fetch(`${BASE}/actions/triggers`);
+  if (!res.ok) throw new Error("Failed to fetch action triggers");
+  const data = await res.json();
+  return data.triggers ?? [];
+}
+
+export interface SendFindingResult {
+  status: "ok" | "failed" | "timeout";
+  http_status: number | null;
+  error: string | null;
+}
+
+/** Share a finding (Briefing/Hub insight) to a configured Action Hub trigger. */
+export async function sendFindingToTrigger(
+  triggerId: string,
+  body: { text: string; metric_name?: string; headline?: string; source_id?: string },
+): Promise<SendFindingResult> {
+  const res = await fetch(`${BASE}/actions/triggers/${encodeURIComponent(triggerId)}/send`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error("Failed to share finding");
+  return res.json();
+}
+
+// ── Scheduled Brief subscriptions ───────────────────────────────────────────────
+
+export interface BriefSubscription {
+  id: string;
+  conn_id: string;
+  name: string;
+  period: "week" | "day";
+  send_cron: string;
+  trigger_id: string;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+  last_sent_at: string | null;
+  last_status: string | null;
+  last_error: string | null;
+}
+
+export async function getBriefSubscriptions(connId?: string): Promise<BriefSubscription[]> {
+  const qs = connId ? `?conn_id=${encodeURIComponent(connId)}` : "";
+  const res = await fetch(`${BASE}/briefs/subscriptions${qs}`);
+  if (!res.ok) throw new Error("Failed to fetch brief subscriptions");
+  const data = await res.json();
+  return data.subscriptions ?? [];
+}
+
+export async function createBriefSubscription(
+  body: { conn_id: string; name: string; trigger_id: string; period?: "week" | "day"; send_cron?: string; enabled?: boolean },
+): Promise<BriefSubscription> {
+  const res = await fetch(`${BASE}/briefs/subscriptions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || "Failed to create brief subscription");
+  return res.json();
+}
+
+export async function updateBriefSubscription(
+  id: string,
+  body: { conn_id: string; name: string; trigger_id: string; period?: "week" | "day"; send_cron?: string; enabled?: boolean },
+): Promise<BriefSubscription> {
+  const res = await fetch(`${BASE}/briefs/subscriptions/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error("Failed to update brief subscription");
+  return res.json();
+}
+
+export async function deleteBriefSubscription(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/briefs/subscriptions/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to delete brief subscription");
+}
+
+export interface BriefDeliveryResult {
+  status: "ok" | "failed" | "timeout";
+  http_status: number | null;
+  error: string | null;
+  summary: string | null;
+  markdown: string | null;
+}
+
+export async function testBriefSubscription(id: string): Promise<BriefDeliveryResult> {
+  const res = await fetch(`${BASE}/briefs/subscriptions/${encodeURIComponent(id)}/test`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to test brief subscription");
   return res.json();
 }
 

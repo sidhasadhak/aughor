@@ -21,25 +21,55 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _resolve_sql(monitor: Monitor) -> Optional[str]:
-    """Return the scalar SQL expression for this monitor (custom_sql wins)."""
+def _query(db, sql: str) -> list:
+    """Run SQL through the connection API and return rows (list), [] on error.
+
+    The connection exposes ``execute(label, sql) -> QueryResult(.rows/.error)`` — NOT
+    ``execute_query`` (a phantom method the runner used to call, which silently
+    AttributeError'd on every check → "No condition met"). This is the single adapter."""
+    try:
+        res = db.execute("__monitor__", sql)
+        if getattr(res, "error", None):
+            logger.debug("monitor query error: %s", res.error)
+            return []
+        return list(getattr(res, "rows", None) or [])
+    except Exception as exc:
+        logger.debug("monitor query failed: %s", exc)
+        return []
+
+
+def _resolve_sql(monitor: Monitor, db=None) -> Optional[str]:
+    """Return the scalar SQL expression for this monitor (custom_sql wins).
+
+    When ``monitor.reanchor_window`` is set and a live ``db`` is provided, the SQL's
+    absolute date window is slid forward to the data's current activity edge — so a
+    monitor built from a Briefing finding tracks the trailing window instead of a
+    frozen one. Re-anchoring is fallback-safe (returns the SQL unchanged on any issue).
+    """
+    sql: Optional[str] = None
     if monitor.custom_sql:
-        return monitor.custom_sql.strip()
-    if monitor.metric_name:
+        sql = monitor.custom_sql.strip()
+    elif monitor.metric_name:
         try:
             from aughor.semantic.metrics import get_metric
             m = get_metric(monitor.metric_name)
             if m:
-                return m.sql.strip()
+                sql = m.sql.strip()
         except Exception:
             pass
-    return None
+    if sql and db is not None and getattr(monitor, "reanchor_window", False):
+        try:
+            from aughor.monitors.window import reanchor_trailing_window
+            sql = reanchor_trailing_window(sql, db, getattr(db, "dialect", "duckdb"))
+        except Exception:
+            pass
+    return sql
 
 
 def _scalar(db, sql: str) -> Optional[float]:
     """Execute SQL and return the first cell as float, or None on error."""
     try:
-        result = db.execute_query(sql)
+        result = _query(db, sql)
         if result and len(result) > 0:
             row = result[0]
             val = list(row.values())[0] if isinstance(row, dict) else row[0]
@@ -88,7 +118,7 @@ def _make_alert(
 
 def run_threshold_monitor(monitor: Monitor, db) -> Optional[MonitorAlert]:
     """Fire if the current metric value crosses warning_threshold or critical_threshold."""
-    sql = _resolve_sql(monitor)
+    sql = _resolve_sql(monitor, db)
     if not sql:
         logger.warning("Monitor %s (%s): no SQL resolved — skipping", monitor.id, monitor.name)
         return None
@@ -125,7 +155,7 @@ def run_threshold_monitor(monitor: Monitor, db) -> Optional[MonitorAlert]:
 
 def run_any_change_monitor(monitor: Monitor, db) -> Optional[MonitorAlert]:
     """Fire whenever the metric value changes from its last recorded value."""
-    sql = _resolve_sql(monitor)
+    sql = _resolve_sql(monitor, db)
     if not sql:
         return None
 
@@ -156,7 +186,7 @@ def run_any_change_monitor(monitor: Monitor, db) -> Optional[MonitorAlert]:
 
 def run_trend_reversal_monitor(monitor: Monitor, db) -> Optional[MonitorAlert]:
     """Fire when the rolling direction of the metric flips (up→down or down→up)."""
-    sql = _resolve_sql(monitor)
+    sql = _resolve_sql(monitor, db)
     if not sql:
         return None
 
@@ -205,7 +235,7 @@ def run_anomaly_monitor(monitor: Monitor, db) -> Optional[MonitorAlert]:
         logger.warning("numpy not available — anomaly monitor skipped")
         return None
 
-    sql = _resolve_sql(monitor)
+    sql = _resolve_sql(monitor, db)
     if not sql:
         return None
 
@@ -214,7 +244,7 @@ def run_anomaly_monitor(monitor: Monitor, db) -> Optional[MonitorAlert]:
     current: Optional[float] = None
 
     try:
-        rows = db.execute_query(sql)
+        rows = _query(db, sql)
         if rows and len(rows[0]) == 2:
             # Two-column time series
             pairs = []
@@ -286,7 +316,7 @@ def run_drift_monitor(monitor: Monitor, db) -> Optional[MonitorAlert]:
     if not monitor.dimension_column:
         return None
 
-    sql = _resolve_sql(monitor)
+    sql = _resolve_sql(monitor, db)
     if not sql:
         return None
 
@@ -298,7 +328,7 @@ def run_drift_monitor(monitor: Monitor, db) -> Optional[MonitorAlert]:
         return None
 
     try:
-        rows = db.execute_query(sql)
+        rows = _query(db, sql)
     except Exception as exc:
         logger.debug("Drift monitor query failed: %s", exc)
         return None
@@ -380,7 +410,7 @@ def run_freshness_monitor(monitor: Monitor, db) -> Optional[MonitorAlert]:
     sql = f"SELECT MAX({col}) AS latest_ts FROM {table}"
 
     try:
-        rows = db.execute_query(sql)
+        rows = _query(db, sql)
         if not rows:
             return None
         row = rows[0]

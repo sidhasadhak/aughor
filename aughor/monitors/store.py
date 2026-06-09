@@ -94,7 +94,14 @@ _init_schema()
 def _row_to_monitor(row: sqlite3.Row) -> Monitor:
     d = dict(row)
     d["enabled"] = bool(d["enabled"])
-    d.pop("extra", None)
+    # Fields added after the original schema live in the `extra` JSON blob (avoids a
+    # column migration). Merge them back into the Monitor kwargs.
+    extra_raw = d.pop("extra", None)
+    if extra_raw:
+        try:
+            d.update(json.loads(extra_raw))
+        except Exception:
+            pass
     return Monitor(**{k: v for k, v in d.items() if v is not None or k in {
         "metric_name", "custom_sql", "warning_threshold", "critical_threshold",
         "dimension_column", "freshness_table",
@@ -136,6 +143,10 @@ def upsert_monitor(monitor: Monitor) -> Monitor:
         monitor = monitor.model_copy(update={"created_at": now})
     monitor = monitor.model_copy(update={"updated_at": now})
 
+    params = monitor.model_dump()
+    # Persist post-schema fields in the `extra` JSON blob (no column migration).
+    params["extra"] = json.dumps({"reanchor_window": monitor.reanchor_window})
+
     with _LOCK:
         conn = _connect()
         try:
@@ -151,7 +162,7 @@ def upsert_monitor(monitor: Monitor) -> Monitor:
                     :alert_on, :warning_threshold, :critical_threshold, :threshold_direction,
                     :sigma_threshold, :history_days, :dimension_column, :drift_p_threshold,
                     :freshness_table, :freshness_column, :freshness_sla_hours,
-                    :notification_channel, :enabled, :created_at, :updated_at, '{}'
+                    :notification_channel, :enabled, :created_at, :updated_at, :extra
                 )
                 ON CONFLICT(id) DO UPDATE SET
                     name=excluded.name,
@@ -171,8 +182,9 @@ def upsert_monitor(monitor: Monitor) -> Monitor:
                     freshness_sla_hours=excluded.freshness_sla_hours,
                     notification_channel=excluded.notification_channel,
                     enabled=excluded.enabled,
-                    updated_at=excluded.updated_at
-            """, monitor.model_dump())
+                    updated_at=excluded.updated_at,
+                    extra=excluded.extra
+            """, params)
             conn.commit()
         finally:
             conn.close()

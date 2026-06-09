@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -96,8 +96,18 @@ Rules:
 def _build_user_prompt(
     top_insights: list[dict],
     top_patterns: list[dict],
+    macro_context: Optional[dict] = None,
 ) -> str:
-    lines = ["FINDINGS (ordered by novelty):"]
+    lines = []
+    # Tier 2: lead with the long-arc context so the narrator can juxtapose the recent
+    # regime (the findings) against the full-history trend ("up 4× over 8 yrs, now flat").
+    if macro_context:
+        from aughor.explorer.temporal import render_macro_context
+        block = render_macro_context(macro_context)
+        if block:
+            lines.append(block)
+            lines.append("")
+    lines.append("FINDINGS (ordered by novelty):")
     for i, ins in enumerate(top_insights, 1):
         domain = ins.get("domain", "Unknown")
         novelty = ins.get("novelty", 0)
@@ -113,6 +123,13 @@ def _build_user_prompt(
                 f"{p.get('evidence_count', 0)} findings across {len(p.get('domains', []))} domains"
             )
 
+    if macro_context:
+        lines.append(
+            "\nWhere the long-arc context reframes a recent finding, say so "
+            "(e.g. a recent dip that is still far above the multi-year base, or recent "
+            "growth that is flattening a longer climb). Do not cite the macro context as a "
+            "numbered finding."
+        )
     lines.append(
         "\nGenerate a 2-3 sentence executive briefing narrative with inline citation markers."
     )
@@ -123,6 +140,7 @@ def generate_narrative(
     domain_data: dict[str, list[dict]],
     patterns: list[dict],
     connection_id: str,
+    macro_context: Optional[dict] = None,
 ) -> dict[str, Any]:
     """
     Call the LLM narrator and return a serialisable briefing dict.
@@ -177,7 +195,7 @@ def generate_narrative(
     # Build prompt and call LLM
     from aughor.llm.provider import get_provider
     provider = get_provider("narrator")
-    user_prompt = _build_user_prompt(top[:8], patterns[:3])
+    user_prompt = _build_user_prompt(top[:8], patterns[:3], macro_context)
 
     result: BriefingNarrative = provider.complete(
         system=_SYSTEM,
@@ -215,6 +233,7 @@ def get_briefing(
     patterns: list[dict],
     force_refresh: bool = False,
     scope_key: str | None = None,
+    macro_context: Optional[dict] = None,
 ) -> dict[str, Any]:
     """Return cached briefing narrative if fresh, otherwise generate and cache.
 
@@ -233,7 +252,7 @@ def get_briefing(
         except Exception:
             pass
 
-    briefing = generate_narrative(domain_data, patterns, connection_id)
+    briefing = generate_narrative(domain_data, patterns, connection_id, macro_context)
 
     try:
         _CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)

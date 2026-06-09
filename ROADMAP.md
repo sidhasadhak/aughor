@@ -6,7 +6,38 @@
 
 ---
 
-## 🧠 Latest — Intelligence-Surface Trust: Scope-Consistent + Self-Explaining Intelligence
+## 🛡 Latest — Finding Trust Guards + Save-Your-Fix (Activity Log)
+
+A full reset + from-scratch rebuild watch over six connections (TPC-H/DS, ClickBench, beautycommerce, a multi-dataset workspace) hardened the autonomous intelligence so the **numbers it reports are trustworthy, not just plausible** — and turned the Activity log's "Run fix" into a durable, guarded action.
+
+| Area | What shipped | Key files |
+|---|---|---|
+| **Numeral grounding** | Every magnitude-bearing number in a finding is verified against the actual result cells; a fabricated magnitude/unit (a finding read "2.49M" for a 2.49 cell — off 1e6) is dropped or re-grounded. | `aughor/explorer/grounding.py` |
+| **Platform-generic SQL robustness** | Date-named integer columns no longer pose as timestamps (ClickBench `EventDate::USMALLINT`); a per-run **dead-reference memory** stops the generator re-proposing hallucinated columns (workspace fix-failures **29→5**); shared **repair-diagnosis branches** (missing-table / unexposed-col / ambiguous / non-inner-join) lift yield (beautycommerce **18→27**). | `aughor/tools/profiler.py`, `aughor/explorer/agent.py`, `aughor/sql/writer.py` |
+| **Angle-feasibility + intent-preservation** | The explorer won't ask a time-based question of a *dateless* table (it had invented `invoice_date`); a repair that **de-temporalises** a query or **neuters** a time metric (`DATE_DIFF(CURRENT_DATE, CURRENT_DATE)` → constant 0) is dropped/flagged. An LLM faithfulness check **failed verification** and was replaced with deterministic signals. | `aughor/explorer/agent.py` |
+| **Fix-and-Save & Fix-All** | A successful "Run fix" is now saved like any successful query — the episode is healed and a finding stored through the *same* guards (flagged **`unverified`** on a guard trip, never auto-promotable); a filter-scoped **"Fix all"** repairs only the errored set visible under the current filter, never starting a fresh crawl. | `aughor/explorer/fix_persist.py`, `web/components/ActivityLog.tsx` |
+
+**Engineering note.** "Can't fail it" testing repeatedly caught the fixes' own gaps (the vacuous-temporal drift mode; an unreliable LLM-as-judge) before they shipped. Full rebuild + architecture-audit findings (wiring, DRY ~900–1,200 LOC, commercial feature-tiering) in `docs/REBUILD_ANOMALIES_AND_IMPROVEMENT_PLAN.md`.
+
+---
+
+## 🧠 Recent — Adaptive Temporal Scope (USP) + Actionability + Evidence Trust Layer
+
+Three big arcs landed: the **temporal USP** ("we don't ask you *when* — we discover *when matters*"), making intelligence **reach the user** (actionability + push), and making every claim **auditable** (Evidence layer). All on branch `backlog-next`.
+
+| Area | What shipped | Key files |
+|---|---|---|
+| **Adaptive Temporal Scope** | **Tier 0** anchors the window on the trailing edge of *activity* (measure-bearing facts), not `MAX(any date)`, so a calendar/date-dimension running to 2100 can't drag the window past the last fact. **Tier 1** narrows to the *current regime* via changepoint detection on the activity density series. **Tier 2** builds a cheap full-span macro rollup juxtaposed with the regime window, injected into the briefing narrator ("up 4× over 8 yrs, now flat"). **Tuning**: recency-tie → core-fact (most rows) wins; `date_dim`-style spines excluded by name + date-part shape. Validated across beautycommerce / TPC-H / TPC-DS. | `aughor/explorer/{agent,regime,temporal}.py`, `aughor/knowledge/briefing.py`, `docs/ADAPTIVE_TEMPORAL_SCOPE.md` |
+| **Actionability + push** | Every finding is actionable: **Create Monitor** (from its SQL), **Promote to Org** (connection- *and* canvas-scoped), **Share** (to a configured Slack/webhook/Jira trigger), and **Evidence** drill-through (the source query + confidence/novelty/freshness behind the claim) — on both the Briefing and the Hub. New **scheduled-brief delivery** subsystem pushes the digest on a cron through an Action Hub trigger. | `aughor/{briefs/,routers/{actions,exploration}.py,explorer/store.py}`, `web/components/{BriefingPanel,IntelligenceHub}.tsx`, `web/lib/api.ts` |
+| **Evidence peer layer** | The Evidence Ledger is now a first-class intelligence layer beside Briefing/Hub/Domains: a scope-recent endpoint (`/investigations/evidence/recent`) + `EvidencePanel` with confidence, source SQL, freshness, and a **validate / dispute / needs-context** feedback loop that teaches Aughor which findings hold up. | `aughor/routers/investigations.py`, `aughor/evidence/store.py`, `aughor/db/history.py`, `web/components/{EvidencePanel,IntelligenceWorkspace}.tsx` |
+| **Deep-Analysis live stepper** | The agent trace renders as an animated stepper (violet→emerald progress bar, checkmark-pop on done, pulsing active dot, per-step rail). | `web/components/ThinkingTrace.tsx`, `web/app/globals.css` |
+| **Visual Briefing** | The Briefing leads with a domain-coverage bar chart + per-finding novelty meters instead of pure text. | `web/components/BriefingPanel.tsx` |
+
+**Next:** see the **Prioritized Backlog** below.
+
+---
+
+## 🧩 Recent — Intelligence-Surface Trust: Scope-Consistent + Self-Explaining Intelligence
 
 The intelligence surfaces (Briefing / Domains) and the Deep-Analysis path were hardened so the platform **reassures users of intelligence quality** — every surface is scoped consistently, never silently empty, and every user-facing number is grounded in the actual result rows.
 
@@ -31,27 +62,28 @@ unblocks. Effort: S (≤ a day) / M (a few days) / L (a week+).
 
 | # | Item | Impact | Effort | Depends on | Why it's here |
 |---|---|---|---|---|---|
-| **1** | **Temporal Tier 0 — role-aware consensus recency + sentinel filter** (the calendar-table fix; rewrite `_compute_time_window`). `docs/ADAPTIVE_TEMPORAL_SCOPE.md` §3/§8-Stage-1 | **High** | S–M | — | Prevents empty-window / "no data" briefings on any schema with a date dimension; cheapest fix; **foundation for all temporal work**; surfaces the calendar↔fact discrepancy as a finding. |
-| **2** | **Metric unification** — one canonical metric; reconcile `OntologyMetric.formula_sql` + `data/metrics.json` | **High** | M | — | Kills "revenue means two different things"; affects every query; **prerequisite for the Semantic Compiler (#11)**. |
-| **3** | **Symmetric-aggregate fan-out guard (first-class)** — PK-keyed aggregation for multi-fact joins | **High** | M | — | The **#1 model-invariant correctness failure** (the $3T product-of-aggregates class), as a declarative guard not a regex. |
-| **4** | **Actionability + push** (#20) — finding-level Create Monitor / Promote to Org / Share; scheduled per-scope Brief delivery; Evidence-Ledger drill-through on claims | **High** | M–L | — (reuses Action Hub + Monitors + Evidence) | Makes intelligence **reach the user** ("heavy-duty actionable intel"); all parts exist, just unwired. |
-| **5** | **Temporal Tier 1 — regime / changepoint window inference** (`ruptures`/`scipy` on the coarse series) | **High** | M | #1 | The statistical heart of the USP — "analyze the current regime, not last 12 months." |
-| **6** | **Temporal Tier 2 — multi-resolution macro+micro** (cheap full-span rollups + bounded active-regime deep-dive) | **High** | M–L | #1 (#5) | Long-arc context juxtaposed with a bounded recent dive — a fixed window can't do this. |
+| ✅ **1** | ~~**Temporal Tier 0 — role-aware consensus recency + sentinel filter**~~ **DONE** (main) + calendar-spine hardening on `backlog-next` | **High** | S–M | — | Prevents empty-window briefings; foundation for all temporal work; surfaces the calendar↔fact discrepancy. |
+| ✅ **2** | ~~**Metric unification** — one canonical metric (`OntologyMetric.formula_sql` + `data/metrics.json`)~~ **DONE** (main) | **High** | M | — | Kills "revenue means two things"; **prerequisite for the Semantic Compiler (#11)**. |
+| ✅ **3** | ~~**Symmetric-aggregate fan-out guard (first-class)**~~ **DONE** (main) | **High** | M | — | The #1 model-invariant correctness failure ($3T product-of-aggregates). |
+| ✅ **4** | ~~**Actionability + push** (#20) — Monitor / Promote / Share + scheduled Brief delivery + Evidence drill-through~~ **DONE** (`backlog-next`) | **High** | M–L | — | Makes intelligence **reach the user**; browser+live verified. |
+| ✅ **5** | ~~**Temporal Tier 1 — regime / changepoint window inference**~~ **DONE** (main) | **High** | M | #1 | The statistical heart of the USP. |
+| ✅ **6** | ~~**Temporal Tier 2 — multi-resolution macro+micro**~~ **DONE** (`backlog-next`) | **High** | M–L | #1 (#5) | Long-arc context juxtaposed with a bounded recent dive. |
 | **7** | **Canvas-explorer scoping** — Briefing in canvas mode polls + drives the *canvas* explorer, not the connection (needs canvas `start`/`trigger-intel` endpoints) | Med | M | canvas start/trigger endpoints | Fixes the scope bug found 2026-06-08; completes canvas-scoped intelligence. |
-| **8** | **Evidence peer layer** (#19 Step B) — `/investigations/evidence/recent?connection_id=&canvas_id=` join endpoint + `EvidencePanel` + new layer | Med | M | scope-join endpoint | Finishes Unification Wave 2; trust drill-through. |
-| **9** | **Delivery polish** — converge ADA + explore on one report contract; charts on the decomposition path; viz upgrades (Pareto, sparkline+distribution, choropleth, MoM% overlay, "within noise") | Med–High | M–L | — | "Reasoning outruns presentation" — the last-mile of trust. |
-| **10** | **Temporal Tier 3 — cost governor** (partition pruning, scan budget, sampling, incremental deltas) | High *(at real-warehouse scale)* | L | #1–#6 | The TB-scale hardening; matters most once a real warehouse connects. |
-| **11** | **Semantic Compiler** — typed Intent IR (`QueryPlanV2`→`QueryIntent`) + deterministic `synthesize_sql(intent, ontology, dialect)` for the 4 safest intents | High *(strategic)* | L | #2 | The biggest architectural bet — "LLM augments a declarative layer, not regenerates SQL." |
+| ✅ **8** | ~~**Evidence peer layer** — scope-recent endpoint + `EvidencePanel` + new layer~~ **DONE** (`backlog-next`) | Med | M | scope-join endpoint | Trust drill-through; closes the validate/dispute loop. |
+| **9** | **Delivery polish** — converge ADA + explore on one report contract; charts on the decomposition path; viz upgrades (Pareto, sparkline+distribution, choropleth, MoM% overlay, "within noise") | Med–High | M–L | — | "Reasoning outruns presentation" — the last-mile of trust. **← NEXT** |
+| ✅ **10** | ~~**Temporal Tier 3 — cost governor**~~ **DONE** (`backlog-next`) — approximate aggregates (COUNT(DISTINCT)→approx_count_distinct) + sampling-with-scaling + incremental watermark; wired into the explorer's large-connection curiosity loop | High *(at real-warehouse scale)* | L | #1–#6 ✅ | The TB-scale hardening. Sampling + incremental-delta re-run kept opt-in pending a per-surface rollout call. |
+| ✅ **11** | ~~**Semantic Compiler**~~ **DONE** (`backlog-next`) — typed `QueryIntent` IR + deterministic `synthesize_sql(intent, ontology, dialect)` for the 4 safe intents + NL→intent parser; wired as a fallback-safe fast-path in the chat SQL flow | High *(strategic)* | L | #2 ✅ | The biggest architectural bet. Live-verified NL→SQL→execute end-to-end on beautycommerce. |
 | **12** | **Enterprise hardening** (Sprint 48) — OAuth2/OIDC, RBAC, workspace tenancy, query cancellation, secrets manager | High *(for deploy)* | L | — | Gates multi-user / deployment; otherwise independent. |
 | **13** | **Full-pipeline eval mode** — measure the lift the pipeline gives over raw schema-only generation | Med *(force-multiplier)* | M | — | Makes every other item measurable instead of vibes-based. |
 | **14** | **UX polish** — ontology legends-at-top, canvas History-tab empty bug, Configure panel (About/Data/Instructions), Recents-includes-Quick-chats, motion/animation pass | Low–Med | S each | — | Product-felt small wins (Configure panel is the most impactful). |
 
-**Dependency chains:** `#1 → #5 → #6 → #10` (temporal); `#2 → #11` (compiler); `#7` & `#8` each gated by a small new endpoint. Everything else is independent and can be slotted by capacity.
+**Done so far:** #1–#6, #8, #10, #11 + Tier-1 tuning + the user-filed monitor/finding fixes + the **Finding Trust Guards** arc (numeral grounding, platform-generic SQL robustness, angle-feasibility + intent-preservation, Fix-and-Save / Fix-All). Both big bets (#10 Tier 3, #11 Semantic Compiler) shipped. **All merged to `main`.**
 
-**Recommended next three** (high impact, low dependency, mix of correctness + reach):
-**#1 Temporal Tier 0** (cheapest, prevents the worst failure, foundational) → **#2 Metric unification** (biggest trust lever, unblocks the compiler) → **#4 Actionability/push** *or* **#3 fan-out guard** (reach vs correctness — pick by mood).
+**Dependency chains:** `#1 → #5 → #6 → #10` (temporal — all ✅); `#2 → #11` (compiler ✅); `#7` gated by a small new endpoint.
 
-**Housekeeping (not a backlog item):** 10 files from Unification Waves 1+2A + the LocalUpload fix are committed-ready (tsc/py-compile clean, live-verified) and awaiting an explicit "commit" word.
+**Recommended next** (of what remains): **#9 Delivery polish** (last-mile of trust — presentation lags the reasoning) → **#14 UX polish** (Configure panel; cheap product-felt wins). #12 (enterprise) and #13 (eval) slot by deployment/measurement need; #7 needs the canvas start/trigger endpoints.
+
+**Housekeeping:** `backlog-next` (22 verified commits since the fork, **286 unit tests green, tsc clean**) **merged to `main` and pushed** (2026-06-09). Open follow-ups: non-temporal semantic drift in repairs (revenue↔cost — harder than the temporal class now covered), the compiler chat-path deploy-env verify, the opt-in Tier-3 sampling/incremental rollout, and the §-audit refactors (one `spawn_explorer`, `Scope` object, `KeyedJsonStore`, silent-ontology-gate→actionable-error) + the commercial feature-flag (`aughor/licensing/`) foundation.
 
 ---
 

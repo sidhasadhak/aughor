@@ -103,6 +103,31 @@ def get_claims_for_investigation(investigation_id: str) -> list[EvidenceClaim]:
             conn.close()
 
 
+def get_recent_claims_for_investigations(
+    investigation_ids: list[str], limit: int = 50,
+) -> list[EvidenceClaim]:
+    """Return the most recent claims across a set of investigations (newest-first).
+
+    Powers the scope-level Evidence layer: the caller resolves a connection/canvas to
+    its investigation IDs (the ledger keys only by investigation_id) and passes them in.
+    """
+    if not investigation_ids:
+        return []
+    with _LOCK:
+        conn = _get_conn()
+        try:
+            _init_schema(conn)
+            placeholders = ",".join("?" * len(investigation_ids))
+            rows = conn.execute(
+                f"SELECT * FROM evidence_claims WHERE investigation_id IN ({placeholders}) "
+                f"ORDER BY created_at DESC LIMIT ?",
+                (*investigation_ids, limit),
+            ).fetchall()
+            return [_row_to_claim(r) for r in rows]
+        finally:
+            conn.close()
+
+
 def get_claims_for_metric(metric_name: str) -> list[EvidenceClaim]:
     """Return all claims that reference a particular metric."""
     with _LOCK:

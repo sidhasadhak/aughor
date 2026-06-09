@@ -26,6 +26,12 @@ class Monitor(BaseModel):
         default=None,
         description="Explicit scalar SQL expression; overrides metric_name SQL when set.",
     )
+    reanchor_window: bool = Field(
+        default=False,
+        description="When True, slide the SQL's absolute date window to the data's live "
+                    "activity edge at run time (relative trailing window). Set for monitors "
+                    "created from a Briefing finding so a frozen window can't go stale.",
+    )
     # Scheduling
     check_cron: str = Field(
         default="0 * * * *",

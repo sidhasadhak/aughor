@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Optional
 
 from aughor.explorer.models import ExplorationPhase
 
@@ -245,6 +246,24 @@ def promote_insight(canvas_id: str, insight_id: str) -> bool:
             save_canvas(canvas_id, state)
             return True
     return False
+
+
+def promote_insight_conn(connection_id: str, insight_id: str) -> Optional[dict]:
+    """Mark a connection-scoped insight as promoted to Org intelligence.
+
+    Returns the promoted insight dict on success, None if the insight is not found.
+    Mirrors promote_insight() but operates on connection-scoped exploration state
+    (data/exploration_{connection_id}.json) so Briefing/Hub findings that live at
+    the connection level — not just canvas insights — can be promoted org-wide.
+    """
+    state = load(connection_id)
+    for ins in state.get("insights", []):
+        if ins.get("id") == insight_id:
+            ins["promoted_to_org"] = True
+            ins["promotion_confidence"] = ins.get("confidence", 0.0)
+            save(connection_id, state)
+            return ins
+    return None
 
 
 def canvas_has_state(canvas_id: str) -> bool:

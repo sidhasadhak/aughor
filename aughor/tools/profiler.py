@@ -189,8 +189,10 @@ _GEO_CODE_PATTERN = re.compile(
 )
 
 _NUMERIC_TYPES = re.compile(
-    r"\b(INT|INTEGER|BIGINT|SMALLINT|TINYINT|HUGEINT|FLOAT|DOUBLE|"
-    r"DECIMAL|NUMERIC|REAL|NUMBER)\b",
+    # `U?` covers DuckDB unsigned ints (UTINYINT/USMALLINT/UINTEGER/UBIGINT/UHUGEINT) —
+    # ClickBench stores EventDate as USMALLINT, which the bare \bSMALLINT\b missed.
+    r"\b(U?(?:TINYINT|SMALLINT|INTEGER|BIGINT|HUGEINT|INT)|"
+    r"FLOAT|DOUBLE|DECIMAL|NUMERIC|REAL|NUMBER)\b",
     re.IGNORECASE,
 )
 _TIMESTAMP_TYPES = re.compile(
@@ -199,6 +201,28 @@ _TIMESTAMP_TYPES = re.compile(
 )
 _BOOL_TYPES = re.compile(r"\b(BOOLEAN|BOOL|BIT)\b", re.IGNORECASE)
 _TEXT_TYPES = re.compile(r"\b(VARCHAR|TEXT|STRING|CHAR|BPCHAR)\b", re.IGNORECASE)
+
+
+def _select_timestamp_cols(columns: list[tuple[str, str]]) -> list[str]:
+    """Columns usable as a table's primary timestamp, best first.
+
+    Real DATE/TIMESTAMP-*typed* columns win. Only when there are none do we fall back to
+    date-*named* columns — but never NUMERIC-typed ones: a date-named integer (ClickBench
+    ``EventDate``::USMALLINT holding epoch-days, or a ``YYYYMMDD`` int) cannot be compared
+    to a date literal and raises "USMALLINT vs DATE". Excluding it means the table gets no
+    time window rather than an un-runnable date filter. ``columns`` is ``[(name, dtype)]``."""
+    typed = [
+        c for c, dtype in columns
+        if _TIMESTAMP_TYPES.search(dtype or "") and not _KEY_PATTERN.search(c.lower())
+    ]
+    if typed:
+        return typed
+    return [
+        c for c, dtype in columns
+        if _TIMESTAMP_PATTERN.search(c.lower())
+        and not _KEY_PATTERN.search(c.lower())
+        and not _NUMERIC_TYPES.search(dtype or "")
+    ][:2]
 
 
 # ── Result dataclasses (lightweight — no Pydantic to keep import cost low) ───
@@ -902,17 +926,7 @@ def build_table_profile(
                         pass
 
     # ── 3. Primary timestamp — use catalog min/max when available ─────────────
-    ts_cols = [
-        c for c, dtype in columns
-        if _TIMESTAMP_TYPES.search(dtype)
-        and not _KEY_PATTERN.search(c.lower())
-    ]
-    if not ts_cols:
-        ts_cols = [
-            c for c, _ in columns
-            if _TIMESTAMP_PATTERN.search(c.lower())
-            and not _KEY_PATTERN.search(c.lower())
-        ][:2]
+    ts_cols = _select_timestamp_cols(columns)
 
     def _ts_priority(col: str) -> int:
         c = col.lower()

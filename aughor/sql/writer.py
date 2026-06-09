@@ -114,7 +114,53 @@ def _make_diagnosis(error: str, sql: str, table_cols: dict[str, list[str]]) -> s
             "Use only column names that appear verbatim in the SCHEMA above."
         )
 
-    # Generic column-missing pattern (Postgres, other dialects)
+    # Referenced table/alias used but not brought into FROM/JOIN
+    # (DuckDB: 'Referenced table "oi" not found!')
+    m = re.search(r'[Rr]eferenced table\s+"?(\w+)"?\s+not found', error)
+    if m:
+        bad = m.group(1)
+        present = ", ".join(sorted(set(_resolve_aliases(sql).values()))) or "(see SCHEMA)"
+        return (
+            f"DIAGNOSIS: table/alias '{bad}' is referenced but never appears in any FROM or JOIN. "
+            f"Either add the JOIN that brings '{bad}' in (only on a real key relationship), or remove "
+            f"every reference to '{bad}'. Tables currently in the query: {present}."
+        )
+
+    # Column referenced but not exposed by the FROM/CTEs
+    # (DuckDB: 'Referenced column "x" not found in FROM clause!')
+    m = re.search(r'[Rr]eferenced column\s+"?(\w+)"?\s+not found', error)
+    if m:
+        bad = m.group(1)
+        cands = _extract_candidate_bindings(error)
+        hint = f" Columns available here: {', '.join(cands)}." if cands else ""
+        return (
+            f"DIAGNOSIS: column '{bad}' is not exposed by the query's FROM/CTEs — it may live inside a "
+            f"subquery that does not SELECT it out, be defined after it is used, or be misspelled.{hint} "
+            f"SELECT '{bad}' out of the inner query before referencing it, or qualify it with its table."
+        )
+
+    # Ambiguous column — exists in 2+ joined tables, must be qualified
+    # (DuckDB: 'Ambiguous reference to column name "x"'; Postgres: 'column reference "x" is ambiguous')
+    m = re.search(r'[Aa]mbiguous reference to column name\s+"?(\w+)"?', error) or \
+        re.search(r'column reference\s+"?(\w+)"?\s+is ambiguous', error)
+    if m:
+        bad = m.group(1)
+        return (
+            f"DIAGNOSIS: column '{bad}' exists in more than one joined table, so it must be qualified. "
+            f"Prefix every use of it with the intended table alias (e.g. o.{bad} or oi.{bad})."
+        )
+
+    # Outer join directly onto a subquery (DuckDB can't do non-inner joins on arbitrary subqueries)
+    if "non-inner join on subquery" in error.lower():
+        return (
+            "DIAGNOSIS: this engine cannot LEFT/RIGHT/FULL JOIN directly onto a subquery. Rewrite as one "
+            "of: (a) an INNER JOIN if every row matches anyway; (b) move the subquery into a WITH (CTE) "
+            "and join the CTE — WITH sub AS (<subquery>) SELECT ... LEFT JOIN sub ON ...; or "
+            "(c) a correlated scalar subquery in SELECT. Prefer the CTE rewrite."
+        )
+
+    # Generic column-missing pattern (Postgres, other dialects) — catch-all after the
+    # specific column/table branches above.
     if "does not have a column" in error or (
         "column" in error.lower() and ("not" in error.lower() or "unknown" in error.lower())
     ):

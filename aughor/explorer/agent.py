@@ -41,11 +41,17 @@ from aughor.explorer.models import (
 )
 from aughor.explorer import store as _store
 from aughor.explorer.episodes import EpisodeCollector
+from aughor.explorer.grounding import (
+    GroundingResult,
+    numeric_cells_block,
+    verify_finding,
+)
 
 logger = logging.getLogger(__name__)
 
 _RATE_SECONDS_SCHEMA = 0.0   # schema phases (3-7) run as fast as the DB allows
 _RATE_SECONDS_INTEL  = 5.0   # domain intel phase runs at 1 query per 5 seconds
+_COST_LARGE_ROWS     = 5_000_000  # Tier 3 — at/above this, prefer approximate aggregates
 
 # State-value vocabulary for lifecycle classification
 _TERMINAL = frozenset({
@@ -114,6 +120,53 @@ def _table_has_measure(cols) -> bool:
     return any(_profile_field(c, "semantic_type") == "measure" for c in vals)
 
 
+# A date dimension / calendar table runs across the *whole* date axis (often into the
+# future, e.g. TPC-DS date_dim → 2100) and the profiler frequently mis-tags its integer
+# date-part columns (d_year, d_moy, d_qoy…) as "measures" — which would wrongly admit it
+# to the activity pool and push the window past all real facts. Catch it by name and by
+# shape (its "measures" are overwhelmingly date-parts). See docs/ADAPTIVE_TEMPORAL_SCOPE.md §3,§7.
+_CALENDAR_NAME_RE = re.compile(
+    r"(?:^|[._])(date_dim|dim_date|dim_day|day_dim|d_date|time_dim|dim_time|calendar|dates?)(?:$|[._])",
+    re.I,
+)
+_DATEPART_RE = re.compile(
+    r"(year|month|moy|day|dom|dow|doy|quarter|qoy|qtr|week|woy|seq|fiscal|fy|holiday|weekend|season|date_sk|julian)",
+    re.I,
+)
+
+
+def _col_name(c, key=None):
+    """Best-effort column name from a profile (dataclass/dict) or its dict key."""
+    return getattr(c, "column", None) or (c.get("column") if isinstance(c, dict) else None) or key
+
+
+def _is_calendar_spine(table, cols) -> bool:
+    """True when *table* is a calendar / date-dimension spine — by name (date_dim,
+    dim_date, calendar…) or by shape (≥70% of its measure-tagged columns are date-parts).
+    Such tables must be excluded from activity anchoring even when mis-tagged with measures."""
+    base = str(table).split(".")[-1].lower()
+    if _CALENDAR_NAME_RE.search(base):
+        return True
+    if not cols:
+        return False
+    items = cols.items() if isinstance(cols, dict) else [(None, c) for c in cols]
+    measure_names = [
+        _col_name(c, k) for k, c in items
+        if _profile_field(c, "semantic_type") == "measure"
+    ]
+    measure_names = [n for n in measure_names if n]
+    if len(measure_names) >= 4:
+        dateparts = sum(1 for n in measure_names if _DATEPART_RE.search(n))
+        if dateparts / len(measure_names) >= 0.7:
+            return True
+    return False
+
+
+def _is_activity_table(table, cols) -> bool:
+    """An *activity* (fact/event) table: measure-bearing and not a calendar spine."""
+    return _table_has_measure(cols) and not _is_calendar_spine(table, cols)
+
+
 def _days_between(a: str, b: str) -> int:
     """Absolute day gap between two ISO date strings; 0 on parse error."""
     try:
@@ -122,21 +175,36 @@ def _days_between(a: str, b: str) -> int:
         return 0
 
 
+# When two activity tables share (nearly) the same trailing edge, the *core fact*
+# (most rows) is the better anchor than a fresher-by-days peripheral table — a tiny
+# `campaigns` (5K rows) ending the same day as a 6.4M-row `order_items` should not win.
+_ANCHOR_RECENCY_TOLERANCE_DAYS = 45
+
+
 def _anchor_activity(tp, cp=None):
-    """Return ``(table, recency, is_effective)`` for the measure-bearing activity table
-    with the latest sentinel-filtered recency — the table whose trailing edge defines the
-    window. Falls back to all dated tables when no measures are detected. Returns
+    """Return ``(table, recency, is_effective)`` for the anchor activity table — the one
+    whose trailing edge defines the window. Among measure-bearing tables whose recency is
+    within ``_ANCHOR_RECENCY_TOLERANCE_DAYS`` of the latest, prefer the **core fact**
+    (largest row_count): recency ties shouldn't hand the window to a small peripheral
+    table. Falls back to all dated tables when no measures are detected. Returns
     ``(None, None, False)`` when nothing is usable."""
-    activity, spine = [], []   # each: (recency, is_effective, table)
+    activity, spine = [], []   # each: (recency, is_effective, table, row_count)
     for table, prof in (tp or {}).items():
         rec, is_eff = _table_recency(prof)
         if rec is None:
             continue
-        (activity if _table_has_measure((cp or {}).get(table)) else spine).append((rec, is_eff, table))
+        rows = _profile_field(prof, "row_count") or 0
+        (activity if _is_activity_table(table, (cp or {}).get(table)) else spine).append(
+            (rec, is_eff, table, rows))
     pool = activity or spine
     if not pool:
         return None, None, False
-    rec, is_eff, table = max(pool, key=lambda r: r[0])
+
+    latest = max(r[0] for r in pool)
+    # Tables effectively at the trailing edge (within tolerance of the latest recency).
+    fresh = [r for r in pool if _days_between(r[0], latest) <= _ANCHOR_RECENCY_TOLERANCE_DAYS]
+    # Among those, the core fact (most rows) wins; recency breaks any row-count tie.
+    rec, is_eff, table, _rows = max(fresh, key=lambda r: (r[3], r[0]))
     return table, rec, is_eff
 
 
@@ -158,7 +226,7 @@ def _role_aware_time_window(tp, cp=None, jmap=None, months: int = 12):
 
     discrepancy = sorted(
         ((t, _table_recency(p)[0]) for t, p in (tp or {}).items()
-         if not _table_has_measure((cp or {}).get(t)) and (_table_recency(p)[0] or "") > best_rec),
+         if not _is_activity_table(t, (cp or {}).get(t)) and (_table_recency(p)[0] or "") > best_rec),
         key=lambda x: x[1], reverse=True,
     )
 
@@ -171,6 +239,170 @@ def _role_aware_time_window(tp, cp=None, jmap=None, months: int = 12):
         return start_d.strftime("%Y-%m-%d"), max_d.strftime("%Y-%m-%d"), discrepancy
     except (ValueError, TypeError):
         return None, None, []
+
+
+# A "no data" finding — the query matched nothing (all-NULL row from an empty join/filter)
+# or the interpreter explicitly reported no data. These must not become insights: they're
+# noise in the Briefing and, worse, become broken monitors when a user clicks Create Monitor.
+_NO_DATA_RE = re.compile(
+    r"(returned no data|no data (found|available|to report|for)|0 \w+ (were |was )?found|"
+    r"null values for all|no rows (returned|found|matched)|query (failed|errored)|"
+    r"no matching (rows|records|data)|empty result set)",
+    re.I,
+)
+
+
+# A connection can hold several UNRELATED uploaded datasets, each landing in its own
+# schema (e.g. a bakehouse CRM in `bakehouse.*` + an ecommerce store in `ecommerce.*`).
+# They share no real key, so any join across them is a hallucination — exactly the
+# `bakehouse.sales_customers ⋈ ecommerce.orders` garbage that produced a broken finding.
+# "Dataset" = the schema path (everything before the table name). The inferred join map
+# can't be trusted to separate them (it had a false-positive cross-schema edge), so the
+# schema is the reliable boundary.
+
+def _dataset_of(tbl: str) -> str:
+    """Schema path of a (possibly qualified) table name; '' when unqualified."""
+    parts = str(tbl).split(".")
+    return ".".join(parts[:-1]) if len(parts) > 1 else ""
+
+
+def _tables_in_sql(sql: str) -> set:
+    """Real (non-CTE) qualified table names referenced by a SQL string. Best-effort."""
+    try:
+        import sqlglot
+        from sqlglot import exp
+        tree = sqlglot.parse_one(sql)
+    except Exception:
+        return set()
+    cte_names = {(c.alias_or_name or "").lower() for c in tree.find_all(exp.CTE)}
+    out = set()
+    for t in tree.find_all(exp.Table):
+        if (t.name or "").lower() in cte_names:
+            continue
+        parts = [p for p in (t.catalog, t.db, t.name) if p]
+        if parts:
+            out.add(".".join(parts))
+    return out
+
+
+def _crosses_datasets(sql: str) -> bool:
+    """True when the SQL references real tables from ≥2 distinct schemas (datasets) — a
+    join across unrelated uploaded datasets. Operates on the generated SQL's *qualified*
+    table refs, so it works regardless of how the ontology stored source tables. Tables
+    with no schema qualifier are ignored (they can't be cross-dataset)."""
+    datasets = {_dataset_of(t) for t in _tables_in_sql(sql)}
+    datasets.discard("")
+    return len(datasets) > 1
+
+
+def _is_degenerate_result(rows, finding_text: str = "") -> bool:
+    """True when a Phase-8 result carries no real data — an all-NULL single/leading row
+    (the filter/join matched nothing) or an interpretation that explicitly says so.
+
+    High-precision by design: a legitimate ``COUNT(...) = 0`` returns 0 (not NULL), so
+    real "zero X" findings survive; only genuinely empty results are dropped."""
+    if rows:
+        total = non_null = 0
+        for r in rows[:5]:
+            cells = list(r.values()) if isinstance(r, dict) else list(r)
+            for c in cells:
+                total += 1
+                if c is not None:
+                    non_null += 1
+        if total > 0 and non_null == 0:
+            return True
+    return bool(finding_text and _NO_DATA_RE.search(finding_text))
+
+
+# Column/table names the SQL engine reported as nonexistent — harvested generically from
+# DuckDB *and* Postgres binder errors and fed back to the question generator so it stops
+# re-proposing the same hallucinated names (the dominant Phase-8 failure class: a generator
+# that "expects" a region/campaign_id/touchpoint_id column the schema doesn't have). This is
+# negative knowledge accumulated from the live engine — no schema or connection specifics.
+# Ambiguous-column errors are deliberately NOT harvested: that column DOES exist, it just
+# needs qualifying (handled by the repair diagnosis instead).
+_DEAD_REF_RES = (
+    re.compile(r'does not have a column named\s+"?(\w+)"?', re.I),
+    re.compile(r'[Rr]eferenced column\s+"?(\w+)"?\s+not found', re.I),
+    re.compile(r'column\s+"?(\w+)"?\s+does not exist', re.I),          # Postgres
+    re.compile(r'[Rr]eferenced table\s+"?(\w+)"?\s+not found', re.I),
+    re.compile(r'[Rr]elation\s+"?(\w+)"?\s+does not exist', re.I),     # Postgres
+)
+
+
+def _extract_dead_refs(error: str) -> set:
+    """Nonexistent column/table names named in a SQL engine error (DuckDB + Postgres)."""
+    out: set = set()
+    for pat in _DEAD_REF_RES:
+        out.update(pat.findall(error or ""))
+    return out
+
+
+# Coverage angles that inherently require a date/timestamp (aging, over-time, cohorts).
+# Offering one on a domain with NO real timestamp forces the generator to invent a date
+# column — the `invoice_date`-on-a-dateless-`invoices`-table hallucination. Substring-matched
+# so checklist wording can vary. See _phase8 temporal-feasibility gate (#1).
+_TEMPORAL_ANGLE_RE = re.compile(
+    r"(trend|season|retention|lifecycle|cohort|churn|aging|recency|lead.?time|"
+    r"growth|velocity|momentum|over.?time|time.?series|tenure)",
+    re.I,
+)
+
+
+def _is_temporal_angle(angle: str) -> bool:
+    """True when a coverage angle inherently needs a date/timestamp column."""
+    return bool(_TEMPORAL_ANGLE_RE.search(angle or ""))
+
+
+def _query_columns(sql: str) -> set:
+    """Lowercased bare column names referenced by a SQL string (best-effort, via sqlglot).
+    Used to tell a meaning-changing repair (one column SUBSTITUTED for another) apart from a
+    benign one (a join added, or an alias qualified) — both of which preserve the columns."""
+    try:
+        import sqlglot
+        from sqlglot import exp
+        tree = sqlglot.parse_one(sql)
+    except Exception:
+        return set()
+    return {(c.name or "").lower() for c in tree.find_all(exp.Column) if c.name}
+
+
+# SQL that computes OVER TIME — a date/time function, INTERVAL, or a date literal. Used to
+# catch a repair that silently DE-TEMPORALISES a time-based question (the invoice case: invoice
+# AGE via DATE_DIFF on a date + a date-range filter, "repaired" into a plain payment-delay
+# column). Deterministic and high-precision — no LLM judgement (an LLM rated that drift faithful).
+_TEMPORAL_SQL_RE = re.compile(
+    r"\b(date_?diff|datediff|date_?trunc|date_?part|date_?add|date_?sub|extract|strftime|"
+    r"julian_?day|current_date|current_timestamp|interval)\b"
+    r"|'\d{4}-\d{2}-\d{2}",   # a date literal like '2025-05-17'
+    re.I,
+)
+
+
+def _has_temporal_sql(sql: str) -> bool:
+    """True when SQL computes over time (date/time function, INTERVAL, or a date literal)."""
+    return bool(_TEMPORAL_SQL_RE.search(sql or ""))
+
+
+# A date-difference whose two date operands are IDENTICAL — DATE_DIFF(CURRENT_DATE,
+# CURRENT_DATE) or DATE_DIFF(x.c, x.c) — is always 0. A repair on a dateless table that
+# can't find a real date column sometimes fakes the time computation this way, keeping a
+# temporal *shape* while answering nothing (so _has_temporal_sql alone won't flag it). The
+# operand class excludes parens, so nested-call operands simply don't match (no false flag).
+_VACUOUS_DATEDIFF_RE = re.compile(
+    r"date_?diff\s*\(\s*(?:'[^']*'\s*,\s*)?(?P<a>[^,()]+?)\s*,\s*(?P<b>[^,()]+?)\s*\)",
+    re.I,
+)
+
+
+def _has_vacuous_temporal(sql: str) -> bool:
+    """True when a date-difference compares a value to itself → a constant-0 'time' metric."""
+    for m in _VACUOUS_DATEDIFF_RE.finditer(sql or ""):
+        a = re.sub(r"\s+", "", m.group("a")).lower()
+        b = re.sub(r"\s+", "", m.group("b")).lower()
+        if a == b:
+            return True
+    return False
 
 
 class SchemaExplorer:
@@ -208,6 +440,10 @@ class SchemaExplorer:
         self._last_query_at: float = 0.0
         self._rate_seconds: float = _RATE_SECONDS_SCHEMA
         self._time_window: Optional[tuple[str, str]] = None  # (start_iso, end_iso) — 12-month window
+        self._dead_refs: set = set()  # column/table names the engine reported as nonexistent
+        self._macro_context: Optional[dict] = None  # Tier 2 full-span long-arc rollup
+        self._cost_large: bool = False               # Tier 3 — connection big enough for approx
+        self._prev_watermark: Optional[str] = None   # Tier 3 — anchor edge at the last run
 
     # ── State persistence helpers ─────────────────────────────────────────────
 
@@ -346,6 +582,60 @@ class SchemaExplorer:
             return None
         return rstart if (rstart and rstart > win_start) else None
 
+    def _compute_macro_context(self, tp: dict, cp: dict) -> Optional[dict]:
+        """Tier 2: one coarse full-span rollup over the anchor activity table — the long
+        arc (secular trend / growth factor) the briefing juxtaposes against the recent
+        regime. Cheap (one GROUP BY year, ~N_years rows). Best-effort; returns None on
+        any failure. See aughor/explorer/temporal.py + docs/ADAPTIVE_TEMPORAL_SCOPE.md §5."""
+        anchor, _rec, _eff = _anchor_activity(tp, cp)
+        if not anchor:
+            return None
+        prof = tp.get(anchor)
+        ts_col = getattr(prof, "primary_timestamp", None) if prof else None
+        if not ts_col:
+            return None
+
+        # Roll up at year grain unless the full span is short (then quarter).
+        grain = "year"
+        # Pick one additive measure column on the anchor to roll up alongside row counts.
+        # Skip key/id-like columns the profiler mis-tags as measures — SUM(l_orderkey)
+        # is a meaningless aggregate of identifiers, not a business quantity.
+        def _looks_like_key(name: str) -> bool:
+            n = name.lower()
+            # _key/_id (snake) and ...key/...id (TPC-style concat: l_orderkey, partkey)
+            return (n in ("id", "key") or n.endswith(("_id", "_key", "_no", "_num", "_code", "_sk",
+                                                       "key", "id"))
+                    or n.startswith(("id_", "key_")))
+        measure_col = None
+        for col_name, col_p in (cp.get(anchor) or {}).items():
+            if _profile_field(col_p, "semantic_type") == "measure" and not _looks_like_key(col_name):
+                measure_col = col_name
+                break
+
+        measure_expr = f", SUM({measure_col}) AS m" if measure_col else ""
+        sql = (
+            f"SELECT date_trunc('{grain}', {ts_col})::VARCHAR AS p, COUNT(*) AS c{measure_expr} "
+            f"FROM {anchor} WHERE {ts_col} IS NOT NULL GROUP BY 1 ORDER BY 1"
+        )
+        try:
+            r = self._conn.execute("__explorer__", sql)
+        except Exception:
+            return None
+        rows = (r.rows or []) if not getattr(r, "error", None) else []
+        if len(rows) < 2:
+            return None
+
+        periods = [str(row[0])[:10] for row in rows]
+        counts = [row[1] for row in rows]
+        measures = [row[2] for row in rows] if measure_col else None
+
+        from aughor.explorer.temporal import build_macro_context
+        micro_start = self._time_window[0] if self._time_window else None
+        return build_macro_context(
+            periods, counts, measures=measures, measure_name=measure_col,
+            micro_start=micro_start, grain=grain, anchor=anchor,
+        )
+
     def _time_filter(self, table: str, tp: dict) -> str:
         """
         Return a SQL AND-clause fragment for the 12-month time window, e.g.
@@ -391,6 +681,39 @@ class SchemaExplorer:
                     "[explorer:%s] Time window: %s → %s",
                     self.connection_id, self._time_window[0], self._time_window[1],
                 )
+
+            # Tier 3 cost governor: capture the activity high-water mark (for incremental
+            # re-exploration) and decide whether this connection is large enough that the
+            # curiosity loop should use approximate aggregates. Best-effort, never fatal.
+            try:
+                from aughor.explorer.watermark import get_watermark, set_watermark
+                _anchor, _rec, _ = _anchor_activity(tp, cp)
+                self._prev_watermark = get_watermark(self.connection_id, _anchor) if _anchor else None
+                if _anchor and _rec:
+                    set_watermark(self.connection_id, _anchor, _rec)
+                self._cost_large = any((_profile_field(p, "row_count") or 0) >= _COST_LARGE_ROWS
+                                       for p in (tp or {}).values())
+                if self._cost_large:
+                    logger.info("[explorer:%s] Tier 3: large connection — approximate aggregates on",
+                                self.connection_id)
+            except Exception:
+                self._cost_large = False
+
+            # Tier 2: cheap full-span macro rollup over the anchor — the long arc that
+            # briefings juxtapose against the recent-regime micro window. Best-effort.
+            try:
+                self._macro_context = self._compute_macro_context(tp, cp)
+                if self._macro_context:
+                    self._state["macro_context"] = self._macro_context
+                    self._save_state()
+                    logger.info(
+                        "[explorer:%s] Macro context: %s %s→%s (%d %ss)",
+                        self.connection_id, self._macro_context.get("anchor"),
+                        self._macro_context.get("first_period"), self._macro_context.get("last_period"),
+                        self._macro_context.get("n_periods"), self._macro_context.get("grain"),
+                    )
+            except Exception:
+                logger.debug("[explorer:%s] Tier 2 macro context skipped", self.connection_id, exc_info=True)
 
             if not domain_intel_only:
                 # Phases 3-7: schema cartography — run as fast as the DB allows
@@ -1105,6 +1428,18 @@ class SchemaExplorer:
                 pass
             return "SQL execution failed"
 
+        # Dataset isolation: a connection may hold unrelated uploaded datasets in separate
+        # schemas (e.g. bakehouse + ecommerce). The generated SQL is schema-qualified, so a
+        # bare→dataset map lets us also restrict the table context the LLM sees. No-op for a
+        # single-schema connection.
+        _all_datasets = {_dataset_of(t) for t in (tp or {}) if _dataset_of(t)}
+        multi_dataset = len(_all_datasets) > 1
+        _bare2dataset = {str(q).split(".")[-1].lower(): _dataset_of(q)
+                         for q in (tp or {}) if _dataset_of(q)}
+        if multi_dataset:
+            logger.info("[explorer:%s] Phase 8: multi-dataset connection %s — isolating datasets",
+                        self.connection_id, sorted(_all_datasets))
+
         for domain, entities in domain_entities.items():
             await self._gate()
             if self._stopped:
@@ -1158,6 +1493,54 @@ class SchemaExplorer:
 
                 # Build compact schema for domain tables — grounding _NextQuestion SQL generation
                 domain_tables = {tbl for ent in entities for tbl in ent.source_tables}
+                # Dataset isolation: a domain's entities can span unrelated uploaded datasets
+                # (different schemas). Restrict each question to the dominant dataset so the
+                # LLM can't be tempted into a cross-dataset (hallucinated) join. Resolve each
+                # (possibly bare) entity table to its schema via the qualified table universe.
+                def _ds(tbl):
+                    return _dataset_of(tbl) or _bare2dataset.get(str(tbl).split(".")[-1].lower(), "")
+                if multi_dataset:
+                    from collections import Counter
+                    counts = Counter(_ds(t) for t in domain_tables if _ds(t))
+                    if len(counts) > 1:
+                        primary = max(sorted(counts), key=lambda d: counts[d])
+                        domain_tables = {t for t in domain_tables if _ds(t) == primary}
+                        logger.info(
+                            "[explorer:%s] Phase 8: %s domain spans %s — restricting to '%s'",
+                            self.connection_id, domain, sorted(counts), primary,
+                        )
+
+                # ── Temporal-feasibility gate (#1) ──────────────────────────────
+                # A table with no real timestamp cannot support date filters, aging or
+                # trends; offering a time-based angle (or window) there forces the generator
+                # to invent a date column — the `invoice_date`-on-a-dateless-`invoices`
+                # hallucination. Drop temporal angles when the whole domain is dateless, and
+                # always name the dateless tables so the LLM never applies time logic to them.
+                def _tbl_ts(t):
+                    p = (tp or {}).get(t) or (tp or {}).get(t.lower())
+                    return getattr(p, "primary_timestamp", None) if p else None
+                dateless_tables = sorted(t for t in domain_tables if not _tbl_ts(t))
+                domain_has_dates = any(_tbl_ts(t) for t in domain_tables)
+                if not domain_has_dates:
+                    uncovered = [a for a in uncovered if not _is_temporal_angle(a)] or [
+                        "distribution", "composition", "ranking", "anomalies"]
+                    temporal_guard_block = (
+                        "NO TEMPORAL DATA: this domain has NO date or timestamp column. Do NOT use "
+                        "any date filter, time window, DATE_DIFF, aging buckets, trends, seasonality, "
+                        "growth or over-time analysis, and do NOT invent a date/timestamp column. "
+                        "Analyze only by category, status, distribution, ratio and rank.\n\n"
+                    )
+                elif dateless_tables:
+                    temporal_guard_block = (
+                        f"TABLES WITH NO DATE COLUMN: {', '.join(dateless_tables)}. For these you MUST "
+                        f"NOT use a date filter, time window, DATE_DIFF, aging bucket or over-time "
+                        f"analysis, and MUST NOT invent a date column for them — analyze them only by "
+                        f"category, status, distribution, ratio or rank. Time-based analysis is valid "
+                        f"only on tables that have a listed timestamp column.\n\n"
+                    )
+                else:
+                    temporal_guard_block = ""
+
                 domain_schema_lines: list[str] = []
                 for tbl in sorted(domain_tables):
                     cols = (
@@ -1299,14 +1682,37 @@ class SchemaExplorer:
                     )
                     time_window_block = ""
                     if self._time_window:
-                        time_window_block = (
-                            f"TIME WINDOW: Scope all queries to the last 12 months "
-                            f"({self._time_window[0]} to {self._time_window[1]}). "
-                            f"Add WHERE <timestamp_col> >= '{self._time_window[0]}' "
-                            f"to every query that touches a timestamped table. "
-                            f"This ensures trends and aggregations reflect recent data.\n\n"
-                        )
+                        # Name only the profiler-vetted timestamp columns. Without this the
+                        # LLM invents a date filter on a date-NAMED integer column (e.g.
+                        # ClickBench EventDate::USMALLINT) → "USMALLINT vs DATE". If a
+                        # connection has no real timestamp anywhere, omit the window
+                        # instruction entirely rather than provoke an un-runnable filter.
+                        _ts_cols = sorted({
+                            f"{t}.{getattr(p, 'primary_timestamp', None)}"
+                            for t, p in (tp or {}).items()
+                            if getattr(p, "primary_timestamp", None)
+                        })
+                        if _ts_cols:
+                            time_window_block = (
+                                f"TIME WINDOW: Scope queries to the last 12 months "
+                                f"({self._time_window[0]} to {self._time_window[1]}). The ONLY "
+                                f"real timestamp columns are: {', '.join(_ts_cols)}. "
+                                f"Add WHERE <that column> >= '{self._time_window[0]}' only when "
+                                f"your query touches one of those tables. NEVER add a date filter "
+                                f"to a table without a listed timestamp column, and never compare "
+                                f"a non-date column to a date literal.\n\n"
+                            )
 
+                    # Negative knowledge: names earlier queries proved don't exist. Steers the
+                    # generator off repeated hallucinations (the #1 wasted-budget failure class).
+                    dead_refs_block = ""
+                    if self._dead_refs:
+                        _avoid = ", ".join(sorted(self._dead_refs)[:30])
+                        dead_refs_block = (
+                            f"NONEXISTENT NAMES — earlier queries failed because these columns/tables "
+                            f"do not exist in the table they were used on. Do NOT reference any of them "
+                            f"unless it appears verbatim in the SCHEMA above: {_avoid}\n\n"
+                        )
                     _usr1 = (
                         f"DOMAIN: {domain}\n\n"
                         f"ENTITIES IN THIS DOMAIN:\n{entity_context}\n\n"
@@ -1314,7 +1720,9 @@ class SchemaExplorer:
                         f"{domain_schema_block}\n\n"
                         f"{grain_block}\n"
                         f"{join_safety_block}\n"
+                        f"{temporal_guard_block}"
                         f"{time_window_block}"
+                        f"{dead_refs_block}"
                         f"{prior_phases_block}"
                         f"COVERAGE ANGLES TO EXPLORE: {', '.join(uncovered)}\n"
                         f"ANGLES ALREADY COVERED: {', '.join(covered_angles) or 'none'}\n\n"
@@ -1330,10 +1738,30 @@ class SchemaExplorer:
                     logger.warning(f"[explorer:{self.connection_id}] Phase 8: LLM question gen failed for {domain}: {e}")
                     break
 
+                # Dataset-isolation guard: if the LLM still wrote a cross-dataset join,
+                # drop it — a hallucinated join between unrelated uploaded datasets that can
+                # only return garbage (the bakehouse ⋈ ecommerce class).
+                if multi_dataset and _crosses_datasets(nq.sql):
+                    logger.info(
+                        "[explorer:%s] Phase 8: %s/%s — skipping cross-dataset join: %s",
+                        self.connection_id, domain, nq.angle, sorted(_tables_in_sql(nq.sql)),
+                    )
+                    used += 1
+                    budgets[domain] = used
+                    continue
+
                 # Step 2: Execute SQL — repair loop: run → fail → fix with real error → repeat
                 MAX_ATTEMPTS = 3
                 think_str = f"Domain {domain} | angle={nq.angle} | {nq.question}"
                 sql = nq.sql
+                # Tier 3: on a large connection, swap exact COUNT(DISTINCT) for the HLL
+                # approximation — orders of magnitude cheaper on big facts, ~1-3% off.
+                if self._cost_large:
+                    try:
+                        from aughor.sql.cost import approximate_aggregates
+                        sql = approximate_aggregates(sql, getattr(self._conn, "dialect", "duckdb"))
+                    except Exception:
+                        pass
                 rows = None
 
                 for attempt in range(MAX_ATTEMPTS):
@@ -1341,13 +1769,16 @@ class SchemaExplorer:
                     rows = await self._run(sql, think=label)
                     if rows is not None:
                         break
+                    error_msg = _last_episode_error()
+                    # Accumulate negative knowledge — names the engine says don't exist — so
+                    # the next-question generator stops re-proposing them (even on the final attempt).
+                    self._dead_refs |= _extract_dead_refs(error_msg)
                     if attempt >= MAX_ATTEMPTS - 1:
                         logger.warning(
                             f"[explorer:{self.connection_id}] Phase 8: all {MAX_ATTEMPTS} attempts "
                             f"failed for {domain}/{nq.angle}"
                         )
                         break
-                    error_msg = _last_episode_error()
                     fix = await _loop.run_in_executor(
                         None, lambda: sql_writer.fix(sql, error_msg, max_retries=1)
                     )
@@ -1370,6 +1801,29 @@ class SchemaExplorer:
                 if not rows or len(rows) == 0:
                     logger.debug(f"[explorer:{self.connection_id}] Phase 8: empty result for {nq.question}")
                     continue
+
+                # ── Intent-preservation gate (#2) ───────────────────────────────
+                # A repair can make a query RUN while silently changing its MEANING. The
+                # highest-confidence, deterministic case: the repair DE-TEMPORALISES a time-based
+                # question — the invoice case computed invoice AGE via DATE_DIFF on a date plus a
+                # date-range filter, and the "fix" swapped in a plain payment-delay column,
+                # stripping every temporal construct. When the repair substituted columns AND the
+                # original computed over time but the repaired query no longer does, the result
+                # answers a DIFFERENT question — drop it (a runnable-but-wrong finding is worse
+                # than none). No LLM judgement: an LLM rated this exact drift "faithful".
+                if sql != nq.sql:
+                    _removed = _query_columns(nq.sql) - _query_columns(sql)
+                    _detemporalised = bool(_removed) and _has_temporal_sql(nq.sql) and not _has_temporal_sql(sql)
+                    _vacuous = _has_vacuous_temporal(sql)
+                    if _detemporalised or _vacuous:
+                        logger.info(
+                            "[explorer:%s] Phase 8: %s/%s — dropping finding; repair %s a time-based "
+                            "question (removed %s, added %s)",
+                            self.connection_id, domain, nq.angle,
+                            "neutered (DATE_DIFF of identical dates → constant)" if _vacuous else "de-temporalised",
+                            sorted(_removed), sorted(_query_columns(sql) - _query_columns(nq.sql)),
+                        )
+                        continue
 
                 # Format result for LLM interpretation (max 20 rows)
                 result_text = "\n".join(str(r) for r in rows[:20])
@@ -1436,11 +1890,15 @@ class SchemaExplorer:
 
                 # Step 3: Interpret the result — run in thread to keep event loop live
                 try:
+                    _cells_block = numeric_cells_block(rows)
                     _sys3 = (
                         "You are interpreting a SQL query result as a concise business insight. "
                         "Write 1-2 sentences maximum. Include specific numbers from the result. "
                         "Focus on what is actionable or surprising.\n\n"
                         "CRITICAL INTERPRETATION RULES:\n"
+                        "- Use ONLY numbers that appear in the result. Copy each value exactly as it "
+                        "is — never scale it or add a magnitude suffix (K/M/B) the value does not "
+                        "already have. If a cell is 2.49, write 2.49, never 2.49M.\n"
                         "- If a column is labelled 'distinct_X_count' in a grouped query, it is the "
                         "TOTAL distinct count of X across all rows in that group, NOT a per-row average. "
                         "Do NOT say 'X per Y' unless the SQL explicitly computed an average (AVG or ratio "
@@ -1454,6 +1912,7 @@ class SchemaExplorer:
                         f"QUESTION: {nq.question}\n"
                         f"SQL:\n{sql}\n\n"
                         f"SQL RESULT (first 20 rows):\n{result_text}\n\n"
+                        f"NUMERIC VALUES IN THE RESULT (cite these exactly):\n{_cells_block}\n\n"
                         f"{grain_block}"
                         f"EXISTING FINDINGS FOR CONTEXT:\n{existing_findings}\n\n"
                         "Interpret this result as a business insight. "
@@ -1468,6 +1927,64 @@ class SchemaExplorer:
                     logger.warning(f"[explorer:{self.connection_id}] Phase 8: LLM interpretation failed for {domain}: {e}")
                     continue
 
+                # Drop "no data" findings — an empty/all-NULL result or an interpretation
+                # that says as much. They pollute the Briefing and turn into broken monitors.
+                if _is_degenerate_result(rows, interp.finding):
+                    logger.info(
+                        "[explorer:%s] Phase 8: %s/%s — skipping degenerate (no-data) finding",
+                        self.connection_id, domain, nq.angle,
+                    )
+                    continue
+
+                # Ground every magnitude-bearing number in the prose against the real
+                # result cells. The narrator sometimes fabricates a magnitude/unit
+                # ("2.49M" for a cell of 2.49 — off 1e6). Try one corrective rewrite that
+                # may only cite the exact values; if it still can't be grounded, drop the
+                # finding rather than headline a wrong number.
+                _g = verify_finding(interp.finding, rows)
+                if not _g.grounded:
+                    logger.info(
+                        "[explorer:%s] Phase 8: %s/%s — ungrounded number(s) %s; re-grounding",
+                        self.connection_id, domain, nq.angle, _g.ungrounded,
+                    )
+                    try:
+                        _sys_rg = (
+                            "Your previous business insight contained a number that does NOT "
+                            "appear in the data — a fabricated magnitude or unit. Rewrite it "
+                            "using ONLY values from the provided list. Copy each value exactly; "
+                            "never scale it or add a magnitude suffix (K/M/B) it does not already "
+                            "have. If a number cannot be supported by the list, drop it and "
+                            "describe the pattern qualitatively. 1-2 sentences. Keep the same "
+                            "novelty and angle_covered."
+                        )
+                        _usr_rg = (
+                            f"QUESTION: {nq.question}\n"
+                            f"SQL:\n{sql}\n\n"
+                            f"EXACT RESULT VALUES YOU MAY CITE:\n{numeric_cells_block(rows)}\n\n"
+                            f"YOUR PREVIOUS (UNGROUNDED) INSIGHT:\n{interp.finding}\n\n"
+                            f"Ungrounded number(s) to remove or fix: {', '.join(_g.ungrounded)}\n"
+                            "Rewrite it grounded strictly in the exact values above."
+                        )
+                        interp_rg: _Interpretation = await _loop.run_in_executor(
+                            None,
+                            lambda: llm.complete(system=_sys_rg, user=_usr_rg, response_model=_Interpretation),
+                        )
+                        if verify_finding(interp_rg.finding, rows).grounded:
+                            interp = interp_rg
+                            _g = GroundingResult(grounded=True)
+                    except Exception as e:
+                        logger.warning(
+                            "[explorer:%s] Phase 8: re-grounding failed for %s: %s",
+                            self.connection_id, domain, e,
+                        )
+                if not _g.grounded:
+                    logger.info(
+                        "[explorer:%s] Phase 8: %s/%s — dropping finding with unverifiable "
+                        "number(s) %s",
+                        self.connection_id, domain, nq.angle, _g.ungrounded,
+                    )
+                    continue
+
                 # Step 4: Store the insight
                 insight_id = f"{domain}__{nq.angle}__{used}"
                 insight = {
@@ -1478,7 +1995,11 @@ class SchemaExplorer:
                     "dimensions": [],
                     "measures": [],
                     "finding": interp.finding,
-                    "sql": nq.sql,
+                    # The query that ACTUALLY produced the result — after the self-repair
+                    # loop fixed column/binder errors (and any Tier-3 approx rewrite). Storing
+                    # nq.sql here showed a non-runnable draft as "the data behind this claim",
+                    # breaking the Evidence layer's provenance.
+                    "sql": sql,
                     "confidence": min(0.95, 0.4 + interp.novelty * 0.1),
                     "novelty": interp.novelty,
                     "generated_at": datetime.now(timezone.utc).isoformat(),

@@ -297,6 +297,16 @@ async def _start_monitor_scheduler() -> None:
         logger.warning("Monitor scheduler startup failed (non-fatal): %s", exc)
 
 
+@app.on_event("startup")
+async def _start_brief_scheduler() -> None:
+    """Load enabled brief subscriptions and start their delivery scheduler."""
+    try:
+        from aughor.briefs.scheduler import start as _start_briefs
+        _start_briefs()
+    except Exception as exc:
+        logger.warning("Brief scheduler startup failed (non-fatal): %s", exc)
+
+
 # ── Router registration ───────────────────────────────────────────────────────
 
 from aughor.routers import (  # noqa: E402
@@ -315,6 +325,7 @@ from aughor.routers import (  # noqa: E402
     query,
     monitors,
     semantic,
+    briefs,
 )
 
 app.include_router(system.router)
@@ -332,3 +343,4 @@ app.include_router(security.router)
 app.include_router(query.router)
 app.include_router(monitors.router)
 app.include_router(semantic.router)
+app.include_router(briefs.router)

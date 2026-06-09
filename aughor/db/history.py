@@ -327,6 +327,27 @@ def delete_investigation(inv_id: str) -> bool:
     return deleted
 
 
+def list_investigation_ids(connection_id: str, canvas_id: Optional[str] = None,
+                           limit: int = 500) -> list[str]:
+    """Return investigation IDs in a scope, newest-first. Used to scope the evidence
+    ledger (which keys only by investigation_id) to a connection / canvas."""
+    c = _conn()
+    _ensure_schema(c)
+    if canvas_id:
+        rows = c.execute(
+            "SELECT id FROM investigations WHERE connection_id = ? AND canvas_id = ? "
+            "ORDER BY started_at DESC LIMIT ?",
+            (connection_id, canvas_id, limit),
+        ).fetchall()
+    else:
+        rows = c.execute(
+            "SELECT id FROM investigations WHERE connection_id = ? "
+            "ORDER BY started_at DESC LIMIT ?",
+            (connection_id, limit),
+        ).fetchall()
+    return [r["id"] for r in rows]
+
+
 def list_investigations(limit: int = 50) -> list[dict]:
     """Return summary rows newest-first, collapsing chat turns into one item per session."""
     c = _conn()
