@@ -405,6 +405,22 @@ def _has_vacuous_temporal(sql: str) -> bool:
     return False
 
 
+def _ontology_skip_note(last_build: Optional[dict]) -> str:
+    """An actionable 'why domain intelligence is empty' message, from the build outcome the
+    connection recorded (which stage failed + why). Turns a silent empty Hub into a clear,
+    retryable status. Falls back to a generic note when no build detail is available."""
+    lb = last_build or {}
+    stage, err = lb.get("stage"), lb.get("error")
+    if stage and err:
+        return f"Domain intelligence couldn't be built — {stage} failed: {err}"
+    if stage:
+        return f"Domain intelligence couldn't be built — the {stage} stage produced no object model."
+    return (
+        "Ontology unavailable — the object model that domain intelligence is "
+        "derived from could not be built (the schema may be too sparse to model)."
+    )
+
+
 class SchemaExplorer:
     """
     Background schema exploration agent.
@@ -1364,15 +1380,12 @@ class SchemaExplorer:
 
         ontology = load_latest_ontology(self.connection_id)
         if not ontology:
-            logger.warning(
-                "[explorer:%s] Phase 8: ontology still not available after build attempt — skipping domain intelligence",
-                self.connection_id,
-            )
+            # Surface the SPECIFIC failure the build recorded (stage + reason) so the user
+            # gets an actionable message + Retry instead of a silent empty Hub.
+            note = _ontology_skip_note(getattr(self._conn, "last_build", None))
+            logger.warning("[explorer:%s] Phase 8: skipping — %s", self.connection_id, note)
             self._status.domain_intel_skipped = True
-            self._status.domain_intel_note = (
-                "Ontology unavailable — the object model that domain intelligence is "
-                "derived from could not be built (the schema may be too sparse to model)."
-            )
+            self._status.domain_intel_note = note
             return
 
         # Group entities by domain
