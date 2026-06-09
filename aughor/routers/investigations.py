@@ -720,6 +720,25 @@ async def _stream_chat(
         except Exception:
             _trusted_used = []
 
+        # Semantic Compiler fast-path (backlog #11): for the safe analytical shapes
+        # (scalar / timeseries / breakdown / ranking) assemble grounded SQL deterministically
+        # from the verified ontology instead of free-form generation. The LLM still writes the
+        # headline/chart/approach around it, but the executed SQL is the compiled one — which
+        # can't hallucinate columns or fan out. Coverage-gated + fallback-safe (None → no-op).
+        _compiled_sql = None
+        _compiled_intent = None
+        if os.getenv("AUGHOR_COMPILER", "1").strip().lower() in ("1", "true", "yes", "on"):
+            try:
+                from aughor.semantic.compiler import compile_question
+                _cc = compile_question(question, connection_id, dialect=db.dialect)
+                if _cc:
+                    _compiled_sql, _compiled_intent = _cc
+                    prompt = ("VERIFIED SQL (assembled from the verified semantic layer — this is "
+                              "the exact query to run; build your headline/chart around it):\n"
+                              f"{_compiled_sql}\n\n" + prompt)
+            except Exception:
+                _compiled_sql = None
+
         # Run the (blocking) LLM call in a worker thread so the event loop stays
         # free to serve other pages (catalog/inbox/home) while the query runs.
         answer: _ChatAnswer = await asyncio.to_thread(
@@ -729,6 +748,15 @@ async def _stream_chat(
         )
 
         final_sql = answer.sql
+        # Guarantee the deterministic, grounded SQL is what executes.
+        if _compiled_sql:
+            final_sql = _compiled_sql
+            yield _sse("compiled", {
+                "intent_type": _compiled_intent.intent_type,
+                "entity": _compiled_intent.entity or _compiled_intent.table,
+                "measure": _compiled_intent.measure or _compiled_intent.metric,
+                "dimension": _compiled_intent.dimension,
+            })
 
         # ── Semantic column alignment — deterministic pre-execution check ─────
         # Catches wrong entity column (e.g. product_id used for seller analysis)
