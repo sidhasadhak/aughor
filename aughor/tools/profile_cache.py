@@ -21,9 +21,11 @@ from pathlib import Path
 from typing import Optional
 
 from aughor.tools.profiler import ColumnProfile, TableProfile
+from aughor.util.json_store import KeyedJsonStore
 
 _CACHE_PATH = Path(__file__).parent.parent.parent / "data" / "schema_profiles.json"
 _MAX_ENTRIES = 20
+_store = KeyedJsonStore(_CACHE_PATH, max_entries=_MAX_ENTRIES)
 
 
 # ── Fingerprint helpers ───────────────────────────────────────────────────────
@@ -50,20 +52,11 @@ def _cache_key(connection_id: str, fingerprint: str) -> str:
 # ── Load / save ───────────────────────────────────────────────────────────────
 
 def _load() -> dict:
-    try:
-        if _CACHE_PATH.exists():
-            return json.loads(_CACHE_PATH.read_text())
-    except Exception:
-        pass
-    return {}
+    return _store.load()
 
 
 def _save(cache: dict) -> None:
-    try:
-        _CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        _CACHE_PATH.write_text(json.dumps(cache, indent=2))
-    except Exception:
-        pass
+    _store.save(cache)
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -103,33 +96,15 @@ def save_profiles(
     column_profiles: dict[str, ColumnProfile],
 ) -> None:
     """Persist profiles to the cache. Evicts oldest entry when cap is reached."""
-    cache = _load()
-    key = _cache_key(connection_id, fingerprint)
-
-    # Move to end (most-recently-used)
-    cache.pop(key, None)
-    cache[key] = {
+    _store.put(_cache_key(connection_id, fingerprint), {
         "tables": {t: tp.to_dict() for t, tp in table_profiles.items()},
         "columns": {k: cp.to_dict() for k, cp in column_profiles.items()},
-    }
-
-    # LRU eviction
-    while len(cache) > _MAX_ENTRIES:
-        oldest = next(iter(cache))
-        del cache[oldest]
-
-    _save(cache)
+    })
 
 
 def invalidate(connection_id: str) -> None:
     """Remove all cached profiles for a connection (called on delete or DSN change)."""
-    cache = _load()
-    prefix = f"{connection_id}:"
-    evict = [k for k in cache if k.startswith(prefix)]
-    for k in evict:
-        del cache[k]
-    if evict:
-        _save(cache)
+    _store.invalidate_prefix(f"{connection_id}:")
 
 
 def get_or_build_profiles(

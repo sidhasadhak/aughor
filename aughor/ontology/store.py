@@ -20,28 +20,21 @@ from pathlib import Path
 from typing import Optional
 
 from aughor.ontology.models import OntologyGraph
+from aughor.util.json_store import KeyedJsonStore
 
 _CACHE_PATH = Path(__file__).parent.parent.parent / "data" / "ontology_cache.json"
 _MAX_ENTRIES = 20
+_store = KeyedJsonStore(_CACHE_PATH, max_entries=_MAX_ENTRIES)
 
 
-# ── Internal I/O ──────────────────────────────────────────────────────────────
+# ── Internal I/O (kept as thin delegators — override-writes read+mutate+save) ──
 
 def _load() -> dict:
-    try:
-        if _CACHE_PATH.exists():
-            return json.loads(_CACHE_PATH.read_text())
-    except Exception:
-        pass
-    return {}
+    return _store.load()
 
 
 def _save(cache: dict) -> None:
-    try:
-        _CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        _CACHE_PATH.write_text(json.dumps(cache, indent=2))
-    except Exception:
-        pass
+    _store.save(cache)
 
 
 def _key(connection_id: str, schema_name: str, fingerprint: str) -> str:
@@ -80,13 +73,7 @@ def save_ontology(
     fingerprint: str,
     graph: OntologyGraph,
 ) -> None:
-    cache = _load()
-    k = _key(connection_id, schema_name, fingerprint)
-    cache.pop(k, None)
-    cache[k] = {"graph": graph.model_dump()}
-    while len(cache) > _MAX_ENTRIES:
-        del cache[next(iter(cache))]
-    _save(cache)
+    _store.put(_key(connection_id, schema_name, fingerprint), {"graph": graph.model_dump()})
 
 
 def invalidate(connection_id: str, schema_name: Optional[str] = None) -> None:
@@ -95,13 +82,8 @@ def invalidate(connection_id: str, schema_name: Optional[str] = None) -> None:
     If schema_name is given, only that schema's entries are removed.
     If omitted, all schemas for the connection are evicted (e.g. on DSN change).
     """
-    cache = _load()
     prefix = _schema_prefix(connection_id, schema_name) if schema_name else _conn_prefix(connection_id)
-    evict = [k for k in cache if k.startswith(prefix)]
-    for k in evict:
-        del cache[k]
-    if evict:
-        _save(cache)
+    _store.invalidate_prefix(prefix)
 
 
 def list_schemas(connection_id: str) -> list[str]:
