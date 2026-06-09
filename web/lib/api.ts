@@ -1006,6 +1006,69 @@ export async function retryQuery(
   return res.json();
 }
 
+// ── Fix-and-save (persist a repaired errored query) ────────────────────────────
+
+export interface FixSaveResult {
+  ok: boolean;
+  stored: boolean;
+  corrected_sql: string;
+  explanation?: string;
+  rows?: string[][];
+  columns?: string[];
+  reason?: string;
+  error?: string;
+  insight?: { id: string; domain: string; angle: string; finding: string; unverified: boolean; verification_note: string };
+}
+
+export interface FixEpisodeInput {
+  sql: string;
+  error: string;
+  think?: string;
+  phase?: string;
+}
+
+export interface FixAllResult {
+  summary: { total: number; fixed: number; saved: number; flagged: number; failed: number };
+  results: Array<FixSaveResult & { sql: string }>;
+}
+
+/** Repair an errored episode and, on success, SAVE it (heal episode + store a finding
+ *  through the same Phase-8 guards). Unlike retryQuery this persists. */
+export async function fixEpisode(
+  connectionId: string,
+  ep: FixEpisodeInput,
+  hint = "",
+  canvasId = "",
+): Promise<FixSaveResult> {
+  const res = await fetch(`${BASE}/exploration/${encodeURIComponent(connectionId)}/fix-episode`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sql: ep.sql, error: ep.error, think: ep.think ?? "", phase: ep.phase ?? "domain_intel", hint, canvas_id: canvasId }),
+  });
+  if (!res.ok) { const e = await res.json(); throw new Error(e.detail ?? "fix-and-save failed"); }
+  return res.json();
+}
+
+/** Repair-and-save a batch — ONLY the episodes provided (the client passes the set
+ *  currently visible under its filter). Never starts the explorer or generates new queries. */
+export async function fixAll(
+  connectionId: string,
+  episodes: FixEpisodeInput[],
+  hint = "",
+  canvasId = "",
+): Promise<FixAllResult> {
+  const res = await fetch(`${BASE}/exploration/${encodeURIComponent(connectionId)}/fix-all`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      episodes: episodes.map(e => ({ sql: e.sql, error: e.error, think: e.think ?? "", phase: e.phase ?? "domain_intel" })),
+      hint, canvas_id: canvasId,
+    }),
+  });
+  if (!res.ok) { const e = await res.json(); throw new Error(e.detail ?? "fix-all failed"); }
+  return res.json();
+}
+
 export async function getExplorationEpisodes(
   connectionId: string,
   phase = "domain_intel",

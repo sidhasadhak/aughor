@@ -13,9 +13,13 @@ import {
   stopCanvasExploration,
   resumeCanvasExploration,
   restartCanvasExploration,
+  fixEpisode,
+  fixAll,
   type ExplorationEpisode,
   type ExplorationStatus,
   type RetryQueryResult,
+  type FixSaveResult,
+  type FixAllResult,
 } from "@/lib/api";
 import { formatCount } from "@/lib/format";
 
@@ -186,17 +190,28 @@ function StatusBar({ status, stopped, onStop, onResume, onRestart, stopping, res
 
 // ── Retry panel ───────────────────────────────────────────────────────────────
 
-function RetryPanel({ ep, connectionId, errorMsg }: { ep: ExplorationEpisode; connectionId: string; errorMsg: string }) {
+function RetryPanel({ ep, connectionId, errorMsg, canvasId }: { ep: ExplorationEpisode; connectionId: string; errorMsg: string; canvasId?: string }) {
   const [hint, setHint]       = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult]   = useState<RetryQueryResult | null>(null);
   const [open, setOpen]       = useState(false);
+  const [saving, setSaving]   = useState(false);
+  const [saved, setSaved]     = useState<FixSaveResult | null>(null);
 
   async function handleRetry() {
-    setLoading(true); setResult(null);
+    setLoading(true); setResult(null); setSaved(null);
     try { setResult(await retryQuery(connectionId, ep.sql, errorMsg, hint)); }
     catch (e: unknown) { setResult({ ok: false, corrected_sql: "", explanation: "", rows: [], columns: [], error: String(e) }); }
     finally { setLoading(false); }
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      setSaved(await fixEpisode(connectionId, { sql: ep.sql, error: errorMsg, think: ep.think, phase: ep.phase }, hint, canvasId ?? ""));
+    } catch (e: unknown) {
+      setSaved({ ok: false, stored: false, corrected_sql: "", error: String(e) });
+    } finally { setSaving(false); }
   }
 
   if (!open) return (
@@ -231,19 +246,31 @@ function RetryPanel({ ep, connectionId, errorMsg }: { ep: ExplorationEpisode; co
             {result.corrected_sql}
           </pre>
           {result.ok ? (
-            <div className="overflow-x-auto rounded" style={{ background: "var(--code-bg)" }}>
-              <table className="text-[11px] font-mono w-full">
-                <thead><tr>{result.columns.map(c => (
-                  <th key={c} className="px-2 py-1 text-left font-medium"
-                    style={{ color: "#4a4b57", borderBottom: "0.5px solid var(--b2)" }}>{c}</th>
-                ))}</tr></thead>
-                <tbody>{result.rows.slice(0, 15).map((row, i) => (
-                  <tr key={i} style={{ borderBottom: "0.5px solid #111115" }}>
-                    {row.map((cell, j) => <td key={j} className="px-2 py-1" style={{ color: "#6e6f78" }}>{cell as string}</td>)}
-                  </tr>
-                ))}</tbody>
-              </table>
-            </div>
+            <>
+              <div className="overflow-x-auto rounded" style={{ background: "var(--code-bg)" }}>
+                <table className="text-[11px] font-mono w-full">
+                  <thead><tr>{result.columns.map(c => (
+                    <th key={c} className="px-2 py-1 text-left font-medium"
+                      style={{ color: "#4a4b57", borderBottom: "0.5px solid var(--b2)" }}>{c}</th>
+                  ))}</tr></thead>
+                  <tbody>{result.rows.slice(0, 15).map((row, i) => (
+                    <tr key={i} style={{ borderBottom: "0.5px solid #111115" }}>
+                      {row.map((cell, j) => <td key={j} className="px-2 py-1" style={{ color: "#6e6f78" }}>{cell as string}</td>)}
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+              {/* Save the successful fix as a finding (through the Phase-8 guards) */}
+              {!saved ? (
+                <button onClick={handleSave} disabled={saving}
+                  className="text-[11px] px-3 py-1.5 rounded disabled:opacity-40"
+                  style={{ background: "#13211a", color: "#34d399", border: "0.5px solid #1e3028" }}>
+                  {saving ? "saving…" : "Save as finding"}
+                </button>
+              ) : (
+                <SaveFeedback saved={saved} />
+              )}
+            </>
           ) : (
             <pre className="text-[11px] font-mono rounded p-2"
               style={{ background: "#180f0f", color: "#f87171", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
@@ -256,9 +283,29 @@ function RetryPanel({ ep, connectionId, errorMsg }: { ep: ExplorationEpisode; co
   );
 }
 
+// ── Save-as-finding feedback ──────────────────────────────────────────────────
+
+function SaveFeedback({ saved }: { saved: FixSaveResult }) {
+  let tone = { bg: "#13211a", fg: "#34d399", bd: "#1e3028" };  // saved clean
+  let text = "✓ Saved as finding";
+  if (!saved.ok) { tone = { bg: "#180f0f", fg: "#f87171", bd: "#3e2020" }; text = `✕ ${saved.error ?? "save failed"}`; }
+  else if (saved.stored && saved.insight?.unverified) {
+    tone = { bg: "#221a10", fg: "#fbbf24", bd: "#3a2a10" };
+    text = `⚠ Saved as unverified — ${saved.insight.verification_note}`;
+  } else if (!saved.stored) {
+    tone = { bg: "#10161f", fg: "#7ba8f7", bd: "#1e2c40" };
+    text = `✓ Query fixed — ${saved.reason ?? "no finding stored"}`;
+  }
+  return (
+    <p className="text-[11px] px-2.5 py-1.5 rounded" style={{ background: tone.bg, color: tone.fg, border: `0.5px solid ${tone.bd}` }}>
+      {text}
+    </p>
+  );
+}
+
 // ── Expanded row detail ───────────────────────────────────────────────────────
 
-function ExpandedDetail({ ep, connectionId }: { ep: ExplorationEpisode; connectionId: string }) {
+function ExpandedDetail({ ep, connectionId, canvasId }: { ep: ExplorationEpisode; connectionId: string; canvasId?: string }) {
   const isError    = ep.observation.startsWith("ERROR:") || ep.observation.startsWith("EXCEPTION:");
   const obsPreview = ep.observation.slice(0, 600) + (ep.observation.length > 600 ? "…" : "");
 
@@ -285,7 +332,7 @@ function ExpandedDetail({ ep, connectionId }: { ep: ExplorationEpisode; connecti
           <p style={{ fontSize: 11, color: "#4a4b57", lineHeight: 1.55, margin: 0 }}>{ep.think}</p>
         </div>
       )}
-      {isError && ep.sql && <RetryPanel ep={ep} connectionId={connectionId} errorMsg={ep.observation} />}
+      {isError && ep.sql && <RetryPanel ep={ep} connectionId={connectionId} errorMsg={ep.observation} canvasId={canvasId} />}
     </div>
   );
 }
@@ -304,12 +351,13 @@ const DEFAULT_LIMIT = 30;
 interface LogTableProps {
   items:        WithMeta[];
   connectionId: string;
+  canvasId?:    string;
   sortCol:      SortCol;
   sortDir:      "asc" | "desc";
   onSort:       (col: SortCol) => void;
 }
 
-function LogTable({ items, connectionId, sortCol, sortDir, onSort }: LogTableProps) {
+function LogTable({ items, connectionId, canvasId, sortCol, sortDir, onSort }: LogTableProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const toggle = (key: string) =>
@@ -440,7 +488,7 @@ function LogTable({ items, connectionId, sortCol, sortDir, onSort }: LogTablePro
                 {isOpen && (
                   <tr style={{ background: "#0f1014", borderBottom: "0.5px solid #1a1b20" }}>
                     <td colSpan={8} style={{ padding: "0 16px" }}>
-                      <ExpandedDetail ep={ep} connectionId={connectionId} />
+                      <ExpandedDetail ep={ep} connectionId={connectionId} canvasId={canvasId} />
                     </td>
                   </tr>
                 )}
@@ -494,6 +542,8 @@ export function ActivityLog({ connectionId, isActive, canvasId }: Props) {
   const [showAll, setShowAll]           = useState(false);
   const [sortCol, setSortCol]   = useState<SortCol>("ts");
   const [sortDir, setSortDir]   = useState<"asc" | "desc">("desc");
+  const [fixingAll, setFixingAll]       = useState(false);
+  const [fixAllSummary, setFixAllSummary] = useState<FixAllResult["summary"] | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -569,6 +619,24 @@ export function ActivityLog({ connectionId, isActive, canvasId }: Props) {
   const isRunning  = status && !["complete", "failed", "pending"].includes(status.phase);
   const errorCount = filtered.filter(({ meta }) => meta.isError).length;
 
+  // Fix-all: repair ONLY the errored episodes currently visible under the filter. The
+  // client passes exactly that set, so the server never re-derives "all errors" or
+  // generates fresh queries — a date filter (e.g. "Yesterday") naturally scopes the batch.
+  async function handleFixAll() {
+    const errs = filtered.filter(({ meta }) => meta.isError).map(({ ep }) => ep);
+    if (errs.length === 0 || fixingAll) return;
+    setFixingAll(true); setFixAllSummary(null);
+    try {
+      const r = await fixAll(
+        connectionId,
+        errs.map(ep => ({ sql: ep.sql, error: ep.observation, think: ep.think, phase: ep.phase })),
+        "", canvasId ?? "",
+      );
+      setFixAllSummary(r.summary);
+    } catch { /* surfaced by the unchanged error rows on next poll */ }
+    finally { setFixingAll(false); }
+  }
+
   if (episodes.length === 0) {
     return (
       <div className="h-full flex flex-col">
@@ -611,6 +679,24 @@ export function ActivityLog({ connectionId, isActive, canvasId }: Props) {
             {errorCount} error{errorCount !== 1 ? "s" : ""}
           </span>
         )}
+        {errorCount > 0 && (
+          <button onClick={handleFixAll} disabled={fixingAll}
+            title={`Repair the ${errorCount} errored quer${errorCount !== 1 ? "ies" : "y"} visible under the current filter`}
+            style={{
+              fontSize: 10, padding: "3px 9px", borderRadius: 4, cursor: "pointer",
+              background: "#221a10", color: "#fbbf24", border: "0.5px solid #3a2a10",
+              opacity: fixingAll ? 0.5 : 1,
+            }}>
+            {fixingAll ? "fixing…" : `Fix all (${errorCount})`}
+          </button>
+        )}
+        {fixAllSummary && (
+          <span style={{ fontSize: 10, color: "var(--t4)" }}>
+            fixed {fixAllSummary.fixed}/{fixAllSummary.total} · saved {fixAllSummary.saved}
+            {fixAllSummary.flagged > 0 && ` (${fixAllSummary.flagged} flagged)`}
+            {fixAllSummary.failed > 0 && ` · ${fixAllSummary.failed} still failing`}
+          </span>
+        )}
         <span className="text-[11px]" style={{ color: "var(--t4)" }}>
           {showAll ? `${filtered.length}` : `${Math.min(DEFAULT_LIMIT, filtered.length)} of ${filtered.length}`}
           {isRunning && <span className="ml-2 animate-pulse" style={{ color: "#4a4b57" }}>● live</span>}
@@ -637,6 +723,7 @@ export function ActivityLog({ connectionId, isActive, canvasId }: Props) {
           <LogTable
             items={displayed}
             connectionId={connectionId}
+            canvasId={canvasId}
             sortCol={sortCol}
             sortDir={sortDir}
             onSort={handleSort}

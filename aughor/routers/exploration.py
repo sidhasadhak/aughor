@@ -87,6 +87,25 @@ class RetryQueryRequest(BaseModel):
     domain: str = ""
 
 
+class FixEpisodeRequest(BaseModel):
+    """One errored episode to repair-and-save."""
+    sql: str
+    error: str
+    think: str = ""
+    phase: str = "domain_intel"
+    hint: str = ""
+    canvas_id: str = ""
+
+
+class FixAllRequest(BaseModel):
+    """A batch of errored episodes to repair — the client passes exactly the episodes
+    currently VISIBLE under its filter, so the server only fixes those and stops. It
+    never generates new questions or starts the explorer."""
+    episodes: list[FixEpisodeRequest]
+    hint: str = ""
+    canvas_id: str = ""
+
+
 # ── Connection-scoped ─────────────────────────────────────────────────────────
 
 @router.get("/exploration/{conn_id}/status")
@@ -416,6 +435,50 @@ async def retry_query(conn_id: str, body: RetryQueryRequest):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Query execution failed: {e}")
+
+
+@router.post("/exploration/{conn_id}/fix-episode")
+def fix_episode(conn_id: str, body: FixEpisodeRequest):
+    """Repair an errored episode and, on a successful run, SAVE it: heal the episode and
+    (for domain-intelligence queries) store a finding through the same Phase-8 guards.
+    Unlike /retry-query this persists; it never generates new questions."""
+    from aughor.explorer.fix_persist import persist_fixed_finding
+    try:
+        return persist_fixed_finding(
+            conn_id, original_sql=body.sql, error=body.error,
+            think=body.think, phase=body.phase, hint=body.hint,
+            canvas_id=body.canvas_id or None,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"fix-and-save failed: {e}")
+
+
+@router.post("/exploration/{conn_id}/fix-all")
+def fix_all(conn_id: str, body: FixAllRequest):
+    """Repair-and-save every episode in the provided list — and ONLY those. The client
+    sends exactly the errored episodes visible under its current filter, so a date filter
+    (e.g. 'yesterday') naturally scopes the batch. This never starts the explorer or
+    generates fresh questions; it repairs the given errors and stops."""
+    from aughor.explorer.fix_persist import persist_fixed_finding
+    results = []
+    for ep in body.episodes[:200]:   # hard cap — a repair batch, not a crawl
+        try:
+            r = persist_fixed_finding(
+                conn_id, original_sql=ep.sql, error=ep.error,
+                think=ep.think, phase=ep.phase, hint=body.hint or ep.hint,
+                canvas_id=body.canvas_id or None,
+            )
+        except Exception as e:
+            r = {"ok": False, "stored": False, "error": str(e)}
+        results.append({"sql": ep.sql[:100], **r})
+    summary = {
+        "total":   len(results),
+        "fixed":   sum(1 for r in results if r.get("ok")),
+        "saved":   sum(1 for r in results if r.get("stored")),
+        "flagged": sum(1 for r in results if r.get("stored") and (r.get("insight") or {}).get("unverified")),
+        "failed":  sum(1 for r in results if not r.get("ok")),
+    }
+    return {"summary": summary, "results": results}
 
 
 # ── Explorer control ─────────────────────────────────────────────────────────

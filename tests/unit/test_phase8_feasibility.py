@@ -1,6 +1,8 @@
 """Phase-8 temporal-feasibility gate (#1) + repair intent-preservation trigger (#2).
 Both platform-generic. See aughor/explorer/agent.py (_is_temporal_angle, _query_columns)."""
-from aughor.explorer.agent import _is_temporal_angle, _query_columns, _has_temporal_sql
+from aughor.explorer.agent import (
+    _is_temporal_angle, _query_columns, _has_temporal_sql, _has_vacuous_temporal,
+)
 
 
 # ── #1: temporal-angle classification ─────────────────────────────────────────
@@ -107,3 +109,32 @@ def test_no_false_drop_on_join_add():
     assert _detemporalised("SELECT o.order_id, oi.quantity FROM orders o",
                            "SELECT o.order_id, oi.quantity FROM orders o "
                            "JOIN order_items oi ON o.order_id=oi.order_id") is False
+
+
+# ── vacuous temporal: DATE_DIFF of identical dates (a constant-0 "age") ────────
+
+def test_vacuous_datediff_current_date_self():
+    # the observed second drift: a repair fakes age as DATE_DIFF(CURRENT_DATE, CURRENT_DATE) = 0
+    assert _has_vacuous_temporal(
+        "SELECT DATE_DIFF('DAY', CURRENT_DATE, CURRENT_DATE) AS age, SUM(revenue_net) FROM invoices") is True
+
+
+def test_vacuous_datediff_same_column():
+    assert _has_vacuous_temporal("SELECT DATEDIFF(i.d, i.d) FROM t i") is True
+
+
+def test_genuine_datediff_is_not_vacuous():
+    assert _has_vacuous_temporal(
+        "SELECT DATE_DIFF('DAY', i.invoice_date, CURRENT_DATE) FROM invoices i") is False
+
+
+def test_no_datediff_is_not_vacuous():
+    assert _has_vacuous_temporal("SELECT category, SUM(amount) FROM sales GROUP BY category") is False
+
+
+def test_vacuous_caught_even_when_temporal_sql_survives():
+    # _has_temporal_sql is True (DATE_DIFF/CURRENT_DATE present) so de-temporalisation misses it;
+    # the vacuous check is what catches this repair.
+    fixed = "SELECT DATE_DIFF('DAY', CURRENT_DATE, CURRENT_DATE) AS age, SUM(i.revenue_net) FROM invoices i GROUP BY 1"
+    assert _has_temporal_sql(fixed) is True
+    assert _has_vacuous_temporal(fixed) is True

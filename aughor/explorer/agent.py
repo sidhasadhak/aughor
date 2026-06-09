@@ -384,6 +384,27 @@ def _has_temporal_sql(sql: str) -> bool:
     return bool(_TEMPORAL_SQL_RE.search(sql or ""))
 
 
+# A date-difference whose two date operands are IDENTICAL — DATE_DIFF(CURRENT_DATE,
+# CURRENT_DATE) or DATE_DIFF(x.c, x.c) — is always 0. A repair on a dateless table that
+# can't find a real date column sometimes fakes the time computation this way, keeping a
+# temporal *shape* while answering nothing (so _has_temporal_sql alone won't flag it). The
+# operand class excludes parens, so nested-call operands simply don't match (no false flag).
+_VACUOUS_DATEDIFF_RE = re.compile(
+    r"date_?diff\s*\(\s*(?:'[^']*'\s*,\s*)?(?P<a>[^,()]+?)\s*,\s*(?P<b>[^,()]+?)\s*\)",
+    re.I,
+)
+
+
+def _has_vacuous_temporal(sql: str) -> bool:
+    """True when a date-difference compares a value to itself → a constant-0 'time' metric."""
+    for m in _VACUOUS_DATEDIFF_RE.finditer(sql or ""):
+        a = re.sub(r"\s+", "", m.group("a")).lower()
+        b = re.sub(r"\s+", "", m.group("b")).lower()
+        if a == b:
+            return True
+    return False
+
+
 class SchemaExplorer:
     """
     Background schema exploration agent.
@@ -1792,12 +1813,15 @@ class SchemaExplorer:
                 # than none). No LLM judgement: an LLM rated this exact drift "faithful".
                 if sql != nq.sql:
                     _removed = _query_columns(nq.sql) - _query_columns(sql)
-                    if _removed and _has_temporal_sql(nq.sql) and not _has_temporal_sql(sql):
+                    _detemporalised = bool(_removed) and _has_temporal_sql(nq.sql) and not _has_temporal_sql(sql)
+                    _vacuous = _has_vacuous_temporal(sql)
+                    if _detemporalised or _vacuous:
                         logger.info(
-                            "[explorer:%s] Phase 8: %s/%s — dropping finding; repair de-temporalised "
-                            "a time-based question (removed %s, added %s)",
-                            self.connection_id, domain, nq.angle, sorted(_removed),
-                            sorted(_query_columns(sql) - _query_columns(nq.sql)),
+                            "[explorer:%s] Phase 8: %s/%s — dropping finding; repair %s a time-based "
+                            "question (removed %s, added %s)",
+                            self.connection_id, domain, nq.angle,
+                            "neutered (DATE_DIFF of identical dates → constant)" if _vacuous else "de-temporalised",
+                            sorted(_removed), sorted(_query_columns(sql) - _query_columns(nq.sql)),
                         )
                         continue
 
