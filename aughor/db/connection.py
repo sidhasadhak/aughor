@@ -474,6 +474,34 @@ class DatabaseConnection(ABC):
         """Return the OntologyGraph built during the last get_schema() call, or None."""
         return self._ontology
 
+    # ── Convenience adapters ──────────────────────────────────────────────────
+    # Replace the ad-hoc "execute → check .error → pull .rows/.rows[0][0]" wrappers
+    # scattered across the codebase. Best-effort: any error returns []/None, never raises.
+
+    def rows(self, sql: str, *, label: str = "__adapter__") -> list:
+        """Run SQL and return its rows; [] on error."""
+        try:
+            res = self.execute(label, sql)
+            if getattr(res, "error", None):
+                return []
+            return list(getattr(res, "rows", None) or [])
+        except Exception:
+            return []
+
+    def scalar(self, sql: str, *, label: str = "__adapter__", cast=float):
+        """Run SQL and return the first cell coerced via ``cast`` (default float), or None."""
+        rs = self.rows(sql, label=label)
+        if not rs:
+            return None
+        row = rs[0]
+        val = list(row.values())[0] if isinstance(row, dict) else row[0]
+        if val is None:
+            return None
+        try:
+            return cast(val)
+        except (TypeError, ValueError):
+            return None
+
     def ibis_connection(self):
         """Return an ibis backend for this connection, or None if ibis is not installed.
 

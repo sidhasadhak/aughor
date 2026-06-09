@@ -129,19 +129,12 @@ def get_or_build_profiles(
         try:
             if conn.dialect == "duckdb":
                 # SELECT-wrapped DESCRIBE passes the SELECT-only validator
-                r = conn.execute(
-                    "__profiler__",
-                    f'SELECT COUNT(*) FROM (DESCRIBE {table})',
-                )
-                col_counts[table] = int(r.rows[0][0]) if not r.error and r.rows else 0
+                sql = f'SELECT COUNT(*) FROM (DESCRIBE {table})'
             else:
                 schema_name = getattr(conn, "_schema_name", "public")
-                r = conn.execute(
-                    "__profiler__",
-                    f"SELECT COUNT(*) FROM information_schema.columns "
-                    f"WHERE table_name = '{table}' AND table_schema = '{schema_name}'",
-                )
-                col_counts[table] = int(r.rows[0][0]) if not r.error and r.rows else 0
+                sql = (f"SELECT COUNT(*) FROM information_schema.columns "
+                       f"WHERE table_name = '{table}' AND table_schema = '{schema_name}'")
+            col_counts[table] = conn.scalar(sql, label="__profiler__", cast=int) or 0
         except Exception:
             col_counts[table] = 0
 
