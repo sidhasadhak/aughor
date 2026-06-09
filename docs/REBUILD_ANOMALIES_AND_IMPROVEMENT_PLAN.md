@@ -45,6 +45,12 @@ _Generated 2026-06-09 from a full platform reset + from-scratch rebuild watch on
 ### D. Watcher self-bug (tooling) ✅ FIXED
 - The first watcher counted a transient `NA` status as terminal and exited early. Fixed to treat only `complete`/`failed` as terminal and require 2 consecutive all-terminal ticks.
 
+### E. `name 're' is not defined` on diagnostic questions ✅ FIXED
+- **Symptom:** Deep-Analysis / direct questions of the *"which X is weakest / lowest"* shape (e.g. *"Which product category is weakest by revenue?"*, *"Which region has the lowest net revenue?"*) crashed with an SSE `{"type":"error","message":"name 're' is not defined"}` and produced **no report**. Reproduced reliably on `c1c664b0` (beautycommerce). Found while running the 10× Deep-Analysis verification gate for the C2 refactor.
+- **Root cause (two stacked bugs):** (1) `aughor/agent/nodes.py` had **no module-level `import re`** — `re` was imported only *locally* inside two unrelated functions, so `classify_question` (reached via `route_question`, the first node of every run) raised a bare `NameError` the moment it evaluated its `direct`-branch `re.search(...)`. The router classifies these questions `direct` (conf 0.95), so the crash hit before any SQL ran. (2) Fixing (1) unmasked an `UnboundLocalError: cannot access local variable 'new_pitfalls'` in `execute_planned_queries` — the cross-query consistency block appends alias/join-divergence pitfalls to `new_pitfalls` ~20 lines **before** the list was initialised; previously invisible because `route_question` always crashed first.
+- **Fix (platform-generic):** added `import re` at module scope (removed the redundant local import) and hoisted `new_pitfalls = []` above the consistency block (removed the later re-init so early-appended pitfalls aren't wiped). +2 regression guards: `test_classify_question_re.py` (runs the exact `direct` path with a stubbed provider) and `test_nodes_scope_safety.py` (AST guard — an UnboundLocalError compiles clean, so only line-order analysis catches it).
+- **Live-verified (beautycommerce):** both reproducing questions now return full reports, zero error events — *weakest category* → honest *"no product-category field in schema"* (correct, no hallucination); *lowest region* → grounded *"TikTok… $43.5M across 247,919 orders."* 331 unit tests green.
+
 ## 4. Internal improvement plan (from 3 architecture audits)
 
 ### 4a. Wiring & coupling — top refactors (ranked impact × commercial value)
@@ -74,9 +80,10 @@ _Generated 2026-06-09 from a full platform reset + from-scratch rebuild watch on
 - **Architecture (minimal blast radius):** new `aughor/licensing/` with a `Capability` enum + `Tier→capabilities` map + `has_capability(conn/workspace, cap)`; a FastAPI `require_capability(cap)` dependency returning **402** + upgrade hint; a `GET /capabilities` endpoint + a React `useCapabilities()` hook that locks/upsells UI. **Tier stored per-connection** in the existing `connection_settings.json` (runtime-flippable, no redeploy); env `AUGHOR_TIER` default `enterprise` so **today's behavior = everything on**. Fold existing env flags into the capability check incrementally. SaaS: add `tier` to `Workspace` + Stripe-webhook writer.
 
 ## 5. Status / next
-- Fixes shipped this session (uncommitted, awaiting explicit "commit"): the ClickBench timestamp-typing fix (`profiler.py` + `agent.py` + `tests/unit/test_profiler_timestamp.py`). 248 unit tests green.
-- Rebuild still finishing on beautycommerce/workspace/tpcds/tpch-dup (final phase). Anomalies B and C have recommended fixes ready to implement on request.
-- The refactors in §4 are sequenced; #4a.5 (silent-gate → actionable error) and #4a.6 (pause canvas explorers) are the quick correctness wins; §4c is the commercial-packaging foundation.
+- **Anomalies A–E all FIXED & committed.** Rebuild completed across all 6 connections (beautycommerce/workspace/tpcds/tpch/tpch-dup/clickbench). **331 unit tests green.**
+- §4a improvement plan: #4a.5 (silent ontology-gate → actionable `BuildResult`) and #4a.6 (pause canvas explorers during investigations) **shipped** (#1/#2); §4c commercial tiering **shipped** as `aughor/licensing/` (Capability enum + Tier map + `require_capability`→402 + `GET /capabilities` + `useCapabilities()` hook, default `enterprise` = everything on).
+- §4b DRY refactors landing in sequence `C1→C3→C2→C4→C6`: **C5** (`util/time.py`), **C1** (`KeyedJsonStore`/`JsonListStore`), **C3** (`db.rows`/`db.scalar`), **C2** (`run_analysis_phase`) done; **C4** (`acomplete`) and **C6** (small helpers) next.
+- The §4b store/adapter migrations are incremental follow-ups (remaining ~7 stores, remaining ad-hoc execute→rows sites).
 
 ## 6. Anomaly D — date-based question on a dateless table (the `invoices` case) ✅ FIXED
 
