@@ -342,8 +342,12 @@ function synthesize(
   const allSignals: SynthesisSignal[] = [];
   let totalInsights = 0;
 
+  // Never surface a degenerate "no data" finding — it must not win the headline or a
+  // signal slot (the backend now drops these at the source; this also hides any that
+  // were stored before that fix). Such findings stay visible only in the full Hub ledger.
   for (const [domain, data] of Object.entries(domainData)) {
     for (const ins of data.insights) {
+      if (isDegenerateFinding(ins)) continue;
       allSignals.push({ insight: ins, domain });
       totalInsights++;
     }
@@ -380,7 +384,7 @@ function synthesize(
   // Per-domain stats for the coverage chart (where the intelligence concentrates).
   const domains: DomainStat[] = Object.entries(domainData)
     .map(([name, data]) => {
-      const ns = data.insights.map(i => i.novelty);
+      const ns = data.insights.filter(i => !isDegenerateFinding(i)).map(i => i.novelty);
       return {
         name,
         count: ns.length,
@@ -1182,6 +1186,16 @@ export function BriefingPanel({
     setExplorerBusy(false);
   }, [connectionId]);
 
+  // One-click refresh: clears stale findings and re-runs the full pipeline under the
+  // current (corrected) explorer — drops "no data" / cross-dataset findings, re-anchors
+  // the temporal window. The honest way to make a stale headline reliable + up to date.
+  const runRefresh = useCallback(async () => {
+    if (!connectionId) return;
+    setExplorerBusy(true);
+    try { await restartExplorer(connectionId); } catch {}
+    setExplorerBusy(false);
+  }, [connectionId]);
+
   useEffect(() => { load(); }, [load]);
 
   // Fetch available schemas for this connection (N/A for a canvas — already scoped)
@@ -1301,6 +1315,14 @@ export function BriefingPanel({
                   onClick={runTriggerIntel}
                   style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: "var(--blue2)", color: "var(--blue5)", border: "1px solid var(--blue3)", cursor: explorerBusy ? "default" : "pointer", opacity: explorerBusy ? 0.6 : 1 }}
                 >Trigger Intel</button>
+              )}
+              {explorerStatus?.phase === "complete" && (
+                <button
+                  disabled={explorerBusy}
+                  onClick={runRefresh}
+                  title="Clear stale findings and re-run intelligence from scratch (drops 'no data' findings, re-anchors the window)"
+                  style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: "var(--bg-3)", color: "var(--t2)", border: "1px solid var(--b2)", cursor: explorerBusy ? "default" : "pointer", opacity: explorerBusy ? 0.6 : 1 }}
+                >↻ Refresh</button>
               )}
             </>
           ) : (
