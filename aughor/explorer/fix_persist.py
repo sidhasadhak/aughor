@@ -34,6 +34,8 @@ from aughor.explorer.episodes import EpisodeCollector
 from aughor.explorer.grounding import verify_finding, numeric_cells_block
 from aughor.explorer.agent import (
     _is_degenerate_result,
+    _has_fabricated_dimension,
+    _clamp_novelty,
     _query_columns,
     _has_temporal_sql,
     _has_vacuous_temporal,
@@ -144,6 +146,10 @@ def persist_fixed_finding(
         out["reason"] = "query fixed, but the result has no real data (all-NULL / empty) — nothing to store"
         return out
 
+    if _has_fabricated_dimension(fixed_sql):
+        out["reason"] = "query fixed, but it groups by a constant literal (fabricated dimension) — vacuous, not stored"
+        return out
+
     domain, angle, question = _parse_think(think)
     domain = domain or "General"
     angle = angle or "fixed"
@@ -183,8 +189,8 @@ def persist_fixed_finding(
         "finding": interp.finding,
         "sql": fixed_sql,
         # Flagged findings are pinned low so they never headline or auto-promote.
-        "confidence": 0.3 if unverified else min(0.95, 0.4 + interp.novelty * 0.1),
-        "novelty": 1 if unverified else interp.novelty,
+        "confidence": 0.3 if unverified else min(0.95, 0.4 + _clamp_novelty(interp.novelty) * 0.1),
+        "novelty": 1 if unverified else _clamp_novelty(interp.novelty),
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "canvas_id": canvas_id,
         "promoted_to_org": False,

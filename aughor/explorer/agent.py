@@ -314,6 +314,45 @@ def _is_degenerate_result(rows, finding_text: str = "") -> bool:
     return bool(finding_text and _NO_DATA_RE.search(finding_text))
 
 
+_LITERAL_DIM_RE = re.compile(r"""['"][^'"]*['"]\s+AS\s+(\w+)""", re.IGNORECASE)
+
+
+def _has_fabricated_dimension(sql: str) -> bool:
+    """True when a query invents its dimension by aliasing a constant literal and
+    grouping by it — e.g. ``SELECT 'Unknown' AS signup_source ... GROUP BY signup_source``.
+
+    The model writes this when the real column doesn't exist, producing a vacuous
+    single-group "breakdown" the narrator then presents as a real category ("the
+    only channel represented"). High-precision: only fires when the SOLE grouping
+    key is the constant — a real dimension alongside it is a legitimate breakdown.
+    """
+    if not sql:
+        return False
+    low = sql.lower()
+    if "group by" not in low:
+        return False
+    gb = low.split("group by", 1)[1]
+    gb = re.split(r"\b(order\s+by|having|limit|window|qualify)\b", gb, maxsplit=1)[0]
+    keys = [k.strip() for k in gb.split(",") if k.strip()]
+    if len(keys) != 1:
+        return False  # another real dimension is present → legitimate breakdown
+    key = keys[0]
+    if key.startswith("'") or key.startswith('"'):
+        return True  # GROUP BY 'literal'
+    return any(m.group(1).lower() == key for m in _LITERAL_DIM_RE.finditer(sql))
+
+
+def _clamp_novelty(v) -> int:
+    """Novelty is a 1-5 score (see the interpret prompt). The LLM occasionally
+    echoes a data magnitude into it — e.g. revenue 77568 lands in `novelty`, which
+    then pins confidence at 95% (``0.4 + novelty*0.1`` capped) and lets a junk
+    finding own the headline (novelty drives ranking). Clamp to the valid range."""
+    try:
+        return max(1, min(5, int(v)))
+    except (TypeError, ValueError):
+        return 3
+
+
 # Column/table names the SQL engine reported as nonexistent — harvested generically from
 # DuckDB *and* Postgres binder errors and fed back to the question generator so it stops
 # re-proposing the same hallucinated names (the dominant Phase-8 failure class: a generator
@@ -1949,6 +1988,17 @@ class SchemaExplorer:
                     )
                     continue
 
+                # Drop fabricated-dimension findings — the model stubbed a missing
+                # column with a constant literal ('Unknown' AS channel … GROUP BY
+                # channel), yielding a vacuous single-group "breakdown" the narrator
+                # dresses up as a real category ("the only channel represented").
+                if _has_fabricated_dimension(sql):
+                    logger.info(
+                        "[explorer:%s] Phase 8: %s/%s — skipping fabricated-dimension finding (constant grouping key)",
+                        self.connection_id, domain, nq.angle,
+                    )
+                    continue
+
                 # Ground every magnitude-bearing number in the prose against the real
                 # result cells. The narrator sometimes fabricates a magnitude/unit
                 # ("2.49M" for a cell of 2.49 — off 1e6). Try one corrective rewrite that
@@ -2013,8 +2063,8 @@ class SchemaExplorer:
                     # nq.sql here showed a non-runnable draft as "the data behind this claim",
                     # breaking the Evidence layer's provenance.
                     "sql": sql,
-                    "confidence": min(0.95, 0.4 + interp.novelty * 0.1),
-                    "novelty": interp.novelty,
+                    "confidence": min(0.95, 0.4 + _clamp_novelty(interp.novelty) * 0.1),
+                    "novelty": _clamp_novelty(interp.novelty),
                     "generated_at": datetime.now(timezone.utc).isoformat(),
                     "canvas_id": self.canvas_id,
                     "promoted_to_org": False,
