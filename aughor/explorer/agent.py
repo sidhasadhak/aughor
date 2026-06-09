@@ -314,6 +314,30 @@ def _is_degenerate_result(rows, finding_text: str = "") -> bool:
     return bool(finding_text and _NO_DATA_RE.search(finding_text))
 
 
+# Column/table names the SQL engine reported as nonexistent — harvested generically from
+# DuckDB *and* Postgres binder errors and fed back to the question generator so it stops
+# re-proposing the same hallucinated names (the dominant Phase-8 failure class: a generator
+# that "expects" a region/campaign_id/touchpoint_id column the schema doesn't have). This is
+# negative knowledge accumulated from the live engine — no schema or connection specifics.
+# Ambiguous-column errors are deliberately NOT harvested: that column DOES exist, it just
+# needs qualifying (handled by the repair diagnosis instead).
+_DEAD_REF_RES = (
+    re.compile(r'does not have a column named\s+"?(\w+)"?', re.I),
+    re.compile(r'[Rr]eferenced column\s+"?(\w+)"?\s+not found', re.I),
+    re.compile(r'column\s+"?(\w+)"?\s+does not exist', re.I),          # Postgres
+    re.compile(r'[Rr]eferenced table\s+"?(\w+)"?\s+not found', re.I),
+    re.compile(r'[Rr]elation\s+"?(\w+)"?\s+does not exist', re.I),     # Postgres
+)
+
+
+def _extract_dead_refs(error: str) -> set:
+    """Nonexistent column/table names named in a SQL engine error (DuckDB + Postgres)."""
+    out: set = set()
+    for pat in _DEAD_REF_RES:
+        out.update(pat.findall(error or ""))
+    return out
+
+
 class SchemaExplorer:
     """
     Background schema exploration agent.
@@ -349,6 +373,7 @@ class SchemaExplorer:
         self._last_query_at: float = 0.0
         self._rate_seconds: float = _RATE_SECONDS_SCHEMA
         self._time_window: Optional[tuple[str, str]] = None  # (start_iso, end_iso) — 12-month window
+        self._dead_refs: set = set()  # column/table names the engine reported as nonexistent
         self._macro_context: Optional[dict] = None  # Tier 2 full-span long-arc rollup
         self._cost_large: bool = False               # Tier 3 — connection big enough for approx
         self._prev_watermark: Optional[str] = None   # Tier 3 — anchor edge at the last run
@@ -1558,14 +1583,37 @@ class SchemaExplorer:
                     )
                     time_window_block = ""
                     if self._time_window:
-                        time_window_block = (
-                            f"TIME WINDOW: Scope all queries to the last 12 months "
-                            f"({self._time_window[0]} to {self._time_window[1]}). "
-                            f"Add WHERE <timestamp_col> >= '{self._time_window[0]}' "
-                            f"to every query that touches a timestamped table. "
-                            f"This ensures trends and aggregations reflect recent data.\n\n"
-                        )
+                        # Name only the profiler-vetted timestamp columns. Without this the
+                        # LLM invents a date filter on a date-NAMED integer column (e.g.
+                        # ClickBench EventDate::USMALLINT) → "USMALLINT vs DATE". If a
+                        # connection has no real timestamp anywhere, omit the window
+                        # instruction entirely rather than provoke an un-runnable filter.
+                        _ts_cols = sorted({
+                            f"{t}.{getattr(p, 'primary_timestamp', None)}"
+                            for t, p in (tp or {}).items()
+                            if getattr(p, "primary_timestamp", None)
+                        })
+                        if _ts_cols:
+                            time_window_block = (
+                                f"TIME WINDOW: Scope queries to the last 12 months "
+                                f"({self._time_window[0]} to {self._time_window[1]}). The ONLY "
+                                f"real timestamp columns are: {', '.join(_ts_cols)}. "
+                                f"Add WHERE <that column> >= '{self._time_window[0]}' only when "
+                                f"your query touches one of those tables. NEVER add a date filter "
+                                f"to a table without a listed timestamp column, and never compare "
+                                f"a non-date column to a date literal.\n\n"
+                            )
 
+                    # Negative knowledge: names earlier queries proved don't exist. Steers the
+                    # generator off repeated hallucinations (the #1 wasted-budget failure class).
+                    dead_refs_block = ""
+                    if self._dead_refs:
+                        _avoid = ", ".join(sorted(self._dead_refs)[:30])
+                        dead_refs_block = (
+                            f"NONEXISTENT NAMES — earlier queries failed because these columns/tables "
+                            f"do not exist in the table they were used on. Do NOT reference any of them "
+                            f"unless it appears verbatim in the SCHEMA above: {_avoid}\n\n"
+                        )
                     _usr1 = (
                         f"DOMAIN: {domain}\n\n"
                         f"ENTITIES IN THIS DOMAIN:\n{entity_context}\n\n"
@@ -1574,6 +1622,7 @@ class SchemaExplorer:
                         f"{grain_block}\n"
                         f"{join_safety_block}\n"
                         f"{time_window_block}"
+                        f"{dead_refs_block}"
                         f"{prior_phases_block}"
                         f"COVERAGE ANGLES TO EXPLORE: {', '.join(uncovered)}\n"
                         f"ANGLES ALREADY COVERED: {', '.join(covered_angles) or 'none'}\n\n"
@@ -1620,13 +1669,16 @@ class SchemaExplorer:
                     rows = await self._run(sql, think=label)
                     if rows is not None:
                         break
+                    error_msg = _last_episode_error()
+                    # Accumulate negative knowledge — names the engine says don't exist — so
+                    # the next-question generator stops re-proposing them (even on the final attempt).
+                    self._dead_refs |= _extract_dead_refs(error_msg)
                     if attempt >= MAX_ATTEMPTS - 1:
                         logger.warning(
                             f"[explorer:{self.connection_id}] Phase 8: all {MAX_ATTEMPTS} attempts "
                             f"failed for {domain}/{nq.angle}"
                         )
                         break
-                    error_msg = _last_episode_error()
                     fix = await _loop.run_in_executor(
                         None, lambda: sql_writer.fix(sql, error_msg, max_retries=1)
                     )
