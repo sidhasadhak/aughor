@@ -26,7 +26,7 @@ from aughor.db.history import (
     save_chat_turn,
 )
 from aughor.db.registry import BUILTIN_ID
-from aughor.routers._shared import explorers as _explorers
+from aughor.routers._shared import explorers as _explorers, explorers_for_connection as _explorers_for_connection
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["investigations"])
@@ -1044,9 +1044,18 @@ async def _stream_investigation(
     except Exception:
         pass
 
-    _active_explorer = _explorers.get(connection_id)
-    if _active_explorer:
-        _active_explorer.pause()
+    # Pause EVERY explorer bound to this connection — the connection explorer AND any
+    # canvas explorers on the same connection — so background exploration doesn't contend
+    # with the investigation's queries. (Previously only the connection explorer paused,
+    # so a canvas explorer kept hammering the DB through the run.) Skip ones already paused
+    # (e.g. user-paused) so we only resume what we actually paused.
+    _paused_explorers = []
+    for _e in _explorers_for_connection(connection_id):
+        try:
+            _e.pause()
+            _paused_explorers.append(_e)
+        except Exception:
+            pass
 
     merged: dict = {}  # bound before try so the except/salvage path can read partial state
     try:
@@ -1294,8 +1303,11 @@ async def _stream_investigation(
             yield _sse("error", {"message": str(e)})
     finally:
         _telemetry.end_trace(trace_id)
-        if _active_explorer:
-            _active_explorer.resume()
+        for _e in _paused_explorers:
+            try:
+                _e.resume()
+            except Exception:
+                pass
         db.close()
         yield _sse("done", {})
 

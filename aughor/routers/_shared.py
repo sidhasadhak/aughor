@@ -39,6 +39,23 @@ canvas_explorers: dict = {}       # canvas_id → SchemaExplorer
 canvas_explorer_tasks: dict = {}  # canvas_id → asyncio.Task
 
 
+def explorers_for_connection(connection_id: str, *, include_paused: bool = False) -> list:
+    """Every live explorer bound to a connection — the connection explorer plus any canvas
+    explorers running on the same connection. Used to pause ALL background exploration
+    during a user investigation so it doesn't contend with the investigation's queries. By
+    default skips already-paused explorers (so the caller only resumes what it paused)."""
+    out = []
+    e = explorers.get(connection_id)
+    if e is not None:
+        out.append(e)
+    for cx in list(canvas_explorers.values()):
+        if getattr(cx, "connection_id", None) == connection_id:
+            out.append(cx)
+    if not include_paused:
+        out = [x for x in out if not getattr(getattr(x, "_status", None), "paused", False)]
+    return out
+
+
 def kickoff_exploration(conn_id: str) -> bool:
     """Schedule a background schema-exploration run for a connection, unless one
     is already active. Returns True if a run was scheduled, False if skipped.
