@@ -250,6 +250,60 @@ class OutcomeRequest(BaseModel):
 _VALID_CHART_TYPES = {"auto", "bar", "bar_horizontal", "bar_vertical", "line", "area", "pie", "pareto", "stacked_bar", "scatter",
                       "multi_line", "heatmap", "treemap", "combo"}
 
+# Concentration / 80-20 intent — only the QUESTION carries this, so the chart
+# selection has to read it here (the renderer never sees the question). Models
+# inconsistently emit a share column or the literal "pareto" chart_type, so this
+# makes the intent deterministic.
+_CONCENTRATION_RE = re.compile(
+    r"80[\s/_-]?20|pareto|concentrat|cumulative\s+share|long\s+tail|"
+    r"(few|handful|top)\b.{0,40}\b(drive|account|make up|generate)\b.{0,20}\b(most|majority|bulk)",
+    re.IGNORECASE,
+)
+_PARETO_BLOCK = {"line", "none", "heatmap", "scatter", "stacked_bar", "multi_line", "area"}
+_ID_COL_RE = re.compile(r"(^|_)(id|key|sk|pk|code)$", re.IGNORECASE)
+
+
+def _maybe_pareto(question: str, columns: list[str], rows: list, current: str) -> str:
+    """Force a Pareto when the question asks about concentration/80-20 and the
+    result is a single category(+id) ranking over a measure. The renderer
+    computes the cumulative curve itself, so no share column is required."""
+    if current in _PARETO_BLOCK:
+        return current
+    if not question or not _CONCENTRATION_RE.search(question):
+        return current
+    if not columns or len(rows) < 4:
+        return current
+    sample = rows[0]
+    if not isinstance(sample, (list, tuple)):
+        return current
+
+    def _numlike(v: object) -> bool:
+        # QueryResult stringifies every cell, so numbers arrive as strings.
+        if isinstance(v, bool):
+            return False
+        if isinstance(v, (int, float)):
+            return True
+        if isinstance(v, str):
+            s = v.strip().replace(",", "")
+            if not s or s == "NULL":
+                return False
+            try:
+                float(s)
+                return True
+            except ValueError:
+                return False
+        return False
+
+    num_idx = [i for i, v in enumerate(sample) if _numlike(v)]
+    cat_idx = [i for i in range(len(columns)) if i not in num_idx]
+    # A ranking = at least one dimension + at least one measure. When the only
+    # dimension is an id (numeric → counted above), still treat it as a ranking.
+    if num_idx and cat_idx:
+        return "pareto"
+    if len(num_idx) >= 2 and any(_ID_COL_RE.search(c) for c in columns):
+        return "pareto"
+    return current
+
 
 def _coerce_list_str(v: object) -> list[str]:
     """Coerce a value that should be list[str] but may arrive as a JSON-encoded
@@ -845,6 +899,8 @@ async def _stream_chat(
         # Ground the headline in the ACTUAL rows — the coder's headline is a pre-execution
         # prediction and can contradict the data it ran on.
         _grounded_headline = _ground_headline(answer.headline, result.columns, result.rows)
+        # Deterministic concentration→pareto (the renderer never sees the question).
+        answer.chart_type = _maybe_pareto(question, result.columns, result.rows, answer.chart_type)
         yield _sse("columns", {"columns": result.columns})
         yield _sse("rows", {"rows": result.rows[:10000]})
         yield _sse("headline", {"headline": _grounded_headline})
