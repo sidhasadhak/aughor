@@ -127,7 +127,7 @@ def test_unverified_object_set_gated():
 
 def test_window_filter_applied():
     sql = synthesize_sql(QueryIntent(intent_type="scalar", table="orders", measure="amount",
-                                     window=("2025-01-01", "2025-12-31")), ONTO, metrics=[])
+                                     window_start="2025-01-01", window_end="2025-12-31"), ONTO, metrics=[])
     assert "2025-01-01" in sql and "2025-12-31" in sql
 
 
@@ -173,3 +173,22 @@ def test_timeseries_no_time_col_gated():
     bare = _onto(_entity("Bare", ["bare"], [_p("v", "measure")]))
     assert synthesize_sql(QueryIntent(intent_type="timeseries", table="bare", measure="v"),
                           bare, metrics=[]) is None
+
+
+# ── NL→intent prelude: catalog + clean structured-output schema ───────────────
+
+def test_catalog_lists_only_grounded_names():
+    from aughor.semantic.compiler import _catalog
+    cat = _catalog(ONTO, [_metric("revenue", "SUM(amount)", ["orders"])])
+    assert "entity Order (table orders)" in cat
+    assert "measures=[amount]" in cat and "region" in cat
+    assert "time_col=order_date" in cat
+    assert "named metrics: revenue" in cat
+
+
+def test_query_intent_schema_is_structured_output_safe():
+    # No bare tuple/any types — the JSON schema must generate cleanly for the LLM backend.
+    schema = QueryIntent.model_json_schema()
+    props = schema["properties"]
+    assert "window_start" in props and "window_end" in props
+    assert "window" not in props

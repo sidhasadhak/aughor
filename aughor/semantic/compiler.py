@@ -52,10 +52,11 @@ class QueryIntent(BaseModel):
     time_col:    str = Field(default="", description="Timestamp column for timeseries (else resolved)")
     time_grain:  str = Field(default="month", description="hour|day|week|month|quarter|year")
 
-    object_set:  str = Field(default="", description="Named verified object set to filter by")
-    window:      Optional[tuple] = Field(default=None, description="(start_iso, end_iso) on time_col")
-    order_desc:  bool = Field(default=True)
-    limit:       Optional[int] = Field(default=None)
+    object_set:   str = Field(default="", description="Named verified object set to filter by")
+    window_start: str = Field(default="", description="ISO date lower bound on time_col (inclusive)")
+    window_end:   str = Field(default="", description="ISO date upper bound on time_col (inclusive)")
+    order_desc:   bool = Field(default=True)
+    limit:        Optional[int] = Field(default=None)
 
 
 # ── resolution helpers ──────────────────────────────────────────────────────────
@@ -134,12 +135,11 @@ def _filters(intent: QueryIntent, entity, props: dict, time_col: Optional[str]) 
             return None  # asked for an object set we can't verify → fall back
         if getattr(os_, "filter_sql", ""):
             out.append(os_.filter_sql)
-    if intent.window and time_col:
-        s, e = intent.window
-        if s:
-            out.append(f"{time_col} >= '{s}'")
-        if e:
-            out.append(f"{time_col} <= '{e}'")
+    if time_col:
+        if intent.window_start:
+            out.append(f"{time_col} >= '{intent.window_start}'")
+        if intent.window_end:
+            out.append(f"{time_col} <= '{intent.window_end}'")
     return out
 
 
@@ -200,7 +200,7 @@ def synthesize_sql(intent: QueryIntent, ontology, *, metrics: Optional[list] = N
         time_col = _resolve_time_col(intent, entity, props)
         if not time_col:
             return None
-    elif intent.window:
+    elif intent.window_start or intent.window_end:
         # a window was requested on a non-timeseries intent — it needs a time column too
         time_col = _resolve_time_col(intent, entity, props)
         if not time_col:
@@ -228,3 +228,98 @@ def synthesize_sql(intent: QueryIntent, ontology, *, metrics: Optional[list] = N
             sql += f" LIMIT {int(intent.limit) if intent.limit else 10}"
 
     return _transpile(sql, dialect)
+
+
+# ── NL → intent (the only LLM step) + the end-to-end convenience ─────────────────
+
+def _catalog(ontology, metrics: Optional[list]) -> str:
+    """A compact, grounded catalog the parser must choose names from."""
+    lines: list = []
+    for e in ontology.entities.values():
+        tables = getattr(e, "source_tables", None) or []
+        if not tables:
+            continue
+        props = _props(e)
+        measures = [n for n, p in props.items() if getattr(p, "semantic_type", "") == "measure"]
+        dims = [n for n, p in props.items() if getattr(p, "semantic_type", "") == "dimension"]
+        ts = getattr(e, "created_at_col", None) or next(
+            (n for n, p in props.items() if getattr(p, "semantic_type", "") == "timestamp"), "")
+        line = (f"- entity {e.id} (table {tables[0]}): "
+                f"measures=[{', '.join(measures[:10])}] dimensions=[{', '.join(dims[:10])}]")
+        if ts:
+            line += f" time_col={ts}"
+        os_ = getattr(e, "object_sets", None) or {}
+        verified_sets = [k for k, v in os_.items() if getattr(v, "verified", False)]
+        if verified_sets:
+            line += f" object_sets=[{', '.join(verified_sets)}]"
+        lines.append(line)
+    named = [m.name for m in (metrics or []) if getattr(m, "verified", True)]
+    if named:
+        lines.append("named metrics: " + ", ".join(named))
+    return "\n".join(lines)
+
+
+_PARSE_SYS = (
+    "You translate a business question into a TYPED analytical intent over a known schema. "
+    "You do NOT write SQL.\n\n"
+    "intent_type is one of: scalar (one aggregate), timeseries (aggregate over a time grain), "
+    "breakdown (aggregate by a dimension), ranking (breakdown + ORDER + LIMIT top-N). "
+    "If the question doesn't fit one of these, needs a JOIN across entities, or needs columns/"
+    "metrics not listed, return intent_type='none'.\n\n"
+    "Rules:\n"
+    "- Use ONLY entity ids, table names, measure/dimension columns, time_col, object_sets and "
+    "named metrics that appear verbatim in the SCHEMA. Never invent names.\n"
+    "- The measure is EITHER a named `metric` OR an `agg` (sum/avg/min/max/count/count_distinct) "
+    "over a `measure` column. count needs no column.\n"
+    "- For breakdown/ranking set `dimension`. For ranking set `limit`. For timeseries set `time_grain` "
+    "(day/week/month/quarter/year).\n"
+    "- Only put a column in `measure` if it is listed as a measure; only put a column in `dimension` "
+    "if it is listed as a dimension."
+)
+
+
+def parse_intent(question: str, ontology, metrics: Optional[list] = None,
+                 *, dialect: str = "duckdb") -> Optional[QueryIntent]:
+    """Map a NL question to a typed QueryIntent grounded in the ontology, or None."""
+    try:
+        if metrics is None:
+            from aughor.semantic.canonical import resolve_canonical_metrics
+            metrics = resolve_canonical_metrics(
+                getattr(ontology, "connection_id", "") or "",
+                getattr(ontology, "schema_name", "") or None, ontology=ontology)
+        from aughor.llm.provider import get_provider
+        user = (f"SCHEMA:\n{_catalog(ontology, metrics)}\n\n"
+                f"QUESTION: {question}\n\nReturn the typed intent (intent_type='none' if it doesn't fit).")
+        intent = get_provider("coder").complete(
+            system=_PARSE_SYS, user=user, response_model=QueryIntent, temperature=0.0)
+        return intent
+    except Exception as exc:
+        logger.debug("compiler: parse_intent failed: %s", exc)
+        return None
+
+
+def compile_question(question: str, connection_id: str, *, schema_name: Optional[str] = None,
+                     dialect: str = "duckdb") -> Optional[tuple]:
+    """Full deterministic path: NL question → typed intent → grounded SQL.
+
+    Returns (sql, intent) when the question maps cleanly to a covered intent and every
+    reference resolves; None otherwise (the caller falls back to free-form LLM SQL)."""
+    try:
+        from aughor.ontology.store import load_latest_ontology
+        ontology = load_latest_ontology(connection_id, schema_name)
+        if not ontology or not getattr(ontology, "entities", None):
+            return None
+        from aughor.semantic.canonical import resolve_canonical_metrics
+        metrics = resolve_canonical_metrics(
+            connection_id, schema_name or (getattr(ontology, "schema_name", "") or None),
+            ontology=ontology)
+        intent = parse_intent(question, ontology, metrics, dialect=dialect)
+        if intent is None:
+            return None
+        sql = synthesize_sql(intent, ontology, metrics=metrics, dialect=dialect)
+        if not sql:
+            return None
+        return sql, intent
+    except Exception as exc:
+        logger.debug("compiler: compile_question failed: %s", exc)
+        return None
