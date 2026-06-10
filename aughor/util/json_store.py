@@ -20,12 +20,40 @@ from typing import Any, Optional, Union
 
 
 class KeyedJsonStore:
+    """K0: a FACADE over the kernel Ledger (aughor/kernel/ledger.py). The API and
+    best-effort contract are unchanged, but storage is now a transactional SQLite
+    table — the unlocked load→mutate→save race that corrupted the ontology /
+    profile caches under concurrent builds is gone by construction.
+
+    The legacy JSON file is imported ONCE on first use (marker in ledger meta)
+    and then left on disk untouched. If the ledger is unavailable for any
+    reason, every method falls back to the original file behaviour."""
+
     def __init__(self, path: Union[str, Path], *, max_entries: Optional[int] = None, indent: int = 2):
         self.path = Path(path)
         self.max_entries = max_entries
         self.indent = indent
+        self._store_id = str(self.path)
+        self._migrated = False
 
-    def load(self) -> dict:
+    # ── ledger plumbing ──────────────────────────────────────────────────────
+
+    def _ledger(self):
+        from aughor.kernel.ledger import Ledger
+        led = Ledger.default()
+        if not self._migrated:
+            marker = f"migrated:{self._store_id}"
+            if not led.meta_get(marker):
+                legacy = self._file_load()
+                if legacy:
+                    led.kv_replace_all(self._store_id, legacy, max_entries=self.max_entries)
+                led.meta_set(marker, "1")
+            self._migrated = True
+        return led
+
+    # ── original file primitives (fallback path) ─────────────────────────────
+
+    def _file_load(self) -> dict:
         try:
             if self.path.exists():
                 return json.loads(self.path.read_text())
@@ -33,35 +61,58 @@ class KeyedJsonStore:
             pass
         return {}
 
-    def save(self, data: dict) -> None:
+    def _file_save(self, data: dict) -> None:
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             self.path.write_text(json.dumps(data, indent=self.indent, default=str))
         except Exception:
             pass
 
+    # ── public API (unchanged) ───────────────────────────────────────────────
+
+    def load(self) -> dict:
+        try:
+            return self._ledger().kv_load_all(self._store_id)
+        except Exception:
+            return self._file_load()
+
+    def save(self, data: dict) -> None:
+        try:
+            self._ledger().kv_replace_all(self._store_id, data, max_entries=self.max_entries)
+        except Exception:
+            self._file_save(data)
+
     def get(self, key: str, default: Any = None) -> Any:
-        return self.load().get(key, default)
+        try:
+            return self._ledger().kv_get(self._store_id, key, default)
+        except Exception:
+            return self._file_load().get(key, default)
 
     def put(self, key: str, value: Any) -> None:
         """Insert/update `key` as most-recently-used; evict oldest past `max_entries`."""
-        cache = self.load()
-        cache.pop(key, None)          # move-to-end (MRU on insertion order)
-        cache[key] = value
-        if self.max_entries:
-            while len(cache) > self.max_entries:
-                del cache[next(iter(cache))]
-        self.save(cache)
+        try:
+            self._ledger().kv_put(self._store_id, key, value, max_entries=self.max_entries)
+        except Exception:
+            cache = self._file_load()
+            cache.pop(key, None)          # move-to-end (MRU on insertion order)
+            cache[key] = value
+            if self.max_entries:
+                while len(cache) > self.max_entries:
+                    del cache[next(iter(cache))]
+            self._file_save(cache)
 
     def invalidate_prefix(self, prefix: str) -> int:
         """Drop every key starting with `prefix`. Returns how many were removed."""
-        cache = self.load()
-        evict = [k for k in cache if k.startswith(prefix)]
-        for k in evict:
-            del cache[k]
-        if evict:
-            self.save(cache)
-        return len(evict)
+        try:
+            return self._ledger().kv_invalidate_prefix(self._store_id, prefix)
+        except Exception:
+            cache = self._file_load()
+            evict = [k for k in cache if k.startswith(prefix)]
+            for k in evict:
+                del cache[k]
+            if evict:
+                self._file_save(cache)
+            return len(evict)
 
 
 class JsonListStore:

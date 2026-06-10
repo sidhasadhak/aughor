@@ -68,6 +68,18 @@ def _require_auth(key: str | None = Security(_api_key_header)) -> None:
 # ── Startup events ────────────────────────────────────────────────────────────
 
 @app.on_event("startup")
+async def _kernel_journal_boot() -> None:
+    # The boot event anchors the journal's timeline: restarts become visible,
+    # and "jobs running before this seq with no later transition" is exactly
+    # the orphan set K1's supervisor will resume.
+    try:
+        from aughor.kernel.ledger import Ledger
+        Ledger.default().emit("api.started")
+    except Exception as exc:
+        logger.warning("Kernel ledger unavailable at boot: %s", exc)
+
+
+@app.on_event("startup")
 async def _setup_samples() -> None:
     # Run synchronous DB seeding off the event loop so startup returns instantly.
     loop = asyncio.get_event_loop()
