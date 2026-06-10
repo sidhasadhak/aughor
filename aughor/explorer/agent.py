@@ -1975,6 +1975,28 @@ class SchemaExplorer:
                     logger.debug(f"[explorer:{self.connection_id}] Phase 8: empty result for {nq.question}")
                     continue
 
+                # ── Fan-out de-fan (deterministic, #1 correctness lever) ─────────
+                # A SUM of a parent measure across a one-to-many join over-counts
+                # (5x on TPC-H) — and this becomes a Briefing number. Replace it with
+                # the exact DISTINCT(parent-key, measure) dedup before interpreting.
+                # Adopt only if it dry-runs clean and re-executes; silent otherwise.
+                try:
+                    from aughor.sql.fanout import detect_fanout, build_parent_fanout_rewrite
+                    _dialect = getattr(self._conn, "dialect", "duckdb")
+                    _ff = detect_fanout(sql, sql_writer.table_cols, dialect=_dialect)
+                    if _ff and _ff.kind == "parent_fanout":
+                        _rw = build_parent_fanout_rewrite(sql, _ff, dialect=_dialect)
+                        if _rw and _rw.strip() != sql.strip() and self._conn.dry_run(_rw)[0]:
+                            _rerows = await self._run(_rw, think=f"[de-fan] {think_str}")
+                            if _rerows:
+                                logger.info(
+                                    "[explorer:%s] Phase 8: %s/%s — de-fanned over-counting SUM (%s ⋈ %s)",
+                                    self.connection_id, domain, nq.angle, _ff.satellites, _ff.children,
+                                )
+                                sql, rows = _rw, _rerows
+                except Exception:
+                    pass
+
                 # ── Intent-preservation gate (#2) ───────────────────────────────
                 # A repair can make a query RUN while silently changing its MEANING. The
                 # highest-confidence, deterministic case: the repair DE-TEMPORALISES a time-based
