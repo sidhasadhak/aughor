@@ -303,10 +303,17 @@ a { color: var(--blue4); text-decoration: none; }
 @keyframes aug-spin     { from { transform: rotate(0) } to { transform: rotate(360deg) } }
 @keyframes aug-shimmer  { 0% { background-position: -200% 0 } 100% { background-position: 200% 0 } }
 
+/* Individual scale/translate properties — they COMPOSE with an element's own
+   `transform` (e.g. CommandPalette's translateX(-50%) centering) instead of
+   clobbering it the way animating `transform` would. */
+@keyframes aug-scale-pop { from { opacity: 0; scale: 0.96; translate: 0 6px } to { opacity: 1; scale: 1; translate: 0 0 } }
+
 .aug-anim-blink { animation: aug-blink 1.4s ease-in-out infinite; }
-.aug-anim-up    { animation: aug-slide-up 0.22s ease-out both; }
-.aug-anim-fade  { animation: aug-fade-in 0.18s ease-out both; }
-.aug-anim-spin  { animation: aug-spin 0.7s linear infinite; }
+.aug-anim-up    { animation: aug-slide-up var(--dur-norm) var(--ease-out) both; }
+.aug-anim-fade  { animation: aug-fade-in var(--dur-norm) var(--ease-out) both; }
+.aug-anim-spin  { animation: aug-spin var(--dur-breath) linear infinite; }
+/* Modal / drawer entrance — replaces instant mounts. */
+.aug-anim-pop   { animation: aug-scale-pop var(--dur-norm) var(--ease-pop) both; }
 .aug-shimmer {
   background: linear-gradient(90deg, var(--bg-2) 25%, var(--bg-3) 50%, var(--bg-2) 75%);
   background-size: 200% 100%;
@@ -328,7 +335,9 @@ a { color: var(--blue4); text-decoration: none; }
   animation: aug-flow-y 0.65s linear infinite;
 }
 @media (prefers-reduced-motion: reduce) {
-  .aug-step-in, .aug-check-pop, .aug-pulse-dot, .aug-flow-y { animation: none; }
+  .aug-step-in, .aug-check-pop, .aug-pulse-dot, .aug-flow-y,
+  .aug-anim-blink, .aug-anim-up, .aug-anim-fade, .aug-anim-pop,
+  .aug-shimmer { animation: none; }
 }
 
 /* ── Ontology canvas edge animations ─────────────────────────────────────── */

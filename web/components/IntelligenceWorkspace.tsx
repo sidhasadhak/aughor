@@ -176,6 +176,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
 function Layer({ show, children }: { show: boolean; children: React.ReactNode }) {
   return (
     <div
+      className={show ? "aug-anim-fade" : undefined}
       style={{
         position: "absolute",
         inset: 0,

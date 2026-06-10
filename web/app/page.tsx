@@ -14,7 +14,7 @@ import type { IntelLayer } from "@/components/IntelligenceWorkspace";
 function LoadingPanel() {
   return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-0)" }}>
-      <div style={{ width: 20, height: 20, border: "2px solid var(--bg-3)", borderTopColor: "var(--blue3)", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />
+      <div style={{ width: 20, height: 20, border: "2px solid var(--bg-3)", borderTopColor: "var(--blue3)", borderRadius: "50%", animation: "aug-spin var(--dur-breath) linear infinite" }} />
     </div>
   );
 }

@@ -293,11 +293,12 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
       {/* Backdrop */}
       <div
         onClick={onClose}
+        className="aug-anim-fade"
         style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.65)", backdropFilter: "blur(3px)", zIndex: 200 }}
       />
 
       {/* Palette */}
-      <div style={{
+      <div className="aug-anim-pop" style={{
         position: "fixed", top: "14%", left: "50%", transform: "translateX(-50%)",
         zIndex: 201, width: "100%", maxWidth: 580,
         background: "var(--bg-2)", border: "1px solid var(--b2)",

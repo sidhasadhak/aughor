@@ -48,6 +48,7 @@ import {
   type InsightReceipt,
 } from "@/lib/api";
 import { subscribeKernelEvents } from "@/lib/events";
+import { Spinner } from "@/components/ui/motion";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -282,7 +283,7 @@ function GenerateBriefButton({
           <span style={{
             width: 12, height: 12, border: "2px solid var(--b2)",
             borderTop: "2px solid var(--blue4)", borderRadius: "50%",
-            animation: "spin 1s linear infinite", flexShrink: 0,
+            animation: "aug-spin var(--dur-breath) linear infinite", flexShrink: 0,
           }} />
           Generating…
         </>
@@ -511,7 +512,7 @@ function ActionButton({ label, title, status, color, onClick, disabled }: {
   color?: string; onClick: () => void; disabled?: boolean;
 }) {
   const c = color || "var(--t3)";
-  const txt = status === "busy" ? "…" : status === "done" ? "✓" : status === "error" ? "!" : label;
+  const txt = status === "done" ? "✓" : status === "error" ? "!" : label;
   return (
     <button
       title={title}
@@ -520,15 +521,17 @@ function ActionButton({ label, title, status, color, onClick, disabled }: {
       style={{
         padding: "3px 9px", borderRadius: "var(--r2)", fontSize: 11, fontWeight: 500,
         background: "transparent",
-        border: `1px solid ${status === "done" ? "var(--green3, #3aa676)" : "var(--b2)"}`,
-        color: status === "done" ? "var(--green4, #2e8c63)" : status === "error" ? "var(--red4)" : c,
+        border: `1px solid ${status === "done" ? "var(--grn3)" : "var(--b2)"}`,
+        color: status === "done" ? "var(--grn4)" : status === "error" ? "var(--red4)" : c,
+        display: "inline-flex", alignItems: "center", gap: 5,
         cursor: disabled || status === "busy" || status === "done" ? "default" : "pointer",
         opacity: disabled ? 0.45 : 1, transition: "all .12s", whiteSpace: "nowrap" as const,
       }}
       onMouseEnter={e => { if (!disabled && status === "idle") { e.currentTarget.style.borderColor = c; } }}
       onMouseLeave={e => { if (status === "idle") { e.currentTarget.style.borderColor = "var(--b2)"; } }}
     >
-      {status === "done" ? `${label} ${txt}` : `${label}${status === "busy" ? " " + txt : ""}`}
+      {status === "busy" && <Spinner size={10} color="currentColor" />}
+      {status === "done" ? `${label} ${txt}` : label}
     </button>
   );
 }
@@ -1086,7 +1089,7 @@ function BriefingEmpty({
           <div style={{
             width: 22, height: 22, border: "2px solid var(--b2)",
             borderTop: "2px solid var(--blue4)", borderRadius: "50%",
-            animation: "spin 1s linear infinite",
+            animation: "aug-spin var(--dur-breath) linear infinite",
           }} />
         ) : (
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
@@ -1120,7 +1123,7 @@ function BriefingEmpty({
         >
           {busy ? (
             <>
-              <span style={{ width: 12, height: 12, border: "2px solid var(--b2)", borderTop: "2px solid var(--blue4)", borderRadius: "50%", animation: "spin 1s linear infinite", flexShrink: 0 }} />
+              <span style={{ width: 12, height: 12, border: "2px solid var(--b2)", borderTop: "2px solid var(--blue4)", borderRadius: "50%", animation: "aug-spin var(--dur-breath) linear infinite", flexShrink: 0 }} />
               Working…
             </>
           ) : (
@@ -1150,7 +1153,7 @@ function BriefingLoading() {
           border: "2px solid var(--b1)",
           borderTop: "2px solid var(--blue4)",
           borderRadius: "50%",
-          animation: "spin 1s linear infinite",
+          animation: "aug-spin var(--dur-breath) linear infinite",
         }} />
         <div style={{ fontSize: 12, color: "var(--t3)" }}>Synthesizing intelligence…</div>
       </div>
@@ -1504,7 +1507,7 @@ export function BriefingPanel({
                   <span style={{
                     width: 14, height: 14, border: "2px solid var(--b2)",
                     borderTop: "2px solid var(--blue4)", borderRadius: "50%",
-                    animation: "spin 1s linear infinite", flexShrink: 0,
+                    animation: "aug-spin var(--dur-breath) linear infinite", flexShrink: 0,
                   }} />
                   <span style={{ fontSize: 12, color: "var(--t3)" }}>
                     Writing intelligence brief…
@@ -1619,7 +1622,6 @@ export function BriefingPanel({
   )}
 
       {/* Spinner keyframe */}
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-    </div>
+          </div>
   );
 }

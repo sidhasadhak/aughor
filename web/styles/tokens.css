@@ -53,6 +53,17 @@
   --font-mono: var(--font-dm-sans), system-ui, sans-serif;
   --font-code: var(--font-ibm-plex-mono), 'Consolas', monospace;
 
+  /* ── Motion vocabulary (WCH-15) ──
+     Four durations, three easings — every transition/animation picks from
+     these instead of ad-hoc 0.1s/0.12s/0.3s values. */
+  --dur-fast:   100ms;   /* hovers, color shifts            */
+  --dur-norm:   200ms;   /* tab fades, expand/collapse      */
+  --dur-slow:   400ms;   /* modals, panel entrances         */
+  --dur-breath: 700ms;   /* spinners, progress, shimmer     */
+  --ease-out:  cubic-bezier(0, 0, 0.2, 1);
+  --ease-pop:  cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-flow: cubic-bezier(0.4, 0, 0.2, 1);
+
   /* ── Radius vocabulary ── */
   --r1: 2px;   /* micro: badges, inline chips         */
   --r2: 4px;   /* default: buttons, inputs, cards      */

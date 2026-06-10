@@ -9,6 +9,7 @@ import {
   type ExplorationFindings,
 } from "@/lib/api";
 import { subscribeKernelEvents } from "@/lib/events";
+import { Spinner, SkeletonRows } from "@/components/ui/motion";
 import { DomainIntelPanel } from "@/components/DomainIntelPanel";
 
 // ── Phase progress bar ────────────────────────────────────────────────────────
@@ -385,8 +386,11 @@ export function ExplorationPanel({ connectionId, initialSection }: Props) {
 
   if (!status || !findings) {
     return (
-      <div className="flex items-center justify-center h-40 text-zinc-500 text-sm">
-        Loading exploration data…
+      <div className="p-5 max-w-xl">
+        <div className="flex items-center gap-2 mb-4 text-zinc-500 text-sm">
+          <Spinner size={13} /> Loading exploration data…
+        </div>
+        <SkeletonRows rows={6} />
       </div>
     );
   }
@@ -460,8 +464,8 @@ export function ExplorationPanel({ connectionId, initialSection }: Props) {
         ))}
       </div>
 
-      {/* Section content */}
-      <div className="flex-1 overflow-y-auto p-4">
+      {/* Section content — keyed so a tab switch fades instead of snapping */}
+      <div key={activeSection} className="flex-1 overflow-y-auto p-4 aug-anim-fade">
         {activeSection === "nulls" && (
           <NullMeaningsSection nullMeanings={findings.null_meanings} />
         )}
