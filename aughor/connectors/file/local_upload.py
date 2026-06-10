@@ -32,7 +32,9 @@ Typical use::
 from __future__ import annotations
 
 import json
+import logging
 import re
+import threading
 import shutil
 import time
 from collections import defaultdict
@@ -43,9 +45,16 @@ import duckdb
 from aughor.connectors.base import Connector
 from aughor.agent.state import QueryResult
 
+logger = logging.getLogger(__name__)
+
 MAX_ROWS = 2000
 _UPLOAD_ROOT = Path("data/uploads")
 DEFAULT_SCHEMA = "main"
+
+# Serializes ATTACH/DETACH of the shared seed file. The connector is constructed
+# fresh per request, so without this two concurrent requests race on the same
+# samples.duckdb and one silently materializes nothing (missing-sample-data bug).
+_SEED_LOCK = threading.Lock()
 
 _SUPPORTED_EXTENSIONS = {
     ".csv":     "read_csv_auto",
@@ -112,6 +121,7 @@ class LocalUploadConnection(Connector):
         # Tables materialized from a read-only seed DB (e.g. the sample catalog).
         self._seed_path = (meta or {}).get("seed_duckdb")
         self._seeded: set[tuple[str, str]] = set()
+        self._seed_failed: str | None = None  # reason string when seeding broke
         self._seed_from_duckdb()        # sample/demo tables (read-only)
         self._reload_existing_files()   # user uploads (override seeds on clash)
         self._set_search_path()         # resolve bare names across user schemas
@@ -159,23 +169,51 @@ class LocalUploadConnection(Connector):
             return
         p = Path(self._seed_path)
         if not p.exists():
+            self._seed_failed = f"seed file not found: {p}"
+            logger.error("Seed DB missing for %s: %s", self._connection_id, p)
             return
+        failed: list[str] = []
         try:
-            self._duckdb.execute(f"ATTACH '{p.as_posix()}' AS _seed (READ_ONLY)")
-            tbls = self._duckdb.execute(
-                "SELECT schema_name, table_name FROM duckdb_tables() "
-                "WHERE database_name = '_seed' AND internal = false"
-            ).fetchall()
-            for schema, table in tbls:
-                self._duckdb.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
-                self._duckdb.execute(
-                    f'CREATE TABLE "{schema}"."{table}" AS '
-                    f'SELECT * FROM _seed."{schema}"."{table}"'
-                )
-                self._seeded.add((schema, table))
-            self._duckdb.execute("DETACH _seed")
-        except Exception:
-            # Demo data is best-effort; never block the Workspace on a seed error.
+            with _SEED_LOCK:
+                self._duckdb.execute(f"ATTACH '{p.as_posix()}' AS _seed (READ_ONLY)")
+                try:
+                    tbls = self._duckdb.execute(
+                        "SELECT schema_name, table_name FROM duckdb_tables() "
+                        "WHERE database_name = '_seed' AND internal = false"
+                    ).fetchall()
+                    if not tbls:
+                        self._seed_failed = "seed DB attached but contains no tables"
+                        logger.error("Seed DB %s has no tables (conn=%s)", p, self._connection_id)
+                    for schema, table in tbls:
+                        try:
+                            self._duckdb.execute(f'CREATE SCHEMA IF NOT EXISTS "{schema}"')
+                            self._duckdb.execute(
+                                f'CREATE TABLE "{schema}"."{table}" AS '
+                                f'SELECT * FROM _seed."{schema}"."{table}"'
+                            )
+                            self._seeded.add((schema, table))
+                        except Exception as exc:
+                            failed.append(f"{schema}.{table}")
+                            logger.error(
+                                "Seed materialization failed for %s.%s (conn=%s): %s",
+                                schema, table, self._connection_id, exc,
+                            )
+                finally:
+                    self._duckdb.execute("DETACH _seed")
+            if failed:
+                self._seed_failed = f"failed to materialize: {', '.join(failed)}"
+            logger.debug(
+                "Seed materialized %d tables (%d failed) for conn=%s",
+                len(self._seeded), len(failed), self._connection_id,
+            )
+        except Exception as exc:
+            # Demo data is best-effort; never block the Workspace on a seed error —
+            # but the failure must be visible (it presents as "sample data missing").
+            self._seed_failed = f"seed attach failed: {exc}"
+            logger.error(
+                "Seed DB attach failed for conn=%s (%s): %s",
+                self._connection_id, p, exc, exc_info=True,
+            )
             try:
                 self._duckdb.execute("DETACH _seed")
             except Exception:

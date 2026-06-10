@@ -469,8 +469,12 @@ function SampleGrid({ connId, tableName, schemaName }: { connId: string; tableNa
     fetched.current = true;
     setLoad(true);
     sampleTable(connId, tableName, 200, schemaName)
-      .then(d => setData(d))
-      .catch(e => setErr((e as Error).message))
+      .then(d => {
+        // Three distinct states: execution error ≠ empty table ≠ data.
+        if (d.error) setErr(d.error);
+        else setData(d);
+      })
+      .catch(e => setErr(`Could not load sample: ${(e as Error).message}`))
       .finally(() => setLoad(false));
   }, [connId, tableName, schemaName]);
 
@@ -480,10 +484,17 @@ function SampleGrid({ connId, tableName, schemaName }: { connId: string; tableNa
       <span style={{ fontSize: 11, color: "var(--t4)" }}>Loading sample data…</span>
     </div>
   );
-  if (error) return <div style={{ padding: 24, fontSize: 11, color: "var(--red4)", textAlign: "center" }}>{error}</div>;
+  if (error) return (
+    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+      <div style={{ maxWidth: 460, textAlign: "center" }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: "var(--red4)", marginBottom: 4 }}>Sample unavailable</div>
+        <div style={{ fontSize: 11, color: "var(--t3)", wordBreak: "break-word" }}>{error}</div>
+      </div>
+    </div>
+  );
   if (!data || data.rows.length === 0) return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <span style={{ fontSize: 11, color: "var(--t4)" }}>No rows returned.</span>
+      <span style={{ fontSize: 11, color: "var(--t4)" }}>Table is empty — no rows to display.</span>
     </div>
   );
 

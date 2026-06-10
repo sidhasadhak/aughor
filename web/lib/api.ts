@@ -324,6 +324,9 @@ export async function getSchemaRich(id: string): Promise<RichSchema> {
 export interface TableSample {
   columns: string[];
   rows: (string | null)[][];
+  row_count?: number;
+  /** Execution error — distinguishes "fetch failed" from a genuinely empty table. */
+  error?: string | null;
 }
 
 export async function sampleTable(

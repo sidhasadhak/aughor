@@ -327,9 +327,14 @@ async def table_sample(conn_id: str, table: str, limit: int = 100, schema: str =
             raise HTTPException(status_code=404, detail="Connection not found")
         try:
             result = db.execute("sample", f"SELECT * FROM {ref} LIMIT {_limit}")
+            error = result.error
+            if error and getattr(db, "_seed_failed", None):
+                # A failed seed materialization presents as "table does not exist" —
+                # surface the real cause instead of a bare binder error.
+                error = f"{error} (sample seed problem: {db._seed_failed})"
             columns = result.columns
             rows = [[str(v) if v is not None else None for v in row] for row in result.rows]
-            return {"columns": columns, "rows": rows}
+            return {"columns": columns, "rows": rows, "row_count": len(rows), "error": error}
         finally:
             if db:
                 try:

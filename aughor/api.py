@@ -30,6 +30,16 @@ from aughor.routers._shared import (
     invalidate_schema_cache as _invalidate_schema_cache,
 )
 
+# Without an explicit config, app loggers fall back to logging's lastResort
+# handler which drops everything below WARNING — every INFO-level
+# instrumentation line in the codebase was invisible. Configure once at the
+# entrypoint; respect a host process that already installed handlers.
+if not logging.getLogger().handlers:
+    logging.basicConfig(
+        level=os.environ.get("AUGHOR_LOG_LEVEL", "INFO"),
+        format="%(asctime)s %(levelname)-7s %(name)s — %(message)s",
+    )
+
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Aughor API")
@@ -63,7 +73,25 @@ async def _setup_samples() -> None:
     loop = asyncio.get_event_loop()
     try:
         from aughor.samples.setup import ensure_samples_db
-        await loop.run_in_executor(None, ensure_samples_db)
+
+        def _seed_and_validate() -> None:
+            path = ensure_samples_db()
+            # Validate the seed actually holds tables — a half-written/corrupt seed
+            # is the root of the "sample data missing" class and must be loud.
+            import duckdb
+            conn = duckdb.connect(str(path), read_only=True)
+            try:
+                n = conn.execute(
+                    "SELECT COUNT(*) FROM duckdb_tables() WHERE internal = false"
+                ).fetchone()[0]
+            finally:
+                conn.close()
+            if n == 0:
+                logger.error("Samples DB validation FAILED: %s exists but has 0 tables", path)
+            else:
+                logger.info("Samples DB validated: %d tables at %s", n, path)
+
+        await loop.run_in_executor(None, _seed_and_validate)
     except Exception as exc:
         logger.warning("Samples DB setup failed (non-fatal): %s", exc)
 
