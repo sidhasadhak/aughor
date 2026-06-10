@@ -224,7 +224,9 @@ Scorecard (re-measured at each stage, published in this doc):
 > **STATUS (2026-06-10):** ✅ K0 (`2631d4e`) · ✅ K1 (`82c5b4d`, live crash-drilled) ·
 > ✅ K2+K3 (`9b6b97e`, live-drilled: SSE phase events + real finding receipt) ·
 > ✅ K4 core (errors.tolerate + swallow/private-import ratchets pinned at 269/70 +
-> OpenAPI wiring-contract test). K4 follow-ups still open: generated typed TS client
+> OpenAPI wiring-contract test) · ✅ Proof Harness (`tests/stress/` + `scripts/chaos_drill.py`,
+> §3) — chaos drill ran 3× random `kill -9`, ALL RECOVERED (4 jobs caught mid-flight,
+> failed-with-reason + resumed). K4 follow-ups still open: generated typed TS client
 > (response-shape coverage), domain interface modules, god-file splits. WCH-8's
 > .duckdb write coordination also remains open. Scorecard re-measure due after the
 > ratchets have had a few sessions to bite.

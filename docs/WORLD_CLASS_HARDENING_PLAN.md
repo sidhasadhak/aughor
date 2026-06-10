@@ -266,6 +266,18 @@ not (mark which is which honestly — some need a live LLM and are `@pytest.mark
 **Gate:** suite runs in CI-ish mode (`pytest tests/stress -m "not live"`); each scenario's expected
 behavior documented in the test docstring; failures filed as findings, not silently skipped. **L.**
 
+> **✅ DONE (2026-06-10).** Two layers shipped: (a) `tests/stress/` — LLM-free invariant tests for
+> scenarios **1, 4, 8** (kernel storm: racing idempotent submits collapse to one job, distinct scopes
+> don't, create/cancel churn ×20 leaks nothing, supervisor sweep stays correct amid live jobs) +
+> **6, 7** (degenerate data: empty DB aborts gracefully, all-0-row tables profile without divide-by-
+> zero, unicode/emoji/reserved-word/10K-char columns survive discovery). (b)
+> `scripts/chaos_drill.py` — the **crash-anywhere** invariant as an executable drill: random `kill -9`
+> mid-exploration, restart, assert no orphan left RUNNING (I1: failed-with-reason), incomplete
+> checkpoints resumed (I2), journal narrates it (I3). **Ran 3× → ALL RECOVERED**, journal confirms
+> 4 jobs caught mid-flight and recovered (not vacuous). Scenarios **2, 5, 9** (SSE-drop, poll-storm,
+> LLM-hang) are structurally covered by K1/K2 already and deferred to a live harness; **3, 10** are
+> the chaos drill's domain. 438 unit+stress tests green.
+
 ### WCH-10 — Wiring contract tests + dead-endpoint triage
 The wiring audit found the 188-endpoint surface largely sound but ~25 endpoints with no frontend
 caller (ontology skills ×5, security budget ×3, glossary ×3, query-cache ×2, suggestions, autonomy,
