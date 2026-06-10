@@ -294,14 +294,18 @@ def generate_sql_full_pipeline(question: str, connection_id: str, db) -> str:
     except Exception:
         pass
 
-    # ── Fan-out detection (M24d) — multi-fact join amplification ─────────────
+    # ── Fan-out: deterministic de-fan first, else LLM hint (mirrors _stream_chat) ─
     _fanout_fix_hint = ""
     try:
-        from aughor.sql.fanout import detect_fanout
+        from aughor.sql.fanout import detect_fanout, defan
         from aughor.tools.schema import _parse_schema_tables as _pst
         _ff = detect_fanout(final_sql, _pst(full_schema), dialect=db.dialect)
         if _ff:
-            _fanout_fix_hint = _ff.to_prompt_text()
+            _rw = defan(final_sql, _ff, dialect=db.dialect)
+            if _rw and _rw.strip() != final_sql.strip() and db.dry_run(_rw)[0]:
+                final_sql = _rw
+            else:
+                _fanout_fix_hint = _ff.to_prompt_text()
     except Exception:
         pass
 
