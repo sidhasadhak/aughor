@@ -912,6 +912,24 @@ export async function promoteConnectionInsight(connectionId: string, insightId: 
   return res.json();
 }
 
+export async function dismissCanvasInsight(canvasId: string, insightId: string, reason: string): Promise<{ dismissed: boolean }> {
+  const res = await fetch(
+    `${BASE}/exploration/canvas/${encodeURIComponent(canvasId)}/insights/${encodeURIComponent(insightId)}/dismiss`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason }) }
+  );
+  if (!res.ok) throw new Error("Failed to dismiss insight");
+  return res.json();
+}
+
+export async function dismissConnectionInsight(connectionId: string, insightId: string, reason: string): Promise<{ dismissed: boolean }> {
+  const res = await fetch(
+    `${BASE}/exploration/${encodeURIComponent(connectionId)}/insights/${encodeURIComponent(insightId)}/dismiss`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason }) }
+  );
+  if (!res.ok) throw new Error("Failed to dismiss insight");
+  return res.json();
+}
+
 export async function resumeCanvasExploration(canvasId: string): Promise<{ status: string }> {
   const res = await fetch(`${BASE}/exploration/canvas/${encodeURIComponent(canvasId)}/resume`, { method: "POST" });
   if (!res.ok) throw new Error("Failed to resume canvas exploration");
