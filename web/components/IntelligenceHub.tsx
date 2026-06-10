@@ -61,6 +61,8 @@ function fmtDate(iso: string): string {
 function InsightRow({ insight, ctx }: { insight: ExplorationInsight; ctx?: ActionsCtx }) {
   const nov = noveltyLabel(insight.novelty);
   const [expanded, setExpanded] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+  if (dismissed) return null;  // vanish instantly; gone for good on next load (store filters it)
   return (
     <div
       onClick={() => setExpanded(e => !e)}
@@ -105,7 +107,8 @@ function InsightRow({ insight, ctx }: { insight: ExplorationInsight; ctx?: Actio
             <div onClick={e => e.stopPropagation()} style={{ marginTop: 10 }}>
               <FindingActions insight={insight} domain={ctx.domain}
                 connectionId={ctx.connectionId} canvasId={ctx.canvasId} triggers={ctx.triggers}
-                onEvidence={(ins) => ctx.onEvidence(ins, ctx.domain)} onTriggersHint={ctx.onTriggersHint} />
+                onEvidence={(ins) => ctx.onEvidence(ins, ctx.domain)} onTriggersHint={ctx.onTriggersHint}
+                onDismissed={() => setDismissed(true)} />
             </div>
           )}
         </div>

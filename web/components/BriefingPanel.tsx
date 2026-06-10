@@ -1490,7 +1490,8 @@ export function BriefingPanel({
                 actions={
                   <FindingActions insight={briefing.headline.insight} domain={briefing.headline.domain}
                     connectionId={connectionId} canvasId={canvasId} triggers={triggers}
-                    onEvidence={(ins) => openEvidence(ins, briefing.headline!.domain)} onTriggersHint={showTriggersHint} />
+                    onEvidence={(ins) => openEvidence(ins, briefing.headline!.domain)} onTriggersHint={showTriggersHint}
+                    onDismissed={() => load()} />
                 } />
             </div>
           )}
@@ -1510,7 +1511,8 @@ export function BriefingPanel({
                     actions={
                       <FindingActions insight={s.insight} domain={s.domain}
                         connectionId={connectionId} canvasId={canvasId} triggers={triggers}
-                        onEvidence={(ins) => openEvidence(ins, s.domain)} onTriggersHint={showTriggersHint} />
+                        onEvidence={(ins) => openEvidence(ins, s.domain)} onTriggersHint={showTriggersHint}
+                        onDismissed={() => load()} />
                     } />
                 ))}
               </div>
