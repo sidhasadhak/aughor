@@ -80,7 +80,7 @@ export function BriefMeta({
     <div className={`flex items-center flex-wrap gap-x-2 gap-y-1 aug-text-xs text-zinc-500 ${className}`}>
       {shown.map((it, i) => (
         <React.Fragment key={i}>
-          {i > 0 && <span className="text-zinc-700 select-none">·</span>}
+          {i > 0 && <span className="text-zinc-500 select-none">·</span>}
           <span>{it}</span>
         </React.Fragment>
       ))}
@@ -101,7 +101,7 @@ export function BriefBullets({
     <ul className={`flex flex-col gap-1.5 ${className}`}>
       {items.map((it, i) => (
         <li key={i} className="aug-text-ui leading-relaxed text-zinc-300 flex gap-2">
-          <span className="shrink-0 text-zinc-600 select-none mt-px">•</span>
+          <span className="shrink-0 text-zinc-500 select-none mt-px">•</span>
           <span>{renderEmphasis(it)}</span>
         </li>
       ))}
@@ -140,7 +140,7 @@ export function BriefMetrics({
               </span>
             )}
           </span>
-          {m.context && <span className="aug-text-xs text-zinc-600">{m.context}</span>}
+          {m.context && <span className="aug-text-xs text-zinc-500">{m.context}</span>}
         </div>
       ))}
     </div>

@@ -23,9 +23,9 @@ interface PlaybookEntry {
 }
 
 const STATUS_CHIP: Record<string, { bg: string; color: string; label: string }> = {
-  active:     { bg: "#0a1a10", color: "#4ade80", label: "active" },
-  draft:      { bg: "var(--bg-1)", color: "#5a5b62", label: "draft" },
-  deprecated: { bg: "#1a0a0a", color: "#f87171", label: "deprecated" },
+  active:     { bg: "var(--grn1)", color: "var(--grn4)", label: "active" },
+  draft:      { bg: "var(--bg-1)", color: "var(--t3)", label: "draft" },
+  deprecated: { bg: "var(--red1)", color: "var(--red4)", label: "deprecated" },
 };
 
 function fmtRate(r: number): string {
@@ -37,7 +37,7 @@ function StatusChip({ status }: { status: string }) {
   const s = STATUS_CHIP[status] ?? STATUS_CHIP.draft;
   return (
     <span className="text-[9.5px] font-mono px-1.5 py-0.5 rounded-[3px]"
-      style={{ background: s.bg, color: s.color, border: `0.5px solid ${s.color}33` }}>
+      style={{ background: s.bg, color: s.color, border: `0.5px solid color-mix(in srgb, ${s.color} 25%, transparent)` }}>
       {s.label}
     </span>
   );
@@ -114,29 +114,29 @@ export function PlaybookPanel() {
         {/* Header */}
         <div className="px-4 pt-4 pb-3 shrink-0" style={{ borderBottom: "0.5px solid var(--b2)" }}>
           <div className="flex items-center justify-between mb-2">
-            <h2 className="text-[13.5px] font-medium" style={{ color: "#e8e6e1" }}>Playbook</h2>
+            <h2 className="text-[13.5px] font-medium" style={{ color: "var(--t1)" }}>Playbook</h2>
             <button
               onClick={handleReseed}
               disabled={seeding}
               className="text-[11px] px-2 py-1 rounded-[4px] transition-all"
-              style={{ border: "0.5px solid #2a2b30", background: "var(--bg-1)", color: "#5a5b62" }}
-              onMouseEnter={e => e.currentTarget.style.color = "#9a9ba4"}
-              onMouseLeave={e => e.currentTarget.style.color = "#5a5b62"}
+              style={{ border: "0.5px solid var(--b2)", background: "var(--bg-1)", color: "var(--t3)" }}
+              onMouseEnter={e => e.currentTarget.style.color = "var(--t2)"}
+              onMouseLeave={e => e.currentTarget.style.color = "var(--t3)"}
             >
               {seeding ? "Seeding…" : "Re-seed from KB"}
             </button>
           </div>
           <div className="flex items-center gap-3 text-[11px] font-mono mb-3" style={{ color: "var(--t4)" }}>
-            <span><span style={{ color: "#4ade80" }}>{activeCount}</span> active</span>
-            <span><span style={{ color: "#5a5b62" }}>{draftCount}</span> draft</span>
-            {provenCount > 0 && <span><span style={{ color: "#7ba8f7" }}>{provenCount}</span> proven</span>}
+            <span><span style={{ color: "var(--grn4)" }}>{activeCount}</span> active</span>
+            <span><span style={{ color: "var(--t3)" }}>{draftCount}</span> draft</span>
+            {provenCount > 0 && <span><span style={{ color: "var(--blue4)" }}>{provenCount}</span> proven</span>}
           </div>
           <input
             value={filter}
             onChange={e => setFilter(e.target.value)}
             placeholder="Search recommendations…"
             className="w-full text-[11px] rounded-md px-2.5 py-1.5 focus:outline-none mb-2"
-            style={{ background: "var(--bg-1)", border: "0.5px solid var(--b2)", color: "#6e6f78" }}
+            style={{ background: "var(--bg-1)", border: "0.5px solid var(--b2)", color: "var(--t3)" }}
           />
           <div className="flex gap-1">
             {(["all", "active", "draft", "deprecated"] as const).map(s => (
@@ -145,9 +145,9 @@ export function PlaybookPanel() {
                 onClick={() => setStatusFilter(s)}
                 className="text-[9.5px] px-2 py-0.5 rounded-full font-mono transition-all"
                 style={{
-                  background: statusFilter === s ? "#1e2040" : "transparent",
-                  border: `0.5px solid ${statusFilter === s ? "#3d6bff55" : "#2a2b30"}`,
-                  color: statusFilter === s ? "#7ba8f7" : "var(--t4)",
+                  background: statusFilter === s ? "var(--blue1)" : "transparent",
+                  border: `0.5px solid ${statusFilter === s ? "#3d6bff55" : "var(--b2)"}`,
+                  color: statusFilter === s ? "var(--blue4)" : "var(--t4)",
                 }}
               >
                 {s}
@@ -179,13 +179,13 @@ export function PlaybookPanel() {
                 background: selected === e.id ? "var(--bg-1)" : "transparent",
                 borderLeft: selected === e.id ? "2px solid #3d6bff" : "2px solid transparent",
               }}
-              onMouseEnter={ev => { if (selected !== e.id) ev.currentTarget.style.background = "#0f1014"; }}
+              onMouseEnter={ev => { if (selected !== e.id) ev.currentTarget.style.background = "var(--bg-2)"; }}
               onMouseLeave={ev => { if (selected !== e.id) ev.currentTarget.style.background = "transparent"; }}
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="text-[11px] font-mono truncate" style={{ color: "#5a5b62" }}>{e.trigger_metric}</p>
-                  <p className="text-[12px] mt-0.5 leading-snug" style={{ color: "#c8c7c3" }}
+                  <p className="text-[11px] font-mono truncate" style={{ color: "var(--t3)" }}>{e.trigger_metric}</p>
+                  <p className="text-[12px] mt-0.5 leading-snug" style={{ color: "var(--t1)" }}
                     title={e.recommendation}>
                     {e.recommendation.length > 80 ? e.recommendation.slice(0, 78) + "…" : e.recommendation}
                   </p>
@@ -234,7 +234,7 @@ function PlaybookDetail({
       <div>
         <div className="flex items-center gap-2 mb-1">
           <span className="text-[11px] font-mono px-2 py-0.5 rounded-[3px]"
-            style={{ background: "var(--bg-1)", border: "0.5px solid #2a2b30", color: "#5a5b62" }}>
+            style={{ background: "var(--bg-1)", border: "0.5px solid var(--b2)", color: "var(--t3)" }}>
             {entry.trigger_metric}
           </span>
           <StatusChip status={entry.status} />
@@ -244,13 +244,13 @@ function PlaybookDetail({
             </span>
           )}
         </div>
-        <p className="text-[11.5px] italic" style={{ color: "#5a5b62" }}>{entry.trigger_condition}</p>
+        <p className="text-[11.5px] italic" style={{ color: "var(--t3)" }}>{entry.trigger_condition}</p>
       </div>
 
       {/* Recommendation */}
       <div>
         <p className="text-[11px] uppercase tracking-wider mb-1.5" style={{ color: "var(--t4)" }}>Recommendation</p>
-        <p className="text-[13px] leading-relaxed" style={{ color: "#e8e6e1" }}>{entry.recommendation}</p>
+        <p className="text-[13px] leading-relaxed" style={{ color: "var(--t1)" }}>{entry.recommendation}</p>
       </div>
 
       {/* Impact + timeline + owner */}
@@ -262,7 +262,7 @@ function PlaybookDetail({
         ].map(({ label, value }) => value ? (
           <div key={label}>
             <p className="text-[11px] uppercase tracking-wider mb-1" style={{ color: "var(--t4)" }}>{label}</p>
-            <p className="text-[12px]" style={{ color: "#9a9ba4" }}>{value}</p>
+            <p className="text-[12px]" style={{ color: "var(--t2)" }}>{value}</p>
           </div>
         ) : null)}
       </div>
@@ -272,7 +272,7 @@ function PlaybookDetail({
         <div>
           <p className="text-[11px] uppercase tracking-wider mb-1" style={{ color: "var(--t4)" }}>Historical success rate</p>
           <p className="text-[18px] font-semibold font-mono"
-            style={{ color: entry.historical_success_rate > 0 ? "#4ade80" : "var(--t4)" }}>
+            style={{ color: entry.historical_success_rate > 0 ? "var(--grn4)" : "var(--t4)" }}>
             {entry.historical_success_rate > 0 ? fmtRate(entry.historical_success_rate) : "No data yet"}
           </p>
           {entry.evidence_sources.length > 0 && (
@@ -288,7 +288,7 @@ function PlaybookDetail({
         <div className="flex flex-wrap gap-1.5">
           {entry.tags.map(t => (
             <span key={t} className="text-[11px] px-2 py-0.5 rounded-full font-mono"
-              style={{ background: "var(--bg-1)", border: "0.5px solid #2a2b30", color: "var(--t4)" }}>
+              style={{ background: "var(--bg-1)", border: "0.5px solid var(--b2)", color: "var(--t4)" }}>
               {t}
             </span>
           ))}
@@ -301,9 +301,9 @@ function PlaybookDetail({
           <button
             onClick={() => onStatusChange("active")}
             className="text-[11px] px-3 py-1.5 rounded-[5px] transition-all"
-            style={{ background: "#0a1a10", border: "0.5px solid #1a3a20", color: "#4ade80" }}
-            onMouseEnter={e => e.currentTarget.style.borderColor = "#4ade80"}
-            onMouseLeave={e => e.currentTarget.style.borderColor = "#1a3a20"}
+            style={{ background: "var(--grn1)", border: "0.5px solid var(--grn2)", color: "var(--grn4)" }}
+            onMouseEnter={e => e.currentTarget.style.borderColor = "var(--grn4)"}
+            onMouseLeave={e => e.currentTarget.style.borderColor = "var(--grn2)"}
           >
             Promote to active
           </button>
@@ -312,9 +312,9 @@ function PlaybookDetail({
           <button
             onClick={() => onStatusChange("deprecated")}
             className="text-[11px] px-3 py-1.5 rounded-[5px] transition-all"
-            style={{ background: "var(--bg-1)", border: "0.5px solid #2a2b30", color: "#5a5b62" }}
-            onMouseEnter={e => { e.currentTarget.style.borderColor = "#f87171"; e.currentTarget.style.color = "#f87171"; }}
-            onMouseLeave={e => { e.currentTarget.style.borderColor = "#2a2b30"; e.currentTarget.style.color = "#5a5b62"; }}
+            style={{ background: "var(--bg-1)", border: "0.5px solid var(--b2)", color: "var(--t3)" }}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--red4)"; e.currentTarget.style.color = "var(--red4)"; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--b2)"; e.currentTarget.style.color = "var(--t3)"; }}
           >
             Deprecate
           </button>
@@ -323,7 +323,7 @@ function PlaybookDetail({
           <button
             onClick={() => onStatusChange("draft")}
             className="text-[11px] px-3 py-1.5 rounded-[5px] transition-all"
-            style={{ background: "var(--bg-1)", border: "0.5px solid #2a2b30", color: "#5a5b62" }}
+            style={{ background: "var(--bg-1)", border: "0.5px solid var(--b2)", color: "var(--t3)" }}
           >
             Restore to draft
           </button>

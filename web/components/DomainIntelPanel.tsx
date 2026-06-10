@@ -86,14 +86,14 @@ function EpisodeRow({ ep, domain }: { ep: ExplorationEpisode; domain: string }) 
         <div className="border-t px-3 pb-3 pt-2 space-y-2" style={{ borderColor: "var(--b1)" }}>
           <div>
             <p className="text-[11px] uppercase tracking-widest mb-1" style={{ color: "var(--t4)" }}>SQL</p>
-            <pre className="text-[11px] font-mono leading-relaxed overflow-x-auto rounded p-2"
+            <pre className="text-[11px] font-code leading-relaxed overflow-x-auto rounded p-2"
               style={{ background: "var(--bg-0)", color: "var(--t2)", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
               {ep.sql}
             </pre>
           </div>
           <div>
             <p className="text-[11px] uppercase tracking-widest mb-1" style={{ color: "var(--t4)" }}>Result</p>
-            <pre className="text-[11px] font-mono leading-relaxed overflow-x-auto rounded p-2"
+            <pre className="text-[11px] font-code leading-relaxed overflow-x-auto rounded p-2"
               style={{ background: isError ? "var(--red1)" : "var(--bg-0)", color: isError ? "var(--red4)" : "var(--t2)", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
               {obsPreview}
             </pre>
@@ -203,7 +203,7 @@ function FindingCard({ insight, canvasId }: { insight: ExplorationInsight; canva
       {/* SQL */}
       {sqlOpen && insight.sql && (
         <pre style={{
-          marginTop: 8, fontSize: 10, fontFamily: "var(--font-mono)",
+          marginTop: 8, fontSize: 10, fontFamily: "var(--font-code)",
           color: "var(--t3)", background: "var(--bg-0)", borderRadius: 4,
           padding: "8px 10px", overflowX: "auto",
           whiteSpace: "pre-wrap", wordBreak: "break-all",

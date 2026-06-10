@@ -49,7 +49,7 @@ function PhaseBar({ status }: { status: ExplorationStatus }) {
                 isFailed && i === cur ? "bg-red-500" :
                 "bg-white/10",
               ].join(" ")} />
-              <span className="absolute -bottom-4 left-1/2 -translate-x-1/2 text-[11px] text-zinc-600 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">
+              <span className="absolute -bottom-4 left-1/2 -translate-x-1/2 text-[11px] text-zinc-500 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity">
                 {p.label}
               </span>
             </div>
@@ -63,7 +63,7 @@ function PhaseBar({ status }: { status: ExplorationStatus }) {
            status.paused ? `Paused · ${PHASES[cur]?.label ?? status.phase}` :
            `${PHASES[cur]?.label ?? status.phase}…`}
         </span>
-        <span className="text-[11px] text-zinc-600">
+        <span className="text-[11px] text-zinc-500">
           {status.queries_executed > 0 && `${status.queries_executed} queries · `}
           {status.facts_discovered > 0 && `${status.facts_discovered} facts`}
         </span>
@@ -80,13 +80,13 @@ const NULL_LABELS: Record<string, { label: string; color: string }> = {
   missing:                 { label: "Data quality gap", color: "text-amber-400" },
   mixed:                   { label: "Mixed pattern",    color: "text-violet-400" },
   not_applicable:          { label: "Always populated", color: "text-emerald-400" },
-  unknown:                 { label: "Unknown",          color: "text-zinc-600" },
+  unknown:                 { label: "Unknown",          color: "text-zinc-500" },
 };
 
 function NullMeaningsSection({ nullMeanings }: { nullMeanings: ExplorationFindings["null_meanings"] }) {
   const entries = Object.entries(nullMeanings).filter(([, v]) => v.meaning !== "not_applicable" && v.meaning !== "unknown");
   if (entries.length === 0) return (
-    <p className="text-xs text-zinc-600 italic">No meaningful nulls detected.</p>
+    <p className="text-xs text-zinc-500 italic">No meaningful nulls detected.</p>
   );
 
   return (
@@ -97,7 +97,7 @@ function NullMeaningsSection({ nullMeanings }: { nullMeanings: ExplorationFindin
         return (
           <div key={key} className="bg-white/[0.03] rounded-lg p-3">
             <div className="flex items-start justify-between gap-2">
-              <span className="text-xs font-mono text-zinc-300">{table}<span className="text-zinc-600">.</span>{col}</span>
+              <span className="text-xs font-mono text-zinc-300">{table}<span className="text-zinc-500">.</span>{col}</span>
               <span className={`text-[11px] shrink-0 font-medium ${info.color}`}>{info.label}</span>
             </div>
             {nm.business_rule && (
@@ -118,7 +118,7 @@ function NullMeaningsSection({ nullMeanings }: { nullMeanings: ExplorationFindin
 function LifecycleMapsSection({ maps }: { maps: ExplorationFindings["lifecycle_maps"] }) {
   const entries = Object.entries(maps);
   if (entries.length === 0) return (
-    <p className="text-xs text-zinc-600 italic">No lifecycle state machines found.</p>
+    <p className="text-xs text-zinc-500 italic">No lifecycle state machines found.</p>
   );
 
   return (
@@ -127,7 +127,7 @@ function LifecycleMapsSection({ maps }: { maps: ExplorationFindings["lifecycle_m
         <div key={table} className="bg-white/[0.03] rounded-lg p-3">
           <div className="flex items-baseline gap-1.5 mb-2">
             <span className="text-xs font-mono text-zinc-200">{table}</span>
-            <span className="text-zinc-600 text-[11px]">.{lm.status_column}</span>
+            <span className="text-zinc-500 text-[11px]">.{lm.status_column}</span>
           </div>
           <div className="flex flex-wrap gap-1 mb-1.5">
             {lm.active_states.map(s => (
@@ -138,7 +138,7 @@ function LifecycleMapsSection({ maps }: { maps: ExplorationFindings["lifecycle_m
             ))}
           </div>
           {lm.transitions.length > 0 && (
-            <p className="text-[11px] text-zinc-600">{lm.transitions.length} state transitions mapped</p>
+            <p className="text-[11px] text-zinc-500">{lm.transitions.length} state transitions mapped</p>
           )}
         </div>
       ))}
@@ -181,7 +181,7 @@ function DistributionsSection({ distributions }: { distributions: ExplorationFin
   const allEntries = Object.entries(distributions).filter(([, d]) => d.shape !== "unknown");
 
   if (allEntries.length === 0) return (
-    <p className="text-xs text-zinc-600 italic">No distributions profiled yet.</p>
+    <p className="text-xs text-zinc-500 italic">No distributions profiled yet.</p>
   );
 
   const normalCount = allEntries.filter(([, d]) => d.shape === "normal").length;
@@ -315,7 +315,7 @@ function DistributionsSection({ distributions }: { distributions: ExplorationFin
 
 function InsightsSection({ insights }: { insights: ExplorationFindings["insights"] }) {
   if (insights.length === 0) return (
-    <p className="text-xs text-zinc-600 italic">No cross-table patterns discovered yet.</p>
+    <p className="text-xs text-zinc-500 italic">No cross-table patterns discovered yet.</p>
   );
 
   return (
@@ -324,7 +324,7 @@ function InsightsSection({ insights }: { insights: ExplorationFindings["insights
         <div key={ins.id} className="bg-white/[0.03] rounded-lg p-3">
           <p className="text-[11px] text-zinc-300 leading-relaxed">{ins.finding}</p>
           <div className="flex items-center gap-2 mt-2">
-            <span className="text-[11px] text-zinc-600">
+            <span className="text-[11px] text-zinc-500">
               {ins.entities_involved.join(" × ")}
             </span>
             <span className="text-[11px] text-emerald-500/70 ml-auto">
@@ -381,7 +381,7 @@ export function ExplorationPanel({ connectionId, initialSection }: Props) {
 
   if (!status || !findings) {
     return (
-      <div className="flex items-center justify-center h-40 text-zinc-600 text-sm">
+      <div className="flex items-center justify-center h-40 text-zinc-500 text-sm">
         Loading exploration data…
       </div>
     );

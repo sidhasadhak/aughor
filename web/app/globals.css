@@ -5,10 +5,17 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* ── Font wiring ─────────────────────────────────────────────────────────── */
+/* ── Font wiring ─────────────────────────────────────────────────────────────
+   ONE font across the whole platform (Databricks policy): DM Sans everywhere —
+   only weight/style/size vary. The `font-mono` Tailwind utility is REPOINTED to
+   the sans font so the hundreds of legacy `font-mono` data labels (table/column
+   names, ids, numbers, timestamps, chips) render in the single UI font. The
+   monospace family survives ONLY as `font-code` (Tailwind) / `--font-code`
+   (inline), used exclusively on real code/SQL `<pre>` blocks. */
 @theme inline {
   --font-sans: var(--font-dm-sans), system-ui, sans-serif;
-  --font-mono: var(--font-ibm-plex-mono), 'Consolas', monospace;
+  --font-mono: var(--font-dm-sans), system-ui, sans-serif;
+  --font-code: var(--font-ibm-plex-mono), 'Consolas', monospace;
 }
 
 /* ── Base reset ─────────────────────────────────────────────────────────── */
@@ -37,6 +44,11 @@ html, body {
 
 button { font-family: var(--font-ui); cursor: pointer; border: none; background: none; color: inherit; }
 input, textarea, select { font-family: var(--font-ui); font-size: 13px; color: var(--t1); }
+/* Code elements are the ONLY monospace surface (single-font policy). This base
+   rule covers <pre>/<code> that have no explicit font; blocks carrying an
+   explicit font-code class/var override consistently. Tailwind preflight points
+   these at --font-mono (now the sans alias), so without this they'd go sans. */
+pre, code, kbd, samp { font-family: var(--font-code); }
 a { color: var(--blue4); text-decoration: none; }
 
 ::-webkit-scrollbar { width: 5px; height: 5px; }
@@ -229,7 +241,8 @@ a { color: var(--blue4); text-decoration: none; }
 .aug-dt tbody td {
   padding: 6px 12px;
   border-bottom: 1px solid var(--b0);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
+  font-variant-numeric: tabular-nums;  /* aligned figures in the sans data grid */
   font-size: 11px;
   color: var(--t1);
   white-space: nowrap;
@@ -238,7 +251,7 @@ a { color: var(--blue4); text-decoration: none; }
 
 /* ── Code block ──────────────────────────────────────────────────────────── */
 .aug-code {
-  font-family: var(--font-mono);
+  font-family: var(--font-code);
   font-size: 11px;
   line-height: 1.7;
   background: var(--code-bg);

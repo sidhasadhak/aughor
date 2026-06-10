@@ -67,7 +67,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
     <div
       className="rounded-md flex flex-col overflow-hidden"
       style={{
-        background: "#0d0e11",
+        background: "var(--bg-1)",
         border: focused
           ? "1px solid rgba(45,114,210,0.55)"
           : "1px solid rgba(255,255,255,0.09)",
@@ -152,7 +152,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
             <button
               onClick={onClear}
               className="text-[12px] transition-colors px-1"
-              style={{ color: "#687986" }}
+              style={{ color: "var(--t3)" }}
               title="Clear conversation"
             >
               Clear
@@ -176,11 +176,11 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
             className="flex items-center justify-center rounded-lg transition-colors disabled:opacity-30"
             style={{
               width: 30, height: 30,
-              color: attachedFile ? "var(--blue4)" : "#687986",
+              color: attachedFile ? "var(--blue4)" : "var(--t3)",
               background: attachedFile ? "rgba(45,114,210,0.1)" : "transparent",
             }}
-            onMouseEnter={e => { if (!attachedFile) (e.currentTarget as HTMLElement).style.color = "#c0bfbc"; }}
-            onMouseLeave={e => { if (!attachedFile) (e.currentTarget as HTMLElement).style.color = "#687986"; }}
+            onMouseEnter={e => { if (!attachedFile) (e.currentTarget as HTMLElement).style.color = "var(--t1)"; }}
+            onMouseLeave={e => { if (!attachedFile) (e.currentTarget as HTMLElement).style.color = "var(--t3)"; }}
           >
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
@@ -247,12 +247,12 @@ function DebugLogDrawer({ eventLogRef, onClose }: { eventLogRef: React.RefObject
       <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-800 shrink-0">
         <span className="text-emerald-400"><AngleBracketsIcon label="Debug log" size="small" /></span>
         <span className="text-[11px] font-mono text-zinc-300 flex-1">SSE Event Log · {events.length} events</span>
-        <span className="text-[11px] text-zinc-600 mr-2">⌘⇧L to close</span>
-        <button onClick={onClose} className="text-zinc-600 hover:text-zinc-300 transition"><CloseIcon label="Close" size="small" /></button>
+        <span className="text-[11px] text-zinc-500 mr-2">⌘⇧L to close</span>
+        <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300 transition"><CloseIcon label="Close" size="small" /></button>
       </div>
       <div ref={scrollRef} className="flex-1 overflow-y-auto min-h-0 font-mono text-[11px]">
         {events.length === 0 ? (
-          <p className="text-zinc-600 p-3">No events yet. Send a message to start.</p>
+          <p className="text-zinc-500 p-3">No events yet. Send a message to start.</p>
         ) : events.map((ev, i) => (
           <div key={i} className="border-b border-zinc-900 hover:bg-zinc-900/40">
             <button
@@ -260,9 +260,9 @@ function DebugLogDrawer({ eventLogRef, onClose }: { eventLogRef: React.RefObject
               onClick={() => setExpanded(expanded === i ? null : i)}
             >
               {expanded === i
-                ? <span className="text-zinc-600 shrink-0"><ChevronDownIcon label="" size="small" /></span>
-                : <span className="text-zinc-600 shrink-0"><ChevronRightIcon label="" size="small" /></span>}
-              <span className="text-zinc-600 shrink-0">{new Date(ev.ts).toLocaleTimeString()}</span>
+                ? <span className="text-zinc-500 shrink-0"><ChevronDownIcon label="" size="small" /></span>
+                : <span className="text-zinc-500 shrink-0"><ChevronRightIcon label="" size="small" /></span>}
+              <span className="text-zinc-500 shrink-0">{new Date(ev.ts).toLocaleTimeString()}</span>
               <span className={`shrink-0 w-28 truncate ${TYPE_COLOR[ev.type] ?? "text-zinc-300"}`}>{ev.type}</span>
               <span className="text-zinc-500 truncate flex-1">{ev.summary}</span>
             </button>
@@ -451,7 +451,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
   };
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 overflow-hidden" style={{ background: "#0d0e11" }}>
+    <div className="flex-1 flex flex-col min-w-0 overflow-hidden" style={{ background: "var(--bg-1)" }}>
 
       {isEmpty ? (
         /* ── Empty state ── */
@@ -472,11 +472,11 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
 
             <InputBox {...inputBoxProps} multiline />
 
-            <p className="text-[12px] text-center" style={{ color: "#687986" }}>Always review the accuracy of responses.</p>
+            <p className="text-[12px] text-center" style={{ color: "var(--t3)" }}>Always review the accuracy of responses.</p>
 
             {/* Suggestions */}
             <div className="pt-1">
-              <p className="text-[9.5px] uppercase tracking-[0.08em] mb-2" style={{ color: "#3e3f47" }}>Suggested questions</p>
+              <p className="text-[9.5px] uppercase tracking-[0.08em] mb-2" style={{ color: "var(--b3)" }}>Suggested questions</p>
               {loadingStarters ? (
                 <div className="grid grid-cols-2 gap-1.5">
                   {Array.from({ length: 6 }).map((_, i) => (
@@ -492,29 +492,29 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                       className="flex items-start gap-1.5 px-3 py-2 rounded-lg text-[11.5px] text-left leading-snug transition-all"
                       style={s.mode === "investigate" ? {
                         background: "var(--bg-1)",
-                        border: "0.5px solid #1e2a1e",
-                        color: "#4a7a55",
+                        border: "0.5px solid var(--grn1)",
+                        color: "var(--grn4)",
                       } : {
                         background: "var(--bg-1)",
                         border: "0.5px solid var(--b2)",
-                        color: "#6e6f78",
+                        color: "var(--t3)",
                       }}
                       onMouseEnter={e => {
                         if (s.mode === "investigate") {
-                          (e.currentTarget as HTMLElement).style.borderColor = "#2a4a2a";
-                          (e.currentTarget as HTMLElement).style.color = "#4ade80";
+                          (e.currentTarget as HTMLElement).style.borderColor = "var(--grn2)";
+                          (e.currentTarget as HTMLElement).style.color = "var(--grn4)";
                         } else {
-                          (e.currentTarget as HTMLElement).style.borderColor = "#2a2b30";
-                          (e.currentTarget as HTMLElement).style.color = "#c0bfbc";
+                          (e.currentTarget as HTMLElement).style.borderColor = "var(--b2)";
+                          (e.currentTarget as HTMLElement).style.color = "var(--t1)";
                         }
                       }}
                       onMouseLeave={e => {
                         if (s.mode === "investigate") {
-                          (e.currentTarget as HTMLElement).style.borderColor = "#1e2a1e";
-                          (e.currentTarget as HTMLElement).style.color = "#4a7a55";
+                          (e.currentTarget as HTMLElement).style.borderColor = "var(--grn1)";
+                          (e.currentTarget as HTMLElement).style.color = "var(--grn4)";
                         } else {
                           (e.currentTarget as HTMLElement).style.borderColor = "var(--bg-3)";
-                          (e.currentTarget as HTMLElement).style.color = "#6e6f78";
+                          (e.currentTarget as HTMLElement).style.color = "var(--t3)";
                         }
                       }}
                     >
@@ -582,7 +582,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
             <div style={{
               position: "absolute", bottom: 0, left: 0, right: 0,
               height: 200, pointerEvents: "none", zIndex: 1,
-              background: "linear-gradient(to bottom, transparent 0%, #0d0e11 68%)",
+              background: "linear-gradient(to bottom, transparent 0%, var(--bg-1) 68%)",
             }} />
 
             {/* ── Floating input ── */}
@@ -592,7 +592,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
             }}>
               <div className="w-[90%] mx-auto space-y-2" style={{ pointerEvents: "all" }}>
                 <InputBox {...inputBoxProps} />
-                <p className="text-[12px] text-center" style={{ color: "#687986" }}>Always review the accuracy of responses.</p>
+                <p className="text-[12px] text-center" style={{ color: "var(--t3)" }}>Always review the accuracy of responses.</p>
               </div>
             </div>
 
@@ -604,7 +604,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
           {sourcePanel && (
             <div
               className="flex-shrink-0 flex flex-col border-l border-zinc-700/60"
-              style={{ width: 380, background: "#0f1923" }}
+              style={{ width: 380, background: "var(--blue1)" }}
             >
               <SourcePanel
                 columns={sourcePanel.columns}

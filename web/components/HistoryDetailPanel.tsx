@@ -431,7 +431,7 @@ function EvidenceClaimCard({
           </button>
           {sqlOpen && (
             <pre style={{
-              marginTop: 6, fontSize: 11, fontFamily: "var(--font-mono)", lineHeight: 1.6,
+              marginTop: 6, fontSize: 11, fontFamily: "var(--font-code)", lineHeight: 1.6,
               background: "var(--code-bg)", border: "1px solid var(--b1)", borderRadius: "var(--r2)",
               padding: "8px 12px", overflowX: "auto", color: "var(--t2)", whiteSpace: "pre-wrap",
             }}>

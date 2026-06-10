@@ -42,7 +42,7 @@ function SqlToggle({ sql }: { sql: string }) {
         SQL
       </button>
       {open && (
-        <pre className="mt-1.5 text-[11px] font-mono text-zinc-300 bg-zinc-950 border border-zinc-700/60 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap">
+        <pre className="mt-1.5 text-[11px] font-code text-zinc-300 bg-zinc-950 border border-zinc-700/60 rounded-lg p-3 overflow-x-auto whitespace-pre-wrap">
           {sql}
         </pre>
       )}
@@ -216,7 +216,7 @@ function EntityDetailDrawer({
               </span>
             )}
           </div>
-          <p className="text-[11px] font-mono text-zinc-600 truncate">{entity.source_tables[0]}</p>
+          <p className="text-[11px] font-mono text-zinc-500 truncate">{entity.source_tables[0]}</p>
           {lifecycleCounts && totalActive > 0 && (
             <p className="text-[11px] text-emerald-400/70 mt-0.5">
               {totalActive.toLocaleString()} active records
@@ -261,7 +261,7 @@ function EntityDetailDrawer({
           >
             {t.label ?? t.id}
             {typeof t.count === "number" && t.count > 0 && (
-              <span className="ml-1 text-[11px] text-zinc-600">{t.count}</span>
+              <span className="ml-1 text-[11px] text-zinc-500">{t.count}</span>
             )}
           </button>
         ))}
@@ -275,7 +275,7 @@ function EntityDetailDrawer({
           <>
             {/* Description */}
             <div>
-              <p className="text-[11px] text-zinc-600 uppercase tracking-wider mb-1.5 font-semibold">
+              <p className="text-[11px] text-zinc-500 uppercase tracking-wider mb-1.5 font-semibold">
                 Description
               </p>
               {editingDesc ? (
@@ -310,7 +310,7 @@ function EntityDetailDrawer({
                   title="Click to edit"
                 >
                   {entity.description || (
-                    <span className="text-zinc-700 italic">Click to add description…</span>
+                    <span className="text-zinc-500 italic">Click to add description…</span>
                   )}
                 </p>
               )}
@@ -318,10 +318,10 @@ function EntityDetailDrawer({
 
             {/* Grain */}
             <div>
-              <p className="text-[11px] text-zinc-600 uppercase tracking-wider mb-1.5 font-semibold">
+              <p className="text-[11px] text-zinc-500 uppercase tracking-wider mb-1.5 font-semibold">
                 Identity key
               </p>
-              <code className="text-zinc-400 font-mono">{entity.identity_key}</code>
+              <code className="text-zinc-400 font-code">{entity.identity_key}</code>
               <span className={cn(
                 "ml-2 text-[11px] border rounded px-1.5 py-0.5",
                 entity.grain_verified
@@ -335,7 +335,7 @@ function EntityDetailDrawer({
             {/* Lifecycle */}
             {entity.has_lifecycle && (
               <div>
-                <p className="text-[11px] text-zinc-600 uppercase tracking-wider mb-1.5 font-semibold">
+                <p className="text-[11px] text-zinc-500 uppercase tracking-wider mb-1.5 font-semibold">
                   Lifecycle — <span className="font-mono normal-case">{entity.lifecycle_column}</span>
                 </p>
                 <div className="flex flex-wrap gap-1 mb-2">
@@ -356,7 +356,7 @@ function EntityDetailDrawer({
                         {cnt !== undefined && (
                           <span className={cn(
                             "text-[8px] font-sans tabular-nums",
-                            isTerm ? "text-zinc-600" : "text-violet-400/70",
+                            isTerm ? "text-zinc-500" : "text-violet-400/70",
                           )}>
                             {cnt.toLocaleString()}
                           </span>
@@ -367,8 +367,8 @@ function EntityDetailDrawer({
                 </div>
                 {entity.active_filter && (
                   <div>
-                    <p className="text-[11px] text-zinc-600 mb-1">Active filter</p>
-                    <code className="text-[11px] text-emerald-300 font-mono bg-zinc-800 border border-zinc-700/60 rounded px-2 py-1 block">
+                    <p className="text-[11px] text-zinc-500 mb-1">Active filter</p>
+                    <code className="text-[11px] text-emerald-300 font-code bg-zinc-800 border border-zinc-700/60 rounded px-2 py-1 block">
                       {entity.active_filter}
                     </code>
                   </div>
@@ -379,12 +379,12 @@ function EntityDetailDrawer({
             {/* Business rules */}
             {entity.default_filters.length > 0 && (
               <div>
-                <p className="text-[11px] text-zinc-600 uppercase tracking-wider mb-1.5 font-semibold">
+                <p className="text-[11px] text-zinc-500 uppercase tracking-wider mb-1.5 font-semibold">
                   Default filters
                 </p>
                 <div className="space-y-1">
                   {entity.default_filters.map((f, i) => (
-                    <code key={i} className="block text-[11px] font-mono text-amber-300/80 bg-zinc-800 border border-zinc-700/40 rounded px-2 py-1">
+                    <code key={i} className="block text-[11px] font-code text-amber-300/80 bg-zinc-800 border border-zinc-700/40 rounded px-2 py-1">
                       {f}
                     </code>
                   ))}
@@ -395,7 +395,7 @@ function EntityDetailDrawer({
             {/* Computed properties */}
             {entity.computed_properties && entity.computed_properties.length > 0 && (
               <div>
-                <p className="text-[11px] text-zinc-600 uppercase tracking-wider mb-1.5 font-semibold">
+                <p className="text-[11px] text-zinc-500 uppercase tracking-wider mb-1.5 font-semibold">
                   Computed properties
                 </p>
                 <div className="space-y-1.5">
@@ -404,12 +404,12 @@ function EntityDetailDrawer({
                       <div className="flex items-center gap-1.5">
                         <span className="text-[11px] text-zinc-300 font-medium">{cp.label}</span>
                         {cp.unit && (
-                          <span className="text-[11px] text-zinc-600 border border-zinc-700 rounded px-1 py-0.5">
+                          <span className="text-[11px] text-zinc-500 border border-zinc-700 rounded px-1 py-0.5">
                             {cp.unit}
                           </span>
                         )}
                       </div>
-                      <code className="block text-[11px] font-mono text-emerald-300/80 leading-snug">
+                      <code className="block text-[11px] font-code text-emerald-300/80 leading-snug">
                         {cp.formula_sql}
                       </code>
                     </div>
@@ -429,7 +429,7 @@ function EntityDetailDrawer({
             ].map(({ label, rels }) =>
               rels.length > 0 ? (
                 <div key={label}>
-                  <p className="text-[11px] text-zinc-600 uppercase tracking-wider mb-2 font-semibold">
+                  <p className="text-[11px] text-zinc-500 uppercase tracking-wider mb-2 font-semibold">
                     {label}
                   </p>
                   <div className="space-y-2">
@@ -441,7 +441,7 @@ function EntityDetailDrawer({
               ) : null,
             )}
             {incomingRels.length === 0 && outgoingRels.length === 0 && (
-              <p className="text-zinc-600 text-center py-6">No relationships.</p>
+              <p className="text-zinc-500 text-center py-6">No relationships.</p>
             )}
           </div>
         )}
@@ -450,7 +450,7 @@ function EntityDetailDrawer({
         {tab === "actions" && (
           <div className="space-y-3">
             {actions.length === 0 ? (
-              <p className="text-zinc-600 text-center py-6">No actions defined.</p>
+              <p className="text-zinc-500 text-center py-6">No actions defined.</p>
             ) : (
               actions.map(a => (
                 <ActionRow
@@ -468,7 +468,7 @@ function EntityDetailDrawer({
         {tab === "metrics" && (
           <div className="space-y-3">
             {metrics.length === 0 ? (
-              <p className="text-zinc-600 text-center py-6">No metrics defined.</p>
+              <p className="text-zinc-500 text-center py-6">No metrics defined.</p>
             ) : (
               metrics.map(m => (
                 <div key={m.id} className="bg-zinc-800/50 border border-zinc-700/50 rounded-lg p-3 space-y-2">
@@ -477,7 +477,7 @@ function EntityDetailDrawer({
                     {m.unit && <span className="text-[11px] text-zinc-500">{m.unit}</span>}
                   </div>
                   {m.description && <p className="text-zinc-500">{m.description}</p>}
-                  <code className="block text-[11px] font-mono text-emerald-300 bg-zinc-950 border border-zinc-700/40 rounded px-2 py-1.5">
+                  <code className="block text-[11px] font-code text-emerald-300 bg-zinc-950 border border-zinc-700/40 rounded px-2 py-1.5">
                     {m.formula_sql}
                   </code>
                 </div>
@@ -528,7 +528,7 @@ function RelationshipRow({
         </span>
         <ConfidencePill c={rel.join_confidence} />
       </div>
-      <code className="text-[11px] font-mono text-zinc-600 block truncate">{rel.join_sql}</code>
+      <code className="text-[11px] font-code text-zinc-500 block truncate">{rel.join_sql}</code>
     </div>
   );
 }
@@ -567,7 +567,7 @@ function ActionRow({
   return (
     <div className="bg-zinc-800/50 border border-zinc-700/40 rounded-lg p-3 space-y-2">
       <div className="flex items-center gap-1.5 flex-wrap">
-        <code className="text-[11px] font-mono text-violet-300 font-semibold truncate">
+        <code className="text-[11px] font-code text-violet-300 font-semibold truncate">
           {action.id}()
         </code>
         <span className={cn(
@@ -601,7 +601,7 @@ function ActionRow({
           onClick={() => setEditDesc(true)}
           title="Click to edit"
         >
-          {action.description || <span className="text-zinc-700 italic">No description</span>}
+          {action.description || <span className="text-zinc-500 italic">No description</span>}
         </p>
       )}
 
@@ -664,16 +664,16 @@ function EdgeSqlPanel({
       <div className="flex items-center gap-2 px-4 py-3 border-b border-zinc-700/60">
         <span className="text-[11px] text-violet-400 font-mono font-semibold flex-1 truncate">
           {fromEntity?.display_name ?? rel.from_entity}
-          <span className="text-zinc-600 mx-1.5">→</span>
+          <span className="text-zinc-500 mx-1.5">→</span>
           {toEntity?.display_name ?? rel.to_entity}
-          <span className="text-zinc-600 ml-2 font-sans font-normal">{verbLabel(rel.verb)}</span>
+          <span className="text-zinc-500 ml-2 font-sans font-normal">{verbLabel(rel.verb)}</span>
         </span>
         <span className="text-[8px] font-mono text-zinc-500 border border-zinc-700 rounded px-1.5 py-0.5">{rel.cardinality}</span>
         <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300 transition ml-1">
           <CloseIcon label="Close" size="small" />
         </button>
       </div>
-      <pre className="text-[11px] font-mono text-zinc-300 bg-zinc-950 px-4 py-3 overflow-x-auto whitespace-pre leading-relaxed">
+      <pre className="text-[11px] font-code text-zinc-300 bg-zinc-950 px-4 py-3 overflow-x-auto whitespace-pre leading-relaxed">
         {sql}
       </pre>
       <div className="flex items-center gap-2 px-4 py-2.5 border-t border-zinc-700/60">
@@ -691,7 +691,7 @@ function EdgeSqlPanel({
             Send to Chat →
           </button>
         )}
-        <span className="ml-auto text-[11px] text-zinc-700">click edge to inspect joins</span>
+        <span className="ml-auto text-[11px] text-zinc-500">click edge to inspect joins</span>
       </div>
     </div>
   );
@@ -766,7 +766,7 @@ function OntologySettings({
       <div className="flex-1 overflow-y-auto p-4 space-y-5">
         {/* Refresh schedule */}
         <div>
-          <p className="text-[11px] text-zinc-600 uppercase tracking-wider mb-2 font-semibold">
+          <p className="text-[11px] text-zinc-500 uppercase tracking-wider mb-2 font-semibold">
             Auto-refresh interval
           </p>
           <p className="text-[11px] text-zinc-500 mb-3 leading-relaxed">
@@ -800,7 +800,7 @@ function OntologySettings({
         {/* Last built */}
         {graph && (
           <div>
-            <p className="text-[11px] text-zinc-600 uppercase tracking-wider mb-1.5 font-semibold">
+            <p className="text-[11px] text-zinc-500 uppercase tracking-wider mb-1.5 font-semibold">
               Last built
             </p>
             <p className="text-[11px] text-zinc-400 font-mono">
@@ -811,7 +811,7 @@ function OntologySettings({
 
         {/* Manual rebuild */}
         <div>
-          <p className="text-[11px] text-zinc-600 uppercase tracking-wider mb-2 font-semibold">
+          <p className="text-[11px] text-zinc-500 uppercase tracking-wider mb-2 font-semibold">
             Manual rebuild
           </p>
           <button
@@ -820,7 +820,7 @@ function OntologySettings({
             className={cn(
               "w-full py-2 text-[11px] rounded-lg border transition",
               rebuilding
-                ? "border-zinc-700 text-zinc-600 cursor-not-allowed"
+                ? "border-zinc-700 text-zinc-500 cursor-not-allowed"
                 : "border-violet-500/30 text-violet-400 hover:bg-violet-500/10 hover:border-violet-400/50",
             )}
           >
@@ -915,7 +915,7 @@ export function OntologyPanel({ connectionId, onInvestigate }: Props) {
               structural only
             </span>
           )}
-          <span className="text-[11px] text-zinc-600">
+          <span className="text-[11px] text-zinc-500">
             {Object.keys(graph.entities).length} entities
             · {Object.keys(graph.relationships).length} relationships
           </span>

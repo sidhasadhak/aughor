@@ -109,9 +109,9 @@ function ClusterTile({
       <span className="text-[12px] font-semibold text-zinc-200 group-hover:text-violet-200 transition truncate">
         {connName}
       </span>
-      <span className="text-zinc-600 text-[12px]">·</span>
+      <span className="text-zinc-500 text-[12px]">·</span>
       <span className="text-[12px] text-zinc-400 truncate">{schema}</span>
-      <span className="text-[10px] uppercase tracking-wider text-zinc-600 border border-zinc-700/60 rounded px-1 py-0.5 shrink-0">
+      <span className="text-[10px] uppercase tracking-wider text-zinc-500 border border-zinc-700/60 rounded px-1 py-0.5 shrink-0">
         {connType}
       </span>
       {graph && (
@@ -136,7 +136,7 @@ function ClusterTile({
     return (
       <div style={{ width: SHELL_W }}>
         {label}
-        <div className="flex items-center justify-center text-[11px] text-zinc-600" style={{ height: 90 }}>
+        <div className="flex items-center justify-center text-[11px] text-zinc-500" style={{ height: 90 }}>
           no ontology yet
         </div>
       </div>

@@ -111,7 +111,7 @@ function SqlToggle({ sql }: { sql: string }) {
     <div>
       <button
         onClick={() => setOpen(v => !v)}
-        className="flex items-center gap-1 text-[11px] text-zinc-700 hover:text-zinc-500 transition-colors"
+        className="flex items-center gap-1 text-[11px] text-zinc-500 hover:text-zinc-500 transition-colors"
       >
         {open ? <ChevronDownIcon label="" size="small" /> : <ChevronRightIcon label="" size="small" />}
         SQL
@@ -134,7 +134,7 @@ function FindingTable({ columns, rows, label }: { columns: string[]; rows: (stri
     <div>
       <button
         onClick={() => setOpen(v => !v)}
-        className="flex items-center gap-1 text-[11px] text-zinc-700 hover:text-zinc-500 transition-colors"
+        className="flex items-center gap-1 text-[11px] text-zinc-500 hover:text-zinc-500 transition-colors"
       >
         {open ? <ChevronDownIcon label="" size="small" /> : <ChevronRightIcon label="" size="small" />}
         {label} · {rows.length} rows
@@ -226,10 +226,10 @@ function WaterfallSection({ entries }: { entries: WaterfallEntry[] }) {
             <div className="flex items-center justify-between aug-text-xs gap-2">
               <span className="text-zinc-400 truncate min-w-0">
                 {entry.cause}
-                {tags && <span className="text-zinc-600"> · {tags}</span>}
+                {tags && <span className="text-zinc-500"> · {tags}</span>}
               </span>
               <span className="flex items-center gap-3 shrink-0">
-                <span className="text-zinc-600 font-mono">{entry.amount_label}</span>
+                <span className="text-zinc-500 font-mono">{entry.amount_label}</span>
                 <span className={`font-mono w-10 text-right ${isNeg ? "text-red-400" : "text-emerald-400"}`}>
                   {entry.pct_of_total > 0 ? "+" : ""}{entry.pct_of_total.toFixed(0)}%
                 </span>
@@ -253,7 +253,7 @@ function RecommendationsList({ recs }: { recs: ADARecommendation[] }) {
     <ol className="flex flex-col gap-2.5">
       {recs.map((rec, i) => (
         <li key={i} className="flex gap-2.5">
-          <span className="shrink-0 aug-text-sm font-mono text-zinc-600 mt-0.5">{i + 1}.</span>
+          <span className="shrink-0 aug-text-sm font-mono text-zinc-500 mt-0.5">{i + 1}.</span>
           <div className="flex flex-col gap-0.5 min-w-0">
             <span className="aug-text-ui text-zinc-200 leading-relaxed">{renderEmphasis(rec.action)}</span>
             {(rec.expected_impact || rec.owner || rec.timeline) && (
@@ -363,7 +363,7 @@ function InvestigationDetails({ report, intakePhase }: { report: ADAReport; inta
           <ul className="flex flex-col gap-1.5">
             {report.data_gaps.map((gap, i) => (
               <li key={i} className="aug-text-sm text-zinc-500 flex items-start gap-2 leading-relaxed">
-                <span className="shrink-0 text-zinc-600">—</span>
+                <span className="shrink-0 text-zinc-500">—</span>
                 {gap}
               </li>
             ))}
@@ -407,10 +407,10 @@ function StreamingPhaseCard({ phase }: { phase: InvestigationPhase }) {
             <RetryIcon label="Loading" size="small" />
           </span>
         )}
-        <span className={`text-[11px] font-medium uppercase tracking-wide ${isSkipped ? "text-zinc-700" : "text-zinc-400"}`}>
+        <span className={`text-[11px] font-medium uppercase tracking-wide ${isSkipped ? "text-zinc-500" : "text-zinc-400"}`}>
           {phase.phase_name}
         </span>
-        {isSkipped && <span className="text-[11px] text-zinc-600 italic">{phase.skipped_reason}</span>}
+        {isSkipped && <span className="text-[11px] text-zinc-500 italic">{phase.skipped_reason}</span>}
       </div>
       {phase.summary && !isSkipped && (
         <div className="text-[11px] text-zinc-500 leading-relaxed">{renderEmphasis(phase.summary)}</div>

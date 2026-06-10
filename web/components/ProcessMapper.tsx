@@ -310,7 +310,7 @@ export function ProcessMapper({ connId, entityId, onInvestigate }: Props) {
 
       {/* No-transition notice */}
       {!map.has_transitions && map.nodes.length > 0 && (
-        <p className="text-[11px] text-zinc-600 text-center">
+        <p className="text-[11px] text-zinc-500 text-center">
           Transition arrows require multiple rows per record tracking state changes over time.
         </p>
       )}

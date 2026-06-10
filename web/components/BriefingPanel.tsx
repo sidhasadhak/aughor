@@ -742,7 +742,7 @@ export function EvidenceDrawer({ insight, domain, onClose }: {
             <pre style={{
               margin: 0, padding: "12px 14px", borderRadius: "var(--r2)",
               background: "var(--bg-2)", border: "1px solid var(--b1)",
-              fontSize: 11.5, fontFamily: "var(--font-mono)", color: "var(--t2)",
+              fontSize: 11.5, fontFamily: "var(--font-code)", color: "var(--t2)",
               whiteSpace: "pre-wrap" as const, wordBreak: "break-word" as const, lineHeight: 1.55,
             }}>{insight.sql || "— no query recorded —"}</pre>
           </div>

@@ -1481,7 +1481,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                     rows={Math.max(6, Math.min(16, sql.split("\n").length + 2))}
                     placeholder={"SELECT *\nFROM table\nLIMIT 1000"}
                     className="w-full text-[12px] leading-relaxed bg-zinc-900/80 border border-zinc-700 rounded-md p-4 text-zinc-200 outline-none focus:border-zinc-500 resize-none transition"
-                    style={{ fontFamily: "var(--font-mono)" }}
+                    style={{ fontFamily: "var(--font-code)" }}
                   />
                 </div>
               </div>

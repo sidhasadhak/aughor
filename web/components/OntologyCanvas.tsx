@@ -459,7 +459,7 @@ function EntityNode({
             {entity.grain_verified ? (
               <span className="text-[11px] text-emerald-400/60">verified grain</span>
             ) : (
-              <span className="text-[11px] text-zinc-700 font-mono truncate">
+              <span className="text-[11px] text-zinc-500 font-mono truncate">
                 {entity.source_tables[0]}
               </span>
             )}
@@ -476,7 +476,7 @@ function EntityNode({
       {/* Lifecycle states */}
       {entity.has_lifecycle && entity.lifecycle_states.length > 0 && (
         <div className="px-3.5 py-2 border-b border-zinc-700/40">
-          <p className="text-[8px] text-zinc-600 uppercase tracking-widest mb-1.5 font-semibold">
+          <p className="text-[8px] text-zinc-500 uppercase tracking-widest mb-1.5 font-semibold">
             {entity.lifecycle_column ?? "status"}
           </p>
           <div className="flex flex-wrap gap-1">
@@ -488,7 +488,7 @@ function EntityNode({
                   className={cn(
                     "text-[11px] font-mono rounded-md px-1.5 py-0.5 border",
                     isTerminal
-                      ? "text-zinc-600 border-zinc-700/60 bg-zinc-800/40"
+                      ? "text-zinc-500 border-zinc-700/60 bg-zinc-800/40"
                       : "text-sky-300 border-sky-500/20 bg-sky-500/8",
                   )}
                 >
@@ -582,13 +582,13 @@ function FlowEdges({
       <defs>
         {/* Arrow markers — inferred / exact / verified */}
         <marker id="arr-inf" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-          <path d="M1,1.5 L7,4 L1,6.5 Z" fill="#4e9dcc" opacity="0.65" />
+          <path d="M1,1.5 L7,4 L1,6.5 Z" fill="var(--blue4)" opacity="0.65" />
         </marker>
         <marker id="arr-ver" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-          <path d="M1,1.5 L7,4 L1,6.5 Z" fill="#34d399" opacity="0.8" />
+          <path d="M1,1.5 L7,4 L1,6.5 Z" fill="var(--grn4)" opacity="0.8" />
         </marker>
         <marker id="arr-hi" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-          <path d="M1,1.5 L7,4 L1,6.5 Z" fill="#a78bfa" />
+          <path d="M1,1.5 L7,4 L1,6.5 Z" fill="var(--vio4)" />
         </marker>
       </defs>
 
@@ -612,8 +612,8 @@ function FlowEdges({
         const mx = cubicBezier(x1, cpx1, cpx2, x2, 0.5);
         const my = cubicBezier(y1, y1, y2, y2, 0.5);
 
-        const baseColor   = verified ? "#34d399" : "#4e9dcc";
-        const hoverColor  = "#a78bfa";
+        const baseColor   = verified ? "var(--grn4)" : "var(--blue4)";
+        const hoverColor  = "var(--vio4)";
         const stroke      = isHovered ? hoverColor : baseColor;
         const markerEnd   = isHovered ? "url(#arr-hi)" : verified ? "url(#arr-ver)" : "url(#arr-inf)";
         const opacity     = isDimmed
@@ -663,7 +663,7 @@ function FlowEdges({
               <path
                 d={d}
                 fill="none"
-                stroke={isHovered ? hoverColor : "#34d399"}
+                stroke={isHovered ? hoverColor : "var(--grn4)"}
                 strokeWidth={2}
                 strokeDasharray="3 30"
                 style={{
@@ -675,7 +675,7 @@ function FlowEdges({
               <path
                 d={d}
                 fill="none"
-                stroke={isHovered ? hoverColor : "#4e9dcc"}
+                stroke={isHovered ? hoverColor : "var(--blue4)"}
                 strokeWidth={1.5}
                 strokeDasharray="5 7"
                 style={{
@@ -693,7 +693,7 @@ function FlowEdges({
                 <g transform={`translate(${mx},${my})`}>
                   <rect
                     x={-verbW / 2} y={-9} width={verbW} height={18} rx={5}
-                    fill={isHovered ? "#1e1b2e" : "#13181f"}
+                    fill={isHovered ? "var(--vio1)" : "var(--bg-1)"}
                     stroke={isHovered ? hoverColor : baseColor}
                     strokeWidth={isHovered ? 1 : 0.7}
                     opacity={0.97}
@@ -717,7 +717,7 @@ function FlowEdges({
               <g transform={`translate(${mx},${my + 20})`}>
                 <rect
                   x={-14} y={-7} width={28} height={14} rx={3}
-                  fill="#1a2030" stroke={hoverColor} strokeWidth={0.6} opacity={0.85}
+                  fill="var(--blue1)" stroke={hoverColor} strokeWidth={0.6} opacity={0.85}
                 />
                 <text
                   textAnchor="middle"
@@ -784,7 +784,7 @@ function CausalEdges({
     >
       <defs>
         <marker id="arr-causal" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
-          <path d="M1,1.5 L7,4 L1,6.5 Z" fill="#f97316" opacity="0.9" />
+          <path d="M1,1.5 L7,4 L1,6.5 Z" fill="var(--amb4)" opacity="0.9" />
         </marker>
       </defs>
       {positioned.map(({ edge, x1, y1, x2, y2 }) => {
@@ -801,15 +801,15 @@ function CausalEdges({
             <path
               d={d}
               fill="none"
-              stroke="#f97316"
+              stroke="var(--amb4)"
               strokeWidth={1.5}
               strokeDasharray="6 4"
               markerEnd="url(#arr-causal)"
             />
             {weightLabel && (
               <g transform={`translate(${mx},${my - 14})`}>
-                <rect x={-12} y={-7} width={24} height={14} rx={3} fill="#1a1008" stroke="#f97316" strokeWidth={0.7} opacity={0.9} />
-                <text textAnchor="middle" dominantBaseline="central" fontSize={8} fontFamily="monospace" fill="#fb923c">{weightLabel}</text>
+                <rect x={-12} y={-7} width={24} height={14} rx={3} fill="var(--amb1)" stroke="var(--amb4)" strokeWidth={0.7} opacity={0.9} />
+                <text textAnchor="middle" dominantBaseline="central" fontSize={8} fontFamily="monospace" fill="var(--amb4)">{weightLabel}</text>
               </g>
             )}
           </g>
@@ -825,7 +825,7 @@ function CanvasLegend({ showCausal }: { showCausal: boolean }) {
   return (
     <div className="flex items-center gap-4 bg-zinc-900/80 backdrop-blur-sm border border-zinc-700/50 rounded-lg px-4 py-2.5 pointer-events-none flex-wrap">
       {/* Entity types */}
-      <span className="text-[11px] text-zinc-600 uppercase tracking-wider font-semibold">Objects</span>
+      <span className="text-[11px] text-zinc-500 uppercase tracking-wider font-semibold">Objects</span>
       <div className="flex items-center gap-1.5">
         <span className="w-3 h-3 rounded-md bg-emerald-700/25 border border-emerald-600/30" />
         <span className="text-[11px] text-zinc-500">reference data</span>
@@ -839,26 +839,26 @@ function CanvasLegend({ showCausal }: { showCausal: boolean }) {
         <span className="text-[11px] text-zinc-500">event</span>
       </div>
       {/* Divider */}
-      <span className="text-zinc-700 text-[11px]">|</span>
+      <span className="text-zinc-500 text-[11px]">|</span>
       {/* Relationships */}
-      <span className="text-[11px] text-zinc-600 uppercase tracking-wider font-semibold">Links</span>
+      <span className="text-[11px] text-zinc-500 uppercase tracking-wider font-semibold">Links</span>
       <div className="flex items-center gap-1.5">
         <svg width="28" height="8" className="shrink-0">
-          <line x1="0" y1="4" x2="28" y2="4" stroke="#4e9dcc" strokeWidth="1.5"
+          <line x1="0" y1="4" x2="28" y2="4" stroke="var(--blue4)" strokeWidth="1.5"
             strokeDasharray="5 7" style={{ animation: "edge-flow 1.2s linear infinite" }} />
         </svg>
         <span className="text-[11px] text-zinc-500">inferred</span>
       </div>
       <div className="flex items-center gap-1.5">
         <svg width="28" height="8" className="shrink-0">
-          <line x1="0" y1="4" x2="28" y2="4" stroke="#34d399" strokeWidth="1.5"
+          <line x1="0" y1="4" x2="28" y2="4" stroke="var(--grn4)" strokeWidth="1.5"
             strokeDasharray="3 30" style={{ animation: "edge-flow-verified 2.2s linear infinite" }} />
         </svg>
         <span className="text-[11px] text-zinc-500">verified</span>
       </div>
       <div className="flex items-center gap-1.5" style={{ opacity: showCausal ? 1 : 0.3 }}>
         <svg width="28" height="8" className="shrink-0">
-          <line x1="0" y1="4" x2="28" y2="4" stroke="#f97316" strokeWidth="1.5" strokeDasharray="6 4" />
+          <line x1="0" y1="4" x2="28" y2="4" stroke="var(--amb4)" strokeWidth="1.5" strokeDasharray="6 4" />
         </svg>
         <span className="text-[11px] text-zinc-500">causal</span>
       </div>
@@ -873,7 +873,7 @@ const COL_LABEL_STYLE: Record<string, string> = {
   Foundation: "text-emerald-600/70",
   Objects:    "text-sky-600/60",
   Events:     "text-violet-600/60",
-  Standalone: "text-zinc-700",
+  Standalone: "text-zinc-500",
 };
 
 function ColLabels({ labels }: { labels: { x: number; label: string }[] }) {
@@ -884,7 +884,7 @@ function ColLabels({ labels }: { labels: { x: number; label: string }[] }) {
           key={x}
           className={cn(
             "absolute text-[11px] uppercase tracking-widest font-semibold pointer-events-none",
-            COL_LABEL_STYLE[label] ?? "text-zinc-700",
+            COL_LABEL_STYLE[label] ?? "text-zinc-500",
           )}
           style={{ left: x, top: 20 }}
         >
@@ -1169,7 +1169,7 @@ export function OntologyCanvas({
   };
 
   return (
-    <div className="w-full h-full relative" style={{ background: "#11171D" }}>
+    <div className="w-full h-full relative" style={{ background: "var(--bg-1)" }}>
 
       {/* Zoom controls + causal toggle — pinned top-right, outside scroll area */}
       <div className="absolute top-3 right-3 z-20 flex items-center gap-1 bg-zinc-900/80 backdrop-blur-sm border border-zinc-700/50 rounded-lg px-2.5 py-1.5 pointer-events-auto select-none">
@@ -1181,7 +1181,7 @@ export function OntologyCanvas({
             "flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md border transition",
             showCausal
               ? "text-orange-400 border-orange-500/30 bg-orange-500/10 hover:bg-orange-500/15"
-              : "text-zinc-600 border-zinc-700/50 hover:text-zinc-400",
+              : "text-zinc-500 border-zinc-700/50 hover:text-zinc-400",
           )}
         >
           <svg width="14" height="8" className="shrink-0">
@@ -1236,7 +1236,7 @@ export function OntologyCanvas({
             height: planeH * zoom,
             position: "relative",
             minWidth: "100%",
-            backgroundImage: "radial-gradient(circle, #2a3140 1.2px, transparent 1.2px)",
+            backgroundImage: "radial-gradient(circle, var(--b2) 1.2px, transparent 1.2px)",
             backgroundSize: `${24 * zoom}px ${24 * zoom}px`,
           }}
         >

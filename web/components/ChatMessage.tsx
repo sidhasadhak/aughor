@@ -338,13 +338,13 @@ function SqlBlock({ sql }: { sql: string }) {
 
   return (
     <div className="relative group/sql">
-      <pre className="text-[12px] font-mono text-zinc-400 rounded p-2.5 pr-10 overflow-x-auto whitespace-pre-wrap leading-relaxed" style={{ background: "var(--code-bg)" }}>
+      <pre className="text-[12px] font-code text-zinc-400 rounded p-2.5 pr-10 overflow-x-auto whitespace-pre-wrap leading-relaxed" style={{ background: "var(--code-bg)" }}>
         {sql}
       </pre>
       <button
         onClick={handleCopy}
         title={copied ? "Copied!" : "Copy SQL"}
-        className="absolute top-2 right-2 w-6 h-6 rounded flex items-center justify-center text-zinc-600 hover:text-zinc-300 hover:bg-zinc-700/60 transition opacity-0 group-hover/sql:opacity-100"
+        className="absolute top-2 right-2 w-6 h-6 rounded flex items-center justify-center text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/60 transition opacity-0 group-hover/sql:opacity-100"
       >
         {copied
           ? <span className="text-emerald-400"><CheckMarkIcon label="Copied" size="small" /></span>
@@ -378,7 +378,7 @@ function FormattedSql({ sql }: { sql: string }) {
   if (lastIdx < sql.length) parts.push(<span key="tail">{sql.slice(lastIdx)}</span>);
 
   return (
-    <pre className="text-[12px] font-mono text-zinc-300 p-3 overflow-x-auto whitespace-pre leading-[1.65]" style={{ background: "transparent" }}>
+    <pre className="text-[12px] font-code text-zinc-300 p-3 overflow-x-auto whitespace-pre leading-[1.65]" style={{ background: "transparent" }}>
       {parts}
     </pre>
   );
@@ -451,7 +451,7 @@ export function SourcePanel({
               {columns.map((c, ci) => (
                 <th key={ci} className="px-3 py-1.5 text-left text-zinc-400 whitespace-nowrap font-medium">
                   <div className="flex items-center gap-1">
-                    <span className="text-zinc-600 font-mono text-[11px] select-none">
+                    <span className="text-zinc-500 font-mono text-[11px] select-none">
                       {isNumeric(rows[0]?.[ci]) ? "1.2" : "Ac"}
                     </span>
                     {cleanLabel(c)}
@@ -507,7 +507,7 @@ function Section({
     <div className="mt-2">
       <button
         onClick={() => setOpen(v => !v)}
-        className="flex items-center gap-1 text-[12px] text-zinc-600 hover:text-zinc-400 transition-colors py-1"
+        className="flex items-center gap-1 text-[12px] text-zinc-500 hover:text-zinc-400 transition-colors py-1"
       >
         <span className={`transition-transform duration-150 inline-block ${open ? "rotate-90" : ""}`}>›</span>
         {label}
@@ -696,7 +696,7 @@ function InlineAgentTrace({ turn }: { turn: ChatTurn }) {
           )}
           Agent trace
           {!running && !open && (
-            <span className="text-zinc-600 normal-case tracking-normal font-normal">· {traceState.investigationPhases?.length || traceState.subQuestions?.length || traceState.hypotheses?.length || 0} steps</span>
+            <span className="text-zinc-500 normal-case tracking-normal font-normal">· {traceState.investigationPhases?.length || traceState.subQuestions?.length || traceState.hypotheses?.length || 0} steps</span>
           )}
         </span>
         <Chevron open={open} />
@@ -787,7 +787,7 @@ function InsightBrief({
                 onClick={() => onFollowUp?.(q)}
                 className="text-left flex items-start gap-1.5 aug-text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
               >
-                <span className="shrink-0 text-zinc-600 mt-0.5"><ArrowRightIcon label="" size="small" /></span>
+                <span className="shrink-0 text-zinc-500 mt-0.5"><ArrowRightIcon label="" size="small" /></span>
                 <span>{q}</span>
               </button>
             ))}
@@ -825,7 +825,7 @@ function InsightDetails({
             <ol className="flex flex-col gap-1">
               {turn.analysis!.steps.map((s, i) => (
                 <li key={i} className="flex gap-2 aug-text-sm text-zinc-400 leading-snug">
-                  <span className="shrink-0 text-zinc-600 font-mono">{i + 1}.</span>
+                  <span className="shrink-0 text-zinc-500 font-mono">{i + 1}.</span>
                   <span>{s}</span>
                 </li>
               ))}
@@ -858,7 +858,7 @@ function InsightDetails({
       {hasPlaybook && <PlaybookRefs refs={turn.playbookRefs} />}
 
       {hasElapsed && (
-        <p className="aug-text-xs text-zinc-600">Completed in {formatElapsed(turn.elapsedMs!)}</p>
+        <p className="aug-text-xs text-zinc-500">Completed in {formatElapsed(turn.elapsedMs!)}</p>
       )}
     </BriefDetails>
   );
@@ -905,7 +905,7 @@ export function ChatMessage({
           {isDone && (
             <button
               onClick={() => setCollapsed(v => !v)}
-              className="text-zinc-700 hover:text-zinc-500 transition-colors p-0.5 mt-2 opacity-0 group-hover:opacity-100 shrink-0"
+              className="text-zinc-500 hover:text-zinc-500 transition-colors p-0.5 mt-2 opacity-0 group-hover:opacity-100 shrink-0"
               title={collapsed ? "Expand" : "Collapse"}
             >
               <Chevron open={!collapsed} />
@@ -940,7 +940,7 @@ export function ChatMessage({
                   <span key={d} className="w-1.5 h-1.5 rounded-full bg-zinc-700 animate-bounce" style={{ animationDelay: `${d}ms` }} />
                 ))}
               </span>
-              <span className="text-[12px] text-zinc-600">
+              <span className="text-[12px] text-zinc-500">
                 {turn.statusText || defaultStatusText()}
               </span>
             </div>
@@ -960,7 +960,7 @@ export function ChatMessage({
            into the report itself.) ── */}
       {isDone && isInvestigate && turn.tablesUsed.length > 0 && (
         <div className="flex items-center gap-2 flex-wrap mb-3">
-          <span className="text-[12px] text-zinc-600">Found relevant data</span>
+          <span className="text-[12px] text-zinc-500">Found relevant data</span>
           {turn.tablesUsed.map(t => (
             <span key={t} className="inline-flex items-center gap-1 text-[12px] font-mono px-2 py-0.5 rounded-md border border-zinc-700/60 text-zinc-400" style={{ background: "#1e2d3d" }}>
               <span className="shrink-0 text-zinc-500"><TableIcon label="Table" size="small" /></span>
@@ -970,7 +970,7 @@ export function ChatMessage({
         </div>
       )}
       {isDone && isInvestigate && turn.elapsedMs != null && (
-        <p className="text-[11px] text-zinc-600 mb-3">Completed in {formatElapsed(turn.elapsedMs)}</p>
+        <p className="text-[11px] text-zinc-500 mb-3">Completed in {formatElapsed(turn.elapsedMs)}</p>
       )}
 
       {/* ── Insight — the final answer as a clean Brief ── */}
@@ -1019,7 +1019,7 @@ export function ChatMessage({
                   onClick={() => onFollowUp?.(q)}
                   className="flex items-center gap-1 text-[12px] text-zinc-500 hover:text-zinc-200 border border-zinc-700/50 hover:border-zinc-600 rounded-full px-2.5 py-[3px] transition-all"
                 >
-                  <span className="text-zinc-600 shrink-0">
+                  <span className="text-zinc-500 shrink-0">
                     <ArrowRightIcon label="" size="small" />
                   </span>
                   {q}

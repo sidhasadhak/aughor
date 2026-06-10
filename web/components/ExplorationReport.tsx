@@ -80,7 +80,7 @@ function SubQuestionCard({
           )}
 
           {answer.error && (
-            <pre className="text-[12px] text-red-400/90 rounded border border-red-500/20 p-2.5 overflow-x-auto whitespace-pre-wrap font-mono" style={{ background: "var(--bg-0)" }}>
+            <pre className="text-[12px] text-red-400/90 rounded border border-red-500/20 p-2.5 overflow-x-auto whitespace-pre-wrap font-code" style={{ background: "var(--bg-0)" }}>
               {answer.error}
             </pre>
           )}
@@ -103,12 +103,12 @@ function SubQuestionCard({
             <div>
               <button
                 onClick={() => setSqlOpen(o => !o)}
-                className="text-[11px] text-zinc-600 hover:text-zinc-400 transition flex items-center gap-1"
+                className="text-[11px] text-zinc-500 hover:text-zinc-400 transition flex items-center gap-1"
               >
                 <span className="inline-block w-2">{sqlOpen ? "▼" : "▶"}</span> SQL
               </button>
               {sqlOpen && (
-                <pre className="mt-1.5 text-[12px] text-zinc-400 rounded border border-zinc-800 p-2.5 overflow-x-auto whitespace-pre-wrap font-mono leading-relaxed" style={{ background: "var(--bg-0)" }}>
+                <pre className="mt-1.5 text-[12px] text-zinc-400 rounded border border-zinc-800 p-2.5 overflow-x-auto whitespace-pre-wrap font-code leading-relaxed" style={{ background: "var(--bg-0)" }}>
                   {answer.sql}
                 </pre>
               )}
@@ -179,7 +179,7 @@ export function ExplorationReportView({ report, subqAnswers, queryCount }: Props
           <ul className="space-y-1.5">
             {dqNotes.map((note, i) => (
               <li key={i} className="leading-relaxed flex items-start gap-2">
-                <span className="shrink-0 mt-0.5 text-zinc-600">—</span>
+                <span className="shrink-0 mt-0.5 text-zinc-500">—</span>
                 <span>
                   <code className="text-[12px] text-zinc-400">{note.column ? `${note.table}.${note.column}` : note.table}</code>
                   <span className="text-zinc-400"> {note.issue}</span>
@@ -191,7 +191,7 @@ export function ExplorationReportView({ report, subqAnswers, queryCount }: Props
         </div>
       )}
 
-      <p className="text-[11px] text-zinc-600 pt-1">
+      <p className="text-[11px] text-zinc-500 pt-1">
         {queryCount} quer{queryCount === 1 ? "y" : "ies"} · {subqAnswers.length} step{subqAnswers.length !== 1 ? "s" : ""}
       </p>
     </div>

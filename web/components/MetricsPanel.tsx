@@ -247,7 +247,7 @@ export function MetricsPanel({ connId }: { connId?: string }) {
                 </div>
                 <div className="text-xs text-zinc-500 font-mono truncate">{m.name}</div>
                 {m.owner && (
-                  <div className="text-[11px] text-zinc-600 truncate">{m.owner}</div>
+                  <div className="text-[11px] text-zinc-500 truncate">{m.owner}</div>
                 )}
               </div>
               <div className="flex items-center gap-1 ml-2 flex-shrink-0">

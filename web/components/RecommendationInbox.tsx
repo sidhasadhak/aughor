@@ -378,7 +378,7 @@ export function RecommendationInbox({ onOpenInvestigation }: Props) {
           <p className="text-sm text-zinc-400">
             {filter === "pending" ? "No pending recommendations" : "No recommendations found"}
           </p>
-          <p className="text-xs text-zinc-600">
+          <p className="text-xs text-zinc-500">
             {filter === "pending"
               ? "All recommendations have been actioned — great work."
               : "Complete an investigation to see recommendations here."}

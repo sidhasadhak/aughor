@@ -137,7 +137,7 @@ function QueryEvidence({
 
       {/* Error detail */}
       {query.error && (
-        <pre className="text-xs text-red-400 bg-red-500/5 rounded border border-red-500/20 p-2.5 overflow-x-auto whitespace-pre-wrap font-mono leading-relaxed">
+        <pre className="text-xs text-red-400 bg-red-500/5 rounded border border-red-500/20 p-2.5 overflow-x-auto whitespace-pre-wrap font-code leading-relaxed">
           {query.error}
         </pre>
       )}
@@ -158,7 +158,7 @@ function QueryEvidence({
           <span className="text-[8px]">{sqlOpen ? "▼" : "▶"}</span> SQL
         </button>
         {sqlOpen && (
-          <pre className="mt-1.5 text-xs text-zinc-400 bg-zinc-800 rounded border border-zinc-600/60 p-2.5 overflow-x-auto whitespace-pre-wrap font-mono leading-relaxed">
+          <pre className="mt-1.5 text-xs text-zinc-400 bg-zinc-800 rounded border border-zinc-600/60 p-2.5 overflow-x-auto whitespace-pre-wrap font-code leading-relaxed">
             {query.sql}
           </pre>
         )}
@@ -749,7 +749,7 @@ function DirectResultTable({ table }: { table: QueryCitation }) {
           <span className="hidden group-open:inline">▼</span>
           SQL
         </summary>
-        <pre className="mt-1 text-xs text-zinc-400 bg-zinc-800 rounded p-3 overflow-x-auto whitespace-pre-wrap font-mono leading-relaxed">
+        <pre className="mt-1 text-xs text-zinc-400 bg-zinc-800 rounded p-3 overflow-x-auto whitespace-pre-wrap font-code leading-relaxed">
           {table.sql}
         </pre>
       </details>
@@ -762,7 +762,7 @@ function DataQualityCard({ note }: { note: DataQualityNote }) {
   return (
     <div className="rounded-lg border border-orange-500/20 bg-orange-500/5 p-4 space-y-2">
       <div className="flex items-start justify-between gap-3">
-        <code className="text-xs font-mono text-orange-300 bg-orange-500/10 px-2 py-0.5 rounded">
+        <code className="text-xs font-code text-orange-300 bg-orange-500/10 px-2 py-0.5 rounded">
           {target}
         </code>
       </div>

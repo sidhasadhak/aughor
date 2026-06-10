@@ -181,7 +181,7 @@ export function DocumentUploader() {
       )}
 
       {docs.length === 0 && !uploading && (
-        <p className="text-xs text-zinc-600 text-center py-4">
+        <p className="text-xs text-zinc-500 text-center py-4">
           No documents yet. Upload one above to give ADA external context.
         </p>
       )}

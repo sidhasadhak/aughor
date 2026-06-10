@@ -50,9 +50,9 @@ const AUG_THEME_DARK: Parameters<typeof ConfigProvider>[0]["theme"] = {
     colorSplit:          "#161A20",
     // Text
     colorText:           "#E2E4E9",   // --t1
-    colorTextSecondary:  "#8B929D",   // --t2
-    colorTextDescription:"#5A6270",   // --t3
-    colorTextDisabled:   "#3A414D",   // --t4
+    colorTextSecondary:  "#939AA6",   // --t2
+    colorTextDescription:"#6E7886",   // --t3
+    colorTextDisabled:   "#525B69",   // --t4
     // Brand
     colorPrimary:        "#0C8CE9",   // --blue3
     colorPrimaryHover:   "#4BA3F5",   // --blue4
@@ -68,7 +68,7 @@ const AUG_THEME_DARK: Parameters<typeof ConfigProvider>[0]["theme"] = {
     Table: {
       // Header
       headerBg:             "#161A20",   // --bg-2
-      headerColor:          "#5A6270",   // --t3
+      headerColor:          "#6E7886",   // --t3
       headerSortActiveBg:   "#161A20",
       headerSortHoverBg:    "#1C2128",   // --bg-3
       headerSplitColor:     "#1E2329",   // --b1
@@ -95,19 +95,19 @@ const AUG_THEME_DARK: Parameters<typeof ConfigProvider>[0]["theme"] = {
 const AUG_THEME_LIGHT: Parameters<typeof ConfigProvider>[0]["theme"] = {
   algorithm: theme.defaultAlgorithm,
   token: {
-    colorBgBase:          "#F2F5FA",   // --bg-0
+    colorBgBase:          "#F5F5F5",   // --bg-0
     colorBgContainer:     "#FFFFFF",   // --bg-1
-    colorBgElevated:      "#F7F9FC",   // --bg-2
-    colorBgLayout:        "#F2F5FA",
-    colorBorder:          "#D2DCEB",   // --b1
-    colorBorderSecondary: "#E5ECF5",   // --b0
-    colorSplit:           "#E5ECF5",
-    colorText:            "#1A2535",   // --t1
-    colorTextSecondary:   "#3C5270",   // --t2
-    colorTextDescription: "#6E8EA8",   // --t3
-    colorTextDisabled:    "#A8BDD0",   // --t4
-    colorPrimary:         "#2D72D2",   // --blue3
-    colorPrimaryHover:    "#1A56B0",   // --blue4
+    colorBgElevated:      "#FAFAFA",   // --bg-2
+    colorBgLayout:        "#F5F5F5",
+    colorBorder:          "#E1E1E1",   // --b1
+    colorBorderSecondary: "#ECECEC",   // --b0
+    colorSplit:           "#ECECEC",
+    colorText:            "#333333",   // --t1
+    colorTextSecondary:   "#555555",   // --t2
+    colorTextDescription: "#787878",   // --t3
+    colorTextDisabled:    "#9E9E9E",   // --t4
+    colorPrimary:         "#1F77B4",   // --blue3
+    colorPrimaryHover:    "#175A88",   // --blue4
     fontSize:             12,
     fontFamily:           "'DM Sans', system-ui, sans-serif",
     borderRadius:         3,
@@ -117,23 +117,23 @@ const AUG_THEME_LIGHT: Parameters<typeof ConfigProvider>[0]["theme"] = {
   },
   components: {
     Table: {
-      headerBg:           "#F7F9FC",   // --bg-2
-      headerColor:        "#6E8EA8",   // --t3
-      headerSortActiveBg: "#ECF0F8",   // --bg-3
-      headerSortHoverBg:  "#ECF0F8",   // --bg-3
-      headerSplitColor:   "#D2DCEB",   // --b1
-      rowHoverBg:         "rgba(45, 114, 210, 0.045)",
-      rowSelectedBg:      "rgba(45, 114, 210, 0.10)",
-      rowSelectedHoverBg: "rgba(45, 114, 210, 0.16)",
+      headerBg:           "#FAFAFA",   // --bg-2
+      headerColor:        "#787878",   // --t3
+      headerSortActiveBg: "#F0F0F0",   // --bg-3
+      headerSortHoverBg:  "#F0F0F0",   // --bg-3
+      headerSplitColor:   "#E1E1E1",   // --b1
+      rowHoverBg:         "rgba(0, 0, 0, 0.04)",
+      rowSelectedBg:      "rgba(31, 119, 180, 0.10)",
+      rowSelectedHoverBg: "rgba(31, 119, 180, 0.16)",
       bodySortBg:         "#FFFFFF",
-      borderColor:        "#E5ECF5",   // --b0
+      borderColor:        "#ECECEC",   // --b0
       cellFontSize:       12,
       cellPaddingInline:  14,
       cellPaddingBlock:   9,
     },
     Pagination: {
       colorBgContainer:   "#FFFFFF",
-      itemActiveBg:       "rgba(45, 114, 210, 0.12)",
+      itemActiveBg:       "rgba(31, 119, 180, 0.12)",
     },
   },
 };

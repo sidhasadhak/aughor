@@ -244,7 +244,7 @@ function RetryPanel({ ep, connectionId, errorMsg, canvasId }: { ep: ExplorationE
       {result && (
         <div className="space-y-2 pt-1">
           {result.explanation && <p className="text-[11px]" style={{ color: "var(--blue4)" }}>{result.explanation}</p>}
-          <pre className="text-[11px] font-mono rounded p-2 overflow-x-auto"
+          <pre className="text-[11px] font-code rounded p-2 overflow-x-auto"
             style={{ background: "var(--code-bg)", color: "var(--t3)", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
             {result.corrected_sql}
           </pre>
@@ -275,7 +275,7 @@ function RetryPanel({ ep, connectionId, errorMsg, canvasId }: { ep: ExplorationE
               )}
             </>
           ) : (
-            <pre className="text-[11px] font-mono rounded p-2"
+            <pre className="text-[11px] font-code rounded p-2"
               style={{ background: "var(--red1)", color: "var(--red4)", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
               {result.error}
             </pre>
@@ -317,14 +317,14 @@ function ExpandedDetail({ ep, connectionId, canvasId }: { ep: ExplorationEpisode
       {/* SQL */}
       <div>
         <p style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "var(--t4)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>SQL</p>
-        <pre style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--t3)", background: "var(--bg-0)", border: "0.5px solid var(--b1)", borderRadius: 4, padding: "8px 10px", overflowX: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all", lineHeight: 1.6, margin: 0 }}>
+        <pre style={{ fontSize: 10, fontFamily: "var(--font-code)", color: "var(--t3)", background: "var(--bg-0)", border: "0.5px solid var(--b1)", borderRadius: 4, padding: "8px 10px", overflowX: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all", lineHeight: 1.6, margin: 0 }}>
           {ep.sql || "(no sql)"}
         </pre>
       </div>
       {/* Result */}
       <div>
         <p style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "var(--t4)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>Result</p>
-        <pre style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: isError ? "var(--red4)" : "var(--t3)", background: isError ? "var(--red1)" : "var(--code-bg)", border: `0.5px solid ${isError ? "var(--red2)" : "var(--b1)"}`, borderRadius: 4, padding: "8px 10px", overflowX: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all", lineHeight: 1.6, margin: 0 }}>
+        <pre style={{ fontSize: 10, fontFamily: "var(--font-code)", color: isError ? "var(--red4)" : "var(--t3)", background: isError ? "var(--red1)" : "var(--code-bg)", border: `0.5px solid ${isError ? "var(--red2)" : "var(--b1)"}`, borderRadius: 4, padding: "8px 10px", overflowX: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all", lineHeight: 1.6, margin: 0 }}>
           {obsPreview}
         </pre>
       </div>

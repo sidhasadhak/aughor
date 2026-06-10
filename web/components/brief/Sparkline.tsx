@@ -118,7 +118,7 @@ export function TrendStrip({
       {deltaTxt && (
         <span>
           <span className={`font-mono ${up ? "text-emerald-400" : "text-red-400"}`}>{deltaTxt}</span>
-          <span className="text-zinc-600"> {periodLabel}</span>
+          <span className="text-zinc-500"> {periodLabel}</span>
         </span>
       )}
     </div>

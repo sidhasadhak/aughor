@@ -619,7 +619,7 @@ function MonitorForm({
         )}
         {!isCustomCron && (
           <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 2 }}>
-            Runs: <code style={{ fontFamily: "var(--font-mono)" }}>{form.check_cron}</code>
+            Runs: <code style={{ fontFamily: "var(--font-code)" }}>{form.check_cron}</code>
           </div>
         )}
       </Field>

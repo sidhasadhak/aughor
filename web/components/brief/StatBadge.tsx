@@ -34,7 +34,7 @@ export function SignificanceBadge({
     >
       <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dot}`} />
       <span className={txt}>{label}</span>
-      {note && <span className="text-zinc-600 font-mono">· {note}</span>}
+      {note && <span className="text-zinc-500 font-mono">· {note}</span>}
     </span>
   );
 }

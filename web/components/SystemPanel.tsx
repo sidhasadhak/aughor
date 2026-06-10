@@ -41,7 +41,7 @@ function StatRow({ label, value, sub, highlight }: StatRowProps) {
       <span className="text-xs text-zinc-400">{label}</span>
       <div className="text-right">
         <span className={`text-xs font-mono ${valColor}`}>{value}</span>
-        {sub && <span className="text-[11px] text-zinc-600 ml-1.5">{sub}</span>}
+        {sub && <span className="text-[11px] text-zinc-500 ml-1.5">{sub}</span>}
       </div>
     </div>
   );
@@ -55,7 +55,7 @@ interface SectionProps {
 function Section({ title, children }: SectionProps) {
   return (
     <div className="mb-5">
-      <p className="text-[11px] uppercase tracking-widest text-zinc-600 mb-2">{title}</p>
+      <p className="text-[11px] uppercase tracking-widest text-zinc-500 mb-2">{title}</p>
       <div className="bg-white/[0.03] rounded-lg px-3 py-0.5">
         {children}
       </div>
@@ -93,7 +93,7 @@ export function SystemPanel() {
 
   if (!stats) {
     return (
-      <div className="flex items-center justify-center h-40 text-zinc-600 text-sm">
+      <div className="flex items-center justify-center h-40 text-zinc-500 text-sm">
         Loading stats…
       </div>
     );
@@ -116,7 +116,7 @@ export function SystemPanel() {
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="text-sm font-medium text-zinc-200">System Stats</h2>
-          <p className="text-[11px] text-zinc-600 mt-0.5">
+          <p className="text-[11px] text-zinc-500 mt-0.5">
             Uptime: {uptime(stats.uptime_seconds)}
             {lastRefresh && (
               <span className="ml-2">· refreshed {lastRefresh.toLocaleTimeString()}</span>
@@ -210,7 +210,7 @@ export function SystemPanel() {
         />
       </Section>
 
-      <p className="text-[11px] text-zinc-700 text-center mt-2">
+      <p className="text-[11px] text-zinc-500 text-center mt-2">
         Counters reset on server restart · auto-refreshes every 15s
       </p>
     </div>
