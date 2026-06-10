@@ -96,6 +96,7 @@
 87. [Deterministic Fan-out De-fan — Parent + Chasm](#87-deterministic-fan-out-de-fan--parent--chasm--shipped)
 88. [Finding-Trust Ladder — Guards, Quarantine & Dismiss-with-Reason](#88-finding-trust-ladder--guards-quarantine--dismiss-with-reason--shipped)
 89. [Delivery Polish — Significance Badge, Sparkline/MoM, Pareto](#89-delivery-polish--significance-badge-sparklinemom-pareto--shipped)
+90. [Eval Trustworthiness — Pinned State, Metric-Aware Scoring, Noise Control](#90-eval-trustworthiness--pinned-state-metric-aware-scoring-noise-control--shipped)
 
 ---
 
@@ -2566,4 +2567,30 @@ The answer surface caught up to the reasoning: a glanceable "within-noise" signi
 
 ---
 
-*Last updated: 2026-06-10 · 89 features — all shipped. See `ROADMAP.md` for upcoming milestones.*
+## 90. Eval Trustworthiness — Pinned State, Metric-Aware Scoring, Noise Control ✅ Shipped
+
+### What
+The golden NL2SQL eval can now be *trusted* to measure the real capability lift of the intelligence-injected pipeline (FULL) over raw generation (RAW) — three levers that close the confounds that made earlier A/B runs unreadable, plus a deep-test that overturned a surface "−8 regression" into "no regression."
+
+### Why
+Running the full-pipeline eval (#13) had shown FULL *losing* to RAW — but the result was confounded (it ran on an *explored* connection whose drifting insights steered the metric choice, on top of LLM run-to-run noise). Without a trustworthy eval, every correctness/capability claim downstream is guesswork. This is the force-multiplier that makes measured work possible.
+
+### How
+1. **Pinned connection + frozen-state guard** (`run_golden.py`) — FULL runs default to `samples` and **abort** if the connection carries volatile exploration insights (verified: `workspace`'s 7549 bytes → hard abort). Each run prints a provenance block (model / temperature / exploration-state / ontology) and disables the silent Anthropic fallback so the model is pinned. The #13 confound can't recur silently.
+2. **Metric-aware multi-reference scoring** (`sql_accuracy.py`) — a record may carry `accept_sql`, equally-valid alternative ground truth; the answer is scored against the BEST of `{reference} ∪ accept_sql`, so a *different-but-canonical* metric definition isn't penalised — without becoming permissive to wrong answers (`tests/unit/test_eval_scoring.py`, 5 cases).
+3. **Noise control** — `--temperature` (default 0.0) threaded through both generators and the `SqlWriter` retry path; `--runs N` reports the per-question score band; `runs_detail` caches each run's SQL so a batch can be **re-scored offline with zero new LLM calls**.
+
+### Deep-test (the finding)
+Pinned `samples`, temp-0, N=3, `qwen3-coder-next:cloud`. Two results overturned the headline: **(A)** temp-0 is *not* deterministic on cloud (RAW 21/53 unstable, band 0.175 → N-averaging is mandatory); **(B)** most of FULL's −8 pass gap is the **ex-cancelled revenue convention** (22/53 queries add `WHERE status NOT IN ('cancelled', …)`), not capability — convention-neutral (MAX-of-definitions estimator), **RAW 28 / FULL 26 (Δ−2, within noise)**; the convention explains +6 of the −8, and FULL posts 5 clean wins where injected context rescues a query RAW fails outright (sql009 0.00→0.85, sql034 0.00→0.85). The binding constraint on measuring lift is **metric unification** (golden refs ↔ injected definition), now quantified and made measurable.
+
+### Component interactions
+- Reuses the production building blocks (`_stream_chat`'s schema-linker / catalog / metrics / semantic-layer / retry) so the eval reflects real platform behaviour, not a re-implementation. The `defan()` de-fan path is mirrored so fan-out correctness is in-scope.
+
+### Tech / libraries
+- **SQLGlot** (the convention-isolation probe strips the status predicate via AST), DuckDB (`samples`), pytest.
+
+**Key files.** `evals/run_golden.py`, `evals/sql_accuracy.py`, `evals/_add_accept_sql.py`, `evals/_probe_convention.py`, `evals/_analyze_13b.py`, `evals/FINDINGS_full_pipeline.md`, `tests/unit/test_eval_scoring.py`, `aughor/sql/writer.py`.
+
+---
+
+*Last updated: 2026-06-10 · 90 features — all shipped. See `ROADMAP.md` for upcoming milestones.*
