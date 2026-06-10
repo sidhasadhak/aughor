@@ -644,7 +644,7 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
           Canvases
         </button>
 
-        <span style={{ color: "var(--b1)", fontSize: 16, lineHeight: 1, userSelect: "none" }}>/</span>
+        <span style={{ color: "var(--t4)", fontSize: 16, lineHeight: 1, userSelect: "none" }}>/</span>
 
         {/* Canvas icon + name */}
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>

@@ -441,7 +441,7 @@ function AddConnForm({ onSave, onCancel }: { onSave: () => void; onCancel: () =>
         <input style={{ ...S, fontFamily: "var(--font-mono)" }} placeholder={type === "postgres" ? "postgresql://user:pass@host/db" : "/path/to/file.duckdb"} value={dsn} onChange={e => setDsn(e.target.value)} required />
       </div>
       <div>
-        <label style={L}>Schema <span style={{ color: "var(--b0)" }}>(optional)</span></label>
+        <label style={L}>Schema <span style={{ color: "var(--t4)" }}>(optional)</span></label>
         <input style={{ ...S, fontFamily: "var(--font-mono)" }} placeholder={type === "postgres" ? "public" : "main"} value={schema} onChange={e => setSchema(e.target.value)} />
       </div>
       {err && <p style={{ fontSize: 11, color: "var(--red4)" }}>{err}</p>}
@@ -959,7 +959,7 @@ function CatalogDetailPanel({ sel, onSelectSchema, conn, onTest, onDelete, testi
                     </div>
                   </div>
                   <span style={{ fontSize: 11, color: "var(--t4)", textAlign: "right" }}>{sc.tables.length}</span>
-                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ color: "var(--b0)", justifySelf: "end" as const }}>
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ color: "var(--t4)", justifySelf: "end" as const }}>
                     <path d="M3 2l4 3-4 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
                   </svg>
                 </div>
@@ -1190,14 +1190,14 @@ function CatalogHomePanel({ tree, onPick }: { tree: CatalogTree | null; onPick: 
 function EmptyDetail() {
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: 40 }}>
-      <svg width="48" height="48" viewBox="0 0 48 48" fill="none" style={{ color: "var(--b0)" }}>
+      <svg width="48" height="48" viewBox="0 0 48 48" fill="none" style={{ color: "var(--t4)" }}>
         <ellipse cx="24" cy="14" rx="18" ry="7" stroke="currentColor" strokeWidth="2" />
         <path d="M6 14v20c0 3.9 8.1 7 18 7s18-3.1 18-7V14" stroke="currentColor" strokeWidth="2" fill="none" />
         <path d="M6 24c0 3.9 8.1 7 18 7s18-3.1 18-7" stroke="currentColor" strokeWidth="2" opacity=".5" />
       </svg>
       <div style={{ textAlign: "center" }}>
         <p style={{ fontSize: 14, fontWeight: 500, color: "var(--t4)", marginBottom: 6 }}>Select an item to view details</p>
-        <p style={{ fontSize: 12, color: "var(--b0)", lineHeight: 1.6 }}>
+        <p style={{ fontSize: 12, color: "var(--t4)", lineHeight: 1.6 }}>
           Click a catalog, schema, or table<br />in the tree to explore it
         </p>
       </div>
@@ -1350,7 +1350,7 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
       );
 
       if (section.entries.length === 0 && section.id === "connections") {
-        nodes.push(<p key="empty" style={{ fontSize: 11, color: "var(--b0)", padding: "6px 12px 10px" }}>No connections yet.</p>);
+        nodes.push(<p key="empty" style={{ fontSize: 11, color: "var(--t4)", padding: "6px 12px 10px" }}>No connections yet.</p>);
       }
 
       section.entries.forEach(entry => {

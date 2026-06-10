@@ -224,7 +224,7 @@ function DistributionsSection({ distributions }: { distributions: ExplorationFin
 
       {/* Column header */}
       <div className="grid gap-2 px-3 pb-1 text-[11px] uppercase tracking-[0.06em]"
-        style={{ gridTemplateColumns: "180px 1fr 80px 80px", color: "var(--b0)" }}>
+        style={{ gridTemplateColumns: "180px 1fr 80px 80px", color: "var(--t4)" }}>
         <div>Column</div>
         <div>Distribution</div>
         <div className="text-center">Mean</div>
@@ -269,7 +269,7 @@ function DistributionsSection({ distributions }: { distributions: ExplorationFin
                   { label: "mean", value: d.mean },
                 ] as const).map(({ label, value }) => (
                   <div key={label} className="flex-1 flex flex-col items-center">
-                    <span className="text-[11px] mb-0.5" style={{ color: "var(--b0)", letterSpacing: "0.04em" }}>{label}</span>
+                    <span className="text-[11px] mb-0.5" style={{ color: "var(--t4)", letterSpacing: "0.04em" }}>{label}</span>
                     <span style={{ color: label === "p50" || label === "mean" ? "var(--t2)" : "#6e6f78" }}>
                       {fmtNum(value as number | null | undefined)}
                     </span>
