@@ -285,6 +285,19 @@ def _apply_ontology_overlay(
     return out
 
 
+def filter_metrics_to_schema(metrics: list, schema_text: str) -> list:
+    """Drop metrics whose declared tables/columns are absent from ``schema_text``.
+    Public boundary so other modules (the canonical resolver) reuse the schema
+    match without importing this module's internals. Returns ``metrics``
+    unchanged when no schema parses (can't prove absence)."""
+    if not schema_text:
+        return metrics
+    tables, cols = _schema_tables_and_columns(schema_text)
+    if not tables:
+        return metrics
+    return [m for m in metrics if _metric_matches_schema(m, tables, cols)]
+
+
 def build_metrics_block(
     path: Path | None = None, schema_text: str = "", connection_id: str = ""
 ) -> str:

@@ -70,6 +70,28 @@ def resolve_canonical_metrics(
             catalog = list_metrics()
         except Exception:
             catalog = []
+
+    # Metrics are GLOBAL. Filter the catalog to the target schema by table+column
+    # existence so one connection's metric can't pollute another's prompt (the
+    # #2 leak class: a curated revenue=SUM(total_amount) metric must NOT inject
+    # into TPC-H, whose orders table has o_totalprice, not total_amount).
+    catalog = list(catalog or [])
+    if catalog and connection_id:
+        _schema_text = ""
+        try:
+            from aughor.db.connection import open_connection_for
+            _db = open_connection_for(connection_id)
+            _schema_text = _db.get_schema()
+            _db.close()
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "metric schema-filter is best-effort; unfiltered catalog "
+                     "is safe (over-injection, not wrong injection)",
+                     counter="metrics.schema_filter", conn_id=connection_id)
+        if _schema_text:
+            from aughor.semantic.metrics import filter_metrics_to_schema
+            catalog = filter_metrics_to_schema(catalog, _schema_text)
+
     for md in catalog or []:
         _consider(CanonicalMetric(
             name=getattr(md, "name", "") or "",

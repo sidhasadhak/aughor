@@ -1,0 +1,35 @@
+[
+  {
+    "name": "revenue",
+    "label": "Revenue",
+    "sql": "SUM(total_amount)",
+    "tables": ["orders"],
+    "dimensions": ["status", "order_date", "customer_id", "payment_method"],
+    "filters": ["status <> 'cancelled'"],
+    "unit": "$",
+    "caveats": "Order-grain booked revenue: SUM(orders.total_amount) over orders not cancelled. Cancelled orders never delivered, so they are excluded by default. Refunded orders WERE fulfilled then reversed — include them in gross booked revenue; exclude them only when net-of-returns is explicitly requested.",
+    "owner": "Revenue team",
+    "approved_by": "Finance",
+    "lineage": ["ecommerce.orders.total_amount — order-level paid total"],
+    "wrong_usage_examples": [
+      "SUM(order_items.line_total) — line-item grain; on this data it diverges ~4.3x from order totals (a different basis, not the same revenue). Use orders.total_amount for order/total revenue; reserve line_total for product/category-grain revenue where order totals cannot be apportioned.",
+      "SUM(total_amount) joined to order_items without de-duplicating to one row per order — the join fans out and multiplies revenue by the line count."
+    ]
+  },
+  {
+    "name": "aov",
+    "label": "Average Order Value",
+    "sql": "AVG(total_amount)",
+    "tables": ["orders"],
+    "dimensions": ["status", "order_date", "payment_method"],
+    "filters": ["status <> 'cancelled'"],
+    "unit": "$",
+    "caveats": "AVG(orders.total_amount) at order grain. NEVER AVG(order_items.line_total) — that is per-line, not per-order, and undercounts AOV by the average lines-per-order. Cancelled orders excluded by default; on this data excluding them barely moves AOV (cancelled orders are average-sized).",
+    "owner": "Revenue team",
+    "approved_by": "Finance",
+    "lineage": ["ecommerce.orders.total_amount"],
+    "wrong_usage_examples": [
+      "AVG(line_total) sold as AOV — that is average LINE value, not average ORDER value (the $467-vs-$1108 grain confusion)."
+    ]
+  }
+]

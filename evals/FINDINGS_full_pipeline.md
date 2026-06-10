@@ -115,3 +115,43 @@ further NL2SQL micro-lever — is gated on metric unification, which the eval no
 makes measurable. See
 [[eval-golden-baseline]], [[ontology-semantic-layer-AB]],
 [[competitive-borrow-cube-mindsdb]].
+
+---
+
+## UNIFY — metric unification (2026-06-10)
+
+The #13b deep-test concluded: *the eval can't measure capability lift until the
+golden refs and the injected pipeline AGREE on the metric definition.* UNIFY
+closes that, deterministically:
+
+1. **One registered metric** (`data/metrics.json`): `revenue = SUM(orders.total_amount)`
+   at order grain, default filter `status <> 'cancelled'` (net-of-cancelled), with
+   `aov = AVG(total_amount)`. The gross/net choice is now made ONCE in the semantic
+   layer and injected, instead of leaking implicitly from KB/rules. Verified it
+   REACHES the injected `CANONICAL METRICS` block (built→wired→leveraged), and that
+   it reconciles with the golden gross ref (net 1,131,805 + cancelled 154,195 =
+   gross 1,286,000 — same metric, one convention choice apart).
+
+2. **Leak fixed (the #2 class, re-exposed by populating the registry)**: a global
+   curated metric was injecting into EVERY connection. `revenue(total_amount)` was
+   polluting TPC-H (whose orders table has `o_totalprice`) and ClickBench. The
+   canonical resolver now schema-filters the catalog by table+column existence
+   (new public `filter_metrics_to_schema`), so the metric injects ONLY where its
+   columns exist. Live-verified: present on samples, dropped from tpch/clickbench.
+
+3. **Scorer made convention-neutral** (`evals/_unify_accept_sql.py`): for revenue
+   questions whose gross/net convention is UNSPECIFIED, the net-of-cancelled
+   variant is registered as an accepted alternative (validated against samples).
+   A correct answer in EITHER convention now scores full — closing the
+   "metric-alt hits = 0" gap where FULL's net answers matched nothing. Status-
+   SEMANTIC questions (sql006 delivered-only, sql014 delivered-vs-cancelled,
+   sql025 %-refunded) are FROZEN — there the filter is the question.
+
+Proven by `tests/unit/test_metric_unification.py` (8 tests): a net-of-cancelled
+answer to "total revenue" now scores ≥0.99 (was penalised), gross still scores
+full, status-semantic questions stay strict, no foreign-schema leak.
+
+**REMAINING — the lift number:** with refs ↔ pipeline now agreeing, a fresh
+PINNED run (`--connection samples --full-pipeline --temperature 0 --runs 3`)
+measures true capability lift. No cached `runs_detail` exists on disk, so this
+needs one live N=3 run — the apparatus is proven; the headline is one eval away.
