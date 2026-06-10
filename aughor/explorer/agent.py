@@ -393,6 +393,39 @@ def _is_temporal_angle(angle: str) -> bool:
     return bool(_TEMPORAL_ANGLE_RE.search(angle or ""))
 
 
+# Coverage angles that need a SPECIFIC KIND of column. Offering one when the
+# domain has no matching column forces the generator to invent the dimension —
+# the `'Unknown' AS signup_source` channel hallucination. Substring-matched on
+# both the angle name (keys) and the available column names (patterns), so
+# checklist/column wording can vary. See _phase8 column-feasibility gate (#1).
+_ANGLE_REQUIRED_COLS: dict[str, "re.Pattern[str]"] = {
+    "channel_mix":          re.compile(r"channel|source|medium|utm|referr|acqui", re.I),
+    "attribution":          re.compile(r"channel|source|medium|utm|referr|attribut|touchpoint|campaign", re.I),
+    "campaign_roi":         re.compile(r"campaign|utm|ad_|adset|spend|budget|cost", re.I),
+    "conversion":           re.compile(r"conver|funnel|stage|status|step|visit|session|signup|lead", re.I),
+    "experiments":          re.compile(r"experiment|variant|\bab_|test_group|bucket|treatment|cohort_group", re.I),
+    "payment_behavior":     re.compile(r"payment|pay_|tender|method|installment|card|gateway|wallet", re.I),
+    "refund_rate":          re.compile(r"refund|return|chargeback|cancel|reversal|dispute", re.I),
+    "receivables":          re.compile(r"invoice|due|outstanding|receivable|balance|paid|payment_date|aging", re.I),
+    "supplier_performance": re.compile(r"supplier|vendor|partner|on_time|delay|fulfil|deliver", re.I),
+    "inventory_health":     re.compile(r"invent|stock|sku|quantity|on_hand|reorder|warehouse|backorder", re.I),
+    "lead_times":           re.compile(r"lead.?time|deliver|ship|fulfil|expected|actual.?date|dispatch", re.I),
+    "fulfillment":          re.compile(r"fulfil|ship|deliver|dispatch|status|tracking|warehouse", re.I),
+}
+
+
+def _angle_feasible(angle: str, columns: "set[str]") -> bool:
+    """True unless the angle needs a column class entirely absent from the domain.
+
+    Conservative: an angle with no specific column requirement is always feasible,
+    and a present-but-oddly-named column is matched by the broad patterns — so a
+    false drop (skipping a real angle) is rare, and far cheaper than a fabrication."""
+    pat = _ANGLE_REQUIRED_COLS.get((angle or "").lower())
+    if pat is None:
+        return True
+    return any(pat.search(c) for c in columns)
+
+
 def _query_columns(sql: str) -> set:
     """Lowercased bare column names referenced by a SQL string (best-effort, via sqlglot).
     Used to tell a meaning-changing repair (one column SUBSTITUTED for another) apart from a
@@ -1594,6 +1627,7 @@ class SchemaExplorer:
                     temporal_guard_block = ""
 
                 domain_schema_lines: list[str] = []
+                domain_cols: set[str] = set()
                 for tbl in sorted(domain_tables):
                     cols = (
                         sql_writer.table_cols.get(tbl)
@@ -1602,10 +1636,27 @@ class SchemaExplorer:
                     )
                     if cols:
                         domain_schema_lines.append(f"  {tbl}: {', '.join(cols)}")
+                        domain_cols.update(str(c).lower() for c in cols)
                 domain_schema_block = (
                     "EXACT COLUMN NAMES — use ONLY these, never invent:\n"
                     + "\n".join(domain_schema_lines)
                 ) if domain_schema_lines else ""
+
+                # ── Column-feasibility gate (#1) ────────────────────────────────
+                # Drop named angles whose required column class is absent (a
+                # channel/source column for channel_mix, a payment column for
+                # payment_behavior …). Offering them forces the generator to stub
+                # the missing dimension with a constant literal. Keep at least one
+                # angle so the loop never starves.
+                if domain_cols:
+                    _feasible = [a for a in uncovered if _angle_feasible(a, domain_cols)]
+                    if _feasible and len(_feasible) < len(uncovered):
+                        logger.info(
+                            "[explorer:%s] Phase 8: %s — dropping infeasible angles %s (required column absent)",
+                            self.connection_id, domain,
+                            [a for a in uncovered if a not in _feasible],
+                        )
+                        uncovered = _feasible
 
                 # ── Grain + cardinality context ─────────────────────────────────
                 # Inject table grains, row counts, FK columns, and high-cardinality
@@ -1797,6 +1848,20 @@ class SchemaExplorer:
                     logger.info(
                         "[explorer:%s] Phase 8: %s/%s — skipping cross-dataset join: %s",
                         self.connection_id, domain, nq.angle, sorted(_tables_in_sql(nq.sql)),
+                    )
+                    used += 1
+                    budgets[domain] = used
+                    continue
+
+                # Feasibility guard (#1, free-proposed angles): the generator stubbed
+                # a missing column with a constant literal ('Unknown' AS signup_source
+                # … GROUP BY signup_source) — a fabricated dimension. Catch it BEFORE
+                # wasting an execute+interpret cycle (the named-angle gate above only
+                # covers the checklist; the LLM can free-propose any angle).
+                if _has_fabricated_dimension(nq.sql):
+                    logger.info(
+                        "[explorer:%s] Phase 8: %s/%s — skipping fabricated-dimension question (constant grouping key)",
+                        self.connection_id, domain, nq.angle,
                     )
                     used += 1
                     budgets[domain] = used
