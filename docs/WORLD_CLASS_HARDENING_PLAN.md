@@ -199,6 +199,15 @@ narrated "per-X" phrasing against the aggregate's actual grain; pairs with the s
 
 ## Phase 1 — Orphaned-State & Lifecycle Correctness (the "intermittent" engine)
 
+> **✅ ABSORBED BY K1 (2026-06-10, commit `82c5b4d`)** — the Job Kernel made these structural:
+> WCH-4 = the supervisor's paused-explorer backstop (note: the finally-block this item asked for
+> already existed at `investigations.py:1408` — the audit claim was stale; pause-tagging added so the
+> backstop never overrides a user pause); WCH-5 = the supervisor loop (30s sweep + 5-min
+> investigation sweep); WCH-6 = boot recovery (live-verified: kill -9 mid-exploration → restart →
+> orphan FAILED + auto-resume from checkpoint); WCH-7 = cancel-on-delete for canvas + connection
+> scopes; WCH-8 = partially (ledger transactions cover the JSON-cache races; the .duckdb write
+> coordination remains open — see K1 follow-ups in the kernel doc).
+
 The perf/stress audit found a *class* of lifecycle bugs that manufacture intermittent behavior
 platform-wide. These likely co-cause all three reported bugs and are individually small fixes.
 
