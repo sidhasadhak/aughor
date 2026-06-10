@@ -208,6 +208,23 @@ def _anchor_activity(tp, cp=None):
     return table, rec, is_eff
 
 
+def _table_min(prof):
+    """Sentinel-filtered earliest date for a table — 'YYYY-MM-DD' or None. Mirrors
+    ``_table_recency`` on the range *start*, preferring the dense effective range."""
+    for key in ("effective_date_range", "date_range"):
+        rng = _profile_field(prof, key)
+        if rng and len(rng) >= 2 and _ISO_DATE.match(str(rng[0])):
+            head = str(rng[0])[:10]
+            try:
+                year = int(head[:4])
+            except ValueError:
+                continue
+            if year >= _SENTINEL_MAX_YEAR or year <= _SENTINEL_MIN_YEAR:
+                continue
+            return head
+    return None
+
+
 def _role_aware_time_window(tp, cp=None, jmap=None, months: int = 12):
     """Choose the analytical window by anchoring recency on *activity* tables.
 
@@ -217,6 +234,11 @@ def _role_aware_time_window(tp, cp=None, jmap=None, months: int = 12):
     surfacing. Returns ``(None, None, [])`` when no usable, non-sentinel date range
     exists. ``jmap`` is accepted for a future join-graph in-degree refinement; the
     measure signal (``cp``) is the primary catch today.
+
+    The window start is CLAMPED to the earliest fact across the activity tables:
+    a dataset holding 17 days of history must not get a "last 12 months" window
+    whose start pre-dates its first row by 11 months — the blind-window bug that
+    framed a 1-month bakehouse dataset as a year of analysis.
     """
     from datetime import timedelta as _td
 
@@ -230,15 +252,50 @@ def _role_aware_time_window(tp, cp=None, jmap=None, months: int = 12):
         key=lambda x: x[1], reverse=True,
     )
 
+    # Earliest fact among activity tables (fall back to any dated table) — the
+    # honest lower bound for the window.
+    _mins = [
+        m for t, p in (tp or {}).items()
+        if _is_activity_table(t, (cp or {}).get(t)) and (m := _table_min(p))
+    ] or [m for p in (tp or {}).values() if (m := _table_min(p))]
+    data_min = min(_mins) if _mins else None
+
     try:
         max_d = datetime.fromisoformat(best_rec)
         if best_eff:
             # an effective max is month-truncated — nudge forward to cover the final month
             max_d = max_d + _td(days=31)
         start_d = max_d - _td(days=round(months * 30.4375))
-        return start_d.strftime("%Y-%m-%d"), max_d.strftime("%Y-%m-%d"), discrepancy
+        start = start_d.strftime("%Y-%m-%d")
+        if data_min and data_min > start:
+            start = data_min
+        return start, max_d.strftime("%Y-%m-%d"), discrepancy
     except (ValueError, TypeError):
         return None, None, []
+
+
+def _window_for_tables(tp, cp, tables, months: int = 12):
+    """Derive a time window from ONLY the given tables (bare or qualified names) —
+    the per-dataset/per-domain view. On a multi-dataset connection the global window
+    anchors on the freshest dataset; a domain living in a different dataset (e.g.
+    17-day ``bakehouse.*`` beside 24-month ``ecommerce.*``) needs its own anchor and
+    its own clamp. Returns ``(start, end)`` or ``None``."""
+    if not tables:
+        return None
+    wanted = set()
+    for t in tables:
+        s = str(t)
+        wanted.add(s.lower())
+        wanted.add(s.split(".")[-1].lower())
+    sub_tp = {
+        t: p for t, p in (tp or {}).items()
+        if t.lower() in wanted or t.split(".")[-1].lower() in wanted
+    }
+    if not sub_tp:
+        return None
+    sub_cp = {t: (cp or {}).get(t) for t in sub_tp}
+    start, end, _ = _role_aware_time_window(sub_tp, sub_cp, None, months)
+    return (start, end) if start and end else None
 
 
 # A "no data" finding — the query matched nothing (all-NULL row from an empty join/filter)
@@ -1840,7 +1897,12 @@ class SchemaExplorer:
                         "growth metrics are only meaningful within a bounded, recent window."
                     )
                     time_window_block = ""
-                    if self._time_window:
+                    # The window must reflect THIS domain's dataset, not the connection's
+                    # freshest dataset (multi-dataset connections), and its phrasing must
+                    # reflect the actual coverage — a 17-day dataset framed as "the last
+                    # 12 months" produces findings narrated over data that doesn't exist.
+                    _domain_window = _window_for_tables(tp, cp, domain_tables) or self._time_window
+                    if _domain_window:
                         # Name only the profiler-vetted timestamp columns. Without this the
                         # LLM invents a date filter on a date-NAMED integer column (e.g.
                         # ClickBench EventDate::USMALLINT) → "USMALLINT vs DATE". If a
@@ -1852,11 +1914,27 @@ class SchemaExplorer:
                             if getattr(p, "primary_timestamp", None)
                         })
                         if _ts_cols:
+                            _wstart, _wend = _domain_window[0], _domain_window[1]
+                            _wdays = _days_between(_wstart, _wend) or 0
+                            if _wdays < 300:
+                                _frame = (
+                                    f"DATA COVERAGE: this domain's data spans only ~{_wdays} days "
+                                    f"({_wstart} to {_wend}) — that is ALL the history that exists. "
+                                    f"Scope queries to that range and frame findings as 'over the "
+                                    f"available {_wdays}-day history' — NEVER as 'the last 12 months' "
+                                    f"or any period longer than the coverage. Do not propose MoM "
+                                    f"comparisons with under ~2 months of data, nor YoY/seasonality "
+                                    f"with under ~13 months. "
+                                )
+                            else:
+                                _frame = (
+                                    f"TIME WINDOW: Scope queries to the last 12 months "
+                                    f"({_wstart} to {_wend}). "
+                                )
                             time_window_block = (
-                                f"TIME WINDOW: Scope queries to the last 12 months "
-                                f"({self._time_window[0]} to {self._time_window[1]}). The ONLY "
+                                f"{_frame}The ONLY "
                                 f"real timestamp columns are: {', '.join(_ts_cols)}. "
-                                f"Add WHERE <that column> >= '{self._time_window[0]}' only when "
+                                f"Add WHERE <that column> >= '{_wstart}' only when "
                                 f"your query touches one of those tables. NEVER add a date filter "
                                 f"to a table without a listed timestamp column, and never compare "
                                 f"a non-date column to a date literal.\n\n"
