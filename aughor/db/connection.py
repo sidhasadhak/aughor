@@ -474,6 +474,34 @@ class DatabaseConnection(ABC):
         """Return the OntologyGraph built during the last get_schema() call, or None."""
         return self._ontology
 
+    # ── Convenience adapters ──────────────────────────────────────────────────
+    # Replace the ad-hoc "execute → check .error → pull .rows/.rows[0][0]" wrappers
+    # scattered across the codebase. Best-effort: any error returns []/None, never raises.
+
+    def rows(self, sql: str, *, label: str = "__adapter__") -> list:
+        """Run SQL and return its rows; [] on error."""
+        try:
+            res = self.execute(label, sql)
+            if getattr(res, "error", None):
+                return []
+            return list(getattr(res, "rows", None) or [])
+        except Exception:
+            return []
+
+    def scalar(self, sql: str, *, label: str = "__adapter__", cast=float):
+        """Run SQL and return the first cell coerced via ``cast`` (default float), or None."""
+        rs = self.rows(sql, label=label)
+        if not rs:
+            return None
+        row = rs[0]
+        val = list(row.values())[0] if isinstance(row, dict) else row[0]
+        if val is None:
+            return None
+        try:
+            return cast(val)
+        except (TypeError, ValueError):
+            return None
+
     def ibis_connection(self):
         """Return an ibis backend for this connection, or None if ibis is not installed.
 
@@ -736,6 +764,11 @@ class DuckDBConnection(DatabaseConnection):
         for j in jmap.get("joins", []):
             fk_hints.setdefault(j["t1"], set()).add(j["c1"])
 
+        # Record the build outcome so a failure surfaces as an actionable status (which
+        # stage failed + why) instead of a silent "empty Hub". Schema loading still never
+        # blocks — we record the failure and carry on.
+        self.last_build = {"ok": True, "stage": None, "error": None}
+        _stage = "profiling"
         try:
             tp, cp = get_or_build_profiles(self, self._connection_id or "fixture", tables, fk_hints)
             from aughor.tools.schema import inject_value_annotations
@@ -749,6 +782,7 @@ class DuckDBConnection(DatabaseConnection):
             from aughor.semantic.glossary import load_merged_glossary
             _glossary = load_merged_glossary()
             _schema_label = self._schema_name or "default"
+            _stage = "ontology"
             graph = get_or_build_ontology(
                 connection_id=self._connection_id or "fixture",
                 schema_name=_schema_label,
@@ -757,11 +791,19 @@ class DuckDBConnection(DatabaseConnection):
                 join_map=jmap,
                 glossary=_glossary,
             )
+            if graph is None:
+                # Fatal for domain intelligence: Phase 8 has no object model to reason over.
+                self.last_build = {
+                    "ok": False, "stage": "ontology",
+                    "error": "the object model could not be built from this schema — it may "
+                             "be too sparse to model (no entities/relationships inferred).",
+                }
             if graph is not None:
                 from aughor.ontology.enricher import ENRICHMENT_VERSION
                 from aughor.stats import stats as _st
                 if not graph.enriched or graph.enrichment_version < ENRICHMENT_VERSION:
                     _st.inc("enrichment_runs")
+                    _stage = "enrichment"
                     try:
                         from aughor.ontology.enricher import enrich_ontology_semantics
                         from aughor.llm.provider import get_provider
@@ -769,8 +811,14 @@ class DuckDBConnection(DatabaseConnection):
                             graph, get_provider("coder"), _glossary, base
                         )
                         save_ontology(graph.connection_id, graph.schema_name, graph.schema_fingerprint, graph)
-                    except Exception:
-                        pass
+                    except Exception as _enr_exc:
+                        # Non-fatal — the ontology still exists, so Phase 8 can run — but
+                        # record it (the descriptions/formulas just won't be enriched).
+                        self.last_build = {
+                            "ok": True, "stage": "enrichment",
+                            "error": f"semantic enrichment failed (ontology still usable): {str(_enr_exc)[:200]}",
+                        }
+                    _stage = "ontology"
                 else:
                     _st.inc("enrichment_cache_hits")
                 # M24c: self-validate enriched semantics against the live DB once
@@ -789,8 +837,9 @@ class DuckDBConnection(DatabaseConnection):
                 onto_block = render_ontology_annotations(graph)
                 if onto_block:
                     base += "\n\n" + onto_block
-        except Exception:
-            pass
+        except Exception as _build_exc:
+            # Record which stage broke so the explorer can surface an actionable status.
+            self.last_build = {"ok": False, "stage": _stage, "error": str(_build_exc)[:400]}
 
         # Append exploration intelligence block
         try:

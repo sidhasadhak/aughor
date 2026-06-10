@@ -422,5 +422,4 @@ def get_investigation(inv_id: str) -> Optional[dict]:
     return d
 
 
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+from aughor.util.time import now_iso as _now

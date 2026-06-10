@@ -20,6 +20,20 @@ export async function getConnections(): Promise<Connection[]> {
   return res.json();
 }
 
+// ── Capabilities (commercial tier gating) ──────────────────────────────────
+export interface Capabilities {
+  tier: "free" | "pro" | "enterprise" | string;
+  capabilities: string[];
+}
+
+/** The active tier + granted capabilities (defaults to enterprise = everything on). */
+export async function getCapabilities(connectionId?: string): Promise<Capabilities> {
+  const q = connectionId ? `?connection_id=${encodeURIComponent(connectionId)}` : "";
+  const res = await fetch(`${BASE}/capabilities${q}`);
+  if (!res.ok) return { tier: "enterprise", capabilities: [] };  // fail-open: never block UI
+  return res.json();
+}
+
 // ── Workspaces ─────────────────────────────────────────────────────────────
 // The top-level scope (Databricks-style): a named grouping of connections.
 // Connections, Canvases and intelligence are all viewed through the lens of
@@ -895,6 +909,24 @@ export async function promoteConnectionInsight(connectionId: string, insightId: 
     { method: "POST" }
   );
   if (!res.ok) throw new Error("Failed to promote insight");
+  return res.json();
+}
+
+export async function dismissCanvasInsight(canvasId: string, insightId: string, reason: string): Promise<{ dismissed: boolean }> {
+  const res = await fetch(
+    `${BASE}/exploration/canvas/${encodeURIComponent(canvasId)}/insights/${encodeURIComponent(insightId)}/dismiss`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason }) }
+  );
+  if (!res.ok) throw new Error("Failed to dismiss insight");
+  return res.json();
+}
+
+export async function dismissConnectionInsight(connectionId: string, insightId: string, reason: string): Promise<{ dismissed: boolean }> {
+  const res = await fetch(
+    `${BASE}/exploration/${encodeURIComponent(connectionId)}/insights/${encodeURIComponent(insightId)}/dismiss`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason }) }
+  );
+  if (!res.ok) throw new Error("Failed to dismiss insight");
   return res.json();
 }
 

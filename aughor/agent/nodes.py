@@ -1,6 +1,7 @@
 """LangGraph node functions — each is a pure function over AgentState."""
 from __future__ import annotations
 
+import re
 from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -261,7 +262,6 @@ def exploratory_scan(state: AgentState, conn: "DatabaseConnection") -> dict[str,
         pass  # fall through to ad-hoc SQL
 
     # ── Fallback: ad-hoc SQL recon ────────────────────────────────────────────
-    import re
     from aughor.tools.schema import _SECTION_STOP
 
     schema_str = state["schema_context"]
@@ -587,6 +587,10 @@ def execute_planned_queries(state: AgentState, conn: "DatabaseConnection") -> di
         raw = [_gen_sql(intents[0])] if intents else []
 
     queries: list[str] = [s for s in raw if s]
+    # Initialised before the consistency block below — that block appends alias/join
+    # divergence pitfalls, so `new_pitfalls` must already exist (was previously declared
+    # further down, raising UnboundLocalError whenever a divergence note fired).
+    new_pitfalls: list[Pitfall] = []
 
     # ── Cross-query consistency: normalize date functions, detect alias drift ─
     if queries:
@@ -619,7 +623,7 @@ def execute_planned_queries(state: AgentState, conn: "DatabaseConnection") -> di
         ]
 
     results: list[QueryResult] = []
-    new_pitfalls: list[Pitfall] = []
+    # (new_pitfalls initialised above, before the consistency block)
 
     for sql in queries:
         # ── Pre-flight: detect unqualified columns and invalid join paths ──

@@ -161,7 +161,9 @@ For EACH query result, write:
     State whether the observed change is statistically significant.
     If a business calendar event may explain the anomaly, note it.
   - key_numbers: the 1–3 most important values (label, value, delta, context)
-  - chart_type: "line" for time series, "bar" for comparisons, "none" for single-value outputs
+  - chart_type: "line" for time series, "bar" for comparisons, "pareto" for concentration
+    (one categorical + one measure where a few categories drive most of the total — 80/20),
+    "none" for single-value outputs
   - stat_note: if z-score is available, format as "z = X.X — [significant/within normal range]"
   - is_significant: true if |z| > {z_threshold} OR absolute change > {pct_threshold}% of prior period value
 
@@ -556,7 +558,7 @@ class IntakeOutput(BaseModel):
 class PhaseQueryPlan(BaseModel):
     title: str
     sql: str
-    chart_type: Literal["line", "bar", "bar_horizontal", "stacked_bar", "pie", "auto", "none"] = "auto"
+    chart_type: Literal["line", "bar", "bar_horizontal", "stacked_bar", "pie", "pareto", "auto", "none"] = "auto"
     rationale: str
 
 
@@ -575,7 +577,7 @@ class PhaseFindingModel(BaseModel):
     title: str
     interpretation: str
     key_numbers: list[PhaseKeyNumberModel] = Field(default_factory=list)
-    chart_type: Literal["line", "bar", "bar_horizontal", "stacked_bar", "pie", "auto", "none"] = "auto"
+    chart_type: Literal["line", "bar", "bar_horizontal", "stacked_bar", "pie", "pareto", "auto", "none"] = "auto"
     stat_note: Optional[str] = None
     is_significant: bool = False
 

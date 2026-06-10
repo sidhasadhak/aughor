@@ -31,6 +31,8 @@ import {
   triggerDomainIntelligence,
   promoteCanvasInsight,
   promoteConnectionInsight,
+  dismissCanvasInsight,
+  dismissConnectionInsight,
   createMonitor,
   getActionTriggers,
   sendFindingToTrigger,
@@ -528,7 +530,7 @@ function ActionButton({ label, title, status, color, onClick, disabled }: {
   );
 }
 
-export function FindingActions({ insight, domain, connectionId, canvasId, triggers, onEvidence, onTriggersHint }: {
+export function FindingActions({ insight, domain, connectionId, canvasId, triggers, onEvidence, onTriggersHint, onDismissed }: {
   insight:       ExplorationInsight;
   domain:        string;
   connectionId:  string;
@@ -536,11 +538,25 @@ export function FindingActions({ insight, domain, connectionId, canvasId, trigge
   triggers:      ActionTrigger[];
   onEvidence:    (insight: ExplorationInsight) => void;
   onTriggersHint: () => void;
+  onDismissed?:  (insightId: string) => void;
 }) {
   const [monStatus, setMonStatus]   = useState<ActStatus>("idle");
   const [promStatus, setPromStatus] = useState<ActStatus>(insight.promoted_to_org ? "done" : "idle");
   const [shareOpen, setShareOpen]   = useState(false);
   const [shareMsg, setShareMsg]     = useState<string | null>(null);
+  const [dismissed, setDismissed]   = useState(false);
+
+  const handleDismiss = useCallback(async () => {
+    // Capture a reason — it feeds the guard/eval backlog (finding_dismissals.jsonl),
+    // turning a one-off correction into systematic signal.
+    const reason = (window.prompt("Dismiss this finding. Why is it wrong or stale? (optional)") ?? "").trim();
+    try {
+      if (canvasId) await dismissCanvasInsight(canvasId, insight.id, reason);
+      else await dismissConnectionInsight(connectionId, insight.id, reason);
+      setDismissed(true);
+      onDismissed?.(insight.id);
+    } catch { /* non-fatal */ }
+  }, [insight.id, canvasId, connectionId, onDismissed]);
 
   const handleMonitor = useCallback(async () => {
     if (!insight.sql) return;
@@ -589,6 +605,15 @@ export function FindingActions({ insight, domain, connectionId, canvasId, trigge
   // stay enabled so the user can inspect why there's no data.
   const degenerate = isDegenerateFinding(insight);
   const noData = "This finding has no data — nothing to act on";
+
+  if (dismissed) {
+    return (
+      <span style={{ fontSize: 11, color: "var(--t4)", fontStyle: "italic" as const }}>
+        Dismissed ✓ — hidden from intelligence (kept for review)
+      </span>
+    );
+  }
+
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" as const, position: "relative" }}>
       <ActionButton label="Monitor"
@@ -628,6 +653,9 @@ export function FindingActions({ insight, domain, connectionId, canvasId, trigge
       </div>
       <ActionButton label="Evidence" title="Show the query + provenance behind this finding" status="idle"
         color={btnColor} onClick={() => onEvidence(insight)} />
+      <ActionButton label="Dismiss"
+        title="Hide this finding if it's wrong or stale — captures a reason for the guard backlog; reversible"
+        status="idle" color={btnColor} onClick={handleDismiss} />
       {degenerate && (
         <span title={noData} style={{
           fontSize: 9, fontWeight: 600, letterSpacing: ".05em", textTransform: "uppercase" as const,
@@ -1462,7 +1490,8 @@ export function BriefingPanel({
                 actions={
                   <FindingActions insight={briefing.headline.insight} domain={briefing.headline.domain}
                     connectionId={connectionId} canvasId={canvasId} triggers={triggers}
-                    onEvidence={(ins) => openEvidence(ins, briefing.headline!.domain)} onTriggersHint={showTriggersHint} />
+                    onEvidence={(ins) => openEvidence(ins, briefing.headline!.domain)} onTriggersHint={showTriggersHint}
+                    onDismissed={() => load()} />
                 } />
             </div>
           )}
@@ -1482,7 +1511,8 @@ export function BriefingPanel({
                     actions={
                       <FindingActions insight={s.insight} domain={s.domain}
                         connectionId={connectionId} canvasId={canvasId} triggers={triggers}
-                        onEvidence={(ins) => openEvidence(ins, s.domain)} onTriggersHint={showTriggersHint} />
+                        onEvidence={(ins) => openEvidence(ins, s.domain)} onTriggersHint={showTriggersHint}
+                        onDismissed={() => load()} />
                     } />
                 ))}
               </div>

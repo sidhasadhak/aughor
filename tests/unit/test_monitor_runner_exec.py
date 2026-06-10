@@ -3,6 +3,7 @@
 `db.execute_query`, returned None, and reported "No condition met" — monitors never ran.
 """
 from aughor.monitors.runner import _query, _scalar
+from aughor.db.connection import DatabaseConnection
 
 
 class _Result:
@@ -12,8 +13,9 @@ class _Result:
 
 
 class ConnLike:
-    """Implements ONLY execute(label, sql) — like the real DuckDBConnection. A runner
-    that reaches for execute_query would AttributeError here and the value would be None."""
+    """Implements execute(label, sql) like the real DuckDBConnection, and inherits the
+    connection adapters (db.rows / db.scalar) the runner now delegates to — so the test
+    exercises the real delegation path, not a re-implementation."""
     def __init__(self, rows, error=None):
         self._res = _Result(rows, error)
         self.calls = []
@@ -21,6 +23,10 @@ class ConnLike:
     def execute(self, label, sql):
         self.calls.append((label, sql))
         return self._res
+
+    # the C3 adapters, bound from the ABC (they only call self.execute)
+    rows = DatabaseConnection.rows
+    scalar = DatabaseConnection.scalar
 
 
 def test_query_uses_execute_and_returns_rows():

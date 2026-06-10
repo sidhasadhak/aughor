@@ -64,14 +64,16 @@ def is_complete(connection_id: str, schema_fingerprint: str | None = None) -> bo
     return True
 
 
-def get_insights(connection_id: str) -> list[dict]:
-    return load(connection_id).get("insights", [])
+def get_insights(connection_id: str, include_invalid: bool = False) -> list[dict]:
+    ins = load(connection_id).get("insights", [])
+    return ins if include_invalid else [i for i in ins if not i.get("invalid")]
 
 
-def get_domain_insights(connection_id: str) -> dict[str, list[dict]]:
-    """Return insights grouped by domain."""
+def get_domain_insights(connection_id: str, include_invalid: bool = False) -> dict[str, list[dict]]:
+    """Return insights grouped by domain. Quarantined (invalid-flagged) findings
+    are excluded by default — kept in the store for inspection, hidden from intel."""
     grouped: dict[str, list[dict]] = {}
-    for ins in get_insights(connection_id):
+    for ins in get_insights(connection_id, include_invalid=include_invalid):
         d = ins.get("domain", "General")
         grouped.setdefault(d, []).append(ins)
     return grouped
@@ -214,13 +216,14 @@ def save_canvas(canvas_id: str, state: dict) -> None:
         pass
 
 
-def get_insights_canvas(canvas_id: str) -> list[dict]:
-    return load_canvas(canvas_id).get("insights", [])
+def get_insights_canvas(canvas_id: str, include_invalid: bool = False) -> list[dict]:
+    ins = load_canvas(canvas_id).get("insights", [])
+    return ins if include_invalid else [i for i in ins if not i.get("invalid")]
 
 
-def get_domain_insights_canvas(canvas_id: str) -> dict[str, list[dict]]:
+def get_domain_insights_canvas(canvas_id: str, include_invalid: bool = False) -> dict[str, list[dict]]:
     grouped: dict[str, list[dict]] = {}
-    for ins in get_insights_canvas(canvas_id):
+    for ins in get_insights_canvas(canvas_id, include_invalid=include_invalid):
         d = ins.get("domain", "General")
         grouped.setdefault(d, []).append(ins)
     return grouped
@@ -264,6 +267,50 @@ def promote_insight_conn(connection_id: str, insight_id: str) -> Optional[dict]:
             save(connection_id, state)
             return ins
     return None
+
+
+def _log_dismissal(scope: str, insight: dict, reason: str) -> None:
+    """Append a dismissal to data/finding_dismissals.jsonl. User reasons are signal
+    for new guards / eval fixtures — the dismiss-with-reason feedback loop."""
+    try:
+        rec = {
+            "scope": scope, "id": insight.get("id"), "reason": reason,
+            "finding": insight.get("finding"), "sql": insight.get("sql"),
+            "domain": insight.get("domain"), "angle": insight.get("angle"),
+        }
+        with (_DATA_DIR / "finding_dismissals.jsonl").open("a") as fh:
+            fh.write(json.dumps(rec, default=str) + "\n")
+    except Exception:
+        pass
+
+
+def _dismiss(state: dict, insight_id: str, reason: str, scope: str) -> Optional[dict]:
+    for ins in state.get("insights", []):
+        if ins.get("id") == insight_id:
+            # Reuse the quarantine flag: hidden from intel (the read path filters
+            # `invalid`), KEPT in the store, reversible. Never deletes.
+            ins["invalid"] = True
+            ins["invalid_reason"] = f"dismissed by user: {reason}" if reason else "dismissed by user"
+            _log_dismissal(scope, ins, reason)
+            return ins
+    return None
+
+
+def dismiss_insight_conn(connection_id: str, insight_id: str, reason: str = "") -> Optional[dict]:
+    """User-dismiss a connection insight with a reason. Returns the insight or None."""
+    state = load(connection_id)
+    ins = _dismiss(state, insight_id, reason, connection_id)
+    if ins is not None:
+        save(connection_id, state)
+    return ins
+
+
+def dismiss_insight_canvas(canvas_id: str, insight_id: str, reason: str = "") -> Optional[dict]:
+    state = load_canvas(canvas_id)
+    ins = _dismiss(state, insight_id, reason, f"canvas:{canvas_id}")
+    if ins is not None:
+        save_canvas(canvas_id, state)
+    return ins
 
 
 def canvas_has_state(canvas_id: str) -> bool:

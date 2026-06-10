@@ -788,3 +788,31 @@ def promote_connection_insight(connection_id: str, insight_id: str):
         pass  # Qdrant unavailable — metadata flag is already set; non-critical
 
     return {"insight_id": insight_id, "promoted": True}
+
+
+class DismissRequest(BaseModel):
+    reason: str = ""
+
+
+@router.post("/exploration/{connection_id}/insights/{insight_id}/dismiss")
+def dismiss_connection_insight(connection_id: str, insight_id: str, req: DismissRequest):
+    """Dismiss a connection-scoped finding with a reason. Flags it invalid (hidden
+    from intel, kept in the store, reversible) and logs the reason for the guard
+    backlog — wrong/stale findings shouldn't need a hand-edited JSON file."""
+    from aughor.explorer.store import dismiss_insight_conn
+    insight = dismiss_insight_conn(connection_id, insight_id, req.reason)
+    if insight is None:
+        raise HTTPException(status_code=404, detail="Insight not found")
+    return {"insight_id": insight_id, "dismissed": True}
+
+
+@router.post("/exploration/canvas/{canvas_id}/insights/{insight_id}/dismiss")
+def dismiss_canvas_insight(canvas_id: str, insight_id: str, req: DismissRequest):
+    from aughor.canvas.store import get_canvas
+    if not get_canvas(canvas_id):
+        raise HTTPException(status_code=404, detail="Canvas not found")
+    from aughor.explorer.store import dismiss_insight_canvas
+    insight = dismiss_insight_canvas(canvas_id, insight_id, req.reason)
+    if insight is None:
+        raise HTTPException(status_code=404, detail="Insight not found")
+    return {"insight_id": insight_id, "dismissed": True}

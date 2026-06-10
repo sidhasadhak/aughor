@@ -314,6 +314,101 @@ def _is_degenerate_result(rows, finding_text: str = "") -> bool:
     return bool(finding_text and _NO_DATA_RE.search(finding_text))
 
 
+_LITERAL_DIM_RE = re.compile(r"""['"][^'"]*['"]\s+AS\s+(\w+)""", re.IGNORECASE)
+
+
+def _has_fabricated_dimension(sql: str) -> bool:
+    """True when a query invents its dimension by aliasing a constant literal and
+    grouping by it — e.g. ``SELECT 'Unknown' AS signup_source ... GROUP BY signup_source``.
+
+    The model writes this when the real column doesn't exist, producing a vacuous
+    single-group "breakdown" the narrator then presents as a real category ("the
+    only channel represented"). High-precision: only fires when the SOLE grouping
+    key is the constant — a real dimension alongside it is a legitimate breakdown.
+    """
+    if not sql:
+        return False
+    low = sql.lower()
+    if "group by" not in low:
+        return False
+    gb = low.split("group by", 1)[1]
+    gb = re.split(r"\b(order\s+by|having|limit|window|qualify)\b", gb, maxsplit=1)[0]
+    keys = [k.strip() for k in gb.split(",") if k.strip()]
+    if len(keys) != 1:
+        return False  # another real dimension is present → legitimate breakdown
+    key = keys[0]
+    if key.startswith("'") or key.startswith('"'):
+        return True  # GROUP BY 'literal'
+    return any(m.group(1).lower() == key for m in _LITERAL_DIM_RE.finditer(sql))
+
+
+def _clamp_novelty(v) -> int:
+    """Novelty is a 1-5 score (see the interpret prompt). The LLM occasionally
+    echoes a data magnitude into it — e.g. revenue 77568 lands in `novelty`, which
+    then pins confidence at 95% (``0.4 + novelty*0.1`` capped) and lets a junk
+    finding own the headline (novelty drives ranking). Clamp to the valid range."""
+    try:
+        return max(1, min(5, int(v)))
+    except (TypeError, ValueError):
+        return 3
+
+
+# Per-grain mislabel (#6): a line-item-grain column averaged and presented as a
+# per-ORDER / per-customer metric. True AOV = SUM(revenue)/COUNT(DISTINCT order);
+# `AVG(oi.line_total) AS aov` averages LINE ITEMS, undercounting (the $467-vs-$1108
+# mislabel). High-precision: keys off a line-grain column name inside AVG() that's
+# then labelled (alias or narration) as an order/customer-level metric.
+_LINE_GRAIN_COL = re.compile(r"line_?(total|amount|item|price|value|subtotal|qty|quantity)|item_(total|amount|price|qty)", re.I)
+_PER_ORDER_LABEL = re.compile(r"\baov\b|average\s+order\s+value|avg_?order_?value|order_?value|per[\s_]order|per[\s_]customer|per[\s_]basket", re.I)
+
+
+def _mislabeled_per_grain(sql: str, finding_text: str = "") -> bool:
+    """True when SQL averages a line-item-grain column but the alias or the finding
+    narrates it as a per-order/per-customer value — a semantic mislabel the numeric
+    grounding can't catch (the averaged value is a real cell, just the wrong metric)."""
+    if not sql:
+        return False
+    for m in re.finditer(r"AVG\s*\(([^)]*)\)(?:\s+AS\s+(\w+))?", sql, re.IGNORECASE):
+        arg, alias = m.group(1), (m.group(2) or "")
+        if _LINE_GRAIN_COL.search(arg) and (_PER_ORDER_LABEL.search(alias) or _PER_ORDER_LABEL.search(finding_text)):
+            return True
+    return False
+
+
+# Semantic metric groups (#5). A repair that swaps a column from one group for a
+# column in another changed WHAT is measured (revenue→cost), not just how. An LLM
+# faithfulness check rates these "faithful" (cf. 5ba0fbe) — the deterministic
+# column-group swap is the reliable signal, like the de-temporalisation guard.
+_METRIC_GROUPS: "dict[str, re.Pattern[str]]" = {
+    "revenue":  re.compile(r"revenue|gross_?sales|net_?sales|gmv|turnover|\bsales\b|total_amount|grand_total|line_total|amount_paid", re.I),
+    "cost":     re.compile(r"\bcost|expense|spend|cogs|unit_cost|landed|purchase_price", re.I),
+    "profit":   re.compile(r"profit|margin|markup|earnings|contribution", re.I),
+    "discount": re.compile(r"discount|markdown|rebate|coupon|promo_amount", re.I),
+    "price":    re.compile(r"unit_price|list_price|msrp|\bprice\b", re.I),
+    "quantity": re.compile(r"\bqty\b|quantity|units?_sold|\bunits\b|volume", re.I),
+}
+
+
+def _semantic_metric_drift(original_sql: str, fixed_sql: str) -> bool:
+    """True when a repair replaced a metric column with one of a DIFFERENT business
+    meaning (revenue↔cost, price↔quantity …). Compares the metric-group membership
+    of columns dropped vs added: a clean, disjoint group swap = the metric drifted."""
+    if not original_sql or not fixed_sql:
+        return False
+    removed = _query_columns(original_sql) - _query_columns(fixed_sql)
+    added = _query_columns(fixed_sql) - _query_columns(original_sql)
+    if not removed or not added:
+        return False
+
+    def _groups(cols: "set[str]") -> "set[str]":
+        return {g for c in cols for g, pat in _METRIC_GROUPS.items() if pat.search(c)}
+
+    gr_removed, gr_added = _groups(removed), _groups(added)
+    # Both sides name a metric, the meaning changed, and there is no overlap that
+    # would mean the original metric is still present.
+    return bool(gr_removed and gr_added and not (gr_removed & gr_added))
+
+
 # Column/table names the SQL engine reported as nonexistent — harvested generically from
 # DuckDB *and* Postgres binder errors and fed back to the question generator so it stops
 # re-proposing the same hallucinated names (the dominant Phase-8 failure class: a generator
@@ -352,6 +447,39 @@ _TEMPORAL_ANGLE_RE = re.compile(
 def _is_temporal_angle(angle: str) -> bool:
     """True when a coverage angle inherently needs a date/timestamp column."""
     return bool(_TEMPORAL_ANGLE_RE.search(angle or ""))
+
+
+# Coverage angles that need a SPECIFIC KIND of column. Offering one when the
+# domain has no matching column forces the generator to invent the dimension —
+# the `'Unknown' AS signup_source` channel hallucination. Substring-matched on
+# both the angle name (keys) and the available column names (patterns), so
+# checklist/column wording can vary. See _phase8 column-feasibility gate (#1).
+_ANGLE_REQUIRED_COLS: dict[str, "re.Pattern[str]"] = {
+    "channel_mix":          re.compile(r"channel|source|medium|utm|referr|acqui", re.I),
+    "attribution":          re.compile(r"channel|source|medium|utm|referr|attribut|touchpoint|campaign", re.I),
+    "campaign_roi":         re.compile(r"campaign|utm|ad_|adset|spend|budget|cost", re.I),
+    "conversion":           re.compile(r"conver|funnel|stage|status|step|visit|session|signup|lead", re.I),
+    "experiments":          re.compile(r"experiment|variant|\bab_|test_group|bucket|treatment|cohort_group", re.I),
+    "payment_behavior":     re.compile(r"payment|pay_|tender|method|installment|card|gateway|wallet", re.I),
+    "refund_rate":          re.compile(r"refund|return|chargeback|cancel|reversal|dispute", re.I),
+    "receivables":          re.compile(r"invoice|due|outstanding|receivable|balance|paid|payment_date|aging", re.I),
+    "supplier_performance": re.compile(r"supplier|vendor|partner|on_time|delay|fulfil|deliver", re.I),
+    "inventory_health":     re.compile(r"invent|stock|sku|quantity|on_hand|reorder|warehouse|backorder", re.I),
+    "lead_times":           re.compile(r"lead.?time|deliver|ship|fulfil|expected|actual.?date|dispatch", re.I),
+    "fulfillment":          re.compile(r"fulfil|ship|deliver|dispatch|status|tracking|warehouse", re.I),
+}
+
+
+def _angle_feasible(angle: str, columns: "set[str]") -> bool:
+    """True unless the angle needs a column class entirely absent from the domain.
+
+    Conservative: an angle with no specific column requirement is always feasible,
+    and a present-but-oddly-named column is matched by the broad patterns — so a
+    false drop (skipping a real angle) is rare, and far cheaper than a fabrication."""
+    pat = _ANGLE_REQUIRED_COLS.get((angle or "").lower())
+    if pat is None:
+        return True
+    return any(pat.search(c) for c in columns)
 
 
 def _query_columns(sql: str) -> set:
@@ -403,6 +531,22 @@ def _has_vacuous_temporal(sql: str) -> bool:
         if a == b:
             return True
     return False
+
+
+def _ontology_skip_note(last_build: Optional[dict]) -> str:
+    """An actionable 'why domain intelligence is empty' message, from the build outcome the
+    connection recorded (which stage failed + why). Turns a silent empty Hub into a clear,
+    retryable status. Falls back to a generic note when no build detail is available."""
+    lb = last_build or {}
+    stage, err = lb.get("stage"), lb.get("error")
+    if stage and err:
+        return f"Domain intelligence couldn't be built — {stage} failed: {err}"
+    if stage:
+        return f"Domain intelligence couldn't be built — the {stage} stage produced no object model."
+    return (
+        "Ontology unavailable — the object model that domain intelligence is "
+        "derived from could not be built (the schema may be too sparse to model)."
+    )
 
 
 class SchemaExplorer:
@@ -1364,15 +1508,12 @@ class SchemaExplorer:
 
         ontology = load_latest_ontology(self.connection_id)
         if not ontology:
-            logger.warning(
-                "[explorer:%s] Phase 8: ontology still not available after build attempt — skipping domain intelligence",
-                self.connection_id,
-            )
+            # Surface the SPECIFIC failure the build recorded (stage + reason) so the user
+            # gets an actionable message + Retry instead of a silent empty Hub.
+            note = _ontology_skip_note(getattr(self._conn, "last_build", None))
+            logger.warning("[explorer:%s] Phase 8: skipping — %s", self.connection_id, note)
             self._status.domain_intel_skipped = True
-            self._status.domain_intel_note = (
-                "Ontology unavailable — the object model that domain intelligence is "
-                "derived from could not be built (the schema may be too sparse to model)."
-            )
+            self._status.domain_intel_note = note
             return
 
         # Group entities by domain
@@ -1542,6 +1683,7 @@ class SchemaExplorer:
                     temporal_guard_block = ""
 
                 domain_schema_lines: list[str] = []
+                domain_cols: set[str] = set()
                 for tbl in sorted(domain_tables):
                     cols = (
                         sql_writer.table_cols.get(tbl)
@@ -1550,10 +1692,27 @@ class SchemaExplorer:
                     )
                     if cols:
                         domain_schema_lines.append(f"  {tbl}: {', '.join(cols)}")
+                        domain_cols.update(str(c).lower() for c in cols)
                 domain_schema_block = (
                     "EXACT COLUMN NAMES — use ONLY these, never invent:\n"
                     + "\n".join(domain_schema_lines)
                 ) if domain_schema_lines else ""
+
+                # ── Column-feasibility gate (#1) ────────────────────────────────
+                # Drop named angles whose required column class is absent (a
+                # channel/source column for channel_mix, a payment column for
+                # payment_behavior …). Offering them forces the generator to stub
+                # the missing dimension with a constant literal. Keep at least one
+                # angle so the loop never starves.
+                if domain_cols:
+                    _feasible = [a for a in uncovered if _angle_feasible(a, domain_cols)]
+                    if _feasible and len(_feasible) < len(uncovered):
+                        logger.info(
+                            "[explorer:%s] Phase 8: %s — dropping infeasible angles %s (required column absent)",
+                            self.connection_id, domain,
+                            [a for a in uncovered if a not in _feasible],
+                        )
+                        uncovered = _feasible
 
                 # ── Grain + cardinality context ─────────────────────────────────
                 # Inject table grains, row counts, FK columns, and high-cardinality
@@ -1750,6 +1909,20 @@ class SchemaExplorer:
                     budgets[domain] = used
                     continue
 
+                # Feasibility guard (#1, free-proposed angles): the generator stubbed
+                # a missing column with a constant literal ('Unknown' AS signup_source
+                # … GROUP BY signup_source) — a fabricated dimension. Catch it BEFORE
+                # wasting an execute+interpret cycle (the named-angle gate above only
+                # covers the checklist; the LLM can free-propose any angle).
+                if _has_fabricated_dimension(nq.sql):
+                    logger.info(
+                        "[explorer:%s] Phase 8: %s/%s — skipping fabricated-dimension question (constant grouping key)",
+                        self.connection_id, domain, nq.angle,
+                    )
+                    used += 1
+                    budgets[domain] = used
+                    continue
+
                 # Step 2: Execute SQL — repair loop: run → fail → fix with real error → repeat
                 MAX_ATTEMPTS = 3
                 think_str = f"Domain {domain} | angle={nq.angle} | {nq.question}"
@@ -1936,6 +2109,39 @@ class SchemaExplorer:
                     )
                     continue
 
+                # Drop fabricated-dimension findings — the model stubbed a missing
+                # column with a constant literal ('Unknown' AS channel … GROUP BY
+                # channel), yielding a vacuous single-group "breakdown" the narrator
+                # dresses up as a real category ("the only channel represented").
+                if _has_fabricated_dimension(sql):
+                    logger.info(
+                        "[explorer:%s] Phase 8: %s/%s — skipping fabricated-dimension finding (constant grouping key)",
+                        self.connection_id, domain, nq.angle,
+                    )
+                    continue
+
+                # Drop per-grain mislabels (#6) — a line-item AVG presented as a
+                # per-order/per-customer metric (AVG(line_total) AS aov). The numeric
+                # grounding below can't catch it: the averaged value is a real cell,
+                # only the metric name is wrong (the $467-AOV-vs-$1108 case).
+                if _mislabeled_per_grain(sql, interp.finding):
+                    logger.info(
+                        "[explorer:%s] Phase 8: %s/%s — skipping per-grain mislabel (line-item AVG sold as a per-order metric)",
+                        self.connection_id, domain, nq.angle,
+                    )
+                    continue
+
+                # Drop semantic metric drift (#5) — the self-repair loop swapped the
+                # metric column for one with a DIFFERENT business meaning (revenue↔cost,
+                # price↔qty) while "fixing" the SQL, so the finding now measures the
+                # wrong thing. Compare the original draft (nq.sql) to what actually ran.
+                if sql != nq.sql and _semantic_metric_drift(nq.sql, sql):
+                    logger.info(
+                        "[explorer:%s] Phase 8: %s/%s — skipping semantic metric drift (repair changed WHAT is measured)",
+                        self.connection_id, domain, nq.angle,
+                    )
+                    continue
+
                 # Ground every magnitude-bearing number in the prose against the real
                 # result cells. The narrator sometimes fabricates a magnitude/unit
                 # ("2.49M" for a cell of 2.49 — off 1e6). Try one corrective rewrite that
@@ -2000,8 +2206,8 @@ class SchemaExplorer:
                     # nq.sql here showed a non-runnable draft as "the data behind this claim",
                     # breaking the Evidence layer's provenance.
                     "sql": sql,
-                    "confidence": min(0.95, 0.4 + interp.novelty * 0.1),
-                    "novelty": interp.novelty,
+                    "confidence": min(0.95, 0.4 + _clamp_novelty(interp.novelty) * 0.1),
+                    "novelty": _clamp_novelty(interp.novelty),
                     "generated_at": datetime.now(timezone.utc).isoformat(),
                     "canvas_id": self.canvas_id,
                     "promoted_to_org": False,

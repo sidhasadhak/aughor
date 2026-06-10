@@ -105,6 +105,18 @@ def health():
     return {"status": "ok", "fixture_db": fixture.exists()}
 
 
+@router.get("/capabilities")
+def get_capabilities(connection_id: str | None = None):
+    """The active tier + the capabilities it grants, for the frontend to show/lock/upsell UI.
+    Defaults to the `enterprise` tier (everything on) until a lower tier is assigned."""
+    from aughor.licensing import resolve_tier, capabilities_for
+    tier = resolve_tier(connection_id)
+    return {
+        "tier": tier.value,
+        "capabilities": sorted(c.value for c in capabilities_for(tier)),
+    }
+
+
 @router.get("/dev/stats")
 def get_dev_stats():
     """Return in-process stats counters."""

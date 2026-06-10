@@ -28,8 +28,7 @@ _CACHE_TTL_HOURS = 6
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+from aughor.util.time import now_iso as _now_iso
 
 
 def _pattern_id(connection_id: str, kind: str, key: str) -> str:
@@ -37,14 +36,7 @@ def _pattern_id(connection_id: str, kind: str, key: str) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
-def _age_hours(iso: str) -> float:
-    try:
-        dt = datetime.fromisoformat(iso)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return (datetime.now(timezone.utc) - dt).total_seconds() / 3600
-    except Exception:
-        return 9999
+from aughor.util.time import age_hours as _age_hours
 
 
 # ── Core extraction ───────────────────────────────────────────────────────────

@@ -26,7 +26,7 @@ from aughor.db.history import (
     save_chat_turn,
 )
 from aughor.db.registry import BUILTIN_ID
-from aughor.routers._shared import explorers as _explorers
+from aughor.routers._shared import explorers as _explorers, explorers_for_connection as _explorers_for_connection
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["investigations"])
@@ -247,8 +247,62 @@ class OutcomeRequest(BaseModel):
     metric_after: Optional[float] = None
 
 
-_VALID_CHART_TYPES = {"auto", "bar", "bar_horizontal", "bar_vertical", "line", "area", "pie", "stacked_bar", "scatter",
+_VALID_CHART_TYPES = {"auto", "bar", "bar_horizontal", "bar_vertical", "line", "area", "pie", "pareto", "stacked_bar", "scatter",
                       "multi_line", "heatmap", "treemap", "combo"}
+
+# Concentration / 80-20 intent — only the QUESTION carries this, so the chart
+# selection has to read it here (the renderer never sees the question). Models
+# inconsistently emit a share column or the literal "pareto" chart_type, so this
+# makes the intent deterministic.
+_CONCENTRATION_RE = re.compile(
+    r"80[\s/_-]?20|pareto|concentrat|cumulative\s+share|long\s+tail|"
+    r"(few|handful|top)\b.{0,40}\b(drive|account|make up|generate)\b.{0,20}\b(most|majority|bulk)",
+    re.IGNORECASE,
+)
+_PARETO_BLOCK = {"line", "none", "heatmap", "scatter", "stacked_bar", "multi_line", "area"}
+_ID_COL_RE = re.compile(r"(^|_)(id|key|sk|pk|code)$", re.IGNORECASE)
+
+
+def _maybe_pareto(question: str, columns: list[str], rows: list, current: str) -> str:
+    """Force a Pareto when the question asks about concentration/80-20 and the
+    result is a single category(+id) ranking over a measure. The renderer
+    computes the cumulative curve itself, so no share column is required."""
+    if current in _PARETO_BLOCK:
+        return current
+    if not question or not _CONCENTRATION_RE.search(question):
+        return current
+    if not columns or len(rows) < 4:
+        return current
+    sample = rows[0]
+    if not isinstance(sample, (list, tuple)):
+        return current
+
+    def _numlike(v: object) -> bool:
+        # QueryResult stringifies every cell, so numbers arrive as strings.
+        if isinstance(v, bool):
+            return False
+        if isinstance(v, (int, float)):
+            return True
+        if isinstance(v, str):
+            s = v.strip().replace(",", "")
+            if not s or s == "NULL":
+                return False
+            try:
+                float(s)
+                return True
+            except ValueError:
+                return False
+        return False
+
+    num_idx = [i for i, v in enumerate(sample) if _numlike(v)]
+    cat_idx = [i for i in range(len(columns)) if i not in num_idx]
+    # A ranking = at least one dimension + at least one measure. When the only
+    # dimension is an id (numeric → counted above), still treat it as a ranking.
+    if num_idx and cat_idx:
+        return "pareto"
+    if len(num_idx) >= 2 and any(_ID_COL_RE.search(c) for c in columns):
+        return "pareto"
+    return current
 
 
 def _coerce_list_str(v: object) -> list[str]:
@@ -452,14 +506,23 @@ async def _stream_chat(
     session_id: str = "",
     canvas_id: Optional[str] = None,
 ) -> AsyncGenerator[str, None]:
-    # Resolve canvas schema override so table names resolve correctly
+    # Resolve canvas scope so table names resolve correctly AND the model only
+    # sees in-scope tables. Multi-dataset connections (local_upload) expose every
+    # dataset and carry schema_name=None with a table-list scope, so the
+    # schema_name override below constrains nothing — without an explicit table
+    # filter a Bakehouse canvas can answer from the ecommerce schema.
     canvas_scope_schema: str | None = None
+    canvas_scope_tables: list[str] = []
+    canvas_scope_full = True
     if canvas_id:
         try:
             from aughor.canvas.store import get_canvas
             canvas = get_canvas(canvas_id)
             if canvas and canvas.scopes:
-                canvas_scope_schema = canvas.scopes[0].schema_name
+                _scope = canvas.scopes[0]
+                canvas_scope_schema = _scope.schema_name
+                canvas_scope_tables = list(_scope.tables or [])
+                canvas_scope_full = _scope.is_full_schema
         except Exception:
             pass
     try:
@@ -556,6 +619,20 @@ async def _stream_chat(
             _safe(_kb), _safe(_ckb), _safe(_sqlex),
             _safe(_expl), _safe(_causal), _safe(_docs), _safe_list(_pb_match),
         )
+
+        # Restrict the schema to the canvas's scoped tables. Table-list scopes on
+        # multi-dataset connections have schema_name=None, so the schema_name
+        # override doesn't constrain anything — filter explicitly, mirroring the
+        # Deep Analysis path's build_canvas_schema_context. Falls back to the full
+        # schema if filtering yields nothing.
+        if canvas_scope_tables and not canvas_scope_full:
+            try:
+                from aughor.tools.schema import get_schema_for_tables
+                _scoped = get_schema_for_tables(schema, canvas_scope_tables)
+                if _scoped and _scoped.strip():
+                    schema = _scoped
+            except Exception:
+                logger.warning("Canvas table-scope filter failed; using full schema", exc_info=True)
 
         # Metrics built AFTER schema (needs the column set to filter out metrics
         # whose tables/columns aren't in THIS connection — metrics are global, so
@@ -668,6 +745,16 @@ async def _stream_chat(
                 f"DEFAULT SCHEMA: {canvas_scope_schema}\n"
                 "CRITICAL: Every table reference in SQL MUST include this schema prefix "
                 f"(e.g. {canvas_scope_schema}.table_name). Do NOT use bare table names.\n\n"
+                + schema
+            )
+        elif canvas_scope_tables and not canvas_scope_full:
+            # Table-list scope (multi-dataset connection, schema_name=None): name
+            # the allowed universe so the model can't wander into another dataset.
+            schema = (
+                "ALLOWED TABLES — this canvas is scoped to ONLY these tables:\n"
+                f"{chr(10).join('  - ' + t for t in canvas_scope_tables)}\n"
+                "CRITICAL: Query ONLY these tables, using the exact schema prefixes shown. "
+                "Do NOT reference any other schema or dataset.\n\n"
                 + schema
             )
 
@@ -845,6 +932,8 @@ async def _stream_chat(
         # Ground the headline in the ACTUAL rows — the coder's headline is a pre-execution
         # prediction and can contradict the data it ran on.
         _grounded_headline = _ground_headline(answer.headline, result.columns, result.rows)
+        # Deterministic concentration→pareto (the renderer never sees the question).
+        answer.chart_type = _maybe_pareto(question, result.columns, result.rows, answer.chart_type)
         yield _sse("columns", {"columns": result.columns})
         yield _sse("rows", {"rows": result.rows[:10000]})
         yield _sse("headline", {"headline": _grounded_headline})
@@ -1044,9 +1133,18 @@ async def _stream_investigation(
     except Exception:
         pass
 
-    _active_explorer = _explorers.get(connection_id)
-    if _active_explorer:
-        _active_explorer.pause()
+    # Pause EVERY explorer bound to this connection — the connection explorer AND any
+    # canvas explorers on the same connection — so background exploration doesn't contend
+    # with the investigation's queries. (Previously only the connection explorer paused,
+    # so a canvas explorer kept hammering the DB through the run.) Skip ones already paused
+    # (e.g. user-paused) so we only resume what we actually paused.
+    _paused_explorers = []
+    for _e in _explorers_for_connection(connection_id):
+        try:
+            _e.pause()
+            _paused_explorers.append(_e)
+        except Exception:
+            pass
 
     merged: dict = {}  # bound before try so the except/salvage path can read partial state
     try:
@@ -1294,8 +1392,11 @@ async def _stream_investigation(
             yield _sse("error", {"message": str(e)})
     finally:
         _telemetry.end_trace(trace_id)
-        if _active_explorer:
-            _active_explorer.resume()
+        for _e in _paused_explorers:
+            try:
+                _e.resume()
+            except Exception:
+                pass
         db.close()
         yield _sse("done", {})
 

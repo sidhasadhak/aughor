@@ -31,9 +31,7 @@ class RecOutcome(BaseModel):
     updated_at: str = Field(default_factory=lambda: _now())
 
 
-def _now() -> str:
-    import datetime
-    return datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+from aughor.util.time import now_iso_z as _now
 
 
 # ── Persistence ───────────────────────────────────────────────────────────────

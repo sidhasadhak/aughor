@@ -21,8 +21,7 @@ _DB_PATH = Path(__file__).parent.parent.parent / "data" / "workspaces.db"
 DEFAULT_WORKSPACE_ID = "default"
 
 
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+from aughor.util.time import now_iso as _now
 
 
 def _conn() -> sqlite3.Connection:

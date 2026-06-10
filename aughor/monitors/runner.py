@@ -17,25 +17,14 @@ logger = logging.getLogger(__name__)
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+from aughor.util.time import now_iso as _now_iso
 
 
 def _query(db, sql: str) -> list:
-    """Run SQL through the connection API and return rows (list), [] on error.
-
-    The connection exposes ``execute(label, sql) -> QueryResult(.rows/.error)`` — NOT
-    ``execute_query`` (a phantom method the runner used to call, which silently
-    AttributeError'd on every check → "No condition met"). This is the single adapter."""
-    try:
-        res = db.execute("__monitor__", sql)
-        if getattr(res, "error", None):
-            logger.debug("monitor query error: %s", res.error)
-            return []
-        return list(getattr(res, "rows", None) or [])
-    except Exception as exc:
-        logger.debug("monitor query failed: %s", exc)
-        return []
+    """Rows for a monitor check ([] on error). Thin wrapper over the connection adapter
+    (``db.rows``); the connection API is ``execute(label, sql) -> QueryResult(.rows/.error)``,
+    NOT the phantom ``execute_query`` the runner once called → "No condition met" forever."""
+    return db.rows(sql, label="__monitor__")
 
 
 def _resolve_sql(monitor: Monitor, db=None) -> Optional[str]:
@@ -67,16 +56,8 @@ def _resolve_sql(monitor: Monitor, db=None) -> Optional[str]:
 
 
 def _scalar(db, sql: str) -> Optional[float]:
-    """Execute SQL and return the first cell as float, or None on error."""
-    try:
-        result = _query(db, sql)
-        if result and len(result) > 0:
-            row = result[0]
-            val = list(row.values())[0] if isinstance(row, dict) else row[0]
-            return float(val) if val is not None else None
-    except Exception as exc:
-        logger.debug("Monitor scalar query failed: %s", exc)
-    return None
+    """First cell of a monitor query as float, or None. Wrapper over ``db.scalar``."""
+    return db.scalar(sql, label="__monitor__", cast=float)
 
 
 def _last_alert_value(monitor_id: str) -> Optional[float]:

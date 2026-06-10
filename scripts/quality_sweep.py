@@ -25,6 +25,14 @@ Usage:
 """
 import argparse, json, re, sys, time, uuid, urllib.request, urllib.error
 
+# Reuse the explorer's generation-time guards as live-sweep detectors so the
+# harness self-grades for the same classes (#4 — eval fixtures from real repros).
+try:
+    from aughor.explorer.agent import _has_fabricated_dimension, _mislabeled_per_grain
+except Exception:  # pragma: no cover — harness still runs without the guards
+    _has_fabricated_dimension = lambda sql: False          # noqa: E731
+    _mislabeled_per_grain = lambda sql, txt="": False       # noqa: E731
+
 BASE = "http://localhost:8000"
 SESSION = "qsweep-" + uuid.uuid4().hex[:8]
 OUT_JSONL = "data/quality_sweep.jsonl"
@@ -161,6 +169,16 @@ def finding_flags(phase_id, f):
     # NOAVG — a cross-sectional finding with no average / per-record lens.
     if phase_id == "cross_section" and not any(_AVG_RE.search(c) for c in cols):
         flags.append(f"NOAVG[{phase_id}]: no average column")
+
+    # FABRICATED — the SQL groups by a constant literal (a stubbed-in dimension,
+    # the 'Unknown' AS signup_source class).
+    sql = f.get("sql") or ""
+    if _has_fabricated_dimension(sql):
+        flags.append(f"FABRICATED[{phase_id}]: groups by a constant literal (fabricated dimension)")
+
+    # AOV — a line-item AVG narrated as a per-order/per-customer metric.
+    if _mislabeled_per_grain(sql, f"{title} {interp}"):
+        flags.append(f"AOV[{phase_id}]: line-item AVG labelled as a per-order metric")
     return flags
 
 
