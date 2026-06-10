@@ -57,8 +57,8 @@ function InsightCard({ insight, onDelete }: { insight: OrgInsight; onDelete: () 
               fontWeight: 600,
               textTransform: "uppercase",
               letterSpacing: "0.06em",
-              color: "var(--b3)",
-              background: "color-mix(in srgb, var(--b3) 12%, transparent)",
+              color: "var(--t3)",
+              background: "color-mix(in srgb, var(--t3) 12%, transparent)",
               borderRadius: 3,
               padding: "1px 5px",
             }}

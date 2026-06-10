@@ -28,11 +28,14 @@
   --b3: #2E3540;
   --bfocus: #0C8CE9;
 
-  /* ── Text ──  cool greys, Databricks hierarchy */
+  /* ── Text ──  cool greys, Databricks hierarchy.
+     Floor raised 2026-06-10: the old --t3 #5A6270 (~3:1) and --t4 #3A414D
+     (~1.9:1 — below perceivable) made row numbers, timestamps and labels
+     "almost invisible" (user report). Hierarchy preserved, every tier legible. */
   --t1: #E2E4E9;
-  --t2: #8B929D;
-  --t3: #5A6270;
-  --t4: #3A414D;
+  --t2: #939AA6;
+  --t3: #6E7886;
+  --t4: #525B69;
 
   /* ── Intent palette — dark ── */
   --blue1: #0A2540; --blue2: #0C3A5C; --blue3: #0C8CE9; --blue4: #4BA3F5; --blue5: #A8D4FF;
@@ -149,35 +152,60 @@
   --color-violet-50: var(--vio5); --color-violet-100: var(--vio5); --color-violet-200: var(--vio5); --color-violet-300: var(--vio5); --color-violet-400: var(--vio4); --color-violet-500: var(--vio3); --color-violet-600: var(--vio3); --color-violet-700: var(--vio2); --color-violet-800: var(--vio2); --color-violet-900: var(--vio1); --color-violet-950: var(--vio1);
 }
 
-/* ── Light mode overrides ─────────────────────────────────────────────────── */
+/* ── Light mode overrides ─────────────────────────────────────────────────────
+   Tableau-style (2026-06-10, replacing the blue-cast scheme the user found
+   hard on the eyes): neutral true-gray surfaces with white panes, #333/#666
+   text, hairline #e1e1e1 borders, Tableau-blue (#1F77B4) accent, and the
+   tab10 palette for charts. Values only — layout, structure and radii are
+   untouched. Ramp semantics preserved: N1 = subtle tint bg, N2 = strong
+   tint/border, N3 = base accent, N4/N5 = darker text-grade shades. */
 [data-theme="light"] {
-  --bg-0: #F2F5FA;
+  --bg-0: #F5F5F5;
   --bg-1: #FFFFFF;
-  --bg-2: #F7F9FC;
-  --bg-3: #ECF0F8;
-  --bg-4: #E2EAF4;
-  --bg-hover: rgba(45, 114, 210, 0.055);
-  --bg-sel:   rgba(45, 114, 210, 0.10);
+  --bg-2: #FAFAFA;
+  --bg-3: #F0F0F0;
+  --bg-4: #E8E8E8;
+  --bg-hover: rgba(0, 0, 0, 0.04);
+  --bg-sel:   rgba(31, 119, 180, 0.10);
 
-  --b0: #E5ECF5;
-  --b1: #D2DCEB;
-  --b2: #BBC9DC;
-  --b3: #A0B5CC;
-  --bfocus: #2D72D2;
+  --b0: #ECECEC;
+  --b1: #E1E1E1;
+  --b2: #D4D4D4;
+  --b3: #BDBDBD;
+  --bfocus: #1F77B4;
 
-  --t1: #1A2535;
-  --t2: #3C5270;
-  --t3: #6E8EA8;
-  --t4: #A8BDD0;
+  --t1: #333333;
+  --t2: #555555;
+  --t3: #787878;
+  --t4: #9E9E9E;
 
-  --blue1: #EBF2FC; --blue2: #C4D8F8; --blue3: #2D72D2; --blue4: #1A56B0; --blue5: #0E3C80;
-  --grn1:  #E8F7EF; --grn2:  #B5E8CE; --grn3:  #18985A; --grn4:  #0D7042; --grn5:  #084F2C;
-  --amb1:  #FDF6E0; --amb2:  #F5DF9C; --amb3:  #C08A00; --amb4:  #8A6200; --amb5:  #5A4000;
-  --red1:  #FBE8E8; --red2:  #F0B5B5; --red3:  #C42A2A; --red4:  #961C1C; --red5:  #660E0E;
-  --vio1:  #F0E8FA; --vio2:  #D4B5F0; --vio3:  #6040B8; --vio4:  #4828A0; --vio5:  #301870;
-  --cyn1:  #E2F5FC; --cyn2:  #AADDF5; --cyn3:  #1690BE; --cyn4:  #0C6E94; --cyn5:  #074C6A;
+  --blue1: #EAF3FA; --blue2: #C3DDF0; --blue3: #1F77B4; --blue4: #175A88; --blue5: #103E5E;
+  --grn1:  #EAF6EA; --grn2:  #BFE6BF; --grn3:  #2CA02C; --grn4:  #1F7A1F; --grn5:  #145214;
+  --amb1:  #FDF3E3; --amb2:  #F5D9A8; --amb3:  #B25D00; --amb4:  #8A4800; --amb5:  #5E3200;
+  --red1:  #FBEAEA; --red2:  #F0BFBF; --red3:  #D62728; --red4:  #A31D1E; --red5:  #701314;
+  --vio1:  #F2EDF8; --vio2:  #D9C7EC; --vio3:  #9467BD; --vio4:  #6F4E9C; --vio5:  #4E3470;
+  --cyn1:  #E5F6F8; --cyn2:  #B5E4EA; --cyn3:  #0F8C9A; --cyn4:  #0B6873; --cyn5:  #07474F;
 
-  --code-bg:   #EDF0F8;
-  --shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.10);
-  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.14);
+  --code-bg:   #F0F0F0;
+  --shadow-sm: 0 1px 4px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.12);
+
+  /* Brighter-than-t1 text aliases (defined as near-white in :root) must flip
+     to near-black here or they vanish on white panes. */
+  --color-zinc-200: #2A2A2A;
+  --color-zinc-100: #1F1F1F;
+
+  /* Charts: the Tableau 10 palette + light axes. */
+  --chart-1: #1F77B4;
+  --chart-2: #2CA02C;
+  --chart-3: #FF7F0E;
+  --chart-4: #9467BD;
+  --chart-5: #D62728;
+  --chart-6: #17BECF;
+  --chart-threshold-warn:   #B25D00;
+  --chart-threshold-crit:   #D62728;
+  --chart-threshold-target: #2CA02C;
+  --chart-axis:  #D4D4D4;
+  --chart-grid:  #EBEBEB;
+  --chart-tick:  #666666;
 }

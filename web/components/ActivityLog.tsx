@@ -25,21 +25,24 @@ import { formatCount } from "@/lib/format";
 
 // ── Phase metadata ────────────────────────────────────────────────────────────
 
+// Token-driven (no raw hex): hardcoded dark-theme values made these chips —
+// and most of this table — unreadable in light mode and the # column nearly
+// invisible everywhere.
 const PHASE_META: Record<string, { label: string; color: string; bg: string }> = {
-  exploration:       { label: "schema",    color: "#9a9ba4", bg: "var(--bg-3)" },
-  null_meaning:      { label: "nulls",     color: "#7ba8f7", bg: "#1a1e2e" },
-  join_verification: { label: "joins",     color: "#f97316", bg: "#2a1e14" },
-  lifecycle_mapping: { label: "lifecycle", color: "#4ade80", bg: "#1a2820" },
-  distribution:      { label: "dist",      color: "#c084fc", bg: "#22182e" },
-  cross_table:       { label: "patterns",  color: "#f87171", bg: "#2a1a1a" },
-  domain_intel:      { label: "intel",     color: "#60a5fa", bg: "#1a2030" },
+  exploration:       { label: "schema",    color: "var(--t2)",    bg: "var(--bg-3)" },
+  null_meaning:      { label: "nulls",     color: "var(--blue4)", bg: "var(--blue1)" },
+  join_verification: { label: "joins",     color: "var(--amb4)",  bg: "var(--amb1)" },
+  lifecycle_mapping: { label: "lifecycle", color: "var(--grn4)",  bg: "var(--grn1)" },
+  distribution:      { label: "dist",      color: "var(--vio4)",  bg: "var(--vio1)" },
+  cross_table:       { label: "patterns",  color: "var(--red4)",  bg: "var(--red1)" },
+  domain_intel:      { label: "intel",     color: "var(--blue4)", bg: "var(--blue1)" },
   // Chat-initiated query types
-  ask:               { label: "quick",     color: "#9a9ba4", bg: "var(--bg-3)" },
-  investigate:       { label: "agentic",   color: "#c084fc", bg: "#22182e" },
+  ask:               { label: "quick",     color: "var(--t2)",    bg: "var(--bg-3)" },
+  investigate:       { label: "agentic",   color: "var(--vio4)",  bg: "var(--vio1)" },
 };
 
 function phaseMeta(phase: string) {
-  return PHASE_META[phase] ?? { label: phase, color: "#6e6f78", bg: "#1a1a22" };
+  return PHASE_META[phase] ?? { label: phase, color: "var(--t3)", bg: "var(--bg-3)" };
 }
 
 // ── Row metadata derivation ───────────────────────────────────────────────────
@@ -150,7 +153,7 @@ function StatusBar({ status, stopped, onStop, onResume, onRestart, stopping, res
   return (
     <div className="flex items-center gap-3 px-4 py-2 border-b shrink-0" style={{ borderColor: "var(--b2)", background: "var(--bg-0)" }}>
       <span className="flex items-center gap-1.5 text-[11px] px-2 py-0.5 rounded font-medium"
-        style={isStopped && !isRunning ? { background: "var(--bg-3)", color: "#5a5b62" } : { background: meta.bg, color: meta.color }}>
+        style={isStopped && !isRunning ? { background: "var(--bg-3)", color: "var(--t3)" } : { background: meta.bg, color: meta.color }}>
         {isRunning && <span className="inline-block w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: meta.color }} />}
         {isStopped && !isRunning ? "stopped" : status.phase === "complete" ? "complete" : status.phase === "pending" ? "idle" : meta.label}
       </span>
@@ -160,26 +163,26 @@ function StatusBar({ status, stopped, onStop, onResume, onRestart, stopping, res
         {status.insights_found    > 0 && ` · ${status.insights_found} insights`}
       </span>
       <div className="ml-auto flex items-center gap-2">
-        <span className="text-[11px]" style={{ color: "var(--b0)" }}>
+        <span className="text-[11px]" style={{ color: "var(--t3)" }}>
           {status.tables_total > 0 && `${status.tables_total} tables · ${status.joins_total} joins`}
         </span>
         {isRunning && (
           <button onClick={onStop} disabled={stopping}
             className="flex items-center gap-1 text-[11px] px-2.5 py-1 rounded transition-all disabled:opacity-40"
-            style={{ background: "#2a1414", color: "#f87171", border: "0.5px solid #3e2020" }}>
-            <span className="w-2 h-2 rounded-sm inline-block" style={{ background: "#f87171" }} />
+            style={{ background: "var(--red1)", color: "var(--red4)", border: "0.5px solid var(--red2)" }}>
+            <span className="w-2 h-2 rounded-sm inline-block" style={{ background: "var(--red4)" }} />
             {stopping ? "stopping…" : "Stop"}
           </button>
         )}
         {isStopped && !isRunning && (<>
           <button onClick={onResume} disabled={resuming || restarting}
             className="text-[11px] px-2.5 py-1 rounded transition-all disabled:opacity-40"
-            style={{ background: "#1a2030", color: "#60a5fa", border: "0.5px solid #2a3a50" }}>
+            style={{ background: "var(--blue1)", color: "var(--blue4)", border: "0.5px solid var(--blue2)" }}>
             {resuming ? "resuming…" : "Resume"}
           </button>
           <button onClick={onRestart} disabled={resuming || restarting}
             className="text-[11px] px-2.5 py-1 rounded transition-all disabled:opacity-40"
-            style={{ background: "#221a10", color: "#fb923c", border: "0.5px solid #3a2a10" }}>
+            style={{ background: "var(--amb1)", color: "var(--amb4)", border: "0.5px solid var(--amb2)" }}>
             {restarting ? "restarting…" : "Restart"}
           </button>
         </>)}
@@ -216,23 +219,23 @@ function RetryPanel({ ep, connectionId, errorMsg, canvasId }: { ep: ExplorationE
 
   if (!open) return (
     <button onClick={() => setOpen(true)} className="text-[11px] px-2.5 py-1 rounded mt-2"
-      style={{ background: "#1a1e2e", color: "#7ba8f7", border: "0.5px solid #2a3050" }}>
+      style={{ background: "var(--blue1)", color: "var(--blue4)", border: "0.5px solid var(--blue2)" }}>
       ↺ Retry with fix
     </button>
   );
 
   return (
-    <div className="rounded-md p-3 space-y-2 mt-2" style={{ background: "var(--bg-0)", border: "0.5px solid #2a2b35" }}>
+    <div className="rounded-md p-3 space-y-2 mt-2" style={{ background: "var(--bg-0)", border: "0.5px solid var(--b2)" }}>
       <p className="text-[11px] uppercase tracking-widest" style={{ color: "var(--t4)" }}>Guidance (optional)</p>
       <div className="flex gap-2">
         <input type="text" value={hint} onChange={e => setHint(e.target.value)}
           onKeyDown={e => e.key === "Enter" && !loading && handleRetry()}
           placeholder="e.g. use click_ts instead of click_id…"
           className="flex-1 text-[11px] rounded px-2.5 py-1.5 focus:outline-none"
-          style={{ background: "var(--bg-1)", border: "0.5px solid #2a2b35", color: "#9a9ba4" }} />
+          style={{ background: "var(--bg-1)", border: "0.5px solid var(--b2)", color: "var(--t2)" }} />
         <button onClick={handleRetry} disabled={loading}
           className="text-[11px] px-3 py-1.5 rounded disabled:opacity-40 shrink-0"
-          style={{ background: "#1a2030", color: "#60a5fa", border: "0.5px solid #2a3a50" }}>
+          style={{ background: "var(--blue1)", color: "var(--blue4)", border: "0.5px solid var(--blue2)" }}>
           {loading ? "fixing…" : "Run fix"}
         </button>
         <button onClick={() => { setOpen(false); setResult(null); }}
@@ -240,9 +243,9 @@ function RetryPanel({ ep, connectionId, errorMsg, canvasId }: { ep: ExplorationE
       </div>
       {result && (
         <div className="space-y-2 pt-1">
-          {result.explanation && <p className="text-[11px]" style={{ color: "#7ba8f7" }}>{result.explanation}</p>}
+          {result.explanation && <p className="text-[11px]" style={{ color: "var(--blue4)" }}>{result.explanation}</p>}
           <pre className="text-[11px] font-mono rounded p-2 overflow-x-auto"
-            style={{ background: "var(--code-bg)", color: "#5a5b62", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+            style={{ background: "var(--code-bg)", color: "var(--t3)", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
             {result.corrected_sql}
           </pre>
           {result.ok ? (
@@ -251,11 +254,11 @@ function RetryPanel({ ep, connectionId, errorMsg, canvasId }: { ep: ExplorationE
                 <table className="text-[11px] font-mono w-full">
                   <thead><tr>{result.columns.map(c => (
                     <th key={c} className="px-2 py-1 text-left font-medium"
-                      style={{ color: "#4a4b57", borderBottom: "0.5px solid var(--b2)" }}>{c}</th>
+                      style={{ color: "var(--t3)", borderBottom: "0.5px solid var(--b2)" }}>{c}</th>
                   ))}</tr></thead>
                   <tbody>{result.rows.slice(0, 15).map((row, i) => (
-                    <tr key={i} style={{ borderBottom: "0.5px solid #111115" }}>
-                      {row.map((cell, j) => <td key={j} className="px-2 py-1" style={{ color: "#6e6f78" }}>{cell as string}</td>)}
+                    <tr key={i} style={{ borderBottom: "0.5px solid var(--b0)" }}>
+                      {row.map((cell, j) => <td key={j} className="px-2 py-1" style={{ color: "var(--t3)" }}>{cell as string}</td>)}
                     </tr>
                   ))}</tbody>
                 </table>
@@ -264,7 +267,7 @@ function RetryPanel({ ep, connectionId, errorMsg, canvasId }: { ep: ExplorationE
               {!saved ? (
                 <button onClick={handleSave} disabled={saving}
                   className="text-[11px] px-3 py-1.5 rounded disabled:opacity-40"
-                  style={{ background: "#13211a", color: "#34d399", border: "0.5px solid #1e3028" }}>
+                  style={{ background: "var(--grn1)", color: "var(--grn4)", border: "0.5px solid var(--grn2)" }}>
                   {saving ? "saving…" : "Save as finding"}
                 </button>
               ) : (
@@ -273,7 +276,7 @@ function RetryPanel({ ep, connectionId, errorMsg, canvasId }: { ep: ExplorationE
             </>
           ) : (
             <pre className="text-[11px] font-mono rounded p-2"
-              style={{ background: "#180f0f", color: "#f87171", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
+              style={{ background: "var(--red1)", color: "var(--red4)", whiteSpace: "pre-wrap", wordBreak: "break-all" }}>
               {result.error}
             </pre>
           )}
@@ -286,14 +289,14 @@ function RetryPanel({ ep, connectionId, errorMsg, canvasId }: { ep: ExplorationE
 // ── Save-as-finding feedback ──────────────────────────────────────────────────
 
 function SaveFeedback({ saved }: { saved: FixSaveResult }) {
-  let tone = { bg: "#13211a", fg: "#34d399", bd: "#1e3028" };  // saved clean
+  let tone = { bg: "var(--grn1)", fg: "var(--grn4)", bd: "var(--grn2)" };  // saved clean
   let text = "✓ Saved as finding";
-  if (!saved.ok) { tone = { bg: "#180f0f", fg: "#f87171", bd: "#3e2020" }; text = `✕ ${saved.error ?? "save failed"}`; }
+  if (!saved.ok) { tone = { bg: "var(--red1)", fg: "var(--red4)", bd: "var(--red2)" }; text = `✕ ${saved.error ?? "save failed"}`; }
   else if (saved.stored && saved.insight?.unverified) {
-    tone = { bg: "#221a10", fg: "#fbbf24", bd: "#3a2a10" };
+    tone = { bg: "var(--amb1)", fg: "var(--amb4)", bd: "var(--amb2)" };
     text = `⚠ Saved as unverified — ${saved.insight.verification_note}`;
   } else if (!saved.stored) {
-    tone = { bg: "#10161f", fg: "#7ba8f7", bd: "#1e2c40" };
+    tone = { bg: "var(--blue1)", fg: "var(--blue4)", bd: "var(--blue2)" };
     text = `✓ Query fixed — ${saved.reason ?? "no finding stored"}`;
   }
   return (
@@ -313,23 +316,23 @@ function ExpandedDetail({ ep, connectionId, canvasId }: { ep: ExplorationEpisode
     <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "12px 4px 8px" }}>
       {/* SQL */}
       <div>
-        <p style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "var(--b0)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>SQL</p>
-        <pre style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "#5a5b62", background: "var(--bg-0)", border: "0.5px solid #1a1b20", borderRadius: 4, padding: "8px 10px", overflowX: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all", lineHeight: 1.6, margin: 0 }}>
+        <p style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "var(--t4)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>SQL</p>
+        <pre style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--t3)", background: "var(--bg-0)", border: "0.5px solid var(--b1)", borderRadius: 4, padding: "8px 10px", overflowX: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all", lineHeight: 1.6, margin: 0 }}>
           {ep.sql || "(no sql)"}
         </pre>
       </div>
       {/* Result */}
       <div>
-        <p style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "var(--b0)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>Result</p>
-        <pre style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: isError ? "#f87171" : "#5a5b62", background: isError ? "#180f0f" : "#0a0b0d", border: `0.5px solid ${isError ? "#3e1a1a" : "#1a1b20"}`, borderRadius: 4, padding: "8px 10px", overflowX: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all", lineHeight: 1.6, margin: 0 }}>
+        <p style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "var(--t4)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>Result</p>
+        <pre style={{ fontSize: 10, fontFamily: "var(--font-mono)", color: isError ? "var(--red4)" : "var(--t3)", background: isError ? "var(--red1)" : "var(--code-bg)", border: `0.5px solid ${isError ? "var(--red2)" : "var(--b1)"}`, borderRadius: 4, padding: "8px 10px", overflowX: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all", lineHeight: 1.6, margin: 0 }}>
           {obsPreview}
         </pre>
       </div>
       {/* Query intent */}
       {ep.think && (
         <div>
-          <p style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "var(--b0)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 4 }}>Query intent</p>
-          <p style={{ fontSize: 11, color: "#4a4b57", lineHeight: 1.55, margin: 0 }}>{ep.think}</p>
+          <p style={{ fontSize: 9, fontFamily: "var(--font-mono)", color: "var(--t4)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 4 }}>Query intent</p>
+          <p style={{ fontSize: 11, color: "var(--t3)", lineHeight: 1.55, margin: 0 }}>{ep.think}</p>
         </div>
       )}
       {isError && ep.sql && <RetryPanel ep={ep} connectionId={connectionId} errorMsg={ep.observation} canvasId={canvasId} />}
@@ -341,7 +344,7 @@ function ExpandedDetail({ ep, connectionId, canvasId }: { ep: ExplorationEpisode
 
 function SortIcon({ active, dir }: { active: boolean; dir: "asc" | "desc" }) {
   if (!active) return <span style={{ marginLeft: 3, opacity: 0.25 }}>⇅</span>;
-  return <span style={{ marginLeft: 3, color: "#7ba8f7" }}>{dir === "asc" ? "↑" : "↓"}</span>;
+  return <span style={{ marginLeft: 3, color: "var(--blue4)" }}>{dir === "asc" ? "↑" : "↓"}</span>;
 }
 
 // ── Log table ─────────────────────────────────────────────────────────────────
@@ -377,7 +380,7 @@ function LogTable({ items, connectionId, canvasId, sortCol, sortDir, onSort }: L
   };
 
   function thClick(col: SortCol) {
-    return { style: { ...TH, color: sortCol === col ? "#7ba8f7" : "var(--t4)" }, onClick: () => onSort(col) };
+    return { style: { ...TH, color: sortCol === col ? "var(--blue4)" : "var(--t4)" }, onClick: () => onSort(col) };
   }
 
   return (
@@ -395,7 +398,7 @@ function LogTable({ items, connectionId, canvasId, sortCol, sortDir, onSort }: L
         </colgroup>
         <thead>
           <tr>
-            <th {...thClick("seq")} style={{ ...TH, textAlign: "right", paddingRight: 10, color: sortCol === "seq" ? "#7ba8f7" : "var(--t4)", cursor: "pointer" }}>
+            <th {...thClick("seq")} style={{ ...TH, textAlign: "right", paddingRight: 10, color: sortCol === "seq" ? "var(--blue4)" : "var(--t4)", cursor: "pointer" }}>
               #<SortIcon active={sortCol === "seq"} dir={sortDir} />
             </th>
             <th {...thClick("ts")}>
@@ -410,7 +413,7 @@ function LogTable({ items, connectionId, canvasId, sortCol, sortDir, onSort }: L
             <th {...thClick("status")}>
               status<SortIcon active={sortCol === "status"} dir={sortDir} />
             </th>
-            <th {...thClick("rows")} style={{ ...TH, textAlign: "right", color: sortCol === "rows" ? "#7ba8f7" : "var(--t4)", cursor: "pointer" }}>
+            <th {...thClick("rows")} style={{ ...TH, textAlign: "right", color: sortCol === "rows" ? "var(--blue4)" : "var(--t4)", cursor: "pointer" }}>
               rows<SortIcon active={sortCol === "rows"} dir={sortDir} />
             </th>
             <th {...thClick("object")}>
@@ -434,59 +437,59 @@ function LogTable({ items, connectionId, canvasId, sortCol, sortDir, onSort }: L
                 <tr
                   onClick={() => toggle(ekey)}
                   style={{
-                    borderBottom: isOpen ? "none" : "0.5px solid #111115",
+                    borderBottom: isOpen ? "none" : "0.5px solid var(--b0)",
                     cursor: "pointer",
-                    background: isOpen ? "#0f1014" : "transparent",
+                    background: isOpen ? "var(--bg-2)" : "transparent",
                   }}
-                  onMouseEnter={e => { if (!isOpen) (e.currentTarget as HTMLTableRowElement).style.background = "#0d0e12"; }}
+                  onMouseEnter={e => { if (!isOpen) (e.currentTarget as HTMLTableRowElement).style.background = "var(--bg-3)"; }}
                   onMouseLeave={e => { if (!isOpen) (e.currentTarget as HTMLTableRowElement).style.background = "transparent"; }}
                 >
-                  {/* # */}
-                  <td style={{ padding: "7px 10px 7px 8px", textAlign: "right", fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--b0)", whiteSpace: "nowrap" }}>
+                  {/* # — var(--b0) was a BORDER token used as text: near-invisible */}
+                  <td style={{ padding: "7px 10px 7px 8px", textAlign: "right", fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--t3)", whiteSpace: "nowrap" }}>
                     {seq}
                   </td>
                   {/* timestamp */}
-                  <td style={{ padding: "7px 8px", fontSize: 10, fontFamily: "var(--font-mono)", color: "#4a4b57", whiteSpace: "nowrap" }}>
+                  <td style={{ padding: "7px 8px", fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--t3)", whiteSpace: "nowrap" }}>
                     {meta.datetime}
                   </td>
                   {/* type */}
                   <td style={{ padding: "7px 8px" }}>
-                    <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 3, background: pm.bg, color: pm.color, border: `0.5px solid ${pm.color}33` }}>
+                    <span style={{ fontSize: 9, padding: "2px 6px", borderRadius: 3, background: pm.bg, color: pm.color, border: `0.5px solid color-mix(in srgb, ${pm.color} 25%, transparent)` }}>
                       {pm.label}
                     </span>
                   </td>
                   {/* message */}
-                  <td style={{ padding: "7px 8px", fontSize: 11, color: meta.isError ? "#f87171" : "#6e6f78", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <td style={{ padding: "7px 8px", fontSize: 11, color: meta.isError ? "var(--red4)" : "var(--t3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {meta.message}
                   </td>
                   {/* status */}
                   <td style={{ padding: "7px 8px" }}>
                     <span style={{
                       fontSize: 9, padding: "2px 6px", borderRadius: 3, fontWeight: 500,
-                      background: meta.isError ? "#2a1414" : "#13211a",
-                      color: meta.isError ? "#f87171" : "#34d399",
-                      border: `0.5px solid ${meta.isError ? "#3e2020" : "#1e3028"}`,
+                      background: meta.isError ? "var(--red1)" : "var(--grn1)",
+                      color: meta.isError ? "var(--red4)" : "var(--grn4)",
+                      border: `0.5px solid ${meta.isError ? "var(--red2)" : "var(--grn2)"}`,
                     }}>
                       {meta.isError ? "error" : "success"}
                     </span>
                   </td>
                   {/* rows */}
-                  <td style={{ padding: "7px 8px", fontSize: 10, fontFamily: "var(--font-mono)", color: "#4a4b57", textAlign: "right", whiteSpace: "nowrap" }}>
+                  <td style={{ padding: "7px 8px", fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--t3)", textAlign: "right", whiteSpace: "nowrap" }}>
                     {formatCount(meta.rows)}
                   </td>
                   {/* object */}
-                  <td style={{ padding: "7px 8px", fontSize: 10, fontFamily: "var(--font-mono)", color: "#6e6f78", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  <td style={{ padding: "7px 8px", fontSize: 10, fontFamily: "var(--font-mono)", color: "var(--t3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {meta.object}
                   </td>
                   {/* expand */}
-                  <td style={{ padding: "7px 8px", textAlign: "center", fontSize: 9, color: "var(--b0)" }}>
+                  <td style={{ padding: "7px 8px", textAlign: "center", fontSize: 9, color: "var(--t4)" }}>
                     {isOpen ? "▲" : "▼"}
                   </td>
                 </tr>
 
                 {/* Detail row — always in DOM when open, no conditional to avoid fragment issues */}
                 {isOpen && (
-                  <tr style={{ background: "#0f1014", borderBottom: "0.5px solid #1a1b20" }}>
+                  <tr style={{ background: "var(--bg-2)", borderBottom: "0.5px solid var(--b1)" }}>
                     <td colSpan={8} style={{ padding: "0 16px" }}>
                       <ExpandedDetail ep={ep} connectionId={connectionId} canvasId={canvasId} />
                     </td>
@@ -505,13 +508,13 @@ function LogTable({ items, connectionId, canvasId, sortCol, sortDir, onSort }: L
 
 function Seg<T extends string>({ value, options, onChange }: { value: T; options: { v: T; label: string }[]; onChange: (v: T) => void }) {
   return (
-    <div style={{ display: "flex", gap: 1, padding: 2, background: "var(--bg-0)", borderRadius: 5, border: "0.5px solid #1a1b20" }}>
+    <div style={{ display: "flex", gap: 1, padding: 2, background: "var(--bg-0)", borderRadius: 5, border: "0.5px solid var(--b1)" }}>
       {options.map(o => (
         <button key={o.v} onClick={() => onChange(o.v)} style={{
           fontSize: 10, padding: "3px 9px", borderRadius: 4, cursor: "pointer",
-          background: value === o.v ? "#1a1e2e" : "transparent",
-          color: value === o.v ? "#7ba8f7" : "var(--t4)",
-          border: value === o.v ? "0.5px solid #2a3050" : "0.5px solid transparent",
+          background: value === o.v ? "var(--blue1)" : "transparent",
+          color: value === o.v ? "var(--blue4)" : "var(--t4)",
+          border: value === o.v ? "0.5px solid var(--blue2)" : "0.5px solid transparent",
           fontWeight: value === o.v ? 500 : 400,
           transition: "all .1s",
         }}>
@@ -643,7 +646,7 @@ export function ActivityLog({ connectionId, isActive, canvasId }: Props) {
         <StatusBar status={status} stopped={stopped} onStop={handleStop} onResume={handleResume} onRestart={handleRestart} stopping={stopping} resuming={resuming} restarting={restarting} />
         <div className="flex-1 flex flex-col items-center justify-center gap-2" style={{ color: "var(--t4)" }}>
           <p className="text-[12px]">No activity recorded yet.</p>
-          <p className="text-[11px]" style={{ color: "var(--b0)" }}>Activity appears here as background exploration runs.</p>
+          <p className="text-[11px]" style={{ color: "var(--t4)" }}>Activity appears here as background exploration runs.</p>
         </div>
       </div>
     );
@@ -655,7 +658,7 @@ export function ActivityLog({ connectionId, isActive, canvasId }: Props) {
 
       {/* Filter + controls bar */}
       <div className="flex items-center gap-2.5 px-4 py-2 border-b shrink-0 flex-wrap"
-        style={{ borderColor: "#1a1b20", background: "var(--bg-0)" }}>
+        style={{ borderColor: "var(--b1)", background: "var(--bg-0)" }}>
         <Seg<DateFilter>
           value={filterDate} onChange={setFilterDate}
           options={[
@@ -675,7 +678,7 @@ export function ActivityLog({ connectionId, isActive, canvasId }: Props) {
         />
         <div style={{ flex: 1 }} />
         {errorCount > 0 && (
-          <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 4, background: "#2a1414", color: "#f87171", border: "0.5px solid #3e2020" }}>
+          <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 4, background: "var(--red1)", color: "var(--red4)", border: "0.5px solid var(--red2)" }}>
             {errorCount} error{errorCount !== 1 ? "s" : ""}
           </span>
         )}
@@ -684,7 +687,7 @@ export function ActivityLog({ connectionId, isActive, canvasId }: Props) {
             title={`Repair the ${errorCount} errored quer${errorCount !== 1 ? "ies" : "y"} visible under the current filter`}
             style={{
               fontSize: 10, padding: "3px 9px", borderRadius: 4, cursor: "pointer",
-              background: "#221a10", color: "#fbbf24", border: "0.5px solid #3a2a10",
+              background: "var(--amb1)", color: "var(--amb4)", border: "0.5px solid var(--amb2)",
               opacity: fixingAll ? 0.5 : 1,
             }}>
             {fixingAll ? "fixing…" : `Fix all (${errorCount})`}
@@ -699,14 +702,14 @@ export function ActivityLog({ connectionId, isActive, canvasId }: Props) {
         )}
         <span className="text-[11px]" style={{ color: "var(--t4)" }}>
           {showAll ? `${filtered.length}` : `${Math.min(DEFAULT_LIMIT, filtered.length)} of ${filtered.length}`}
-          {isRunning && <span className="ml-2 animate-pulse" style={{ color: "#4a4b57" }}>● live</span>}
+          {isRunning && <span className="ml-2 animate-pulse" style={{ color: "var(--t3)" }}>● live</span>}
         </span>
         {filtered.length > DEFAULT_LIMIT && (
           <button onClick={() => setShowAll(v => !v)} style={{
             fontSize: 10, padding: "3px 8px", borderRadius: 4, cursor: "pointer",
-            background: showAll ? "#1a2030" : "var(--bg-1)",
-            color: showAll ? "#60a5fa" : "#5a5b62",
-            border: `0.5px solid ${showAll ? "#2a3a50" : "var(--bg-3)"}`,
+            background: showAll ? "var(--blue1)" : "var(--bg-1)",
+            color: showAll ? "var(--blue4)" : "var(--t3)",
+            border: `0.5px solid ${showAll ? "var(--blue2)" : "var(--bg-3)"}`,
           }}>
             {showAll ? "Show less" : `Show all ${filtered.length}`}
           </button>

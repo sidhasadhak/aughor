@@ -239,7 +239,7 @@ function PlaybookDetail({
           </span>
           <StatusChip status={entry.status} />
           {entry.source_kb_id && (
-            <span className="text-[9.5px] font-mono" style={{ color: "var(--b0)" }}>
+            <span className="text-[9.5px] font-mono" style={{ color: "var(--t4)" }}>
               from KB: {entry.source_kb_id}
             </span>
           )}
