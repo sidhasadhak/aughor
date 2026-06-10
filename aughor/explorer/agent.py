@@ -2131,6 +2131,17 @@ class SchemaExplorer:
                     )
                     continue
 
+                # Drop semantic metric drift (#5) — the self-repair loop swapped the
+                # metric column for one with a DIFFERENT business meaning (revenue↔cost,
+                # price↔qty) while "fixing" the SQL, so the finding now measures the
+                # wrong thing. Compare the original draft (nq.sql) to what actually ran.
+                if sql != nq.sql and _semantic_metric_drift(nq.sql, sql):
+                    logger.info(
+                        "[explorer:%s] Phase 8: %s/%s — skipping semantic metric drift (repair changed WHAT is measured)",
+                        self.connection_id, domain, nq.angle,
+                    )
+                    continue
+
                 # Ground every magnitude-bearing number in the prose against the real
                 # result cells. The narrator sometimes fabricates a magnitude/unit
                 # ("2.49M" for a cell of 2.49 — off 1e6). Try one corrective rewrite that
