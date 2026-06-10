@@ -7,7 +7,7 @@ double-count), so the de-fan must be deterministic: DISTINCT(parent-key, measure
 sums each parent once. High-precision — it bails (None) on any shape it can't
 prove correct, and the caller dry-runs the result before adopting it.
 """
-from aughor.sql.fanout import detect_fanout, build_parent_fanout_rewrite
+from aughor.sql.fanout import detect_fanout, build_parent_fanout_rewrite, build_chasm_fanout_rewrite, defan
 
 # orders (parent, root "order") one-to-many lineitem (child) — the classic case.
 TC = {"orders": ["o_orderkey", "o_orderstatus", "o_totalprice"],
@@ -56,3 +56,54 @@ def test_count_star_bails():
 def test_non_parent_fanout_finding_bails():
     # A finding that isn't parent_fanout (or None) yields no rewrite.
     assert build_parent_fanout_rewrite("SELECT 1", None) is None  # type: ignore[arg-type]
+
+
+# ── Chasm (≥2 satellites of one hub) ──────────────────────────────────────────
+# part (hub, root "part") with two many-side satellites: lineitem + partsupp.
+CHASM_TC = {"part": ["p_partkey", "p_mfgr"],
+            "lineitem": ["l_orderkey", "l_partkey", "l_quantity"],
+            "partsupp": ["ps_partkey", "ps_suppkey", "ps_availqty"]}
+_CHASM_SQL = ("SELECT SUM(l.l_quantity) AS lqty, SUM(ps.ps_availqty) AS psqty "
+              "FROM part p JOIN lineitem l ON p.p_partkey = l.l_partkey "
+              "JOIN partsupp ps ON p.p_partkey = ps.ps_partkey")
+
+
+def _chasm(sql):
+    ff = detect_fanout(sql, CHASM_TC)
+    return build_chasm_fanout_rewrite(sql, ff) if ff else None
+
+
+def test_chasm_preaggregates_each_satellite():
+    rw = _chasm(_CHASM_SQL)
+    assert rw is not None
+    low = rw.lower()
+    assert low.count("group by") == 2          # one pre-agg per satellite
+    assert "with" in low and "_s_l" in low and "_s_ps" in low
+
+
+def test_chasm_count_supported():
+    rw = _chasm("SELECT COUNT(l.l_orderkey), COUNT(ps.ps_suppkey) FROM part p JOIN lineitem l ON p.p_partkey = l.l_partkey JOIN partsupp ps ON p.p_partkey = ps.ps_partkey")
+    assert rw is not None and rw.lower().count("group by") == 2
+
+
+def test_chasm_bails_on_satellite_where():
+    assert _chasm(_CHASM_SQL + " WHERE l.l_quantity > 10") is None
+
+
+def test_chasm_bails_on_avg():
+    assert _chasm("SELECT AVG(l.l_quantity), SUM(ps.ps_availqty) FROM part p JOIN lineitem l ON p.p_partkey = l.l_partkey JOIN partsupp ps ON p.p_partkey = ps.ps_partkey") is None
+
+
+def test_chasm_bails_on_count_star():
+    assert _chasm("SELECT COUNT(*), SUM(ps.ps_availqty) FROM part p JOIN lineitem l ON p.p_partkey = l.l_partkey JOIN partsupp ps ON p.p_partkey = ps.ps_partkey") is None
+
+
+def test_chasm_bails_on_outer_join():
+    assert _chasm("SELECT SUM(l.l_quantity), SUM(ps.ps_availqty) FROM part p LEFT JOIN lineitem l ON p.p_partkey = l.l_partkey JOIN partsupp ps ON p.p_partkey = ps.ps_partkey") is None
+
+
+def test_defan_dispatches_by_kind():
+    parent = "SELECT SUM(o.o_totalprice) FROM orders o JOIN lineitem l ON o.o_orderkey = l.l_orderkey"
+    assert defan(parent, detect_fanout(parent, TC)) is not None          # parent_fanout
+    assert defan(_CHASM_SQL, detect_fanout(_CHASM_SQL, CHASM_TC)) is not None  # chasm
+    assert defan("SELECT 1", None) is None

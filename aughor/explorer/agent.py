@@ -1981,11 +1981,11 @@ class SchemaExplorer:
                 # the exact DISTINCT(parent-key, measure) dedup before interpreting.
                 # Adopt only if it dry-runs clean and re-executes; silent otherwise.
                 try:
-                    from aughor.sql.fanout import detect_fanout, build_parent_fanout_rewrite
+                    from aughor.sql.fanout import detect_fanout, defan
                     _dialect = getattr(self._conn, "dialect", "duckdb")
                     _ff = detect_fanout(sql, sql_writer.table_cols, dialect=_dialect)
-                    if _ff and _ff.kind == "parent_fanout":
-                        _rw = build_parent_fanout_rewrite(sql, _ff, dialect=_dialect)
+                    if _ff:
+                        _rw = defan(sql, _ff, dialect=_dialect)
                         if _rw and _rw.strip() != sql.strip() and self._conn.dry_run(_rw)[0]:
                             _rerows = await self._run(_rw, think=f"[de-fan] {think_str}")
                             if _rerows:

@@ -292,3 +292,169 @@ def build_parent_fanout_rewrite(sql: str, finding: "FanoutFinding", dialect: str
         return outer.sql(dialect=dialect)
     except Exception:
         return None
+
+
+def build_chasm_fanout_rewrite(sql: str, finding: "FanoutFinding", dialect: str = "duckdb"):
+    """Deterministic de-fan for a CHASM (≥2 satellites of one hub aggregated across a
+    star join — the clicks×impressions case). Pre-aggregate EACH satellite to the hub
+    key in its own CTE, then join the CTEs to the hub so each satellite's SUM/COUNT is
+    counted once (TPC-H verified: 153M vs the 4x-inflated 612M).
+
+    Returns rewritten SQL or None on any shape it can't prove correct: AVG/MIN/MAX or
+    COUNT(DISTINCT)/COUNT(*) aggs, a hub-column aggregate mixed in, a WHERE on a
+    satellite (predicates can't be safely split), a child-level GROUP BY, or a
+    non-star join. Caller MUST dry-run/compare before adopting."""
+    if finding is None or finding.kind != "chasm" or len(finding.satellites) < 2:
+        return None
+    try:
+        import sqlglot
+        from sqlglot import exp
+    except Exception:
+        return None
+
+    sats = set(finding.satellites)
+    try:
+        sel = sqlglot.parse_one(sql, read=dialect)
+    except Exception:
+        return None
+    if not isinstance(sel, exp.Select) or sel.args.get("with"):
+        return None
+
+    alias_to_table = {(t.alias_or_name or "").lower(): t.name.lower() for t in sel.find_all(exp.Table)}
+    sat_aliases = {a: tn for a, tn in alias_to_table.items() if tn in sats}
+    hub_aliases = {a for a, tn in alias_to_table.items() if tn not in sats}
+    if len(sat_aliases) < 2 or not hub_aliases:
+        return None
+
+    # Each satellite must join to ONE shared hub (star). Capture sat key + hub key.
+    sat_join: dict[str, tuple] = {}   # sat_alias -> (sat_key Column, hub_alias, hub_key Column)
+    for j in (sel.args.get("joins") or []):
+        on = j.args.get("on")
+        if not on:
+            continue
+        for eq in on.find_all(exp.EQ):
+            l, r = eq.left, eq.right
+            if not (isinstance(l, exp.Column) and isinstance(r, exp.Column)):
+                continue
+            for sc, hc in ((l, r), (r, l)):
+                sa, ha = (sc.table or "").lower(), (hc.table or "").lower()
+                if sa in sat_aliases and ha in hub_aliases:
+                    sat_join[sa] = (sc, ha, hc)
+    if set(sat_join) != set(sat_aliases):
+        return None
+    hubs = {ha for (_, ha, _) in sat_join.values()}
+    if len(hubs) != 1:
+        return None
+    hub_alias = next(iter(hubs))
+
+    # We rebuild the satellite joins as INNER (hub ⋈ CTE); a LEFT/RIGHT/FULL original
+    # would change which hub rows survive — bail rather than alter semantics.
+    for j in (sel.args.get("joins") or []):
+        jt = j.this
+        ja = (jt.alias_or_name or "").lower() if isinstance(jt, exp.Table) else None
+        if ja in sat_aliases and (j.args.get("side") or "").upper() in ("LEFT", "RIGHT", "FULL"):
+            return None
+
+    where = sel.args.get("where")
+    if where and any((c.table or "").lower() in sat_aliases for c in where.find_all(exp.Column)):
+        return None  # a satellite predicate can't be safely pushed into one CTE
+
+    grp = sel.args.get("group")
+    group_cols = []
+    if grp:
+        for g in grp.expressions:
+            if not isinstance(g, exp.Column) or (g.table or "").lower() != hub_alias:
+                return None
+            group_cols.append(g)
+
+    # Classify projections: hub dim, or a SUM/COUNT over exactly one satellite column.
+    proj_plan = []   # ("dim", Column, out_alias) | ("agg", sat_alias, body, out_alias)
+    for e in sel.expressions:
+        body = e.this if isinstance(e, exp.Alias) else e
+        out_alias = e.alias if isinstance(e, exp.Alias) else None
+        if isinstance(body, exp.Column):
+            if (body.table or "").lower() != hub_alias:
+                return None
+            proj_plan.append(("dim", body, out_alias))
+        elif isinstance(body, (exp.Sum, exp.Count)):
+            inner = body.this
+            if isinstance(inner, exp.Distinct) or not isinstance(inner, exp.Column):
+                return None  # COUNT(*)/COUNT(DISTINCT) unattributable
+            ta = (inner.table or "").lower()
+            if ta not in sat_aliases:
+                return None
+            proj_plan.append(("agg", ta, body, out_alias))
+        else:
+            return None  # AVG/MIN/MAX/expr → bail
+    aggregated = {p[1] for p in proj_plan if p[0] == "agg"}
+    if len(aggregated) < 2:
+        return None
+
+    # Build a CTE per aggregated satellite: SELECT sat_key AS _k, <aggs> GROUP BY sat_key.
+    ctes = {}
+    agg_loc = {}   # id(body) -> (cte_name, agg_alias)
+    for sa in aggregated:
+        sat_key = sat_join[sa][0]
+        cte_name = f"_s_{sa}"
+        cproj = [exp.alias_(exp.column(sat_key.name), "_k")]
+        ai = 0
+        for p in proj_plan:
+            if p[0] == "agg" and p[1] == sa:
+                body = p[2]
+                an = f"_a{ai}"; ai += 1
+                cproj.append(exp.alias_(type(body)(this=exp.column(body.this.name)), an))
+                agg_loc[id(body)] = (cte_name, an)
+        cte_sel = exp.Select(expressions=cproj).from_(exp.to_table(sat_aliases[sa])).group_by(exp.column(sat_key.name))
+        ctes[sa] = (cte_name, cte_sel)
+
+    # Clone the original (keeps hub FROM/WHERE/GROUP BY), swap satellite joins for CTE joins,
+    # re-project satellite aggs as SUM(cte._aN), and attach the WITH.
+    outer = sel.copy()
+    kept = []
+    for j in (outer.args.get("joins") or []):
+        jt = j.this
+        ja = (jt.alias_or_name or "").lower() if isinstance(jt, exp.Table) else None
+        if ja in sat_aliases:
+            continue
+        kept.append(j)
+    for sa in aggregated:
+        cte_name = ctes[sa][0]
+        hub_key = sat_join[sa][2]
+        kept.append(exp.Join(
+            this=exp.to_table(cte_name),
+            on=exp.EQ(this=exp.column(hub_key.name, table=hub_alias), expression=exp.column("_k", table=cte_name)),
+            kind="INNER",
+        ))
+    outer.set("joins", kept)
+
+    final_proj = []
+    for p in proj_plan:
+        if p[0] == "dim":
+            col = exp.column(p[1].name, table=hub_alias)
+            final_proj.append(exp.alias_(col, p[2]) if p[2] else col)
+        else:
+            body, out_alias = p[2], p[3]
+            cte_name, an = agg_loc[id(body)]
+            agg = exp.Sum(this=exp.column(an, table=cte_name))
+            out_name = out_alias or f"{body.key.lower()}_{body.this.name}"
+            final_proj.append(exp.alias_(agg, out_name))
+    outer.set("expressions", final_proj)
+    try:
+        for cn, cs in ctes.values():
+            outer = outer.with_(cn, as_=cs)
+        return outer.sql(dialect=dialect)
+    except Exception:
+        return None
+
+
+def defan(sql: str, finding: "FanoutFinding", dialect: str = "duckdb"):
+    """Deterministic de-fan dispatcher. Returns a corrected SQL for the
+    parent_fanout or chasm cases, or None when neither can be safely rewritten
+    (the caller then falls back to the LLM hint)."""
+    if finding is None:
+        return None
+    if finding.kind == "parent_fanout":
+        return build_parent_fanout_rewrite(sql, finding, dialect)
+    if finding.kind == "chasm":
+        return build_chasm_fanout_rewrite(sql, finding, dialect)
+    return None

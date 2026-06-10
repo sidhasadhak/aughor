@@ -569,14 +569,14 @@ def _execute_safe(conn: "DatabaseConnection", phase_id: str, sql: str, schema: O
     # executing. Adopt only if it dry-runs clean; silent on anything it can't prove.
     if schema:
         try:
-            from aughor.sql.fanout import detect_fanout, build_parent_fanout_rewrite
+            from aughor.sql.fanout import detect_fanout, defan
             from aughor.tools.schema import _parse_schema_tables
             _dialect = getattr(conn, "dialect", "duckdb")
             _tc = {t: (list(c.keys()) if isinstance(c, dict) else c)
                    for t, c in _parse_schema_tables(schema).items()}
             _ff = detect_fanout(sql, _tc, dialect=_dialect)
-            if _ff and _ff.kind == "parent_fanout":
-                _rw = build_parent_fanout_rewrite(sql, _ff, dialect=_dialect)
+            if _ff:
+                _rw = defan(sql, _ff, dialect=_dialect)
                 if _rw and _rw.strip() != sql.strip() and conn.dry_run(_rw)[0]:
                     sql = _rw
         except Exception:

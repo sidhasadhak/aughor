@@ -864,16 +864,16 @@ async def _stream_chat(
         # pre-aggregate rewrite below (adopted only if it re-executes cleanly).
         _fanout_fix_hint = ""
         try:
-            from aughor.sql.fanout import detect_fanout, build_parent_fanout_rewrite
+            from aughor.sql.fanout import detect_fanout, defan
             from aughor.tools.schema import _parse_schema_tables as _pst
             _ff = detect_fanout(final_sql, _pst(_full_schema), dialect=db.dialect)
             if _ff:
                 # Deterministic de-fan FIRST (the LLM-rewrite path is only ~20%
                 # reliable on a known fan-out — it returns plausible CTEs that still
-                # double-count). For the parent_fanout case the DISTINCT(parent-key,
-                # measure) dedup is exact + filter-preserving (TPC-H verified). Adopt
-                # it only if it dry-runs clean; otherwise fall back to the LLM hint.
-                _rw = build_parent_fanout_rewrite(final_sql, _ff, dialect=db.dialect)
+                # double-count). The DISTINCT-dedup (parent_fanout) and per-satellite
+                # pre-aggregate (chasm) rewrites are exact + filter-preserving (TPC-H
+                # verified). Adopt only if it dry-runs clean; else fall back to the hint.
+                _rw = defan(final_sql, _ff, dialect=db.dialect)
                 _adopted = False
                 if _rw and _rw.strip() != final_sql.strip():
                     _dry_ok, _ = db.dry_run(_rw)
