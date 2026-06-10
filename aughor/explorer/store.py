@@ -64,14 +64,16 @@ def is_complete(connection_id: str, schema_fingerprint: str | None = None) -> bo
     return True
 
 
-def get_insights(connection_id: str) -> list[dict]:
-    return load(connection_id).get("insights", [])
+def get_insights(connection_id: str, include_invalid: bool = False) -> list[dict]:
+    ins = load(connection_id).get("insights", [])
+    return ins if include_invalid else [i for i in ins if not i.get("invalid")]
 
 
-def get_domain_insights(connection_id: str) -> dict[str, list[dict]]:
-    """Return insights grouped by domain."""
+def get_domain_insights(connection_id: str, include_invalid: bool = False) -> dict[str, list[dict]]:
+    """Return insights grouped by domain. Quarantined (invalid-flagged) findings
+    are excluded by default — kept in the store for inspection, hidden from intel."""
     grouped: dict[str, list[dict]] = {}
-    for ins in get_insights(connection_id):
+    for ins in get_insights(connection_id, include_invalid=include_invalid):
         d = ins.get("domain", "General")
         grouped.setdefault(d, []).append(ins)
     return grouped
@@ -214,13 +216,14 @@ def save_canvas(canvas_id: str, state: dict) -> None:
         pass
 
 
-def get_insights_canvas(canvas_id: str) -> list[dict]:
-    return load_canvas(canvas_id).get("insights", [])
+def get_insights_canvas(canvas_id: str, include_invalid: bool = False) -> list[dict]:
+    ins = load_canvas(canvas_id).get("insights", [])
+    return ins if include_invalid else [i for i in ins if not i.get("invalid")]
 
 
-def get_domain_insights_canvas(canvas_id: str) -> dict[str, list[dict]]:
+def get_domain_insights_canvas(canvas_id: str, include_invalid: bool = False) -> dict[str, list[dict]]:
     grouped: dict[str, list[dict]] = {}
-    for ins in get_insights_canvas(canvas_id):
+    for ins in get_insights_canvas(canvas_id, include_invalid=include_invalid):
         d = ins.get("domain", "General")
         grouped.setdefault(d, []).append(ins)
     return grouped
