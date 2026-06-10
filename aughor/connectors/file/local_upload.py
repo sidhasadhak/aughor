@@ -146,8 +146,10 @@ class LocalUploadConnection(Connector):
                 schemas.append("main")
             if schemas:
                 self._duckdb.execute(f"SET search_path = '{','.join(schemas)}'")
-        except Exception:
-            pass  # best-effort — never block the Workspace on schema routing
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "search_path routing is best-effort; qualified names still resolve",
+                     counter="workspace.search_path", conn_id=self._connection_id)
 
     def build_intelligence(self) -> str:
         """Build the heavy intelligence (profiles + ontology + enrichment) for this

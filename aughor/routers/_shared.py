@@ -28,8 +28,10 @@ def invalidate_schema_cache(conn_id: str) -> None:
     try:
         from aughor.db.pool import evict_conn
         evict_conn(conn_id)
-    except Exception:
-        pass
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "pool eviction is best-effort; a stale pooled conn self-heals on next open",
+                 counter="pool.evict", conn_id=conn_id)
 
 
 # ── Background explorer registry ──────────────────────────────────────────────

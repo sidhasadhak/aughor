@@ -221,6 +221,14 @@ Scorecard (re-measured at each stage, published in this doc):
 
 ## 4. Migration plan — K0…K4 (incremental, NEVER a rewrite)
 
+> **STATUS (2026-06-10):** ✅ K0 (`2631d4e`) · ✅ K1 (`82c5b4d`, live crash-drilled) ·
+> ✅ K2+K3 (`9b6b97e`, live-drilled: SSE phase events + real finding receipt) ·
+> ✅ K4 core (errors.tolerate + swallow/private-import ratchets pinned at 269/70 +
+> OpenAPI wiring-contract test). K4 follow-ups still open: generated typed TS client
+> (response-shape coverage), domain interface modules, god-file splits. WCH-8's
+> .duckdb write coordination also remains open. Scorecard re-measure due after the
+> ratchets have had a few sessions to bite.
+
 Each stage ships independently, is verified by the harness, and leaves the app working. Old paths are
 deleted only after the new path passes its invariant tests.
 
