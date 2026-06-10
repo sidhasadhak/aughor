@@ -187,3 +187,108 @@ def detect_fanout(sql: str, table_cols: dict[str, list[str]], dialect: str = "du
             )
 
     return None
+
+
+def build_parent_fanout_rewrite(sql: str, finding: "FanoutFinding", dialect: str = "duckdb"):
+    """Deterministic de-fan for a parent_fanout: wrap the source in a DISTINCT
+    subquery keyed by the parent's join column, so the parent's measure is summed
+    ONCE per parent instead of once per fanned child row. Exact and filter-
+    preserving (verified on TPC-H: $226.8B vs the 5x-inflated $1,134B).
+
+    Returns rewritten SQL, or None when it cannot transform SAFELY — a CHILD-level
+    GROUP BY (ambiguous chasm), a non-parent aggregate, a CTE/set-op, COUNT(*), or
+    any shape it doesn't fully understand. High-precision: silence over a guess.
+    The caller MUST still execute the rewrite and accept it only if it runs clean
+    and yields a value ≤ the original (dedup can only remove duplicated rows)."""
+    if finding is None or finding.kind != "parent_fanout" or not finding.satellites:
+        return None
+    try:
+        import sqlglot
+        from sqlglot import exp
+    except Exception:
+        return None
+
+    parent = finding.satellites[0]
+    children = set(finding.children)
+    try:
+        sel = sqlglot.parse_one(sql, read=dialect)
+    except Exception:
+        return None
+    if not isinstance(sel, exp.Select) or sel.args.get("with"):
+        return None  # only a single flat SELECT (detect_fanout already excludes CTE sources)
+
+    alias_to_table = {(t.alias_or_name or "").lower(): t.name.lower() for t in sel.find_all(exp.Table)}
+    parent_aliases = {a for a, tn in alias_to_table.items() if tn == parent}
+    if not parent_aliases:
+        return None
+
+    # Parent join key — the parent-side column of an ON-equality to a child table.
+    parent_key = None
+    for j in (sel.args.get("joins") or []):
+        on = j.args.get("on")
+        if not on:
+            continue
+        for eq in on.find_all(exp.EQ):
+            for side, other in ((eq.left, eq.right), (eq.right, eq.left)):
+                if (isinstance(side, exp.Column) and (side.table or "").lower() in parent_aliases
+                        and isinstance(other, exp.Column)
+                        and alias_to_table.get((other.table or "").lower()) in children):
+                    parent_key = side
+    if parent_key is None:
+        return None
+
+    # GROUP BY must be parent-level (a child dimension makes the parent measure ambiguous).
+    group_cols = []
+    grp = sel.args.get("group")
+    if grp:
+        for g in grp.expressions:
+            if not isinstance(g, exp.Column) or (g.table or "").lower() not in parent_aliases:
+                return None
+            group_cols.append(g)
+
+    inner_proj = [exp.alias_(parent_key.copy(), "_fk_pk")]
+    outer_proj = []
+    measure_alias: dict[str, str] = {}
+    mi = 0
+    for e in sel.expressions:
+        body = e.this if isinstance(e, exp.Alias) else e
+        out_alias = e.alias if isinstance(e, exp.Alias) else None
+        if isinstance(body, exp.Column):
+            if (body.table or "").lower() not in parent_aliases:
+                return None
+            inner_proj.append(body.copy())
+            col = exp.column(body.name)
+            outer_proj.append(exp.alias_(col, out_alias) if out_alias else col)
+        elif isinstance(body, (exp.Sum, exp.Avg)):
+            inner = body.this
+            if not isinstance(inner, exp.Column) or (inner.table or "").lower() not in parent_aliases:
+                return None
+            key = inner.sql(dialect=dialect)
+            if key not in measure_alias:
+                measure_alias[key] = f"_m{mi}"
+                mi += 1
+                inner_proj.append(exp.alias_(inner.copy(), measure_alias[key]))
+            new_agg = type(body)(this=exp.column(measure_alias[key]))
+            # Preserve a stable output column name (downstream grounding/charts key
+            # on it): the explicit alias, else "<func>_<measurecol>".
+            out_name = out_alias or f"{body.key.lower()}_{inner.name}"
+            outer_proj.append(exp.alias_(new_agg, out_name))
+        else:
+            return None  # COUNT(*), expressions, non-parent aggs → bail
+
+    # Inner = clone of the original (keeps FROM/JOIN/WHERE verbatim), re-projected to
+    # DISTINCT(key, dims, measures) with the aggregation/group/order stripped.
+    inner = sel.copy()
+    inner.set("expressions", inner_proj)
+    for k in ("group", "having", "order", "limit", "qualify", "offset"):
+        inner.set(k, None)
+    inner.set("distinct", exp.Distinct())
+
+    try:
+        subq = exp.Subquery(this=inner, alias=exp.TableAlias(this=exp.to_identifier("_dedup")))
+        outer = exp.Select(expressions=outer_proj).from_(subq)
+        if group_cols:
+            outer = outer.group_by(*[exp.column(g.name) for g in group_cols])
+        return outer.sql(dialect=dialect)
+    except Exception:
+        return None

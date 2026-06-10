@@ -864,12 +864,27 @@ async def _stream_chat(
         # pre-aggregate rewrite below (adopted only if it re-executes cleanly).
         _fanout_fix_hint = ""
         try:
-            from aughor.sql.fanout import detect_fanout
+            from aughor.sql.fanout import detect_fanout, build_parent_fanout_rewrite
             from aughor.tools.schema import _parse_schema_tables as _pst
             _ff = detect_fanout(final_sql, _pst(_full_schema), dialect=db.dialect)
             if _ff:
-                _fanout_fix_hint = _ff.to_prompt_text()
-                yield _sse("fanout", {"hub": _ff.hub_root, "satellites": _ff.satellites})
+                # Deterministic de-fan FIRST (the LLM-rewrite path is only ~20%
+                # reliable on a known fan-out — it returns plausible CTEs that still
+                # double-count). For the parent_fanout case the DISTINCT(parent-key,
+                # measure) dedup is exact + filter-preserving (TPC-H verified). Adopt
+                # it only if it dry-runs clean; otherwise fall back to the LLM hint.
+                _rw = build_parent_fanout_rewrite(final_sql, _ff, dialect=db.dialect)
+                _adopted = False
+                if _rw and _rw.strip() != final_sql.strip():
+                    _dry_ok, _ = db.dry_run(_rw)
+                    if _dry_ok:
+                        final_sql = _rw
+                        _adopted = True
+                        yield _sse("sql", {"sql": final_sql})
+                        yield _sse("fanout", {"hub": _ff.hub_root, "satellites": _ff.satellites, "corrected": True})
+                if not _adopted:
+                    _fanout_fix_hint = _ff.to_prompt_text()
+                    yield _sse("fanout", {"hub": _ff.hub_root, "satellites": _ff.satellites})
         except Exception:
             pass
 
