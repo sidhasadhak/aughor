@@ -61,6 +61,23 @@ CREATE TABLE IF NOT EXISTS meta (
   k TEXT PRIMARY KEY,
   v TEXT
 );
+CREATE TABLE IF NOT EXISTS jobs (
+  id              TEXT PRIMARY KEY,
+  kind            TEXT NOT NULL,
+  conn_id         TEXT,
+  canvas_id       TEXT,
+  state           TEXT NOT NULL,
+  payload         TEXT,
+  error           TEXT,
+  idempotency_key TEXT,
+  attempt         INTEGER NOT NULL DEFAULT 1,
+  created_at      TEXT NOT NULL,
+  started_at      TEXT,
+  heartbeat_at    TEXT,
+  finished_at     TEXT
+);
+CREATE INDEX IF NOT EXISTS jobs_state ON jobs(state);
+CREATE INDEX IF NOT EXISTS jobs_scope ON jobs(conn_id, canvas_id);
 """
 
 
@@ -183,6 +200,74 @@ class Ledger:
                 "ON CONFLICT(k) DO UPDATE SET v=excluded.v",
                 (k, v),
             )
+
+    # ── jobs: rows for the K1 job kernel (state machine lives in jobs.py) ────
+
+    def job_insert(self, row: dict) -> None:
+        cols = ("id", "kind", "conn_id", "canvas_id", "state", "payload", "error",
+                "idempotency_key", "attempt", "created_at", "started_at",
+                "heartbeat_at", "finished_at")
+        with self._lock, self._conn:
+            self._conn.execute(
+                f"INSERT INTO jobs ({','.join(cols)}) VALUES ({','.join('?' * len(cols))})",
+                tuple(
+                    json.dumps(row.get(c), default=str) if c == "payload" and row.get(c) is not None
+                    else row.get(c)
+                    for c in cols
+                ),
+            )
+
+    def job_update(self, job_id: str, **fields) -> None:
+        if not fields:
+            return
+        sets = ", ".join(f"{k}=?" for k in fields)
+        with self._lock, self._conn:
+            self._conn.execute(
+                f"UPDATE jobs SET {sets} WHERE id=?", (*fields.values(), job_id)
+            )
+
+    def job_get(self, job_id: str) -> Optional[dict]:
+        with self._lock:
+            cur = self._conn.execute("SELECT * FROM jobs WHERE id=?", (job_id,))
+            row = cur.fetchone()
+            if row is None:
+                return None
+            cols = [d[0] for d in cur.description]
+        out = dict(zip(cols, row))
+        if out.get("payload"):
+            try:
+                out["payload"] = json.loads(out["payload"])
+            except Exception:
+                pass
+        return out
+
+    def jobs_where(self, *, states: Optional[list[str]] = None,
+                   conn_id: Optional[str] = None, canvas_id: Optional[str] = None,
+                   idempotency_key: Optional[str] = None, limit: int = 500) -> list[dict]:
+        q, args = "SELECT * FROM jobs WHERE 1=1", []
+        if states:
+            q += f" AND state IN ({','.join('?' * len(states))})"; args.extend(states)
+        if conn_id is not None:
+            q += " AND conn_id=?"; args.append(conn_id)
+        if canvas_id is not None:
+            q += " AND canvas_id=?"; args.append(canvas_id)
+        if idempotency_key is not None:
+            q += " AND idempotency_key=?"; args.append(idempotency_key)
+        q += " ORDER BY created_at DESC LIMIT ?"; args.append(int(limit))
+        with self._lock:
+            cur = self._conn.execute(q, args)
+            cols = [d[0] for d in cur.description]
+            rows = cur.fetchall()
+        out = []
+        for r in rows:
+            d = dict(zip(cols, r))
+            if d.get("payload"):
+                try:
+                    d["payload"] = json.loads(d["payload"])
+                except Exception:
+                    pass
+            out.append(d)
+        return out
 
     # ── events: the append-only journal ──────────────────────────────────────
 

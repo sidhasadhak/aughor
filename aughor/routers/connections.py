@@ -131,6 +131,14 @@ def remove_connection(conn_id: str):
         explorer.stop()
     if task and not task.done():
         task.cancel()
+    # Cancel every kernel job in this scope — including canvas explorations
+    # running on this connection, which the registry pops above don't cover.
+    try:
+        from aughor.kernel.jobs import kernel
+        kernel().cancel_scope(conn_id=conn_id)
+    except Exception:
+        logger.warning("Could not cancel kernel jobs for deleted connection %s",
+                       conn_id, exc_info=True)
     _invalidate_schema_cache(conn_id)
     try:
         delete_connection(conn_id)

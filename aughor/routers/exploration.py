@@ -17,6 +17,7 @@ from aughor.routers._shared import (
     canvas_explorers as _canvas_explorers,
     canvas_explorer_tasks as _canvas_explorer_tasks,
     kickoff_exploration,
+    spawn_explorer,
 )
 
 logger = logging.getLogger(__name__)
@@ -301,18 +302,9 @@ async def extend_domain_budget(conn_id: str, domain: str):
     if existing is not None and existing.status.phase not in (ExplorationPhase.COMPLETE, ExplorationPhase.FAILED):
         existing._state.setdefault("domain_budgets", {})[f"{domain}__cap"] = new_cap
     else:
-        try:
-            from aughor.explorer.agent import SchemaExplorer
-            db = open_connection_for(conn_id)
-            explorer = SchemaExplorer(conn_id, db)
-            _explorers[conn_id] = explorer
-            _t = asyncio.create_task(
-                explorer.explore(domain_intel_only=True), name=f"explorer-{conn_id}-extend"
-            )
-            _t.add_done_callback(lambda _, k=conn_id: _explorer_tasks.pop(k, None))
-            _explorer_tasks[conn_id] = _t
-        except Exception as exc:
-            logger.warning("Could not restart explorer for %s after extend: %s", conn_id, exc)
+        res = await spawn_explorer(conn_id, domain_intel_only=True)
+        if not res["ok"]:
+            logger.warning("Could not restart explorer for %s after extend: %s", conn_id, res["reason"])
     return {"ok": True, "domain": domain, "extra": 5}
 
 
@@ -350,35 +342,10 @@ async def resume_exploration(conn_id: str):
     if existing and existing.status.phase not in (ExplorationPhase.COMPLETE, ExplorationPhase.FAILED):
         return {"ok": False, "reason": "already running"}
 
-    async def _do_resume() -> None:
-        loop = asyncio.get_running_loop()
-        try:
-            def _open_and_test():
-                db = open_connection_for(conn_id)
-                ok, msg = db.test()
-                if not ok:
-                    db.close()
-                    return None, False, msg
-                return db, True, msg
-
-            db, ok, msg = await loop.run_in_executor(None, _open_and_test)
-            if not ok or db is None:
-                logger.warning("Resume: connection %s not ready — %s", conn_id, msg)
-                return
-            from aughor.explorer.agent import SchemaExplorer
-            explorer = SchemaExplorer(conn_id, db)
-            _explorers[conn_id] = explorer
-            _t = asyncio.create_task(
-                explorer.explore(), name=f"explorer-{conn_id}-resume"
-            )
-            _t.add_done_callback(lambda _, k=conn_id: _explorer_tasks.pop(k, None))
-            _explorer_tasks[conn_id] = _t
-            logger.info("Resume: explorer started for %s", conn_id)
-        except Exception as exc:
-            logger.warning("Resume: failed for %s — %s", conn_id, exc)
-
-    asyncio.create_task(_do_resume(), name=f"resume-{conn_id}")
-    return {"ok": True}
+    res = await spawn_explorer(conn_id)
+    if not res["ok"]:
+        logger.warning("Resume: failed for %s — %s", conn_id, res["reason"])
+    return {"ok": res["ok"], **({"reason": res["reason"]} if res["reason"] else {})}
 
 
 @router.post("/exploration/{conn_id}/restart")
@@ -400,17 +367,13 @@ async def restart_exploration(conn_id: str):
         invalidate_profiles(conn_id)
     except Exception as _exc:
         logger.warning("Could not invalidate profile cache for %s: %s", conn_id, _exc)
-    try:
-        from aughor.explorer.agent import SchemaExplorer
-        db = open_connection_for(conn_id)
-        new_explorer = SchemaExplorer(conn_id, db)
-        _explorers[conn_id] = new_explorer
-        _t = asyncio.create_task(new_explorer.explore(), name=f"explorer-{conn_id}-restart")
-        _t.add_done_callback(lambda _, k=conn_id: _explorer_tasks.pop(k, None))
-        _explorer_tasks[conn_id] = _t
-        return {"ok": True}
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+    # Drop the stopped explorer or spawn_explorer's already-running guard refuses.
+    _explorers.pop(conn_id, None)
+    _explorer_tasks.pop(conn_id, None)
+    res = await spawn_explorer(conn_id)
+    if not res["ok"]:
+        raise HTTPException(status_code=500, detail=res["reason"] or "could not start explorer")
+    return {"ok": True}
 
 
 @router.post("/exploration/{conn_id}/retry-query")
@@ -508,35 +471,10 @@ async def trigger_domain_intelligence(conn_id: str):
     if existing and existing.status.phase not in (ExplorationPhase.COMPLETE, ExplorationPhase.FAILED):
         return {"ok": False, "reason": "explorer already running", "phase": existing.status.phase.value}
 
-    async def _do_intel() -> None:
-        loop = asyncio.get_running_loop()
-        try:
-            def _open_and_test():
-                db = open_connection_for(conn_id)
-                ok, msg = db.test()
-                if not ok:
-                    db.close()
-                    return None, False, msg
-                return db, True, msg
-
-            db, ok, msg = await loop.run_in_executor(None, _open_and_test)
-            if not ok or db is None:
-                logger.warning("Trigger-intel: connection %s not ready — %s", conn_id, msg)
-                return
-            from aughor.explorer.agent import SchemaExplorer
-            explorer = SchemaExplorer(conn_id, db)
-            _explorers[conn_id] = explorer
-            _t = asyncio.create_task(
-                explorer.explore(domain_intel_only=True), name=f"explorer-{conn_id}-intel"
-            )
-            _t.add_done_callback(lambda _, k=conn_id: _explorer_tasks.pop(k, None))
-            _explorer_tasks[conn_id] = _t
-            logger.info("Trigger-intel: domain intelligence started for %s", conn_id)
-        except Exception as exc:
-            logger.warning("Trigger-intel: failed for %s — %s", conn_id, exc)
-
-    asyncio.create_task(_do_intel(), name=f"intel-{conn_id}")
-    return {"ok": True}
+    res = await spawn_explorer(conn_id, domain_intel_only=True)
+    if not res["ok"]:
+        logger.warning("Trigger-intel: failed for %s — %s", conn_id, res["reason"])
+    return {"ok": res["ok"], **({"reason": res["reason"]} if res["reason"] else {})}
 
 
 @router.post("/exploration/{conn_id}/reset")
@@ -663,16 +601,11 @@ async def resume_canvas_exploration(canvas_id: str):
     if existing and not existing._stopped:
         existing.resume()
         return {"status": "resumed"}
-    try:
-        db = open_connection_for(conn_id)
-        explorer = SchemaExplorer(conn_id, db, canvas_id=canvas_id, tables_filter=tables)
-        _canvas_explorers[canvas_id] = explorer
-        _ct = asyncio.create_task(explorer.explore(), name=f"canvas-explorer-{canvas_id}")
-        _ct.add_done_callback(lambda _, k=canvas_id: _canvas_explorer_tasks.pop(k, None))
-        _canvas_explorer_tasks[canvas_id] = _ct
-        return {"status": "started"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    _canvas_explorers.pop(canvas_id, None)   # stopped husk would trip the spawn guard
+    res = await spawn_explorer(conn_id, canvas_id=canvas_id, tables_filter=tables)
+    if not res["ok"]:
+        raise HTTPException(status_code=500, detail=res["reason"] or "could not start canvas explorer")
+    return {"status": "started"}
 
 
 @router.post("/exploration/canvas/{canvas_id}/stop")
@@ -704,16 +637,10 @@ async def restart_canvas_exploration(canvas_id: str):
     ep_path = Path("data") / f"episodes_canvas_{canvas_id}.jsonl"
     if ep_path.exists():
         ep_path.unlink()
-    try:
-        db = open_connection_for(conn_id)
-        explorer = SchemaExplorer(conn_id, db, canvas_id=canvas_id, tables_filter=tables)
-        _canvas_explorers[canvas_id] = explorer
-        _ct = asyncio.create_task(explorer.explore(), name=f"canvas-explorer-{canvas_id}")
-        _ct.add_done_callback(lambda _, k=canvas_id: _canvas_explorer_tasks.pop(k, None))
-        _canvas_explorer_tasks[canvas_id] = _ct
-        return {"status": "restarted"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    res = await spawn_explorer(conn_id, canvas_id=canvas_id, tables_filter=tables)
+    if not res["ok"]:
+        raise HTTPException(status_code=500, detail=res["reason"] or "could not restart canvas explorer")
+    return {"status": "restarted"}
 
 
 @router.post("/exploration/canvas/{canvas_id}/domains/{domain}/extend")
