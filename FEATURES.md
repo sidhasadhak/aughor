@@ -93,6 +93,9 @@
 84. [Finding Trust Guards — Numeral Grounding & Platform-Generic SQL Robustness](#84-finding-trust-guards--numeral-grounding--platform-generic-sql-robustness--shipped)
 85. [Angle-Feasibility Gate & Repair Intent-Preservation](#85-angle-feasibility-gate--repair-intent-preservation--shipped)
 86. [Fix-and-Save & Fix-All from the Activity Log](#86-fix-and-save--fix-all-from-the-activity-log--shipped)
+87. [Deterministic Fan-out De-fan — Parent + Chasm](#87-deterministic-fan-out-de-fan--parent--chasm--shipped)
+88. [Finding-Trust Ladder — Guards, Quarantine & Dismiss-with-Reason](#88-finding-trust-ladder--guards-quarantine--dismiss-with-reason--shipped)
+89. [Delivery Polish — Significance Badge, Sparkline/MoM, Pareto](#89-delivery-polish--significance-badge-sparklinemom-pareto--shipped)
 
 ---
 
@@ -2489,4 +2492,78 @@ Two connected pieces of work that make the **Canvas** — not the raw connection
 
 ---
 
-*Last updated: 2026-06-09 · 86 features — all shipped. See `ROADMAP.md` for upcoming milestones.*
+## 87. Deterministic Fan-out De-fan — Parent + Chasm ✅ Shipped
+
+### What
+A `SUM`/`COUNT` over a one-to-many join silently over-counts (the "fan-out" / join-amplification / chasm trap) — the platform's #1 model-invariant correctness failure. Aughor now **detects and deterministically rewrites** the query so each value is counted once, before the number ever reaches the user.
+
+### Why
+On TPC-H, `SUM(orders.o_totalprice)` joined to `lineitem` returns **$1,134B instead of $226.8B (5.0×)**; on ecommerce, 2.4×. The prior fix detected the fan-out and asked the LLM to rewrite it — measured at **1/5 reliable**, with the failures returning plausible CTEs that *still* double-count ("looks fixed but isn't"). Correctness can't be probabilistic, so the rewrite is now deterministic and exact.
+
+### How
+1. `detect_fanout` (existing, high-precision) classifies the shape: `parent_fanout` (one parent measure across a detail join) or `chasm` (≥2 satellites of one hub aggregated across a star join).
+2. `build_parent_fanout_rewrite` wraps the source in a `DISTINCT(parent-join-key, measure)` subquery, then re-aggregates — exact and filter-preserving.
+3. `build_chasm_fanout_rewrite` pre-aggregates **each satellite** to its hub key in its own CTE, then joins the CTEs to the hub 1:1.
+4. A `defan()` dispatcher routes by kind; the caller **dry-runs** the rewrite and adopts it only if it executes clean. High-precision: both rewriters bail to `None` on any shape they can't prove (child-level `GROUP BY`, `AVG`/`COUNT(*)`, a satellite `WHERE`, an outer join, a hub-column agg mixed in).
+5. Wired into **all three SQL-executing surfaces**: chat (`investigations._stream_chat`, pre-execution), explorer Phase-8 (`agent.py`, before a finding is interpreted), and Deep Analysis (`investigate._execute_safe`).
+
+### Component interactions
+- Verified against the DB oracle across 6+ query shapes × 2 schemas; every surface verified end-to-end (fanned → corrected number) on real data.
+- Supersedes the prompt-only fan-out guard; the LLM hint remains the fallback for shapes the deterministic rewriter declines.
+
+### Tech / libraries
+- **SQLGlot** — parse, clone, and reconstruct the rewrite (CTEs via `.with_()`, join surgery).
+
+**Key files.** `aughor/sql/fanout.py`, `aughor/routers/investigations.py`, `aughor/explorer/agent.py`, `aughor/agent/investigate.py`; `tests/unit/test_fanout_rewrite.py`.
+
+---
+
+## 88. Finding-Trust Ladder — Guards, Quarantine & Dismiss-with-Reason ✅ Shipped
+
+### What
+A layered defense against autonomous-explorer hallucinations: prevent bad findings at the source, guard them at generation, systematically remediate the ones already stored (without ever deleting them), and let the user dismiss-with-reason — feeding corrections back into the guards.
+
+### Why
+A live Evidence card claimed *"the 'Unknown' acquisition channel, the only channel represented…"* with `NOVELTY 77568/10` and 95% confidence. Root cause: the explorer pursued a coverage angle (acquisition channel) whose column doesn't exist, so the model stubbed `'Unknown' AS signup_source`; and the LLM echoed the revenue magnitude (77568) into the 1–5 novelty score, pinning confidence and letting junk own the Briefing.
+
+### How
+1. **Angle-feasibility gate** — don't pursue a coverage angle whose required column class is absent; plus a pre-execution skip of any free-proposed question that fabricates a constant dimension (`_has_fabricated_dimension`).
+2. **Generation guards** — drop fabricated-dimension findings, clamp runaway novelty to [1,5], drop per-grain mislabels (line-item `AVG` narrated as a per-order metric — the $467-vs-$1108 case), and flag semantic metric drift (a repair swapping revenue↔cost).
+3. **Re-validation / quarantine pass** (`revalidate.py` + `scripts/revalidate_findings.py`) — re-checks *stored* findings, flags the bad ones `invalid` (hidden from intel via the store read-filter, **kept in the store, reversible — never deleted**), and repairs in-place a real finding whose only flaw is a bad score. Dry-run by default.
+4. **Dismiss-with-reason** — a "Dismiss" action on every finding card; the reason is logged to `finding_dismissals.jsonl` so user corrections become systematic signal for new guards/eval fixtures. Dismissed cards vanish instantly.
+
+### Component interactions
+- Quality-sweep harness gained `FABRICATED` + `AOV` detectors (reusing the same guards) so the platform self-grades for these classes.
+- Standing rule encoded: bad findings are preserved as reproductions, never deleted, because they drive systematic platform fixes.
+
+### Tech / libraries
+- **SQLGlot** — constant-dimension / per-grain detection; **regex** semantic-group matching for metric drift.
+
+**Key files.** `aughor/explorer/{agent,fix_persist,revalidate,store}.py`, `aughor/routers/exploration.py`, `web/components/{BriefingPanel,IntelligenceHub}.tsx`, `scripts/{quality_sweep,revalidate_findings}.py`; `tests/unit/test_{degenerate_finding,angle_feasibility,revalidate,dismiss,metric_guards}.py`.
+
+---
+
+## 89. Delivery Polish — Significance Badge, Sparkline/MoM, Pareto ✅ Shipped
+
+### What
+The answer surface caught up to the reasoning: a glanceable "within-noise" significance badge, a sparkline + month-over-month delta on time-series findings, and a Pareto (80/20) chart that surfaces concentration.
+
+### Why
+"Reasoning outruns presentation" — the analysis was already computing significance (`is_significant`) and concentration, but the UI only showed raw prose. These are the last-mile-of-trust cues a reader scans for.
+
+### How
+1. **Significance badge** (`brief/StatBadge.tsx`) — surfaces `is_significant` as a quiet "Significant" / "Within noise" marker (the value was computed but only shown as raw stat-note text).
+2. **Sparkline + MoM%** (`brief/Sparkline.tsx`) — pure-SVG sparkline + a `seriesTrend()` helper that computes period-over-period % and labels MoM/WoW/YoY by granularity.
+3. **Pareto** (`Chart.tsx`) — sorted bars + cumulative-% line + 80% rule. Because the model emits a share column for 80/20 questions but tags `chart_type:auto`, a deterministic backend rule (`_maybe_pareto`) forces Pareto when the question signals concentration and the result is a category ranking; the renderer also auto-detects a `*_share`/cumulative column.
+
+### Component interactions
+- All three plug into the ADA report's `EvidenceBlock` (and the Pareto into any `<Chart>` surface). `EvidenceBlock` now passes the finding's `chart_type` through (it was computed then ignored).
+
+### Tech / libraries
+- **Vega-Lite** (Pareto spec, dual-axis), pure-SVG (sparkline/badge).
+
+**Key files.** `web/components/brief/{StatBadge,Sparkline}.tsx`, `web/components/{Chart,InvestigationReport}.tsx`, `aughor/routers/investigations.py`, `aughor/agent/prompts*.py`.
+
+---
+
+*Last updated: 2026-06-10 · 89 features — all shipped. See `ROADMAP.md` for upcoming milestones.*
