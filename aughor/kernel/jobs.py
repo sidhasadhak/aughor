@@ -1,0 +1,314 @@
+"""The Job Kernel (stage K1) — every long-running operation is a supervised job.
+
+Before K1, long-running work was 17 raw ``asyncio.create_task`` sites with no
+shared state model: explorations stuck "running" after a crash, never resumed
+after a restart, leaked tasks on canvas/connection deletion, and pause states
+that nothing was responsible for releasing. The kernel makes those properties
+structural instead of per-call-site:
+
+- **One state machine** (PENDING → RUNNING → SUCCEEDED | FAILED | CANCELLED,
+  with PAUSED reserved) persisted in the ledger; every transition emits a
+  ``job.state`` event to the journal.
+- **Heartbeats** — a runner-side sidecar touches the job row while the task is
+  alive. A heartbeat that stops without a terminal transition = an orphan.
+  (Liveness of the event loop, not of the work itself — a hung-but-alive task
+  is K1's known blind spot, taken deliberately to avoid threading heartbeat
+  calls through every work loop.)
+- **The Supervisor** — a periodic loop that fails stale orphans, absorbs the
+  old one-shot ``sweep_stale_running`` (history.db, leveraged not duplicated),
+  and resumes explorers left paused by a dead investigation.
+- **Boot recovery** — at startup every non-terminal job row necessarily belongs
+  to a dead process (single-process runtime): mark it FAILED("server restart")
+  and hand resumable explorations back to the caller to respawn from their
+  checkpoint files. The ``api.started`` journal event anchors the timeline.
+- **Idempotency** — submitting with an idempotency key while a job with that
+  key is active returns the existing job instead of double-spawning (the
+  manual-rebuild-races-Phase-8 class).
+- **Scope cancellation** — deleting a canvas/connection cancels its jobs.
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+import uuid
+from datetime import datetime, timezone
+from typing import Any, Awaitable, Callable, Optional
+
+from aughor.kernel.ledger import Ledger
+
+logger = logging.getLogger(__name__)
+
+
+class JobState:
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    PAUSED = "PAUSED"
+    SUCCEEDED = "SUCCEEDED"
+    FAILED = "FAILED"
+    CANCELLED = "CANCELLED"
+
+    ACTIVE = (PENDING, RUNNING, PAUSED)
+    TERMINAL = (SUCCEEDED, FAILED, CANCELLED)
+
+
+_LEGAL = {
+    JobState.PENDING: {JobState.RUNNING, JobState.CANCELLED, JobState.FAILED},
+    JobState.RUNNING: {JobState.SUCCEEDED, JobState.FAILED, JobState.CANCELLED, JobState.PAUSED},
+    JobState.PAUSED: {JobState.RUNNING, JobState.CANCELLED, JobState.FAILED},
+    JobState.SUCCEEDED: set(),
+    JobState.FAILED: set(),
+    JobState.CANCELLED: set(),
+}
+
+_HEARTBEAT_SECONDS = 15
+_STALE_SECONDS = 120
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+class JobKernel:
+    def __init__(self, ledger: Optional[Ledger] = None):
+        self.ledger = ledger or Ledger.default()
+        self._tasks: dict[str, asyncio.Task] = {}
+
+    # ── state transitions (the ONLY writer of job.state) ─────────────────────
+
+    def _transition(self, job_id: str, to: str, *, error: Optional[str] = None) -> bool:
+        job = self.ledger.job_get(job_id)
+        if job is None:
+            return False
+        frm = job["state"]
+        if to not in _LEGAL.get(frm, set()):
+            logger.warning("job %s: illegal transition %s → %s ignored", job_id, frm, to)
+            return False
+        fields: dict[str, Any] = {"state": to}
+        if to == JobState.RUNNING and not job.get("started_at"):
+            fields["started_at"] = _now()
+            fields["heartbeat_at"] = _now()
+        if to in JobState.TERMINAL:
+            fields["finished_at"] = _now()
+        if error is not None:
+            fields["error"] = error[:2000]
+        self.ledger.job_update(job_id, **fields)
+        self.ledger.emit(
+            "job.state",
+            {"state": to, "kind": job["kind"], **({"error": error[:300]} if error else {})},
+            conn_id=job.get("conn_id"), canvas_id=job.get("canvas_id"), job_id=job_id,
+        )
+        return True
+
+    # ── submit / run ──────────────────────────────────────────────────────────
+
+    async def submit(
+        self,
+        kind: str,
+        coro_factory: Callable[[], Awaitable[Any]],
+        *,
+        conn_id: Optional[str] = None,
+        canvas_id: Optional[str] = None,
+        idempotency_key: Optional[str] = None,
+        payload: Any = None,
+        on_finish: Optional[Callable[[str, str], None]] = None,
+    ) -> str:
+        """Create a supervised job and start it. Returns the job id.
+
+        ``on_finish(job_id, final_state)`` runs after the terminal transition —
+        callers use it for registry cleanup (the old add_done_callback role).
+        """
+        if idempotency_key:
+            existing = self.ledger.jobs_where(
+                states=list(JobState.ACTIVE), idempotency_key=idempotency_key, limit=1
+            )
+            if existing:
+                return existing[0]["id"]
+
+        job_id = uuid.uuid4().hex[:12]
+        self.ledger.job_insert({
+            "id": job_id, "kind": kind, "conn_id": conn_id, "canvas_id": canvas_id,
+            "state": JobState.PENDING, "payload": payload,
+            "idempotency_key": idempotency_key, "attempt": 1, "created_at": _now(),
+        })
+        self.ledger.emit("job.state", {"state": JobState.PENDING, "kind": kind},
+                         conn_id=conn_id, canvas_id=canvas_id, job_id=job_id)
+        task = asyncio.create_task(
+            self._run(job_id, coro_factory, on_finish), name=f"job-{kind}-{job_id}"
+        )
+        self._tasks[job_id] = task
+        return job_id
+
+    async def _heartbeat_loop(self, job_id: str) -> None:
+        while True:
+            await asyncio.sleep(_HEARTBEAT_SECONDS)
+            try:
+                self.ledger.job_update(job_id, heartbeat_at=_now())
+            except Exception:
+                logger.debug("heartbeat write failed for job %s", job_id, exc_info=True)
+
+    async def _run(self, job_id: str, coro_factory, on_finish) -> None:
+        self._transition(job_id, JobState.RUNNING)
+        hb = asyncio.create_task(self._heartbeat_loop(job_id), name=f"hb-{job_id}")
+        final = JobState.FAILED
+        try:
+            await coro_factory()
+            final = JobState.SUCCEEDED
+            self._transition(job_id, JobState.SUCCEEDED)
+        except asyncio.CancelledError:
+            final = JobState.CANCELLED
+            self._transition(job_id, JobState.CANCELLED)
+            # Deliberately not re-raised: cancellation is an intended outcome,
+            # and this task is the top of its own stack.
+        except Exception as exc:
+            final = JobState.FAILED
+            self._transition(job_id, JobState.FAILED, error=str(exc))
+            logger.error("job %s failed: %s", job_id, exc, exc_info=True)
+        finally:
+            hb.cancel()
+            self._tasks.pop(job_id, None)
+            if on_finish is not None:
+                try:
+                    on_finish(job_id, final)
+                except Exception:
+                    logger.warning("job %s on_finish hook failed", job_id, exc_info=True)
+
+    # ── cancellation ──────────────────────────────────────────────────────────
+
+    def cancel(self, job_id: str) -> bool:
+        task = self._tasks.get(job_id)
+        if task is not None and not task.done():
+            task.cancel()
+            return True
+        # No live task (e.g. PENDING row from a dead process) — close the row.
+        return self._transition(job_id, JobState.CANCELLED)
+
+    def cancel_scope(self, *, conn_id: Optional[str] = None, canvas_id: Optional[str] = None) -> int:
+        """Cancel every active job in a scope — wired into canvas/connection
+        deletion so explorer tasks can't outlive their owner (the task-leak class)."""
+        if conn_id is None and canvas_id is None:
+            return 0
+        n = 0
+        for job in self.ledger.jobs_where(states=list(JobState.ACTIVE),
+                                          conn_id=conn_id, canvas_id=canvas_id):
+            if self.cancel(job["id"]):
+                n += 1
+        # A connection scope also owns canvas jobs running on that connection.
+        if conn_id is not None and canvas_id is None:
+            for job in self.ledger.jobs_where(states=list(JobState.ACTIVE)):
+                if job.get("conn_id") == conn_id and job.get("canvas_id"):
+                    if self.cancel(job["id"]):
+                        n += 1
+        return n
+
+    # ── boot recovery (WCH-6) ─────────────────────────────────────────────────
+
+    def boot_recovery(self) -> list[dict]:
+        """At startup, every non-terminal job row belongs to a dead process —
+        mark it FAILED and return the exploration jobs so the caller can respawn
+        them from their checkpoints. Idempotent: a clean ledger returns []."""
+        orphans = self.ledger.jobs_where(states=list(JobState.ACTIVE))
+        resumable = []
+        for job in orphans:
+            self.ledger.emit("job.orphaned", {"kind": job["kind"]},
+                             conn_id=job.get("conn_id"), canvas_id=job.get("canvas_id"),
+                             job_id=job["id"])
+            # PENDING/PAUSED → FAILED is legal; RUNNING → FAILED is legal.
+            self._transition(job["id"], JobState.FAILED, error="server restart (orphaned)")
+            if job["kind"] == "exploration":
+                resumable.append(job)
+        if orphans:
+            logger.info("boot recovery: %d orphaned job(s) failed, %d exploration(s) resumable",
+                        len(orphans), len(resumable))
+        return resumable
+
+    # ── the Supervisor ────────────────────────────────────────────────────────
+
+    def sweep_stale(self, *, stale_after: int = _STALE_SECONDS) -> int:
+        """Fail RUNNING jobs whose heartbeat went silent and whose task is gone —
+        the in-process orphan case (task died without a terminal transition)."""
+        n = 0
+        cutoff = datetime.now(timezone.utc).timestamp() - stale_after
+        for job in self.ledger.jobs_where(states=[JobState.RUNNING]):
+            if job["id"] in self._tasks:
+                continue
+            hb = job.get("heartbeat_at") or job.get("started_at") or job.get("created_at")
+            try:
+                hb_ts = datetime.fromisoformat(hb).timestamp()
+            except (ValueError, TypeError):
+                hb_ts = 0
+            if hb_ts < cutoff:
+                if self._transition(job["id"], JobState.FAILED,
+                                    error="orphaned (stale heartbeat, no live task)"):
+                    n += 1
+        return n
+
+    def _resume_investigation_paused_explorers(self) -> int:
+        """Backstop for the paused-explorer leak: an explorer paused BY AN
+        INVESTIGATION (tagged ``_paused_by_investigation``) whose connection has
+        no running investigation anymore gets resumed. User-paused explorers
+        (stop endpoints) are never touched — pause intent belongs to the user."""
+        try:
+            from aughor.routers._shared import explorers, canvas_explorers
+            from aughor.db.history import list_investigations
+        except Exception:
+            return 0
+        candidates = [e for e in (*explorers.values(), *canvas_explorers.values())
+                      if getattr(getattr(e, "_status", None), "paused", False)
+                      and getattr(e, "_paused_by_investigation", False)]
+        if not candidates:
+            return 0
+        running_conns = {
+            r.get("connection_id") for r in list_investigations(limit=100)
+            if r.get("status") == "running"
+        }
+        n = 0
+        for e in candidates:
+            if getattr(e, "connection_id", None) not in running_conns:
+                try:
+                    e.resume()
+                    e._paused_by_investigation = False
+                    self.ledger.emit("explorer.resumed",
+                                     {"reason": "investigation gone (supervisor backstop)"},
+                                     conn_id=getattr(e, "connection_id", None),
+                                     canvas_id=getattr(e, "canvas_id", None))
+                    n += 1
+                except Exception:
+                    logger.warning("supervisor: explorer resume failed", exc_info=True)
+        return n
+
+    async def supervise_forever(self, *, interval: int = 30) -> None:
+        """The periodic supervisor — replaces the old boot-only stale sweep."""
+        tick = 0
+        while True:
+            await asyncio.sleep(interval)
+            tick += 1
+            try:
+                n = self.sweep_stale()
+                if n:
+                    logger.info("supervisor: failed %d stale orphaned job(s)", n)
+            except Exception:
+                logger.warning("supervisor: stale sweep failed", exc_info=True)
+            try:
+                self._resume_investigation_paused_explorers()
+            except Exception:
+                logger.warning("supervisor: paused-explorer backstop failed", exc_info=True)
+            if tick % 10 == 0:  # ~every 5 min — absorb the old boot-only sweep
+                try:
+                    from aughor.db.history import sweep_stale_running
+                    n = sweep_stale_running(max_age_minutes=60)
+                    if n:
+                        self.ledger.emit("investigations.swept", {"count": n})
+                        logger.info("supervisor: swept %d stale investigation(s)", n)
+                except Exception:
+                    logger.warning("supervisor: investigation sweep failed", exc_info=True)
+
+
+_kernel: Optional[JobKernel] = None
+
+
+def kernel() -> JobKernel:
+    """The process-wide job kernel (lazy — tests construct their own)."""
+    global _kernel
+    if _kernel is None:
+        _kernel = JobKernel()
+    return _kernel

@@ -30,6 +30,16 @@ from aughor.routers._shared import (
     invalidate_schema_cache as _invalidate_schema_cache,
 )
 
+# Without an explicit config, app loggers fall back to logging's lastResort
+# handler which drops everything below WARNING — every INFO-level
+# instrumentation line in the codebase was invisible. Configure once at the
+# entrypoint; respect a host process that already installed handlers.
+if not logging.getLogger().handlers:
+    logging.basicConfig(
+        level=os.environ.get("AUGHOR_LOG_LEVEL", "INFO"),
+        format="%(asctime)s %(levelname)-7s %(name)s — %(message)s",
+    )
+
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Aughor API")
@@ -58,12 +68,42 @@ def _require_auth(key: str | None = Security(_api_key_header)) -> None:
 # ── Startup events ────────────────────────────────────────────────────────────
 
 @app.on_event("startup")
+async def _kernel_journal_boot() -> None:
+    # The boot event anchors the journal's timeline: restarts become visible,
+    # and "jobs running before this seq with no later transition" is exactly
+    # the orphan set K1's supervisor will resume.
+    try:
+        from aughor.kernel.ledger import Ledger
+        Ledger.default().emit("api.started")
+    except Exception as exc:
+        logger.warning("Kernel ledger unavailable at boot: %s", exc)
+
+
+@app.on_event("startup")
 async def _setup_samples() -> None:
     # Run synchronous DB seeding off the event loop so startup returns instantly.
     loop = asyncio.get_event_loop()
     try:
         from aughor.samples.setup import ensure_samples_db
-        await loop.run_in_executor(None, ensure_samples_db)
+
+        def _seed_and_validate() -> None:
+            path = ensure_samples_db()
+            # Validate the seed actually holds tables — a half-written/corrupt seed
+            # is the root of the "sample data missing" class and must be loud.
+            import duckdb
+            conn = duckdb.connect(str(path), read_only=True)
+            try:
+                n = conn.execute(
+                    "SELECT COUNT(*) FROM duckdb_tables() WHERE internal = false"
+                ).fetchone()[0]
+            finally:
+                conn.close()
+            if n == 0:
+                logger.error("Samples DB validation FAILED: %s exists but has 0 tables", path)
+            else:
+                logger.info("Samples DB validated: %d tables at %s", n, path)
+
+        await loop.run_in_executor(None, _seed_and_validate)
     except Exception as exc:
         logger.warning("Samples DB setup failed (non-fatal): %s", exc)
 
@@ -126,73 +166,13 @@ async def _validate_connections() -> None:
         logger.warning("Could not run connection key check: %s", exc)
 
 
-def _open_and_test(conn_id: str):
-    """
-    Synchronous: open a DB connection and test it.
-    Returns (db, ok, msg). Runs in a thread-pool executor — never call on the event loop.
-    """
-    db = open_connection_for(conn_id)
-    ok, msg = db.test()
-    if not ok:
-        db.close()
-        return None, False, msg
-    return db, True, msg
-
-
-async def _boot_explorer(
-    conn_id: str,
-    *,
-    retry_interval: int = 30,
-    max_retries: int = 20,
-) -> None:
-    """
-    Background task: open + test the connection (off the event loop), then launch
-    the SchemaExplorer.  Retries automatically if the DB isn't reachable yet —
-    useful for containers / Postgres that starts after the API.
-    """
-    from aughor.explorer.agent import SchemaExplorer
-
-    loop = asyncio.get_event_loop()
-    is_resume = (Path("data") / f"exploration_{conn_id}.json").exists()
-
-    for attempt in range(1, max_retries + 1):
-        try:
-            db, ok, msg = await loop.run_in_executor(None, _open_and_test, conn_id)
-        except Exception as exc:
-            ok, msg, db = False, str(exc), None
-
-        if ok and db is not None:
-            explorer = SchemaExplorer(conn_id, db)
-            _explorers[conn_id] = explorer
-            task = asyncio.create_task(explorer.explore(), name=f"explorer-{conn_id}")
-            _explorer_tasks[conn_id] = task
-            logger.info(
-                "Explorer %s for connection %s",
-                "resumed" if is_resume else "started fresh",
-                conn_id,
-            )
-            return
-
-        if attempt < max_retries:
-            logger.info(
-                "Connection %s not ready (attempt %d/%d): %s — retry in %ds",
-                conn_id, attempt, max_retries, msg, retry_interval,
-            )
-            await asyncio.sleep(retry_interval)
-        else:
-            logger.warning(
-                "Explorer not started for %s after %d attempts: %s",
-                conn_id, max_retries, msg,
-            )
-
-
 async def _boot_canvas_explorers() -> None:
-    """Background task: resume canvas explorers from saved state."""
-    from aughor.explorer.agent import SchemaExplorer
+    """Background task: resume canvas explorers from saved state (via the ONE
+    kernel-supervised spawn path)."""
     from aughor.canvas.store import get_canvas
     from aughor.explorer.store import canvas_has_state
+    from aughor.routers._shared import spawn_explorer
 
-    loop = asyncio.get_event_loop()
     canvas_states = [
         p.stem.replace("exploration_canvas_", "")
         for p in Path("data").glob("exploration_canvas_*.json")
@@ -205,33 +185,80 @@ async def _boot_canvas_explorers() -> None:
             canvas = get_canvas(canvas_id)
             if not canvas or not canvas.scopes:
                 continue
-            conn_id = canvas.scopes[0].connection_id
-            tables   = canvas.scopes[0].tables
-            db, ok, msg = await loop.run_in_executor(None, _open_and_test, conn_id)
-            if not ok:
-                logger.info("Canvas explorer skipped for %s — %s", canvas_id, msg)
-                continue
-            explorer = SchemaExplorer(conn_id, db, canvas_id=canvas_id, tables_filter=tables or None)
-            _canvas_explorers[canvas_id] = explorer
-            task = asyncio.create_task(explorer.explore(), name=f"canvas-explorer-{canvas_id}")
-            _canvas_explorer_tasks[canvas_id] = task
-            logger.info("Canvas explorer resumed for canvas %s", canvas_id)
+            res = await spawn_explorer(
+                canvas.scopes[0].connection_id,
+                canvas_id=canvas_id,
+                tables_filter=canvas.scopes[0].tables or None,
+            )
+            if res["ok"]:
+                logger.info("Canvas explorer resumed for canvas %s (job %s)", canvas_id, res["job_id"])
+            else:
+                logger.info("Canvas explorer skipped for %s — %s", canvas_id, res["reason"])
         except Exception as exc:
             logger.warning("Could not resume canvas explorer for %s: %s", canvas_id, exc)
 
 
+async def _kernel_boot_recovery() -> None:
+    """K1: fail every job orphaned by the previous process, then resume the
+    explorations whose checkpoints show unfinished work — the restart-amnesia
+    fix (an exploration at phase 5 no longer dies silently with the server)."""
+    from aughor.kernel.jobs import kernel
+    from aughor.routers._shared import spawn_explorer
+
+    try:
+        resumable = kernel().boot_recovery()
+    except Exception as exc:
+        logger.warning("Kernel boot recovery failed: %s", exc)
+        return
+    for job in resumable:
+        conn_id, canvas_id = job.get("conn_id"), job.get("canvas_id")
+        if not conn_id:
+            continue
+        try:
+            if canvas_id:
+                # Canvas explorers are also resumed by _boot_canvas_explorers;
+                # the spawn guard + idempotency key make double-resume a no-op.
+                from aughor.explorer.store import canvas_has_state
+                if not canvas_has_state(canvas_id):
+                    continue
+                tables = (job.get("payload") or {}).get("tables_filter")
+                res = await spawn_explorer(conn_id, canvas_id=canvas_id, tables_filter=tables)
+            else:
+                from aughor.explorer import store as _expl_store
+                phase = (_expl_store.load(conn_id) or {}).get("phase", "pending")
+                if phase in ("complete", "failed"):
+                    continue
+                res = await spawn_explorer(
+                    conn_id,
+                    domain_intel_only=bool((job.get("payload") or {}).get("domain_intel_only")),
+                )
+            logger.info(
+                "Boot recovery: exploration %s for %s — %s",
+                "resumed" if res["ok"] else "NOT resumed",
+                canvas_id or conn_id,
+                res["job_id"] or res["reason"],
+            )
+        except Exception as exc:
+            logger.warning("Boot recovery: could not resume %s: %s", canvas_id or conn_id, exc)
+
+
 @app.on_event("startup")
 async def _start_explorers() -> None:
+    """Kernel-supervised background work boot:
+    1. fail jobs orphaned by the previous process + resume unfinished explorations,
+    2. resume canvas explorers from saved state,
+    3. start the supervisor (stale-job sweep, paused-explorer backstop,
+       periodic stale-investigation sweep — replaces the old boot-only sweep).
+    Fresh connection explorations still start manually (POST /exploration/{id}/start).
     """
-    Explorer boot is now manual — no auto-start on server startup.
-    Users (or the UI) must trigger exploration via
-    POST /exploration/{conn_id}/start or /restart.
-    Canvas explorers from saved state are still resumed automatically.
-    """
-    # NOTE: Connection explorers are no longer auto-started to prevent
-    # heavy background work from cascading into connection failures.
-    # Only canvas explorers with saved state are resumed.
-    asyncio.create_task(_boot_canvas_explorers(), name="boot-canvas-explorers")
+    from aughor.kernel.jobs import kernel
+
+    async def _boot() -> None:
+        await _kernel_boot_recovery()
+        await _boot_canvas_explorers()
+
+    asyncio.create_task(_boot(), name="kernel-boot")
+    asyncio.create_task(kernel().supervise_forever(), name="kernel-supervisor")
 
 
 async def _ontology_refresh_loop() -> None:

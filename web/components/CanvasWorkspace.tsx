@@ -553,6 +553,11 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
   const [chatKey, setChatKey] = useState(0);
   const [openInvId, setOpenInvId] = useState<string | null>(null);
   const [restoreSessionId, setRestoreSessionId] = useState<string | null>(null);
+  // Seed question for ChatPanel, set by canvas-scoped Intelligence "Investigate" actions.
+  // ChatPanel only auto-submits on a fresh mount, so every path that bumps chatKey for
+  // another reason must clear the seed or the stale question would re-submit.
+  const [chatInitialQuestion, setChatInitialQuestion] = useState<string | undefined>(undefined);
+  const [chatInitialMode, setChatInitialMode] = useState<"ask" | "investigate" | undefined>(undefined);
   const [showSettings, setShowSettings] = useState(false);
   const [showConfigure, setShowConfigure] = useState(false);
   const headerRef = useRef<HTMLDivElement>(null);
@@ -566,6 +571,8 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
 
   // When canvas changes, reset to chat tab, but honour initial props
   useEffect(() => {
+    setChatInitialQuestion(undefined);
+    setChatInitialMode(undefined);
     if (initialOpenInvId) {
       setWsTab("history");
       setOpenInvId(initialOpenInvId);
@@ -592,6 +599,8 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
     if (kind === "chat") {
       setOpenInvId(null);
       setRestoreSessionId(id);
+      setChatInitialQuestion(undefined);
+      setChatInitialMode(undefined);
       setWsTab("chat");
       setChatKey(k => k + 1);
     } else {
@@ -687,7 +696,7 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
 
         {/* New chat button */}
         <button
-          onClick={() => { setWsTab("chat"); setChatKey(k => k + 1); setOpenInvId(null); setRestoreSessionId(null); }}
+          onClick={() => { setWsTab("chat"); setChatKey(k => k + 1); setOpenInvId(null); setRestoreSessionId(null); setChatInitialQuestion(undefined); setChatInitialMode(undefined); }}
           className="aug-btn aug-btn-ghost aug-btn-sm"
           title="New conversation"
           style={{ display: "inline-flex", alignItems: "center", gap: 5 }}
@@ -764,6 +773,8 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
             connectionId={connectionId}
             canvasId={canvas.id}
             restoreSessionId={restoreSessionId}
+            initialQuestion={chatInitialQuestion}
+            initialMode={chatInitialMode}
             capabilities={<CapabilitiesBlock canvas={canvas} connection={connection} />}
           />
         </div>
@@ -800,6 +811,8 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
                     invId={openInvId}
                     onContinue={() => {
                       setOpenInvId(null);
+                      setChatInitialQuestion(undefined);
+                      setChatInitialMode(undefined);
                       setWsTab("chat");
                       setChatKey(k => k + 1);
                     }}
@@ -834,7 +847,16 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
             canvasId={canvas.id}
             layer={intelLayer}
             onLayerChange={setIntelLayer}
-            onInvestigate={() => setWsTab("chat")}
+            onInvestigate={(q, mode) => {
+              if (q) {
+                setChatInitialQuestion(q);
+                setChatInitialMode(mode);
+                setRestoreSessionId(null);
+                setOpenInvId(null);
+                setChatKey(k => k + 1); // fresh mount → ChatPanel auto-submits the seeded question
+              }
+              setWsTab("chat");
+            }}
           />
         </div>
 

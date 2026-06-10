@@ -131,6 +131,14 @@ def remove_connection(conn_id: str):
         explorer.stop()
     if task and not task.done():
         task.cancel()
+    # Cancel every kernel job in this scope — including canvas explorations
+    # running on this connection, which the registry pops above don't cover.
+    try:
+        from aughor.kernel.jobs import kernel
+        kernel().cancel_scope(conn_id=conn_id)
+    except Exception:
+        logger.warning("Could not cancel kernel jobs for deleted connection %s",
+                       conn_id, exc_info=True)
     _invalidate_schema_cache(conn_id)
     try:
         delete_connection(conn_id)
@@ -327,9 +335,14 @@ async def table_sample(conn_id: str, table: str, limit: int = 100, schema: str =
             raise HTTPException(status_code=404, detail="Connection not found")
         try:
             result = db.execute("sample", f"SELECT * FROM {ref} LIMIT {_limit}")
+            error = result.error
+            if error and getattr(db, "_seed_failed", None):
+                # A failed seed materialization presents as "table does not exist" —
+                # surface the real cause instead of a bare binder error.
+                error = f"{error} (sample seed problem: {db._seed_failed})"
             columns = result.columns
             rows = [[str(v) if v is not None else None for v in row] for row in result.rows]
-            return {"columns": columns, "rows": rows}
+            return {"columns": columns, "rows": rows, "row_count": len(rows), "error": error}
         finally:
             if db:
                 try:

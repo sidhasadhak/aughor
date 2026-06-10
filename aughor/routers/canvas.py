@@ -104,6 +104,21 @@ def delete_canvas_endpoint(canvas_id: str):
     from aughor.canvas.store import delete_canvas
     if not delete_canvas(canvas_id):
         raise HTTPException(status_code=404, detail="Canvas not found")
+    # A canvas's explorer must not outlive it — before this, the task kept
+    # running and the registry entry leaked on every create/delete cycle.
+    try:
+        from aughor.routers._shared import canvas_explorers, canvas_explorer_tasks
+        from aughor.kernel.jobs import kernel
+        ex = canvas_explorers.pop(canvas_id, None)
+        if ex is not None:
+            ex.stop()
+        canvas_explorer_tasks.pop(canvas_id, None)
+        kernel().cancel_scope(canvas_id=canvas_id)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).warning(
+            "Could not cancel explorer for deleted canvas %s", canvas_id, exc_info=True
+        )
 
 
 @router.get("/canvases/{canvas_id}/schema")

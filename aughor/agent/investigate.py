@@ -1005,13 +1005,133 @@ def _phases_evidence(phases: list[InvestigationPhaseResult]) -> str:
 
 # ── Phase nodes ───────────────────────────────────────────────────────────────
 
-def _extract_data_date_range(scan_context: str) -> tuple:
-    """Pull the overall (min, max) date the data actually covers from the DATA
-    PORTRAIT text — the [PROFILE] lines carry 'YYYY-MM-DD → YYYY-MM-DD'."""
+def _extract_data_date_range(scan_context: str, table: str = "") -> tuple:
+    """Pull the (min, max) date the data actually covers from the DATA PORTRAIT
+    text — the [PROFILE] lines carry 'YYYY-MM-DD → YYYY-MM-DD'.
+
+    When ``table`` is given, read THAT table's [PROFILE] line only: on a
+    multi-dataset connection the global min/max mixes datasets (ecommerce's
+    24 months beside bakehouse's 17 days), which let an empty comparison window
+    pass validation because a *sibling* dataset had data there."""
+    if table:
+        bare = str(table).split(".")[-1].lower()
+        for line in (scan_context or "").splitlines():
+            if "[PROFILE]" not in line:
+                continue
+            m = re.search(r"\[PROFILE\]\s+(\S+)", line)
+            name = (m.group(1) if m else "").lower()
+            if name == str(table).lower() or name.split(".")[-1] == bare:
+                dates = re.findall(r"\d{4}-\d{2}-\d{2}", line)
+                if dates:
+                    return min(dates), max(dates)
     dates = re.findall(r"\d{4}-\d{2}-\d{2}", scan_context or "")
     if not dates:
         return None, None
     return min(dates), max(dates)
+
+
+def _measure_date_span(conn_id: str, table: str, date_column: str) -> tuple:
+    """Authoritative (min, max) of the metric table's date column via one cheap
+    probe. The DATA PORTRAIT is empty on the ADA path (scan_context is never
+    populated before intake), so profile-text parsing alone leaves the window
+    validation blind — this asks the database itself. Returns (None, None) on
+    any failure; the clamp then no-ops."""
+    if not conn_id or not table or not date_column:
+        return None, None
+    db = None
+    try:
+        from aughor.db.connection import open_connection_for
+        db = open_connection_for(conn_id)
+        col = str(date_column).split(".")[-1].replace('"', "").replace(";", "")
+        ref = str(table).replace('"', "").replace(";", "")
+        res = db.execute("intake_span", f"SELECT MIN({col}), MAX({col}) FROM {ref}")
+        if res.error or not res.rows or len(res.rows[0]) < 2:
+            return None, None
+        lo, hi = str(res.rows[0][0])[:10], str(res.rows[0][1])[:10]
+        if re.match(r"^\d{4}-\d{2}-\d{2}$", lo) and re.match(r"^\d{4}-\d{2}-\d{2}$", hi):
+            return lo, hi
+        return None, None
+    except Exception:
+        return None, None
+    finally:
+        if db is not None:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+
+def _clamp_intake_to_coverage(intake, dmin, dmax):
+    """Deterministically fit the intake's windows to the data that actually exists.
+    The LLM-retry path merely *asks* for a correction; this enforces it. Returns a
+    coverage note (str) when anything was adjusted, else None.
+
+    - Observation is clipped to [dmin, dmax]; if it misses the data entirely it
+      becomes the full available history.
+    - A comparison with NO overlap collapses onto the observation window and is
+      relabelled — "compare vs an empty period" is the bug class this kills.
+    - When the available history is short (<~45 days), the label says so and the
+      note tells the planner to use a daily/weekly grain and skip MoM/YoY.
+    """
+    from datetime import datetime
+
+    if not dmin or not dmax or getattr(intake, "cross_sectional", False):
+        return None
+    notes = []
+
+    def _clip(start, end):
+        s, e = (start or "")[:10], (end or "")[:10]
+        if not s or not e:
+            return s, e, False
+        if e < dmin or s > dmax:           # no overlap at all
+            return dmin, dmax, True
+        cs, ce = max(s, dmin), min(e, dmax)
+        return cs, ce, (cs != s or ce != e)
+
+    os_, oe_, o_changed = _clip(intake.observation_start, intake.observation_end)
+    if o_changed:
+        notes.append(
+            f"observation window clipped to the data's actual coverage [{os_} → {oe_}] "
+            f"(requested {intake.observation_start} → {intake.observation_end}, data spans {dmin} → {dmax})"
+        )
+        intake.observation_start, intake.observation_end = os_, oe_
+
+    cs_ = (getattr(intake, "comparison_start", "") or "")[:10]
+    ce_ = (getattr(intake, "comparison_end", "") or "")[:10]
+    if cs_ and ce_:
+        if ce_ < dmin or cs_ > dmax:   # no overlap → no prior period exists
+            intake.comparison_start, intake.comparison_end = intake.observation_start, intake.observation_end
+            intake.comparison_label = "Same period (no prior period exists in the data)"
+            notes.append(
+                f"comparison period {cs_} → {ce_} contains no data (data spans {dmin} → {dmax}); "
+                f"no prior period exists — trend/YoY/baseline comparisons are not possible"
+            )
+        else:                          # partial overlap → clip (a half-empty baseline skews stats)
+            ncs, nce, c_changed = _clip(cs_, ce_)
+            if c_changed:
+                intake.comparison_start, intake.comparison_end = ncs, nce
+                notes.append(
+                    f"comparison window clipped to the data's actual coverage [{ncs} → {nce}] "
+                    f"(requested {cs_} → {ce_})"
+                )
+
+    try:
+        cov_days = (datetime.fromisoformat(intake.observation_end)
+                    - datetime.fromisoformat(intake.observation_start)).days + 1
+    except (ValueError, TypeError):
+        cov_days = None
+    if cov_days is not None and cov_days < 45:
+        intake.observation_label = (
+            f"Available history ({intake.observation_start} → {intake.observation_end}, ~{cov_days} days)"
+        )
+        notes.append(
+            f"only ~{cov_days} days of history exist — analyse at daily/weekly grain; "
+            f"month-over-month, year-over-year and 12-month framings are not applicable"
+        )
+
+    if not notes:
+        return None
+    return "DATA COVERAGE: " + "; ".join(notes) + "."
 
 
 def _validate_intake_windows(intake, dmin, dmax):
@@ -1138,7 +1258,7 @@ def ada_intake(state: AgentState) -> dict:
         mt_error = _validate_intake_metric_table(intake.metric_table, schema)
         if mt_error:
             _errs.append(mt_error)
-        _dmin, _dmax = _extract_data_date_range(scan)
+        _dmin, _dmax = _extract_data_date_range(scan, getattr(intake, "metric_table", "") or "")
         win_error = _validate_intake_windows(intake, _dmin, _dmax)
         if win_error:
             _errs.append(win_error)
@@ -1215,6 +1335,21 @@ def ada_intake(state: AgentState) -> dict:
         )
         if _dc_changed:
             intake.date_column = _resolved_dc
+
+    # Deterministic coverage clamp — fit the windows to the data that exists for the
+    # METRIC TABLE (not the whole connection: on multi-dataset connections the global
+    # range mixes datasets and masks an empty window). The LLM retry above only asks;
+    # this enforces. The portrait parse is the cheap path, but scan_context is empty
+    # on the ADA entry points — the DB probe is the authoritative fallback.
+    if intake is not None and not intake.cross_sectional:
+        _cmin, _cmax = _extract_data_date_range(scan, intake.metric_table or "")
+        if not _cmin:
+            _cmin, _cmax = _measure_date_span(
+                state.get("connection_id") or "", intake.metric_table or "", intake.date_column or ""
+            )
+        _cov_note = _clamp_intake_to_coverage(intake, _cmin, _cmax)
+        if _cov_note:
+            intake.intake_notes = f"{_cov_note} {intake.intake_notes or ''}".strip()
 
     if intake is None:
         phase = _phase_result(

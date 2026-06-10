@@ -1157,6 +1157,10 @@ async def _stream_investigation(
     for _e in _explorers_for_connection(connection_id):
         try:
             _e.pause()
+            # Tag the pause as investigation-owned: the kernel supervisor's
+            # backstop only auto-resumes these (never a user-initiated pause)
+            # if this stream dies without reaching its finally-block.
+            _e._paused_by_investigation = True
             _paused_explorers.append(_e)
         except Exception:
             pass
@@ -1410,6 +1414,7 @@ async def _stream_investigation(
         for _e in _paused_explorers:
             try:
                 _e.resume()
+                _e._paused_by_investigation = False
             except Exception:
                 pass
         db.close()

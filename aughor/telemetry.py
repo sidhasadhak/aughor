@@ -11,6 +11,7 @@ from __future__ import annotations
 import functools
 import logging
 import os
+import time as _time
 from contextlib import contextmanager
 from typing import Any, Generator
 
@@ -111,6 +112,7 @@ def span(
     Both are no-ops when the respective backend is unconfigured or ``trace_id``
     is empty.  The yielded value is the Langfuse span object (or ``None``).
     """
+    _t0 = _time.monotonic()
     # ── Langfuse span ──────────────────────────────────────────────────────────
     lf_span = None
     if _langfuse() is not None and trace_id:
@@ -138,6 +140,21 @@ def span(
             lf_span.end()
         except Exception as exc:
             logger.debug("Langfuse span end failed: %s", exc)
+
+    # ── Kernel event journal — local-first observability, on regardless of
+    # Langfuse/OTel config (those are usually unconfigured in dev, which made
+    # this instrumentation effectively dead; the ledger journal is always there).
+    if os.environ.get("AUGHOR_KERNEL_EVENTS", "1") != "0":
+        try:
+            from aughor.kernel.ledger import Ledger
+            Ledger.default().emit(
+                "node.span",
+                {"name": name, "ms": round((_time.monotonic() - _t0) * 1000, 1),
+                 **(metadata or {})},
+                job_id=trace_id or None,
+            )
+        except Exception as exc:
+            logger.debug("Ledger span emit failed: %s", exc)
 
 
 def log_generation(

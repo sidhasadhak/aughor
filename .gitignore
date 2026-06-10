@@ -67,3 +67,6 @@ data/*.duckdb.tmp
 # Eval run artifacts (regenerable — durable outputs are the dataset/harness/FINDINGS)
 evals/results*.json
 evals/_log*.txt
+data/system.db
+data/system.db-shm
+data/system.db-wal

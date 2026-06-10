@@ -2,12 +2,18 @@
 from __future__ import annotations
 
 import os
+import tempfile
 import pytest
 from fastapi.testclient import TestClient
 
 # Point at the builtin DuckDB fixture connection during tests
 os.environ.setdefault("AUGHOR_API_KEY", "")  # disable auth in tests
 os.environ.setdefault("AUGHOR_CORS_ORIGINS", "*")
+# Hermetic kernel ledger — tests must never write to data/system.db
+os.environ.setdefault(
+    "AUGHOR_SYSTEM_DB",
+    os.path.join(tempfile.mkdtemp(prefix="aughor-test-ledger-"), "system.db"),
+)
 
 
 @pytest.fixture(scope="session")

@@ -392,10 +392,13 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
   const initialFiredRef = useRef(false);
   useEffect(() => {
     if (!initialQuestion || initialFiredRef.current || state.streaming) return;
-    initialFiredRef.current = true;
     if (initialMode) setMode(initialMode);
-    // Small delay so the component is fully mounted and mode is set
+    // Small delay so the component is fully mounted and mode is set.
+    // The fired-latch is set INSIDE the timer: StrictMode's dev double-invoke
+    // (setup → cleanup → setup) clears the first timer, and latching eagerly
+    // would make the second setup bail — auto-submit would never fire in dev.
     const t = setTimeout(() => {
+      initialFiredRef.current = true;
       ask(initialQuestion, connectionId, initialMode ?? "investigate", { canvasId: canvasId ?? undefined });
     }, 80);
     return () => clearTimeout(t);

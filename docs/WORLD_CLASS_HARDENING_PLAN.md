@@ -163,7 +163,50 @@ lock + version rollback. Effort: **M**.
 
 ---
 
+### WCH-DS — Data-shape-aware temporal planning (user-reported 2026-06-10, fixed same day)
+
+**Repro:** bakehouse holds **17 days** of data (2024-05-01→17) beside ecommerce's 24 months on the
+same `workspace` connection. The explorer framed findings as "the last 12 months"; ADA ran a
+12-month observation vs an empty prior-12-month comparison and reported a wall of NULLs ("honest"
+but useless). The analysis playbook never consulted the data's measured shape.
+
+**Root causes (all confirmed):**
+1. `_role_aware_time_window` computed `start = max − 365d` with **no clamp to the first fact**
+   (`explorer/agent.py`), and the Phase-8 prompt hardcoded "last 12 months" phrasing.
+2. The window was **global per connection** — a domain living in a 17-day dataset inherited the
+   window anchored by the sibling 24-month dataset.
+3. ADA's window validator was **dead code**: `scan_context` is initialized `""` on both ADA entry
+   points and never populated before intake, so `_extract_data_date_range` had nothing to parse —
+   and even when it fires, enforcement was a polite LLM retry, not a clamp.
+
+**Fixes (shipped + tested):** start-clamp to earliest activity fact in `_role_aware_time_window`;
+per-domain/dataset `_window_for_tables`; coverage-aware Phase-8 prompt ("this domain's data spans
+only ~N days … NEVER frame as 'last 12 months'; no MoM under 2 months, no YoY under 13");
+`_measure_date_span` DB probe (MIN/MAX of the metric table's date column) as the authoritative
+intake source; `_clamp_intake_to_coverage` deterministic enforcement (clip observation, collapse
+empty comparison to "no prior period exists", relabel short history as "Available history (~N
+days)" + planner note). 14 regression tests in `tests/unit/test_coverage_clamp.py`.
+
+**Follow-up (open):** narration-inversion guard — the same briefing card read `order_count=3,
+total_items=3, avg_items_per_order=1.0` (3 orders averaging ONE item) and narrated "all orders
+contained exactly 3 items". Magnitude grounding passes (the numbers exist as cells); the *semantic
+binding* of number→meaning is wrong. Candidate guard: per-grain/per-entity claim checker comparing
+narrated "per-X" phrasing against the aggregate's actual grain; pairs with the small-n qualifier
+(findings built on n<30 entities must carry the n). The stored repro finding is preserved
+(never delete) and will regenerate under the corrected pipeline on the next explore/refresh.
+
+---
+
 ## Phase 1 — Orphaned-State & Lifecycle Correctness (the "intermittent" engine)
+
+> **✅ ABSORBED BY K1 (2026-06-10, commit `82c5b4d`)** — the Job Kernel made these structural:
+> WCH-4 = the supervisor's paused-explorer backstop (note: the finally-block this item asked for
+> already existed at `investigations.py:1408` — the audit claim was stale; pause-tagging added so the
+> backstop never overrides a user pause); WCH-5 = the supervisor loop (30s sweep + 5-min
+> investigation sweep); WCH-6 = boot recovery (live-verified: kill -9 mid-exploration → restart →
+> orphan FAILED + auto-resume from checkpoint); WCH-7 = cancel-on-delete for canvas + connection
+> scopes; WCH-8 = partially (ledger transactions cover the JSON-cache races; the .duckdb write
+> coordination remains open — see K1 follow-ups in the kernel doc).
 
 The perf/stress audit found a *class* of lifecycle bugs that manufacture intermittent behavior
 platform-wide. These likely co-cause all three reported bugs and are individually small fixes.
