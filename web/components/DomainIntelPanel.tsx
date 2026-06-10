@@ -13,6 +13,7 @@ import {
   type ExplorationInsight,
   type ExplorationEpisode,
 } from "@/lib/api";
+import { subscribeKernelEvents } from "@/lib/events";
 
 // ── Domain metadata ───────────────────────────────────────────────────────────
 
@@ -578,8 +579,12 @@ export function DomainIntelPanel({ connectionId, isActive, canvasId }: Props) {
     };
 
     load();
-    const t = setInterval(load, 10_000);
-    return () => { cancelled = true; clearInterval(t); };
+    // K2: kernel events drive refresh; the interval is only a slow fallback.
+    const t = setInterval(load, 60_000);
+    const unsub = subscribeKernelEvents(() => load(), {
+      kinds: ["exploration."], connId: connectionId, canvasId: canvasId || undefined,
+    });
+    return () => { cancelled = true; clearInterval(t); unsub(); };
   }, [connectionId, canvasId, isActive, tick]);
 
   const domains = Object.keys(data);

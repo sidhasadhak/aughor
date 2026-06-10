@@ -8,6 +8,7 @@ import {
   type ExplorationStatus,
   type ExplorationFindings,
 } from "@/lib/api";
+import { subscribeKernelEvents } from "@/lib/events";
 import { DomainIntelPanel } from "@/components/DomainIntelPanel";
 
 // ── Phase progress bar ────────────────────────────────────────────────────────
@@ -374,9 +375,12 @@ export function ExplorationPanel({ connectionId, initialSection }: Props) {
     };
 
     load();
-    // Poll while exploration is active
-    const t = setInterval(load, 12_000);
-    return () => { cancelled = true; clearInterval(t); };
+    // K2: kernel events drive refresh; the interval is only a slow fallback.
+    const t = setInterval(load, 60_000);
+    const unsub = subscribeKernelEvents(() => load(), {
+      kinds: ["exploration.", "job.state"], connId: connectionId,
+    });
+    return () => { cancelled = true; clearInterval(t); unsub(); };
   }, [connectionId]);
 
   if (!status || !findings) {

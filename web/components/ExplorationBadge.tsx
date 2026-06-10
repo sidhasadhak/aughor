@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { getExplorationStatus, type ExplorationStatus } from "@/lib/api";
+import { subscribeKernelEvents } from "@/lib/events";
 import { cn } from "@/lib/utils";
 
 const PHASE_LABELS: Record<string, string> = {
@@ -36,10 +37,15 @@ export function ExplorationBadge({ connectionId, className }: Props) {
     };
 
     poll();
-    const timer = setInterval(poll, 10_000);
+    // K2: kernel events drive refresh; the interval is only a slow fallback.
+    const timer = setInterval(poll, 60_000);
+    const unsub = subscribeKernelEvents(() => poll(), {
+      kinds: ["exploration.", "job.state"], connId: connectionId,
+    });
     return () => {
       cancelled = true;
       clearInterval(timer);
+      unsub();
     };
   }, [connectionId]);
 

@@ -656,6 +656,20 @@ class SchemaExplorer:
 
     # ── External control ──────────────────────────────────────────────────────
 
+    def _journal(self, kind: str, payload: dict | None = None) -> None:
+        """Best-effort kernel-journal emit, scoped to this exploration — the
+        event spine the UI subscribes to (K2). Never raises into the run."""
+        try:
+            from aughor.kernel.ledger import Ledger
+            from aughor.kernel.jobs import current_job_id
+            Ledger.default().emit(
+                kind, payload or {},
+                conn_id=self.connection_id, canvas_id=self.canvas_id,
+                job_id=current_job_id(),
+            )
+        except Exception:
+            logger.debug("journal emit failed (%s)", kind, exc_info=True)
+
     def pause(self) -> None:
         """Yield execution — called when a user investigation begins."""
         self._can_run.clear()
@@ -922,22 +936,27 @@ class SchemaExplorer:
 
                 # Phase 3 — Null meaning resolution
                 self._status.phase = ExplorationPhase.NULL_MEANING
+                self._journal("exploration.phase", {"phase": "null_meaning"})
                 await self._phase3_null_meaning(tp, cp)
 
                 # Phase 4 — Join verification
                 self._status.phase = ExplorationPhase.JOIN_VERIFICATION
+                self._journal("exploration.phase", {"phase": "join_verification"})
                 await self._phase4_joins(jmap)
 
                 # Phase 5 — Lifecycle mapping
                 self._status.phase = ExplorationPhase.LIFECYCLE_MAPPING
+                self._journal("exploration.phase", {"phase": "lifecycle_mapping"})
                 await self._phase5_lifecycle(tp, cp)
 
                 # Phase 6 — Distribution profiling
                 self._status.phase = ExplorationPhase.DISTRIBUTION
+                self._journal("exploration.phase", {"phase": "distribution"})
                 await self._phase6_distributions(cp, tp)
 
                 # Phase 7 — Cross-table pattern discovery
                 self._status.phase = ExplorationPhase.CROSS_TABLE
+                self._journal("exploration.phase", {"phase": "cross_table"})
                 await self._phase7_patterns(cp, jmap, tp)
 
             # ── Ontology gate: Phase 8 needs the ontology; build it now if it
@@ -967,12 +986,14 @@ class SchemaExplorer:
             # and to allow the user to stop between queries if needed
             self._rate_seconds = _RATE_SECONDS_INTEL
             self._status.phase = ExplorationPhase.DOMAIN_INTEL
+            self._journal("exploration.phase", {"phase": "domain_intel"})
             self._status.domain_intel_skipped = False   # cleared; set by Phase 8 if it bails
             self._status.domain_intel_note = None
             await self._phase8_domain_intelligence(cp, tp)
 
             # Done — persist runtime counters so the status fallback can restore them
             self._status.phase = ExplorationPhase.COMPLETE
+            self._journal("exploration.phase", {"phase": "complete"})
             self._status.completed_at = datetime.now(timezone.utc).isoformat()
             self._state["phase"] = ExplorationPhase.COMPLETE.value
             self._state["tables_total"] = self._status.tables_total
@@ -996,6 +1017,7 @@ class SchemaExplorer:
             raise
         except Exception as e:
             self._status.phase = ExplorationPhase.FAILED
+            self._journal("exploration.phase", {"phase": "failed"})
             self._status.error = str(e)
             self._save_state()
             logger.error(f"[explorer:{self.connection_id}] Error: {e}", exc_info=True)
@@ -2317,6 +2339,34 @@ class SchemaExplorer:
                 domain_insights.append(insight)
                 self._status.insights_found += 1
                 self._status.facts_discovered += 1
+
+                # K3: the finding becomes a versioned ledger artifact with
+                # provenance edges — the Trust Receipt ("why believe this
+                # number") is a SELECT over these, not a reconstruction.
+                # Supersede-not-delete; a re-explored finding gets version+1.
+                try:
+                    from aughor.kernel.ledger import Ledger
+                    from aughor.kernel.jobs import current_job_id
+                    _lineage = [("source_sql", "sql", sql)]
+                    for _tbl in sorted(_tables_in_sql(sql))[:8]:
+                        _lineage.append(("input", f"table:{_tbl}", None))
+                    _lineage.append(("validated_by", "guard:numeric_grounding",
+                                     "all magnitudes matched result cells"))
+                    Ledger.default().artifact_write(
+                        "finding",
+                        f"insight:{self.connection_id}:{insight_id}",
+                        insight,
+                        conn_id=self.connection_id,
+                        canvas_id=self.canvas_id,
+                        created_by_job=current_job_id(),
+                        lineage=_lineage,
+                    )
+                except Exception:
+                    logger.debug("finding artifact write failed", exc_info=True)
+                self._journal("exploration.insight", {
+                    "insight_id": insight_id, "domain": domain,
+                    "finding": interp.finding[:120],
+                })
 
                 # Mark angle as covered
                 angle_key = interp.angle_covered or nq.angle

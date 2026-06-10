@@ -29,6 +29,7 @@ structural instead of per-call-site:
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -37,6 +38,16 @@ from typing import Any, Awaitable, Callable, Optional
 from aughor.kernel.ledger import Ledger
 
 logger = logging.getLogger(__name__)
+
+# The job whose async context the current code runs under — artifact writes
+# stamp `created_by_job` from this without threading ids through call chains.
+_current_job: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "aughor_current_job", default=None
+)
+
+
+def current_job_id() -> Optional[str]:
+    return _current_job.get()
 
 
 class JobState:
@@ -150,6 +161,7 @@ class JobKernel:
         self._transition(job_id, JobState.RUNNING)
         hb = asyncio.create_task(self._heartbeat_loop(job_id), name=f"hb-{job_id}")
         final = JobState.FAILED
+        _token = _current_job.set(job_id)
         try:
             await coro_factory()
             final = JobState.SUCCEEDED
@@ -164,6 +176,7 @@ class JobKernel:
             self._transition(job_id, JobState.FAILED, error=str(exc))
             logger.error("job %s failed: %s", job_id, exc, exc_info=True)
         finally:
+            _current_job.reset(_token)
             hb.cancel()
             self._tasks.pop(job_id, None)
             if on_finish is not None:

@@ -150,3 +150,73 @@ class TestEvents:
         ledger.emit("tick", {"n": 2})
         newer = ledger.events(since_seq=first)
         assert len(newer) == 1 and newer[0]["payload"]["n"] == 2
+
+
+# ── K3: artifacts + lineage + the Trust Receipt ───────────────────────────────
+
+class TestArtifacts:
+    def test_versioning_supersedes_never_deletes(self, ledger):
+        a1 = ledger.artifact_write("finding", "insight:c1:rev_drop", {"finding": "v1"})
+        a2 = ledger.artifact_write("finding", "insight:c1:rev_drop", {"finding": "v2"})
+        latest = ledger.artifact_latest("insight:c1:rev_drop")
+        assert latest["id"] == a2 and latest["version"] == 2
+        assert latest["payload"]["finding"] == "v2"
+        # v1 survives, marked superseded — preserve-artifacts at schema level
+        with ledger._lock:
+            row = ledger._conn.execute(
+                "SELECT version, superseded_by FROM artifacts WHERE id=?", (a1,)
+            ).fetchone()
+        assert row == (1, a2)
+
+    def test_receipt_joins_lineage_and_job(self, ledger):
+        ledger.job_insert({
+            "id": "job1", "kind": "exploration", "conn_id": "c1",
+            "state": "SUCCEEDED", "attempt": 1,
+            "created_at": "2026-06-10T00:00:00+00:00",
+            "started_at": "2026-06-10T00:00:01+00:00",
+            "finished_at": "2026-06-10T00:05:00+00:00",
+        })
+        ledger.artifact_write(
+            "finding", "insight:c1:aov", {"finding": "AOV is $19.94"},
+            conn_id="c1", created_by_job="job1",
+            lineage=[("source_sql", "sql", "SELECT AVG(totalPrice) FROM t"),
+                     ("input", "table:bakehouse.sales_transactions", None),
+                     ("validated_by", "guard:numeric_grounding", "ok")],
+        )
+        rec = ledger.receipt("insight:c1:aov")
+        assert rec["artifact"]["payload"]["finding"] == "AOV is $19.94"
+        assert rec["job"]["id"] == "job1" and rec["job"]["state"] == "SUCCEEDED"
+        rels = {e["relation"] for e in rec["lineage"]}
+        assert rels == {"source_sql", "input", "validated_by"}
+        assert any("SELECT AVG" in (e["detail"] or "") for e in rec["lineage"])
+
+    def test_receipt_missing_returns_none(self, ledger):
+        assert ledger.receipt("insight:none:nothing") is None
+
+
+class TestJobContextStamping:
+    def test_artifact_written_inside_job_gets_job_id(self, ledger):
+        import asyncio
+        from aughor.kernel.jobs import JobKernel, current_job_id
+
+        captured = {}
+
+        async def main():
+            k = JobKernel(ledger)
+
+            async def work():
+                captured["jid"] = current_job_id()
+                ledger.artifact_write(
+                    "finding", "insight:c1:ctx", {"x": 1},
+                    created_by_job=current_job_id(),
+                )
+
+            jid = await k.submit("exploration", work, conn_id="c1")
+            while jid in k._tasks:
+                await asyncio.sleep(0.01)
+            return jid
+
+        jid = asyncio.run(main())
+        assert captured["jid"] == jid
+        assert ledger.artifact_latest("insight:c1:ctx")["created_by_job"] == jid
+        assert current_job_id() is None   # context reset outside the job

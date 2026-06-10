@@ -2122,3 +2122,18 @@ export async function getAuditStats(connectionId?: string): Promise<AuditStats> 
   if (!res.ok) throw new Error("Failed to fetch audit stats");
   return res.json();
 }
+
+export interface InsightReceipt {
+  artifact: { id: string; kind: string; version: number; created_at: string; payload: Record<string, unknown> };
+  lineage: { relation: string; ref: string; detail: string | null }[];
+  job: { id: string; kind: string; state: string; started_at: string | null; finished_at: string | null } | null;
+}
+
+/** K3 Trust Receipt — provenance for a finding (404 if it predates tracking). */
+export async function getInsightReceipt(connId: string, insightId: string): Promise<InsightReceipt | null> {
+  const res = await fetch(
+    `${BASE}/exploration/${encodeURIComponent(connId)}/insights/${encodeURIComponent(insightId)}/receipt`,
+  );
+  if (!res.ok) return null;
+  return res.json();
+}

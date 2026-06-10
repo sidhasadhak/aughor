@@ -353,6 +353,7 @@ from aughor.routers import (  # noqa: E402
     monitors,
     semantic,
     briefs,
+    events,
 )
 
 app.include_router(system.router)
@@ -371,3 +372,4 @@ app.include_router(query.router)
 app.include_router(monitors.router)
 app.include_router(semantic.router)
 app.include_router(briefs.router)
+app.include_router(events.router)

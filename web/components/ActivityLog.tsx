@@ -21,6 +21,7 @@ import {
   type FixSaveResult,
   type FixAllResult,
 } from "@/lib/api";
+import { subscribeKernelEvents } from "@/lib/events";
 import { formatCount } from "@/lib/format";
 
 // ── Phase metadata ────────────────────────────────────────────────────────────
@@ -567,8 +568,12 @@ export function ActivityLog({ connectionId, isActive, canvasId }: Props) {
       } catch { /* next poll retries */ }
     };
     load();
-    const t = setInterval(load, 5_000);
-    return () => { cancelled = true; clearInterval(t); };
+    // K2: kernel events drive refresh; the interval is only a slow fallback.
+    const t = setInterval(load, 60_000);
+    const unsub = subscribeKernelEvents(() => load(), {
+      kinds: ["exploration."], connId: connectionId, canvasId: canvasId || undefined,
+    });
+    return () => { cancelled = true; clearInterval(t); unsub(); };
   }, [connectionId, canvasId, isActive]);
 
   function handleSort(col: SortCol) {

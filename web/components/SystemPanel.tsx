@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { getDevStats, resetDevStats, type DevStats } from "@/lib/api";
+import { subscribeKernelEvents } from "@/lib/events";
 import { formatCount, pct as fmtPct } from "@/lib/format";
 
 function fmt(n: number | undefined | null): string {
@@ -80,8 +81,10 @@ export function SystemPanel() {
 
   useEffect(() => {
     load();
-    const t = setInterval(load, 15_000);
-    return () => clearInterval(t);
+    // K2: node spans land as journal events; the interval is only a slow fallback.
+    const t = setInterval(load, 60_000);
+    const unsub = subscribeKernelEvents(() => load(), { kinds: ["node.span", "job."] });
+    return () => { clearInterval(t); unsub(); };
   }, [load]);
 
   const handleReset = async () => {

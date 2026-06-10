@@ -733,6 +733,20 @@ def dismiss_connection_insight(connection_id: str, insight_id: str, req: Dismiss
     return {"insight_id": insight_id, "dismissed": True}
 
 
+@router.get("/exploration/{connection_id}/insights/{insight_id}/receipt")
+def get_insight_receipt(connection_id: str, insight_id: str):
+    """K3 Trust Receipt — the versioned finding artifact + its provenance edges
+    (source SQL, input tables, guards) + the kernel job that computed it. One
+    query over the ledger answers 'why should I trust this number'. Findings
+    persisted before K3 have no artifact yet — they gain one on the next
+    explore/refresh (404 until then, by design)."""
+    from aughor.kernel.ledger import Ledger
+    rec = Ledger.default().receipt(f"insight:{connection_id}:{insight_id}")
+    if rec is None:
+        raise HTTPException(status_code=404, detail="No receipt — finding predates provenance tracking; re-explore to generate one")
+    return rec
+
+
 @router.post("/exploration/canvas/{canvas_id}/insights/{insight_id}/dismiss")
 def dismiss_canvas_insight(canvas_id: str, insight_id: str, req: DismissRequest):
     from aughor.canvas.store import get_canvas

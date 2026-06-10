@@ -1244,7 +1244,7 @@ export function IntelligenceHub({ connectionId, canvasId }: { connectionId: stri
   return (
     <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
       {/* Evidence drill-through drawer + transient hint (finding actions, #4) */}
-      <EvidenceDrawer insight={evidenceInsight} domain={evidenceDomain} onClose={() => setEvidenceInsight(null)} />
+      <EvidenceDrawer insight={evidenceInsight} domain={evidenceDomain} connectionId={connectionId} onClose={() => setEvidenceInsight(null)} />
       {hint && (
         <div style={{
           position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)", zIndex: 70,

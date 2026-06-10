@@ -61,6 +61,26 @@ CREATE TABLE IF NOT EXISTS meta (
   k TEXT PRIMARY KEY,
   v TEXT
 );
+CREATE TABLE IF NOT EXISTS artifacts (
+  id           TEXT PRIMARY KEY,
+  kind         TEXT NOT NULL,
+  natural_key  TEXT NOT NULL,
+  version      INTEGER NOT NULL,
+  conn_id      TEXT,
+  canvas_id    TEXT,
+  payload      TEXT NOT NULL,
+  created_at   TEXT NOT NULL,
+  created_by_job TEXT,
+  superseded_by  TEXT
+);
+CREATE INDEX IF NOT EXISTS artifacts_nk ON artifacts(natural_key, version);
+CREATE TABLE IF NOT EXISTS lineage (
+  artifact_id  TEXT NOT NULL,
+  relation     TEXT NOT NULL,
+  ref          TEXT NOT NULL,
+  detail       TEXT
+);
+CREATE INDEX IF NOT EXISTS lineage_artifact ON lineage(artifact_id);
 CREATE TABLE IF NOT EXISTS jobs (
   id              TEXT PRIMARY KEY,
   kind            TEXT NOT NULL,
@@ -200,6 +220,84 @@ class Ledger:
                 "ON CONFLICT(k) DO UPDATE SET v=excluded.v",
                 (k, v),
             )
+
+    # ── artifacts + lineage: versioned outputs with provenance (K3) ──────────
+    # Supersede, never delete — the preserve-artifacts rule at schema level.
+    # A Trust Receipt is a SELECT over these two tables, not a feature build.
+
+    def artifact_write(
+        self,
+        kind: str,
+        natural_key: str,
+        payload: Any,
+        *,
+        conn_id: Optional[str] = None,
+        canvas_id: Optional[str] = None,
+        created_by_job: Optional[str] = None,
+        lineage: Optional[list[tuple[str, str, Optional[str]]]] = None,
+    ) -> str:
+        """Write a new VERSION of an artifact (id returned). The previous
+        version (if any) gets `superseded_by` set — never deleted. ``lineage``
+        is a list of (relation, ref, detail) provenance edges."""
+        import uuid as _uuid
+        art_id = _uuid.uuid4().hex[:12]
+        with self._lock, self._conn:
+            row = self._conn.execute(
+                "SELECT id, version FROM artifacts WHERE natural_key=? AND superseded_by IS NULL "
+                "ORDER BY version DESC LIMIT 1", (natural_key,)
+            ).fetchone()
+            prev_id, prev_ver = (row[0], row[1]) if row else (None, 0)
+            self._conn.execute(
+                "INSERT INTO artifacts (id, kind, natural_key, version, conn_id, canvas_id, "
+                "payload, created_at, created_by_job) VALUES (?,?,?,?,?,?,?,?,?)",
+                (art_id, kind, natural_key, prev_ver + 1, conn_id, canvas_id,
+                 json.dumps(payload, default=str), _now(), created_by_job),
+            )
+            if prev_id:
+                self._conn.execute(
+                    "UPDATE artifacts SET superseded_by=? WHERE id=?", (art_id, prev_id)
+                )
+            for relation, ref, detail in (lineage or []):
+                self._conn.execute(
+                    "INSERT INTO lineage (artifact_id, relation, ref, detail) VALUES (?,?,?,?)",
+                    (art_id, relation, ref, detail),
+                )
+        return art_id
+
+    def artifact_latest(self, natural_key: str) -> Optional[dict]:
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT * FROM artifacts WHERE natural_key=? ORDER BY version DESC LIMIT 1",
+                (natural_key,),
+            )
+            row = cur.fetchone()
+            if row is None:
+                return None
+            cols = [d[0] for d in cur.description]
+        out = dict(zip(cols, row))
+        try:
+            out["payload"] = json.loads(out["payload"])
+        except Exception:
+            pass
+        return out
+
+    def receipt(self, natural_key: str) -> Optional[dict]:
+        """The Trust Receipt: the latest artifact version + its provenance edges
+        + the job that computed it. One query path answers 'why should I trust
+        this number'."""
+        art = self.artifact_latest(natural_key)
+        if art is None:
+            return None
+        with self._lock:
+            edges = self._conn.execute(
+                "SELECT relation, ref, detail FROM lineage WHERE artifact_id=?", (art["id"],)
+            ).fetchall()
+        job = self.job_get(art["created_by_job"]) if art.get("created_by_job") else None
+        return {
+            "artifact": art,
+            "lineage": [{"relation": r, "ref": ref, "detail": d} for r, ref, d in edges],
+            "job": {k: job.get(k) for k in ("id", "kind", "state", "started_at", "finished_at")} if job else None,
+        }
 
     # ── jobs: rows for the K1 job kernel (state machine lives in jobs.py) ────
 

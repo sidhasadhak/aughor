@@ -44,7 +44,10 @@ import {
   type BriefingNarrativeResponse,
   type ExplorerStatus,
   type ActionTrigger,
+  getInsightReceipt,
+  type InsightReceipt,
 } from "@/lib/api";
+import { subscribeKernelEvents } from "@/lib/events";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -673,11 +676,19 @@ export function FindingActions({ insight, domain, connectionId, canvasId, trigge
 // ── Evidence drawer ──────────────────────────────────────────────────────────
 // Drill-through: the exact SQL + confidence/novelty/freshness behind a finding.
 
-export function EvidenceDrawer({ insight, domain, onClose }: {
+export function EvidenceDrawer({ insight, domain, onClose, connectionId }: {
   insight: ExplorationInsight | null;
   domain:  string;
   onClose: () => void;
+  connectionId?: string;
 }) {
+  // K3 Trust Receipt — provenance from the kernel ledger (job + lineage edges).
+  const [receipt, setReceipt] = useState<InsightReceipt | null>(null);
+  useEffect(() => {
+    setReceipt(null);
+    if (!insight || !connectionId) return;
+    getInsightReceipt(connectionId, insight.id).then(r => setReceipt(r)).catch(() => {});
+  }, [insight, connectionId]);
   if (!insight) return null;
   const fresh = insight.generated_at ? new Date(insight.generated_at).toLocaleString() : "—";
   const Stat = ({ label, value }: { label: string; value: string }) => (
@@ -746,6 +757,39 @@ export function EvidenceDrawer({ insight, domain, onClose }: {
               whiteSpace: "pre-wrap" as const, wordBreak: "break-word" as const, lineHeight: 1.55,
             }}>{insight.sql || "— no query recorded —"}</pre>
           </div>
+
+          {receipt && (
+            <div>
+              <div style={{ fontSize: 9, color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".06em", marginBottom: 6 }}>
+                Trust receipt — how this finding was produced
+              </div>
+              <div style={{ display: "flex", flexDirection: "column" as const, gap: 6, padding: "10px 12px", borderRadius: "var(--r2)", background: "var(--bg-2)", border: "1px solid var(--b1)" }}>
+                {receipt.job && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--t2)" }}>
+                    <span style={{ width: 7, height: 7, borderRadius: "50%", background: receipt.job.state === "SUCCEEDED" ? "var(--grn4)" : "var(--amb4)", flexShrink: 0 }} />
+                    Computed by {receipt.job.kind} job <span style={{ color: "var(--t1)", fontWeight: 500 }}>{receipt.job.id}</span>
+                    {receipt.job.finished_at ? ` · finished ${new Date(receipt.job.finished_at).toLocaleString()}` : ""}
+                  </div>
+                )}
+                <div style={{ fontSize: 11, color: "var(--t2)" }}>
+                  Version {receipt.artifact.version}{receipt.artifact.version > 1 ? " (earlier versions preserved)" : ""} · recorded {new Date(receipt.artifact.created_at).toLocaleString()}
+                </div>
+                {receipt.lineage.filter(l => l.relation === "input").length > 0 && (
+                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" as const, alignItems: "center" }}>
+                    <span style={{ fontSize: 10, color: "var(--t3)" }}>Inputs:</span>
+                    {receipt.lineage.filter(l => l.relation === "input").map(l => (
+                      <span key={l.ref} style={{ padding: "1px 6px", borderRadius: "var(--r1)", fontSize: 10, background: "var(--bg-3)", border: "1px solid var(--b1)", color: "var(--t3)" }}>{l.ref.replace("table:", "")}</span>
+                    ))}
+                  </div>
+                )}
+                {receipt.lineage.filter(l => l.relation === "validated_by").map(l => (
+                  <div key={l.ref} style={{ fontSize: 11, color: "var(--grn4)" }}>
+                    ✓ {l.ref.replace("guard:", "").replace(/_/g, " ")}{l.detail ? ` — ${l.detail}` : ""}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -1257,8 +1301,13 @@ export function BriefingPanel({
         .catch(() => { if (mounted) setExplorerStatus(null); });
     };
     poll();
-    const iv = setInterval(poll, 3000);
-    return () => { mounted = false; clearInterval(iv); };
+    // K2: phase-change events drive this; the interval is only a slow fallback
+    // (was a 3s poll — the worst offender of the seven).
+    const iv = setInterval(poll, 60_000);
+    const unsub = subscribeKernelEvents(() => poll(), {
+      kinds: ["exploration.", "job.state"], connId: connectionId,
+    });
+    return () => { mounted = false; clearInterval(iv); unsub(); };
   }, [connectionId]);
 
   // Auto-refresh the briefing the moment an exploration run reaches "complete" —
@@ -1293,7 +1342,7 @@ export function BriefingPanel({
     <div style={{ flex: 1, overflowY: "auto", padding: "20px 28px" }}>
 
       {/* Evidence drill-through drawer + transient hint toast (finding actions, #4) */}
-      <EvidenceDrawer insight={evidenceInsight} domain={evidenceDomain} onClose={() => setEvidenceInsight(null)} />
+      <EvidenceDrawer insight={evidenceInsight} domain={evidenceDomain} connectionId={connectionId} onClose={() => setEvidenceInsight(null)} />
       {hint && (
         <div style={{
           position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)", zIndex: 70,
