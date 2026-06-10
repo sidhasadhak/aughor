@@ -353,6 +353,62 @@ def _clamp_novelty(v) -> int:
         return 3
 
 
+# Per-grain mislabel (#6): a line-item-grain column averaged and presented as a
+# per-ORDER / per-customer metric. True AOV = SUM(revenue)/COUNT(DISTINCT order);
+# `AVG(oi.line_total) AS aov` averages LINE ITEMS, undercounting (the $467-vs-$1108
+# mislabel). High-precision: keys off a line-grain column name inside AVG() that's
+# then labelled (alias or narration) as an order/customer-level metric.
+_LINE_GRAIN_COL = re.compile(r"line_?(total|amount|item|price|value|subtotal|qty|quantity)|item_(total|amount|price|qty)", re.I)
+_PER_ORDER_LABEL = re.compile(r"\baov\b|average\s+order\s+value|avg_?order_?value|order_?value|per[\s_]order|per[\s_]customer|per[\s_]basket", re.I)
+
+
+def _mislabeled_per_grain(sql: str, finding_text: str = "") -> bool:
+    """True when SQL averages a line-item-grain column but the alias or the finding
+    narrates it as a per-order/per-customer value — a semantic mislabel the numeric
+    grounding can't catch (the averaged value is a real cell, just the wrong metric)."""
+    if not sql:
+        return False
+    for m in re.finditer(r"AVG\s*\(([^)]*)\)(?:\s+AS\s+(\w+))?", sql, re.IGNORECASE):
+        arg, alias = m.group(1), (m.group(2) or "")
+        if _LINE_GRAIN_COL.search(arg) and (_PER_ORDER_LABEL.search(alias) or _PER_ORDER_LABEL.search(finding_text)):
+            return True
+    return False
+
+
+# Semantic metric groups (#5). A repair that swaps a column from one group for a
+# column in another changed WHAT is measured (revenue→cost), not just how. An LLM
+# faithfulness check rates these "faithful" (cf. 5ba0fbe) — the deterministic
+# column-group swap is the reliable signal, like the de-temporalisation guard.
+_METRIC_GROUPS: "dict[str, re.Pattern[str]]" = {
+    "revenue":  re.compile(r"revenue|gross_?sales|net_?sales|gmv|turnover|\bsales\b|total_amount|grand_total|line_total|amount_paid", re.I),
+    "cost":     re.compile(r"\bcost|expense|spend|cogs|unit_cost|landed|purchase_price", re.I),
+    "profit":   re.compile(r"profit|margin|markup|earnings|contribution", re.I),
+    "discount": re.compile(r"discount|markdown|rebate|coupon|promo_amount", re.I),
+    "price":    re.compile(r"unit_price|list_price|msrp|\bprice\b", re.I),
+    "quantity": re.compile(r"\bqty\b|quantity|units?_sold|\bunits\b|volume", re.I),
+}
+
+
+def _semantic_metric_drift(original_sql: str, fixed_sql: str) -> bool:
+    """True when a repair replaced a metric column with one of a DIFFERENT business
+    meaning (revenue↔cost, price↔quantity …). Compares the metric-group membership
+    of columns dropped vs added: a clean, disjoint group swap = the metric drifted."""
+    if not original_sql or not fixed_sql:
+        return False
+    removed = _query_columns(original_sql) - _query_columns(fixed_sql)
+    added = _query_columns(fixed_sql) - _query_columns(original_sql)
+    if not removed or not added:
+        return False
+
+    def _groups(cols: "set[str]") -> "set[str]":
+        return {g for c in cols for g, pat in _METRIC_GROUPS.items() if pat.search(c)}
+
+    gr_removed, gr_added = _groups(removed), _groups(added)
+    # Both sides name a metric, the meaning changed, and there is no overlap that
+    # would mean the original metric is still present.
+    return bool(gr_removed and gr_added and not (gr_removed & gr_added))
+
+
 # Column/table names the SQL engine reported as nonexistent — harvested generically from
 # DuckDB *and* Postgres binder errors and fed back to the question generator so it stops
 # re-proposing the same hallucinated names (the dominant Phase-8 failure class: a generator
@@ -2060,6 +2116,17 @@ class SchemaExplorer:
                 if _has_fabricated_dimension(sql):
                     logger.info(
                         "[explorer:%s] Phase 8: %s/%s — skipping fabricated-dimension finding (constant grouping key)",
+                        self.connection_id, domain, nq.angle,
+                    )
+                    continue
+
+                # Drop per-grain mislabels (#6) — a line-item AVG presented as a
+                # per-order/per-customer metric (AVG(line_total) AS aov). The numeric
+                # grounding below can't catch it: the averaged value is a real cell,
+                # only the metric name is wrong (the $467-AOV-vs-$1108 case).
+                if _mislabeled_per_grain(sql, interp.finding):
+                    logger.info(
+                        "[explorer:%s] Phase 8: %s/%s — skipping per-grain mislabel (line-item AVG sold as a per-order metric)",
                         self.connection_id, domain, nq.angle,
                     )
                     continue

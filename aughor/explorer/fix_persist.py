@@ -36,6 +36,7 @@ from aughor.explorer.agent import (
     _is_degenerate_result,
     _has_fabricated_dimension,
     _clamp_novelty,
+    _semantic_metric_drift,
     _query_columns,
     _has_temporal_sql,
     _has_vacuous_temporal,
@@ -161,6 +162,8 @@ def persist_fixed_finding(
         flags.append("the repair removed all time logic from a time-based question (de-temporalised)")
     if _has_vacuous_temporal(fixed_sql):
         flags.append("the repair reduced the time computation to a constant (date difference of identical dates)")
+    if _semantic_metric_drift(original_sql, fixed_sql):
+        flags.append("the repair swapped the metric for a different one (e.g. revenue↔cost) — it changed WHAT is measured")
 
     llm = get_provider("coder")
     try:
