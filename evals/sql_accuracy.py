@@ -100,19 +100,8 @@ def compare_result_sets(ref_cols, ref_rows, gen_cols, gen_rows) -> dict:
     return scores
 
 
-def score_single(db, record: dict, generated_sql: str) -> dict:
-    ref_sql = record.get("reference_sql", "")
-    if not ref_sql:
-        return {"overall": 0.0, "error": "No reference SQL"}
-
-    ref_ok, ref_cols, ref_rows, ref_err = _safe_exec(db, ref_sql)
-    if not ref_ok:
-        return {"overall": 0.0, "execution_success": 0.0, "error": f"Reference failed: {ref_err}", "reference_row_count": 0}
-
-    gen_ok, gen_cols, gen_rows, gen_err = _safe_exec(db, generated_sql)
-    if not gen_ok:
-        return {"overall": 0.0, "execution_success": 0.0, "error": f"Generated failed: {gen_err}", "reference_row_count": len(ref_rows)}
-
+def _score_vs_reference(ref_cols, ref_rows, gen_cols, gen_rows, gen_ok: bool) -> dict:
+    """Score one already-executed generated result against one reference result."""
     comparison = compare_result_sets(ref_cols, ref_rows, gen_cols, gen_rows)
     overall = (
         comparison.get("column_count_match", 0.0) * 0.15 +
@@ -129,6 +118,51 @@ def score_single(db, record: dict, generated_sql: str) -> dict:
     comparison["reference_row_count"] = len(ref_rows)
     comparison["generated_row_count"] = len(gen_rows)
     return comparison
+
+
+def score_single(db, record: dict, generated_sql: str) -> dict:
+    """Score a generated query against the golden reference(s).
+
+    Metric-aware (multi-reference): a record may carry `accept_sql` — a list of
+    ALTERNATIVE reference SQLs that are equally-valid ground truth (e.g. revenue
+    as SUM(orders.total_amount) vs SUM(order_items.line_total), both defensible
+    on the same data). The generated query is scored against the primary
+    reference AND every accept_sql; the BEST overall wins. This stops the scorer
+    from penalising a correct answer that simply picked a different — but
+    canonical — metric definition than the one the reference happened to spell
+    (the #13 confound). `matched_reference` records which won (0 = primary,
+    1..n = accept_sql index); `num_references` how many were considered.
+    """
+    ref_sql = record.get("reference_sql", "")
+    if not ref_sql:
+        return {"overall": 0.0, "error": "No reference SQL"}
+
+    ref_ok, ref_cols, ref_rows, ref_err = _safe_exec(db, ref_sql)
+    if not ref_ok:
+        return {"overall": 0.0, "execution_success": 0.0, "error": f"Reference failed: {ref_err}", "reference_row_count": 0}
+
+    gen_ok, gen_cols, gen_rows, gen_err = _safe_exec(db, generated_sql)
+    if not gen_ok:
+        return {"overall": 0.0, "execution_success": 0.0, "error": f"Generated failed: {gen_err}", "reference_row_count": len(ref_rows)}
+
+    # Primary reference first; then any equally-valid alternatives.
+    best = _score_vs_reference(ref_cols, ref_rows, gen_cols, gen_rows, gen_ok)
+    best["matched_reference"] = 0
+    alts = record.get("accept_sql") or []
+    num_refs = 1
+    for i, alt_sql in enumerate(alts, start=1):
+        alt_ok, alt_cols, alt_rows, _ = _safe_exec(db, alt_sql)
+        if not alt_ok:
+            # A broken alternative is a dataset-authoring issue, not the model's
+            # fault — skip it rather than let it drag the score down.
+            continue
+        num_refs += 1
+        cand = _score_vs_reference(alt_cols, alt_rows, gen_cols, gen_rows, gen_ok)
+        if cand["overall"] > best["overall"]:
+            cand["matched_reference"] = i
+            best = cand
+    best["num_references"] = num_refs
+    return best
 
 
 def main():

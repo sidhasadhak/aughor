@@ -1,63 +1,117 @@
-# Full-pipeline eval — what it can and can't measure (#13)
+# Full-pipeline eval — trustworthiness & what it can measure (#13 → #13b)
 
-Ran `evals/run_golden.py` (53 golden NL2SQL cases, cloud `qwen3-coder-next`) in RAW
-(schema-only) and FULL (intelligence-injected) modes. The full-pipeline mode already
-existed; the task was to run it and record the lift. The honest answer required two
-rounds of digging — and overturned the surface reading twice.
+Goal: make the golden NL2SQL eval *trustworthy* — able to measure the real
+capability lift of the intelligence-injected pipeline (FULL) over raw schema-only
+generation (RAW). The prior run (#13) was confounded and couldn't. This is the
+#13b follow-up: build the trustworthiness levers, then deep-test what they reveal.
 
-## The numbers (this run, `workspace` connection)
+## Levers built
 
-| Mode | Perfect | Pass (≥0.80) | Errors |
-|------|---------|--------------|--------|
-| RAW  | 10 (19%) | 25 (47%) | 2 |
-| FULL | 9 (17%) | 19 (36%) | 0 |
+1. **Pinned connection + frozen-state guard** (`run_golden.py`). FULL runs default
+   to `samples` and **abort** if the connection carries volatile exploration
+   insights (verified: `workspace`'s 7549 bytes → hard abort). Every run prints a
+   provenance block (model / temperature / exploration-state / ontology) and
+   disables the silent Anthropic fallback so the model is pinned. This makes the
+   #13 confound (running on an *explored* connection whose ~25 drifting insights
+   steer the metric choice) impossible to reintroduce silently.
+2. **Metric-aware multi-reference scoring** (`sql_accuracy.py`). A record may carry
+   `accept_sql` — equally-valid alternative ground-truth SQLs. The generated query
+   is scored against the BEST of `{reference_sql} ∪ accept_sql`, so a correct
+   answer using a *different but canonical* metric definition isn't penalised —
+   without becoming permissive to genuinely wrong answers (regression-tested,
+   `tests/unit/test_eval_scoring.py`). Attached gross `line_total` alternatives to
+   the 8 order-grain revenue questions.
+3. **Noise control** (`--temperature`, default 0.0; `--runs N`). Decode temperature
+   threaded through both generators and the `SqlWriter` retry path; `--runs N`
+   reports the per-question score band.
 
-FULL looks worse — but this run is **confounded**; do not read it as a capability
-regression. (A prior run on the `samples` connection, 2026-06-07, had FULL *beating*
-RAW at 26%/56% vs 20%/50% — see [[eval-golden-baseline]].)
+## Deep-test (pinned `samples`, temp-0, N=3, qwen3-coder-next:cloud)
 
-## Why this run is confounded (three independent causes)
+| Mode | Perfect | Pass (≥0.80) | Errors | Unstable (band>0.05) | Mean band |
+|------|---------|--------------|--------|----------------------|-----------|
+| RAW  | 11 (N=3 mean) | 26 | 3 | 21/53 | 0.175 |
+| FULL | 8  | 18 | 0 | 20/53 | 0.133 |
 
-1. **Connection-specific semantic state.** I ran on `workspace` because `samples`
-   isn't in the connection list. 10 of 12 regressions are one cause: FULL computes
-   revenue as `SUM(order_items.line_total)` / `qty*unit_price`, excluding cancelled/
-   refunded, whereas the golden references use `SUM(orders.total_amount)`. This is
-   NOT from `metrics.json` (empty on both connections) — it's the injected
-   exploration/ontology/Data-Catalog context steering the model toward `order_items`.
-   `workspace` was explored (≈25 insights); `samples` was not, so the injected
-   context — and therefore the result — differs by connection state.
+The headline says FULL is **−8 on pass**. It is NOT a capability regression. Two
+findings explain (and dissolve) it.
 
-2. **The sample dataset is internally inconsistent.** `orders.total_amount` = 1.29M
-   but `SUM(order_items.line_total)` = 5.58M (4.3×). So the two revenue definitions
-   genuinely disagree on this data; the golden references happened to pick
-   `total_amount`. Neither SQL is "wrong" — the scorer just can't tell.
+### Finding A — temperature 0 does NOT make the cloud model deterministic
 
-3. **LLM run-to-run noise ±2–4 questions** (documented in [[eval-golden-baseline]]:
-   sql014 swung 1.00→0.30→1.00 on unchanged code). A single A/B is within noise for
-   small deltas; the 6-case gap here is mostly cause #1, not signal.
+RAW (a single coder call, no retry) still shows **21/53 questions unstable** across
+three identical temp-0 runs, mean band **0.175**; some swing the full range
+(sql009 `[0.0, 1.0, 1.0]`). Cloud inference is non-deterministic at temp-0
+(batching/hardware), so **temp-0 alone is insufficient — N-averaging is mandatory**,
+and even N=3 leaves a ~0.13 band (headline good to only ±3–4 questions). Any
+single-run A/B on this stack is untrustworthy. (Previously hypothesised in
+`eval_golden_baseline`; now quantified.)
 
-## What IS solid
+### Finding B — FULL's −8 is the ex-cancelled REVENUE CONVENTION, not capability
 
-- Excluding the 10 metric-divergence cases, FULL is **net +4 on real capability**
-  (+6 genuine gains — customer count, country ranking, cancelled-vs-delivered,
-  status distribution, pending-order aging, slow-delivery rating; −2 genuine
-  regressions — sql044, sql049). Errors went 2 → 0 (retry/fix works).
-- The harness now mirrors the production de-fan (`defan()`), so the eval reflects
-  this session's fan-out correctness work.
+On the clean `samples` connection (0 bytes exploration), FULL still applies
+`WHERE status NOT IN ('cancelled', …)` to **22/53** revenue/items aggregates — a
+defensible *net-revenue* convention coming from the injected rules/KB/catalog. The
+golden references use *gross* revenue. So FULL is penalised for computing a more
+considered number. Proof (`_probe_convention.py`, run[0] basis since the stored
+SQL is run[0]'s; convention-neutral score = **MAX(as-scored, status-stripped)** per
+question, so a query passes if it matches the golden *with or without* the
+ex-cancelled convention — this recovers pure-revenue queries WITHOUT damaging
+genuinely status-dependent ones, which keep their correct as-scored value):
 
-## Conclusion / next levers
+| | as-scored | convention-neutral |
+|---|---|---|
+| RAW  pass@0.80 | 28 | 28 |
+| FULL pass@0.80 | 20 | 26 |
+| **Δ (FULL − RAW)** | **−8** | **−2** |
 
-The full-pipeline eval, as-is, **cannot reliably measure capability lift** — the
-result is dominated by which revenue definition the injected context steers toward
-(connection-state-dependent, not pinned) plus LLM noise. To make it trustworthy:
+Neutralising the convention recovers **+6** of FULL's −8 (RAW is unchanged — raw
+schema-only generation rarely invents the convention). Six queries recover cleanly
+and completely (sql004 0.60→1.00, sql012 0.60→1.00, sql020 0.60→1.00, sql022, sql009,
+sql011) — the SQL was correct; only the revenue *definition* differed. The residual
+**−2** sits inside the ±3–4q noise band (Finding A) **and is itself mostly further
+definition-divergence the status-strip doesn't catch**, not capability:
 
-1. **Pin the eval connection + its semantic state** (restore/register `samples`;
-   freeze its metrics/ontology) so runs are comparable.
-2. **Metric-aware scoring** — accept a result that matches any registered canonical
-   metric definition, not just the golden's one spelling of revenue.
-3. **Noise control** — coder at temperature 0 (or average N runs) so small lever
-   deltas are measurable.
+- FULL deficits (RAW pass / FULL fail): sql002, sql006, sql025 (AOV / %-refunded
+  computed ex-cancelled — same convention, on `AVG`/ratio not `SUM`), sql043
+  (ex-cancelled **+** a spurious `GROUP BY country`), sql008 (dropped `LIMIT 1`),
+  sql042/sql053.
+- FULL **wins** (FULL pass / RAW fail) — clean capability gains where injected
+  context rescues a RAW *total* failure: sql009 0.00→0.85, sql034 0.00→0.85,
+  sql021, sql031, sql048.
 
-Do (1)–(3) before drawing capability conclusions or chasing micro-levers. This is
-the metric-unification problem, made measurable: the semantic layer must agree with
-ground truth, and the eval must be metric-aligned and noise-controlled.
+So convention-neutral, **FULL ≈ RAW within noise (26 vs 28)**, and FULL wins exactly
+where the intelligence rescues a query RAW cannot write at all. (`Metric-alt hits = 0`
+corroborates the root cause: the 2-way `accept_sql` — gross `total_amount` ↔ gross
+`line_total` — never matched, because FULL's answers are the *net* ex-cancelled
+variant, a third definition the references don't yet encode.)
+
+> Correction note: an earlier pass reported "RAW 23 ≈ FULL 23 (Δ0)". That used a
+> *replace*-with-stripped probe that over-corrected status-dependent questions on
+> both sides, depressing the absolute to 23 and coincidentally equalising it. The
+> MAX estimator above is the corrected, consistent figure: **RAW 28 / FULL 26, Δ−2**.
+
+## Conclusion — the binding constraint is METRIC UNIFICATION, not the harness
+
+Connection-pinning (Lever 1) was **necessary** — it removed the exploration-driven
+drift of #13 — but **not sufficient**: the *stable* injected context (rules/KB/
+catalog conventions) still diverges from the golden's naive metric definition. The
+eval cannot measure capability lift until the ground truth and the injected
+semantic layer **agree on the metric definition**, including the cancelled/refunded
+treatment. That is precisely the metric-unification problem (roadmap #2 / the
+semantic-layer convergence), and this gives it a concrete success criterion:
+
+- **Drive both sides from ONE registered metric.** Derive the golden references
+  from the same canonical `revenue` definition the pipeline injects (gross vs
+  net-of-cancelled decided once, in the semantic layer), so they agree by
+  construction. As a bridge, extend `accept_sql` to the full set
+  (gross/net × total_amount/line_total). The harness now caches per-run SQL
+  (`runs_detail`) so this re-scoring needs **no** new LLM calls.
+- **Control noise with N-averaging + reported confidence** (temp-0 is not enough).
+
+Net for #13b: the trustworthiness infrastructure is built and the deep-test
+**overturned the surface −8 to −2 (within noise)** — the convention explains +6 of
+the gap and the residual −2 is mostly further definition-divergence, against which
+FULL posts 5 clean wins RAW can't match. The honest capability verdict — and any
+further NL2SQL micro-lever — is gated on metric unification, which the eval now
+makes measurable. See
+[[eval-golden-baseline]], [[ontology-semantic-layer-AB]],
+[[competitive-borrow-cube-mindsdb]].

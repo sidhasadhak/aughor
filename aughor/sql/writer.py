@@ -253,11 +253,16 @@ class SqlWriter:
                 supplied (useful when the caller already holds a fresh schema)
     """
 
-    def __init__(self, db, schema_str: str | None = None):
+    def __init__(self, db, schema_str: str | None = None, temperature: float = 0.1):
         self._db = db
         self._schema: str = schema_str if schema_str is not None else db.get_schema()
         self._table_cols: dict[str, list[str]] = _parse_schema_tables(self._schema)
         self._llm: LLMProvider = get_provider("coder")
+        # Decode temperature for the write/fix calls. Defaults to 0.1 — the same
+        # value LLMProvider.complete() already used implicitly — so existing
+        # callers are unaffected. The eval harness sets 0.0 for deterministic,
+        # noise-controlled measurement (so a fix-path retry can't add variance).
+        self._temperature: float = temperature
 
     # ── Properties ─────────────────────────────────────────────────────────────
 
@@ -296,6 +301,7 @@ DUCKDB DIALECT RULES (violations cause runtime errors):
         dialect_rules = self._DUCKDB_RULES if self._db.dialect == "duckdb" else f"Target dialect: {self._db.dialect}."
 
         result = self._llm.complete(
+            temperature=self._temperature,
             system=(
                 "You are a data analyst writing SQL against a business database. "
                 "Write SELECT-only SQL using exact table and column names from the schema. "
@@ -347,6 +353,7 @@ DUCKDB DIALECT RULES (violations cause runtime errors):
 
             try:
                 fixed = self._llm.complete(
+                    temperature=self._temperature,
                     system="Fix the SQL query. Return corrected_sql and a one-line explanation.",
                     user=FIX_SQL_PROMPT.format(
                         dialect=self._db.dialect,
