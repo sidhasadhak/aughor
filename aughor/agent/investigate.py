@@ -563,6 +563,25 @@ def _execute_safe(conn: "DatabaseConnection", phase_id: str, sql: str, schema: O
     from aughor.agent.prompts_investigate import PhasePlan
     from pydantic import BaseModel
 
+    # Deterministic de-fan (#1 correctness): a SUM of a parent measure across a
+    # one-to-many join over-counts (5x) — and this is a deep-analysis headline
+    # number. Replace it with the exact DISTINCT(parent-key, measure) dedup BEFORE
+    # executing. Adopt only if it dry-runs clean; silent on anything it can't prove.
+    if schema:
+        try:
+            from aughor.sql.fanout import detect_fanout, build_parent_fanout_rewrite
+            from aughor.tools.schema import _parse_schema_tables
+            _dialect = getattr(conn, "dialect", "duckdb")
+            _tc = {t: (list(c.keys()) if isinstance(c, dict) else c)
+                   for t, c in _parse_schema_tables(schema).items()}
+            _ff = detect_fanout(sql, _tc, dialect=_dialect)
+            if _ff and _ff.kind == "parent_fanout":
+                _rw = build_parent_fanout_rewrite(sql, _ff, dialect=_dialect)
+                if _rw and _rw.strip() != sql.strip() and conn.dry_run(_rw)[0]:
+                    sql = _rw
+        except Exception:
+            pass
+
     result = conn.execute(phase_id, sql)
 
     # Determine whether to retry: hard error OR suspicious zero-row result
