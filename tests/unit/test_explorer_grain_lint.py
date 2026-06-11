@@ -5,7 +5,7 @@ products" = 25 products × 80 order_items). detect_fanout deliberately skips bot
 ignores COUNT(*) and needs ≥2 satellites). These pin the two new high-precision linters —
 they must FIRE on the bug and stay SILENT on legitimate SQL (the false-positive guard is
 the whole point: a clumsy version would suppress valid insights)."""
-from aughor.sql.fanout import integer_division_risk, count_star_entity_fanout
+from aughor.sql.fanout import integer_division_risk, count_star_entity_fanout, count_star_chasm_fanout
 
 # products is the PARENT (order_items.product_id references it); orders is a many-side child.
 TC = {
@@ -69,3 +69,58 @@ class TestCountStarFanout:
 
     def test_no_join_not_flagged(self):
         assert count_star_entity_fanout("SELECT COUNT(*) AS product_count FROM ecommerce.products", TC) is None
+
+
+# COUNT(*) over a CHASM — ≥2 satellites of one hub joined directly — the FAN-b gap
+# detect_fanout deliberately skips (it can't attribute COUNT(*) to a satellite and
+# defan() can't rewrite a cross-product count). High-precision DROP signal.
+CHASM_TC = {
+    "ads.campaigns":   ["campaign_id", "name", "budget"],
+    "ads.clicks":      ["click_id", "campaign_id", "ts"],
+    "ads.impressions": ["impression_id", "campaign_id", "ts"],
+    "ads.customers":   ["customer_id", "region"],
+}
+_J = ("JOIN clicks k ON c.campaign_id=k.campaign_id "
+      "JOIN impressions i ON c.campaign_id=i.campaign_id")
+
+
+class TestCountStarChasm:
+    def test_chasm_count_star_flagged(self):
+        # clicks × impressions per campaign — the textbook chasm
+        sql = f"SELECT c.name, COUNT(*) FROM campaigns c {_J} GROUP BY c.name"
+        assert count_star_chasm_fanout(sql, CHASM_TC)
+
+    def test_chasm_count_one_flagged(self):
+        assert count_star_chasm_fanout(f"SELECT COUNT(1) FROM campaigns c {_J}", CHASM_TC)
+
+    def test_single_join_not_a_chasm(self):
+        # hub ⋈ one satellite is NOT a chasm — no cross-product, must stay silent
+        sql = "SELECT COUNT(*) FROM campaigns c JOIN clicks k ON c.campaign_id=k.campaign_id"
+        assert count_star_chasm_fanout(sql, CHASM_TC) is None
+
+    def test_count_distinct_not_flagged(self):
+        assert count_star_chasm_fanout(f"SELECT COUNT(DISTINCT k.click_id) FROM campaigns c {_J}", CHASM_TC) is None
+
+    def test_qualified_count_left_to_detect_fanout(self):
+        # COUNT(<col>) is detect_fanout's job; this linter only owns bare COUNT(*)
+        assert count_star_chasm_fanout(f"SELECT COUNT(k.click_id) FROM campaigns c {_J}", CHASM_TC) is None
+
+    def test_no_join_not_flagged(self):
+        assert count_star_chasm_fanout("SELECT COUNT(*) FROM clicks", CHASM_TC) is None
+
+    def test_unrelated_join_not_flagged(self):
+        # two tables that don't share a hub FK root → not a chasm
+        sql = "SELECT COUNT(*) FROM campaigns c JOIN customers cu ON c.campaign_id=cu.customer_id"
+        assert count_star_chasm_fanout(sql, CHASM_TC) is None
+
+    def test_pre_aggregated_ctes_are_the_fix_not_flagged(self):
+        # the CORRECT rewrite — each satellite pre-aggregated in a CTE — must NOT be flagged
+        sql = ("WITH k AS (SELECT campaign_id, COUNT(*) n FROM clicks GROUP BY 1), "
+               "i AS (SELECT campaign_id, COUNT(*) n FROM impressions GROUP BY 1) "
+               "SELECT COUNT(*) FROM campaigns c JOIN k ON c.campaign_id=k.campaign_id "
+               "JOIN i ON c.campaign_id=i.campaign_id")
+        assert count_star_chasm_fanout(sql, CHASM_TC) is None
+
+    def test_malformed_sql_never_raises(self):
+        assert count_star_chasm_fanout("this is not sql", CHASM_TC) is None
+        assert count_star_chasm_fanout("", CHASM_TC) is None

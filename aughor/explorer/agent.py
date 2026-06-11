@@ -2183,9 +2183,13 @@ class SchemaExplorer:
                 # value is a real cell). Skip rather than store a runnable-but-wrong finding.
                 if not _skip_result:
                     try:
-                        from aughor.sql.fanout import integer_division_risk, count_star_entity_fanout
+                        from aughor.sql.fanout import (
+                            integer_division_risk, count_star_entity_fanout, count_star_chasm_fanout,
+                        )
+                        _tc = getattr(sql_writer, "table_cols", {})
                         _grain = (integer_division_risk(sql)
-                                  or count_star_entity_fanout(sql, getattr(sql_writer, "table_cols", {})))
+                                  or count_star_entity_fanout(sql, _tc)
+                                  or count_star_chasm_fanout(sql, _tc, dialect=getattr(self._conn, "dialect", "duckdb")))
                         if _grain:
                             from aughor.stats import stats as _s; _s.inc("explorer.grain_skips")
                             logger.info(
