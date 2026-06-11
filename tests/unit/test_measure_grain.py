@@ -4,7 +4,9 @@ The pure classifier (classify_from_buckets) decides per-unit vs per-line from AV
 quantity buckets, the signal verified live on beautycommerce (final_price_usd flat 1/1/1
 → per_unit; gross_margin_usd 1/2/3 → per_line). These pin the decision logic exhaustively
 and the conservative 'unknown' fallback (it must never mislabel a noisy measure)."""
-from aughor.semantic.measure_grain import classify_from_buckets, measure_grain_misuse
+from aughor.semantic.measure_grain import (
+    classify_from_buckets, measure_grain_misuse, render_grains_block,
+)
 
 # beautycommerce grains (detected live): final_price_usd per-unit, gross_margin_usd per-line.
 GRAINS = {"final_price_usd": "per_unit", "unit_price_usd": "per_unit",
@@ -103,3 +105,24 @@ class TestGrainMisuseGuard:
 
     def test_malformed_sql_never_raises(self):
         assert measure_grain_misuse("not sql ((", GRAINS, QCOLS) is None
+
+
+class TestGrainsBlock:
+    def test_renders_both_grains_with_quantity_name(self):
+        b = render_grains_block({"final_price_usd": "per_unit", "gross_margin_usd": "per_line"}, {"quantity"})
+        assert "PER-UNIT" in b and "final_price_usd" in b and "* quantity" in b
+        assert "PER-LINE" in b and "gross_margin_usd" in b
+        # the actionable rules both appear
+        assert "under-counts" in b and "double-counts" in b
+
+    def test_uses_the_detected_quantity_column_name(self):
+        b = render_grains_block({"unit_price": "per_unit"}, {"qty"})
+        assert "* qty" in b
+
+    def test_empty_grains_is_empty_string(self):
+        assert render_grains_block({}, {"quantity"}) == ""
+        assert render_grains_block({"x": "unknown"}, {"quantity"}) == ""
+
+    def test_only_per_unit(self):
+        b = render_grains_block({"final_price_usd": "per_unit"}, {"quantity"})
+        assert "PER-UNIT" in b and "PER-LINE" not in b

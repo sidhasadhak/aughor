@@ -747,6 +747,12 @@ async def _stream_chat(
             metrics_section = (_mb + "\n\n") if _mb else ""
         except Exception:
             metrics_section = ""
+        # Measure-additivity PREVENTION: tell the generator each measure's grain (per-unit
+        # → SUM(x*quantity); per-line → SUM(x)). No-op safe; data-detected + cached.
+        from aughor.semantic.measure_grain import measure_grains_block as _grains_block
+        _gb = _grains_block(connection_id, db, schema_text=schema)
+        if _gb:
+            metrics_section += _gb + "\n\n"
 
         # Schema-linking pre-filter: narrow schema to relevant tables/columns
         # for this specific question. Reduces hallucination by 30-60%.

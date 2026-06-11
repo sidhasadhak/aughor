@@ -1832,6 +1832,12 @@ class SchemaExplorer:
                         + "\n".join(grain_lines)
                         + "\n"
                     )
+                # Measure-additivity PREVENTION: per-unit vs per-line grain so the generator
+                # writes SUM(x*quantity) for a unit price and SUM(x) for a line total. No-op safe.
+                from aughor.semantic.measure_grain import measure_grains_block as _mg_block
+                _mgb = _mg_block(self.connection_id, self._conn, sql_writer.table_cols)
+                if _mgb:
+                    grain_block += "\n" + _mgb + "\n"
 
                 # Build join-safety rules from FK knowledge
                 join_rules: list[str] = []

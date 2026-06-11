@@ -35,6 +35,10 @@ _MEASURE_RE = re.compile(
     r"(price|cost|margin|amount|revenue|sales|value|spend|fee|charge|discount|tax|profit|"
     r"gross|net|paid|cogs|total|subtotal|freight|shipping)", re.I)
 _NON_MEASURE_RE = re.compile(r"(?:^|_)(id|key|sk|code|date|ts|timestamp|at|flag|status|type|name)(?:$|_)", re.I)
+# Rates / percentages / ratios are NOT additive base measures — a per-unit percentage is
+# still flat across quantity (so the grain probe would label it per_unit), but you never
+# SUM(pct × quantity). Exclude them so they're neither guarded nor put in the grains block.
+_RATE_RE = re.compile(r"_(pct|percent|rate|ratio|share)$|(?:^|_)(pct|percent)(?:_|$)", re.I)
 
 
 @dataclass(frozen=True)
@@ -108,7 +112,8 @@ def connection_measure_grains(
             for c in cols:
                 if probes >= max_probes:
                     break
-                if c == qty or _NON_MEASURE_RE.search(c) or not _MEASURE_RE.search(c):
+                if (c == qty or _NON_MEASURE_RE.search(c) or _RATE_RE.search(c)
+                        or not _MEASURE_RE.search(c)):
                     continue
                 probes += 1
                 g = detect_measure_grain(db, table, c, qty)
@@ -121,6 +126,45 @@ def connection_measure_grains(
                  counter="measure_grain.detect_failed")
     _GRAIN_CACHE[conn_id] = (grains, qcols)
     return grains, qcols
+
+
+def render_grains_block(grains: "dict[str, str]", quantity_cols: "set[str]") -> str:
+    """Format detected grains as a generator-prompt block (pure; testable without a DB).
+    Returns "" when nothing was classified, so callers can append unconditionally."""
+    per_unit = sorted(c for c, g in grains.items() if g == "per_unit")
+    per_line = sorted(c for c, g in grains.items() if g == "per_line")
+    if not per_unit and not per_line:
+        return ""
+    qty = sorted(quantity_cols)
+    qty_name = qty[0] if len(qty) == 1 else "quantity"
+    lines = ["MEASURE GRAINS — aggregate each measure at the RIGHT grain (verified from the data):"]
+    if per_unit:
+        lines.append(
+            f"  - PER-UNIT (a per-item value; the additive line total is the measure × {qty_name}): "
+            f"{', '.join(per_unit)}. For a SUM/total/revenue, write SUM(<measure> * {qty_name}) — "
+            f"NEVER SUM(<measure>) alone (it under-counts by the units per line)."
+        )
+    if per_line:
+        lines.append(
+            f"  - PER-LINE (already a line total, includes {qty_name}): {', '.join(per_line)}. "
+            f"Write SUM(<measure>) directly — NEVER SUM(<measure> * {qty_name}) (it double-counts)."
+        )
+    return "\n".join(lines)
+
+
+def measure_grains_block(conn_id: str, db, table_cols: "Optional[dict]" = None,
+                         *, schema_text: "Optional[str]" = None) -> str:
+    """Convenience: detect (cached) + render the measure-grains block for a connection.
+    Pass table_cols, or a schema_text to parse. No-op safe — returns "" on any trouble
+    or when nothing is classified, so callers can append it unconditionally."""
+    try:
+        if table_cols is None:
+            from aughor.tools.schema import parse_schema_tables
+            table_cols = parse_schema_tables(schema_text or "")
+        grains, qcols = connection_measure_grains(conn_id, db, table_cols or {})
+        return render_grains_block(grains, qcols)
+    except Exception:
+        return ""
 
 
 def measure_grain_misuse(

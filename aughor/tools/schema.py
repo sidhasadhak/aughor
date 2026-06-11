@@ -130,6 +130,12 @@ def _parse_schema_tables(schema_str: str) -> dict[str, list[str]]:
     return table_cols
 
 
+def parse_schema_tables(schema_str: str) -> dict[str, list[str]]:
+    """Public alias for the schema → {table: [columns]} parser (a stable interface
+    callers can import without reaching into the module's internals)."""
+    return _parse_schema_tables(schema_str)
+
+
 def _table_base(t: str) -> str:
     """Bare table name for owner matching: last path segment, lowercased, with
     dim_/fact_/_dim wrappers and a trailing plural 's' removed."""
