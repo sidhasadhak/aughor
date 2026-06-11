@@ -1061,19 +1061,38 @@ def _measure_date_span(conn_id: str, table: str, date_column: str) -> tuple:
                 pass
 
 
-def _clamp_intake_to_coverage(intake, dmin, dmax):
+def _question_pins_period(question: str, obs_start: str, obs_end: str) -> bool:
+    """True when the question explicitly names a calendar period (a 4-digit year) that the
+    observation window already covers — the user asked for THIS specific period, so it must
+    NOT be re-anchored to 'most recent'. A relative framing ('last N months', 'recent',
+    'trailing', or no date at all) returns False, so the clamp is free to re-anchor it to the
+    data's latest window."""
+    q = (question or "").lower()
+    q_years = set(re.findall(r"\b(20\d{2})\b", q))
+    if not q_years:
+        return False  # no explicit year → relative framing, safe to re-anchor
+    obs_years = {(obs_start or "")[:4], (obs_end or "")[:4]}
+    return bool(q_years & obs_years)
+
+
+def _clamp_intake_to_coverage(intake, dmin, dmax, question: str = ""):
     """Deterministically fit the intake's windows to the data that actually exists.
     The LLM-retry path merely *asks* for a correction; this enforces it. Returns a
     coverage note (str) when anything was adjusted, else None.
 
     - Observation is clipped to [dmin, dmax]; if it misses the data entirely it
       becomes the full available history.
+    - A RELATIVE 'last-N / recent' window the LLM mis-anchored to an OLDER in-range
+      period is re-anchored to END at dmax (the data's latest point), and its
+      comparison set to the prior window — so we analyse the most recent data and a
+      real prior-period (YoY) comparison becomes available instead of being forfeited.
+      Specific periods named in the question (an explicit year) are left literal.
     - A comparison with NO overlap collapses onto the observation window and is
       relabelled — "compare vs an empty period" is the bug class this kills.
     - When the available history is short (<~45 days), the label says so and the
       note tells the planner to use a daily/weekly grain and skip MoM/YoY.
     """
-    from datetime import datetime
+    from datetime import datetime, timedelta
 
     if not dmin or not dmax or getattr(intake, "cross_sectional", False):
         return None
@@ -1095,6 +1114,45 @@ def _clamp_intake_to_coverage(intake, dmin, dmax):
             f"(requested {intake.observation_start} → {intake.observation_end}, data spans {dmin} → {dmax})"
         )
         intake.observation_start, intake.observation_end = os_, oe_
+
+    # ── Re-anchor a mis-placed RELATIVE window to the data's most-recent point ──
+    # The LLM picks observation dates for a "last N / recent / trailing" framing, but it
+    # sometimes anchors to an OLDER window that happens to sit inside the data (e.g. "last
+    # 12 months" → calendar 2023 when the data runs through 2024) — analysing stale data
+    # AND forfeiting the prior-period comparison the data actually supports. Deterministically
+    # shift the window to END at dmax (preserving length) and set the comparison to the prior
+    # equal-length window — UNLESS the question pins a specific period the window matches.
+    try:
+        _os0 = (intake.observation_start or "")[:10]
+        _oe0 = (intake.observation_end or "")[:10]
+        if _os0 and _oe0 and not _question_pins_period(question, _os0, _oe0):
+            _dmax_d = datetime.fromisoformat(dmax[:10])
+            _dmin_d = datetime.fromisoformat(dmin[:10])
+            _oe_d = datetime.fromisoformat(_oe0)
+            _os_d = datetime.fromisoformat(_os0)
+            _win = (_oe_d - _os_d).days
+            _gap = (_dmax_d - _oe_d).days
+            if _win >= 0 and _gap > 31:   # window ends >1 month before the data's latest point
+                _new_os = max(_dmax_d - timedelta(days=_win), _dmin_d)
+                intake.observation_start = _new_os.date().isoformat()
+                intake.observation_end = _dmax_d.date().isoformat()
+                _new_ce = _new_os - timedelta(days=1)
+                intake.comparison_start = (_new_ce - timedelta(days=_win)).date().isoformat()
+                intake.comparison_end = _new_ce.date().isoformat()
+                _months = max(1, round(_win / 30.44))
+                intake.observation_label = f"Last {_months} months (most recent in data)"
+                intake.comparison_label = f"Prior {_months} months"
+                notes.append(
+                    f"observation re-anchored to the data's most recent window "
+                    f"[{intake.observation_start} → {intake.observation_end}] — a relative "
+                    f"'last/recent' framing had been placed at an older window ending {_oe0}, "
+                    f"{_gap} days before the latest data {dmax[:10]}; the prior-period (YoY) "
+                    f"comparison is now available"
+                )
+    except (ValueError, TypeError) as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "re-anchor is best-effort on malformed dates; leave the window as the "
+                 "clip step left it", counter="intake.reanchor_parse_failed")
 
     cs_ = (getattr(intake, "comparison_start", "") or "")[:10]
     ce_ = (getattr(intake, "comparison_end", "") or "")[:10]
@@ -1361,12 +1419,18 @@ def ada_intake(state: AgentState) -> dict:
     # this enforces. The portrait parse is the cheap path, but scan_context is empty
     # on the ADA entry points — the DB probe is the authoritative fallback.
     if intake is not None and not intake.cross_sectional:
-        _cmin, _cmax = _extract_data_date_range(scan, intake.metric_table or "")
-        if not _cmin:
-            _cmin, _cmax = _measure_date_span(
-                state.get("connection_id") or "", intake.metric_table or "", intake.date_column or ""
-            )
-        _cov_note = _clamp_intake_to_coverage(intake, _cmin, _cmax)
+        # The data's true date span drives temporal windowing (esp. the re-anchor of a
+        # 'last-N' window to the most recent data). The scan PORTRAIT undercounts the max
+        # (it reported 2024-05 when the orders table runs to 2024-12 — mis-anchoring "last
+        # 12 months"); the DB MIN/MAX probe is authoritative. UNION both so neither a short
+        # portrait nor a failed probe can shrink the range. ISO date strings → lexical min/max.
+        _smin, _smax = _extract_data_date_range(scan, intake.metric_table or "")
+        _pmin, _pmax = _measure_date_span(
+            state.get("connection_id") or "", intake.metric_table or "", intake.date_column or ""
+        )
+        _cmin = min([d for d in (_smin, _pmin) if d], default="")
+        _cmax = max([d for d in (_smax, _pmax) if d], default="")
+        _cov_note = _clamp_intake_to_coverage(intake, _cmin, _cmax, question=state.get("question", ""))
         if _cov_note:
             intake.intake_notes = f"{_cov_note} {intake.intake_notes or ''}".strip()
 
