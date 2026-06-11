@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { compactNumber } from "@/lib/format";
 import {
   getConnections, getSchemaRich, getTableColumns, getMetrics, runDirectQuery, getCatalogTree,
-  createCanvas, suggestCanvasName,
+  createCanvas, suggestCanvasName, getMeasureGrains,
   listSavedQueries, createSavedQuery, updateSavedQuery, deleteSavedQuery,
   type Connection, type SchemaColumn, type SchemaJoin, type Metric, type DirectQueryResult,
   type CatalogEntry, type SavedQuery,
@@ -117,6 +117,36 @@ function measureExpr(m: MeasureItem, multi: boolean) {
   if (m.agg === "COUNT" && !m.col) return "COUNT(*)";
   if (m.agg === "COUNT DISTINCT")  return `COUNT(DISTINCT ${qc})`;
   return `${m.agg}(${qc || "*"})`;
+}
+
+// ── Measure-grain (additivity) warnings ───────────────────────────────────────
+// Driven by the connection's detected per-unit/per-line grains — mirrors the backend
+// measure_grain_misuse at the chip level. Catches the $252M-class under-count (SUM a
+// per-unit price without ×quantity) and the per-line × quantity double-count.
+const _esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function grainWarning(m: MeasureItem, grains: Record<string, string>, qtyCols: string[]): string | null {
+  // Structured SUM of a per-unit measure without ×quantity → under-counts.
+  if (m.agg === "SUM" && m.col && grains[m.col.toLowerCase()] === "per_unit") {
+    return `"${m.col}" is a per-unit value — SUM(${m.col}) under-counts by the units per line. Multiply by quantity.`;
+  }
+  // CUSTOM expression: per-line × quantity (double-count) or a bare SUM of a per-unit measure.
+  if (m.agg === "CUSTOM" && m.customExpr) {
+    const e = m.customExpr.toLowerCase();
+    for (const [col, g] of Object.entries(grains)) {
+      const c = _esc(col);
+      if (g === "per_line") {
+        const mulQty = qtyCols.some(q => {
+          const qq = _esc(q.toLowerCase());
+          return new RegExp(`\\b${c}\\b\\s*\\*\\s*\\b${qq}\\b|\\b${qq}\\b\\s*\\*\\s*\\b${c}\\b`).test(e);
+        });
+        if (mulQty && /\bsum\s*\(/.test(e)) return `"${col}" is a per-line total — multiplying by quantity double-counts. Use SUM(${col}) alone.`;
+      }
+      if (g === "per_unit" && new RegExp(`sum\\s*\\(\\s*${c}\\s*\\)`).test(e)) {
+        return `"${col}" is a per-unit value — SUM(${col}) under-counts. Multiply by quantity.`;
+      }
+    }
+  }
+  return null;
 }
 
 // ── Join inference ────────────────────────────────────────────────────────────
@@ -660,6 +690,9 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
   const [colSearch, setColSearch] = useState("");
 
   const [metrics,         setMetrics]         = useState<Metric[]>([]);
+  // Measure grains (additivity) for this connection — drives the metric-chip warnings.
+  const [measureGrains, setMeasureGrains] = useState<Record<string, "per_unit"|"per_line">>({});
+  const [grainQtyCols,  setGrainQtyCols]  = useState<string[]>([]);
 
   // Fetch columns for a single table on-demand (fallback when rich schema is empty)
   const fetchTableColumns = useCallback(async (table: string, schemaName?: string) => {
@@ -803,6 +836,15 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
     setSavedId(null); setSavedName("");
     if (!connId) { setSavedList([]); return; }
     listSavedQueries(connId).then(setSavedList).catch(() => setSavedList([]));
+  }, [connId]);
+
+  // Fetch measure grains (additivity) for the connection — async/non-blocking; warnings appear
+  // on metric chips once resolved (the first probe is slow on a wide warehouse, then cached).
+  useEffect(() => {
+    if (!connId) { setMeasureGrains({}); setGrainQtyCols([]); return; }
+    getMeasureGrains(connId)
+      .then(r => { setMeasureGrains(r.grains || {}); setGrainQtyCols(r.quantity_cols || []); })
+      .catch(() => { setMeasureGrains({}); setGrainQtyCols([]); });
   }, [connId]);
 
   const allTables = primaryTable ? [primaryTable, ...joinedTables] : [];
@@ -1061,6 +1103,17 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
   const addMeasureDirect = (table: string, col: string, agg: AggFn) => {
     ensureTable(table);
     setMeasures(p => [...p, { id:uid(), col, table, agg, customExpr: col, alias: autoAlias(agg, col, col) }]);
+  };
+
+  // One-click fix for a per-unit SUM under-count: rewrite the measure to SUM(col × quantity).
+  const fixGrainMeasure = (m: MeasureItem) => {
+    const qty = grainQtyCols.find(q => (tableCols[m.table] ?? []).some(c => c.name.toLowerCase() === q.toLowerCase()))
+      || grainQtyCols[0] || "quantity";
+    const base = qualify(m.col, m.table, isMulti);
+    const qtyQ = qualify(qty, m.table, isMulti);
+    setMeasures(p => p.map(x => x.id === m.id
+      ? { ...x, agg: "CUSTOM" as AggFn, customExpr: `SUM(${base} * ${qtyQ})`, alias: x.alias || `sum_${m.col}_x_${qty}` }
+      : x));
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -1685,11 +1738,23 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                     )}
                     {measures.map(m => {
                       const ao = AGG_OPTIONS.find(o=>o.fn===m.agg);
+                      const warn = grainWarning(m, measureGrains, grainQtyCols);
                       return (
-                        <span key={m.id} title={`${measureExpr(m,isMulti)} AS ${m.alias}`}
-                          className={`inline-flex items-center gap-1.5 text-[12px] font-mono px-2.5 py-1 rounded-lg border ${ao?.cls??"text-violet-300 border-violet-500/30 bg-violet-500/10"}`}>
+                        <span key={m.id} title={warn || `${measureExpr(m,isMulti)} AS ${m.alias}`}
+                          className={`inline-flex items-center gap-1.5 text-[12px] font-mono px-2.5 py-1 rounded-lg border ${
+                            warn ? "text-amber-200 border-amber-500/50 bg-amber-500/10"
+                                 : (ao?.cls ?? "text-violet-300 border-violet-500/30 bg-violet-500/10")}`}>
                           <span className="text-[11px] font-sans opacity-70">{m.fromMetric?"📊":m.agg==="CUSTOM"?"fx":m.agg}</span>
                           <span className="max-w-[120px] truncate">{m.alias||measureExpr(m,isMulti)}</span>
+                          {warn && (
+                            <>
+                              <span title={warn} className="text-amber-400 cursor-help">⚠</span>
+                              {m.agg === "SUM" && (
+                                <button onClick={()=>fixGrainMeasure(m)} title={`Rewrite as SUM(${m.col} × quantity)`}
+                                  className="text-[10px] text-amber-300 hover:text-amber-100 underline decoration-dotted">fix</button>
+                              )}
+                            </>
+                          )}
                           <button onClick={()=>setMeasures(p=>p.filter(x=>x.id!==m.id))} className="opacity-50 hover:opacity-100 text-sm leading-none">×</button>
                         </span>
                       );

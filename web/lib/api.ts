@@ -1435,6 +1435,21 @@ export async function deleteSavedQuery(id: string): Promise<void> {
   if (!res.ok) throw new Error("Failed to delete saved query");
 }
 
+// ── Measure grains (additivity) ─────────────────────────────────────────────
+// Per-unit vs per-line classification for a connection's measure columns — powers the
+// Query Builder's grain-misuse warnings (SUM a per-unit price without ×quantity = under-count).
+
+export interface MeasureGrains {
+  grains: Record<string, "per_unit" | "per_line">;   // keyed by lower-case column name
+  quantity_cols: string[];
+}
+
+export async function getMeasureGrains(connId: string): Promise<MeasureGrains> {
+  const res = await fetch(`${BASE}/connections/${encodeURIComponent(connId)}/measure-grains`);
+  if (!res.ok) throw new Error("Failed to fetch measure grains");
+  return res.json();
+}
+
 /** LLM-inferred Canvas name + description from the scoped tables' schema. */
 export async function suggestCanvasName(
   connectionId: string,

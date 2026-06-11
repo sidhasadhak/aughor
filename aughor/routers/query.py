@@ -209,6 +209,43 @@ def saved_queries_delete(query_id: str):
     return {"ok": True, "id": query_id}
 
 
+# ── Measure grains (additivity) ────────────────────────────────────────────────
+# Expose per-unit vs per-line classification for a connection's measure columns so the
+# Query Builder can warn on grain misuse (SUM a per-unit price without ×quantity = under-count;
+# SUM a per-line total ×quantity = double-count). Reuses the additivity semantic layer.
+
+@router.get("/connections/{conn_id}/measure-grains")
+def connection_measure_grains_endpoint(conn_id: str):
+    """Return {grains: {col_lower: 'per_unit'|'per_line'}, quantity_cols: [...]} for a connection.
+    Best-effort: ontology-stamped grains first (no DB), else a cached live probe. Never raises."""
+    from aughor.semantic.measure_grain import (
+        connection_measure_grains, grains_from_ontology, cached_connection_grains,
+    )
+    grains, qcols = grains_from_ontology(conn_id)
+    if not grains:
+        cached = cached_connection_grains(conn_id)  # cheap hit: no DB open, no schema introspection
+        if cached is not None:
+            grains, qcols = cached
+        else:
+            try:
+                from aughor.db.connection import open_connection_for
+                from aughor.tools.schema import parse_schema_tables
+                db = open_connection_for(conn_id)
+                try:
+                    table_cols = parse_schema_tables(db.get_schema())
+                    grains, qcols = connection_measure_grains(conn_id, db, table_cols)
+                finally:
+                    try:
+                        db.close()
+                    except Exception as _e:
+                        from aughor.kernel.errors import tolerate
+                        tolerate(_e, "measure-grains endpoint: best-effort connection close",
+                                 counter="query.measure_grains.close_failed")
+            except Exception:
+                grains, qcols = {}, set()
+    return {"grains": grains, "quantity_cols": sorted(qcols)}
+
+
 @router.get("/query/cache/stats")
 def query_cache_stats():
     """Return materialization cache statistics."""
