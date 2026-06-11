@@ -31,5 +31,38 @@
     "wrong_usage_examples": [
       "AVG(line_total) sold as AOV — that is average LINE value, not average ORDER value (the $467-vs-$1108 grain confusion)."
     ]
+  },
+  {
+    "name": "revenue",
+    "label": "Revenue",
+    "sql": "SUM(final_price_usd * quantity)",
+    "tables": ["order_items"],
+    "dimensions": ["product_id", "traffic_source", "device_type"],
+    "filters": ["order_status NOT IN ('cancelled', 'test', 'fraud')"],
+    "unit": "$",
+    "caveats": "beautycommerce gross line revenue at order_items grain. final_price_usd is the PER-UNIT price AFTER discount, so revenue = SUM(final_price_usd * quantity) — NEVER SUM(final_price_usd) alone (that drops quantity and undercounts ~50%; avg quantity is ~2, so $252M instead of the correct $503M). Exclude non-real orders by joining analytics.orders on order_id and filtering order_status NOT IN ('cancelled','test','fraud'). For NET-of-returns revenue use analytics.invoices.revenue_net instead (~2.4% lower).",
+    "owner": "Revenue team",
+    "approved_by": "Finance",
+    "lineage": ["analytics.order_items.final_price_usd (per-unit, post-discount) x analytics.order_items.quantity"],
+    "wrong_usage_examples": [
+      "SUM(final_price_usd) without * quantity — final_price_usd is per-unit, so this undercounts revenue by the average quantity per line (~2x on this data: $252M vs the correct $503M).",
+      "SUM(orders.total_amount) — beautycommerce has no total_amount column; that is the samples-connection formula."
+    ]
+  },
+  {
+    "name": "aov",
+    "label": "Average Order Value",
+    "sql": "SUM(final_price_usd * quantity) / NULLIF(COUNT(DISTINCT order_id), 0)",
+    "tables": ["order_items"],
+    "dimensions": ["product_id", "traffic_source", "device_type"],
+    "filters": ["order_status NOT IN ('cancelled', 'test', 'fraud')"],
+    "unit": "$",
+    "caveats": "beautycommerce AOV = gross line revenue / distinct orders at order_items grain: SUM(final_price_usd * quantity) / COUNT(DISTINCT order_id). final_price_usd is per-unit, so the quantity multiplier is REQUIRED — AVG(final_price_usd) or a per-order SUM(final_price_usd) without quantity undercounts AOV ~2x (the $78 vs the correct ~$156 bug). Exclude cancelled/test/fraud orders.",
+    "owner": "Revenue team",
+    "approved_by": "Finance",
+    "lineage": ["analytics.order_items.final_price_usd x quantity / distinct order_id"],
+    "wrong_usage_examples": [
+      "AVG(final_price_usd) or a per-order SUM(final_price_usd) sold as AOV — drops the quantity multiplier (per-unit price), undercounting AOV ~2x ($78 vs the correct ~$156)."
+    ]
   }
 ]
