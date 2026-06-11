@@ -192,13 +192,26 @@ def _pb_serialize(entries) -> list[dict]:
     return out
 
 
+# Sentinel for _aiter_sync — see why a sentinel (not except StopIteration) below.
+_AITER_DONE = object()
+
+
 async def _aiter_sync(sync_iter):
+    """Bridge a SYNC iterator (LangGraph's .stream()) into an async generator.
+
+    Uses a sentinel rather than `except StopIteration`: `await run_in_executor(..., next, it)`
+    marshals the iterator's terminal StopIteration through a Future, and asyncio REFUSES to
+    set StopIteration on a Future ("StopIteration ... cannot be raised into a Future"),
+    converting it to a TypeError that `except StopIteration` never catches. That TypeError
+    leaked out at stream-end, so a cleanly-completed investigation was routed through the
+    except/salvage path instead of clean post-loop finalization. `next(it, _AITER_DONE)`
+    returns the sentinel on exhaustion, so the loop ends cleanly.
+    """
     loop = asyncio.get_event_loop()
     it = iter(sync_iter)
     while True:
-        try:
-            item = await loop.run_in_executor(None, next, it)
-        except StopIteration:
+        item = await loop.run_in_executor(None, next, it, _AITER_DONE)
+        if item is _AITER_DONE:
             break
         yield item
 
@@ -906,7 +919,9 @@ async def _stream_chat(
         if os.getenv("AUGHOR_COMPILER", "1").strip().lower() in ("1", "true", "yes", "on"):
             try:
                 from aughor.semantic.compiler import compile_question
-                _cc = compile_question(question, connection_id, dialect=db.dialect)
+                # Pass the schema we already fetched (_full_schema) so metric resolution
+                # inside the compiler doesn't re-introspect it — ~16s per compile (profiled).
+                _cc = compile_question(question, connection_id, dialect=db.dialect, schema_text=_full_schema)
                 if _cc:
                     _compiled_sql, _compiled_intent = _cc
                     prompt = ("VERIFIED SQL (assembled from the verified semantic layer — this is "

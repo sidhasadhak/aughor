@@ -279,14 +279,17 @@ _PARSE_SYS = (
 
 
 def parse_intent(question: str, ontology, metrics: Optional[list] = None,
-                 *, dialect: str = "duckdb") -> Optional[QueryIntent]:
-    """Map a NL question to a typed QueryIntent grounded in the ontology, or None."""
+                 *, dialect: str = "duckdb", schema_text: Optional[str] = None) -> Optional[QueryIntent]:
+    """Map a NL question to a typed QueryIntent grounded in the ontology, or None.
+    ``schema_text`` is forwarded to metric resolution to avoid a costly schema
+    re-introspection (see resolve_canonical_metrics)."""
     try:
         if metrics is None:
             from aughor.semantic.canonical import resolve_canonical_metrics
             metrics = resolve_canonical_metrics(
                 getattr(ontology, "connection_id", "") or "",
-                getattr(ontology, "schema_name", "") or None, ontology=ontology)
+                getattr(ontology, "schema_name", "") or None, ontology=ontology,
+                schema_text=schema_text)
         from aughor.llm.provider import get_provider
         user = (f"SCHEMA:\n{_catalog(ontology, metrics)}\n\n"
                 f"QUESTION: {question}\n\nReturn the typed intent (intent_type='none' if it doesn't fit).")
@@ -299,11 +302,14 @@ def parse_intent(question: str, ontology, metrics: Optional[list] = None,
 
 
 def compile_question(question: str, connection_id: str, *, schema_name: Optional[str] = None,
-                     dialect: str = "duckdb") -> Optional[tuple]:
+                     dialect: str = "duckdb", schema_text: Optional[str] = None) -> Optional[tuple]:
     """Full deterministic path: NL question → typed intent → grounded SQL.
 
     Returns (sql, intent) when the question maps cleanly to a covered intent and every
-    reference resolves; None otherwise (the caller falls back to free-form LLM SQL)."""
+    reference resolves; None otherwise (the caller falls back to free-form LLM SQL).
+
+    ``schema_text``: pass the caller's already-fetched schema so metric resolution doesn't
+    RE-INTROSPECT it — that redundant db.get_schema() was ~16s per /chat compile (profiled)."""
     try:
         from aughor.ontology.store import load_latest_ontology
         ontology = load_latest_ontology(connection_id, schema_name)
@@ -312,8 +318,8 @@ def compile_question(question: str, connection_id: str, *, schema_name: Optional
         from aughor.semantic.canonical import resolve_canonical_metrics
         metrics = resolve_canonical_metrics(
             connection_id, schema_name or (getattr(ontology, "schema_name", "") or None),
-            ontology=ontology)
-        intent = parse_intent(question, ontology, metrics, dialect=dialect)
+            ontology=ontology, schema_text=schema_text)
+        intent = parse_intent(question, ontology, metrics, dialect=dialect, schema_text=schema_text)
         if intent is None:
             return None
         sql = synthesize_sql(intent, ontology, metrics=metrics, dialect=dialect)
