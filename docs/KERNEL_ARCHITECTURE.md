@@ -198,6 +198,49 @@ Every job transition, artifact write, and structured error appends to `events`. 
   `page.tsx` 1,948 → screen modules consuming the event stream; `BriefingPanel.tsx` 1,576 →
   card/layer components. Each split lands WITH its tests, incrementally.
 
+### Pillar 4 — The Semantic Governance Plane (the SOTA trust wedge)
+
+This is the layer that separates a demo from a platform a Fortune-500 data team
+*trusts*. It is not new machinery — it is the **Ledger + Contracts applied to
+meaning**: a metric definition is a versioned, owned, approved artifact, and the
+AI is contractually forbidden from acting outside the governed set. Four
+mechanisms, each mapped to a substrate we already have:
+
+1. **Definitions are governed artifacts, not config.** `revenue`, `aov`, churn,
+   margin — each is a versioned Ledger artifact (Pillar 1) with an `owner`,
+   `approved_by`, and an audit trail of every change. A definition flows
+   `proposed → reviewed → approved → enforced`; superseding a version preserves
+   the old one (the artifact model already does this). *Today:* one flat
+   `data/metrics.json` I hand-edited (UNIFY). *SOTA:* the human workflow around
+   it — a business user proposes in the UI, an owner approves, it governs every
+   query/dashboard/AI answer org-wide, instantly.
+2. **The AI may only USE registered metrics — never invent one.** This is the
+   single biggest trust differentiator, and it is a **Contract**: when a metric
+   is governed, the SQL path must use that exact formula; when a requested metric
+   is *not* governed, the agent says "this metric isn't defined yet — define it?"
+   instead of free-handing a formula. Structural, not advisory — the generator
+   is gated, the way the kernel gates a silent swallow. (Aughor already has the
+   pieces: the canonical-metrics injection, the fan-out/grain guards, the
+   semantic-drift guard. SOTA = compose them into a hard *use-only-registered*
+   rule with a measured enforcement rate.)
+3. **Every number self-justifies — receipts by default, not on click.** The K3
+   lineage already records (metric definition → SQL → inputs → validation → job).
+   SOTA surfaces it *inline*: hover any figure and see "net revenue, defined by
+   Finance, this SQL, validated, as of 2pm." The receipt is the visible proof of
+   mechanism #2 — the CFO's "can I put this in a board deck?" answered in one
+   glance. (Built as a drawer in K3; the SOTA delta is *default-visible*.)
+4. **Honest, deterministic measurement.** Governance claims ("the AI now never
+   improvises a metric", "trusted answers rose") must be *provable*. UNIFY made
+   the eval unconfounded but it is small and cloud-noise-dominated (a 2% lift is
+   invisible). SOTA = a larger, harder benchmark on real warehouses with a
+   deterministic decode, so an improvement is *visible* instead of drowned. The
+   `runs_detail` cache already enables zero-LLM re-scoring; the gap is scale +
+   determinism, a methodology choice not a code gap.
+
+Why this is a *plane* and not a feature: meaning is the one thing autonomous
+agents must agree on to be trusted at scale. Pillar 1 makes state safe to share;
+Pillar 4 makes *definitions* safe to share — the same move, one level up.
+
 ---
 
 ## 3. Reliability you can demonstrate — the Proof Harness
@@ -241,6 +284,12 @@ deleted only after the new path passes its invariant tests.
 | **K2 — Event Spine to UI** | one SSE `/events` channel; panels subscribe | ChatPanel/Briefing/Exploration/DomainIntel stop polling (fallback kept); live job progress everywhere (feeds the motion pass — real progress, not fake spinners) | Polling-loop count ≤1; network-trace before/after; WCH-11 absorbed | M |
 | **K3 — Lineage & Trust Receipts** | artifacts + lineage edges; receipt chip UI | findings/briefs/monitors written as versioned artifacts with provenance; B-1 ships as a query over `lineage` | A finding's receipt shows job, SQL, inputs, validation — live demo; supersede-not-delete verified | M |
 | **K4 — Contracts** | error taxonomy + lint; generated TS client; domain interface modules; god-file splits begin | `errors.tolerate` + CI lint (no new silent swallows); `api.gen.ts`; boundary lint | Swallow count <20; wiring-contract invariant in CI; WCH-10 absorbed | M–L |
+| **K5 — Semantic Governance Plane** | metrics as governed Ledger artifacts (owner/approve/version/audit); the *use-only-registered* generation contract; receipts default-visible; deterministic benchmark | UNIFY registry ✅ → governance workflow + enforcement gate + inline receipts + harder eval | **Enforcement rate** (% of metric-bearing answers using a registered formula) measured + risen; receipt visible on every figure; a metric change is auditable | L |
+
+**Migration status (2026-06-10):** K0–K4 ✅ shipped + drilled. **K5 is the next architectural stage** —
+its first brick (the UNIFY metric registry + schema-scoped injection) is already in; the remaining
+bricks are the governance workflow, the AI-use-only-registered contract, default-visible receipts, and
+the deterministic benchmark (see the 5-step plan below / `WORLD_CLASS_HARDENING_PLAN.md` Phase 5).
 
 **What we explicitly do NOT do:** no microservices, no message broker, no Postgres requirement (SQLite
 WAL until #12 multi-node), no framework swap, no big-bang rewrite. The kernel is ~4 focused modules;

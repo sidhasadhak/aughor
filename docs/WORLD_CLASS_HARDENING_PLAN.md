@@ -376,13 +376,27 @@ insights; almost nobody can show *why a number is right*. Everything below sharp
 | # | Item | Why it sells | Builds on |
 |---|---|---|---|
 | B-1 | **Trust Receipts** — every surfaced number carries a one-click provenance chip (source SQL, validation status, fan-out-guard applied, freshness, grounding check) rendered as a compact badge row | The CFO question is "can I put this in a board deck?" Evidence layer exists; productize it as a visible receipt, not a drawer | Evidence layer, validator, grounding |
-| B-2 | **UNIFY — metric unification** (already queued) | "Revenue means one thing" is the #1 enterprise semantic-layer ask (Cube/dbt-metrics convergence); also unblocks the eval | #13b ✅ |
+| B-2 | ✅ **UNIFY — metric unification** (DONE `3c97559`) — one registered metric, schema-scoped injection, leak fixed, convention-neutral eval | "Revenue means one thing" is the #1 enterprise semantic-layer ask; the first brick of the K5 Semantic Governance Plane | #13b ✅ |
 | B-3 | **Slack-first delivery** — scheduled briefs + monitor alerts with finding cards and an Investigate deep-link back into the app | Data teams live in Slack; push is how intelligence reaches non-analysts. Subsystem exists (briefs/, triggers); needs real-creds E2E + deep links | #4 ✅ |
 | B-4 | **Data-health monitor pack** — one-click freshness/volume/schema-drift monitors per connection, auto-proposed from the ontology | Cheapest "always-on value" — the platform notices breakage before the user does; classic land-and-expand | monitors, watermark (Tier 3) |
-| B-5 | **#12 Enterprise hardening** (OAuth2/OIDC, RBAC, tenancy, query cancel, secrets) | Gates every real deployment; licensing foundation already dark-launched | licensing/ |
+| B-5 | **#12 Enterprise hardening** (OAuth2/OIDC, RBAC, tenancy, query cancel, secrets) | Gates every real deployment; **also the identity substrate K5 governance needs** — "Finance owns the definition" requires a "Finance"; licensing foundation already dark-launched | licensing/ |
 | B-6 | **Time-to-first-insight < 5 min** — instrument and optimize the connect→first-briefing funnel as a product KPI (sample data, progressive exploration: first findings surface while later phases run) | The eval for "wow"; today exploration is all-or-nothing for 8–15 min | WCH-11..14 |
 
-Sequencing recommendation after this arc: **UNIFY → B-1 Trust Receipts → B-3 Slack E2E → #12.**
+### Phase 5b — The Semantic Governance Plane (K5 / SOTA trust wedge)
+
+The Ledger + Contracts applied to **meaning** (see `KERNEL_ARCHITECTURE.md` Pillar 4). This is the
+Palantir/Databricks-tier differentiator: a metric is a governed, owned, approved object, and the AI is
+*forbidden* from acting outside the governed set. UNIFY (B-2) laid the first brick.
+
+| # | Item | Why it sells | Builds on |
+|---|---|---|---|
+| **B-7** | **AI use-only-registered metrics (enforcement contract)** — when a metric is governed, the SQL path MUST use that exact formula; when it isn't, the agent offers to define it instead of free-handing one. Measured *enforcement rate*. | The single biggest trust differentiator — "the AI can't improvise the numbers." This is what lets a CFO trust an autonomous answer. | UNIFY registry ✅, canonical injection, fan-out/grain/drift guards |
+| **B-8** | **Metric governance workflow** — propose → review → approve → enforce, versioned with an audit trail, in the UI. Metrics become Ledger artifacts with `owner`/`approved_by`. | "Revenue is owned by Finance, versioned, audited" — the enterprise semantic-layer table-stakes (Cube/dbt-metrics/Unity Catalog parity). | K0 Ledger (artifacts), K3 lineage, #12 identity |
+| **B-9** | **Receipts default-visible** — the K3 provenance shown *inline* on every figure (hover → definition + owner + SQL + validation + freshness), not behind a drawer click. | The visible proof of B-7; turns "trust me" into "here's why." | K3 lineage ✅ (drawer built) |
+| **B-10** | **Deterministic, harder benchmark** — a larger real-warehouse eval with deterministic decode so a real lift is *visible*, not drowned in cloud noise (UNIFY made it unconfounded but small). | Makes every governance/capability claim *provable*, not asserted — the honesty infrastructure. | UNIFY eval ✅, `runs_detail` zero-LLM re-score ✅ |
+
+Sequencing recommendation after this arc: **B-7 enforce → B-9 receipts-visible → B-8 governance workflow
+→ #12 identity → B-10 benchmark** (the 5-step criticality plan below).
 
 ---
 
@@ -402,6 +416,30 @@ Sequencing recommendation after this arc: **UNIFY → B-1 Trust Receipts → B-3
 | 10 | WCH-10, WCH-17, WCH-14 | M | Contract tests, felt-quality, optional parallelism |
 
 Then: UNIFY → B-1 → B-3 → #12 (see Phase 5).
+
+---
+
+## ▶ NEXT 5 STEPS — by criticality (2026-06-10, post-UNIFY)
+
+The wedge is **trustworthy autonomy**. With the kernel (K0–K4), motion, proof harness, and UNIFY
+done, the highest-criticality moves all sharpen that wedge — the Semantic Governance Plane (K5) —
+then secure deployment. Ordered by impact × unblocks, constrained by dependency.
+
+| # | Step | Why it's #N (criticality) | Effort | Depends on |
+|---|---|---|---|---|
+| **1** | **B-7 — Lock the AI to registered metrics** (use-only-registered enforcement contract + measured enforcement rate) | THE trust differentiator and the cheapest big win: the registry exists (UNIFY), the guards exist — compose them into a hard gate. "The AI can't improvise the numbers" is the wedge a CFO buys. | M | UNIFY ✅ |
+| **2** | **B-9 — Trust Receipts default-visible** (K3 lineage surfaced inline on every figure, not a drawer) | Makes step 1 *provable at a glance* — "net revenue, defined by Finance, this SQL, validated." Mostly built (K3); the delta is default-visible. Steps 1+2 together = the demo that wins enterprise. | S–M | K3 ✅ |
+| **3** | **B-8 — Metric governance workflow** (propose → approve → version → audit; metrics become governed Ledger artifacts) | Turns the registry from a file I edit into an object Finance owns. The enterprise semantic-layer table-stake. Heavier, and it needs identity → why #12 is #4. | L | K0/K3, partial on #12 |
+| **4** | **#12 — Enterprise identity** (OAuth2/OIDC + RBAC + tenancy + query cancel + secrets) | The substrate that makes "ownership/approval" real (no "Finance" without identity) AND gates every real deployment. Licensing foundation already dark-launched. | L | licensing/ ✅ |
+| **5** | **B-10 — Deterministic, harder benchmark** | Makes every claim above measurable instead of asserted — the honesty infrastructure. Lower user-facing criticality, high engineering-trust value; can run in parallel. | M | UNIFY eval ✅ |
+
+**One-liner:** *teach the AI it may only use governed definitions (1), show the receipt by default (2),
+let Finance govern those definitions (3) under real identity (4), and prove it all on an honest
+benchmark (5).* That is the path from "good demo" to "platform a Fortune-500 data team trusts."
+
+Smaller correctness items run alongside as they surface: the **narration-inversion guard** (the
+"3 orders × 1 item" → "all orders have 3 items" bug), **WCH-8** .duckdb write coordination, and the
+remaining **K4 follow-ups** (generated TS client, domain interfaces, god-file splits).
 
 ---
 
