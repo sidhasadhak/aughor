@@ -6,7 +6,38 @@
 
 ---
 
-## 🚨 NEXT ARC — World-Class Hardening: Stress-Test Everything, No Fake Claims (directive 2026-06-10)
+## 🚨 ARC STATUS — World-Class Hardening + Aughor Kernel (2026-06-10, compaction checkpoint)
+
+**Branch `2026-06-10-ui-uplift-k2` (synced to `main` = `2a57290`, 21 commits this arc, all pushed).**
+Master ranked backlog + per-stage detail: memory `roadmap_priorities.md`. Architecture:
+`docs/KERNEL_ARCHITECTURE.md` (now 4 pillars incl. the Semantic Governance Plane / K5). Execution
+detail: `docs/WORLD_CLASS_HARDENING_PLAN.md` (Phase 5b + the criticality-ordered next-5).
+
+**SHIPPED this arc (all on main, each live-verified):**
+- **3 reported bugs:** Investigate→blank canvas (root-caused `CanvasWorkspace.tsx:837` + a StrictMode
+  auto-submit deadlock); sample-data honesty chain (loud seed failures + error≠empty UI); +
+  data-shape-aware temporal planning (the 17-day-dataset-framed-as-12-months bug).
+- **Kernel K0–K4:** Ledger (transactional `system.db` + event journal) · Job Kernel (supervised
+  state machines, crash-resume — proven by a `kill -9` chaos drill) · Event Spine → SSE (6 pollers
+  retired) · Trust Receipts (lineage) · Contracts (`tolerate()` + AST ratchets 269/70 + OpenAPI
+  wiring contract). **Proof Harness** (`tests/stress/` + `scripts/chaos_drill.py`).
+- **Product/UX:** motion system (WCH-15/16) · single-font policy + Tableau light theme · platform-wide
+  legibility sweep · **UNIFY** (one registered metric, schema-scoped, convention-neutral eval).
+- **Meta-arc (T0–T2):** T0 ontology build observability (`ontology.build` events + `/ontology/build-status`)
+  · **T1 the visible trust USP** — Trust Receipts on every chat AND ADA answer + **B-7 metric
+  enforcement** (verify+measure whether the AI used the governed formula; `/metrics/enforcement-rate`)
+  · **WCH-12** schema-cache wiring (was bypassed on both hot paths).
+
+**NEXT (by criticality, from the meta-eval):** **WCH-13** parallelize the sequential ADA phase chain
+(the 8–15 min / 600s-timeout speed offender — SCOPED, needs `investigation_phases`→additive reducer +
+per-node delta returns + a `decompose` fan-out; ~8 min per verification) → **T3** kernel-leverage
+completion (jobs/events/artifacts currently serve ONE consumer each — wire kernel-wide) → **#12**
+enterprise identity → **B-8** metric governance workflow. Standing honesty bar: every "works" backed
+by an executed verification; built ≠ wired ≠ leveraged.
+
+---
+
+### Original mandate (2026-06-10, kept for provenance)
 
 **The mandate (user, verbatim intent):** we built a lot; whether it *functions as expected* is a matter of stress testing. The platform is still clunky in design and performance, with naive gaps, rework, and fake claims making it lackluster. Act as the world's best software engineer + AI expert + business maverick: **reprioritize, deep-scan the codebase, identify wirings, challenge logic, make UI components genuinely SOTA, verify every component/button does what it claims, and run deep stress tests. Do not lie to yourself or to the user.**
 
