@@ -85,18 +85,26 @@ def resolve_canonical_metrics(
     if catalog and connection_id:
         _schema_text = schema_text or ""
         if not _schema_text:
+            _db = None
             try:
                 from aughor.db.connection import open_connection_for
                 _db = open_connection_for(connection_id)
                 _schema_text = _db.get_schema()
-                # Do NOT close — open_connection_for returns a POOLED connection;
-                # closing it forces an expensive pool rebuild (and is a borrower
-                # closing a shared handle). The pool owns the lifecycle.
             except Exception as exc:
                 from aughor.kernel.errors import tolerate
                 tolerate(exc, "metric schema-filter is best-effort; unfiltered catalog "
                          "is safe (over-injection, not wrong injection)",
                          counter="metrics.schema_filter", conn_id=connection_id)
+            finally:
+                # Release back to the pool. open_connection_for hands out a POOLED
+                # connection whose .close() is swapped to a pool-RELEASE (not a physical
+                # close); skipping it leaks the checkout. The latency win comes from
+                # avoiding this fetch entirely when schema_text is passed, not from here.
+                if _db is not None:
+                    try:
+                        _db.close()
+                    except Exception:
+                        pass
         if _schema_text:
             from aughor.semantic.metrics import filter_metrics_to_schema
             catalog = filter_metrics_to_schema(catalog, _schema_text)
