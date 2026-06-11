@@ -4,7 +4,9 @@ The pure classifier (classify_from_buckets) decides per-unit vs per-line from AV
 quantity buckets, the signal verified live on beautycommerce (final_price_usd flat 1/1/1
 → per_unit; gross_margin_usd 1/2/3 → per_line). These pin the decision logic exhaustively
 and the conservative 'unknown' fallback (it must never mislabel a noisy measure)."""
-from aughor.semantic.measure_grain import classify_from_buckets, measure_grain_misuse
+from aughor.semantic.measure_grain import (
+    classify_from_buckets, measure_grain_misuse, render_grains_block,
+)
 
 # beautycommerce grains (detected live): final_price_usd per-unit, gross_margin_usd per-line.
 GRAINS = {"final_price_usd": "per_unit", "unit_price_usd": "per_unit",
@@ -103,3 +105,58 @@ class TestGrainMisuseGuard:
 
     def test_malformed_sql_never_raises(self):
         assert measure_grain_misuse("not sql ((", GRAINS, QCOLS) is None
+
+
+class TestGrainsBlock:
+    def test_renders_both_grains_with_quantity_name(self):
+        b = render_grains_block({"final_price_usd": "per_unit", "gross_margin_usd": "per_line"}, {"quantity"})
+        assert "PER-UNIT" in b and "final_price_usd" in b and "* quantity" in b
+        assert "PER-LINE" in b and "gross_margin_usd" in b
+        # the actionable rules both appear
+        assert "under-counts" in b and "double-counts" in b
+
+    def test_uses_the_detected_quantity_column_name(self):
+        b = render_grains_block({"unit_price": "per_unit"}, {"qty"})
+        assert "* qty" in b
+
+    def test_empty_grains_is_empty_string(self):
+        assert render_grains_block({}, {"quantity"}) == ""
+        assert render_grains_block({"x": "unknown"}, {"quantity"}) == ""
+
+    def test_only_per_unit(self):
+        b = render_grains_block({"final_price_usd": "per_unit"}, {"quantity"})
+        assert "PER-UNIT" in b and "PER-LINE" not in b
+
+
+class TestOntologyPersistence:
+    def _fake_graph(self, props):
+        from types import SimpleNamespace
+        ent = SimpleNamespace(properties={n: SimpleNamespace(name=n, measure_grain=g) for n, g in props})
+        return SimpleNamespace(entities={"e": ent})
+
+    def test_grains_from_ontology_reads_stamped(self, monkeypatch):
+        from aughor.semantic import measure_grain as M
+        graph = self._fake_graph([("final_price_usd", "per_unit"), ("gross_margin_usd", "per_line"), ("quantity", "")])
+        monkeypatch.setattr("aughor.ontology.store.load_latest_ontology", lambda cid: graph)
+        g, q = M.grains_from_ontology("c1")
+        assert g == {"final_price_usd": "per_unit", "gross_margin_usd": "per_line"}
+        assert "quantity" in q
+
+    def test_grains_from_ontology_empty_when_no_ontology(self, monkeypatch):
+        monkeypatch.setattr("aughor.ontology.store.load_latest_ontology", lambda cid: None)
+        from aughor.semantic.measure_grain import grains_from_ontology
+        assert grains_from_ontology("c1") == ({}, set())
+
+    def test_connection_grains_seeds_from_ontology_without_probing(self, monkeypatch):
+        # the persistence payoff: when grains are stamped on the ontology, no DB probe runs.
+        from aughor.semantic import measure_grain as M
+        M._GRAIN_CACHE.pop("c1_seed", None)
+        graph = self._fake_graph([("final_price_usd", "per_unit"), ("quantity", "")])
+        monkeypatch.setattr("aughor.ontology.store.load_latest_ontology", lambda cid: graph)
+
+        class _NoProbeDB:
+            def execute(self, *a, **k):
+                raise AssertionError("probed the DB despite grains being on the ontology")
+
+        g, q = M.connection_measure_grains("c1_seed", _NoProbeDB(), {"t": ["final_price_usd", "quantity"]})
+        assert g == {"final_price_usd": "per_unit"} and "quantity" in q

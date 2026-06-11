@@ -747,6 +747,19 @@ async def _stream_chat(
             metrics_section = (_mb + "\n\n") if _mb else ""
         except Exception:
             metrics_section = ""
+        # Measure-additivity PREVENTION: tell the generator each measure's grain (per-unit
+        # → SUM(x*quantity); per-line → SUM(x)). No-op safe; data-detected + cached.
+        from aughor.semantic.measure_grain import measure_grains_block as _grains_block
+        _gb = _grains_block(connection_id, db, schema_text=schema)
+        if _gb:
+            metrics_section += _gb + "\n\n"
+        # Metric-feasibility: if the question needs a metric this connection can't support
+        # (profit with no cost, efficiency with no conversions), tell the generator to report
+        # what IS measurable instead of fabricating a verdict.
+        from aughor.semantic.metric_feasibility import unsupported_metric_gap as _feas_gap
+        _fg = _feas_gap(question, schema)
+        if _fg:
+            metrics_section += "DATA AVAILABILITY — " + _fg + ".\n\n"
 
         # Schema-linking pre-filter: narrow schema to relevant tables/columns
         # for this specific question. Reduces hallucination by 30-60%.
@@ -1070,6 +1083,19 @@ async def _stream_chat(
             )
             _rcpt["narration_inversion"] = True
             logger.info("[chat] narration-inversion caveat applied to headline")
+        # Measure-grain caveat (backstop to the prevention block): if the executed SQL
+        # summed a measure at the WRONG grain (per-unit without ×quantity, or per-line
+        # ×quantity), flag the number instead of asserting it. Data-detected + cached.
+        from aughor.semantic.measure_grain import connection_measure_grains, measure_grain_misuse
+        from aughor.tools.schema import parse_schema_tables as _parse_tc
+        _mg, _qc = connection_measure_grains(connection_id, db, _parse_tc(_full_schema))
+        if _mg and final_sql and measure_grain_misuse(final_sql, _mg, _qc, dialect=db.dialect):
+            _grounded_headline = (
+                f"{(_grounded_headline or '').rstrip('. ')} — caution: a measure may be "
+                "summed at the wrong grain (per-unit vs per-line); verify the total."
+            )
+            _rcpt["measure_grain"] = True
+            logger.info("[chat] measure-grain caveat applied to headline")
         # Deterministic concentration→pareto (the renderer never sees the question).
         answer.chart_type = _maybe_pareto(question, result.columns, result.rows, answer.chart_type)
         yield _sse("columns", {"columns": result.columns})
@@ -1121,6 +1147,8 @@ async def _stream_chat(
                 _guards.append(("validated_by", "guard:sql_lint", "auto-fixed a SQL quality issue before execution"))
             if _rcpt.get("narration_inversion"):
                 _guards.append(("flagged", "guard:narration_inversion", "a per-group value was stated as universal; caveated inline"))
+            if _rcpt.get("measure_grain"):
+                _guards.append(("flagged", "guard:measure_grain", "a measure may be summed at the wrong grain (per-unit vs per-line); caveated inline"))
             for _tq in (_trusted_used or []):
                 _guards.append(("trusted", f"query:{(_tq.get('question') or '')[:60]}", _tq.get('note')))
             _write_answer_receipt(

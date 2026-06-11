@@ -247,6 +247,28 @@ def get_or_build_ontology(
             join_map=join_map,
             glossary=glossary,
         )
+        # Stamp measure-grain (additivity: per_unit vs per_line) onto properties FROM THE
+        # DATA, so consumers read a persisted grain instead of re-probing each run (#3).
+        try:
+            from aughor.semantic.measure_grain import probe_measure_grains
+            from aughor.db.connection import open_connection_for
+            _tc = {ent.source_tables[0]: [p.name for p in ent.properties.values()]
+                   for ent in graph.entities.values() if getattr(ent, "source_tables", None)}
+            if _tc:
+                _db = open_connection_for(connection_id)
+                try:
+                    _grains, _ = probe_measure_grains(_db, _tc)
+                finally:
+                    _db.close()
+                for ent in graph.entities.values():
+                    for p in ent.properties.values():
+                        g = _grains.get(p.name.lower())
+                        if g:
+                            p.measure_grain = g
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "measure-grain stamping is best-effort; the runtime probe still covers it",
+                     counter="ontology.grain_stamp_failed")
         # Persist ONLY the structural graph to the fingerprint cache — learned
         # skills must never be baked in (they'd be wiped on rebuild and would
         # pollute the structural fingerprint).  Overlay happens after save.

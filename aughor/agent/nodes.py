@@ -1034,6 +1034,48 @@ def synthesize_report(state: AgentState) -> dict[str, Any]:
             report = AnalysisReport(
                 **{**report.model_dump(), "data_quality_notes": list(report.data_quality_notes) + [inv_note]}
             )
+        # Measure-grain misuse: a query that summed a measure at the wrong grain
+        # (per-unit without ×quantity → under-count; per-line ×quantity → double-count).
+        from aughor.semantic.measure_grain import connection_measure_grains, measure_grain_misuse
+        from aughor.tools.schema import parse_schema_tables
+        from aughor.db.connection import open_connection_for
+        from aughor.routers._shared import get_schema_cached
+        cid = state.get("connection_id") or ""
+        _sqls = [r.sql for r in _qh if getattr(r, "sql", "") and not getattr(r, "error", None)]
+        if cid and _sqls:
+            _db = open_connection_for(cid)
+            _dial = getattr(_db, "dialect", "duckdb")
+            try:
+                _sch = get_schema_cached(cid, _db)
+                _mg, _qc = connection_measure_grains(cid, _db, parse_schema_tables(_sch))
+            finally:
+                _db.close()
+            # Metric feasibility: the question needs a metric this connection can't support
+            # (profit with no cost; efficiency with no conversions) → a fabricated verdict.
+            from aughor.semantic.metric_feasibility import unsupported_metric_gap
+            _fgap = unsupported_metric_gap(state.get("question", ""), _sch)
+            if _fgap:
+                report = AnalysisReport(**{**report.model_dump(), "data_quality_notes": list(report.data_quality_notes) + [DataQualityNote(
+                    table="Report Narrative", column=None,
+                    issue="The question asks for a metric this connection cannot support: " + _fgap + ".",
+                    impact="Any profit/efficiency verdict here is inferred, not measured — treat it as unsupported.",
+                    recommended_fix="Report what IS measurable (revenue, volume, spend) and state that the missing data blocks the verdict.",
+                )]})
+            _ghits: list[str] = []
+            for _s in _sqls:
+                _m = measure_grain_misuse(_s, _mg, _qc, dialect=_dial)
+                if _m and _m not in _ghits:
+                    _ghits.append(_m)
+            if _ghits:
+                gnote = DataQualityNote(
+                    table="Report Narrative", column=None,
+                    issue="A query aggregated a measure at the wrong grain: " + "; ".join(_ghits) + ".",
+                    impact="A per-unit measure summed without quantity under-counts; a per-line measure × quantity double-counts.",
+                    recommended_fix="Re-aggregate at the correct grain — per-unit measures × quantity, per-line measures summed directly.",
+                )
+                report = AnalysisReport(
+                    **{**report.model_dump(), "data_quality_notes": list(report.data_quality_notes) + [gnote]}
+                )
     except Exception:
         pass  # verifiers are best-effort — never block the report
 
