@@ -52,6 +52,7 @@ export interface ChatTurn {
   latestScore: Record<string, unknown> | null;
   hypotheses: Hypothesis[];
   investigationId: string | null;
+  receiptId: string | null;   // chat turn id for the Trust Receipt
 
   // Shared
   tablesUsed: string[];
@@ -126,7 +127,7 @@ type ChatAction =
   | { type: "ERROR";            message: string }
   | { type: "INSIGHT";           narrative: string; anomalies: string[]; trend: string; confidence: string }
   | { type: "CLARIFYING_QUESTIONS"; questions: string[]; contextNote: string }
-  | { type: "DONE" }
+  | { type: "DONE"; receiptId?: string | null }
   | { type: "CLEAR" }
   | { type: "RESTORE";          turns: ChatTurn[] };
 
@@ -144,7 +145,7 @@ const EMPTY_TURN: Omit<ChatTurn, "id" | "question" | "mode"> = {
   statusText: null, phases: [], adaReport: null, report: null, queryMode: null,
   subQuestions: [], subqAnswers: [], exploreReport: null,
   queriesExecuted: [], latestScore: null,
-  hypotheses: [], investigationId: null,
+  hypotheses: [], investigationId: null, receiptId: null,
   tablesUsed: [], followups: [], analysis: null, error: null,
   startedAt: 0, elapsedMs: null,
   fromCache: false, cachedQuestion: null,
@@ -221,7 +222,7 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
       // `error`. Only promote a still-running turn; never overwrite a terminal
       // `error` status (otherwise the failure message is set but never shown and
       // the investigation looks like it silently "gave up").
-      return { ...updateLast(state, t => finish({ ...t, status: t.status === "loading" ? "done" : t.status })), streaming: false };
+      return { ...updateLast(state, t => finish({ ...t, status: t.status === "loading" ? "done" : t.status, receiptId: action.receiptId ?? t.receiptId })), streaming: false };
     case "CLEAR":
       return { turns: [], streaming: false };
     case "RESTORE":
@@ -338,7 +339,7 @@ async function consumeStream(
             case "insight":      dispatch({ type: "INSIGHT", narrative: (p.narrative as string) ?? "", anomalies: (p.anomalies as string[]) ?? [], trend: (p.trend as string) ?? "stable", confidence: (p.confidence as string) ?? "medium" }); break;
             case "clarifying_questions": dispatch({ type: "CLARIFYING_QUESTIONS", questions: (p.questions as string[]) ?? [], contextNote: (p.context_note as string) ?? "" }); break;
             case "error":        dispatch({ type: "ERROR", message: p.message as string }); break;
-            case "done":         dispatch({ type: "DONE" }); break;
+            case "done":         dispatch({ type: "DONE", receiptId: (p.has_receipt ? (p.inv_id as string) : null) }); break;
           }
         } catch { /* malformed chunk — skip */ }
       }

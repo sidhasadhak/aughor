@@ -1,0 +1,103 @@
+"use client";
+
+/**
+ * B-9 — the Trust Receipt, default-visible.
+ *
+ * Every chat answer's number self-justifies: a compact badge row (the metric it
+ * used, the guards that fired) shown inline, expandable to the executed SQL and
+ * full provenance. The CFO's "can I put this in a board deck?" answered in one
+ * glance. Fetches lazily; renders nothing if the answer has no receipt (older
+ * turns, or answers with no SQL).
+ */
+import { useEffect, useState } from "react";
+import { getChatReceipt, type InsightReceipt } from "@/lib/api";
+
+const REL_LABEL: Record<string, string> = {
+  metric_available: "metric",
+  validated_by: "guard",
+  trusted: "trusted",
+};
+
+export function TrustReceipt({ connectionId, receiptId }: { connectionId: string; receiptId: string }) {
+  const [rec, setRec] = useState<InsightReceipt | null>(null);
+  const [open, setOpen] = useState(false);
+  const [tried, setTried] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    getChatReceipt(connectionId, receiptId)
+      .then(r => { if (alive) { setRec(r); setTried(true); } })
+      .catch(() => { if (alive) setTried(true); });
+    return () => { alive = false; };
+  }, [connectionId, receiptId]);
+
+  if (!tried || !rec) return null;
+
+  const metrics = rec.lineage.filter(l => l.relation === "metric_available");
+  const guards = rec.lineage.filter(l => l.relation === "validated_by");
+  const inputs = rec.lineage.filter(l => l.relation === "input");
+  const sqlEdge = rec.lineage.find(l => l.relation === "source_sql");
+  // The metric whose formula the answer's SQL actually contains — "used", not just available.
+  const usedMetric = metrics.find(m => m.detail && (rec.artifact.payload?.sql as string || "").includes(m.detail.split("(")[0]));
+
+  const Badge = ({ tone, children }: { tone: "metric" | "guard" | "muted"; children: React.ReactNode }) => (
+    <span style={{
+      fontSize: 10, padding: "1px 6px", borderRadius: "var(--r1)", whiteSpace: "nowrap",
+      background: tone === "metric" ? "var(--blue1)" : tone === "guard" ? "var(--grn1)" : "var(--bg-3)",
+      border: `1px solid ${tone === "metric" ? "var(--blue2)" : tone === "guard" ? "var(--grn2)" : "var(--b1)"}`,
+      color: tone === "metric" ? "var(--blue4)" : tone === "guard" ? "var(--grn4)" : "var(--t3)",
+    }}>{children}</span>
+  );
+
+  return (
+    <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 5 }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap",
+          background: "none", border: "none", cursor: "pointer", padding: 0, textAlign: "left",
+        }}
+        aria-label="Trust receipt"
+      >
+        <span style={{ fontSize: 10, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".06em" }}>receipt</span>
+        {usedMetric && <Badge tone="metric">{usedMetric.ref.replace("metric:", "")} · governed</Badge>}
+        {guards.map(g => <Badge key={g.ref} tone="guard">✓ {g.ref.replace("guard:", "").replace(/_/g, " ")}</Badge>)}
+        {!usedMetric && guards.length === 0 && <Badge tone="muted">{inputs.length} source{inputs.length !== 1 ? "s" : ""} · executed SQL</Badge>}
+        <span style={{ fontSize: 10, color: "var(--t4)" }}>{open ? "▾" : "▸"}</span>
+      </button>
+
+      {open && (
+        <div style={{
+          padding: "8px 10px", borderRadius: "var(--r2)", background: "var(--bg-2)",
+          border: "1px solid var(--b1)", display: "flex", flexDirection: "column", gap: 7,
+        }}>
+          {rec.job && (
+            <div style={{ fontSize: 11, color: "var(--t3)" }}>
+              Recorded {new Date(rec.artifact.created_at).toLocaleString()} · version {rec.artifact.version}
+            </div>
+          )}
+          {metrics.length > 0 && (
+            <div style={{ fontSize: 11, color: "var(--t2)" }}>
+              Governed metrics available: {metrics.map(m => (
+                <span key={m.ref} title={m.detail || ""} style={{ color: "var(--blue4)" }}>{m.ref.replace("metric:", "")} </span>
+              ))}
+            </div>
+          )}
+          {inputs.length > 0 && (
+            <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" }}>
+              <span style={{ fontSize: 10, color: "var(--t3)" }}>inputs:</span>
+              {inputs.map(i => <Badge key={i.ref} tone="muted">{i.ref.replace("table:", "")}</Badge>)}
+            </div>
+          )}
+          {sqlEdge?.detail && (
+            <pre style={{
+              margin: 0, padding: "8px 10px", borderRadius: "var(--r2)", background: "var(--code-bg)",
+              border: "1px solid var(--b1)", fontSize: 11, fontFamily: "var(--font-code)",
+              color: "var(--t2)", whiteSpace: "pre-wrap", wordBreak: "break-word", lineHeight: 1.5,
+            }}>{sqlEdge.detail}</pre>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

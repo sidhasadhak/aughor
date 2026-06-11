@@ -835,9 +835,13 @@ async def _stream_chat(
         )
 
         final_sql = answer.sql
+        # Trust-receipt provenance signals — recorded ONLY when a guard
+        # demonstrably fires this turn (honest lineage, not aspirational).
+        _rcpt = {"compiled": False, "defan": False, "grounded": False, "lint": False}
         # Guarantee the deterministic, grounded SQL is what executes.
         if _compiled_sql:
             final_sql = _compiled_sql
+            _rcpt["compiled"] = True
             yield _sse("compiled", {
                 "intent_type": _compiled_intent.intent_type,
                 "entity": _compiled_intent.entity or _compiled_intent.table,
@@ -880,6 +884,7 @@ async def _stream_chat(
                     if _dry_ok:
                         final_sql = _rw
                         _adopted = True
+                        _rcpt["defan"] = True
                         yield _sse("sql", {"sql": final_sql})
                         yield _sse("fanout", {"hub": _ff.hub_root, "satellites": _ff.satellites, "corrected": True})
                 if not _adopted:
@@ -905,6 +910,7 @@ async def _stream_chat(
                 )
                 if _lint_fix.ok:
                     final_sql = _lint_fix.sql
+                    _rcpt["lint"] = True
             except Exception:
                 pass   # non-fatal — proceed with original SQL
 
@@ -947,6 +953,7 @@ async def _stream_chat(
         # Ground the headline in the ACTUAL rows — the coder's headline is a pre-execution
         # prediction and can contradict the data it ran on.
         _grounded_headline = _ground_headline(answer.headline, result.columns, result.rows)
+        _rcpt["grounded"] = (_grounded_headline or "") != (answer.headline or "")
         # Deterministic concentration→pareto (the renderer never sees the question).
         answer.chart_type = _maybe_pareto(question, result.columns, result.rows, answer.chart_type)
         yield _sse("columns", {"columns": result.columns})
@@ -981,7 +988,47 @@ async def _stream_chat(
         except Exception:
             pass
 
-        yield _sse("done", {})
+        # K3-wide: the chat answer becomes a versioned ledger artifact with
+        # provenance — so EVERY user-facing number carries a Trust Receipt, not
+        # just explorer findings. Lineage records ONLY what verifiably happened
+        # this turn (executed SQL, input tables, guards that fired, registered
+        # metrics available for this connection, trusted queries used).
+        if _chat_inv_id and final_sql:
+            try:
+                from aughor.kernel.ledger import Ledger
+                _lin = [("source_sql", "sql", final_sql)]
+                for _t in _extract_tables(final_sql):
+                    _lin.append(("input", f"table:{_t}", None))
+                try:
+                    from aughor.semantic.metrics import list_metrics, filter_metrics_to_schema
+                    for _m in filter_metrics_to_schema(list_metrics(), schema):
+                        _lin.append(("metric_available", f"metric:{_m.name}", _m.sql))
+                except Exception:
+                    pass
+                if _rcpt["compiled"]:
+                    _lin.append(("validated_by", "guard:semantic_compiler", "SQL synthesized deterministically from a typed intent"))
+                if _rcpt["defan"]:
+                    _lin.append(("validated_by", "guard:fan_out_defan", "rewrote SQL to prevent join over-counting"))
+                if _rcpt["grounded"]:
+                    _lin.append(("validated_by", "guard:numeric_grounding", "headline corrected to match the result cells"))
+                if _rcpt["lint"]:
+                    _lin.append(("validated_by", "guard:sql_lint", "auto-fixed a SQL quality issue before execution"))
+                for _tq in (_trusted_used or []):
+                    _lin.append(("trusted", f"query:{(_tq.get('question') or '')[:60]}", _tq.get('note')))
+                Ledger.default().artifact_write(
+                    "chat_answer",
+                    f"chat:{connection_id}:{_chat_inv_id}",
+                    {"question": question, "headline": _grounded_headline or question,
+                     "sql": final_sql, "tables": _extract_tables(final_sql),
+                     "chart_type": answer.chart_type, "row_count": len(result.rows)},
+                    conn_id=connection_id, canvas_id=canvas_id or None,
+                    lineage=_lin,
+                )
+            except Exception:
+                logger.debug("chat_answer artifact write failed", exc_info=True)
+
+        # Carry the turn id so the client can fetch this answer's Trust Receipt.
+        yield _sse("done", {"inv_id": _chat_inv_id, "has_receipt": bool(_chat_inv_id and final_sql)})
 
         # ── Post-answer enrichment (streams in after DONE, never delays it) ──
         # ONE narrator call produces BOTH the analytical insight and the
@@ -1584,6 +1631,20 @@ def get_chat_session_turns(session_id: str):
     if not turns:
         raise HTTPException(status_code=404, detail="Session not found")
     return turns
+
+
+@router.get("/chat/{connection_id}/{turn_id}/receipt")
+def get_chat_receipt(connection_id: str, turn_id: str):
+    """K3-wide Trust Receipt for a chat answer — the executed SQL, input tables,
+    registered metrics available, and the guards that fired this turn. Makes
+    every user-facing number self-justifying, not just explorer findings. 404
+    until the answer is produced under the receipt-emitting path (older turns
+    have none)."""
+    from aughor.kernel.ledger import Ledger
+    rec = Ledger.default().receipt(f"chat:{connection_id}:{turn_id}")
+    if rec is None:
+        raise HTTPException(status_code=404, detail="No receipt for this answer")
+    return rec
 
 
 @router.post("/investigations/{inv_id}/recommendations/{rec_index}/outcome", status_code=201)

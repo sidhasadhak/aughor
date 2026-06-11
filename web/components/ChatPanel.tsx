@@ -12,6 +12,7 @@ import AiSparkleIcon      from "@atlaskit/icon/core/ai-sparkle";
 import { uploadDocument } from "@/lib/api";
 import { useChat, type DebugEvent } from "@/lib/useChat";
 import { ChatMessage, SourcePanel, type SourcePanelData } from "./ChatMessage";
+import { TrustReceipt } from "./TrustReceipt";
 
 import { API_BASE as BASE } from "@/lib/config";
 import { FeedbackPrompt } from "@/components/FeedbackPrompt";
@@ -333,6 +334,9 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
           question: t.question,
           mode: "ask" as const,
           status: "done" as const,
+          // Restored turns: the turn id IS the receipt key; the component 404-noops
+          // gracefully if this turn predates receipts.
+          receiptId: t.sql ? t.id : null,
           sql: t.sql || null,
           columns: t.columns || [],
           rows: t.rows || [],
@@ -556,6 +560,10 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                       onRunFresh={(q) => handleSend(q, "investigate", { skipCache: true })}
                       onShowSource={setSourcePanel}
                     />
+                    {/* B-9 — Trust Receipt on every answered turn that has one. */}
+                    {turn.status === "done" && turn.receiptId && (
+                      <TrustReceipt connectionId={connectionId} receiptId={turn.receiptId} />
+                    )}
                     {/* Post-investigation feedback — shown once per completed investigation with hypotheses */}
                     {turn.mode === "investigate" &&
                      turn.status === "done" &&

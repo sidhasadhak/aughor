@@ -2137,3 +2137,12 @@ export async function getInsightReceipt(connId: string, insightId: string): Prom
   if (!res.ok) return null;
   return res.json();
 }
+
+/** K3-wide Trust Receipt for a chat answer (404 if the turn predates receipts). */
+export async function getChatReceipt(connId: string, turnId: string): Promise<InsightReceipt | null> {
+  const res = await fetch(
+    `${BASE}/chat/${encodeURIComponent(connId)}/${encodeURIComponent(turnId)}/receipt`,
+  );
+  if (!res.ok) return null;
+  return res.json();
+}
