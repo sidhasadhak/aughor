@@ -2176,6 +2176,29 @@ class SchemaExplorer:
                 except Exception:
                     pass
 
+                # ── Two grain bugs detect_fanout/the ratio check above miss: integer
+                # division of aggregates (→ avg=1.0, "all orders 3 items") and a single-join
+                # COUNT(*) aliased as a PARENT entity (→ "2000 products" = 25 × 80 items).
+                # Both narrate confident WRONG numbers grounding can't catch (the inflated
+                # value is a real cell). Skip rather than store a runnable-but-wrong finding.
+                if not _skip_result:
+                    try:
+                        from aughor.sql.fanout import integer_division_risk, count_star_entity_fanout
+                        _grain = (integer_division_risk(sql)
+                                  or count_star_entity_fanout(sql, getattr(sql_writer, "table_cols", {})))
+                        if _grain:
+                            from aughor.stats import stats as _s; _s.inc("explorer.grain_skips")
+                            logger.info(
+                                "[explorer:%s] Phase 8: %s/%s — skipping (SQL grain bug: %s)",
+                                self.connection_id, domain, nq.angle, _grain,
+                            )
+                            _skip_result = True
+                    except Exception as _exc:
+                        from aughor.kernel.errors import tolerate
+                        tolerate(_exc, "grain-bug lint is best-effort; on failure keep the "
+                                 "finding (no worse than before the lint existed)",
+                                 counter="explorer.grain_lint_failed")
+
                 if _skip_result:
                     logger.info(
                         "[explorer:%s] Phase 8: %s/%s — result skipped (grain-confused ratio detected)",

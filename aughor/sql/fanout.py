@@ -189,6 +189,75 @@ def detect_fanout(sql: str, table_cols: dict[str, list[str]], dialect: str = "du
     return None
 
 
+# ── Two grain bugs detect_fanout deliberately does NOT cover (it ignores COUNT(*)
+# and needs ≥2 satellites / a SUM-AVG parent measure). Both produced confidently-
+# narrated WRONG numbers in the explorer: integer division gave avg_items_per_order=1.0
+# ("all orders 3 items"); a single-join COUNT(*) gave "2000 products" (25 × 80 items). ──
+
+_AGG_DIV = re.compile(r"\b(?:count|sum)\s*\([^)]*\)\s*/\s*(?:(?:count|sum)\s*\(|\d)", re.I)
+_FLOAT_COERCED = re.compile(
+    r"::\s*(?:float|double|real|decimal|numeric)"
+    r"|cast\s*\([^)]*\bas\s+(?:float|double|real|decimal|numeric)"
+    r"|\b1\.0\b|\b100\.0\b|\b1000\.0\b",
+    re.I,
+)
+
+
+def integer_division_risk(sql: str) -> str | None:
+    """A non-distinct aggregate divided by another aggregate (or an int) with no float
+    coercion: DuckDB integer division TRUNCATES the ratio — this produced the
+    ``avg_items_per_order=1.0`` / "all orders had exactly 3 items" bug. High-precision:
+    a genuine average uses AVG() or a float cast / ×1.0, so this only fires on
+    COUNT/SUM ÷ COUNT/SUM/int with none of those present."""
+    s = sql or ""
+    if _AGG_DIV.search(s) and not _FLOAT_COERCED.search(s):
+        return ("integer division of aggregates truncates the ratio — use AVG(), a FLOAT "
+                "cast, or multiply the numerator by 1.0")
+    return None
+
+
+_COUNT_STAR_AS = re.compile(r"count\s*\(\s*\*\s*\)\s+as\s+([a-z_][a-z0-9_]*)", re.I)
+_FROM_JOIN_TBL = re.compile(r"(?:from|join)\s+([a-z_][a-z0-9_.]*)", re.I)
+
+
+def count_star_entity_fanout(sql: str, table_cols: dict | None = None) -> str | None:
+    """``COUNT(*) AS <entity>_count`` where ``<entity>`` is the PARENT side of a join
+    counts JOINED (child) rows, not distinct entities — the "2000 products" bug (25
+    products × 80 order_items). The fan-out-safe form is ``COUNT(DISTINCT <entity>_id)``.
+
+    High-precision via FK DIRECTION: only flags when another table in the query holds
+    ``<entity>_id`` (i.e. <entity> is the referenced parent). So ``COUNT(*) AS order_count
+    FROM orders JOIN customers`` is NOT flagged (orders is the many-side; nothing in the
+    query references order_id), but ``COUNT(*) AS product_count FROM products JOIN
+    order_items`` IS (order_items.product_id makes products the parent)."""
+    s = sql or ""
+    if " join " not in s.lower():
+        return None
+    # tables actually referenced in this query (base names)
+    q_tables = {t.split(".")[-1].lower() for t in _FROM_JOIN_TBL.findall(s)}
+    if not q_tables:
+        return None
+    tc = {str(t).split(".")[-1].lower(): {str(c).lower() for c in (cols or [])}
+          for t, cols in (table_cols or {}).items()}
+    for m in _COUNT_STAR_AS.finditer(s):
+        alias = m.group(1).lower()
+        stem = re.sub(r"^(?:num|n|total)_", "", re.sub(r"_(?:count|cnt)$", "", alias))
+        singular = stem[:-1] if stem.endswith("s") else stem
+        if not singular:
+            continue
+        fk = f"{singular}_id"
+        # is <singular> a parent? another query table (not itself) holds <singular>_id
+        for tname in q_tables:
+            tbase = tname[:-1] if tname.endswith("s") else tname
+            if tbase == singular:
+                continue
+            if fk in tc.get(tname, set()):
+                return (f"COUNT(*) AS {m.group(1)} over a JOIN counts joined rows, not "
+                        f"distinct {singular} — {tname}.{fk} makes {singular} the parent; "
+                        f"use COUNT(DISTINCT {fk})")
+    return None
+
+
 def build_parent_fanout_rewrite(sql: str, finding: "FanoutFinding", dialect: str = "duckdb"):
     """Deterministic de-fan for a parent_fanout: wrap the source in a DISTINCT
     subquery keyed by the parent's join column, so the parent's measure is summed

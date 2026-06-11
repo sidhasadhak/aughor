@@ -1,0 +1,71 @@
+"""Two grain bugs the explorer narrated as confident wrong numbers (verified live via
+evals/test_explorer_recurrence.py): integer division of aggregates (avg_items_per_order=1.0
+→ "all orders 3 items") and a single-join COUNT(*) aliased as a parent entity ("2000
+products" = 25 products × 80 order_items). detect_fanout deliberately skips both (it
+ignores COUNT(*) and needs ≥2 satellites). These pin the two new high-precision linters —
+they must FIRE on the bug and stay SILENT on legitimate SQL (the false-positive guard is
+the whole point: a clumsy version would suppress valid insights)."""
+from aughor.sql.fanout import integer_division_risk, count_star_entity_fanout
+
+# products is the PARENT (order_items.product_id references it); orders is a many-side child.
+TC = {
+    "ecommerce.products": ["product_id", "category", "unit_price"],
+    "ecommerce.order_items": ["item_id", "order_id", "product_id", "quantity"],
+    "ecommerce.orders": ["order_id", "customer_id", "total_amount"],
+    "ecommerce.customers": ["customer_id", "region"],
+}
+
+
+class TestIntegerDivision:
+    def test_count_over_count_flagged(self):
+        assert integer_division_risk("SELECT COUNT(a)/COUNT(b) FROM t")
+
+    def test_the_original_bug(self):
+        assert integer_division_risk(
+            "SELECT COUNT(oi.item_id) / COUNT(*) AS avg_items FROM orders o JOIN order_items oi")
+
+    def test_sum_over_count_flagged(self):
+        assert integer_division_risk("SELECT SUM(qty)/COUNT(*) FROM t")
+
+    def test_float_multiply_is_safe(self):
+        assert integer_division_risk("SELECT COUNT(a)*1.0/COUNT(b) FROM t") is None
+
+    def test_cast_is_safe(self):
+        assert integer_division_risk("SELECT CAST(COUNT(a) AS DOUBLE)/COUNT(b) FROM t") is None
+
+    def test_avg_is_safe(self):
+        assert integer_division_risk("SELECT AVG(total_amount) FROM orders") is None
+
+    def test_divide_by_float_literal_is_safe(self):
+        assert integer_division_risk("SELECT SUM(a)/100.0 FROM t") is None
+
+    def test_no_division_is_safe(self):
+        assert integer_division_risk("SELECT COUNT(*) FROM t") is None
+
+
+class TestCountStarFanout:
+    def test_parent_count_star_flagged(self):
+        # the "2000 products" bug
+        sql = ("SELECT p.category, COUNT(*) AS product_count "
+               "FROM ecommerce.products p JOIN ecommerce.order_items oi "
+               "ON p.product_id = oi.product_id GROUP BY p.category")
+        assert count_star_entity_fanout(sql, TC)
+
+    def test_many_side_count_star_not_flagged(self):
+        # orders is the many-side of orders⋈customers — COUNT(*) AS order_count is CORRECT
+        sql = ("SELECT COUNT(*) AS order_count FROM ecommerce.orders o "
+               "JOIN ecommerce.customers c ON o.customer_id = c.customer_id")
+        assert count_star_entity_fanout(sql, TC) is None
+
+    def test_count_distinct_not_flagged(self):
+        sql = ("SELECT COUNT(DISTINCT p.product_id) AS product_count "
+               "FROM ecommerce.products p JOIN ecommerce.order_items oi "
+               "ON p.product_id = oi.product_id")
+        assert count_star_entity_fanout(sql, TC) is None
+
+    def test_row_count_alias_not_flagged(self):
+        sql = "SELECT COUNT(*) AS row_count FROM ecommerce.products p JOIN ecommerce.order_items oi"
+        assert count_star_entity_fanout(sql, TC) is None
+
+    def test_no_join_not_flagged(self):
+        assert count_star_entity_fanout("SELECT COUNT(*) AS product_count FROM ecommerce.products", TC) is None
