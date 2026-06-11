@@ -753,6 +753,13 @@ async def _stream_chat(
         _gb = _grains_block(connection_id, db, schema_text=schema)
         if _gb:
             metrics_section += _gb + "\n\n"
+        # Metric-feasibility: if the question needs a metric this connection can't support
+        # (profit with no cost, efficiency with no conversions), tell the generator to report
+        # what IS measurable instead of fabricating a verdict.
+        from aughor.semantic.metric_feasibility import unsupported_metric_gap as _feas_gap
+        _fg = _feas_gap(question, schema)
+        if _fg:
+            metrics_section += "DATA AVAILABILITY — " + _fg + ".\n\n"
 
         # Schema-linking pre-filter: narrow schema to relevant tables/columns
         # for this specific question. Reduces hallucination by 30-60%.

@@ -1046,9 +1046,21 @@ def synthesize_report(state: AgentState) -> dict[str, Any]:
             _db = open_connection_for(cid)
             _dial = getattr(_db, "dialect", "duckdb")
             try:
-                _mg, _qc = connection_measure_grains(cid, _db, parse_schema_tables(get_schema_cached(cid, _db)))
+                _sch = get_schema_cached(cid, _db)
+                _mg, _qc = connection_measure_grains(cid, _db, parse_schema_tables(_sch))
             finally:
                 _db.close()
+            # Metric feasibility: the question needs a metric this connection can't support
+            # (profit with no cost; efficiency with no conversions) → a fabricated verdict.
+            from aughor.semantic.metric_feasibility import unsupported_metric_gap
+            _fgap = unsupported_metric_gap(state.get("question", ""), _sch)
+            if _fgap:
+                report = AnalysisReport(**{**report.model_dump(), "data_quality_notes": list(report.data_quality_notes) + [DataQualityNote(
+                    table="Report Narrative", column=None,
+                    issue="The question asks for a metric this connection cannot support: " + _fgap + ".",
+                    impact="Any profit/efficiency verdict here is inferred, not measured — treat it as unsupported.",
+                    recommended_fix="Report what IS measurable (revenue, volume, spend) and state that the missing data blocks the verdict.",
+                )]})
             _ghits: list[str] = []
             for _s in _sqls:
                 _m = measure_grain_misuse(_s, _mg, _qc, dialect=_dial)
