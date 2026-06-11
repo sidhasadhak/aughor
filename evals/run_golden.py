@@ -25,6 +25,17 @@ _REPO_ROOT = Path(__file__).parent.parent
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+# Load .env so the eval uses the CONFIGURED coder model (AUGHOR_CODER_MODEL),
+# not the provider's stale hardcoded default. As a standalone script this never
+# imports api.py (which is what loads dotenv for the app), so without this the
+# whole run silently fell back to qwen2.5-coder:32b — uninstalled → every
+# generation 404'd and scored 0 (a measurement that looked stable but was empty).
+try:
+    from dotenv import load_dotenv
+    load_dotenv(_REPO_ROOT / ".env")
+except ImportError:
+    pass
+
 from evals.sql_accuracy import compare_result_sets, score_single
 from aughor.db.connection import open_connection_for
 

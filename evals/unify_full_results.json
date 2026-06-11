@@ -1,0 +1,2726 @@
+{
+  "results": [
+    {
+      "id": "sql001",
+      "question": "How many orders were placed in total?",
+      "difficulty": "easy",
+      "category": "direct_count",
+      "reference_sql": "SELECT COUNT(*) AS order_count FROM ecommerce.orders",
+      "generated_sql": "SELECT COUNT(*) AS total_orders\nFROM ecommerce.orders",
+      "scores": {
+        "column_count_match": 1.0,
+        "column_name_match": 0.0,
+        "row_count_match": 1.0,
+        "result_set_match": 1.0,
+        "top_row_overlap": 1.0,
+        "overall": 0.85,
+        "execution_success": 1.0,
+        "reference_row_count": 1,
+        "generated_row_count": 1,
+        "matched_reference": 0,
+        "num_references": 1
+      },
+      "latency_ms": 0.8,
+      "runs_overall": [
+        0.85,
+        0.85,
+        0.85
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT COUNT(*) AS total_orders\nFROM ecommerce.orders",
+          "overall": 0.85,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT COUNT(*) AS total_orders\nFROM ecommerce.orders",
+          "overall": 0.85,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT COUNT(*) AS total_orders\nFROM ecommerce.orders;",
+          "overall": 0.85,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.85,
+      "overall_max": 0.85,
+      "overall_band": 0.0,
+      "unstable": false
+    },
+    {
+      "id": "sql002",
+      "question": "What is the average order value?",
+      "difficulty": "easy",
+      "category": "direct_agg",
+      "reference_sql": "SELECT ROUND(AVG(total_amount), 2) AS avg_order_value FROM ecommerce.orders",
+      "generated_sql": "SELECT ROUND(AVG(total_amount), 2) AS aov\nFROM ecommerce.orders\nWHERE status <> 'cancelled'",
+      "scores": {
+        "column_count_match": 1.0,
+        "column_name_match": 0.0,
+        "row_count_match": 1.0,
+        "result_set_match": 1.0,
+        "top_row_overlap": 1.0,
+        "overall": 0.85,
+        "execution_success": 1.0,
+        "reference_row_count": 1,
+        "generated_row_count": 1,
+        "matched_reference": 1,
+        "num_references": 2
+      },
+      "latency_ms": 1.1,
+      "runs_overall": [
+        0.85,
+        0.85,
+        0.85
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT ROUND(AVG(total_amount), 2) AS aov\nFROM ecommerce.orders\nWHERE status <> 'cancelled'",
+          "overall": 0.85,
+          "matched_reference": 1,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT ROUND(AVG(total_amount), 2) AS aov\nFROM ecommerce.orders\nWHERE status <> 'cancelled';",
+          "overall": 0.85,
+          "matched_reference": 1,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT ROUND(AVG(total_amount), 2) AS aov\nFROM ecommerce.orders\nWHERE status <> 'cancelled'",
+          "overall": 0.85,
+          "matched_reference": 1,
+          "error": null
+        }
+      ],
+      "overall_min": 0.85,
+      "overall_max": 0.85,
+      "overall_band": 0.0,
+      "unstable": false
+    },
+    {
+      "id": "sql003",
+      "question": "How many customers do we have?",
+      "difficulty": "easy",
+      "category": "direct_count",
+      "reference_sql": "SELECT COUNT(*) AS customer_count FROM ecommerce.customers",
+      "generated_sql": "SELECT COUNT(*) AS total_customers\nFROM ecommerce.customers",
+      "scores": {
+        "column_count_match": 1.0,
+        "column_name_match": 0.0,
+        "row_count_match": 1.0,
+        "result_set_match": 1.0,
+        "top_row_overlap": 1.0,
+        "overall": 0.9,
+        "execution_success": 1.0,
+        "reference_row_count": 1,
+        "generated_row_count": 1,
+        "matched_reference": 0,
+        "num_references": 1
+      },
+      "latency_ms": 0.3,
+      "runs_overall": [
+        0.85,
+        0.85,
+        1.0
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT COUNT(*) AS total_customers\nFROM ecommerce.customers",
+          "overall": 0.85,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT COUNT(DISTINCT customer_id) AS total_customers\nFROM ecommerce.customers",
+          "overall": 0.85,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT COUNT(DISTINCT customer_id) AS customer_count\nFROM ecommerce.customers\nWHERE customer_id IS NOT NULL",
+          "overall": 1.0,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.85,
+      "overall_max": 1.0,
+      "overall_band": 0.15,
+      "unstable": true
+    },
+    {
+      "id": "sql004",
+      "question": "What is the total revenue across all orders?",
+      "difficulty": "easy",
+      "category": "direct_agg",
+      "reference_sql": "SELECT ROUND(SUM(total_amount), 2) AS total_revenue FROM ecommerce.orders",
+      "generated_sql": "SELECT ROUND(SUM(total_amount), 2) AS total_revenue\nFROM ecommerce.orders\nWHERE status <> 'cancelled'",
+      "scores": {
+        "column_count_match": 1.0,
+        "column_name_match": 1.0,
+        "row_count_match": 1.0,
+        "result_set_match": 1.0,
+        "top_row_overlap": 1.0,
+        "overall": 1.0,
+        "execution_success": 1.0,
+        "reference_row_count": 1,
+        "generated_row_count": 1,
+        "matched_reference": 2,
+        "num_references": 4
+      },
+      "latency_ms": 1.5,
+      "runs_overall": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT ROUND(SUM(total_amount), 2) AS total_revenue\nFROM ecommerce.orders\nWHERE status <> 'cancelled'",
+          "overall": 1.0,
+          "matched_reference": 2,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT ROUND(SUM(total_amount), 2) AS total_revenue\nFROM ecommerce.orders\nWHERE status <> 'cancelled'",
+          "overall": 1.0,
+          "matched_reference": 2,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT ROUND(SUM(total_amount), 2) AS total_revenue\nFROM ecommerce.orders\nWHERE status <> 'cancelled'",
+          "overall": 1.0,
+          "matched_reference": 2,
+          "error": null
+        }
+      ],
+      "overall_min": 1.0,
+      "overall_max": 1.0,
+      "overall_band": 0.0,
+      "unstable": false
+    },
+    {
+      "id": "sql005",
+      "question": "How many orders were placed in January 2024?",
+      "difficulty": "easy",
+      "category": "filtered_count",
+      "reference_sql": "SELECT COUNT(*) AS jan_orders FROM ecommerce.orders WHERE order_date >= '2024-01-01' AND order_date < '2024-02-01'",
+      "generated_sql": "SELECT COUNT(*) AS order_count\nFROM ecommerce.orders\nWHERE order_date >= '2024-01-01' AND order_date <= '2024-01-31'",
+      "scores": {
+        "column_count_match": 1.0,
+        "column_name_match": 0.0,
+        "row_count_match": 1.0,
+        "result_set_match": 1.0,
+        "top_row_overlap": 1.0,
+        "overall": 0.85,
+        "execution_success": 1.0,
+        "reference_row_count": 1,
+        "generated_row_count": 1,
+        "matched_reference": 0,
+        "num_references": 1
+      },
+      "latency_ms": 0.7,
+      "runs_overall": [
+        0.85,
+        0.85,
+        0.85
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT COUNT(*) AS order_count\nFROM ecommerce.orders\nWHERE order_date >= '2024-01-01' AND order_date <= '2024-01-31'",
+          "overall": 0.85,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT COUNT(*) AS order_count\nFROM ecommerce.orders\nWHERE order_date >= '2024-01-01' AND order_date <= '2024-01-31'",
+          "overall": 0.85,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT COUNT(*) AS order_count\nFROM ecommerce.orders\nWHERE order_date >= '2024-01-01' AND order_date <= '2024-01-31'",
+          "overall": 0.85,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.85,
+      "overall_max": 0.85,
+      "overall_band": 0.0,
+      "unstable": false
+    },
+    {
+      "id": "sql006",
+      "question": "What is the average order value for delivered orders only?",
+      "difficulty": "easy",
+      "category": "filtered_agg",
+      "reference_sql": "SELECT ROUND(AVG(total_amount), 2) AS avg_delivered_aov FROM ecommerce.orders WHERE status = 'delivered'",
+      "generated_sql": "SELECT \n  ROUND(AVG(total_amount), 2) AS average_order_value\nFROM ecommerce.orders\nWHERE status = 'delivered';",
+      "scores": {
+        "column_count_match": 1.0,
+        "column_name_match": 0.0,
+        "row_count_match": 1.0,
+        "result_set_match": 1.0,
+        "top_row_overlap": 1.0,
+        "overall": 0.85,
+        "execution_success": 1.0,
+        "reference_row_count": 1,
+        "generated_row_count": 1,
+        "matched_reference": 0,
+        "num_references": 1
+      },
+      "latency_ms": 0.7,
+      "runs_overall": [
+        0.85,
+        0.85,
+        0.85
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT \n  ROUND(AVG(total_amount), 2) AS average_order_value\nFROM ecommerce.orders\nWHERE status = 'delivered';",
+          "overall": 0.85,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n  ROUND(AVG(total_amount), 2) AS aov\nFROM ecommerce.orders\nWHERE status = 'delivered'",
+          "overall": 0.85,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT ROUND(AVG(total_amount), 2) AS aov\nFROM ecommerce.orders\nWHERE status = 'delivered';",
+          "overall": 0.85,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.85,
+      "overall_max": 0.85,
+      "overall_band": 0.0,
+      "unstable": false
+    },
+    {
+      "id": "sql007",
+      "question": "Show total revenue by month for 2024",
+      "difficulty": "medium",
+      "category": "time_series",
+      "reference_sql": "SELECT DATE_TRUNC('month', order_date) AS month, ROUND(SUM(total_amount), 2) AS total_revenue FROM ecommerce.orders WHERE order_date >= '2024-01-01' AND order_date < '2025-01-01' GROUP BY DATE_TRUNC('month', order_date) ORDER BY month",
+      "generated_sql": "SELECT\n  DATE_TRUNC('month', order_date) AS month,\n  SUM(total_amount) AS total_revenue\nFROM ecommerce.orders\nWHERE order_date >= '2024-01-01' AND order_date < '2025-01-01'\n  AND status <> 'cancelled'\nGROUP BY DATE_TRUNC('month', order_date)\nORDER BY month;",
+      "scores": {
+        "column_count_match": 1.0,
+        "column_name_match": 1.0,
+        "row_count_match": 1.0,
+        "result_set_match": 0.0,
+        "top_row_overlap": 0.0,
+        "overall": 0.6,
+        "execution_success": 1.0,
+        "reference_row_count": 12,
+        "generated_row_count": 12,
+        "matched_reference": 0,
+        "num_references": 2
+      },
+      "latency_ms": 3.4,
+      "runs_overall": [
+        0.6,
+        0.6,
+        0.6
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT\n  DATE_TRUNC('month', order_date) AS month,\n  SUM(total_amount) AS total_revenue\nFROM ecommerce.orders\nWHERE order_date >= '2024-01-01' AND order_date < '2025-01-01'\n  AND status <> 'cancelled'\nGROUP BY DATE_TRUNC('month', order_date)\nORDER BY month;",
+          "overall": 0.6,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n  DATE_TRUNC('month', order_date) AS month,\n  SUM(total_amount) AS total_revenue\nFROM ecommerce.orders\nWHERE status <> 'cancelled'\n  AND order_date >= '2024-01-01' \n  AND order_date < '2025-01-01'\nGROUP BY DATE_TRUNC('month', order_date)\nORDER BY month;",
+          "overall": 0.6,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n  DATE_TRUNC('month', order_date) AS month,\n  SUM(total_amount) AS total_revenue\nFROM ecommerce.orders\nWHERE status <> 'cancelled'\n  AND order_date >= '2024-01-01'\n  AND order_date < '2025-01-01'\nGROUP BY DATE_TRUNC('month', order_date)\nORDER BY month;",
+          "overall": 0.6,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.6,
+      "overall_max": 0.6,
+      "overall_band": 0.0,
+      "unstable": false
+    },
+    {
+      "id": "sql008",
+      "question": "Which payment method has the highest total revenue?",
+      "difficulty": "easy",
+      "category": "ranking",
+      "reference_sql": "SELECT payment_method, ROUND(SUM(total_amount), 2) AS total_revenue FROM ecommerce.orders GROUP BY payment_method ORDER BY total_revenue DESC LIMIT 1",
+      "generated_sql": "SELECT\n  payment_method,\n  ROUND(SUM(total_amount), 2) AS total_revenue\nFROM ecommerce.orders\nWHERE status <> 'cancelled'\nGROUP BY payment_method\nORDER BY total_revenue DESC\nLIMIT 1",
+      "scores": {
+        "column_count_match": 1.0,
+        "column_name_match": 1.0,
+        "row_count_match": 1.0,
+        "result_set_match": 0.0,
+        "top_row_overlap": 0.0,
+        "overall": 0.6,
+        "execution_success": 1.0,
+        "reference_row_count": 1,
+        "generated_row_count": 1,
+        "matched_reference": 0,
+        "num_references": 2
+      },
+      "latency_ms": 3.5,
+      "runs_overall": [
+        0.6,
+        0.6,
+        0.6
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT\n  payment_method,\n  ROUND(SUM(total_amount), 2) AS total_revenue\nFROM ecommerce.orders\nWHERE status <> 'cancelled'\nGROUP BY payment_method\nORDER BY total_revenue DESC\nLIMIT 1",
+          "overall": 0.6,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT\n    payment_method,\n    ROUND(SUM(total_amount), 2) AS total_revenue\nFROM ecommerce.orders\nWHERE status <> 'cancelled'\nGROUP BY payment_method\nORDER BY total_revenue DESC\nLIMIT 1;",
+          "overall": 0.6,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n    payment_method,\n    SUM(total_amount) AS total_revenue\nFROM ecommerce.orders\nWHERE status <> 'cancelled'\nGROUP BY payment_method\nORDER BY total_revenue DESC\nLIMIT 1",
+          "overall": 0.6,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.6,
+      "overall_max": 0.6,
+      "overall_band": 0.0,
+      "unstable": false
+    },
+    {
+      "id": "sql009",
+      "question": "What is the total revenue by product category?",
+      "difficulty": "medium",
+      "category": "join_agg",
+      "reference_sql": "SELECT p.category, ROUND(SUM(oi.line_total), 2) AS total_revenue FROM ecommerce.order_items oi JOIN ecommerce.products p ON oi.product_id = p.product_id GROUP BY p.category ORDER BY total_revenue DESC",
+      "generated_sql": "SELECT \n    p.category,\n    SUM(oi.quantity * oi.unit_price) AS total_revenue\nFROM ecommerce.order_items oi\nJOIN ecommerce.orders o ON oi.order_id = o.order_id\nJOIN ecommerce.products p ON oi.product_id = p.product_id\nWHERE o.status <> 'cancelled'\nGROUP BY p.category\nORDER BY total_revenue DESC",
+      "scores": {
+        "column_count_match": 1.0,
+        "column_name_match": 1.0,
+        "row_count_match": 1.0,
+        "result_set_match": 0.0,
+        "top_row_overlap": 0.0,
+        "overall": 0.5,
+        "execution_success": 1.0,
+        "reference_row_count": 6,
+        "generated_row_count": 6,
+        "matched_reference": 0,
+        "num_references": 1
+      },
+      "latency_ms": 4.0,
+      "runs_overall": [
+        0.6,
+        0.45,
+        0.45
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT \n    p.category,\n    SUM(oi.quantity * oi.unit_price) AS total_revenue\nFROM ecommerce.order_items oi\nJOIN ecommerce.orders o ON oi.order_id = o.order_id\nJOIN ecommerce.products p ON oi.product_id = p.product_id\nWHERE o.status <> 'cancelled'\nGROUP BY p.category\nORDER BY total_revenue DESC",
+          "overall": 0.6,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT\n    p.category,\n    ROUND(SUM(oi.quantity * oi.unit_price), 2) AS revenue\nFROM ecommerce.order_items oi\nJOIN ecommerce.orders o ON oi.order_id = o.order_id\nJOIN ecommerce.products p ON oi.product_id = p.product_id\nWHERE o.status <> 'cancelled'\nGROUP BY p.category\nORDER BY revenue DESC",
+          "overall": 0.45,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT\n    p.category,\n    ROUND(SUM(oi.quantity * oi.unit_price), 2) AS revenue\nFROM ecommerce.order_items oi\nJOIN ecommerce.orders o ON oi.order_id = o.order_id\nJOIN ecommerce.products p ON oi.product_id = p.product_id\nWHERE o.status <> 'cancelled'\nGROUP BY p.category\nORDER BY revenue DESC",
+          "overall": 0.45,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.45,
+      "overall_max": 0.6,
+      "overall_band": 0.15,
+      "unstable": true
+    },
+    {
+      "id": "sql010",
+      "question": "Which 5 customers have spent the most?",
+      "difficulty": "medium",
+      "category": "ranking",
+      "reference_sql": "SELECT c.customer_id, c.full_name, ROUND(SUM(o.total_amount), 2) AS total_spend FROM ecommerce.customers c JOIN ecommerce.orders o ON c.customer_id = o.customer_id GROUP BY c.customer_id, c.full_name ORDER BY total_spend DESC LIMIT 5",
+      "generated_sql": "SELECT\n    c.customer_id,\n    c.full_name,\n    SUM(o.total_amount) AS total_spent\nFROM ecommerce.customers c\nJOIN ecommerce.orders o ON c.customer_id = o.customer_id\nWHERE o.status <> 'cancelled'\nGROUP BY c.customer_id, c.full_name\nORDER BY total_spent DESC\nLIMIT 5;",
+      "scores": {
+        "column_count_match": 1.0,
+        "column_name_match": 0.0,
+        "row_count_match": 1.0,
+        "result_set_match": 0.42857142857142855,
+        "top_row_overlap": 0.4,
+        "overall": 0.619,
+        "execution_success": 1.0,
+        "reference_row_count": 5,
+        "generated_row_count": 5,
+        "matched_reference": 0,
+        "num_references": 2
+      },
+      "latency_ms": 3.2,
+      "runs_overall": [
+        0.619,
+        0.619,
+        0.619
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT\n    c.customer_id,\n    c.full_name,\n    SUM(o.total_amount) AS total_spent\nFROM ecommerce.customers c\nJOIN ecommerce.orders o ON c.customer_id = o.customer_id\nWHERE o.status <> 'cancelled'\nGROUP BY c.customer_id, c.full_name\nORDER BY total_spent DESC\nLIMIT 5;",
+          "overall": 0.619,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n  c.customer_id,\n  c.full_name,\n  SUM(o.total_amount) AS total_spent\nFROM ecommerce.customers c\nJOIN ecommerce.orders o ON c.customer_id = o.customer_id\nWHERE o.status <> 'cancelled'\nGROUP BY c.customer_id, c.full_name\nORDER BY total_spent DESC\nLIMIT 5",
+          "overall": 0.619,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT\n    c.customer_id,\n    c.full_name,\n    SUM(o.total_amount) AS total_spent\nFROM ecommerce.customers c\nJOIN ecommerce.orders o ON c.customer_id = o.customer_id\nWHERE o.status <> 'cancelled'\nGROUP BY c.customer_id, c.full_name\nORDER BY total_spent DESC\nLIMIT 5",
+          "overall": 0.619,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.619,
+      "overall_max": 0.619,
+      "overall_band": 0.0,
+      "unstable": false
+    },
+    {
+      "id": "sql011",
+      "question": "What is the average rating for each product category?",
+      "difficulty": "medium",
+      "category": "join_agg",
+      "reference_sql": "SELECT p.category, ROUND(AVG(r.rating), 2) AS avg_rating FROM ecommerce.reviews r JOIN ecommerce.order_items oi ON r.order_id = oi.order_id JOIN ecommerce.products p ON oi.product_id = p.product_id GROUP BY p.category ORDER BY avg_rating DESC",
+      "generated_sql": "SELECT \n  p.category,\n  ROUND(AVG(r.rating), 2) AS avg_rating\nFROM ecommerce.reviews r\nJOIN ecommerce.orders o ON r.order_id = o.order_id\nJOIN ecommerce.order_items oi ON o.order_id = oi.order_id\nJOIN ecommerce.products p ON oi.product_id = p.product_id\nWHERE o.status <> 'cancelled'\nGROUP BY p.category\nORDER BY avg_rating DESC;",
+      "scores": {
+        "column_count_match": 1.0,
+        "column_name_match": 1.0,
+        "row_count_match": 1.0,
+        "result_set_match": 0.0,
+        "top_row_overlap": 0.0,
+        "overall": 0.813,
+        "execution_success": 1.0,
+        "reference_row_count": 6,
+        "generated_row_count": 6,
+        "matched_reference": 0,
+        "num_references": 1
+      },
+      "latency_ms": 4.4,
+      "runs_overall": [
+        0.6,
+        0.9,
+        0.94
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT \n  p.category,\n  ROUND(AVG(r.rating), 2) AS avg_rating\nFROM ecommerce.reviews r\nJOIN ecommerce.orders o ON r.order_id = o.order_id\nJOIN ecommerce.order_items oi ON o.order_id = oi.order_id\nJOIN ecommerce.products p ON oi.product_id = p.product_id\nWHERE o.status <> 'cancelled'\nGROUP BY p.category\nORDER BY avg_rating DESC;",
+          "overall": 0.6,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n    p.category,\n    ROUND(AVG(r.rating), 2) AS avg_rating\nFROM ecommerce.reviews r\nJOIN ecommerce.orders o ON r.order_id = o.order_id\nJOIN ecommerce.order_items oi ON o.order_id = oi.order_id\nJOIN ecommerce.products p ON oi.product_id = p.product_id\nGROUP BY p.category\nORDER BY avg_rating DESC;",
+          "overall": 0.9,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n    p.category,\n    ROUND(AVG(r.rating), 2) AS avg_rating\nFROM ecommerce.reviews r\nJOIN ecommerce.orders o ON r.order_id = o.order_id\nJOIN ecommerce.order_items oi ON o.order_id = oi.order_id\nJOIN ecommerce.products p ON oi.product_id = p.product_id\nGROUP BY p.category\nORDER BY avg_rating DESC",
+          "overall": 0.94,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.6,
+      "overall_max": 0.94,
+      "overall_band": 0.34,
+      "unstable": true
+    },
+    {
+      "id": "sql012",
+      "question": "How many items were sold in total?",
+      "difficulty": "easy",
+      "category": "direct_agg",
+      "reference_sql": "SELECT SUM(quantity) AS total_items_sold FROM ecommerce.order_items",
+      "generated_sql": "SELECT SUM(quantity) AS total_items_sold\nFROM ecommerce.order_items oi\nJOIN ecommerce.orders o ON oi.order_id = o.order_id\nWHERE o.status NOT IN ('cancelled', 'test', 'fraud')",
+      "scores": {
+        "column_count_match": 1.0,
+        "column_name_match": 1.0,
+        "row_count_match": 1.0,
+        "result_set_match": 0.0,
+        "top_row_overlap": 0.0,
+        "overall": 0.6,
+        "execution_success": 1.0,
+        "reference_row_count": 1,
+        "generated_row_count": 1,
+        "matched_reference": 0,
+        "num_references": 1
+      },
+      "latency_ms": 1.5,
+      "runs_overall": [
+        0.6,
+        0.6,
+        0.6
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT SUM(quantity) AS total_items_sold\nFROM ecommerce.order_items oi\nJOIN ecommerce.orders o ON oi.order_id = o.order_id\nWHERE o.status NOT IN ('cancelled', 'test', 'fraud')",
+          "overall": 0.6,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT SUM(oi.quantity) AS total_items_sold\nFROM ecommerce.order_items oi\nJOIN ecommerce.orders o ON oi.order_id = o.order_id\nWHERE o.status NOT IN ('cancelled', 'test', 'fraud')",
+          "overall": 0.6,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT SUM(quantity) AS total_items_sold\nFROM ecommerce.order_items oi\nJOIN ecommerce.orders o ON oi.order_id = o.order_id\nWHERE o.status NOT IN ('cancelled', 'test', 'fraud')",
+          "overall": 0.6,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.6,
+      "overall_max": 0.6,
+      "overall_band": 0.0,
+      "unstable": false
+    },
+    {
+      "id": "sql013",
+      "question": "What is the revenue share of each product category?",
+      "difficulty": "hard",
+      "category": "join_agg",
+      "reference_sql": "SELECT p.category, ROUND(SUM(oi.line_total) * 100.0 / NULLIF((SELECT SUM(line_total) FROM ecommerce.order_items), 0), 2) AS revenue_share_pct FROM ecommerce.order_items oi JOIN ecommerce.products p ON oi.product_id = p.product_id GROUP BY p.category ORDER BY revenue_share_pct DESC",
+      "generated_sql": "WITH category_revenue AS (\n  SELECT\n    p.category,\n    SUM(oi.line_total) AS revenue\n  FROM ecommerce.order_items oi\n  JOIN ecommerce.orders o ON oi.order_id = o.order_id\n  JOIN ecommerce.products p ON oi.product_id = p.product_id\n  WHERE o.status <> 'cancelled'\n  GROUP BY p.category\n),\ntotal_revenue AS (\n  SELECT SUM(revenue) AS grand_total FROM category_revenue\n)\nSELECT\n  cr.category,\n  ROUND(cr.revenue, 2) AS revenue,\n  ROUND(cr.revenue * 100.0 / NULLIF(tr.grand_total, 0), 2) AS revenue_share_pct\nFROM category_revenue cr\nCROSS JOIN total_revenue tr\nORDER BY cr.revenue DESC;",
+      "scores": {
+        "column_count_match": 0.0,
+        "column_name_match": 0.0,
+        "row_count_match": 1.0,
+        "result_set_match": 0.0,
+        "top_row_overlap": 0.0,
+        "overall": 0.35,
+        "execution_success": 1.0,
+        "reference_row_count": 6,
+        "generated_row_count": 6,
+        "matched_reference": 0,
+        "num_references": 1
+      },
+      "latency_ms": 5.0,
+      "runs_overall": [
+        0.3,
+        0.3,
+        0.45
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "WITH category_revenue AS (\n  SELECT\n    p.category,\n    SUM(oi.line_total) AS revenue\n  FROM ecommerce.order_items oi\n  JOIN ecommerce.orders o ON oi.order_id = o.order_id\n  JOIN ecommerce.products p ON oi.product_id = p.product_id\n  WHERE o.status <> 'cancelled'\n  GROUP BY p.category\n),\ntotal_revenue AS (\n  SELECT SUM(revenue) AS grand_total FROM category_revenue\n)\nSELECT\n  cr.category,\n  ROUND(cr.revenue, 2) AS revenue,\n  ROUND(cr.revenue * 100.0 / NULLIF(tr.grand_total, 0), 2) AS revenue_share_pct\nFROM category_revenue cr\nCROSS JOIN total_revenue tr\nORDER BY cr.revenue DESC;",
+          "overall": 0.3,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT\n    p.category,\n    SUM(oi.line_total) AS revenue,\n    ROUND(SUM(oi.line_total) * 100.0 / NULLIF(SUM(SUM(oi.line_total)) OVER (), 0), 2) AS revenue_share_pct\nFROM ecommerce.order_items oi\nJOIN ecommerce.orders o ON oi.order_id = o.order_id\nJOIN ecommerce.products p ON oi.product_id = p.product_id\nWHERE o.status NOT IN ('cancelled', 'test', 'fraud')\nGROUP BY p.category\nORDER BY revenue DESC;",
+          "overall": 0.3,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "WITH category_revenue AS (\n    SELECT\n        p.category,\n        SUM(oi.line_total) AS revenue\n    FROM ecommerce.order_items oi\n    JOIN ecommerce.orders o ON oi.order_id = o.order_id\n    JOIN ecommerce.products p ON oi.product_id = p.product_id\n    WHERE o.status <> 'cancelled'\n    GROUP BY p.category\n),\ntotal_revenue AS (\n    SELECT SUM(revenue) AS grand_total\n    FROM category_revenue\n)\nSELECT\n    cr.category,\n    ROUND(cr.revenue * 100.0 / NULLIF(tr.grand_total, 0), 2) AS revenue_share\nFROM category_revenue cr\nCROSS JOIN total_revenue tr\nORDER BY cr.revenue DESC",
+          "overall": 0.45,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.3,
+      "overall_max": 0.45,
+      "overall_band": 0.15,
+      "unstable": true
+    },
+    {
+      "id": "sql014",
+      "question": "Compare average order value for delivered vs cancelled orders",
+      "difficulty": "easy",
+      "category": "comparison",
+      "reference_sql": "SELECT status, ROUND(AVG(total_amount), 2) AS avg_order_value FROM ecommerce.orders WHERE status IN ('delivered', 'cancelled') GROUP BY status",
+      "generated_sql": "SELECT\n    status,\n    ROUND(AVG(total_amount), 2) AS aov\nFROM ecommerce.orders\nWHERE status IN ('delivered', 'cancelled')\nGROUP BY status\nORDER BY status;",
+      "scores": {
+        "column_count_match": 1.0,
+        "column_name_match": 0.0,
+        "row_count_match": 1.0,
+        "result_set_match": 1.0,
+        "top_row_overlap": 1.0,
+        "overall": 0.9,
+        "execution_success": 1.0,
+        "reference_row_count": 2,
+        "generated_row_count": 2,
+        "matched_reference": 0,
+        "num_references": 1
+      },
+      "latency_ms": 1.3,
+      "runs_overall": [
+        0.85,
+        1.0,
+        0.85
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT\n    status,\n    ROUND(AVG(total_amount), 2) AS aov\nFROM ecommerce.orders\nWHERE status IN ('delivered', 'cancelled')\nGROUP BY status\nORDER BY status;",
+          "overall": 0.85,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT\n    o.status,\n    ROUND(AVG(o.total_amount), 2) AS avg_order_value\nFROM ecommerce.orders o\nWHERE o.status IN ('delivered', 'cancelled')\nGROUP BY o.status\nORDER BY o.status;",
+          "overall": 1.0,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n    status,\n    ROUND(AVG(total_amount), 2) AS aov\nFROM ecommerce.orders\nWHERE status IN ('delivered', 'cancelled')\nGROUP BY status\nORDER BY status;",
+          "overall": 0.85,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.85,
+      "overall_max": 1.0,
+      "overall_band": 0.15,
+      "unstable": true
+    },
+    {
+      "id": "sql015",
+      "question": "What was the total revenue last month compared to the month before?",
+      "difficulty": "hard",
+      "category": "period_over_period",
+      "reference_sql": "WITH monthly AS (SELECT DATE_TRUNC('month', order_date) AS month, SUM(total_amount) AS revenue FROM ecommerce.orders GROUP BY DATE_TRUNC('month', order_date)) SELECT month, revenue, LAG(revenue) OVER (ORDER BY month) AS prev_month_revenue, ROUND((revenue - LAG(revenue) OVER (ORDER BY month)) * 100.0 / NULLIF(LAG(revenue) OVER (ORDER BY month), 0), 2) AS mom_change_pct FROM monthly ORDER BY month DESC LIMIT 1",
+      "generated_sql": "WITH monthly_revenue AS (\n  SELECT\n    DATE_TRUNC('month', order_date) AS month,\n    SUM(total_amount) AS revenue\n  FROM ecommerce.orders\n  WHERE status <> 'cancelled'\n  GROUP BY DATE_TRUNC('month', order_date)\n),\ncomparison AS (\n  SELECT\n    LAG(revenue) OVER (ORDER BY month) AS prev_month_revenue,\n    revenue AS current_month_revenue,\n    month\n  FROM monthly_revenue\n  WHERE month >= (SELECT MAX(month) - INTERVAL '2 months' FROM monthly_revenue)\n)\nSELECT\n  ROUND(prev_month_revenue, 2) AS prev_month_revenue,\n  ROUND(current_month_revenue, 2) AS current_month_revenue\nFROM comparison\nWHERE month = (SELECT MAX(month) FROM comparison)",
+      "scores": {
+        "column_count_match": 0.0,
+        "column_name_match": 0.0,
+        "row_count_match": 1.0,
+        "result_set_match": 0.0,
+        "top_row_overlap": 0.0,
+        "overall": 0.3,
+        "execution_success": 1.0,
+        "reference_row_count": 1,
+        "generated_row_count": 1,
+        "matched_reference": 0,
+        "num_references": 2
+      },
+      "latency_ms": 5.3,
+      "runs_overall": [
+        0.3,
+        0.3,
+        0.3
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "WITH monthly_revenue AS (\n  SELECT\n    DATE_TRUNC('month', order_date) AS month,\n    SUM(total_amount) AS revenue\n  FROM ecommerce.orders\n  WHERE status <> 'cancelled'\n  GROUP BY DATE_TRUNC('month', order_date)\n),\ncomparison AS (\n  SELECT\n    LAG(revenue) OVER (ORDER BY month) AS prev_month_revenue,\n    revenue AS current_month_revenue,\n    month\n  FROM monthly_revenue\n  WHERE month >= (SELECT MAX(month) - INTERVAL '2 months' FROM monthly_revenue)\n)\nSELECT\n  ROUND(prev_month_revenue, 2) AS prev_month_revenue,\n  ROUND(current_month_revenue, 2) AS current_month_revenue\nFROM comparison\nWHERE month = (SELECT MAX(month) FROM comparison)",
+          "overall": 0.3,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "WITH monthly_revenue AS (\n  SELECT\n    DATE_TRUNC('month', order_date) AS month,\n    SUM(total_amount) AS revenue\n  FROM ecommerce.orders\n  WHERE status <> 'cancelled'\n  GROUP BY DATE_TRUNC('month', order_date)\n),\nprev_month AS (\n  SELECT MAX(month) AS last_month FROM monthly_revenue\n),\ncurrent_prev AS (\n  SELECT\n    MAX(CASE WHEN month = (SELECT last_month FROM prev_month) THEN revenue END) AS last_month_revenue,\n    MAX(CASE WHEN month = (SELECT last_month - INTERVAL '1 month' FROM prev_month) THEN revenue END) AS month_before_revenue\n  FROM monthly_revenue\n  WHERE month IN ((SELECT last_month FROM prev_month), (SELECT last_month - INTERVAL '1 month' FROM prev_month))\n)\nSELECT\n  ROUND(COALESCE(last_month_revenue, 0), 2) AS last_month_revenue,\n  ROUND(COALESCE(month_before_revenue, 0), 2) AS month_before_revenue\nFROM current_prev;",
+          "overall": 0.3,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "WITH monthly_revenue AS (\n  SELECT\n    DATE_TRUNC('month', order_date) AS month,\n    SUM(total_amount) AS revenue\n  FROM ecommerce.orders\n  WHERE status <> 'cancelled'\n  GROUP BY DATE_TRUNC('month', order_date)\n),\nlagged AS (\n  SELECT\n    month,\n    revenue,\n    LAG(revenue) OVER (ORDER BY month) AS prev_revenue\n  FROM monthly_revenue\n)\nSELECT\n  revenue AS last_month_revenue,\n  prev_revenue AS month_before_revenue\nFROM lagged\nWHERE month = (SELECT MAX(month) FROM monthly_revenue)",
+          "overall": 0.3,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.3,
+      "overall_max": 0.3,
+      "overall_band": 0.0,
+      "unstable": false
+    },
+    {
+      "id": "sql016",
+      "question": "Which countries have the most customers?",
+      "difficulty": "easy",
+      "category": "ranking",
+      "reference_sql": "SELECT country, COUNT(*) AS customer_count FROM ecommerce.customers GROUP BY country ORDER BY customer_count DESC",
+      "generated_sql": "SELECT country, COUNT(*) AS customer_count\nFROM ecommerce.customers\nGROUP BY country\nORDER BY customer_count DESC",
+      "scores": {
+        "column_count_match": 1.0,
+        "column_name_match": 1.0,
+        "row_count_match": 1.0,
+        "result_set_match": 1.0,
+        "top_row_overlap": 0.0,
+        "overall": 0.9,
+        "execution_success": 1.0,
+        "reference_row_count": 10,
+        "generated_row_count": 10,
+        "matched_reference": 0,
+        "num_references": 1
+      },
+      "latency_ms": 1.1,
+      "runs_overall": [
+        0.9,
+        0.9,
+        0.9
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT country, COUNT(*) AS customer_count\nFROM ecommerce.customers\nGROUP BY country\nORDER BY customer_count DESC",
+          "overall": 0.9,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n  country, \n  COUNT(*) AS customer_count\nFROM ecommerce.customers\nWHERE country IS NOT NULL\nGROUP BY country\nORDER BY customer_count DESC;",
+          "overall": 0.9,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n  country, \n  COUNT(*) AS customer_count\nFROM ecommerce.customers\nWHERE country IS NOT NULL\nGROUP BY country\nORDER BY customer_count DESC",
+          "overall": 0.9,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.9,
+      "overall_max": 0.9,
+      "overall_band": 0.0,
+      "unstable": false
+    },
+    {
+      "id": "sql017",
+      "question": "What is the average delivery time in days for shipped orders?",
+      "difficulty": "medium",
+      "category": "derived_metric",
+      "reference_sql": "SELECT ROUND(AVG(DATE_DIFF('day', shipped_at, delivered_at)), 2) AS avg_delivery_days FROM ecommerce.orders WHERE shipped_at IS NOT NULL AND delivered_at IS NOT NULL",
+      "generated_sql": "SELECT \n  ROUND(AVG(DATE_DIFF('day', order_date, delivered_at)), 2) AS avg_delivery_time_days\nFROM ecommerce.orders\nWHERE status = 'shipped' AND delivered_at IS NOT NULL",
+      "scores": {
+        "column_count_match": 1.0,
+        "column_name_match": 0.0,
+        "row_count_match": 1.0,
+        "result_set_match": 0.0,
+        "top_row_overlap": 0.0,
+        "overall": 0.5,
+        "execution_success": 1.0,
+        "reference_row_count": 1,
+        "generated_row_count": 1,
+        "matched_reference": 0,
+        "num_references": 1
+      },
+      "latency_ms": 1.2,
+      "runs_overall": [
+        0.45,
+        0.45,
+        0.6
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT \n  ROUND(AVG(DATE_DIFF('day', order_date, delivered_at)), 2) AS avg_delivery_time_days\nFROM ecommerce.orders\nWHERE status = 'shipped' AND delivered_at IS NOT NULL",
+          "overall": 0.45,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n  ROUND(AVG(DATEDIFF('day', order_date, shipped_at)), 2) AS avg_delivery_time_days\nFROM ecommerce.orders\nWHERE shipped_at IS NOT NULL;",
+          "overall": 0.45,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n  ROUND(AVG(DATEDIFF('day', order_date, shipped_at)), 2) AS avg_delivery_days\nFROM ecommerce.orders\nWHERE shipped_at IS NOT NULL",
+          "overall": 0.6,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.45,
+      "overall_max": 0.6,
+      "overall_band": 0.15,
+      "unstable": true
+    },
+    {
+      "id": "sql018",
+      "question": "Show monthly order count and average order value for 2024",
+      "difficulty": "medium",
+      "category": "multi_metric",
+      "reference_sql": "SELECT DATE_TRUNC('month', order_date) AS month, COUNT(*) AS order_count, ROUND(AVG(total_amount), 2) AS avg_order_value FROM ecommerce.orders WHERE order_date >= '2024-01-01' AND order_date < '2025-01-01' GROUP BY DATE_TRUNC('month', order_date) ORDER BY month",
+      "generated_sql": "WITH monthly_orders AS (\n  SELECT\n    DATE_TRUNC('month', order_date) AS month,\n    COUNT(*) AS order_count,\n    ROUND(AVG(total_amount), 2) AS aov\n  FROM ecommerce.orders\n  WHERE status <> 'cancelled'\n    AND order_date >= '2024-01-01'\n    AND order_date < '2025-01-01'\n  GROUP BY DATE_TRUNC('month', order_date)\n)\nSELECT\n  TO_CHAR(month, 'YYYY-MM') AS month,\n  order_count,\n  aov\nFROM monthly_orders\nORDER BY month;",
+      "scores": {
+        "overall": 0.3,
+        "execution_success": 0.0,
+        "error": "Generated failed: Catalog Error: Scalar Function with name to_char does not exist!\nDid you mean \"to_hours\"?\n\nLINE 13:   TO_CHAR(month, 'YYYY-MM') AS month,\n           ^",
+        "reference_row_count": 12
+      },
+      "latency_ms": 2.2,
+      "runs_overall": [
+        0.0,
+        0.45,
+        0.45
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "WITH monthly_orders AS (\n  SELECT\n    DATE_TRUNC('month', order_date) AS month,\n    COUNT(*) AS order_count,\n    ROUND(AVG(total_amount), 2) AS aov\n  FROM ecommerce.orders\n  WHERE status <> 'cancelled'\n    AND order_date >= '2024-01-01'\n    AND order_date < '2025-01-01'\n  GROUP BY DATE_TRUNC('month', order_date)\n)\nSELECT\n  TO_CHAR(month, 'YYYY-MM') AS month,\n  order_count,\n  aov\nFROM monthly_orders\nORDER BY month;",
+          "overall": 0.0,
+          "matched_reference": 0,
+          "error": "Generated failed: Catalog Error: Scalar Function with name to_char does not exist!\nDid you mean \"to_hours\"?\n\nLINE 13:   TO_CHAR(month, 'YYYY-MM') AS month,\n           ^"
+        },
+        {
+          "generated_sql": "SELECT\n  DATE_TRUNC('month', order_date) AS month,\n  COUNT(*) AS order_count,\n  ROUND(AVG(total_amount), 2) AS aov\nFROM ecommerce.orders\nWHERE status <> 'cancelled'\n  AND order_date >= '2024-01-01'\n  AND order_date < '2025-01-01'\nGROUP BY DATE_TRUNC('month', order_date)\nORDER BY month;",
+          "overall": 0.45,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT\n    DATE_TRUNC('month', order_date) AS month,\n    COUNT(DISTINCT order_id) AS order_count,\n    ROUND(AVG(total_amount), 2) AS aov\nFROM ecommerce.orders\nWHERE\n    status <> 'cancelled'\n    AND order_date >= '2024-01-01'\n    AND order_date < '2025-01-01'\nGROUP BY DATE_TRUNC('month', order_date)\nORDER BY month;",
+          "overall": 0.45,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.0,
+      "overall_max": 0.45,
+      "overall_band": 0.45,
+      "unstable": true
+    },
+    {
+      "id": "sql019",
+      "question": "Which products are out of stock?",
+      "difficulty": "easy",
+      "category": "filtered_lookup",
+      "reference_sql": "SELECT product_id, product_name, category FROM ecommerce.products WHERE is_out_of_stock = true",
+      "generated_sql": "SELECT \n    product_id,\n    product_name,\n    category,\n    price,\n    stock_quantity\nFROM ecommerce.products\nWHERE is_out_of_stock = TRUE\nORDER BY product_id",
+      "scores": {
+        "column_count_match": 0.0,
+        "column_name_match": 0.0,
+        "row_count_match": 1.0,
+        "result_set_match": 1.0,
+        "top_row_overlap": 0.0,
+        "overall": 0.8,
+        "execution_success": 1.0,
+        "reference_row_count": 0,
+        "generated_row_count": 0,
+        "matched_reference": 0,
+        "num_references": 1
+      },
+      "latency_ms": 0.8,
+      "runs_overall": [
+        0.6,
+        0.9,
+        0.9
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT \n    product_id,\n    product_name,\n    category,\n    price,\n    stock_quantity\nFROM ecommerce.products\nWHERE is_out_of_stock = TRUE\nORDER BY product_id",
+          "overall": 0.6,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n    p.product_id,\n    p.product_name,\n    p.category\nFROM ecommerce.products p\nWHERE p.stock_quantity = 0 OR p.is_out_of_stock = TRUE",
+          "overall": 0.9,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT product_id, product_name, category\nFROM ecommerce.products\nWHERE is_out_of_stock = TRUE",
+          "overall": 0.9,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.6,
+      "overall_max": 0.9,
+      "overall_band": 0.3,
+      "unstable": true
+    },
+    {
+      "id": "sql020",
+      "question": "What is the total revenue from Electronics category in Q4 2024?",
+      "difficulty": "hard",
+      "category": "filtered_join_agg",
+      "reference_sql": "SELECT ROUND(SUM(oi.line_total), 2) AS total_revenue FROM ecommerce.order_items oi JOIN ecommerce.products p ON oi.product_id = p.product_id WHERE p.category = 'Electronics' AND oi.order_id IN (SELECT order_id FROM ecommerce.orders WHERE order_date >= '2024-10-01' AND order_date < '2025-01-01')",
+      "generated_sql": "SELECT \n  ROUND(SUM(oi.quantity * oi.unit_price), 2) AS revenue\nFROM ecommerce.order_items oi\nJOIN ecommerce.orders o ON oi.order_id = o.order_id\nJOIN ecommerce.products p ON oi.product_id = p.product_id\nWHERE \n  p.category = 'Electronics' \n  AND o.order_date >= '2024-10-01' \n  AND o.order_date <= '2024-12-31'\n  AND o.status <> 'cancelled';",
+      "scores": {
+        "column_count_match": 1.0,
+        "column_name_match": 0.0,
+        "row_count_match": 1.0,
+        "result_set_match": 0.0,
+        "top_row_overlap": 0.0,
+        "overall": 0.5,
+        "execution_success": 1.0,
+        "reference_row_count": 1,
+        "generated_row_count": 1,
+        "matched_reference": 0,
+        "num_references": 1
+      },
+      "latency_ms": 2.3,
+      "runs_overall": [
+        0.45,
+        0.45,
+        0.6
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT \n  ROUND(SUM(oi.quantity * oi.unit_price), 2) AS revenue\nFROM ecommerce.order_items oi\nJOIN ecommerce.orders o ON oi.order_id = o.order_id\nJOIN ecommerce.products p ON oi.product_id = p.product_id\nWHERE \n  p.category = 'Electronics' \n  AND o.order_date >= '2024-10-01' \n  AND o.order_date <= '2024-12-31'\n  AND o.status <> 'cancelled';",
+          "overall": 0.45,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n  SUM(oi.line_total) AS revenue\nFROM ecommerce.order_items oi\nJOIN ecommerce.orders o ON oi.order_id = o.order_id\nJOIN ecommerce.products p ON oi.product_id = p.product_id\nWHERE \n  p.category = 'Electronics'\n  AND o.status NOT IN ('cancelled', 'test', 'fraud')\n  AND o.order_date >= '2024-10-01'\n  AND o.order_date <= '2024-12-31'",
+          "overall": 0.45,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n  ROUND(SUM(oi.quantity * oi.unit_price), 2) AS total_revenue\nFROM \n  ecommerce.order_items oi\n  JOIN ecommerce.orders o ON oi.order_id = o.order_id\n  JOIN ecommerce.products p ON oi.product_id = p.product_id\nWHERE \n  p.category = 'Electronics'\n  AND o.status <> 'cancelled'\n  AND o.order_date >= '2024-10-01' \n  AND o.order_date <= '2024-12-31'",
+          "overall": 0.6,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.45,
+      "overall_max": 0.6,
+      "overall_band": 0.15,
+      "unstable": true
+    },
+    {
+      "id": "sql021",
+      "question": "How many orders were cancelled vs delivered in each month of 2024?",
+      "difficulty": "medium",
+      "category": "filtered_agg",
+      "reference_sql": "SELECT DATE_TRUNC('month', order_date) AS month, COUNT(*) FILTER (WHERE status = 'cancelled') AS cancelled_count, COUNT(*) FILTER (WHERE status = 'delivered') AS delivered_count FROM ecommerce.orders WHERE order_date >= '2024-01-01' AND order_date < '2025-01-01' AND status IN ('cancelled', 'delivered') GROUP BY DATE_TRUNC('month', order_date) ORDER BY month",
+      "generated_sql": "SELECT \n  DATE_TRUNC('month', order_date) AS month,\n  COUNT(DISTINCT CASE WHEN status = 'cancelled' THEN order_id END) AS cancelled_orders,\n  COUNT(DISTINCT CASE WHEN status = 'shipped' OR status = 'delivered' THEN order_id END) AS delivered_orders\nFROM ecommerce.orders\nWHERE order_date >= '2024-01-01' AND order_date < '2025-01-01'\nGROUP BY DATE_TRUNC('month', order_date)\nORDER BY month",
+      "scores": {
+        "column_count_match": 1.0,
+        "column_name_match": 0.0,
+        "row_count_match": 1.0,
+        "result_set_match": 0.0,
+        "top_row_overlap": 0.0,
+        "overall": 0.717,
+        "execution_success": 1.0,
+        "reference_row_count": 12,
+        "generated_row_count": 12,
+        "matched_reference": 0,
+        "num_references": 1
+      },
+      "latency_ms": 2.5,
+      "runs_overall": [
+        0.45,
+        0.85,
+        0.85
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT \n  DATE_TRUNC('month', order_date) AS month,\n  COUNT(DISTINCT CASE WHEN status = 'cancelled' THEN order_id END) AS cancelled_orders,\n  COUNT(DISTINCT CASE WHEN status = 'shipped' OR status = 'delivered' THEN order_id END) AS delivered_orders\nFROM ecommerce.orders\nWHERE order_date >= '2024-01-01' AND order_date < '2025-01-01'\nGROUP BY DATE_TRUNC('month', order_date)\nORDER BY month",
+          "overall": 0.45,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n  DATE_TRUNC('month', order_date) AS month,\n  COUNT(DISTINCT CASE WHEN status = 'cancelled' THEN order_id END) AS cancelled_orders,\n  COUNT(DISTINCT CASE WHEN status = 'delivered' THEN order_id END) AS delivered_orders\nFROM ecommerce.orders\nWHERE order_date >= '2024-01-01' AND order_date < '2025-01-01'\nGROUP BY DATE_TRUNC('month', order_date)\nORDER BY month;",
+          "overall": 0.85,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT\n  DATE_TRUNC('month', order_date) AS month,\n  COUNT(DISTINCT CASE WHEN status = 'cancelled' THEN order_id END) AS cancelled_orders,\n  COUNT(DISTINCT CASE WHEN status = 'delivered' THEN order_id END) AS delivered_orders\nFROM ecommerce.orders\nWHERE order_date >= '2024-01-01' AND order_date < '2025-01-01'\nGROUP BY DATE_TRUNC('month', order_date)\nORDER BY month;",
+          "overall": 0.85,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.45,
+      "overall_max": 0.85,
+      "overall_band": 0.4,
+      "unstable": true
+    },
+    {
+      "id": "sql022",
+      "question": "What is the average number of items per order?",
+      "difficulty": "easy",
+      "category": "direct_agg",
+      "reference_sql": "SELECT ROUND(AVG(item_count), 2) AS avg_items_per_order FROM ecommerce.orders",
+      "generated_sql": "SELECT ROUND(AVG(item_count), 2) AS avg_items_per_order\nFROM ecommerce.orders\nWHERE status <> 'cancelled'",
+      "scores": {
+        "column_count_match": 1.0,
+        "column_name_match": 1.0,
+        "row_count_match": 1.0,
+        "result_set_match": 0.0,
+        "top_row_overlap": 0.0,
+        "overall": 0.6,
+        "execution_success": 1.0,
+        "reference_row_count": 1,
+        "generated_row_count": 1,
+        "matched_reference": 0,
+        "num_references": 1
+      },
+      "latency_ms": 0.7,
+      "runs_overall": [
+        0.6,
+        0.6,
+        0.6
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT ROUND(AVG(item_count), 2) AS avg_items_per_order\nFROM ecommerce.orders\nWHERE status <> 'cancelled'",
+          "overall": 0.6,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n  ROUND(AVG(item_count), 2) AS avg_items_per_order\nFROM ecommerce.orders\nWHERE status <> 'cancelled'",
+          "overall": 0.6,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT ROUND(AVG(item_count), 2) AS avg_items_per_order\nFROM ecommerce.orders\nWHERE status <> 'cancelled'",
+          "overall": 0.6,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.6,
+      "overall_max": 0.6,
+      "overall_band": 0.0,
+      "unstable": false
+    },
+    {
+      "id": "sql023",
+      "question": "Which product categories have the most out-of-stock items?",
+      "difficulty": "easy",
+      "category": "filtered_agg",
+      "reference_sql": "SELECT category, COUNT(*) AS out_of_stock_count FROM ecommerce.products WHERE is_out_of_stock = true GROUP BY category ORDER BY out_of_stock_count DESC",
+      "generated_sql": "SELECT \n  p.category,\n  COUNT(*) AS out_of_stock_count\nFROM ecommerce.products p\nWHERE p.is_out_of_stock = TRUE\nGROUP BY p.category\nORDER BY out_of_stock_count DESC",
+      "scores": {
+        "column_count_match": 1.0,
+        "column_name_match": 1.0,
+        "row_count_match": 1.0,
+        "result_set_match": 1.0,
+        "top_row_overlap": 0.0,
+        "overall": 0.8,
+        "execution_success": 1.0,
+        "reference_row_count": 0,
+        "generated_row_count": 0,
+        "matched_reference": 0,
+        "num_references": 1
+      },
+      "latency_ms": 0.7,
+      "runs_overall": [
+        0.9,
+        0.6,
+        0.9
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT \n  p.category,\n  COUNT(*) AS out_of_stock_count\nFROM ecommerce.products p\nWHERE p.is_out_of_stock = TRUE\nGROUP BY p.category\nORDER BY out_of_stock_count DESC",
+          "overall": 0.9,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n  product_id,\n  category,\n  COUNT(*) OVER (PARTITION BY category) AS out_of_stock_count\nFROM ecommerce.products\nWHERE is_out_of_stock = TRUE",
+          "overall": 0.6,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n    p.category,\n    COUNT(*) AS out_of_stock_count\nFROM ecommerce.products p\nWHERE p.is_out_of_stock = TRUE\nGROUP BY p.category\nORDER BY out_of_stock_count DESC;",
+          "overall": 0.9,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.6,
+      "overall_max": 0.9,
+      "overall_band": 0.3,
+      "unstable": true
+    },
+    {
+      "id": "sql024",
+      "question": "What is the total quantity sold for each product?",
+      "difficulty": "medium",
+      "category": "join_agg",
+      "reference_sql": "SELECT p.product_id, p.product_name, SUM(oi.quantity) AS total_quantity_sold FROM ecommerce.order_items oi JOIN ecommerce.products p ON oi.product_id = p.product_id GROUP BY p.product_id, p.product_name ORDER BY total_quantity_sold DESC LIMIT 10",
+      "generated_sql": "SELECT \n  oi.product_id,\n  SUM(oi.quantity) AS total_quantity_sold\nFROM ecommerce.order_items oi\nJOIN ecommerce.orders o ON oi.order_id = o.order_id\nWHERE o.status <> 'cancelled'\nGROUP BY oi.product_id\nORDER BY total_quantity_sold DESC;",
+      "scores": {
+        "column_count_match": 0.0,
+        "column_name_match": 0.0,
+        "row_count_match": 0.06666666666666667,
+        "result_set_match": 0.0,
+        "top_row_overlap": 0.0,
+        "overall": 0.373,
+        "execution_success": 1.0,
+        "reference_row_count": 10,
+        "generated_row_count": 150,
+        "matched_reference": 0,
+        "num_references": 1
+      },
+      "latency_ms": 4.1,
+      "runs_overall": [
+        0.16,
+        0.48,
+        0.48
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT \n  oi.product_id,\n  SUM(oi.quantity) AS total_quantity_sold\nFROM ecommerce.order_items oi\nJOIN ecommerce.orders o ON oi.order_id = o.order_id\nWHERE o.status <> 'cancelled'\nGROUP BY oi.product_id\nORDER BY total_quantity_sold DESC;",
+          "overall": 0.16,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n    p.product_id,\n    p.product_name,\n    COALESCE(SUM(oi.quantity), 0) AS total_quantity_sold\nFROM ecommerce.products p\nLEFT JOIN ecommerce.order_items oi ON p.product_id = oi.product_id\nGROUP BY p.product_id, p.product_name\nORDER BY total_quantity_sold DESC;",
+          "overall": 0.48,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n    p.product_id,\n    p.product_name,\n    SUM(oi.quantity) AS total_quantity_sold\nFROM ecommerce.order_items oi\nJOIN ecommerce.products p ON oi.product_id = p.product_id\nGROUP BY p.product_id, p.product_name\nORDER BY total_quantity_sold DESC",
+          "overall": 0.48,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.16,
+      "overall_max": 0.48,
+      "overall_band": 0.32,
+      "unstable": true
+    },
+    {
+      "id": "sql025",
+      "question": "What percentage of orders were refunded?",
+      "difficulty": "medium",
+      "category": "ratio",
+      "reference_sql": "SELECT ROUND(COUNT(*) FILTER (WHERE status = 'refunded') * 100.0 / COUNT(*), 2) AS refund_rate_pct FROM ecommerce.orders",
+      "generated_sql": "SELECT \n  ROUND(COUNT(DISTINCT CASE WHEN o.order_id IN (SELECT order_id FROM ecommerce.reviews WHERE rating = 1) THEN o.order_id END) * 100.0 / NULLIF(COUNT(DISTINCT o.order_id), 0), 2) AS refunded_order_pct\nFROM ecommerce.orders o\nWHERE o.status NOT IN ('cancelled', 'test', 'fraud')",
+      "scores": {
+        "column_count_match": 1.0,
+        "column_name_match": 0.0,
+        "row_count_match": 1.0,
+        "result_set_match": 0.0,
+        "top_row_overlap": 0.0,
+        "overall": 0.55,
+        "execution_success": 1.0,
+        "reference_row_count": 1,
+        "generated_row_count": 1,
+        "matched_reference": 0,
+        "num_references": 1
+      },
+      "latency_ms": 2.0,
+      "runs_overall": [
+        0.45,
+        0.6,
+        0.6
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT \n  ROUND(COUNT(DISTINCT CASE WHEN o.order_id IN (SELECT order_id FROM ecommerce.reviews WHERE rating = 1) THEN o.order_id END) * 100.0 / NULLIF(COUNT(DISTINCT o.order_id), 0), 2) AS refunded_order_pct\nFROM ecommerce.orders o\nWHERE o.status NOT IN ('cancelled', 'test', 'fraud')",
+          "overall": 0.45,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n  ROUND(COUNT(DISTINCT CASE WHEN ri.item_id IS NOT NULL THEN o.order_id END) * 100.0 / NULLIF(COUNT(DISTINCT o.order_id), 0), 2) AS refund_rate_pct\nFROM ecommerce.orders o\nLEFT JOIN ecommerce.order_items ri ON o.order_id = ri.order_id\nWHERE o.status NOT IN ('cancelled', 'test', 'fraud')",
+          "overall": 0.6,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n  ROUND(\n    COUNT(DISTINCT CASE WHEN r.review_id IS NOT NULL THEN o.order_id END) * 100.0 \n    / NULLIF(COUNT(DISTINCT o.order_id), 0), \n    2\n  ) AS refund_rate_pct\nFROM ecommerce.orders o\nLEFT JOIN ecommerce.reviews r ON o.order_id = r.order_id\nWHERE o.status NOT IN ('cancelled', 'test', 'fraud');",
+          "overall": 0.6,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.45,
+      "overall_max": 0.6,
+      "overall_band": 0.15,
+      "unstable": true
+    },
+    {
+      "id": "sql026",
+      "question": "Show the top 10 products by revenue with their stock status",
+      "difficulty": "medium",
+      "category": "ranking",
+      "reference_sql": "SELECT p.product_id, p.product_name, p.category, p.is_out_of_stock, ROUND(SUM(oi.line_total), 2) AS total_revenue FROM ecommerce.order_items oi JOIN ecommerce.products p ON oi.product_id = p.product_id GROUP BY p.product_id, p.product_name, p.category, p.is_out_of_stock ORDER BY total_revenue DESC LIMIT 10",
+      "generated_sql": "WITH order_item_revenue AS (\n    SELECT \n        oi.order_id,\n        SUM(oi.line_total) AS item_revenue\n    FROM ecommerce.order_items oi\n    GROUP BY oi.order_id\n)\nSELECT \n    p.product_id,\n    p.product_name,\n    SUM(oir.item_revenue) AS revenue,\n    p.is_out_of_stock\nFROM ecommerce.orders o\nJOIN order_item_revenue oir ON o.order_id = oir.order_id\nJOIN ecommerce.order_items oi ON oir.order_id = oi.order_id\nJOIN ecommerce.products p ON oi.product_id = p.product_id\nWHERE o.status <> 'cancelled'\nGROUP BY p.product_id, p.product_name, p.is_out_of_stock\nORDER BY revenue DESC\nLIMIT 10;",
+      "scores": {
+        "column_count_match": 0.0,
+        "column_name_match": 0.0,
+        "row_count_match": 1.0,
+        "result_set_match": 0.0,
+        "top_row_overlap": 0.0,
+        "overall": 0.3,
+        "execution_success": 1.0,
+        "reference_row_count": 10,
+        "generated_row_count": 10,
+        "matched_reference": 0,
+        "num_references": 1
+      },
+      "latency_ms": 7.0,
+      "runs_overall": [
+        0.3,
+        0.3,
+        0.3
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "WITH order_item_revenue AS (\n    SELECT \n        oi.order_id,\n        SUM(oi.line_total) AS item_revenue\n    FROM ecommerce.order_items oi\n    GROUP BY oi.order_id\n)\nSELECT \n    p.product_id,\n    p.product_name,\n    SUM(oir.item_revenue) AS revenue,\n    p.is_out_of_stock\nFROM ecommerce.orders o\nJOIN order_item_revenue oir ON o.order_id = oir.order_id\nJOIN ecommerce.order_items oi ON oir.order_id = oi.order_id\nJOIN ecommerce.products p ON oi.product_id = p.product_id\nWHERE o.status <> 'cancelled'\nGROUP BY p.product_id, p.product_name, p.is_out_of_stock\nORDER BY revenue DESC\nLIMIT 10;",
+          "overall": 0.3,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n    p.product_name,\n    ROUND(SUM(oi.line_total), 2) AS revenue,\n    p.is_out_of_stock\nFROM ecommerce.order_items oi\nJOIN ecommerce.products p ON oi.product_id = p.product_id\nJOIN ecommerce.orders o ON oi.order_id = o.order_id\nWHERE o.status <> 'cancelled'\nGROUP BY p.product_name, p.is_out_of_stock\nORDER BY revenue DESC\nLIMIT 10;",
+          "overall": 0.3,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "WITH order_item_totals AS (\n    SELECT\n        oi.order_id,\n        SUM(oi.line_total) AS item_total\n    FROM ecommerce.order_items oi\n    GROUP BY oi.order_id\n),\norder_totals AS (\n    SELECT\n        o.order_id,\n        o.total_amount,\n        o.status\n    FROM ecommerce.orders o\n    WHERE o.status <> 'cancelled'\n)\nSELECT\n    p.product_id,\n    p.product_name,\n    ROUND(SUM(oit.item_total), 2) AS revenue,\n    p.is_out_of_stock\nFROM order_totals o\nJOIN order_item_totals oit ON o.order_id = oit.order_id\nJOIN ecommerce.order_items oi ON o.order_id = oi.order_id\nJOIN ecommerce.products p ON oi.product_id = p.product_id\nGROUP BY p.product_id, p.product_name, p.is_out_of_stock\nORDER BY revenue DESC\nLIMIT 10;",
+          "overall": 0.3,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.3,
+      "overall_max": 0.3,
+      "overall_band": 0.0,
+      "unstable": false
+    },
+    {
+      "id": "sql027",
+      "question": "How many customers signed up in 2023?",
+      "difficulty": "easy",
+      "category": "filtered_count",
+      "reference_sql": "SELECT COUNT(*) AS new_customers_2023 FROM ecommerce.customers WHERE signup_date >= '2023-01-01' AND signup_date < '2024-01-01'",
+      "generated_sql": "SELECT COUNT(*) AS customer_count\nFROM ecommerce.customers\nWHERE signup_date >= '2023-01-01' AND signup_date <= '2023-12-31'",
+      "scores": {
+        "column_count_match": 1.0,
+        "column_name_match": 0.0,
+        "row_count_match": 1.0,
+        "result_set_match": 1.0,
+        "top_row_overlap": 1.0,
+        "overall": 0.85,
+        "execution_success": 1.0,
+        "reference_row_count": 1,
+        "generated_row_count": 1,
+        "matched_reference": 0,
+        "num_references": 1
+      },
+      "latency_ms": 0.6,
+      "runs_overall": [
+        0.85,
+        0.85,
+        0.85
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT COUNT(*) AS customer_count\nFROM ecommerce.customers\nWHERE signup_date >= '2023-01-01' AND signup_date <= '2023-12-31'",
+          "overall": 0.85,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT COUNT(*) AS customer_count\nFROM ecommerce.customers\nWHERE EXTRACT(YEAR FROM signup_date) = 2023",
+          "overall": 0.85,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT COUNT(*) AS customer_count\nFROM ecommerce.customers\nWHERE EXTRACT(YEAR FROM signup_date) = 2023",
+          "overall": 0.85,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.85,
+      "overall_max": 0.85,
+      "overall_band": 0.0,
+      "unstable": false
+    },
+    {
+      "id": "sql028",
+      "question": "What is the average lifetime spend by country?",
+      "difficulty": "easy",
+      "category": "direct_agg",
+      "reference_sql": "SELECT country, ROUND(AVG(lifetime_spend), 2) AS avg_lifetime_spend FROM ecommerce.customers GROUP BY country ORDER BY avg_lifetime_spend DESC",
+      "generated_sql": "SELECT \n    country,\n    ROUND(AVG(lifetime_spend), 2) AS avg_lifetime_spend\nFROM ecommerce.customers\nWHERE country IS NOT NULL\nGROUP BY country\nORDER BY avg_lifetime_spend DESC;",
+      "scores": {
+        "column_count_match": 1.0,
+        "column_name_match": 1.0,
+        "row_count_match": 1.0,
+        "result_set_match": 1.0,
+        "top_row_overlap": 1.0,
+        "overall": 1.0,
+        "execution_success": 1.0,
+        "reference_row_count": 10,
+        "generated_row_count": 10,
+        "matched_reference": 0,
+        "num_references": 1
+      },
+      "latency_ms": 1.4,
+      "runs_overall": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT \n    country,\n    ROUND(AVG(lifetime_spend), 2) AS avg_lifetime_spend\nFROM ecommerce.customers\nWHERE country IS NOT NULL\nGROUP BY country\nORDER BY avg_lifetime_spend DESC;",
+          "overall": 1.0,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n    country,\n    ROUND(AVG(lifetime_spend), 2) AS avg_lifetime_spend\nFROM ecommerce.customers\nWHERE country IS NOT NULL\nGROUP BY country\nORDER BY avg_lifetime_spend DESC",
+          "overall": 1.0,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n    country,\n    ROUND(AVG(lifetime_spend), 2) AS avg_lifetime_spend\nFROM ecommerce.customers\nWHERE country IS NOT NULL\nGROUP BY country\nORDER BY avg_lifetime_spend DESC;",
+          "overall": 1.0,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 1.0,
+      "overall_max": 1.0,
+      "overall_band": 0.0,
+      "unstable": false
+    },
+    {
+      "id": "sql029",
+      "question": "Which orders had the highest total amount?",
+      "difficulty": "easy",
+      "category": "ranking",
+      "reference_sql": "SELECT order_id, total_amount, status, order_date FROM ecommerce.orders ORDER BY total_amount DESC LIMIT 5",
+      "generated_sql": "SELECT order_id, total_amount\nFROM ecommerce.orders\nWHERE status <> 'cancelled'\nORDER BY total_amount DESC\nLIMIT 10",
+      "scores": {
+        "column_count_match": 1.0,
+        "column_name_match": 1.0,
+        "row_count_match": 1.0,
+        "result_set_match": 1.0,
+        "top_row_overlap": 1.0,
+        "overall": 0.567,
+        "execution_success": 1.0,
+        "reference_row_count": 10,
+        "generated_row_count": 10,
+        "matched_reference": 1,
+        "num_references": 2
+      },
+      "latency_ms": 2.3,
+      "runs_overall": [
+        1.0,
+        0.15,
+        0.551
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT order_id, total_amount\nFROM ecommerce.orders\nWHERE status <> 'cancelled'\nORDER BY total_amount DESC\nLIMIT 10",
+          "overall": 1.0,
+          "matched_reference": 1,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT order_id, customer_id, total_amount\nFROM ecommerce.orders\nORDER BY total_amount DESC",
+          "overall": 0.15,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT order_id, total_amount\nFROM ecommerce.orders\nORDER BY total_amount DESC",
+          "overall": 0.551,
+          "matched_reference": 1,
+          "error": null
+        }
+      ],
+      "overall_min": 0.15,
+      "overall_max": 1.0,
+      "overall_band": 0.85,
+      "unstable": true
+    },
+    {
+      "id": "sql030",
+      "question": "How does the average order value trend month over month in 2024?",
+      "difficulty": "hard",
+      "category": "period_over_period",
+      "reference_sql": "WITH monthly AS (SELECT DATE_TRUNC('month', order_date) AS month, AVG(total_amount) AS avg_aov FROM ecommerce.orders WHERE order_date >= '2024-01-01' AND order_date < '2025-01-01' GROUP BY DATE_TRUNC('month', order_date)) SELECT month, ROUND(avg_aov, 2) AS avg_aov, ROUND((avg_aov - LAG(avg_aov) OVER (ORDER BY month)) * 100.0 / NULLIF(LAG(avg_aov) OVER (ORDER BY month), 0), 2) AS mom_change_pct FROM monthly ORDER BY month",
+      "generated_sql": "WITH monthly_aov AS (\n  SELECT\n    DATE_TRUNC('month', order_date) AS month,\n    ROUND(AVG(total_amount), 2) AS aov\n  FROM ecommerce.orders\n  WHERE status <> 'cancelled'\n    AND order_date >= '2024-01-01'\n    AND order_date < '2025-01-01'\n  GROUP BY DATE_TRUNC('month', order_date)\n)\nSELECT\n  month,\n  aov,\n  ROUND((aov - LAG(aov) OVER (ORDER BY month)) * 100.0 / NULLIF(LAG(aov) OVER (ORDER BY month), 0), 2) AS mom_change_pct\nFROM monthly_aov\nORDER BY month;",
+      "scores": {
+        "column_count_match": 1.0,
+        "column_name_match": 0.0,
+        "row_count_match": 1.0,
+        "result_set_match": 0.0,
+        "top_row_overlap": 0.0,
+        "overall": 0.15,
+        "execution_success": 1.0,
+        "reference_row_count": 12,
+        "generated_row_count": 12,
+        "matched_reference": 0,
+        "num_references": 1
+      },
+      "latency_ms": 2.2,
+      "runs_overall": [
+        0.45,
+        0.0,
+        0.0
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "WITH monthly_aov AS (\n  SELECT\n    DATE_TRUNC('month', order_date) AS month,\n    ROUND(AVG(total_amount), 2) AS aov\n  FROM ecommerce.orders\n  WHERE status <> 'cancelled'\n    AND order_date >= '2024-01-01'\n    AND order_date < '2025-01-01'\n  GROUP BY DATE_TRUNC('month', order_date)\n)\nSELECT\n  month,\n  aov,\n  ROUND((aov - LAG(aov) OVER (ORDER BY month)) * 100.0 / NULLIF(LAG(aov) OVER (ORDER BY month), 0), 2) AS mom_change_pct\nFROM monthly_aov\nORDER BY month;",
+          "overall": 0.45,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "WITH monthly_aov AS (\n  SELECT\n    DATE_TRUNC('month', order_date) AS month,\n    ROUND(AVG(total_amount), 2) AS aov\n  FROM ecommerce.orders\n  WHERE status <> 'cancelled'\n    AND order_date >= '2024-01-01'\n    AND order_date < '2025-01-01'\n  GROUP BY DATE_TRUNC('month', order_date)\n)\nSELECT\n  TO_CHAR(month, 'YYYY-MM') AS month,\n  aov,\n  ROUND((aov - LAG(aov) OVER (ORDER BY month)) * 100.0 / NULLIF(LAG(aov) OVER (ORDER BY month), 0), 2) AS mom_change_pct\nFROM monthly_aov\nORDER BY month;",
+          "overall": 0.0,
+          "matched_reference": 0,
+          "error": "Generated failed: Catalog Error: Scalar Function with name to_char does not exist!\nDid you mean \"to_hours\"?\n\nLINE 12:   TO_CHAR(month, 'YYYY-MM') AS month,\n           ^"
+        },
+        {
+          "generated_sql": "WITH monthly_aov AS (\n  SELECT\n    DATE_TRUNC('month', order_date) AS month,\n    ROUND(AVG(total_amount), 2) AS aov\n  FROM ecommerce.orders\n  WHERE order_date >= '2024-01-01' AND order_date < '2025-01-01'\n    AND status <> 'cancelled'\n  GROUP BY DATE_TRUNC('month', order_date)\n),\nmonthly_with_lag AS (\n  SELECT\n    month,\n    aov,\n    LAG(aov) OVER (ORDER BY month) AS prev_month_aov\n  FROM monthly_aov\n)\nSELECT\n  TO_CHAR(month, 'YYYY-MM') AS month,\n  ROUND(\n    (aov - prev_month_aov) * 100.0 / NULLIF(prev_month_aov, 0),\n    2\n  ) AS mom_change_pct\nFROM monthly_with_lag\nORDER BY month;",
+          "overall": 0.0,
+          "matched_reference": 0,
+          "error": "Generated failed: Catalog Error: Scalar Function with name to_char does not exist!\nDid you mean \"to_hours\"?\n\nLINE 18:   TO_CHAR(month, 'YYYY-MM') AS month,\n           ^"
+        }
+      ],
+      "overall_min": 0.0,
+      "overall_max": 0.45,
+      "overall_band": 0.45,
+      "unstable": true
+    },
+    {
+      "id": "sql031",
+      "question": "What is the cancellation rate by payment method?",
+      "difficulty": "medium",
+      "category": "ratio",
+      "reference_sql": "SELECT payment_method, ROUND(COUNT(*) FILTER (WHERE status = 'cancelled') * 100.0 / COUNT(*), 2) AS cancellation_rate_pct FROM ecommerce.orders GROUP BY payment_method ORDER BY cancellation_rate_pct DESC",
+      "generated_sql": "SELECT\n    o.payment_method,\n    ROUND(\n        (COUNT(DISTINCT CASE WHEN o.status = 'cancelled' THEN o.order_id END) * 100.0) /\n        NULLIF(COUNT(DISTINCT o.order_id), 0),\n        2\n    ) AS cancellation_rate\nFROM ecommerce.orders o\nWHERE o.status NOT IN ('test', 'fraud')\nGROUP BY o.payment_method\nORDER BY cancellation_rate DESC;",
+      "scores": {
+        "column_count_match": 1.0,
+        "column_name_match": 0.0,
+        "row_count_match": 1.0,
+        "result_set_match": 1.0,
+        "top_row_overlap": 0.2,
+        "overall": 0.81,
+        "execution_success": 1.0,
+        "reference_row_count": 5,
+        "generated_row_count": 5,
+        "matched_reference": 0,
+        "num_references": 1
+      },
+      "latency_ms": 3.7,
+      "runs_overall": [
+        0.77,
+        0.81,
+        0.85
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT\n    o.payment_method,\n    ROUND(\n        (COUNT(DISTINCT CASE WHEN o.status = 'cancelled' THEN o.order_id END) * 100.0) /\n        NULLIF(COUNT(DISTINCT o.order_id), 0),\n        2\n    ) AS cancellation_rate\nFROM ecommerce.orders o\nWHERE o.status NOT IN ('test', 'fraud')\nGROUP BY o.payment_method\nORDER BY cancellation_rate DESC;",
+          "overall": 0.77,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n    o.payment_method,\n    ROUND((COUNT(DISTINCT CASE WHEN o.status = 'cancelled' THEN o.order_id END) * 100.0) / NULLIF(COUNT(DISTINCT o.order_id), 0), 2) AS cancellation_rate\nFROM ecommerce.orders o\nWHERE o.status NOT IN ('test', 'fraud')\nGROUP BY o.payment_method\nORDER BY cancellation_rate DESC;",
+          "overall": 0.81,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n    o.payment_method,\n    ROUND(\n        (COUNT(DISTINCT CASE WHEN o.status = 'cancelled' THEN o.order_id END) * 100.0) / \n        NULLIF(COUNT(DISTINCT o.order_id), 0),\n        2\n    ) AS cancellation_rate\nFROM ecommerce.orders o\nWHERE o.status NOT IN ('test', 'fraud')\nGROUP BY o.payment_method\nORDER BY cancellation_rate DESC;",
+          "overall": 0.85,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.77,
+      "overall_max": 0.85,
+      "overall_band": 0.08,
+      "unstable": true
+    },
+    {
+      "id": "sql032",
+      "question": "Show revenue and order count by country for customers who placed orders",
+      "difficulty": "medium",
+      "category": "join_agg",
+      "reference_sql": "SELECT c.country, COUNT(DISTINCT o.order_id) AS order_count, ROUND(SUM(o.total_amount), 2) AS total_revenue FROM ecommerce.customers c JOIN ecommerce.orders o ON c.customer_id = o.customer_id GROUP BY c.country ORDER BY total_revenue DESC",
+      "generated_sql": "SELECT \n    c.country,\n    ROUND(SUM(o.total_amount), 2) AS revenue,\n    COUNT(o.order_id) AS order_count\nFROM ecommerce.customers c\nJOIN ecommerce.orders o ON c.customer_id = o.customer_id\nWHERE o.status <> 'cancelled'\nGROUP BY c.country\nORDER BY revenue DESC;",
+      "scores": {
+        "column_count_match": 1.0,
+        "column_name_match": 0.0,
+        "row_count_match": 1.0,
+        "result_set_match": 0.0,
+        "top_row_overlap": 0.0,
+        "overall": 0.45,
+        "execution_success": 1.0,
+        "reference_row_count": 10,
+        "generated_row_count": 10,
+        "matched_reference": 0,
+        "num_references": 2
+      },
+      "latency_ms": 6.2,
+      "runs_overall": [
+        0.45,
+        0.45,
+        0.45
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT \n    c.country,\n    ROUND(SUM(o.total_amount), 2) AS revenue,\n    COUNT(o.order_id) AS order_count\nFROM ecommerce.customers c\nJOIN ecommerce.orders o ON c.customer_id = o.customer_id\nWHERE o.status <> 'cancelled'\nGROUP BY c.country\nORDER BY revenue DESC;",
+          "overall": 0.45,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n    c.country,\n    ROUND(SUM(o.total_amount), 2) AS revenue,\n    COUNT(DISTINCT o.order_id) AS order_count\nFROM ecommerce.orders o\nJOIN ecommerce.customers c ON o.customer_id = c.customer_id\nWHERE o.status <> 'cancelled'\nGROUP BY c.country\nORDER BY revenue DESC;",
+          "overall": 0.45,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n    c.country,\n    ROUND(SUM(o.total_amount), 2) AS revenue,\n    COUNT(o.order_id) AS order_count\nFROM ecommerce.orders o\nJOIN ecommerce.customers c ON o.customer_id = c.customer_id\nWHERE o.status <> 'cancelled'\nGROUP BY c.country\nORDER BY revenue DESC;",
+          "overall": 0.45,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.45,
+      "overall_max": 0.45,
+      "overall_band": 0.0,
+      "unstable": false
+    },
+    {
+      "id": "sql033",
+      "question": "What is the average rating of orders with delivery time over 5 days?",
+      "difficulty": "hard",
+      "category": "filtered_join_agg",
+      "reference_sql": "SELECT ROUND(AVG(r.rating), 2) AS avg_rating FROM ecommerce.reviews r JOIN ecommerce.orders o ON r.order_id = o.order_id WHERE o.shipped_at IS NOT NULL AND o.delivered_at IS NOT NULL AND DATE_DIFF('day', o.shipped_at, o.delivered_at) > 5",
+      "generated_sql": "SELECT ROUND(AVG(r.rating), 2) AS avg_rating\nFROM ecommerce.orders o\nJOIN ecommerce.reviews r ON o.order_id = r.order_id\nWHERE DATEDIFF('day', o.order_date, o.delivered_at) > 5\n  AND o.delivered_at IS NOT NULL",
+      "scores": {
+        "column_count_match": 1.0,
+        "column_name_match": 1.0,
+        "row_count_match": 1.0,
+        "result_set_match": 1.0,
+        "top_row_overlap": 1.0,
+        "overall": 0.95,
+        "execution_success": 1.0,
+        "reference_row_count": 1,
+        "generated_row_count": 1,
+        "matched_reference": 0,
+        "num_references": 1
+      },
+      "latency_ms": 2.0,
+      "runs_overall": [
+        1.0,
+        1.0,
+        0.85
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT ROUND(AVG(r.rating), 2) AS avg_rating\nFROM ecommerce.orders o\nJOIN ecommerce.reviews r ON o.order_id = r.order_id\nWHERE DATEDIFF('day', o.order_date, o.delivered_at) > 5\n  AND o.delivered_at IS NOT NULL",
+          "overall": 1.0,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT ROUND(AVG(r.rating), 2) AS avg_rating\nFROM ecommerce.reviews r\nJOIN ecommerce.orders o ON r.order_id = o.order_id\nWHERE o.delivered_at IS NOT NULL\n  AND DATE_DIFF('day', o.order_date, o.delivered_at) > 5\n  AND o.status <> 'cancelled';",
+          "overall": 1.0,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n  ROUND(AVG(r.rating), 2) AS average_rating\nFROM ecommerce.orders o\nJOIN ecommerce.reviews r ON o.order_id = r.order_id\nWHERE \n  o.delivered_at IS NOT NULL \n  AND o.order_date IS NOT NULL\n  AND o.delivered_at > o.order_date + INTERVAL '5 days'",
+          "overall": 0.85,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.85,
+      "overall_max": 1.0,
+      "overall_band": 0.15,
+      "unstable": true
+    },
+    {
+      "id": "sql034",
+      "question": "How many orders are pending and for how long on average?",
+      "difficulty": "medium",
+      "category": "multi_metric",
+      "reference_sql": "SELECT COUNT(*) AS pending_count, ROUND(AVG(DATE_DIFF('day', order_date, CURRENT_DATE)), 2) AS avg_days_pending FROM ecommerce.orders WHERE status = 'pending'",
+      "generated_sql": "SELECT\n  COUNT(*) AS pending_order_count,\n  ROUND(AVG(DATEDIFF('day', order_date, CURRENT_DATE)), 2) AS avg_days_pending\nFROM ecommerce.orders\nWHERE status = 'pending'\n  AND order_date <= CURRENT_DATE;",
+      "scores": {
+        "column_count_match": 1.0,
+        "column_name_match": 0.0,
+        "row_count_match": 1.0,
+        "result_set_match": 1.0,
+        "top_row_overlap": 1.0,
+        "overall": 0.567,
+        "execution_success": 1.0,
+        "reference_row_count": 1,
+        "generated_row_count": 1,
+        "matched_reference": 0,
+        "num_references": 1
+      },
+      "latency_ms": 1.1,
+      "runs_overall": [
+        0.85,
+        0.0,
+        0.85
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT\n  COUNT(*) AS pending_order_count,\n  ROUND(AVG(DATEDIFF('day', order_date, CURRENT_DATE)), 2) AS avg_days_pending\nFROM ecommerce.orders\nWHERE status = 'pending'\n  AND order_date <= CURRENT_DATE;",
+          "overall": 0.85,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT\n  COUNT(*) AS pending_order_count,\n  ROUND(SUM(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP() - order_date))) / NULLIF(SUM(86400.0), 0), 2) AS avg_pending_days\nFROM ecommerce.orders\nWHERE status = 'pending'",
+          "overall": 0.0,
+          "matched_reference": 0,
+          "error": "Generated failed: Catalog Error: Scalar Function with name current_timestamp does not exist!\nDid you mean \"current_localtimestamp\"?\n\nLINE 3:   ROUND(SUM(EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP() - order_date))) / NULLIF(SUM(86400.0...\n                                        ^"
+        },
+        {
+          "generated_sql": "SELECT\n  COUNT(*) AS pending_order_count,\n  ROUND(AVG(DATEDIFF('day', order_date, CURRENT_DATE)), 2) AS avg_days_pending\nFROM ecommerce.orders\nWHERE status = 'pending' AND order_date IS NOT NULL;",
+          "overall": 0.85,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.0,
+      "overall_max": 0.85,
+      "overall_band": 0.85,
+      "unstable": true
+    },
+    {
+      "id": "sql035",
+      "question": "Which customer has the most orders?",
+      "difficulty": "easy",
+      "category": "ranking",
+      "reference_sql": "SELECT c.customer_id, c.full_name, COUNT(o.order_id) AS order_count FROM ecommerce.customers c JOIN ecommerce.orders o ON c.customer_id = o.customer_id GROUP BY c.customer_id, c.full_name ORDER BY order_count DESC LIMIT 1",
+      "generated_sql": "SELECT \n  customer_id, \n  COUNT(*) AS order_count\nFROM ecommerce.orders\nGROUP BY customer_id\nORDER BY order_count DESC\nLIMIT 1",
+      "scores": {
+        "column_count_match": 0.0,
+        "column_name_match": 0.0,
+        "row_count_match": 1.0,
+        "result_set_match": 0.0,
+        "top_row_overlap": 0.0,
+        "overall": 0.3,
+        "execution_success": 1.0,
+        "reference_row_count": 1,
+        "generated_row_count": 1,
+        "matched_reference": 0,
+        "num_references": 1
+      },
+      "latency_ms": 2.5,
+      "runs_overall": [
+        0.3,
+        0.3,
+        0.3
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT \n  customer_id, \n  COUNT(*) AS order_count\nFROM ecommerce.orders\nGROUP BY customer_id\nORDER BY order_count DESC\nLIMIT 1",
+          "overall": 0.3,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n    customer_id, \n    COUNT(*) AS order_count\nFROM ecommerce.orders\nGROUP BY customer_id\nORDER BY order_count DESC\nLIMIT 1",
+          "overall": 0.3,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n    c.customer_id,\n    COUNT(o.order_id) AS order_count\nFROM \n    ecommerce.customers c\nJOIN \n    ecommerce.orders o ON c.customer_id = o.customer_id\nGROUP BY \n    c.customer_id\nORDER BY \n    order_count DESC\nLIMIT 1",
+          "overall": 0.3,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.3,
+      "overall_max": 0.3,
+      "overall_band": 0.0,
+      "unstable": false
+    },
+    {
+      "id": "sql036",
+      "question": "What is the total revenue from the top 3 categories by revenue?",
+      "difficulty": "medium",
+      "category": "ranking",
+      "reference_sql": "WITH cat_revenue AS (SELECT p.category, SUM(oi.line_total) AS revenue FROM ecommerce.order_items oi JOIN ecommerce.products p ON oi.product_id = p.product_id GROUP BY p.category) SELECT category, ROUND(revenue, 2) AS revenue FROM cat_revenue ORDER BY revenue DESC LIMIT 3",
+      "generated_sql": "WITH category_revenue AS (\n  SELECT\n    p.category,\n    SUM(oi.quantity * oi.unit_price) AS revenue\n  FROM ecommerce.order_items oi\n  JOIN ecommerce.orders o ON oi.order_id = o.order_id\n  JOIN ecommerce.products p ON oi.product_id = p.product_id\n  WHERE o.status <> 'cancelled'\n  GROUP BY p.category\n),\nranked_categories AS (\n  SELECT\n    category,\n    revenue,\n    RANK() OVER (ORDER BY revenue DESC) AS rnk\n  FROM category_revenue\n)\nSELECT\n  SUM(revenue) AS total_revenue_from_top_3_categories\nFROM ranked_categories\nWHERE rnk <= 3;",
+      "scores": {
+        "column_count_match": 0.0,
+        "column_name_match": 0.0,
+        "row_count_match": 0.3333333333333333,
+        "result_set_match": 0.0,
+        "top_row_overlap": 0.0,
+        "overall": 0.2,
+        "execution_success": 1.0,
+        "reference_row_count": 3,
+        "generated_row_count": 1,
+        "matched_reference": 0,
+        "num_references": 1
+      },
+      "latency_ms": 4.0,
+      "runs_overall": [
+        0.2,
+        0.2,
+        0.2
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "WITH category_revenue AS (\n  SELECT\n    p.category,\n    SUM(oi.quantity * oi.unit_price) AS revenue\n  FROM ecommerce.order_items oi\n  JOIN ecommerce.orders o ON oi.order_id = o.order_id\n  JOIN ecommerce.products p ON oi.product_id = p.product_id\n  WHERE o.status <> 'cancelled'\n  GROUP BY p.category\n),\nranked_categories AS (\n  SELECT\n    category,\n    revenue,\n    RANK() OVER (ORDER BY revenue DESC) AS rnk\n  FROM category_revenue\n)\nSELECT\n  SUM(revenue) AS total_revenue_from_top_3_categories\nFROM ranked_categories\nWHERE rnk <= 3;",
+          "overall": 0.2,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "WITH category_revenue AS (\n  SELECT\n    p.category,\n    SUM(oi.line_total) AS revenue\n  FROM ecommerce.order_items oi\n  JOIN ecommerce.orders o ON oi.order_id = o.order_id\n  JOIN ecommerce.products p ON oi.product_id = p.product_id\n  WHERE o.status <> 'cancelled'\n  GROUP BY p.category\n  ORDER BY revenue DESC\n  LIMIT 3\n)\nSELECT SUM(revenue) AS total_revenue_top_3_categories\nFROM category_revenue;",
+          "overall": 0.2,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "WITH category_revenue AS (\n  SELECT\n    p.category,\n    SUM(oi.line_total) AS revenue\n  FROM ecommerce.order_items oi\n  JOIN ecommerce.orders o ON oi.order_id = o.order_id\n  JOIN ecommerce.products p ON oi.product_id = p.product_id\n  WHERE o.status <> 'cancelled'\n  GROUP BY p.category\n),\nranked_categories AS (\n  SELECT\n    category,\n    revenue,\n    RANK() OVER (ORDER BY revenue DESC) AS rnk\n  FROM category_revenue\n)\nSELECT\n  SUM(revenue) AS total_revenue\nFROM ranked_categories\nWHERE rnk <= 3;",
+          "overall": 0.2,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.2,
+      "overall_max": 0.2,
+      "overall_band": 0.0,
+      "unstable": false
+    },
+    {
+      "id": "sql037",
+      "question": "Show daily order count for the first week of January 2024",
+      "difficulty": "easy",
+      "category": "time_series",
+      "reference_sql": "SELECT DATE_TRUNC('day', order_date) AS day, COUNT(*) AS order_count FROM ecommerce.orders WHERE order_date >= '2024-01-01' AND order_date < '2024-01-08' GROUP BY DATE_TRUNC('day', order_date) ORDER BY day",
+      "generated_sql": "SELECT \n  order_date,\n  COUNT(*) AS order_count\nFROM ecommerce.orders\nWHERE order_date >= '2024-01-01' AND order_date <= '2024-01-07'\nGROUP BY order_date\nORDER BY order_date;",
+      "scores": {
+        "column_count_match": 1.0,
+        "column_name_match": 0.0,
+        "row_count_match": 1.0,
+        "result_set_match": 0.0,
+        "top_row_overlap": 0.0,
+        "overall": 0.45,
+        "execution_success": 1.0,
+        "reference_row_count": 7,
+        "generated_row_count": 7,
+        "matched_reference": 0,
+        "num_references": 1
+      },
+      "latency_ms": 1.3,
+      "runs_overall": [
+        0.45,
+        0.45,
+        0.45
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT \n  order_date,\n  COUNT(*) AS order_count\nFROM ecommerce.orders\nWHERE order_date >= '2024-01-01' AND order_date <= '2024-01-07'\nGROUP BY order_date\nORDER BY order_date;",
+          "overall": 0.45,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n  order_date,\n  COUNT(*) AS order_count\nFROM ecommerce.orders\nWHERE order_date >= '2024-01-01' AND order_date < '2024-01-08'\nGROUP BY order_date\nORDER BY order_date;",
+          "overall": 0.45,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n    order_date,\n    COUNT(*) AS order_count\nFROM ecommerce.orders\nWHERE order_date >= '2024-01-01' \n  AND order_date < '2024-01-08'\n  AND status <> 'cancelled'\nGROUP BY order_date\nORDER BY order_date;",
+          "overall": 0.45,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.45,
+      "overall_max": 0.45,
+      "overall_band": 0.0,
+      "unstable": false
+    },
+    {
+      "id": "sql038",
+      "question": "What is the average unit price of products in each category?",
+      "difficulty": "easy",
+      "category": "direct_agg",
+      "reference_sql": "SELECT category, ROUND(AVG(price), 2) AS avg_unit_price FROM ecommerce.products GROUP BY category ORDER BY avg_unit_price DESC",
+      "generated_sql": "SELECT \n  p.category,\n  ROUND(AVG(p.price), 2) AS avg_unit_price\nFROM ecommerce.products p\nGROUP BY p.category\nORDER BY avg_unit_price DESC;",
+      "scores": {
+        "column_count_match": 1.0,
+        "column_name_match": 1.0,
+        "row_count_match": 1.0,
+        "result_set_match": 1.0,
+        "top_row_overlap": 1.0,
+        "overall": 1.0,
+        "execution_success": 1.0,
+        "reference_row_count": 6,
+        "generated_row_count": 6,
+        "matched_reference": 0,
+        "num_references": 1
+      },
+      "latency_ms": 1.2,
+      "runs_overall": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT \n  p.category,\n  ROUND(AVG(p.price), 2) AS avg_unit_price\nFROM ecommerce.products p\nGROUP BY p.category\nORDER BY avg_unit_price DESC;",
+          "overall": 1.0,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n    p.category,\n    ROUND(AVG(p.price), 2) AS avg_unit_price\nFROM \n    ecommerce.products p\nGROUP BY \n    p.category\nORDER BY \n    avg_unit_price DESC",
+          "overall": 1.0,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n    p.category,\n    ROUND(AVG(p.price), 2) AS avg_unit_price\nFROM ecommerce.products p\nWHERE p.price IS NOT NULL\nGROUP BY p.category\nORDER BY avg_unit_price DESC;",
+          "overall": 1.0,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 1.0,
+      "overall_max": 1.0,
+      "overall_band": 0.0,
+      "unstable": false
+    },
+    {
+      "id": "sql039",
+      "question": "How many unique products were ordered in total?",
+      "difficulty": "easy",
+      "category": "direct_count",
+      "reference_sql": "SELECT COUNT(DISTINCT product_id) AS unique_products_ordered FROM ecommerce.order_items",
+      "generated_sql": "SELECT COUNT(DISTINCT product_id) AS unique_products_ordered\nFROM ecommerce.order_items\nWHERE product_id IS NOT NULL",
+      "scores": {
+        "column_count_match": 1.0,
+        "column_name_match": 1.0,
+        "row_count_match": 1.0,
+        "result_set_match": 1.0,
+        "top_row_overlap": 1.0,
+        "overall": 1.0,
+        "execution_success": 1.0,
+        "reference_row_count": 1,
+        "generated_row_count": 1,
+        "matched_reference": 0,
+        "num_references": 1
+      },
+      "latency_ms": 1.0,
+      "runs_overall": [
+        1.0,
+        1.0,
+        1.0
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT COUNT(DISTINCT product_id) AS unique_products_ordered\nFROM ecommerce.order_items\nWHERE product_id IS NOT NULL",
+          "overall": 1.0,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT COUNT(DISTINCT product_id) AS unique_products_ordered\nFROM ecommerce.order_items\nWHERE product_id IS NOT NULL",
+          "overall": 1.0,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT COUNT(DISTINCT product_id) AS unique_products_ordered\nFROM ecommerce.order_items",
+          "overall": 1.0,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 1.0,
+      "overall_max": 1.0,
+      "overall_band": 0.0,
+      "unstable": false
+    },
+    {
+      "id": "sql040",
+      "question": "What is the median order value?",
+      "difficulty": "easy",
+      "category": "direct_agg",
+      "reference_sql": "SELECT MEDIAN(total_amount) AS median_order_value FROM ecommerce.orders",
+      "generated_sql": "SELECT \n  PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY total_amount) AS median_order_value\nFROM ecommerce.orders\nWHERE status <> 'cancelled';",
+      "scores": {
+        "column_count_match": 1.0,
+        "column_name_match": 1.0,
+        "row_count_match": 1.0,
+        "result_set_match": 0.0,
+        "top_row_overlap": 0.0,
+        "overall": 0.6,
+        "execution_success": 1.0,
+        "reference_row_count": 1,
+        "generated_row_count": 1,
+        "matched_reference": 0,
+        "num_references": 1
+      },
+      "latency_ms": 0.8,
+      "runs_overall": [
+        0.6,
+        0.6,
+        0.6
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT \n  PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY total_amount) AS median_order_value\nFROM ecommerce.orders\nWHERE status <> 'cancelled';",
+          "overall": 0.6,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY total_amount) AS median_order_value\nFROM ecommerce.orders\nWHERE status <> 'cancelled'",
+          "overall": 0.6,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n  PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY total_amount) AS median_order_value\nFROM ecommerce.orders\nWHERE status <> 'cancelled'",
+          "overall": 0.6,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.6,
+      "overall_max": 0.6,
+      "overall_band": 0.0,
+      "unstable": false
+    },
+    {
+      "id": "sql041",
+      "question": "Show the revenue split between new customers (signed up in 2024) and old customers",
+      "difficulty": "hard",
+      "category": "comparison",
+      "reference_sql": "SELECT CASE WHEN c.signup_date >= '2024-01-01' THEN 'new' ELSE 'old' END AS customer_type, ROUND(SUM(o.total_amount), 2) AS total_revenue, COUNT(DISTINCT o.order_id) AS order_count FROM ecommerce.customers c JOIN ecommerce.orders o ON c.customer_id = o.customer_id GROUP BY CASE WHEN c.signup_date >= '2024-01-01' THEN 'new' ELSE 'old' END ORDER BY total_revenue DESC",
+      "generated_sql": "WITH first_orders AS (\n  SELECT customer_id, MIN(order_date) AS first_order_date\n  FROM ecommerce.orders\n  WHERE status NOT IN ('cancelled', 'test', 'fraud')\n  GROUP BY customer_id\n),\norder_classification AS (\n  SELECT\n    o.order_id,\n    o.customer_id,\n    o.total_amount,\n    o.order_date,\n    f.first_order_date,\n    c.signup_date,\n    CASE\n      WHEN o.order_date = f.first_order_date AND c.signup_date >= '2024-01-01' AND c.signup_date < '2025-01-01'\n        THEN 'new_customer_2024'\n      ELSE 'old_customer'\n    END AS customer_segment\n  FROM ecommerce.orders o\n  JOIN first_orders f ON o.customer_id = f.customer_id\n  LEFT JOIN ecommerce.customers c ON o.customer_id = c.customer_id\n  WHERE o.status NOT IN ('cancelled', 'test', 'fraud')\n)\nSELECT\n  customer_segment,\n  ROUND(SUM(total_amount), 2) AS revenue\nFROM order_classification\nWHERE customer_segment IS NOT NULL\nGROUP BY customer_segment\nORDER BY revenue DESC;",
+      "scores": {
+        "column_count_match": 0.0,
+        "column_name_match": 0.0,
+        "row_count_match": 1.0,
+        "result_set_match": 0.0,
+        "top_row_overlap": 0.0,
+        "overall": 0.3,
+        "execution_success": 1.0,
+        "reference_row_count": 2,
+        "generated_row_count": 2,
+        "matched_reference": 0,
+        "num_references": 2
+      },
+      "latency_ms": 8.3,
+      "runs_overall": [
+        0.3,
+        0.3,
+        0.3
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "WITH first_orders AS (\n  SELECT customer_id, MIN(order_date) AS first_order_date\n  FROM ecommerce.orders\n  WHERE status NOT IN ('cancelled', 'test', 'fraud')\n  GROUP BY customer_id\n),\norder_classification AS (\n  SELECT\n    o.order_id,\n    o.customer_id,\n    o.total_amount,\n    o.order_date,\n    f.first_order_date,\n    c.signup_date,\n    CASE\n      WHEN o.order_date = f.first_order_date AND c.signup_date >= '2024-01-01' AND c.signup_date < '2025-01-01'\n        THEN 'new_customer_2024'\n      ELSE 'old_customer'\n    END AS customer_segment\n  FROM ecommerce.orders o\n  JOIN first_orders f ON o.customer_id = f.customer_id\n  LEFT JOIN ecommerce.customers c ON o.customer_id = c.customer_id\n  WHERE o.status NOT IN ('cancelled', 'test', 'fraud')\n)\nSELECT\n  customer_segment,\n  ROUND(SUM(total_amount), 2) AS revenue\nFROM order_classification\nWHERE customer_segment IS NOT NULL\nGROUP BY customer_segment\nORDER BY revenue DESC;",
+          "overall": 0.3,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "WITH customers_2024 AS (\n  SELECT customer_id\n  FROM ecommerce.customers\n  WHERE DATE_TRUNC('year', signup_date) = '2024-01-01'\n),\norder_revenue AS (\n  SELECT\n    o.customer_id,\n    o.total_amount,\n    CASE\n      WHEN c24.customer_id IS NOT NULL THEN 'new'\n      ELSE 'old'\n    END AS customer_segment\n  FROM ecommerce.orders o\n  LEFT JOIN customers_2024 c24 ON o.customer_id = c24.customer_id\n  WHERE o.status <> 'cancelled'\n)\nSELECT\n  customer_segment,\n  ROUND(SUM(total_amount), 2) AS revenue\nFROM order_revenue\nGROUP BY customer_segment\nORDER BY revenue DESC;",
+          "overall": 0.3,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "WITH customers_2024 AS (\n  SELECT customer_id\n  FROM ecommerce.customers\n  WHERE DATE_TRUNC('year', signup_date) = '2024-01-01'\n),\norder_customer_types AS (\n  SELECT\n    o.order_id,\n    o.customer_id,\n    o.total_amount,\n    CASE\n      WHEN c2.customer_id IS NOT NULL THEN 'new'\n      ELSE 'old'\n    END AS customer_type\n  FROM ecommerce.orders o\n  LEFT JOIN customers_2024 c2 ON o.customer_id = c2.customer_id\n  WHERE o.status <> 'cancelled'\n)\nSELECT\n  customer_type,\n  ROUND(SUM(total_amount), 2) AS revenue\nFROM order_customer_types\nGROUP BY customer_type\nORDER BY revenue DESC;",
+          "overall": 0.3,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.3,
+      "overall_max": 0.3,
+      "overall_band": 0.0,
+      "unstable": false
+    },
+    {
+      "id": "sql042",
+      "question": "Which products have never been ordered?",
+      "difficulty": "medium",
+      "category": "anti_join",
+      "reference_sql": "SELECT p.product_id, p.product_name, p.category FROM ecommerce.products p LEFT JOIN ecommerce.order_items oi ON p.product_id = oi.product_id WHERE oi.product_id IS NULL",
+      "generated_sql": "SELECT \n    p.product_id,\n    p.product_name,\n    p.category\nFROM ecommerce.products p\nLEFT JOIN ecommerce.order_items oi ON p.product_id = oi.product_id\nWHERE oi.product_id IS NULL",
+      "scores": {
+        "column_count_match": 1.0,
+        "column_name_match": 1.0,
+        "row_count_match": 1.0,
+        "result_set_match": 1.0,
+        "top_row_overlap": 0.0,
+        "overall": 0.9,
+        "execution_success": 1.0,
+        "reference_row_count": 0,
+        "generated_row_count": 0,
+        "matched_reference": 0,
+        "num_references": 1
+      },
+      "latency_ms": 1.9,
+      "runs_overall": [
+        0.9,
+        0.9,
+        0.9
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT \n    p.product_id,\n    p.product_name,\n    p.category\nFROM ecommerce.products p\nLEFT JOIN ecommerce.order_items oi ON p.product_id = oi.product_id\nWHERE oi.product_id IS NULL",
+          "overall": 0.9,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT p.product_id, p.product_name, p.category\nFROM ecommerce.products p\nLEFT JOIN ecommerce.order_items oi ON p.product_id = oi.product_id\nWHERE oi.product_id IS NULL\nORDER BY p.product_id;",
+          "overall": 0.9,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n  p.product_id,\n  p.product_name,\n  p.category\nFROM ecommerce.products p\nLEFT JOIN ecommerce.order_items oi ON p.product_id = oi.product_id\nWHERE oi.product_id IS NULL\nORDER BY p.product_id;",
+          "overall": 0.9,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.9,
+      "overall_max": 0.9,
+      "overall_band": 0.0,
+      "unstable": false
+    },
+    {
+      "id": "sql043",
+      "question": "What is the total revenue from customers in Brazil?",
+      "difficulty": "easy",
+      "category": "filtered_join_agg",
+      "reference_sql": "SELECT ROUND(SUM(o.total_amount), 2) AS total_revenue FROM ecommerce.customers c JOIN ecommerce.orders o ON c.customer_id = o.customer_id WHERE c.country = 'BR'",
+      "generated_sql": "SELECT \n    c.country,\n    SUM(o.total_amount) AS total_revenue\nFROM ecommerce.orders o\nJOIN ecommerce.customers c ON o.customer_id = c.customer_id\nWHERE c.country = 'BR' AND o.status <> 'cancelled'\nGROUP BY c.country",
+      "scores": {
+        "column_count_match": 0.0,
+        "column_name_match": 0.0,
+        "row_count_match": 1.0,
+        "result_set_match": 0.0,
+        "top_row_overlap": 0.0,
+        "overall": 0.5,
+        "execution_success": 1.0,
+        "reference_row_count": 1,
+        "generated_row_count": 1,
+        "matched_reference": 0,
+        "num_references": 2
+      },
+      "latency_ms": 3.0,
+      "runs_overall": [
+        0.3,
+        0.6,
+        0.6
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT \n    c.country,\n    SUM(o.total_amount) AS total_revenue\nFROM ecommerce.orders o\nJOIN ecommerce.customers c ON o.customer_id = c.customer_id\nWHERE c.country = 'BR' AND o.status <> 'cancelled'\nGROUP BY c.country",
+          "overall": 0.3,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n    SUM(o.total_amount) AS total_revenue\nFROM \n    ecommerce.orders o\nJOIN \n    ecommerce.customers c ON o.customer_id = c.customer_id\nWHERE \n    c.country = 'BR' \n    AND o.status <> 'cancelled'",
+          "overall": 0.6,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n  ROUND(SUM(o.total_amount), 2) AS total_revenue\nFROM ecommerce.orders o\nJOIN ecommerce.customers c ON o.customer_id = c.customer_id\nWHERE c.country = 'BR'\n  AND o.status <> 'cancelled'",
+          "overall": 0.6,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.3,
+      "overall_max": 0.6,
+      "overall_band": 0.3,
+      "unstable": true
+    },
+    {
+      "id": "sql044",
+      "question": "How many orders had more than 3 items?",
+      "difficulty": "easy",
+      "category": "filtered_count",
+      "reference_sql": "SELECT COUNT(*) AS orders_over_3_items FROM ecommerce.orders WHERE item_count > 3",
+      "generated_sql": "SELECT COUNT(*) AS order_count\nFROM ecommerce.orders\nWHERE item_count > 3",
+      "scores": {
+        "column_count_match": 1.0,
+        "column_name_match": 0.0,
+        "row_count_match": 1.0,
+        "result_set_match": 1.0,
+        "top_row_overlap": 1.0,
+        "overall": 0.85,
+        "execution_success": 1.0,
+        "reference_row_count": 1,
+        "generated_row_count": 1,
+        "matched_reference": 0,
+        "num_references": 1
+      },
+      "latency_ms": 0.7,
+      "runs_overall": [
+        0.85,
+        0.85,
+        0.85
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT COUNT(*) AS order_count\nFROM ecommerce.orders\nWHERE item_count > 3",
+          "overall": 0.85,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT COUNT(*) AS order_count\nFROM ecommerce.orders\nWHERE item_count > 3;",
+          "overall": 0.85,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT COUNT(*) AS order_count\nFROM ecommerce.orders\nWHERE item_count > 3",
+          "overall": 0.85,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.85,
+      "overall_max": 0.85,
+      "overall_band": 0.0,
+      "unstable": false
+    },
+    {
+      "id": "sql045",
+      "question": "What is the average review rating per product?",
+      "difficulty": "medium",
+      "category": "join_agg",
+      "reference_sql": "SELECT p.product_id, p.product_name, ROUND(AVG(r.rating), 2) AS avg_rating FROM ecommerce.reviews r JOIN ecommerce.order_items oi ON r.order_id = oi.order_id JOIN ecommerce.products p ON oi.product_id = p.product_id GROUP BY p.product_id, p.product_name ORDER BY avg_rating DESC LIMIT 10",
+      "generated_sql": "SELECT \n  p.product_id,\n  p.product_name,\n  ROUND(AVG(r.rating), 2) AS avg_rating\nFROM ecommerce.reviews r\nJOIN ecommerce.order_items oi ON r.order_id = oi.order_id\nJOIN ecommerce.products p ON oi.product_id = p.product_id\nGROUP BY p.product_id, p.product_name\nORDER BY avg_rating DESC;",
+      "scores": {
+        "column_count_match": 1.0,
+        "column_name_match": 1.0,
+        "row_count_match": 0.3333333333333333,
+        "result_set_match": 0.3333333333333333,
+        "top_row_overlap": 0.0,
+        "overall": 0.57,
+        "execution_success": 1.0,
+        "reference_row_count": 10,
+        "generated_row_count": 30,
+        "matched_reference": 0,
+        "num_references": 1
+      },
+      "latency_ms": 4.2,
+      "runs_overall": [
+        0.6,
+        0.66,
+        0.45
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT \n  p.product_id,\n  p.product_name,\n  ROUND(AVG(r.rating), 2) AS avg_rating\nFROM ecommerce.reviews r\nJOIN ecommerce.order_items oi ON r.order_id = oi.order_id\nJOIN ecommerce.products p ON oi.product_id = p.product_id\nGROUP BY p.product_id, p.product_name\nORDER BY avg_rating DESC;",
+          "overall": 0.6,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n    p.product_id,\n    p.product_name,\n    ROUND(AVG(r.rating), 2) AS avg_rating\nFROM ecommerce.reviews r\nJOIN ecommerce.order_items oi ON r.order_id = oi.order_id\nJOIN ecommerce.products p ON oi.product_id = p.product_id\nGROUP BY p.product_id, p.product_name\nORDER BY avg_rating DESC;",
+          "overall": 0.66,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n  p.product_id,\n  p.product_name,\n  ROUND(AVG(r.rating), 2) AS avg_review_rating\nFROM ecommerce.reviews r\nJOIN ecommerce.order_items oi ON r.order_id = oi.order_id\nJOIN ecommerce.products p ON oi.product_id = p.product_id\nGROUP BY p.product_id, p.product_name\nORDER BY avg_review_rating DESC",
+          "overall": 0.45,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.45,
+      "overall_max": 0.66,
+      "overall_band": 0.21,
+      "unstable": true
+    },
+    {
+      "id": "sql046",
+      "question": "Show the distribution of order statuses",
+      "difficulty": "medium",
+      "category": "distribution",
+      "reference_sql": "SELECT status, COUNT(*) AS order_count, ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (), 2) AS pct_of_total FROM ecommerce.orders GROUP BY status ORDER BY order_count DESC",
+      "generated_sql": "SELECT \n  status,\n  COUNT(*) AS order_count,\n  ROUND(COUNT(*) * 100.0 / NULLIF(SUM(COUNT(*)) OVER (), 0), 2) AS pct\nFROM ecommerce.orders\nGROUP BY status\nORDER BY order_count DESC",
+      "scores": {
+        "column_count_match": 1.0,
+        "column_name_match": 0.0,
+        "row_count_match": 1.0,
+        "result_set_match": 1.0,
+        "top_row_overlap": 1.0,
+        "overall": 0.85,
+        "execution_success": 1.0,
+        "reference_row_count": 6,
+        "generated_row_count": 6,
+        "matched_reference": 0,
+        "num_references": 1
+      },
+      "latency_ms": 1.8,
+      "runs_overall": [
+        0.85,
+        0.85,
+        0.85
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT \n  status,\n  COUNT(*) AS order_count,\n  ROUND(COUNT(*) * 100.0 / NULLIF(SUM(COUNT(*)) OVER (), 0), 2) AS pct\nFROM ecommerce.orders\nGROUP BY status\nORDER BY order_count DESC",
+          "overall": 0.85,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n    status,\n    COUNT(*) AS order_count,\n    COUNT(*) * 100.0 / NULLIF(SUM(COUNT(*)) OVER (), 0) AS share_pct\nFROM ecommerce.orders\nGROUP BY status\nORDER BY order_count DESC",
+          "overall": 0.85,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n  status,\n  COUNT(*) AS order_count,\n  ROUND(COUNT(*) * 100.0 / NULLIF(SUM(COUNT(*)) OVER (), 0), 2) AS share_pct\nFROM ecommerce.orders\nGROUP BY status\nORDER BY order_count DESC",
+          "overall": 0.85,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.85,
+      "overall_max": 0.85,
+      "overall_band": 0.0,
+      "unstable": false
+    },
+    {
+      "id": "sql047",
+      "question": "What is the 90th percentile order value?",
+      "difficulty": "medium",
+      "category": "percentile",
+      "reference_sql": "SELECT PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY total_amount) AS p90_order_value FROM ecommerce.orders",
+      "generated_sql": "SELECT PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY total_amount) AS p90_order_value\nFROM ecommerce.orders\nWHERE status <> 'cancelled'",
+      "scores": {
+        "column_count_match": 1.0,
+        "column_name_match": 1.0,
+        "row_count_match": 1.0,
+        "result_set_match": 0.0,
+        "top_row_overlap": 0.0,
+        "overall": 0.6,
+        "execution_success": 1.0,
+        "reference_row_count": 1,
+        "generated_row_count": 1,
+        "matched_reference": 0,
+        "num_references": 1
+      },
+      "latency_ms": 0.7,
+      "runs_overall": [
+        0.6,
+        0.6,
+        0.6
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY total_amount) AS p90_order_value\nFROM ecommerce.orders\nWHERE status <> 'cancelled'",
+          "overall": 0.6,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT ROUND(PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY total_amount), 2) AS p90_order_value\nFROM ecommerce.orders\nWHERE status <> 'cancelled'",
+          "overall": 0.6,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT PERCENTILE_CONT(0.90) WITHIN GROUP (ORDER BY total_amount) AS p90_order_value\nFROM ecommerce.orders\nWHERE status <> 'cancelled'",
+          "overall": 0.6,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.6,
+      "overall_max": 0.6,
+      "overall_band": 0.0,
+      "unstable": false
+    },
+    {
+      "id": "sql048",
+      "question": "Which month had the highest number of new customer signups?",
+      "difficulty": "easy",
+      "category": "ranking",
+      "reference_sql": "SELECT DATE_TRUNC('month', signup_date) AS month, COUNT(*) AS new_signups FROM ecommerce.customers GROUP BY DATE_TRUNC('month', signup_date) ORDER BY new_signups DESC LIMIT 1",
+      "generated_sql": "SELECT \n  DATE_TRUNC('month', signup_date) AS month,\n  COUNT(DISTINCT customer_id) AS new_customers\nFROM ecommerce.customers\nWHERE signup_date IS NOT NULL\nGROUP BY DATE_TRUNC('month', signup_date)\nORDER BY new_customers DESC\nLIMIT 1",
+      "scores": {
+        "column_count_match": 1.0,
+        "column_name_match": 0.0,
+        "row_count_match": 1.0,
+        "result_set_match": 0.0,
+        "top_row_overlap": 0.0,
+        "overall": 0.717,
+        "execution_success": 1.0,
+        "reference_row_count": 1,
+        "generated_row_count": 1,
+        "matched_reference": 0,
+        "num_references": 1
+      },
+      "latency_ms": 2.2,
+      "runs_overall": [
+        0.45,
+        0.85,
+        0.85
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT \n  DATE_TRUNC('month', signup_date) AS month,\n  COUNT(DISTINCT customer_id) AS new_customers\nFROM ecommerce.customers\nWHERE signup_date IS NOT NULL\nGROUP BY DATE_TRUNC('month', signup_date)\nORDER BY new_customers DESC\nLIMIT 1",
+          "overall": 0.45,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n  DATE_TRUNC('month', signup_date) AS month,\n  COUNT(*) AS new_customer_count\nFROM ecommerce.customers\nWHERE signup_date IS NOT NULL\nGROUP BY DATE_TRUNC('month', signup_date)\nORDER BY new_customer_count DESC\nLIMIT 1;",
+          "overall": 0.85,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n  DATE_TRUNC('month', signup_date) AS month,\n  COUNT(*) AS new_customers\nFROM ecommerce.customers\nWHERE signup_date IS NOT NULL\nGROUP BY DATE_TRUNC('month', signup_date)\nORDER BY new_customers DESC\nLIMIT 1;",
+          "overall": 0.85,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.45,
+      "overall_max": 0.85,
+      "overall_band": 0.4,
+      "unstable": true
+    },
+    {
+      "id": "sql049",
+      "question": "What is the average delivery time for each payment method?",
+      "difficulty": "medium",
+      "category": "filtered_agg",
+      "reference_sql": "SELECT payment_method, ROUND(AVG(DATE_DIFF('day', shipped_at, delivered_at)), 2) AS avg_delivery_days FROM ecommerce.orders WHERE shipped_at IS NOT NULL AND delivered_at IS NOT NULL GROUP BY payment_method ORDER BY avg_delivery_days DESC",
+      "generated_sql": "SELECT\n    o.payment_method,\n    ROUND(AVG(DATEDIFF('day', o.order_date, o.delivered_at)), 2) AS avg_delivery_days\nFROM ecommerce.orders o\nWHERE o.delivered_at IS NOT NULL\n  AND o.status <> 'cancelled'\nGROUP BY o.payment_method\nORDER BY o.payment_method;",
+      "scores": {
+        "column_count_match": 1.0,
+        "column_name_match": 1.0,
+        "row_count_match": 1.0,
+        "result_set_match": 0.0,
+        "top_row_overlap": 0.0,
+        "overall": 0.7,
+        "execution_success": 1.0,
+        "reference_row_count": 5,
+        "generated_row_count": 5,
+        "matched_reference": 0,
+        "num_references": 1
+      },
+      "latency_ms": 1.5,
+      "runs_overall": [
+        0.6,
+        0.6,
+        0.9
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT\n    o.payment_method,\n    ROUND(AVG(DATEDIFF('day', o.order_date, o.delivered_at)), 2) AS avg_delivery_days\nFROM ecommerce.orders o\nWHERE o.delivered_at IS NOT NULL\n  AND o.status <> 'cancelled'\nGROUP BY o.payment_method\nORDER BY o.payment_method;",
+          "overall": 0.6,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n    o.payment_method,\n    ROUND(AVG(DATEDIFF('day', o.order_date, o.delivered_at)), 2) AS avg_delivery_days\nFROM ecommerce.orders o\nWHERE o.delivered_at IS NOT NULL\n  AND o.status = 'delivered'\nGROUP BY o.payment_method\nORDER BY o.payment_method;",
+          "overall": 0.6,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n    o.payment_method,\n    ROUND(AVG(date_diff('day', o.shipped_at, o.delivered_at)), 2) AS avg_delivery_days\nFROM ecommerce.orders o\nWHERE o.delivered_at IS NOT NULL \n  AND o.shipped_at IS NOT NULL \n  AND o.status <> 'cancelled'\nGROUP BY o.payment_method\nORDER BY o.payment_method;",
+          "overall": 0.9,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.6,
+      "overall_max": 0.9,
+      "overall_band": 0.3,
+      "unstable": true
+    },
+    {
+      "id": "sql050",
+      "question": "Show orders placed by customers with lifetime spend over 5000",
+      "difficulty": "medium",
+      "category": "filtered_join",
+      "reference_sql": "SELECT o.order_id, o.total_amount, o.order_date, c.full_name FROM ecommerce.orders o JOIN ecommerce.customers c ON o.customer_id = c.customer_id WHERE c.lifetime_spend > 5000 ORDER BY o.order_date DESC LIMIT 20",
+      "generated_sql": "SELECT \n    o.order_id,\n    o.customer_id,\n    c.full_name,\n    c.lifetime_spend,\n    o.order_date,\n    o.total_amount,\n    o.status\nFROM ecommerce.orders o\nJOIN ecommerce.customers c ON o.customer_id = c.customer_id\nWHERE c.lifetime_spend > 5000\nORDER BY c.lifetime_spend DESC, o.order_date DESC;",
+      "scores": {
+        "column_count_match": 0.0,
+        "column_name_match": 0.0,
+        "row_count_match": 0.008547008547008548,
+        "result_set_match": 0.0,
+        "top_row_overlap": 0.0,
+        "overall": 0.151,
+        "execution_success": 1.0,
+        "reference_row_count": 20,
+        "generated_row_count": 2340,
+        "matched_reference": 0,
+        "num_references": 1
+      },
+      "latency_ms": 27.2,
+      "runs_overall": [
+        0.151,
+        0.151,
+        0.151
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT \n    o.order_id,\n    o.customer_id,\n    c.full_name,\n    c.lifetime_spend,\n    o.order_date,\n    o.total_amount,\n    o.status\nFROM ecommerce.orders o\nJOIN ecommerce.customers c ON o.customer_id = c.customer_id\nWHERE c.lifetime_spend > 5000\nORDER BY c.lifetime_spend DESC, o.order_date DESC;",
+          "overall": 0.151,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n    o.order_id,\n    o.customer_id,\n    o.order_date,\n    o.total_amount,\n    o.status,\n    c.full_name,\n    c.email,\n    c.lifetime_spend\nFROM ecommerce.orders o\nJOIN ecommerce.customers c ON o.customer_id = c.customer_id\nWHERE c.lifetime_spend > 5000\nORDER BY c.lifetime_spend DESC, o.order_date DESC;",
+          "overall": 0.151,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT \n    o.order_id,\n    o.customer_id,\n    o.order_date,\n    o.total_amount,\n    o.status,\n    c.full_name,\n    c.email,\n    c.lifetime_spend\nFROM ecommerce.orders o\nJOIN ecommerce.customers c ON o.customer_id = c.customer_id\nWHERE c.lifetime_spend > 5000\nORDER BY c.lifetime_spend DESC, o.order_date DESC;",
+          "overall": 0.151,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.151,
+      "overall_max": 0.151,
+      "overall_band": 0.0,
+      "unstable": false
+    },
+    {
+      "id": "sql051",
+      "question": "What is the correlation between product price and quantity ordered?",
+      "difficulty": "medium",
+      "category": "correlation",
+      "reference_sql": "SELECT CORR(p.price, oi.quantity) AS price_quantity_correlation FROM ecommerce.order_items oi JOIN ecommerce.products p ON oi.product_id = p.product_id",
+      "generated_sql": "WITH product_prices AS (\n  SELECT \n    product_id,\n    price\n  FROM ecommerce.products\n),\norder_item_aggregates AS (\n  SELECT \n    product_id,\n    SUM(quantity) AS total_quantity\n  FROM ecommerce.order_items\n  GROUP BY product_id\n)\nSELECT\n  CORR(pp.price, oia.total_quantity) AS correlation_price_quantity,\n  REGR_SLOPE(oia.total_quantity, pp.price) AS slope_quantity_on_price,\n  ROUND(REGR_R2(oia.total_quantity, pp.price) * 100, 2) AS r_squared_pct\nFROM product_prices pp\nJOIN order_item_aggregates oia ON pp.product_id = oia.product_id;",
+      "scores": {
+        "column_count_match": 0.0,
+        "column_name_match": 0.0,
+        "row_count_match": 1.0,
+        "result_set_match": 0.0,
+        "top_row_overlap": 0.0,
+        "overall": 0.667,
+        "execution_success": 1.0,
+        "reference_row_count": 1,
+        "generated_row_count": 1,
+        "matched_reference": 0,
+        "num_references": 1
+      },
+      "latency_ms": 2.0,
+      "runs_overall": [
+        0.3,
+        0.85,
+        0.85
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "WITH product_prices AS (\n  SELECT \n    product_id,\n    price\n  FROM ecommerce.products\n),\norder_item_aggregates AS (\n  SELECT \n    product_id,\n    SUM(quantity) AS total_quantity\n  FROM ecommerce.order_items\n  GROUP BY product_id\n)\nSELECT\n  CORR(pp.price, oia.total_quantity) AS correlation_price_quantity,\n  REGR_SLOPE(oia.total_quantity, pp.price) AS slope_quantity_on_price,\n  ROUND(REGR_R2(oia.total_quantity, pp.price) * 100, 2) AS r_squared_pct\nFROM product_prices pp\nJOIN order_item_aggregates oia ON pp.product_id = oia.product_id;",
+          "overall": 0.3,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "WITH aggregated_order_items AS (\n  SELECT \n    product_id,\n    SUM(quantity) AS total_quantity\n  FROM ecommerce.order_items\n  GROUP BY product_id\n),\naggregated_products AS (\n  SELECT \n    product_id,\n    price\n  FROM ecommerce.products\n)\nSELECT \n  CORR(p.price, oi.total_quantity) AS correlation_price_quantity\nFROM aggregated_products p\nJOIN aggregated_order_items oi ON p.product_id = oi.product_id",
+          "overall": 0.85,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "WITH aggregated_order_items AS (\n    SELECT\n        product_id,\n        SUM(quantity) AS total_quantity\n    FROM ecommerce.order_items\n    GROUP BY product_id\n),\naggregated_products AS (\n    SELECT\n        product_id,\n        price\n    FROM ecommerce.products\n)\nSELECT\n    CORR(p.price, oi.total_quantity) AS correlation_price_quantity\nFROM aggregated_products p\nJOIN aggregated_order_items oi ON p.product_id = oi.product_id;",
+          "overall": 0.85,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.3,
+      "overall_max": 0.85,
+      "overall_band": 0.55,
+      "unstable": true
+    },
+    {
+      "id": "sql052",
+      "question": "How many orders were shipped but not yet delivered?",
+      "difficulty": "easy",
+      "category": "filtered_count",
+      "reference_sql": "SELECT COUNT(*) AS shipped_not_delivered FROM ecommerce.orders WHERE shipped_at IS NOT NULL AND delivered_at IS NULL",
+      "generated_sql": "SELECT COUNT(*) AS shipped_not_delivered_orders\nFROM ecommerce.orders\nWHERE status = 'shipped' AND delivered_at IS NULL",
+      "scores": {
+        "column_count_match": 1.0,
+        "column_name_match": 0.0,
+        "row_count_match": 1.0,
+        "result_set_match": 0.0,
+        "top_row_overlap": 0.0,
+        "overall": 0.45,
+        "execution_success": 1.0,
+        "reference_row_count": 1,
+        "generated_row_count": 1,
+        "matched_reference": 0,
+        "num_references": 1
+      },
+      "latency_ms": 0.7,
+      "runs_overall": [
+        0.45,
+        0.45,
+        0.45
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "SELECT COUNT(*) AS shipped_not_delivered_orders\nFROM ecommerce.orders\nWHERE status = 'shipped' AND delivered_at IS NULL",
+          "overall": 0.45,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT COUNT(*) AS orders_shipped_not_delivered\nFROM ecommerce.orders\nWHERE status = 'shipped' AND delivered_at IS NULL",
+          "overall": 0.45,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "SELECT COUNT(*) AS orders_shipped_not_delivered\nFROM ecommerce.orders\nWHERE status = 'shipped' AND delivered_at IS NULL",
+          "overall": 0.45,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.45,
+      "overall_max": 0.45,
+      "overall_band": 0.0,
+      "unstable": false
+    },
+    {
+      "id": "sql053",
+      "question": "What is the revenue per customer by order month in 2024?",
+      "difficulty": "medium",
+      "category": "join_agg",
+      "reference_sql": "SELECT DATE_TRUNC('month', o.order_date) AS month, c.customer_id, c.full_name, ROUND(SUM(o.total_amount), 2) AS revenue FROM ecommerce.orders o JOIN ecommerce.customers c ON o.customer_id = c.customer_id WHERE o.order_date >= '2024-01-01' AND o.order_date < '2025-01-01' GROUP BY DATE_TRUNC('month', o.order_date), c.customer_id, c.full_name ORDER BY month, revenue DESC",
+      "generated_sql": "WITH monthly_customer_revenue AS (\n  SELECT\n    DATE_TRUNC('month', o.order_date) AS order_month,\n    o.customer_id,\n    SUM(o.total_amount) AS revenue\n  FROM ecommerce.orders o\n  WHERE o.status <> 'cancelled'\n    AND o.order_date >= '2024-01-01'\n    AND o.order_date < '2025-01-01'\n  GROUP BY DATE_TRUNC('month', o.order_date), o.customer_id\n)\nSELECT\n  order_month,\n  ROUND(AVG(revenue), 2) AS revenue_per_customer\nFROM monthly_customer_revenue\nGROUP BY order_month\nORDER BY order_month;",
+      "scores": {
+        "column_count_match": 0.0,
+        "column_name_match": 0.0,
+        "row_count_match": 0.004905968928863451,
+        "result_set_match": 0.0,
+        "top_row_overlap": 0.0,
+        "overall": 0.195,
+        "execution_success": 1.0,
+        "reference_row_count": 2446,
+        "generated_row_count": 12,
+        "matched_reference": 0,
+        "num_references": 2
+      },
+      "latency_ms": 40.0,
+      "runs_overall": [
+        0.151,
+        0.151,
+        0.282
+      ],
+      "runs_detail": [
+        {
+          "generated_sql": "WITH monthly_customer_revenue AS (\n  SELECT\n    DATE_TRUNC('month', o.order_date) AS order_month,\n    o.customer_id,\n    SUM(o.total_amount) AS revenue\n  FROM ecommerce.orders o\n  WHERE o.status <> 'cancelled'\n    AND o.order_date >= '2024-01-01'\n    AND o.order_date < '2025-01-01'\n  GROUP BY DATE_TRUNC('month', o.order_date), o.customer_id\n)\nSELECT\n  order_month,\n  ROUND(AVG(revenue), 2) AS revenue_per_customer\nFROM monthly_customer_revenue\nGROUP BY order_month\nORDER BY order_month;",
+          "overall": 0.151,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "WITH monthly_customer_revenue AS (\n  SELECT\n    DATE_TRUNC('month', o.order_date) AS order_month,\n    o.customer_id,\n    SUM(o.total_amount) AS revenue\n  FROM ecommerce.orders o\n  WHERE o.status <> 'cancelled'\n    AND EXTRACT('year' FROM o.order_date) = 2024\n  GROUP BY DATE_TRUNC('month', o.order_date), o.customer_id\n)\nSELECT\n  order_month,\n  ROUND(AVG(revenue), 2) AS revenue_per_customer\nFROM monthly_customer_revenue\nGROUP BY order_month\nORDER BY order_month;",
+          "overall": 0.151,
+          "matched_reference": 0,
+          "error": null
+        },
+        {
+          "generated_sql": "WITH monthly_orders AS (\n  SELECT\n    DATE_TRUNC('month', order_date) AS order_month,\n    customer_id,\n    SUM(total_amount) AS revenue\n  FROM ecommerce.orders\n  WHERE status <> 'cancelled'\n    AND order_date >= DATE '2024-01-01'\n    AND order_date < DATE '2025-01-01'\n  GROUP BY DATE_TRUNC('month', order_date), customer_id\n)\nSELECT\n  order_month,\n  customer_id,\n  ROUND(AVG(revenue), 2) AS revenue_per_order\nFROM monthly_orders\nGROUP BY order_month, customer_id\nORDER BY order_month, customer_id;",
+          "overall": 0.282,
+          "matched_reference": 0,
+          "error": null
+        }
+      ],
+      "overall_min": 0.151,
+      "overall_max": 0.282,
+      "overall_band": 0.131,
+      "unstable": true
+    }
+  ],
+  "summary": {
+    "total": 53,
+    "perfect": 4,
+    "passed_80": 20,
+    "errors": 1,
+    "by_difficulty": {
+      "easy": {
+        "total": 25,
+        "perfect": 4,
+        "passed_80": 15,
+        "errors": 0
+      },
+      "medium": {
+        "total": 22,
+        "perfect": 0,
+        "passed_80": 4,
+        "errors": 1
+      },
+      "hard": {
+        "total": 6,
+        "perfect": 0,
+        "passed_80": 1,
+        "errors": 0
+      }
+    }
+  }
+}

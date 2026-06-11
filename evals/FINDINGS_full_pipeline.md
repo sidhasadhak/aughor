@@ -155,3 +155,46 @@ full, status-semantic questions stay strict, no foreign-schema leak.
 PINNED run (`--connection samples --full-pipeline --temperature 0 --runs 3`)
 measures true capability lift. No cached `runs_detail` exists on disk, so this
 needs one live N=3 run — the apparatus is proven; the headline is one eval away.
+
+---
+
+## UNIFY — the pinned lift run (2026-06-10, temp-0, N=3, samples)
+
+Ran RAW vs FULL on the pinned `samples` connection after unification. **First run
+was garbage** (every generation 404'd) — `run_golden.py` is a standalone script
+that never loaded `.env`, so it used the provider's stale default
+`qwen2.5-coder:32b` (uninstalled) instead of the configured cloud model. The
+"0/53 unstable, band 0.0" looked clean but was 53 empty errors. Fixed: the
+harness now `load_dotenv()`s like the app. (Lesson re-confirmed: a stable-looking
+metric can be uniformly empty — check the model line in the provenance block.)
+
+**N=3 averaged headline (the trustworthy number):**
+| | perfect | pass (≥0.80) | mean | errors | accept_sql-alt matched |
+|---|---|---|---|---|---|
+| RAW  | 6/53 (11%) | 16/53 (30%) | 0.600 | 3 | 4 |
+| FULL | 4/53 (7%)  | 18/53 (33%) | 0.628 | 1 | 3 |
+
+**Honest reading — UNIFY worked; the lift is within noise:**
+1. **The confound is gone.** Pre-UNIFY, FULL's net-of-cancelled revenue answers
+   matched ZERO accept_sql alternatives (the whole #13b finding). Now they match
+   on 3–4 questions — the convention-neutral scorer is live, so the eval measures
+   capability, not the gross/net convention.
+2. **FULL ≈ RAW within noise.** FULL is +2 pass / +0.028 mean / −2 perfect / −2
+   errors vs RAW — every one of those deltas is SMALLER than the run-to-run band
+   (RAW unstable on 26/53, mean band 0.176; FULL 24/53, band 0.140). temp-0 is
+   still not deterministic on cloud (sql029 ran [1.0, 0.15, 0.551] on unchanged
+   code), exactly as #13b measured. So this is a statistical TIE, consistent with
+   #13b's convention-neutral RAW 28 / FULL 26.
+3. **Where injection genuinely wins:** the per-question deltas, not the headline —
+   FULL +0.57 sql034 (pending-duration), +0.55 sql049, +0.47 sql021/sql051
+   (grounding-dependent questions where injected context writes SQL RAW can't),
+   and FULL halves the dialect errors (3→1; the residual is a `to_char` that still
+   slips the normaliser on sql018). It loses on others (sql029 −0.43, sql035 −0.43).
+
+**Conclusion:** intelligence injection is not an aggregate-headline win on this
+clean, base-model-friendly 53-question set — it's a wash on easy questions and a
+win on grounding-dependent ones, with the headline dominated by cloud
+nondeterminism. The valuable outcome is that the eval is now UNCONFOUNDED and
+trustworthy: any future capability lever can be measured against this honest
+baseline. Run artifacts (with `runs_detail`) cached at
+`evals/unify_{raw,full}_results.json` for zero-LLM re-scoring.
