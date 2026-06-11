@@ -1347,7 +1347,10 @@ async def _stream_investigation(
         # the ontology's verified OntologyMetric.formula_sql. No-op when none exist.
         try:
             from aughor.semantic.canonical import canonical_metrics_block
-            _canon = canonical_metrics_block(connection_id, canvas_scope_schema)
+            # Pass the schema we already fetched (full_schema, cached above) so the metric
+            # schema-filter doesn't RE-INTROSPECT it — that redundant fetch was ~16s per
+            # investigation on big warehouses (profiled), duplicating this same schema.
+            _canon = canonical_metrics_block(connection_id, canvas_scope_schema, schema_text=full_schema)
             if _canon:
                 schema_for_agent = f"{schema_for_agent}\n\n{_canon}"
         except Exception:
