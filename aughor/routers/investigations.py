@@ -1058,6 +1058,18 @@ async def _stream_chat(
         # prediction and can contradict the data it ran on.
         _grounded_headline = _ground_headline(answer.headline, result.columns, result.rows)
         _rcpt["grounded"] = (_grounded_headline or "") != (answer.headline or "")
+        # Narration-inversion caveat: a per-group value stated as UNIVERSAL ("all
+        # orders have 3 items") over a varying result. We can't drop a user's answer,
+        # so qualify it inline instead of asserting a falsehood. High-precision, so
+        # this fires rarely; non-destructive (the claim stays, only gets a caveat).
+        from aughor.agent.verify import inverted_universal_claim
+        if inverted_universal_claim(_grounded_headline, result.rows):
+            _grounded_headline = (
+                f"{(_grounded_headline or '').rstrip('. ')} — note: this value varies "
+                "across the data and is not uniform across every row."
+            )
+            _rcpt["narration_inversion"] = True
+            logger.info("[chat] narration-inversion caveat applied to headline")
         # Deterministic concentration→pareto (the renderer never sees the question).
         answer.chart_type = _maybe_pareto(question, result.columns, result.rows, answer.chart_type)
         yield _sse("columns", {"columns": result.columns})
@@ -1107,6 +1119,8 @@ async def _stream_chat(
                 _guards.append(("validated_by", "guard:numeric_grounding", "headline corrected to match the result cells"))
             if _rcpt["lint"]:
                 _guards.append(("validated_by", "guard:sql_lint", "auto-fixed a SQL quality issue before execution"))
+            if _rcpt.get("narration_inversion"):
+                _guards.append(("flagged", "guard:narration_inversion", "a per-group value was stated as universal; caveated inline"))
             for _tq in (_trusted_used or []):
                 _guards.append(("trusted", f"query:{(_tq.get('question') or '')[:60]}", _tq.get('note')))
             _write_answer_receipt(

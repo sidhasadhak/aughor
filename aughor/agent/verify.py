@@ -193,6 +193,39 @@ def verify_numeric_claims(
     return unverified
 
 
+def verify_universal_claims(
+    report: "AnalysisReport",
+    query_history: list["QueryResult"],
+) -> list[str]:
+    """Universal per-entity claims in the report ('all orders have 3 items') that an
+    executed result distribution disproves. Returns reason strings (empty = none).
+
+    Each executed result's rows are checked against the report's full narrative text.
+    The detector is high-precision — it needs the universal phrasing AND the number to
+    be one of several DIFFERING values in that result's columns — so a cross-query
+    false match is unlikely. Surfaced as a DataQualityNote caveat, never blocking."""
+    texts: list[str] = [report.headline, report.verdict]
+    for f in report.key_findings:
+        texts.append(f.claim)
+        texts.append(f.evidence)
+    for r in report.recommended_actions:
+        texts.append(r)
+    full_text = " ".join(t for t in texts if t)
+    if not full_text.strip():
+        return []
+
+    reasons: list[str] = []
+    seen: set[str] = set()
+    for r in query_history:
+        if getattr(r, "error", None):
+            continue
+        reason = inverted_universal_claim(full_text, getattr(r, "rows", None))
+        if reason and reason not in seen:
+            seen.add(reason)
+            reasons.append(reason)
+    return reasons
+
+
 def build_pre_synthesis_number_check(
     query_history: list["QueryResult"],
 ) -> str:

@@ -74,3 +74,54 @@ class TestRobustness:
     def test_decimal_value_match(self):
         rows = [["a", 2.49], ["b", 7.1], ["c", 3.0]]
         assert inverted_universal_claim("All SKUs average 2.49 returns.", rows)
+
+
+# ── ADA report verifier (cross-surface wiring → DataQualityNote caveat) ────────
+
+def _report(headline="", verdict="", claims=(), actions=()):
+    from aughor.agent.state import AnalysisReport, Finding
+    return AnalysisReport(
+        headline=headline, verdict=verdict,
+        key_findings=[Finding(claim=c, evidence="", confidence=0.9) for c in claims],
+        what_is_not_the_cause=[], risks=[], recommended_actions=list(actions),
+    )
+
+
+def _qr(columns, rows, error=None):
+    from aughor.agent.state import QueryResult
+    return QueryResult(hypothesis_id="h1", sql="SELECT 1", columns=columns,
+                       rows=rows, row_count=len(rows), error=error)
+
+
+class TestADAReportVerifier:
+    def test_inverted_finding_flagged(self):
+        from aughor.agent.verify import verify_universal_claims
+        rep = _report(headline="AOV is flat.",
+                      claims=["All orders have 3 items, so basket size is uniform."])
+        qr = _qr(["items", "order_count"], VARYING)
+        reasons = verify_universal_claims(rep, [qr])
+        assert reasons and "over-generalises" in reasons[0]
+
+    def test_clean_report_not_flagged(self):
+        from aughor.agent.verify import verify_universal_claims
+        rep = _report(headline="Revenue grew 12% in Q4.",
+                      claims=["The top region drove most of the gain."])
+        qr = _qr(["items", "order_count"], VARYING)
+        assert verify_universal_claims(rep, [qr]) == []
+
+    def test_uniform_data_not_flagged(self):
+        from aughor.agent.verify import verify_universal_claims
+        rep = _report(headline="All months have 3 launches.")
+        qr = _qr(["month", "launches"], [["jan", 3], ["feb", 3], ["mar", 3]])
+        assert verify_universal_claims(rep, [qr]) == []
+
+    def test_errored_query_is_skipped(self):
+        from aughor.agent.verify import verify_universal_claims
+        rep = _report(headline="All orders have 3 items.")
+        qr = _qr(["items", "order_count"], VARYING, error="boom")
+        assert verify_universal_claims(rep, [qr]) == []
+
+    def test_empty_report_text_no_crash(self):
+        from aughor.agent.verify import verify_universal_claims
+        rep = _report()
+        assert verify_universal_claims(rep, [_qr(["a"], [[1], [2]])]) == []

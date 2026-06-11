@@ -996,10 +996,11 @@ def synthesize_report(state: AgentState) -> dict[str, Any]:
                 **{**report.model_dump(), "data_quality_notes": list(report.data_quality_notes) + [id_note]}
             )
 
-    # ── Post-synthesis numeric verifier ──────────────────────────────────────
+    # ── Post-synthesis verifiers (numeric grounding + narration inversion) ────
     try:
-        from aughor.agent.verify import verify_numeric_claims
-        unverified = verify_numeric_claims(report, state.get("query_history", []))
+        from aughor.agent.verify import verify_numeric_claims, verify_universal_claims
+        _qh = state.get("query_history", [])
+        unverified = verify_numeric_claims(report, _qh)
         if unverified:
             note = DataQualityNote(
                 table="Report Narrative",
@@ -1015,8 +1016,26 @@ def synthesize_report(state: AgentState) -> dict[str, Any]:
             report = AnalysisReport(
                 **{**report.model_dump(), "data_quality_notes": list(report.data_quality_notes) + [note]}
             )
+        # A finding that asserts a per-group value as UNIVERSAL ("all orders have 3
+        # items") while the result is a varying distribution — caveat, never drop a
+        # whole report over one over-generalised sentence.
+        inversions = verify_universal_claims(report, _qh)
+        if inversions:
+            inv_note = DataQualityNote(
+                table="Report Narrative",
+                column=None,
+                issue=(
+                    "A claim states a value as universal that the data shows varies: "
+                    + "; ".join(inversions) + ". Read it as a per-group value, not 'every' entity."
+                ),
+                impact="Over-generalising a per-group value misrepresents the distribution.",
+                recommended_fix="State the range or the per-group split instead of a single universal value.",
+            )
+            report = AnalysisReport(
+                **{**report.model_dump(), "data_quality_notes": list(report.data_quality_notes) + [inv_note]}
+            )
     except Exception:
-        pass  # verifier is best-effort — never block the report
+        pass  # verifiers are best-effort — never block the report
 
     return {"report": report, "unresolved_tensions": unresolved_tensions}
 
