@@ -6,6 +6,42 @@
 
 ---
 
+## 🚨 ARC STATUS — Robustness, Correctness Guards & the Measure-Additivity Layer (2026-06-11)
+
+**Branch `2026-06-11-robustness-finish` → merged to `main`.** Continued from the kernel/hardening arc below.
+Master ranked backlog + per-stage detail: memory `roadmap_priorities.md`; the additivity architecture:
+memory `arch_measure_additivity_gap.md`.
+
+**SHIPPED this arc (each runtime-verified; 600+ unit+integration green):**
+- **Product Robustness Program (#91)** — failure-path contract (4xx never 500; invalid SQL surfaces an
+  error; security boundary closed), hot-path fault injection (`/chat` + `SqlWriter.fix` + investigate
+  salvage degrade gracefully), crash-recovery drill (+ "recovered server actually serves" invariant),
+  `@app.on_event`→`lifespan` migration, and regression locks for the 3 original reported bugs.
+- **Correctness-guard expansion (#92)** — Phase-8 Binder repair (GROUP-BY-completeness + `EXTRACT(EPOCH)`
+  classes now repair to executable SQL), the chasm `COUNT(*)` lint, and the **narration-inversion guard**
+  (drops/caveats a per-group value universalised into a false "all X have N" claim) — all proven firing
+  on the real path.
+- **Metric unification hardening (#93)** — closed a cross-connection metric-leak (the schema-filter now
+  checks formula columns) and an over-aggressive ontology-overlay drop; fixed a real ~50% revenue/AOV
+  **under-count** on a warehouse ($252M → the correct $503M), verified end-to-end.
+- **Measure-additivity layer (#94, increment 1)** — the *root* fix for the grain class: detect from the
+  DATA whether a measure is per-unit (`SUM(price × quantity)`) or per-line (`SUM(margin)`) and guard the
+  misuse, so a SUM aggregates at the right grain on **any** connection — retiring the bug class generally
+  instead of registering metrics one warehouse at a time.
+
+**METHOD that drove it:** a *data-driven sweep* — run the product against real warehouses and scrutinise the
+numbers against the data — caught a $250M-class bug that 0 auto-flags missed, then a second grain bug; both
+became the metric + additivity fixes. Standing honesty bar reinforced: a "resolved"/"works" claim must be
+**runtime-proven** on the real path (caught three uncontrolled-measurement slips this arc); built ≠ wired ≠
+**leveraged**.
+
+**NEXT — measure-additivity increments #2–5:** inject a "measure grains" PREVENTION block into the SQL
+generator (highest leverage — stop the bug at generation, not just drop it) → persist grain on the
+ColumnProfile/ontology during profiling → cross-surface caveat in chat/ADA → an unsupported-metric-verdict
+guard (don't narrate "0% margin → not losing money" on a connection with no cost data).
+
+---
+
 ## 🚨 ARC STATUS — World-Class Hardening + Aughor Kernel (2026-06-10, compaction checkpoint)
 
 **Branch `2026-06-10-ui-uplift-k2` (synced to `main` = `2a57290`, 21 commits this arc, all pushed).**

@@ -2593,4 +2593,85 @@ Pinned `samples`, temp-0, N=3, `qwen3-coder-next:cloud`. Two results overturned 
 
 ---
 
-*Last updated: 2026-06-10 · 90 features — all shipped. See `ROADMAP.md` for upcoming milestones.*
+## 91. Product Robustness Program — Fail Graceful by Contract ✅ Shipped
+
+### What
+A test-locked guarantee that the platform fails *gracefully* under every adverse condition: bad inputs, dead dependencies, and crashes produce a clean error or a recovery — never a 500, a hang, or a silent-wrong success.
+
+### Why
+"Near-flawless & fool-proof before enterprise rollout." A fragility scan was reassuring, so the work was to *lock* the good behaviour and restore the safety net, not clean up a mess.
+
+### How
+1. **Failure-path contract** (`tests/integration/test_failure_paths.py`) — unknown resources → 4xx never 500; invalid SQL → a *surfaced* error, never silent-empty; the security boundary stays closed to stacked / comment-hidden / case-mixed `DROP`/`TRUNCATE`/`UPDATE`/`DELETE` and neutralises DDL-via-query-run.
+2. **Hot-path fault injection** (`tests/integration/test_fault_injection.py`) — when the LLM provider throws mid-request, `/chat` emits one error event and the process survives; `SqlWriter.fix()` fails *soft* (the contract the explorer relies on to drop one angle, not crash the run); the investigate salvage path never raises.
+3. **Crash recovery** — `scripts/chaos_drill.py` SIGKILLs the server mid-exploration and asserts orphans are FAILED-with-reason, checkpoints resume, the journal narrates it, **and** the recovered server actually serves a query (invariant I4).
+4. **Lifespan migration** — the 11 deprecated `@app.on_event("startup")` handlers became one `@asynccontextmanager` lifespan (behaviour byte-for-byte preserved).
+5. **Regression locks for the 3 original reported bugs** (`tests/integration/test_original_bugs_regression.py`) — a source-contract tripwire for the blank-canvas wiring, a real backend contract for sample-error surfacing, and an existence check for the temporal coverage suites.
+
+### Tech / libraries
+- FastAPI `TestClient`, pytest (`--run-e2e` opt-in for live-LLM cases), the K1 job kernel's `boot_recovery`.
+
+**Key files.** `tests/integration/test_failure_paths.py`, `test_fault_injection.py`, `test_original_bugs_regression.py`, `scripts/chaos_drill.py`, `aughor/api.py`.
+
+---
+
+## 92. Correctness-Guard Expansion — Binder Repair, Chasm `COUNT(*)`, Narration Inversion ✅ Shipped
+
+### What
+Three new deterministic guards in the trust layer, each born from a real wrong-number observed live.
+
+### Why
+The explorer kept dropping analytical angles to un-diagnosable DuckDB Binder errors, the fan-out guard ignored bare `COUNT(*)` chasms, and the narrator could universalise a per-group value into a confident falsehood.
+
+### How
+1. **Phase-8 Binder repair** (`aughor/sql/writer.py`) — reproduced the real DuckDB error strings, then added diagnosis branches for the GROUP-BY-completeness class and `EXTRACT(EPOCH FROM (date−date))`, plus prevention rules in the dialect prompt; the previously-dropped error classes now repair to executable SQL.
+2. **Chasm `COUNT(*)` lint** (`aughor/sql/fanout.py::count_star_chasm_fanout`) — flags `COUNT(*)` over ≥2 satellites of the same hub (the `campaigns ⋈ clicks ⋈ impressions` cross-product) that `detect_fanout` deliberately skips; silent on single joins, `COUNT(DISTINCT)`, and the pre-aggregated-CTE correct form.
+3. **Narration-inversion guard** (`aughor/agent/verify.py::inverted_universal_claim`) — fires only when prose makes an "all/every/each ⟨entity⟩ have/has ⟨N⟩" claim that the result distribution contradicts; the explorer **drops** the finding, chat/ADA **caveat** it (inline note + Trust-Receipt flag / `DataQualityNote`).
+
+### Component interactions
+- All three are wired and **runtime-proven** firing on the real path (explorer Phase-8 loop, `/chat`, `synthesize_report`), not inferred from sibling guards.
+
+**Key files.** `aughor/sql/writer.py`, `aughor/sql/fanout.py`, `aughor/agent/verify.py`, `aughor/agent/nodes.py`, `aughor/routers/investigations.py`.
+
+---
+
+## 93. Metric Unification Hardening — Stop the Cross-Connection Leak ✅ Shipped
+
+### What
+Closed two holes in the global-metric machinery that let a wrong canonical formula reach (or a right one miss) the generator's prompt — surfaced by a beautycommerce sweep where "revenue" was being computed three ways and intermittently under-counted ~50% ($252M vs the correct $503M).
+
+### Why
+A metric authored for one connection must never inject its column-mismatched formula into another's prompt, and a curated, Finance-approved formula must not be silently stripped by an unverified ontology template.
+
+### How
+1. **Formula-column schema filter** (`aughor/semantic/metrics.py::_metric_matches_schema`) — the filter checked a metric's tables + dimensions but **not the columns in its formula**, so `revenue = SUM(total_amount)` injected into a connection with no `total_amount`. Now every formula column must exist in the schema (sqlglot extraction; conservative — an unparseable formula adds no constraint).
+2. **Ontology-overlay catalog-keep** — the overlay dropped a curated catalog metric whenever the ontology had an *unverified same-name* metric, even a *different* failed template. Now it only drops when the failed ontology formula **matches** the catalog (preserving the product-of-sums protection); otherwise the Finance-approved catalog wins.
+3. **Registration** — beautycommerce's gross-line revenue / AOV registered in `data/metrics.json`, verified end-to-end (revenue $503M, AOV $179.82, deterministic across re-runs).
+
+**Key files.** `aughor/semantic/metrics.py`, `data/metrics.json`, `tests/unit/test_metric_schema_filter.py`.
+
+---
+
+## 94. Measure-Additivity Layer — Per-Unit vs Per-Line Grain ✅ Shipped (increment 1)
+
+### What
+The platform now learns each measure's **additive grain from the data**: a per-UNIT measure (a unit price → the additive line value is `price × quantity`) vs a per-LINE measure (an already-totalled margin → `SUM(margin)` is correct). It already modelled column semantic-type, entity grain, and joins — this adds the missing piece needed to aggregate a measure *correctly*.
+
+### Why
+Two measures can live in the same table at different grains (`final_price_usd` per-unit, `gross_margin_usd` per-line). Treating them identically produced both the revenue under-count *and* a margin double-count (−$20,882 vs the correct −$8,712). Per-connection metric registration was a band-aid that could even over-generalise; detecting grain from the data retires the class generally.
+
+### How
+1. **Detection signal** (`aughor/semantic/measure_grain.py`) — bucket rows by the quantity column and read `AVG(measure)`: flat (ratio ≈1) → per-unit; scales (ratio ≈k) → per-line. Verified on real data before building; conservative `unknown` unless the fit is clean. One cheap `GROUP BY` probe, cached per connection (0.1s on 2.7M rows).
+2. **Misuse guard** — `SUM(per_line × quantity)` = double-count; `SUM(per_unit)` without `× quantity` = under-count; correct forms silent. Wired into the explorer drop path; runtime-proven dropping the real gross-margin double-count on the live connection.
+
+### Component interactions
+- Next increments (tracked): inject a "measure grains" PREVENTION block into the generator; persist grain on the ColumnProfile/ontology during profiling; cross-surface caveat in chat/ADA.
+
+### Tech / libraries
+- DuckDB (the AVG-by-quantity probe), SQLGlot (the guard's AST), pytest.
+
+**Key files.** `aughor/semantic/measure_grain.py`, `aughor/explorer/agent.py`, `tests/unit/test_measure_grain.py`.
+
+---
+
+*Last updated: 2026-06-11 · 94 features — all shipped. See `ROADMAP.md` for upcoming milestones.*
