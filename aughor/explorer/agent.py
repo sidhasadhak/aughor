@@ -2187,9 +2187,17 @@ class SchemaExplorer:
                             integer_division_risk, count_star_entity_fanout, count_star_chasm_fanout,
                         )
                         _tc = getattr(sql_writer, "table_cols", {})
+                        # Measure-additivity: per-unit measure summed without ×quantity
+                        # (under-count) or per-line measure ×quantity (double-count). Grains
+                        # are data-detected once per connection and cached.
+                        from aughor.semantic.measure_grain import (
+                            connection_measure_grains, measure_grain_misuse,
+                        )
+                        _mg, _qc = connection_measure_grains(self.connection_id, self._conn, _tc)
                         _grain = (integer_division_risk(sql)
                                   or count_star_entity_fanout(sql, _tc)
-                                  or count_star_chasm_fanout(sql, _tc, dialect=getattr(self._conn, "dialect", "duckdb")))
+                                  or count_star_chasm_fanout(sql, _tc, dialect=getattr(self._conn, "dialect", "duckdb"))
+                                  or (measure_grain_misuse(sql, _mg, _qc, dialect=getattr(self._conn, "dialect", "duckdb")) if _mg else None))
                         if _grain:
                             from aughor.stats import stats as _s; _s.inc("explorer.grain_skips")
                             logger.info(
