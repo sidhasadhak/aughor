@@ -2183,9 +2183,21 @@ class SchemaExplorer:
                 # value is a real cell). Skip rather than store a runnable-but-wrong finding.
                 if not _skip_result:
                     try:
-                        from aughor.sql.fanout import integer_division_risk, count_star_entity_fanout
+                        from aughor.sql.fanout import (
+                            integer_division_risk, count_star_entity_fanout, count_star_chasm_fanout,
+                        )
+                        _tc = getattr(sql_writer, "table_cols", {})
+                        # Measure-additivity: per-unit measure summed without ×quantity
+                        # (under-count) or per-line measure ×quantity (double-count). Grains
+                        # are data-detected once per connection and cached.
+                        from aughor.semantic.measure_grain import (
+                            connection_measure_grains, measure_grain_misuse,
+                        )
+                        _mg, _qc = connection_measure_grains(self.connection_id, self._conn, _tc)
                         _grain = (integer_division_risk(sql)
-                                  or count_star_entity_fanout(sql, getattr(sql_writer, "table_cols", {})))
+                                  or count_star_entity_fanout(sql, _tc)
+                                  or count_star_chasm_fanout(sql, _tc, dialect=getattr(self._conn, "dialect", "duckdb"))
+                                  or (measure_grain_misuse(sql, _mg, _qc, dialect=getattr(self._conn, "dialect", "duckdb")) if _mg else None))
                         if _grain:
                             from aughor.stats import stats as _s; _s.inc("explorer.grain_skips")
                             logger.info(
@@ -2273,6 +2285,20 @@ class SchemaExplorer:
                     logger.info(
                         "[explorer:%s] Phase 8: %s/%s — skipping per-grain mislabel (line-item AVG sold as a per-order metric)",
                         self.connection_id, domain, nq.angle,
+                    )
+                    continue
+
+                # Drop narration-inversion findings — a per-group/per-row value the
+                # narrator universalised over a varying distribution ("3 orders have 1
+                # item" → "all orders have 3 items"). Deterministic: fires only when the
+                # prose says "all/every/each <entity> have/has <N>" AND N is one of
+                # several differing values in the result, so the data disproves it.
+                from aughor.agent.verify import inverted_universal_claim
+                _inv = inverted_universal_claim(interp.finding, rows)
+                if _inv:
+                    logger.info(
+                        "[explorer:%s] Phase 8: %s/%s — skipping narration inversion (%s)",
+                        self.connection_id, domain, nq.angle, _inv,
                     )
                     continue
 

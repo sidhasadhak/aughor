@@ -73,6 +73,12 @@ def _table_fk_roots(cols: list[str]) -> set[str]:
     return roots
 
 
+def _singular(t: str) -> str:
+    """Crude singular stem of a table name — used to tell the hub (stem == FK root)
+    from its satellites (many-side tables that merely carry the hub's FK)."""
+    return t[:-1] if t.endswith("s") else t
+
+
 def detect_fanout(sql: str, table_cols: dict[str, list[str]], dialect: str = "duckdb"):
     """Return a FanoutFinding if the OUTER scope fans out across ≥2 shared-root
     satellites with non-distinct aggregates over both, else None. Best-effort:
@@ -255,6 +261,88 @@ def count_star_entity_fanout(sql: str, table_cols: dict | None = None) -> str | 
                 return (f"COUNT(*) AS {m.group(1)} over a JOIN counts joined rows, not "
                         f"distinct {singular} — {tname}.{fk} makes {singular} the parent; "
                         f"use COUNT(DISTINCT {fk})")
+    return None
+
+
+def count_star_chasm_fanout(sql: str, table_cols: dict | None = None, dialect: str = "duckdb") -> str | None:
+    """``COUNT(*)`` over a CHASM — ≥2 base tables on the many-side of the SAME hub key
+    joined directly — counts the cross-product of the satellites, not either entity.
+    The textbook case `campaigns JOIN clicks JOIN impressions ... COUNT(*)` returns
+    clicks×impressions per campaign.
+
+    detect_fanout deliberately ignores COUNT(*) (it has no column to attribute to a
+    satellite) and defan() can't rewrite it (COUNT(*) of a cross-product has no single
+    correct meaning) — so this is a DROP signal, complementary to the de-fan rewrite
+    path. High-precision by the same rules as detect_fanout: needs ≥2 RAW base tables
+    (CTE/subquery sources excluded — pre-aggregating is the fix) sharing an FK root, and
+    a non-distinct COUNT(*)/COUNT(1) in the OUTER scope. Pure static analysis; returns a
+    reason string or None; never raises."""
+    try:
+        import sqlglot
+        from sqlglot import exp
+        from sqlglot.optimizer.scope import build_scope
+    except Exception:
+        return None
+    try:
+        tree = sqlglot.parse_one(sql, read=dialect)
+    except Exception:
+        return None
+    if tree is None:
+        return None
+    try:
+        root = build_scope(tree)
+    except Exception:
+        root = None
+    if root is None:
+        return None
+
+    # RAW base tables in the OUTER scope (exclude CTE references — pre-aggregated = safe).
+    cte_names = {c.alias_or_name.lower() for c in tree.find_all(exp.CTE)}
+    base_tables: set[str] = set()
+    for _alias, source in root.sources.items():
+        if isinstance(source, exp.Table):
+            name = source.name.lower()
+            if name not in cte_names:
+                base_tables.add(name)
+    if len(base_tables) < 2:
+        return None
+
+    def _schema_cols(bare: str) -> list[str]:
+        for t, cols in (table_cols or {}).items():
+            if str(t).split(".")[-1].lower() == bare or str(t).lower() == bare:
+                return cols
+        return []
+
+    # Satellites of a hub = base tables that carry the hub's FK root but are NOT the
+    # hub itself (the hub's singular stem equals the root). A chasm needs ≥2 satellites
+    # of the SAME hub joined directly — a single hub⋈satellite join is not a chasm.
+    roots_by_table = {bt: _table_fk_roots(_schema_cols(bt)) for bt in base_tables}
+    sat_by_root: dict[str, set[str]] = {}
+    for bt in base_tables:
+        for r in roots_by_table[bt]:
+            if _singular(bt) != r and bt != r:   # bt is a satellite of hub r, not the hub
+                sat_by_root.setdefault(r, set()).add(bt)
+    chasm = {r: sats for r, sats in sat_by_root.items() if len(sats) >= 2}
+    if not chasm:
+        return None
+
+    # A non-distinct COUNT(*) / COUNT(1) in the OUTER scope.
+    outer = root.expression
+    for cnt in outer.find_all(exp.Count):
+        inner = cnt.this
+        if isinstance(inner, exp.Distinct):
+            continue
+        is_star = inner is None or isinstance(inner, exp.Star) or (
+            isinstance(inner, exp.Literal) and not inner.is_string)
+        if is_star:
+            r = sorted(chasm)[0]
+            sats = sorted(chasm[r])
+            return (
+                f"COUNT(*) over a chasm join ({', '.join(sats)} are each on the many-side "
+                f"of '{r}') counts the cross-product of the satellites, not either entity — "
+                f"pre-aggregate each in its own CTE keyed by '{r}', or use "
+                f"COUNT(DISTINCT <entity>_id) for the entity you mean to count"
+            )
     return None
 
 

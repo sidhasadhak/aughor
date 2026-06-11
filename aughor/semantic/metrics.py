@@ -227,18 +227,41 @@ def _schema_tables_and_columns(schema_text: str) -> tuple[set[str], set[str]]:
         return set(), set()
 
 
+def _formula_columns(sql_expr: str) -> set[str]:
+    """Bare column names referenced in a metric FORMULA fragment, via sqlglot.
+    Best-effort: returns an empty set on any parse trouble so the caller adds NO
+    formula-column constraint (over-injection is safer than wrongly dropping a
+    valid metric). Function names / literals are not columns, so they're excluded."""
+    try:
+        import sqlglot
+        from sqlglot import exp
+        tree = sqlglot.parse_one(f"SELECT {sql_expr}", read="duckdb")
+    except Exception:
+        return set()
+    if tree is None:
+        return set()
+    return {c.name.lower() for c in tree.find_all(exp.Column) if c.name}
+
+
 def _metric_matches_schema(metric, tables: set[str], cols: set[str]) -> bool:
-    """True if every table and dimension the metric declares is present in the
-    target connection's schema. Metrics are stored globally, so without this a
-    metric authored for one connection (e.g. SALES on `final_price_usd`) leaks a
-    wrong, column-mismatched formula into every other connection's prompt — a
-    real NL2SQL-corrupting bug surfaced by the golden-SQL eval. Conservative:
-    only drops a metric when a declared table/dimension is genuinely absent."""
+    """True if every table, dimension AND formula column the metric declares is
+    present in the target connection's schema. Metrics are stored globally, so
+    without this a metric authored for one connection (e.g. SALES on
+    `final_price_usd`) leaks a wrong, column-mismatched formula into every other
+    connection's prompt — a real NL2SQL-corrupting bug surfaced by the golden-SQL
+    eval. The formula-column check closes the half the table/dimension checks
+    miss: a metric like `revenue = SUM(total_amount)` must NOT inject into a
+    connection whose orders has `o_totalprice`/`final_price_usd` and no
+    `total_amount` (observed leaking AVG(total_amount) into beautycommerce, which
+    has neither). Conservative: only drops when a declared name is genuinely absent."""
     for tbl in (metric.tables or []):
         if tbl.split(".")[-1].lower() not in tables:
             return False
     for dim in (metric.dimensions or []):
         if dim.split(".")[-1].lower() not in cols:
+            return False
+    for col in _formula_columns(getattr(metric, "sql", "") or ""):
+        if col not in cols:
             return False
     return True
 
@@ -277,7 +300,19 @@ def _apply_ontology_overlay(
             out.append(m)
             continue
         if not getattr(om, "verified", False):
-            continue  # validator proved this formula wrong on this connection — drop it
+            # An unverified ontology metric means the validator could not confirm THE
+            # ONTOLOGY'S formula — which says nothing about the curated catalog formula
+            # unless they are the SAME. Drop the catalog metric ONLY when the failed
+            # ontology formula matches it (the original SUM(a)*SUM(b) product-of-sums
+            # case); otherwise the curated, Finance-approved catalog is highest
+            # authority and wins. (Without this, a connection whose ontology carries a
+            # wrong templated SUM(total_amount) — e.g. beautycommerce — silently strips
+            # the correct catalog revenue/AOV from the LLM prompt.)
+            om_sql = (getattr(om, "formula_sql", "") or "").strip()
+            if om_sql and om_sql == (m.sql or "").strip():
+                continue  # validator tested THIS exact formula and it failed → drop
+            out.append(m)
+            continue
         new_sql = getattr(om, "formula_sql", "") or ""
         if new_sql.strip() and new_sql.strip() != (m.sql or "").strip():
             m = m.model_copy(update={"sql": new_sql})  # corrected formula

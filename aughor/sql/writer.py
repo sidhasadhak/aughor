@@ -150,6 +150,24 @@ def _make_diagnosis(error: str, sql: str, table_cols: dict[str, list[str]]) -> s
             f"Prefix every use of it with the intended table alias (e.g. o.{bad} or oi.{bad})."
         )
 
+    # Non-aggregated column in SELECT/ORDER BY missing from GROUP BY
+    # (DuckDB: 'column "x" must appear in the GROUP BY clause or must be part of
+    #  an aggregate function.'). The column EXISTS — it just needs grouping or
+    # aggregating, so this is distinct from the missing-column branch above and
+    # must NOT be treated as a dead reference.
+    m = re.search(r'column\s+"?(\w+)"?\s+must appear in the GROUP BY clause', error, re.IGNORECASE)
+    if m:
+        bad = m.group(1)
+        return (
+            f"DIAGNOSIS: column '{bad}' is selected or ordered-by but is neither listed in "
+            f"GROUP BY nor wrapped in an aggregate. Choose ONE: (a) add '{bad}' to the GROUP BY "
+            f"clause if you want one row per '{bad}' value; (b) wrap it in an aggregate matching "
+            f"the intent — SUM/COUNT/AVG for a metric, or MIN/MAX/ANY_VALUE({bad}) for a "
+            f"display-only attribute. If '{bad}' appears only in ORDER BY, order by an aggregate "
+            f"instead (e.g. ORDER BY SUM(metric) DESC), not the raw column. "
+            f"Do NOT drop the column — it exists; it is only ungrouped."
+        )
+
     # Outer join directly onto a subquery (DuckDB can't do non-inner joins on arbitrary subqueries)
     if "non-inner join on subquery" in error.lower():
         return (
@@ -222,16 +240,20 @@ def _make_diagnosis(error: str, sql: str, table_cols: dict[str, list[str]]) -> s
         )
 
     # DuckDB: date_part/EXTRACT applied to a date subtraction. (date - date)
-    # returns an INTEGER number of days, so date_part('day', a - b) fails with
-    # 'No function matches date_part(VARCHAR, BIGINT)'.
+    # returns an INTEGER number of days, so date_part('day', a - b) AND
+    # EXTRACT(EPOCH FROM (a - b)) — which DuckDB lowers to date_part('epoch', BIGINT) —
+    # both fail with 'No function matches date_part(VARCHAR, BIGINT)'.
     if "date_part" in err_lower and (
         "bigint" in err_lower or "integer" in err_lower or "no function matches" in err_lower
     ):
         return (
-            "DIAGNOSIS: date_part('day', a - b) fails because in DuckDB (date - date) "
-            "already returns an INTEGER number of days, not an interval. "
-            "Use date_diff('day', b, a) for the day difference between two dates/timestamps, "
-            "or just (a - b) when both are DATE. Remove the date_part/EXTRACT wrapper."
+            "DIAGNOSIS: date_part/EXTRACT on a date subtraction fails because in DuckDB "
+            "(date - date) already returns an INTEGER number of days, not an interval — so "
+            "date_part('day', a - b) and EXTRACT(EPOCH FROM (a - b)) both error. "
+            "For elapsed SECONDS use date_diff('second', b, a); for DAYS use "
+            "date_diff('day', b, a) or just (a - b) when both are DATE. Remove the "
+            "date_part/EXTRACT wrapper. (Subtracting two TIMESTAMPs yields an INTERVAL, on "
+            "which EXTRACT(EPOCH FROM ...) is valid — cast both sides to TIMESTAMP if you need seconds.)"
         )
 
     return ""
@@ -279,9 +301,10 @@ class SqlWriter:
     # DuckDB-specific rules injected into every write prompt
     _DUCKDB_RULES = """
 DUCKDB DIALECT RULES (violations cause runtime errors):
-- Date differences: use datediff('day', date1, date2) or CAST(date2 AS DATE) - CAST(date1 AS DATE). NEVER use TIMESTAMPDIFF, JULIANDAY, DATEDIFF(unit, ...) (those are MySQL/SQLite).
+- Date differences: use date_diff('day', date1, date2) for days or date_diff('second', a, b) for seconds. NEVER use TIMESTAMPDIFF, JULIANDAY. (date - date) already returns an INTEGER day count, so NEVER wrap a date subtraction in date_part/EXTRACT — date_part('day', a - b) and EXTRACT(EPOCH FROM (a - b)) both error. EXTRACT(EPOCH FROM ...) is valid ONLY on an INTERVAL (timestamp - timestamp).
 - Interval arithmetic: use INTERVAL '1' DAY syntax. NEVER cast an interval to numeric directly.
-- GROUP BY: NEVER put aggregate functions (COUNT, SUM, AVG, MAX, MIN) inside GROUP BY. Aggregates belong only in SELECT or HAVING.
+- GROUP BY (aggregates): NEVER put aggregate functions (COUNT, SUM, AVG, MAX, MIN) inside GROUP BY. Aggregates belong only in SELECT or HAVING.
+- GROUP BY (completeness): every column in SELECT or ORDER BY that is NOT inside an aggregate MUST also appear in GROUP BY. To show a non-grouped attribute, wrap it in MIN/MAX/ANY_VALUE(col); to sort by a metric, ORDER BY the aggregate (e.g. ORDER BY SUM(x) DESC), not a raw ungrouped column.
 - HAVING: reference only aggregate expressions or columns that appear in GROUP BY. You CANNOT reference SELECT aliases in HAVING.
 - String aggregation: use string_agg(col, sep) not GROUP_CONCAT.
 - Type casting: use col::TYPE syntax (e.g. val::DATE, val::NUMERIC) or CAST(val AS TYPE).

@@ -49,8 +49,12 @@ For "why did revenue drop 8%?" Aughor runs a LangGraph investigative loop: **dec
 ### 🛡 Trust guards — numbers you can act on
 The layer that separates Aughor from a plausible-sounding demo. Deterministic, engine-driven guards keep wrong numbers out of the intelligence:
 - **Numeral grounding** — every magnitude-bearing figure in a finding is verified against the actual result cells (catches the "2.49M" for a 2.49 cell, the `$3T` product-of-aggregates).
-- **Fan-out / symmetric-aggregate guard**, **dataset isolation** (no cross-dataset hallucinated joins), **timestamp typing** (a date-named integer can't pose as a date), **dead-reference memory** (stops re-proposing hallucinated columns), shared **repair-diagnosis branches**.
+- **Measure-additivity (grain) awareness** — detects from the data whether a measure is *per-unit* (a unit price → `SUM(price × quantity)`) or *per-line* (an already-totalled margin → `SUM(margin)`), so a SUM aggregates at the right grain. Catches the ~50% revenue under-count *and* the margin double-count that come from treating the two the same.
+- **Fan-out / symmetric-aggregate guard** (incl. chasm `COUNT(*)` and integer-division-of-aggregates lints), **dataset isolation** (no cross-dataset hallucinated joins), **timestamp typing** (a date-named integer can't pose as a date), **dead-reference memory** (stops re-proposing hallucinated columns), shared **repair-diagnosis branches**.
+- **Metric unification** — one canonical, governance-approved formula per metric, schema-filtered so a metric authored for one connection can never leak its (column-mismatched) formula into another's prompt.
+- **Narration-inversion guard** — drops/caveats a claim that over-generalises a per-group value into a universal one ("3 orders × 1 item" narrated as "all orders have 3 items").
 - **Angle-feasibility + intent-preservation** — won't ask a time-based question of a dateless table, and drops/flags a repair that silently changed the question's meaning.
+- **Graceful by contract** — bad inputs, dead dependencies, and crashes surface an error or recover; never a 500, a hang, or a silent-wrong success (locked by a failure-path + fault-injection + crash-recovery test suite).
 
 ### 📡 Intelligence surfaces + actionability
 One corpus at three altitudes — **Briefing → Hub → Domains** — plus the **Evidence** layer. Findings are actionable: **Monitor**, **Promote to Org**, **Share** (Slack/webhook/Jira), and scheduled **Brief delivery**. From the Activity log, a successful **Run fix** is *saved* as a finding (through the same guards), and **Fix all** repairs the errored set visible under your current filter — never starting a fresh crawl.
@@ -109,19 +113,19 @@ aughor/
 │   ├── ontology/     # Ontology builder, enricher, validator, store
 │   ├── routers/      # FastAPI domain routers (async, SSE)
 │   ├── security/     # Safety checker, PII scanner, audit log, query budget
-│   ├── semantic/     # Glossary, metrics, compiler, canonical resolver, KB
-│   ├── sql/          # SqlWriter, cost governor, fan-out guard
+│   ├── semantic/     # Glossary, metrics, compiler, canonical resolver, measure-grain, KB
+│   ├── sql/          # SqlWriter, cost governor, fan-out + grain guards
 │   └── tools/        # schema-linker, data catalog, profiler, stats
 ├── evals/            # run_tpch / run_tpcds / run_clickbench / run_golden / run_realdb
 ├── web/              # Next.js App Router — components, lib (api.ts), design tokens
 ├── docs/             # Adaptive-temporal-scope, intelligence-unification, rebuild/audit
-└── tests/            # pytest unit suite (286+)
+└── tests/            # pytest suite (600+ unit + integration; failure-path / fault-injection / chaos)
 ```
 
 ## Roadmap & features
 
 - **[ROADMAP.md](ROADMAP.md)** — prioritized backlog, shipped milestones, what's next.
-- **[FEATURES.md](FEATURES.md)** — a living reference of every major feature (86 and counting), how it works, and the files behind it.
+- **[FEATURES.md](FEATURES.md)** — a living reference of every major feature (90+ and counting), how it works, and the files behind it.
 
 ## License
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 # Load .env from the project root (no-op if python-dotenv not installed)
@@ -42,7 +43,36 @@ if not logging.getLogger().handlers:
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Aughor API")
+
+@asynccontextmanager
+async def _lifespan(app: "FastAPI"):
+    """Application lifespan — replaces the deprecated @app.on_event('startup')
+    handlers. The startup steps run in the SAME order they were previously
+    registered (FastAPI ran on_event handlers sequentially in registration
+    order); each step is individually fault-isolated inside its own helper, so
+    one failing step never aborts boot. Forward-references the step helpers
+    defined below — they are resolved at call time (startup), not import time.
+    """
+    # ── Startup ────────────────────────────────────────────────────────────────
+    await _kernel_journal_boot()
+    await _setup_samples()
+    await _sweep_stale_investigations()
+    await _purge_legacy_canvases()
+    await _ensure_default_workspace()
+    await _validate_connections()
+    await _start_explorers()
+    await _start_ontology_refresh_loop()
+    await _seed_playbook()
+    await _start_monitor_scheduler()
+    await _start_brief_scheduler()
+    yield
+    # ── Shutdown ───────────────────────────────────────────────────────────────
+    # Nothing to tear down explicitly: background loops (supervisor, ontology
+    # refresh) are cancelled by event-loop teardown, and the kernel's
+    # boot_recovery fails any job orphaned by the stop on the next start.
+
+
+app = FastAPI(title="Aughor API", lifespan=_lifespan)
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
 _cors_raw = os.environ.get("AUGHOR_CORS_ORIGINS", "http://localhost:3000,http://localhost:3001")
@@ -65,9 +95,8 @@ def _require_auth(key: str | None = Security(_api_key_header)) -> None:
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
 
-# ── Startup events ────────────────────────────────────────────────────────────
+# ── Startup steps (run by _lifespan above, in this order) ──────────────────────
 
-@app.on_event("startup")
 async def _kernel_journal_boot() -> None:
     # The boot event anchors the journal's timeline: restarts become visible,
     # and "jobs running before this seq with no later transition" is exactly
@@ -79,7 +108,6 @@ async def _kernel_journal_boot() -> None:
         logger.warning("Kernel ledger unavailable at boot: %s", exc)
 
 
-@app.on_event("startup")
 async def _setup_samples() -> None:
     # Run synchronous DB seeding off the event loop so startup returns instantly.
     loop = asyncio.get_event_loop()
@@ -108,7 +136,6 @@ async def _setup_samples() -> None:
         logger.warning("Samples DB setup failed (non-fatal): %s", exc)
 
 
-@app.on_event("startup")
 async def _sweep_stale_investigations() -> None:
     # Investigations orphaned mid-run (interrupted streams / restarts) get stuck
     # in 'running' forever and clutter history with un-openable items. Fail them.
@@ -121,7 +148,6 @@ async def _sweep_stale_investigations() -> None:
         logger.warning("Stale investigation sweep failed (non-fatal): %s", exc)
 
 
-@app.on_event("startup")
 async def _purge_legacy_canvases() -> None:
     # Auto-generated per-connection Canvases are no longer created. Purge any
     # left over from older installs so only user-created Canvases remain.
@@ -134,7 +160,6 @@ async def _purge_legacy_canvases() -> None:
         logger.warning("Canvas cleanup failed (non-fatal): %s", exc)
 
 
-@app.on_event("startup")
 async def _ensure_default_workspace() -> None:
     try:
         from aughor.workspace.store import ensure_default_workspace
@@ -143,7 +168,6 @@ async def _ensure_default_workspace() -> None:
         logger.warning("Workspace migration failed (non-fatal): %s", exc)
 
 
-@app.on_event("startup")
 async def _validate_connections() -> None:
     from aughor.db.registry import _db, _decrypt
     try:
@@ -242,7 +266,6 @@ async def _kernel_boot_recovery() -> None:
             logger.warning("Boot recovery: could not resume %s: %s", canvas_id or conn_id, exc)
 
 
-@app.on_event("startup")
 async def _start_explorers() -> None:
     """Kernel-supervised background work boot:
     1. fail jobs orphaned by the previous process + resume unfinished explorations,
@@ -292,12 +315,10 @@ async def _ontology_refresh_loop() -> None:
             logger.warning("Ontology refresh loop error: %s", exc)
 
 
-@app.on_event("startup")
 async def _start_ontology_refresh_loop() -> None:
     asyncio.create_task(_ontology_refresh_loop(), name="ontology-refresh")
 
 
-@app.on_event("startup")
 async def _seed_playbook() -> None:
     try:
         from aughor.playbook.builder import seed_from_kb, activate_seeded
@@ -310,11 +331,12 @@ async def _seed_playbook() -> None:
         promoted = activate_seeded()
         if promoted:
             logger.info("Activated %d seeded playbook entries.", promoted)
-    except Exception:
-        pass
+    except Exception as exc:
+        # Non-fatal: a missing/empty KB just means no seeded playbook. Surface it
+        # at warning level like every other startup step rather than swallowing.
+        logger.warning("Playbook seeding failed (non-fatal): %s", exc)
 
 
-@app.on_event("startup")
 async def _start_monitor_scheduler() -> None:
     """Load enabled monitors and start the APScheduler background thread."""
     try:
@@ -324,7 +346,6 @@ async def _start_monitor_scheduler() -> None:
         logger.warning("Monitor scheduler startup failed (non-fatal): %s", exc)
 
 
-@app.on_event("startup")
 async def _start_brief_scheduler() -> None:
     """Load enabled brief subscriptions and start their delivery scheduler."""
     try:
