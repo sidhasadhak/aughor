@@ -2276,6 +2276,20 @@ class SchemaExplorer:
                     )
                     continue
 
+                # Drop narration-inversion findings — a per-group/per-row value the
+                # narrator universalised over a varying distribution ("3 orders have 1
+                # item" → "all orders have 3 items"). Deterministic: fires only when the
+                # prose says "all/every/each <entity> have/has <N>" AND N is one of
+                # several differing values in the result, so the data disproves it.
+                from aughor.agent.verify import inverted_universal_claim
+                _inv = inverted_universal_claim(interp.finding, rows)
+                if _inv:
+                    logger.info(
+                        "[explorer:%s] Phase 8: %s/%s — skipping narration inversion (%s)",
+                        self.connection_id, domain, nq.angle, _inv,
+                    )
+                    continue
+
                 # Drop semantic metric drift (#5) — the self-repair loop swapped the
                 # metric column for one with a DIFFERENT business meaning (revenue↔cost,
                 # price↔qty) while "fixing" the SQL, so the finding now measures the
