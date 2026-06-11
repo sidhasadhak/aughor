@@ -148,6 +148,67 @@ def query_build_sql(body: _QueryBuildRequest):
     return {"sql": "\n".join(lines)}
 
 
+# ── Saved queries ─────────────────────────────────────────────────────────────
+# Persist a Query Builder query (SQL + visual spec) so it survives reloads. Connection-scoped,
+# mirrors the Canvas store pattern. ``spec`` is opaque JSON owned by the frontend.
+
+class _SaveQueryRequest(BaseModel):
+    connection_id: str
+    name: str
+    sql: str = ""
+    spec: dict = {}
+
+
+class _UpdateSavedQueryRequest(BaseModel):
+    name: str | None = None
+    sql: str | None = None
+    spec: dict | None = None
+
+
+@router.get("/saved-queries")
+def saved_queries_list(connection_id: str | None = None):
+    """List saved queries, optionally filtered to one connection (newest first)."""
+    from aughor.savedquery.store import list_saved_queries
+    return [q.model_dump() for q in list_saved_queries(connection_id)]
+
+
+@router.post("/saved-queries", status_code=201)
+def saved_queries_create(body: _SaveQueryRequest):
+    """Create a saved query from the current builder state."""
+    if not body.name.strip():
+        raise HTTPException(status_code=400, detail="name is required")
+    from aughor.savedquery.store import create_saved_query
+    q = create_saved_query(body.connection_id, body.name.strip(), body.sql, body.spec)
+    return q.model_dump()
+
+
+@router.get("/saved-queries/{query_id}")
+def saved_queries_get(query_id: str):
+    from aughor.savedquery.store import get_saved_query
+    q = get_saved_query(query_id)
+    if not q:
+        raise HTTPException(status_code=404, detail="Saved query not found")
+    return q.model_dump()
+
+
+@router.put("/saved-queries/{query_id}")
+def saved_queries_update(query_id: str, body: _UpdateSavedQueryRequest):
+    from aughor.savedquery.store import update_saved_query
+    q = update_saved_query(query_id, name=body.name, sql=body.sql, spec=body.spec)
+    if not q:
+        raise HTTPException(status_code=404, detail="Saved query not found")
+    return q.model_dump()
+
+
+@router.delete("/saved-queries/{query_id}", status_code=200)
+def saved_queries_delete(query_id: str):
+    from aughor.savedquery.store import delete_saved_query
+    ok = delete_saved_query(query_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Saved query not found")
+    return {"ok": True, "id": query_id}
+
+
 @router.get("/query/cache/stats")
 def query_cache_stats():
     """Return materialization cache statistics."""

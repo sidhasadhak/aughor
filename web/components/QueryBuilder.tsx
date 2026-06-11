@@ -5,8 +5,9 @@ import { compactNumber } from "@/lib/format";
 import {
   getConnections, getSchemaRich, getTableColumns, getMetrics, runDirectQuery, getCatalogTree,
   createCanvas, suggestCanvasName,
+  listSavedQueries, createSavedQuery, updateSavedQuery, deleteSavedQuery,
   type Connection, type SchemaColumn, type SchemaJoin, type Metric, type DirectQueryResult,
-  type CatalogEntry,
+  type CatalogEntry, type SavedQuery,
 } from "@/lib/api";
 import { InvestigationChart } from "@/components/InvestigationChart";
 import { ResizableSplit } from "@/components/ResizableSplit";
@@ -653,6 +654,16 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
   const [nfOp,    setNfOp]    = useState<FilterOp>("=");
   const [nfVal,   setNfVal]   = useState("");
 
+  // Saved queries (persistence) — savedId/savedName track the currently loaded saved query so
+  // "Save" updates in place; the dropdown lists this connection's saved queries to load/delete.
+  const [savedList,   setSavedList]   = useState<SavedQuery[]>([]);
+  const [savedId,     setSavedId]     = useState<string|null>(null);
+  const [savedName,   setSavedName]   = useState("");
+  const [showSaved,   setShowSaved]   = useState(false);
+  const [showSaveName, setShowSaveName] = useState(false);
+  const [saveName,    setSaveName]    = useState("");
+  const [savingState, setSavingState] = useState<"idle"|"saving"|"saved">("idle");
+
   useEffect(() => {
     getConnections().then(cs => { setConnections(cs); if (!connId && cs.length) setConnId(cs[0].id); }).catch(()=>{});
     getMetrics().then(setMetrics).catch(()=>{});
@@ -718,6 +729,13 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
     if (!autoSql || !primaryTable) return;
     setSql(buildSql(primaryTable, joinedTables, schemaJoins, dims, measures, filters, orderBy, limit, tableSchemas));
   }, [autoSql, primaryTable, joinedTables, schemaJoins, dims, measures, filters, orderBy, limit, tableSchemas]);
+
+  // Load this connection's saved queries; reset the active saved-query pointer on switch.
+  useEffect(() => {
+    setSavedId(null); setSavedName("");
+    if (!connId) { setSavedList([]); return; }
+    listSavedQueries(connId).then(setSavedList).catch(() => setSavedList([]));
+  }, [connId]);
 
   const allTables = primaryTable ? [primaryTable, ...joinedTables] : [];
   const isMulti   = allTables.length > 1;
@@ -863,6 +881,75 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
     finally { setRunning(false); }
   };
 
+  // ── Saved-query persistence ────────────────────────────────────────────────
+  // The visual builder state we persist so loading restores the builder, not just the SQL.
+  const buildSpec = useCallback(() => ({
+    primaryTable, joinedTables, dims, measures, filters, orderBy, limit,
+  }), [primaryTable, joinedTables, dims, measures, filters, orderBy, limit]);
+
+  const suggestedName = () => {
+    if (!primaryTable) return "Untitled query";
+    const ms = measures.map(m => m.alias || m.col || m.agg).filter(Boolean).slice(0, 2).join(", ");
+    return ms ? `${primaryTable} · ${ms}` : `${primaryTable} query`;
+  };
+
+  const refreshSavedList = useCallback(() => {
+    if (connId) listSavedQueries(connId).then(setSavedList).catch(() => {});
+  }, [connId]);
+
+  const doCreateSaved = async (name: string) => {
+    if (!connId || !name.trim()) return;
+    setSavingState("saving");
+    try {
+      const q = await createSavedQuery(connId, name.trim(), sql, buildSpec());
+      setSavedId(q.id); setSavedName(q.name);
+      setShowSaveName(false); setSaveName("");
+      setSavingState("saved"); setTimeout(() => setSavingState("idle"), 1500);
+      refreshSavedList();
+    } catch (e) { alert((e as Error).message || "Failed to save query"); setSavingState("idle"); }
+  };
+
+  const doUpdateSaved = async () => {
+    if (!savedId) return;
+    setSavingState("saving");
+    try {
+      const q = await updateSavedQuery(savedId, { name: savedName, sql, spec: buildSpec() });
+      setSavedName(q.name);
+      setSavingState("saved"); setTimeout(() => setSavingState("idle"), 1500);
+      refreshSavedList();
+    } catch (e) { alert((e as Error).message || "Failed to update query"); setSavingState("idle"); }
+  };
+
+  const onSaveClick = () => {
+    if (!sql.trim()) return;
+    if (savedId) doUpdateSaved();
+    else { setSaveName(suggestedName()); setShowSaveName(true); }
+  };
+
+  const loadSaved = (q: SavedQuery) => {
+    const s = (q.spec || {}) as Record<string, unknown>;
+    setPrimaryTable((s.primaryTable as string) ?? null);
+    setJoinedTables(Array.isArray(s.joinedTables) ? s.joinedTables as string[] : []);
+    setDims(Array.isArray(s.dims) ? s.dims as DimItem[] : []);
+    setMeasures(Array.isArray(s.measures) ? s.measures as MeasureItem[] : []);
+    setFilters(Array.isArray(s.filters) ? s.filters as FilterItem[] : []);
+    setOrderBy(typeof s.orderBy === "string" ? s.orderBy : "");
+    setLimit(typeof s.limit === "number" ? s.limit : 1000);
+    setAutoSql(false);            // preserve the saved SQL exactly
+    setSql(q.sql);
+    setSavedId(q.id); setSavedName(q.name);
+    setResult(null); setRunError(null); setShowSaved(false);
+  };
+
+  const removeSaved = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await deleteSavedQuery(id);
+      if (savedId === id) { setSavedId(null); setSavedName(""); }
+      refreshSavedList();
+    } catch { /* best-effort */ }
+  };
+
   const commitFilter = () => {
     if (!nfCol) return;
     setFilters(p => [...p, {id:uid(),col:nfCol,table:nfTable||primaryTable||"",op:nfOp,val:nfVal}]);
@@ -945,6 +1032,79 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
 
         {/* Right controls */}
         <div className="ml-auto flex items-center gap-3">
+
+          {/* Saved queries — persistence */}
+          <div className="relative flex items-center gap-1.5">
+            <button onClick={() => { setShowSaved(v => !v); refreshSavedList(); }}
+              title="Open saved queries"
+              className="flex items-center gap-1 text-[11px] text-zinc-400 hover:text-zinc-200 border border-zinc-700 rounded-lg px-2.5 py-1 transition">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" className="shrink-0">
+                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+              </svg>
+              {savedName ? <span className="max-w-[110px] truncate">{savedName}</span> : "Saved"}
+              {savedList.length > 0 && <span className="text-zinc-500">{savedList.length}</span>}
+              <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="shrink-0"><polyline points="1,2 4,6 7,2"/></svg>
+            </button>
+            <button onClick={onSaveClick} disabled={!sql.trim()}
+              title={savedId ? "Update this saved query" : "Save the current query"}
+              className={`text-[11px] rounded-lg px-2.5 py-1 transition border disabled:opacity-40 ${
+                savingState === "saved" ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+                  : "border-zinc-700 text-zinc-300 hover:border-zinc-500 hover:text-zinc-100"
+              }`}>
+              {savingState === "saving" ? "Saving…" : savingState === "saved" ? "Saved ✓" : savedId ? "Save" : "Save"}
+            </button>
+
+            {/* Saved-query list */}
+            {showSaved && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setShowSaved(false)} />
+                <div className="absolute right-0 top-full mt-2 z-40 w-72 rounded-md border border-zinc-700 bg-zinc-900 shadow-2xl overflow-hidden">
+                  <div className="px-3 py-2 border-b border-zinc-700/50 flex items-center justify-between">
+                    <span className="text-[11px] font-semibold text-zinc-400">Saved queries</span>
+                    <button onClick={() => { setSavedId(null); setSaveName(suggestedName()); setShowSaved(false); setShowSaveName(true); }}
+                      disabled={!sql.trim()}
+                      className="text-[11px] text-blue-400 hover:text-blue-300 disabled:opacity-40">+ Save current as…</button>
+                  </div>
+                  <div className="max-h-[320px] overflow-y-auto">
+                    {savedList.length === 0 ? (
+                      <p className="px-3 py-3 text-[11px] text-zinc-500">No saved queries for this connection yet.</p>
+                    ) : savedList.map(q => (
+                      <div key={q.id} onClick={() => loadSaved(q)}
+                        className={`group/sq flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-zinc-800/70 border-b border-zinc-700/30 last:border-0 ${q.id === savedId ? "bg-zinc-800/40" : ""}`}>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[12px] text-zinc-200 truncate">{q.name}</p>
+                          <p className="text-[10px] text-zinc-500 truncate font-mono">{(q.sql || "").replace(/\s+/g, " ").slice(0, 52)}</p>
+                        </div>
+                        {q.id === savedId && <span className="text-[9px] text-blue-400 shrink-0">active</span>}
+                        <button onClick={(e) => removeSaved(q.id, e)} title="Delete saved query"
+                          className="opacity-0 group-hover/sq:opacity-100 text-zinc-500 hover:text-red-400 shrink-0 leading-none">✕</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Name prompt for create */}
+            {showSaveName && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowSaveName(false)} />
+                <div className="absolute right-0 top-full mt-2 z-50 w-72 rounded-md border border-zinc-700 bg-zinc-900 shadow-2xl p-3">
+                  <p className="text-[11px] font-semibold text-zinc-400 mb-2">Save query as</p>
+                  <input autoFocus value={saveName} onChange={e => setSaveName(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter") doCreateSaved(saveName); if (e.key === "Escape") setShowSaveName(false); }}
+                    placeholder="Query name"
+                    className="w-full text-[12px] bg-zinc-800 border border-zinc-600 rounded-md px-2.5 py-1.5 text-zinc-200 outline-none focus:border-zinc-400" />
+                  <div className="flex justify-end gap-2 mt-2.5">
+                    <button onClick={() => setShowSaveName(false)} className="text-[11px] text-zinc-400 hover:text-zinc-200 px-2 py-1">Cancel</button>
+                    <button onClick={() => doCreateSaved(saveName)} disabled={!saveName.trim()}
+                      className="text-[11px] bg-blue-600 hover:bg-blue-500 text-white rounded-md px-3 py-1 font-medium disabled:opacity-40">Save</button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
           {!autoSql && (
             <button
               onClick={() => { setAutoSql(true); if (primaryTable) setSql(buildSql(primaryTable,joinedTables,schemaJoins,dims,measures,filters,orderBy,limit,tableSchemas)); }}
