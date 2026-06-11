@@ -188,6 +188,51 @@ function resolveJoins(primary: string, joined: string[], joins: SchemaJoin[]) {
   });
 }
 
+// ── Time controls ─────────────────────────────────────────────────────────────
+// A first-class time range (relative presets + custom) and time grain — the two most-used
+// controls in real BI, previously buried in a per-dimension transform dropdown.
+
+type TimePreset = "all"|"7d"|"30d"|"90d"|"this_month"|"last_month"|"this_quarter"|"this_year"|"ytd"|"custom";
+type TimeGrain  = "none"|"hour"|"day"|"week"|"month"|"quarter"|"year";
+
+interface TimeSpec { col: string; table: string; preset: TimePreset; from: string; to: string; grain: TimeGrain }
+
+const TIME_PRESETS: { id: TimePreset; label: string }[] = [
+  { id: "all",          label: "All time" },
+  { id: "7d",           label: "Last 7 days" },
+  { id: "30d",          label: "Last 30 days" },
+  { id: "90d",          label: "Last 90 days" },
+  { id: "this_month",   label: "This month" },
+  { id: "last_month",   label: "Last month" },
+  { id: "this_quarter", label: "This quarter" },
+  { id: "this_year",    label: "This year" },
+  { id: "ytd",          label: "Year to date" },
+  { id: "custom",       label: "Custom range" },
+];
+const TIME_GRAINS: TimeGrain[] = ["none", "hour", "day", "week", "month", "quarter", "year"];
+
+// Build a WHERE predicate for a relative/custom range on `col` (DuckDB/ANSI INTERVAL syntax).
+// Returns "" for "all" or an incomplete custom range. Pure + testable (no DB, no React).
+function timePredicate(preset: TimePreset, col: string, from: string, to: string): string {
+  switch (preset) {
+    case "7d":           return `${col} >= CURRENT_DATE - INTERVAL '7 days'`;
+    case "30d":          return `${col} >= CURRENT_DATE - INTERVAL '30 days'`;
+    case "90d":          return `${col} >= CURRENT_DATE - INTERVAL '90 days'`;
+    case "this_month":   return `${col} >= DATE_TRUNC('month', CURRENT_DATE)`;
+    case "last_month":   return `${col} >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 month' AND ${col} < DATE_TRUNC('month', CURRENT_DATE)`;
+    case "this_quarter": return `${col} >= DATE_TRUNC('quarter', CURRENT_DATE)`;
+    case "this_year":
+    case "ytd":          return `${col} >= DATE_TRUNC('year', CURRENT_DATE)`;
+    case "custom": {
+      const parts: string[] = [];
+      if (from.trim()) parts.push(`${col} >= '${from.trim()}'`);
+      if (to.trim())   parts.push(`${col} < '${to.trim()}'`);
+      return parts.join(" AND ");
+    }
+    default: return "";
+  }
+}
+
 // ── SQL builder ───────────────────────────────────────────────────────────────
 
 function buildSql(
@@ -195,6 +240,7 @@ function buildSql(
   dims: DimItem[], measures: MeasureItem[], filters: FilterItem[],
   orderBy: string, limit: number,
   tableSchemas?: Record<string, string>,
+  time?: TimeSpec,
 ) {
   const qTable = (t: string) => quoteTable(t, tableSchemas?.[t]);
   const multi = joined.length > 0;
@@ -210,7 +256,11 @@ function buildSql(
       default:         return base;
     }
   };
+  // Time grain — a DATE_TRUNC over the chosen time column, rendered as the leading dimension.
+  const timeBase = time?.col ? qualify(time.col, time.table, multi) : "";
+  const timeGrainExpr = (time && time.grain !== "none" && timeBase) ? `DATE_TRUNC('${time.grain}', ${timeBase})` : "";
   const selParts = [
+    ...(timeGrainExpr ? [`${timeGrainExpr} AS ${time!.col}_${time!.grain}`] : []),
     ...dims.map(d => `${dimExpr(d)} AS ${d.col}_grouped`),
     ...measures.map(m => `${measureExpr(m,multi)} AS ${m.alias || autoAlias(m.agg,m.col,m.customExpr)}`),
   ];
@@ -218,17 +268,22 @@ function buildSql(
     ({ table, join, pivot }) => join ? joinClause(join, pivot, tableSchemas) : `-- TODO: no join found for "${table}"`,
   );
   const hasAgg = measures.some(m => m.agg !== "CUSTOM" || /\b(SUM|COUNT|AVG|MIN|MAX|STDDEV|VARIANCE|MEDIAN)\s*\(/i.test(m.customExpr));
-  const groupCols = dims.map(d => dimExpr(d));
+  const groupCols = [
+    ...(timeGrainExpr ? [timeGrainExpr] : []),
+    ...dims.map(d => dimExpr(d)),
+  ];
   const groupBy   = groupCols.length && hasAgg ? `GROUP BY ${groupCols.join(", ")}` : "";
   const whereItems = filters.flatMap(f => {
     const qc = qualify(f.col,f.table,multi);
     if (NO_VAL_OPS.includes(f.op as FilterOp)) return [`${qc} ${f.op}`];
     return f.val.trim() ? [`${qc} ${f.op} ${f.val}`] : [];
   });
+  const timeWhere = time && timeBase ? timePredicate(time.preset, timeBase, time.from, time.to) : "";
+  const allWhere = timeWhere ? [...whereItems, timeWhere] : whereItems;
   return [
     "SELECT", `  ${selParts.length ? selParts.join(",\n  ") : "*"}`,
     `FROM ${qTable(primary)}`, ...joinLines,
-    ...(whereItems.length ? [`WHERE ${whereItems.join("\n  AND ")}`] : []),
+    ...(allWhere.length ? [`WHERE ${allWhere.join("\n  AND ")}`] : []),
     ...(groupBy ? [groupBy] : []),
     ...(orderBy.trim() ? [`ORDER BY ${orderBy}`] : []),
     ...(limit > 0 ? [`LIMIT ${limit}`] : []),
@@ -631,6 +686,14 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
   // footgun. 0 (or a cleared field) is an explicit "no limit" opt-out the user can still choose.
   const [limit,    setLimit]    = useState(1000);
 
+  // Time controls — opt-in: a chosen time column enables the range preset + grain.
+  const [timeCol,    setTimeCol]    = useState("");
+  const [timeColTable, setTimeColTable] = useState("");
+  const [timePreset, setTimePreset] = useState<TimePreset>("all");
+  const [timeFrom,   setTimeFrom]   = useState("");
+  const [timeTo,     setTimeTo]     = useState("");
+  const [timeGrain,  setTimeGrain]  = useState<TimeGrain>("none");
+
   const [aggInfo,     setAggInfo]     = useState<{col:SchemaColumn;table:string}|null>(null);
   const [overDims,    setOverDims]    = useState(false);
   const [overMeasures,setOverMeasures]= useState(false);
@@ -675,6 +738,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
     setLoadingCols(true);
     setPrimaryTable(null); setJoinedTables([]); setTableNames([]); setTableCols({});
     setSchemaJoins([]); setDims([]); setMeasures([]); setFilters([]);
+    setTimeCol(""); setTimeColTable(""); setTimePreset("all"); setTimeFrom(""); setTimeTo(""); setTimeGrain("none");
     setSql(""); setResult(null); setCatEntry(null); setExpandedSchemas({});
 
     // Phase 1 — fast: catalog tree gives us schema/table hierarchy immediately
@@ -727,8 +791,12 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
 
   useEffect(() => {
     if (!autoSql || !primaryTable) return;
-    setSql(buildSql(primaryTable, joinedTables, schemaJoins, dims, measures, filters, orderBy, limit, tableSchemas));
-  }, [autoSql, primaryTable, joinedTables, schemaJoins, dims, measures, filters, orderBy, limit, tableSchemas]);
+    const t: TimeSpec | undefined = timeCol
+      ? { col: timeCol, table: timeColTable || primaryTable, preset: timePreset, from: timeFrom, to: timeTo, grain: timeGrain }
+      : undefined;
+    setSql(buildSql(primaryTable, joinedTables, schemaJoins, dims, measures, filters, orderBy, limit, tableSchemas, t));
+  }, [autoSql, primaryTable, joinedTables, schemaJoins, dims, measures, filters, orderBy, limit, tableSchemas,
+      timeCol, timeColTable, timePreset, timeFrom, timeTo, timeGrain]);
 
   // Load this connection's saved queries; reset the active saved-query pointer on switch.
   useEffect(() => {
@@ -739,6 +807,10 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
 
   const allTables = primaryTable ? [primaryTable, ...joinedTables] : [];
   const isMulti   = allTables.length > 1;
+  // A chosen time column enables the range/grain; otherwise time controls are a no-op in SQL.
+  const timeSpec: TimeSpec | undefined = timeCol
+    ? { col: timeCol, table: timeColTable || primaryTable || "", preset: timePreset, from: timeFrom, to: timeTo, grain: timeGrain }
+    : undefined;
   const allCols   = allTables.flatMap(t => (tableCols[t]??[]).map(c => c.name));
   const qualCols  = isMulti ? allTables.flatMap(t => (tableCols[t]??[]).map(c => `${t}.${c.name}`)) : [];
   const joinStatuses = primaryTable ? resolveJoins(primaryTable, joinedTables, schemaJoins) : [];
@@ -768,6 +840,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
     if (schema) setTableSchemas(prev => ({ ...prev, [name]: schema }));
     setPrimaryTable(name); setJoinedTables([]); setExpandedTables({[name]: true});
     setDims([]); setMeasures([]); setFilters([]); setOrderBy("");
+    setTimeCol(""); setTimeColTable(""); setTimePreset("all"); setTimeFrom(""); setTimeTo(""); setTimeGrain("none");
     setResult(null); setRunError(null); setAutoSql(true); setColSearch("");
     const qTable = quoteTable(name, schema);
     setSql(limit > 0 ? `SELECT *\nFROM ${qTable}\nLIMIT ${limit}` : `SELECT *\nFROM ${qTable}`);
@@ -885,7 +958,9 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
   // The visual builder state we persist so loading restores the builder, not just the SQL.
   const buildSpec = useCallback(() => ({
     primaryTable, joinedTables, dims, measures, filters, orderBy, limit,
-  }), [primaryTable, joinedTables, dims, measures, filters, orderBy, limit]);
+    timeCol, timeColTable, timePreset, timeFrom, timeTo, timeGrain,
+  }), [primaryTable, joinedTables, dims, measures, filters, orderBy, limit,
+       timeCol, timeColTable, timePreset, timeFrom, timeTo, timeGrain]);
 
   const suggestedName = () => {
     if (!primaryTable) return "Untitled query";
@@ -935,6 +1010,12 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
     setFilters(Array.isArray(s.filters) ? s.filters as FilterItem[] : []);
     setOrderBy(typeof s.orderBy === "string" ? s.orderBy : "");
     setLimit(typeof s.limit === "number" ? s.limit : 1000);
+    setTimeCol(typeof s.timeCol === "string" ? s.timeCol : "");
+    setTimeColTable(typeof s.timeColTable === "string" ? s.timeColTable : "");
+    setTimePreset((s.timePreset as TimePreset) ?? "all");
+    setTimeFrom(typeof s.timeFrom === "string" ? s.timeFrom : "");
+    setTimeTo(typeof s.timeTo === "string" ? s.timeTo : "");
+    setTimeGrain((s.timeGrain as TimeGrain) ?? "none");
     setAutoSql(false);            // preserve the saved SQL exactly
     setSql(q.sql);
     setSavedId(q.id); setSavedName(q.name);
@@ -960,6 +1041,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
   const usedDimKeys = new Set(dims.map(d => `${d.table}.${d.col}`));
   const usedMeaCols = new Set(measures.map(m => `${m.table}.${m.col}`));
   const resolvedCols = allTables.flatMap(t => (tableCols[t] ?? []).map(c => ({ ...c, table: t })));
+  const timeColumns = resolvedCols.filter(c => isDate(c.type));
 
   const suggestedDims = resolvedCols
     .filter(c => !usedDimKeys.has(`${c.table}.${c.name}`) && !c.is_fk && !isIdLike(c.name)
@@ -1107,7 +1189,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
 
           {!autoSql && (
             <button
-              onClick={() => { setAutoSql(true); if (primaryTable) setSql(buildSql(primaryTable,joinedTables,schemaJoins,dims,measures,filters,orderBy,limit,tableSchemas)); }}
+              onClick={() => { setAutoSql(true); if (primaryTable) setSql(buildSql(primaryTable,joinedTables,schemaJoins,dims,measures,filters,orderBy,limit,tableSchemas,timeSpec)); }}
               className="text-[11px] text-zinc-500 hover:text-zinc-300 border border-zinc-700 rounded-lg px-2.5 py-1 transition">
               ↺ Regenerate SQL
             </button>
@@ -1449,6 +1531,47 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                         <span className={`w-1.5 h-1.5 rounded-full ${dot(s.type)}`}/> {s.name}
                       </button>
                     ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Time controls — range + grain over a date column */}
+              {primaryTable && timeColumns.length > 0 && (
+                <div className="rounded-md border border-zinc-700/40 bg-zinc-800/20 px-4 py-3">
+                  <div className="flex items-center gap-2 mb-2.5">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" strokeWidth="1.8" strokeLinecap="round" className="shrink-0">
+                      <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>
+                    </svg>
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Time</p>
+                    <span className="text-[11px] text-zinc-500">range &amp; grain over a date column</span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <select value={timeCol}
+                      onChange={e => { const v = e.target.value; setTimeCol(v); const tc = timeColumns.find(c => c.name === v); setTimeColTable(tc ? tc.table : ""); }}
+                      className="text-[12px] bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition">
+                      <option value="">No time column</option>
+                      {timeColumns.map(c => <option key={`${c.table}.${c.name}`} value={c.name}>{isMulti ? `${c.table}.` : ""}{c.name}</option>)}
+                    </select>
+                    <select value={timePreset} onChange={e => setTimePreset(e.target.value as TimePreset)} disabled={!timeCol}
+                      className="text-[12px] bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition disabled:opacity-40">
+                      {TIME_PRESETS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+                    </select>
+                    {timeCol && timePreset === "custom" && (
+                      <div className="flex items-center gap-1.5">
+                        <input type="date" value={timeFrom} onChange={e => setTimeFrom(e.target.value)}
+                          className="text-[12px] font-mono bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-zinc-200 outline-none focus:border-zinc-500" />
+                        <span className="text-zinc-500 text-[11px]">→</span>
+                        <input type="date" value={timeTo} onChange={e => setTimeTo(e.target.value)}
+                          className="text-[12px] font-mono bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-zinc-200 outline-none focus:border-zinc-500" />
+                      </div>
+                    )}
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[11px] text-zinc-500">grain</span>
+                      <select value={timeGrain} onChange={e => setTimeGrain(e.target.value as TimeGrain)} disabled={!timeCol}
+                        className="text-[12px] bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition disabled:opacity-40">
+                        {TIME_GRAINS.map(g => <option key={g} value={g}>{g}</option>)}
+                      </select>
+                    </div>
                   </div>
                 </div>
               )}
