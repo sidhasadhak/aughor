@@ -341,6 +341,19 @@ def rebuild_ontology(
             if in_memory else
             "Ontology could not be built for this connection (no schema returned)."
         )
+        # Journal the failure (the build raised before its own emit could fire) —
+        # the original "ontology silently doesn't build" becomes a queryable event.
+        try:
+            from aughor.kernel.ledger import Ledger
+            Ledger.default().emit(
+                "ontology.build",
+                {"ok": False, "entities": 0, "stage": "rebuild",
+                 "error": detail, "in_memory": in_memory},
+                conn_id=connection_id,
+            )
+        except Exception:
+            import logging
+            logging.getLogger(__name__).debug("ontology.build failure-emit skipped", exc_info=True)
         raise HTTPException(status_code=422, detail=detail)
     return {
         "ok": True,
@@ -348,6 +361,24 @@ def rebuild_ontology(
         "generated_at": graph.generated_at,
         "entities": len(graph.entities),
     }
+
+
+@router.get("/ontology/build-status")
+def ontology_build_status(connection_id: str = BUILTIN_ID, limit: int = 5):
+    """Surface the ontology build outcome — the WCH-3 observability the original
+    'ontology silently doesn't build' symptom needed. Returns the connection's
+    last in-memory build result (which stage failed + why) AND the recent
+    ontology.build journal events (persistent trail across restarts)."""
+    from aughor.kernel.ledger import Ledger
+    last_build = None
+    try:
+        db = open_connection_for(connection_id)
+        last_build = getattr(db, "last_build", None)
+        db.close()
+    except Exception:
+        last_build = None
+    events = Ledger.default().events(kind="ontology.build", conn_id=connection_id, limit=int(limit))
+    return {"connection_id": connection_id, "last_build": last_build, "recent_builds": events}
 
 
 # ── Skills (learned actions / procedural memory) ────────────────────────────────

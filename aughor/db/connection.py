@@ -830,8 +830,12 @@ class DuckDBConnection(DatabaseConnection):
                         from aughor.ontology.validator import validate_semantics
                         graph = validate_semantics(graph, self)
                         save_ontology(graph.connection_id, graph.schema_name, graph.schema_fingerprint, graph)
-                    except Exception:
-                        pass  # validation is best-effort — never block schema loading
+                    except Exception as _val_exc:
+                        # Best-effort — never block schema loading — but visible, not silent.
+                        from aughor.kernel.errors import tolerate
+                        tolerate(_val_exc, "semantic validation is best-effort; ontology still usable "
+                                 "unvalidated", counter="ontology.validation",
+                                 conn_id=self._connection_id or None)
                 _apply_explorer_to_ontology(graph, self._connection_id or "fixture")
                 self._ontology = graph
                 onto_block = render_ontology_annotations(graph)
@@ -847,8 +851,30 @@ class DuckDBConnection(DatabaseConnection):
             expl_block = render_exploration_annotations(self._connection_id or "fixture")
             if expl_block:
                 base += "\n\n" + expl_block
-        except Exception:
-            pass
+        except Exception as _expl_exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_expl_exc, "exploration annotation block is additive; schema loads without it",
+                     counter="ontology.exploration_block", conn_id=self._connection_id or None)
+
+        # Journal the build outcome (K2 event spine) — the original "ontology
+        # silently doesn't build" symptom becomes a queryable event with the
+        # failing stage + entity count, instead of a dead in-memory last_build.
+        try:
+            from aughor.kernel.ledger import Ledger
+            from aughor.kernel.jobs import current_job_id
+            _ents = len(getattr(self._ontology, "entities", {}) or {}) if getattr(self, "_ontology", None) else 0
+            _lb = getattr(self, "last_build", {}) or {}
+            Ledger.default().emit(
+                "ontology.build",
+                {"ok": bool(_lb.get("ok", True)) and _ents > 0,
+                 "entities": _ents, "stage": _lb.get("stage"), "error": _lb.get("error")},
+                conn_id=self._connection_id or None, job_id=current_job_id(),
+            )
+        except Exception as _j_exc:
+            # The ONE place we don't use tolerate() — it journals, which would
+            # recurse if the ledger is the thing that's broken. Log and move on.
+            import logging as _logging
+            _logging.getLogger(__name__).debug("ontology.build journal emit failed: %s", _j_exc)
 
         return base
 
