@@ -273,3 +273,30 @@ def reseed_playbook():
     from aughor.playbook.builder import seed_from_kb
     n = seed_from_kb(force=True)
     return {"seeded": n}
+
+
+@router.get("/metrics/enforcement-rate")
+def metric_enforcement_rate(connection_id: str = "", limit: int = 500):
+    """B-7 — the measured enforcement rate: of the answers that TARGETED a
+    governed metric, what fraction USED the governed formula (vs improvised).
+    Aggregated from the metric.enforcement journal events. The honest
+    denominator is metric-bearing answers only — questions with no governed
+    metric don't count for or against."""
+    from aughor.kernel.ledger import Ledger
+    evs = Ledger.default().events(
+        kind="metric.enforcement",
+        conn_id=connection_id or None, limit=int(limit),
+    )
+    total = len(evs)
+    enforced = sum(1 for e in evs if (e.get("payload") or {}).get("enforced"))
+    drift_metrics: dict[str, int] = {}
+    for e in evs:
+        for m in (e.get("payload") or {}).get("drift", []) or []:
+            drift_metrics[m] = drift_metrics.get(m, 0) + 1
+    return {
+        "connection_id": connection_id or "all",
+        "metric_bearing_answers": total,
+        "enforced": enforced,
+        "enforcement_rate": round(enforced / total, 3) if total else None,
+        "drift_by_metric": drift_metrics,
+    }

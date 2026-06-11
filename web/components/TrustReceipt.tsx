@@ -34,20 +34,26 @@ export function TrustReceipt({ connectionId, receiptId }: { connectionId: string
   if (!tried || !rec) return null;
 
   const metrics = rec.lineage.filter(l => l.relation === "metric_available");
+  const used = rec.lineage.filter(l => l.relation === "metric_used");      // B-7: governed formula used
+  const drift = rec.lineage.filter(l => l.relation === "metric_drift");    // B-7: improvised
   const guards = rec.lineage.filter(l => l.relation === "validated_by");
   const inputs = rec.lineage.filter(l => l.relation === "input");
   const sqlEdge = rec.lineage.find(l => l.relation === "source_sql");
-  // The metric whose formula the answer's SQL actually contains — "used", not just available.
-  const usedMetric = metrics.find(m => m.detail && (rec.artifact.payload?.sql as string || "").includes(m.detail.split("(")[0]));
 
-  const Badge = ({ tone, children }: { tone: "metric" | "guard" | "muted"; children: React.ReactNode }) => (
-    <span style={{
-      fontSize: 10, padding: "1px 6px", borderRadius: "var(--r1)", whiteSpace: "nowrap",
-      background: tone === "metric" ? "var(--blue1)" : tone === "guard" ? "var(--grn1)" : "var(--bg-3)",
-      border: `1px solid ${tone === "metric" ? "var(--blue2)" : tone === "guard" ? "var(--grn2)" : "var(--b1)"}`,
-      color: tone === "metric" ? "var(--blue4)" : tone === "guard" ? "var(--grn4)" : "var(--t3)",
-    }}>{children}</span>
-  );
+  const Badge = ({ tone, title, children }: { tone: "governed" | "drift" | "guard" | "muted"; title?: string; children: React.ReactNode }) => {
+    const c = {
+      governed: ["var(--blue1)", "var(--blue2)", "var(--blue4)"],
+      drift: ["var(--amb1)", "var(--amb2)", "var(--amb4)"],
+      guard: ["var(--grn1)", "var(--grn2)", "var(--grn4)"],
+      muted: ["var(--bg-3)", "var(--b1)", "var(--t3)"],
+    }[tone];
+    return (
+      <span title={title} style={{
+        fontSize: 10, padding: "1px 6px", borderRadius: "var(--r1)", whiteSpace: "nowrap",
+        background: c[0], border: `1px solid ${c[1]}`, color: c[2],
+      }}>{children}</span>
+    );
+  };
 
   return (
     <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 5 }}>
@@ -60,9 +66,10 @@ export function TrustReceipt({ connectionId, receiptId }: { connectionId: string
         aria-label="Trust receipt"
       >
         <span style={{ fontSize: 10, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".06em" }}>receipt</span>
-        {usedMetric && <Badge tone="metric">{usedMetric.ref.replace("metric:", "")} · governed</Badge>}
+        {used.map(m => <Badge key={m.ref} tone="governed" title={m.detail || ""}>{m.ref.replace("metric:", "")} · governed ✓</Badge>)}
+        {drift.map(m => <Badge key={m.ref} tone="drift" title={m.detail || ""}>⚠ {m.ref.replace("metric:", "")} · non-governed</Badge>)}
         {guards.map(g => <Badge key={g.ref} tone="guard">✓ {g.ref.replace("guard:", "").replace(/_/g, " ")}</Badge>)}
-        {!usedMetric && guards.length === 0 && <Badge tone="muted">{inputs.length} source{inputs.length !== 1 ? "s" : ""} · executed SQL</Badge>}
+        {used.length === 0 && drift.length === 0 && guards.length === 0 && <Badge tone="muted">{inputs.length} source{inputs.length !== 1 ? "s" : ""} · executed SQL</Badge>}
         <span style={{ fontSize: 10, color: "var(--t4)" }}>{open ? "▾" : "▸"}</span>
       </button>
 

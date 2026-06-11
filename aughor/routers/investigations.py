@@ -999,10 +999,19 @@ async def _stream_chat(
                 _lin = [("source_sql", "sql", final_sql)]
                 for _t in _extract_tables(final_sql):
                     _lin.append(("input", f"table:{_t}", None))
+                _enf = None
                 try:
                     from aughor.semantic.metrics import list_metrics, filter_metrics_to_schema
-                    for _m in filter_metrics_to_schema(list_metrics(), schema):
+                    from aughor.semantic.enforcement import check_metric_enforcement, enforcement_summary
+                    _conn_metrics = filter_metrics_to_schema(list_metrics(), schema)
+                    for _m in _conn_metrics:
                         _lin.append(("metric_available", f"metric:{_m.name}", _m.sql))
+                    # B-7: did the answer USE the governed formula, or improvise?
+                    _verdicts = check_metric_enforcement(question, final_sql, _conn_metrics)
+                    for _v in _verdicts:
+                        _rel = "metric_used" if _v["status"] == "used" else "metric_drift"
+                        _lin.append((_rel, f"metric:{_v['metric']}", _v["detail"]))
+                    _enf = enforcement_summary(_verdicts)
                 except Exception:
                     pass
                 if _rcpt["compiled"]:
@@ -1024,6 +1033,15 @@ async def _stream_chat(
                     conn_id=connection_id, canvas_id=canvas_id or None,
                     lineage=_lin,
                 )
+                # B-7: journal the enforcement verdict so the RATE (% of
+                # metric-bearing answers that used the governed formula) is a
+                # queryable number. Only emitted when a metric was actually
+                # targeted (the honest denominator).
+                if _enf is not None:
+                    Ledger.default().emit(
+                        "metric.enforcement", _enf,
+                        conn_id=connection_id, canvas_id=canvas_id or None,
+                    )
             except Exception:
                 logger.debug("chat_answer artifact write failed", exc_info=True)
 
