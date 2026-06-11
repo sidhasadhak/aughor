@@ -9,7 +9,10 @@ assert recovery:
       with the "server restart" reason),
   I2  an exploration whose checkpoint was incomplete is auto-resumed
       (a new RUNNING job exists for the connection),
-  I3  the journal narrates it (job.orphaned + api.started events present).
+  I3  the journal narrates it (job.orphaned + api.started events present),
+  I4  the recovered server actually SERVES — a real query against the
+      throwaway connection returns rows (recovery restores service, not just
+      state bookkeeping).
 
 Run:  .venv/bin/python scripts/chaos_drill.py [iterations]
 Exit: 0 = every iteration recovered; 1 = an invariant failed (details printed).
@@ -114,6 +117,18 @@ def drill(iteration: int) -> list[str]:
             (conn_id,))[0][0]
         if frozen and orphan_evs == 0:
             failures.append("I3: no job.orphaned event for the crashed run")
+
+        # I4 — the recovered server actually SERVES traffic, not just bookkeeps:
+        # a real query against the throwaway connection must return rows.
+        try:
+            qr = api("/query/run", "POST", {
+                "conn_id": conn_id, "sql": "SELECT 1 AS ok", "limit": 1,
+                "use_cache": False, "use_bulk": False,
+            })
+            if not qr or qr.get("error") or not qr.get("rows"):
+                failures.append(f"I4: recovered server did not serve a query: {qr}")
+        except Exception as exc:
+            failures.append(f"I4: query after recovery raised: {exc}")
     finally:
         try:
             if conn_id:
