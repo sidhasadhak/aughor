@@ -100,6 +100,21 @@ def connection_measure_grains(
     max_probes; best-effort (any failure → whatever was detected so far)."""
     if conn_id in _GRAIN_CACHE:
         return _GRAIN_CACHE[conn_id]
+    # Prefer grains PERSISTED on the ontology (stamped at build time) — no probe needed,
+    # survives restart, and is the same value the UI/validator see (increment #3).
+    seeded = grains_from_ontology(conn_id)
+    if seeded[0]:
+        _GRAIN_CACHE[conn_id] = seeded
+        return seeded
+    result = probe_measure_grains(db, table_cols, max_probes=max_probes)
+    _GRAIN_CACHE[conn_id] = result
+    return result
+
+
+def probe_measure_grains(db, table_cols: "dict[str, list[str]]", *, max_probes: int = 24
+                         ) -> "tuple[dict[str, str], set[str]]":
+    """The PROBE itself (no cache, no ontology read-back) — detect grains by scanning the
+    data. Used by connection_measure_grains on a miss, and by build-time grain stamping."""
     grains: "dict[str, str]" = {}
     qcols: "set[str]" = set()
     probes = 0
@@ -124,7 +139,30 @@ def connection_measure_grains(
         tolerate(exc, "measure-grain detection is best-effort; partial grains are safe "
                  "(an undetected measure is just not guarded, no worse than before)",
                  counter="measure_grain.detect_failed")
-    _GRAIN_CACHE[conn_id] = (grains, qcols)
+    return grains, qcols
+
+
+def grains_from_ontology(conn_id: str) -> "tuple[dict[str, str], set[str]]":
+    """Read measure grains PERSISTED on the connection's ontology (EntityProperty.measure_grain,
+    stamped at build time). Quantity columns are derived from property names. Returns ({}, set())
+    when there's no ontology or nothing was stamped. Never raises."""
+    grains: "dict[str, str]" = {}
+    qcols: "set[str]" = set()
+    try:
+        from aughor.ontology.store import load_latest_ontology
+        graph = load_latest_ontology(conn_id)
+        if graph is None:
+            return grains, qcols
+        for ent in (getattr(graph, "entities", {}) or {}).values():
+            for p in (getattr(ent, "properties", {}) or {}).values():
+                nm = getattr(p, "name", "") or ""
+                g = getattr(p, "measure_grain", "") or ""
+                if g in ("per_unit", "per_line"):
+                    grains[nm.lower()] = g
+                if _QTY_RE.search(nm):
+                    qcols.add(nm.lower())
+    except Exception:
+        return {}, set()
     return grains, qcols
 
 

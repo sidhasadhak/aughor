@@ -72,6 +72,7 @@ class EntityProperty(BaseModel):
     null_meaning: str = ""            # from phase-3 exploration: "event not yet occurred", "unknown", etc.
     is_derived: bool = False           # True for computed/formula columns, not raw source columns
     value_interpretation: str = ""    # "currency", "fraction 0-1", "count", "duration_days"
+    measure_grain: str = ""            # additivity: "per_unit" (×qty for a line total) | "per_line" | ""
     unit: str = ""                     # "USD", "days", "%"
     sample_values: list[str] = Field(default_factory=list)   # top_values from profiler (dimensions only)
     # Distribution stats from phase-6 exploration (numeric columns only)

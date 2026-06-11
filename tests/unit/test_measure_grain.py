@@ -126,3 +126,37 @@ class TestGrainsBlock:
     def test_only_per_unit(self):
         b = render_grains_block({"final_price_usd": "per_unit"}, {"quantity"})
         assert "PER-UNIT" in b and "PER-LINE" not in b
+
+
+class TestOntologyPersistence:
+    def _fake_graph(self, props):
+        from types import SimpleNamespace
+        ent = SimpleNamespace(properties={n: SimpleNamespace(name=n, measure_grain=g) for n, g in props})
+        return SimpleNamespace(entities={"e": ent})
+
+    def test_grains_from_ontology_reads_stamped(self, monkeypatch):
+        from aughor.semantic import measure_grain as M
+        graph = self._fake_graph([("final_price_usd", "per_unit"), ("gross_margin_usd", "per_line"), ("quantity", "")])
+        monkeypatch.setattr("aughor.ontology.store.load_latest_ontology", lambda cid: graph)
+        g, q = M.grains_from_ontology("c1")
+        assert g == {"final_price_usd": "per_unit", "gross_margin_usd": "per_line"}
+        assert "quantity" in q
+
+    def test_grains_from_ontology_empty_when_no_ontology(self, monkeypatch):
+        monkeypatch.setattr("aughor.ontology.store.load_latest_ontology", lambda cid: None)
+        from aughor.semantic.measure_grain import grains_from_ontology
+        assert grains_from_ontology("c1") == ({}, set())
+
+    def test_connection_grains_seeds_from_ontology_without_probing(self, monkeypatch):
+        # the persistence payoff: when grains are stamped on the ontology, no DB probe runs.
+        from aughor.semantic import measure_grain as M
+        M._GRAIN_CACHE.pop("c1_seed", None)
+        graph = self._fake_graph([("final_price_usd", "per_unit"), ("quantity", "")])
+        monkeypatch.setattr("aughor.ontology.store.load_latest_ontology", lambda cid: graph)
+
+        class _NoProbeDB:
+            def execute(self, *a, **k):
+                raise AssertionError("probed the DB despite grains being on the ontology")
+
+        g, q = M.connection_measure_grains("c1_seed", _NoProbeDB(), {"t": ["final_price_usd", "quantity"]})
+        assert g == {"final_price_usd": "per_unit"} and "quantity" in q
