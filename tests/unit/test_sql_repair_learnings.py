@@ -83,3 +83,53 @@ def test_diag_still_handles_plain_missing_column():
     d = _make_diagnosis('Table "im" does not have a column named "id"',
                         "SELECT im.id FROM inventory_movements im", {"inventory_movements": ["movement_id"]})
     assert "does not exist" in d and "movement_id" in d
+
+
+# ── T2b: Phase-8 Binder-error classes the retry loop used to DROP ─────────────
+# Each error string below was reproduced verbatim against DuckDB 1.5.2 (not
+# guessed) so the diagnosis regexes match what the engine actually emits.
+
+# the GROUP BY completeness class — column in SELECT/ORDER BY not grouped/aggregated
+_GROUPBY_ERR = ('Binder Error: column "order_date" must appear in the GROUP BY clause '
+                'or must be part of an aggregate function.')
+
+
+def test_diag_group_by_completeness_offers_group_or_aggregate():
+    d = _make_diagnosis(_GROUPBY_ERR,
+                        "SELECT region, SUM(total) FROM orders GROUP BY region ORDER BY order_date", {})
+    assert "order_date" in d
+    assert "GROUP BY" in d
+    # offers BOTH legal repairs, not just one
+    assert "ANY_VALUE" in d or "aggregate" in d.lower()
+    # and explicitly forbids the wrong "fix" of deleting the column
+    assert "exists" in d.lower()
+
+
+def test_group_by_error_does_not_ban_the_column():
+    # the column EXISTS — negative-knowledge harvest must NOT add it to dead refs,
+    # or the generator would stop selecting a perfectly real column.
+    assert _extract_dead_refs(_GROUPBY_ERR) == set()
+
+
+# the EXTRACT(EPOCH FROM (date - date)) class — DuckDB lowers it to
+# date_part('epoch', BIGINT); same error string as date_part('day', a - b).
+_EPOCH_ERR = ("Binder Error: No function matches the given name and argument types "
+              "'date_part(STRING_LITERAL, BIGINT)'. You might need to add explicit type casts.")
+
+
+def test_diag_extract_epoch_on_date_diff_routes_to_date_diff():
+    d = _make_diagnosis(_EPOCH_ERR,
+                        "SELECT EXTRACT(EPOCH FROM (ship_date - order_date)) FROM orders", {})
+    assert "date_diff" in d
+    # covers the seconds/epoch intent, not just days
+    assert "second" in d.lower()
+    assert "EXTRACT" in d
+
+
+def test_diag_cte_dropped_column_points_at_inner_select():
+    # a column dropped by an intermediate CTE — must say "SELECT it out", not ban it
+    err = 'Binder Error: Referenced column "order_date" not found in FROM clause!'
+    sql = ("WITH agg AS (SELECT customer_id, SUM(total) AS rev FROM orders GROUP BY customer_id) "
+           "SELECT customer_id, rev, order_date FROM agg")
+    d = _make_diagnosis(err, sql, {})
+    assert "order_date" in d and ("SELECT" in d or "subquery" in d.lower())
