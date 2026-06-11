@@ -560,9 +560,14 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                       onRunFresh={(q) => handleSend(q, "investigate", { skipCache: true })}
                       onShowSource={setSourcePanel}
                     />
-                    {/* B-9 — Trust Receipt on every answered turn that has one. */}
+                    {/* B-9 — Trust Receipt on every answered turn that has one:
+                        a chat answer (receiptId) or an agentic ADA report
+                        (investigationId). */}
                     {turn.status === "done" && turn.receiptId && (
                       <TrustReceipt connectionId={connectionId} receiptId={turn.receiptId} />
+                    )}
+                    {turn.status === "done" && turn.adaReport && turn.investigationId && (
+                      <TrustReceipt connectionId={connectionId} receiptId={turn.investigationId} kind="ada" />
                     )}
                     {/* Post-investigation feedback — shown once per completed investigation with hypotheses */}
                     {turn.mode === "investigate" &&

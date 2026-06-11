@@ -26,7 +26,11 @@ from aughor.db.history import (
     save_chat_turn,
 )
 from aughor.db.registry import BUILTIN_ID
-from aughor.routers._shared import explorers as _explorers, explorers_for_connection as _explorers_for_connection
+from aughor.routers._shared import (
+    explorers as _explorers,
+    explorers_for_connection as _explorers_for_connection,
+    get_schema_cached as _get_schema_cached,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["investigations"])
@@ -57,6 +61,81 @@ def _record_memory(inv_id: str, connection_id: str, question: str, state: dict) 
 
 def _sse(event_type: str, data: dict) -> str:
     return f"data: {json.dumps({'type': event_type, **data})}\n\n"
+
+
+def _ada_sqls(ada) -> list[str]:
+    """Every executed SQL in an ADA report — walks the report dict collecting
+    string values under 'sql' keys. More reliable than query_history, which can
+    be empty on some terminal paths (the false-drift cause)."""
+    out: list[str] = []
+
+    def _walk(o):
+        if isinstance(o, dict):
+            for k, v in o.items():
+                if k == "sql" and isinstance(v, str) and v.strip():
+                    out.append(v)
+                else:
+                    _walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                _walk(v)
+
+    _walk(ada if isinstance(ada, dict) else {})
+    seen, uniq = set(), []
+    for x in out:
+        if x not in seen:
+            seen.add(x); uniq.append(x)
+    return uniq
+
+
+def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
+                          sqls: list[str], headline: str, schema: str,
+                          connection_id: str, canvas_id: str = "",
+                          guard_edges: list | None = None,
+                          payload_extra: dict | None = None) -> None:
+    """K3-wide Trust Receipt for any user-facing answer (chat / ADA / monitor):
+    a versioned ledger artifact with HONEST lineage + B-7 metric enforcement.
+    Records only verifiable provenance — executed SQL(s), input tables, the
+    registered metrics available, whether the governed formula was USED or the
+    answer DRIFTED, plus any guard edges the caller proved fired. Best-effort;
+    never raises into the answer path."""
+    try:
+        from aughor.kernel.ledger import Ledger
+        sqls = [s for s in (sqls or []) if s]
+        lineage: list = [("source_sql", "sql", s) for s in sqls[:6]]
+        seen: set[str] = set()
+        for s in sqls:
+            for t in _extract_tables(s):
+                if t not in seen:
+                    seen.add(t)
+                    lineage.append(("input", f"table:{t}", None))
+        enf = None
+        try:
+            from aughor.semantic.metrics import list_metrics, filter_metrics_to_schema
+            from aughor.semantic.enforcement import check_metric_enforcement, enforcement_summary
+            cms = filter_metrics_to_schema(list_metrics(), schema)
+            for m in cms:
+                lineage.append(("metric_available", f"metric:{m.name}", m.sql))
+            verdicts = check_metric_enforcement(question, " ".join(sqls), cms)
+            for v in verdicts:
+                rel = "metric_used" if v["status"] == "used" else "metric_drift"
+                lineage.append((rel, f"metric:{v['metric']}", v["detail"]))
+            enf = enforcement_summary(verdicts)
+        except Exception:
+            pass
+        for e in (guard_edges or []):
+            lineage.append(e)
+        Ledger.default().artifact_write(
+            kind, natural_key,
+            {"question": question, "headline": headline or question,
+             "sql": sqls[0] if sqls else "", "tables": sorted(seen), **(payload_extra or {})},
+            conn_id=connection_id, canvas_id=canvas_id or None, lineage=lineage,
+        )
+        if enf is not None:
+            Ledger.default().emit("metric.enforcement", enf,
+                                  conn_id=connection_id, canvas_id=canvas_id or None)
+    except Exception:
+        logger.debug("%s receipt write failed", kind, exc_info=True)
 
 
 _TABLE_RE = re.compile(r'\b(?:FROM|JOIN)\s+(?:\w+\.)?(\w+)', re.IGNORECASE)
@@ -156,7 +235,7 @@ def _stall_summary(merged: dict) -> str:
     )
 
 
-def _try_salvage(merged: dict, inv_id: str, question: str, connection_id: str):
+def _try_salvage(merged: dict, inv_id: str, question: str, connection_id: str, schema: str = ""):
     """Best-effort terminal synthesis when the graph stops without a report.
 
     A SOTA investigation must never end with nothing: if ANY evidence was gathered
@@ -200,6 +279,13 @@ def _try_salvage(merged: dict, inv_id: str, question: str, connection_id: str):
                                        hypotheses=merged.get("hypotheses", []),
                                        query_history=qh, question=question,
                                        connection_id=connection_id, skip_index=False)
+                _write_answer_receipt(
+                    kind="ada_report", natural_key=f"ada:{connection_id}:{inv_id}",
+                    question=question, sqls=_ada_sqls(ada_save) or [r.sql for r in qh if getattr(r, "sql", None)],
+                    headline=(ada_save.get("headline", "") if isinstance(ada_save, dict) else ""),
+                    schema=schema, connection_id=connection_id,
+                    payload_extra={"investigation_id": inv_id, "partial": True},
+                )
                 payload = ada_save if isinstance(ada, dict) else ada.model_dump()
                 return _sse("ada_report", {
                     "ada_report": payload, "investigation_id": inv_id,
@@ -615,7 +701,10 @@ async def _stream_chat(
             exploration_section, causal_section, document_section,
             pb_entries,
         ) = await asyncio.gather(
-            asyncio.to_thread(db.get_schema),  # critical: a failure here propagates
+            # WCH-12: the connection-scoped schema cache (300s TTL) — was bypassed
+            # here, re-walking information_schema on EVERY chat. Cache miss still
+            # introspects; hits within the window skip it.
+            asyncio.to_thread(_get_schema_cached, connection_id, db),
             _safe(_kb), _safe(_ckb), _safe(_sqlex),
             _safe(_expl), _safe(_causal), _safe(_docs), _safe_list(_pb_match),
         )
@@ -994,56 +1083,24 @@ async def _stream_chat(
         # this turn (executed SQL, input tables, guards that fired, registered
         # metrics available for this connection, trusted queries used).
         if _chat_inv_id and final_sql:
-            try:
-                from aughor.kernel.ledger import Ledger
-                _lin = [("source_sql", "sql", final_sql)]
-                for _t in _extract_tables(final_sql):
-                    _lin.append(("input", f"table:{_t}", None))
-                _enf = None
-                try:
-                    from aughor.semantic.metrics import list_metrics, filter_metrics_to_schema
-                    from aughor.semantic.enforcement import check_metric_enforcement, enforcement_summary
-                    _conn_metrics = filter_metrics_to_schema(list_metrics(), schema)
-                    for _m in _conn_metrics:
-                        _lin.append(("metric_available", f"metric:{_m.name}", _m.sql))
-                    # B-7: did the answer USE the governed formula, or improvise?
-                    _verdicts = check_metric_enforcement(question, final_sql, _conn_metrics)
-                    for _v in _verdicts:
-                        _rel = "metric_used" if _v["status"] == "used" else "metric_drift"
-                        _lin.append((_rel, f"metric:{_v['metric']}", _v["detail"]))
-                    _enf = enforcement_summary(_verdicts)
-                except Exception:
-                    pass
-                if _rcpt["compiled"]:
-                    _lin.append(("validated_by", "guard:semantic_compiler", "SQL synthesized deterministically from a typed intent"))
-                if _rcpt["defan"]:
-                    _lin.append(("validated_by", "guard:fan_out_defan", "rewrote SQL to prevent join over-counting"))
-                if _rcpt["grounded"]:
-                    _lin.append(("validated_by", "guard:numeric_grounding", "headline corrected to match the result cells"))
-                if _rcpt["lint"]:
-                    _lin.append(("validated_by", "guard:sql_lint", "auto-fixed a SQL quality issue before execution"))
-                for _tq in (_trusted_used or []):
-                    _lin.append(("trusted", f"query:{(_tq.get('question') or '')[:60]}", _tq.get('note')))
-                Ledger.default().artifact_write(
-                    "chat_answer",
-                    f"chat:{connection_id}:{_chat_inv_id}",
-                    {"question": question, "headline": _grounded_headline or question,
-                     "sql": final_sql, "tables": _extract_tables(final_sql),
-                     "chart_type": answer.chart_type, "row_count": len(result.rows)},
-                    conn_id=connection_id, canvas_id=canvas_id or None,
-                    lineage=_lin,
-                )
-                # B-7: journal the enforcement verdict so the RATE (% of
-                # metric-bearing answers that used the governed formula) is a
-                # queryable number. Only emitted when a metric was actually
-                # targeted (the honest denominator).
-                if _enf is not None:
-                    Ledger.default().emit(
-                        "metric.enforcement", _enf,
-                        conn_id=connection_id, canvas_id=canvas_id or None,
-                    )
-            except Exception:
-                logger.debug("chat_answer artifact write failed", exc_info=True)
+            _guards = []
+            if _rcpt["compiled"]:
+                _guards.append(("validated_by", "guard:semantic_compiler", "SQL synthesized deterministically from a typed intent"))
+            if _rcpt["defan"]:
+                _guards.append(("validated_by", "guard:fan_out_defan", "rewrote SQL to prevent join over-counting"))
+            if _rcpt["grounded"]:
+                _guards.append(("validated_by", "guard:numeric_grounding", "headline corrected to match the result cells"))
+            if _rcpt["lint"]:
+                _guards.append(("validated_by", "guard:sql_lint", "auto-fixed a SQL quality issue before execution"))
+            for _tq in (_trusted_used or []):
+                _guards.append(("trusted", f"query:{(_tq.get('question') or '')[:60]}", _tq.get('note')))
+            _write_answer_receipt(
+                kind="chat_answer", natural_key=f"chat:{connection_id}:{_chat_inv_id}",
+                question=question, sqls=[final_sql], headline=_grounded_headline or question,
+                schema=schema, connection_id=connection_id, canvas_id=canvas_id,
+                guard_edges=_guards,
+                payload_extra={"chart_type": answer.chart_type, "row_count": len(result.rows)},
+            )
 
         # Carry the turn id so the client can fetch this answer's Trust Receipt.
         yield _sse("done", {"inv_id": _chat_inv_id, "has_receipt": bool(_chat_inv_id and final_sql)})
@@ -1232,7 +1289,7 @@ async def _stream_investigation(
 
     merged: dict = {}  # bound before try so the except/salvage path can read partial state
     try:
-        full_schema = await asyncio.to_thread(db.get_schema)
+        full_schema = await asyncio.to_thread(_get_schema_cached, connection_id, db)  # WCH-12: cached (was bypassed)
         # When a Canvas is active, use the pre-filtered canvas schema context so the
         # agent only sees the tables selected for that Canvas.
         schema = canvas_schema_context if canvas_schema_context else full_schema
@@ -1395,6 +1452,16 @@ async def _stream_investigation(
                 ada_save = dict(ada) if isinstance(ada, dict) else ada
                 ada_save["_report_type"] = "investigate"
                 await asyncio.to_thread(lambda: complete_investigation(inv_id, report=ada_save, hypotheses=merged.get("hypotheses", []), query_history=qh, question=question, connection_id=connection_id, skip_index=False))
+                # K3-wide: the ADA report carries a Trust Receipt too (executed
+                # queries → input tables → metric enforcement), so an agentic
+                # answer self-justifies like a chat answer and an explorer finding.
+                _write_answer_receipt(
+                    kind="ada_report", natural_key=f"ada:{connection_id}:{inv_id}",
+                    question=question, sqls=_ada_sqls(ada) or [r.sql for r in qh if getattr(r, "sql", None)],
+                    headline=(ada.get("headline", "") if isinstance(ada, dict) else ""),
+                    schema=full_schema, connection_id=connection_id, canvas_id=canvas_id,
+                    payload_extra={"investigation_id": inv_id},
+                )
                 await asyncio.to_thread(_record_memory, inv_id, connection_id, question, merged)
                 report_emitted = True
             elif node_name == "decompose_exploration":
@@ -1447,7 +1514,7 @@ async def _stream_investigation(
 
         if timed_out:
             # Even on timeout, salvage a partial report from gathered evidence first.
-            salvaged = _try_salvage(merged, inv_id, question, connection_id)
+            salvaged = _try_salvage(merged, inv_id, question, connection_id, schema=full_schema)
             if salvaged:
                 yield salvaged
             else:
@@ -1458,7 +1525,7 @@ async def _stream_investigation(
             # query errored and the loop exhausted its iterations. First try a
             # best-effort synthesis from whatever evidence exists; only if there's
             # genuinely nothing to salvage do we surface a terminal stall message.
-            salvaged = _try_salvage(merged, inv_id, question, connection_id)
+            salvaged = _try_salvage(merged, inv_id, question, connection_id, schema=full_schema)
             if salvaged:
                 yield salvaged
             else:
@@ -1468,7 +1535,7 @@ async def _stream_investigation(
     except Exception as e:
         # An unhandled node exception still shouldn't lose partial work — salvage
         # a best-effort report from gathered evidence before surfacing the error.
-        salvaged = _try_salvage(merged, inv_id, question, connection_id)
+        salvaged = _try_salvage(merged, inv_id, question, connection_id, schema=full_schema)
         if salvaged:
             yield salvaged
         else:
@@ -1649,6 +1716,18 @@ def get_chat_session_turns(session_id: str):
     if not turns:
         raise HTTPException(status_code=404, detail="Session not found")
     return turns
+
+
+@router.get("/ada/{connection_id}/{inv_id}/receipt")
+def get_ada_receipt(connection_id: str, inv_id: str):
+    """K3-wide Trust Receipt for an agentic (ADA) report — executed queries,
+    input tables, registered metrics + B-7 enforcement verdict. 404 for
+    investigations produced before receipts."""
+    from aughor.kernel.ledger import Ledger
+    rec = Ledger.default().receipt(f"ada:{connection_id}:{inv_id}")
+    if rec is None:
+        raise HTTPException(status_code=404, detail="No receipt for this report")
+    return rec
 
 
 @router.get("/chat/{connection_id}/{turn_id}/receipt")

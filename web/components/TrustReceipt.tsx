@@ -10,7 +10,7 @@
  * turns, or answers with no SQL).
  */
 import { useEffect, useState } from "react";
-import { getChatReceipt, type InsightReceipt } from "@/lib/api";
+import { getAnswerReceipt, type InsightReceipt } from "@/lib/api";
 
 const REL_LABEL: Record<string, string> = {
   metric_available: "metric",
@@ -18,18 +18,18 @@ const REL_LABEL: Record<string, string> = {
   trusted: "trusted",
 };
 
-export function TrustReceipt({ connectionId, receiptId }: { connectionId: string; receiptId: string }) {
+export function TrustReceipt({ connectionId, receiptId, kind = "chat" }: { connectionId: string; receiptId: string; kind?: "chat" | "ada" }) {
   const [rec, setRec] = useState<InsightReceipt | null>(null);
   const [open, setOpen] = useState(false);
   const [tried, setTried] = useState(false);
 
   useEffect(() => {
     let alive = true;
-    getChatReceipt(connectionId, receiptId)
+    getAnswerReceipt(kind, connectionId, receiptId)
       .then(r => { if (alive) { setRec(r); setTried(true); } })
       .catch(() => { if (alive) setTried(true); });
     return () => { alive = false; };
-  }, [connectionId, receiptId]);
+  }, [connectionId, receiptId, kind]);
 
   if (!tried || !rec) return null;
 

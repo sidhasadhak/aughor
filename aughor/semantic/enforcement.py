@@ -57,8 +57,13 @@ def _wrong_columns(metric) -> list[str]:
 def check_metric_enforcement(question: str, sql: str, metrics: list) -> list[dict]:
     """Per targeted metric: {metric, status: 'used'|'drift', formula, detail}.
     Untargeted metrics are omitted (n/a for enforcement). Returns [] when no
-    governed metric is relevant — the honest 'nothing to enforce' case."""
+    governed metric is relevant — the honest 'nothing to enforce' case.
+
+    No SQL to judge → no verdict (NOT a drift): enforcing against an empty string
+    would flag every targeted metric as 'drift' for the wrong reason."""
     s = _norm(sql)
+    if not s:
+        return []
     out: list[dict] = []
     for m in metrics or []:
         if not _targets(question, m):

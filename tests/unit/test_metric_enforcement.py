@@ -77,6 +77,12 @@ class TestNotApplicable:
     def test_no_metrics_registered_is_na(self):
         assert check_metric_enforcement("total revenue", "SELECT SUM(x) FROM y", []) == []
 
+    def test_empty_sql_is_na_not_drift(self):
+        # The ADA false-drift bug: enforcing against no SQL flagged every targeted
+        # metric as 'drift' for the wrong reason. No SQL → no verdict.
+        assert check_metric_enforcement("why did average order value change?", "", [_aov()]) == []
+        assert check_metric_enforcement("total revenue", "   ", [_revenue()]) == []
+
 
 class TestSummary:
     def test_mixed_used_and_drift_not_enforced(self):
