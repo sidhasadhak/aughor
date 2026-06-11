@@ -71,6 +71,29 @@ function autoAlias(agg: AggFn, col: string, expr: string) {
 }
 function qualify(col: string, table: string, multi: boolean) { return multi ? `${table}.${col}` : col; }
 
+// Quote a (possibly already schema-qualified) table identifier. A table name can arrive
+// dotted ("analytics.order_items") straight from the rich schema, or bare ("order_items")
+// with the schema known separately. Quote EACH dotted segment — wrapping the whole dotted
+// string in one pair of quotes ("analytics.order_items") makes the engine read it as a single
+// identifier and fail with "table does not exist" (the beautycommerce builder bug).
+function quoteTable(name: string, schema?: string): string {
+  if (name.includes(".")) return name.split(".").map(p => `"${p}"`).join(".");
+  return schema && schema !== "main" && schema !== "public" ? `"${schema}"."${name}"` : `"${name}"`;
+}
+
+// The rich schema returns schema-qualified table names ("analytics.order_items") while the
+// catalog tree uses bare names ("order_items") + a separate schema, so the two never key-match
+// and the bare catalog rows can't find their columns/joins. Strip the prefix to one canonical
+// bare key (quote-time qualification is restored via quoteTable + the tableSchemas map).
+function bareTable(name: string): string {
+  const i = name.lastIndexOf(".");
+  return i >= 0 ? name.slice(i + 1) : name;
+}
+function tableSchemaOf(name: string): string | undefined {
+  const i = name.lastIndexOf(".");
+  return i >= 0 ? name.slice(0, i) : undefined;
+}
+
 // ── Suggestion intelligence (type + name heuristics) ──────────────────────────
 // Columns that make natural GROUP BY dimensions.
 const CATEGORICAL_HINT = /(channel|region|type|status|category|segment|name|country|state|city|gender|tier|group|method|source|stage|priority|currency|brand|department|role|plan|product|customer|account|industry|cohort|level|class|kind|label)/i;
@@ -106,10 +129,7 @@ function findJoin(from: string, to: string, joins: SchemaJoin[]): SchemaJoin | n
 function joinClause(join: SchemaJoin, pivot: string, tableSchemas?: Record<string, string>) {
   const fwd = join.t1 === pivot;
   const [lt,lc,rt,rc] = fwd ? [join.t1,join.c1,join.t2,join.c2] : [join.t2,join.c2,join.t1,join.c1];
-  const qTable = (t: string) => {
-    const s = tableSchemas?.[t];
-    return s && s !== "main" && s !== "public" ? `"${s}"."${t}"` : `"${t}"`;
-  };
+  const qTable = (t: string) => quoteTable(t, tableSchemas?.[t]);
   return `LEFT JOIN ${qTable(rt)} ON ${qTable(lt)}.${lc} = ${qTable(rt)}.${rc}`;
 }
 
@@ -175,10 +195,7 @@ function buildSql(
   orderBy: string, limit: number,
   tableSchemas?: Record<string, string>,
 ) {
-  const qTable = (t: string) => {
-    const s = tableSchemas?.[t];
-    return s && s !== "main" && s !== "public" ? `"${s}"."${t}"` : `"${t}"`;
-  };
+  const qTable = (t: string) => quoteTable(t, tableSchemas?.[t]);
   const multi = joined.length > 0;
   const dimExpr = (d: DimItem) => {
     const base = qualify(d.col, d.table, multi);
@@ -609,7 +626,9 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
   const [measures, setMeasures] = useState<MeasureItem[]>([]);
   const [filters,  setFilters]  = useState<FilterItem[]>([]);
   const [orderBy,  setOrderBy]  = useState("");
-  const [limit,    setLimit]    = useState(0);
+  // Default to a bounded preview LIMIT — a fresh SELECT * on a large table with no cap is a
+  // footgun. 0 (or a cleared field) is an explicit "no limit" opt-out the user can still choose.
+  const [limit,    setLimit]    = useState(1000);
 
   const [aggInfo,     setAggInfo]     = useState<{col:SchemaColumn;table:string}|null>(null);
   const [overDims,    setOverDims]    = useState(false);
@@ -668,21 +687,37 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
       .catch(() => setCatEntry(null))
       .finally(() => setLoadingTree(false));
 
-    // Phase 2 — slower: rich schema adds columns, joins, row counts
+    // Phase 2 — slower: rich schema adds columns, joins, row counts.
+    // Canonicalize the rich schema's qualified names ("analytics.order_items") to the bare key
+    // the catalog tree uses ("order_items"), so the catalog rows find their columns/joins.
+    // Collision guard: if two schemas expose the same bare name, keep BOTH dotted to stay
+    // unambiguous. Schema is recorded in tableSchemas so quoteTable re-qualifies at SQL time.
     getSchemaRich(connId).then(rich => {
-      const names = rich.tables.map(t => t.name);
+      const bareCount: Record<string, number> = {};
+      rich.tables.forEach(t => { const b = bareTable(t.name); bareCount[b] = (bareCount[b] || 0) + 1; });
+      const keyOf = (full: string) => (bareCount[bareTable(full)] > 1 ? full : bareTable(full));
+
+      const names: string[] = [];
       const cols: Record<string,SchemaColumn[]> = {};
       const rc: Record<string,string|null> = {};
-      rich.tables.forEach(t => { cols[t.name] = t.columns; rc[t.name] = t.row_count; });
+      const schemaAdds: Record<string,string> = {};
+      rich.tables.forEach(t => {
+        const k = keyOf(t.name);
+        names.push(k); cols[k] = t.columns; rc[k] = t.row_count;
+        const s = tableSchemaOf(t.name); if (s) schemaAdds[k] = s;
+      });
+      const joins = rich.joins.map(j => ({ ...j, t1: keyOf(j.t1), t2: keyOf(j.t2) }));
+      const iso = (rich.isolated ?? []).map(keyOf);
       setTableNames(names); setTableCols(cols); setRowCounts(rc);
-      setSchemaJoins(rich.joins); setIsolated(rich.isolated ?? []);
+      setTableSchemas(prev => ({ ...prev, ...schemaAdds }));
+      setSchemaJoins(joins); setIsolated(iso);
     }).catch(err => { console.error("[QueryBuilder] getSchemaRich failed:", err); }).finally(()=>setLoadingCols(false));
   }, [connId]);
 
   useEffect(() => {
     if (!autoSql || !primaryTable) return;
     setSql(buildSql(primaryTable, joinedTables, schemaJoins, dims, measures, filters, orderBy, limit, tableSchemas));
-  }, [autoSql, primaryTable, joinedTables, schemaJoins, dims, measures, filters, orderBy, limit]);
+  }, [autoSql, primaryTable, joinedTables, schemaJoins, dims, measures, filters, orderBy, limit, tableSchemas]);
 
   const allTables = primaryTable ? [primaryTable, ...joinedTables] : [];
   const isMulti   = allTables.length > 1;
@@ -716,7 +751,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
     setPrimaryTable(name); setJoinedTables([]); setExpandedTables({[name]: true});
     setDims([]); setMeasures([]); setFilters([]); setOrderBy("");
     setResult(null); setRunError(null); setAutoSql(true); setColSearch("");
-    const qTable = schema && schema !== "main" && schema !== "public" ? `"${schema}"."${name}"` : `"${name}"`;
+    const qTable = quoteTable(name, schema);
     setSql(limit > 0 ? `SELECT *\nFROM ${qTable}\nLIMIT ${limit}` : `SELECT *\nFROM ${qTable}`);
   }, [limit]);
 
@@ -912,7 +947,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
         <div className="ml-auto flex items-center gap-3">
           {!autoSql && (
             <button
-              onClick={() => { setAutoSql(true); if (primaryTable) setSql(buildSql(primaryTable,joinedTables,schemaJoins,dims,measures,filters,orderBy,limit)); }}
+              onClick={() => { setAutoSql(true); if (primaryTable) setSql(buildSql(primaryTable,joinedTables,schemaJoins,dims,measures,filters,orderBy,limit,tableSchemas)); }}
               className="text-[11px] text-zinc-500 hover:text-zinc-300 border border-zinc-700 rounded-lg px-2.5 py-1 transition">
               ↺ Regenerate SQL
             </button>
@@ -1449,6 +1484,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                       setLimit(v === "" ? 0 : Math.max(0, parseInt(v) || 0));
                     }}
                     placeholder="∞"
+                    title="Rows to preview. Blank or 0 = no limit (unbounded — use with care on large tables)."
                     className="text-[12px] font-mono bg-zinc-800/60 border border-zinc-700 rounded-md px-3 py-2 text-zinc-200 outline-none focus:border-zinc-500 w-24 transition" />
                 </div>
               </div>
