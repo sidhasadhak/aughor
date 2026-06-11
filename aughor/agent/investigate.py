@@ -1180,7 +1180,26 @@ _ADA_SQL_GROUNDING = (
     "THAT EXACT table qualifier everywhere (SELECT, WHERE, GROUP BY) — do NOT re-qualify it to the "
     "metric table. Writing `invoices.order_ts` when the column lives on `orders` is the #1 error; "
     "join orders and write `orders.order_ts`."
+    " TEMPORAL GROUNDING: the observation and comparison periods are given to you as EXPLICIT date "
+    "ranges. Filter using those LITERAL dates as DATE literals — e.g. `WHERE orders.order_ts >= "
+    "DATE '2023-03-10' AND orders.order_ts < DATE '2024-03-10'`. NEVER use CURRENT_DATE, NOW(), "
+    "GETDATE(), SYSDATE, or DATE_SUB/DATE_ADD/DATEADD interval arithmetic relative to today — the "
+    "data is HISTORICAL, so a window relative to the current date silently returns ZERO rows (and "
+    "DATE_SUB/DATE_ADD are not DuckDB functions). Use the given literal dates verbatim."
 )
+
+
+_RELATIVE_DATE_RE = re.compile(
+    r"\bcurrent_date\b|\bcurrent_timestamp\b|\bsysdate\b|\b(?:now|getdate|date_sub|date_add|dateadd)\s*\(",
+    re.IGNORECASE,
+)
+
+
+def _uses_relative_date(sql: str) -> bool:
+    """True when SQL anchors a date window to TODAY (CURRENT_DATE / NOW() / DATE_SUB / …) instead
+    of the literal observation/comparison dates. On HISTORICAL data those windows return ZERO rows
+    — the WCH-DS failure class — so the phase runner uses this to force a corrective re-plan."""
+    return bool(_RELATIVE_DATE_RE.search(sql or ""))
 
 
 def _unsafe_metric_sql(sql: str):
@@ -1516,6 +1535,32 @@ def run_analysis_phase(
         return _PhaseRun(ok=False, error_phase=_phase_result(
             phase_id, title, emoji, "error", plan_error_msg, [_skipped_finding(phase_id, str(e))]))
 
+    # Temporal guard (WCH-DS) — the intake clamp put LITERAL observation/comparison windows into
+    # plan_user, but a coder that reaches for CURRENT_DATE / NOW() / DATE_SUB produces ZERO rows on
+    # historical data. The prompt rule is advisory; this ENFORCES it with one corrective re-plan
+    # that must use the literal dates. (Shared by every phase, so baseline/decompose/dimensional/
+    # behavioral are all covered.)
+    if plan and plan.queries and any(_uses_relative_date(q.sql) for q in plan.queries):
+        from aughor.stats import stats as _s; _s.inc("temporal_guard_retries")
+        try:
+            _fixed = _provider("coder").complete(
+                system=plan_system,
+                user=plan_user + (
+                    "\n\nCORRECTION REQUIRED: a previous attempt used CURRENT_DATE / NOW() / "
+                    "DATE_SUB / DATE_ADD / relative date arithmetic. That is FORBIDDEN — the data "
+                    "is HISTORICAL, so any window relative to today returns ZERO rows. Re-write "
+                    "EVERY query using ONLY the LITERAL observation and comparison date ranges given "
+                    "above, as DATE literals (WHERE col >= DATE 'YYYY-MM-DD' AND col < DATE "
+                    "'YYYY-MM-DD'). Never use CURRENT_DATE / NOW / DATE_SUB / DATE_ADD / DATEADD / "
+                    "SYSDATE."),
+                response_model=PhasePlan)
+            if _fixed and _fixed.queries:
+                plan = _fixed
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "temporal-guard re-plan is best-effort; the prompt rule still applies "
+                     "and the original plan still runs", counter="temporal_guard.replan_failed")
+
     # Step 2 — execute (parallel — each query gets its own reader connection)
     results = _parallel_execute_safe(conn, phase_id, plan.queries, cap=cap, schema=schema)
     if not results:
@@ -1628,9 +1673,11 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
         for sr in stat_results:
             if sr.sigma is not None:
                 if code_sigma is None or sr.sigma > code_sigma:
-                    code_sigma = sr.sigma
+                    code_sigma = float(sr.sigma)  # numpy.float64 → python float
         if code_sigma is not None:
-            code_significant = code_sigma >= 2.0
+            # bool() so a numpy.bool_ never reaches graph state — the LangGraph msgpack
+            # checkpointer can't serialize numpy scalars and the whole run crashes.
+            code_significant = bool(code_sigma >= 2.0)
             break  # first successful result is enough
 
     if interpretation and interpretation.findings:
