@@ -31,6 +31,7 @@ import {
 } from "@/components/brief/Brief";
 import { SignificanceBadge } from "@/components/brief/StatBadge";
 import { TrendStrip } from "@/components/brief/Sparkline";
+import { useOpenInBuilder } from "@/lib/openInBuilder";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -153,6 +154,7 @@ function FindingTable({ columns, rows, label }: { columns: string[]; rows: (stri
 function EvidenceBlock({ finding }: { finding: InvestigationFinding }) {
   const hasData = finding.columns.length > 0 && finding.rows.length > 0;
   const hasChart = hasData && finding.chart_type !== "none" && finding.rows.length >= 2;
+  const openInBuilder = useOpenInBuilder();
 
   return (
     <div className="flex flex-col gap-2.5">
@@ -187,8 +189,19 @@ function EvidenceBlock({ finding }: { finding: InvestigationFinding }) {
         <FindingTable columns={finding.columns} rows={finding.rows} label="Data" />
       )}
 
-      {/* SQL toggle */}
-      <SqlToggle sql={finding.sql} />
+      {/* SQL toggle + open this query in the Query Builder */}
+      <div className="flex items-center gap-3">
+        <SqlToggle sql={finding.sql} />
+        {finding.sql && openInBuilder && (
+          <button
+            onClick={() => openInBuilder(finding.sql)}
+            title="Open this query in the Query Builder"
+            className="text-[11px] text-blue-400 hover:text-blue-300 transition-colors"
+          >
+            Open in Query Builder →
+          </button>
+        )}
+      </div>
     </div>
   );
 }

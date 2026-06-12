@@ -773,7 +773,13 @@ function ResultsPane({
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function QueryBuilder({ initialConnId, onOpenCanvas }: { initialConnId?: string; onOpenCanvas?: (canvas: Canvas) => void }) {
+export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest }: {
+  initialConnId?: string;
+  onOpenCanvas?: (canvas: Canvas) => void;
+  /** A query handed in from Insights / Deep Analysis: load the SQL, switch to its
+   *  connection, and run it. nonce-keyed so the same request fires exactly once. */
+  importRequest?: { connId: string; sql: string; nonce: number };
+}) {
   const [connections,   setConnections]   = useState<Connection[]>([]);
   const [connId,        setConnId]        = useState(initialConnId ?? "");
   const [tableNames,    setTableNames]    = useState<string[]>([]);
@@ -1114,14 +1120,54 @@ export function QueryBuilder({ initialConnId, onOpenCanvas }: { initialConnId?: 
   const runRef = useRef({sql,connId,limit,useCache});
   useEffect(()=>{ runRef.current={sql,connId,limit,useCache}; },[sql,connId,limit,useCache]);
 
-  const triggerRun = async () => {
-    const {sql:s,connId:c,limit:l,useCache:uc} = runRef.current;
-    if (!s.trim()||!c) return;
+  // Run an explicit (connId, sql) — used by the Run button (via runRef) and by an
+  // import, which must run BEFORE its setSql/setConnId state has committed to runRef.
+  const runWith = async (c: string, s: string) => {
+    if (!s.trim() || !c) return;
+    const { limit: l, useCache: uc } = runRef.current;
     setRunning(true); setRunError(null); setResult(null); setAcItems([]);
-    try { setResult(await runDirectQuery(c,s,l,{useCache:uc})); }
+    try { setResult(await runDirectQuery(c, s, l, { useCache: uc })); }
     catch(err) { setRunError(err instanceof Error ? err.message : "Query failed"); }
     finally { setRunning(false); }
   };
+  const triggerRun = () => { const { sql: s, connId: c } = runRef.current; void runWith(c, s); };
+
+  // ── Import a query from Insights / Deep Analysis ───────────────────────────
+  // Load the SQL into the manual editor and run it. The grain / aggregation /
+  // HAVING are all encoded in the SQL, so the result + chart come across faithfully.
+  const pendingImportRef = useRef<{ connId: string; sql: string } | null>(null);
+  const importNonceRef   = useRef(0);
+  const applyPendingImport = () => {
+    const imp = pendingImportRef.current;
+    if (!imp) return;
+    pendingImportRef.current = null;
+    // Defer past the mount's synchronous connId-reset effect (which clears sql/autoSql state)
+    // so the imported query is what survives, then run it.
+    window.setTimeout(() => {
+      setAutoSql(false);
+      setSqlOpen(true);
+      setSql(imp.sql);
+      void runWith(imp.connId, imp.sql);
+    }, 0);
+  };
+  // Receive a request (nonce-keyed so it fires once). A different connection must
+  // switch first — the connId-reset effect clears sql, then the effect below re-applies.
+  useEffect(() => {
+    if (!importRequest || importRequest.nonce === importNonceRef.current) return;
+    importNonceRef.current = importRequest.nonce;
+    const c = importRequest.connId || connId;
+    if (!c || !importRequest.sql?.trim()) return;
+    pendingImportRef.current = { connId: c, sql: importRequest.sql };
+    if (c !== connId) setConnId(c);        // triggers reset; applied by the effect below
+    else applyPendingImport();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [importRequest?.nonce]);
+  // After a connection switch settles (this runs AFTER the connId-reset effect above,
+  // by declaration order), apply any pending import the reset just wiped.
+  useEffect(() => {
+    if (pendingImportRef.current && pendingImportRef.current.connId === connId) applyPendingImport();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connId]);
 
   // ── Saved-query persistence ────────────────────────────────────────────────
   // The visual builder state we persist so loading restores the builder, not just the SQL.
@@ -1328,6 +1374,11 @@ export function QueryBuilder({ initialConnId, onOpenCanvas }: { initialConnId?: 
               );
             })}
           </div>
+        ) : result ? (
+          <span className="flex items-center gap-1.5 text-[11px] font-mono px-2.5 py-0.5 rounded-full border shrink-0 bg-violet-500/10 border-violet-500/30 text-violet-300 ml-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-violet-400" />
+            imported query · edit SQL below
+          </span>
         ) : (
           <span className="text-[12px] text-zinc-500 ml-1">Drag a field from the catalog to begin</span>
         )}
@@ -1700,8 +1751,9 @@ export function QueryBuilder({ initialConnId, onOpenCanvas }: { initialConnId?: 
                 </div>
               )}
 
-              {/* Onboarding prompt — until the first field is dropped */}
-              {!primaryTable && (
+              {/* Onboarding prompt — until the first field is dropped (hidden once a query has run,
+                  e.g. an imported query from Insights / Deep Analysis) */}
+              {!primaryTable && !result && (
                 <div className="flex items-center gap-3 rounded-md border border-zinc-700/50 bg-zinc-800/30 px-4 py-3">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" strokeWidth="1.5" strokeLinecap="round" className="shrink-0">
                     <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
@@ -2002,7 +2054,11 @@ export function QueryBuilder({ initialConnId, onOpenCanvas }: { initialConnId?: 
                 </div>
               </div>
 
-              {/* SQL EDITOR — collapsed by default */}
+              {/* close the primaryTable fragment — Filters/Having/Sort need a resolved table */}
+              </>)}
+
+              {/* SQL EDITOR — shows for a built query OR an imported/manual one (no table needed) */}
+              {(primaryTable || sql.trim()) && (
               <div className="border-t border-zinc-700/30 pt-4">
                 <div className="flex items-center gap-2 mb-2">
                   <button onClick={()=>setSqlOpen(o=>!o)} className="flex items-center gap-2">
@@ -2040,9 +2096,7 @@ export function QueryBuilder({ initialConnId, onOpenCanvas }: { initialConnId?: 
                   />
                 )}
               </div>
-
-              {/* close the primaryTable fragment — Filters/Having/Sort/SQL live in the rail */}
-              </>)}
+              )}
             </div>{/* end DATA tab */}
 
             {/* CUSTOMIZE tab — chart styling */}
