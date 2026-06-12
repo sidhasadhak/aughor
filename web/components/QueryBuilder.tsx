@@ -366,6 +366,111 @@ function caretPos(el: HTMLTextAreaElement): { top: number; left: number } {
   };
 }
 
+// ── SQL syntax highlighting + formatting ──────────────────────────────────────
+// A tiny SQL tokenizer shared by the highlighter and the formatter. Strings and quoted
+// identifiers are tokenized FIRST so the formatter never uppercases a keyword inside a
+// literal (which would change the query) — casing/whitespace stay semantically inert.
+
+const _SQL_KW = new Set([
+  "SELECT","FROM","WHERE","GROUP","BY","ORDER","HAVING","LIMIT","OFFSET","DISTINCT","AS","JOIN",
+  "LEFT","RIGHT","INNER","FULL","OUTER","CROSS","ON","AND","OR","NOT","IN","LIKE","ILIKE","BETWEEN",
+  "EXISTS","IS","NULL","UNION","ALL","CASE","WHEN","THEN","ELSE","END","ASC","DESC","WITH","OVER",
+  "PARTITION","USING","INTERVAL","CURRENT_DATE","CURRENT_TIMESTAMP","DAY","MONTH","YEAR","QUARTER","HOUR","WEEK","MINUTE",
+]);
+const _SQL_FN = new Set([
+  "SUM","AVG","COUNT","MIN","MAX","MEDIAN","STDDEV","VARIANCE","DATE_TRUNC","DATE_DIFF","DATE_PART",
+  "EXTRACT","COALESCE","NULLIF","CAST","ROUND","FLOOR","CEIL","ABS","GREATEST","LEAST","LENGTH","TRIM",
+  "LOWER","UPPER","CONCAT","REPLACE","SUBSTRING","ROW_NUMBER","RANK","DENSE_RANK","LAG","LEAD","PERCENTILE_CONT","NOW",
+]);
+
+interface SqlTok { t: "kw" | "fn" | "string" | "ident" | "num" | "comment" | "punct" | "word" | "ws"; v: string }
+
+function tokenizeSql(sql: string): SqlTok[] {
+  const toks: SqlTok[] = [];
+  const n = sql.length;
+  let i = 0;
+  while (i < n) {
+    const c = sql[i];
+    if (c === "-" && sql[i + 1] === "-") { let j = i + 2; while (j < n && sql[j] !== "\n") j++; toks.push({ t: "comment", v: sql.slice(i, j) }); i = j; continue; }
+    if (c === "/" && sql[i + 1] === "*") { let j = i + 2; while (j < n && !(sql[j] === "*" && sql[j + 1] === "/")) j++; j = Math.min(n, j + 2); toks.push({ t: "comment", v: sql.slice(i, j) }); i = j; continue; }
+    if (c === "'") { let j = i + 1; while (j < n) { if (sql[j] === "'") { if (sql[j + 1] === "'") { j += 2; continue; } j++; break; } j++; } toks.push({ t: "string", v: sql.slice(i, j) }); i = j; continue; }
+    if (c === '"') { let j = i + 1; while (j < n) { if (sql[j] === '"') { if (sql[j + 1] === '"') { j += 2; continue; } j++; break; } j++; } toks.push({ t: "ident", v: sql.slice(i, j) }); i = j; continue; }
+    if (/\s/.test(c)) { let j = i + 1; while (j < n && /\s/.test(sql[j])) j++; toks.push({ t: "ws", v: sql.slice(i, j) }); i = j; continue; }
+    if (/[A-Za-z_]/.test(c)) { let j = i + 1; while (j < n && /[A-Za-z0-9_]/.test(sql[j])) j++; const w = sql.slice(i, j); const up = w.toUpperCase(); toks.push({ t: _SQL_KW.has(up) ? "kw" : _SQL_FN.has(up) ? "fn" : "word", v: w }); i = j; continue; }
+    if (/[0-9]/.test(c)) { let j = i + 1; while (j < n && /[0-9.]/.test(sql[j])) j++; toks.push({ t: "num", v: sql.slice(i, j) }); i = j; continue; }
+    let j = i + 1; while (j < n && /[^\w\s'"]/.test(sql[j]) && !(sql[j] === "-" && sql[j + 1] === "-") && !(sql[j] === "/" && sql[j + 1] === "*")) j++;
+    toks.push({ t: "punct", v: sql.slice(i, j) }); i = j;
+  }
+  return toks;
+}
+
+const _escHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const _SQL_COLOR: Record<SqlTok["t"], string> = {
+  kw: "#7dd3fc", fn: "#c4b5fd", string: "#86efac", num: "#fbbf24",
+  comment: "#71717a", ident: "#fdba74", punct: "#a1a1aa", word: "#e4e4e7", ws: "",
+};
+function highlightSql(sql: string): string {
+  return tokenizeSql(sql).map(tok => {
+    const v = _escHtml(tok.v);
+    const col = _SQL_COLOR[tok.t];
+    return col ? `<span style="color:${col}">${v}</span>` : v;
+  }).join("");
+}
+
+// Major clauses start a new line; AND/OR get an indented continuation line. Only whitespace
+// and keyword CASE change — the SQL stays semantically identical.
+const _SQL_NEWLINE = new Set(["SELECT","FROM","WHERE","GROUP","ORDER","HAVING","LIMIT","UNION","LEFT","RIGHT","INNER","FULL","CROSS","JOIN","ON"]);
+const _SQL_INDENT  = new Set(["AND","OR"]);
+function formatSql(sql: string): string {
+  const toks = tokenizeSql(sql.trim());
+  let out = "";
+  for (let k = 0; k < toks.length; k++) {
+    const tok = toks[k];
+    if (tok.t === "ws") {
+      const next = toks[k + 1];
+      const up = next && next.t === "kw" ? next.v.toUpperCase() : "";
+      out += up && _SQL_NEWLINE.has(up) && out ? "\n" : (up && _SQL_INDENT.has(up) && out ? "\n  " : " ");
+    } else {
+      out += (tok.t === "kw" || tok.t === "fn") ? tok.v.toUpperCase() : tok.v;
+    }
+  }
+  return out;
+}
+
+// Transparent-textarea-over-highlighted-pre editor: the user types in the textarea (transparent
+// text, visible caret); the <pre> behind it shows the colors. Both share identical metrics so the
+// caret aligns. Scroll is synced from the textarea. No external editor dependency.
+function SqlEditor({ value, rows, taRef, onChange, onKeyDown, onClick, placeholder }: {
+  value: string; rows: number; taRef: React.RefObject<HTMLTextAreaElement | null>;
+  onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
+  onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+  onClick: () => void; placeholder?: string;
+}) {
+  const preRef = useRef<HTMLPreElement>(null);
+  // The theme has unlayered global textarea rules (font-size/color/line-height) that beat
+  // Tailwind utility classes on the <textarea> — so drive every metric inline (inline wins),
+  // identically on both elements, or the caret drifts out of sync with the highlighted text.
+  const metrics: React.CSSProperties = {
+    fontFamily: "var(--font-code)", fontSize: "12px", lineHeight: "1.625",
+    padding: "16px", tabSize: 2, whiteSpace: "pre-wrap", overflowWrap: "break-word",
+    margin: 0, border: "1px solid transparent", borderRadius: "0.375rem",
+  };
+  return (
+    <div className="relative">
+      <pre ref={preRef} aria-hidden
+        className="absolute inset-0 overflow-auto pointer-events-none"
+        style={{ ...metrics, background: "rgba(24,24,27,0.8)" }}
+        dangerouslySetInnerHTML={{ __html: highlightSql(value) + "\n" }} />
+      <textarea
+        ref={taRef} value={value} onChange={onChange} onKeyDown={onKeyDown} onClick={onClick}
+        onScroll={e => { if (preRef.current) { preRef.current.scrollTop = e.currentTarget.scrollTop; preRef.current.scrollLeft = e.currentTarget.scrollLeft; } }}
+        spellCheck={false} rows={rows} placeholder={placeholder}
+        className="relative w-full outline-none resize-none focus:border-zinc-500"
+        style={{ ...metrics, background: "transparent", color: "transparent", caretColor: "#f4f4f5", borderColor: "#3f3f46" }} />
+    </div>
+  );
+}
+
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 function ColRow({ col, tableName, onAddDim, onAddMeasure }: {
@@ -1932,26 +2037,25 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                   )}
                   <div className="ml-auto flex items-center gap-2">
                     <span className="text-[11px] text-zinc-500">⌘↵ to run</span>
+                    <button onClick={()=>{ if (sql.trim()) { setSql(formatSql(sql)); setAutoSql(false); } }}
+                      className="text-[11px] text-zinc-500 hover:text-zinc-300 border border-zinc-700 rounded-lg px-2.5 py-1 transition">
+                      Format
+                    </button>
                     <button onClick={()=>navigator.clipboard.writeText(sql).catch(()=>{})}
                       className="text-[11px] text-zinc-500 hover:text-zinc-300 border border-zinc-700 rounded-lg px-2.5 py-1 transition">
                       Copy
                     </button>
                   </div>
                 </div>
-                <div className="relative">
-                  <textarea
-                    ref={sqlRef}
-                    value={sql}
-                    onChange={handleSqlChange}
-                    onKeyDown={handleSqlKeyDown}
-                    onClick={()=>setAcItems([])}
-                    spellCheck={false}
-                    rows={Math.max(6, Math.min(16, sql.split("\n").length + 2))}
-                    placeholder={"SELECT *\nFROM table\nLIMIT 1000"}
-                    className="w-full text-[12px] leading-relaxed bg-zinc-900/80 border border-zinc-700 rounded-md p-4 text-zinc-200 outline-none focus:border-zinc-500 resize-none transition"
-                    style={{ fontFamily: "var(--font-code)" }}
-                  />
-                </div>
+                <SqlEditor
+                  taRef={sqlRef}
+                  value={sql}
+                  rows={Math.max(6, Math.min(16, sql.split("\n").length + 2))}
+                  onChange={handleSqlChange}
+                  onKeyDown={handleSqlKeyDown}
+                  onClick={()=>setAcItems([])}
+                  placeholder={"SELECT *\nFROM table\nLIMIT 1000"}
+                />
               </div>
 
               {/* RESULTS */}
