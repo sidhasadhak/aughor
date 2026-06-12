@@ -17,13 +17,19 @@
 
 import { useState } from "react";
 import { ChartWrapper } from "@/components/charts/ChartWrapper";
-import { inferChartType, type ChartType } from "@/components/charts/chartTypeInference";
-import { Chart } from "@/components/Chart";
+import { inferChartType, availableTypesFor, type ChartType } from "@/components/charts/chartTypeInference";
+import { Chart, type ChartCustom } from "@/components/Chart";
 
 interface Props {
   columns: string[];
   rows: unknown[][];
   title?: string;
+  /** Controlled mode — an outer rail (the Query Builder Explore panel) owns the chart type
+   *  and data-labels, so the internal toggle/labels chrome is hidden here. */
+  controlled?: boolean;
+  typeOverride?: ChartType | "auto";
+  showLabels?: boolean;
+  custom?: ChartCustom | null;
 }
 
 const TYPE_TO_HINT: Record<ChartType, string> = {
@@ -42,10 +48,14 @@ const TYPE_TO_HINT: Record<ChartType, string> = {
   "table":       "auto",
 };
 
-export function InvestigationChart({ columns, rows, title }: Props) {
+export function InvestigationChart({ columns, rows, title, controlled, typeOverride, showLabels: showLabelsProp, custom }: Props) {
   const inferred = inferChartType(columns, rows);
-  const [override, setOverride] = useState<ChartType | "auto">("auto");
-  const [showLabels, setShowLabels] = useState(false);
+  const [overrideState, setOverride] = useState<ChartType | "auto">("auto");
+  const [showLabelsState, setShowLabels] = useState(false);
+
+  // Controlled mode: the outer rail owns type + labels; otherwise use the internal toggles.
+  const override = controlled ? (typeOverride ?? "auto") : overrideState;
+  const showLabels = controlled ? (showLabelsProp ?? false) : showLabelsState;
 
   if (!inferred) return null;
 
@@ -53,18 +63,7 @@ export function InvestigationChart({ columns, rows, title }: Props) {
   if (effectiveType === "table") return null;
 
   // Toggle options — restricted to types the unified <Chart> engine renders.
-  const available: ChartType[] = (() => {
-    switch (inferred.type) {
-      case "line":        return ["line", "bar"];
-      case "multi-line":  return ["multi-line", "heatmap", "stacked-bar"];
-      case "heatmap":     return ["heatmap", "multi-line", "stacked-bar"];
-      case "scatter":     return ["scatter", "bar"];
-      case "pie":         return ["pie", "bar", "treemap"];
-      case "treemap":     return ["treemap", "bar", "pie"];
-      case "combo":       return ["combo", "bar"];
-      default:            return ["bar", "line"];
-    }
-  })();
+  const available: ChartType[] = availableTypesFor(inferred.type);
 
   const chartTitle = title ?? (
     effectiveType === "line" || effectiveType === "multi-line" ? "Trend" :
@@ -81,8 +80,8 @@ export function InvestigationChart({ columns, rows, title }: Props) {
       title={chartTitle}
       chartType={override}
       availableTypes={available}
-      onChartTypeChange={setOverride}
-      actions={
+      onChartTypeChange={controlled ? undefined : setOverride}
+      actions={controlled ? undefined : (
         <button
           onClick={() => setShowLabels(s => !s)}
           title={showLabels ? "Hide data labels" : "Show data labels"}
@@ -96,7 +95,7 @@ export function InvestigationChart({ columns, rows, title }: Props) {
             <path d="M9 9h6v6H9z" />
           </svg>
         </button>
-      }
+      )}
     >
       <Chart
         columns={columns}
@@ -104,6 +103,7 @@ export function InvestigationChart({ columns, rows, title }: Props) {
         chartType={hint}
         chrome={false}
         showLabels={showLabels}
+        custom={custom}
         title={chartTitle}
       />
     </ChartWrapper>

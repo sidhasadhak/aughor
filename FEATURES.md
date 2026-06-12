@@ -2766,4 +2766,69 @@ A small SQL **tokenizer** (strings & quoted identifiers tokenized first) is shar
 
 ---
 
-*Last updated: 2026-06-12 · 100 features — all shipped. See `ROADMAP.md` for upcoming milestones.*
+## 101. Query Builder — Explore Layout (chart hero + Data/Customize panel) ✅ Shipped
+
+### What
+The builder was reorganised into an Apache Superset–style Explore surface, then refined per use to a
+**vertical** layout: the chart is the **hero on top**, and a **DATA / CUSTOMIZE** control panel docks
+at the **bottom** — draggable to resize and a chevron to **fully collapse** (chart takes the whole
+height). The catalog field list stays on the left.
+
+### Why
+The old builder was a long single scroll with the chart buried under the controls. Leading with the
+chart and tucking the controls into a tabbed, collapsible panel makes the result the focus and the
+authoring controls a deliberate, organised space.
+
+### How
+A `flex-col` right pane with CSS `order` (chart `order-1`, divider `order-2`, panel `order-3`); the
+panel has a resizable height (drag the divider) and a collapse toggle. All existing controls (chart
+type, time, dimensions, metrics, filters, HAVING, sort, limit, SQL) live in the DATA tab.
+
+**Key files.** `web/components/QueryBuilder.tsx`.
+
+---
+
+## 102. Query Builder — Chart Type Gallery + Customize Tab ✅ Shipped
+
+### What
+A **Chart Type** gallery (Auto + the inferred-shape's available types) and a **CUSTOMIZE** tab that
+styles the chart: title, data labels, **color scheme**, **number format**, **legend position**, and
+**X/Y axis titles**.
+
+### Why
+Charts were inferred-only with no styling — the biggest gap vs. a real BI explore view.
+
+### How
+`InvestigationChart` gained a backward-compatible controlled mode (type / labels / title) so the rail
+owns them; the shared `<Chart>` engine gained an optional `custom` prop applied as a generic
+post-pass over the built Vega-Lite spec (`applyCustom` walks single + layered specs to set axis
+format/title, color-scale scheme, legend orient). A null custom is a no-op, so chat / reports /
+explorer charts are unaffected. All chart config persists in the saved-query spec.
+
+### Tech / libraries
+- Vega-Lite (the spec post-pass), the shared `Chart` engine + `chartTypeInference`.
+
+**Key files.** `web/components/{QueryBuilder,InvestigationChart,Chart}.tsx`, `web/components/charts/chartTypeInference.ts`.
+
+---
+
+## 103. Query Builder — Compact DATA Tab, Folded Time, Catalog Tree & Canvas-Nav Fix ✅ Shipped
+
+### What
+Polish pass making the rail compact and fixing real defects: removed the Suggested + standalone Time
+sections; **folded the relative time range onto the date-dimension chip** (grain + range inline);
+single-line drop zones that grow with content; SQL and Resolved-Joins collapse by default; tightened
+spacing; **indented catalog columns** under their table (connection→schema→table→column tree); fixed
+dimension chips overflowing their box; gave the chart the full width (no x-axis clipping); and **fixed
+Start Canvas** — it navigated via `window.location.href="/?canvas=id"` (never read → landed on Home),
+now routed through the app's canvas handler with create-then-navigate (LLM name upgraded in background).
+
+### Why
+The control rail was tall and redundant, the catalog hierarchy was ambiguous, and Start Canvas was
+broken (silently went to Home).
+
+**Key files.** `web/components/QueryBuilder.tsx`, `web/app/page.tsx`.
+
+---
+
+*Last updated: 2026-06-12 · 103 features — all shipped. See `ROADMAP.md` for upcoming milestones.*

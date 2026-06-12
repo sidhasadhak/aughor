@@ -188,6 +188,21 @@ export function inferChartType(
   return null;
 }
 
+/** Chart types the unified <Chart> engine can switch between for a given inferred type —
+ *  the gallery shared by InvestigationChart and the Query Builder Explore rail. */
+export function availableTypesFor(inferred: ChartType): ChartType[] {
+  switch (inferred) {
+    case "line":        return ["line", "bar"];
+    case "multi-line":  return ["multi-line", "heatmap", "stacked-bar"];
+    case "heatmap":     return ["heatmap", "multi-line", "stacked-bar"];
+    case "scatter":     return ["scatter", "bar"];
+    case "pie":         return ["pie", "bar", "treemap"];
+    case "treemap":     return ["treemap", "bar", "pie"];
+    case "combo":       return ["combo", "bar"];
+    default:            return ["bar", "line"];
+  }
+}
+
 /** True when the column name looks like a 0–1 share / rate / percentage. */
 export function isShareColumn(colName: string, rows: unknown[][], colIdx: number): boolean {
   if (!SHARE_COL.test(colName)) return false;
