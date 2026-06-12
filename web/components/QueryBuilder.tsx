@@ -13,8 +13,12 @@ import { InvestigationChart } from "@/components/InvestigationChart";
 import { type ChartCustom } from "@/components/Chart";
 import { ResizableSplit } from "@/components/ResizableSplit";
 import { SqlResultTable } from "@/components/AugTable";
+import { PivotTable } from "@/components/PivotTable";
 import { ChartWrapper }       from "@/components/charts/ChartWrapper";
-import { inferChartType, availableTypesFor, type ChartType } from "@/components/charts/chartTypeInference";
+import { inferChartType, availableChartTypes, type ChartType } from "@/components/charts/chartTypeInference";
+
+/** The Query Builder result display: a chart type, "auto" (engine infers), the raw table, or a pivot. */
+type VizMode = ChartType | "auto" | "table" | "pivot";
 
 // ── Aggregation catalogue ─────────────────────────────────────────────────────
 
@@ -633,12 +637,11 @@ function ResultsPane({
   joinedTables: string[];
   onStartCanvas?: (canvas: Canvas) => void;
   tableSchemas?: Record<string, string>;
-  vizType?: ChartType | "auto";
+  vizType?: VizMode;
   showDataLabels?: boolean;
   chartTitle?: string;
   custom?: ChartCustom | null;
 }) {
-  const [view, setView] = useState<"chart" | "matrix" | "table">("chart");
   const [creatingCanvas, setCreatingCanvas] = useState(false);
 
   if (result.error) {
@@ -659,13 +662,10 @@ function ResultsPane({
 
   const rows = result.rows as unknown[][];
   const chartable = inferChartType(result.columns, rows);
-  const hasTwoCats =
-    chartable &&
-    chartable.colorCol !== undefined &&
-    result.columns.filter((_, i) => {
-      const firstVal = rows.find(r => r[i] != null)?.[i];
-      return firstVal != null && isNaN(Number(firstVal));
-    }).length >= 2;
+  // The display mode is owned by the DATA-tab dropdown (vizType). "pivot" → cross-tab,
+  // "table" → raw table; anything else → chart. Non-chartable results fall back to the table.
+  const showPivot = vizType === "pivot";
+  const showTable = !showPivot && (vizType === "table" || !chartable);
 
   const meta = [
     `${result.row_count ?? result.rows.length} rows`,
@@ -710,32 +710,8 @@ function ResultsPane({
 
   return (
     <div className="flex flex-col gap-3">
-      {/* View toggle + actions */}
-      <div className="flex items-center gap-2">
-        {chartable && (
-          <>
-            <button
-              onClick={() => setView("chart")}
-              className={`text-[11px] px-2 py-0.5 rounded border transition-colors ${view === "chart" ? "border-blue-500/40 bg-blue-500/10 text-blue-300" : "border-zinc-700 text-zinc-500 hover:text-zinc-300"}`}
-            >
-              ◈ Chart
-            </button>
-            {hasTwoCats && (
-              <button
-                onClick={() => setView("matrix")}
-                className={`text-[11px] px-2 py-0.5 rounded border transition-colors ${view === "matrix" ? "border-blue-500/40 bg-blue-500/10 text-blue-300" : "border-zinc-700 text-zinc-500 hover:text-zinc-300"}`}
-              >
-                ⊞ Matrix
-              </button>
-            )}
-          </>
-        )}
-        <button
-          onClick={() => setView("table")}
-          className={`text-[11px] px-2 py-0.5 rounded border transition-colors ${view === "table" ? "border-blue-500/40 bg-blue-500/10 text-blue-300" : "border-zinc-700 text-zinc-500 hover:text-zinc-300"}`}
-        >
-          ≡ Table
-        </button>
+      {/* Result meta + CSV (the Chart/Table choice now lives in the DATA-tab dropdown) */}
+      <div className="flex items-center gap-2.5">
         <div className="ml-auto flex items-center gap-2.5">
           <span className="text-[11px]" style={{ color: "var(--t3)" }}>{meta}</span>
           <button onClick={exportCsv} title="Download results as CSV"
@@ -746,29 +722,22 @@ function ResultsPane({
         </div>
       </div>
 
+      {/* Pivot — client-side cross-tab (works on any tabular result) */}
+      {showPivot && (
+        <PivotTable columns={result.columns} rows={rows} />
+      )}
+
       {/* Chart — controlled by the Explore rail (type / labels / title) */}
-      {view === "chart" && chartable && (
+      {!showPivot && !showTable && chartable && (
         <div className="overflow-x-auto overflow-y-auto" style={{ maxHeight: 560 }}>
           <InvestigationChart columns={result.columns} rows={rows}
             controlled typeOverride={vizType} showLabels={showDataLabels} title={chartTitle} custom={custom} />
         </div>
       )}
 
-      {/* Matrix */}
-      {view === "matrix" && chartable && (
-        <div className="overflow-x-auto overflow-y-auto" style={{ maxHeight: 520 }}>
-          <InvestigationChart columns={result.columns} rows={rows} title="Matrix" />
-        </div>
-      )}
-
       {/* Table */}
-      {(view === "table" || !chartable) && (
-        <>
-          {!chartable && (
-            <span className="text-[11px] text-right" style={{ color: "var(--t3)" }}>{meta}</span>
-          )}
-          <SqlResultTable columns={result.columns} rows={rows} maxHeight={420} />
-        </>
+      {showTable && (
+        <SqlResultTable columns={result.columns} rows={rows} maxHeight={420} />
       )}
 
       {/* Start Canvas */}
@@ -804,7 +773,13 @@ function ResultsPane({
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function QueryBuilder({ initialConnId, onOpenCanvas }: { initialConnId?: string; onOpenCanvas?: (canvas: Canvas) => void }) {
+export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest }: {
+  initialConnId?: string;
+  onOpenCanvas?: (canvas: Canvas) => void;
+  /** A query handed in from Insights / Deep Analysis: load the SQL, switch to its
+   *  connection, and run it. nonce-keyed so the same request fires exactly once. */
+  importRequest?: { connId: string; sql: string; nonce: number };
+}) {
   const [connections,   setConnections]   = useState<Connection[]>([]);
   const [connId,        setConnId]        = useState(initialConnId ?? "");
   const [tableNames,    setTableNames]    = useState<string[]>([]);
@@ -901,8 +876,8 @@ export function QueryBuilder({ initialConnId, onOpenCanvas }: { initialConnId?: 
   const [sqlOpen,     setSqlOpen]     = useState(false);  // SQL editor collapsed by default
   const [joinsOpen,   setJoinsOpen]   = useState(false);  // resolved-joins collapsed by default
   const [controlsCollapsed, setControlsCollapsed] = useState(false);  // bottom Data/Customize panel
-  const [controlsH,   setControlsH]   = useState(360);    // bottom panel height (resizable)
-  const [vizType,        setVizType]        = useState<ChartType | "auto">("auto");  // chart-type override
+  const [controlsH,   setControlsH]   = useState(300);    // bottom panel height (resizable) — smaller default = taller chart hero
+  const [vizType,        setVizType]        = useState<VizMode>("auto");  // display: chart type / auto / table
   const [showDataLabels, setShowDataLabels] = useState(false);
   const [chartTitle,     setChartTitle]     = useState("");
   const [colorScheme,    setColorScheme]    = useState("");   // "" = engine default
@@ -1145,14 +1120,54 @@ export function QueryBuilder({ initialConnId, onOpenCanvas }: { initialConnId?: 
   const runRef = useRef({sql,connId,limit,useCache});
   useEffect(()=>{ runRef.current={sql,connId,limit,useCache}; },[sql,connId,limit,useCache]);
 
-  const triggerRun = async () => {
-    const {sql:s,connId:c,limit:l,useCache:uc} = runRef.current;
-    if (!s.trim()||!c) return;
+  // Run an explicit (connId, sql) — used by the Run button (via runRef) and by an
+  // import, which must run BEFORE its setSql/setConnId state has committed to runRef.
+  const runWith = async (c: string, s: string) => {
+    if (!s.trim() || !c) return;
+    const { limit: l, useCache: uc } = runRef.current;
     setRunning(true); setRunError(null); setResult(null); setAcItems([]);
-    try { setResult(await runDirectQuery(c,s,l,{useCache:uc})); }
+    try { setResult(await runDirectQuery(c, s, l, { useCache: uc })); }
     catch(err) { setRunError(err instanceof Error ? err.message : "Query failed"); }
     finally { setRunning(false); }
   };
+  const triggerRun = () => { const { sql: s, connId: c } = runRef.current; void runWith(c, s); };
+
+  // ── Import a query from Insights / Deep Analysis ───────────────────────────
+  // Load the SQL into the manual editor and run it. The grain / aggregation /
+  // HAVING are all encoded in the SQL, so the result + chart come across faithfully.
+  const pendingImportRef = useRef<{ connId: string; sql: string } | null>(null);
+  const importNonceRef   = useRef(0);
+  const applyPendingImport = () => {
+    const imp = pendingImportRef.current;
+    if (!imp) return;
+    pendingImportRef.current = null;
+    // Defer past the mount's synchronous connId-reset effect (which clears sql/autoSql state)
+    // so the imported query is what survives, then run it.
+    window.setTimeout(() => {
+      setAutoSql(false);
+      setSqlOpen(true);
+      setSql(imp.sql);
+      void runWith(imp.connId, imp.sql);
+    }, 0);
+  };
+  // Receive a request (nonce-keyed so it fires once). A different connection must
+  // switch first — the connId-reset effect clears sql, then the effect below re-applies.
+  useEffect(() => {
+    if (!importRequest || importRequest.nonce === importNonceRef.current) return;
+    importNonceRef.current = importRequest.nonce;
+    const c = importRequest.connId || connId;
+    if (!c || !importRequest.sql?.trim()) return;
+    pendingImportRef.current = { connId: c, sql: importRequest.sql };
+    if (c !== connId) setConnId(c);        // triggers reset; applied by the effect below
+    else applyPendingImport();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [importRequest?.nonce]);
+  // After a connection switch settles (this runs AFTER the connId-reset effect above,
+  // by declaration order), apply any pending import the reset just wiped.
+  useEffect(() => {
+    if (pendingImportRef.current && pendingImportRef.current.connId === connId) applyPendingImport();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connId]);
 
   // ── Saved-query persistence ────────────────────────────────────────────────
   // The visual builder state we persist so loading restores the builder, not just the SQL.
@@ -1219,7 +1234,7 @@ export function QueryBuilder({ initialConnId, onOpenCanvas }: { initialConnId?: 
     setTimeFrom(typeof s.timeFrom === "string" ? s.timeFrom : "");
     setTimeTo(typeof s.timeTo === "string" ? s.timeTo : "");
     setTimeGrain((s.timeGrain as TimeGrain) ?? "none");
-    setVizType((s.vizType as ChartType | "auto") ?? "auto");
+    setVizType((s.vizType as VizMode) ?? "auto");
     setShowDataLabels(typeof s.showDataLabels === "boolean" ? s.showDataLabels : false);
     setChartTitle(typeof s.chartTitle === "string" ? s.chartTitle : "");
     setColorScheme(typeof s.colorScheme === "string" ? s.colorScheme : "");
@@ -1291,11 +1306,16 @@ export function QueryBuilder({ initialConnId, onOpenCanvas }: { initialConnId?: 
   // Chart customization — the available viz types depend on the current result's shape.
   const chartInfo = result && !result.error && result.columns.length
     ? inferChartType(result.columns, result.rows as unknown[][]) : null;
-  const availTypes = chartInfo ? availableTypesFor(chartInfo.type) : [];
+  const availTypes = result && !result.error && result.columns.length
+    ? availableChartTypes(result.columns, result.rows as unknown[][]) : [];
+  // Clamp a stale chart-type pick (the result shape may have changed since it was chosen)
+  // to "auto" so the chart never renders blank; "table"/"auto" always pass through.
+  const vizMode: VizMode = (vizType === "table" || vizType === "pivot" || vizType === "auto" || availTypes.includes(vizType as ChartType))
+    ? vizType : "auto";
   const CHART_TYPE_LABEL: Record<string, string> = {
     auto: "Auto", bar: "Bar", line: "Line", "multi-line": "Multi-line", area: "Area",
-    "stacked-bar": "Stacked", "grouped-bar": "Grouped", combo: "Combo", scatter: "Scatter",
-    heatmap: "Heatmap", pie: "Pie", treemap: "Treemap",
+    "stacked-bar": "Stacked bar", "grouped-bar": "Grouped bar", combo: "Combo (bar + line)", scatter: "Scatter",
+    heatmap: "Heatmap", pie: "Pie", treemap: "Treemap", table: "Table",
   };
   const chartCustom: ChartCustom = {
     format: numberFormat || undefined,
@@ -1354,6 +1374,11 @@ export function QueryBuilder({ initialConnId, onOpenCanvas }: { initialConnId?: 
               );
             })}
           </div>
+        ) : result ? (
+          <span className="flex items-center gap-1.5 text-[11px] font-mono px-2.5 py-0.5 rounded-full border shrink-0 bg-violet-500/10 border-violet-500/30 text-violet-300 ml-1">
+            <span className="w-1.5 h-1.5 rounded-full bg-violet-400" />
+            imported query · edit SQL below
+          </span>
         ) : (
           <span className="text-[12px] text-zinc-500 ml-1">Drag a field from the catalog to begin</span>
         )}
@@ -1704,23 +1729,31 @@ export function QueryBuilder({ initialConnId, onOpenCanvas }: { initialConnId?: 
             {!controlsCollapsed && (<>
             <div className={`flex-1 overflow-y-auto px-5 py-3 space-y-3 ${railTab==="data"?"":"hidden"}`}>
 
-              {/* CHART TYPE — viz gallery (Superset's first DATA section); appears once chartable */}
-              {availTypes.length > 0 && (
-                <div className="pb-1">
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-2">Chart Type</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {(["auto", ...availTypes] as (ChartType|"auto")[]).map(t => (
-                      <button key={t} onClick={()=>setVizType(t)}
-                        className={`text-[11px] px-2.5 py-1 rounded-lg border transition ${vizType===t ? "border-blue-500/50 bg-blue-500/10 text-blue-300" : "border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200"}`}>
-                        {CHART_TYPE_LABEL[t] ?? t}
-                      </button>
-                    ))}
-                  </div>
+              {/* DISPLAY — one dropdown for "how to show the result": chart type, Auto, or Table.
+                  Replaces both the old chart-type gallery and the Chart/Table toggle above the chart. */}
+              {result && !result.error && (
+                <div className="pb-1 flex items-center gap-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Display</p>
+                  <select value={vizType} onChange={e=>setVizType(e.target.value as VizMode)}
+                    className="text-[12px] bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition min-w-[150px]">
+                    {availTypes.length > 0 && (
+                      <optgroup label="Chart">
+                        {(["auto", ...availTypes] as VizMode[]).map(t => (
+                          <option key={t} value={t}>{CHART_TYPE_LABEL[t] ?? t}</option>
+                        ))}
+                      </optgroup>
+                    )}
+                    <optgroup label="Data">
+                      <option value="table">Table</option>
+                      <option value="pivot">Pivot</option>
+                    </optgroup>
+                  </select>
                 </div>
               )}
 
-              {/* Onboarding prompt — until the first field is dropped */}
-              {!primaryTable && (
+              {/* Onboarding prompt — until the first field is dropped (hidden once a query has run,
+                  e.g. an imported query from Insights / Deep Analysis) */}
+              {!primaryTable && !result && (
                 <div className="flex items-center gap-3 rounded-md border border-zinc-700/50 bg-zinc-800/30 px-4 py-3">
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" strokeWidth="1.5" strokeLinecap="round" className="shrink-0">
                     <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
@@ -1744,8 +1777,8 @@ export function QueryBuilder({ initialConnId, onOpenCanvas }: { initialConnId?: 
                 </div>
               )}
 
-              {/* Dimensions + Metrics */}
-              <div className="grid grid-cols-1 gap-3">
+              {/* Dimensions + Metrics — side by side */}
+              <div className="grid grid-cols-2 gap-3">
 
                 {/* DIMENSIONS */}
                 <div>
@@ -2021,7 +2054,11 @@ export function QueryBuilder({ initialConnId, onOpenCanvas }: { initialConnId?: 
                 </div>
               </div>
 
-              {/* SQL EDITOR — collapsed by default */}
+              {/* close the primaryTable fragment — Filters/Having/Sort need a resolved table */}
+              </>)}
+
+              {/* SQL EDITOR — shows for a built query OR an imported/manual one (no table needed) */}
+              {(primaryTable || sql.trim()) && (
               <div className="border-t border-zinc-700/30 pt-4">
                 <div className="flex items-center gap-2 mb-2">
                   <button onClick={()=>setSqlOpen(o=>!o)} className="flex items-center gap-2">
@@ -2059,9 +2096,7 @@ export function QueryBuilder({ initialConnId, onOpenCanvas }: { initialConnId?: 
                   />
                 )}
               </div>
-
-              {/* close the primaryTable fragment — Filters/Having/Sort/SQL live in the rail */}
-              </>)}
+              )}
             </div>{/* end DATA tab */}
 
             {/* CUSTOMIZE tab — chart styling */}
@@ -2162,7 +2197,7 @@ export function QueryBuilder({ initialConnId, onOpenCanvas }: { initialConnId?: 
                     primaryTable={primaryTable}
                     joinedTables={joinedTables}
                     tableSchemas={tableSchemas}
-                    vizType={vizType}
+                    vizType={vizMode}
                     showDataLabels={showDataLabels}
                     chartTitle={chartTitle || undefined}
                     custom={chartCustom}

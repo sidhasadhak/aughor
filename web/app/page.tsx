@@ -7,6 +7,7 @@ import dynamic from "next/dynamic";
 import { ChatPanel } from "@/components/ChatPanel";
 import { ExplorationBadge } from "@/components/ExplorationBadge";
 import { SchemaProvider } from "@/lib/schema-context";
+import { OpenInBuilderProvider } from "@/lib/openInBuilder";
 import { getCanvases } from "@/lib/api";
 import { CommandPalette } from "@/components/CommandPalette";
 import type { IntelLayer } from "@/components/IntelligenceWorkspace";
@@ -1357,6 +1358,7 @@ export default function Home() {
   const [tab, setTab] = useState<NavTab>("home");
   const [theme, setThemeState] = useState<Theme>("dark");
   const [selectedConn, setSelectedConn] = useState("");
+  const [builderImport, setBuilderImport] = useState<{ connId: string; sql: string; nonce: number } | undefined>(undefined);
   const [activeCanvas, setActiveCanvas] = useState<Canvas | null>(null);
   const [initialCanvasInvId, setInitialCanvasInvId] = useState<string | null>(null);
   const [initialCanvasChatId, setInitialCanvasChatId] = useState<string | null>(null);
@@ -1551,6 +1553,15 @@ export default function Home() {
     setTab("canvas-workspace");
   };
 
+  // Open in Query Builder — a query handed off from Insights / Deep Analysis.
+  // Defaults the connection to the currently selected one (what the insight ran against).
+  const handleOpenInBuilder = (sql: string, connId?: string) => {
+    const c = connId || selectedConn;
+    if (c && c !== selectedConn) setSelectedConn(c);
+    setBuilderImport({ connId: c, sql, nonce: Date.now() });
+    setTab("builder");
+  };
+
   const handleAddConn = async (name: string, type: string, dsn: string, schema?: string, meta?: Record<string, string>) => {
     await apiAddConnection(name, type, dsn, schema, meta);
     setShowAddConn(false);
@@ -1592,6 +1603,7 @@ export default function Home() {
   }, [selectedWorkspace, connections]);
 
   return (
+    <OpenInBuilderProvider value={handleOpenInBuilder}>
     <div className="aug-app">
 
       {/* Topbar */}
@@ -1811,7 +1823,7 @@ export default function Home() {
             {/* ── QUERY BUILDER ── */}
             {tab === "builder" && (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
-                <QueryBuilder initialConnId={selectedConn} onOpenCanvas={handleCanvasSelect} />
+                <QueryBuilder initialConnId={selectedConn} onOpenCanvas={handleCanvasSelect} importRequest={builderImport} />
               </div>
             )}
 
@@ -1944,5 +1956,6 @@ export default function Home() {
       )}
 
     </div>
+    </OpenInBuilderProvider>
   );
 }

@@ -128,7 +128,19 @@ export function verbLabel(verb: string): string {
 // aggregated. We match the label/axis granularity to the data rather than re-bin,
 // inferring the grain from the column name first, then median spacing of values.
 
-export type Gran = "day" | "week" | "month" | "quarter" | "year";
+export type Gran = "minute" | "hour" | "day" | "week" | "month" | "quarter" | "year";
+
+/**
+ * Tidy a raw cell value for tabular display. A DATE_TRUNC'd dimension comes back as a
+ * midnight timestamp ("2025-04-01 00:00:00"); the trailing 00:00:00 is noise in a table,
+ * so collapse it to the date ("2025-04-01"). Everything else passes through unchanged.
+ */
+export function displayCellValue(v: unknown): string {
+  if (v == null) return "";
+  const s = String(v);
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})[ T]00:00:00(?:\.0+)?$/);
+  return m ? m[1] : s;
+}
 
 /**
  * "2024-01-01 00:00:00" / "2024-01" → a string `new Date()` can parse.
@@ -143,6 +155,8 @@ export function normDateStr(v: string): string {
 
 export function granFromName(col: string): Gran | null {
   const n = (col || "").toLowerCase();
+  if (/\bminute\b|_minute|per_minute/.test(n)) return "minute";
+  if (/\bhour\b|_hour|hourly/.test(n)) return "hour";
   if (/\bweek\b|wk\b|_week|iso_week|week_/.test(n)) return "week";
   if (/\bquarter\b|\bqtr\b|_q$|fiscal_q/.test(n)) return "quarter";
   if (/\bmonth\b|_month|yyyymm/.test(n)) return "month";
@@ -156,6 +170,21 @@ const _DAY_MS = 86_400_000;
 export function detectGranularity(col: string, values: unknown[]): Gran {
   const named = granFromName(col);
   if (named) return named;
+
+  // Sub-day grain from the time-of-day component, BEFORE the spacing heuristic —
+  // DATE_TRUNC('minute') leaves a varying MM, DATE_TRUNC('hour') a varying HH with
+  // MM=00, and day+ are all midnight. Sparse minute data (orders hours apart) would
+  // otherwise be misread as "day" by the median-delta test and lose its time labels.
+  let anyMinute = false, anyHour = false;
+  for (const v of values) {
+    const mt = String(v ?? "").match(/\d{4}-\d{2}-\d{2}[ T](\d{2}):(\d{2}):\d{2}/);
+    if (!mt) continue;
+    if (mt[2] !== "00") { anyMinute = true; break; }  // non-zero minutes → minute grain
+    if (mt[1] !== "00") anyHour = true;               // non-zero hour, zero minutes → hour grain
+  }
+  if (anyMinute) return "minute";
+  if (anyHour) return "hour";
+
   const ts = Array.from(
     new Set(values.map((v) => String(v ?? "")).filter((s) => /^\d{4}-\d{2}(-\d{2})?/.test(s)))
   )
@@ -183,6 +212,10 @@ export function fmtDate(v: string, gran: Gran): string {
   const d = new Date(normDateStr(v));
   if (isNaN(d.getTime())) return v;
   switch (gran) {
+    case "minute":
+      return d.toLocaleString("default", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+    case "hour":
+      return d.toLocaleString("default", { day: "numeric", month: "short", hour: "numeric" });
     case "day":
     case "week":
       return d.toLocaleString("default", { day: "numeric", month: "short", year: "numeric" });
@@ -202,6 +235,9 @@ export function fmtDate(v: string, gran: Gran): string {
  */
 export function chartDateFormat(gran: Gran, multiYear: boolean): string {
   switch (gran) {
+    case "minute":
+    case "hour":
+      return "%b %d %H:%M";
     case "day":
     case "week":
       return multiYear ? "%b %Y" : "%b %d";
@@ -215,6 +251,8 @@ export function chartDateFormat(gran: Gran, multiYear: boolean): string {
 }
 
 export const GRAN_WORD: Record<Gran, string> = {
+  minute: "Per-minute",
+  hour: "Hourly",
   day: "Daily",
   week: "Weekly",
   month: "Monthly",

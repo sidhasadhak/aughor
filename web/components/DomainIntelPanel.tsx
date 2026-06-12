@@ -14,6 +14,7 @@ import {
   type ExplorationEpisode,
 } from "@/lib/api";
 import { subscribeKernelEvents } from "@/lib/events";
+import { useOpenInBuilder } from "@/lib/openInBuilder";
 
 // ── Domain metadata ───────────────────────────────────────────────────────────
 
@@ -107,10 +108,11 @@ function EpisodeRow({ ep, domain }: { ep: ExplorationEpisode; domain: string }) 
 
 // ── Finding card ──────────────────────────────────────────────────────────────
 
-function FindingCard({ insight, canvasId }: { insight: ExplorationInsight; canvasId?: string }) {
+function FindingCard({ insight, canvasId, connectionId }: { insight: ExplorationInsight; canvasId?: string; connectionId?: string }) {
   const [sqlOpen, setSqlOpen] = useState(false);
   const [promoted, setPromoted] = useState(insight.promoted_to_org ?? false);
   const [promoting, setPromoting] = useState(false);
+  const openInBuilder = useOpenInBuilder();
   const nv = noveltyMeta(insight.novelty);
   const dm = domainMeta(insight.domain);
 
@@ -189,6 +191,15 @@ function FindingCard({ insight, canvasId }: { insight: ExplorationInsight; canva
                 {promoting ? "…" : "Promote to Org →"}
               </button>
             )
+          )}
+          {insight.sql && openInBuilder && (
+            <button
+              onClick={() => openInBuilder(insight.sql, connectionId)}
+              title="Open this query in the Query Builder"
+              style={{ fontSize: 10, color: "var(--blue4)", background: "var(--blue1)", border: "0.5px solid var(--blue2)", borderRadius: 4, cursor: "pointer", padding: "2px 8px" }}
+            >
+              Open in Query Builder →
+            </button>
           )}
           {insight.sql && (
             <button
@@ -545,7 +556,7 @@ function DomainDetailView({ domain, data, episodes, connectionId, canvasId, onBa
           ? <p style={{ fontSize: 11, color: "var(--t4)", fontStyle: "italic" }}>
               {hasFilters ? "No findings match these filters." : "No findings yet — exploration is running or budget not started."}
             </p>
-          : filtered.map(ins => <FindingCard key={ins.id} insight={ins} canvasId={canvasId} />)
+          : filtered.map(ins => <FindingCard key={ins.id} insight={ins} canvasId={canvasId} connectionId={connectionId} />)
       )}
     </div>
   );

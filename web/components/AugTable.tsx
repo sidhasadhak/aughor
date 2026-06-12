@@ -13,7 +13,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Table, ConfigProvider, theme } from "antd";
 import type { TableProps, TableColumnsType } from "antd";
-import { cleanLabel, formatMetricValue, formatPercent } from "@/lib/format";
+import { cleanLabel, formatMetricValue, formatPercent, displayCellValue } from "@/lib/format";
 
 // ── Theme-mode hook ──────────────────────────────────────────────────────────
 // Ant Design's theme tokens must be real colors (it derives shades), so we can't
@@ -165,7 +165,8 @@ function fmt(col: string, v: unknown): React.ReactNode {
   if (!isNaN(n) && !ORDINAL_COL.test(col) && s.trim() !== "") {
     return <span style={{ fontVariantNumeric: "tabular-nums" }}>{formatMetricValue(n)}</span>;
   }
-  return s;
+  // Collapse a DATE_TRUNC'd midnight timestamp ("2025-04-01 00:00:00") to its date.
+  return displayCellValue(s);
 }
 
 // ── Core AugTable component ──────────────────────────────────────────────────
