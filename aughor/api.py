@@ -137,13 +137,20 @@ async def _setup_samples() -> None:
 
 
 async def _sweep_stale_investigations() -> None:
-    # Investigations orphaned mid-run (interrupted streams / restarts) get stuck
-    # in 'running' forever and clutter history with un-openable items. Fail them.
+    # Boot reconciliation, the investigation analog of kernel boot_recovery: a
+    # freshly-started process has NOTHING genuinely running, so every row still
+    # marked 'running' is orphaned by the previous process's restart/crash. Fail
+    # ALL of them immediately (max_age_minutes=0) instead of waiting up to ~60min
+    # for the periodic supervisor sweep — a crashed investigation otherwise shows
+    # as "running" in the UI long after the server that owned it is gone. The
+    # periodic supervisor keeps the 60-min cutoff (during live operation a recent
+    # 'running' row IS legitimately in flight and must not be swept). Each sweep
+    # emits investigation.failed onto the event spine via fail_investigation.
     try:
-        from aughor.db.history import sweep_stale_running
-        n = sweep_stale_running(max_age_minutes=60)
+        from aughor.db.history import reconcile_orphaned_investigations
+        n = reconcile_orphaned_investigations()
         if n:
-            logger.info("Marked %d stale 'running' investigation(s) as failed", n)
+            logger.info("Boot reconciliation: marked %d orphaned 'running' investigation(s) as failed", n)
     except Exception as exc:
         logger.warning("Stale investigation sweep failed (non-fatal): %s", exc)
 

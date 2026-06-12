@@ -91,4 +91,18 @@ def deliver_subscription(sub: BriefSubscription, *, persist: bool = True) -> dic
         except Exception:
             pass
 
+    # T3 kernel-leverage: a delivered brief lands on the event spine so the
+    # scheduled-subsystem activity is observable (status incl. failures) instead
+    # of living only in the subscription's last_status.
+    try:
+        from aughor.kernel.ledger import Ledger
+        Ledger.default().emit(
+            "brief.delivered",
+            {"subscription_id": sub.id, "name": sub.name, "period": sub.period,
+             "status": result["status"], "error": result["error"]},
+            conn_id=sub.conn_id,
+        )
+    except Exception:
+        logger.debug("brief.delivered emit failed", exc_info=True)
+
     return result

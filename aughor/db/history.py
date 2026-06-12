@@ -11,15 +11,54 @@ Only complete investigations are eligible for Qdrant indexing and cache hits.
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal, Optional
 
+logger = logging.getLogger(__name__)
+
 _DB_PATH = Path(__file__).parent.parent.parent / "data" / "history.db"
 
 InvStatus = Literal["running", "complete", "timed_out", "failed", "paused"]
+
+
+# ── Kernel event spine (K2) — investigation lifecycle ─────────────────────────
+# T3 kernel-leverage: investigations used to be invisible on the event spine (only
+# the explorer emitted). Journaling each lifecycle transition HERE — at the single
+# point every transition flows through — means every surface (ActivityLog, system
+# panels, a second tab) sees an investigation start/finish/fail without polling,
+# and reconciliation/supervision can build on a real event trail. Best-effort:
+# the history row is the source of truth, so a failed emit never breaks the request.
+
+def _inv_scope(c: sqlite3.Connection, inv_id: str) -> tuple[Optional[str], Optional[str]]:
+    """(connection_id, canvas_id) for an investigation, so its events scope to the
+    same connection/canvas the explorer's do."""
+    try:
+        row = c.execute(
+            "SELECT connection_id, canvas_id FROM investigations WHERE id = ?", (inv_id,)
+        ).fetchone()
+        if row:
+            return row["connection_id"], row["canvas_id"]
+    except Exception:
+        logger.debug("investigation scope lookup failed for %s", inv_id, exc_info=True)
+    return None, None
+
+
+def _emit_lifecycle(inv_id: str, kind: str, *, conn_id: Optional[str] = None,
+                    canvas_id: Optional[str] = None, **payload: Any) -> None:
+    """Append an `investigation.*` event to the kernel journal (best-effort)."""
+    try:
+        from aughor.kernel.ledger import Ledger
+        from aughor.kernel.jobs import current_job_id
+        Ledger.default().emit(
+            kind, {"investigation_id": inv_id, **payload},
+            conn_id=conn_id, canvas_id=canvas_id, job_id=current_job_id(),
+        )
+    except Exception:
+        logger.debug("investigation lifecycle emit failed (%s)", kind, exc_info=True)
 
 
 def _conn() -> sqlite3.Connection:
@@ -87,6 +126,8 @@ def create_investigation(
     )
     c.commit()
     c.close()
+    _emit_lifecycle(inv_id, "investigation.created", conn_id=connection_id,
+                    canvas_id=canvas_id, question=question[:200])
     return inv_id
 
 
@@ -128,7 +169,12 @@ def complete_investigation(
         ),
     )
     c.commit()
+    _conn_scope, _canvas_scope = _inv_scope(c, inv_id)
     c.close()
+    _emit_lifecycle(inv_id, "investigation.completed",
+                    conn_id=connection_id or _conn_scope, canvas_id=_canvas_scope,
+                    headline=(headline or "")[:200],
+                    query_count=len(queries_list))
 
     # Index in Qdrant — only for investigate-mode completions (not direct queries)
     if report_dict and not skip_index:
@@ -149,7 +195,9 @@ def pause_investigation(inv_id: str) -> None:
         (inv_id,),
     )
     c.commit()
+    _conn_scope, _canvas_scope = _inv_scope(c, inv_id)
     c.close()
+    _emit_lifecycle(inv_id, "investigation.paused", conn_id=_conn_scope, canvas_id=_canvas_scope)
 
 
 def fail_investigation(inv_id: str, status: InvStatus = "timed_out") -> None:
@@ -164,7 +212,10 @@ def fail_investigation(inv_id: str, status: InvStatus = "timed_out") -> None:
         (_now(), status, inv_id),
     )
     c.commit()
+    _conn_scope, _canvas_scope = _inv_scope(c, inv_id)
     c.close()
+    _emit_lifecycle(inv_id, "investigation.failed", conn_id=_conn_scope,
+                    canvas_id=_canvas_scope, status=status)
 
 
 def save_chat_turn(
@@ -258,20 +309,61 @@ def last_activity_by_canvas() -> dict[str, str]:
 def sweep_stale_running(max_age_minutes: int = 60) -> int:
     """Mark investigations stuck in 'running' past max_age_minutes as 'failed'.
     These are orphaned by interrupted streams / restarts and otherwise clutter
-    history with un-openable items. Returns the count updated."""
+    history with un-openable items. Returns the count updated.
+
+    Each swept row journals an `investigation.failed` event: this is a terminal
+    transition like any other, so the event spine must reflect it (otherwise a
+    panel keeps showing the row as 'running' until its next poll, and the DB and
+    journal disagree — the exact inconsistency T3 closes)."""
     from datetime import timedelta
     cutoff = (datetime.now(timezone.utc) - timedelta(minutes=max_age_minutes)).isoformat()
     c = _conn()
     _ensure_schema(c)
-    cur = c.execute(
+    rows = c.execute(
+        "SELECT id, connection_id, canvas_id FROM investigations "
+        "WHERE status = 'running' AND started_at < ?",
+        (cutoff,),
+    ).fetchall()
+    if not rows:
+        c.close()
+        return 0
+    c.execute(
         "UPDATE investigations SET status = 'failed', completed_at = ? "
         "WHERE status = 'running' AND started_at < ?",
         (_now(), cutoff),
     )
-    n = cur.rowcount
     c.commit()
     c.close()
-    return n if (n and n > 0) else 0
+    for r in rows:
+        _emit_lifecycle(r["id"], "investigation.failed", conn_id=r["connection_id"],
+                        canvas_id=r["canvas_id"], status="failed", reason="stale sweep (orphaned)")
+    return len(rows)
+
+
+def reconcile_orphaned_investigations() -> int:
+    """Boot-time reconciliation: a freshly-started process has nothing genuinely
+    running, so EVERY 'running' row is an orphan from the prior process. Fail all
+    of them (regardless of age — unlike the periodic 60-min sweep) and journal an
+    `investigation.failed` event for each, so the event spine narrates the
+    recovery the same way the kernel narrates orphaned jobs. Returns the count."""
+    c = _conn()
+    _ensure_schema(c)
+    rows = c.execute(
+        "SELECT id, connection_id, canvas_id FROM investigations WHERE status = 'running'"
+    ).fetchall()
+    if not rows:
+        c.close()
+        return 0
+    c.execute(
+        "UPDATE investigations SET status = 'failed', completed_at = ? WHERE status = 'running'",
+        (_now(),),
+    )
+    c.commit()
+    c.close()
+    for r in rows:
+        _emit_lifecycle(r["id"], "investigation.failed", conn_id=r["connection_id"],
+                        canvas_id=r["canvas_id"], status="failed", reason="server restart (orphaned)")
+    return len(rows)
 
 
 def get_session_turns(session_id: str) -> list[dict]:

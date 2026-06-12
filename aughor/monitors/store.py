@@ -7,12 +7,15 @@ Two tables in data/monitors.db:
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import threading
 from pathlib import Path
 from typing import Optional
 
 from aughor.monitors.models import Monitor, MonitorAlert
+
+logger = logging.getLogger(__name__)
 
 _DB_PATH = Path("data") / "monitors.db"
 _LOCK = threading.Lock()
@@ -247,6 +250,20 @@ def append_alert(alert: MonitorAlert) -> MonitorAlert:
             conn.commit()
         finally:
             conn.close()
+    # T3 kernel-leverage: surface a fired alert on the event spine so any panel
+    # (and a second tab) sees it live, the same way explorer insights do. The
+    # alert row is the source of truth — a failed emit never blocks the alert.
+    try:
+        from aughor.kernel.ledger import Ledger
+        Ledger.default().emit(
+            "monitor.alert",
+            {"monitor_id": alert.monitor_id, "monitor_name": alert.monitor_name,
+             "severity": alert.severity, "metric": alert.metric_name,
+             "current_value": alert.current_value, "message": alert.message[:200]},
+            conn_id=alert.conn_id,
+        )
+    except Exception:
+        logger.debug("monitor.alert emit failed", exc_info=True)
     return alert
 
 
