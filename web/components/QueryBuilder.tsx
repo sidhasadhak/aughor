@@ -876,7 +876,7 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest }: {
   const [sqlOpen,     setSqlOpen]     = useState(false);  // SQL editor collapsed by default
   const [joinsOpen,   setJoinsOpen]   = useState(false);  // resolved-joins collapsed by default
   const [controlsCollapsed, setControlsCollapsed] = useState(false);  // bottom Data/Customize panel
-  const [controlsH,   setControlsH]   = useState(360);    // bottom panel height (resizable)
+  const [controlsH,   setControlsH]   = useState(300);    // bottom panel height (resizable) — smaller default = taller chart hero
   const [vizType,        setVizType]        = useState<VizMode>("auto");  // display: chart type / auto / table
   const [showDataLabels, setShowDataLabels] = useState(false);
   const [chartTitle,     setChartTitle]     = useState("");
@@ -1777,8 +1777,8 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest }: {
                 </div>
               )}
 
-              {/* Dimensions + Metrics */}
-              <div className="grid grid-cols-1 gap-3">
+              {/* Dimensions + Metrics — side by side */}
+              <div className="grid grid-cols-2 gap-3">
 
                 {/* DIMENSIONS */}
                 <div>
