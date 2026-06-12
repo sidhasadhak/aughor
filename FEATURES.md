@@ -3035,4 +3035,79 @@ to a removed route went uncaught.
 
 ---
 
-*Last updated: 2026-06-12 · 114 features — all shipped. See `ROADMAP.md` for upcoming milestones.*
+## 115. Investigations as First-Class Kernel Jobs ✅ Shipped (T3)
+
+### What
+A live investigation now runs as a **supervised kernel job**, the same as the explorer: a `job.state`
+PENDING→RUNNING→SUCCEEDED|FAILED|CANCELLED lifecycle on the event spine, a heartbeat (orphan detection), and
+its artifacts auto-stamped with `created_by_job`. A new `POST /investigations/{inv_id}/cancel` cancels an
+in-flight run via the kernel (job → CANCELLED, the row reconciled to failed).
+
+### Why
+Investigations were the last major long-running operation outside the kernel — reconciled only by
+side-channels. Making them jobs gives unified status, heartbeats, kernel-driven cancel, and artifact lineage.
+
+### How
+`_stream_investigation` is left **completely unchanged**; a thin wrapper (`_investigation_job_streamed`) runs
+it inside the job's task and bridges its SSE events to the client over an in-process queue (latency unchanged,
+zero risk to the 360-line streaming path). Verified live: job PENDING→RUNNING→SUCCEEDED with the report still
+streamed; in-flight cancel → CANCELLED + reconcile.
+
+**Key files.** `aughor/routers/investigations.py` (`_investigation_job_streamed`, cancel route).
+
+---
+
+## 116. Investigation Crash-Recovery (Boot Salvage) ✅ Shipped (T3)
+
+### What
+After a hard crash, an investigation orphaned mid-run is **recovered, not just failed**: on boot a supervised
+salvage job reads its LangGraph checkpoint (persistent `SqliteSaver`, keyed by inv_id) and runs the proven
+`_try_salvage` to synthesize a **partial report** from the evidence (ADA phases / explore answers) gathered
+before the crash — marking it `complete` (flagged `_partial`) where possible, failing it only when there is
+nothing to recover.
+
+### Why
+"crash-RESUME vs sweep-to-failed" — don't throw away minutes of gathered investigation work because the
+process died. Reuses the battle-tested salvage path rather than a risky full graph re-run.
+
+### How
+`_recover_orphaned_investigations` runs inside `_kernel_boot_recovery` (AFTER the kernel's job sweep, so the
+salvage jobs aren't swept themselves) and submits one salvage job per orphaned `running` row. **Verified with
+a kill -9 chaos test**: a hard-killed mid-ADA investigation came back `complete` with a real partial headline.
+
+**Key files.** `aughor/routers/investigations.py` (`salvage_orphaned_investigation`), `aughor/api.py`
+(`_recover_orphaned_investigations`), `aughor/db/history.py` (`list_orphaned_running_investigations`).
+
+---
+
+## 117. Shared SQL-Analysis Facade (`analyze()`) ✅ Shipped
+
+### What
+One place — `aughor/sql/analyze.py` `analyze(sql) -> SqlFacts` — that parses SQL once (sqlglot) and exposes
+the reusable semantic facts: tables (CTEs excluded), columns, aggregates (func / arg / distinct / windowed),
+GROUP BY, and the `product_of_aggregates` predicate. Pure static analysis; never raises (unparseable →
+`ok=False`, empty facts).
+
+### Why
+sqlglot was already load-bearing (fanout / lint / measure_grain parse the AST), yet several trust-critical
+checks still **string-munged** the SQL, each fragile in its own way. The facade lets them share one rigorous
+extraction. The headline fix: the ontology validator's product-of-aggregates detector was a regex
+(`AGG(...)\s*\*\s*AGG(`) that **silently missed any nested-paren argument** — e.g.
+`SUM(COALESCE(price,0)) * SUM(quantity)` slipped through as *verified*, injecting a $3T-class formula into the
+NL2SQL prompt with authority. The AST predicate catches it (a multiply whose **both** operands contain an
+aggregate, and which is not itself inside one — so `SUM(a*b)` stays correct).
+
+### How (first two consumers retargeted)
+- `ontology/validator.py` — product-of-aggregates regex → `analyze().product_of_aggregates`. **Runtime-proven**:
+  the nested case is now demoted to unverified on the real `validate_semantics` path.
+- `investigations._extract_tables` — regex → `analyze().tables` (AST-correct on aliases/subqueries), with a
+  regex fallback for the multi-statement blobs some call sites pass.
+
+Remaining string holdouts (`sql_consistency`, `lint` NOT-IN, `measure_grain` dedup) are follow-ups; the
+chips reverse-compile (Layer 3) stays out of scope by design.
+
+**Key files.** `aughor/sql/analyze.py`, `aughor/ontology/validator.py`, `aughor/routers/investigations.py`.
+
+---
+
+*Last updated: 2026-06-12 · 117 features — all shipped. See `ROADMAP.md` for upcoming milestones.*
