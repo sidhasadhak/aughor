@@ -264,6 +264,40 @@ def count_star_entity_fanout(sql: str, table_cols: dict | None = None) -> str | 
     return None
 
 
+def _chasm_roots(tree, root, table_cols: dict | None) -> dict[str, set[str]]:
+    """Hubs that have ≥2 RAW base-table satellites joined directly in the OUTER
+    scope — i.e. a chasm. Returns {hub_fk_root: {satellite tables}} with ≥2 sats
+    each, or {} when there's no chasm. Shared by the COUNT(*) and AVG chasm
+    linters so they detect the SAME structure identically. CTE/subquery sources
+    are excluded (pre-aggregating in a CTE is the fix)."""
+    from sqlglot import exp
+    cte_names = {c.alias_or_name.lower() for c in tree.find_all(exp.CTE)}
+    base_tables: set[str] = set()
+    for _alias, source in root.sources.items():
+        if isinstance(source, exp.Table):
+            name = source.name.lower()
+            if name not in cte_names:
+                base_tables.add(name)
+    if len(base_tables) < 2:
+        return {}
+
+    def _schema_cols(bare: str) -> list[str]:
+        for t, cols in (table_cols or {}).items():
+            if str(t).split(".")[-1].lower() == bare or str(t).lower() == bare:
+                return cols
+        return []
+
+    # Satellites of a hub = base tables that carry the hub's FK root but are NOT
+    # the hub itself (the hub's singular stem equals the root).
+    roots_by_table = {bt: _table_fk_roots(_schema_cols(bt)) for bt in base_tables}
+    sat_by_root: dict[str, set[str]] = {}
+    for bt in base_tables:
+        for r in roots_by_table[bt]:
+            if _singular(bt) != r and bt != r:   # bt is a satellite of hub r, not the hub
+                sat_by_root.setdefault(r, set()).add(bt)
+    return {r: sats for r, sats in sat_by_root.items() if len(sats) >= 2}
+
+
 def count_star_chasm_fanout(sql: str, table_cols: dict | None = None, dialect: str = "duckdb") -> str | None:
     """``COUNT(*)`` over a CHASM — ≥2 base tables on the many-side of the SAME hub key
     joined directly — counts the cross-product of the satellites, not either entity.
@@ -296,33 +330,9 @@ def count_star_chasm_fanout(sql: str, table_cols: dict | None = None, dialect: s
     if root is None:
         return None
 
-    # RAW base tables in the OUTER scope (exclude CTE references — pre-aggregated = safe).
-    cte_names = {c.alias_or_name.lower() for c in tree.find_all(exp.CTE)}
-    base_tables: set[str] = set()
-    for _alias, source in root.sources.items():
-        if isinstance(source, exp.Table):
-            name = source.name.lower()
-            if name not in cte_names:
-                base_tables.add(name)
-    if len(base_tables) < 2:
-        return None
-
-    def _schema_cols(bare: str) -> list[str]:
-        for t, cols in (table_cols or {}).items():
-            if str(t).split(".")[-1].lower() == bare or str(t).lower() == bare:
-                return cols
-        return []
-
-    # Satellites of a hub = base tables that carry the hub's FK root but are NOT the
-    # hub itself (the hub's singular stem equals the root). A chasm needs ≥2 satellites
-    # of the SAME hub joined directly — a single hub⋈satellite join is not a chasm.
-    roots_by_table = {bt: _table_fk_roots(_schema_cols(bt)) for bt in base_tables}
-    sat_by_root: dict[str, set[str]] = {}
-    for bt in base_tables:
-        for r in roots_by_table[bt]:
-            if _singular(bt) != r and bt != r:   # bt is a satellite of hub r, not the hub
-                sat_by_root.setdefault(r, set()).add(bt)
-    chasm = {r: sats for r, sats in sat_by_root.items() if len(sats) >= 2}
+    # A chasm needs ≥2 satellites of the SAME hub joined directly — a single
+    # hub⋈satellite join is not a chasm.
+    chasm = _chasm_roots(tree, root, table_cols)
     if not chasm:
         return None
 
@@ -343,6 +353,59 @@ def count_star_chasm_fanout(sql: str, table_cols: dict | None = None, dialect: s
                 f"pre-aggregate each in its own CTE keyed by '{r}', or use "
                 f"COUNT(DISTINCT <entity>_id) for the entity you mean to count"
             )
+    return None
+
+
+def avg_over_chasm_fanout(sql: str, table_cols: dict | None = None, dialect: str = "duckdb") -> str | None:
+    """``AVG(x)`` over a CHASM — every row is the cross-product of ≥2 satellites of
+    one hub, so each distinct value is repeated by the OTHER satellite's fan-out
+    multiplicity. Unlike SUM/COUNT (which merely inflate) the mean comes out
+    *silently biased* — weighted by fan-out, not the true average; and unlike
+    MIN/MAX (which survive duplication unchanged) it can't be trusted. detect_fanout
+    targets additive measures and defan() bails on AVG by design, so this is a
+    high-precision DROP signal on the SAME chasm structure as the COUNT(*) case:
+    ≥2 RAW satellites of one hub + a non-DISTINCT, non-windowed AVG in the OUTER
+    scope. Static analysis; returns a reason string or None; never raises."""
+    try:
+        import sqlglot
+        from sqlglot import exp
+        from sqlglot.optimizer.scope import build_scope
+    except Exception:
+        return None
+    try:
+        tree = sqlglot.parse_one(sql, read=dialect)
+    except Exception:
+        return None
+    if tree is None:
+        return None
+    try:
+        root = build_scope(tree)
+    except Exception:
+        root = None
+    if root is None:
+        return None
+
+    chasm = _chasm_roots(tree, root, table_cols)
+    if not chasm:
+        return None
+
+    # A non-DISTINCT AVG in the OUTER scope. Windowed AVG (AVG(x) OVER (...)) is a
+    # different construct — it doesn't collapse the rows — so exclude it.
+    outer = root.expression
+    for avg in outer.find_all(exp.Avg):
+        if isinstance(avg.this, exp.Distinct):
+            continue
+        if isinstance(avg.parent, exp.Window):
+            continue
+        r = sorted(chasm)[0]
+        sats = sorted(chasm[r])
+        col = avg.this.sql() if avg.this else "x"
+        return (
+            f"AVG({col}) over a chasm join ({', '.join(sats)} are each on the many-side "
+            f"of '{r}') averages the cross-product, so every value is weighted by the "
+            f"other satellite's fan-out — a biased mean, not the true average — "
+            f"pre-aggregate each satellite in its own CTE keyed by '{r}' first"
+        )
     return None
 
 
