@@ -10,6 +10,19 @@ from enum import Enum
 from typing import Optional
 
 
+def elapsed_seconds(start_iso: Optional[str], end_iso: Optional[str]) -> Optional[float]:
+    """Seconds between two ISO timestamps, or None if either is missing/unparseable.
+    Used for the time-to-first-insight KPI (B-6)."""
+    if not start_iso or not end_iso:
+        return None
+    try:
+        start = datetime.fromisoformat(start_iso)
+        end = datetime.fromisoformat(end_iso)
+        return round((end - start).total_seconds(), 1)
+    except (ValueError, TypeError):
+        return None
+
+
 class ExplorationPhase(str, Enum):
     PENDING            = "pending"
     NULL_MEANING       = "null_meaning"
@@ -133,6 +146,10 @@ class ExplorationStatus:
     domain_coverage: dict = field(default_factory=dict)  # {domain: [angles_covered]}
 
     started_at: Optional[str] = None
+    # Time-to-first-insight KPI (B-6): when the FIRST insight from any phase
+    # (cross-table Phase 7 or domain-intel Phase 8) was discovered. Lets the
+    # connect→first-insight funnel be measured instead of being all-or-nothing.
+    first_insight_at: Optional[str] = None
     completed_at: Optional[str] = None
     error: Optional[str] = None
 
@@ -161,6 +178,8 @@ class ExplorationStatus:
             "domain_budgets": self.domain_budgets,
             "domain_coverage": self.domain_coverage,
             "started_at": self.started_at,
+            "first_insight_at": self.first_insight_at,
+            "first_insight_seconds": elapsed_seconds(self.started_at, self.first_insight_at),
             "completed_at": self.completed_at,
             "error": self.error,
             "domain_intel_skipped": self.domain_intel_skipped,

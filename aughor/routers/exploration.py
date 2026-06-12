@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from aughor.db.connection import open_connection_for
-from aughor.explorer.models import ExplorationPhase
+from aughor.explorer.models import ExplorationPhase, elapsed_seconds
 from aughor.routers._shared import (
     explorers as _explorers,
     explorer_tasks as _explorer_tasks,
@@ -132,10 +132,50 @@ def get_exploration_status(conn_id: str):
         "queries_executed": state.get("queries_executed", 0),
         "facts_discovered": len(state.get("insights", [])) + len(state.get("lifecycle_maps", {})),
         "started_at":   state.get("started_at"),
+        "first_insight_at": state.get("first_insight_at"),
+        "first_insight_seconds": elapsed_seconds(state.get("started_at"), state.get("first_insight_at")),
         "completed_at": state.get("completed_at"),
         "error": None,
         "domain_intel_skipped": state.get("domain_intel_skipped", False),
         "domain_intel_note": state.get("domain_intel_note"),
+    }
+
+
+@router.get("/exploration/kpi/time-to-first-insight")
+def time_to_first_insight_kpi(limit: int = 200):
+    """B-6 product KPI: the connect→first-insight funnel, measured.
+
+    Reads the `exploration.first_insight` milestone events the explorer stamps
+    (one per run, on the first insight from any phase) and reports the
+    distribution of elapsed seconds — so "how fast does a fresh connection
+    deliver its first finding" is a query, not a vibe. Mirrors
+    /metrics/enforcement-rate: a measured rate the product is held to."""
+    from aughor.kernel.ledger import Ledger
+    events = Ledger.default().events(kind="exploration.first_insight", limit=min(int(limit), 500))
+    samples = [
+        {
+            "conn_id": e.get("conn_id"),
+            "at": e.get("at"),
+            "elapsed_seconds": (e.get("payload") or {}).get("elapsed_seconds"),
+            "phase": (e.get("payload") or {}).get("phase"),
+        }
+        for e in events
+    ]
+    durations = sorted(s["elapsed_seconds"] for s in samples if isinstance(s["elapsed_seconds"], (int, float)))
+
+    def _pct(p: float) -> float | None:
+        if not durations:
+            return None
+        idx = min(len(durations) - 1, int(round(p * (len(durations) - 1))))
+        return round(durations[idx], 1)
+
+    return {
+        "count": len(durations),
+        "p50_seconds": _pct(0.5),
+        "p90_seconds": _pct(0.9),
+        "min_seconds": durations[0] if durations else None,
+        "max_seconds": durations[-1] if durations else None,
+        "samples": samples[:50],   # newest-first, for inspection
     }
 
 

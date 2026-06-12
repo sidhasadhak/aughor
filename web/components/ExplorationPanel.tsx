@@ -66,6 +66,11 @@ function PhaseBar({ status }: { status: ExplorationStatus }) {
            `${PHASES[cur]?.label ?? status.phase}…`}
         </span>
         <span className="text-[11px] text-zinc-500">
+          {status.first_insight_seconds != null && (
+            <span className="text-emerald-400" title="Time from exploration start to the first insight (B-6 KPI)">
+              ⏱ first insight in {fmtDuration(status.first_insight_seconds)} ·{" "}
+            </span>
+          )}
           {status.queries_executed > 0 && `${status.queries_executed} queries · `}
           {status.facts_discovered > 0 && `${status.facts_discovered} facts`}
         </span>
@@ -176,6 +181,14 @@ function miniBarHeights(shape: string): number[] {
 function fmtNum(n: number | null | undefined): string {
   if (n == null) return "—";
   return compactNumber(n, 1);
+}
+
+// Human-readable elapsed for the time-to-first-insight KPI: "8s", "47s", "3m 12s".
+function fmtDuration(seconds: number): string {
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  const m = Math.floor(seconds / 60);
+  const s = Math.round(seconds % 60);
+  return s ? `${m}m ${s}s` : `${m}m`;
 }
 
 function DistributionsSection({ distributions }: { distributions: ExplorationFindings["distributions"] }) {

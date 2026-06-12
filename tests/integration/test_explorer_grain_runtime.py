@@ -22,9 +22,18 @@ CHASM_TC = {
 CHASM_SQL = ("SELECT c.name, COUNT(*) FROM campaigns c "
              "JOIN clicks k ON c.campaign_id=k.campaign_id "
              "JOIN impressions i ON c.campaign_id=i.campaign_id GROUP BY c.name")
+# AVG over the SAME chasm — the mean is biased by the cross-product (each click
+# row repeated per impression), which SUM/COUNT-targeted guards don't catch.
+AVG_CHASM_SQL = ("SELECT c.name, AVG(k.ts) FROM campaigns c "
+                 "JOIN clicks k ON c.campaign_id=k.campaign_id "
+                 "JOIN impressions i ON c.campaign_id=i.campaign_id GROUP BY c.name")
 
 
-def test_explorer_phase8_drops_count_star_chasm(monkeypatch) -> None:
+def _run_phase8_with_forced_sql(monkeypatch, forced_sql: str) -> list[str]:
+    """Drive the REAL `_phase8_domain_intelligence` loop with the coder forced to
+    emit `forced_sql` (and a fake interpreter, reached only if the guard fails to
+    drop). Returns the captured `aughor.explorer.agent` log messages. Only the LLM
+    is forced — the question→execute→lint→drop path is the real one."""
     import aughor.llm.provider as prov
     import aughor.ontology.store as ostore
     import aughor.sql.writer as wmod
@@ -74,8 +83,8 @@ def test_explorer_phase8_drops_count_star_chasm(monkeypatch) -> None:
         class FakeLLM:
             def complete(self, *a, response_model=None, **k):
                 f = getattr(response_model, "model_fields", {})
-                if "sql" in f:        # _NextQuestion → the chasm COUNT(*) query
-                    return response_model(question="q", sql=CHASM_SQL, angle="volume", why="t")
+                if "sql" in f:        # _NextQuestion → the forced query
+                    return response_model(question="q", sql=forced_sql, angle="volume", why="t")
                 if "finding" in f:    # _Interpretation (only reached if the guard fails to drop)
                     return response_model(finding="Campaigns vary in volume.", novelty=4, angle_covered="volume")
                 return real("coder").complete(*a, response_model=response_model, **k)
@@ -84,6 +93,61 @@ def test_explorer_phase8_drops_count_star_chasm(monkeypatch) -> None:
         asyncio.run(asyncio.wait_for(ex._phase8_domain_intelligence(), timeout=120))
     finally:
         lg.removeHandler(handler)
+    return records
 
+
+def test_explorer_phase8_drops_count_star_chasm(monkeypatch) -> None:
+    records = _run_phase8_with_forced_sql(monkeypatch, CHASM_SQL)
     fired = [m for m in records if "grain bug" in m and "chasm" in m.lower()]
     assert fired, "the COUNT(*)-chasm grain guard never fired on the real Phase-8 loop"
+
+
+def test_explorer_phase8_drops_avg_chasm(monkeypatch) -> None:
+    records = _run_phase8_with_forced_sql(monkeypatch, AVG_CHASM_SQL)
+    fired = [m for m in records if "grain bug" in m and "AVG" in m and "chasm" in m.lower()]
+    assert fired, "the AVG-over-chasm grain guard never fired on the real Phase-8 loop"
+
+
+def test_explorer_phase7_emits_cross_table_insight(monkeypatch) -> None:
+    """Runtime LEVERAGE proof for the Phase-7 emit fix (T2): a cross-table insight
+    must fire a LIVE `exploration.insight` event tagged phase=cross_table. Before
+    the fix Phase-7 only bumped counters (no event, no artifact), so the earliest
+    findings never surfaced live. Drives the REAL `_phase7_patterns` method — only
+    the DB query (`_run`) and rate-gate are stubbed; the insight creation + the
+    `_emit_insight` call site are the real ones."""
+    import aughor.kernel.ledger as ledger_mod
+    from aughor.db.connection import open_connection_for
+    from aughor.explorer.agent import SchemaExplorer
+
+    monkeypatch.setattr(ledger_mod.Ledger, "default",
+                        classmethod(lambda cls: SimpleNamespace(artifact_write=lambda *a, **k: None)))
+
+    ex = SchemaExplorer("fixture", open_connection_for("fixture"))
+    ex._state = {}
+    monkeypatch.setattr(ex, "_save_state", lambda: None)
+
+    journal: list[tuple] = []
+    monkeypatch.setattr(ex, "_journal", lambda kind, payload=None: journal.append((kind, payload or {})))
+
+    async def _no_gate():
+        return None
+    monkeypatch.setattr(ex, "_gate", _no_gate)
+
+    # avg measure varies ~2.5x across the dimension → ratio 2.5 > 1.15 → an insight
+    async def fake_run(sql, think=""):
+        return [["North", 100.0, 60], ["South", 40.0, 50]]
+    monkeypatch.setattr(ex, "_run", fake_run)
+
+    cp = {
+        "customers": {"region": SimpleNamespace(
+            semantic_type="dimension", is_low_cardinality=True, distinct_count=3, dtype="VARCHAR")},
+        "orders": {"amount": SimpleNamespace(
+            semantic_type="measure", is_low_cardinality=False, distinct_count=900, dtype="DOUBLE")},
+    }
+    jmap = {"joins": [{"t1": "orders", "t2": "customers", "c1": "customer_id", "c2": "id"}]}
+
+    asyncio.run(asyncio.wait_for(ex._phase7_patterns(cp, jmap, {}), timeout=30))
+
+    xt = [p for k, p in journal if k == "exploration.insight" and p.get("phase") == "cross_table"]
+    assert xt, "Phase-7 cross-table insight did not emit a live exploration.insight event"
+    assert "region" in xt[0]["finding"] or "avg" in xt[0]["finding"].lower()

@@ -1602,6 +1602,20 @@ async def _stream_investigation(
             fail_investigation(inv_id, status="failed")
             yield _sse("error", {"message": str(e)})
     finally:
+        # Orphan reconcile. If we reach here with the row still 'running', no
+        # terminal handler ran — the dominant cause is a client disconnect:
+        # Starlette cancels the SSE coroutine with asyncio.CancelledError, which
+        # is a BaseException and so slips past every `except Exception` above,
+        # straight into this finally. Without this, the investigation orphans in
+        # 'running' (no terminal event, no UI resolution) until the 60-min sweep.
+        # fail_investigation journals the transition, so the event spine stays
+        # consistent. Runs FIRST so it survives even if later cleanup is cut short.
+        try:
+            _inv_now = get_investigation(inv_id)
+            if _inv_now and _inv_now.get("status") == "running":
+                fail_investigation(inv_id, status="failed")
+        except Exception:
+            logger.debug("finally orphan-reconcile failed", exc_info=True)
         _telemetry.end_trace(trace_id)
         for _e in _paused_explorers:
             try:
@@ -1679,6 +1693,15 @@ async def _stream_resume(inv_id: str, feedback: str, request: Request) -> AsyncG
         fail_investigation(inv_id, status="failed")
         yield _sse("error", {"message": str(e)})
     finally:
+        # Same orphan-reconcile as the main stream: a client disconnect raises
+        # CancelledError (BaseException) past the except handlers, so fail any row
+        # still 'running' here — keeps it off the 60-min sweep and on the spine.
+        try:
+            _inv_now = get_investigation(inv_id)
+            if _inv_now and _inv_now.get("status") == "running":
+                fail_investigation(inv_id, status="failed")
+        except Exception:
+            logger.debug("resume finally orphan-reconcile failed", exc_info=True)
         db.close()
         yield _sse("done", {})
 

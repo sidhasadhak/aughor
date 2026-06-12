@@ -5,7 +5,10 @@ products" = 25 products × 80 order_items). detect_fanout deliberately skips bot
 ignores COUNT(*) and needs ≥2 satellites). These pin the two new high-precision linters —
 they must FIRE on the bug and stay SILENT on legitimate SQL (the false-positive guard is
 the whole point: a clumsy version would suppress valid insights)."""
-from aughor.sql.fanout import integer_division_risk, count_star_entity_fanout, count_star_chasm_fanout
+from aughor.sql.fanout import (
+    integer_division_risk, count_star_entity_fanout, count_star_chasm_fanout,
+    avg_over_chasm_fanout,
+)
 
 # products is the PARENT (order_items.product_id references it); orders is a many-side child.
 TC = {
@@ -124,3 +127,50 @@ class TestCountStarChasm:
     def test_malformed_sql_never_raises(self):
         assert count_star_chasm_fanout("this is not sql", CHASM_TC) is None
         assert count_star_chasm_fanout("", CHASM_TC) is None
+
+
+class TestAvgOverChasm:
+    def test_avg_over_chasm_flagged(self):
+        # AVG(clicks.value) over campaigns⋈clicks⋈impressions — biased by the
+        # impressions fan-out (each click row repeated per impression)
+        sql = f"SELECT c.name, AVG(k.ts) FROM campaigns c {_J} GROUP BY c.name"
+        reason = avg_over_chasm_fanout(sql, CHASM_TC)
+        assert reason and "biased mean" in reason
+
+    def test_avg_of_hub_column_also_flagged(self):
+        # even AVG of a hub column is biased — the hub row is duplicated by the
+        # satellite cross-product
+        sql = f"SELECT AVG(c.budget) FROM campaigns c {_J}"
+        assert avg_over_chasm_fanout(sql, CHASM_TC)
+
+    def test_min_max_not_flagged(self):
+        # MIN/MAX survive row duplication unchanged — NOT a bug, must stay silent
+        assert avg_over_chasm_fanout(f"SELECT MIN(k.ts) FROM campaigns c {_J}", CHASM_TC) is None
+        assert avg_over_chasm_fanout(f"SELECT MAX(k.ts) FROM campaigns c {_J}", CHASM_TC) is None
+
+    def test_avg_distinct_not_flagged(self):
+        assert avg_over_chasm_fanout(f"SELECT AVG(DISTINCT k.ts) FROM campaigns c {_J}", CHASM_TC) is None
+
+    def test_windowed_avg_not_flagged(self):
+        # AVG(...) OVER (...) doesn't collapse rows — different construct
+        sql = f"SELECT AVG(k.ts) OVER (PARTITION BY c.name) FROM campaigns c {_J}"
+        assert avg_over_chasm_fanout(sql, CHASM_TC) is None
+
+    def test_single_join_not_a_chasm(self):
+        sql = "SELECT AVG(k.ts) FROM campaigns c JOIN clicks k ON c.campaign_id=k.campaign_id"
+        assert avg_over_chasm_fanout(sql, CHASM_TC) is None
+
+    def test_no_avg_not_flagged(self):
+        sql = f"SELECT SUM(k.ts) FROM campaigns c {_J}"
+        assert avg_over_chasm_fanout(sql, CHASM_TC) is None
+
+    def test_pre_aggregated_ctes_not_flagged(self):
+        sql = ("WITH k AS (SELECT campaign_id, AVG(ts) a FROM clicks GROUP BY 1), "
+               "i AS (SELECT campaign_id, AVG(ts) a FROM impressions GROUP BY 1) "
+               "SELECT AVG(k.a) FROM campaigns c JOIN k ON c.campaign_id=k.campaign_id "
+               "JOIN i ON c.campaign_id=i.campaign_id")
+        assert avg_over_chasm_fanout(sql, CHASM_TC) is None
+
+    def test_malformed_sql_never_raises(self):
+        assert avg_over_chasm_fanout("this is not sql", CHASM_TC) is None
+        assert avg_over_chasm_fanout("", CHASM_TC) is None

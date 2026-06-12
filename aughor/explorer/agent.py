@@ -638,6 +638,9 @@ class SchemaExplorer:
         self._can_run.set()
         self._stopped = False
         self._state = _store.load_canvas(canvas_id) if canvas_id else _store.load(connection_id)
+        # Restore the time-to-first-insight milestone if this run is resuming a
+        # prior one, so TTFI isn't re-stamped (and re-emitted) on every restart.
+        self._status.first_insight_at = self._state.get("first_insight_at")
         self._last_query_at: float = 0.0
         self._rate_seconds: float = _RATE_SECONDS_SCHEMA
         self._time_window: Optional[tuple[str, str]] = None  # (start_iso, end_iso) — 12-month window
@@ -669,6 +672,73 @@ class SchemaExplorer:
             )
         except Exception:
             logger.debug("journal emit failed (%s)", kind, exc_info=True)
+
+    def _record_first_insight(self) -> None:
+        """Stamp the time-to-first-insight milestone (B-6) on the first insight
+        of the run. No-op after that, so a restart/resume never re-stamps. Emits
+        an `exploration.first_insight` event carrying elapsed seconds so the
+        connect→first-insight funnel is a query, not a guess."""
+        if self._status.first_insight_at:
+            return
+        now = datetime.now(timezone.utc)
+        self._status.first_insight_at = now.isoformat()
+        self._state["first_insight_at"] = self._status.first_insight_at
+        elapsed: float | None = None
+        if self._status.started_at:
+            try:
+                elapsed = round((now - datetime.fromisoformat(self._status.started_at)).total_seconds(), 1)
+            except (ValueError, TypeError):
+                elapsed = None
+        self._journal("exploration.first_insight", {
+            "elapsed_seconds": elapsed,
+            "insights_found": self._status.insights_found,
+            "phase": self._status.phase.value if isinstance(self._status.phase, ExplorationPhase) else self._status.phase,
+        })
+        logger.info("[explorer:%s] ⏱ time-to-first-insight: %ss", self.connection_id, elapsed)
+
+    def _emit_insight(self, insight: dict, sql: str, *, journal_extra: dict | None = None) -> None:
+        """Common emission tail for a discovered insight, shared by Phase 7
+        (cross-table) and Phase 8 (domain intel). Bumps counters, writes the K3
+        ledger artifact (Trust-Receipt provenance), fires the live
+        `exploration.insight` event so subscribed panels surface it immediately,
+        and stamps the TTFI milestone. The caller has already appended the
+        insight to `self._state["insights"]`.
+
+        Before this helper, Phase 7 insights bumped only the counters — they had
+        no artifact and emitted no event, so the *earliest* findings never
+        surfaced live (the panels saw them only on the slow 60s fallback poll or
+        at completion). Routing both phases here closes that built-not-wired gap.
+        """
+        self._status.insights_found += 1
+        self._status.facts_discovered += 1
+        self._record_first_insight()
+        insight_id = insight.get("id", "")
+        # K3: the finding becomes a versioned ledger artifact with provenance
+        # edges — the Trust Receipt ("why believe this number") is a SELECT over
+        # these, not a reconstruction. Supersede-not-delete; re-explore → version+1.
+        try:
+            from aughor.kernel.ledger import Ledger
+            from aughor.kernel.jobs import current_job_id
+            _lineage = [("source_sql", "sql", sql)]
+            for _tbl in sorted(_tables_in_sql(sql))[:8]:
+                _lineage.append(("input", f"table:{_tbl}", None))
+            _lineage.append(("validated_by", "guard:numeric_grounding",
+                             "all magnitudes matched result cells"))
+            Ledger.default().artifact_write(
+                "finding",
+                f"insight:{self.connection_id}:{insight_id}",
+                insight,
+                conn_id=self.connection_id,
+                canvas_id=self.canvas_id,
+                created_by_job=current_job_id(),
+                lineage=_lineage,
+            )
+        except Exception:
+            logger.debug("finding artifact write failed", exc_info=True)
+        payload = {"insight_id": insight_id, "finding": str(insight.get("finding", ""))[:120]}
+        if journal_extra:
+            payload.update(journal_extra)
+        self._journal("exploration.insight", payload)
 
     def pause(self) -> None:
         """Yield execution — called when a user investigation begins."""
@@ -1550,8 +1620,7 @@ class SchemaExplorer:
                         }
                         self._state.setdefault("insights", []).append(insight)
                         done_ids.add(insight_id)
-                        self._status.insights_found += 1
-                        self._status.facts_discovered += 1
+                        self._emit_insight(insight, sql, journal_extra={"phase": "cross_table"})
                         self._save_state()
                     except (TypeError, ValueError, ZeroDivisionError):
                         continue
@@ -2191,6 +2260,7 @@ class SchemaExplorer:
                     try:
                         from aughor.sql.fanout import (
                             integer_division_risk, count_star_entity_fanout, count_star_chasm_fanout,
+                            avg_over_chasm_fanout,
                         )
                         _tc = getattr(sql_writer, "table_cols", {})
                         # Measure-additivity: per-unit measure summed without ×quantity
@@ -2203,6 +2273,7 @@ class SchemaExplorer:
                         _grain = (integer_division_risk(sql)
                                   or count_star_entity_fanout(sql, _tc)
                                   or count_star_chasm_fanout(sql, _tc, dialect=getattr(self._conn, "dialect", "duckdb"))
+                                  or avg_over_chasm_fanout(sql, _tc, dialect=getattr(self._conn, "dialect", "duckdb"))
                                   or (measure_grain_misuse(sql, _mg, _qc, dialect=getattr(self._conn, "dialect", "duckdb")) if _mg else None))
                         if _grain:
                             from aughor.stats import stats as _s; _s.inc("explorer.grain_skips")
@@ -2392,36 +2463,7 @@ class SchemaExplorer:
                 }
                 self._state.setdefault("insights", []).append(insight)
                 domain_insights.append(insight)
-                self._status.insights_found += 1
-                self._status.facts_discovered += 1
-
-                # K3: the finding becomes a versioned ledger artifact with
-                # provenance edges — the Trust Receipt ("why believe this
-                # number") is a SELECT over these, not a reconstruction.
-                # Supersede-not-delete; a re-explored finding gets version+1.
-                try:
-                    from aughor.kernel.ledger import Ledger
-                    from aughor.kernel.jobs import current_job_id
-                    _lineage = [("source_sql", "sql", sql)]
-                    for _tbl in sorted(_tables_in_sql(sql))[:8]:
-                        _lineage.append(("input", f"table:{_tbl}", None))
-                    _lineage.append(("validated_by", "guard:numeric_grounding",
-                                     "all magnitudes matched result cells"))
-                    Ledger.default().artifact_write(
-                        "finding",
-                        f"insight:{self.connection_id}:{insight_id}",
-                        insight,
-                        conn_id=self.connection_id,
-                        canvas_id=self.canvas_id,
-                        created_by_job=current_job_id(),
-                        lineage=_lineage,
-                    )
-                except Exception:
-                    logger.debug("finding artifact write failed", exc_info=True)
-                self._journal("exploration.insight", {
-                    "insight_id": insight_id, "domain": domain,
-                    "finding": interp.finding[:120],
-                })
+                self._emit_insight(insight, sql, journal_extra={"domain": domain})
 
                 # Mark angle as covered
                 angle_key = interp.angle_covered or nq.angle

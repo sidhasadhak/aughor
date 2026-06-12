@@ -6,6 +6,52 @@
 
 ---
 
+## 🚀 ARC STATUS — Speed (T2) · Kernel-Leverage (T3) · Correctness Long-Tail (T6) (2026-06-12 pt4)
+
+**Branch `2026-06-12-speed-kernel-longtail` (off `main` = `ac842cc`).** Three backlog tiers closed in one
+session, each BUILT→WIRED→TESTED→LEVERAGED with the new code observed firing on the real path.
+
+- **T2 — Time-to-first-insight (B-6).** Instrumented the connect→first-insight funnel as a product KPI:
+  `first_insight_at` milestone + `exploration.first_insight` event (elapsed seconds) + status field +
+  `GET /exploration/kpi/time-to-first-insight` (p50/p90) + an Exploration-panel "⏱ first insight in 47s"
+  chip. **Runtime-measured at 39.6s** on a cold run. Fixed the built-not-wired gap where Phase-7 cross-table
+  insights emitted **no** live event/artifact (only Phase 8 did) — both phases now share one `_emit_insight`
+  seam, so the earliest findings surface live. The deeper "overlap the ontology build with phases 3-7"
+  optimization was **investigated and rejected** — `build_intelligence` drives the same single-threaded
+  `self._conn` phases 3-7 use, so parallelizing it would be a race (documented, not shipped).
+- **T3 — Kernel-leverage (investigations/monitors/briefs on the event spine).** Investigation lifecycle now
+  journals `investigation.created/completed/failed/paused` at the single history-store seam every transition
+  flows through; the History panel refreshes live off it. Boot now **reconciles orphaned `running` rows
+  immediately** (the investigation analog of kernel `boot_recovery`) instead of waiting ≤60min, and the
+  periodic sweep journals per-row too. Monitors (`monitor.alert`) and briefs (`brief.delivered`) emit too.
+  The risky streaming→supervised-job conversion stays **deferred** (per the prior tested-scoping: risky for
+  elegance, side-channels keep it correct). Runtime-proven: live `investigation.created`, boot-reconcile
+  `investigation.failed`, and real-DB diagnostics for `completed`/`failed`/sweep.
+- **T6 — Correctness long-tail + componentization.** New `avg_over_chasm_fanout` linter (AVG over a chasm =
+  biased mean; MIN/MAX correctly not flagged) wired into the explorer drop chain beside the proven
+  COUNT(*)-chasm one, sharing a `_chasm_roots` helper. K4 wiring contract widened to scan `web/components`
+  + the `${BASE_API}` alias (closed a blank-canvas-class hole). **WCH-10 dead-endpoint removal was
+  declined as unsafe** — the frontend uses ≥4 fetch patterns (`${BASE}`/`${API_BASE}`/`${BASE_API}`/string
+  concat), so "no `${BASE}` caller" ≠ dead (proven by the `/canvases/{id}/artifacts` false positive); the
+  triage list is recorded instead. Larger T6 refactors (god-file splits, generated TS client, domain
+  interfaces) remain — [M–L] architecture not safe to rush in a session tail.
+
+**State:** full suite **659 passed / 4 e2e-skipped**; K4 swallow + private-import ratchets held (the new
+public `elapsed_seconds` and a logged `_inv_scope` swallow both caught by the contract first, then fixed).
+Features #111–114 in `FEATURES.md`. Awaiting the push/merge word.
+
+**Real bug found + fixed via the principle (`27dcd642`).** Following the leverage gate fully turned up a
+genuine bug: a client disconnect makes Starlette cancel the SSE coroutine with `asyncio.CancelledError` — a
+**BaseException** that slips past every `except Exception` salvage/fail handler in `_stream_investigation`,
+so the investigation orphans in `running` with no terminal event (the terminal `fail_investigation` never
+runs). Reproduced cleanly, then fixed with an orphan-reconcile at the top of `finally` in **both** stream
+entrypoints (fail any still-`running` row → journals via the instrumented path), and **re-proven live**
+(disconnect at 5s → `failed` + `investigation.failed` within ~12s). The AVG-over-chasm linter is now
+**runtime-proven on the real `_phase8` loop** too (forced coder → real execute→lint→drop). Standing bar
+reaffirmed: BUILT→WIRED→TESTED→**LEVERAGED**, every guard observed firing on the real path.
+
+---
+
 ## 📈 ARC STATUS — Query Builder Charts, Pivot & Import (2026-06-12 pt3)
 
 **Branch `2026-06-12-qb-charts-pivot-import` → merged to `main`.** A polish + feature pass on the

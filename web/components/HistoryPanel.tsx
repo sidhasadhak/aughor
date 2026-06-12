@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import DeleteIcon from "@atlaskit/icon/core/delete";
 import type { InvestigationSummary } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { API_BASE } from "@/lib/config";
+import { subscribeKernelEvents } from "@/lib/events";
 
 interface Props {
   selectedId: string | null;
@@ -27,7 +28,7 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
   const [search, setSearch] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8_000);
     Promise.all([
@@ -41,6 +42,15 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
       .catch(() => {})
       .finally(() => clearTimeout(timeout));
   }, []);
+
+  useEffect(() => {
+    load();
+    // K2 (T3): investigation lifecycle now lands on the kernel event spine, so the
+    // history list refreshes live — a run finishing in another tab, a resumed run,
+    // or a boot-reconciled orphan all show up without a manual reload.
+    const unsub = subscribeKernelEvents(() => load(), { kinds: ["investigation."] });
+    return () => unsub();
+  }, [load]);
 
   async function handleDelete(e: React.MouseEvent, invId: string) {
     e.stopPropagation();
