@@ -57,6 +57,10 @@ type Props = {
   /** Active layer — controlled by the shell so external nav can deep-link. */
   layer: IntelLayer;
   onLayerChange: (l: IntelLayer) => void;
+  /** Briefings-enabled connections for the workspace's connection picker, and the
+   *  setter to switch the active one. Omitted/short → the picker hides. */
+  connections?: { id: string; name: string }[];
+  onConnectionChange?: (connectionId: string) => void;
   /** ExplorationPanel deep-link section, applied when the Domains layer mounts. */
   domainSection?: "nulls" | "lifecycles" | "distributions" | "insights" | "intelligence";
   /** When set, scope-aware layers (Briefing) reflect this Canvas's curated tables rather
@@ -75,7 +79,7 @@ type Props = {
  * mounted (display toggled), so graph zoom/scroll/fetch state survives layer
  * switches. Layers that have never been visited aren't mounted at all.
  */
-export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLayerChange, domainSection, canvasId }: Props) {
+export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLayerChange, connections, onConnectionChange, domainSection, canvasId }: Props) {
   // Mount a layer the first time it becomes active, then keep it mounted.
   const [visited, setVisited] = useState<Set<IntelLayer>>(() => new Set([layer]));
   useEffect(() => {
@@ -101,6 +105,8 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
     return () => { alive = false; };
   }, [connectionId, canvasId]);
   const schema = selectedSchema ?? undefined;
+  const showConnPicker = !canvasId && !!onConnectionChange && (connections?.length ?? 0) > 1;
+  const showSchema = !canvasId && schemas.length > 1;
 
   const active = LAYERS.find(l => l.id === layer)!;
 
@@ -112,10 +118,29 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
         <span style={{ fontSize: 13, fontWeight: 500 }}>{active.label}</span>
         <span style={{ fontSize: 11, color: "var(--t3)" }}>· {active.blurb}</span>
 
+        {/* Connection picker — lists only briefings-enabled connections (Catalog opt-in). */}
+        {showConnPicker && (
+          <label style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: 10, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".06em" }}>Connection</span>
+            <select
+              value={connectionId}
+              onChange={e => onConnectionChange?.(e.target.value)}
+              aria-label="Connection"
+              style={{
+                fontSize: 12, color: "var(--t2)", background: "var(--bg-2)",
+                border: "1px solid var(--b1)", borderRadius: "var(--r2)",
+                padding: "3px 8px", cursor: "pointer", maxWidth: 200,
+              }}
+            >
+              {connections!.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </label>
+        )}
+
         {/* Shared schema scope — drives Briefing / Hub / Domains together. Only shown
             when the connection exposes more than one schema (and never for a canvas). */}
-        {!canvasId && schemas.length > 1 && (
-          <label style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
+        {showSchema && (
+          <label style={{ marginLeft: showConnPicker ? 0 : "auto", display: "flex", alignItems: "center", gap: 6 }}>
             <span style={{ fontSize: 10, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".06em" }}>Schema</span>
             <select
               value={selectedSchema ?? ""}
@@ -138,7 +163,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
           role="tablist"
           aria-label="Intelligence layers"
           style={{
-            marginLeft: (!canvasId && schemas.length > 1) ? 0 : "auto",
+            marginLeft: (showConnPicker || showSchema) ? 0 : "auto",
             display: "flex",
             gap: 2,
             padding: 2,

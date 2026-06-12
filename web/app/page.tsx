@@ -1760,6 +1760,8 @@ export default function Home() {
                 onInvestigate={goToChat}
                 layer={intelLayer}
                 onLayerChange={setIntelLayer}
+                connections={connections.filter(c => c.briefings_enabled !== false).map(c => ({ id: c.id, name: c.name }))}
+                onConnectionChange={setSelectedConn}
                 domainSection={explorationSection}
               />
             )}

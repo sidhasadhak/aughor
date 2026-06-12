@@ -7,6 +7,8 @@ export interface Connection {
   dsn_preview: string;
   schema_name: string | null;
   builtin: boolean;
+  /** Whether this connection is opted into Briefings (opt-out: true unless disabled). */
+  briefings_enabled?: boolean;
 }
 
 export interface TestResult {
@@ -658,6 +660,7 @@ export interface OntologyEntity {
 
 export interface ConnectionSettings {
   ontology_refresh_hours: number | null;
+  briefings_enabled?: boolean | null;
 }
 
 export async function getConnectionSettings(id: string): Promise<ConnectionSettings> {

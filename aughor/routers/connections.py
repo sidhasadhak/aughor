@@ -56,13 +56,21 @@ class InstructionsRequest(BaseModel):
 
 class _ConnectionSettings(BaseModel):
     ontology_refresh_hours: Optional[int] = None
+    briefings_enabled: Optional[bool] = None
 
 
 # ── CRUD ──────────────────────────────────────────────────────────────────────
 
 @router.get("/connections")
 def get_connections():
-    return list_connections()
+    # Surface each connection's briefings opt-in so the Briefing workspace can list
+    # only enabled connections without an N+1 settings fetch. Briefings are opt-OUT:
+    # enabled unless explicitly turned off in Catalog.
+    conns = list_connections()
+    for c in conns:
+        s = get_connection_settings(c.get("id", ""))
+        c["briefings_enabled"] = s.get("briefings_enabled", True) is not False
+    return conns
 
 
 @router.post("/connections", status_code=201)
@@ -612,7 +620,9 @@ def get_conn_settings(conn_id: str):
 
 @router.put("/connections/{conn_id}/settings")
 def put_conn_settings(conn_id: str, body: _ConnectionSettings):
-    return update_connection_settings(conn_id, body.model_dump(exclude_none=False))
+    # Merge only the fields the caller actually sent (partial update) so toggling one
+    # setting — e.g. briefings_enabled — never clobbers another (ontology_refresh_hours).
+    return update_connection_settings(conn_id, body.model_dump(exclude_unset=True))
 
 
 # ── Files (local_upload connector) ────────────────────────────────────────────
