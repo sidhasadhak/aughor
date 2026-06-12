@@ -72,6 +72,9 @@ interface BriefingData {
   domainCount:   number;
   totalInsights: number;
   synthesizedAt: string;
+  /** insight_id → {insight, domain} so a narrative citation can resolve to the full
+   *  finding and offer the same actions a finding card has. */
+  insightById:   Map<string, SynthesisSignal>;
 }
 
 // ── Inline citation renderer ───────────────────────────────────────────────────
@@ -80,11 +83,11 @@ interface BriefingData {
 function CitationChip({
   ref: refNum,
   citation,
-  onInvestigate,
+  onCitationClick,
 }: {
   ref: string;
   citation: BriefingCitation | undefined;
-  onInvestigate: (q: string) => void;
+  onCitationClick: (citation: BriefingCitation, e: { clientX: number; clientY: number }) => void;
 }) {
   const [tooltip, setTooltip] = useState(false);
 
@@ -93,7 +96,7 @@ function CitationChip({
       <span
         onMouseEnter={() => setTooltip(true)}
         onMouseLeave={() => setTooltip(false)}
-        onClick={() => citation && onInvestigate(`Investigate: ${citation.finding}`)}
+        onClick={e => { if (citation) { setTooltip(false); onCitationClick(citation, e); } }}
         style={{
           display: "inline-flex", alignItems: "center", justifyContent: "center",
           width: 18, height: 18, borderRadius: "50%",
@@ -133,11 +136,11 @@ function CitationChip({
 function NarrativeText({
   text,
   citations,
-  onInvestigate,
+  onCitationClick,
 }: {
   text: string;
   citations: BriefingCitation[];
-  onInvestigate: (q: string) => void;
+  onCitationClick: (citation: BriefingCitation, e: { clientX: number; clientY: number }) => void;
 }) {
   const citationMap = Object.fromEntries(citations.map(c => [c.ref, c]));
   // Split on [N] markers
@@ -153,7 +156,7 @@ function NarrativeText({
               key={i}
               ref={match[1]}
               citation={citationMap[match[1]]}
-              onInvestigate={onInvestigate}
+              onCitationClick={onCitationClick}
             />
           );
         }
@@ -165,13 +168,30 @@ function NarrativeText({
 
 // ── Narrative card ─────────────────────────────────────────────────────────────
 
+/** Shared context a narrative citation needs to open the same action menu a finding
+ *  card has (resolve the cited insight, then Monitor/Promote/Share/Evidence/Dismiss). */
+interface CitationActionContext {
+  insightById:    Map<string, SynthesisSignal>;
+  connectionId:   string;
+  canvasId?:      string;
+  triggers:       ActionTrigger[];
+  onEvidence:     (insight: ExplorationInsight, domain: string) => void;
+  onTriggersHint: () => void;
+  onDismissed:    () => void;
+  onInvestigate:  (q: string) => void;
+}
+
 function NarrativeCard({
   narrative,
-  onInvestigate,
+  ctx,
 }: {
   narrative: BriefingNarrativeResponse;
-  onInvestigate: (q: string) => void;
+  ctx: CitationActionContext;
 }) {
+  const [active, setActive] = useState<{ citation: BriefingCitation; x: number; y: number } | null>(null);
+  const onCitationClick = (citation: BriefingCitation, e: { clientX: number; clientY: number }) =>
+    setActive({ citation, x: e.clientX, y: e.clientY });
+
   return (
     <div style={{
       background: "linear-gradient(135deg, color-mix(in srgb, var(--blue4) 8%, var(--bg-2)), var(--bg-2))",
@@ -208,7 +228,7 @@ function NarrativeCard({
         <NarrativeText
           text={narrative.narrative}
           citations={narrative.citations}
-          onInvestigate={onInvestigate}
+          onCitationClick={onCitationClick}
         />
       </div>
 
@@ -218,7 +238,7 @@ function NarrativeCard({
           {narrative.citations.map(c => (
             <div
               key={c.ref}
-              onClick={() => onInvestigate(`Investigate: ${c.finding}`)}
+              onClick={e => onCitationClick(c, e)}
               style={{
                 display: "flex", gap: 8, alignItems: "flex-start",
                 cursor: "pointer", borderRadius: "var(--r2)", padding: "4px 6px",
@@ -244,7 +264,87 @@ function NarrativeCard({
           ))}
         </div>
       )}
+
+      {active && (
+        <CitationActionsPopover
+          citation={active.citation}
+          x={active.x}
+          y={active.y}
+          ctx={ctx}
+          onClose={() => setActive(null)}
+        />
+      )}
     </div>
+  );
+}
+
+/** Anchored action menu for a narrative citation — resolves the cited insight (or a
+ *  minimal stand-in if it was filtered out) and offers the same actions as a finding
+ *  card: Monitor / Promote / Share / Evidence / Dismiss, plus Investigate. */
+function CitationActionsPopover({
+  citation,
+  x,
+  y,
+  ctx,
+  onClose,
+}: {
+  citation: BriefingCitation;
+  x: number;
+  y: number;
+  ctx: CitationActionContext;
+  onClose: () => void;
+}) {
+  const resolved = ctx.insightById.get(citation.insight_id);
+  const insight: ExplorationInsight = resolved?.insight ?? {
+    id: citation.insight_id, domain: citation.domain, angle: citation.angle,
+    entities_involved: [], dimensions: [], measures: [],
+    finding: citation.finding, sql: "", confidence: 0, novelty: 0, generated_at: "",
+  };
+  const domain = resolved?.domain ?? citation.domain;
+  const left = Math.max(12, Math.min(x, (typeof window !== "undefined" ? window.innerWidth : 1280) - 332));
+  const top  = Math.min(y + 10, (typeof window !== "undefined" ? window.innerHeight : 800) - 180);
+
+  return (
+    <>
+      <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 99 }} />
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          position: "fixed", left, top, zIndex: 100, width: 320,
+          background: "var(--bg-2)", border: "1px solid var(--b2)", borderRadius: "var(--r3)",
+          boxShadow: "0 8px 28px rgba(0,0,0,.45)", padding: 12,
+          display: "flex", flexDirection: "column", gap: 10,
+        }}
+      >
+        <div style={{ fontSize: 9, fontWeight: 600, color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".07em" }}>
+          {domain}{citation.angle ? ` · ${citation.angle}` : ""}
+        </div>
+        <div style={{ fontSize: 11, color: "var(--t2)", lineHeight: 1.5 }}>
+          {citation.finding.length > 180 ? citation.finding.slice(0, 180) + "…" : citation.finding}
+        </div>
+        <FindingActions
+          insight={insight}
+          domain={domain}
+          connectionId={ctx.connectionId}
+          canvasId={ctx.canvasId}
+          triggers={ctx.triggers}
+          onEvidence={ins => { ctx.onEvidence(ins, domain); onClose(); }}
+          onTriggersHint={ctx.onTriggersHint}
+          onDismissed={() => { ctx.onDismissed(); onClose(); }}
+        />
+        <button
+          onClick={() => { ctx.onInvestigate(`Investigate: ${citation.finding}`); onClose(); }}
+          className="aug-btn"
+          style={{
+            alignSelf: "flex-start", fontSize: 11, color: "var(--blue5)",
+            background: "var(--bg-sel)", border: "1px solid var(--b1)",
+            borderRadius: "var(--r2)", padding: "4px 10px", cursor: "pointer",
+          }}
+        >
+          Investigate →
+        </button>
+      </div>
+    </>
   );
 }
 
@@ -347,11 +447,16 @@ function synthesize(
   const allSignals: SynthesisSignal[] = [];
   let totalInsights = 0;
 
+  // Index every insight by id (including degenerate ones) so a citation referencing
+  // any finding can resolve to the full object for its action menu.
+  const insightById = new Map<string, SynthesisSignal>();
+
   // Never surface a degenerate "no data" finding — it must not win the headline or a
   // signal slot (the backend now drops these at the source; this also hides any that
   // were stored before that fix). Such findings stay visible only in the full Hub ledger.
   for (const [domain, data] of Object.entries(domainData)) {
     for (const ins of data.insights) {
+      insightById.set(ins.id, { insight: ins, domain });
       if (isDegenerateFinding(ins)) continue;
       allSignals.push({ insight: ins, domain });
       totalInsights++;
@@ -409,6 +514,7 @@ function synthesize(
     domainCount:   domains.length,
     totalInsights,
     synthesizedAt: new Date().toISOString(),
+    insightById,
   };
 }
 
@@ -1504,7 +1610,19 @@ export function BriefingPanel({
                 </div>
               )}
               {!narrativeLoading && hasNarrative && narrative && (
-                <NarrativeCard narrative={narrative} onInvestigate={onInvestigate} />
+                <NarrativeCard
+                  narrative={narrative}
+                  ctx={{
+                    insightById:    briefing.insightById,
+                    connectionId,
+                    canvasId,
+                    triggers,
+                    onEvidence:     openEvidence,
+                    onTriggersHint: showTriggersHint,
+                    onDismissed:    load,
+                    onInvestigate,
+                  }}
+                />
               )}
             </div>
           )}
