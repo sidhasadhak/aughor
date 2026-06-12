@@ -14,15 +14,23 @@ from pathlib import Path
 
 import pytest
 
-WEB_LIB = Path(__file__).parent.parent.parent / "web" / "lib"
+WEB = Path(__file__).parent.parent.parent / "web"
 
-# `${BASE}/exploration/${encodeURIComponent(connId)}/insights/...` etc.
-_CALL_RE = re.compile(r"\$\{(?:BASE|API_BASE)\}(/[^\s`\"']*)")
+# Frontend API calls reach the backend through several base constants — `${BASE}`,
+# `${API_BASE}` (lib/api.ts), and `${BASE_API}` (CatalogScreen). Match all of them
+# so the contract isn't blind to whole files (CatalogScreen/ActionHub) just because
+# they picked a different alias. `${BASE}/exploration/${encodeURIComponent(id)}/...`
+_CALL_RE = re.compile(r"\$\{(?:BASE|API_BASE|BASE_API)\}(/[^\s`\"']*)")
+
+# Scan lib AND components: a fetch that drifts to a removed route is the
+# blank-canvas bug class, and components call the API directly too (the original
+# scan only covered web/lib, leaving every component fetch unguarded).
+_SOURCES = sorted(WEB.glob("lib/*.ts")) + sorted(WEB.glob("components/*.ts")) + sorted(WEB.glob("components/*.tsx"))
 
 
 def _frontend_paths():
     paths = set()
-    for ts in WEB_LIB.glob("*.ts"):
+    for ts in _SOURCES:
         for m in _CALL_RE.finditer(ts.read_text()):
             raw = m.group(1).split("?")[0].rstrip("/")
             # An unterminated `${` means the regex cut mid-template (e.g. a
