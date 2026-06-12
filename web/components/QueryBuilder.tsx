@@ -892,6 +892,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
   const [savedId,     setSavedId]     = useState<string|null>(null);
   const [savedName,   setSavedName]   = useState("");
   const [showSaved,   setShowSaved]   = useState(false);
+  const [railTab,     setRailTab]     = useState<"data"|"customize">("data");  // Superset-style control rail
   const [showSaveName, setShowSaveName] = useState(false);
   const [saveName,    setSaveName]    = useState("");
   const [savingState, setSavingState] = useState<"idle"|"saving"|"saved">("idle");
@@ -1641,11 +1642,19 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
         </aside>
         }
         right={
-        <main className="flex-1 overflow-y-auto h-full">
+        <div className="flex-1 flex overflow-hidden h-full">
 
-          {/* ── BUILDER (always rendered once a connection is loaded) ── */}
-          {(
-            <div className="px-6 py-5 space-y-6">
+          {/* ── CONTROL RAIL: DATA / CUSTOMIZE tabs (Superset Explore structure) ── */}
+          <div className="w-[380px] shrink-0 flex flex-col border-r border-zinc-700/40 bg-zinc-900/20 h-full">
+            <div className="flex items-center gap-1 px-4 pt-3 border-b border-zinc-700/40 shrink-0">
+              {(["data","customize"] as const).map(tab => (
+                <button key={tab} onClick={()=>setRailTab(tab)}
+                  className={`text-[12px] font-semibold uppercase tracking-wide px-3 py-2 -mb-px border-b-2 transition ${railTab===tab ? "border-blue-500 text-zinc-100" : "border-transparent text-zinc-500 hover:text-zinc-300"}`}>
+                  {tab}
+                </button>
+              ))}
+            </div>
+            <div className={`flex-1 overflow-y-auto px-5 py-4 space-y-5 ${railTab==="data"?"":"hidden"}`}>
 
               {/* Onboarding prompt — until the first field is dropped */}
               {!primaryTable && (
@@ -1780,7 +1789,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
               )}
 
               {/* Dimensions + Metrics */}
-              <div className="grid grid-cols-2 gap-5">
+              <div className="grid grid-cols-1 gap-4">
 
                 {/* DIMENSIONS */}
                 <div>
@@ -2058,53 +2067,63 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                 />
               </div>
 
-              {/* RESULTS */}
-              {(running || runError || result) && (
-                <div className="border-t border-zinc-700/30 pt-5 pb-6">
-                  <div className="flex items-center gap-3 mb-3">
-                    <p className="text-[13px] font-semibold text-zinc-300">Results</p>
-                    {result && !result.error && (
-                      <span className="text-[12px] text-zinc-400">
-                        {fmtN(result.row_count)} rows · {fmtMs(result.duration_ms)}
-                        {result.cached && <span className="ml-2 text-[11px] text-violet-400 border border-violet-500/30 rounded-md px-1.5 py-0.5">cached</span>}
-                      </span>
-                    )}
-                  </div>
-                  {running && (
-                    <div className="flex items-center gap-2 py-8 justify-center text-zinc-500">
-                      <span className="w-4 h-4 border-2 border-zinc-600 border-t-zinc-400 rounded-full animate-spin"/>
-                      <span className="text-[12px]">Running query…</span>
-                    </div>
-                  )}
-                  {runError && !running && (
-                    <div className="p-4 rounded-md border border-red-500/20 bg-red-500/5">
-                      <p className="text-[12px] font-mono text-red-400">{runError}</p>
-                    </div>
-                  )}
-                  {result && !running && (
-                    <ResultsPane
-                      result={result}
-                      connId={connId}
-                      sql={sql}
-                      primaryTable={primaryTable}
-                      joinedTables={joinedTables}
-                      tableSchemas={tableSchemas}
-                      onStartCanvas={(id) => {
-                        // Navigate to canvas workspace
-                        window.location.href = `/?canvas=${id}`;
-                      }}
-                    />
+              {/* close the primaryTable fragment — Filters/Having/Sort/SQL live in the rail */}
+              </>)}
+            </div>{/* end DATA tab */}
+
+            {/* CUSTOMIZE tab — chart styling (wired in the next increment) */}
+            <div className={`flex-1 overflow-y-auto px-5 py-4 space-y-3 ${railTab==="customize"?"":"hidden"}`}>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Customize</p>
+              <p className="text-[12px] text-zinc-500">Chart-type gallery, colors, axis titles, legend & number format land here next.</p>
+            </div>
+          </div>{/* end control rail */}
+
+          {/* ── CHART AREA — the chart is the hero; the data table sits below ── */}
+          <main className="flex-1 overflow-y-auto h-full px-6 py-5">
+            {(running || runError || result) ? (
+              <div className="pb-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <p className="text-[15px] font-semibold text-zinc-100">{savedName || (primaryTable ?? "Results")}</p>
+                  {result && !result.error && (
+                    <span className="text-[12px] text-zinc-400">
+                      {fmtN(result.row_count)} rows · {fmtMs(result.duration_ms)}
+                      {result.cached && <span className="ml-2 text-[11px] text-violet-400 border border-violet-500/30 rounded-md px-1.5 py-0.5">cached</span>}
+                    </span>
                   )}
                 </div>
-              )}
-              {!result && !running && !runError && (
-                <p className="text-[12px] text-zinc-500 italic pb-4">Configure your query above, then click <strong className="text-zinc-500 font-normal">Run</strong> or press <kbd className="text-zinc-500 bg-zinc-800 border border-zinc-700 rounded px-1 py-0.5 text-[11px]">⌘↵</kbd></p>
-              )}
-
-              </>)}
-            </div>
-          )}
-        </main>
+                {running && (
+                  <div className="flex items-center gap-2 py-16 justify-center text-zinc-500">
+                    <span className="w-4 h-4 border-2 border-zinc-600 border-t-zinc-400 rounded-full animate-spin"/>
+                    <span className="text-[12px]">Running query…</span>
+                  </div>
+                )}
+                {runError && !running && (
+                  <div className="p-4 rounded-md border border-red-500/20 bg-red-500/5">
+                    <p className="text-[12px] font-mono text-red-400">{runError}</p>
+                  </div>
+                )}
+                {result && !running && (
+                  <ResultsPane
+                    result={result}
+                    connId={connId}
+                    sql={sql}
+                    primaryTable={primaryTable}
+                    joinedTables={joinedTables}
+                    tableSchemas={tableSchemas}
+                    onStartCanvas={(id) => { window.location.href = `/?canvas=${id}`; }}
+                  />
+                )}
+              </div>
+            ) : (
+              <div className="h-full flex flex-col items-center justify-center text-center gap-2 text-zinc-500">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" className="opacity-50">
+                  <line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/>
+                </svg>
+                <p className="text-[12px] italic">Configure your query in the panel, then <strong className="text-zinc-400 font-normal not-italic">Run</strong> or press <kbd className="text-zinc-400 bg-zinc-800 border border-zinc-700 rounded px-1 py-0.5 text-[11px]">⌘↵</kbd></p>
+              </div>
+            )}
+          </main>
+        </div>
         }
       />
 
