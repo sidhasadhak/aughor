@@ -1450,6 +1450,17 @@ export async function getMeasureGrains(connId: string): Promise<MeasureGrains> {
   return res.json();
 }
 
+/** Distinct non-null values for a column — powers the filter-value picker. */
+export async function getColumnDistinct(
+  connId: string, table: string, column: string, schema?: string, limit = 200,
+): Promise<{ values: (string | null)[]; truncated: boolean }> {
+  const qs = new URLSearchParams({ table, column, limit: String(limit) });
+  if (schema) qs.set("schema", schema);
+  const res = await fetch(`${BASE}/connections/${encodeURIComponent(connId)}/distinct?${qs.toString()}`);
+  if (!res.ok) throw new Error("Failed to fetch distinct values");
+  return res.json();
+}
+
 /** LLM-inferred Canvas name + description from the scoped tables' schema. */
 export async function suggestCanvasName(
   connectionId: string,

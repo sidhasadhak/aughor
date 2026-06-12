@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { compactNumber } from "@/lib/format";
 import {
   getConnections, getSchemaRich, getTableColumns, getMetrics, runDirectQuery, getCatalogTree,
-  createCanvas, suggestCanvasName, getMeasureGrains,
+  createCanvas, suggestCanvasName, getMeasureGrains, getColumnDistinct,
   listSavedQueries, createSavedQuery, updateSavedQuery, deleteSavedQuery,
   type Connection, type SchemaColumn, type SchemaJoin, type Metric, type DirectQueryResult,
   type CatalogEntry, type SavedQuery,
@@ -51,6 +51,9 @@ const NO_VAL_OPS: FilterOp[] = ["IS NULL","IS NOT NULL"];
 interface DimItem     { id: string; col: string; table: string; transform?: "date" | "month" | "year" | "quarter" | "hour" | "minute" }
 interface MeasureItem { id: string; col: string; table: string; agg: AggFn; customExpr: string; alias: string; fromMetric?: string }
 interface FilterItem  { id: string; col: string; table: string; op: FilterOp; val: string }
+// HAVING — a filter on an aggregate (references a measure, compiles to its aggregate expression).
+interface HavingItem  { id: string; measureId: string; op: string; val: string }
+const HAVING_OPS = [">", ">=", "<", "<=", "=", "!="];
 
 // ── Pure helpers ──────────────────────────────────────────────────────────────
 
@@ -271,6 +274,7 @@ function buildSql(
   orderBy: string, limit: number,
   tableSchemas?: Record<string, string>,
   time?: TimeSpec,
+  having: HavingItem[] = [],
 ) {
   const qTable = (t: string) => quoteTable(t, tableSchemas?.[t]);
   const multi = joined.length > 0;
@@ -310,11 +314,18 @@ function buildSql(
   });
   const timeWhere = time && timeBase ? timePredicate(time.preset, timeBase, time.from, time.to) : "";
   const allWhere = timeWhere ? [...whereItems, timeWhere] : whereItems;
+  // HAVING — filters on aggregates, compiled from each having item's referenced measure expression.
+  const havingItems = (having || []).flatMap(h => {
+    const m = measures.find(x => x.id === h.measureId);
+    return (m && h.val.trim()) ? [`${measureExpr(m, multi)} ${h.op} ${h.val}`] : [];
+  });
+  const havingClause = havingItems.length && hasAgg ? `HAVING ${havingItems.join("\n  AND ")}` : "";
   return [
     "SELECT", `  ${selParts.length ? selParts.join(",\n  ") : "*"}`,
     `FROM ${qTable(primary)}`, ...joinLines,
     ...(allWhere.length ? [`WHERE ${allWhere.join("\n  AND ")}`] : []),
     ...(groupBy ? [groupBy] : []),
+    ...(havingClause ? [havingClause] : []),
     ...(orderBy.trim() ? [`ORDER BY ${orderBy}`] : []),
     ...(limit > 0 ? [`LIMIT ${limit}`] : []),
   ].join("\n");
@@ -551,6 +562,17 @@ function ResultsPane({
     result.cached ? "cached" : null,
   ].filter(Boolean).join(" · ");
 
+  const exportCsv = () => {
+    const esc = (v: unknown) => { const s = v == null ? "" : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+    const csv = [result.columns.map(esc).join(","), ...rows.map(r => r.map(esc).join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "query-results.csv";
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  };
+
   const handleCreateCanvas = async () => {
     if (!connId || !primaryTable) return;
     setCreatingCanvas(true);
@@ -605,7 +627,14 @@ function ResultsPane({
         >
           ≡ Table
         </button>
-        <span className="text-[11px] ml-auto" style={{ color: "var(--t3)" }}>{meta}</span>
+        <div className="ml-auto flex items-center gap-2.5">
+          <span className="text-[11px]" style={{ color: "var(--t3)" }}>{meta}</span>
+          <button onClick={exportCsv} title="Download results as CSV"
+            className="text-[11px] px-2 py-0.5 rounded border border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500 transition flex items-center gap-1">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            CSV
+          </button>
+        </div>
       </div>
 
       {/* Chart */}
@@ -714,6 +743,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
   const [dims,     setDims]     = useState<DimItem[]>([]);
   const [measures, setMeasures] = useState<MeasureItem[]>([]);
   const [filters,  setFilters]  = useState<FilterItem[]>([]);
+  const [having,   setHaving]   = useState<HavingItem[]>([]);   // filters on aggregates → HAVING
   const [orderBy,  setOrderBy]  = useState("");
   // Default to a bounded preview LIMIT — a fresh SELECT * on a large table with no cap is a
   // footgun. 0 (or a cleared field) is an explicit "no limit" opt-out the user can still choose.
@@ -749,6 +779,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
   const [nfCol,   setNfCol]   = useState("");
   const [nfOp,    setNfOp]    = useState<FilterOp>("=");
   const [nfVal,   setNfVal]   = useState("");
+  const [nfDistinct, setNfDistinct] = useState<string[]>([]);  // distinct-value suggestions for the picker
 
   // Saved queries (persistence) — savedId/savedName track the currently loaded saved query so
   // "Save" updates in place; the dropdown lists this connection's saved queries to load/delete.
@@ -770,7 +801,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
     setLoadingTree(true);
     setLoadingCols(true);
     setPrimaryTable(null); setJoinedTables([]); setTableNames([]); setTableCols({});
-    setSchemaJoins([]); setDims([]); setMeasures([]); setFilters([]);
+    setSchemaJoins([]); setDims([]); setMeasures([]); setFilters([]); setHaving([]);
     setTimeCol(""); setTimeColTable(""); setTimePreset("all"); setTimeFrom(""); setTimeTo(""); setTimeGrain("none");
     setSql(""); setResult(null); setCatEntry(null); setExpandedSchemas({});
 
@@ -827,9 +858,9 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
     const t: TimeSpec | undefined = timeCol
       ? { col: timeCol, table: timeColTable || primaryTable, preset: timePreset, from: timeFrom, to: timeTo, grain: timeGrain }
       : undefined;
-    setSql(buildSql(primaryTable, joinedTables, schemaJoins, dims, measures, filters, orderBy, limit, tableSchemas, t));
+    setSql(buildSql(primaryTable, joinedTables, schemaJoins, dims, measures, filters, orderBy, limit, tableSchemas, t, having));
   }, [autoSql, primaryTable, joinedTables, schemaJoins, dims, measures, filters, orderBy, limit, tableSchemas,
-      timeCol, timeColTable, timePreset, timeFrom, timeTo, timeGrain]);
+      timeCol, timeColTable, timePreset, timeFrom, timeTo, timeGrain, having]);
 
   // Load this connection's saved queries; reset the active saved-query pointer on switch.
   useEffect(() => {
@@ -881,7 +912,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
     if (!name) return;
     if (schema) setTableSchemas(prev => ({ ...prev, [name]: schema }));
     setPrimaryTable(name); setJoinedTables([]); setExpandedTables({[name]: true});
-    setDims([]); setMeasures([]); setFilters([]); setOrderBy("");
+    setDims([]); setMeasures([]); setFilters([]); setHaving([]); setOrderBy("");
     setTimeCol(""); setTimeColTable(""); setTimePreset("all"); setTimeFrom(""); setTimeTo(""); setTimeGrain("none");
     setResult(null); setRunError(null); setAutoSql(true); setColSearch("");
     const qTable = quoteTable(name, schema);
@@ -999,9 +1030,9 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
   // ── Saved-query persistence ────────────────────────────────────────────────
   // The visual builder state we persist so loading restores the builder, not just the SQL.
   const buildSpec = useCallback(() => ({
-    primaryTable, joinedTables, dims, measures, filters, orderBy, limit,
+    primaryTable, joinedTables, dims, measures, filters, having, orderBy, limit,
     timeCol, timeColTable, timePreset, timeFrom, timeTo, timeGrain,
-  }), [primaryTable, joinedTables, dims, measures, filters, orderBy, limit,
+  }), [primaryTable, joinedTables, dims, measures, filters, having, orderBy, limit,
        timeCol, timeColTable, timePreset, timeFrom, timeTo, timeGrain]);
 
   const suggestedName = () => {
@@ -1050,6 +1081,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
     setDims(Array.isArray(s.dims) ? s.dims as DimItem[] : []);
     setMeasures(Array.isArray(s.measures) ? s.measures as MeasureItem[] : []);
     setFilters(Array.isArray(s.filters) ? s.filters as FilterItem[] : []);
+    setHaving(Array.isArray(s.having) ? s.having as HavingItem[] : []);
     setOrderBy(typeof s.orderBy === "string" ? s.orderBy : "");
     setLimit(typeof s.limit === "number" ? s.limit : 1000);
     setTimeCol(typeof s.timeCol === "string" ? s.timeCol : "");
@@ -1076,8 +1108,21 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
   const commitFilter = () => {
     if (!nfCol) return;
     setFilters(p => [...p, {id:uid(),col:nfCol,table:nfTable||primaryTable||"",op:nfOp,val:nfVal}]);
-    setNfTable(""); setNfCol(""); setNfOp("="); setNfVal(""); setShowAddFilter(false);
+    setNfTable(""); setNfCol(""); setNfOp("="); setNfVal(""); setNfDistinct([]); setShowAddFilter(false);
   };
+
+  // Fetch distinct values for the chosen filter column and format them as SQL literals
+  // (quoted for text columns) so the picker inserts a valid predicate value.
+  const loadDistinct = useCallback(async (table: string, col: string) => {
+    setNfDistinct([]);
+    if (!connId || !table || !col) return;
+    try {
+      const { values } = await getColumnDistinct(connId, table, col, tableSchemas[table], 200);
+      const numeric = isNum((tableCols[table] ?? []).find(c => c.name === col)?.type ?? "");
+      setNfDistinct(values.filter((v): v is string => v != null)
+        .map(v => numeric ? v : `'${v.replace(/'/g, "''")}'`));
+    } catch { setNfDistinct([]); }
+  }, [connId, tableSchemas, tableCols]);
 
   // ── Suggestion intelligence (over the resolved tables) ────────────────────
   const usedDimKeys = new Set(dims.map(d => `${d.table}.${d.col}`));
@@ -1242,7 +1287,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
 
           {!autoSql && (
             <button
-              onClick={() => { setAutoSql(true); if (primaryTable) setSql(buildSql(primaryTable,joinedTables,schemaJoins,dims,measures,filters,orderBy,limit,tableSchemas,timeSpec)); }}
+              onClick={() => { setAutoSql(true); if (primaryTable) setSql(buildSql(primaryTable,joinedTables,schemaJoins,dims,measures,filters,orderBy,limit,tableSchemas,timeSpec,having)); }}
               className="text-[11px] text-zinc-500 hover:text-zinc-300 border border-zinc-700 rounded-lg px-2.5 py-1 transition">
               ↺ Regenerate SQL
             </button>
@@ -1755,7 +1800,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                               )}
                             </>
                           )}
-                          <button onClick={()=>setMeasures(p=>p.filter(x=>x.id!==m.id))} className="opacity-50 hover:opacity-100 text-sm leading-none">×</button>
+                          <button onClick={()=>{ setMeasures(p=>p.filter(x=>x.id!==m.id)); setHaving(h=>h.filter(x=>x.measureId!==m.id)); }} className="opacity-50 hover:opacity-100 text-sm leading-none">×</button>
                         </span>
                       );
                     })}
@@ -1780,13 +1825,13 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                   {showAddFilter ? (
                     <div className="flex items-center gap-2 flex-wrap p-3 rounded-md border border-zinc-700/60 bg-zinc-800/30">
                       {isMulti && (
-                        <select value={nfTable} onChange={e=>setNfTable(e.target.value)}
+                        <select value={nfTable} onChange={e=>{ setNfTable(e.target.value); setNfCol(""); setNfDistinct([]); }}
                           className="text-[12px] bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition">
                           <option value="">table</option>
                           {allTables.map(t=><option key={t} value={t}>{t}</option>)}
                         </select>
                       )}
-                      <select value={nfCol} onChange={e=>setNfCol(e.target.value)}
+                      <select value={nfCol} onChange={e=>{ const c=e.target.value; setNfCol(c); loadDistinct(nfTable||primaryTable||"", c); }}
                         className="text-[12px] bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition">
                         <option value="">column</option>
                         {(isMulti&&nfTable ? tableCols[nfTable]??[] : allTables.flatMap(t=>tableCols[t]??[])).map(c=>(
@@ -1798,9 +1843,16 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                         {FILTER_OPS.map(op=><option key={op} value={op}>{op}</option>)}
                       </select>
                       {!NO_VAL_OPS.includes(nfOp) && (
-                        <input value={nfVal} onChange={e=>setNfVal(e.target.value)}
-                          onKeyDown={e=>{if(e.key==="Enter")commitFilter();}} placeholder="value" autoFocus
-                          className="text-[12px] font-mono bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none focus:border-zinc-500 w-32 transition" />
+                        <>
+                          <input value={nfVal} onChange={e=>setNfVal(e.target.value)} list="qb-nf-distinct"
+                            onKeyDown={e=>{if(e.key==="Enter")commitFilter();}} placeholder="value" autoFocus
+                            className="text-[12px] font-mono bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none focus:border-zinc-500 w-40 transition" />
+                          {nfDistinct.length > 0 && (
+                            <datalist id="qb-nf-distinct">
+                              {nfDistinct.map(v => <option key={v} value={v} />)}
+                            </datalist>
+                          )}
+                        </>
                       )}
                       <button onClick={commitFilter} className="px-3 py-1.5 text-[12px] rounded-lg bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 font-medium transition">Add</button>
                       <button onClick={()=>setShowAddFilter(false)} className="text-[12px] text-zinc-500 hover:text-zinc-300 px-1.5 transition">Cancel</button>
@@ -1816,6 +1868,38 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                   )}
                 </div>
               </div>
+
+              {/* HAVING — filter on aggregated metrics */}
+              {measures.length > 0 && (
+                <div className="border-t border-zinc-700/30 pt-5">
+                  <p className="text-[13px] font-semibold text-zinc-300 mb-1">Having</p>
+                  <p className="text-[11px] text-zinc-500 mb-3">HAVING — filter on aggregated metrics (e.g. total &gt; 1000)</p>
+                  <div className="flex flex-col gap-2 items-start">
+                    {having.map(h => (
+                      <div key={h.id} className="flex items-center gap-2 flex-wrap">
+                        <select value={h.measureId} onChange={e=>setHaving(p=>p.map(x=>x.id===h.id?{...x,measureId:e.target.value}:x))}
+                          className="text-[12px] font-mono bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition max-w-[200px]">
+                          {measures.map(mm=><option key={mm.id} value={mm.id}>{mm.alias||measureExpr(mm,isMulti)}</option>)}
+                        </select>
+                        <select value={h.op} onChange={e=>setHaving(p=>p.map(x=>x.id===h.id?{...x,op:e.target.value}:x))}
+                          className="text-[12px] font-mono bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition">
+                          {HAVING_OPS.map(op=><option key={op} value={op}>{op}</option>)}
+                        </select>
+                        <input value={h.val} onChange={e=>setHaving(p=>p.map(x=>x.id===h.id?{...x,val:e.target.value}:x))} placeholder="value"
+                          className="text-[12px] font-mono bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none focus:border-zinc-500 w-28 transition" />
+                        <button onClick={()=>setHaving(p=>p.filter(x=>x.id!==h.id))} className="text-zinc-500 hover:text-red-400 text-sm leading-none px-1">×</button>
+                      </div>
+                    ))}
+                    <button onClick={()=>setHaving(p=>[...p,{id:uid(),measureId:measures[0].id,op:">",val:""}])}
+                      className="flex items-center gap-1.5 text-[12px] border border-dashed border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300 transition">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                        <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                      </svg>
+                      Add having
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* ORDER BY + LIMIT */}
               <div className="border-t border-zinc-700/30 pt-5 flex items-end gap-6">

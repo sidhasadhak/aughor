@@ -246,6 +246,42 @@ def connection_measure_grains_endpoint(conn_id: str):
     return {"grains": grains, "quantity_cols": sorted(qcols)}
 
 
+# ── Distinct values (filter pickers) ───────────────────────────────────────────
+
+def _quote_ident(name: str, schema: "str | None" = None) -> str:
+    """Quote a (possibly already schema-qualified) table identifier — each dotted segment
+    separately, never the whole dotted string as one identifier (the beautycommerce bug)."""
+    if "." in name:
+        return ".".join(f'"{p}"' for p in name.split("."))
+    if schema and schema not in ("main", "public"):
+        return f'"{schema}"."{name}"'
+    return f'"{name}"'
+
+
+@router.get("/connections/{conn_id}/distinct")
+def column_distinct(conn_id: str, table: str, column: str, schema: "str | None" = None, limit: int = 200):
+    """Distinct non-null values for a column, for filter-value pickers. Capped + best-effort."""
+    from aughor.db.connection import open_connection_for
+    try:
+        db = open_connection_for(conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    try:
+        n = max(1, min(int(limit), 1000))
+        qt, qc = _quote_ident(table, schema), f'"{column}"'
+        res = db.execute("__distinct__", f"SELECT DISTINCT {qc} AS v FROM {qt} WHERE {qc} IS NOT NULL ORDER BY 1 LIMIT {n}")
+        if getattr(res, "error", None):
+            return {"values": [], "truncated": False}
+        vals = [None if r[0] is None else str(r[0]) for r in (res.rows or [])]
+        return {"values": vals, "truncated": len(vals) >= n}
+    finally:
+        try:
+            db.close()
+        except Exception as _e:
+            from aughor.kernel.errors import tolerate
+            tolerate(_e, "distinct endpoint: best-effort connection close", counter="query.distinct.close_failed")
+
+
 @router.get("/query/cache/stats")
 def query_cache_stats():
     """Return materialization cache statistics."""
