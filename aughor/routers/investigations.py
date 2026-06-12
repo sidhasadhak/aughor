@@ -144,10 +144,16 @@ _CTE_DEF_RE = re.compile(r'\b(\w+)\s+AS\s*\(', re.IGNORECASE)
 
 
 def _extract_tables(sql: str) -> list[str]:
-    # Collect CTE names defined in WITH clauses so we can exclude them from the chip list.
-    # CTEs look like:  WITH cte_name AS ( ... ), other_cte AS ( ... )
+    """Base tables referenced by `sql`, CTEs excluded. Uses the shared analyze()
+    AST facade (correct on aliases/subqueries/schema-qualified names); falls back
+    to a regex scan for inputs that don't parse as a single statement — some call
+    sites pass several queries space-joined into one blob, which the parser rejects."""
+    from aughor.sql.analyze import analyze
+    facts = analyze(sql)
+    if facts.ok and facts.tables:
+        return sorted(facts.tables)
+    # Regex fallback: multi-statement blobs (and anything else the parser can't read).
     cte_names = {m.group(1).lower() for m in _CTE_DEF_RE.finditer(sql)}
-
     seen: dict[str, None] = {}
     for m in _TABLE_RE.finditer(sql):
         t = m.group(1)
@@ -307,6 +313,63 @@ def _try_salvage(merged: dict, inv_id: str, question: str, connection_id: str, s
     except Exception:
         return None
     return None
+
+
+async def salvage_orphaned_investigation(
+    inv_id: str, connection_id: str, canvas_id: Optional[str], question: str,
+) -> None:
+    """Crash-recovery for an investigation orphaned by a process restart. Reads its
+    LangGraph checkpoint (persisted SqliteSaver, keyed by inv_id) and runs the same
+    proven `_try_salvage` the timeout/exception paths use — synthesising a partial
+    report from whatever evidence (ADA phases / explore answers) was gathered before
+    the crash. Recovery instead of sweep-to-failed; always reaches a terminal status
+    (complete on salvage, failed when there's nothing to recover). Runs as a
+    supervised kernel job, so it carries its own job.state lifecycle + heartbeat."""
+    db = None
+    try:
+        from aughor.agent.graph import build_graph_generic
+        canvas_scope_schema: Optional[str] = None
+        if canvas_id:
+            try:
+                from aughor.canvas.store import get_canvas
+                canvas = get_canvas(canvas_id)
+                if canvas and canvas.scopes:
+                    canvas_scope_schema = canvas.scopes[0].schema_name
+            except Exception:
+                logger.debug("salvage: canvas scope lookup failed for %s", canvas_id, exc_info=True)
+        if canvas_scope_schema:
+            from aughor.db.connection import open_connection_for_with_schema
+            db = open_connection_for_with_schema(connection_id, schema_name=canvas_scope_schema)
+        else:
+            db = open_connection_for(connection_id)
+        agent = build_graph_generic(db, hitl=False)
+        config = {"configurable": {"thread_id": inv_id}}
+        try:
+            st = await asyncio.to_thread(lambda: agent.get_state(config))
+            merged = dict(st.values) if st and getattr(st, "values", None) else {}
+        except Exception:
+            logger.debug("salvage: checkpoint read failed for %s", inv_id, exc_info=True)
+            merged = {}
+        salvaged = None
+        if merged:
+            salvaged = await asyncio.to_thread(_try_salvage, merged, inv_id, question, connection_id, "")
+        if salvaged:
+            logger.info("boot recovery: salvaged a partial report for orphaned investigation %s", inv_id)
+        else:
+            fail_investigation(inv_id, status="failed")
+            logger.info("boot recovery: nothing to salvage for %s — marked failed", inv_id)
+    except Exception:
+        logger.warning("boot recovery: salvage crashed for %s", inv_id, exc_info=True)
+        try:
+            fail_investigation(inv_id, status="failed")
+        except Exception:
+            logger.debug("salvage fallback fail_investigation failed for %s", inv_id, exc_info=True)
+    finally:
+        if db is not None:
+            try:
+                db.close()
+            except Exception:
+                logger.debug("salvage: db close failed for %s", inv_id, exc_info=True)
 
 
 # ── Request models ────────────────────────────────────────────────────────────
@@ -1723,6 +1786,56 @@ async def chat_endpoint(req: ChatRequest, request: Request):
     )
 
 
+_STREAM_END = object()   # queue sentinel: the investigation generator finished
+
+
+async def _investigation_job_streamed(
+    question: str,
+    connection_id: str,
+    request: Request,
+    *,
+    hitl: bool = False,
+    skip_cache: bool = False,
+    canvas_id: Optional[str] = None,
+) -> AsyncGenerator[str, None]:
+    """Run the investigation as a first-class supervised kernel job (K1).
+
+    `_stream_investigation` is left UNCHANGED — it just executes inside the job's
+    task instead of the request coroutine, with its SSE events bridged to the
+    client over an in-process queue. That alone makes a live investigation a real
+    job: a `job.state` PENDING→RUNNING→SUCCEEDED|FAILED|CANCELLED lifecycle on the
+    event spine, a heartbeat (orphan detection), kernel-driven cancellation, and
+    artifacts auto-stamped with `created_by_job` (the contextvar is set around the
+    coro) — the same supervision the explorer already has. Latency is unchanged:
+    the queue hop is in-process and `await queue.put` preserves natural backpressure.
+    """
+    from aughor.kernel.jobs import kernel
+    queue: asyncio.Queue = asyncio.Queue()
+
+    async def _drive() -> None:
+        try:
+            async for sse in _stream_investigation(
+                question, connection_id, request,
+                hitl=hitl, skip_cache=skip_cache, canvas_id=canvas_id,
+            ):
+                await queue.put(sse)
+        finally:
+            # Always release the client drainer, even on cancellation/error.
+            queue.put_nowait(_STREAM_END)
+
+    job_id = await kernel().submit(
+        "investigation", _drive,
+        conn_id=connection_id, canvas_id=canvas_id,
+        payload={"question": question[:200]},
+    )
+    logger.debug("investigation job %s submitted", job_id)
+    while True:
+        item = await queue.get()
+        if item is _STREAM_END:
+            break
+        yield item
+
+
 @router.post("/investigate")
 async def investigate(req: InvestigateRequest, request: Request):
     conn_id = req.connection_id
@@ -1732,10 +1845,33 @@ async def investigate(req: InvestigateRequest, request: Request):
         if resolved:
             conn_id = resolved
     return StreamingResponse(
-        _stream_investigation(req.question, conn_id, request, hitl=req.hitl, skip_cache=req.skip_cache, canvas_id=req.canvas_id),
+        _investigation_job_streamed(req.question, conn_id, request, hitl=req.hitl, skip_cache=req.skip_cache, canvas_id=req.canvas_id),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+def _job_id_for_investigation(inv_id: str) -> Optional[str]:
+    """The kernel job running (or that ran) this investigation — read from the
+    journal, where every investigation.* event is job-stamped. No extra state."""
+    from aughor.kernel.ledger import Ledger
+    for e in Ledger.default().events(kind="investigation.created", limit=300):
+        if (e.get("payload") or {}).get("investigation_id") == inv_id:
+            return e.get("job_id")
+    return None
+
+
+@router.post("/investigations/{inv_id}/cancel")
+def cancel_investigation_route(inv_id: str):
+    """Cancel an in-flight investigation by cancelling its supervised kernel job.
+    The job's CancelledError unwinds the stream's finally (which reconciles the
+    'running' row to failed); the kernel records the job CANCELLED."""
+    from aughor.kernel.jobs import kernel
+    job_id = _job_id_for_investigation(inv_id)
+    if not job_id:
+        raise HTTPException(status_code=404, detail="No kernel job found for this investigation")
+    cancelled = kernel().cancel(job_id)
+    return {"investigation_id": inv_id, "job_id": job_id, "cancelled": cancelled}
 
 
 @router.post("/investigations/{inv_id}/feedback")

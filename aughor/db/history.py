@@ -340,6 +340,19 @@ def sweep_stale_running(max_age_minutes: int = 60) -> int:
     return len(rows)
 
 
+def list_orphaned_running_investigations() -> list[dict]:
+    """Investigations still 'running' at boot — orphaned by the prior process (a
+    fresh process has nothing genuinely running). Each carries what crash-recovery
+    needs; `id` is also the LangGraph checkpoint thread_id."""
+    c = _conn()
+    _ensure_schema(c)
+    rows = c.execute(
+        "SELECT id, connection_id, canvas_id, question FROM investigations WHERE status = 'running'"
+    ).fetchall()
+    c.close()
+    return [dict(r) for r in rows]
+
+
 def reconcile_orphaned_investigations() -> int:
     """Boot-time reconciliation: a freshly-started process has nothing genuinely
     running, so EVERY 'running' row is an orphan from the prior process. Fail all

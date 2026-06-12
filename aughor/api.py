@@ -56,7 +56,9 @@ async def _lifespan(app: "FastAPI"):
     # ── Startup ────────────────────────────────────────────────────────────────
     await _kernel_journal_boot()
     await _setup_samples()
-    await _sweep_stale_investigations()
+    # Orphaned investigations are recovered (salvaged, not blanket-failed) inside
+    # _kernel_boot_recovery — AFTER kernel boot_recovery sweeps the job table, so
+    # the salvage jobs we submit aren't themselves caught by that sweep.
     await _purge_legacy_canvases()
     await _ensure_default_workspace()
     await _validate_connections()
@@ -134,25 +136,6 @@ async def _setup_samples() -> None:
         await loop.run_in_executor(None, _seed_and_validate)
     except Exception as exc:
         logger.warning("Samples DB setup failed (non-fatal): %s", exc)
-
-
-async def _sweep_stale_investigations() -> None:
-    # Boot reconciliation, the investigation analog of kernel boot_recovery: a
-    # freshly-started process has NOTHING genuinely running, so every row still
-    # marked 'running' is orphaned by the previous process's restart/crash. Fail
-    # ALL of them immediately (max_age_minutes=0) instead of waiting up to ~60min
-    # for the periodic supervisor sweep — a crashed investigation otherwise shows
-    # as "running" in the UI long after the server that owned it is gone. The
-    # periodic supervisor keeps the 60-min cutoff (during live operation a recent
-    # 'running' row IS legitimately in flight and must not be swept). Each sweep
-    # emits investigation.failed onto the event spine via fail_investigation.
-    try:
-        from aughor.db.history import reconcile_orphaned_investigations
-        n = reconcile_orphaned_investigations()
-        if n:
-            logger.info("Boot reconciliation: marked %d orphaned 'running' investigation(s) as failed", n)
-    except Exception as exc:
-        logger.warning("Stale investigation sweep failed (non-fatal): %s", exc)
 
 
 async def _purge_legacy_canvases() -> None:
@@ -271,6 +254,35 @@ async def _kernel_boot_recovery() -> None:
             )
         except Exception as exc:
             logger.warning("Boot recovery: could not resume %s: %s", canvas_id or conn_id, exc)
+
+    # Investigations: recover orphaned 'running' rows AFTER the job sweep above, so
+    # the salvage jobs we submit here aren't swept as orphans themselves.
+    await _recover_orphaned_investigations()
+
+
+async def _recover_orphaned_investigations() -> None:
+    """Crash recovery for investigations. A 'running' row at boot was orphaned by
+    the previous process; instead of blanket-failing it, submit a supervised salvage
+    job that reads its LangGraph checkpoint and recovers a partial report from the
+    evidence gathered before the crash — completing it where possible, failing it
+    only when there is nothing to salvage. The 60-min supervisor sweep backstops any
+    that don't get a job."""
+    try:
+        from aughor.db.history import list_orphaned_running_investigations
+        from aughor.routers.investigations import salvage_orphaned_investigation
+        from aughor.kernel.jobs import kernel
+        orphans = list_orphaned_running_investigations()
+        for inv in orphans:
+            await kernel().submit(
+                "investigation_salvage",
+                (lambda inv=inv: salvage_orphaned_investigation(
+                    inv["id"], inv["connection_id"], inv.get("canvas_id"), inv["question"])),
+                conn_id=inv["connection_id"], canvas_id=inv.get("canvas_id"),
+            )
+        if orphans:
+            logger.info("Boot recovery: submitted salvage jobs for %d orphaned investigation(s)", len(orphans))
+    except Exception as exc:
+        logger.warning("Orphaned-investigation recovery failed (non-fatal): %s", exc)
 
 
 async def _start_explorers() -> None:
