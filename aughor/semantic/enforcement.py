@@ -54,13 +54,41 @@ def _wrong_columns(metric) -> list[str]:
     return cols
 
 
+def _collapse_by_metric(verdicts: list[dict]) -> list[dict]:
+    """One verdict per metric NAME, ``used`` winning over ``drift``.
+
+    A KPI can carry several governed grains under the same name (e.g. ``aov`` over
+    ``orders`` = ``AVG(total_amount)`` vs over ``order_items`` =
+    ``SUM(final_price_usd*quantity)/NULLIF(COUNT(DISTINCT order_id),0)``). A query
+    matches at most one grain, so the others would each emit a spurious ``drift``.
+    Crediting the metric ``used`` when ANY grain matched is the correct verdict —
+    the answer DID use a governed formula — and it also yields exactly one verdict
+    per name (so the Trust Receipt can't render two badges with the same key).
+    First-seen order is preserved; the winning verdict keeps its own formula/detail."""
+    chosen: dict[str, dict] = {}
+    order: list[str] = []
+    for v in verdicts:
+        name = v["metric"]
+        if name not in chosen:
+            order.append(name)
+            chosen[name] = v
+        elif chosen[name]["status"] != "used" and v["status"] == "used":
+            chosen[name] = v  # a matching grain beats an earlier drift
+    return [chosen[n] for n in order]
+
+
 def check_metric_enforcement(question: str, sql: str, metrics: list) -> list[dict]:
     """Per targeted metric: {metric, status: 'used'|'drift', formula, detail}.
     Untargeted metrics are omitted (n/a for enforcement). Returns [] when no
     governed metric is relevant — the honest 'nothing to enforce' case.
 
     No SQL to judge → no verdict (NOT a drift): enforcing against an empty string
-    would flag every targeted metric as 'drift' for the wrong reason."""
+    would flag every targeted metric as 'drift' for the wrong reason.
+
+    Several metrics can share a name (different governed grains of one KPI). They
+    are all evaluated, then collapsed to one verdict per name (used > drift) so a
+    query matching any grain reads 'used', not a false 'drift' from the grains it
+    didn't match."""
     s = _norm(sql)
     if not s:
         return []
@@ -79,7 +107,7 @@ def check_metric_enforcement(question: str, sql: str, metrics: list) -> list[dic
         detail = (f"used a non-governed form (references {wrong})" if wrong
                   else "did not use the governed formula")
         out.append({"metric": m.name, "status": "drift", "formula": m.sql, "detail": detail})
-    return out
+    return _collapse_by_metric(out)
 
 
 def enforcement_summary(verdicts: list[dict]) -> Optional[dict]:

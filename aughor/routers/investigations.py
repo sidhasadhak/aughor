@@ -113,8 +113,15 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
         try:
             from aughor.semantic.metrics import list_metrics, filter_metrics_to_schema
             from aughor.semantic.enforcement import check_metric_enforcement, enforcement_summary
-            cms = filter_metrics_to_schema(list_metrics(), schema)
+            # Keep every surviving grain for enforcement: a query matches one grain,
+            # so collapsing first would mislabel a correct answer as drift.
+            # check_metric_enforcement collapses its own verdicts to one-per-name.
+            cms = filter_metrics_to_schema(list_metrics(), schema, dedupe=False)
+            _av_seen: set[str] = set()
             for m in cms:
+                if m.name in _av_seen:  # one "available" badge per metric name
+                    continue
+                _av_seen.add(m.name)
                 lineage.append(("metric_available", f"metric:{m.name}", m.sql))
             verdicts = check_metric_enforcement(question, " ".join(sqls), cms)
             for v in verdicts:

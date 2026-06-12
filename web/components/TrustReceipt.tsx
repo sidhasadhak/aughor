@@ -66,9 +66,9 @@ export function TrustReceipt({ connectionId, receiptId, kind = "chat" }: { conne
         aria-label="Trust receipt"
       >
         <span style={{ fontSize: 10, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".06em" }}>receipt</span>
-        {used.map(m => <Badge key={m.ref} tone="governed" title={m.detail || ""}>{m.ref.replace("metric:", "")} · governed ✓</Badge>)}
-        {drift.map(m => <Badge key={m.ref} tone="drift" title={m.detail || ""}>⚠ {m.ref.replace("metric:", "")} · non-governed</Badge>)}
-        {guards.map(g => <Badge key={g.ref} tone="guard">✓ {g.ref.replace("guard:", "").replace(/_/g, " ")}</Badge>)}
+        {used.map((m, i) => <Badge key={`used:${i}:${m.ref}`} tone="governed" title={m.detail || ""}>{m.ref.replace("metric:", "")} · governed ✓</Badge>)}
+        {drift.map((m, i) => <Badge key={`drift:${i}:${m.ref}`} tone="drift" title={m.detail || ""}>⚠ {m.ref.replace("metric:", "")} · non-governed</Badge>)}
+        {guards.map((g, i) => <Badge key={`guard:${i}:${g.ref}`} tone="guard">✓ {g.ref.replace("guard:", "").replace(/_/g, " ")}</Badge>)}
         {used.length === 0 && drift.length === 0 && guards.length === 0 && <Badge tone="muted">{inputs.length} source{inputs.length !== 1 ? "s" : ""} · executed SQL</Badge>}
         <span style={{ fontSize: 10, color: "var(--t4)" }}>{open ? "▾" : "▸"}</span>
       </button>
@@ -85,15 +85,15 @@ export function TrustReceipt({ connectionId, receiptId, kind = "chat" }: { conne
           )}
           {metrics.length > 0 && (
             <div style={{ fontSize: 11, color: "var(--t2)" }}>
-              Governed metrics available: {metrics.map(m => (
-                <span key={m.ref} title={m.detail || ""} style={{ color: "var(--blue4)" }}>{m.ref.replace("metric:", "")} </span>
+              Governed metrics available: {metrics.map((m, i) => (
+                <span key={`avail:${i}:${m.ref}`} title={m.detail || ""} style={{ color: "var(--blue4)" }}>{m.ref.replace("metric:", "")} </span>
               ))}
             </div>
           )}
           {inputs.length > 0 && (
             <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" }}>
               <span style={{ fontSize: 10, color: "var(--t3)" }}>inputs:</span>
-              {inputs.map(i => <Badge key={i.ref} tone="muted">{i.ref.replace("table:", "")}</Badge>)}
+              {inputs.map((inp, idx) => <Badge key={`input:${idx}:${inp.ref}`} tone="muted">{inp.ref.replace("table:", "")}</Badge>)}
             </div>
           )}
           {sqlEdge?.detail && (

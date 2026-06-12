@@ -16,12 +16,15 @@ Relationship to the Business Glossary:
 from __future__ import annotations
 
 import json
+import logging
 import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 _DEFAULT_PATH = Path(__file__).parent.parent.parent / "data" / "metrics.json"
 
@@ -320,17 +323,61 @@ def _apply_ontology_overlay(
     return out
 
 
-def filter_metrics_to_schema(metrics: list, schema_text: str) -> list:
-    """Drop metrics whose declared tables/columns are absent from ``schema_text``.
+def _dedupe_by_name(metrics: list) -> list:
+    """Collapse duplicate metric NAMES to one survivor (the LAST occurrence,
+    matching ``save_metric``'s most-recent-wins upsert) and log each conflict.
+
+    A metric name is its identity — ``save_metric`` upserts by name — so two
+    entries sharing a name is an invariant violation. It only surfaces once a
+    schema keeps both grains of the same KPI (e.g. ``orders`` AND ``order_items``
+    both present), and the damage is real: the catalog gets injected into the
+    prompt twice with CONFLICTING formulas, enforcement double-counts, and the
+    Trust Receipt collides React keys. We restore the invariant at the
+    schema-scoped consumer boundary; the raw file is left untouched (so the
+    metrics-management UI still shows the conflict for a human to clean)."""
+    by_name: dict[str, object] = {}
+    first_seen: list[str] = []
+    for m in metrics:
+        name = getattr(m, "name", None)
+        if name is None:
+            continue
+        if name in by_name:
+            logger.warning(
+                "metric catalog has a duplicate name %r — keeping the most recent "
+                "formula %r, dropping the earlier %r; clean data/metrics.json (a "
+                "name must be unique, or scope these per connection)",
+                name, getattr(m, "sql", ""), getattr(by_name[name], "sql", ""),
+            )
+        else:
+            first_seen.append(name)
+        by_name[name] = m
+    return [by_name[n] for n in first_seen]
+
+
+def filter_metrics_to_schema(metrics: list, schema_text: str, dedupe: bool = True) -> list:
+    """Drop metrics whose declared tables/columns are absent from ``schema_text``,
+    then (by default) collapse duplicate names to a single governed definition.
     Public boundary so other modules (the canonical resolver) reuse the schema
     match without importing this module's internals. Returns ``metrics``
-    unchanged when no schema parses (can't prove absence)."""
+    name-deduped when no schema parses (can't prove absence, but a duplicate
+    name is always wrong).
+
+    ``dedupe=False`` keeps EVERY surviving grain of a duplicated name. Two
+    same-named metrics can be genuinely different formulas at different grains
+    (e.g. ``revenue`` over ``orders`` = ``SUM(total_amount)`` vs over
+    ``order_items`` = ``SUM(final_price_usd * quantity)``). A query can only match
+    one grain, so collapsing here would drop the matching grain and mislabel a
+    correct answer as drift — the enforcement path passes ``dedupe=False`` and
+    lets ``check_metric_enforcement`` collapse its own verdicts (used > drift)
+    instead. Callers that need a single definition per name (prompt, badges,
+    canonical resolver) keep the default."""
+    _fold = _dedupe_by_name if dedupe else (lambda xs: list(xs))
     if not schema_text:
-        return metrics
+        return _fold(metrics)
     tables, cols = _schema_tables_and_columns(schema_text)
     if not tables:
-        return metrics
-    return [m for m in metrics if _metric_matches_schema(m, tables, cols)]
+        return _fold(metrics)
+    return _fold([m for m in metrics if _metric_matches_schema(m, tables, cols)])
 
 
 def build_metrics_block(
@@ -359,6 +406,7 @@ def build_metrics_block(
             metrics = [m for m in metrics if _metric_matches_schema(m, _tables, _cols)]
     if connection_id:
         metrics = _apply_ontology_overlay(metrics, connection_id)
+    metrics = _dedupe_by_name(metrics)  # never inject the same KPI twice with conflicting formulas
     if not metrics:
         return ""
 
