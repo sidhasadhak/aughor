@@ -6,6 +6,30 @@
 
 ---
 
+## 📊 ARC STATUS — Query Builder Explore Layout + Customize (2026-06-12 pt2)
+
+**Branch `2026-06-12-qb-explore-layout` → merged to `main`.** A follow-on to the workflow-loop arc:
+the user shared Apache Superset's Explore view and asked to adopt its structure, then iterated. Five
+runtime-proven increments (each tsc-clean, cold-server console-clean):
+
+- **Explore layout** — three-zone (field list · DATA/CUSTOMIZE control rail · chart hero), then
+  refined to a **vertical** split: chart on top, Data/Customize panel docked at the bottom, draggable
+  to resize + fully collapsible.
+- **Chart Type gallery** + a **controlled chart** (the rail owns type / labels / title).
+- **Customize tab** at parity — color scheme, number format, legend position, axis titles — wired via
+  a generic `custom` post-pass over the Vega-Lite spec in the shared `<Chart>` engine (no-op for
+  chat/reports/explorer).
+- **Compaction** — dropped Suggested + standalone Time, **folded the relative range onto date-dim
+  chips**, single-line drop zones, collapsible SQL + Resolved-Joins, tighter spacing, pruned dead code.
+- **Fixes** — catalog column indentation (proper tree), dim-chip overflow, full-width chart (no axis
+  clipping), and the **Start Canvas** navigation bug (was `window.location.href` → Home; now routes
+  through the app's canvas handler, create-then-navigate with background LLM rename).
+
+Features #101–103 in `FEATURES.md`; details in memory `qb_explore_layout_arc.md`. Chart-engine change
+is additive + backward-compatible.
+
+---
+
 ## 🧱 ARC STATUS — Query Builder Workflow Loop (Superset-gap close) (2026-06-12)
 
 **Branch `2026-06-12-query-builder-workflow` → merged to `main`.** A study of Apache Superset's
