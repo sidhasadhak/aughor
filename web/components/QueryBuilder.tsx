@@ -49,7 +49,7 @@ type FilterOp = "=" | "!=" | ">" | ">=" | "<" | "<=" | "LIKE" | "ILIKE" | "IN" |
 const FILTER_OPS: FilterOp[] = ["=","!=",">",">=","<","<=","LIKE","ILIKE","IN","IS NULL","IS NOT NULL"];
 const NO_VAL_OPS: FilterOp[] = ["IS NULL","IS NOT NULL"];
 
-interface DimItem     { id: string; col: string; table: string; transform?: "date" | "month" | "year" | "quarter" | "hour" | "minute" }
+interface DimItem     { id: string; col: string; table: string; transform?: "date" | "month" | "year" | "quarter" | "hour" | "minute"; range?: string }
 interface MeasureItem { id: string; col: string; table: string; agg: AggFn; customExpr: string; alias: string; fromMetric?: string }
 interface FilterItem  { id: string; col: string; table: string; op: FilterOp; val: string }
 // HAVING — a filter on an aggregate (references a measure, compiles to its aggregate expression).
@@ -99,15 +99,6 @@ function tableSchemaOf(name: string): string | undefined {
   return i >= 0 ? name.slice(0, i) : undefined;
 }
 
-// ── Suggestion intelligence (type + name heuristics) ──────────────────────────
-// Columns that make natural GROUP BY dimensions.
-const CATEGORICAL_HINT = /(channel|region|type|status|category|segment|name|country|state|city|gender|tier|group|method|source|stage|priority|currency|brand|department|role|plan|product|customer|account|industry|cohort|level|class|kind|label)/i;
-// Numeric columns that are typically summed vs. averaged.
-const AVG_HINT = /(rate|ratio|score|pct|percent|avg|average|margin|age|duration|days|temperature|index|weight|height|balance_pct)/i;
-const SUM_HINT = /(revenue|amount|total|value|price|spend|cost|sales|qty|quantity|budget|profit|gmv|fee|sum|payment|charge|discount|tax|units)/i;
-const suggestAgg = (name: string): AggFn => AVG_HINT.test(name) ? "AVG" : "SUM";
-// Identifier-ish columns that rarely make good aggregates or dimensions on their own.
-const isIdLike = (name: string) => /(^id$|_id$|_key$|uuid|guid|^pk_|hash)/i.test(name);
 const fmtRows = (rc: string | number | null | undefined) => {
   if (rc == null || rc === "") return null;
   const n = typeof rc === "string" ? parseInt(rc.replace(/[^0-9]/g, ""), 10) : rc;
@@ -314,7 +305,13 @@ function buildSql(
     return f.val.trim() ? [`${qc} ${f.op} ${f.val}`] : [];
   });
   const timeWhere = time && timeBase ? timePredicate(time.preset, timeBase, time.from, time.to) : "";
-  const allWhere = timeWhere ? [...whereItems, timeWhere] : whereItems;
+  // Per-dimension relative ranges (the date-dim chip's range dropdown) → WHERE on the raw column.
+  const dimRangeWheres = dims.flatMap(d => {
+    if (!d.range || d.range === "all") return [];
+    const p = timePredicate(d.range as TimePreset, qualify(d.col, d.table, multi), "", "");
+    return p ? [p] : [];
+  });
+  const allWhere = [...whereItems, ...(timeWhere ? [timeWhere] : []), ...dimRangeWheres];
   // HAVING — filters on aggregates, compiled from each having item's referenced measure expression.
   const havingItems = (having || []).flatMap(h => {
     const m = measures.find(x => x.id === h.measureId);
@@ -903,6 +900,8 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
   const [savedName,   setSavedName]   = useState("");
   const [showSaved,   setShowSaved]   = useState(false);
   const [railTab,     setRailTab]     = useState<"data"|"customize">("data");  // Superset-style control rail
+  const [sqlOpen,     setSqlOpen]     = useState(false);  // SQL editor collapsed by default
+  const [joinsOpen,   setJoinsOpen]   = useState(false);  // resolved-joins collapsed by default
   const [vizType,        setVizType]        = useState<ChartType | "auto">("auto");  // chart-type override
   const [showDataLabels, setShowDataLabels] = useState(false);
   const [chartTitle,     setChartTitle]     = useState("");
@@ -1262,31 +1261,8 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
     } catch { setNfDistinct([]); }
   }, [connId, tableSchemas, tableCols]);
 
-  // ── Suggestion intelligence (over the resolved tables) ────────────────────
-  const usedDimKeys = new Set(dims.map(d => `${d.table}.${d.col}`));
-  const usedMeaCols = new Set(measures.map(m => `${m.table}.${m.col}`));
-  const resolvedCols = allTables.flatMap(t => (tableCols[t] ?? []).map(c => ({ ...c, table: t })));
-  const timeColumns = resolvedCols.filter(c => isDate(c.type));
-
-  const suggestedDims = resolvedCols
-    .filter(c => !usedDimKeys.has(`${c.table}.${c.name}`) && !c.is_fk && !isIdLike(c.name)
-      && (isDate(c.type) || (!isNum(c.type) && CATEGORICAL_HINT.test(c.name))))
-    .sort((a, b) => (isDate(b.type)?1:0) - (isDate(a.type)?1:0)) // dates first
-    .slice(0, 6);
-
-  const suggestedMetrics = resolvedCols
-    .filter(c => isNum(c.type) && !c.is_fk && !isIdLike(c.name) && !usedMeaCols.has(`${c.table}.${c.name}`))
-    .slice(0, 6)
-    .map(c => ({ table: c.table, col: c.name, agg: suggestAgg(c.name) as AggFn }));
-
-  const hasCount = measures.some(m => m.agg === "COUNT" && !m.col);
   // Joins can fan rows out across one-to-many relationships → aggregates may double-count.
   const fanOutRisk = isMulti && measures.some(m => m.agg !== "CUSTOM");
-
-  const addMeasureDirect = (table: string, col: string, agg: AggFn) => {
-    ensureTable(table);
-    setMeasures(p => [...p, { id:uid(), col, table, agg, customExpr: col, alias: autoAlias(agg, col, col) }]);
-  };
 
   // One-click fix for a per-unit SUM under-count: rewrite the measure to SUM(col × quantity).
   const fixGrainMeasure = (m: MeasureItem) => {
@@ -1707,7 +1683,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                 </button>
               ))}
             </div>
-            <div className={`flex-1 overflow-y-auto px-5 py-4 space-y-5 ${railTab==="data"?"":"hidden"}`}>
+            <div className={`flex-1 overflow-y-auto px-5 py-3 space-y-3 ${railTab==="data"?"":"hidden"}`}>
 
               {/* CHART TYPE — viz gallery (Superset's first DATA section); appears once chartable */}
               {availTypes.length > 0 && (
@@ -1749,145 +1725,32 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                 </div>
               )}
 
-              {/* Join status */}
-              {joinStatuses.length > 0 && (
-                <div className="rounded-md border border-zinc-700/50 bg-zinc-800/30 px-4 py-3 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Resolved joins · {allTables.length} tables</p>
-                    {fanOutRisk && (
-                      <span title="One-to-many joins can repeat rows from the parent table, inflating SUM/COUNT. Verify the aggregation grain."
-                        className="flex items-center gap-1 text-[11px] text-amber-400/90 border border-amber-500/30 bg-amber-500/5 rounded px-1.5 py-0.5">
-                        ⚠ joins may fan out rows
-                      </span>
-                    )}
-                  </div>
-                  {joinStatuses.map(({table, join, pivot}) => (
-                    <div key={table} className="flex items-center gap-2 text-[11px] font-mono">
-                      <span className={`w-2 h-2 rounded-full shrink-0 ${join?"bg-emerald-400":"bg-red-400"}`}/>
-                      <span className="text-zinc-500">{join ? pivot : primaryTable}</span>
-                      <span className="text-zinc-500">→</span>
-                      <span className="text-zinc-300">{table}</span>
-                      {join ? (
-                        <>
-                          <span className="text-zinc-500 mx-1">ON</span>
-                          <span className="text-emerald-400">{join.t1}.{join.c1} = {join.t2}.{join.c2}</span>
-                          <span className={`ml-auto text-[11px] px-1.5 py-0.5 rounded border ${
-                            join.match==="exact" ? "text-emerald-600 border-emerald-700/50 bg-emerald-500/5"
-                                                 : "text-amber-600  border-amber-700/50  bg-amber-500/5"
-                          }`}>{join.match}</span>
-                        </>
-                      ) : <span className="text-red-400 ml-2 italic">no join found — add ON clause manually in SQL</span>}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Suggested fields */}
-              {primaryTable && (suggestedDims.length > 0 || suggestedMetrics.length > 0 || !hasCount) && (
-                <div className="rounded-md border border-zinc-700/40 bg-zinc-800/20 px-4 py-3">
-                  <div className="flex items-center gap-2 mb-2.5">
-                    <span className="text-violet-400 text-[12px]">✦</span>
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Suggested</p>
-                    <span className="text-[11px] text-zinc-500">one-click add, based on column types &amp; relationships</span>
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {!hasCount && (
-                      <button onClick={()=>setMeasures(p=>[...p,{id:uid(),col:"",table:primaryTable,agg:"COUNT",customExpr:"",alias:"row_count"}])}
-                        className="inline-flex items-center gap-1.5 text-[11px] font-mono px-2.5 py-1 rounded border border-violet-500/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20 transition">
-                        <span className="opacity-70">M</span> COUNT(*)
-                      </button>
-                    )}
-                    {suggestedMetrics.map(s => (
-                      <button key={`m-${s.table}.${s.col}`} onClick={()=>addMeasureDirect(s.table, s.col, s.agg)}
-                        title={`${s.agg}(${isMulti?`${s.table}.`:""}${s.col})`}
-                        className="inline-flex items-center gap-1.5 text-[11px] font-mono px-2.5 py-1 rounded border border-violet-500/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20 transition">
-                        <span className="opacity-70">{s.agg}</span> {s.col}
-                      </button>
-                    ))}
-                    {suggestedDims.map(s => (
-                      <button key={`d-${s.table}.${s.name}`} onClick={()=>addDim(s.name, s.table)}
-                        title={`Group by ${isMulti?`${s.table}.`:""}${s.name}`}
-                        className="inline-flex items-center gap-1.5 text-[11px] font-mono px-2.5 py-1 rounded border border-blue-500/30 bg-blue-500/10 text-blue-300 hover:bg-blue-500/20 transition">
-                        <span className={`w-1.5 h-1.5 rounded-full ${dot(s.type)}`}/> {s.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Time controls — range + grain over a date column */}
-              {primaryTable && timeColumns.length > 0 && (
-                <div className="rounded-md border border-zinc-700/40 bg-zinc-800/20 px-4 py-3">
-                  <div className="flex items-center gap-2 mb-2.5">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" strokeWidth="1.8" strokeLinecap="round" className="shrink-0">
-                      <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>
-                    </svg>
-                    <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Time</p>
-                    <span className="text-[11px] text-zinc-500">range &amp; grain over a date column</span>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <select value={timeCol}
-                      onChange={e => { const v = e.target.value; setTimeCol(v); const tc = timeColumns.find(c => c.name === v); setTimeColTable(tc ? tc.table : ""); }}
-                      className="text-[12px] bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition">
-                      <option value="">No time column</option>
-                      {timeColumns.map(c => <option key={`${c.table}.${c.name}`} value={c.name}>{isMulti ? `${c.table}.` : ""}{c.name}</option>)}
-                    </select>
-                    <select value={timePreset} onChange={e => setTimePreset(e.target.value as TimePreset)} disabled={!timeCol}
-                      className="text-[12px] bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition disabled:opacity-40">
-                      {TIME_PRESETS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
-                    </select>
-                    {timeCol && timePreset === "custom" && (
-                      <div className="flex items-center gap-1.5">
-                        <input type="date" value={timeFrom} onChange={e => setTimeFrom(e.target.value)}
-                          className="text-[12px] font-mono bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-zinc-200 outline-none focus:border-zinc-500" />
-                        <span className="text-zinc-500 text-[11px]">→</span>
-                        <input type="date" value={timeTo} onChange={e => setTimeTo(e.target.value)}
-                          className="text-[12px] font-mono bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-zinc-200 outline-none focus:border-zinc-500" />
-                      </div>
-                    )}
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[11px] text-zinc-500">grain</span>
-                      <select value={timeGrain} onChange={e => setTimeGrain(e.target.value as TimeGrain)} disabled={!timeCol}
-                        className="text-[12px] bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition disabled:opacity-40">
-                        {TIME_GRAINS.map(g => <option key={g} value={g}>{g}</option>)}
-                      </select>
-                    </div>
-                  </div>
-                </div>
-              )}
-
               {/* Dimensions + Metrics */}
-              <div className="grid grid-cols-1 gap-4">
+              <div className="grid grid-cols-1 gap-3">
 
                 {/* DIMENSIONS */}
                 <div>
-                  <div className="mb-3">
-                    <p className="text-[13px] font-semibold text-zinc-300">Dimensions</p>
-                    <p className="text-[11px] text-zinc-500 mt-0.5">GROUP BY — drag from left or click D</p>
+                  <div className="mb-1.5">
+                    <p className="text-[13px] font-semibold text-zinc-300">Dimensions <span className="text-[11px] font-normal text-zinc-500">· GROUP BY</span></p>
                   </div>
                   <div
                     onDragOver={e=>{e.preventDefault();setOverDims(true);}}
                     onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget as Node))setOverDims(false);}}
                     onDrop={onDropDims}
-                    className={`min-h-[120px] rounded-md border-2 border-dashed p-4 flex flex-wrap gap-2 items-start content-start transition-all ${
+                    className={`min-h-[42px] rounded-md border-2 border-dashed p-2 flex flex-wrap gap-2 items-center content-start transition-all ${
                       overDims ? "border-blue-500 bg-blue-500/5 shadow-[0_0_0_1px_rgba(59,130,246,0.2)]"
                                : "border-zinc-600 bg-zinc-800/10 hover:border-zinc-500"
                     }`}
                   >
                     {dims.length === 0 && (
-                      <div className={`w-full flex flex-col items-center justify-center py-4 gap-2 ${overDims?"text-blue-400":"text-zinc-500"}`}>
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                          <path d="M12 5v14M5 12l7 7 7-7"/>
-                        </svg>
-                        <p className="text-[12px] italic">{overDims ? "Release to add dimension" : "Drop columns here"}</p>
-                      </div>
+                      <p className={`w-full px-1 text-[11px] italic ${overDims?"text-blue-400":"text-zinc-500"}`}>{overDims ? "Release to add dimension" : "Drop a column or click D"}</p>
                     )}
                     {dims.map(d => (
                       <span key={d.id} className="inline-flex items-center gap-1 text-[12px] font-mono px-2 py-1 rounded-lg border bg-blue-500/10 border-blue-500/30 text-blue-300">
                         {isMulti ? `${d.table}.${d.col}` : d.col}
-                        {/* Date transform dropdown */}
+                        {/* Date dims: grain (DATE_TRUNC) + relative range (WHERE) inline on the chip */}
                         {(tableCols[d.table]?.find(c=>c.name===d.col)?.type?.toLowerCase().includes("date") ||
-                          tableCols[d.table]?.find(c=>c.name===d.col)?.type?.toLowerCase().includes("time")) && (
+                          tableCols[d.table]?.find(c=>c.name===d.col)?.type?.toLowerCase().includes("time")) && (<>
                           <select
                             value={d.transform || ""}
                             onChange={e=> {
@@ -1905,7 +1768,16 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                             <option value="hour">HOUR</option>
                             <option value="minute">MIN</option>
                           </select>
-                        )}
+                          <select
+                            value={d.range || "all"}
+                            onChange={e=> { const r=e.target.value; setDims(p => p.map(x => x.id === d.id ? { ...x, range: r==="all"?undefined:r } : x)); }}
+                            className={`text-[10px] bg-zinc-800 border rounded px-1 py-0.5 outline-none ${d.range ? "border-blue-500/50 text-blue-300" : "border-zinc-700 text-zinc-300"}`}
+                            onClick={e=> e.stopPropagation()}
+                            title="Relative time range (WHERE)"
+                          >
+                            {TIME_PRESETS.filter(p=>p.id!=="custom").map(p=><option key={p.id} value={p.id}>{p.label}</option>)}
+                          </select>
+                        </>)}
                         <button onClick={()=>setDims(p=>p.filter(x=>x.id!==d.id))} className="opacity-50 hover:opacity-100 text-sm leading-none ml-0.5">×</button>
                       </span>
                     ))}
@@ -1914,10 +1786,9 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
 
                 {/* METRICS */}
                 <div>
-                  <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-start justify-between mb-1.5">
                     <div>
-                      <p className="text-[13px] font-semibold text-zinc-300">Metrics</p>
-                      <p className="text-[11px] text-zinc-500 mt-0.5">Aggregations — drag from left or click M</p>
+                      <p className="text-[13px] font-semibold text-zinc-300">Metrics <span className="text-[11px] font-normal text-zinc-500">· aggregations</span></p>
                     </div>
                     {metrics.length > 0 && (
                       <div className="relative">
@@ -1950,18 +1821,13 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                     onDragOver={e=>{e.preventDefault();setOverMeasures(true);}}
                     onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget as Node))setOverMeasures(false);}}
                     onDrop={onDropMeasures}
-                    className={`min-h-[120px] rounded-md border-2 border-dashed p-4 flex flex-wrap gap-2 items-start content-start transition-all ${
+                    className={`min-h-[42px] rounded-md border-2 border-dashed p-2 flex flex-wrap gap-2 items-center content-start transition-all ${
                       overMeasures ? "border-violet-500 bg-violet-500/5 shadow-[0_0_0_1px_rgba(139,92,246,0.2)]"
                                    : "border-zinc-600 bg-zinc-800/10 hover:border-zinc-500"
                     }`}
                   >
                     {measures.length === 0 && (
-                      <div className={`w-full flex flex-col items-center justify-center py-4 gap-2 ${overMeasures?"text-violet-400":"text-zinc-500"}`}>
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                          <path d="M12 5v14M5 12l7 7 7-7"/>
-                        </svg>
-                        <p className="text-[12px] italic">{overMeasures ? "Release to configure metric" : "Drop columns here"}</p>
-                      </div>
+                      <p className={`w-full px-1 text-[11px] italic ${overMeasures?"text-violet-400":"text-zinc-500"}`}>{overMeasures ? "Release to configure metric" : "Drop a column or click M"}</p>
                     )}
                     {measures.map(m => {
                       const ao = AGG_OPTIONS.find(o=>o.fn===m.agg);
@@ -1990,11 +1856,44 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                 </div>
               </div>
 
+              {/* Resolved joins — below metrics, collapsed by default */}
+              {joinStatuses.length > 0 && (
+                <div className="rounded-md border border-zinc-700/50 bg-zinc-800/20">
+                  <button onClick={()=>setJoinsOpen(o=>!o)} className="w-full flex items-center gap-2 px-3 py-2 text-left">
+                    <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className={`shrink-0 text-zinc-500 transition-transform ${joinsOpen?"rotate-90":""}`}><polyline points="2,1 6,4 2,7"/></svg>
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Resolved joins · {allTables.length} tables</span>
+                    {fanOutRisk && (
+                      <span title="One-to-many joins can repeat rows from the parent table, inflating SUM/COUNT. Verify the aggregation grain."
+                        className="ml-auto flex items-center gap-1 text-[11px] text-amber-400/90 border border-amber-500/30 bg-amber-500/5 rounded px-1.5 py-0.5">⚠ fan-out</span>
+                    )}
+                  </button>
+                  {joinsOpen && (
+                    <div className="px-3 pb-2.5 space-y-1.5">
+                      {joinStatuses.map(({table, join, pivot}) => (
+                        <div key={table} className="flex items-center gap-2 text-[11px] font-mono">
+                          <span className={`w-2 h-2 rounded-full shrink-0 ${join?"bg-emerald-400":"bg-red-400"}`}/>
+                          <span className="text-zinc-500">{join ? pivot : primaryTable}</span>
+                          <span className="text-zinc-500">→</span>
+                          <span className="text-zinc-300">{table}</span>
+                          {join ? (
+                            <>
+                              <span className="text-zinc-500 mx-1">ON</span>
+                              <span className="text-emerald-400 truncate">{join.t1}.{join.c1} = {join.t2}.{join.c2}</span>
+                              <span className={`ml-auto shrink-0 text-[11px] px-1.5 py-0.5 rounded border ${join.match==="exact" ? "text-emerald-600 border-emerald-700/50 bg-emerald-500/5" : "text-amber-600 border-amber-700/50 bg-amber-500/5"}`}>{join.match}</span>
+                            </>
+                          ) : <span className="text-red-400 ml-2 italic">no join — wire in SQL</span>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Filters / ordering / SQL / results need a resolved table */}
               {primaryTable && (<>
 
               {/* FILTERS */}
-              <div className="border-t border-zinc-700/30 pt-5">
+              <div className="border-t border-zinc-700/30 pt-4">
                 <p className="text-[13px] font-semibold text-zinc-300 mb-1">Filters</p>
                 <p className="text-[11px] text-zinc-500 mb-3">WHERE — narrow down your results</p>
                 <div className="flex flex-wrap gap-2 items-center min-h-[36px]">
@@ -2053,7 +1952,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
 
               {/* HAVING — filter on aggregated metrics */}
               {measures.length > 0 && (
-                <div className="border-t border-zinc-700/30 pt-5">
+                <div className="border-t border-zinc-700/30 pt-4">
                   <p className="text-[13px] font-semibold text-zinc-300 mb-1">Having</p>
                   <p className="text-[11px] text-zinc-500 mb-3">HAVING — filter on aggregated metrics (e.g. total &gt; 1000)</p>
                   <div className="flex flex-col gap-2 items-start">
@@ -2084,7 +1983,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
               )}
 
               {/* ORDER BY + LIMIT */}
-              <div className="border-t border-zinc-700/30 pt-5 flex items-end gap-6">
+              <div className="border-t border-zinc-700/30 pt-4 flex items-end gap-6">
                 <div>
                   <p className="text-[12px] text-zinc-500 mb-2">ORDER BY</p>
                   <input value={orderBy} onChange={e=>setOrderBy(e.target.value)}
@@ -2103,36 +2002,43 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                 </div>
               </div>
 
-              {/* SQL EDITOR */}
-              <div className="border-t border-zinc-700/30 pt-5">
-                <div className="flex items-center gap-3 mb-3">
-                  <p className="text-[13px] font-semibold text-zinc-300">SQL</p>
+              {/* SQL EDITOR — collapsed by default */}
+              <div className="border-t border-zinc-700/30 pt-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <button onClick={()=>setSqlOpen(o=>!o)} className="flex items-center gap-2">
+                    <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className={`shrink-0 text-zinc-500 transition-transform ${sqlOpen?"rotate-90":""}`}><polyline points="2,1 6,4 2,7"/></svg>
+                    <p className="text-[13px] font-semibold text-zinc-300">SQL</p>
+                  </button>
                   {!autoSql && (
                     <span className="text-[11px] text-amber-500/80 border border-amber-500/20 bg-amber-500/5 rounded-md px-1.5 py-0.5">
                       manually edited
                     </span>
                   )}
-                  <div className="ml-auto flex items-center gap-2">
-                    <span className="text-[11px] text-zinc-500">⌘↵ to run</span>
-                    <button onClick={()=>{ if (sql.trim()) { setSql(formatSql(sql)); setAutoSql(false); } }}
-                      className="text-[11px] text-zinc-500 hover:text-zinc-300 border border-zinc-700 rounded-lg px-2.5 py-1 transition">
-                      Format
-                    </button>
-                    <button onClick={()=>navigator.clipboard.writeText(sql).catch(()=>{})}
-                      className="text-[11px] text-zinc-500 hover:text-zinc-300 border border-zinc-700 rounded-lg px-2.5 py-1 transition">
-                      Copy
-                    </button>
-                  </div>
+                  {sqlOpen && (
+                    <div className="ml-auto flex items-center gap-2">
+                      <span className="text-[11px] text-zinc-500">⌘↵ to run</span>
+                      <button onClick={()=>{ if (sql.trim()) { setSql(formatSql(sql)); setAutoSql(false); } }}
+                        className="text-[11px] text-zinc-500 hover:text-zinc-300 border border-zinc-700 rounded-lg px-2.5 py-1 transition">
+                        Format
+                      </button>
+                      <button onClick={()=>navigator.clipboard.writeText(sql).catch(()=>{})}
+                        className="text-[11px] text-zinc-500 hover:text-zinc-300 border border-zinc-700 rounded-lg px-2.5 py-1 transition">
+                        Copy
+                      </button>
+                    </div>
+                  )}
                 </div>
-                <SqlEditor
-                  taRef={sqlRef}
-                  value={sql}
-                  rows={Math.max(6, Math.min(16, sql.split("\n").length + 2))}
-                  onChange={handleSqlChange}
-                  onKeyDown={handleSqlKeyDown}
-                  onClick={()=>setAcItems([])}
-                  placeholder={"SELECT *\nFROM table\nLIMIT 1000"}
-                />
+                {sqlOpen && (
+                  <SqlEditor
+                    taRef={sqlRef}
+                    value={sql}
+                    rows={Math.max(6, Math.min(16, sql.split("\n").length + 2))}
+                    onChange={handleSqlChange}
+                    onKeyDown={handleSqlKeyDown}
+                    onClick={()=>setAcItems([])}
+                    placeholder={"SELECT *\nFROM table\nLIMIT 1000"}
+                  />
+                )}
               </div>
 
               {/* close the primaryTable fragment — Filters/Having/Sort/SQL live in the rail */}
