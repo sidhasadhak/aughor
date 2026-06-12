@@ -2949,4 +2949,90 @@ Better use of the wide control rail and more room for the chart, which is the po
 
 ---
 
-*Last updated: 2026-06-12 · 110 features — all shipped. See `ROADMAP.md` for upcoming milestones.*
+## 111. Time-to-First-Insight — Instrumented KPI + Progressive Exploration ✅ Shipped (T2)
+
+### What
+The connect→first-insight funnel is now a **measured product KPI** instead of an all-or-nothing wait. The
+explorer stamps a `first_insight_at` milestone on the **first** insight of a run (from any phase), emits an
+`exploration.first_insight` event carrying elapsed seconds, surfaces `first_insight_seconds` on the
+exploration status, and exposes an aggregate endpoint `GET /exploration/kpi/time-to-first-insight`
+(p50/p90/min/max). The Exploration panel shows "⏱ first insight in 47s".
+
+### Why
+"Today exploration is all-or-nothing for 8–15 min" (B-6). You can't optimize what you can't measure —
+this makes the funnel queryable and holds the product to it, like the metric-enforcement rate.
+
+### How
+A single `_emit_insight()` seam now handles **both** Phase 7 (cross-table) and Phase 8 (domain-intel)
+findings. Previously Phase 7 insights bumped counters but emitted **no** live event and wrote **no**
+Trust-Receipt artifact — so the *earliest* findings never surfaced live (only on the 60s fallback poll or
+at completion). Routing both phases through one seam fixes that built-not-wired gap and stamps the TTFI
+milestone once (idempotent across restart/resume).
+
+**Key files.** `aughor/explorer/agent.py` (`_emit_insight`, `_record_first_insight`),
+`aughor/explorer/models.py` (`first_insight_at`, `elapsed_seconds`), `aughor/routers/exploration.py`
+(KPI endpoint), `web/components/ExplorationPanel.tsx`.
+
+---
+
+## 112. Investigations on the Kernel Event Spine + Boot Reconciliation ✅ Shipped (T3)
+
+### What
+Investigation lifecycle transitions now journal `investigation.created / completed / failed / paused`
+events onto the kernel event spine (the same journal the explorer uses), so any surface sees a run
+start/finish/fail live. The investigation **History panel** refreshes live off these events. On boot, every
+orphaned `running` row (left by a prior crash/restart) is **reconciled immediately** — failed + journaled —
+instead of lingering until the periodic 60-min supervisor sweep; the periodic sweep now journals per-row too.
+
+### Why
+Investigations were invisible to the kernel (only the explorer emitted), and a crashed run showed as
+"running" long after the server that owned it was gone. T3 closes the "every substrate serves one consumer"
+gap for investigations.
+
+A real bug surfaced while proving this end-to-end: a **client disconnect** makes Starlette cancel the SSE
+coroutine with `asyncio.CancelledError` — a `BaseException` that bypasses every `except Exception`
+salvage/fail handler, so the investigation orphaned in `running` with no terminal event. Fixed with an
+**orphan-reconcile in `finally`** (both `_stream_investigation` and `_stream_resume`): any row still
+`running` is failed there, journaling the transition. Verified live (disconnect → `failed` +
+`investigation.failed` in ~12s).
+
+### How
+Events are emitted at the **single point** every transition flows through — the `history.db` lifecycle
+functions (`create/complete/fail/pause_investigation`, `reconcile_orphaned_investigations`,
+`sweep_stale_running`) — so all callers (including resume + future ones) journal automatically.
+
+**Key files.** `aughor/db/history.py` (`_emit_lifecycle`, `reconcile_orphaned_investigations`),
+`aughor/api.py` (boot reconciliation), `aughor/routers/investigations.py` (`finally` orphan-reconcile),
+`web/components/HistoryPanel.tsx`.
+
+---
+
+## 113. Monitors & Briefs on the Event Spine ✅ Shipped (T3)
+
+### What
+A fired monitor alert emits `monitor.alert` and a delivered brief emits `brief.delivered` onto the kernel
+journal — the scheduled subsystems are now observable (including delivery failures) on the same spine the
+explorer uses, rather than living only in their own stores.
+
+**Key files.** `aughor/monitors/store.py` (`append_alert`), `aughor/briefs/delivery.py`
+(`deliver_subscription`).
+
+---
+
+## 114. AVG-over-Chasm Fan-out Linter + Wider Wiring Contract ✅ Shipped (T6)
+
+### What
+Two correctness/hygiene closes. **(1)** A new high-precision linter `avg_over_chasm_fanout` drops a Phase-8
+finding when an `AVG(x)` is computed over a **chasm** join (≥2 satellites of one hub) — the mean is silently
+**biased** by the cross-product (each value weighted by the other satellite's fan-out). It mirrors the proven
+`count_star_chasm_fanout` and correctly leaves MIN/MAX (unaffected by duplication) and windowed/DISTINCT/
+pre-aggregated-CTE forms alone. **(2)** The K4 wiring contract now scans `web/components` (not just
+`web/lib`) and matches the `${BASE_API}` alias — closing the blank-canvas-class hole where a component fetch
+to a removed route went uncaught.
+
+**Key files.** `aughor/sql/fanout.py` (`avg_over_chasm_fanout`, shared `_chasm_roots`),
+`aughor/explorer/agent.py` (drop chain), `tests/integration/test_api_contract.py`.
+
+---
+
+*Last updated: 2026-06-12 · 114 features — all shipped. See `ROADMAP.md` for upcoming milestones.*
