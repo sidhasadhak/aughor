@@ -354,19 +354,30 @@ def _dedupe_by_name(metrics: list) -> list:
     return [by_name[n] for n in first_seen]
 
 
-def filter_metrics_to_schema(metrics: list, schema_text: str) -> list:
+def filter_metrics_to_schema(metrics: list, schema_text: str, dedupe: bool = True) -> list:
     """Drop metrics whose declared tables/columns are absent from ``schema_text``,
-    then collapse any duplicate names to a single governed definition.
+    then (by default) collapse duplicate names to a single governed definition.
     Public boundary so other modules (the canonical resolver) reuse the schema
     match without importing this module's internals. Returns ``metrics``
     name-deduped when no schema parses (can't prove absence, but a duplicate
-    name is always wrong)."""
+    name is always wrong).
+
+    ``dedupe=False`` keeps EVERY surviving grain of a duplicated name. Two
+    same-named metrics can be genuinely different formulas at different grains
+    (e.g. ``revenue`` over ``orders`` = ``SUM(total_amount)`` vs over
+    ``order_items`` = ``SUM(final_price_usd * quantity)``). A query can only match
+    one grain, so collapsing here would drop the matching grain and mislabel a
+    correct answer as drift — the enforcement path passes ``dedupe=False`` and
+    lets ``check_metric_enforcement`` collapse its own verdicts (used > drift)
+    instead. Callers that need a single definition per name (prompt, badges,
+    canonical resolver) keep the default."""
+    _fold = _dedupe_by_name if dedupe else (lambda xs: list(xs))
     if not schema_text:
-        return _dedupe_by_name(metrics)
+        return _fold(metrics)
     tables, cols = _schema_tables_and_columns(schema_text)
     if not tables:
-        return _dedupe_by_name(metrics)
-    return _dedupe_by_name([m for m in metrics if _metric_matches_schema(m, tables, cols)])
+        return _fold(metrics)
+    return _fold([m for m in metrics if _metric_matches_schema(m, tables, cols)])
 
 
 def build_metrics_block(

@@ -205,6 +205,15 @@ export function MetricsPanel({ connId }: { connId?: string }) {
     } finally { setCheckingFreshness(false); }
   };
 
+  // A metric name is its identity (save_metric upserts by name), so two rows
+  // sharing one is an unresolved conflict. The backend dedupes downstream
+  // (most-recent wins) and logs a WARNING; this list reads the RAW catalog by
+  // design so a human can see and fix it — surface the same signal right here.
+  const nameCounts = metrics.reduce<Record<string, number>>((acc, m) => {
+    acc[m.name] = (acc[m.name] ?? 0) + 1;
+    return acc;
+  }, {});
+
   const isEditing = adding || selected !== null;
 
   return (
@@ -228,9 +237,9 @@ export function MetricsPanel({ connId }: { connId?: string }) {
         )}
 
         <div className="flex flex-col gap-1">
-          {metrics.map((m) => (
+          {metrics.map((m, i) => (
             <div
-              key={m.name}
+              key={`${m.name}:${i}`}
               onClick={() => startEdit(m)}
               className={`group flex items-start justify-between rounded-md px-3 py-2 cursor-pointer transition-colors ${
                 selected === m.name
@@ -243,6 +252,14 @@ export function MetricsPanel({ connId }: { connId?: string }) {
                   <span className="text-sm font-medium text-zinc-200 truncate">{m.label}</span>
                   {m.approved_by && (
                     <span className="text-[10px] text-emerald-400/80">✓</span>
+                  )}
+                  {nameCounts[m.name] > 1 && (
+                    <span
+                      className="text-[10px] text-amber-400 shrink-0"
+                      title={`Duplicate name "${m.name}" — two definitions share this identity. Downstream only one is used (most-recent wins). Delete removes ALL copies (then re-add one canonical definition), or rename/scope one here.`}
+                    >
+                      ⚠ dup
+                    </span>
                   )}
                 </div>
                 <div className="text-xs text-zinc-500 font-mono truncate">{m.name}</div>
