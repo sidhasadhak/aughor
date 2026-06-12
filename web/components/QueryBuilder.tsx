@@ -13,7 +13,7 @@ import { InvestigationChart } from "@/components/InvestigationChart";
 import { ResizableSplit } from "@/components/ResizableSplit";
 import { SqlResultTable } from "@/components/AugTable";
 import { ChartWrapper }       from "@/components/charts/ChartWrapper";
-import { inferChartType, type ChartType } from "@/components/charts/chartTypeInference";
+import { inferChartType, availableTypesFor, type ChartType } from "@/components/charts/chartTypeInference";
 
 // ── Aggregation catalogue ─────────────────────────────────────────────────────
 
@@ -623,6 +623,9 @@ function ResultsPane({
   joinedTables,
   onStartCanvas,
   tableSchemas,
+  vizType,
+  showDataLabels,
+  chartTitle,
 }: {
   result: DirectQueryResult;
   connId: string;
@@ -631,6 +634,9 @@ function ResultsPane({
   joinedTables: string[];
   onStartCanvas?: (canvasId: string) => void;
   tableSchemas?: Record<string, string>;
+  vizType?: ChartType | "auto";
+  showDataLabels?: boolean;
+  chartTitle?: string;
 }) {
   const [view, setView] = useState<"chart" | "matrix" | "table">("chart");
   const [creatingCanvas, setCreatingCanvas] = useState(false);
@@ -742,10 +748,11 @@ function ResultsPane({
         </div>
       </div>
 
-      {/* Chart */}
+      {/* Chart — controlled by the Explore rail (type / labels / title) */}
       {view === "chart" && chartable && (
-        <div className="overflow-x-auto overflow-y-auto" style={{ maxHeight: 520 }}>
-          <InvestigationChart columns={result.columns} rows={rows} />
+        <div className="overflow-x-auto overflow-y-auto" style={{ maxHeight: 560 }}>
+          <InvestigationChart columns={result.columns} rows={rows}
+            controlled typeOverride={vizType} showLabels={showDataLabels} title={chartTitle} />
         </div>
       )}
 
@@ -893,6 +900,9 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
   const [savedName,   setSavedName]   = useState("");
   const [showSaved,   setShowSaved]   = useState(false);
   const [railTab,     setRailTab]     = useState<"data"|"customize">("data");  // Superset-style control rail
+  const [vizType,        setVizType]        = useState<ChartType | "auto">("auto");  // chart-type override
+  const [showDataLabels, setShowDataLabels] = useState(false);
+  const [chartTitle,     setChartTitle]     = useState("");
   const [showSaveName, setShowSaveName] = useState(false);
   const [saveName,    setSaveName]    = useState("");
   const [savingState, setSavingState] = useState<"idle"|"saving"|"saved">("idle");
@@ -909,6 +919,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
     setPrimaryTable(null); setJoinedTables([]); setTableNames([]); setTableCols({});
     setSchemaJoins([]); setDims([]); setMeasures([]); setFilters([]); setHaving([]);
     setTimeCol(""); setTimeColTable(""); setTimePreset("all"); setTimeFrom(""); setTimeTo(""); setTimeGrain("none");
+    setVizType("auto"); setShowDataLabels(false); setChartTitle("");
     setSql(""); setResult(null); setCatEntry(null); setExpandedSchemas({});
 
     // Phase 1 — fast: catalog tree gives us schema/table hierarchy immediately
@@ -1020,6 +1031,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
     setPrimaryTable(name); setJoinedTables([]); setExpandedTables({[name]: true});
     setDims([]); setMeasures([]); setFilters([]); setHaving([]); setOrderBy("");
     setTimeCol(""); setTimeColTable(""); setTimePreset("all"); setTimeFrom(""); setTimeTo(""); setTimeGrain("none");
+    setVizType("auto"); setShowDataLabels(false); setChartTitle("");
     setResult(null); setRunError(null); setAutoSql(true); setColSearch("");
     const qTable = quoteTable(name, schema);
     setSql(limit > 0 ? `SELECT *\nFROM ${qTable}\nLIMIT ${limit}` : `SELECT *\nFROM ${qTable}`);
@@ -1138,8 +1150,10 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
   const buildSpec = useCallback(() => ({
     primaryTable, joinedTables, dims, measures, filters, having, orderBy, limit,
     timeCol, timeColTable, timePreset, timeFrom, timeTo, timeGrain,
+    vizType, showDataLabels, chartTitle,
   }), [primaryTable, joinedTables, dims, measures, filters, having, orderBy, limit,
-       timeCol, timeColTable, timePreset, timeFrom, timeTo, timeGrain]);
+       timeCol, timeColTable, timePreset, timeFrom, timeTo, timeGrain,
+       vizType, showDataLabels, chartTitle]);
 
   const suggestedName = () => {
     if (!primaryTable) return "Untitled query";
@@ -1196,6 +1210,9 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
     setTimeFrom(typeof s.timeFrom === "string" ? s.timeFrom : "");
     setTimeTo(typeof s.timeTo === "string" ? s.timeTo : "");
     setTimeGrain((s.timeGrain as TimeGrain) ?? "none");
+    setVizType((s.vizType as ChartType | "auto") ?? "auto");
+    setShowDataLabels(typeof s.showDataLabels === "boolean" ? s.showDataLabels : false);
+    setChartTitle(typeof s.chartTitle === "string" ? s.chartTitle : "");
     setAutoSql(false);            // preserve the saved SQL exactly
     setSql(q.sql);
     setSavedId(q.id); setSavedName(q.name);
@@ -1265,6 +1282,16 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
     setMeasures(p => p.map(x => x.id === m.id
       ? { ...x, agg: "CUSTOM" as AggFn, customExpr: `SUM(${base} * ${qtyQ})`, alias: x.alias || `sum_${m.col}_x_${qty}` }
       : x));
+  };
+
+  // Chart customization — the available viz types depend on the current result's shape.
+  const chartInfo = result && !result.error && result.columns.length
+    ? inferChartType(result.columns, result.rows as unknown[][]) : null;
+  const availTypes = chartInfo ? availableTypesFor(chartInfo.type) : [];
+  const CHART_TYPE_LABEL: Record<string, string> = {
+    auto: "Auto", bar: "Bar", line: "Line", "multi-line": "Multi-line", area: "Area",
+    "stacked-bar": "Stacked", "grouped-bar": "Grouped", combo: "Combo", scatter: "Scatter",
+    heatmap: "Heatmap", pie: "Pie", treemap: "Treemap",
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -1655,6 +1682,21 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
               ))}
             </div>
             <div className={`flex-1 overflow-y-auto px-5 py-4 space-y-5 ${railTab==="data"?"":"hidden"}`}>
+
+              {/* CHART TYPE — viz gallery (Superset's first DATA section); appears once chartable */}
+              {availTypes.length > 0 && (
+                <div className="pb-1">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-2">Chart Type</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(["auto", ...availTypes] as (ChartType|"auto")[]).map(t => (
+                      <button key={t} onClick={()=>setVizType(t)}
+                        className={`text-[11px] px-2.5 py-1 rounded-lg border transition ${vizType===t ? "border-blue-500/50 bg-blue-500/10 text-blue-300" : "border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200"}`}>
+                        {CHART_TYPE_LABEL[t] ?? t}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* Onboarding prompt — until the first field is dropped */}
               {!primaryTable && (
@@ -2071,10 +2113,27 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
               </>)}
             </div>{/* end DATA tab */}
 
-            {/* CUSTOMIZE tab — chart styling (wired in the next increment) */}
-            <div className={`flex-1 overflow-y-auto px-5 py-4 space-y-3 ${railTab==="customize"?"":"hidden"}`}>
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Customize</p>
-              <p className="text-[12px] text-zinc-500">Chart-type gallery, colors, axis titles, legend & number format land here next.</p>
+            {/* CUSTOMIZE tab — chart styling */}
+            <div className={`flex-1 overflow-y-auto px-5 py-4 space-y-5 ${railTab==="customize"?"":"hidden"}`}>
+              {availTypes.length === 0 ? (
+                <p className="text-[12px] text-zinc-500">Run a chartable query, then customize its chart here.</p>
+              ) : (
+                <>
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-2">Chart title</p>
+                    <input value={chartTitle} onChange={e=>setChartTitle(e.target.value)} placeholder="(auto)"
+                      className="w-full text-[12px] bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none focus:border-zinc-500 transition" />
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-2">Labels</p>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={showDataLabels} onChange={e=>setShowDataLabels(e.target.checked)} className="w-3.5 h-3.5 accent-blue-500" />
+                      <span className="text-[12px] text-zinc-300">Show data labels on the chart</span>
+                    </label>
+                  </div>
+                  <p className="text-[11px] text-zinc-600 pt-3 border-t border-zinc-800/80">Color scheme, axis titles, legend position & number format land here next.</p>
+                </>
+              )}
             </div>
           </div>{/* end control rail */}
 
@@ -2110,6 +2169,9 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                     primaryTable={primaryTable}
                     joinedTables={joinedTables}
                     tableSchemas={tableSchemas}
+                    vizType={vizType}
+                    showDataLabels={showDataLabels}
+                    chartTitle={chartTitle || undefined}
                     onStartCanvas={(id) => { window.location.href = `/?canvas=${id}`; }}
                   />
                 )}
