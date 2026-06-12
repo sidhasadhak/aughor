@@ -6,6 +6,32 @@
 
 ---
 
+## 🧱 ARC STATUS — Query Builder Workflow Loop (Superset-gap close) (2026-06-12)
+
+**Branch `2026-06-12-query-builder-workflow` → merged to `main`.** A study of Apache Superset's
+dashboard flow surfaced the gap: our Query Builder was a powerful but **dead-end** one-shot surface.
+This arc turns it into a **workflow loop** and makes the trust layer visible where queries are authored —
+six priorities, each runtime-proven in the browser against the live API (BUILT→WIRED→TESTED→LEVERAGED).
+
+- **Correctness (+ real unblock):** the builder was *unusable on schema-qualified connections* — dotted
+  rich-schema names quoted as one identifier, catalog/rich keys never matched (no columns loaded). Fixed
+  with a unified `quoteTable()` + bare-key canonicalization; bounded the no-LIMIT footgun.
+- **Persistence:** connection-scoped **saved queries** that reload the full visual builder (SQLite store
+  mirroring Canvas) — the dead-end → workflow conversion.
+- **First-class time:** relative + custom **range** → `WHERE`, **grain** → `DATE_TRUNC` + `GROUP BY`.
+- **Grain-misuse warnings on metric chips** (the flagship): the additivity layer surfaces a ⚠ + one-click
+  fix on a per-unit `SUM` without `× quantity` — turning a $252M under-count into the correct **$503M**.
+- **HAVING + distinct-value picker + CSV export** — closes the "real BI tool" checklist.
+- **Real SQL editor** — highlight overlay + tokenizer-aware Format, no new dependency.
+
+**State:** 7 commits off `8184b57`; full suite **634 passed / 4 skipped** (incl. the frontend↔backend
+route-contract test); K4 silent-swallow ratchet held at 268. New endpoints: `/saved-queries` (CRUD),
+`/connections/{id}/measure-grains`, `/connections/{id}/distinct`. Backlog flagged: the catalog/rich
+name reconciliation is fixed inside the builder but likely worth generalizing platform-wide. Details in
+memory `qb_workflow_arc.md`; features #95–100 in `FEATURES.md`.
+
+---
+
 ## 🚨 ARC STATUS — Robustness, Correctness Guards & the Measure-Additivity Layer (2026-06-11)
 
 **Branch `2026-06-11-robustness-finish` → merged to `main`.** Continued from the kernel/hardening arc below.
