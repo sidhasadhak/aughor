@@ -2831,4 +2831,122 @@ broken (silently went to Home).
 
 ---
 
-*Last updated: 2026-06-12 · 103 features — all shipped. See `ROADMAP.md` for upcoming milestones.*
+## 104. Chart Engine — Nice Y-Axis Headroom ✅ Shipped
+
+### What
+A `withYHeadroom()` post-pass over every built Vega-Lite spec sets the quantitative Y-axis
+`domainMax` to a *nice* value ~5% above the data peak (a 9.9M peak → an 11M ceiling) so the series
+no longer kisses the top frame. Skips axes that already pin a domain (combo/pareto), stacked axes
+(segment max ≠ stack total) and non-positive/diverging data. Y-only by design — horizontal bars
+already pad their measure axis.
+
+### Why
+The axis pinned its max to the data peak, so a line/area touched the top gridline with no breathing
+room and no sense of range. Applies to **every** `<Chart>` surface (chat / reports / explorer / builder).
+
+**Key files.** `web/components/Chart.tsx`.
+
+---
+
+## 105. Query Builder — One Display Dropdown + Full Chart-Type Set ✅ Shipped
+
+### What
+Folds the chart-type gallery **and** the Chart/Table toggle into a single **Display** dropdown in the
+DATA tab (Chart group + Data group), with **Table** as an option alongside the chart types. A new
+`availableChartTypes(columns, rows)` keys off the column classification and offers the full set the
+data shape can actually render — line, area, bar, **combo, pie, heatmap, treemap, scatter, stacked** —
+never a type that would render blank. A stale pick is clamped to Auto when the result shape changes.
+
+### Why
+Two separate controls for "how to show the result" was redundant, and the old swap-list under-offered
+(a line only offered line/bar). One home, more types.
+
+**Key files.** `web/components/QueryBuilder.tsx`, `web/components/charts/chartTypeInference.ts`.
+
+---
+
+## 106. Chart Engine — Customize Knobs Actually Apply + No Label Overlap ✅ Shipped
+
+### What
+Fixed a silent no-op: `applyCustom` looped `spec.layer ?? [spec]`, but the engine's single-line and
+bar specs keep x/y at the **shared top-level encoding** — so number-format and axis-titles never
+reached an axis. Rewrote it over a `forEachEncoding` walker that visits the top-level encoding *and*
+nested layers; number format now lands on whichever positional axis is the measure (x for horizontal
+bars), and color scheme is guarded to categorical channels (can't corrupt a heatmap's scale). Data
+labels: skip specs that already self-label (bars), label each measure once (kills the area+line
+double-stamp), and thin dense line/area series to ~10 labels so a 13/50-point trend reads.
+
+### Why
+"Customize" looked broken on the most common chart, and toggling data labels smeared overlapping
+numbers across the line.
+
+**Key files.** `web/components/Chart.tsx`, `web/components/VegaChart.tsx`.
+
+---
+
+## 107. Query Builder — Pivot Display Mode ✅ Shipped
+
+### What
+A **Pivot** option in the Display dropdown renders a client-side cross-tab of the already-fetched
+rows (no round-trip): pick Rows, an optional Columns field, a Values field and an aggregation
+(SUM/COUNT/AVG/MIN/MAX), with row/column/grand totals. Every aggregate — including the totals — is
+computed from the underlying rows, so an AVG total is a true mean, not an average of cell averages.
+
+### Why
+A pivot is table-stakes for ad-hoc analysis; doing it client-side keeps it instant.
+
+**Key files.** `web/components/PivotTable.tsx`, `web/components/QueryBuilder.tsx`.
+
+---
+
+## 108. Query Builder — Open in Query Builder (from Insights + Deep Analysis) ✅ Shipped
+
+### What
+An **Open in Query Builder** action on Insight cards (`DomainIntelPanel`) and Deep Analysis findings
+(`InvestigationReport`). It hands the generated query off to the builder, which loads the SQL into the
+manual editor, switches to its connection, and runs it — so the grain (`DATE_TRUNC`), aggregation,
+`GROUP BY` and `HAVING` all ride along inside the SQL and the result renders as a chart/table you can
+re-chart, customize, pivot, and export. Wired through a small app-wide `OpenInBuilderProvider` context
+rather than prop-drilling through every layer; the builder shows an "imported query · edit SQL below"
+chip in place of the onboarding prompt.
+
+### Why
+Closes the loop the other way: intelligence surfaces produced a query, but you couldn't keep working
+with it. (Carries the SQL faithfully; does not yet reverse-compile it back into dimension/metric chips.)
+
+**Key files.** `web/lib/openInBuilder.tsx`, `web/components/QueryBuilder.tsx`, `web/app/page.tsx`, `web/components/DomainIntelPanel.tsx`, `web/components/InvestigationReport.tsx`.
+
+---
+
+## 109. Chart/Table — Sub-Day Grain on the Axis + Clean Date Cells ✅ Shipped
+
+### What
+Two grain-display fixes: (1) the `Gran` type only ran day→year, so a `DATE_TRUNC('minute')` column
+was misread as "day" and the axis dropped the time — picking Minute looked identical to Day. Now
+`minute`/`hour` are detected from the time-of-day component (before the spacing heuristic, so sparse
+minute data isn't misread) and the axis formats `%b %d %H:%M`. (2) Tables showed the raw
+`2025-04-01 00:00:00` for a quarter/month/day grain — a new `displayCellValue()` collapses a midnight
+timestamp to its date, wired into `AugTable` cells and the pivot headers.
+
+### Why
+A selected grain that doesn't change what you see is a broken control; and the trailing `00:00:00` was
+noise in every grain-truncated table.
+
+**Key files.** `web/lib/format.ts`, `web/components/AugTable.tsx`, `web/components/PivotTable.tsx`, `web/components/brief/Sparkline.tsx`.
+
+---
+
+## 110. Query Builder — Dimensions + Metrics Side by Side, Taller Chart ✅ Shipped
+
+### What
+The DATA-tab Dimensions and Metrics drop zones move from stacked to **side by side**, and the default
+control-panel height drops (360 → 300) so the **chart hero is taller** by default (still drag-resizable).
+
+### Why
+Better use of the wide control rail and more room for the chart, which is the point of an Explore layout.
+
+**Key files.** `web/components/QueryBuilder.tsx`.
+
+---
+
+*Last updated: 2026-06-12 · 110 features — all shipped. See `ROADMAP.md` for upcoming milestones.*

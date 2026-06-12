@@ -6,6 +6,34 @@
 
 ---
 
+## 📈 ARC STATUS — Query Builder Charts, Pivot & Import (2026-06-12 pt3)
+
+**Branch `2026-06-12-qb-charts-pivot-import` → merged to `main`.** A polish + feature pass on the
+Explore layout, driven by the user's review. Seven runtime-proven increments (each tsc-clean,
+cold-server console-clean):
+
+- **Nice Y-axis headroom** — domainMax to a nice ~5%-over value so the series never kisses the frame
+  (applies to every `<Chart>` surface).
+- **One Display dropdown** — chart-type gallery + Chart/Table toggle collapsed into a single control,
+  with **Table** and a client-side **Pivot** cross-tab as options, and the **full chart-type set** the
+  data shape supports (combo/pie/heatmap/treemap/scatter/stacked) via `availableChartTypes`.
+- **Customize actually applies** — found+fixed a silent no-op (the post-pass missed the shared
+  top-level encoding); number-format/axis-titles/color-scheme/legend now land across chart shapes, and
+  data labels dedupe + thin so they don't overlap.
+- **Pivot** — rows × columns × value × aggregate, totals computed from underlying rows (true AVG).
+- **Open in Query Builder** — from Insights (`DomainIntelPanel`) and Deep Analysis
+  (`InvestigationReport`), via an app-wide `OpenInBuilderProvider`; carries the generated SQL (grain /
+  aggregation / HAVING) in. Both paths runtime-proven. Raw-SQL import; reverse-compile-to-chips backlogged.
+- **Sub-day grain + clean dates** — `Gran` gains hour/minute (axis was dropping the time, so Minute
+  looked like Day); tables drop the `00:00:00` from grain-truncated timestamps.
+- **Layout** — Dimensions + Metrics side by side; taller chart hero by default.
+
+Features #104–110 in `FEATURES.md`; details in memory `qb_charts_pivot_import_arc.md`. Chart-engine
+changes are additive + backward-compatible. Backlog spun out: a shared **SQL-analysis facade** over the
+already-present sqlglot (`arch_sql_analysis_facade.md`).
+
+---
+
 ## 📊 ARC STATUS — Query Builder Explore Layout + Customize (2026-06-12 pt2)
 
 **Branch `2026-06-12-qb-explore-layout` → merged to `main`.** A follow-on to the workflow-loop arc:
