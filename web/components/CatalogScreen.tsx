@@ -30,6 +30,7 @@ import {
   type TableColumn, type DistributionProfile, type RichSchema,
 } from "@/lib/api";
 import { ERDiagram } from "@/components/ERDiagram";
+import { SchemaShape } from "@/components/SchemaShape";
 import { ExplorationBadge } from "@/components/ExplorationBadge";
 import { SchemaPanel } from "@/components/SchemaPanel";
 import { DocumentUploader } from "@/components/DocumentUploader";
@@ -732,7 +733,7 @@ function TableDetailPanel({ sel, onAsk }: {
 
 // ── Right: SCHEMA detail ──────────────────────────────────────────────────────
 
-type SchemaTab = "tables" | "erd";
+type SchemaTab = "tables" | "erd" | "shape";
 
 function SchemaDetailPanel({ sel, onSelectTable, onAsk, connName }: {
   sel:           Extract<Sel, { level: "schema" }>;
@@ -791,12 +792,20 @@ function SchemaDetailPanel({ sel, onSelectTable, onAsk, connName }: {
       />
 
       <TabBar
-        tabs={[{ id: "tables", label: `Tables  ${entry.tables.length}` }, { id: "erd", label: "ERD" }]}
+        tabs={[
+          { id: "tables", label: `Tables  ${entry.tables.length}` },
+          { id: "erd", label: "ERD" },
+          { id: "shape", label: "Schema Shape" },
+        ]}
         active={tab}
         onChange={id => setTab(id as SchemaTab)}
       />
 
-      {tab === "erd" ? (
+      {tab === "shape" ? (
+        <div style={{ flex: 1, overflow: "hidden", minWidth: 0, display: "flex", flexDirection: "column" }}>
+          <SchemaShape connectionId={sel.connId} schemaTables={entry.tables.map(t => t.name)} />
+        </div>
+      ) : tab === "erd" ? (
         <div style={{ flex: 1, overflow: "hidden", minWidth: 0 }}>
           {erdLoading ? (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", gap: 8 }}>
