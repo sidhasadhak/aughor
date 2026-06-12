@@ -10,6 +10,7 @@ import {
   type CatalogEntry, type SavedQuery,
 } from "@/lib/api";
 import { InvestigationChart } from "@/components/InvestigationChart";
+import { type ChartCustom } from "@/components/Chart";
 import { ResizableSplit } from "@/components/ResizableSplit";
 import { SqlResultTable } from "@/components/AugTable";
 import { ChartWrapper }       from "@/components/charts/ChartWrapper";
@@ -626,6 +627,7 @@ function ResultsPane({
   vizType,
   showDataLabels,
   chartTitle,
+  custom,
 }: {
   result: DirectQueryResult;
   connId: string;
@@ -637,6 +639,7 @@ function ResultsPane({
   vizType?: ChartType | "auto";
   showDataLabels?: boolean;
   chartTitle?: string;
+  custom?: ChartCustom | null;
 }) {
   const [view, setView] = useState<"chart" | "matrix" | "table">("chart");
   const [creatingCanvas, setCreatingCanvas] = useState(false);
@@ -752,7 +755,7 @@ function ResultsPane({
       {view === "chart" && chartable && (
         <div className="overflow-x-auto overflow-y-auto" style={{ maxHeight: 560 }}>
           <InvestigationChart columns={result.columns} rows={rows}
-            controlled typeOverride={vizType} showLabels={showDataLabels} title={chartTitle} />
+            controlled typeOverride={vizType} showLabels={showDataLabels} title={chartTitle} custom={custom} />
         </div>
       )}
 
@@ -903,6 +906,11 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
   const [vizType,        setVizType]        = useState<ChartType | "auto">("auto");  // chart-type override
   const [showDataLabels, setShowDataLabels] = useState(false);
   const [chartTitle,     setChartTitle]     = useState("");
+  const [colorScheme,    setColorScheme]    = useState("");   // "" = engine default
+  const [numberFormat,   setNumberFormat]   = useState("");   // "" = auto
+  const [legendPos,      setLegendPos]      = useState("");   // "" = default (right)
+  const [xTitle,         setXTitle]         = useState("");
+  const [yTitle,         setYTitle]         = useState("");
   const [showSaveName, setShowSaveName] = useState(false);
   const [saveName,    setSaveName]    = useState("");
   const [savingState, setSavingState] = useState<"idle"|"saving"|"saved">("idle");
@@ -920,6 +928,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
     setSchemaJoins([]); setDims([]); setMeasures([]); setFilters([]); setHaving([]);
     setTimeCol(""); setTimeColTable(""); setTimePreset("all"); setTimeFrom(""); setTimeTo(""); setTimeGrain("none");
     setVizType("auto"); setShowDataLabels(false); setChartTitle("");
+    setColorScheme(""); setNumberFormat(""); setLegendPos(""); setXTitle(""); setYTitle("");
     setSql(""); setResult(null); setCatEntry(null); setExpandedSchemas({});
 
     // Phase 1 — fast: catalog tree gives us schema/table hierarchy immediately
@@ -1032,6 +1041,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
     setDims([]); setMeasures([]); setFilters([]); setHaving([]); setOrderBy("");
     setTimeCol(""); setTimeColTable(""); setTimePreset("all"); setTimeFrom(""); setTimeTo(""); setTimeGrain("none");
     setVizType("auto"); setShowDataLabels(false); setChartTitle("");
+    setColorScheme(""); setNumberFormat(""); setLegendPos(""); setXTitle(""); setYTitle("");
     setResult(null); setRunError(null); setAutoSql(true); setColSearch("");
     const qTable = quoteTable(name, schema);
     setSql(limit > 0 ? `SELECT *\nFROM ${qTable}\nLIMIT ${limit}` : `SELECT *\nFROM ${qTable}`);
@@ -1150,10 +1160,10 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
   const buildSpec = useCallback(() => ({
     primaryTable, joinedTables, dims, measures, filters, having, orderBy, limit,
     timeCol, timeColTable, timePreset, timeFrom, timeTo, timeGrain,
-    vizType, showDataLabels, chartTitle,
+    vizType, showDataLabels, chartTitle, colorScheme, numberFormat, legendPos, xTitle, yTitle,
   }), [primaryTable, joinedTables, dims, measures, filters, having, orderBy, limit,
        timeCol, timeColTable, timePreset, timeFrom, timeTo, timeGrain,
-       vizType, showDataLabels, chartTitle]);
+       vizType, showDataLabels, chartTitle, colorScheme, numberFormat, legendPos, xTitle, yTitle]);
 
   const suggestedName = () => {
     if (!primaryTable) return "Untitled query";
@@ -1213,6 +1223,11 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
     setVizType((s.vizType as ChartType | "auto") ?? "auto");
     setShowDataLabels(typeof s.showDataLabels === "boolean" ? s.showDataLabels : false);
     setChartTitle(typeof s.chartTitle === "string" ? s.chartTitle : "");
+    setColorScheme(typeof s.colorScheme === "string" ? s.colorScheme : "");
+    setNumberFormat(typeof s.numberFormat === "string" ? s.numberFormat : "");
+    setLegendPos(typeof s.legendPos === "string" ? s.legendPos : "");
+    setXTitle(typeof s.xTitle === "string" ? s.xTitle : "");
+    setYTitle(typeof s.yTitle === "string" ? s.yTitle : "");
     setAutoSql(false);            // preserve the saved SQL exactly
     setSql(q.sql);
     setSavedId(q.id); setSavedName(q.name);
@@ -1293,6 +1308,17 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
     "stacked-bar": "Stacked", "grouped-bar": "Grouped", combo: "Combo", scatter: "Scatter",
     heatmap: "Heatmap", pie: "Pie", treemap: "Treemap",
   };
+  const chartCustom: ChartCustom = {
+    format: numberFormat || undefined,
+    colorScheme: colorScheme || undefined,
+    legend: (legendPos || undefined) as ChartCustom["legend"],
+    xTitle: xTitle || undefined,
+    yTitle: yTitle || undefined,
+  };
+  // Customize-tab option lists
+  const COLOR_SCHEMES = [["", "Default"], ["tableau10", "Tableau 10"], ["category10", "Category 10"], ["set2", "Set 2"], ["dark2", "Dark 2"], ["pastel1", "Pastel"], ["tableau20", "Tableau 20"]];
+  const NUMBER_FORMATS = [["", "Auto"], [",.0f", "1,234"], [",.2f", "1,234.56"], ["$,.0f", "$1,234"], ["$,.2f", "$1,234.56"], ["~s", "1.2K (compact)"], [".0%", "12%"], [".1%", "12.3%"]];
+  const LEGEND_POS = [["", "Default"], ["right", "Right"], ["bottom", "Bottom"], ["top", "Top"], ["none", "Hidden"]];
 
   // ── Render ────────────────────────────────────────────────────────────────
 
@@ -2131,7 +2157,40 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                       <span className="text-[12px] text-zinc-300">Show data labels on the chart</span>
                     </label>
                   </div>
-                  <p className="text-[11px] text-zinc-600 pt-3 border-t border-zinc-800/80">Color scheme, axis titles, legend position & number format land here next.</p>
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-2">Color scheme</p>
+                    <select value={colorScheme} onChange={e=>setColorScheme(e.target.value)}
+                      className="w-full text-[12px] bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition">
+                      {COLOR_SCHEMES.map(([v,l])=><option key={v} value={v}>{l}</option>)}
+                    </select>
+                    <p className="text-[10px] text-zinc-600 mt-1">Applies to multi-series charts.</p>
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-2">Number format</p>
+                    <select value={numberFormat} onChange={e=>setNumberFormat(e.target.value)}
+                      className="w-full text-[12px] bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition">
+                      {NUMBER_FORMATS.map(([v,l])=><option key={v} value={v}>{l}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-2">Legend</p>
+                    <select value={legendPos} onChange={e=>setLegendPos(e.target.value)}
+                      className="w-full text-[12px] bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition">
+                      {LEGEND_POS.map(([v,l])=><option key={v} value={v}>{l}</option>)}
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-2">X axis title</p>
+                      <input value={xTitle} onChange={e=>setXTitle(e.target.value)} placeholder="(auto)"
+                        className="w-full text-[12px] bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none focus:border-zinc-500 transition" />
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-2">Y axis title</p>
+                      <input value={yTitle} onChange={e=>setYTitle(e.target.value)} placeholder="(auto)"
+                        className="w-full text-[12px] bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none focus:border-zinc-500 transition" />
+                    </div>
+                  </div>
                 </>
               )}
             </div>
@@ -2172,6 +2231,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                     vizType={vizType}
                     showDataLabels={showDataLabels}
                     chartTitle={chartTitle || undefined}
+                    custom={chartCustom}
                     onStartCanvas={(id) => { window.location.href = `/?canvas=${id}`; }}
                   />
                 )}

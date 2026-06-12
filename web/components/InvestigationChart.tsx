@@ -18,7 +18,7 @@
 import { useState } from "react";
 import { ChartWrapper } from "@/components/charts/ChartWrapper";
 import { inferChartType, availableTypesFor, type ChartType } from "@/components/charts/chartTypeInference";
-import { Chart } from "@/components/Chart";
+import { Chart, type ChartCustom } from "@/components/Chart";
 
 interface Props {
   columns: string[];
@@ -29,6 +29,7 @@ interface Props {
   controlled?: boolean;
   typeOverride?: ChartType | "auto";
   showLabels?: boolean;
+  custom?: ChartCustom | null;
 }
 
 const TYPE_TO_HINT: Record<ChartType, string> = {
@@ -47,7 +48,7 @@ const TYPE_TO_HINT: Record<ChartType, string> = {
   "table":       "auto",
 };
 
-export function InvestigationChart({ columns, rows, title, controlled, typeOverride, showLabels: showLabelsProp }: Props) {
+export function InvestigationChart({ columns, rows, title, controlled, typeOverride, showLabels: showLabelsProp, custom }: Props) {
   const inferred = inferChartType(columns, rows);
   const [overrideState, setOverride] = useState<ChartType | "auto">("auto");
   const [showLabelsState, setShowLabels] = useState(false);
@@ -102,6 +103,7 @@ export function InvestigationChart({ columns, rows, title, controlled, typeOverr
         chartType={hint}
         chrome={false}
         showLabels={showLabels}
+        custom={custom}
         title={chartTitle}
       />
     </ChartWrapper>

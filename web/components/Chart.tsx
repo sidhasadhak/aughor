@@ -34,6 +34,35 @@ import {
   firstNonNull,
 } from "@/components/charts/columnRoles";
 
+/** User chart styling applied as a generic post-pass over the built Vega-Lite spec — lets the
+ *  Query Builder Customize tab override colors / number format / legend / axis titles without
+ *  threading options through every chart-type branch. All fields optional; a null/empty custom
+ *  is a no-op, so non-customizing callers (chat, reports, explorer) are unaffected. */
+export interface ChartCustom {
+  format?: string;        // d3 number format for the quantitative axis (e.g. ",.0f", "$,.2f", "~s")
+  colorScheme?: string;   // Vega categorical color scheme (e.g. "tableau10", "set2")
+  xTitle?: string;
+  yTitle?: string;
+  legend?: "right" | "bottom" | "top" | "left" | "none";
+}
+
+function applyCustom(spec: VLSpec | null, custom?: ChartCustom | null): VLSpec | null {
+  if (!spec || !custom) return spec;
+  if (!(custom.format || custom.colorScheme || custom.xTitle || custom.yTitle || custom.legend)) return spec;
+  const s = JSON.parse(JSON.stringify(spec)) as Record<string, unknown>;
+  const views = (Array.isArray(s.layer) ? s.layer : [s]) as Record<string, unknown>[];
+  for (const v of views) {
+    const enc = v.encoding as Record<string, Record<string, unknown>> | undefined;
+    if (!enc) continue;
+    if (custom.xTitle && enc.x) enc.x.axis = { ...(enc.x.axis as object || {}), title: custom.xTitle };
+    if (custom.yTitle && enc.y) enc.y.axis = { ...(enc.y.axis as object || {}), title: custom.yTitle };
+    if (custom.format && enc.y && enc.y.type === "quantitative") enc.y.axis = { ...(enc.y.axis as object || {}), format: custom.format };
+    if (custom.colorScheme && enc.color?.field) enc.color.scale = { ...(enc.color.scale as object || {}), scheme: custom.colorScheme };
+    if (custom.legend && enc.color?.field) enc.color.legend = custom.legend === "none" ? null : { ...(enc.color.legend as object || {}), orient: custom.legend };
+  }
+  return s as VLSpec;
+}
+
 export function Chart({
   columns,
   rows,
@@ -42,6 +71,7 @@ export function Chart({
   title = "chart",
   chrome = true,
   showLabels: showLabelsProp,
+  custom = null,
 }: {
   columns: string[];
   rows: unknown[][];
@@ -54,6 +84,8 @@ export function Chart({
   /** Externally control data-label visibility (chromeless mode). Falls back to
    *  the internal toggle when undefined. */
   showLabels?: boolean;
+  /** User styling overrides applied as a post-pass over the spec (colors/format/legend/axes). */
+  custom?: ChartCustom | null;
 }) {
   const outerRef  = useRef<HTMLDivElement>(null);
   const chartRef  = useRef<HTMLDivElement>(null);
@@ -1160,7 +1192,7 @@ export function Chart({
       {/* Chart viewport — fixed 350px with internal scroll; Vega renders at full natural height */}
       <div ref={outerRef} style={{ maxHeight: 350, overflowY: 'auto', overflowX: 'auto', width: '100%' }}>
         <div ref={chartRef}>
-          <VegaChart spec={spec} data={vegaData} height={chartH} showLabels={showLabels} />
+          <VegaChart spec={applyCustom(spec, custom)!} data={vegaData} height={chartH} showLabels={showLabels} />
         </div>
       </div>
 
