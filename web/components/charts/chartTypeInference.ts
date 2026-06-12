@@ -188,6 +188,42 @@ export function inferChartType(
   return null;
 }
 
+/** Every chart type the unified <Chart> engine can actually RENDER for the given data
+ *  shape — the gallery for the Query Builder display dropdown. Unlike availableTypesFor
+ *  (which keys off a single inferred type and offers a narrow swap list), this keys off
+ *  the column classification so it can offer the full set the data supports (combo, pie,
+ *  heatmap, treemap, scatter, stacked, area …) without ever offering a type that would
+ *  render blank for the shape. Returns [] when the data isn't chartable. */
+export function availableChartTypes(columns: string[], rows: unknown[][]): ChartType[] {
+  if (!columns.length || rows.length < 2) return [];
+  const { dateIdxs, numericIdxs, catIdxs } = classifyColumns(columns, rows);
+  const nNum = numericIdxs.length;
+  if (!nNum) return [];
+  const hasDate = dateIdxs.length > 0;
+  const hasCat  = catIdxs.length > 0;
+  const out: ChartType[] = [];
+  const add = (t: ChartType) => { if (!out.includes(t)) out.push(t); };
+
+  if (hasDate && hasCat) {
+    // time × category — one series per category value
+    add("multi-line"); add("stacked-bar"); add("heatmap");
+  } else if (hasDate) {
+    // pure time series
+    add("line"); add("area"); add("bar");
+  }
+
+  if (hasCat && !hasDate) {
+    if (nNum >= 2) add("combo");
+    add("bar");
+    if (nNum === 1 && countUnique(rows, catIdxs[0]) <= 12) add("pie");
+    add("treemap");
+  }
+
+  if (!hasDate && !hasCat && nNum >= 2) add("scatter");
+
+  return out;
+}
+
 /** Chart types the unified <Chart> engine can switch between for a given inferred type —
  *  the gallery shared by InvestigationChart and the Query Builder Explore rail. */
 export function availableTypesFor(inferred: ChartType): ChartType[] {

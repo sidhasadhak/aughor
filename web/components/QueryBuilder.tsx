@@ -14,7 +14,10 @@ import { type ChartCustom } from "@/components/Chart";
 import { ResizableSplit } from "@/components/ResizableSplit";
 import { SqlResultTable } from "@/components/AugTable";
 import { ChartWrapper }       from "@/components/charts/ChartWrapper";
-import { inferChartType, availableTypesFor, type ChartType } from "@/components/charts/chartTypeInference";
+import { inferChartType, availableChartTypes, type ChartType } from "@/components/charts/chartTypeInference";
+
+/** The Query Builder result display: a chart type, "auto" (engine infers), or the raw table. */
+type VizMode = ChartType | "auto" | "table";
 
 // ── Aggregation catalogue ─────────────────────────────────────────────────────
 
@@ -633,12 +636,11 @@ function ResultsPane({
   joinedTables: string[];
   onStartCanvas?: (canvas: Canvas) => void;
   tableSchemas?: Record<string, string>;
-  vizType?: ChartType | "auto";
+  vizType?: VizMode;
   showDataLabels?: boolean;
   chartTitle?: string;
   custom?: ChartCustom | null;
 }) {
-  const [view, setView] = useState<"chart" | "matrix" | "table">("chart");
   const [creatingCanvas, setCreatingCanvas] = useState(false);
 
   if (result.error) {
@@ -659,13 +661,9 @@ function ResultsPane({
 
   const rows = result.rows as unknown[][];
   const chartable = inferChartType(result.columns, rows);
-  const hasTwoCats =
-    chartable &&
-    chartable.colorCol !== undefined &&
-    result.columns.filter((_, i) => {
-      const firstVal = rows.find(r => r[i] != null)?.[i];
-      return firstVal != null && isNaN(Number(firstVal));
-    }).length >= 2;
+  // The display mode is owned by the DATA-tab dropdown (vizType). "table" → raw table;
+  // anything else → chart. Non-chartable results always fall back to the table.
+  const showTable = vizType === "table" || !chartable;
 
   const meta = [
     `${result.row_count ?? result.rows.length} rows`,
@@ -710,32 +708,8 @@ function ResultsPane({
 
   return (
     <div className="flex flex-col gap-3">
-      {/* View toggle + actions */}
-      <div className="flex items-center gap-2">
-        {chartable && (
-          <>
-            <button
-              onClick={() => setView("chart")}
-              className={`text-[11px] px-2 py-0.5 rounded border transition-colors ${view === "chart" ? "border-blue-500/40 bg-blue-500/10 text-blue-300" : "border-zinc-700 text-zinc-500 hover:text-zinc-300"}`}
-            >
-              ◈ Chart
-            </button>
-            {hasTwoCats && (
-              <button
-                onClick={() => setView("matrix")}
-                className={`text-[11px] px-2 py-0.5 rounded border transition-colors ${view === "matrix" ? "border-blue-500/40 bg-blue-500/10 text-blue-300" : "border-zinc-700 text-zinc-500 hover:text-zinc-300"}`}
-              >
-                ⊞ Matrix
-              </button>
-            )}
-          </>
-        )}
-        <button
-          onClick={() => setView("table")}
-          className={`text-[11px] px-2 py-0.5 rounded border transition-colors ${view === "table" ? "border-blue-500/40 bg-blue-500/10 text-blue-300" : "border-zinc-700 text-zinc-500 hover:text-zinc-300"}`}
-        >
-          ≡ Table
-        </button>
+      {/* Result meta + CSV (the Chart/Table choice now lives in the DATA-tab dropdown) */}
+      <div className="flex items-center gap-2.5">
         <div className="ml-auto flex items-center gap-2.5">
           <span className="text-[11px]" style={{ color: "var(--t3)" }}>{meta}</span>
           <button onClick={exportCsv} title="Download results as CSV"
@@ -747,28 +721,16 @@ function ResultsPane({
       </div>
 
       {/* Chart — controlled by the Explore rail (type / labels / title) */}
-      {view === "chart" && chartable && (
+      {!showTable && chartable && (
         <div className="overflow-x-auto overflow-y-auto" style={{ maxHeight: 560 }}>
           <InvestigationChart columns={result.columns} rows={rows}
             controlled typeOverride={vizType} showLabels={showDataLabels} title={chartTitle} custom={custom} />
         </div>
       )}
 
-      {/* Matrix */}
-      {view === "matrix" && chartable && (
-        <div className="overflow-x-auto overflow-y-auto" style={{ maxHeight: 520 }}>
-          <InvestigationChart columns={result.columns} rows={rows} title="Matrix" />
-        </div>
-      )}
-
       {/* Table */}
-      {(view === "table" || !chartable) && (
-        <>
-          {!chartable && (
-            <span className="text-[11px] text-right" style={{ color: "var(--t3)" }}>{meta}</span>
-          )}
-          <SqlResultTable columns={result.columns} rows={rows} maxHeight={420} />
-        </>
+      {showTable && (
+        <SqlResultTable columns={result.columns} rows={rows} maxHeight={420} />
       )}
 
       {/* Start Canvas */}
@@ -902,7 +864,7 @@ export function QueryBuilder({ initialConnId, onOpenCanvas }: { initialConnId?: 
   const [joinsOpen,   setJoinsOpen]   = useState(false);  // resolved-joins collapsed by default
   const [controlsCollapsed, setControlsCollapsed] = useState(false);  // bottom Data/Customize panel
   const [controlsH,   setControlsH]   = useState(360);    // bottom panel height (resizable)
-  const [vizType,        setVizType]        = useState<ChartType | "auto">("auto");  // chart-type override
+  const [vizType,        setVizType]        = useState<VizMode>("auto");  // display: chart type / auto / table
   const [showDataLabels, setShowDataLabels] = useState(false);
   const [chartTitle,     setChartTitle]     = useState("");
   const [colorScheme,    setColorScheme]    = useState("");   // "" = engine default
@@ -1219,7 +1181,7 @@ export function QueryBuilder({ initialConnId, onOpenCanvas }: { initialConnId?: 
     setTimeFrom(typeof s.timeFrom === "string" ? s.timeFrom : "");
     setTimeTo(typeof s.timeTo === "string" ? s.timeTo : "");
     setTimeGrain((s.timeGrain as TimeGrain) ?? "none");
-    setVizType((s.vizType as ChartType | "auto") ?? "auto");
+    setVizType((s.vizType as VizMode) ?? "auto");
     setShowDataLabels(typeof s.showDataLabels === "boolean" ? s.showDataLabels : false);
     setChartTitle(typeof s.chartTitle === "string" ? s.chartTitle : "");
     setColorScheme(typeof s.colorScheme === "string" ? s.colorScheme : "");
@@ -1291,11 +1253,16 @@ export function QueryBuilder({ initialConnId, onOpenCanvas }: { initialConnId?: 
   // Chart customization — the available viz types depend on the current result's shape.
   const chartInfo = result && !result.error && result.columns.length
     ? inferChartType(result.columns, result.rows as unknown[][]) : null;
-  const availTypes = chartInfo ? availableTypesFor(chartInfo.type) : [];
+  const availTypes = result && !result.error && result.columns.length
+    ? availableChartTypes(result.columns, result.rows as unknown[][]) : [];
+  // Clamp a stale chart-type pick (the result shape may have changed since it was chosen)
+  // to "auto" so the chart never renders blank; "table"/"auto" always pass through.
+  const vizMode: VizMode = (vizType === "table" || vizType === "auto" || availTypes.includes(vizType as ChartType))
+    ? vizType : "auto";
   const CHART_TYPE_LABEL: Record<string, string> = {
     auto: "Auto", bar: "Bar", line: "Line", "multi-line": "Multi-line", area: "Area",
-    "stacked-bar": "Stacked", "grouped-bar": "Grouped", combo: "Combo", scatter: "Scatter",
-    heatmap: "Heatmap", pie: "Pie", treemap: "Treemap",
+    "stacked-bar": "Stacked bar", "grouped-bar": "Grouped bar", combo: "Combo (bar + line)", scatter: "Scatter",
+    heatmap: "Heatmap", pie: "Pie", treemap: "Treemap", table: "Table",
   };
   const chartCustom: ChartCustom = {
     format: numberFormat || undefined,
@@ -1704,18 +1671,24 @@ export function QueryBuilder({ initialConnId, onOpenCanvas }: { initialConnId?: 
             {!controlsCollapsed && (<>
             <div className={`flex-1 overflow-y-auto px-5 py-3 space-y-3 ${railTab==="data"?"":"hidden"}`}>
 
-              {/* CHART TYPE — viz gallery (Superset's first DATA section); appears once chartable */}
-              {availTypes.length > 0 && (
-                <div className="pb-1">
-                  <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 mb-2">Chart Type</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {(["auto", ...availTypes] as (ChartType|"auto")[]).map(t => (
-                      <button key={t} onClick={()=>setVizType(t)}
-                        className={`text-[11px] px-2.5 py-1 rounded-lg border transition ${vizType===t ? "border-blue-500/50 bg-blue-500/10 text-blue-300" : "border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200"}`}>
-                        {CHART_TYPE_LABEL[t] ?? t}
-                      </button>
-                    ))}
-                  </div>
+              {/* DISPLAY — one dropdown for "how to show the result": chart type, Auto, or Table.
+                  Replaces both the old chart-type gallery and the Chart/Table toggle above the chart. */}
+              {result && !result.error && (
+                <div className="pb-1 flex items-center gap-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Display</p>
+                  <select value={vizType} onChange={e=>setVizType(e.target.value as VizMode)}
+                    className="text-[12px] bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition min-w-[150px]">
+                    {availTypes.length > 0 && (
+                      <optgroup label="Chart">
+                        {(["auto", ...availTypes] as VizMode[]).map(t => (
+                          <option key={t} value={t}>{CHART_TYPE_LABEL[t] ?? t}</option>
+                        ))}
+                      </optgroup>
+                    )}
+                    <optgroup label="Data">
+                      <option value="table">Table</option>
+                    </optgroup>
+                  </select>
                 </div>
               )}
 
@@ -2162,7 +2135,7 @@ export function QueryBuilder({ initialConnId, onOpenCanvas }: { initialConnId?: 
                     primaryTable={primaryTable}
                     joinedTables={joinedTables}
                     tableSchemas={tableSchemas}
-                    vizType={vizType}
+                    vizType={vizMode}
                     showDataLabels={showDataLabels}
                     chartTitle={chartTitle || undefined}
                     custom={chartCustom}
