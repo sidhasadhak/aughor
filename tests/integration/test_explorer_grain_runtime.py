@@ -22,9 +22,18 @@ CHASM_TC = {
 CHASM_SQL = ("SELECT c.name, COUNT(*) FROM campaigns c "
              "JOIN clicks k ON c.campaign_id=k.campaign_id "
              "JOIN impressions i ON c.campaign_id=i.campaign_id GROUP BY c.name")
+# AVG over the SAME chasm — the mean is biased by the cross-product (each click
+# row repeated per impression), which SUM/COUNT-targeted guards don't catch.
+AVG_CHASM_SQL = ("SELECT c.name, AVG(k.ts) FROM campaigns c "
+                 "JOIN clicks k ON c.campaign_id=k.campaign_id "
+                 "JOIN impressions i ON c.campaign_id=i.campaign_id GROUP BY c.name")
 
 
-def test_explorer_phase8_drops_count_star_chasm(monkeypatch) -> None:
+def _run_phase8_with_forced_sql(monkeypatch, forced_sql: str) -> list[str]:
+    """Drive the REAL `_phase8_domain_intelligence` loop with the coder forced to
+    emit `forced_sql` (and a fake interpreter, reached only if the guard fails to
+    drop). Returns the captured `aughor.explorer.agent` log messages. Only the LLM
+    is forced — the question→execute→lint→drop path is the real one."""
     import aughor.llm.provider as prov
     import aughor.ontology.store as ostore
     import aughor.sql.writer as wmod
@@ -74,8 +83,8 @@ def test_explorer_phase8_drops_count_star_chasm(monkeypatch) -> None:
         class FakeLLM:
             def complete(self, *a, response_model=None, **k):
                 f = getattr(response_model, "model_fields", {})
-                if "sql" in f:        # _NextQuestion → the chasm COUNT(*) query
-                    return response_model(question="q", sql=CHASM_SQL, angle="volume", why="t")
+                if "sql" in f:        # _NextQuestion → the forced query
+                    return response_model(question="q", sql=forced_sql, angle="volume", why="t")
                 if "finding" in f:    # _Interpretation (only reached if the guard fails to drop)
                     return response_model(finding="Campaigns vary in volume.", novelty=4, angle_covered="volume")
                 return real("coder").complete(*a, response_model=response_model, **k)
@@ -84,6 +93,16 @@ def test_explorer_phase8_drops_count_star_chasm(monkeypatch) -> None:
         asyncio.run(asyncio.wait_for(ex._phase8_domain_intelligence(), timeout=120))
     finally:
         lg.removeHandler(handler)
+    return records
 
+
+def test_explorer_phase8_drops_count_star_chasm(monkeypatch) -> None:
+    records = _run_phase8_with_forced_sql(monkeypatch, CHASM_SQL)
     fired = [m for m in records if "grain bug" in m and "chasm" in m.lower()]
     assert fired, "the COUNT(*)-chasm grain guard never fired on the real Phase-8 loop"
+
+
+def test_explorer_phase8_drops_avg_chasm(monkeypatch) -> None:
+    records = _run_phase8_with_forced_sql(monkeypatch, AVG_CHASM_SQL)
+    fired = [m for m in records if "grain bug" in m and "AVG" in m and "chasm" in m.lower()]
+    assert fired, "the AVG-over-chasm grain guard never fired on the real Phase-8 loop"

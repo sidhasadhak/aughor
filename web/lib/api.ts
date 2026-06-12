@@ -790,6 +790,8 @@ export interface ExplorationStatus {
   queries_executed: number;
   facts_discovered: number;
   started_at: string | null;
+  first_insight_at: string | null;        // B-6: time-to-first-insight milestone
+  first_insight_seconds: number | null;   // elapsed start→first insight, the KPI
   completed_at: string | null;
   error: string | null;
 }
