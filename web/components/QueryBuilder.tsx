@@ -13,11 +13,12 @@ import { InvestigationChart } from "@/components/InvestigationChart";
 import { type ChartCustom } from "@/components/Chart";
 import { ResizableSplit } from "@/components/ResizableSplit";
 import { SqlResultTable } from "@/components/AugTable";
+import { PivotTable } from "@/components/PivotTable";
 import { ChartWrapper }       from "@/components/charts/ChartWrapper";
 import { inferChartType, availableChartTypes, type ChartType } from "@/components/charts/chartTypeInference";
 
-/** The Query Builder result display: a chart type, "auto" (engine infers), or the raw table. */
-type VizMode = ChartType | "auto" | "table";
+/** The Query Builder result display: a chart type, "auto" (engine infers), the raw table, or a pivot. */
+type VizMode = ChartType | "auto" | "table" | "pivot";
 
 // ── Aggregation catalogue ─────────────────────────────────────────────────────
 
@@ -661,9 +662,10 @@ function ResultsPane({
 
   const rows = result.rows as unknown[][];
   const chartable = inferChartType(result.columns, rows);
-  // The display mode is owned by the DATA-tab dropdown (vizType). "table" → raw table;
-  // anything else → chart. Non-chartable results always fall back to the table.
-  const showTable = vizType === "table" || !chartable;
+  // The display mode is owned by the DATA-tab dropdown (vizType). "pivot" → cross-tab,
+  // "table" → raw table; anything else → chart. Non-chartable results fall back to the table.
+  const showPivot = vizType === "pivot";
+  const showTable = !showPivot && (vizType === "table" || !chartable);
 
   const meta = [
     `${result.row_count ?? result.rows.length} rows`,
@@ -720,8 +722,13 @@ function ResultsPane({
         </div>
       </div>
 
+      {/* Pivot — client-side cross-tab (works on any tabular result) */}
+      {showPivot && (
+        <PivotTable columns={result.columns} rows={rows} />
+      )}
+
       {/* Chart — controlled by the Explore rail (type / labels / title) */}
-      {!showTable && chartable && (
+      {!showPivot && !showTable && chartable && (
         <div className="overflow-x-auto overflow-y-auto" style={{ maxHeight: 560 }}>
           <InvestigationChart columns={result.columns} rows={rows}
             controlled typeOverride={vizType} showLabels={showDataLabels} title={chartTitle} custom={custom} />
@@ -1257,7 +1264,7 @@ export function QueryBuilder({ initialConnId, onOpenCanvas }: { initialConnId?: 
     ? availableChartTypes(result.columns, result.rows as unknown[][]) : [];
   // Clamp a stale chart-type pick (the result shape may have changed since it was chosen)
   // to "auto" so the chart never renders blank; "table"/"auto" always pass through.
-  const vizMode: VizMode = (vizType === "table" || vizType === "auto" || availTypes.includes(vizType as ChartType))
+  const vizMode: VizMode = (vizType === "table" || vizType === "pivot" || vizType === "auto" || availTypes.includes(vizType as ChartType))
     ? vizType : "auto";
   const CHART_TYPE_LABEL: Record<string, string> = {
     auto: "Auto", bar: "Bar", line: "Line", "multi-line": "Multi-line", area: "Area",
@@ -1687,6 +1694,7 @@ export function QueryBuilder({ initialConnId, onOpenCanvas }: { initialConnId?: 
                     )}
                     <optgroup label="Data">
                       <option value="table">Table</option>
+                      <option value="pivot">Pivot</option>
                     </optgroup>
                   </select>
                 </div>
