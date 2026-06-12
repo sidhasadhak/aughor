@@ -53,7 +53,7 @@ export function Sparkline({
 
 // ── Series-trend extraction ────────────────────────────────────────────────────
 const PERIOD_LABEL: Record<Gran, string> = {
-  day: "DoD", week: "WoW", month: "MoM", quarter: "QoQ", year: "YoY",
+  minute: "Δ", hour: "HoH", day: "DoD", week: "WoW", month: "MoM", quarter: "QoQ", year: "YoY",
 };
 
 export interface SeriesTrend {
