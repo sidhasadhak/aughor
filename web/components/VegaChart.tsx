@@ -92,40 +92,61 @@ interface Props {
   showLabels?: boolean;
 }
 
-/** Inject data-label text layers into a Vega-Lite spec.
- *  Keeps every existing mark/layer and appends a matching text mark on top. */
-function injectLabels(spec: VLSpec): VLSpec {
+/** Inject data-label text layers into a Vega-Lite spec, avoiding overlap.
+ *  - Skips specs that already draw their own value labels (engine bar/treemap
+ *    charts self-label) so toggling labels never double-stamps them.
+ *  - Labels each measure ONCE — a line spec built as area+line+point layers
+ *    sharing one encoding would otherwise stamp the same point twice.
+ *  - Thins dense line/area series (keeps ~10 labels, partitioned by series) so a
+ *    13- or 50-point trend doesn't smear its numbers into an unreadable ribbon. */
+function injectLabels(spec: VLSpec, data?: Record<string, unknown>[]): VLSpec {
   const existing = (spec.layer || [spec]) as VLSpec[];
+  // Already self-labeling? Leave it — a second pass would just overlap the first.
+  if (existing.some(l => ((l.mark as Record<string, unknown>)?.type) === "text")) return spec;
   const topEnc = (spec.encoding || {}) as Record<string, unknown>;
+  const labeled = new Set<string>();
   const wrapped: VLSpec[] = [];
   let changed = false;
   for (const layer of existing) {
     const enc = (layer.encoding || {}) as Record<string, unknown>;
     const yEnc = (enc.y || topEnc.y) as Record<string, unknown> | undefined;
     const xEnc = (enc.x || topEnc.x) as Record<string, unknown> | undefined;
-    if (!yEnc || !xEnc) {
+    const yField = (yEnc?.field || yEnc?.aggregate) as string | undefined;
+    const xField = (xEnc?.field || xEnc?.aggregate) as string | undefined;
+    const markType = (layer.mark as Record<string, unknown>)?.type as string | undefined;
+    if (!yField || !xField || !yEnc || !xEnc ||
+        markType === "text" || markType === "point" || markType === "rect" || markType === "rule" || markType === "arc" ||
+        labeled.has(yField)) {
       wrapped.push(layer);
       continue;
     }
-    const yField = (yEnc.field || yEnc.aggregate) as string | undefined;
-    const xField = (xEnc.field || xEnc.aggregate) as string | undefined;
-    if (!yField || !xField) {
-      wrapped.push(layer);
-      continue;
+    labeled.add(yField);
+    const colorEnc = (enc.color || topEnc.color) as Record<string, unknown> | undefined;
+    const colorField = colorEnc?.field as string | undefined;
+
+    // Thin dense continuous series — keep every Nth point so ~10 labels survive per series.
+    let transform: unknown[] | undefined;
+    if ((markType === "line" || markType === "area") && data?.length) {
+      const distinctX = new Set(data.map(d => d[xField])).size;
+      const stride = Math.max(1, Math.ceil(distinctX / 10));
+      if (stride > 1) {
+        transform = [
+          { window: [{ op: "row_number", as: "__li" }], sort: [{ field: xField, order: "ascending" }],
+            ...(colorField ? { groupby: [colorField] } : {}) },
+          { filter: `(datum.__li - 1) % ${stride} === 0` },
+        ];
+      }
     }
-    const markType = (layer.mark as Record<string, unknown>)?.type;
-    if (markType === "text" || markType === "point" || markType === "rect" || markType === "rule") {
-      wrapped.push(layer);
-      continue;
-    }
+
     const yOffset = markType === "bar" || markType === "area" ? -4 : -8;
     const labelLayer = {
+      ...(transform ? { transform } : {}),
       mark: { type: "text", align: "center", baseline: "bottom", dy: yOffset, fontSize: 10, color: "#9AA0A8" },
       encoding: {
         x: { field: xField, ...(xEnc.type ? { type: xEnc.type } : {}) },
         y: { field: yField, ...(yEnc.type ? { type: yEnc.type } : {}) },
         text: { field: yField, type: "quantitative", format: ",.2~f" },
-        ...(enc.color ? { color: enc.color } : {}),
+        ...(colorEnc ? { color: colorEnc } : {}),
       },
     };
     wrapped.push({ layer: [layer, labelLayer] });
@@ -161,7 +182,7 @@ export function VegaChart({ spec, data, height, width, className, showLabels }: 
 
     injectTooltipCss();
 
-    const specWithLabels = showLabels ? injectLabels(spec) : spec;
+    const specWithLabels = showLabels ? injectLabels(spec, data) : spec;
     const isVega = typeof specWithLabels.$schema === "string" && specWithLabels.$schema.includes("/vega/");
     const safeW = Math.max(w, 320) - 2;
 

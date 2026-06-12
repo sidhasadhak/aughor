@@ -104,16 +104,25 @@ function applyCustom(spec: VLSpec | null, custom?: ChartCustom | null): VLSpec |
   if (!spec || !custom) return spec;
   if (!(custom.format || custom.colorScheme || custom.xTitle || custom.yTitle || custom.legend)) return spec;
   const s = JSON.parse(JSON.stringify(spec)) as Record<string, unknown>;
-  const views = (Array.isArray(s.layer) ? s.layer : [s]) as Record<string, unknown>[];
-  for (const v of views) {
-    const enc = v.encoding as Record<string, Record<string, unknown>> | undefined;
-    if (!enc) continue;
+  // Walk the shared top-level encoding AND every nested layer — the engine's single-line
+  // and bar specs keep x/y at the top level while marks live in layer[], so the old
+  // `spec.layer ?? [spec]` loop silently skipped the real axes (Customize was a no-op there).
+  forEachEncoding(s, (enc) => {
     if (custom.xTitle && enc.x) enc.x.axis = { ...(enc.x.axis as object || {}), title: custom.xTitle };
     if (custom.yTitle && enc.y) enc.y.axis = { ...(enc.y.axis as object || {}), title: custom.yTitle };
-    if (custom.format && enc.y && enc.y.type === "quantitative") enc.y.axis = { ...(enc.y.axis as object || {}), format: custom.format };
-    if (custom.colorScheme && enc.color?.field) enc.color.scale = { ...(enc.color.scale as object || {}), scheme: custom.colorScheme };
+    // Number format applies to whichever positional axis carries the quantitative measure —
+    // y for vertical charts, x for horizontal bars (and both for scatter).
+    if (custom.format) {
+      if (enc.y && enc.y.type === "quantitative") enc.y.axis = { ...(enc.y.axis as object || {}), format: custom.format };
+      if (enc.x && enc.x.type === "quantitative") enc.x.axis = { ...(enc.x.axis as object || {}), format: custom.format };
+    }
+    // Color scheme is a CATEGORICAL palette — only apply to nominal/ordinal series, never a
+    // quantitative color channel (e.g. a heatmap's sequential scale), which it would corrupt.
+    const colorCategorical = enc.color?.field &&
+      (enc.color.type === "nominal" || enc.color.type === "ordinal" || enc.color.type === undefined);
+    if (custom.colorScheme && colorCategorical) enc.color.scale = { ...(enc.color.scale as object || {}), scheme: custom.colorScheme };
     if (custom.legend && enc.color?.field) enc.color.legend = custom.legend === "none" ? null : { ...(enc.color.legend as object || {}), orient: custom.legend };
-  }
+  });
   return s as VLSpec;
 }
 
