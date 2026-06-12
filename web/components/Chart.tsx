@@ -46,6 +46,60 @@ export interface ChartCustom {
   legend?: "right" | "bottom" | "top" | "left" | "none";
 }
 
+/** Visit every encoding block in a (possibly layered) Vega-Lite spec — the shared
+ *  top-level `encoding` AND each (nested) layer's own `encoding`. Layered specs in
+ *  this engine keep the x/y scales at the top level while marks live in `layer[]`,
+ *  so a naive `spec.layer ?? [spec]` loop misses the real axes entirely. */
+function forEachEncoding(
+  node: Record<string, unknown> | null | undefined,
+  fn: (enc: Record<string, Record<string, unknown>>, owner: Record<string, unknown>) => void,
+): void {
+  if (!node || typeof node !== "object") return;
+  const enc = node.encoding as Record<string, Record<string, unknown>> | undefined;
+  if (enc) fn(enc, node);
+  for (const key of ["layer", "concat", "hconcat", "vconcat"] as const) {
+    const arr = node[key];
+    if (Array.isArray(arr)) arr.forEach(child => forEachEncoding(child as Record<string, unknown>, fn));
+  }
+}
+
+/** Round a positive number UP to a human-friendly value (1/1.1/1.25/1.5/2/2.5/3/4/5/6/7.5/8/9 × 10ⁿ). */
+function niceCeil(x: number): number {
+  if (!isFinite(x) || x <= 0) return x;
+  const mag  = Math.pow(10, Math.floor(Math.log10(x)));
+  const norm = x / mag;
+  const steps = [1, 1.1, 1.2, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5, 6, 7, 7.5, 8, 9, 10];
+  return (steps.find(s => s >= norm - 1e-9) ?? 10) * mag;
+}
+
+/** Give the quantitative Y axis a little breathing room above the data peak so the
+ *  top of the series never kisses the frame — set domainMax to a NICE value ~5% over
+ *  the max (e.g. a 9.9M peak gets an 11M ceiling). Skips axes that already pin a
+ *  domain (combo/pareto/diverging), stacked axes (segment max ≠ stack total), and
+ *  non-positive / diverging data. Y-only by design: horizontal bars already pad X. */
+function withYHeadroom(spec: VLSpec | null, data: Record<string, unknown>[]): VLSpec | null {
+  if (!spec || !data?.length) return spec;
+  const s = JSON.parse(JSON.stringify(spec)) as Record<string, unknown>;
+  forEachEncoding(s, (enc) => {
+    const y = enc.y;
+    if (!y || y.type !== "quantitative" || y.stack) return;
+    const field = y.field as string | undefined;
+    if (!field) return;
+    const sc = (y.scale as Record<string, unknown> | undefined) ?? {};
+    if (sc.domain != null || sc.domainMax != null || sc.domainMin != null) return;
+    let max = -Infinity, min = Infinity;
+    for (const d of data) {
+      const v = Number(d[field]);
+      if (!isFinite(v)) continue;
+      if (v > max) max = v;
+      if (v < min) min = v;
+    }
+    if (!isFinite(max) || max <= 0 || min < 0) return;
+    y.scale = { ...sc, domainMax: niceCeil(max * 1.05) };
+  });
+  return s as VLSpec;
+}
+
 function applyCustom(spec: VLSpec | null, custom?: ChartCustom | null): VLSpec | null {
   if (!spec || !custom) return spec;
   if (!(custom.format || custom.colorScheme || custom.xTitle || custom.yTitle || custom.legend)) return spec;
@@ -1192,7 +1246,7 @@ export function Chart({
       {/* Chart viewport — fixed 350px with internal scroll; Vega renders at full natural height */}
       <div ref={outerRef} style={{ maxHeight: 350, overflowY: 'auto', overflowX: 'auto', width: '100%' }}>
         <div ref={chartRef}>
-          <VegaChart spec={applyCustom(spec, custom)!} data={vegaData} height={chartH} showLabels={showLabels} />
+          <VegaChart spec={applyCustom(withYHeadroom(spec, vegaData), custom)!} data={vegaData} height={chartH} showLabels={showLabels} />
         </div>
       </div>
 
