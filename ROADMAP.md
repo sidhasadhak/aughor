@@ -6,6 +6,45 @@
 
 ---
 
+## 🧱 ARC STATUS — Shared SQL-Analysis Facade (2026-06-12 pt6)
+
+**Same branch `2026-06-12-investigations-as-jobs`.** Started the `analyze()` facade (backlog
+`arch_sql_analysis_facade`): `aughor/sql/analyze.py` parses SQL once and exposes the reusable semantic facts
+(tables/columns/aggregates/group_by + `product_of_aggregates`), so string-munging consumers share one rigorous
+extraction. **First two consumers retargeted + proven**: the ontology validator's product-of-aggregates regex
+→ AST predicate (**fixes a real false-negative** — `SUM(COALESCE(price,0))*SUM(qty)` was silently *verified*
+before; runtime-proven demoted on the real `validate_semantics` path), and `investigations._extract_tables`
+→ `analyze().tables` (regex fallback kept for the multi-statement blobs). 14 facade tests; suite 681 pass / 4
+skip. Layer 3 (chips reverse-compile) stays out of scope; remaining holdouts (sql_consistency, lint NOT-IN,
+measure_grain dedup) are follow-ups. Feature #117.
+
+---
+
+## 🧩 ARC STATUS — Investigations as First-Class Kernel Jobs (2026-06-12 pt5)
+
+**Branch `2026-06-12-investigations-as-jobs` (off `main` = `5dd153c`).** Completes T3's deferred piece: the
+investigation — the last major long-running op outside the kernel — is now a supervised job, each capability
+observed firing on the real path (the principle, held).
+
+- **Increment A — live investigations are supervised jobs.** `_stream_investigation` is left UNCHANGED; a thin
+  wrapper runs it inside a `kernel().submit("investigation", …)` job and bridges its SSE to the client over an
+  in-process queue. Gains: `job.state` PENDING→RUNNING→SUCCEEDED|CANCELLED on the spine, heartbeat,
+  `created_by_job` artifact stamping, and a `POST /investigations/{id}/cancel`. **Runtime-proven**: a real run
+  showed PENDING→RUNNING→SUCCEEDED with investigation.created/completed job-stamped and the report still
+  streamed; cancel → CANCELLED + reconcile.
+- **Increment B — crash-recovery (boot salvage).** On boot, orphaned `running` investigations are recovered,
+  not blanket-failed: a supervised salvage job reads the LangGraph `SqliteSaver` checkpoint and runs the proven
+  `_try_salvage` to synthesize a partial report from gathered evidence. **Verified with a kill -9 chaos test**:
+  a hard-killed mid-ADA investigation came back `complete` with a real partial headline (z=3.99 anomaly).
+
+Deliberately NOT done (risk-managed): the full graph re-run resume of an arbitrary ADA investigation — the
+existing resume path only handles the classic `synthesize` node, so a general re-run is unproven/risky;
+salvage recovers the gathered work with battle-tested machinery instead. Suite 667 pass / 4 e2e-skip; K4
+ratchets held (caught 2 of my own slips — silent swallows + a private cross-import — both fixed). Features
+#115-116. Next: SQL-analysis facade.
+
+---
+
 ## 🚀 ARC STATUS — Speed (T2) · Kernel-Leverage (T3) · Correctness Long-Tail (T6) (2026-06-12 pt4)
 
 **Branch `2026-06-12-speed-kernel-longtail` (off `main` = `ac842cc`).** Three backlog tiers closed in one

@@ -22,22 +22,16 @@ graph.validation_version and persists the result, so it is off the query hot pat
 from __future__ import annotations
 
 import math
-import re
 from typing import Any
 
 from aughor.ontology.models import OntologyGraph
+from aughor.sql.analyze import analyze
 
 # Bump when the validation logic below changes — cached graphs with a lower
 # version are re-validated automatically (same pattern as ENRICHMENT_VERSION).
 VALIDATION_VERSION = 1
 
 _OVERFLOW = 1e15
-
-# AGG(...) * AGG(...) — product of two aggregates, the $3T metric anti-pattern.
-_PRODUCT_OF_AGGS = re.compile(
-    r"\b(?:SUM|COUNT|AVG|MIN|MAX)\s*\([^)]*\)\s*\*\s*(?:SUM|COUNT|AVG|MIN|MAX)\s*\(",
-    re.IGNORECASE,
-)
 
 
 def _to_float(cell: Any) -> float | None:
@@ -87,6 +81,7 @@ def validate_semantics(graph: OntologyGraph, db: Any) -> OntologyGraph:
     Best-effort: any unexpected error leaves that item unverified rather than
     raising, so a flaky probe never breaks ontology construction.
     """
+    _dialect = getattr(db, "dialect", "duckdb")
     # ── Metrics ───────────────────────────────────────────────────────────────
     for m in graph.metrics.values():
         try:
@@ -94,7 +89,11 @@ def validate_semantics(graph: OntologyGraph, db: Any) -> OntologyGraph:
             if not table:
                 m.verified, m.verification_note = False, "no source table to probe"
                 continue
-            if _PRODUCT_OF_AGGS.search(m.formula_sql or ""):
+            # Product-of-aggregates is now detected on the AST (shared analyze()
+            # facade) rather than a regex — so a nested argument like
+            # SUM(COALESCE(price,0)) * SUM(qty), which the old `AGG(...)*AGG(`
+            # pattern silently missed, is caught.
+            if analyze(m.formula_sql, dialect=_dialect).product_of_aggregates:
                 m.verified, m.verification_note = False, (
                     "product-of-aggregates anti-pattern — AGG(...) * AGG(...) double-counts; "
                     "use SUM(a * b) per row instead"
