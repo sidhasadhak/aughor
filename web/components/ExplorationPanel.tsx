@@ -357,11 +357,14 @@ function InsightsSection({ insights }: { insights: ExplorationFindings["insights
 interface Props {
   connectionId: string;
   initialSection?: SectionKey;
+  /** Shared schema scope from the workspace header — scopes the combined
+   *  Schema-Shape view in the Distributions section. */
+  schema?: string;
 }
 
 type SectionKey = "nulls" | "lifecycles" | "distributions" | "insights" | "intelligence";
 
-export function ExplorationPanel({ connectionId, initialSection }: Props) {
+export function ExplorationPanel({ connectionId, initialSection, schema }: Props) {
   const [status, setStatus] = useState<ExplorationStatus | null>(null);
   const [findings, setFindings] = useState<ExplorationFindings | null>(null);
   const [activeSection, setActiveSection] = useState<SectionKey>(initialSection ?? "nulls");

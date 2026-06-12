@@ -1183,7 +1183,7 @@ function SynthesisHome({
 
 // ── Main panel ─────────────────────────────────────────────────────────────────
 
-export function IntelligenceHub({ connectionId, canvasId }: { connectionId: string; canvasId?: string }) {
+export function IntelligenceHub({ connectionId, canvasId, schema }: { connectionId: string; canvasId?: string; schema?: string }) {
   const [domainData, setDomainData] = useState<Record<string, DomainInsights>>({});
   const [orgInsights, setOrgInsights] = useState<OrgInsight[]>([]);
   const [hubPatterns, setHubPatterns] = useState<Pattern[]>([]);
@@ -1215,9 +1215,9 @@ export function IntelligenceHub({ connectionId, canvasId }: { connectionId: stri
       // Canvas scope: brief/synthesise only the canvas's curated-table intelligence,
       // keeping the Hub consistent with the canvas-scoped Briefing + Domains.
       const [domains, org, pat] = await Promise.all([
-        canvasId ? getCanvasDomainInsights(canvasId) : getDomainInsights(connectionId),
+        canvasId ? getCanvasDomainInsights(canvasId) : getDomainInsights(connectionId, schema),
         getOrgIntelligence(),
-        (canvasId ? getCanvasPatterns(canvasId) : getPatterns(connectionId))
+        (canvasId ? getCanvasPatterns(canvasId) : getPatterns(connectionId, false, schema))
           .then(r => r.patterns ?? []).catch(() => [] as Pattern[]),
       ]);
       setDomainData(domains);
@@ -1230,7 +1230,7 @@ export function IntelligenceHub({ connectionId, canvasId }: { connectionId: stri
     } finally {
       setLoading(false);
     }
-  }, [connectionId, canvasId]);
+  }, [connectionId, canvasId, schema]);
 
   useEffect(() => { load(); }, [load]);
 

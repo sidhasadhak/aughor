@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
+import { getCatalogTree } from "@/lib/api";
 
 // ── Lazy panels ──────────────────────────────────────────────────────────────
 // The four perspectives are heavy graph/data views — load each only when its
@@ -81,6 +82,26 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
     setVisited(prev => (prev.has(layer) ? prev : new Set(prev).add(layer)));
   }, [layer]);
 
+  // Shared schema scope — one selector that filters Briefing, Hub, and Domains
+  // together (a connection can expose several schemas; a canvas is already scoped).
+  const [schemas, setSchemas]               = useState<string[]>([]);
+  const [selectedSchema, setSelectedSchema] = useState<string | null>(null);
+  useEffect(() => {
+    if (canvasId || !connectionId) { setSchemas([]); setSelectedSchema(null); return; }
+    let alive = true;
+    getCatalogTree()
+      .then(tree => {
+        if (!alive) return;
+        const entry = tree.sections.flatMap(s => s.entries).find(e => e.conn_id === connectionId);
+        const names = entry?.schemas.map(s => s.name) ?? [];
+        setSchemas(names);
+        setSelectedSchema(names.length === 1 ? names[0] : null);
+      })
+      .catch(() => { if (alive) setSchemas([]); });
+    return () => { alive = false; };
+  }, [connectionId, canvasId]);
+  const schema = selectedSchema ?? undefined;
+
   const active = LAYERS.find(l => l.id === layer)!;
 
   return (
@@ -91,12 +112,33 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
         <span style={{ fontSize: 13, fontWeight: 500 }}>{active.label}</span>
         <span style={{ fontSize: 11, color: "var(--t3)" }}>· {active.blurb}</span>
 
+        {/* Shared schema scope — drives Briefing / Hub / Domains together. Only shown
+            when the connection exposes more than one schema (and never for a canvas). */}
+        {!canvasId && schemas.length > 1 && (
+          <label style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: 10, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".06em" }}>Schema</span>
+            <select
+              value={selectedSchema ?? ""}
+              onChange={e => setSelectedSchema(e.target.value || null)}
+              aria-label="Schema scope"
+              style={{
+                fontSize: 12, color: "var(--t2)", background: "var(--bg-2)",
+                border: "1px solid var(--b1)", borderRadius: "var(--r2)",
+                padding: "3px 8px", cursor: "pointer",
+              }}
+            >
+              <option value="">All schemas</option>
+              {schemas.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </label>
+        )}
+
         {/* Layer switcher — segmented control */}
         <div
           role="tablist"
           aria-label="Intelligence layers"
           style={{
-            marginLeft: "auto",
+            marginLeft: (!canvasId && schemas.length > 1) ? 0 : "auto",
             display: "flex",
             gap: 2,
             padding: 2,
@@ -136,7 +178,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
       <div style={{ flex: 1, position: "relative", overflow: "hidden", minHeight: 0 }}>
         {visited.has("briefing") && (
           <Layer show={layer === "briefing"}>
-            <BriefingPanel connectionId={connectionId} onInvestigate={q => onInvestigate(q, "investigate")} canvasId={canvasId} />
+            <BriefingPanel connectionId={connectionId} onInvestigate={q => onInvestigate(q, "investigate")} canvasId={canvasId} schema={schema} />
           </Layer>
         )}
         {visited.has("ontology") && (
@@ -146,7 +188,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
         )}
         {visited.has("hub") && (
           <Layer show={layer === "hub"}>
-            <IntelligenceHub connectionId={connectionId} canvasId={canvasId} />
+            <IntelligenceHub connectionId={connectionId} canvasId={canvasId} schema={schema} />
           </Layer>
         )}
         {visited.has("domains") && (
@@ -155,7 +197,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
                 connection scope → the full exploration profile. */}
             {canvasId
               ? <DomainIntelPanel connectionId={connectionId} canvasId={canvasId} isActive={layer === "domains"} />
-              : <ExplorationPanel connectionId={connectionId} initialSection={domainSection} />}
+              : <ExplorationPanel connectionId={connectionId} initialSection={domainSection} schema={schema} />}
           </Layer>
         )}
         {visited.has("evidence") && (

@@ -23,7 +23,6 @@ import {
   getOrgIntelligence,
   generateBriefingNarrative,
   generateCanvasBriefingNarrative,
-  getCatalogTree,
   getExplorerStatus,
   startExplorer,
   stopExplorer,
@@ -1167,12 +1166,16 @@ export function BriefingPanel({
   connectionId,
   onInvestigate,
   canvasId,
+  schema,
 }: {
   connectionId: string;
   onInvestigate: (q: string) => void;
   /** When set, the briefing is scoped to this Canvas's curated tables (not the whole
    *  connection) — keeps Briefing consistent with the already-canvas-scoped Domains. */
   canvasId?: string;
+  /** Shared schema scope from the workspace header (filters findings + narrative).
+   *  Undefined = all schemas. N/A for a canvas (already table-scoped). */
+  schema?: string;
 }) {
   const [briefing, setBriefing]             = useState<BriefingData | null>(null);
   const [loading, setLoading]               = useState(false);
@@ -1180,8 +1183,10 @@ export function BriefingPanel({
   const [narrative, setNarrative]           = useState<BriefingNarrativeResponse | null>(null);
   const [narrativeLoading, setNarrativeLoading] = useState(false);
   const [narrativeError, setNarrativeError] = useState<string | null>(null);
-  const [schemas, setSchemas]                 = useState<string[]>([]);
-  const [selectedSchema, setSelectedSchema]   = useState<string | null>(null);
+  // Scope the narrative auto-fetch by connection+schema so the AI Synthesis card
+  // re-fetches when the shared schema selector changes (it previously short-circuited
+  // on `narrative !== null`, leaving the synthesis stale while every other card updated).
+  const fetchedScope = useRef<string | null>(null);
   const [explorerStatus, setExplorerStatus]   = useState<ExplorerStatus | null>(null);
   const [explorerBusy, setExplorerBusy]       = useState(false);
   const [triggers, setTriggers]               = useState<ActionTrigger[]>([]);
@@ -1211,7 +1216,6 @@ export function BriefingPanel({
     setLoading(true);
     setError(null);
     try {
-      const schema = selectedSchema ?? undefined;
       // Canvas scope: use the canvas's domain insights; patterns aren't computed per-canvas
       // (the canvas briefing endpoint derives them internally for the narrative).
       const [domainRaw, patternsRes, orgInsights] = await Promise.all([
@@ -1227,7 +1231,7 @@ export function BriefingPanel({
     } finally {
       setLoading(false);
     }
-  }, [connectionId, canvasId, selectedSchema]);
+  }, [connectionId, canvasId, schema]);
 
   const generateNarrative = useCallback(async (forceRefresh = false) => {
     if (!canvasId && !connectionId) return;
@@ -1236,7 +1240,7 @@ export function BriefingPanel({
     try {
       const result = canvasId
         ? await generateCanvasBriefingNarrative(canvasId, forceRefresh)
-        : await generateBriefingNarrative(connectionId, forceRefresh, selectedSchema ?? undefined);
+        : await generateBriefingNarrative(connectionId, forceRefresh, schema);
       if (result.available) setNarrative(result);
       else setNarrativeError("No domain intelligence available — run an exploration first.");
     } catch (e) {
@@ -1244,7 +1248,7 @@ export function BriefingPanel({
     } finally {
       setNarrativeLoading(false);
     }
-  }, [connectionId, canvasId, selectedSchema]);
+  }, [connectionId, canvasId, schema]);
 
   // Shared explorer actions — used by both the control bar and the empty-state CTA.
   const runExplorer = useCallback(async () => {
@@ -1273,26 +1277,17 @@ export function BriefingPanel({
 
   useEffect(() => { load(); }, [load]);
 
-  // Fetch available schemas for this connection (N/A for a canvas — already scoped)
+  // Auto-fetch the cached narrative on mount and whenever the scope (connection or
+  // shared schema) changes. Guard on the scope we last fetched — not on `narrative
+  // !== null` — so a schema switch actually re-fetches instead of keeping the old one.
   useEffect(() => {
-    if (canvasId || !connectionId) { setSchemas([]); setSelectedSchema(null); return; }
-    getCatalogTree()
-      .then(tree => {
-        const entry = tree.sections.flatMap(s => s.entries).find(e => e.conn_id === connectionId);
-        const names = entry?.schemas.map(s => s.name) ?? [];
-        setSchemas(names);
-        // If only one schema, auto-select it; otherwise keep previous or null
-        if (names.length === 1) setSelectedSchema(names[0]);
-      })
-      .catch(() => setSchemas([]));
-  }, [connectionId, canvasId]);
-
-  // Auto-fetch cached narrative (no force-refresh) on mount / scope change
-  useEffect(() => {
-    if ((!canvasId && !connectionId) || narrative !== null) return;
+    if (!canvasId && !connectionId) return;
+    const scope = canvasId ?? `${connectionId}:${schema ?? ""}`;
+    if (scope === fetchedScope.current) return;
+    fetchedScope.current = scope;
     generateNarrative(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connectionId, canvasId, selectedSchema]);
+  }, [connectionId, canvasId, schema]);
 
   // Poll explorer status every 3 seconds
   useEffect(() => {
@@ -1441,23 +1436,8 @@ export function BriefingPanel({
       ) : (
         <>
 
-      {/* ── Meta strip ── */}
+      {/* ── Meta strip ── (schema selection now lives in the shared workspace header) */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
-        {schemas.length > 1 && (
-          <select
-            value={selectedSchema ?? ""}
-            onChange={e => setSelectedSchema(e.target.value || null)}
-            style={{
-              fontSize: 11, color: "var(--t1)", background: "var(--bg-1)",
-              border: "1px solid var(--b1)", borderRadius: 4, padding: "3px 8px", cursor: "pointer",
-            }}
-          >
-            <option value="">All schemas</option>
-            {schemas.map(s => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </select>
-        )}
         <span style={{ fontSize: 11, color: "var(--t3)" }}>
           Synthesized from{" "}
           <span style={{ color: "var(--t2)", fontWeight: 500 }}>{briefing.domainCount} domains</span>
