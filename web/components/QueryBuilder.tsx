@@ -4,10 +4,10 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { compactNumber } from "@/lib/format";
 import {
   getConnections, getSchemaRich, getTableColumns, getMetrics, runDirectQuery, getCatalogTree,
-  createCanvas, suggestCanvasName, getMeasureGrains, getColumnDistinct,
+  createCanvas, updateCanvas, suggestCanvasName, getMeasureGrains, getColumnDistinct,
   listSavedQueries, createSavedQuery, updateSavedQuery, deleteSavedQuery,
   type Connection, type SchemaColumn, type SchemaJoin, type Metric, type DirectQueryResult,
-  type CatalogEntry, type SavedQuery,
+  type CatalogEntry, type SavedQuery, type Canvas,
 } from "@/lib/api";
 import { InvestigationChart } from "@/components/InvestigationChart";
 import { type ChartCustom } from "@/components/Chart";
@@ -631,7 +631,7 @@ function ResultsPane({
   sql: string;
   primaryTable: string | null;
   joinedTables: string[];
-  onStartCanvas?: (canvasId: string) => void;
+  onStartCanvas?: (canvas: Canvas) => void;
   tableSchemas?: Record<string, string>;
   vizType?: ChartType | "auto";
   showDataLabels?: boolean;
@@ -692,17 +692,15 @@ function ResultsPane({
       // Use the primary table's schema as the canvas scope schema so multi-schema
       // DuckDB connections resolve bare table names correctly.
       const scopeSchema = tableSchemas?.[primaryTable] || null;
-      let name = "Query Canvas";
-      let description = `Canvas from Query Builder: ${tables.join(", ")}`;
-      try {
-        const suggested = await suggestCanvasName(connId, tables);
-        name = suggested.name;
-        description = suggested.description;
-      } catch {}
-      const canvas = await createCanvas(name, description, [
+      // Create + navigate immediately with a sensible default name; don't block the
+      // hand-off on the (slow) LLM name suggestion — upgrade the name in the background.
+      const canvas = await createCanvas("Query Canvas", `Canvas from Query Builder: ${tables.join(", ")}`, [
         { connection_id: connId, schema_name: scopeSchema, tables },
       ]);
-      onStartCanvas?.(canvas.id);
+      onStartCanvas?.(canvas);
+      suggestCanvasName(connId, tables)
+        .then(s => updateCanvas(canvas.id, { name: s.name, description: s.description }))
+        .catch(() => { /* keep the default name */ });
     } catch (e) {
       alert((e as Error).message || "Failed to create canvas");
     } finally {
@@ -806,7 +804,7 @@ function ResultsPane({
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
+export function QueryBuilder({ initialConnId, onOpenCanvas }: { initialConnId?: string; onOpenCanvas?: (canvas: Canvas) => void }) {
   const [connections,   setConnections]   = useState<Connection[]>([]);
   const [connId,        setConnId]        = useState(initialConnId ?? "");
   const [tableNames,    setTableNames]    = useState<string[]>([]);
@@ -902,6 +900,8 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
   const [railTab,     setRailTab]     = useState<"data"|"customize">("data");  // Superset-style control rail
   const [sqlOpen,     setSqlOpen]     = useState(false);  // SQL editor collapsed by default
   const [joinsOpen,   setJoinsOpen]   = useState(false);  // resolved-joins collapsed by default
+  const [controlsCollapsed, setControlsCollapsed] = useState(false);  // bottom Data/Customize panel
+  const [controlsH,   setControlsH]   = useState(360);    // bottom panel height (resizable)
   const [vizType,        setVizType]        = useState<ChartType | "auto">("auto");  // chart-type override
   const [showDataLabels, setShowDataLabels] = useState(false);
   const [chartTitle,     setChartTitle]     = useState("");
@@ -1275,6 +1275,19 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
       : x));
   };
 
+  // Vertical resize for the bottom Data/Customize panel (drag the divider up to grow it).
+  const startVResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startY = e.clientY, startH = controlsH;
+    const move = (ev: MouseEvent) => setControlsH(Math.min(Math.max(140, startH - (ev.clientY - startY)), Math.round(window.innerHeight * 0.72)));
+    const up = () => {
+      document.removeEventListener("mousemove", move); document.removeEventListener("mouseup", up);
+      document.body.style.cursor = ""; document.body.style.userSelect = "";
+    };
+    document.addEventListener("mousemove", move); document.addEventListener("mouseup", up);
+    document.body.style.cursor = "row-resize"; document.body.style.userSelect = "none";
+  };
+
   // Chart customization — the available viz types depend on the current result's shape.
   const chartInfo = result && !result.error && result.columns.length
     ? inferChartType(result.columns, result.rows as unknown[][]) : null;
@@ -1603,7 +1616,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                                   ? <div className="pl-11 py-1.5"><span className="text-[11px] text-zinc-500 animate-pulse">Loading columns…</span></div>
                                   : cols.length > 0
                                     ? cols.map(col => (
-                                      <div key={col.name} className="pl-4">
+                                      <div key={col.name} className="ml-7 pl-2 border-l border-zinc-700/40">
                                         <ColRow col={col} tableName={tbl}
                                           onAddDim={()=>addDim(col.name, tbl)}
                                           onAddMeasure={()=>openMeasure(col, tbl)}
@@ -1671,18 +1684,24 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
         </aside>
         }
         right={
-        <div className="flex-1 flex overflow-hidden h-full">
+        <div className="flex-1 flex flex-col overflow-hidden h-full">
 
-          {/* ── CONTROL RAIL: DATA / CUSTOMIZE tabs (Superset Explore structure) ── */}
-          <div className="w-[380px] shrink-0 flex flex-col border-r border-zinc-700/40 bg-zinc-900/20 h-full">
-            <div className="flex items-center gap-1 px-4 pt-3 border-b border-zinc-700/40 shrink-0">
+          {/* ── CONTROL PANEL (bottom): DATA / CUSTOMIZE — resizable + collapsible ── */}
+          <div className="order-3 shrink-0 flex flex-col border-t border-zinc-700/40 bg-zinc-900/20 overflow-hidden"
+            style={controlsCollapsed ? undefined : { height: controlsH }}>
+            <div className="flex items-center gap-1 px-4 pt-2 border-b border-zinc-700/40 shrink-0">
               {(["data","customize"] as const).map(tab => (
-                <button key={tab} onClick={()=>setRailTab(tab)}
+                <button key={tab} onClick={()=>{ setRailTab(tab); if (controlsCollapsed) setControlsCollapsed(false); }}
                   className={`text-[12px] font-semibold uppercase tracking-wide px-3 py-2 -mb-px border-b-2 transition ${railTab===tab ? "border-blue-500 text-zinc-100" : "border-transparent text-zinc-500 hover:text-zinc-300"}`}>
                   {tab}
                 </button>
               ))}
+              <button onClick={()=>setControlsCollapsed(c=>!c)} title={controlsCollapsed?"Expand panel":"Collapse panel"}
+                className="ml-auto text-zinc-500 hover:text-zinc-300 p-1.5">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform ${controlsCollapsed?"rotate-180":""}`}><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
             </div>
+            {!controlsCollapsed && (<>
             <div className={`flex-1 overflow-y-auto px-5 py-3 space-y-3 ${railTab==="data"?"":"hidden"}`}>
 
               {/* CHART TYPE — viz gallery (Superset's first DATA section); appears once chartable */}
@@ -1746,8 +1765,8 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                       <p className={`w-full px-1 text-[11px] italic ${overDims?"text-blue-400":"text-zinc-500"}`}>{overDims ? "Release to add dimension" : "Drop a column or click D"}</p>
                     )}
                     {dims.map(d => (
-                      <span key={d.id} className="inline-flex items-center gap-1 text-[12px] font-mono px-2 py-1 rounded-lg border bg-blue-500/10 border-blue-500/30 text-blue-300">
-                        {isMulti ? `${d.table}.${d.col}` : d.col}
+                      <span key={d.id} className="inline-flex flex-wrap items-center gap-1 max-w-full text-[12px] font-mono px-2 py-1 rounded-lg border bg-blue-500/10 border-blue-500/30 text-blue-300">
+                        <span className="truncate max-w-[150px]" title={isMulti ? `${d.table}.${d.col}` : d.col}>{isMulti ? `${d.table}.${d.col}` : d.col}</span>
                         {/* Date dims: grain (DATE_TRUNC) + relative range (WHERE) inline on the chip */}
                         {(tableCols[d.table]?.find(c=>c.name===d.col)?.type?.toLowerCase().includes("date") ||
                           tableCols[d.table]?.find(c=>c.name===d.col)?.type?.toLowerCase().includes("time")) && (<>
@@ -2100,10 +2119,19 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                 </>
               )}
             </div>
-          </div>{/* end control rail */}
+            </>)}
+          </div>{/* end control panel (bottom) */}
 
-          {/* ── CHART AREA — the chart is the hero; the data table sits below ── */}
-          <main className="flex-1 overflow-y-auto h-full px-6 py-5">
+          {/* Vertical resize divider — drag up/down to size the panel */}
+          {!controlsCollapsed && (
+            <div onMouseDown={startVResize} title="Drag to resize"
+              className="order-2 h-1.5 shrink-0 cursor-row-resize flex items-center justify-center group">
+              <span className="h-px w-full bg-zinc-700/60 group-hover:bg-blue-500/60 transition-colors"/>
+            </div>
+          )}
+
+          {/* ── CHART AREA (top) — the chart is the hero ── */}
+          <main className="order-1 flex-1 min-h-0 overflow-y-auto px-6 py-5">
             {(running || runError || result) ? (
               <div className="pb-6">
                 <div className="flex items-center gap-3 mb-4">
@@ -2138,7 +2166,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                     showDataLabels={showDataLabels}
                     chartTitle={chartTitle || undefined}
                     custom={chartCustom}
-                    onStartCanvas={(id) => { window.location.href = `/?canvas=${id}`; }}
+                    onStartCanvas={(canvas) => onOpenCanvas?.(canvas)}
                   />
                 )}
               </div>

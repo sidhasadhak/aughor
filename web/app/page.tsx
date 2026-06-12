@@ -1811,7 +1811,7 @@ export default function Home() {
             {/* ── QUERY BUILDER ── */}
             {tab === "builder" && (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
-                <QueryBuilder initialConnId={selectedConn} />
+                <QueryBuilder initialConnId={selectedConn} onOpenCanvas={handleCanvasSelect} />
               </div>
             )}
 
