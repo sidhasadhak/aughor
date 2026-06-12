@@ -111,6 +111,13 @@ def connection_measure_grains(
     return result
 
 
+def cached_connection_grains(conn_id: str) -> "Optional[tuple[dict[str, str], set[str]]]":
+    """Return the in-process cached grains for a connection WITHOUT opening a DB or probing,
+    or None if not yet detected. Lets HTTP callers serve a cache hit cheaply (the probe path
+    re-introspects the schema, which is slow on wide connections)."""
+    return _GRAIN_CACHE.get(conn_id)
+
+
 def probe_measure_grains(db, table_cols: "dict[str, list[str]]", *, max_probes: int = 24
                          ) -> "tuple[dict[str, str], set[str]]":
     """The PROBE itself (no cache, no ontology read-back) — detect grains by scanning the

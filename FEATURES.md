@@ -2674,4 +2674,96 @@ Two measures can live in the same table at different grains (`final_price_usd` p
 
 ---
 
-*Last updated: 2026-06-11 · 94 features — all shipped. See `ROADMAP.md` for upcoming milestones.*
+## 95. Query Builder — Schema-Qualified Correctness + Bounded Preview ✅ Shipped
+
+### What
+A correctness pass on the visual Query Builder that also unblocked it on real connections: it was effectively **unusable on any schema-qualified connection** — the rich schema returns dotted names (`analytics.order_items`) that were quoted as a *single* identifier (`"analytics.order_items"` → "table does not exist"), and the catalog tree's bare names never key-matched, so columns never loaded.
+
+### Why
+The headline demo connection (beautycommerce) couldn't run a single query in the builder and showed "No columns available". A fresh `SELECT *` also defaulted to **no LIMIT** — a footgun on million-row tables.
+
+### How
+1. One `quoteTable()` helper (replacing three drifting copies) quotes **each dotted segment** → `"analytics"."order_items"`.
+2. Phase-2 ingestion **canonicalizes** rich dotted names to the bare catalog key (cross-schema collision-guarded) and records the schema, so columns/joins attach and SQL re-qualifies at build time.
+3. LIMIT defaults to a bounded `1000` (blank/0 stays an explicit opt-out); `tableSchemas` added to the auto-SQL dependency path.
+
+**Key files.** `web/components/QueryBuilder.tsx`.
+
+---
+
+## 96. Query Builder — Saved Queries (Persistence) ✅ Shipped
+
+### What
+The builder was a dead-end — build, run, lose it on reload. Now **connection-scoped saved queries** persist both the SQL *and* the full visual spec (primary table, joins, dimensions, measures, filters, time, HAVING, order/limit), so loading one restores the **builder**, not just a SQL dump. A header "Saved" dropdown lists/loads/deletes; "Save" creates (with a suggested name) or updates in place.
+
+### Why
+Turns a scratchpad into a workflow loop — the foundation every other improvement compounds on.
+
+### How
+SQLite store mirroring the Canvas pattern (`aughor/savedquery/{models,store}.py`, idempotent schema, newest-first list, partial updates; `spec` is opaque JSON owned by the frontend), REST CRUD on `query.py`, `api.ts` client, and the header UI. Runtime-proven: save → reload → load restores table+dims+measures+SQL → runs; in-place update doesn't duplicate.
+
+**Key files.** `aughor/savedquery/`, `aughor/routers/query.py`, `web/lib/api.ts`, `web/components/QueryBuilder.tsx`, `tests/unit/test_saved_query_store.py`.
+
+---
+
+## 97. Query Builder — First-Class Time Range & Grain ✅ Shipped
+
+### What
+Time — the most-used control in real BI — is now first-class instead of a buried per-dimension dropdown: a date-column picker, **relative presets** (Last 7/30/90 days, This/Last month, This quarter, This year, Year-to-date) plus a **custom from/to** range compiling to `WHERE`, and a **time-grain** selector (hour…year) compiling to a leading `DATE_TRUNC` dimension + `GROUP BY`.
+
+### Why
+You couldn't scope a query to "last 30 days" or roll up by month without hand-editing SQL.
+
+### How
+A pure `timePredicate()` (DuckDB/ANSI `INTERVAL`) + a `TimeSpec` threaded into `buildSql`; time state persists in the saved-query spec. Proven: `This year` → 5 rows; custom range compiles correctly.
+
+**Key files.** `web/components/QueryBuilder.tsx`.
+
+---
+
+## 98. Query Builder — Grain-Misuse Warnings on Metric Chips ✅ Shipped
+
+### What
+The measure-additivity (grain) layer now surfaces **directly on the metric chips**: sum a per-unit price without `× quantity` (under-count) or a per-line total `× quantity` (double-count) and the chip lights amber with a ⚠ explanation and a **one-click fix**. The differentiated trust feature no generic BI tool has.
+
+### Why
+A wrong number should be flagged the moment it's built — at authoring time, on the surface where people build queries — not just inside an investigation.
+
+### How
+New `GET /connections/{id}/measure-grains` (ontology-stamped grains first, else a cached live probe; `cached_connection_grains()` makes hits ~16ms vs ~19s cold; close via kernel `tolerate()`), reusing `aughor/semantic/measure_grain.py`. Frontend `grainWarning()` mirrors `measure_grain_misuse` at the chip level; "fix" rewrites `SUM(col)` → `SUM(col × quantity)`. Runtime-proven: the suggester's own `SUM final_price_usd` flags → fix → **$503.30M (the correct revenue), not the $252M undercount**.
+
+**Key files.** `aughor/routers/query.py`, `aughor/semantic/measure_grain.py`, `web/lib/api.ts`, `web/components/QueryBuilder.tsx`.
+
+---
+
+## 99. Query Builder — HAVING, Distinct-Value Picker & CSV Export ✅ Shipped
+
+### What
+Closes the "real BI tool" checklist: **HAVING** (filter on an aggregated metric → `HAVING <expr> <op> <val>`), a **distinct-value filter picker** (a column's distinct values offered as a datalist, formatted as valid SQL literals — quoted for text columns), and client-side **CSV export** of results.
+
+### Why
+You couldn't filter on a `SUM`, had to hand-type (and correctly quote) filter values, and couldn't export.
+
+### How
+HAVING items compile from their referenced measure's expression and persist in the spec; `GET /connections/{id}/distinct` backs the picker (`_quote_ident` mirrors the frontend per-segment quoting; close via `tolerate()`); CSV is RFC-4180-escaped in the browser. Proven: `WHERE traffic_source='Organic'` (picked) + `GROUP BY` + `HAVING SUM > 1e6` compose & run; CSV captured.
+
+**Key files.** `aughor/routers/query.py`, `web/lib/api.ts`, `web/components/QueryBuilder.tsx`.
+
+---
+
+## 100. Query Builder — Real SQL Editor (Highlighting + Format) ✅ Shipped
+
+### What
+The plain monospace textarea becomes a real editor: **syntax highlighting** (keywords/functions/strings/numbers/comments/identifiers) and a **Format** button — with **no new dependency**.
+
+### Why
+A SQL surface should look and behave like one; pasted/hand-written SQL deserves one-click cleanup.
+
+### How
+A small SQL **tokenizer** (strings & quoted identifiers tokenized first) is shared by the highlighter (a transparent-`<textarea>`-over-highlighted-`<pre>` overlay, scroll-synced) and the formatter (uppercases **only** keyword/function tokens and newlines major clauses — strings/identifiers untouched, so the result is semantically identical). The theme's unlayered global `<textarea>` rules were beating Tailwind classes and drifting the caret; fixed by driving every metric inline on both elements. Proven: metrics match, no doubled text, live highlight, autocomplete intact, Format keeps `'Organic'` and `"analytics"."order_items"` literal.
+
+**Key files.** `web/components/QueryBuilder.tsx`.
+
+---
+
+*Last updated: 2026-06-12 · 100 features — all shipped. See `ROADMAP.md` for upcoming milestones.*

@@ -1379,6 +1379,88 @@ export async function updateCanvas(
   return res.json();
 }
 
+// ── Saved queries ─────────────────────────────────────────────────────────────
+// Persist a Query Builder query (SQL + visual builder spec) so it survives reloads.
+
+export interface SavedQuery {
+  id: string;
+  connection_id: string;
+  name: string;
+  sql: string;
+  /** Opaque visual-builder state (primaryTable, joins, dims, measures, filters, orderBy, limit). */
+  spec: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function listSavedQueries(connectionId?: string): Promise<SavedQuery[]> {
+  const qs = connectionId ? `?connection_id=${encodeURIComponent(connectionId)}` : "";
+  const res = await fetch(`${BASE}/saved-queries${qs}`);
+  if (!res.ok) throw new Error("Failed to fetch saved queries");
+  return res.json();
+}
+
+export async function createSavedQuery(
+  connectionId: string, name: string, sql: string, spec: Record<string, unknown>,
+): Promise<SavedQuery> {
+  const res = await fetch(`${BASE}/saved-queries`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ connection_id: connectionId, name, sql, spec }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to save query"));
+  }
+  return res.json();
+}
+
+export async function updateSavedQuery(
+  id: string, patch: { name?: string; sql?: string; spec?: Record<string, unknown> },
+): Promise<SavedQuery> {
+  const res = await fetch(`${BASE}/saved-queries/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "Failed to update saved query"));
+  }
+  return res.json();
+}
+
+export async function deleteSavedQuery(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/saved-queries/${encodeURIComponent(id)}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to delete saved query");
+}
+
+// ── Measure grains (additivity) ─────────────────────────────────────────────
+// Per-unit vs per-line classification for a connection's measure columns — powers the
+// Query Builder's grain-misuse warnings (SUM a per-unit price without ×quantity = under-count).
+
+export interface MeasureGrains {
+  grains: Record<string, "per_unit" | "per_line">;   // keyed by lower-case column name
+  quantity_cols: string[];
+}
+
+export async function getMeasureGrains(connId: string): Promise<MeasureGrains> {
+  const res = await fetch(`${BASE}/connections/${encodeURIComponent(connId)}/measure-grains`);
+  if (!res.ok) throw new Error("Failed to fetch measure grains");
+  return res.json();
+}
+
+/** Distinct non-null values for a column — powers the filter-value picker. */
+export async function getColumnDistinct(
+  connId: string, table: string, column: string, schema?: string, limit = 200,
+): Promise<{ values: (string | null)[]; truncated: boolean }> {
+  const qs = new URLSearchParams({ table, column, limit: String(limit) });
+  if (schema) qs.set("schema", schema);
+  const res = await fetch(`${BASE}/connections/${encodeURIComponent(connId)}/distinct?${qs.toString()}`);
+  if (!res.ok) throw new Error("Failed to fetch distinct values");
+  return res.json();
+}
+
 /** LLM-inferred Canvas name + description from the scoped tables' schema. */
 export async function suggestCanvasName(
   connectionId: string,

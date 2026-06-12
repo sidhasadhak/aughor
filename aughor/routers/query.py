@@ -148,6 +148,140 @@ def query_build_sql(body: _QueryBuildRequest):
     return {"sql": "\n".join(lines)}
 
 
+# ── Saved queries ─────────────────────────────────────────────────────────────
+# Persist a Query Builder query (SQL + visual spec) so it survives reloads. Connection-scoped,
+# mirrors the Canvas store pattern. ``spec`` is opaque JSON owned by the frontend.
+
+class _SaveQueryRequest(BaseModel):
+    connection_id: str
+    name: str
+    sql: str = ""
+    spec: dict = {}
+
+
+class _UpdateSavedQueryRequest(BaseModel):
+    name: str | None = None
+    sql: str | None = None
+    spec: dict | None = None
+
+
+@router.get("/saved-queries")
+def saved_queries_list(connection_id: str | None = None):
+    """List saved queries, optionally filtered to one connection (newest first)."""
+    from aughor.savedquery.store import list_saved_queries
+    return [q.model_dump() for q in list_saved_queries(connection_id)]
+
+
+@router.post("/saved-queries", status_code=201)
+def saved_queries_create(body: _SaveQueryRequest):
+    """Create a saved query from the current builder state."""
+    if not body.name.strip():
+        raise HTTPException(status_code=400, detail="name is required")
+    from aughor.savedquery.store import create_saved_query
+    q = create_saved_query(body.connection_id, body.name.strip(), body.sql, body.spec)
+    return q.model_dump()
+
+
+@router.get("/saved-queries/{query_id}")
+def saved_queries_get(query_id: str):
+    from aughor.savedquery.store import get_saved_query
+    q = get_saved_query(query_id)
+    if not q:
+        raise HTTPException(status_code=404, detail="Saved query not found")
+    return q.model_dump()
+
+
+@router.put("/saved-queries/{query_id}")
+def saved_queries_update(query_id: str, body: _UpdateSavedQueryRequest):
+    from aughor.savedquery.store import update_saved_query
+    q = update_saved_query(query_id, name=body.name, sql=body.sql, spec=body.spec)
+    if not q:
+        raise HTTPException(status_code=404, detail="Saved query not found")
+    return q.model_dump()
+
+
+@router.delete("/saved-queries/{query_id}", status_code=200)
+def saved_queries_delete(query_id: str):
+    from aughor.savedquery.store import delete_saved_query
+    ok = delete_saved_query(query_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Saved query not found")
+    return {"ok": True, "id": query_id}
+
+
+# ── Measure grains (additivity) ────────────────────────────────────────────────
+# Expose per-unit vs per-line classification for a connection's measure columns so the
+# Query Builder can warn on grain misuse (SUM a per-unit price without ×quantity = under-count;
+# SUM a per-line total ×quantity = double-count). Reuses the additivity semantic layer.
+
+@router.get("/connections/{conn_id}/measure-grains")
+def connection_measure_grains_endpoint(conn_id: str):
+    """Return {grains: {col_lower: 'per_unit'|'per_line'}, quantity_cols: [...]} for a connection.
+    Best-effort: ontology-stamped grains first (no DB), else a cached live probe. Never raises."""
+    from aughor.semantic.measure_grain import (
+        connection_measure_grains, grains_from_ontology, cached_connection_grains,
+    )
+    grains, qcols = grains_from_ontology(conn_id)
+    if not grains:
+        cached = cached_connection_grains(conn_id)  # cheap hit: no DB open, no schema introspection
+        if cached is not None:
+            grains, qcols = cached
+        else:
+            try:
+                from aughor.db.connection import open_connection_for
+                from aughor.tools.schema import parse_schema_tables
+                db = open_connection_for(conn_id)
+                try:
+                    table_cols = parse_schema_tables(db.get_schema())
+                    grains, qcols = connection_measure_grains(conn_id, db, table_cols)
+                finally:
+                    try:
+                        db.close()
+                    except Exception as _e:
+                        from aughor.kernel.errors import tolerate
+                        tolerate(_e, "measure-grains endpoint: best-effort connection close",
+                                 counter="query.measure_grains.close_failed")
+            except Exception:
+                grains, qcols = {}, set()
+    return {"grains": grains, "quantity_cols": sorted(qcols)}
+
+
+# ── Distinct values (filter pickers) ───────────────────────────────────────────
+
+def _quote_ident(name: str, schema: "str | None" = None) -> str:
+    """Quote a (possibly already schema-qualified) table identifier — each dotted segment
+    separately, never the whole dotted string as one identifier (the beautycommerce bug)."""
+    if "." in name:
+        return ".".join(f'"{p}"' for p in name.split("."))
+    if schema and schema not in ("main", "public"):
+        return f'"{schema}"."{name}"'
+    return f'"{name}"'
+
+
+@router.get("/connections/{conn_id}/distinct")
+def column_distinct(conn_id: str, table: str, column: str, schema: "str | None" = None, limit: int = 200):
+    """Distinct non-null values for a column, for filter-value pickers. Capped + best-effort."""
+    from aughor.db.connection import open_connection_for
+    try:
+        db = open_connection_for(conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    try:
+        n = max(1, min(int(limit), 1000))
+        qt, qc = _quote_ident(table, schema), f'"{column}"'
+        res = db.execute("__distinct__", f"SELECT DISTINCT {qc} AS v FROM {qt} WHERE {qc} IS NOT NULL ORDER BY 1 LIMIT {n}")
+        if getattr(res, "error", None):
+            return {"values": [], "truncated": False}
+        vals = [None if r[0] is None else str(r[0]) for r in (res.rows or [])]
+        return {"values": vals, "truncated": len(vals) >= n}
+    finally:
+        try:
+            db.close()
+        except Exception as _e:
+            from aughor.kernel.errors import tolerate
+            tolerate(_e, "distinct endpoint: best-effort connection close", counter="query.distinct.close_failed")
+
+
 @router.get("/query/cache/stats")
 def query_cache_stats():
     """Return materialization cache statistics."""

@@ -4,9 +4,10 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { compactNumber } from "@/lib/format";
 import {
   getConnections, getSchemaRich, getTableColumns, getMetrics, runDirectQuery, getCatalogTree,
-  createCanvas, suggestCanvasName,
+  createCanvas, suggestCanvasName, getMeasureGrains, getColumnDistinct,
+  listSavedQueries, createSavedQuery, updateSavedQuery, deleteSavedQuery,
   type Connection, type SchemaColumn, type SchemaJoin, type Metric, type DirectQueryResult,
-  type CatalogEntry,
+  type CatalogEntry, type SavedQuery,
 } from "@/lib/api";
 import { InvestigationChart } from "@/components/InvestigationChart";
 import { ResizableSplit } from "@/components/ResizableSplit";
@@ -50,6 +51,9 @@ const NO_VAL_OPS: FilterOp[] = ["IS NULL","IS NOT NULL"];
 interface DimItem     { id: string; col: string; table: string; transform?: "date" | "month" | "year" | "quarter" | "hour" | "minute" }
 interface MeasureItem { id: string; col: string; table: string; agg: AggFn; customExpr: string; alias: string; fromMetric?: string }
 interface FilterItem  { id: string; col: string; table: string; op: FilterOp; val: string }
+// HAVING — a filter on an aggregate (references a measure, compiles to its aggregate expression).
+interface HavingItem  { id: string; measureId: string; op: string; val: string }
+const HAVING_OPS = [">", ">=", "<", "<=", "=", "!="];
 
 // ── Pure helpers ──────────────────────────────────────────────────────────────
 
@@ -70,6 +74,29 @@ function autoAlias(agg: AggFn, col: string, expr: string) {
     : `${agg.toLowerCase().replace(/ /g,"_")}_${col||"all"}`;
 }
 function qualify(col: string, table: string, multi: boolean) { return multi ? `${table}.${col}` : col; }
+
+// Quote a (possibly already schema-qualified) table identifier. A table name can arrive
+// dotted ("analytics.order_items") straight from the rich schema, or bare ("order_items")
+// with the schema known separately. Quote EACH dotted segment — wrapping the whole dotted
+// string in one pair of quotes ("analytics.order_items") makes the engine read it as a single
+// identifier and fail with "table does not exist" (the beautycommerce builder bug).
+function quoteTable(name: string, schema?: string): string {
+  if (name.includes(".")) return name.split(".").map(p => `"${p}"`).join(".");
+  return schema && schema !== "main" && schema !== "public" ? `"${schema}"."${name}"` : `"${name}"`;
+}
+
+// The rich schema returns schema-qualified table names ("analytics.order_items") while the
+// catalog tree uses bare names ("order_items") + a separate schema, so the two never key-match
+// and the bare catalog rows can't find their columns/joins. Strip the prefix to one canonical
+// bare key (quote-time qualification is restored via quoteTable + the tableSchemas map).
+function bareTable(name: string): string {
+  const i = name.lastIndexOf(".");
+  return i >= 0 ? name.slice(i + 1) : name;
+}
+function tableSchemaOf(name: string): string | undefined {
+  const i = name.lastIndexOf(".");
+  return i >= 0 ? name.slice(0, i) : undefined;
+}
 
 // ── Suggestion intelligence (type + name heuristics) ──────────────────────────
 // Columns that make natural GROUP BY dimensions.
@@ -95,6 +122,36 @@ function measureExpr(m: MeasureItem, multi: boolean) {
   return `${m.agg}(${qc || "*"})`;
 }
 
+// ── Measure-grain (additivity) warnings ───────────────────────────────────────
+// Driven by the connection's detected per-unit/per-line grains — mirrors the backend
+// measure_grain_misuse at the chip level. Catches the $252M-class under-count (SUM a
+// per-unit price without ×quantity) and the per-line × quantity double-count.
+const _esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function grainWarning(m: MeasureItem, grains: Record<string, string>, qtyCols: string[]): string | null {
+  // Structured SUM of a per-unit measure without ×quantity → under-counts.
+  if (m.agg === "SUM" && m.col && grains[m.col.toLowerCase()] === "per_unit") {
+    return `"${m.col}" is a per-unit value — SUM(${m.col}) under-counts by the units per line. Multiply by quantity.`;
+  }
+  // CUSTOM expression: per-line × quantity (double-count) or a bare SUM of a per-unit measure.
+  if (m.agg === "CUSTOM" && m.customExpr) {
+    const e = m.customExpr.toLowerCase();
+    for (const [col, g] of Object.entries(grains)) {
+      const c = _esc(col);
+      if (g === "per_line") {
+        const mulQty = qtyCols.some(q => {
+          const qq = _esc(q.toLowerCase());
+          return new RegExp(`\\b${c}\\b\\s*\\*\\s*\\b${qq}\\b|\\b${qq}\\b\\s*\\*\\s*\\b${c}\\b`).test(e);
+        });
+        if (mulQty && /\bsum\s*\(/.test(e)) return `"${col}" is a per-line total — multiplying by quantity double-counts. Use SUM(${col}) alone.`;
+      }
+      if (g === "per_unit" && new RegExp(`sum\\s*\\(\\s*${c}\\s*\\)`).test(e)) {
+        return `"${col}" is a per-unit value — SUM(${col}) under-counts. Multiply by quantity.`;
+      }
+    }
+  }
+  return null;
+}
+
 // ── Join inference ────────────────────────────────────────────────────────────
 
 function findJoin(from: string, to: string, joins: SchemaJoin[]): SchemaJoin | null {
@@ -106,10 +163,7 @@ function findJoin(from: string, to: string, joins: SchemaJoin[]): SchemaJoin | n
 function joinClause(join: SchemaJoin, pivot: string, tableSchemas?: Record<string, string>) {
   const fwd = join.t1 === pivot;
   const [lt,lc,rt,rc] = fwd ? [join.t1,join.c1,join.t2,join.c2] : [join.t2,join.c2,join.t1,join.c1];
-  const qTable = (t: string) => {
-    const s = tableSchemas?.[t];
-    return s && s !== "main" && s !== "public" ? `"${s}"."${t}"` : `"${t}"`;
-  };
+  const qTable = (t: string) => quoteTable(t, tableSchemas?.[t]);
   return `LEFT JOIN ${qTable(rt)} ON ${qTable(lt)}.${lc} = ${qTable(rt)}.${rc}`;
 }
 
@@ -167,6 +221,51 @@ function resolveJoins(primary: string, joined: string[], joins: SchemaJoin[]) {
   });
 }
 
+// ── Time controls ─────────────────────────────────────────────────────────────
+// A first-class time range (relative presets + custom) and time grain — the two most-used
+// controls in real BI, previously buried in a per-dimension transform dropdown.
+
+type TimePreset = "all"|"7d"|"30d"|"90d"|"this_month"|"last_month"|"this_quarter"|"this_year"|"ytd"|"custom";
+type TimeGrain  = "none"|"hour"|"day"|"week"|"month"|"quarter"|"year";
+
+interface TimeSpec { col: string; table: string; preset: TimePreset; from: string; to: string; grain: TimeGrain }
+
+const TIME_PRESETS: { id: TimePreset; label: string }[] = [
+  { id: "all",          label: "All time" },
+  { id: "7d",           label: "Last 7 days" },
+  { id: "30d",          label: "Last 30 days" },
+  { id: "90d",          label: "Last 90 days" },
+  { id: "this_month",   label: "This month" },
+  { id: "last_month",   label: "Last month" },
+  { id: "this_quarter", label: "This quarter" },
+  { id: "this_year",    label: "This year" },
+  { id: "ytd",          label: "Year to date" },
+  { id: "custom",       label: "Custom range" },
+];
+const TIME_GRAINS: TimeGrain[] = ["none", "hour", "day", "week", "month", "quarter", "year"];
+
+// Build a WHERE predicate for a relative/custom range on `col` (DuckDB/ANSI INTERVAL syntax).
+// Returns "" for "all" or an incomplete custom range. Pure + testable (no DB, no React).
+function timePredicate(preset: TimePreset, col: string, from: string, to: string): string {
+  switch (preset) {
+    case "7d":           return `${col} >= CURRENT_DATE - INTERVAL '7 days'`;
+    case "30d":          return `${col} >= CURRENT_DATE - INTERVAL '30 days'`;
+    case "90d":          return `${col} >= CURRENT_DATE - INTERVAL '90 days'`;
+    case "this_month":   return `${col} >= DATE_TRUNC('month', CURRENT_DATE)`;
+    case "last_month":   return `${col} >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 month' AND ${col} < DATE_TRUNC('month', CURRENT_DATE)`;
+    case "this_quarter": return `${col} >= DATE_TRUNC('quarter', CURRENT_DATE)`;
+    case "this_year":
+    case "ytd":          return `${col} >= DATE_TRUNC('year', CURRENT_DATE)`;
+    case "custom": {
+      const parts: string[] = [];
+      if (from.trim()) parts.push(`${col} >= '${from.trim()}'`);
+      if (to.trim())   parts.push(`${col} < '${to.trim()}'`);
+      return parts.join(" AND ");
+    }
+    default: return "";
+  }
+}
+
 // ── SQL builder ───────────────────────────────────────────────────────────────
 
 function buildSql(
@@ -174,11 +273,10 @@ function buildSql(
   dims: DimItem[], measures: MeasureItem[], filters: FilterItem[],
   orderBy: string, limit: number,
   tableSchemas?: Record<string, string>,
+  time?: TimeSpec,
+  having: HavingItem[] = [],
 ) {
-  const qTable = (t: string) => {
-    const s = tableSchemas?.[t];
-    return s && s !== "main" && s !== "public" ? `"${s}"."${t}"` : `"${t}"`;
-  };
+  const qTable = (t: string) => quoteTable(t, tableSchemas?.[t]);
   const multi = joined.length > 0;
   const dimExpr = (d: DimItem) => {
     const base = qualify(d.col, d.table, multi);
@@ -192,7 +290,11 @@ function buildSql(
       default:         return base;
     }
   };
+  // Time grain — a DATE_TRUNC over the chosen time column, rendered as the leading dimension.
+  const timeBase = time?.col ? qualify(time.col, time.table, multi) : "";
+  const timeGrainExpr = (time && time.grain !== "none" && timeBase) ? `DATE_TRUNC('${time.grain}', ${timeBase})` : "";
   const selParts = [
+    ...(timeGrainExpr ? [`${timeGrainExpr} AS ${time!.col}_${time!.grain}`] : []),
     ...dims.map(d => `${dimExpr(d)} AS ${d.col}_grouped`),
     ...measures.map(m => `${measureExpr(m,multi)} AS ${m.alias || autoAlias(m.agg,m.col,m.customExpr)}`),
   ];
@@ -200,18 +302,30 @@ function buildSql(
     ({ table, join, pivot }) => join ? joinClause(join, pivot, tableSchemas) : `-- TODO: no join found for "${table}"`,
   );
   const hasAgg = measures.some(m => m.agg !== "CUSTOM" || /\b(SUM|COUNT|AVG|MIN|MAX|STDDEV|VARIANCE|MEDIAN)\s*\(/i.test(m.customExpr));
-  const groupCols = dims.map(d => dimExpr(d));
+  const groupCols = [
+    ...(timeGrainExpr ? [timeGrainExpr] : []),
+    ...dims.map(d => dimExpr(d)),
+  ];
   const groupBy   = groupCols.length && hasAgg ? `GROUP BY ${groupCols.join(", ")}` : "";
   const whereItems = filters.flatMap(f => {
     const qc = qualify(f.col,f.table,multi);
     if (NO_VAL_OPS.includes(f.op as FilterOp)) return [`${qc} ${f.op}`];
     return f.val.trim() ? [`${qc} ${f.op} ${f.val}`] : [];
   });
+  const timeWhere = time && timeBase ? timePredicate(time.preset, timeBase, time.from, time.to) : "";
+  const allWhere = timeWhere ? [...whereItems, timeWhere] : whereItems;
+  // HAVING — filters on aggregates, compiled from each having item's referenced measure expression.
+  const havingItems = (having || []).flatMap(h => {
+    const m = measures.find(x => x.id === h.measureId);
+    return (m && h.val.trim()) ? [`${measureExpr(m, multi)} ${h.op} ${h.val}`] : [];
+  });
+  const havingClause = havingItems.length && hasAgg ? `HAVING ${havingItems.join("\n  AND ")}` : "";
   return [
     "SELECT", `  ${selParts.length ? selParts.join(",\n  ") : "*"}`,
     `FROM ${qTable(primary)}`, ...joinLines,
-    ...(whereItems.length ? [`WHERE ${whereItems.join("\n  AND ")}`] : []),
+    ...(allWhere.length ? [`WHERE ${allWhere.join("\n  AND ")}`] : []),
     ...(groupBy ? [groupBy] : []),
+    ...(havingClause ? [havingClause] : []),
     ...(orderBy.trim() ? [`ORDER BY ${orderBy}`] : []),
     ...(limit > 0 ? [`LIMIT ${limit}`] : []),
   ].join("\n");
@@ -250,6 +364,111 @@ function caretPos(el: HTMLTextAreaElement): { top: number; left: number } {
     top:  rect.top  + logTop - el.scrollTop + lh + 5,
     left: Math.min(rect.left + logLeft, rect.right - 220),
   };
+}
+
+// ── SQL syntax highlighting + formatting ──────────────────────────────────────
+// A tiny SQL tokenizer shared by the highlighter and the formatter. Strings and quoted
+// identifiers are tokenized FIRST so the formatter never uppercases a keyword inside a
+// literal (which would change the query) — casing/whitespace stay semantically inert.
+
+const _SQL_KW = new Set([
+  "SELECT","FROM","WHERE","GROUP","BY","ORDER","HAVING","LIMIT","OFFSET","DISTINCT","AS","JOIN",
+  "LEFT","RIGHT","INNER","FULL","OUTER","CROSS","ON","AND","OR","NOT","IN","LIKE","ILIKE","BETWEEN",
+  "EXISTS","IS","NULL","UNION","ALL","CASE","WHEN","THEN","ELSE","END","ASC","DESC","WITH","OVER",
+  "PARTITION","USING","INTERVAL","CURRENT_DATE","CURRENT_TIMESTAMP","DAY","MONTH","YEAR","QUARTER","HOUR","WEEK","MINUTE",
+]);
+const _SQL_FN = new Set([
+  "SUM","AVG","COUNT","MIN","MAX","MEDIAN","STDDEV","VARIANCE","DATE_TRUNC","DATE_DIFF","DATE_PART",
+  "EXTRACT","COALESCE","NULLIF","CAST","ROUND","FLOOR","CEIL","ABS","GREATEST","LEAST","LENGTH","TRIM",
+  "LOWER","UPPER","CONCAT","REPLACE","SUBSTRING","ROW_NUMBER","RANK","DENSE_RANK","LAG","LEAD","PERCENTILE_CONT","NOW",
+]);
+
+interface SqlTok { t: "kw" | "fn" | "string" | "ident" | "num" | "comment" | "punct" | "word" | "ws"; v: string }
+
+function tokenizeSql(sql: string): SqlTok[] {
+  const toks: SqlTok[] = [];
+  const n = sql.length;
+  let i = 0;
+  while (i < n) {
+    const c = sql[i];
+    if (c === "-" && sql[i + 1] === "-") { let j = i + 2; while (j < n && sql[j] !== "\n") j++; toks.push({ t: "comment", v: sql.slice(i, j) }); i = j; continue; }
+    if (c === "/" && sql[i + 1] === "*") { let j = i + 2; while (j < n && !(sql[j] === "*" && sql[j + 1] === "/")) j++; j = Math.min(n, j + 2); toks.push({ t: "comment", v: sql.slice(i, j) }); i = j; continue; }
+    if (c === "'") { let j = i + 1; while (j < n) { if (sql[j] === "'") { if (sql[j + 1] === "'") { j += 2; continue; } j++; break; } j++; } toks.push({ t: "string", v: sql.slice(i, j) }); i = j; continue; }
+    if (c === '"') { let j = i + 1; while (j < n) { if (sql[j] === '"') { if (sql[j + 1] === '"') { j += 2; continue; } j++; break; } j++; } toks.push({ t: "ident", v: sql.slice(i, j) }); i = j; continue; }
+    if (/\s/.test(c)) { let j = i + 1; while (j < n && /\s/.test(sql[j])) j++; toks.push({ t: "ws", v: sql.slice(i, j) }); i = j; continue; }
+    if (/[A-Za-z_]/.test(c)) { let j = i + 1; while (j < n && /[A-Za-z0-9_]/.test(sql[j])) j++; const w = sql.slice(i, j); const up = w.toUpperCase(); toks.push({ t: _SQL_KW.has(up) ? "kw" : _SQL_FN.has(up) ? "fn" : "word", v: w }); i = j; continue; }
+    if (/[0-9]/.test(c)) { let j = i + 1; while (j < n && /[0-9.]/.test(sql[j])) j++; toks.push({ t: "num", v: sql.slice(i, j) }); i = j; continue; }
+    let j = i + 1; while (j < n && /[^\w\s'"]/.test(sql[j]) && !(sql[j] === "-" && sql[j + 1] === "-") && !(sql[j] === "/" && sql[j + 1] === "*")) j++;
+    toks.push({ t: "punct", v: sql.slice(i, j) }); i = j;
+  }
+  return toks;
+}
+
+const _escHtml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const _SQL_COLOR: Record<SqlTok["t"], string> = {
+  kw: "#7dd3fc", fn: "#c4b5fd", string: "#86efac", num: "#fbbf24",
+  comment: "#71717a", ident: "#fdba74", punct: "#a1a1aa", word: "#e4e4e7", ws: "",
+};
+function highlightSql(sql: string): string {
+  return tokenizeSql(sql).map(tok => {
+    const v = _escHtml(tok.v);
+    const col = _SQL_COLOR[tok.t];
+    return col ? `<span style="color:${col}">${v}</span>` : v;
+  }).join("");
+}
+
+// Major clauses start a new line; AND/OR get an indented continuation line. Only whitespace
+// and keyword CASE change — the SQL stays semantically identical.
+const _SQL_NEWLINE = new Set(["SELECT","FROM","WHERE","GROUP","ORDER","HAVING","LIMIT","UNION","LEFT","RIGHT","INNER","FULL","CROSS","JOIN","ON"]);
+const _SQL_INDENT  = new Set(["AND","OR"]);
+function formatSql(sql: string): string {
+  const toks = tokenizeSql(sql.trim());
+  let out = "";
+  for (let k = 0; k < toks.length; k++) {
+    const tok = toks[k];
+    if (tok.t === "ws") {
+      const next = toks[k + 1];
+      const up = next && next.t === "kw" ? next.v.toUpperCase() : "";
+      out += up && _SQL_NEWLINE.has(up) && out ? "\n" : (up && _SQL_INDENT.has(up) && out ? "\n  " : " ");
+    } else {
+      out += (tok.t === "kw" || tok.t === "fn") ? tok.v.toUpperCase() : tok.v;
+    }
+  }
+  return out;
+}
+
+// Transparent-textarea-over-highlighted-pre editor: the user types in the textarea (transparent
+// text, visible caret); the <pre> behind it shows the colors. Both share identical metrics so the
+// caret aligns. Scroll is synced from the textarea. No external editor dependency.
+function SqlEditor({ value, rows, taRef, onChange, onKeyDown, onClick, placeholder }: {
+  value: string; rows: number; taRef: React.RefObject<HTMLTextAreaElement | null>;
+  onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
+  onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+  onClick: () => void; placeholder?: string;
+}) {
+  const preRef = useRef<HTMLPreElement>(null);
+  // The theme has unlayered global textarea rules (font-size/color/line-height) that beat
+  // Tailwind utility classes on the <textarea> — so drive every metric inline (inline wins),
+  // identically on both elements, or the caret drifts out of sync with the highlighted text.
+  const metrics: React.CSSProperties = {
+    fontFamily: "var(--font-code)", fontSize: "12px", lineHeight: "1.625",
+    padding: "16px", tabSize: 2, whiteSpace: "pre-wrap", overflowWrap: "break-word",
+    margin: 0, border: "1px solid transparent", borderRadius: "0.375rem",
+  };
+  return (
+    <div className="relative">
+      <pre ref={preRef} aria-hidden
+        className="absolute inset-0 overflow-auto pointer-events-none"
+        style={{ ...metrics, background: "rgba(24,24,27,0.8)" }}
+        dangerouslySetInnerHTML={{ __html: highlightSql(value) + "\n" }} />
+      <textarea
+        ref={taRef} value={value} onChange={onChange} onKeyDown={onKeyDown} onClick={onClick}
+        onScroll={e => { if (preRef.current) { preRef.current.scrollTop = e.currentTarget.scrollTop; preRef.current.scrollLeft = e.currentTarget.scrollLeft; } }}
+        spellCheck={false} rows={rows} placeholder={placeholder}
+        className="relative w-full outline-none resize-none focus:border-zinc-500"
+        style={{ ...metrics, background: "transparent", color: "transparent", caretColor: "#f4f4f5", borderColor: "#3f3f46" }} />
+    </div>
+  );
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -448,6 +667,17 @@ function ResultsPane({
     result.cached ? "cached" : null,
   ].filter(Boolean).join(" · ");
 
+  const exportCsv = () => {
+    const esc = (v: unknown) => { const s = v == null ? "" : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+    const csv = [result.columns.map(esc).join(","), ...rows.map(r => r.map(esc).join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "query-results.csv";
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  };
+
   const handleCreateCanvas = async () => {
     if (!connId || !primaryTable) return;
     setCreatingCanvas(true);
@@ -502,7 +732,14 @@ function ResultsPane({
         >
           ≡ Table
         </button>
-        <span className="text-[11px] ml-auto" style={{ color: "var(--t3)" }}>{meta}</span>
+        <div className="ml-auto flex items-center gap-2.5">
+          <span className="text-[11px]" style={{ color: "var(--t3)" }}>{meta}</span>
+          <button onClick={exportCsv} title="Download results as CSV"
+            className="text-[11px] px-2 py-0.5 rounded border border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500 transition flex items-center gap-1">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            CSV
+          </button>
+        </div>
       </div>
 
       {/* Chart */}
@@ -587,6 +824,9 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
   const [colSearch, setColSearch] = useState("");
 
   const [metrics,         setMetrics]         = useState<Metric[]>([]);
+  // Measure grains (additivity) for this connection — drives the metric-chip warnings.
+  const [measureGrains, setMeasureGrains] = useState<Record<string, "per_unit"|"per_line">>({});
+  const [grainQtyCols,  setGrainQtyCols]  = useState<string[]>([]);
 
   // Fetch columns for a single table on-demand (fallback when rich schema is empty)
   const fetchTableColumns = useCallback(async (table: string, schemaName?: string) => {
@@ -608,8 +848,19 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
   const [dims,     setDims]     = useState<DimItem[]>([]);
   const [measures, setMeasures] = useState<MeasureItem[]>([]);
   const [filters,  setFilters]  = useState<FilterItem[]>([]);
+  const [having,   setHaving]   = useState<HavingItem[]>([]);   // filters on aggregates → HAVING
   const [orderBy,  setOrderBy]  = useState("");
-  const [limit,    setLimit]    = useState(0);
+  // Default to a bounded preview LIMIT — a fresh SELECT * on a large table with no cap is a
+  // footgun. 0 (or a cleared field) is an explicit "no limit" opt-out the user can still choose.
+  const [limit,    setLimit]    = useState(1000);
+
+  // Time controls — opt-in: a chosen time column enables the range preset + grain.
+  const [timeCol,    setTimeCol]    = useState("");
+  const [timeColTable, setTimeColTable] = useState("");
+  const [timePreset, setTimePreset] = useState<TimePreset>("all");
+  const [timeFrom,   setTimeFrom]   = useState("");
+  const [timeTo,     setTimeTo]     = useState("");
+  const [timeGrain,  setTimeGrain]  = useState<TimeGrain>("none");
 
   const [aggInfo,     setAggInfo]     = useState<{col:SchemaColumn;table:string}|null>(null);
   const [overDims,    setOverDims]    = useState(false);
@@ -633,6 +884,17 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
   const [nfCol,   setNfCol]   = useState("");
   const [nfOp,    setNfOp]    = useState<FilterOp>("=");
   const [nfVal,   setNfVal]   = useState("");
+  const [nfDistinct, setNfDistinct] = useState<string[]>([]);  // distinct-value suggestions for the picker
+
+  // Saved queries (persistence) — savedId/savedName track the currently loaded saved query so
+  // "Save" updates in place; the dropdown lists this connection's saved queries to load/delete.
+  const [savedList,   setSavedList]   = useState<SavedQuery[]>([]);
+  const [savedId,     setSavedId]     = useState<string|null>(null);
+  const [savedName,   setSavedName]   = useState("");
+  const [showSaved,   setShowSaved]   = useState(false);
+  const [showSaveName, setShowSaveName] = useState(false);
+  const [saveName,    setSaveName]    = useState("");
+  const [savingState, setSavingState] = useState<"idle"|"saving"|"saved">("idle");
 
   useEffect(() => {
     getConnections().then(cs => { setConnections(cs); if (!connId && cs.length) setConnId(cs[0].id); }).catch(()=>{});
@@ -644,7 +906,8 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
     setLoadingTree(true);
     setLoadingCols(true);
     setPrimaryTable(null); setJoinedTables([]); setTableNames([]); setTableCols({});
-    setSchemaJoins([]); setDims([]); setMeasures([]); setFilters([]);
+    setSchemaJoins([]); setDims([]); setMeasures([]); setFilters([]); setHaving([]);
+    setTimeCol(""); setTimeColTable(""); setTimePreset("all"); setTimeFrom(""); setTimeTo(""); setTimeGrain("none");
     setSql(""); setResult(null); setCatEntry(null); setExpandedSchemas({});
 
     // Phase 1 — fast: catalog tree gives us schema/table hierarchy immediately
@@ -668,24 +931,64 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
       .catch(() => setCatEntry(null))
       .finally(() => setLoadingTree(false));
 
-    // Phase 2 — slower: rich schema adds columns, joins, row counts
+    // Phase 2 — slower: rich schema adds columns, joins, row counts.
+    // Canonicalize the rich schema's qualified names ("analytics.order_items") to the bare key
+    // the catalog tree uses ("order_items"), so the catalog rows find their columns/joins.
+    // Collision guard: if two schemas expose the same bare name, keep BOTH dotted to stay
+    // unambiguous. Schema is recorded in tableSchemas so quoteTable re-qualifies at SQL time.
     getSchemaRich(connId).then(rich => {
-      const names = rich.tables.map(t => t.name);
+      const bareCount: Record<string, number> = {};
+      rich.tables.forEach(t => { const b = bareTable(t.name); bareCount[b] = (bareCount[b] || 0) + 1; });
+      const keyOf = (full: string) => (bareCount[bareTable(full)] > 1 ? full : bareTable(full));
+
+      const names: string[] = [];
       const cols: Record<string,SchemaColumn[]> = {};
       const rc: Record<string,string|null> = {};
-      rich.tables.forEach(t => { cols[t.name] = t.columns; rc[t.name] = t.row_count; });
+      const schemaAdds: Record<string,string> = {};
+      rich.tables.forEach(t => {
+        const k = keyOf(t.name);
+        names.push(k); cols[k] = t.columns; rc[k] = t.row_count;
+        const s = tableSchemaOf(t.name); if (s) schemaAdds[k] = s;
+      });
+      const joins = rich.joins.map(j => ({ ...j, t1: keyOf(j.t1), t2: keyOf(j.t2) }));
+      const iso = (rich.isolated ?? []).map(keyOf);
       setTableNames(names); setTableCols(cols); setRowCounts(rc);
-      setSchemaJoins(rich.joins); setIsolated(rich.isolated ?? []);
+      setTableSchemas(prev => ({ ...prev, ...schemaAdds }));
+      setSchemaJoins(joins); setIsolated(iso);
     }).catch(err => { console.error("[QueryBuilder] getSchemaRich failed:", err); }).finally(()=>setLoadingCols(false));
   }, [connId]);
 
   useEffect(() => {
     if (!autoSql || !primaryTable) return;
-    setSql(buildSql(primaryTable, joinedTables, schemaJoins, dims, measures, filters, orderBy, limit, tableSchemas));
-  }, [autoSql, primaryTable, joinedTables, schemaJoins, dims, measures, filters, orderBy, limit]);
+    const t: TimeSpec | undefined = timeCol
+      ? { col: timeCol, table: timeColTable || primaryTable, preset: timePreset, from: timeFrom, to: timeTo, grain: timeGrain }
+      : undefined;
+    setSql(buildSql(primaryTable, joinedTables, schemaJoins, dims, measures, filters, orderBy, limit, tableSchemas, t, having));
+  }, [autoSql, primaryTable, joinedTables, schemaJoins, dims, measures, filters, orderBy, limit, tableSchemas,
+      timeCol, timeColTable, timePreset, timeFrom, timeTo, timeGrain, having]);
+
+  // Load this connection's saved queries; reset the active saved-query pointer on switch.
+  useEffect(() => {
+    setSavedId(null); setSavedName("");
+    if (!connId) { setSavedList([]); return; }
+    listSavedQueries(connId).then(setSavedList).catch(() => setSavedList([]));
+  }, [connId]);
+
+  // Fetch measure grains (additivity) for the connection — async/non-blocking; warnings appear
+  // on metric chips once resolved (the first probe is slow on a wide warehouse, then cached).
+  useEffect(() => {
+    if (!connId) { setMeasureGrains({}); setGrainQtyCols([]); return; }
+    getMeasureGrains(connId)
+      .then(r => { setMeasureGrains(r.grains || {}); setGrainQtyCols(r.quantity_cols || []); })
+      .catch(() => { setMeasureGrains({}); setGrainQtyCols([]); });
+  }, [connId]);
 
   const allTables = primaryTable ? [primaryTable, ...joinedTables] : [];
   const isMulti   = allTables.length > 1;
+  // A chosen time column enables the range/grain; otherwise time controls are a no-op in SQL.
+  const timeSpec: TimeSpec | undefined = timeCol
+    ? { col: timeCol, table: timeColTable || primaryTable || "", preset: timePreset, from: timeFrom, to: timeTo, grain: timeGrain }
+    : undefined;
   const allCols   = allTables.flatMap(t => (tableCols[t]??[]).map(c => c.name));
   const qualCols  = isMulti ? allTables.flatMap(t => (tableCols[t]??[]).map(c => `${t}.${c.name}`)) : [];
   const joinStatuses = primaryTable ? resolveJoins(primaryTable, joinedTables, schemaJoins) : [];
@@ -714,9 +1017,10 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
     if (!name) return;
     if (schema) setTableSchemas(prev => ({ ...prev, [name]: schema }));
     setPrimaryTable(name); setJoinedTables([]); setExpandedTables({[name]: true});
-    setDims([]); setMeasures([]); setFilters([]); setOrderBy("");
+    setDims([]); setMeasures([]); setFilters([]); setHaving([]); setOrderBy("");
+    setTimeCol(""); setTimeColTable(""); setTimePreset("all"); setTimeFrom(""); setTimeTo(""); setTimeGrain("none");
     setResult(null); setRunError(null); setAutoSql(true); setColSearch("");
-    const qTable = schema && schema !== "main" && schema !== "public" ? `"${schema}"."${name}"` : `"${name}"`;
+    const qTable = quoteTable(name, schema);
     setSql(limit > 0 ? `SELECT *\nFROM ${qTable}\nLIMIT ${limit}` : `SELECT *\nFROM ${qTable}`);
   }, [limit]);
 
@@ -828,16 +1132,108 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
     finally { setRunning(false); }
   };
 
+  // ── Saved-query persistence ────────────────────────────────────────────────
+  // The visual builder state we persist so loading restores the builder, not just the SQL.
+  const buildSpec = useCallback(() => ({
+    primaryTable, joinedTables, dims, measures, filters, having, orderBy, limit,
+    timeCol, timeColTable, timePreset, timeFrom, timeTo, timeGrain,
+  }), [primaryTable, joinedTables, dims, measures, filters, having, orderBy, limit,
+       timeCol, timeColTable, timePreset, timeFrom, timeTo, timeGrain]);
+
+  const suggestedName = () => {
+    if (!primaryTable) return "Untitled query";
+    const ms = measures.map(m => m.alias || m.col || m.agg).filter(Boolean).slice(0, 2).join(", ");
+    return ms ? `${primaryTable} · ${ms}` : `${primaryTable} query`;
+  };
+
+  const refreshSavedList = useCallback(() => {
+    if (connId) listSavedQueries(connId).then(setSavedList).catch(() => {});
+  }, [connId]);
+
+  const doCreateSaved = async (name: string) => {
+    if (!connId || !name.trim()) return;
+    setSavingState("saving");
+    try {
+      const q = await createSavedQuery(connId, name.trim(), sql, buildSpec());
+      setSavedId(q.id); setSavedName(q.name);
+      setShowSaveName(false); setSaveName("");
+      setSavingState("saved"); setTimeout(() => setSavingState("idle"), 1500);
+      refreshSavedList();
+    } catch (e) { alert((e as Error).message || "Failed to save query"); setSavingState("idle"); }
+  };
+
+  const doUpdateSaved = async () => {
+    if (!savedId) return;
+    setSavingState("saving");
+    try {
+      const q = await updateSavedQuery(savedId, { name: savedName, sql, spec: buildSpec() });
+      setSavedName(q.name);
+      setSavingState("saved"); setTimeout(() => setSavingState("idle"), 1500);
+      refreshSavedList();
+    } catch (e) { alert((e as Error).message || "Failed to update query"); setSavingState("idle"); }
+  };
+
+  const onSaveClick = () => {
+    if (!sql.trim()) return;
+    if (savedId) doUpdateSaved();
+    else { setSaveName(suggestedName()); setShowSaveName(true); }
+  };
+
+  const loadSaved = (q: SavedQuery) => {
+    const s = (q.spec || {}) as Record<string, unknown>;
+    setPrimaryTable((s.primaryTable as string) ?? null);
+    setJoinedTables(Array.isArray(s.joinedTables) ? s.joinedTables as string[] : []);
+    setDims(Array.isArray(s.dims) ? s.dims as DimItem[] : []);
+    setMeasures(Array.isArray(s.measures) ? s.measures as MeasureItem[] : []);
+    setFilters(Array.isArray(s.filters) ? s.filters as FilterItem[] : []);
+    setHaving(Array.isArray(s.having) ? s.having as HavingItem[] : []);
+    setOrderBy(typeof s.orderBy === "string" ? s.orderBy : "");
+    setLimit(typeof s.limit === "number" ? s.limit : 1000);
+    setTimeCol(typeof s.timeCol === "string" ? s.timeCol : "");
+    setTimeColTable(typeof s.timeColTable === "string" ? s.timeColTable : "");
+    setTimePreset((s.timePreset as TimePreset) ?? "all");
+    setTimeFrom(typeof s.timeFrom === "string" ? s.timeFrom : "");
+    setTimeTo(typeof s.timeTo === "string" ? s.timeTo : "");
+    setTimeGrain((s.timeGrain as TimeGrain) ?? "none");
+    setAutoSql(false);            // preserve the saved SQL exactly
+    setSql(q.sql);
+    setSavedId(q.id); setSavedName(q.name);
+    setResult(null); setRunError(null); setShowSaved(false);
+  };
+
+  const removeSaved = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await deleteSavedQuery(id);
+      if (savedId === id) { setSavedId(null); setSavedName(""); }
+      refreshSavedList();
+    } catch { /* best-effort */ }
+  };
+
   const commitFilter = () => {
     if (!nfCol) return;
     setFilters(p => [...p, {id:uid(),col:nfCol,table:nfTable||primaryTable||"",op:nfOp,val:nfVal}]);
-    setNfTable(""); setNfCol(""); setNfOp("="); setNfVal(""); setShowAddFilter(false);
+    setNfTable(""); setNfCol(""); setNfOp("="); setNfVal(""); setNfDistinct([]); setShowAddFilter(false);
   };
+
+  // Fetch distinct values for the chosen filter column and format them as SQL literals
+  // (quoted for text columns) so the picker inserts a valid predicate value.
+  const loadDistinct = useCallback(async (table: string, col: string) => {
+    setNfDistinct([]);
+    if (!connId || !table || !col) return;
+    try {
+      const { values } = await getColumnDistinct(connId, table, col, tableSchemas[table], 200);
+      const numeric = isNum((tableCols[table] ?? []).find(c => c.name === col)?.type ?? "");
+      setNfDistinct(values.filter((v): v is string => v != null)
+        .map(v => numeric ? v : `'${v.replace(/'/g, "''")}'`));
+    } catch { setNfDistinct([]); }
+  }, [connId, tableSchemas, tableCols]);
 
   // ── Suggestion intelligence (over the resolved tables) ────────────────────
   const usedDimKeys = new Set(dims.map(d => `${d.table}.${d.col}`));
   const usedMeaCols = new Set(measures.map(m => `${m.table}.${m.col}`));
   const resolvedCols = allTables.flatMap(t => (tableCols[t] ?? []).map(c => ({ ...c, table: t })));
+  const timeColumns = resolvedCols.filter(c => isDate(c.type));
 
   const suggestedDims = resolvedCols
     .filter(c => !usedDimKeys.has(`${c.table}.${c.name}`) && !c.is_fk && !isIdLike(c.name)
@@ -857,6 +1253,17 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
   const addMeasureDirect = (table: string, col: string, agg: AggFn) => {
     ensureTable(table);
     setMeasures(p => [...p, { id:uid(), col, table, agg, customExpr: col, alias: autoAlias(agg, col, col) }]);
+  };
+
+  // One-click fix for a per-unit SUM under-count: rewrite the measure to SUM(col × quantity).
+  const fixGrainMeasure = (m: MeasureItem) => {
+    const qty = grainQtyCols.find(q => (tableCols[m.table] ?? []).some(c => c.name.toLowerCase() === q.toLowerCase()))
+      || grainQtyCols[0] || "quantity";
+    const base = qualify(m.col, m.table, isMulti);
+    const qtyQ = qualify(qty, m.table, isMulti);
+    setMeasures(p => p.map(x => x.id === m.id
+      ? { ...x, agg: "CUSTOM" as AggFn, customExpr: `SUM(${base} * ${qtyQ})`, alias: x.alias || `sum_${m.col}_x_${qty}` }
+      : x));
   };
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -910,9 +1317,82 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
 
         {/* Right controls */}
         <div className="ml-auto flex items-center gap-3">
+
+          {/* Saved queries — persistence */}
+          <div className="relative flex items-center gap-1.5">
+            <button onClick={() => { setShowSaved(v => !v); refreshSavedList(); }}
+              title="Open saved queries"
+              className="flex items-center gap-1 text-[11px] text-zinc-400 hover:text-zinc-200 border border-zinc-700 rounded-lg px-2.5 py-1 transition">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" className="shrink-0">
+                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+              </svg>
+              {savedName ? <span className="max-w-[110px] truncate">{savedName}</span> : "Saved"}
+              {savedList.length > 0 && <span className="text-zinc-500">{savedList.length}</span>}
+              <svg width="8" height="8" viewBox="0 0 8 8" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="shrink-0"><polyline points="1,2 4,6 7,2"/></svg>
+            </button>
+            <button onClick={onSaveClick} disabled={!sql.trim()}
+              title={savedId ? "Update this saved query" : "Save the current query"}
+              className={`text-[11px] rounded-lg px-2.5 py-1 transition border disabled:opacity-40 ${
+                savingState === "saved" ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
+                  : "border-zinc-700 text-zinc-300 hover:border-zinc-500 hover:text-zinc-100"
+              }`}>
+              {savingState === "saving" ? "Saving…" : savingState === "saved" ? "Saved ✓" : savedId ? "Save" : "Save"}
+            </button>
+
+            {/* Saved-query list */}
+            {showSaved && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setShowSaved(false)} />
+                <div className="absolute right-0 top-full mt-2 z-40 w-72 rounded-md border border-zinc-700 bg-zinc-900 shadow-2xl overflow-hidden">
+                  <div className="px-3 py-2 border-b border-zinc-700/50 flex items-center justify-between">
+                    <span className="text-[11px] font-semibold text-zinc-400">Saved queries</span>
+                    <button onClick={() => { setSavedId(null); setSaveName(suggestedName()); setShowSaved(false); setShowSaveName(true); }}
+                      disabled={!sql.trim()}
+                      className="text-[11px] text-blue-400 hover:text-blue-300 disabled:opacity-40">+ Save current as…</button>
+                  </div>
+                  <div className="max-h-[320px] overflow-y-auto">
+                    {savedList.length === 0 ? (
+                      <p className="px-3 py-3 text-[11px] text-zinc-500">No saved queries for this connection yet.</p>
+                    ) : savedList.map(q => (
+                      <div key={q.id} onClick={() => loadSaved(q)}
+                        className={`group/sq flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-zinc-800/70 border-b border-zinc-700/30 last:border-0 ${q.id === savedId ? "bg-zinc-800/40" : ""}`}>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[12px] text-zinc-200 truncate">{q.name}</p>
+                          <p className="text-[10px] text-zinc-500 truncate font-mono">{(q.sql || "").replace(/\s+/g, " ").slice(0, 52)}</p>
+                        </div>
+                        {q.id === savedId && <span className="text-[9px] text-blue-400 shrink-0">active</span>}
+                        <button onClick={(e) => removeSaved(q.id, e)} title="Delete saved query"
+                          className="opacity-0 group-hover/sq:opacity-100 text-zinc-500 hover:text-red-400 shrink-0 leading-none">✕</button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Name prompt for create */}
+            {showSaveName && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowSaveName(false)} />
+                <div className="absolute right-0 top-full mt-2 z-50 w-72 rounded-md border border-zinc-700 bg-zinc-900 shadow-2xl p-3">
+                  <p className="text-[11px] font-semibold text-zinc-400 mb-2">Save query as</p>
+                  <input autoFocus value={saveName} onChange={e => setSaveName(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter") doCreateSaved(saveName); if (e.key === "Escape") setShowSaveName(false); }}
+                    placeholder="Query name"
+                    className="w-full text-[12px] bg-zinc-800 border border-zinc-600 rounded-md px-2.5 py-1.5 text-zinc-200 outline-none focus:border-zinc-400" />
+                  <div className="flex justify-end gap-2 mt-2.5">
+                    <button onClick={() => setShowSaveName(false)} className="text-[11px] text-zinc-400 hover:text-zinc-200 px-2 py-1">Cancel</button>
+                    <button onClick={() => doCreateSaved(saveName)} disabled={!saveName.trim()}
+                      className="text-[11px] bg-blue-600 hover:bg-blue-500 text-white rounded-md px-3 py-1 font-medium disabled:opacity-40">Save</button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
           {!autoSql && (
             <button
-              onClick={() => { setAutoSql(true); if (primaryTable) setSql(buildSql(primaryTable,joinedTables,schemaJoins,dims,measures,filters,orderBy,limit)); }}
+              onClick={() => { setAutoSql(true); if (primaryTable) setSql(buildSql(primaryTable,joinedTables,schemaJoins,dims,measures,filters,orderBy,limit,tableSchemas,timeSpec,having)); }}
               className="text-[11px] text-zinc-500 hover:text-zinc-300 border border-zinc-700 rounded-lg px-2.5 py-1 transition">
               ↺ Regenerate SQL
             </button>
@@ -1258,6 +1738,47 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                 </div>
               )}
 
+              {/* Time controls — range + grain over a date column */}
+              {primaryTable && timeColumns.length > 0 && (
+                <div className="rounded-md border border-zinc-700/40 bg-zinc-800/20 px-4 py-3">
+                  <div className="flex items-center gap-2 mb-2.5">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--t3)" strokeWidth="1.8" strokeLinecap="round" className="shrink-0">
+                      <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>
+                    </svg>
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500">Time</p>
+                    <span className="text-[11px] text-zinc-500">range &amp; grain over a date column</span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <select value={timeCol}
+                      onChange={e => { const v = e.target.value; setTimeCol(v); const tc = timeColumns.find(c => c.name === v); setTimeColTable(tc ? tc.table : ""); }}
+                      className="text-[12px] bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition">
+                      <option value="">No time column</option>
+                      {timeColumns.map(c => <option key={`${c.table}.${c.name}`} value={c.name}>{isMulti ? `${c.table}.` : ""}{c.name}</option>)}
+                    </select>
+                    <select value={timePreset} onChange={e => setTimePreset(e.target.value as TimePreset)} disabled={!timeCol}
+                      className="text-[12px] bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition disabled:opacity-40">
+                      {TIME_PRESETS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+                    </select>
+                    {timeCol && timePreset === "custom" && (
+                      <div className="flex items-center gap-1.5">
+                        <input type="date" value={timeFrom} onChange={e => setTimeFrom(e.target.value)}
+                          className="text-[12px] font-mono bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-zinc-200 outline-none focus:border-zinc-500" />
+                        <span className="text-zinc-500 text-[11px]">→</span>
+                        <input type="date" value={timeTo} onChange={e => setTimeTo(e.target.value)}
+                          className="text-[12px] font-mono bg-zinc-800 border border-zinc-700 rounded-lg px-2 py-1.5 text-zinc-200 outline-none focus:border-zinc-500" />
+                      </div>
+                    )}
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[11px] text-zinc-500">grain</span>
+                      <select value={timeGrain} onChange={e => setTimeGrain(e.target.value as TimeGrain)} disabled={!timeCol}
+                        className="text-[12px] bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition disabled:opacity-40">
+                        {TIME_GRAINS.map(g => <option key={g} value={g}>{g}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Dimensions + Metrics */}
               <div className="grid grid-cols-2 gap-5">
 
@@ -1367,12 +1888,24 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                     )}
                     {measures.map(m => {
                       const ao = AGG_OPTIONS.find(o=>o.fn===m.agg);
+                      const warn = grainWarning(m, measureGrains, grainQtyCols);
                       return (
-                        <span key={m.id} title={`${measureExpr(m,isMulti)} AS ${m.alias}`}
-                          className={`inline-flex items-center gap-1.5 text-[12px] font-mono px-2.5 py-1 rounded-lg border ${ao?.cls??"text-violet-300 border-violet-500/30 bg-violet-500/10"}`}>
+                        <span key={m.id} title={warn || `${measureExpr(m,isMulti)} AS ${m.alias}`}
+                          className={`inline-flex items-center gap-1.5 text-[12px] font-mono px-2.5 py-1 rounded-lg border ${
+                            warn ? "text-amber-200 border-amber-500/50 bg-amber-500/10"
+                                 : (ao?.cls ?? "text-violet-300 border-violet-500/30 bg-violet-500/10")}`}>
                           <span className="text-[11px] font-sans opacity-70">{m.fromMetric?"📊":m.agg==="CUSTOM"?"fx":m.agg}</span>
                           <span className="max-w-[120px] truncate">{m.alias||measureExpr(m,isMulti)}</span>
-                          <button onClick={()=>setMeasures(p=>p.filter(x=>x.id!==m.id))} className="opacity-50 hover:opacity-100 text-sm leading-none">×</button>
+                          {warn && (
+                            <>
+                              <span title={warn} className="text-amber-400 cursor-help">⚠</span>
+                              {m.agg === "SUM" && (
+                                <button onClick={()=>fixGrainMeasure(m)} title={`Rewrite as SUM(${m.col} × quantity)`}
+                                  className="text-[10px] text-amber-300 hover:text-amber-100 underline decoration-dotted">fix</button>
+                              )}
+                            </>
+                          )}
+                          <button onClick={()=>{ setMeasures(p=>p.filter(x=>x.id!==m.id)); setHaving(h=>h.filter(x=>x.measureId!==m.id)); }} className="opacity-50 hover:opacity-100 text-sm leading-none">×</button>
                         </span>
                       );
                     })}
@@ -1397,13 +1930,13 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                   {showAddFilter ? (
                     <div className="flex items-center gap-2 flex-wrap p-3 rounded-md border border-zinc-700/60 bg-zinc-800/30">
                       {isMulti && (
-                        <select value={nfTable} onChange={e=>setNfTable(e.target.value)}
+                        <select value={nfTable} onChange={e=>{ setNfTable(e.target.value); setNfCol(""); setNfDistinct([]); }}
                           className="text-[12px] bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition">
                           <option value="">table</option>
                           {allTables.map(t=><option key={t} value={t}>{t}</option>)}
                         </select>
                       )}
-                      <select value={nfCol} onChange={e=>setNfCol(e.target.value)}
+                      <select value={nfCol} onChange={e=>{ const c=e.target.value; setNfCol(c); loadDistinct(nfTable||primaryTable||"", c); }}
                         className="text-[12px] bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition">
                         <option value="">column</option>
                         {(isMulti&&nfTable ? tableCols[nfTable]??[] : allTables.flatMap(t=>tableCols[t]??[])).map(c=>(
@@ -1415,9 +1948,16 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                         {FILTER_OPS.map(op=><option key={op} value={op}>{op}</option>)}
                       </select>
                       {!NO_VAL_OPS.includes(nfOp) && (
-                        <input value={nfVal} onChange={e=>setNfVal(e.target.value)}
-                          onKeyDown={e=>{if(e.key==="Enter")commitFilter();}} placeholder="value" autoFocus
-                          className="text-[12px] font-mono bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none focus:border-zinc-500 w-32 transition" />
+                        <>
+                          <input value={nfVal} onChange={e=>setNfVal(e.target.value)} list="qb-nf-distinct"
+                            onKeyDown={e=>{if(e.key==="Enter")commitFilter();}} placeholder="value" autoFocus
+                            className="text-[12px] font-mono bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none focus:border-zinc-500 w-40 transition" />
+                          {nfDistinct.length > 0 && (
+                            <datalist id="qb-nf-distinct">
+                              {nfDistinct.map(v => <option key={v} value={v} />)}
+                            </datalist>
+                          )}
+                        </>
                       )}
                       <button onClick={commitFilter} className="px-3 py-1.5 text-[12px] rounded-lg bg-amber-500/20 text-amber-300 hover:bg-amber-500/30 font-medium transition">Add</button>
                       <button onClick={()=>setShowAddFilter(false)} className="text-[12px] text-zinc-500 hover:text-zinc-300 px-1.5 transition">Cancel</button>
@@ -1434,6 +1974,38 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                 </div>
               </div>
 
+              {/* HAVING — filter on aggregated metrics */}
+              {measures.length > 0 && (
+                <div className="border-t border-zinc-700/30 pt-5">
+                  <p className="text-[13px] font-semibold text-zinc-300 mb-1">Having</p>
+                  <p className="text-[11px] text-zinc-500 mb-3">HAVING — filter on aggregated metrics (e.g. total &gt; 1000)</p>
+                  <div className="flex flex-col gap-2 items-start">
+                    {having.map(h => (
+                      <div key={h.id} className="flex items-center gap-2 flex-wrap">
+                        <select value={h.measureId} onChange={e=>setHaving(p=>p.map(x=>x.id===h.id?{...x,measureId:e.target.value}:x))}
+                          className="text-[12px] font-mono bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition max-w-[200px]">
+                          {measures.map(mm=><option key={mm.id} value={mm.id}>{mm.alias||measureExpr(mm,isMulti)}</option>)}
+                        </select>
+                        <select value={h.op} onChange={e=>setHaving(p=>p.map(x=>x.id===h.id?{...x,op:e.target.value}:x))}
+                          className="text-[12px] font-mono bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none hover:border-zinc-500 transition">
+                          {HAVING_OPS.map(op=><option key={op} value={op}>{op}</option>)}
+                        </select>
+                        <input value={h.val} onChange={e=>setHaving(p=>p.map(x=>x.id===h.id?{...x,val:e.target.value}:x))} placeholder="value"
+                          className="text-[12px] font-mono bg-zinc-800 border border-zinc-700 rounded-lg px-2.5 py-1.5 text-zinc-200 outline-none focus:border-zinc-500 w-28 transition" />
+                        <button onClick={()=>setHaving(p=>p.filter(x=>x.id!==h.id))} className="text-zinc-500 hover:text-red-400 text-sm leading-none px-1">×</button>
+                      </div>
+                    ))}
+                    <button onClick={()=>setHaving(p=>[...p,{id:uid(),measureId:measures[0].id,op:">",val:""}])}
+                      className="flex items-center gap-1.5 text-[12px] border border-dashed border-zinc-700 rounded-lg px-3 py-1.5 text-zinc-500 hover:border-zinc-500 hover:text-zinc-300 transition">
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                        <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                      </svg>
+                      Add having
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* ORDER BY + LIMIT */}
               <div className="border-t border-zinc-700/30 pt-5 flex items-end gap-6">
                 <div>
@@ -1449,6 +2021,7 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                       setLimit(v === "" ? 0 : Math.max(0, parseInt(v) || 0));
                     }}
                     placeholder="∞"
+                    title="Rows to preview. Blank or 0 = no limit (unbounded — use with care on large tables)."
                     className="text-[12px] font-mono bg-zinc-800/60 border border-zinc-700 rounded-md px-3 py-2 text-zinc-200 outline-none focus:border-zinc-500 w-24 transition" />
                 </div>
               </div>
@@ -1464,26 +2037,25 @@ export function QueryBuilder({ initialConnId }: { initialConnId?: string }) {
                   )}
                   <div className="ml-auto flex items-center gap-2">
                     <span className="text-[11px] text-zinc-500">⌘↵ to run</span>
+                    <button onClick={()=>{ if (sql.trim()) { setSql(formatSql(sql)); setAutoSql(false); } }}
+                      className="text-[11px] text-zinc-500 hover:text-zinc-300 border border-zinc-700 rounded-lg px-2.5 py-1 transition">
+                      Format
+                    </button>
                     <button onClick={()=>navigator.clipboard.writeText(sql).catch(()=>{})}
                       className="text-[11px] text-zinc-500 hover:text-zinc-300 border border-zinc-700 rounded-lg px-2.5 py-1 transition">
                       Copy
                     </button>
                   </div>
                 </div>
-                <div className="relative">
-                  <textarea
-                    ref={sqlRef}
-                    value={sql}
-                    onChange={handleSqlChange}
-                    onKeyDown={handleSqlKeyDown}
-                    onClick={()=>setAcItems([])}
-                    spellCheck={false}
-                    rows={Math.max(6, Math.min(16, sql.split("\n").length + 2))}
-                    placeholder={"SELECT *\nFROM table\nLIMIT 1000"}
-                    className="w-full text-[12px] leading-relaxed bg-zinc-900/80 border border-zinc-700 rounded-md p-4 text-zinc-200 outline-none focus:border-zinc-500 resize-none transition"
-                    style={{ fontFamily: "var(--font-code)" }}
-                  />
-                </div>
+                <SqlEditor
+                  taRef={sqlRef}
+                  value={sql}
+                  rows={Math.max(6, Math.min(16, sql.split("\n").length + 2))}
+                  onChange={handleSqlChange}
+                  onKeyDown={handleSqlKeyDown}
+                  onClick={()=>setAcItems([])}
+                  placeholder={"SELECT *\nFROM table\nLIMIT 1000"}
+                />
               </div>
 
               {/* RESULTS */}
