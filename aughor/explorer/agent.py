@@ -1730,6 +1730,11 @@ class SchemaExplorer:
         multi_dataset = len(_all_datasets) > 1
         _bare2dataset = {str(q).split(".")[-1].lower(): _dataset_of(q)
                          for q in (tp or {}) if _dataset_of(q)}
+
+        def _ds(tbl):
+            """Dataset (schema) of a possibly-bare table, via the qualified-table universe."""
+            return _dataset_of(tbl) or _bare2dataset.get(str(tbl).split(".")[-1].lower(), "")
+
         if multi_dataset:
             logger.info("[explorer:%s] Phase 8: multi-dataset connection %s — isolating datasets",
                         self.connection_id, sorted(_all_datasets))
@@ -1747,6 +1752,29 @@ class SchemaExplorer:
             ]
 
             used = budgets.get(domain, 0)
+
+            # Dataset isolation, hoisted to cover the WHOLE per-domain context. A domain's
+            # entities can span unrelated uploaded datasets (Customer = bakehouse.sales_customers
+            # AND ecommerce.customers). Restricting only the schema BLOCK still leaves the other
+            # dataset's entities — and their column names — in the entity/relationship context,
+            # and the generator then reaches for them (ecommerce `line_total`/`customer` in a
+            # bakehouse domain), burning budget on questions the gates must skip. Scope `entities`
+            # to the dominant dataset HERE so every downstream block (entity context, relationships,
+            # schema, grains) sees one dataset only — the principle the measure-grain leak taught.
+            if multi_dataset:
+                from collections import Counter as _Counter
+                _ent_tbl_ds = _Counter(_ds(t) for e in entities for t in e.source_tables if _ds(t))
+                if len(_ent_tbl_ds) > 1:
+                    _primary_ds = max(sorted(_ent_tbl_ds), key=lambda d: _ent_tbl_ds[d])
+                    _scoped = [e for e in entities if any(_ds(t) == _primary_ds for t in e.source_tables)]
+                    if _scoped and len(_scoped) < len(entities):
+                        logger.info(
+                            "[explorer:%s] Phase 8: %s domain spans %s — scoping entities to '%s' "
+                            "(%d→%d entities)",
+                            self.connection_id, domain, sorted(_ent_tbl_ds), _primary_ds,
+                            len(entities), len(_scoped),
+                        )
+                        entities = _scoped
 
             entity_context = "\n".join(
                 f"  - {e.display_name} ({', '.join(e.source_tables)}): {e.description}"
@@ -1787,12 +1815,9 @@ class SchemaExplorer:
 
                 # Build compact schema for domain tables — grounding _NextQuestion SQL generation
                 domain_tables = {tbl for ent in entities for tbl in ent.source_tables}
-                # Dataset isolation: a domain's entities can span unrelated uploaded datasets
-                # (different schemas). Restrict each question to the dominant dataset so the
-                # LLM can't be tempted into a cross-dataset (hallucinated) join. Resolve each
-                # (possibly bare) entity table to its schema via the qualified table universe.
-                def _ds(tbl):
-                    return _dataset_of(tbl) or _bare2dataset.get(str(tbl).split(".")[-1].lower(), "")
+                # Table-level isolation backstop: entities are already scoped to the dominant
+                # dataset above, but an entity that itself SPANS datasets can still drag the
+                # other schema's tables in here — trim them so the schema block stays single-set.
                 if multi_dataset:
                     from collections import Counter
                     counts = Counter(_ds(t) for t in domain_tables if _ds(t))
@@ -1800,7 +1825,7 @@ class SchemaExplorer:
                         primary = max(sorted(counts), key=lambda d: counts[d])
                         domain_tables = {t for t in domain_tables if _ds(t) == primary}
                         logger.info(
-                            "[explorer:%s] Phase 8: %s domain spans %s — restricting to '%s'",
+                            "[explorer:%s] Phase 8: %s domain spans %s — restricting tables to '%s'",
                             self.connection_id, domain, sorted(counts), primary,
                         )
 
@@ -1848,10 +1873,40 @@ class SchemaExplorer:
                         domain_schema_lines.append(f"  {tbl}: {', '.join(cols)}")
                         domain_cols.update(str(c).lower() for c in cols)
                         domain_table_cols[tbl] = cols
+
+                # Joinable-neighbour grounding: a domain often analyses a metric that lives on a
+                # SIBLING fact table reached by a verified FK (Customer 'value' lives on
+                # sales_transactions.totalPrice, not on sales_customers). That table isn't a
+                # domain entity, so without its columns here the generator GUESSES the measure
+                # name (total_amount vs the real totalPrice) — the gate skips it, but a budget
+                # slot is wasted and the domain starves. Surface the EXACT columns of same-dataset,
+                # verified-FK neighbours so the generator joins with real names. Same dataset only
+                # (the cross-dataset guard still rejects an actual cross-schema join).
+                _nbr_tables: set[str] = set()
+                for jv in self._state.get("join_verifications", []):
+                    _ft, _tt = jv.get("from_table", ""), jv.get("to_table", "")
+                    for _a, _b in ((_ft, _tt), (_tt, _ft)):
+                        if _a in domain_tables and _b and _b not in domain_tables and _ds(_b) == _ds(_a):
+                            _nbr_tables.add(_b)
+                _nbr_lines: list[str] = []
+                for nt in sorted(_nbr_tables)[:4]:    # cap — keep the prompt tight
+                    cols = (sql_writer.table_cols.get(nt)
+                            or next((v for k, v in sql_writer.table_cols.items() if k.lower() == nt.lower()), None))
+                    if cols:
+                        _nbr_lines.append(f"  {nt}: {', '.join(cols)}")
+                        domain_table_cols[nt] = cols                 # so measure-grains sees its grain too
+                        domain_cols.update(str(c).lower() for c in cols)
+
                 domain_schema_block = (
                     "EXACT COLUMN NAMES — use ONLY these, never invent:\n"
                     + "\n".join(domain_schema_lines)
                 ) if domain_schema_lines else ""
+                if _nbr_lines:
+                    domain_schema_block += (
+                        "\nJOINABLE TABLES (reachable by a verified key — if you join to one, use its "
+                        "EXACT column names below; NEVER invent a measure like total_amount/line_total):\n"
+                        + "\n".join(_nbr_lines)
+                    )
 
                 # ── Column-feasibility gate (#1) ────────────────────────────────
                 # Drop named angles whose required column class is absent (a
@@ -2083,6 +2138,22 @@ class SchemaExplorer:
                     logger.warning(f"[explorer:{self.connection_id}] Phase 8: LLM question gen failed for {domain}: {e}")
                     break
 
+                # Qualify bare table names to their unique schema FIRST: on a multi-dataset
+                # connection the LLM drops the qualifier (`FROM reviews`), which both errors
+                # on DuckDB (no cross-schema search path) and hides a cross-dataset reference
+                # from the guard below. Qualifying makes a same-dataset reference runnable and
+                # exposes a cross-dataset one (`reviews` → ecommerce.reviews in a bakehouse domain).
+                if multi_dataset:
+                    try:
+                        from aughor.sql.identifiers import qualify_table_names
+                        nq.sql = qualify_table_names(nq.sql, sql_writer.table_cols,
+                                                     getattr(self._conn, "dialect", "duckdb"))
+                    except Exception as _exc:
+                        from aughor.kernel.errors import tolerate
+                        tolerate(_exc, "table qualification is best-effort; on failure the "
+                                 "cross-dataset guard still runs on the original SQL",
+                                 counter="explorer.qualify_failed")
+
                 # Dataset-isolation guard: if the LLM still wrote a cross-dataset join,
                 # drop it — a hallucinated join between unrelated uploaded datasets that can
                 # only return garbage (the bakehouse ⋈ ecommerce class).
@@ -2122,16 +2193,94 @@ class SchemaExplorer:
                     from aughor.sql.identifiers import repair_identifiers
                     sql = repair_identifiers(sql, sql_writer.table_cols,
                                              getattr(self._conn, "dialect", "duckdb"))
-                except Exception:
-                    pass
+                except Exception as _exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_exc, "identifier repair is best-effort; on failure execute the "
+                             "original SQL (the retry loop still catches a casing error)",
+                             counter="explorer.repair_failed")
+                # ── Schema-grounding pre-flight (#residual, deterministic) ───────
+                # Casing slips are now repaired; what survives is a genuine invention —
+                # `segment`/`region`/generic `id`, or an invented table (`product_items`).
+                # A blind execute+retry only learns this by FAILING first, and that first
+                # failure is exactly the Binder error the user sees in the Activity Tab.
+                # Catch it statically, harvest the dead names (so the very next budget
+                # iteration regenerates avoiding them — the existing NONEXISTENT-NAMES
+                # block), and skip without ever executing. Mirrors the cross-dataset /
+                # fabricated-dimension guards: a runnable question is worth more than a
+                # logged error, and the loop will simply propose a valid one next.
+                try:
+                    from aughor.sql.identifiers import unresolved_identifiers
+                    _bad_cols, _bad_tbls = unresolved_identifiers(
+                        sql, sql_writer.table_cols, getattr(self._conn, "dialect", "duckdb"))
+                    if _bad_cols or _bad_tbls:
+                        self._dead_refs |= _bad_cols | _bad_tbls
+                        from aughor.stats import stats as _s; _s.inc("explorer.invention_skips")
+                        logger.info(
+                            "[explorer:%s] Phase 8: %s/%s — skipping invented identifiers "
+                            "(cols=%s tables=%s); harvested to negative knowledge",
+                            self.connection_id, domain, nq.angle,
+                            sorted(_bad_cols), sorted(_bad_tbls),
+                        )
+                        used += 1
+                        budgets[domain] = used
+                        self._state["domain_budgets"] = budgets
+                        continue
+                except Exception as _exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_exc, "schema-grounding pre-flight is best-effort; on failure "
+                             "fall through to the execute+retry loop (no worse than before)",
+                             counter="explorer.preflight_failed")
                 # Tier 3: on a large connection, swap exact COUNT(DISTINCT) for the HLL
                 # approximation — orders of magnitude cheaper on big facts, ~1-3% off.
                 if self._cost_large:
                     try:
                         from aughor.sql.cost import approximate_aggregates
                         sql = approximate_aggregates(sql, getattr(self._conn, "dialect", "duckdb"))
-                    except Exception:
-                        pass
+                    except Exception as _exc:
+                        from aughor.kernel.errors import tolerate
+                        tolerate(_exc, "HLL approximation is an optional cost optimisation; on "
+                                 "failure run the exact aggregate (correct, just slower)",
+                                 counter="explorer.cost_approx_failed")
+
+                # ── Universal bind-check (#residual backstop, deterministic) ─────
+                # EXPLAIN the final SQL against the real engine BEFORE executing. The
+                # static gate models the dominant invention class, but no static checker
+                # enumerates EVERY binder rule — a dangling table alias (c.customer_id with
+                # no `c` in scope), a GROUP BY/aggregate violation, a residual VARCHAR/BIGINT
+                # mismatch. dry_run IS the engine's binder, so it catches them all without
+                # returning rows or logging an episode. On a bind failure, harvest the dead
+                # names and attempt ONE grounded fix (fix() dry-runs internally, so it only
+                # returns SQL that binds); adopt the fix or skip. This guarantees the first
+                # real execution binds — no failed-bind episode reaches the Activity Tab —
+                # while still salvaging a fixable question into an insight rather than losing it.
+                try:
+                    _ok, _berr = self._conn.dry_run(sql)
+                    if not _ok:
+                        self._dead_refs |= _extract_dead_refs(_berr)
+                        _fix = await _loop.run_in_executor(
+                            None, lambda: sql_writer.fix(sql, _berr, max_retries=2))
+                        if _fix.ok and _fix.sql:
+                            logger.info(
+                                "[explorer:%s] Phase 8: %s/%s — pre-flight bind-fix applied: %s",
+                                self.connection_id, domain, nq.angle, _fix.explanation,
+                            )
+                            sql = _fix.sql
+                        else:
+                            from aughor.stats import stats as _s; _s.inc("explorer.bindcheck_skips")
+                            logger.info(
+                                "[explorer:%s] Phase 8: %s/%s — skipping unbindable question (%s)",
+                                self.connection_id, domain, nq.angle,
+                                (_berr.splitlines()[0] if _berr else "bind error")[:90],
+                            )
+                            used += 1
+                            budgets[domain] = used
+                            self._state["domain_budgets"] = budgets
+                            continue
+                except Exception as _exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_exc, "pre-flight bind-check is best-effort; on failure fall "
+                             "through to the execute+retry loop (no worse than before)",
+                             counter="explorer.bindcheck_failed")
                 rows = None
 
                 for attempt in range(MAX_ATTEMPTS):

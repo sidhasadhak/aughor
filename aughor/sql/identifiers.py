@@ -78,3 +78,166 @@ def repair_identifiers(sql: str, table_cols: dict[str, list[str]], dialect: str 
             changed = True
 
     return tree.sql(dialect=dialect) if changed else sql
+
+
+def _table_key(t) -> tuple[str, str]:
+    """A (qualified, bare) lowercased key for a sqlglot Table node."""
+    parts = [p for p in (getattr(t, "catalog", ""), getattr(t, "db", ""), t.name) if p]
+    return ".".join(parts).lower(), (t.name or "").lower()
+
+
+def qualify_table_names(
+    sql: str, table_cols: dict[str, list[str]], dialect: str = "duckdb"
+) -> str:
+    """Prefix a bare table name with its schema when that name lives in exactly ONE
+    dataset (schema) of `table_cols`.
+
+    On a multi-dataset connection the LLM often drops the schema qualifier — ``FROM
+    reviews`` instead of ``FROM ecommerce.reviews``. DuckDB has no cross-schema search
+    path, so that errors with "Table with name reviews does not exist"; worse, a bare
+    name hides a *cross-dataset* reference from :func:`_crosses_datasets` (which only
+    sees qualified names), letting a bakehouse-domain query silently reach into the
+    ecommerce schema. Qualifying makes a same-dataset reference runnable and exposes a
+    cross-dataset one to the guard.
+
+    Conservative: a name present in ≥2 schemas (ambiguous) or already schema-qualified
+    is left untouched — never guess. Fail-safe: any parse problem returns `sql` as-is."""
+    if not sql or not table_cols:
+        return sql
+    try:
+        import sqlglot
+        from sqlglot import exp
+        tree = sqlglot.parse_one(sql, read=dialect)
+    except Exception:
+        return sql
+    if tree is None:
+        return sql
+
+    # bare name → set of schemas it appears in (only those WITH a schema qualifier)
+    bare_to_schemas: dict[str, set[str]] = {}
+    for tname in table_cols:
+        parts = tname.split(".")
+        if len(parts) >= 2:
+            bare_to_schemas.setdefault(parts[-1].lower(), set()).add(".".join(parts[:-1]))
+
+    ctes = {(c.alias_or_name or "").lower() for c in tree.find_all(exp.CTE)}
+    changed = False
+    for t in tree.find_all(exp.Table):
+        bare = (t.name or "").lower()
+        if not bare or bare in ctes:
+            continue
+        if t.args.get("db") or t.args.get("catalog"):   # already qualified
+            continue
+        schemas = bare_to_schemas.get(bare)
+        if not schemas or len(schemas) != 1:            # unknown or ambiguous → leave
+            continue
+        schema = next(iter(schemas))
+        sparts = schema.split(".")
+        t.set("db", exp.to_identifier(sparts[-1]))
+        if len(sparts) > 1:
+            t.set("catalog", exp.to_identifier(sparts[0]))
+        changed = True
+
+    return tree.sql(dialect=dialect) if changed else sql
+
+
+def unresolved_identifiers(
+    sql: str, table_cols: dict[str, list[str]], dialect: str = "duckdb"
+) -> tuple[set[str], set[str]]:
+    """Static schema-grounding check — the deterministic pre-execution gate.
+
+    Returns ``(unknown_columns, unknown_tables)``: identifiers in `sql` that cannot be
+    resolved against the real schema in `table_cols` AFTER casing/separator normalisation.
+    This runs AFTER :func:`repair_identifiers`, so a mere casing slip (``customer_id`` vs
+    ``customerID``) is already fixed and never reported here — what remains is a genuine
+    invention (``segment``, ``region``) or a missing/cross-dataset table (``reviews``),
+    the residual Phase-8 Binder-error classes that a blind execute+retry only discovers by
+    failing first (logging an Activity-Tab error). Catching them statically lets the caller
+    skip the question before it ever runs.
+
+    ``unknown_tables``  base (non-CTE) tables whose name matches no key in `table_cols`
+                        (by qualified or bare name).
+    ``unknown_columns`` column refs matching no real column of any in-scope table AND not a
+                        query-defined alias/CTE/derived name. Computed ONLY when every base
+                        table is known and the query has no table-valued/UNNEST/VALUES/LATERAL
+                        source (whose columns aren't in `table_cols`) — so an incomplete view
+                        of the schema can never yield a false "unknown".
+
+    Conservative and fail-safe by construction: a false *miss* (a real bad column slips
+    through to the existing retry loop) is cheap; a false *positive* (skipping a valid
+    question) is not — so every uncertainty resolves toward "resolved". Any parse failure
+    returns ``(set(), set())``."""
+    if not sql or not table_cols:
+        return set(), set()
+    try:
+        import sqlglot
+        from sqlglot import exp
+        tree = sqlglot.parse_one(sql, read=dialect)
+    except Exception:
+        return set(), set()
+    if tree is None:
+        return set(), set()
+
+    # Known-table index: match a query table by exact-qualified OR bare name.
+    by_qualified: dict[str, list[str]] = {}
+    by_bare: dict[str, list[list[str]]] = {}
+    for tname, cols in table_cols.items():
+        by_qualified[tname.lower()] = cols or []
+        by_bare.setdefault(tname.split(".")[-1].lower(), []).append(cols or [])
+
+    ctes = {(c.alias_or_name or "").lower() for c in tree.find_all(exp.CTE)}
+    unknown_tables: set[str] = set()
+    in_scope_cols: set[str] = set()   # real columns of the query's known base tables (normed)
+    all_tables_known = True
+    for t in tree.find_all(exp.Table):
+        bare = (t.name or "").lower()
+        if not bare or bare in ctes:
+            continue
+        qual, _ = _table_key(t)
+        is_qualified = bool(t.args.get("db") or t.args.get("catalog"))
+        if qual in by_qualified:
+            cols = by_qualified[qual]
+        elif (not is_qualified) and bare in by_bare:
+            # a BARE name may resolve by its unique bare match; a QUALIFIED name must match
+            # its schema exactly — `bakehouse.reviews` is NOT `ecommerce.reviews`, it is an
+            # invented table in the bakehouse schema (the residual cross-dataset confusion).
+            cols = [c for group in by_bare[bare] for c in group]   # union across same-named tables
+        else:
+            unknown_tables.add(qual if is_qualified else t.name)
+            all_tables_known = False
+            continue
+        in_scope_cols.update(_norm(c) for c in cols)
+
+    # Column check only when we have a complete, ordinary view of the FROM clause —
+    # an unknown table or an exotic source means columns can legitimately come from
+    # outside `table_cols`, so we must not flag them.
+    exotic = any(tree.find_all(exp.Unnest)) or any(tree.find_all(exp.Values)) \
+        or any(tree.find_all(exp.Lateral))
+    if unknown_tables or exotic or not in_scope_cols:
+        return set(), unknown_tables
+
+    # Names the query itself defines (aliases, CTE names, derived-column aliases) — these
+    # shadow base columns and must never be reported as unknown.
+    defined: set[str] = set(ctes)
+    for a in tree.find_all(exp.Alias):
+        nm = a.alias
+        if nm:
+            defined.add(_norm(nm))
+    for ta in tree.find_all(exp.TableAlias):
+        if ta.name:
+            defined.add(_norm(ta.name))
+        for c in ta.columns:
+            if getattr(c, "name", ""):
+                defined.add(_norm(c.name))
+
+    unknown_columns: set[str] = set()
+    for col in tree.find_all(exp.Column):
+        name = col.name
+        if not name or "*" in name:
+            continue
+        n = _norm(name)
+        if n in in_scope_cols or n in defined:
+            continue
+        unknown_columns.add(name)
+
+    return unknown_columns, unknown_tables
