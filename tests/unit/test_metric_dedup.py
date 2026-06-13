@@ -116,13 +116,17 @@ def test_build_block_injects_each_kpi_exactly_once():
     block = build_metrics_block(schema_text=_BOTH_TABLES_SCHEMA)
     if not block:
         pytest.skip("catalog empty under this schema")
-    up = block.upper()
-    # Header format is "  AOV (Average Order Value): ..." — when a KPI is present
-    # it must appear EXACTLY once (no conflicting twin formula injected).
-    if "AOV (" in up:
-        assert up.count("AOV (") == 1, "AOV injected twice with conflicting formulas"
-    if "REVENUE (" in up:
-        assert up.count("REVENUE (") == 1, "REVENUE injected twice with conflicting formulas"
+    # Count HEADER lines only ("  AOV (Average Order Value): …"), not prose mentions —
+    # a metric's caveats / NEVER rules can legitimately contain "AOV (" (e.g. "…barely
+    # moves AOV (cancelled orders…)"). A header is a top-level line: two-space indent,
+    # then NAME "(". When a KPI is present it must head the block exactly once.
+    def header_count(name: str) -> int:
+        return sum(1 for ln in block.splitlines()
+                   if ln.strip().upper().startswith(f"{name} ("))
+    if header_count("AOV"):
+        assert header_count("AOV") == 1, "AOV injected twice with conflicting formulas"
+    if header_count("REVENUE"):
+        assert header_count("REVENUE") == 1, "REVENUE injected twice with conflicting formulas"
 
 
 # ── enforcement: judge every grain, credit 'used' if any matched ───────────────

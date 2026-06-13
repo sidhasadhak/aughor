@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { compactNumber, pct } from "@/lib/format";
+import { pct } from "@/lib/format";
 import {
   getExplorationStatus,
   getExplorationFindings,
@@ -11,6 +11,7 @@ import {
 import { subscribeKernelEvents } from "@/lib/events";
 import { Spinner, SkeletonRows } from "@/components/ui/motion";
 import { DomainIntelPanel } from "@/components/DomainIntelPanel";
+import { SchemaShape } from "@/components/SchemaShape";
 
 // ── Phase progress bar ────────────────────────────────────────────────────────
 
@@ -154,34 +155,9 @@ function LifecycleMapsSection({ maps }: { maps: ExplorationFindings["lifecycle_m
 }
 
 // ── Distributions ─────────────────────────────────────────────────────────────
-
-const DIST_SHAPE_PILL: Record<string, { label: string; bg: string; text: string; border: string; barColor: string }> = {
-  fraction_0_1:  { label: "0–1 ratio",    bg: "var(--grn1)", text: "var(--grn4)", border: "var(--grn2)", barColor: "var(--grn2)" },
-  normal:        { label: "Normal",        bg: "var(--blue1)", text: "var(--blue4)", border: "var(--blue2)", barColor: "var(--blue2)" },
-  concentrated:  { label: "Concentrated", bg: "var(--vio1)", text: "var(--vio4)", border: "var(--vio2)", barColor: "var(--b3)" },
-  skewed_right:  { label: "Right-skewed", bg: "var(--amb1)", text: "var(--amb4)", border: "var(--amb2)", barColor: "var(--amb2)" },
-  skewed_left:   { label: "Left-skewed",  bg: "var(--amb1)", text: "var(--amb4)", border: "var(--amb2)", barColor: "var(--amb2)" },
-  uniform:       { label: "Uniform",      bg: "#1a2a1e", text: "var(--grn4)", border: "var(--grn2)", barColor: "var(--grn2)" },
-  bimodal:       { label: "Bimodal",      bg: "var(--red1)", text: "var(--red4)", border: "var(--red2)", barColor: "var(--red2)" },
-};
-
-function miniBarHeights(shape: string): number[] {
-  switch (shape) {
-    case "normal":        return [4, 8, 22, 24, 16, 6];
-    case "fraction_0_1": return [6, 14, 24, 16, 8, 4];
-    case "concentrated":  return [3, 10, 24, 18, 8, 3];
-    case "skewed_right":  return [24, 20, 14, 8, 4, 2];
-    case "skewed_left":   return [2, 4, 8, 14, 20, 24];
-    case "uniform":       return [20, 22, 22, 21, 20, 21];
-    case "bimodal":       return [20, 8, 4, 8, 22, 16];
-    default:              return [10, 14, 18, 16, 12, 8];
-  }
-}
-
-function fmtNum(n: number | null | undefined): string {
-  if (n == null) return "—";
-  return compactNumber(n, 1);
-}
+// The Distributions section is now rendered by the shared <SchemaShape> component
+// (column profile + distribution shape merged), which also lives in the Catalog
+// schema panel. The old standalone shape pills/mini-bars moved there.
 
 // Human-readable elapsed for the time-to-first-insight KPI: "8s", "47s", "3m 12s".
 function fmtDuration(seconds: number): string {
@@ -189,141 +165,6 @@ function fmtDuration(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = Math.round(seconds % 60);
   return s ? `${m}m ${s}s` : `${m}m`;
-}
-
-function DistributionsSection({ distributions }: { distributions: ExplorationFindings["distributions"] }) {
-  const [search, setSearch] = useState("");
-  const allEntries = Object.entries(distributions).filter(([, d]) => d.shape !== "unknown");
-
-  if (allEntries.length === 0) return (
-    <p className="text-xs text-zinc-500 italic">No distributions profiled yet.</p>
-  );
-
-  const normalCount = allEntries.filter(([, d]) => d.shape === "normal").length;
-  const ratioCount  = allEntries.filter(([, d]) => d.shape === "fraction_0_1").length;
-  const concCount   = allEntries.filter(([, d]) => d.shape === "concentrated").length;
-  const otherCount  = allEntries.length - normalCount - ratioCount - concCount;
-
-  const q        = search.toLowerCase();
-  const filtered = q ? allEntries.filter(([key]) => key.toLowerCase().includes(q)) : allEntries;
-
-  return (
-    <div className="space-y-3">
-      {/* Summary cards */}
-      <div className="grid grid-cols-4 gap-1.5">
-        {([
-          { label: "Normal",       count: normalCount, color: "var(--blue4)" },
-          { label: "0–1 Ratio",    count: ratioCount,  color: "var(--grn4)" },
-          { label: "Concentrated", count: concCount,   color: "var(--vio4)" },
-          { label: "Other",        count: otherCount,  color: "var(--t2)" },
-        ] as const).map(({ label, count, color }) => (
-          <div key={label} className="rounded-md p-2.5" style={{ background: "var(--bg-1)", border: "0.5px solid var(--b1)" }}>
-            <p className="text-[11px] uppercase tracking-widest mb-1" style={{ color: "var(--t4)" }}>{label}</p>
-            <p className="text-xl font-medium font-mono" style={{ color, letterSpacing: "-0.02em" }}>{count}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Filter row */}
-      <div className="flex items-center justify-between">
-        <span className="text-[11px]" style={{ color: "var(--t3)" }}>{allEntries.length} columns profiled</span>
-        <input
-          type="text"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="Filter columns…"
-          className="text-[11px] rounded-md px-2.5 py-1 focus:outline-none w-32"
-          style={{ background: "var(--bg-1)", border: "0.5px solid var(--b1)", color: "var(--t2)" }}
-        />
-      </div>
-
-      {/* Column header */}
-      <div className="grid gap-2 px-3 pb-1 text-[11px] uppercase tracking-[0.06em]"
-        style={{ gridTemplateColumns: "180px 1fr 80px 80px", color: "var(--t4)" }}>
-        <div>Column</div>
-        <div>Distribution</div>
-        <div className="text-center">Mean</div>
-        <div className="text-right">Shape</div>
-      </div>
-
-      {/* Rows */}
-      <div className="flex flex-col gap-0.5">
-        {filtered.map(([key, d]) => {
-          const [table, col] = key.split(":");
-          const pill     = DIST_SHAPE_PILL[d.shape] ?? { label: d.shape, bg: "#1a1a1e", text: "#6e6f78", border: "#2a2b30", barColor: "#2a2b35" };
-          const barH     = miniBarHeights(d.shape);
-          const maxH     = Math.max(...barH);
-          return (
-            <div
-              key={key}
-              className="flex items-center gap-2 px-3 py-2.5 rounded-md cursor-pointer transition-all"
-              style={{ background: "var(--bg-1)", border: "0.5px solid transparent" }}
-              onMouseEnter={e => (e.currentTarget.style.borderColor = "#2a2b30")}
-              onMouseLeave={e => (e.currentTarget.style.borderColor = "transparent")}
-            >
-              {/* Column name + type */}
-              <div style={{ flex: "0 0 180px", minWidth: 0 }}>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[11px] font-mono" style={{ color: "var(--t3)" }}>{table}</span>
-                  {d.col_type && (
-                    <span className="text-[11px] font-mono" style={{ color: "var(--t4)" }}>{d.col_type}</span>
-                  )}
-                  {d.col_type === "BIGINT" && /(^ts$|_ts$|_at$|timestamp|time)/i.test(col) && (
-                    <span className="text-[8.5px] px-1 py-0 rounded" style={{ background: "var(--vio1)", color: "var(--vio4)", border: "0.5px solid var(--vio2)" }}>unix ts</span>
-                  )}
-                </div>
-                <div className="text-[12.5px] font-medium font-mono mt-0.5" style={{ color: "#c8c7c3" }}>{col}</div>
-              </div>
-
-              {/* Stats */}
-              <div className="flex-1 flex font-mono text-[11px]">
-                {([
-                  { label: "p25",  value: d.p25 },
-                  { label: "p50",  value: d.p50 },
-                  { label: "p75",  value: d.p75 },
-                  { label: "mean", value: d.mean },
-                ] as const).map(({ label, value }) => (
-                  <div key={label} className="flex-1 flex flex-col items-center">
-                    <span className="text-[11px] mb-0.5" style={{ color: "var(--t4)", letterSpacing: "0.04em" }}>{label}</span>
-                    <span style={{ color: label === "p50" || label === "mean" ? "var(--t2)" : "#6e6f78" }}>
-                      {fmtNum(value as number | null | undefined)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-
-              {/* Mini histogram bars */}
-              <div style={{ flex: "0 0 80px" }}>
-                <div className="flex items-end gap-0.5" style={{ height: "24px" }}>
-                  {barH.map((h, i) => (
-                    <div
-                      key={i}
-                      className="flex-1"
-                      style={{
-                        height: `${h}px`,
-                        background: h >= maxH * 0.6 ? pill.barColor : "#2a2b35",
-                        borderRadius: "2px 2px 0 0",
-                      }}
-                    />
-                  ))}
-                </div>
-              </div>
-
-              {/* Shape pill */}
-              <div style={{ flex: "0 0 80px", textAlign: "right" }}>
-                <span
-                  className="inline-flex items-center text-[11px] px-2 py-0.5 rounded-[4px] whitespace-nowrap"
-                  style={{ background: pill.bg, color: pill.text, border: `0.5px solid ${pill.border}` }}
-                >
-                  {pill.label}
-                </span>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
 }
 
 // ── Cross-table Insights ──────────────────────────────────────────────────────
@@ -357,11 +198,14 @@ function InsightsSection({ insights }: { insights: ExplorationFindings["insights
 interface Props {
   connectionId: string;
   initialSection?: SectionKey;
+  /** Shared schema scope from the workspace header — scopes the combined
+   *  Schema-Shape view in the Distributions section. */
+  schema?: string;
 }
 
 type SectionKey = "nulls" | "lifecycles" | "distributions" | "insights" | "intelligence";
 
-export function ExplorationPanel({ connectionId, initialSection }: Props) {
+export function ExplorationPanel({ connectionId, initialSection, schema }: Props) {
   const [status, setStatus] = useState<ExplorationStatus | null>(null);
   const [findings, setFindings] = useState<ExplorationFindings | null>(null);
   const [activeSection, setActiveSection] = useState<SectionKey>(initialSection ?? "nulls");
@@ -486,7 +330,7 @@ export function ExplorationPanel({ connectionId, initialSection }: Props) {
           <LifecycleMapsSection maps={findings.lifecycle_maps} />
         )}
         {activeSection === "distributions" && (
-          <DistributionsSection distributions={findings.distributions} />
+          <SchemaShape connectionId={connectionId} schemaName={schema} />
         )}
         {activeSection === "insights" && (
           <InsightsSection insights={findings.insights.filter(i => !i.domain)} />

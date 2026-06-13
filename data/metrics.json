@@ -3,66 +3,54 @@
     "name": "revenue",
     "label": "Revenue",
     "sql": "SUM(total_amount)",
-    "tables": ["orders"],
-    "dimensions": ["status", "order_date", "customer_id", "payment_method"],
-    "filters": ["status <> 'cancelled'"],
+    "tables": [
+      "orders"
+    ],
+    "dimensions": [
+      "status",
+      "order_date",
+      "customer_id",
+      "payment_method"
+    ],
+    "filters": [
+      "status <> 'cancelled'"
+    ],
     "unit": "$",
-    "caveats": "Order-grain booked revenue: SUM(orders.total_amount) over orders not cancelled. Cancelled orders never delivered, so they are excluded by default. Refunded orders WERE fulfilled then reversed — include them in gross booked revenue; exclude them only when net-of-returns is explicitly requested.",
+    "caveats": "Order-grain booked revenue: SUM(orders.total_amount) over orders not cancelled. Cancelled orders never delivered, so they are excluded by default. Refunded orders WERE fulfilled then reversed \u2014 include them in gross booked revenue; exclude them only when net-of-returns is explicitly requested.",
     "owner": "Revenue team",
     "approved_by": "Finance",
-    "lineage": ["ecommerce.orders.total_amount — order-level paid total"],
+    "lineage": [
+      "ecommerce.orders.total_amount \u2014 order-level paid total"
+    ],
     "wrong_usage_examples": [
-      "SUM(order_items.line_total) — line-item grain; on this data it diverges ~4.3x from order totals (a different basis, not the same revenue). Use orders.total_amount for order/total revenue; reserve line_total for product/category-grain revenue where order totals cannot be apportioned.",
-      "SUM(total_amount) joined to order_items without de-duplicating to one row per order — the join fans out and multiplies revenue by the line count."
+      "SUM(order_items.line_total) \u2014 line-item grain; on this data it diverges ~4.3x from order totals (a different basis, not the same revenue). Use orders.total_amount for order/total revenue; reserve line_total for product/category-grain revenue where order totals cannot be apportioned.",
+      "SUM(total_amount) joined to order_items without de-duplicating to one row per order \u2014 the join fans out and multiplies revenue by the line count."
     ]
   },
   {
     "name": "aov",
     "label": "Average Order Value",
     "sql": "AVG(total_amount)",
-    "tables": ["orders"],
-    "dimensions": ["status", "order_date", "payment_method"],
-    "filters": ["status <> 'cancelled'"],
+    "tables": [
+      "orders"
+    ],
+    "dimensions": [
+      "status",
+      "order_date",
+      "payment_method"
+    ],
+    "filters": [
+      "status <> 'cancelled'"
+    ],
     "unit": "$",
-    "caveats": "AVG(orders.total_amount) at order grain. NEVER AVG(order_items.line_total) — that is per-line, not per-order, and undercounts AOV by the average lines-per-order. Cancelled orders excluded by default; on this data excluding them barely moves AOV (cancelled orders are average-sized).",
+    "caveats": "AVG(orders.total_amount) at order grain. NEVER AVG(order_items.line_total) \u2014 that is per-line, not per-order, and undercounts AOV by the average lines-per-order. Cancelled orders excluded by default; on this data excluding them barely moves AOV (cancelled orders are average-sized).",
     "owner": "Revenue team",
     "approved_by": "Finance",
-    "lineage": ["ecommerce.orders.total_amount"],
+    "lineage": [
+      "ecommerce.orders.total_amount"
+    ],
     "wrong_usage_examples": [
-      "AVG(line_total) sold as AOV — that is average LINE value, not average ORDER value (the $467-vs-$1108 grain confusion)."
-    ]
-  },
-  {
-    "name": "revenue",
-    "label": "Revenue",
-    "sql": "SUM(final_price_usd * quantity)",
-    "tables": ["order_items"],
-    "dimensions": ["product_id", "traffic_source", "device_type"],
-    "filters": ["order_status NOT IN ('cancelled', 'test', 'fraud')"],
-    "unit": "$",
-    "caveats": "beautycommerce gross line revenue at order_items grain. final_price_usd is the PER-UNIT price AFTER discount, so revenue = SUM(final_price_usd * quantity) — NEVER SUM(final_price_usd) alone (that drops quantity and undercounts ~50%; avg quantity is ~2, so $252M instead of the correct $503M). Exclude non-real orders by joining analytics.orders on order_id and filtering order_status NOT IN ('cancelled','test','fraud'). For NET-of-returns revenue use analytics.invoices.revenue_net instead (~2.4% lower).",
-    "owner": "Revenue team",
-    "approved_by": "Finance",
-    "lineage": ["analytics.order_items.final_price_usd (per-unit, post-discount) x analytics.order_items.quantity"],
-    "wrong_usage_examples": [
-      "SUM(final_price_usd) without * quantity — final_price_usd is per-unit, so this undercounts revenue by the average quantity per line (~2x on this data: $252M vs the correct $503M).",
-      "SUM(orders.total_amount) — beautycommerce has no total_amount column; that is the samples-connection formula."
-    ]
-  },
-  {
-    "name": "aov",
-    "label": "Average Order Value",
-    "sql": "SUM(final_price_usd * quantity) / NULLIF(COUNT(DISTINCT order_id), 0)",
-    "tables": ["order_items"],
-    "dimensions": ["product_id", "traffic_source", "device_type"],
-    "filters": ["order_status NOT IN ('cancelled', 'test', 'fraud')"],
-    "unit": "$",
-    "caveats": "beautycommerce AOV = gross line revenue / distinct orders at order_items grain: SUM(final_price_usd * quantity) / COUNT(DISTINCT order_id). final_price_usd is per-unit, so the quantity multiplier is REQUIRED — AVG(final_price_usd) or a per-order SUM(final_price_usd) without quantity undercounts AOV ~2x (the $78 vs the correct ~$156 bug). Exclude cancelled/test/fraud orders.",
-    "owner": "Revenue team",
-    "approved_by": "Finance",
-    "lineage": ["analytics.order_items.final_price_usd x quantity / distinct order_id"],
-    "wrong_usage_examples": [
-      "AVG(final_price_usd) or a per-order SUM(final_price_usd) sold as AOV — drops the quantity multiplier (per-unit price), undercounting AOV ~2x ($78 vs the correct ~$156)."
+      "AVG(line_total) sold as AOV \u2014 that is average LINE value, not average ORDER value (the $467-vs-$1108 grain confusion)."
     ]
   }
 ]

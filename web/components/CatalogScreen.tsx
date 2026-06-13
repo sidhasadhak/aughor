@@ -24,12 +24,13 @@ import { bare, schemaOf } from "@/lib/tableName";
 import {
   getCatalogTree, getConnections, addConnection, deleteConnection,
   testConnection, sampleTable, getSchemaRich, getTableColumns, getExplorationFindings,
-  alterColumn,
+  alterColumn, getConnectionSettings, updateConnectionSettings,
   type CatalogTree, type CatalogEntry, type CatalogSchemaInfo, type CatalogTableInfo,
   type Connection, type SchemaTable, type SchemaColumn, type TableSample,
   type TableColumn, type DistributionProfile, type RichSchema,
 } from "@/lib/api";
 import { ERDiagram } from "@/components/ERDiagram";
+import { SchemaShape } from "@/components/SchemaShape";
 import { ExplorationBadge } from "@/components/ExplorationBadge";
 import { SchemaPanel } from "@/components/SchemaPanel";
 import { DocumentUploader } from "@/components/DocumentUploader";
@@ -151,6 +152,57 @@ import { API_BASE as BASE_API } from "@/lib/config";
 const _SYNCABLE      = ["stripe", "hubspot", "salesforce", "s3"];
 const _KNOWLEDGE     = ["confluence", "notion"];
 const _FILE_UPLOAD   = ["local_upload"];
+
+/** Per-connection opt-in for the Briefing workspace. Opt-out by default (enabled
+ *  unless turned off here); persisted via connection settings. */
+function BriefingsToggle({ connId }: { connId: string }) {
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [saving, setSaving]   = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    getConnectionSettings(connId)
+      .then(s => { if (alive) setEnabled(s.briefings_enabled !== false); })
+      .catch(() => { if (alive) setEnabled(true); });
+    return () => { alive = false; };
+  }, [connId]);
+
+  const toggle = async () => {
+    if (enabled === null || saving) return;
+    const next = !enabled;
+    setEnabled(next);
+    setSaving(true);
+    try { await updateConnectionSettings(connId, { briefings_enabled: next }); }
+    catch { setEnabled(!next); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div style={{ padding: "12px 16px", borderTop: "0.5px solid var(--b1)", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: 12, fontWeight: 500, color: "var(--t1)" }}>Briefings</div>
+        <div style={{ fontSize: 11, color: "var(--t3)" }}>Show this connection in the Briefing workspace.</div>
+      </div>
+      <button
+        role="switch"
+        aria-checked={enabled === true}
+        aria-label="Enable briefings for this connection"
+        disabled={enabled === null || saving}
+        onClick={toggle}
+        style={{
+          flexShrink: 0, width: 38, height: 22, borderRadius: 11, position: "relative", padding: 0,
+          cursor: enabled === null ? "default" : "pointer", border: "none",
+          background: enabled ? "var(--blue3)" : "var(--bg-3)", transition: "background .15s", opacity: saving ? 0.6 : 1,
+        }}
+      >
+        <span style={{
+          position: "absolute", top: 2, left: enabled ? 18 : 2, width: 18, height: 18, borderRadius: "50%",
+          background: "var(--bg-0)", transition: "left .15s",
+        }} />
+      </button>
+    </div>
+  );
+}
 
 function ConnectorActions({ connId, connType }: { connId: string; connType: string }) {
   const [status, setStatus]   = useState<string | null>(null);
@@ -732,7 +784,7 @@ function TableDetailPanel({ sel, onAsk }: {
 
 // ── Right: SCHEMA detail ──────────────────────────────────────────────────────
 
-type SchemaTab = "tables" | "erd";
+type SchemaTab = "tables" | "erd" | "shape";
 
 function SchemaDetailPanel({ sel, onSelectTable, onAsk, connName }: {
   sel:           Extract<Sel, { level: "schema" }>;
@@ -791,12 +843,20 @@ function SchemaDetailPanel({ sel, onSelectTable, onAsk, connName }: {
       />
 
       <TabBar
-        tabs={[{ id: "tables", label: `Tables  ${entry.tables.length}` }, { id: "erd", label: "ERD" }]}
+        tabs={[
+          { id: "tables", label: `Tables  ${entry.tables.length}` },
+          { id: "erd", label: "ERD" },
+          { id: "shape", label: "Schema Shape" },
+        ]}
         active={tab}
         onChange={id => setTab(id as SchemaTab)}
       />
 
-      {tab === "erd" ? (
+      {tab === "shape" ? (
+        <div style={{ flex: 1, overflow: "hidden", minWidth: 0, display: "flex", flexDirection: "column" }}>
+          <SchemaShape connectionId={sel.connId} schemaTables={entry.tables.map(t => t.name)} />
+        </div>
+      ) : tab === "erd" ? (
         <div style={{ flex: 1, overflow: "hidden", minWidth: 0 }}>
           {erdLoading ? (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", gap: 8 }}>
@@ -968,9 +1028,12 @@ function CatalogDetailPanel({ sel, onSelectSchema, conn, onTest, onDelete, testi
           </div>
         </div>
 
-        {/* Footer: connector actions + connection management */}
-        {!entry.builtin && (
+        {/* Footer: briefings opt-in (all real connections) + connector actions + management */}
+        {entry.conn_id !== "samples" && (
           <div style={{ flexShrink: 0, background: "var(--bg-0)" }}>
+          <BriefingsToggle connId={entry.conn_id} />
+          {!entry.builtin && (
+          <>
           <ConnectorActions connId={entry.conn_id} connType={entry.conn_type} />
 
           {/* Connection management actions (test / remove) */}
@@ -1008,6 +1071,8 @@ function CatalogDetailPanel({ sel, onSelectSchema, conn, onTest, onDelete, testi
                 </>
               )}
             </div>
+          )}
+          </>
           )}
           </div>
         )}

@@ -286,11 +286,15 @@ def generate_briefing(conn_id: str, refresh: bool = False, schema: str | None = 
 
     patterns = get_patterns(conn_id, by_domain, force_refresh=False)
     macro = _expl_store.load(conn_id).get("macro_context")
+    # Scope the cache key per schema so a schema-filtered briefing never returns the
+    # connection-wide (or another schema's) cached narrative — the AI Synthesis card
+    # was staying stale on schema change because every schema shared one cache key.
     result = get_briefing(
         connection_id=conn_id,
         domain_data=by_domain,
         patterns=patterns,
         force_refresh=refresh,
+        scope_key=f"{conn_id}:{schema}" if schema else conn_id,
         macro_context=macro,
     )
     return {**result, "macro_context": macro, "available": bool(result.get("narrative"))}

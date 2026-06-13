@@ -5,16 +5,12 @@ import {
   getDomainInsights,
   getCanvasDomainInsights,
   getOrgIntelligence,
-  getSchemaProfile,
   getPatterns,
   getCanvasPatterns,
   getActionTriggers,
   type DomainInsights,
   type ExplorationInsight,
   type OrgInsight,
-  type SchemaProfile,
-  type TableProfileData,
-  type ColumnProfileData,
   type Pattern,
   type ActionTrigger,
 } from "@/lib/api";
@@ -346,256 +342,9 @@ function PatternsTab({
   );
 }
 
-// ── Schema Shape tab ──────────────────────────────────────────────────────────
-
-function NullBar({ rate }: { rate: number }) {
-  const pct = Math.round(rate * 100);
-  const color = pct > 20 ? "var(--r3)" : pct > 5 ? "var(--amb3)" : "var(--grn3)";
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-      <div style={{ width: 48, height: 4, background: "var(--bg-3)", borderRadius: 2 }}>
-        <div style={{ width: `${Math.min(100, pct)}%`, height: "100%", background: color, borderRadius: 2 }} />
-      </div>
-      <span style={{ fontSize: 10, color: pct > 10 ? color : "var(--t4)", fontVariantNumeric: "tabular-nums" }}>
-        {pct}%
-      </span>
-    </div>
-  );
-}
-
-function TableCard({
-  table,
-  tableProfile,
-  columns,
-}: {
-  table: string;
-  tableProfile: TableProfileData | undefined;
-  columns: ColumnProfileData[];
-}) {
-  const [expanded, setExpanded] = useState(true);
-  const rowCount = tableProfile?.row_count;
-  const grain = tableProfile?.grain_column;
-  const ts = tableProfile?.primary_timestamp;
-  const dr = tableProfile?.date_range;
-
-  return (
-    <div style={{ background: "var(--bg-1)", border: "1px solid var(--b1)", borderRadius: 7, overflow: "hidden" }}>
-      {/* Table header */}
-      <button
-        onClick={() => setExpanded(e => !e)}
-        style={{
-          width: "100%", display: "flex", alignItems: "center", gap: 10,
-          padding: "10px 14px", background: "none", border: "none", cursor: "pointer",
-          textAlign: "left",
-        }}
-        onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-hover)")}
-        onMouseLeave={e => (e.currentTarget.style.background = "none")}
-      >
-        <span style={{ fontSize: 12, fontWeight: 700, color: "var(--t1)", fontFamily: "var(--font-mono)", flex: 1 }}>
-          {table}
-        </span>
-        {rowCount != null && (
-          <span style={{ fontSize: 10, color: "var(--t3)", background: "var(--bg-2)", padding: "1px 6px", borderRadius: 3 }}>
-            {rowCount.toLocaleString()} rows
-          </span>
-        )}
-        {grain && (
-          <span style={{ fontSize: 10, color: "var(--blue4)", background: "color-mix(in srgb, var(--blue4) 10%, transparent)", padding: "1px 6px", borderRadius: 3 }}>
-            grain: {grain}
-          </span>
-        )}
-        {ts && (
-          <span style={{ fontSize: 10, color: "var(--t4)" }}>
-            ts: {ts}
-          </span>
-        )}
-        {dr && (
-          <span style={{ fontSize: 10, color: "var(--t4)" }}>
-            {String(dr[0]).slice(0, 10)} → {String(dr[1]).slice(0, 10)}
-          </span>
-        )}
-        <span style={{ fontSize: 10, color: "var(--t4)", marginLeft: 4 }}>{expanded ? "▲" : "▼"}</span>
-      </button>
-
-      {/* Columns */}
-      {expanded && (
-        <div style={{ borderTop: "1px solid var(--b0)" }}>
-          <div style={{
-            display: "grid",
-            gridTemplateColumns: "1fr 80px 90px 100px 1fr",
-            padding: "5px 14px 4px",
-            fontSize: 10, fontWeight: 700, textTransform: "uppercase",
-            letterSpacing: "0.06em", color: "var(--t4)",
-            borderBottom: "1px solid var(--b0)",
-          }}>
-            <span>Column</span>
-            <span>Type</span>
-            <span>Nulls</span>
-            <span>Distinct</span>
-            <span>Values / Range</span>
-          </div>
-          {columns.map(col => (
-            <div
-              key={col.column}
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 80px 90px 100px 1fr",
-                padding: "5px 14px",
-                borderBottom: "1px solid var(--b0)",
-                alignItems: "center",
-              }}
-              onMouseEnter={e => (e.currentTarget.style.background = "var(--bg-hover)")}
-              onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
-            >
-              {/* Name + tags */}
-              <div style={{ display: "flex", alignItems: "center", gap: 5, overflow: "hidden" }}>
-                <span style={{ fontSize: 11, color: "var(--t1)", fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {col.column}
-                </span>
-                {col.is_fk && (
-                  <span style={{ fontSize: 9, color: "var(--blue4)", background: "color-mix(in srgb, var(--blue4) 12%, transparent)", padding: "0 4px", borderRadius: 2, flexShrink: 0 }}>FK</span>
-                )}
-                {col.semantic_type && col.semantic_type !== "unknown" && (
-                  <span style={{ fontSize: 9, color: "var(--t4)", flexShrink: 0 }}>{col.semantic_type}</span>
-                )}
-              </div>
-              {/* Type */}
-              <span style={{ fontSize: 10, color: "var(--t3)", fontFamily: "var(--font-mono)" }}>
-                {col.dtype?.split("(")[0].toUpperCase().slice(0, 10)}
-              </span>
-              {/* Null bar */}
-              <NullBar rate={col.null_rate ?? 0} />
-              {/* Distinct */}
-              <span style={{ fontSize: 11, color: "var(--t2)", fontVariantNumeric: "tabular-nums" }}>
-                {col.distinct_count?.toLocaleString() ?? "—"}
-              </span>
-              {/* Values */}
-              <div style={{ overflow: "hidden" }}>
-                {col.top_values && col.is_low_cardinality ? (
-                  <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
-                    {col.top_values.slice(0, 5).map(v => (
-                      <span key={v} style={{
-                        fontSize: 10, padding: "1px 5px", borderRadius: 3,
-                        background: "var(--bg-2)", color: "var(--t2)", whiteSpace: "nowrap",
-                      }}>{v}</span>
-                    ))}
-                    {col.top_values.length > 5 && (
-                      <span style={{ fontSize: 10, color: "var(--t4)" }}>+{col.top_values.length - 5}</span>
-                    )}
-                  </div>
-                ) : col.value_range ? (
-                  <span style={{ fontSize: 10, color: "var(--t3)", fontFamily: "var(--font-mono)" }}>
-                    {String(col.value_range[0]).slice(0, 12)} – {String(col.value_range[1]).slice(0, 12)}
-                  </span>
-                ) : (
-                  <span style={{ fontSize: 10, color: "var(--t4)" }}>—</span>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function SchemaTab({
-  connectionId,
-  domainEntities,
-}: {
-  connectionId: string;
-  domainEntities: string[];   // table names inferred from domain insights
-}) {
-  const [profile, setProfile] = useState<SchemaProfile | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [showAll, setShowAll] = useState(false);
-
-  useEffect(() => {
-    setLoading(true);
-    getSchemaProfile(connectionId)
-      .then(setProfile)
-      .catch(() => setProfile(null))
-      .finally(() => setLoading(false));
-  }, [connectionId]);
-
-  if (loading) return (
-    <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 8 }}>
-      {[1, 2, 3].map(i => (
-        <div key={i} className="animate-pulse" style={{ height: 48, borderRadius: 6, background: "var(--bg-1)" }} />
-      ))}
-    </div>
-  );
-
-  if (!profile?.available) return (
-    <div style={{ padding: "48px 20px", textAlign: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, color: "var(--t3)" }}>
-      <span style={{ fontSize: 28, opacity: 0.2 }}>◫</span>
-      <span style={{ fontSize: 12 }}>Schema profile not yet built.</span>
-      <span style={{ fontSize: 11, maxWidth: 280, textAlign: "center", lineHeight: 1.6 }}>
-        The column profiler runs automatically when the background explorer analyses your schema. Trigger exploration from Connections to build it.
-      </span>
-    </div>
-  );
-
-  // Group columns by table
-  const byTable: Record<string, ColumnProfileData[]> = {};
-  for (const col of profile.columns) {
-    if (!byTable[col.table]) byTable[col.table] = [];
-    byTable[col.table].push(col);
-  }
-
-  // Relevance: domain entities first, then all
-  const domainNorm = new Set(domainEntities.map(e => e.toLowerCase()));
-  const allTables = Object.keys(byTable).sort();
-  const relevantTables = allTables.filter(t => domainNorm.has(t.toLowerCase()));
-  const otherTables = allTables.filter(t => !domainNorm.has(t.toLowerCase()));
-  const tablesToShow = relevantTables.length > 0 && !showAll
-    ? relevantTables
-    : allTables;
-
-  // Summary stats
-  const totalCols = profile.columns.length;
-  const avgNull = totalCols > 0
-    ? (profile.columns.reduce((s, c) => s + (c.null_rate ?? 0), 0) / totalCols * 100).toFixed(1)
-    : "0";
-  const lowCard = profile.columns.filter(c => c.is_low_cardinality).length;
-
-  const tableProfileMap: Record<string, TableProfileData> = {};
-  for (const tp of profile.tables) tableProfileMap[tp.table] = tp;
-
-  return (
-    <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
-      {/* Summary strip */}
-      <div style={{ display: "flex", gap: 16, padding: "10px 14px", background: "var(--bg-1)", borderRadius: 6, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 11, color: "var(--t2)" }}><strong>{allTables.length}</strong> tables</span>
-        <span style={{ fontSize: 11, color: "var(--t2)" }}><strong>{totalCols}</strong> columns</span>
-        <span style={{ fontSize: 11, color: "var(--t2)" }}>avg null <strong>{avgNull}%</strong></span>
-        <span style={{ fontSize: 11, color: "var(--t2)" }}><strong>{lowCard}</strong> categorical</span>
-        {relevantTables.length > 0 && otherTables.length > 0 && (
-          <button
-            onClick={() => setShowAll(s => !s)}
-            style={{ marginLeft: "auto", fontSize: 11, color: "var(--blue4)", background: "none", border: "none", cursor: "pointer" }}
-          >
-            {showAll ? `Domain tables only (${relevantTables.length})` : `Show all ${allTables.length} tables`}
-          </button>
-        )}
-      </div>
-
-      {/* Table cards */}
-      {tablesToShow.map(table => (
-        <TableCard
-          key={table}
-          table={table}
-          tableProfile={tableProfileMap[table]}
-          columns={byTable[table] ?? []}
-        />
-      ))}
-    </div>
-  );
-}
-
 // ── Domain profile ─────────────────────────────────────────────────────────────
 
-type ProfileTab = "overview" | "insights" | "org-intel" | "schema" | "patterns";
+type ProfileTab = "overview" | "insights" | "org-intel" | "patterns";
 
 function DomainProfile({
   domain,
@@ -635,16 +384,9 @@ function DomainProfile({
   );
   const topInsights = sorted.slice(0, 3);
 
-  // Collect entity names from insights to scope the schema tab
-  const domainEntities = useMemo(() =>
-    Array.from(new Set(data.insights.flatMap(i => i.entities_involved ?? []))),
-    [data.insights]
-  );
-
   const TABS: { id: ProfileTab; label: string }[] = [
     { id: "overview",  label: "Overview"  },
     { id: "insights",  label: `Insights (${data.insights.length})` },
-    { id: "schema",    label: "Schema Shape" },
     { id: "patterns",  label: "Patterns" },
     { id: "org-intel", label: `Org Intel (${domainOrg.length})` },
   ];
@@ -839,11 +581,6 @@ function DomainProfile({
               </div>
             ) : filtered.map(ins => <InsightRow key={ins.id} insight={ins} ctx={actionsCtx} />)}
           </div>
-        )}
-
-        {/* ── SCHEMA SHAPE ── */}
-        {tab === "schema" && (
-          <SchemaTab connectionId={connectionId} domainEntities={domainEntities} />
         )}
 
         {/* ── PATTERNS ── */}
@@ -1183,7 +920,7 @@ function SynthesisHome({
 
 // ── Main panel ─────────────────────────────────────────────────────────────────
 
-export function IntelligenceHub({ connectionId, canvasId }: { connectionId: string; canvasId?: string }) {
+export function IntelligenceHub({ connectionId, canvasId, schema }: { connectionId: string; canvasId?: string; schema?: string }) {
   const [domainData, setDomainData] = useState<Record<string, DomainInsights>>({});
   const [orgInsights, setOrgInsights] = useState<OrgInsight[]>([]);
   const [hubPatterns, setHubPatterns] = useState<Pattern[]>([]);
@@ -1215,9 +952,9 @@ export function IntelligenceHub({ connectionId, canvasId }: { connectionId: stri
       // Canvas scope: brief/synthesise only the canvas's curated-table intelligence,
       // keeping the Hub consistent with the canvas-scoped Briefing + Domains.
       const [domains, org, pat] = await Promise.all([
-        canvasId ? getCanvasDomainInsights(canvasId) : getDomainInsights(connectionId),
+        canvasId ? getCanvasDomainInsights(canvasId) : getDomainInsights(connectionId, schema),
         getOrgIntelligence(),
-        (canvasId ? getCanvasPatterns(canvasId) : getPatterns(connectionId))
+        (canvasId ? getCanvasPatterns(canvasId) : getPatterns(connectionId, false, schema))
           .then(r => r.patterns ?? []).catch(() => [] as Pattern[]),
       ]);
       setDomainData(domains);
@@ -1230,7 +967,7 @@ export function IntelligenceHub({ connectionId, canvasId }: { connectionId: stri
     } finally {
       setLoading(false);
     }
-  }, [connectionId, canvasId]);
+  }, [connectionId, canvasId, schema]);
 
   useEffect(() => { load(); }, [load]);
 
