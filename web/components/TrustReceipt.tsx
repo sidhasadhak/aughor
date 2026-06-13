@@ -34,17 +34,19 @@ export function TrustReceipt({ connectionId, receiptId, kind = "chat" }: { conne
   if (!tried || !rec) return null;
 
   const metrics = rec.lineage.filter(l => l.relation === "metric_available");
-  const used = rec.lineage.filter(l => l.relation === "metric_used");      // B-7: governed formula used
-  const drift = rec.lineage.filter(l => l.relation === "metric_drift");    // B-7: improvised
+  const used = rec.lineage.filter(l => l.relation === "metric_used");        // B-7: governed formula used
+  const drift = rec.lineage.filter(l => l.relation === "metric_drift");      // B-7: improvised
+  const proposed = rec.lineage.filter(l => l.relation === "metric_proposed"); // B-7: ungoverned KPI to define
   const guards = rec.lineage.filter(l => l.relation === "validated_by");
   const inputs = rec.lineage.filter(l => l.relation === "input");
   const sqlEdge = rec.lineage.find(l => l.relation === "source_sql");
 
-  const Badge = ({ tone, title, children }: { tone: "governed" | "drift" | "guard" | "muted"; title?: string; children: React.ReactNode }) => {
+  const Badge = ({ tone, title, children }: { tone: "governed" | "drift" | "guard" | "propose" | "muted"; title?: string; children: React.ReactNode }) => {
     const c = {
       governed: ["var(--blue1)", "var(--blue2)", "var(--blue4)"],
       drift: ["var(--amb1)", "var(--amb2)", "var(--amb4)"],
       guard: ["var(--grn1)", "var(--grn2)", "var(--grn4)"],
+      propose: ["var(--vio1)", "var(--vio2)", "var(--vio4)"],
       muted: ["var(--bg-3)", "var(--b1)", "var(--t3)"],
     }[tone];
     return (
@@ -68,8 +70,9 @@ export function TrustReceipt({ connectionId, receiptId, kind = "chat" }: { conne
         <span style={{ fontSize: 10, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".06em" }}>receipt</span>
         {used.map((m, i) => <Badge key={`used:${i}:${m.ref}`} tone="governed" title={m.detail || ""}>{m.ref.replace("metric:", "")} · governed ✓</Badge>)}
         {drift.map((m, i) => <Badge key={`drift:${i}:${m.ref}`} tone="drift" title={m.detail || ""}>⚠ {m.ref.replace("metric:", "")} · non-governed</Badge>)}
+        {proposed.map((m, i) => <Badge key={`prop:${i}:${m.ref}`} tone="propose" title={m.detail || "Define this metric in the Semantic Layer to enforce it"}>✎ define {m.ref.replace("metric:", "")}</Badge>)}
         {guards.map((g, i) => <Badge key={`guard:${i}:${g.ref}`} tone="guard">✓ {g.ref.replace("guard:", "").replace(/_/g, " ")}</Badge>)}
-        {used.length === 0 && drift.length === 0 && guards.length === 0 && <Badge tone="muted">{inputs.length} source{inputs.length !== 1 ? "s" : ""} · executed SQL</Badge>}
+        {used.length === 0 && drift.length === 0 && proposed.length === 0 && guards.length === 0 && <Badge tone="muted">{inputs.length} source{inputs.length !== 1 ? "s" : ""} · executed SQL</Badge>}
         <span style={{ fontSize: 10, color: "var(--t4)" }}>{open ? "▾" : "▸"}</span>
       </button>
 

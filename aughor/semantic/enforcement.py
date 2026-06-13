@@ -110,6 +110,116 @@ def check_metric_enforcement(question: str, sql: str, metrics: list) -> list[dic
     return _collapse_by_metric(out)
 
 
+def drift_count(verdicts: list[dict]) -> int:
+    """How many targeted metrics drifted from their governed formula."""
+    return sum(1 for v in (verdicts or []) if v.get("status") == "drift")
+
+
+def corrective_directive(verdicts: list[dict]) -> str:
+    """B-7 hard gate — a pointed instruction for ONE corrective regenerate pass.
+
+    Names each *drifted* metric's governed formula verbatim and the wrong form that
+    was detected, so the re-generation can't repeat the same improvisation. Empty
+    string when nothing drifted (the caller skips the regenerate entirely)."""
+    drifts = [v for v in (verdicts or []) if v.get("status") == "drift"]
+    if not drifts:
+        return ""
+    lines = [
+        "\nGOVERNED-METRIC ENFORCEMENT — your previous SQL drifted from the approved "
+        "definition. You MUST fix this:",
+    ]
+    for v in drifts:
+        detail = v.get("detail") or "did not use the governed formula"
+        lines.append(
+            f"  • {v['metric']}: {detail}. Recompute it with this EXACT expression, "
+            f"verbatim — do NOT re-derive it: {v['formula']}"
+        )
+    lines.append(
+        "Rewrite the SQL so every metric above uses its governed expression exactly "
+        "as written.\n"
+    )
+    return "\n".join(lines)
+
+
+# Well-known KPI concepts → a canonical metric slug. High-precision (only
+# unambiguous business KPIs) so "propose to define" never fires on chatter. Each
+# (phrase, slug); longer phrases first so "average order value" wins over "value".
+_KPI_TERMS: list[tuple[str, str]] = [
+    ("average order value", "aov"),
+    ("conversion rate", "conversion_rate"),
+    ("retention rate", "retention_rate"),
+    ("churn rate", "churn_rate"),
+    ("gross margin", "gross_margin"),
+    ("profit margin", "profit_margin"),
+    ("lifetime value", "ltv"),
+    ("customer lifetime value", "ltv"),
+    ("repeat purchase rate", "repeat_purchase_rate"),
+    ("revenue", "revenue"),
+    ("churn", "churn_rate"),
+    ("retention", "retention_rate"),
+    ("conversion", "conversion_rate"),
+    ("arpu", "arpu"),
+    ("aov", "aov"),
+    ("ltv", "ltv"),
+    ("clv", "ltv"),
+]
+
+
+def propose_undefined_metrics(question: str, metrics: list) -> list[dict]:
+    """B-7 propose-to-define — KPI concepts the question names that NO registered
+    metric governs. Each is a candidate the user can define so it becomes enforceable.
+
+    High-precision: only well-known KPI phrases, and only when no governed metric
+    already covers the concept (by name, slug, or label) — so a governed KPI is never
+    re-proposed. Returns ``[{slug, phrase}]`` (one per slug), or ``[]``."""
+    q = (question or "").lower()
+    if not q:
+        return []
+
+    def _covered(slug: str, phrase: str) -> bool:
+        # Is THIS concept already governed? Match the metric to the slug/phrase only —
+        # NOT to the whole question (a governed metric named elsewhere in the question
+        # must not suppress an unrelated ungoverned KPI also mentioned).
+        for m in metrics or []:
+            name = (getattr(m, "name", "") or "").lower()
+            label = (getattr(m, "label", "") or "").lower()
+            if slug == name or phrase == name or (label and (phrase in label or label in phrase)):
+                return True
+        return False
+
+    out: list[dict] = []
+    seen: set[str] = set()
+    for phrase, slug in _KPI_TERMS:
+        if phrase in q and slug not in seen and not _covered(slug, phrase):
+            seen.add(slug)
+            out.append({"slug": slug, "phrase": phrase})
+    return out
+
+
+def enforce_gate(question: str, sql: str, metrics: list, regenerate) -> str:
+    """B-7 hard gate. If `sql` drifted from a governed formula `question` targets,
+    call ``regenerate(directive)`` ONCE with a pointed corrective directive and keep
+    the rewrite only if it reduces drift. Fail-safe — returns the original SQL when
+    nothing drifted, when there's nothing to enforce, or when the rewrite isn't
+    strictly better — so the gate can never replace a query with a worse one.
+
+    ``regenerate`` takes the corrective-directive string and returns SQL (or None);
+    the caller owns the LLM, so this stays pure + unit-testable."""
+    if not sql or not metrics:
+        return sql
+    verdicts = check_metric_enforcement(question, sql, metrics)
+    directive = corrective_directive(verdicts)
+    if not directive:                       # used (or nothing targeted) → leave as-is
+        return sql
+    try:
+        sql2 = regenerate(directive)
+    except Exception:
+        return sql
+    if sql2 and drift_count(check_metric_enforcement(question, sql2, metrics)) < drift_count(verdicts):
+        return sql2
+    return sql
+
+
 def enforcement_summary(verdicts: list[dict]) -> Optional[dict]:
     """Roll verdicts into one enforcement record for the journal. None when there
     was nothing to enforce."""

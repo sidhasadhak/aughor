@@ -112,7 +112,9 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
         enf = None
         try:
             from aughor.semantic.metrics import list_metrics, filter_metrics_to_schema
-            from aughor.semantic.enforcement import check_metric_enforcement, enforcement_summary
+            from aughor.semantic.enforcement import (
+                check_metric_enforcement, enforcement_summary, propose_undefined_metrics,
+            )
             # Keep every surviving grain for enforcement: a query matches one grain,
             # so collapsing first would mislabel a correct answer as drift.
             # check_metric_enforcement collapses its own verdicts to one-per-name.
@@ -128,6 +130,11 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
                 rel = "metric_used" if v["status"] == "used" else "metric_drift"
                 lineage.append((rel, f"metric:{v['metric']}", v["detail"]))
             enf = enforcement_summary(verdicts)
+            # B-7 propose-to-define: KPI concepts the question names that nothing
+            # governs yet — surfaced so the user can define them (then they're enforced).
+            for p in propose_undefined_metrics(question, cms):
+                lineage.append(("metric_proposed", f"metric:{p['slug']}",
+                                f"no governed definition for “{p['phrase']}” — define it to enforce"))
         except Exception:
             pass
         for e in (guard_edges or []):
