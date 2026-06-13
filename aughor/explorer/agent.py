@@ -1873,10 +1873,40 @@ class SchemaExplorer:
                         domain_schema_lines.append(f"  {tbl}: {', '.join(cols)}")
                         domain_cols.update(str(c).lower() for c in cols)
                         domain_table_cols[tbl] = cols
+
+                # Joinable-neighbour grounding: a domain often analyses a metric that lives on a
+                # SIBLING fact table reached by a verified FK (Customer 'value' lives on
+                # sales_transactions.totalPrice, not on sales_customers). That table isn't a
+                # domain entity, so without its columns here the generator GUESSES the measure
+                # name (total_amount vs the real totalPrice) — the gate skips it, but a budget
+                # slot is wasted and the domain starves. Surface the EXACT columns of same-dataset,
+                # verified-FK neighbours so the generator joins with real names. Same dataset only
+                # (the cross-dataset guard still rejects an actual cross-schema join).
+                _nbr_tables: set[str] = set()
+                for jv in self._state.get("join_verifications", []):
+                    _ft, _tt = jv.get("from_table", ""), jv.get("to_table", "")
+                    for _a, _b in ((_ft, _tt), (_tt, _ft)):
+                        if _a in domain_tables and _b and _b not in domain_tables and _ds(_b) == _ds(_a):
+                            _nbr_tables.add(_b)
+                _nbr_lines: list[str] = []
+                for nt in sorted(_nbr_tables)[:4]:    # cap — keep the prompt tight
+                    cols = (sql_writer.table_cols.get(nt)
+                            or next((v for k, v in sql_writer.table_cols.items() if k.lower() == nt.lower()), None))
+                    if cols:
+                        _nbr_lines.append(f"  {nt}: {', '.join(cols)}")
+                        domain_table_cols[nt] = cols                 # so measure-grains sees its grain too
+                        domain_cols.update(str(c).lower() for c in cols)
+
                 domain_schema_block = (
                     "EXACT COLUMN NAMES — use ONLY these, never invent:\n"
                     + "\n".join(domain_schema_lines)
                 ) if domain_schema_lines else ""
+                if _nbr_lines:
+                    domain_schema_block += (
+                        "\nJOINABLE TABLES (reachable by a verified key — if you join to one, use its "
+                        "EXACT column names below; NEVER invent a measure like total_amount/line_total):\n"
+                        + "\n".join(_nbr_lines)
+                    )
 
                 # ── Column-feasibility gate (#1) ────────────────────────────────
                 # Drop named angles whose required column class is absent (a
