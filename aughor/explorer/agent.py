@@ -1837,6 +1837,7 @@ class SchemaExplorer:
 
                 domain_schema_lines: list[str] = []
                 domain_cols: set[str] = set()
+                domain_table_cols: dict[str, list] = {}   # scoped to THIS domain's tables
                 for tbl in sorted(domain_tables):
                     cols = (
                         sql_writer.table_cols.get(tbl)
@@ -1846,6 +1847,7 @@ class SchemaExplorer:
                     if cols:
                         domain_schema_lines.append(f"  {tbl}: {', '.join(cols)}")
                         domain_cols.update(str(c).lower() for c in cols)
+                        domain_table_cols[tbl] = cols
                 domain_schema_block = (
                     "EXACT COLUMN NAMES — use ONLY these, never invent:\n"
                     + "\n".join(domain_schema_lines)
@@ -1908,8 +1910,12 @@ class SchemaExplorer:
                     )
                 # Measure-additivity PREVENTION: per-unit vs per-line grain so the generator
                 # writes SUM(x*quantity) for a unit price and SUM(x) for a line total. No-op safe.
+                # Scope to THIS domain's tables — passing the whole connection injects another
+                # dataset's measure columns (e.g. ecommerce `total_amount`/`line_total`) into a
+                # bakehouse prompt, and the generator then writes them onto tables that don't
+                # have them (the #1 Binder-error class on a mixed-dataset workspace).
                 from aughor.semantic.measure_grain import measure_grains_block as _mg_block
-                _mgb = _mg_block(self.connection_id, self._conn, sql_writer.table_cols)
+                _mgb = _mg_block(self.connection_id, self._conn, domain_table_cols or sql_writer.table_cols)
                 if _mgb:
                     grain_block += "\n" + _mgb + "\n"
 
