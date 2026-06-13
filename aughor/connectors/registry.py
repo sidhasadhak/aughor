@@ -45,6 +45,15 @@ DSN_PREVIEWS: dict[str, str] = {
 # ── Form field descriptors (used by the frontend to build connection forms) ───
 # Each entry: [{"key": ..., "label": ..., "placeholder": ..., "secret": bool}]
 
+
+def secret_field_keys(conn_type: str) -> set[str]:
+    """Form field keys marked secret for a connector, EXCLUDING `dsn` (the DSN is
+    stored in its own Fernet-encrypted column). These are the secret values that
+    otherwise land in `meta` plaintext — the connection registry encrypts them."""
+    return {f["key"] for f in FORM_FIELDS.get(conn_type, [])
+            if f.get("secret") and f["key"] != "dsn"}
+
+
 FORM_FIELDS: dict[str, list[dict]] = {
     "duckdb": [
         {"key": "dsn", "label": "File path", "placeholder": "/path/to/file.duckdb", "secret": False},

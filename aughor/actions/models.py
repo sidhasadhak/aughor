@@ -1,8 +1,17 @@
 """Action Hub data models."""
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Literal, Optional
+
+# A header whose NAME looks auth-bearing is treated as a secret (encrypted at rest,
+# masked in API responses). Content-Type / Accept etc. stay visible.
+_SECRET_HEADER_RE = re.compile(r"auth|token|key|secret|bearer|cookie|password|x-api", re.I)
+
+
+def is_secret_header(name: str) -> bool:
+    return bool(_SECRET_HEADER_RE.search(name or ""))
 
 
 @dataclass
@@ -34,11 +43,13 @@ class ActionTrigger:
         }
 
     def to_safe_dict(self) -> dict:
-        """API-facing form — the credential `url` is masked so the raw secret never
-        leaves the server. The frontend shows the preview; on save it sends the mask
-        back unchanged, which the update path detects and keeps (see the router)."""
+        """API-facing form — the credential `url` and any auth `headers` are masked so
+        the raw secret never leaves the server. The frontend shows the preview; on save
+        it sends the mask back unchanged, which the update path detects and keeps."""
         from aughor.secretvault import mask_secret
-        return {**self.to_dict(), "url": mask_secret(self.url)}
+        safe_headers = {k: (mask_secret(v) if is_secret_header(k) and isinstance(v, str) else v)
+                        for k, v in self.headers.items()}
+        return {**self.to_dict(), "url": mask_secret(self.url), "headers": safe_headers}
 
     @classmethod
     def from_dict(cls, d: dict) -> "ActionTrigger":

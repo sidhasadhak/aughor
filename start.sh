@@ -16,10 +16,14 @@ export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"
 
 start_api() {
-  pkill -f "uvicorn aughor.api" 2>/dev/null || true
+  # SIGKILL (not TERM): a --reload worker blocked on open SSE/exploration connections
+  # ignores a graceful TERM and holds :8000, so a plain pkill can't restart it.
+  pkill -9 -f "uvicorn aughor.api" 2>/dev/null || true
   sleep 0.5
   cd "$AUGHOR_DIR"
-  nohup uv run uvicorn aughor.api:app --port 8000 --reload > "$API_LOG" 2>&1 &
+  # --timeout-graceful-shutdown bounds the wait so an in-flight reload can't hang
+  # forever on long-lived SSE streams (the recurring dev wedge).
+  nohup uv run uvicorn aughor.api:app --port 8000 --reload --timeout-graceful-shutdown 3 > "$API_LOG" 2>&1 &
   echo $! > "$API_PID"
   echo "API started (pid $!, logs: $API_LOG)"
   sleep 2
