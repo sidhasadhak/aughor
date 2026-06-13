@@ -1809,6 +1809,46 @@ class SchemaExplorer:
                     for i in domain_insights
                 ) or "  (none yet)"
 
+                # Angle-diversity nudge — POSITIVE grounding only. The structural-dedup gate
+                # drops exact repeats, but a domain can still circle one THEME at different
+                # grains (all four Customer cuts were geographic). NAME the real, low-cardinality
+                # dimension columns it hasn't used yet and invite one. Purely positive by design:
+                # an earlier negative-only "pick something different" pushed the generator to
+                # INVENT a `customer_type`/`segment` column (negative steering without a real
+                # alternative → hallucination). This only fires when a real unused dimension
+                # exists and names it, so it can never induce one.
+                diversity_block = ""
+                try:
+                    from aughor.sql.shape import query_signature as _qsig
+                    _used_dims: set[str] = set()
+                    for _i in domain_insights:
+                        _sg = _qsig(_i.get("sql", ""), getattr(self._conn, "dialect", "duckdb"))
+                        if _sg:
+                            _used_dims |= set(_sg[1])
+                    if len(_used_dims) >= 2:
+                        def _dnorm(s):
+                            return (s or "").replace("_", "").replace("-", "").replace(" ", "").lower()
+                        _avail: list[str] = []
+                        for _tbl in domain_table_cols:
+                            _cps = (cp or {}).get(_tbl) or (cp or {}).get(_tbl.lower()) or {}
+                            for _cn, _cpf in _cps.items():
+                                if (getattr(_cpf, "is_low_cardinality", False)
+                                        and not getattr(_cpf, "is_fk", False)
+                                        and (getattr(_cpf, "semantic_type", "") or "") not in ("id", "foreign_key", "metric")
+                                        and _dnorm(_cn) not in _used_dims):
+                                    _avail.append(_cn)
+                        _avail = sorted(set(_avail))[:6]
+                        if _avail:
+                            diversity_block = (
+                                f"DIMENSIONS ALREADY ANALYSED: {', '.join(sorted(_used_dims))} — well-covered. "
+                                f"For a fresh angle, prefer an UNUSED real dimension — e.g. {', '.join(_avail)} "
+                                f"— or a measure-based cut. Use ONLY columns that appear in the SCHEMA.\n\n"
+                            )
+                except Exception as _exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_exc, "diversity nudge is best-effort prompt context; on failure omit it",
+                             counter="explorer.diversity_nudge_failed")
+
                 uncovered = [a for a in angles if a not in covered_angles]
                 if not uncovered:
                     # All named angles covered — let LLM propose deeper / cross-cutting questions
@@ -2146,6 +2186,7 @@ class SchemaExplorer:
                         f"COVERAGE ANGLES TO EXPLORE: {', '.join(uncovered)}\n"
                         f"ANGLES ALREADY COVERED: {', '.join(covered_angles) or 'none'}\n\n"
                         f"EXISTING FINDINGS FOR THIS DOMAIN:\n{existing_findings}\n\n"
+                        f"{diversity_block}"
                         "Propose the single most valuable next question. "
                         "Choose an uncovered angle. Write grain-correct SQL."
                     )
