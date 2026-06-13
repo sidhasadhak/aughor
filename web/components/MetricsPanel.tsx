@@ -11,10 +11,116 @@ import {
   getMetricFreshness,
   updateMetric,
   validateMetric,
+  transitionMetric,
+  getMetricAudit,
   type Metric,
   type MetricValidationResult,
   type MetricFreshnessResult,
+  type MetricAuditEntry,
 } from "@/lib/api";
+
+// ── Governance lifecycle (B-8) ──────────────────────────────────────────────────
+const STATUS_STYLE: Record<string, string> = {
+  draft:      "border-zinc-600 bg-zinc-800 text-zinc-400",
+  proposed:   "border-amber-500/40 bg-amber-500/10 text-amber-400",
+  approved:   "border-emerald-500/40 bg-emerald-500/10 text-emerald-400",
+  deprecated: "border-zinc-700 bg-zinc-800/60 text-zinc-500 line-through",
+};
+// Legal transitions per state — mirrors aughor/semantic/governance.py.
+const NEXT_ACTIONS: Record<string, string[]> = {
+  draft:      ["propose"],
+  proposed:   ["approve", "reject"],
+  approved:   ["deprecate"],
+  deprecated: ["propose"],
+};
+
+function GovernanceSection({ metric, onChanged }: { metric: Metric; onChanged: () => void }) {
+  const [actor, setActor] = useState("");
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState("");
+  const [audit, setAudit] = useState<MetricAuditEntry[]>([]);
+  const [showAudit, setShowAudit] = useState(false);
+
+  const status = metric.status ?? "draft";
+  const actions = NEXT_ACTIONS[status] ?? [];
+
+  useEffect(() => {
+    let alive = true;
+    getMetricAudit(metric.name).then(a => { if (alive) setAudit(a); }).catch(() => {});
+    return () => { alive = false; };
+  }, [metric.name]);
+
+  const run = async (action: string) => {
+    setErr("");
+    if (!actor.trim()) { setErr("Enter who's performing this (actor)."); return; }
+    setBusy(action);
+    try {
+      await transitionMetric(metric.name, action, actor.trim());
+      setAudit(await getMetricAudit(metric.name));
+      onChanged();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Transition failed");
+    } finally { setBusy(null); }
+  };
+
+  return (
+    <div className="rounded-md border border-zinc-700 bg-zinc-800/40 p-3">
+      <div className="flex items-center gap-2 mb-2 flex-wrap">
+        <span className="text-xs font-medium text-zinc-300">Governance</span>
+        <span className={`text-[10px] px-1.5 rounded border ${STATUS_STYLE[status] ?? STATUS_STYLE.draft}`}>
+          {status}{metric.version ? ` v${metric.version}` : ""}
+        </span>
+        {metric.approved_by && status === "approved" && (
+          <span className="text-[11px] text-zinc-500">approved by {metric.approved_by}</span>
+        )}
+        {metric.proposed_by && status === "proposed" && (
+          <span className="text-[11px] text-zinc-500">proposed by {metric.proposed_by}</span>
+        )}
+      </div>
+      {actions.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap">
+          <input
+            value={actor}
+            onChange={(e) => setActor(e.target.value)}
+            placeholder="actor (you / team)"
+            className="text-xs bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-zinc-200 w-36 outline-none focus:border-zinc-500"
+          />
+          {actions.map(a => (
+            <button
+              key={a}
+              disabled={!!busy}
+              onClick={() => run(a)}
+              className={`text-xs px-2 py-1 rounded border capitalize disabled:opacity-50 ${
+                a === "approve" ? "border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/10"
+                : (a === "reject" || a === "deprecate") ? "border-red-500/40 text-red-400 hover:bg-red-500/10"
+                : "border-amber-500/40 text-amber-400 hover:bg-amber-500/10"}`}
+            >
+              {busy === a ? "…" : a}
+            </button>
+          ))}
+        </div>
+      )}
+      {err && <div className="text-[11px] text-red-400 mt-1.5">{err}</div>}
+      {audit.length > 0 && (
+        <div className="mt-2">
+          <button onClick={() => setShowAudit(s => !s)} className="text-[11px] text-zinc-400 hover:text-zinc-200">
+            {showAudit ? "▾" : "▸"} audit trail ({audit.length})
+          </button>
+          {showAudit && (
+            <div className="mt-1 flex flex-col gap-0.5">
+              {audit.map((a, i) => (
+                <div key={i} className="text-[11px] text-zinc-500 font-mono">
+                  {a.at.slice(0, 19).replace("T", " ")} · <span className="text-zinc-300">{a.actor}</span>{" "}
+                  {a.action} <span className="text-zinc-600">{a.from}→{a.to}</span>{a.version ? ` v${a.version}` : ""}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ── Empty defaults ─────────────────────────────────────────────────────────────
 
@@ -252,8 +358,13 @@ export function MetricsPanel({ connId }: { connId?: string }) {
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
                   <span className="text-sm font-medium text-zinc-200 truncate">{m.label}</span>
-                  {m.approved_by && (
-                    <span className="text-[10px] text-emerald-400/80">✓</span>
+                  {m.status && (
+                    <span
+                      className={`text-[9px] px-1 rounded border shrink-0 ${STATUS_STYLE[m.status] ?? STATUS_STYLE.draft}`}
+                      title={`Governance status: ${m.status}${m.version ? ` (v${m.version})` : ""}`}
+                    >
+                      {m.status}{m.status === "approved" && m.version ? ` v${m.version}` : ""}
+                    </span>
                   )}
                   {nameCounts[m.name] > 1 && (
                     <span
@@ -307,6 +418,12 @@ export function MetricsPanel({ connId }: { connId?: string }) {
             <h3 className="text-sm font-semibold text-zinc-300">
               {adding ? "New Metric" : `Edit — ${selected}`}
             </h3>
+
+            {/* ── Governance lifecycle (B-8) — existing metrics only ──────── */}
+            {!adding && (() => {
+              const sm = metrics.find((m) => m.name === selected);
+              return sm ? <GovernanceSection metric={sm} onChanged={load} /> : null;
+            })()}
 
             {/* ── Core fields ─────────────────────────────────────────────── */}
             <Field label="Name (snake_case)" required>
