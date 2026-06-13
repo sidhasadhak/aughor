@@ -768,7 +768,7 @@ function HomeScreen({
                       </td>
                       <td style={{ color: "var(--t3)", fontSize: 11 }}>{timeAgo(inv.started_at)}</td>
                       <td>
-                        {inv.status === "completed" && <span className="aug-tag aug-tag-green">Completed</span>}
+                        {inv.status === "complete" && <span className="aug-tag aug-tag-green">Completed</span>}
                         {inv.status === "timed_out" && <span className="aug-tag aug-tag-amber">Timed out</span>}
                         {inv.status === "running"   && <span className="aug-tag aug-tag-blue">Running</span>}
                         {inv.status === "failed"    && <span className="aug-tag aug-tag-red">Failed</span>}
@@ -852,7 +852,7 @@ function RecentsScreen({ onGoToChat, onOpenInvestigation }: { onGoToChat: (q?: s
                     </td>
                     <td style={{ color: "var(--t3)", fontSize: 11 }}>{timeAgo(a.started_at)}</td>
                     <td>
-                      {a.status === "completed" && <span className="aug-tag aug-tag-green">Completed</span>}
+                      {a.status === "complete" && <span className="aug-tag aug-tag-green">Completed</span>}
                       {a.status === "timed_out" && <span className="aug-tag aug-tag-amber">Timed out</span>}
                       {a.status === "running"   && <span className="aug-tag aug-tag-blue">Running</span>}
                       {a.status === "failed"    && <span className="aug-tag aug-tag-red">Failed</span>}

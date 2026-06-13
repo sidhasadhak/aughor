@@ -202,7 +202,7 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
       sublabel: `${timeAgo(inv.started_at)} ago · ${inv.status}`,
       type: "investigation" as ItemType,
       icon: "spark",
-      accent: inv.status === "completed" ? "var(--grn3)" : inv.status === "failed" ? "var(--red3)" : "var(--t3)",
+      accent: inv.status === "complete" ? "var(--grn3)" : inv.status === "failed" ? "var(--red3)" : "var(--t3)",
       onSelect: () => onGoToChat(inv.question),
     }));
 
