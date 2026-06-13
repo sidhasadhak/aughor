@@ -25,6 +25,19 @@ export {
   buildColumnFormatter,
 } from "./formatCell";
 
+// ── Column types ─────────────────────────────────────────────────────────────
+
+/** SQL numeric column types — mirrors the backend `_NUMERIC_TYPES` (profiler.py),
+ *  including DuckDB's unsigned `U*INT` variants. Distributions/percentiles only
+ *  make sense for these, so the UI gates the per-column distribution on it. */
+const NUMERIC_TYPE_RE =
+  /\b(U?(?:TINYINT|SMALLINT|INTEGER|BIGINT|HUGEINT|INT)|FLOAT|DOUBLE|DECIMAL|NUMERIC|REAL|NUMBER)\b/i;
+
+/** True when a column's declared SQL type is numeric (int/float/decimal/…). */
+export function isNumericType(type: string | null | undefined): boolean {
+  return !!type && NUMERIC_TYPE_RE.test(type);
+}
+
 // ── Numbers ──────────────────────────────────────────────────────────────────
 
 /**

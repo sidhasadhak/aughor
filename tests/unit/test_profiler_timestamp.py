@@ -1,7 +1,7 @@
 """Primary-timestamp selection — guards against date-NAMED integer columns being
 vouched as timestamps (ClickBench EventDate::USMALLINT → "USMALLINT vs DATE").
 See aughor/tools/profiler.py:_select_timestamp_cols."""
-from aughor.tools.profiler import _select_timestamp_cols, _NUMERIC_TYPES
+from aughor.tools.profiler import _select_timestamp_cols, _NUMERIC_TYPES, _semantic_type
 
 
 # ── the USMALLINT regex fix ───────────────────────────────────────────────────
@@ -60,3 +60,35 @@ def test_key_like_timestamps_excluded():
 def test_no_timestamp_columns_at_all():
     cols = [("a", "BIGINT"), ("b", "VARCHAR"), ("c", "DOUBLE")]
     assert _select_timestamp_cols(cols) == []
+
+
+# ── camelCase identifier classification (the franchiseID distribution bug) ────────
+# camelCase ids (franchiseID, supplierID, customerID) were lowercased before the
+# snake_case _KEY_PATTERN check, so "_id$" never matched → they fell through to the
+# numeric branch as "measure" and got numeric percentiles in the Catalog. They must
+# classify as "key" so the distribution profiler skips them.
+
+def _st(col, dtype, *, is_fk=False, distinct=5000, rows=5000, null=0.0, vr=(1, 9999)):
+    return _semantic_type(col, dtype, is_fk, distinct, rows, null, vr)
+
+
+def test_camelcase_ids_classified_as_key():
+    for col in ("franchiseID", "supplierID", "customerID", "transactionID", "eventGUID", "orderNum"):
+        assert _st(col, "BIGINT") == "key", f"{col} should be a key, not a measure"
+
+
+def test_snake_case_ids_still_keys():
+    for col in ("order_id", "customer_id", "supplier_pk", "row_uuid"):
+        assert _st(col, "VARCHAR") == "key"
+
+
+def test_real_measures_unaffected():
+    for col in ("lifetime_spend", "revenue", "quantity", "total_amount"):
+        assert _st(col, "DECIMAL") == "measure"
+
+
+def test_plain_words_ending_in_id_are_not_keys():
+    # the lookbehind requires an uppercase suffix after a lowercase letter, so these
+    # all-lowercase numeric columns must NOT be mistaken for ids
+    for col in ("valid", "void", "grid", "solid", "humid", "rapid"):
+        assert _st(col, "BIGINT") == "measure", f"{col} should not be classified as a key"
