@@ -33,14 +33,16 @@ def _tables_from_sql(sql: str) -> set[str]:
     return {m.group(1) for m in _SQL_TABLE_RE.finditer(sql) if m.group(1)}
 
 
-def _filter_by_schema(domain_data: dict, conn_id: str, schema: str | None) -> dict:
-    """Filter domain insights to only those referencing tables in the given schema."""
+def _schema_table_set(conn_id: str, schema: str | None) -> set[str] | None:
+    """The bare, lowercased table names in ``schema`` for ``conn_id`` — or None when it
+    can't be determined (the caller then skips filtering: over-inclusion is safe, wrong
+    exclusion is not)."""
     if not schema:
-        return domain_data
+        return None
     try:
         db = open_connection_for(conn_id)
     except Exception:
-        return domain_data
+        return None
     try:
         safe_schema = schema.replace("'", "''")
         # information_schema.tables is standard SQL — same query for every dialect.
@@ -49,34 +51,58 @@ def _filter_by_schema(domain_data: dict, conn_id: str, schema: str | None) -> di
             "SELECT table_name FROM information_schema.tables "
             f"WHERE table_schema = '{safe_schema}' AND table_type = 'BASE TABLE'",
         )
-        tables_in_schema = {str(r[0]) for r in res.rows}
+        return {str(r[0]).lower() for r in res.rows}
     except Exception:
-        db.close()
-        return domain_data
+        return None
     finally:
         try:
             db.close()
         except Exception:
             pass
 
+
+def _insight_refs(ins: dict) -> set[str]:
+    """Lowercased table names an insight references — SQL tables plus declared entities
+    (also snake-cased, so CamelCase entity names match snake_case tables)."""
+    sql_tables = {t.lower() for t in _tables_from_sql(ins.get("sql", ""))}
+    entities = {e.lower() for e in ins.get("entities_involved", [])}
+    snake = {_re.sub(r'(?<!^)(?=[A-Z])', '_', e).lower() for e in entities}
+    return sql_tables | entities | snake
+
+
+def _filter_by_schema(domain_data: dict, conn_id: str, schema: str | None) -> dict:
+    """Filter domain insights to only those referencing tables in the given schema."""
+    tables_in_schema = _schema_table_set(conn_id, schema)
+    if tables_in_schema is None:
+        return domain_data
     filtered = {}
     for domain, data in domain_data.items():
         insights = data if isinstance(data, list) else data.get("insights", [])
-        filtered_insights = []
-        for ins in insights:
-            sql_tables = _tables_from_sql(ins.get("sql", ""))
-            entities = {e.lower() for e in ins.get("entities_involved", [])}
-            # snake_case entities for broader matching
-            snake_entities = {_re.sub(r'(?<!^)(?=[A-Z])', '_', e).lower() for e in entities}
-            all_refs = sql_tables | snake_entities | entities
-            if all_refs & tables_in_schema:
-                filtered_insights.append(ins)
-        if filtered_insights:
-            if isinstance(data, list):
-                filtered[domain] = filtered_insights
-            else:
-                filtered[domain] = {**data, "insights": filtered_insights}
+        kept = [ins for ins in insights if _insight_refs(ins) & tables_in_schema]
+        if kept:
+            filtered[domain] = kept if isinstance(data, list) else {**data, "insights": kept}
     return filtered
+
+
+def _filter_findings_by_schema(findings: dict, conn_id: str, schema: str | None) -> dict:
+    """Scope an exploration-findings payload to one schema's tables so the Domains layer
+    follows the shared schema selector. Sections are keyed by table (``lifecycle_maps``)
+    or ``"table:column"`` (``null_meanings``, ``distributions``); insights reference
+    tables via their SQL/entities. Returns ``findings`` unchanged when the schema's table
+    set can't be determined (over-inclusion beats wrong exclusion)."""
+    tset = _schema_table_set(conn_id, schema)
+    if tset is None:
+        return findings
+
+    def _tbl(key: str) -> str:
+        return key.split(":", 1)[0].split(".")[-1].lower()
+
+    out = dict(findings)
+    out["null_meanings"] = {k: v for k, v in (findings.get("null_meanings") or {}).items() if _tbl(k) in tset}
+    out["distributions"] = {k: v for k, v in (findings.get("distributions") or {}).items() if _tbl(k) in tset}
+    out["lifecycle_maps"] = {k: v for k, v in (findings.get("lifecycle_maps") or {}).items() if k.split(".")[-1].lower() in tset}
+    out["insights"] = [i for i in (findings.get("insights") or []) if _insight_refs(i) & tset]
+    return out
 
 router = APIRouter(tags=["exploration"])
 
@@ -180,7 +206,7 @@ def time_to_first_insight_kpi(limit: int = 200):
 
 
 @router.get("/exploration/{conn_id}/findings")
-def get_exploration_findings(conn_id: str):
+def get_exploration_findings(conn_id: str, schema: str | None = None):
     from aughor.explorer import store as _expl_store
     state = _expl_store.load(conn_id)
     distributions = state.get("distributions", {})
@@ -204,7 +230,7 @@ def get_exploration_findings(conn_id: str):
         except Exception:
             pass
 
-    return {
+    result = {
         "connection_id": conn_id,
         "phase": state.get("phase", "pending"),
         "null_meanings": state.get("null_meanings", {}),
@@ -213,6 +239,10 @@ def get_exploration_findings(conn_id: str):
         "distributions": distributions,
         "insights": state.get("insights", []),
     }
+    # Scope to the shared schema selector (Domains layer) when one is supplied.
+    if schema:
+        result = _filter_findings_by_schema(result, conn_id, schema)
+    return result
 
 
 @router.get("/exploration/{conn_id}/domains")

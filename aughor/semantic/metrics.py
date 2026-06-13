@@ -104,10 +104,19 @@ def save_metric(metric: MetricDefinition, path: Path | None = None) -> None:
     _save_raw(raw, path)
 
 
-def delete_metric(name: str, path: Path | None = None) -> bool:
-    """Remove a metric by name. Returns True if found and deleted."""
+def delete_metric(name: str, sql: str | None = None, path: Path | None = None) -> bool:
+    """Remove a metric by name. Returns True if anything was deleted.
+
+    Grain-aware: a name can carry several governed grains, each with a distinct
+    formula (e.g. ``revenue`` over ``orders`` vs ``order_items``). When ``sql`` is
+    given, only the entry whose formula matches is removed — so deleting one grain
+    from the UI doesn't wipe the others. Without ``sql`` every entry sharing the
+    name is removed (legacy behaviour, used by bulk cleanup paths)."""
     raw = _load_raw(path)
-    new = [m for m in raw if m.get("name") != name]
+    if sql is None:
+        new = [m for m in raw if m.get("name") != name]
+    else:
+        new = [m for m in raw if not (m.get("name") == name and (m.get("sql") or "") == sql)]
     if len(new) == len(raw):
         return False
     _save_raw(new, path)

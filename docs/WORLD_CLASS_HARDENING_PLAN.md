@@ -1,5 +1,15 @@
 # 🚨 World-Class Hardening — Execution Plan
 
+> **✅ STATUS (2026-06-13, code-verified):** the bulk of this plan **shipped via the Aughor Kernel**.
+> Done: WCH-3–8 (orphan/resume/crash-recovery — kernel K1 properties), WCH-11 (poll storm — K2 SSE),
+> WCH-12 (schema-introspection TTL cache), WCH-15/16/17 (motion foundation + rollout, ontology
+> legends-at-top, canvas History-tab), plus the sample-data fix. **Still pending:** WCH-13 hypothesis-
+> evaluation parallelism (SQL-gen already parallel), the K4 follow-ups (typed TS client, domain interface
+> modules, god-file splits, `.duckdb` write coordination), and **Phase 5 / K5** governance (enforcement
+> gate + governance workflow + harder benchmark — receipts already inline). **To verify:** WCH-1
+> (Briefing "Investigate" blank canvas) may be resolved by the citations→actions work. Current pending
+> truth lives in `ROADMAP.md` → "VERIFIED PENDING STATUS — 2026-06-13".
+
 > **⚠️ SUPERSTRUCTURE UPDATE (2026-06-10, same day):** the user escalated this arc from bug-fixing to
 > an architectural rebase — see **`docs/KERNEL_ARCHITECTURE.md`** (the Aughor Kernel: Ledger + Job
 > Kernel + Event Spine + Contracts, with measured proof of the gap). That doc's §4 reconciles the two

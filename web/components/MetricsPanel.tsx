@@ -169,11 +169,13 @@ export function MetricsPanel({ connId }: { connId?: string }) {
     } finally { setSaving(false); }
   };
 
-  const handleDelete = async (name: string) => {
-    setDeleting(name);
+  const handleDelete = async (m: Metric) => {
+    setDeleting(m.name);
     try {
-      await deleteMetric(name);
-      if (selected === name) cancelForm();
+      // Pass the formula so only this grain is removed when a name has several
+      // definitions — not every same-named row.
+      await deleteMetric(m.name, m.sql);
+      if (selected === m.name) cancelForm();
       await load();
     } catch {}
     finally { setDeleting(null); }
@@ -280,7 +282,7 @@ export function MetricsPanel({ connId }: { connId?: string }) {
                   </Badge>
                 )}
                 <button
-                  onClick={(e) => { e.stopPropagation(); handleDelete(m.name); }}
+                  onClick={(e) => { e.stopPropagation(); handleDelete(m); }}
                   className="opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-red-400 text-xs transition-all ml-1"
                   disabled={deleting === m.name}
                 >

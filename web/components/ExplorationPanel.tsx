@@ -221,7 +221,7 @@ export function ExplorationPanel({ connectionId, initialSection, schema }: Props
       try {
         const [s, f] = await Promise.all([
           getExplorationStatus(connectionId),
-          getExplorationFindings(connectionId),
+          getExplorationFindings(connectionId, schema),
         ]);
         if (!cancelled) {
           setStatus(s);
@@ -239,7 +239,7 @@ export function ExplorationPanel({ connectionId, initialSection, schema }: Props
       kinds: ["exploration.", "job.state"], connId: connectionId,
     });
     return () => { cancelled = true; clearInterval(t); unsub(); };
-  }, [connectionId]);
+  }, [connectionId, schema]);
 
   if (!status || !findings) {
     return (

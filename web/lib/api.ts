@@ -546,8 +546,11 @@ export async function updateMetric(name: string, m: Metric): Promise<Metric> {
   return res.json();
 }
 
-export async function deleteMetric(name: string): Promise<void> {
-  await fetch(`${BASE}/metrics/${encodeURIComponent(name)}`, { method: "DELETE" });
+export async function deleteMetric(name: string, sql?: string): Promise<void> {
+  // Pass the formula to delete a single grain when a name has several definitions;
+  // omit it to remove every entry sharing the name.
+  const q = sql ? `?sql=${encodeURIComponent(sql)}` : "";
+  await fetch(`${BASE}/metrics/${encodeURIComponent(name)}${q}`, { method: "DELETE" });
 }
 
 export async function validateMetric(name: string, connId: string): Promise<MetricValidationResult> {
@@ -981,8 +984,9 @@ export interface ExplorationFindings {
   insights: ExplorationInsight[];
 }
 
-export async function getExplorationFindings(connectionId: string): Promise<ExplorationFindings> {
-  const res = await fetch(`${BASE}/exploration/${encodeURIComponent(connectionId)}/findings`);
+export async function getExplorationFindings(connectionId: string, schema?: string): Promise<ExplorationFindings> {
+  const q = schema ? `?schema=${encodeURIComponent(schema)}` : "";
+  const res = await fetch(`${BASE}/exploration/${encodeURIComponent(connectionId)}/findings${q}`);
   if (!res.ok) throw new Error("Failed to fetch exploration findings");
   return res.json();
 }
