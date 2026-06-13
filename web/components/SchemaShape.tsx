@@ -98,7 +98,7 @@ function TableCard({
   const dr = tableProfile?.date_range;
 
   return (
-    <div style={{ background: "var(--bg-1)", border: "1px solid var(--b1)", borderRadius: 7, overflow: "hidden" }}>
+    <div style={{ background: "var(--bg-1)", border: "1px solid var(--b1)", borderRadius: 7, overflow: "hidden", flexShrink: 0 }}>
       <button
         onClick={() => setExpanded(e => !e)}
         style={{
@@ -311,7 +311,7 @@ export function SchemaShape({
   for (const tp of profile.tables) tableProfileMap[tp.table] = tp;
 
   return (
-    <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 12, overflowY: "auto" }}>
+    <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 12, flex: 1, minHeight: 0, overflowY: "auto" }}>
       <div style={{ display: "flex", gap: 16, padding: "10px 14px", background: "var(--bg-1)", borderRadius: 6, flexWrap: "wrap" }}>
         <span style={{ fontSize: 11, color: "var(--t2)" }}><strong>{tablesToShow.length}</strong> tables</span>
         <span style={{ fontSize: 11, color: "var(--t2)" }}><strong>{totalCols}</strong> columns</span>
