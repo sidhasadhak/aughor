@@ -22,7 +22,8 @@ router = APIRouter(tags=["actions"])
 @router.get("/actions/triggers")
 def list_action_triggers():
     from aughor.actions.store import list_triggers
-    return {"triggers": [t.to_dict() for t in list_triggers()]}
+    # to_safe_dict masks the credential URL — the raw secret never leaves the server.
+    return {"triggers": [t.to_safe_dict() for t in list_triggers()]}
 
 
 class _TriggerBody(BaseModel):
@@ -45,21 +46,26 @@ def create_action_trigger(body: _TriggerBody):
         headers=body.headers, enabled=body.enabled,
         channel=body.channel, project=body.project, issue_type=body.issue_type,
     )
-    return save_trigger(trigger).to_dict()
+    return save_trigger(trigger).to_safe_dict()
 
 
 @router.put("/actions/triggers/{trigger_id}", dependencies=[gate(Capability.ACTION_HUB)])
 def update_action_trigger(trigger_id: str, body: _TriggerBody):
     from aughor.actions.models import ActionTrigger
     from aughor.actions.store  import save_trigger, get_trigger
-    if not get_trigger(trigger_id):
+    from aughor.secretvault    import is_masked
+    existing = get_trigger(trigger_id)
+    if not existing:
         raise HTTPException(status_code=404, detail="Trigger not found")
+    # The API returns a masked URL; if the UI sends that mask back unchanged, keep the
+    # real secret rather than overwriting it with bullets.
+    url = existing.url if is_masked(body.url) else body.url
     trigger = ActionTrigger(
-        id=trigger_id, name=body.name, type=body.type, url=body.url,
+        id=trigger_id, name=body.name, type=body.type, url=url,
         headers=body.headers, enabled=body.enabled,
         channel=body.channel, project=body.project, issue_type=body.issue_type,
     )
-    return save_trigger(trigger).to_dict()
+    return save_trigger(trigger).to_safe_dict()
 
 
 @router.delete("/actions/triggers/{trigger_id}", status_code=200)

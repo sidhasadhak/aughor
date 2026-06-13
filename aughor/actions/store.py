@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 from aughor.actions.models import ActionTrigger, ActionLog
+from aughor.secretvault import encrypt_secret, decrypt_secret
 from aughor.util.json_store import JsonListStore
 
 _TRIGGERS_PATH = Path("data/action_triggers.json")
@@ -16,22 +17,31 @@ _triggers = JsonListStore(_TRIGGERS_PATH)
 _logs     = JsonListStore(_LOGS_PATH)
 
 
+# The trigger `url` is a credential (a Slack/webhook URL grants posting access), so it
+# is encrypted at rest and only ever decrypted in-process to fire. Load returns the
+# plaintext URL (for the executor); the API masks it (see ActionTrigger.to_safe_dict).
+def _load_decrypted(d: dict) -> ActionTrigger:
+    d = {**d, "url": decrypt_secret(d.get("url", ""))}
+    return ActionTrigger.from_dict(d)
+
+
 # ── Trigger CRUD ──────────────────────────────────────────────────────────────
 
 def list_triggers() -> list[ActionTrigger]:
-    return [ActionTrigger.from_dict(d) for d in _triggers.all()]
+    return [_load_decrypted(d) for d in _triggers.all()]
 
 
 def get_trigger(trigger_id: str) -> Optional[ActionTrigger]:
     d = _triggers.get(trigger_id)
-    return ActionTrigger.from_dict(d) if d else None
+    return _load_decrypted(d) if d else None
 
 
 def save_trigger(trigger: ActionTrigger) -> ActionTrigger:
-    """Create or update a trigger (upsert by id)."""
+    """Create or update a trigger (upsert by id). The URL is encrypted at rest."""
     if not trigger.id:
         trigger.id = str(uuid.uuid4())[:8]
-    _triggers.upsert(trigger.to_dict())
+    record = {**trigger.to_dict(), "url": encrypt_secret(trigger.url)}
+    _triggers.upsert(record)
     return trigger
 
 

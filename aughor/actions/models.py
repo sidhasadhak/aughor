@@ -33,6 +33,13 @@ class ActionTrigger:
             "issue_type": self.issue_type,
         }
 
+    def to_safe_dict(self) -> dict:
+        """API-facing form — the credential `url` is masked so the raw secret never
+        leaves the server. The frontend shows the preview; on save it sends the mask
+        back unchanged, which the update path detects and keeps (see the router)."""
+        from aughor.secretvault import mask_secret
+        return {**self.to_dict(), "url": mask_secret(self.url)}
+
     @classmethod
     def from_dict(cls, d: dict) -> "ActionTrigger":
         return cls(
