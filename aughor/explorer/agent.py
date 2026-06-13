@@ -1788,6 +1788,7 @@ class SchemaExplorer:
 
             logger.info(f"[explorer:{self.connection_id}] Phase 8: {domain} domain — {len(entities)} entities, used={used}")
 
+            _dup_streak = 0   # consecutive structural-duplicate findings → stop a looping domain
             while used < budgets.get(f"{domain}__cap", HARD_BUDGET):
                 cap = budgets.get(f"{domain}__cap", HARD_BUDGET)
                 await self._gate()
@@ -2627,6 +2628,41 @@ class SchemaExplorer:
                         self.connection_id, domain, nq.angle, _g.ungrounded,
                     )
                     continue
+
+                # ── Structural-duplicate gate (insight diversity) ───────────────
+                # The model self-grades novelty generously — it rates "top countries by
+                # customer count" and "customer concentration by continent" as both novel,
+                # so novelty-decay never fires and a domain emits the SAME cut four cosmetic
+                # ways (COUNT(*) vs COUNT(DISTINCT pk), a pct-of-total window wrapper, an
+                # alias rename). A query's STRUCTURE is the honest signal: same tables, same
+                # grain, same measures = the same finding. Drop the duplicate; a different
+                # grain or measure has a different signature and is kept. After a few in a
+                # row the domain is clearly out of fresh structural questions — stop it
+                # rather than burn the rest of the budget regenerating variants.
+                try:
+                    from aughor.sql.shape import is_structural_duplicate
+                    _prior_sqls = [i.get("sql", "") for i in domain_insights]
+                    if is_structural_duplicate(sql, _prior_sqls, getattr(self._conn, "dialect", "duckdb")):
+                        _dup_streak += 1
+                        from aughor.stats import stats as _s; _s.inc("explorer.duplicate_skips")
+                        logger.info(
+                            "[explorer:%s] Phase 8: %s/%s — dropping structural-duplicate finding "
+                            "(same tables/grain/measures as a prior one); streak=%d",
+                            self.connection_id, domain, nq.angle, _dup_streak,
+                        )
+                        if _dup_streak >= 3:
+                            logger.info(
+                                "[explorer:%s] Phase 8: %s — 3 consecutive duplicates, stopping domain",
+                                self.connection_id, domain,
+                            )
+                            break
+                        continue
+                    _dup_streak = 0
+                except Exception as _exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_exc, "structural-dedup is best-effort; on failure keep the finding "
+                             "(no worse than before the gate existed)",
+                             counter="explorer.dedup_failed")
 
                 # Step 4: Store the insight
                 insight_id = f"{domain}__{nq.angle}__{used}"
