@@ -1289,13 +1289,18 @@ class SchemaExplorer:
 
             await self._gate()
 
+            # CAST both keys to VARCHAR for the orphan comparison: the same logical key
+            # can carry different physical types across tables (e.g. franchiseID BIGINT
+            # here, VARCHAR there), and a raw `NOT IN` then errors "Cannot compare VARCHAR
+            # and BIGINT". Comparing the string forms is the right FK check (an id is an id)
+            # and never raises.
             sql = (
                 f"SELECT "
                 f"(SELECT COUNT(DISTINCT {c1}) FROM {t1}) AS fk_distinct, "
                 f"(SELECT COUNT(DISTINCT {c2}) FROM {t2}) AS pk_distinct, "
                 f"(SELECT COUNT(*) FROM {t1} "
                 f" WHERE {c1} IS NOT NULL "
-                f" AND {c1} NOT IN (SELECT {c2} FROM {t2} WHERE {c2} IS NOT NULL)"
+                f" AND CAST({c1} AS VARCHAR) NOT IN (SELECT CAST({c2} AS VARCHAR) FROM {t2} WHERE {c2} IS NOT NULL)"
                 f") AS orphan_count"
             )
             think = (
@@ -1832,6 +1837,7 @@ class SchemaExplorer:
 
                 domain_schema_lines: list[str] = []
                 domain_cols: set[str] = set()
+                domain_table_cols: dict[str, list] = {}   # scoped to THIS domain's tables
                 for tbl in sorted(domain_tables):
                     cols = (
                         sql_writer.table_cols.get(tbl)
@@ -1841,6 +1847,7 @@ class SchemaExplorer:
                     if cols:
                         domain_schema_lines.append(f"  {tbl}: {', '.join(cols)}")
                         domain_cols.update(str(c).lower() for c in cols)
+                        domain_table_cols[tbl] = cols
                 domain_schema_block = (
                     "EXACT COLUMN NAMES — use ONLY these, never invent:\n"
                     + "\n".join(domain_schema_lines)
@@ -1903,8 +1910,12 @@ class SchemaExplorer:
                     )
                 # Measure-additivity PREVENTION: per-unit vs per-line grain so the generator
                 # writes SUM(x*quantity) for a unit price and SUM(x) for a line total. No-op safe.
+                # Scope to THIS domain's tables — passing the whole connection injects another
+                # dataset's measure columns (e.g. ecommerce `total_amount`/`line_total`) into a
+                # bakehouse prompt, and the generator then writes them onto tables that don't
+                # have them (the #1 Binder-error class on a mixed-dataset workspace).
                 from aughor.semantic.measure_grain import measure_grains_block as _mg_block
-                _mgb = _mg_block(self.connection_id, self._conn, sql_writer.table_cols)
+                _mgb = _mg_block(self.connection_id, self._conn, domain_table_cols or sql_writer.table_cols)
                 if _mgb:
                     grain_block += "\n" + _mgb + "\n"
 
@@ -2102,6 +2113,17 @@ class SchemaExplorer:
                 MAX_ATTEMPTS = 3
                 think_str = f"Domain {domain} | angle={nq.angle} | {nq.question}"
                 sql = nq.sql
+                # Deterministic identifier repair: the LLM rewrites a camelCase schema's
+                # `customerID` to snake_case `customer_id` (a nonexistent column → Binder
+                # error → wasted retry, often a dropped angle). Remap to the exact column
+                # name BEFORE execution so the query just runs. Invented columns are left
+                # alone (a different, hallucination class).
+                try:
+                    from aughor.sql.identifiers import repair_identifiers
+                    sql = repair_identifiers(sql, sql_writer.table_cols,
+                                             getattr(self._conn, "dialect", "duckdb"))
+                except Exception:
+                    pass
                 # Tier 3: on a large connection, swap exact COUNT(DISTINCT) for the HLL
                 # approximation — orders of magnitude cheaper on big facts, ~1-3% off.
                 if self._cost_large:
