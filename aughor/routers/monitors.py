@@ -6,6 +6,8 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ValidationError
 
+from aughor.licensing import Capability, gate
+
 from aughor.monitors.models import Monitor, MonitorAlert
 from aughor.monitors.store import (
     list_monitors,
@@ -80,7 +82,7 @@ def get_monitor_route(monitor_id: str) -> dict:
     return m.model_dump()
 
 
-@router.post("/monitors", status_code=201)
+@router.post("/monitors", status_code=201, dependencies=[gate(Capability.MONITORS)])
 def create_monitor(req: CreateMonitorRequest) -> dict:
     # CreateMonitorRequest is permissive (str fields); Monitor enforces strict
     # Literals (alert_on, threshold_direction, …). Translate a domain-model
@@ -100,7 +102,7 @@ def create_monitor(req: CreateMonitorRequest) -> dict:
     return saved.model_dump()
 
 
-@router.put("/monitors/{monitor_id}")
+@router.put("/monitors/{monitor_id}", dependencies=[gate(Capability.MONITORS)])
 def update_monitor(monitor_id: str, req: UpdateMonitorRequest) -> dict:
     existing = get_monitor(monitor_id)
     if not existing:
@@ -161,7 +163,7 @@ def disable_monitor(monitor_id: str) -> dict:
 
 # ── Trigger now (test run) ─────────────────────────────────────────────────────
 
-@router.post("/monitors/{monitor_id}/trigger")
+@router.post("/monitors/{monitor_id}/trigger", dependencies=[gate(Capability.MONITORS)])
 def trigger_monitor(monitor_id: str) -> dict:
     """Run a monitor immediately and return the alert (or null if no condition met)."""
     if not get_monitor(monitor_id):
