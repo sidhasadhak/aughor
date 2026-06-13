@@ -57,12 +57,14 @@ def update_action_trigger(trigger_id: str, body: _TriggerBody):
     existing = get_trigger(trigger_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Trigger not found")
-    # The API returns a masked URL; if the UI sends that mask back unchanged, keep the
-    # real secret rather than overwriting it with bullets.
+    # The API returns masked secrets; if the UI sends a mask back unchanged, keep the
+    # real value rather than overwriting it with bullets.
     url = existing.url if is_masked(body.url) else body.url
+    headers = {k: (existing.headers.get(k) if is_masked(v) else v)
+               for k, v in (body.headers or {}).items()}
     trigger = ActionTrigger(
         id=trigger_id, name=body.name, type=body.type, url=url,
-        headers=body.headers, enabled=body.enabled,
+        headers=headers, enabled=body.enabled,
         channel=body.channel, project=body.project, issue_type=body.issue_type,
     )
     return save_trigger(trigger).to_safe_dict()

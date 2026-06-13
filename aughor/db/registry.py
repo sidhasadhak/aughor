@@ -133,12 +133,29 @@ def list_connections() -> list[dict]:
     return rows
 
 
+def _encrypt_meta(conn_type: str, meta: dict | None) -> dict:
+    """Encrypt secret connector fields that live in meta (API tokens, SA-JSON path,
+    …) — the DSN is encrypted separately. Non-secret keys pass through untouched."""
+    from aughor.connectors.registry import secret_field_keys
+    from aughor.secretvault import encrypt_secret
+    keys = secret_field_keys(conn_type)
+    return {k: (encrypt_secret(v) if k in keys and isinstance(v, str) else v)
+            for k, v in (meta or {}).items()}
+
+
+def _decrypt_meta(meta: dict | None) -> dict:
+    """Decrypt any encrypted values in meta. Legacy plaintext (and non-secret) values
+    round-trip unchanged, so this is safe on every read with no migration."""
+    from aughor.secretvault import decrypt_secret, is_encrypted
+    return {k: (decrypt_secret(v) if is_encrypted(v) else v) for k, v in (meta or {}).items()}
+
+
 def add_connection(name: str, conn_type: str, dsn: str, meta: dict | None = None) -> str:
     conn_id = str(uuid.uuid4())[:8]
     with _db() as conn:
         conn.execute(
             "INSERT INTO connections (id, name, conn_type, dsn_enc, meta) VALUES (?, ?, ?, ?, ?)",
-            [conn_id, name, conn_type, _encrypt(dsn), json.dumps(meta or {})],
+            [conn_id, name, conn_type, _encrypt(dsn), json.dumps(_encrypt_meta(conn_type, meta))],
         )
         conn.commit()
     return conn_id
@@ -164,7 +181,7 @@ def get_meta(conn_id: str) -> dict:
         ).fetchone()
     if not row:
         return {}
-    return json.loads(row["meta"] or "{}")
+    return _decrypt_meta(json.loads(row["meta"] or "{}"))
 
 
 _SETTINGS_PATH = Path(__file__).parent.parent.parent / "data" / "connection_settings.json"

@@ -7,7 +7,9 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
-from aughor.actions.models import ActionTrigger, ActionLog
+import re
+
+from aughor.actions.models import ActionTrigger, ActionLog, is_secret_header
 from aughor.secretvault import encrypt_secret, decrypt_secret
 from aughor.util.json_store import JsonListStore
 
@@ -17,11 +19,22 @@ _triggers = JsonListStore(_TRIGGERS_PATH)
 _logs     = JsonListStore(_LOGS_PATH)
 
 
-# The trigger `url` is a credential (a Slack/webhook URL grants posting access), so it
-# is encrypted at rest and only ever decrypted in-process to fire. Load returns the
-# plaintext URL (for the executor); the API masks it (see ActionTrigger.to_safe_dict).
+# The trigger `url` (a Slack/webhook URL grants posting access) and any auth-bearing
+# `headers` (Authorization, X-Api-Key, …) are credentials, so they're encrypted at rest
+# and only decrypted in-process to fire. Load returns the plaintext values (for the
+# executor); the API masks them (see ActionTrigger.to_safe_dict).
+def _enc_headers(h: dict | None) -> dict:
+    return {k: (encrypt_secret(v) if is_secret_header(k) and isinstance(v, str) else v)
+            for k, v in (h or {}).items()}
+
+
+def _dec_headers(h: dict | None) -> dict:
+    return {k: (decrypt_secret(v) if is_secret_header(k) and isinstance(v, str) else v)
+            for k, v in (h or {}).items()}
+
+
 def _load_decrypted(d: dict) -> ActionTrigger:
-    d = {**d, "url": decrypt_secret(d.get("url", ""))}
+    d = {**d, "url": decrypt_secret(d.get("url", "")), "headers": _dec_headers(d.get("headers"))}
     return ActionTrigger.from_dict(d)
 
 
@@ -37,10 +50,13 @@ def get_trigger(trigger_id: str) -> Optional[ActionTrigger]:
 
 
 def save_trigger(trigger: ActionTrigger) -> ActionTrigger:
-    """Create or update a trigger (upsert by id). The URL is encrypted at rest."""
+    """Create or update a trigger (upsert by id). The URL + auth headers are
+    encrypted at rest."""
     if not trigger.id:
         trigger.id = str(uuid.uuid4())[:8]
-    record = {**trigger.to_dict(), "url": encrypt_secret(trigger.url)}
+    record = {**trigger.to_dict(),
+              "url": encrypt_secret(trigger.url),
+              "headers": _enc_headers(trigger.headers)}
     _triggers.upsert(record)
     return trigger
 
