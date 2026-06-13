@@ -67,8 +67,10 @@ def update_metric(name: str, req: MetricRequest):
 
 
 @router.delete("/metrics/{name}")
-def remove_metric(name: str):
-    if not delete_metric(name):
+def remove_metric(name: str, sql: Optional[str] = None):
+    # `sql` (optional) targets a single grain when a name has several governed
+    # definitions; omitted → remove every entry sharing the name.
+    if not delete_metric(name, sql=sql):
         raise HTTPException(status_code=404, detail=f"Metric '{name}' not found.")
     return {"ok": True, "name": name}
 
