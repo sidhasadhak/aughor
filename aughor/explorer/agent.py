@@ -1788,6 +1788,7 @@ class SchemaExplorer:
 
             logger.info(f"[explorer:{self.connection_id}] Phase 8: {domain} domain — {len(entities)} entities, used={used}")
 
+            _dup_streak = 0   # consecutive structural-duplicate findings → stop a looping domain
             while used < budgets.get(f"{domain}__cap", HARD_BUDGET):
                 cap = budgets.get(f"{domain}__cap", HARD_BUDGET)
                 await self._gate()
@@ -2012,27 +2013,45 @@ class SchemaExplorer:
                     + "\n"
                 ) if join_rules else ""
 
-                # Build prior-phases context (phases 3-7 findings)
+                # Build prior-phases context (phases 3-7 findings) — SCOPED to this domain's
+                # DATASET (not its individual tables). The phase-3/4/5 facts are connection-wide;
+                # left unscoped a bakehouse domain is handed ecommerce lifecycles and bakehouse↔
+                # ecommerce "join issues" (the cross-dataset leak). But SAME-dataset facts are
+                # useful GROUNDING — a join issue naming sales_suppliers.continent reminds the
+                # generator that column is real. An earlier draft scoped to the table SET and was
+                # too aggressive: it dropped those same-dataset join facts and the Catalog domain
+                # started inventing location_country instead of using continent. Dataset
+                # granularity removes the leak while keeping the grounding.
+                _domain_ds = _ds(sorted(domain_tables)[0]) if domain_tables else ""
+                def _pp_same_ds(tbl: str) -> bool:
+                    return (not multi_dataset) or _ds(tbl) == _domain_ds
                 prior_phases_lines: list[str] = []
                 nm = self._state.get("null_meanings", {})
                 if nm:
-                    meaningful = {k: v for k, v in nm.items() if v.get("meaning") not in ("not_applicable", "unknown")}
+                    meaningful = {k: v for k, v in nm.items()
+                                  if v.get("meaning") not in ("not_applicable", "unknown")
+                                  and _pp_same_ds(k.split(":")[0])}
                     if meaningful:
                         prior_phases_lines.append("NULL SEMANTICS (from Phase 3):")
                         for k, v in list(meaningful.items())[:8]:
                             prior_phases_lines.append(f"  {k.replace(':', '.')}: NULL = {v.get('meaning', '?')} ({v.get('null_rate', 0):.0%})")
                 jv = self._state.get("join_verifications", [])
                 if jv:
-                    orphans = [j for j in jv if j.get("orphan_count", 0) > 0]
+                    # Same-dataset only — drops bakehouse↔ecommerce leaks, keeps the in-dataset
+                    # join facts that ground the generator on real column names.
+                    orphans = [j for j in jv if j.get("orphan_count", 0) > 0
+                               and _pp_same_ds(j.get("from_table", "")) and _pp_same_ds(j.get("to_table", ""))]
                     if orphans:
                         prior_phases_lines.append("JOIN ISSUES (from Phase 4):")
                         for j in orphans[:5]:
                             prior_phases_lines.append(f"  {j.get('key', '?')}: {j.get('orphan_count', 0)} orphan rows")
                 lm = self._state.get("lifecycle_maps", {})
                 if lm:
-                    prior_phases_lines.append("LIFECYCLES (from Phase 5):")
-                    for tbl, m in list(lm.items())[:5]:
-                        prior_phases_lines.append(f"  {tbl}.{m.get('status_column', '?')}: {', '.join(m.get('active_states', [])[:4])} → {', '.join(m.get('terminal_states', [])[:3])}")
+                    _scoped_lm = [(tbl, m) for tbl, m in lm.items() if _pp_same_ds(tbl)]
+                    if _scoped_lm:
+                        prior_phases_lines.append("LIFECYCLES (from Phase 5):")
+                        for tbl, m in _scoped_lm[:5]:
+                            prior_phases_lines.append(f"  {tbl}.{m.get('status_column', '?')}: {', '.join(m.get('active_states', [])[:4])} → {', '.join(m.get('terminal_states', [])[:3])}")
                 prior_phases_block = "\n".join(prior_phases_lines) + "\n\n" if prior_phases_lines else ""
 
                 # Step 1: Ask LLM what to investigate next (grain-aware, schema-grounded)
@@ -2609,6 +2628,41 @@ class SchemaExplorer:
                         self.connection_id, domain, nq.angle, _g.ungrounded,
                     )
                     continue
+
+                # ── Structural-duplicate gate (insight diversity) ───────────────
+                # The model self-grades novelty generously — it rates "top countries by
+                # customer count" and "customer concentration by continent" as both novel,
+                # so novelty-decay never fires and a domain emits the SAME cut four cosmetic
+                # ways (COUNT(*) vs COUNT(DISTINCT pk), a pct-of-total window wrapper, an
+                # alias rename). A query's STRUCTURE is the honest signal: same tables, same
+                # grain, same measures = the same finding. Drop the duplicate; a different
+                # grain or measure has a different signature and is kept. After a few in a
+                # row the domain is clearly out of fresh structural questions — stop it
+                # rather than burn the rest of the budget regenerating variants.
+                try:
+                    from aughor.sql.shape import is_structural_duplicate
+                    _prior_sqls = [i.get("sql", "") for i in domain_insights]
+                    if is_structural_duplicate(sql, _prior_sqls, getattr(self._conn, "dialect", "duckdb")):
+                        _dup_streak += 1
+                        from aughor.stats import stats as _s; _s.inc("explorer.duplicate_skips")
+                        logger.info(
+                            "[explorer:%s] Phase 8: %s/%s — dropping structural-duplicate finding "
+                            "(same tables/grain/measures as a prior one); streak=%d",
+                            self.connection_id, domain, nq.angle, _dup_streak,
+                        )
+                        if _dup_streak >= 3:
+                            logger.info(
+                                "[explorer:%s] Phase 8: %s — 3 consecutive duplicates, stopping domain",
+                                self.connection_id, domain,
+                            )
+                            break
+                        continue
+                    _dup_streak = 0
+                except Exception as _exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_exc, "structural-dedup is best-effort; on failure keep the finding "
+                             "(no worse than before the gate existed)",
+                             counter="explorer.dedup_failed")
 
                 # Step 4: Store the insight
                 insight_id = f"{domain}__{nq.angle}__{used}"
