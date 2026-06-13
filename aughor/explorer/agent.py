@@ -2122,16 +2122,54 @@ class SchemaExplorer:
                     from aughor.sql.identifiers import repair_identifiers
                     sql = repair_identifiers(sql, sql_writer.table_cols,
                                              getattr(self._conn, "dialect", "duckdb"))
-                except Exception:
-                    pass
+                except Exception as _exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_exc, "identifier repair is best-effort; on failure execute the "
+                             "original SQL (the retry loop still catches a casing error)",
+                             counter="explorer.repair_failed")
+                # ── Schema-grounding pre-flight (#residual, deterministic) ───────
+                # Casing slips are now repaired; what survives is a genuine invention —
+                # `segment`/`region`/generic `id`, or an invented table (`product_items`).
+                # A blind execute+retry only learns this by FAILING first, and that first
+                # failure is exactly the Binder error the user sees in the Activity Tab.
+                # Catch it statically, harvest the dead names (so the very next budget
+                # iteration regenerates avoiding them — the existing NONEXISTENT-NAMES
+                # block), and skip without ever executing. Mirrors the cross-dataset /
+                # fabricated-dimension guards: a runnable question is worth more than a
+                # logged error, and the loop will simply propose a valid one next.
+                try:
+                    from aughor.sql.identifiers import unresolved_identifiers
+                    _bad_cols, _bad_tbls = unresolved_identifiers(
+                        sql, sql_writer.table_cols, getattr(self._conn, "dialect", "duckdb"))
+                    if _bad_cols or _bad_tbls:
+                        self._dead_refs |= _bad_cols | _bad_tbls
+                        from aughor.stats import stats as _s; _s.inc("explorer.invention_skips")
+                        logger.info(
+                            "[explorer:%s] Phase 8: %s/%s — skipping invented identifiers "
+                            "(cols=%s tables=%s); harvested to negative knowledge",
+                            self.connection_id, domain, nq.angle,
+                            sorted(_bad_cols), sorted(_bad_tbls),
+                        )
+                        used += 1
+                        budgets[domain] = used
+                        self._state["domain_budgets"] = budgets
+                        continue
+                except Exception as _exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_exc, "schema-grounding pre-flight is best-effort; on failure "
+                             "fall through to the execute+retry loop (no worse than before)",
+                             counter="explorer.preflight_failed")
                 # Tier 3: on a large connection, swap exact COUNT(DISTINCT) for the HLL
                 # approximation — orders of magnitude cheaper on big facts, ~1-3% off.
                 if self._cost_large:
                     try:
                         from aughor.sql.cost import approximate_aggregates
                         sql = approximate_aggregates(sql, getattr(self._conn, "dialect", "duckdb"))
-                    except Exception:
-                        pass
+                    except Exception as _exc:
+                        from aughor.kernel.errors import tolerate
+                        tolerate(_exc, "HLL approximation is an optional cost optimisation; on "
+                                 "failure run the exact aggregate (correct, just slower)",
+                                 counter="explorer.cost_approx_failed")
                 rows = None
 
                 for attempt in range(MAX_ATTEMPTS):
