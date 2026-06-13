@@ -962,6 +962,12 @@ export async function getCanvasExplorationStatus(canvasId: string): Promise<Expl
   return res.json();
 }
 
+export async function triggerCanvasDomainIntelligence(canvasId: string): Promise<{ ok: boolean; reason?: string }> {
+  const res = await fetch(`${BASE}/exploration/canvas/${encodeURIComponent(canvasId)}/trigger-intel`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to trigger canvas domain intelligence");
+  return res.json();
+}
+
 export async function getCanvasExplorationEpisodes(canvasId: string, phase = "", limit = 300): Promise<ExplorationEpisode[]> {
   const params = new URLSearchParams({ limit: String(limit) });
   if (phase) params.set("phase", phase);
