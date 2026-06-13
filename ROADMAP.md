@@ -6,6 +6,60 @@
 
 ---
 
+## ✅ VERIFIED PENDING STATUS — 2026-06-13 (code-checked)
+
+> This section is the **current source of truth**, reconciled against the actual code on
+> `main` = `03b6c29`. Everything below it is **historical arc-status / provenance** — many
+> items there are now shipped (the Aughor Kernel K1 absorbed the WCH reliability tranche;
+> K2 absorbed the poll storm; UNIFY's eval bridge + Trust-Receipt visibility shipped). The
+> old "Prioritized Backlog" table near the bottom still pins `main = 50a85a3` — that is
+> stale; trust this section instead. In-flight: branch `2026-06-13-domains-schema-grain-delete`
+> (pushed, awaiting merge): Domains schema-scoping + grain-aware metric delete.
+
+**Shipped & verified done** (do not re-open): UNIFY eval bridge (`accept_sql` gross/net × AOV/ratio +
+zero-LLM `runs_detail` re-score) · **B-9 Trust Receipts inline-by-default** · FAN-b chasm breadth
+(AVG-over-chasm + satellite-WHERE safely bail) · narration-inversion guard (`agent/verify.py`) ·
+sample-data `total_amount`/`line_total` independence · #7 canvas-explorer scoping · motion pass ·
+ontology legends-at-top · canvas History-tab · poll-storm (SSE) · schema-introspection TTL cache ·
+single `spawn_explorer` · kernel K0–K4 (Ledger / Job supervision+crash-resume / Event spine / Contracts).
+
+### 🔴 Pending — what's actually left
+
+**K5 — Semantic Governance Plane (the active architectural frontier)**
+| Item | State | What remains |
+|---|---|---|
+| **B-7** — use-only-registered enforcement | PARTIAL | detection (`check_metric_enforcement`) + rate endpoint exist; add the **hard gate** (force the governed formula, propose-to-define when ungoverned) |
+| **B-8** — metric governance workflow | PARTIAL | `owner`/`approved_by`/`approved_at` fields exist; add **propose→review→approve→version→audit** state machine + audit-trail UI (metrics as governed Ledger artifacts) |
+| **B-10** — deterministic / harder benchmark | PARTIAL | UNIFY eval bridge is ready; **run** the larger real-warehouse, deterministic-decode benchmark so lift is measurable above cloud noise |
+
+**Enterprise / deploy (#12)** — query cancellation ✅ (kernel). Pending: **OAuth2/OIDC**, real **RBAC**,
+**secrets manager** (creds still plaintext in `connection_settings.json`); workspace tenancy partial.
+
+**Licensing enforcement** — full capability scaffold (`aughor/licensing/`) exists but **0 routes call
+`require_capability`** → every feature is ungated. Pending: fold env flags into capability checks per route.
+
+**K4 follow-ups** — generated typed TS client (`api.gen.ts`, response-shape coverage) · domain interface
+modules · god-file splits (`_phase8_domain_intelligence` is 855 LOC) · WCH-8 `.duckdb` write coordination.
+
+**Correctness / agent** — parallelize **hypothesis evaluation** in the agent graph (SQL-gen already parallel) ·
+FAN-b *auto-rewrite* of AVG/satellite-WHERE shapes (today it safely bails — optional).
+
+**Query Builder** — reverse-compile **raw SQL → semantic chips** (Layer 3); only forward `buildSql()` exists.
+
+**Canvas** — multi-connection canvas (hard `len(scopes) > 1 → raise` still in `canvas/store.py`; gated on M12a federation).
+
+**UI polish** — persistent **Recents / quick-chats** surface (history panel + starters exist; no recents list).
+
+**Refactors** — `Scope` value object (unify per-connection onto `CanvasScope`).
+
+**M12 — Org Intelligence (large strategic arc, entirely unbuilt — no `org/` package):**
+lineage ingestor + multi-source federation (M12a) → org profiler & drift sentinel (M12b) → org knowledge
+graph (M12c) → graph-traversal tool layer (M12d) → structural-question router (M12e) → frontend + evals.
+
+**To verify** — WCH-1 Briefing "Investigate" blank-canvas (15-line `CanvasWorkspace` param threading) may already be resolved by the citations→actions work; confirm before scheduling.
+
+---
+
 ## 🧱 ARC STATUS — Shared SQL-Analysis Facade (2026-06-12 pt6)
 
 **Same branch `2026-06-12-investigations-as-jobs`.** Started the `analyze()` facade (backlog

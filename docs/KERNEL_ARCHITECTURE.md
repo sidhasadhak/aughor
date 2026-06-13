@@ -291,6 +291,15 @@ its first brick (the UNIFY metric registry + schema-scoped injection) is already
 bricks are the governance workflow, the AI-use-only-registered contract, default-visible receipts, and
 the deterministic benchmark (see the 5-step plan below / `WORLD_CLASS_HARDENING_PLAN.md` Phase 5).
 
+**Update (2026-06-13, code-verified):** K5 is **in progress, not done**. Shipped: the UNIFY eval bridge
+(`accept_sql` covers gross/net × AOV/ratio + zero-LLM `runs_detail` re-score) and **B-9 default-visible
+Trust Receipts** (rendered inline on every answer). Still pending (the K5 remainder): **B-7** the
+use-only-registered *hard gate* (detection + enforcement-rate endpoint exist; the blocking gate does not),
+**B-8** the propose→review→approve→version→audit governance workflow (only static `owner`/`approved_by`
+fields exist today), and **B-10** the harder deterministic benchmark *run*. K4 follow-ups still open:
+generated typed TS client (`api.gen.ts`), domain interface modules, god-file splits (`_phase8` ≈855 LOC),
+and WCH-8 `.duckdb` write coordination. See `ROADMAP.md` → "VERIFIED PENDING STATUS — 2026-06-13".
+
 **What we explicitly do NOT do:** no microservices, no message broker, no Postgres requirement (SQLite
 WAL until #12 multi-node), no framework swap, no big-bang rewrite. The kernel is ~4 focused modules;
 everything else migrates onto it incrementally.
