@@ -717,6 +717,30 @@ async def restart_canvas_exploration(canvas_id: str):
     return {"status": "restarted"}
 
 
+@router.post("/exploration/canvas/{canvas_id}/trigger-intel")
+async def trigger_canvas_domain_intelligence(canvas_id: str):
+    """Run only Phase 8 (domain intelligence) for a Canvas if phases 3-7 are already
+    complete — the canvas-scoped counterpart to the connection `trigger-intel`. Drives
+    the *canvas* explorer (scoped to the canvas's curated tables), not the connection.
+    spawn_explorer guards the already-running case."""
+    from aughor.explorer import store as _expl_store
+    from aughor.canvas.store import get_canvas
+    canvas = get_canvas(canvas_id)
+    if not canvas or not canvas.scopes:
+        raise HTTPException(status_code=404, detail="Canvas not found")
+    state = _expl_store.load_canvas(canvas_id)
+    phase = state.get("phase", "pending")
+    if phase not in ("complete", ExplorationPhase.COMPLETE.value):
+        return {"ok": False, "reason": f"phases 3-7 not complete (current: {phase}) — run /resume or /restart first"}
+
+    conn_id = canvas.scopes[0].connection_id
+    tables  = canvas.scopes[0].tables or None
+    res = await spawn_explorer(conn_id, canvas_id=canvas_id, tables_filter=tables, domain_intel_only=True)
+    if not res["ok"]:
+        logger.warning("Canvas trigger-intel: failed for %s — %s", canvas_id, res["reason"])
+    return {"ok": res["ok"], **({"reason": res["reason"]} if res["reason"] else {})}
+
+
 @router.post("/exploration/canvas/{canvas_id}/domains/{domain}/extend")
 def extend_canvas_domain_budget(canvas_id: str, domain: str, extra: int = 5):
     from aughor.canvas.store import get_canvas

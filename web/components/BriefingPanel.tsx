@@ -28,6 +28,11 @@ import {
   stopExplorer,
   restartExplorer,
   triggerDomainIntelligence,
+  getCanvasExplorationStatus,
+  resumeCanvasExploration,
+  stopCanvasExploration,
+  restartCanvasExploration,
+  triggerCanvasDomainIntelligence,
   promoteCanvasInsight,
   promoteConnectionInsight,
   dismissCanvasInsight,
@@ -1357,29 +1362,50 @@ export function BriefingPanel({
   }, [connectionId, canvasId, schema]);
 
   // Shared explorer actions — used by both the control bar and the empty-state CTA.
+  // In canvas mode (canvasId set) every action drives the *canvas* explorer, scoped to
+  // the canvas's curated tables (#7) — not the underlying connection.
   const runExplorer = useCallback(async () => {
-    if (!connectionId) return;
+    if (!canvasId && !connectionId) return;
     setExplorerBusy(true);
-    try { await startExplorer(connectionId); } catch {}
+    try {
+      if (canvasId) await resumeCanvasExploration(canvasId);
+      else          await startExplorer(connectionId);
+    } catch {}
     setExplorerBusy(false);
-  }, [connectionId]);
+  }, [connectionId, canvasId]);
 
   const runTriggerIntel = useCallback(async () => {
-    if (!connectionId) return;
+    if (!canvasId && !connectionId) return;
     setExplorerBusy(true);
-    try { await triggerDomainIntelligence(connectionId); } catch {}
+    try {
+      if (canvasId) await triggerCanvasDomainIntelligence(canvasId);
+      else          await triggerDomainIntelligence(connectionId);
+    } catch {}
     setExplorerBusy(false);
-  }, [connectionId]);
+  }, [connectionId, canvasId]);
 
   // One-click refresh: clears stale findings and re-runs the full pipeline under the
   // current (corrected) explorer — drops "no data" / cross-dataset findings, re-anchors
   // the temporal window. The honest way to make a stale headline reliable + up to date.
   const runRefresh = useCallback(async () => {
-    if (!connectionId) return;
+    if (!canvasId && !connectionId) return;
     setExplorerBusy(true);
-    try { await restartExplorer(connectionId); } catch {}
+    try {
+      if (canvasId) await restartCanvasExploration(canvasId);
+      else          await restartExplorer(connectionId);
+    } catch {}
     setExplorerBusy(false);
-  }, [connectionId]);
+  }, [connectionId, canvasId]);
+
+  const runStop = useCallback(async () => {
+    if (!canvasId && !connectionId) return;
+    setExplorerBusy(true);
+    try {
+      if (canvasId) await stopCanvasExploration(canvasId);
+      else          await stopExplorer(connectionId);
+    } catch {}
+    setExplorerBusy(false);
+  }, [connectionId, canvasId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -1395,12 +1421,15 @@ export function BriefingPanel({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [connectionId, canvasId, schema]);
 
-  // Poll explorer status every 3 seconds
+  // Poll explorer status — canvas-scoped when a canvasId is set (#7), so the control
+  // bar + empty-state reflect the *canvas* explorer's phase, not the connection's.
   useEffect(() => {
-    if (!connectionId) return;
+    const scopeId = canvasId || connectionId;
+    if (!scopeId) return;
     let mounted = true;
     const poll = () => {
-      getExplorerStatus(connectionId)
+      const req = canvasId ? getCanvasExplorationStatus(canvasId) : getExplorerStatus(connectionId);
+      req
         .then(s => { if (mounted) setExplorerStatus(s); })
         .catch(() => { if (mounted) setExplorerStatus(null); });
     };
@@ -1409,10 +1438,11 @@ export function BriefingPanel({
     // (was a 3s poll — the worst offender of the seven).
     const iv = setInterval(poll, 60_000);
     const unsub = subscribeKernelEvents(() => poll(), {
-      kinds: ["exploration.", "job.state"], connId: connectionId,
+      kinds: ["exploration.", "job.state"],
+      ...(canvasId ? { canvasId } : { connId: connectionId }),
     });
     return () => { mounted = false; clearInterval(iv); unsub(); };
-  }, [connectionId]);
+  }, [connectionId, canvasId]);
 
   // Auto-refresh the briefing the moment an exploration run reaches "complete" —
   // newly-synthesised domain intelligence would otherwise stay hidden until a manual Reload.
@@ -1510,20 +1540,12 @@ export function BriefingPanel({
             <>
               <button
                 disabled={explorerBusy}
-                onClick={async () => {
-                  setExplorerBusy(true);
-                  try { await stopExplorer(connectionId); } catch {}
-                  setExplorerBusy(false);
-                }}
+                onClick={runStop}
                 style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: "var(--red2)", color: "var(--red5)", border: "1px solid var(--red3)", cursor: explorerBusy ? "default" : "pointer", opacity: explorerBusy ? 0.6 : 1 }}
               >Stop</button>
               <button
                 disabled={explorerBusy}
-                onClick={async () => {
-                  setExplorerBusy(true);
-                  try { await restartExplorer(connectionId); } catch {}
-                  setExplorerBusy(false);
-                }}
+                onClick={runRefresh}
                 style={{ fontSize: 10, padding: "3px 8px", borderRadius: 4, background: "var(--bg-3)", color: "var(--t3)", border: "1px solid var(--b2)", cursor: explorerBusy ? "default" : "pointer", opacity: explorerBusy ? 0.6 : 1 }}
               >Restart</button>
             </>
