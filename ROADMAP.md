@@ -9,7 +9,7 @@
 ## ✅ VERIFIED PENDING STATUS — 2026-06-13 (code-checked)
 
 > This section is the **current source of truth**, reconciled against the actual code on
-> `main` = `03b6c29`. Everything below it is **historical arc-status / provenance** — many
+> `main` = `aed13cc` (2026-06-13, after this session's merges #12–#17). Everything below it is **historical arc-status / provenance** — many
 > items there are now shipped (the Aughor Kernel K1 absorbed the WCH reliability tranche;
 > K2 absorbed the poll storm; UNIFY's eval bridge + Trust-Receipt visibility shipped). The
 > old "Prioritized Backlog" table near the bottom still pins `main = 50a85a3` — that is
@@ -23,20 +23,29 @@ sample-data `total_amount`/`line_total` independence · #7 canvas-explorer scopi
 ontology legends-at-top · canvas History-tab · poll-storm (SSE) · schema-introspection TTL cache ·
 single `spawn_explorer` · kernel K0–K4 (Ledger / Job supervision+crash-resume / Event spine / Contracts).
 
+**Shipped 2026-06-13 (this session — all merged + leverage-verified on the real path):**
+**B-7** metric-enforcement hard gate (regenerate-on-drift, fail-safe) + propose-to-define (`metric_proposed` Trust-Receipt badge) (#12) ·
+**B-8** metric governance lifecycle (draft→proposed→approved→deprecated state machine + Ledger audit trail + Semantic-Layer status/transition/audit UI) (#13) ·
+**Licensing enforcement** — `require_capability` wired into 14 PRO/ENTERPRISE routes via a `gate()` helper; lands dark at the default enterprise tier (#14) ·
+**Secrets-at-rest** — reusable `secretvault` (Fernet, `enc:v1:` prefix, back-compat): action-trigger URLs + auth headers + connector `meta` API tokens encrypted, masked on read, decrypted in-process (#15, #16) ·
+**Activity-Tab Phase-8 errors** root-caused (the measure-grains block was injecting another dataset's columns into a domain prompt — not LLM hallucination) → measure-grains **domain-scoped** + deterministic identifier-repair (`customer_id`→`customerID`) + orphan-check `CAST` (#17) ·
+Also: #14 completed-status tags · Schema-Shape card-clip fix · catalog distribution gated on numeric type + camelCase-id classification.
+
 ### 🔴 Pending — what's actually left
 
-**K5 — Semantic Governance Plane (the active architectural frontier)**
+**K5 — Semantic Governance Plane** (B-7 ✅, B-8 ✅ shipped above)
 | Item | State | What remains |
 |---|---|---|
-| **B-7** — use-only-registered enforcement | PARTIAL | detection (`check_metric_enforcement`) + rate endpoint exist; add the **hard gate** (force the governed formula, propose-to-define when ungoverned) |
-| **B-8** — metric governance workflow | PARTIAL | `owner`/`approved_by`/`approved_at` fields exist; add **propose→review→approve→version→audit** state machine + audit-trail UI (metrics as governed Ledger artifacts) |
 | **B-10** — deterministic / harder benchmark | PARTIAL | UNIFY eval bridge is ready; **run** the larger real-warehouse, deterministic-decode benchmark so lift is measurable above cloud noise |
 
-**Enterprise / deploy (#12)** — query cancellation ✅ (kernel). Pending: **OAuth2/OIDC**, real **RBAC**,
-**secrets manager** (creds still plaintext in `connection_settings.json`); workspace tenancy partial.
+**Enterprise / deploy (#12)** — query cancellation ✅ (kernel); **secrets manager ✅** (DSNs, trigger URLs/headers,
+connector `meta` tokens all encrypted at rest). Pending: **OAuth2/OIDC**, real **RBAC**; workspace tenancy partial.
 
-**Licensing enforcement** — full capability scaffold (`aughor/licensing/`) exists but **0 routes call
-`require_capability`** → every feature is ungated. Pending: fold env flags into capability checks per route.
+**Licensing enforcement** — ✅ capability gating wired (14 routes via `gate()`). Pending: extend the same one-line
+pattern to the remaining surfaces (exploration, ADA deep-analysis, evidence, semantic/ontology edits, connector sync) + frontend 402→upsell handling.
+
+**Explorer context-scoping** — `measure_grains` now domain-scoped; audit the other per-domain blocks for the same
+cross-dataset leak (`prior_phases` carries connection-wide facts) + tighten multi-dataset domain grouping (the residual `segment`/cross-schema Phase-8 errors).
 
 **K4 follow-ups** — generated typed TS client (`api.gen.ts`, response-shape coverage) · domain interface
 modules · god-file splits (`_phase8_domain_intelligence` is 855 LOC) · WCH-8 `.duckdb` write coordination.
