@@ -471,6 +471,21 @@ export interface Metric {
   wrong_usage_examples: string[];
   approved_by: string | null;
   approved_at: string | null;
+  // Governance lifecycle (B-8) — backend-owned; optional so editor forms needn't set them.
+  status?: string;
+  version?: number;
+  proposed_by?: string | null;
+  proposed_at?: string | null;
+}
+
+export interface MetricAuditEntry {
+  metric: string;
+  action: string;
+  actor: string;
+  from: string;
+  to: string;
+  version: number;
+  at: string;
 }
 
 export interface QualityTestResult {
@@ -551,6 +566,26 @@ export async function deleteMetric(name: string, sql?: string): Promise<void> {
   // omit it to remove every entry sharing the name.
   const q = sql ? `?sql=${encodeURIComponent(sql)}` : "";
   await fetch(`${BASE}/metrics/${encodeURIComponent(name)}${q}`, { method: "DELETE" });
+}
+
+/** B-8 — drive a metric through its governance lifecycle (propose/approve/reject/deprecate). */
+export async function transitionMetric(name: string, action: string, actor: string): Promise<{ metric: Metric; audit: MetricAuditEntry }> {
+  const res = await fetch(`${BASE}/metrics/${encodeURIComponent(name)}/transition`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, actor }),
+  });
+  if (!res.ok) {
+    const detail = await res.json().then(d => d?.detail).catch(() => null);
+    throw new Error(detail || "Transition failed");
+  }
+  return res.json();
+}
+
+/** B-8 — the governance audit trail for a metric (newest first). */
+export async function getMetricAudit(name: string): Promise<MetricAuditEntry[]> {
+  const res = await fetch(`${BASE}/metrics/${encodeURIComponent(name)}/audit`);
+  if (!res.ok) return [];
+  return (await res.json()).audit ?? [];
 }
 
 export async function validateMetric(name: string, connId: string): Promise<MetricValidationResult> {

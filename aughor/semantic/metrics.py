@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +53,26 @@ class MetricDefinition(BaseModel):
     wrong_usage_examples: list[str] = Field(default_factory=list, description="Anti-patterns with explanations — injected as NEVER rules")
     approved_by: Optional[str] = Field(default=None, description="Who approved this definition, e.g. 'Finance'")
     approved_at: Optional[str] = Field(default=None, description="ISO date of approval, e.g. '2026-01-15'")
+    # Governance lifecycle (B-8) — propose → review → approve → version → audit.
+    status: str = Field(default="draft", description="Lifecycle: draft|proposed|approved|deprecated")
+    version: int = Field(default=0, description="Revision counter — bumps on each approval")
+    proposed_by: Optional[str] = Field(default=None, description="Who proposed this (draft→proposed)")
+    proposed_at: Optional[str] = Field(default=None, description="ISO timestamp of the proposal")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _govern_defaults(cls, data):
+        """Back-compat: pre-B-8 metrics have no status/version. An already-approved
+        metric (has `approved_by`) is treated as approved/v1; everything else is a
+        draft. Explicit values are never overridden."""
+        if isinstance(data, dict):
+            patched = dict(data)
+            if not patched.get("status"):
+                patched["status"] = "approved" if patched.get("approved_by") else "draft"
+            if patched.get("version") in (None, 0) and patched.get("approved_by"):
+                patched["version"] = 1
+            return patched
+        return data
 
 
 # ── Persistence ───────────────────────────────────────────────────────────────
