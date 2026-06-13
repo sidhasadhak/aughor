@@ -515,6 +515,7 @@ def execute_planned_queries(state: AgentState, conn: "DatabaseConnection") -> di
     # Build ontology formula injection section — if the hypothesis/intent mentions
     # a known metric name, inject its approved formula_sql so the LLM can't hallucinate it.
     _ontology_formulas_section = ""
+    _targeted_metrics: list = []   # governed metrics this hypothesis targets (B-7 gate)
     try:
         from aughor.semantic.metrics import list_metrics as _list_metrics
         all_metrics = _list_metrics()
@@ -524,6 +525,7 @@ def execute_planned_queries(state: AgentState, conn: "DatabaseConnection") -> di
             label_lower = m.label.lower()
             name_lower = m.name.lower()
             if any(token in hyp_lower for token in [name_lower, label_lower] if len(token) > 3):
+                _targeted_metrics.append(m)
                 formula_line = f"  {m.label} ({m.name}): {m.sql}"
                 if m.caveats:
                     formula_line += f"  — NOTE: {m.caveats}"
@@ -559,26 +561,41 @@ def execute_planned_queries(state: AgentState, conn: "DatabaseConnection") -> di
                         break
         except Exception:
             pass
-        try:
-            sql_out: SQLOutput = llm.complete(
-                system="You are a SQL expert. Translate the query intent into one SQL SELECT statement.",
-                user=WRITE_SQL_PROMPT.format(
-                    dialect=_dialect,
-                    hypothesis_description=h.description,
-                    intent_description=intent.get("description", ""),
-                    intent_tables=intent_tables,
-                    intent_filters=intent_filters,
-                    intent_aggregation=intent_aggregation,
-                    schema=_schema_ctx,
-                    pitfall_section=pitfall_section,
-                    sql_examples_section=sql_examples_section,
-                    ontology_actions_section=ontology_actions_section + intent_formula_section,
-                ),
-                response_model=SQLOutput,
-            )
-            return sql_out.sql.strip() if sql_out.sql and sql_out.sql.strip() else None
-        except Exception:
-            return None
+        def _write(extra: str = "") -> str | None:
+            try:
+                sql_out: SQLOutput = llm.complete(
+                    system="You are a SQL expert. Translate the query intent into one SQL SELECT statement.",
+                    user=WRITE_SQL_PROMPT.format(
+                        dialect=_dialect,
+                        hypothesis_description=h.description,
+                        intent_description=intent.get("description", ""),
+                        intent_tables=intent_tables,
+                        intent_filters=intent_filters,
+                        intent_aggregation=intent_aggregation,
+                        schema=_schema_ctx,
+                        pitfall_section=pitfall_section,
+                        sql_examples_section=sql_examples_section,
+                        ontology_actions_section=ontology_actions_section + intent_formula_section + extra,
+                    ),
+                    response_model=SQLOutput,
+                )
+                return sql_out.sql.strip() if sql_out.sql and sql_out.sql.strip() else None
+            except Exception:
+                return None
+
+        sql = _write()
+        # B-7 hard gate — if the SQL drifted from a governed formula this hypothesis
+        # targets, regenerate ONCE with a pointed corrective directive naming the exact
+        # formula + the wrong form. `enforce_gate` keeps the rewrite only if it reduces
+        # drift, so it never replaces a query with a worse one.
+        if sql and _targeted_metrics:
+            try:
+                from aughor.semantic.enforcement import enforce_gate
+                _qtext = f"{h.description} {intent.get('description', '')}"
+                sql = enforce_gate(_qtext, sql, _targeted_metrics, _write)
+            except Exception:
+                pass
+        return sql
 
     if len(intents) > 1:
         with _ThreadPool(max_workers=len(intents)) as pool:
