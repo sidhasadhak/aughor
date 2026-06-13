@@ -157,11 +157,33 @@ def _find_dim_owner(root: str, entries: list[tuple[str, str]]) -> int | None:
     return None
 
 
+def _entity_roots(table_cols: dict[str, list[str]]) -> set[str]:
+    """Root tokens that NAME an entity (a table in the schema) — its head noun and the
+    full base, in singular and plural.
+
+    A non-suffixed join key references an entity: a bare ``customer`` column means "the
+    customer this row belongs to" → the customers table. A shared *dimension* attribute
+    (``continent``, ``quantity``, ``district``) names no table — two tables having a
+    ``continent`` column is a coincidence, not a foreign key. Requiring a non-key join
+    root to name an entity is the data-free signal that separates the two, so the verifier
+    never wastes an orphan-check (or pollutes neighbour-grounding) on ``quantity↔quantity``."""
+    roots: set[str] = set()
+    for t in table_cols:
+        base = _table_base(t)                       # sales_customers → sales_customer
+        head = base.split("_")[-1]                  # head noun → customer
+        for r in (base, head):
+            if len(r) >= 3:
+                roots.add(r)
+                roots.add(r + "s")                  # plural, so a bare `customer` col matches `customers`
+    return roots
+
+
 def _compute_join_map(table_cols: dict[str, list[str]]) -> dict:
     """
     Compute join candidates across tables using root-normalised column names.
     Returns {"joins": [...], "no_join": [...]} — same shape as talonsight's get_join_map.
     """
+    entity_roots = _entity_roots(table_cols)
     # Two rooting passes, merged. A column is treated as a join key if EITHER:
     #   • key-aware: it ends in a key/id suffix (incl. fused/prefixed forms like
     #     c_custkey) → high-confidence FK, never blocklisted; or
@@ -177,7 +199,10 @@ def _compute_join_map(table_cols: dict[str, list[str]]) -> dict:
                 key_roots.add(kroot)
                 continue
             oroot = _col_root(col)
-            if len(oroot) >= 3 and oroot not in _NON_KEY_ROOTS:
+            # Legacy non-key path: a shared root joins only when it NAMES AN ENTITY (a
+            # table). This is what stops a coincidental dimension/measure match — two tables
+            # both having `continent` or `quantity` — from being proposed as a foreign key.
+            if len(oroot) >= 3 and oroot not in _NON_KEY_ROOTS and oroot in entity_roots:
                 root_map.setdefault(oroot, []).append((table, col))
 
     joined_pairs: set[frozenset[str]] = set()
