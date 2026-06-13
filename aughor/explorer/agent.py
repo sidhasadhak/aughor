@@ -2083,6 +2083,22 @@ class SchemaExplorer:
                     logger.warning(f"[explorer:{self.connection_id}] Phase 8: LLM question gen failed for {domain}: {e}")
                     break
 
+                # Qualify bare table names to their unique schema FIRST: on a multi-dataset
+                # connection the LLM drops the qualifier (`FROM reviews`), which both errors
+                # on DuckDB (no cross-schema search path) and hides a cross-dataset reference
+                # from the guard below. Qualifying makes a same-dataset reference runnable and
+                # exposes a cross-dataset one (`reviews` → ecommerce.reviews in a bakehouse domain).
+                if multi_dataset:
+                    try:
+                        from aughor.sql.identifiers import qualify_table_names
+                        nq.sql = qualify_table_names(nq.sql, sql_writer.table_cols,
+                                                     getattr(self._conn, "dialect", "duckdb"))
+                    except Exception as _exc:
+                        from aughor.kernel.errors import tolerate
+                        tolerate(_exc, "table qualification is best-effort; on failure the "
+                                 "cross-dataset guard still runs on the original SQL",
+                                 counter="explorer.qualify_failed")
+
                 # Dataset-isolation guard: if the LLM still wrote a cross-dataset join,
                 # drop it — a hallucinated join between unrelated uploaded datasets that can
                 # only return garbage (the bakehouse ⋈ ecommerce class).

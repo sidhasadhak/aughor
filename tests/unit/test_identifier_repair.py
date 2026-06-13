@@ -3,7 +3,9 @@
 Pins: snake_case→camelCase remap (the dominant Bakehouse Binder class), exact columns
 untouched, invented columns left alone, table-scoped, ambiguity-safe, fail-safe.
 """
-from aughor.sql.identifiers import repair_identifiers, unresolved_identifiers
+from aughor.sql.identifiers import (
+    repair_identifiers, unresolved_identifiers, qualify_table_names,
+)
 
 CUSTOMERS = {"bakehouse.sales_customers": ["customerID", "first_name", "city"]}
 TWO = {
@@ -113,6 +115,14 @@ class TestUnresolved:
         cols, tbls = unresolved_identifiers(sql, WORKSPACE)
         assert tbls == {"mystery_table"} and cols == set()
 
+    def test_qualified_wrong_schema_is_unknown_table(self):
+        # `bakehouse.reviews` is invented — reviews lives in ecommerce; the bare fallback
+        # must NOT rescue a qualified-but-wrong reference (the residual cross-dataset class)
+        sql = ("SELECT mcr.review, r.rating FROM bakehouse.media_customer_reviews mcr "
+               "JOIN bakehouse.reviews r ON mcr.new_id = r.review_id")
+        cols, tbls = unresolved_identifiers(sql, WORKSPACE)
+        assert "bakehouse.reviews" in tbls
+
     def test_generic_id_invention_flagged(self):
         # `sc.id` — the LLM assumed a generic PK; sales_customers has customerID, not id
         sql = "SELECT sc.id FROM bakehouse.sales_customers sc"
@@ -123,3 +133,40 @@ class TestUnresolved:
         assert unresolved_identifiers("this <<< not sql", WORKSPACE) == (set(), set())
         assert unresolved_identifiers("", WORKSPACE) == (set(), set())
         assert unresolved_identifiers("SELECT 1", {}) == (set(), set())
+
+
+class TestQualify:
+    def test_bare_unique_table_is_qualified(self):
+        # `reviews` lives only in ecommerce → qualify so it runs (and becomes guard-visible)
+        out = qualify_table_names("SELECT review_id FROM reviews", WORKSPACE)
+        assert "ecommerce.reviews" in out
+
+    def test_qualifying_exposes_cross_dataset_to_guard(self):
+        from aughor.explorer.agent import _crosses_datasets
+        sql = ("SELECT * FROM bakehouse.sales_customers sc JOIN reviews r "
+               "ON sc.customerID = r.customer_id")
+        assert _crosses_datasets(sql) is False          # bare `reviews` is invisible
+        assert _crosses_datasets(qualify_table_names(sql, WORKSPACE)) is True  # now visible
+
+    def test_already_qualified_untouched(self):
+        sql = "SELECT review_id FROM ecommerce.reviews"
+        assert qualify_table_names(sql, WORKSPACE) == sql
+
+    def test_ambiguous_bare_name_left_alone(self):
+        # a name in two schemas must never be guessed
+        ambig = {"a.events": ["id"], "b.events": ["id"]}
+        sql = "SELECT id FROM events"
+        assert qualify_table_names(sql, ambig) == sql
+
+    def test_cte_name_not_qualified(self):
+        sql = "WITH reviews AS (SELECT 1 AS x) SELECT x FROM reviews"
+        assert qualify_table_names(sql, WORKSPACE) == sql   # local CTE shadows the table
+
+    def test_unknown_bare_name_left_alone(self):
+        sql = "SELECT * FROM mystery"
+        assert qualify_table_names(sql, WORKSPACE) == sql
+
+    def test_fail_safe(self):
+        assert qualify_table_names("this <<< not sql", WORKSPACE) == "this <<< not sql"
+        assert qualify_table_names("", WORKSPACE) == ""
+        assert qualify_table_names("SELECT 1", {}) == "SELECT 1"

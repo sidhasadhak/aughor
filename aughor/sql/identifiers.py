@@ -86,6 +86,61 @@ def _table_key(t) -> tuple[str, str]:
     return ".".join(parts).lower(), (t.name or "").lower()
 
 
+def qualify_table_names(
+    sql: str, table_cols: dict[str, list[str]], dialect: str = "duckdb"
+) -> str:
+    """Prefix a bare table name with its schema when that name lives in exactly ONE
+    dataset (schema) of `table_cols`.
+
+    On a multi-dataset connection the LLM often drops the schema qualifier — ``FROM
+    reviews`` instead of ``FROM ecommerce.reviews``. DuckDB has no cross-schema search
+    path, so that errors with "Table with name reviews does not exist"; worse, a bare
+    name hides a *cross-dataset* reference from :func:`_crosses_datasets` (which only
+    sees qualified names), letting a bakehouse-domain query silently reach into the
+    ecommerce schema. Qualifying makes a same-dataset reference runnable and exposes a
+    cross-dataset one to the guard.
+
+    Conservative: a name present in ≥2 schemas (ambiguous) or already schema-qualified
+    is left untouched — never guess. Fail-safe: any parse problem returns `sql` as-is."""
+    if not sql or not table_cols:
+        return sql
+    try:
+        import sqlglot
+        from sqlglot import exp
+        tree = sqlglot.parse_one(sql, read=dialect)
+    except Exception:
+        return sql
+    if tree is None:
+        return sql
+
+    # bare name → set of schemas it appears in (only those WITH a schema qualifier)
+    bare_to_schemas: dict[str, set[str]] = {}
+    for tname in table_cols:
+        parts = tname.split(".")
+        if len(parts) >= 2:
+            bare_to_schemas.setdefault(parts[-1].lower(), set()).add(".".join(parts[:-1]))
+
+    ctes = {(c.alias_or_name or "").lower() for c in tree.find_all(exp.CTE)}
+    changed = False
+    for t in tree.find_all(exp.Table):
+        bare = (t.name or "").lower()
+        if not bare or bare in ctes:
+            continue
+        if t.args.get("db") or t.args.get("catalog"):   # already qualified
+            continue
+        schemas = bare_to_schemas.get(bare)
+        if not schemas or len(schemas) != 1:            # unknown or ambiguous → leave
+            continue
+        schema = next(iter(schemas))
+        sparts = schema.split(".")
+        t.set("db", exp.to_identifier(sparts[-1]))
+        if len(sparts) > 1:
+            t.set("catalog", exp.to_identifier(sparts[0]))
+        changed = True
+
+    return tree.sql(dialect=dialect) if changed else sql
+
+
 def unresolved_identifiers(
     sql: str, table_cols: dict[str, list[str]], dialect: str = "duckdb"
 ) -> tuple[set[str], set[str]]:
@@ -139,12 +194,16 @@ def unresolved_identifiers(
         if not bare or bare in ctes:
             continue
         qual, _ = _table_key(t)
+        is_qualified = bool(t.args.get("db") or t.args.get("catalog"))
         if qual in by_qualified:
             cols = by_qualified[qual]
-        elif bare in by_bare:
+        elif (not is_qualified) and bare in by_bare:
+            # a BARE name may resolve by its unique bare match; a QUALIFIED name must match
+            # its schema exactly — `bakehouse.reviews` is NOT `ecommerce.reviews`, it is an
+            # invented table in the bakehouse schema (the residual cross-dataset confusion).
             cols = [c for group in by_bare[bare] for c in group]   # union across same-named tables
         else:
-            unknown_tables.add(t.name)
+            unknown_tables.add(qual if is_qualified else t.name)
             all_tables_known = False
             continue
         in_scope_cols.update(_norm(c) for c in cols)
