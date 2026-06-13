@@ -61,9 +61,67 @@ def create_metric(req: MetricRequest):
 
 @router.put("/metrics/{name}")
 def update_metric(name: str, req: MetricRequest):
-    m = MetricDefinition(**{**req.model_dump(), "name": name})
+    existing = get_metric(name)
+    data = {**req.model_dump(), "name": name}
+    audit = None
+    if existing is not None:
+        # Governance state is owned by the transition workflow (B-8), not by edits —
+        # carry status/version/stamps forward. But changing the FORMULA of an approved
+        # metric un-approves it: it returns to 'proposed' for re-review, and that's audited.
+        data["status"] = existing.status
+        data["version"] = existing.version
+        data["proposed_by"], data["proposed_at"] = existing.proposed_by, existing.proposed_at
+        data["approved_by"], data["approved_at"] = existing.approved_by, existing.approved_at
+        if existing.status == "approved" and (req.sql or "").strip() != (existing.sql or "").strip():
+            from datetime import datetime, timezone
+            data["status"] = "proposed"
+            data["approved_by"] = data["approved_at"] = None
+            audit = {"metric": name, "action": "edit_reproposed",
+                     "actor": existing.owner or "editor", "from": "approved", "to": "proposed",
+                     "version": existing.version, "at": datetime.now(timezone.utc).isoformat()}
+    m = MetricDefinition(**data)
     save_metric(m)
+    if audit:
+        from aughor.kernel.ledger import Ledger
+        Ledger.default().emit("metric.governance", audit)
     return m.model_dump()
+
+
+class TransitionRequest(BaseModel):
+    action: str   # propose | approve | reject | deprecate
+    actor: str    # who is performing it (person/team)
+
+
+@router.post("/metrics/{name}/transition")
+def transition_metric(name: str, req: TransitionRequest):
+    """B-8 — drive a metric through its governance lifecycle (propose → approve →
+    deprecate …). Validates the transition, persists the new state, and journals an
+    audit event so the trail is queryable."""
+    from datetime import datetime, timezone
+    from aughor.semantic.governance import apply_transition
+    from aughor.kernel.ledger import Ledger
+
+    m = get_metric(name)
+    if not m:
+        raise HTTPException(status_code=404, detail=f"Metric '{name}' not found.")
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        updated, audit = apply_transition(m.model_dump(), req.action, req.actor, now)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    save_metric(MetricDefinition(**updated))
+    Ledger.default().emit("metric.governance", audit)
+    return {"metric": updated, "audit": audit}
+
+
+@router.get("/metrics/{name}/audit")
+def metric_audit(name: str, limit: int = 50):
+    """The governance audit trail for a metric — every transition, newest first."""
+    from aughor.kernel.ledger import Ledger
+    events = Ledger.default().events(kind="metric.governance", limit=1000)
+    trail = [e["payload"] for e in events
+             if e.get("payload") and e["payload"].get("metric") == name]
+    return {"metric": name, "audit": trail[:limit]}
 
 
 @router.delete("/metrics/{name}")
