@@ -2186,6 +2186,46 @@ class SchemaExplorer:
                         tolerate(_exc, "HLL approximation is an optional cost optimisation; on "
                                  "failure run the exact aggregate (correct, just slower)",
                                  counter="explorer.cost_approx_failed")
+
+                # ── Universal bind-check (#residual backstop, deterministic) ─────
+                # EXPLAIN the final SQL against the real engine BEFORE executing. The
+                # static gate models the dominant invention class, but no static checker
+                # enumerates EVERY binder rule — a dangling table alias (c.customer_id with
+                # no `c` in scope), a GROUP BY/aggregate violation, a residual VARCHAR/BIGINT
+                # mismatch. dry_run IS the engine's binder, so it catches them all without
+                # returning rows or logging an episode. On a bind failure, harvest the dead
+                # names and attempt ONE grounded fix (fix() dry-runs internally, so it only
+                # returns SQL that binds); adopt the fix or skip. This guarantees the first
+                # real execution binds — no failed-bind episode reaches the Activity Tab —
+                # while still salvaging a fixable question into an insight rather than losing it.
+                try:
+                    _ok, _berr = self._conn.dry_run(sql)
+                    if not _ok:
+                        self._dead_refs |= _extract_dead_refs(_berr)
+                        _fix = await _loop.run_in_executor(
+                            None, lambda: sql_writer.fix(sql, _berr, max_retries=2))
+                        if _fix.ok and _fix.sql:
+                            logger.info(
+                                "[explorer:%s] Phase 8: %s/%s — pre-flight bind-fix applied: %s",
+                                self.connection_id, domain, nq.angle, _fix.explanation,
+                            )
+                            sql = _fix.sql
+                        else:
+                            from aughor.stats import stats as _s; _s.inc("explorer.bindcheck_skips")
+                            logger.info(
+                                "[explorer:%s] Phase 8: %s/%s — skipping unbindable question (%s)",
+                                self.connection_id, domain, nq.angle,
+                                (_berr.splitlines()[0] if _berr else "bind error")[:90],
+                            )
+                            used += 1
+                            budgets[domain] = used
+                            self._state["domain_budgets"] = budgets
+                            continue
+                except Exception as _exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_exc, "pre-flight bind-check is best-effort; on failure fall "
+                             "through to the execute+retry loop (no worse than before)",
+                             counter="explorer.bindcheck_failed")
                 rows = None
 
                 for attempt in range(MAX_ATTEMPTS):
