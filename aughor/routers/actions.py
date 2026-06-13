@@ -8,6 +8,8 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from aughor.licensing import Capability, gate
+
 from aughor.db.connection import open_connection_for
 from aughor.db.registry import add_connection, get_dsn, get_meta
 
@@ -34,7 +36,7 @@ class _TriggerBody(BaseModel):
     issue_type: Optional[str] = None
 
 
-@router.post("/actions/triggers", status_code=201)
+@router.post("/actions/triggers", status_code=201, dependencies=[gate(Capability.ACTION_HUB)])
 def create_action_trigger(body: _TriggerBody):
     from aughor.actions.models import ActionTrigger
     from aughor.actions.store  import save_trigger
@@ -46,7 +48,7 @@ def create_action_trigger(body: _TriggerBody):
     return save_trigger(trigger).to_dict()
 
 
-@router.put("/actions/triggers/{trigger_id}")
+@router.put("/actions/triggers/{trigger_id}", dependencies=[gate(Capability.ACTION_HUB)])
 def update_action_trigger(trigger_id: str, body: _TriggerBody):
     from aughor.actions.models import ActionTrigger
     from aughor.actions.store  import save_trigger, get_trigger
@@ -136,7 +138,7 @@ class _SendFindingBody(BaseModel):
     source_id:   Optional[str] = None   # insight_id / canvas_id / conn_id for provenance
 
 
-@router.post("/actions/triggers/{trigger_id}/send")
+@router.post("/actions/triggers/{trigger_id}/send", dependencies=[gate(Capability.ACTION_HUB)])
 def send_finding_to_trigger(trigger_id: str, body: _SendFindingBody):
     """Share an arbitrary finding (Briefing/Hub insight) to a configured trigger.
 
@@ -229,7 +231,7 @@ class _FederateRequest(BaseModel):
     connection_ids: list[str]
 
 
-@router.post("/connections/federate", status_code=201)
+@router.post("/connections/federate", status_code=201, dependencies=[gate(Capability.FEDERATION)])
 async def create_federated_connection(req: _FederateRequest):
     if len(req.connection_ids) < 2:
         raise HTTPException(status_code=400, detail="Provide at least 2 connection_ids to federate")

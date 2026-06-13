@@ -7,6 +7,8 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from aughor.licensing import Capability, gate
+
 from aughor.semantic.metrics import (
     MetricDefinition,
     delete_metric,
@@ -50,7 +52,7 @@ def get_metrics():
     return [m.model_dump() for m in list_metrics()]
 
 
-@router.post("/metrics", status_code=201)
+@router.post("/metrics", status_code=201, dependencies=[gate(Capability.METRICS_DEFINE)])
 def create_metric(req: MetricRequest):
     if get_metric(req.name):
         raise HTTPException(status_code=409, detail=f"Metric '{req.name}' already exists. Use PUT to update.")
@@ -59,7 +61,7 @@ def create_metric(req: MetricRequest):
     return m.model_dump()
 
 
-@router.put("/metrics/{name}")
+@router.put("/metrics/{name}", dependencies=[gate(Capability.METRICS_DEFINE)])
 def update_metric(name: str, req: MetricRequest):
     existing = get_metric(name)
     data = {**req.model_dump(), "name": name}
@@ -92,7 +94,7 @@ class TransitionRequest(BaseModel):
     actor: str    # who is performing it (person/team)
 
 
-@router.post("/metrics/{name}/transition")
+@router.post("/metrics/{name}/transition", dependencies=[gate(Capability.METRICS_DEFINE)])
 def transition_metric(name: str, req: TransitionRequest):
     """B-8 — drive a metric through its governance lifecycle (propose → approve →
     deprecate …). Validates the transition, persists the new state, and journals an
@@ -292,7 +294,7 @@ def get_playbook_entry(entry_id: str):
     return e.model_dump()
 
 
-@router.post("/playbook", status_code=201)
+@router.post("/playbook", status_code=201, dependencies=[gate(Capability.PLAYBOOK)])
 def create_playbook_entry(req: PlaybookEntryRequest):
     from aughor.playbook.models import PlaybookEntry
     from aughor.playbook.store import save_entry
@@ -302,7 +304,7 @@ def create_playbook_entry(req: PlaybookEntryRequest):
     return entry.model_dump()
 
 
-@router.put("/playbook/{entry_id}")
+@router.put("/playbook/{entry_id}", dependencies=[gate(Capability.PLAYBOOK)])
 def update_playbook_entry(entry_id: str, req: PlaybookEntryRequest):
     from aughor.playbook.models import PlaybookEntry
     from aughor.playbook.store import get_entry, save_entry

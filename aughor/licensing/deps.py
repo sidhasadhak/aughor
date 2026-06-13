@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import HTTPException, Query
+from fastapi import Depends, HTTPException, Query
 
 from aughor.licensing.capabilities import Capability
 from aughor.licensing.resolver import has_capability, resolve_tier
@@ -34,3 +34,11 @@ def require_capability(cap: Capability):
                 },
             )
     return _dep
+
+
+def gate(cap: Capability) -> Depends:
+    """Sugar for route decorators: ``dependencies=[gate(Capability.MONITORS)]``.
+
+    Equivalent to ``Depends(require_capability(cap))`` but keeps the per-route wiring
+    to a single import (``from aughor.licensing import Capability, gate``)."""
+    return Depends(require_capability(cap))

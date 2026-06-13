@@ -12,9 +12,9 @@ Single source of truth:
 """
 from aughor.licensing.capabilities import Capability, Tier, TIER_CAPABILITIES, capabilities_for
 from aughor.licensing.resolver import resolve_tier, has_capability
-from aughor.licensing.deps import require_capability
+from aughor.licensing.deps import require_capability, gate
 
 __all__ = [
     "Capability", "Tier", "TIER_CAPABILITIES", "capabilities_for",
-    "resolve_tier", "has_capability", "require_capability",
+    "resolve_tier", "has_capability", "require_capability", "gate",
 ]

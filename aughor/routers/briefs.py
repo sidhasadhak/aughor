@@ -10,6 +10,8 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from aughor.licensing import Capability, gate
+
 router = APIRouter(tags=["briefs"])
 
 
@@ -33,7 +35,7 @@ def list_brief_subscriptions(conn_id: Optional[str] = None):
     return {"subscriptions": [s.to_dict() for s in list_subscriptions(conn_id)]}
 
 
-@router.post("/briefs/subscriptions", status_code=201)
+@router.post("/briefs/subscriptions", status_code=201, dependencies=[gate(Capability.SCHEDULED_BRIEFS)])
 def create_brief_subscription(body: _SubscriptionBody):
     from aughor.briefs.models    import BriefSubscription
     from aughor.briefs.store     import save_subscription
@@ -53,7 +55,7 @@ def create_brief_subscription(body: _SubscriptionBody):
     return saved.to_dict()
 
 
-@router.put("/briefs/subscriptions/{sub_id}")
+@router.put("/briefs/subscriptions/{sub_id}", dependencies=[gate(Capability.SCHEDULED_BRIEFS)])
 def update_brief_subscription(sub_id: str, body: _SubscriptionBody):
     from aughor.briefs.store     import get_subscription, save_subscription
     from aughor.briefs.scheduler import reload_subscription
