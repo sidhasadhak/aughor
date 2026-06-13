@@ -1730,6 +1730,11 @@ class SchemaExplorer:
         multi_dataset = len(_all_datasets) > 1
         _bare2dataset = {str(q).split(".")[-1].lower(): _dataset_of(q)
                          for q in (tp or {}) if _dataset_of(q)}
+
+        def _ds(tbl):
+            """Dataset (schema) of a possibly-bare table, via the qualified-table universe."""
+            return _dataset_of(tbl) or _bare2dataset.get(str(tbl).split(".")[-1].lower(), "")
+
         if multi_dataset:
             logger.info("[explorer:%s] Phase 8: multi-dataset connection %s — isolating datasets",
                         self.connection_id, sorted(_all_datasets))
@@ -1747,6 +1752,29 @@ class SchemaExplorer:
             ]
 
             used = budgets.get(domain, 0)
+
+            # Dataset isolation, hoisted to cover the WHOLE per-domain context. A domain's
+            # entities can span unrelated uploaded datasets (Customer = bakehouse.sales_customers
+            # AND ecommerce.customers). Restricting only the schema BLOCK still leaves the other
+            # dataset's entities — and their column names — in the entity/relationship context,
+            # and the generator then reaches for them (ecommerce `line_total`/`customer` in a
+            # bakehouse domain), burning budget on questions the gates must skip. Scope `entities`
+            # to the dominant dataset HERE so every downstream block (entity context, relationships,
+            # schema, grains) sees one dataset only — the principle the measure-grain leak taught.
+            if multi_dataset:
+                from collections import Counter as _Counter
+                _ent_tbl_ds = _Counter(_ds(t) for e in entities for t in e.source_tables if _ds(t))
+                if len(_ent_tbl_ds) > 1:
+                    _primary_ds = max(sorted(_ent_tbl_ds), key=lambda d: _ent_tbl_ds[d])
+                    _scoped = [e for e in entities if any(_ds(t) == _primary_ds for t in e.source_tables)]
+                    if _scoped and len(_scoped) < len(entities):
+                        logger.info(
+                            "[explorer:%s] Phase 8: %s domain spans %s — scoping entities to '%s' "
+                            "(%d→%d entities)",
+                            self.connection_id, domain, sorted(_ent_tbl_ds), _primary_ds,
+                            len(entities), len(_scoped),
+                        )
+                        entities = _scoped
 
             entity_context = "\n".join(
                 f"  - {e.display_name} ({', '.join(e.source_tables)}): {e.description}"
@@ -1787,12 +1815,9 @@ class SchemaExplorer:
 
                 # Build compact schema for domain tables — grounding _NextQuestion SQL generation
                 domain_tables = {tbl for ent in entities for tbl in ent.source_tables}
-                # Dataset isolation: a domain's entities can span unrelated uploaded datasets
-                # (different schemas). Restrict each question to the dominant dataset so the
-                # LLM can't be tempted into a cross-dataset (hallucinated) join. Resolve each
-                # (possibly bare) entity table to its schema via the qualified table universe.
-                def _ds(tbl):
-                    return _dataset_of(tbl) or _bare2dataset.get(str(tbl).split(".")[-1].lower(), "")
+                # Table-level isolation backstop: entities are already scoped to the dominant
+                # dataset above, but an entity that itself SPANS datasets can still drag the
+                # other schema's tables in here — trim them so the schema block stays single-set.
                 if multi_dataset:
                     from collections import Counter
                     counts = Counter(_ds(t) for t in domain_tables if _ds(t))
@@ -1800,7 +1825,7 @@ class SchemaExplorer:
                         primary = max(sorted(counts), key=lambda d: counts[d])
                         domain_tables = {t for t in domain_tables if _ds(t) == primary}
                         logger.info(
-                            "[explorer:%s] Phase 8: %s domain spans %s — restricting to '%s'",
+                            "[explorer:%s] Phase 8: %s domain spans %s — restricting tables to '%s'",
                             self.connection_id, domain, sorted(counts), primary,
                         )
 

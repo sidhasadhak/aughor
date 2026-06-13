@@ -19,6 +19,11 @@ start_api() {
   # SIGKILL (not TERM): a --reload worker blocked on open SSE/exploration connections
   # ignores a graceful TERM and holds :8000, so a plain pkill can't restart it.
   pkill -9 -f "uvicorn aughor.api" 2>/dev/null || true
+  # Also kill by PORT: a --reload worker reparents to launchd when its manager dies and
+  # then runs as a bare `Python -c from multiprocessing...` — the pattern above misses it,
+  # so it keeps holding :8000 and the relaunched server silently fails to bind (you end up
+  # talking to stale code). Killing whatever owns the port guarantees a clean rebind.
+  lsof -ti:8000 2>/dev/null | xargs -r kill -9 2>/dev/null || true
   sleep 0.5
   cd "$AUGHOR_DIR"
   # --timeout-graceful-shutdown bounds the wait so an in-flight reload can't hang
