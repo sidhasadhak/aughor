@@ -157,6 +157,15 @@ _FACT_SIGNALS: re.Pattern = _build_fact_signals()
 _KEY_PATTERN = re.compile(
     r"(_id|_key|_code|_num|_number|_identifier|_pk|_uuid|_guid)$", re.IGNORECASE
 )
+# camelCase identifier suffixes — franchiseID, supplierID, customerID, eventGUID …
+# The snake_case _KEY_PATTERN above misses these: lowercasing erases the boundary
+# (franchiseID → "franchiseid", which has no "_id$"), so the id falls through to the
+# numeric branch and is mis-typed as a "measure" (then needlessly distribution-profiled).
+# The lookbehind requires a lowercase letter before the uppercase suffix, so plain words
+# (valid, void, grid, solid, humid, rapid) never match. Checked against ORIGINAL case.
+_KEY_PATTERN_CAMEL = re.compile(
+    r"(?<=[a-z])(ID|Id|Key|Code|Num|Number|Identifier|UUID|Uuid|GUID|Guid|Pk|PK)$"
+)
 _TIMESTAMP_PATTERN = re.compile(
     r"(date|time|_at|_on|timestamp|created|updated|delivered|approved|"
     r"purchase|shipping|processed|modified|inserted|loaded)$",
@@ -423,7 +432,7 @@ def _semantic_type(
 ) -> str:
     col_lower = col.lower()
 
-    if is_fk or _KEY_PATTERN.search(col_lower):
+    if is_fk or _KEY_PATTERN.search(col_lower) or _KEY_PATTERN_CAMEL.search(col):
         return "key"
     if _BOOL_TYPES.search(dtype):
         return "flag"

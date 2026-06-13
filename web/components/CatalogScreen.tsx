@@ -19,7 +19,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { SqlResultTable } from "@/components/AugTable";
 import { useSchema } from "@/lib/schema-context";
-import { compactNumber } from "@/lib/format";
+import { compactNumber, isNumericType } from "@/lib/format";
 import { bare, schemaOf } from "@/lib/tableName";
 import {
   getCatalogTree, getConnections, addConnection, deleteConnection,
@@ -628,7 +628,11 @@ function TableDetailPanel({ sel, onAsk }: {
   const q    = colFilter.toLowerCase();
   const filteredCols = q ? cols.filter(c => c.name.toLowerCase().includes(q) || c.type.toLowerCase().includes(q)) : cols;
   const fkCount = cols.filter(c => c.is_fk).length;
-  const distCount = Object.keys(distMap).length;
+  // Distributions (p25/p50/mean/…) only make sense for numeric columns. Gate on the
+  // column's *live* declared type — so a VARCHAR id never shows numeric percentiles,
+  // and saving a column's type to VARCHAR immediately hides its (stale) distribution.
+  const numericDist = (c: SchemaColumn) => (isNumericType(c.type) ? distMap[c.name] : undefined);
+  const distCount = cols.filter(numericDist).length;
   const toggleCol = (name: string) => setExpandedCols(prev => { const n = new Set(prev); n.has(name) ? n.delete(name) : n.add(name); return n; });
 
   const handleSave = async (colName: string) => {
@@ -711,7 +715,7 @@ function TableDetailPanel({ sel, onAsk }: {
                 </p>
               )}
               {!loading && filteredCols.map((col) => {
-                const dist = distMap[col.name];
+                const dist = numericDist(col);
                 const open = expandedCols.has(col.name);
                 return (
                 <div key={col.name}>
