@@ -29,6 +29,7 @@ single `spawn_explorer` · kernel K0–K4 (Ledger / Job supervision+crash-resume
 **Licensing enforcement** — `require_capability` wired into 14 PRO/ENTERPRISE routes via a `gate()` helper; lands dark at the default enterprise tier (#14) ·
 **Secrets-at-rest** — reusable `secretvault` (Fernet, `enc:v1:` prefix, back-compat): action-trigger URLs + auth headers + connector `meta` API tokens encrypted, masked on read, decrypted in-process (#15, #16) ·
 **Activity-Tab Phase-8 errors** root-caused (the measure-grains block was injecting another dataset's columns into a domain prompt — not LLM hallucination) → measure-grains **domain-scoped** + deterministic identifier-repair (`customer_id`→`customerID`) + orphan-check `CAST` (#17) ·
+**Phase-8 grounding gate → 70→0 Binder errors** (#19) — layered deterministic pre-execution gate (`qualify_table_names` → `_crosses_datasets` → `repair_identifiers` → static `unresolved_identifiers` invention-skip → **`dry_run`/EXPLAIN universal backstop + grounded `fix`**) so no SQL executes unless the engine's own binder accepts it; + entity-context dataset-scoping (the principle applied to every per-domain block). Live re-exploration: **0/68 episodes errored** (was 70). ·
 Also: #14 completed-status tags · Schema-Shape card-clip fix · catalog distribution gated on numeric type + camelCase-id classification.
 
 ### 🔴 Pending — what's actually left
@@ -44,8 +45,7 @@ connector `meta` tokens all encrypted at rest). Pending: **OAuth2/OIDC**, real *
 **Licensing enforcement** — ✅ capability gating wired (14 routes via `gate()`). Pending: extend the same one-line
 pattern to the remaining surfaces (exploration, ADA deep-analysis, evidence, semantic/ontology edits, connector sync) + frontend 402→upsell handling.
 
-**Explorer context-scoping** — `measure_grains` now domain-scoped; audit the other per-domain blocks for the same
-cross-dataset leak (`prior_phases` carries connection-wide facts) + tighten multi-dataset domain grouping (the residual `segment`/cross-schema Phase-8 errors).
+**Explorer context-scoping** — ✅ DONE (#19): `measure_grains`, **entity/relationship context**, schema and grains all domain-scoped to the dominant dataset; the `dry_run` backstop closes every remaining Binder class (live: 70→0). Pending (yield, not error): a bakehouse domain that joins to a sibling fact table can't see its measure columns (Customer domain guesses `total_amount` vs real `totalPrice`, caught every time → 0 errors but budget burned, 1 insight) — **include FK-joinable same-dataset tables' columns in the domain schema block** so the generator sees the real measure. Also still open: `prior_phases` carries connection-wide facts (lower risk).
 
 **K4 follow-ups** — generated typed TS client (`api.gen.ts`, response-shape coverage) · domain interface
 modules · god-file splits (`_phase8_domain_intelligence` is 855 LOC) · WCH-8 `.duckdb` write coordination.
