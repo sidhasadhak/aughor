@@ -1869,7 +1869,7 @@ export default function Home() {
                   <span style={{ fontSize: 13, fontWeight: 500 }}>Recommendation Inbox</span>
                 </div>
                 <div style={{ flex: 1, overflowY: "auto", padding: "0 20px 16px" }}>
-                  <RecommendationInbox onOpenInvestigation={invId => { setSelectedHistoryInvId(invId); setTab("chat"); }} />
+                  <RecommendationInbox onOpenInvestigation={invId => { setSelectedHistoryInvId(invId); setTab("chat"); }} workspaceId={selectedWorkspace} />
                 </div>
               </div>
             )}
