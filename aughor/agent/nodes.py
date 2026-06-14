@@ -50,7 +50,6 @@ class _ConsistencyReport(_BaseModel):
 
 _CONSISTENCY_ENABLED = __import__("os").getenv("AUGHOR_CONSISTENCY_CHECK", "true").lower() != "false"
 from aughor.llm.provider import get_provider
-from aughor.agent.hypothesis_cascade import score_evidence_cascade
 from aughor.tools.executor import format_result_for_llm
 from aughor.tools.stats import analyze_query_result, StatResult as _StatResult
 from aughor import telemetry as _telemetry
@@ -791,10 +790,7 @@ def score_evidence(state: AgentState) -> dict[str, Any]:
         else:
             predictions_section = "(No predictions were recorded for this hypothesis — score on evidence alone.)"
 
-        # Cascade-aware (opt-in via AUGHOR_CASCADE_HYPOTHESIS): the cheap proxy scores first
-        # and only an ambiguous verdict escalates to the full coder model. Disabled →
-        # identical to the original oracle-only call. score_evidence_cascade is fail-safe.
-        score, _resolved_by = score_evidence_cascade(
+        score = get_provider("coder").complete(
             system="You are a senior data analyst evaluating evidence for a hypothesis.",
             user=SCORE_EVIDENCE_PROMPT.format(
                 hypothesis_id=h.id,
@@ -802,6 +798,7 @@ def score_evidence(state: AgentState) -> dict[str, Any]:
                 predictions_section=predictions_section,
                 query_results=formatted,
             ),
+            response_model=EvidenceScore,
         )
         # Apply evidence-depth confidence ceiling (deterministic, post-LLM)
         successful = [r for r in hyp_results if not r.error]

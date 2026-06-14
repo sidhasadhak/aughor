@@ -3212,19 +3212,18 @@ The capability gate now covers the platform's expensive/autonomous surfaces, and
 
 ---
 
-## 126. Model-Cascade Core (Adaptive Inference) ✅ Shipped · ◑ Parked
+## 126. Model-Cascade Core (Adaptive Inference) — ⊘ Built (#49), then Removed
 
-### What
-Infrastructure for **cost-bounded LLM inference with an accuracy guarantee**: a cheap proxy model answers the easy cases and only the ambiguous ones escalate to the expensive "oracle," with a *proven* recall/precision bound. A reusable core + an opt-in pilot on hypothesis scoring.
+> **Tombstone, kept as record.** The cascade was built and merged (#49), then **removed from the
+> codebase entirely** (2026-06-15) as not worth its weight. The entry stays so the idea isn't
+> re-attempted blindly.
 
-### Why
-Aughor makes many graded LLM judgments (hypothesis scoring, finding-trust, LLM-judge). A cascade can cut their cost/latency *without* sacrificing accuracy.
+### What it was
+Infrastructure for cost-bounded LLM inference with an accuracy guarantee: a cheap proxy model answers the easy cases and only the ambiguous ones escalate to the expensive "oracle," with a *proven* recall/precision bound (`aughor/llm/cascade.py` — Hoeffding threshold learner), plus `get_proxy_provider` and an opt-in cascade on hypothesis scoring (`AUGHOR_CASCADE_HYPOTHESIS`, fail-safe to the oracle).
 
-### How
-`aughor/llm/cascade.py` learns two thresholds `(τ⁺, τ⁻)` from a calibration corpus using Hoeffding confidence bounds (guarantee proven on synthetic data); `get_proxy_provider` resolves a cheaper model on the active backend; `score_evidence` gains an opt-in cascade (`AUGHOR_CASCADE_HYPOTHESIS`, fail-safe to the oracle). **Parked** pending a cheap *and* well-calibrated proxy — every accessible cheap model proved miscalibrated (the calibration harness, parked in PR #50, surfaced this empirically; the accuracy guarantee always held). Plan: [`docs/ADAPTIVE_INFERENCE_AND_SEMANTIC_OPERATORS.md`](docs/ADAPTIVE_INFERENCE_AND_SEMANTIC_OPERATORS.md).
-
-**Key files.** `aughor/llm/cascade.py`, `aughor/llm/provider.py`, `aughor/agent/hypothesis_cascade.py`, `tests/unit/test_cascade.py`. (#49)
+### Why it was removed
+Every accessible *cheap* proxy proved **miscalibrated** — self-reported confidence clusters at 0.6–0.8 regardless of the evidence — so the cascade had to escalate ~85% of the time, yielding only a **~15% best-case call saving**, and only if a cheap+calibrated model existed (none does on any reachable backend; the well-calibrated ones are slow/costly, the cheap+calibrated candidate is access-gated). A ~15% contingent saving isn't worth a permanent second provider, an env flag, a thresholds file, and a calibration harness in the live agent path. **The accuracy guarantee always held (recall 1.0)** — the math was never the problem, the available models were. The ~150-line core is trivially reconstructable from git (#49) + the plan doc's Part VII if a cheap+calibrated proxy ever lands. Calibration harness (PR #50) closed unmerged. Plan + full post-mortem: [`docs/ADAPTIVE_INFERENCE_AND_SEMANTIC_OPERATORS.md`](docs/ADAPTIVE_INFERENCE_AND_SEMANTIC_OPERATORS.md) Part VII.
 
 ---
 
-*Last updated: 2026-06-15 · 126 features shipped (+ adaptive-inference research/plan #48, the model bake-off, and a calibration harness parked in PR #50). See `ROADMAP.md` for upcoming milestones.*
+*Last updated: 2026-06-15 · 125 active features (#126 model-cascade core was built then removed — kept as a tombstone). See `ROADMAP.md` for upcoming milestones; **semantic operators over SQL** is the active adaptive-inference work.*
