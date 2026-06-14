@@ -34,9 +34,9 @@ _ideas_, not adopting any framework:
 great naming, which makes powerful machinery legible and sellable. Aughor has _more_ powerful
 machinery but it is scattered and under-named. §3 proposes how to consolidate.
 
-**Recommended first step:** a cascade pilot on **hypothesis evaluation** (`aughor/agent/nodes.py`,
-`score_evidence`) — which also happens to be the "quickest standalone perf win" already on the
-roadmap (it scores hypotheses serially today).
+**Recommended first step (original):** a cascade pilot on hypothesis evaluation. _Outcome: built then
+removed — see Part VII._ **The active first step is now Borrow 3 — semantic operators over SQL** (§4),
+the one genuinely new capability that survived the build phase.
 
 ---
 
@@ -173,19 +173,23 @@ A proposed naming spine (names are placeholders — the point is the consolidati
 | Named layer | What it consolidates (today, scattered) | One-liner |
 |---|---|---|
 | **Grounded SQL** | Semantic Compiler · QueryIntent IR · synthesize_sql · Phase-8 binder · fanout de-fan · grain/additivity | "NL in, a number that's _provably_ what the warehouse says — or a refusal." |
-| **Trust Layer** | finding-trust ladder · narration-inversion guard · quarantine · Trust Receipts · (NEW) cascade confidence | "Every finding carries calibrated confidence and evidence; the unsure ones escalate." |
-| **Adaptive Inference** *(NEW)* | model cascades · per-role provider routing (#33) · optimization-tuned prompts | "Cheap model first, expensive model only where it changes the answer — with a guarantee." |
+| **Trust Layer** | finding-trust ladder · narration-inversion guard · quarantine · Trust Receipts | "Every finding carries calibrated confidence and evidence." |
+| **Adaptive Inference** | per-role provider routing (#33) · eval-driven model selection (golden-SQL bake-off) | "Each role runs on the model that wins its eval — coder, narrator, fast routed independently." |
 | **Temporal Scope** | Adaptive Temporal Scope (already a named USP) | "Knows _when_ matters; discovers the window instead of MAX(date)." |
 | **Semantic Operators** *(NEW)* | filter/extract/top-k/agg over SQL result text | "Reason over the text columns SQL can't — ranked, extracted, summarised." |
 
-This table is also the integration map: two of its rows ("Adaptive Inference", "Semantic Operators")
-are the new capabilities this plan adds; the others are re-namings of what we already ship.
+This table is also the integration map: **Semantic Operators** is the one genuinely new capability this
+plan still adds; the others are re-namings of what we already ship. (The cascade row that once sat under
+"Adaptive Inference" was built and then removed — see Part VII.)
 
 ---
 
 ## Part IV — Integration plan (prioritised)
 
 ### Borrow 1 — Cascade-gated LLM judgments  ·  **Priority 1, effort S–M**
+> ⚠️ **Superseded — built then REMOVED.** This was the original Priority 1; it shipped (#49) and was
+> then deleted from the codebase as not worth its weight. See **Part VII** for the full outcome. The
+> plan below is kept only as the design record.
 
 **Where.** Any surface where we make a graded/binary LLM judgment at scale, in priority order:
 1. **Hypothesis evaluation** — `aughor/agent/nodes.py::score_evidence` (scores hypotheses serially
@@ -215,6 +219,8 @@ serial hypothesis loop. Lock with a unit test asserting the guarantee holds on a
 parallel cheap pass _and_ fewer expensive calls.
 
 ### Borrow 2 — Automatic prompt optimization  ·  **Priority 2, effort M**
+> ⚠️ **Superseded — built then DROPPED** (overfit a thin eval set; the hand-tuned prompt won). See
+> **Part VII**. Kept as the design record.
 
 **Where.** Our highest-value prompts: explorer angle/hypothesis generation, ADA investigation, the
 Semantic-Compiler intent prompt, narration. **Offline** only — optimise, then ship the winning prompt
@@ -245,8 +251,11 @@ NL question → Grounded SQL (push-down: structured filter/agg/join in the wareh
             → (optionally back into SQL / a Canvas / a finding)
 ```
 Start with semantic **filter** + **extract** over a result set's text column; add **top-k**/
-**aggregate** next. Each runs through the **same cascade** (Borrow 1) so it's cost-bounded. Surface it
-as an explicit "semantic step" in the Query Builder and as a composable tool for ADA.
+**aggregate** next. **Cost is bounded by push-down, not by a cascade:** SQL does the structured
+filtering/aggregation first, so only a *small text residue* reaches the LLM; on top of that, each
+operator carries an explicit **row cap** (refuse/sample above it, surfaced — never a silent truncation)
+and batches rows per call. Surface it as an explicit "semantic step" in the Query Builder and as a
+composable tool for ADA.
 
 **Why this is the right shape:** SQL does what SQL is good at (the structured 99%); the LLM only
 touches the text residue — never the bulk scan the row-wise systems pay for. This fills the gap in our
@@ -269,14 +278,15 @@ when synthesising many findings; partition-aware so it won't blend unrelated dom
 
 ## Part V — Sequencing
 
-- **Phase 1 (now):** Borrow 1 cascade core (`aughor/llm/cascade.py` + a `helper` provider role) →
-  pilot on **hypothesis-eval**. Prove the guarantee + the cost/latency win on a real run. _This is
-  the recommended starting point._
-- **Phase 2:** extend the cascade to finding-trust + the UNIFY judge; ship the **"Adaptive
-  Inference" / "Trust Layer"** naming (§3).
-- **Phase 3:** prompt-optimization harness over the top 2–3 prompts, scored on UNIFY/B-10.
-- **Phase 4:** the **Semantic-Operator layer** over SQL results (the product expansion), cost-bounded
-  by the Phase-1 cascade, surfaced in Query Builder + ADA.
+_Updated after the Borrow 1/2 outcomes (Part VII): the cascade was built then **removed**, and
+prompt-optimization was **dropped**. Semantic operators is now the active, first-class work._
+
+- **Phase 1 (now):** the **Semantic-Operator layer** over SQL results (Borrow 3) — the product
+  expansion. Start with `filter` + `extract` over a result set's text column, cost-bounded by
+  push-down + explicit row caps (not a cascade), surfaced in Query Builder + ADA.
+- **Phase 2:** add `top-k` + `aggregate`; compose operators into an investigation step.
+- **Later / deferred:** hierarchical Briefing synthesis (Borrow 4) and embedding dedup for the ontology
+  (Borrow 5) — both small, independent. The cascade (Borrow 1) and prompt-opt (Borrow 2) are closed out.
 
 ---
 
@@ -311,23 +321,28 @@ core; optionally use an existing prompt-optimizer library for Borrow 2 only).
 We built and stress-tested Borrows 1 and 2. Both ended in **honest negative results that the built-in
 guardrails caught** — which is the system working, not failing.
 
-### Borrow 1 — model cascade: BUILT, then PARKED (blocked on a model)
-- **Shipped (#49):** the generic cascade core (`aughor/llm/cascade.py`, Hoeffding guarantee proven on
+### Borrow 1 — model cascade: BUILT, then REMOVED (not worth its weight)
+Built (#49) and then **removed from the codebase entirely** (2026-06-15) — the cascade core, the proxy
+provider, the opt-in `score_evidence` wiring, and the parked calibration harness (PR #50) are all gone.
+The learning below is why; it's kept as record so the idea isn't re-attempted blindly.
+- **What was built:** a generic cascade core (`aughor/llm/cascade.py`, Hoeffding guarantee proven on
   synthetic data), `get_proxy_provider`, and an opt-in cascade on hypothesis scoring
-  (`AUGHOR_CASCADE_HYPOTHESIS`, fail-safe). Calibration harness = **PR #50 (parked-open)**.
+  (`AUGHOR_CASCADE_HYPOTHESIS`, fail-safe to the oracle).
 - **The wall:** the proxy signal is the cheap model's self-reported `EvidenceScore.confidence`, and on a
   live 45-example calibration **every accessible cheap model is miscalibrated** — gemma4:31b,
-  qwen2.5-coder:14b, and Cohere command-r7b all cluster confidence at 0.6–0.8 regardless of the evidence
+  qwen2.5-coder:14b, and command-r7b all cluster confidence at 0.6–0.8 regardless of the evidence
   (command-r7b even *confirmed* a clearly-refuting case). So the cascade can't trust them → escalates
-  ~85% → only **~15% oracle-call saving**. The one well-calibrated model tried (Cohere
-  `command-a-reasoning`, confidence spanning 0.0–0.6) is a **slow reasoning model**, not cheap.
+  ~85% → only **~15% call saving**. The one well-calibrated model tried (`command-a-reasoning`,
+  confidence spanning 0.0–0.6) is a **slow reasoning model**, not cheap. The cheap-*and*-calibrated
+  candidate (a 30B/3B-active MoE) was **access-gated** and never testable.
 - **The crucial constant:** in *every* run the **recall guarantee held at 1.0** — the cascade never traded
-  accuracy for cost. A bad proxy yields fewer savings, never wrong answers. That's the guarantee doing
-  its job.
-- **The grail, and why it's parked:** the cheap-*and*-calibrated candidate is **Cohere North Mini Code**
-  (30B/3B-active MoE) — but it's **access-gated** (Cohere's enterprise "North" platform; not on the trial
-  API; its 128-expert MoE isn't runnable on Ollama/llama.cpp; needs an H100). Parked until a
-  cheap+calibrated proxy + access exists. (A Cohere backend was wired to test it, then reverted.)
+  accuracy for cost. A bad proxy yields fewer savings, never wrong answers. The math was never the
+  problem; the available *models* were.
+- **Why removed, not parked:** a ~15% best-case saving — contingent on a calibrated cheap proxy that
+  doesn't exist on any reachable backend — isn't worth a permanent second provider, an env flag, a
+  thresholds file, and a calibration harness sitting in the live agent path. The honest call is to delete
+  it and reclaim the simplicity; if a cheap+calibrated proxy ever lands, the ~150-line core is trivial to
+  reconstruct from this record and git history (#49).
 
 ### Borrow 2 — prompt optimization (GEPA-style): BUILT, then DROPPED
 - A reflective hill-climb over `CHAT_SQL_SYSTEM`, scored on the 53-pair golden NL2SQL set with the
