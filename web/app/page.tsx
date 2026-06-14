@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 
 // Always-eager: on the critical path at first render
 import { ChatPanel } from "@/components/ChatPanel";
+import { InferencePanel } from "@/components/InferencePanel";
 import { ExplorationBadge } from "@/components/ExplorationBadge";
 import { SchemaProvider } from "@/lib/schema-context";
 import { OpenInBuilderProvider } from "@/lib/openInBuilder";
@@ -1064,6 +1065,12 @@ function SettingsScreen({ theme, setTheme }: { theme: Theme; setTheme: (t: Theme
               </button>
             ))}
           </div>
+        </div>
+
+        {/* Inference — LLM provider / models / keys */}
+        <div>
+          <div className="aug-label" style={{ marginBottom: 12 }}>Inference</div>
+          <InferencePanel />
         </div>
 
         {/* System settings */}

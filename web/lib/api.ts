@@ -2181,6 +2181,56 @@ export function downloadInvestigationExport(invId: string, fmt: "pdf" | "pptx", 
   a.remove();
 }
 
+// ── LLM inference provider config (Settings → Inference) ────────────────────────
+
+export interface LlmConfig {
+  backend: string;
+  models: Record<string, string>;          // effective coder/narrator/fast
+  base_urls: Record<string, string>;       // effective ollama/lmstudio
+  keys_set: Record<string, boolean>;        // groq/together/anthropic — set or not (never the value)
+  models_set: Record<string, string>;       // explicit overrides on disk
+  base_urls_set: Record<string, string>;
+  backends: string[];
+  needs_key: string[];
+  local_backends: string[];
+  default_models: Record<string, Record<string, string>>;
+}
+
+export interface LlmConfigPatch {
+  backend?: string;
+  models?: Record<string, string>;
+  base_urls?: Record<string, string>;
+  keys?: Record<string, string>;
+}
+
+export async function getLlmConfig(): Promise<LlmConfig> {
+  const res = await fetch(`${BASE}/llm/config`);
+  if (!res.ok) throw new Error("Failed to load inference config");
+  return res.json();
+}
+
+export async function setLlmConfig(patch: LlmConfigPatch): Promise<LlmConfig> {
+  const res = await fetch(`${BASE}/llm/config`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error((e as { detail?: string }).detail ?? "Failed to save inference config");
+  }
+  return res.json();
+}
+
+export async function testLlmConfig(backend?: string, model?: string): Promise<{ ok: boolean; backend: string; model?: string; error?: string }> {
+  const res = await fetch(`${BASE}/llm/config/test`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ backend, model }),
+  });
+  return res.json();
+}
+
 // ── Explorer Control ────────────────────────────────────────────────────────────
 
 export interface ExplorerStatus {
