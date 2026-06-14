@@ -662,12 +662,16 @@ function HomeScreen({
   onGoToChat,
   onNavigate,
   onOpenInvestigation,
+  onAddConnection,
+  onTryDemo,
 }: {
   connections: Connection[];
   selectedConn: string;
   onGoToChat: (q?: string, mode?: AskMode) => void;
   onNavigate: (t: NavTab) => void;
   onOpenInvestigation: (id: string, kind?: "investigation" | "chat", connectionId?: string, canvasId?: string | null) => void;
+  onAddConnection: () => void;
+  onTryDemo: () => void;
 }) {
   const [recentInvs, setRecentInvs] = useState<RecentInv[]>([]);
   const [exploration, setExploration] = useState<ExplorationStatus | null>(null);
@@ -699,6 +703,33 @@ function HomeScreen({
       </div>
 
       <div style={{ flex: 1, overflowY: "auto", padding: "24px 28px", display: "flex", flexDirection: "column", gap: 24 }}>
+
+        {/* First-run funnel — shown until the user runs their first investigation */}
+        {recentInvs.length === 0 && (
+          <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: "22px 24px" }}>
+            <div style={{ fontSize: 15, fontWeight: 650, color: "var(--t1)", marginBottom: 4 }}>Welcome to Aughor</div>
+            <div style={{ fontSize: 12, color: "var(--t3)", marginBottom: 18, lineHeight: 1.5 }}>
+              Autonomous analysis of your data — ask in plain English, get investigated answers. Get started in three steps:
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
+              {[
+                { n: 1, icon: "db",      title: "Connect your data", desc: "Add a database, or upload a CSV / Parquet / Excel file.",                 cta: "Add a connection", accent: "var(--cyn3)", action: onAddConnection },
+                { n: 2, icon: "brief",   title: "Explore the demo",  desc: "No data handy? Browse the bundled BeautyCommerce sample workspace.",       cta: "Open the demo",    accent: "var(--vio3)", action: onTryDemo },
+                { n: 3, icon: "home",    title: "Ask a question",    desc: "Ask anything — Aughor writes the SQL and runs the investigation for you.", cta: "Ask now",          accent: "var(--grn3)", action: () => onGoToChat() },
+              ].map(s => (
+                <div key={s.n} style={{ border: "1px solid var(--b1)", borderRadius: "var(--r2)", padding: 14, background: "var(--bg-3)", display: "flex", flexDirection: "column" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                    <div style={{ width: 22, height: 22, borderRadius: "50%", background: s.accent + "22", border: `1px solid ${s.accent}55`, color: s.accent, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700 }}>{s.n}</div>
+                    <NavIcon name={s.icon} size={13} color={s.accent} />
+                    <div style={{ fontSize: 12.5, fontWeight: 600, color: "var(--t1)" }}>{s.title}</div>
+                  </div>
+                  <div style={{ fontSize: 11, color: "var(--t3)", lineHeight: 1.5, flex: 1, marginBottom: 12 }}>{s.desc}</div>
+                  <button onClick={s.action} style={{ alignSelf: "flex-start", fontSize: 11, fontWeight: 600, color: s.accent, background: s.accent + "14", border: `1px solid ${s.accent}44`, borderRadius: "var(--r2)", padding: "6px 12px", cursor: "pointer" }}>{s.cta} →</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Get Started — primary launcher (top of page) */}
         <div>
@@ -1443,6 +1474,16 @@ export default function Home() {
 
   const reloadConnections = () => getConnections().then(setConnections).catch(() => {});
 
+  // First-run funnel: select the best available demo connection and open the Catalog to browse it.
+  const tryDemo = () => {
+    const demo = connections.find(c => c.name === "BeautyCommerce")
+      || connections.find(c => c.id === "workspace")
+      || connections.find(c => c.builtin)
+      || connections[0];
+    if (demo) setSelectedConn(demo.id);
+    handleNavigate("catalog");
+  };
+
   const goToChat = (q?: string, mode?: "ask" | "investigate") => {
     setSelectedChatSessionId(null);
     setSelectedHistoryInvId(null);
@@ -1641,6 +1682,8 @@ export default function Home() {
                 onGoToChat={goToChat}
                 onNavigate={handleNavigate}
                 onOpenInvestigation={openInvestigation}
+                onAddConnection={() => setShowAddConn(true)}
+                onTryDemo={tryDemo}
               />
             )}
 
