@@ -75,9 +75,9 @@ graph (M12c) → graph-traversal tool layer (M12d) → structural-question route
 
 ---
 
-### 🟡 Planned — to scope (raised 2026-06-14; nothing to build yet)
+### 🟡 Planned — five product directions (raised 2026-06-14; 2 shipped, 3 open)
 
-Five product directions to consider/plan, each mapped against the codebase (current state + concrete gap; nothing built yet).
+Each mapped against the codebase (current state + concrete gap). **Shipped: #5 beautycommerce seed (#25), #1 onboarding first-run funnel (#26).** **▶ Recommended NEXT: #3 Briefing dashboard** — highest user-facing value and it reuses the already-deployed Vega-Lite stack (`Chart.tsx`/`VegaChart`/`chartTypeInference`); every briefing finding already carries a `.sql` to auto-render. Then #2 PDF/PPTX export (self-contained serializer) and #4 provider switching (config layer over the existing 5-backend client).
 
 1. **Onboarding for a fresh install** — ✅ FIRST-RUN FUNNEL SHIPPED (#26). A "Welcome to Aughor — get started in three steps" panel now renders at the top of Home (`web/app/page.tsx` `HomeScreen`) while the user has no investigations yet, then auto-hides: **(1) Connect your data** → opens the `AddConnectionForm` modal; **(2) Explore the demo** → drops straight into the BeautyCommerce workspace showing its seeded insights; **(3) Ask a question** → chat. Verified in-browser (all 3 CTAs, panel hides once history exists, no console errors, zero new lint). Remaining nice-to-haves (deferred): a step-completion checklist that marks "connected/explored/asked" as done, contextual help on the connection fields, and surfacing the demo even more prominently for a truly empty install. Background: connection creation already exists (`AddConnectionForm` `page.tsx:1133`, `AddDataPanel.tsx`) and a demo DB ships (`aughor/samples/setup.py` + the new BeautyCommerce seed #25).
 
