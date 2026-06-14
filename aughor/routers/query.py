@@ -3,9 +3,12 @@ from __future__ import annotations
 
 import asyncio
 import re
+from typing import Literal, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+
+from aughor.licensing import Capability, gate
 
 router = APIRouter(tags=["query"])
 
@@ -86,6 +89,144 @@ async def query_run(body: _QueryRunRequest):
         "cached": False,
         "error": result.error,
     }
+
+
+# ── Semantic operators over SQL result text ────────────────────────────────────
+# Run an LLM operator (filter / extract) over ONE text column of a SQL result set — the
+# unstructured residue SQL can't reason over (tickets, reviews, notes). SQL does the structured
+# push-down first; the LLM only touches the small text residue. Cost is bounded by push-down +
+# an explicit per-operator row cap (refuse over the cap, surfaced). See aughor/semops/operators.py.
+
+class _ExtractFieldReq(BaseModel):
+    name: str
+    description: str = ""
+
+
+class _SemanticOpRequest(BaseModel):
+    conn_id: str
+    sql: str
+    operator: Literal["filter", "extract"]
+    column: str
+    predicate: Optional[str] = None          # required for filter
+    fields: list[_ExtractFieldReq] = []      # required for extract
+    limit: int = 500
+    max_rows: int = 200
+    override_cap: bool = False
+
+
+def _wrap_limited(sql: str, limit: int) -> str:
+    sql = sql.strip().rstrip(";")
+    lim = limit if limit > 0 else 500
+    return f"SELECT * FROM ({sql}) __q LIMIT {lim}"
+
+
+@router.post("/query/semantic", dependencies=[gate(Capability.SEMANTIC_OPERATORS)])
+async def query_semantic(body: _SemanticOpRequest):
+    """Apply a semantic operator (LLM filter/extract over a text column) to a SQL result set.
+
+    Re-runs the SQL server-side (authoritative — never trusts client-sent rows), then applies the
+    operator to the text residue. Returns the transformed result plus surfaced operator metadata."""
+    from aughor.db.connection import open_connection_for
+    from aughor.semops.operators import semantic_extract, semantic_filter
+
+    if not body.sql.strip():
+        raise HTTPException(status_code=400, detail="sql is required")
+    if not body.column.strip():
+        raise HTTPException(status_code=400, detail="column is required")
+    if body.operator == "filter" and not (body.predicate or "").strip():
+        raise HTTPException(status_code=400, detail="predicate is required for the filter operator")
+    if body.operator == "extract" and not body.fields:
+        raise HTTPException(status_code=400, detail="fields is required for the extract operator")
+
+    try:
+        db = open_connection_for(body.conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+
+    wrapped = _wrap_limited(body.sql, body.limit)
+
+    def _work():
+        try:
+            base = db.execute("__semantic__", wrapped)
+        finally:
+            try:
+                db.close()
+            except Exception as _e:
+                from aughor.kernel.errors import tolerate
+                tolerate(_e, "query/semantic: best-effort connection close", counter="query.semantic.close_failed")
+        if base.error:
+            return None, base
+        if body.operator == "filter":
+            op = semantic_filter(base, body.column, body.predicate or "",
+                                 max_rows=body.max_rows, override_cap=body.override_cap)
+        else:
+            op = semantic_extract(base, body.column, [(f.name, f.description) for f in body.fields],
+                                  max_rows=body.max_rows, override_cap=body.override_cap)
+        return op, base
+
+    loop = asyncio.get_event_loop()
+    try:
+        op, base = await loop.run_in_executor(None, _work)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    if op is None:  # SQL failed before the operator ran
+        return {"columns": base.columns, "rows": base.rows, "row_count": base.row_count,
+                "sql": base.sql, "error": base.error, "operator": body.operator, "column": body.column}
+
+    r = op.result
+    return {
+        "columns": r.columns,
+        "rows": r.rows,
+        "row_count": r.row_count,
+        "sql": r.sql,
+        "error": r.error,
+        "operator": op.operator,
+        "column": op.column,
+        "input_rows": op.input_rows,
+        "output_rows": op.output_rows,
+        "truncated": op.truncated,
+        "notes": op.notes,
+        "llm_calls": op.llm_calls,
+    }
+
+
+@router.post("/query/semantic/text-columns", dependencies=[gate(Capability.SEMANTIC_OPERATORS)])
+async def query_semantic_text_columns(body: _QueryRunRequest):
+    """Detect which columns of a query's result read as free text — the operator candidates the UI
+    should offer. Re-runs the SQL server-side and inspects the values (rows carry no dtypes)."""
+    from aughor.db.connection import open_connection_for
+    from aughor.semops.operators import detect_text_columns
+
+    if not body.sql.strip():
+        raise HTTPException(status_code=400, detail="sql is required")
+    try:
+        db = open_connection_for(body.conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+
+    wrapped = _wrap_limited(body.sql, body.limit)
+
+    def _work():
+        try:
+            return db.execute("__semantic_cols__", wrapped)
+        finally:
+            try:
+                db.close()
+            except Exception as _e:
+                from aughor.kernel.errors import tolerate
+                tolerate(_e, "query/semantic/text-columns: best-effort connection close",
+                         counter="query.semantic.text_columns.close_failed")
+
+    loop = asyncio.get_event_loop()
+    try:
+        result = await loop.run_in_executor(None, _work)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    if result.error:
+        return {"columns": [], "text_columns": [], "error": result.error}
+    return {"columns": result.columns, "text_columns": detect_text_columns(result), "error": None}
 
 
 class _MeasureDef(BaseModel):

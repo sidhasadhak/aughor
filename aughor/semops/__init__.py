@@ -1,0 +1,17 @@
+"""Semantic operators over SQL — LLM filter/extract (top-k/aggregate next) over the *text* columns
+of a SQL result set, after the warehouse has done the structured push-down. See ``operators.py``."""
+from __future__ import annotations
+
+from aughor.semops.operators import (
+    SemanticOpResult,
+    detect_text_columns,
+    semantic_extract,
+    semantic_filter,
+)
+
+__all__ = [
+    "SemanticOpResult",
+    "detect_text_columns",
+    "semantic_extract",
+    "semantic_filter",
+]
