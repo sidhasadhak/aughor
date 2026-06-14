@@ -11,6 +11,7 @@ import { ExplorationReportView } from "@/components/ExplorationReport";
 import type { Hypothesis, QueryCitation, Report, ADAReport, ExplorationReport, SubQuestion, SubQuestionAnswer } from "@/lib/types";
 import { API_BASE } from "@/lib/config";
 import { getEvidenceClaims, submitClaimFeedback, type EvidenceClaim } from "@/lib/api";
+import { ExportButton } from "@/components/ExportButton";
 
 interface FullInvestigation {
   id: string;
@@ -199,6 +200,11 @@ export function HistoryDetailPanel({ invId, onContinue }: Props) {
               )}
               {reportType === "direct" && (
                 <span style={{ fontSize: 11, color: "var(--blue5)", border: "1px solid var(--blue2)", background: "var(--blue1)", borderRadius: "var(--r1)", padding: "1px 8px", fontWeight: 500 }}>Quick</span>
+              )}
+              {invId && reportRaw && (
+                <div style={{ marginLeft: "auto" }}>
+                  <ExportButton invId={invId} />
+                </div>
               )}
             </div>
             <p style={{ fontSize: 15, fontWeight: 500, color: "var(--t1)", lineHeight: 1.5 }}>{inv.question}</p>

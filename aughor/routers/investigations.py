@@ -1918,6 +1918,33 @@ def get_investigation_detail(inv_id: str):
     return inv
 
 
+@router.get("/investigations/{inv_id}/export")
+def export_investigation(inv_id: str, format: str = "pdf", narrate: bool = False):
+    """Download a stored analysis as a polished PDF or PowerPoint (`format=pdf|pptx`).
+
+    `narrate=true` prepends an LLM-authored executive summary (best-effort; the
+    export still succeeds if the model is slow or unavailable)."""
+    from fastapi.responses import Response
+    from aughor.export import export_report
+
+    inv = get_investigation(inv_id)
+    if not inv:
+        raise HTTPException(status_code=404, detail="Investigation not found")
+    fmt = (format or "pdf").lower()
+    if fmt not in ("pdf", "pptx"):
+        raise HTTPException(status_code=400, detail="format must be 'pdf' or 'pptx'")
+    try:
+        data, filename, media_type = export_report(inv, fmt, narrate=narrate)
+    except Exception as e:  # never leak a stack trace to the client
+        logger.exception("export failed for %s", inv_id)
+        raise HTTPException(status_code=500, detail=f"export failed: {e}")
+    return Response(
+        content=data,
+        media_type=media_type,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @router.delete("/investigations/{inv_id}", status_code=204)
 def delete_investigation_endpoint(inv_id: str):
     if not delete_investigation(inv_id):
