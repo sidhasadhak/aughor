@@ -98,6 +98,8 @@ interface InvWithOutcomes {
 
 interface Props {
   onOpenInvestigation?: (invId: string) => void;
+  /** Active workspace — scopes recommendations to its connections' investigations. */
+  workspaceId?: string;
 }
 
 function timeAgo(iso: string): string {
@@ -259,7 +261,7 @@ function InvCard({
   );
 }
 
-export function RecommendationInbox({ onOpenInvestigation }: Props) {
+export function RecommendationInbox({ onOpenInvestigation, workspaceId }: Props) {
   const [items, setItems] = useState<InvWithOutcomes[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"pending" | "all">("pending");
@@ -270,7 +272,7 @@ export function RecommendationInbox({ onOpenInvestigation }: Props) {
     async function load() {
       setLoading(true);
       try {
-        const invRes = await fetch(`${BASE}/investigations?limit=20`);
+        const invRes = await fetch(`${BASE}/investigations?limit=20${workspaceId ? `&workspace_id=${encodeURIComponent(workspaceId)}` : ""}`);
         const invs: InvestigationSummary[] = await invRes.json();
         const complete = invs.filter(i => i.status === "complete" && i.kind === "investigation");
 
@@ -318,7 +320,7 @@ export function RecommendationInbox({ onOpenInvestigation }: Props) {
 
     load();
     return () => { cancelled = true; };
-  }, []);
+  }, [workspaceId]);
 
   const visible = filter === "pending"
     ? items.filter(d => d.actions.some((_, i) => {
