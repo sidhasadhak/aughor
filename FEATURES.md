@@ -3110,4 +3110,76 @@ chips reverse-compile (Layer 3) stays out of scope by design.
 
 ---
 
-*Last updated: 2026-06-12 · 117 features — all shipped. See `ROADMAP.md` for upcoming milestones.*
+## 118. BeautyCommerce Demo Workspace Seed ✅ Shipped
+
+### What
+`python -m aughor.samples.beautycommerce` (idempotent) builds a complete, lived-in demo: a registered `BeautyCommerce` DuckDB connection over a 6-table beauty/cosmetics dataset (products 120 / customers 600 / campaigns 12 / orders 6k / order_items 15k / reviews 3.5k — FKs consistent, 0 orphans), 5 governed `beauty_*` metrics, a Canvas with insights + a deep-analysis report, 4 saved Query-Builder entries, and a Slack trigger (disabled).
+
+### How
+Built on the existing create-fns (`add_connection`, `save_metric`, `create_canvas`/`create_artifact`, `create_saved_query`, `save_trigger`); metrics namespaced `beauty_*` so they don't clobber the global store; item prices derived from the product via a join so category-revenue insights are real. Data is runtime (gitignored).
+
+**Key files.** `aughor/samples/beautycommerce.py`, `tests/unit/test_beautycommerce_seed.py`. (#25)
+
+---
+
+## 119. Onboarding First-Run Funnel ✅ Shipped
+
+### What
+A "Welcome — get started in three steps" panel atop Home (`HomeScreen`) while the user has no investigations: (1) Connect data → the AddConnection modal; (2) Explore the demo → drops into the seeded BeautyCommerce workspace; (3) Ask a question → chat. Auto-hides once history exists. Composes with the seed (#118).
+
+**Key files.** `web/app/page.tsx` (`HomeScreen`). (#26)
+
+---
+
+## 120. Briefing Live Dashboard ✅ Shipped
+
+### What
+The Briefing tab renders a live chart + KPI dashboard above the prose: it runs each top finding's own `.sql` through the Query-Builder authority (`runDirectQuery` → `/query/run`, matcache-backed) and renders with the deployed Vega stack — single-series trend/scalar → a KPI tile (value + Sparkline + Δ), categorical/multi-series → an auto-typed chart figure, non-chartable/errored → dropped (fail-safe). Each figure keeps `FindingActions`. **Zero backend change.**
+
+### How
+`BriefingDashboard` reads the panel's selected findings and classifies with `charts/chartTypeInference.ts`. Live-path bug fixed: a `lastKey` ref guard defeated React StrictMode's double-invoke → all results discarded; removed (the `[runKey]` dep gates re-runs).
+
+**Key files.** `web/components/brief/BriefingDashboard.tsx`. (#28)
+
+---
+
+## 121. PDF / PowerPoint Report Export ✅ Shipped
+
+### What
+Download any **Insight** (chat answer) or **Deep-Analysis** report as a polished PDF or PowerPoint. `GET /investigations/{id}/export?format=pdf|pptx[&narrate=true]` (`narrate` = a best-effort LLM executive summary). Buttons in the saved-report header (`HistoryDetailPanel`) and on every chat response (`ChatMessage`).
+
+### How
+`aughor/export/`: parse `report_json` → a format-agnostic `ExportDoc` (typed blocks) → PDF (reportlab) / PPTX (python-pptx). Charts render server-side with **matplotlib** (Agg, headless) honouring the stored `chart_type` — no client inference, no browser; non-chartable → table fallback; a render failure never breaks the doc. `**markdown bold**` → real bold in both. New deps: reportlab, python-pptx, matplotlib.
+
+**Key files.** `aughor/export/{charts,document,pdf,slides}.py`, `web/components/ExportButton.tsx`, `tests/unit/test_export.py`. (#30, #31)
+
+---
+
+## 122. Runtime LLM Provider Switching ✅ Shipped
+
+### What
+Choose & change the inference backend / models / API keys **at runtime** — no `.env` edit, no restart. Settings → Inference: provider dropdown (Ollama / LM Studio / Groq / Together / Anthropic), per-role models, base URLs, write-only API keys, a **Test connection** button (a real tiny completion).
+
+### How
+`provider.py` gained a config layer (precedence: `data/llm_config.json` → env → default); `get_provider(role)` is unchanged for its **34 callers** but rebuilds its cache on a config version bump (model AND backend changes take effect). Keys secretvault-encrypted; `current_config()` is secret-free (set/not-set). `GET/POST /llm/config` + `POST /llm/config/test`.
+
+**Key files.** `aughor/llm/provider.py`, `aughor/routers/llm.py`, `web/components/InferencePanel.tsx`, `tests/unit/test_llm_config.py`. (#33)
+
+---
+
+## 123. Workspace Data-Path Tenancy Isolation ✅ Shipped
+
+### What
+A workspace now actually scopes what you see. Every connection-tied surface is filtered to the active workspace's connections: the connection pickers (Briefing/Hub/Domains, Semantic Layer, Query Builder), `/canvases`, `/investigations` (Recents), the Recommendation Inbox, and the Catalog tree. An **empty workspace shows none of another's data**.
+
+### Why
+The `Workspace` model owned `connection_ids` and promised scoping but enforced it nowhere — an empty workspace leaked another's data (reported bug). Even the UI-scoped surfaces only filtered the picker; the backend was global.
+
+### How
+One fail-closed gate — `workspace_connection_ids(workspace_id)`: `None` when unscoped (management flows stay global), the workspace's ids when known, an **EMPTY set for an unknown workspace**. Applied server-side to `/canvases`, `/investigations`, `/catalog/tree`; the frontend passes the active workspace + refetches on switch, and the pickers use `wsConnections`. **Both layers — real isolation, not UI-only.** Shared resources (metrics catalog, action triggers, org-intelligence) are global by design. Remaining for full tenancy: connection-registry ownership + platform auth/RBAC (#12).
+
+**Key files.** `aughor/workspace/store.py`, `aughor/routers/{canvas,investigations,catalog}.py`, `web/app/page.tsx`, `web/components/{CanvasBrowser,RecommendationInbox,CatalogScreen,QueryBuilder}.tsx`. (#38, #39, #41, #42)
+
+---
+
+*Last updated: 2026-06-14 · 123 features — all shipped. See `ROADMAP.md` for upcoming milestones.*
