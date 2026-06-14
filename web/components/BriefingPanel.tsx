@@ -53,6 +53,7 @@ import {
 } from "@/lib/api";
 import { subscribeKernelEvents } from "@/lib/events";
 import { Spinner } from "@/components/ui/motion";
+import { BriefingDashboard } from "@/components/brief/BriefingDashboard";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -1594,6 +1595,19 @@ export function BriefingPanel({
           </button>
         </div>
       </div>
+
+      {/* ── Live dashboard ── charts + KPIs from the top findings' own queries (#3) */}
+      <BriefingDashboard
+        findings={[briefing.headline, ...briefing.signals].filter(Boolean) as { insight: ExplorationInsight; domain: string }[]}
+        connectionId={connectionId}
+        onInvestigate={onInvestigate}
+        renderActions={(insight, domain) => (
+          <FindingActions insight={insight} domain={domain}
+            connectionId={connectionId} canvasId={canvasId} triggers={triggers}
+            onEvidence={(ins) => openEvidence(ins, domain)} onTriggersHint={showTriggersHint}
+            onDismissed={() => load()} />
+        )}
+      />
 
       {/* ── Two-column layout ── */}
       <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
