@@ -34,20 +34,7 @@ Also: #14 completed-status tags · Schema-Shape card-clip fix · catalog distrib
 
 ### 🔴 Pending — what's actually left
 
-#### ▶ NEXT UP — Explorer invention starvation (the dominant insight-yield lever)
-
-**Symptom (live, real path):** a Phase-8 domain can burn its ENTIRE budget (15 slots) inventing column names that don't exist while the real columns sit right there in the schema block — and produce **0 findings**. The grounding gate catches every invention (so **0 errors**), but every question is skipped. Observed repeatedly on the workspace connection (Customer 0 findings one run, Catalog 0 another). Yield swung 0–20 across identical runs; this starvation is the biggest cause.
-
-**The invented → real mappings actually seen:**
-- Geographic: `location_country` / `location_region` / `region` → real `continent` / `country` / `state` / `city`
-- Measures: `total_amount` / `line_total` → real `totalPrice` (bakehouse) ; `customer_type` / `segment` (no real equivalent — genuine hallucination, correctly skipped)
-
-**Why the existing levers don't catch it:** `repair_identifiers` only fixes *casing/separator* (`customer_id`→`customerID`), not *semantic* renames (`location_country`→`country`). `dead_refs` negative-knowledge lists the bad name but the model keeps inventing variants. The schema block lists the real columns but the model's prior overrides it. The neighbour-grounding (#19) fixed the measure case *only when the column is on a joinable sibling table* (`totalPrice`).
-
-**Candidate fix (on-pattern, deterministic): semantic column repair.** A new `aughor/sql/semantic_repair.py` (sibling of `identifiers.py`) `repair_semantic_columns(sql, table_cols, dialect)` that maps an *unresolved* column to the schema's real one when there is an UNAMBIGUOUS semantic match among the query's in-scope tables — via a curated synonym map (geo: location/region/province/area → the table's real geo column; measure: amount/total/revenue → the table's real money column) plus a conservative fuzzy/containment fallback. High-precision and fail-safe like `repair_identifiers`: only rewrite on a single unambiguous candidate, else leave it (the gate still skips → no error). Wire it in `_phase8` AFTER `repair_identifiers` and BEFORE `unresolved_identifiers`.
-- **Leverage test:** re-run the workspace exploration; the starved domains (Customer/Catalog) should convert `location_*`/`total_amount` skips into real findings; errors stay 0; total yield rises and stabilises.
-- **Risk:** semantic mapping is fuzzier than casing — must require an unambiguous single candidate (never guess between `country`/`continent`/`city`), or it will silently answer the wrong question. Pair with a post-repair `dry_run` (already the backstop) and a meaning-preservation check.
-- Secondary lever if repair underperforms: a far more prominent, explicit "DIMENSION COLUMNS YOU MAY GROUP BY: …" / "MEASURE COLUMNS YOU MAY AGGREGATE: …" directive built from the column profiles, separate from the raw schema dump.
+**Explorer invention starvation** — ✅ DONE (#24): deterministic **semantic column repair**. A domain was burning its whole budget inventing real-sounding columns the schema lacks (`location_country`/`location_region`/`region`→`country`/`state`; `total_amount`→`totalPrice`) → 0 findings, 0 errors. New `aughor/sql/semantic_repair.py` `repair_semantic_columns()` maps an unresolved column to the schema's real one BEFORE the gate, but ONLY on an unambiguous CONCEPT match (geo level; grain-aware money — `total_amount`/`totalPrice`→money_total, `unitPrice`→money_unit) with a UNIQUE in-scope target; no-concept (`segment`) and ambiguous cases are left for the gate; the metric-drift/grain/`dry_run` guards backstop a bad map. Wired after `repair_identifiers`, before `unresolved_identifiers`. Live (2 runs vs the explorer's high variance): errors 0/0, 11 & 14 repairs applied, the Customer domain recovered from 0–2 to **4 findings in both runs** with correct real-column cuts — and `total_amount`→`totalPrice` unlocked value analysis (revenue deciles / value quartiles on `totalPrice`). Residual (conservative-by-design, not errors): `region` in the *supplier* domain has no region-level column so it's left skipped; `line_total` left to avoid a ×quantity double-count. Secondary lever if those matter: a prominent profile-driven "DIMENSION/MEASURE COLUMNS YOU MAY USE" directive, or a nearest-geo-level map — both riskier, defer until needed.
 
 **K5 — Semantic Governance Plane** (B-7 ✅, B-8 ✅ shipped above)
 | Item | State | What remains |
@@ -64,7 +51,7 @@ pattern to the remaining surfaces (exploration, ADA deep-analysis, evidence, sem
 
 **Explorer insight diversity** — ✅ DONE (#20): novelty was the model's self-graded score, which it inflated, so a domain emitted the same cut 10 cosmetic ways. New `aughor/sql/shape.py` `query_signature()` → `(tables, grain, measures)`; Phase-8 drops a structural-duplicate finding and stops a domain after 3 consecutive dups. Live: Customer 10→4 *distinct* cuts, 9 dups dropped, 0 errors. Follow-ups (#21): **spurious joins** fixed at the source — `_compute_join_map` now requires a non-key join root to NAME AN ENTITY (a table), so `continent↔continent`/`quantity↔quantity` are no longer proposed (live: 18→7 verified joins, 0 spurious, 0 errors). **Angle-diversity nudge** added (positive grounding — names a domain's unused low-cardinality dimensions), but its gain is within the explorer's high yield variance and wasn't isolated; shipped as safe, not measured.
 
-**Explorer invention starvation** → promoted to **▶ NEXT UP** at the top of this section (the dominant insight-yield lever; semantic column repair is the candidate fix).
+**Explorer invention starvation** → ✅ shipped (#24, semantic column repair) — see the Explorer line above.
 
 **K4 follow-ups** — generated typed TS client (`api.gen.ts`, response-shape coverage) · domain interface
 modules · god-file splits (`_phase8_domain_intelligence` is 855 LOC) · WCH-8 `.duckdb` write coordination.
