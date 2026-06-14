@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { SqlResultTable } from "@/components/AugTable";
+import { ExportButton } from "@/components/ExportButton";
 import TableIcon         from "@atlaskit/icon/core/table";
 import DownloadIcon      from "@atlaskit/icon/core/download";
 import CloseIcon         from "@atlaskit/icon/core/close";
@@ -1028,6 +1029,13 @@ export function ChatMessage({
             </div>
           )}
         </>
+      )}
+
+      {/* ── Export this response as PDF / PowerPoint (Insight or Deep Analysis) ── */}
+      {isDone && (turn.investigationId || turn.receiptId) && (
+        <div className="flex justify-end mt-3">
+          <ExportButton invId={(turn.investigationId ?? turn.receiptId) as string} />
+        </div>
       )}
     </div>
   );
