@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from aughor.semops.operators import (
     SemanticOpResult,
+    apply_step,
     detect_text_columns,
     semantic_extract,
     semantic_filter,
@@ -11,6 +12,7 @@ from aughor.semops.operators import (
 
 __all__ = [
     "SemanticOpResult",
+    "apply_step",
     "detect_text_columns",
     "semantic_extract",
     "semantic_filter",

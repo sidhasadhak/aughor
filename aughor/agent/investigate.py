@@ -688,6 +688,40 @@ def _parallel_execute_safe(
         return results
 
 
+def _apply_semantic_steps(results: list[tuple]) -> list[tuple]:
+    """Apply any planner-attached semantic operator to its query's result (opt-in, fail-open).
+
+    A ``PhaseQueryPlan`` may carry a ``.semantic`` step (filter/extract over a free-text column). When
+    it does — and the target column actually reads as text — the operator transforms that result so the
+    phase interpreter reasons over the text-derived evidence (filtered rows / extracted columns). A step
+    attached to a missing or non-text column is skipped safely, and any operator failure leaves the raw
+    result in place. Returns the same ``(PlanQuery, QueryResult)`` shape; never raises."""
+    from aughor.stats import stats as _s
+
+    out: list[tuple] = []
+    for q, r in results:
+        step = getattr(q, "semantic", None)
+        if step and not getattr(r, "error", None):
+            try:
+                from aughor.semops.operators import apply_step, detect_text_columns
+                if step.column in detect_text_columns(r):
+                    op = apply_step(
+                        r, step.operator, step.column,
+                        predicate=(step.predicate or ""),
+                        fields=[(f.name, f.description) for f in step.fields],
+                    )
+                    r = op.result
+                    _s.inc("ada.semantic_steps_applied")
+                else:
+                    _s.inc("ada.semantic_steps_skipped_nontext")
+            except Exception as _e:
+                from aughor.kernel.errors import tolerate
+                tolerate(_e, "ADA semantic step is best-effort; raw result still used",
+                         counter="ada.semantic_step_failed")
+        out.append((q, r))
+    return out
+
+
 def _results_to_text(results) -> str:
     """Render a list of QueryResults as compact text for LLM interpretation."""
     parts = []
@@ -1631,6 +1665,10 @@ def run_analysis_phase(
         return _PhaseRun(ok=False, error_phase=_phase_result(
             phase_id, title, emoji, exec_status, exec_error_msg,
             [_skipped_finding(phase_id, exec_skipped_reason)]))
+
+    # Step 2b — semantic operators (opt-in per query): turn text-column results into evidence the
+    # interpreter can reason over. No-op unless the planner attached a step; fail-open and guarded.
+    results = _apply_semantic_steps(results)
 
     # Step 3 — interpret
     results_text = _results_to_text([r for _, r in results])

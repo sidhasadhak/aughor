@@ -369,8 +369,14 @@ The remaining, highest-upside borrow (§4) and the one genuinely-new capability 
   is surfaced in `notes`, never raises into the query path). Exposed as `POST /query/semantic` +
   `/query/semantic/text-columns` (re-run SQL server-side, then operate), gated by a new Pro
   `SEMANTIC_OPERATORS` capability. Unit + integration tested end-to-end through the real app.
-- **Phase 2 (next):** `top_k` + `aggregate`; the Query Builder "semantic step" UI affordance (the
-  real-path leverage proof); and a composable semantic-operator tool/node for the ADA agent.
+- **Phase 2a shipped — ADA agent tool:** every ADA investigation phase can attach an opt-in semantic
+  step to a query (`PhaseQueryPlan.semantic`), applied in the shared `run_analysis_phase` executor after
+  the SQL runs so the phase interpreter reasons over text-derived evidence. **Opt-in** (no-op unless the
+  planner emits a step), **guarded** (`detect_text_columns` skips a step misattached to a non-text column
+  — it can't corrupt numeric evidence), **fail-open**. The field's own description teaches the planner —
+  no phase-prompt edits. One seam covers baseline/decompose/dimensional/behavioral.
+- **Phase 2b (next):** `top_k` + `aggregate` operators; the Query Builder "semantic step" UI affordance
+  (the visible user-path leverage proof).
 
 **Meta-learning:** the two guardrails we designed in — the cascade's recall **guarantee** and GEPA's
 **held-out split** — each independently caught a result that *looked* like a win but wasn't. Measuring
