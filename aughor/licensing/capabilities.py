@@ -36,6 +36,7 @@ class Capability(str, Enum):
     METRICS_DEFINE      = "metrics.define"
     PLAYBOOK            = "playbook"
     SEMANTIC_EDIT       = "semantic.edit"
+    SEMANTIC_OPERATORS  = "semantic.operators"  # LLM filter/extract over SQL result text
     ONTOLOGY_EDIT       = "ontology.edit"
     CANVAS_MULTI        = "canvas.multi"
     TEMPORAL_TIER12     = "temporal.tier12"
@@ -62,6 +63,7 @@ _PRO: set[Capability] = _FREE | {
     Capability.BRIEFING_LIVE, Capability.INTELLIGENCE_HUB, Capability.EVIDENCE_LEDGER,
     Capability.MONITORS, Capability.SCHEDULED_BRIEFS, Capability.ACTION_HUB,
     Capability.METRICS_DEFINE, Capability.PLAYBOOK, Capability.SEMANTIC_EDIT,
+    Capability.SEMANTIC_OPERATORS,
     Capability.ONTOLOGY_EDIT, Capability.CANVAS_MULTI, Capability.TEMPORAL_TIER12,
     Capability.FEDERATION, Capability.FIX_SAVE,
 }

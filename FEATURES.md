@@ -3226,4 +3226,19 @@ Every accessible *cheap* proxy proved **miscalibrated** — self-reported confid
 
 ---
 
-*Last updated: 2026-06-15 · 125 active features (#126 model-cascade core was built then removed — kept as a tombstone). See `ROADMAP.md` for upcoming milestones; **semantic operators over SQL** is the active adaptive-inference work.*
+## 127. Semantic Operators over SQL — Phase 1 (filter + extract) ✅ Shipped
+
+### What
+LLM operators that run over the **text** columns of a SQL result set — the unstructured residue SQL can't reason over (support tickets, reviews, notes, incident write-ups). Phase 1 ships two operators: **`filter`** (keep rows whose text satisfies a natural-language predicate) and **`extract`** (pull named structured fields out of free text into new columns).
+
+### Why
+SQL handles the structured 99% — filtering, aggregation, joins — but can't answer "which of these tickets describe a billing problem?" or "pull the root-cause and component out of each incident note." Semantic operators fill that gap **without** giving up grounding or efficiency: the warehouse does the push-down first, and the LLM only ever touches the small text residue.
+
+### How
+`aughor/semops/operators.py` implements the operators as pure `QueryResult → SemanticOpResult` functions. Rows arrive stringified with no dtypes, so text columns are detected from the **values** (`detect_text_columns` — mostly non-numeric, non-date, non-id). **Cost is bounded by push-down + an explicit per-operator row cap** (default 200; refuses above it with a surfaced message pushing the caller to add SQL `WHERE`/`LIMIT`, never a silent truncation) and by batching rows per LLM call (role `fast`). Every operator is **fail-open**: an LLM/parse failure keeps the row (filter) or leaves fields blank (extract) and is recorded in `notes` — it never raises into the query path. `POST /query/semantic` and `POST /query/semantic/text-columns` re-run the SQL server-side (authoritative — never trusts client-sent rows), then apply the operator; both gated by the new Pro **`SEMANTIC_OPERATORS`** capability.
+
+**Key files.** `aughor/semops/operators.py`, `aughor/semops/__init__.py`, `aughor/routers/query.py`, `aughor/licensing/capabilities.py`, `tests/unit/test_semops.py`, `tests/integration/test_query_semantic.py`. Plan: [`docs/ADAPTIVE_INFERENCE_AND_SEMANTIC_OPERATORS.md`](docs/ADAPTIVE_INFERENCE_AND_SEMANTIC_OPERATORS.md) §4. **Next (Phase 2):** `top_k` + `aggregate`, the Query Builder "semantic step" UI, and an ADA agent tool.
+
+---
+
+*Last updated: 2026-06-15 · 126 active features (#127 semantic operators Phase 1; #126 model-cascade core was built then removed — kept as a tombstone). See `ROADMAP.md` for upcoming milestones; **semantic operators over SQL** is the active adaptive-inference work.*

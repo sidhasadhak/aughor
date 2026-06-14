@@ -360,9 +360,17 @@ Kept **`qwen3-coder-next:cloud`** as the main coder model. In a 53-question gold
 `kimi-k2.7-code:cloud` was *more accurate* (+0.047 mean, +4 pass@80, winning the medium-difficulty band)
 but **~6× slower** (~20s vs ~3s) — unacceptable latency for the interactive coder role.
 
-### Borrow 3 — semantic operators over SQL: NOT STARTED
-The remaining, highest-upside borrow (§4). Unblocked by the above (it doesn't depend on the cascade
-landing) and the clearest *new capability* — see §3/§4. The recommended next adaptive-inference step.
+### Borrow 3 — semantic operators over SQL: IN PROGRESS
+The remaining, highest-upside borrow (§4) and the one genuinely-new capability — now the active work.
+- **Phase 1 shipped:** the `filter` + `extract` operators in `aughor/semops/operators.py` (pure
+  `QueryResult → SemanticOpResult` functions; value-based text-column detection since rows arrive
+  stringified with no dtypes; **cost-bounded by push-down + a refuse-over-cap of 200 rows**, batched
+  per LLM call on role `fast`; **fail-open** — a model/parse error keeps the row or blanks the field and
+  is surfaced in `notes`, never raises into the query path). Exposed as `POST /query/semantic` +
+  `/query/semantic/text-columns` (re-run SQL server-side, then operate), gated by a new Pro
+  `SEMANTIC_OPERATORS` capability. Unit + integration tested end-to-end through the real app.
+- **Phase 2 (next):** `top_k` + `aggregate`; the Query Builder "semantic step" UI affordance (the
+  real-path leverage proof); and a composable semantic-operator tool/node for the ADA agent.
 
 **Meta-learning:** the two guardrails we designed in — the cascade's recall **guarantee** and GEPA's
 **held-out split** — each independently caught a result that *looked* like a win but wasn't. Measuring
