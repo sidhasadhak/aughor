@@ -75,3 +75,52 @@ class TestRouteGating:
     def test_reads_are_not_gated(self, client: TestClient, monkeypatch):
         monkeypatch.setenv("AUGHOR_TIER", "free")
         assert client.get("/metrics").status_code == 200   # listing is free
+
+
+# ── extended-surface gating (investigations / exploration / ontology / semantic) ──
+
+class TestExtendedSurfaceGating:
+    """The autonomous + edit surfaces gated this change. One representative endpoint
+    per (surface, capability); reads stay open and the gate lands dark at enterprise."""
+
+    # method, path, expected Capability.value — exercised at the FREE tier, where the
+    # gate 402s *before* the handler runs (so no exploration job is ever started).
+    GATED = [
+        ("post", "/investigate", "analysis.deep"),
+        ("post", "/exploration/c1/start", "exploration.auto"),
+        ("post", "/exploration/c1/trigger-intel", "intel.domain"),
+        ("post", "/exploration/c1/fix-all", "fix.save"),
+        ("put", "/ontology/entities/e1", "ontology.edit"),
+        ("post", "/semantic/c1/knowledge", "semantic.edit"),
+    ]
+    # subset whose handler validates a body first → safe to call at enterprise (422/404,
+    # never a real side effect) to prove the gate is transparent there.
+    BODY_VALIDATED = [g for g in GATED if g[1] in
+                      ("/investigate", "/ontology/entities/e1", "/semantic/c1/knowledge")]
+
+    def test_free_tier_402s_every_gated_surface(self, client: TestClient, monkeypatch):
+        monkeypatch.setenv("AUGHOR_TIER", "free")
+        for method, path, cap in self.GATED:
+            r = getattr(client, method)(path, json={})
+            assert r.status_code == 402, f"{method.upper()} {path}: expected 402, got {r.status_code}"
+            detail = r.json()["detail"]
+            assert detail["error"] == "capability_locked"
+            assert detail["capability"] == cap
+            assert detail["current_tier"] == "free"
+
+    def test_enterprise_tier_opens_gated_surfaces(self, client: TestClient, monkeypatch):
+        monkeypatch.setenv("AUGHOR_TIER", "enterprise")
+        for method, path, _ in self.BODY_VALIDATED:
+            r = getattr(client, method)(path, json={})
+            assert r.status_code != 402, f"{method.upper()} {path}: must not gate at enterprise"
+
+    def test_reads_on_gated_surfaces_stay_open(self, client: TestClient, monkeypatch):
+        monkeypatch.setenv("AUGHOR_TIER", "free")
+        # chat is Free NL2SQL (never gated); catalog + ontology reads stay open
+        assert client.get("/catalog/tree").status_code != 402
+        assert client.get("/ontology").status_code != 402
+
+    def test_gated_capabilities_are_not_free(self):
+        free = capabilities_for(Tier.FREE)
+        for _, _, cap in self.GATED:
+            assert Capability(cap) not in free, f"{cap} is Free — gating it is a no-op"

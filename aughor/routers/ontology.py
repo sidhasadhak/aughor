@@ -12,6 +12,8 @@ from aughor.db.registry import BUILTIN_ID, get_meta
 from aughor.ontology.models import OntologyAction
 from aughor.routers._shared import invalidate_schema_cache as _invalidate_schema_cache
 
+from aughor.licensing import Capability, gate
+
 router = APIRouter(tags=["ontology"])
 
 
@@ -222,7 +224,7 @@ def get_ontology_metrics(
 
 # ── Override (write) endpoints ─────────────────────────────────────────────────
 
-@router.put("/ontology/entities/{entity_id}")
+@router.put("/ontology/entities/{entity_id}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
 def override_ontology_entity(
     entity_id: str,
     body: _EntityOverride,
@@ -244,7 +246,7 @@ def override_ontology_entity(
     return updated.entities[entity_id].model_dump()
 
 
-@router.put("/ontology/actions/{action_id}")
+@router.put("/ontology/actions/{action_id}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
 def override_ontology_action(
     action_id: str,
     body: _ActionOverride,
@@ -314,7 +316,7 @@ async def get_entity_lifecycle_counts(
 
 # ── Rebuild ────────────────────────────────────────────────────────────────────
 
-@router.post("/ontology/rebuild")
+@router.post("/ontology/rebuild", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
 def rebuild_ontology(
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
@@ -434,7 +436,7 @@ def propose_learned_skill(
     return {"schema_name": effective, "candidate": candidate.model_dump()}
 
 
-@router.post("/ontology/skills")
+@router.post("/ontology/skills", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
 def save_learned_skill(
     action: OntologyAction,
     connection_id: str = BUILTIN_ID,

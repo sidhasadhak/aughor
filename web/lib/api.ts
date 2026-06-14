@@ -1,4 +1,9 @@
 import { API_BASE as BASE } from "./config";
+import { installUpsellInterceptor } from "./upsell";
+
+// Screen every API response for HTTP 402 (capability_locked) → app-wide upsell modal.
+// Idempotent, client-only; installed when the API layer first loads.
+installUpsellInterceptor();
 
 export interface Connection {
   id: string;

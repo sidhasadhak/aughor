@@ -104,6 +104,8 @@ def _filter_findings_by_schema(findings: dict, conn_id: str, schema: str | None)
     out["insights"] = [i for i in (findings.get("insights") or []) if _insight_refs(i) & tset]
     return out
 
+from aughor.licensing import Capability, gate
+
 router = APIRouter(tags=["exploration"])
 
 
@@ -368,7 +370,7 @@ def generate_canvas_briefing(canvas_id: str, refresh: bool = False):
     return {**result, "macro_context": macro, "available": bool(result.get("narrative"))}
 
 
-@router.post("/exploration/{conn_id}/domains/{domain}/extend")
+@router.post("/exploration/{conn_id}/domains/{domain}/extend", dependencies=[gate(Capability.AUTO_EXPLORATION)])
 async def extend_domain_budget(conn_id: str, domain: str):
     from aughor.explorer import store as _expl_store
     new_cap = _expl_store.extend_domain_budget(conn_id, domain, extra=5)
@@ -410,7 +412,7 @@ def stop_exploration(conn_id: str):
     return {"ok": True, "stopped": explorer is not None}
 
 
-@router.post("/exploration/{conn_id}/resume")
+@router.post("/exploration/{conn_id}/resume", dependencies=[gate(Capability.AUTO_EXPLORATION)])
 async def resume_exploration(conn_id: str):
     existing = _explorers.get(conn_id)
     if existing and existing.status.phase not in (ExplorationPhase.COMPLETE, ExplorationPhase.FAILED):
@@ -422,7 +424,7 @@ async def resume_exploration(conn_id: str):
     return {"ok": res["ok"], **({"reason": res["reason"]} if res["reason"] else {})}
 
 
-@router.post("/exploration/{conn_id}/restart")
+@router.post("/exploration/{conn_id}/restart", dependencies=[gate(Capability.AUTO_EXPLORATION)])
 async def restart_exploration(conn_id: str):
     explorer = _explorers.get(conn_id)
     if explorer:
@@ -474,7 +476,7 @@ async def retry_query(conn_id: str, body: RetryQueryRequest):
         raise HTTPException(status_code=500, detail=f"Query execution failed: {e}")
 
 
-@router.post("/exploration/{conn_id}/fix-episode")
+@router.post("/exploration/{conn_id}/fix-episode", dependencies=[gate(Capability.FIX_SAVE)])
 def fix_episode(conn_id: str, body: FixEpisodeRequest):
     """Repair an errored episode and, on a successful run, SAVE it: heal the episode and
     (for domain-intelligence queries) store a finding through the same Phase-8 guards.
@@ -490,7 +492,7 @@ def fix_episode(conn_id: str, body: FixEpisodeRequest):
         raise HTTPException(status_code=500, detail=f"fix-and-save failed: {e}")
 
 
-@router.post("/exploration/{conn_id}/fix-all")
+@router.post("/exploration/{conn_id}/fix-all", dependencies=[gate(Capability.FIX_SAVE)])
 def fix_all(conn_id: str, body: FixAllRequest):
     """Repair-and-save every episode in the provided list — and ONLY those. The client
     sends exactly the errored episodes visible under its current filter, so a date filter
@@ -520,7 +522,7 @@ def fix_all(conn_id: str, body: FixAllRequest):
 
 # ── Explorer control ─────────────────────────────────────────────────────────
 
-@router.post("/exploration/{conn_id}/start")
+@router.post("/exploration/{conn_id}/start", dependencies=[gate(Capability.AUTO_EXPLORATION)])
 async def start_exploration(conn_id: str):
     """Start a fresh explorer run if none is active."""
     existing = _explorers.get(conn_id)
@@ -532,7 +534,7 @@ async def start_exploration(conn_id: str):
     return {"ok": started}
 
 
-@router.post("/exploration/{conn_id}/trigger-intel")
+@router.post("/exploration/{conn_id}/trigger-intel", dependencies=[gate(Capability.DOMAIN_INTEL)])
 async def trigger_domain_intelligence(conn_id: str):
     """Run only Phase 8 (domain intelligence) if phases 3-7 are already complete."""
     from aughor.explorer import store as _expl_store
@@ -662,7 +664,7 @@ def get_canvas_exploration_episodes(canvas_id: str, phase: str = "", limit: int 
     return entries[-limit:]
 
 
-@router.post("/exploration/canvas/{canvas_id}/resume")
+@router.post("/exploration/canvas/{canvas_id}/resume", dependencies=[gate(Capability.AUTO_EXPLORATION)])
 async def resume_canvas_exploration(canvas_id: str):
     from aughor.canvas.store import get_canvas
     from aughor.explorer.agent import SchemaExplorer
@@ -691,7 +693,7 @@ def stop_canvas_exploration(canvas_id: str):
     return {"status": "paused"}
 
 
-@router.post("/exploration/canvas/{canvas_id}/restart")
+@router.post("/exploration/canvas/{canvas_id}/restart", dependencies=[gate(Capability.AUTO_EXPLORATION)])
 async def restart_canvas_exploration(canvas_id: str):
     from aughor.canvas.store import get_canvas
     from aughor.explorer.agent import SchemaExplorer
@@ -717,7 +719,7 @@ async def restart_canvas_exploration(canvas_id: str):
     return {"status": "restarted"}
 
 
-@router.post("/exploration/canvas/{canvas_id}/trigger-intel")
+@router.post("/exploration/canvas/{canvas_id}/trigger-intel", dependencies=[gate(Capability.DOMAIN_INTEL)])
 async def trigger_canvas_domain_intelligence(canvas_id: str):
     """Run only Phase 8 (domain intelligence) for a Canvas if phases 3-7 are already
     complete — the canvas-scoped counterpart to the connection `trigger-intel`. Drives
@@ -741,7 +743,7 @@ async def trigger_canvas_domain_intelligence(canvas_id: str):
     return {"ok": res["ok"], **({"reason": res["reason"]} if res["reason"] else {})}
 
 
-@router.post("/exploration/canvas/{canvas_id}/domains/{domain}/extend")
+@router.post("/exploration/canvas/{canvas_id}/domains/{domain}/extend", dependencies=[gate(Capability.AUTO_EXPLORATION)])
 def extend_canvas_domain_budget(canvas_id: str, domain: str, extra: int = 5):
     from aughor.canvas.store import get_canvas
     if not get_canvas(canvas_id):

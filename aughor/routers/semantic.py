@@ -34,6 +34,8 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
+from aughor.licensing import Capability, gate
+
 router = APIRouter(prefix="/semantic", tags=["semantic"])
 
 
@@ -86,7 +88,7 @@ def get_table_annotation(conn_id: str, table: str):
     return {"table": table, "description": desc}
 
 
-@router.put("/{conn_id}/annotations/table/{table}", status_code=200)
+@router.put("/{conn_id}/annotations/table/{table}", status_code=200, dependencies=[gate(Capability.SEMANTIC_EDIT)])
 def upsert_table_annotation(conn_id: str, table: str, body: TableAnnotationIn):
     from aughor.db.annotations import load_annotations, save_annotations
     ann = load_annotations(conn_id)
@@ -112,7 +114,7 @@ def get_column_annotation(conn_id: str, table: str, column: str):
     return {"table": table, "column": column, "description": desc}
 
 
-@router.put("/{conn_id}/annotations/column/{table}/{column}", status_code=200)
+@router.put("/{conn_id}/annotations/column/{table}/{column}", status_code=200, dependencies=[gate(Capability.SEMANTIC_EDIT)])
 def upsert_column_annotation(conn_id: str, table: str, column: str, body: ColumnAnnotationIn):
     from aughor.db.annotations import load_annotations, save_annotations
     ann = load_annotations(conn_id)
@@ -141,7 +143,7 @@ def list_knowledge(conn_id: str):
     return [e.to_dict() for e in entries]
 
 
-@router.post("/{conn_id}/knowledge", status_code=201)
+@router.post("/{conn_id}/knowledge", status_code=201, dependencies=[gate(Capability.SEMANTIC_EDIT)])
 def create_knowledge(conn_id: str, body: KnowledgeEntryIn):
     from aughor.semantic.connection_kb import KnowledgeEntry, upsert_entry
     entry = KnowledgeEntry(
@@ -156,7 +158,7 @@ def create_knowledge(conn_id: str, body: KnowledgeEntryIn):
     return saved.to_dict()
 
 
-@router.put("/{conn_id}/knowledge/{entry_id}", status_code=200)
+@router.put("/{conn_id}/knowledge/{entry_id}", status_code=200, dependencies=[gate(Capability.SEMANTIC_EDIT)])
 def update_knowledge(conn_id: str, entry_id: str, body: KnowledgeEntryIn):
     from aughor.semantic.connection_kb import KnowledgeEntry, upsert_entry, load_entries
     existing = {e.id: e for e in load_entries(conn_id)}
@@ -183,7 +185,7 @@ def delete_knowledge(conn_id: str, entry_id: str):
     return {"ok": True}
 
 
-@router.post("/{conn_id}/knowledge/rebuild-index", status_code=200)
+@router.post("/{conn_id}/knowledge/rebuild-index", status_code=200, dependencies=[gate(Capability.SEMANTIC_EDIT)])
 def rebuild_knowledge_index(conn_id: str):
     from aughor.semantic.connection_kb import rebuild_index
     count = rebuild_index(conn_id)
@@ -200,7 +202,7 @@ def list_benchmarks(conn_id: str):
     return [c.to_dict() for c in load_cases(conn_id)]
 
 
-@router.post("/{conn_id}/benchmarks", status_code=201)
+@router.post("/{conn_id}/benchmarks", status_code=201, dependencies=[gate(Capability.SEMANTIC_EDIT)])
 def create_benchmark(conn_id: str, body: BenchmarkCaseIn):
     from aughor.db.benchmarks import BenchmarkCase, upsert_case
     case = BenchmarkCase(
@@ -215,7 +217,7 @@ def create_benchmark(conn_id: str, body: BenchmarkCaseIn):
     return saved.to_dict()
 
 
-@router.put("/{conn_id}/benchmarks/{case_id}", status_code=200)
+@router.put("/{conn_id}/benchmarks/{case_id}", status_code=200, dependencies=[gate(Capability.SEMANTIC_EDIT)])
 def update_benchmark(conn_id: str, case_id: str, body: BenchmarkCaseIn):
     from aughor.db.benchmarks import BenchmarkCase, upsert_case, load_cases
     existing = {c.id: c for c in load_cases(conn_id)}
@@ -242,7 +244,7 @@ def delete_benchmark(conn_id: str, case_id: str):
     return {"ok": True}
 
 
-@router.post("/{conn_id}/benchmarks/run")
+@router.post("/{conn_id}/benchmarks/run", dependencies=[gate(Capability.SEMANTIC_EDIT)])
 def run_benchmarks_endpoint(conn_id: str):
     """Generate + execute SQL for every benchmark case and score them."""
     from aughor.db.benchmarks import run_benchmarks
