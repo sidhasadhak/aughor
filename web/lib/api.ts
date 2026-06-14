@@ -1362,8 +1362,9 @@ export interface Canvas {
   last_activity?: string | null;
 }
 
-export async function getCanvases(): Promise<Canvas[]> {
-  const res = await fetch(`${BASE}/canvases`);
+export async function getCanvases(workspaceId?: string): Promise<Canvas[]> {
+  const qs = workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : "";
+  const res = await fetch(`${BASE}/canvases${qs}`);
   if (!res.ok) throw new Error("Failed to fetch canvases");
   return res.json();
 }

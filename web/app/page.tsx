@@ -660,6 +660,7 @@ type RecentInv = { id: string; question: string; started_at: string; status: str
 function HomeScreen({
   connections,
   selectedConn,
+  workspaceId,
   onGoToChat,
   onNavigate,
   onOpenInvestigation,
@@ -668,6 +669,7 @@ function HomeScreen({
 }: {
   connections: Connection[];
   selectedConn: string;
+  workspaceId: string;
   onGoToChat: (q?: string, mode?: AskMode) => void;
   onNavigate: (t: NavTab) => void;
   onOpenInvestigation: (id: string, kind?: "investigation" | "chat", connectionId?: string, canvasId?: string | null) => void;
@@ -680,7 +682,7 @@ function HomeScreen({
   const [domainInsightCount, setDomainInsightCount] = useState<number | null>(null);
 
   useEffect(() => {
-    fetch(`${API_BASE}/investigations`)
+    fetch(`${API_BASE}/investigations${workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : ""}`)
       .then(r => r.json())
       .then(d => setRecentInvs(Array.isArray(d) ? d.slice(0, 8) : []))
       .catch(() => {});
@@ -689,7 +691,7 @@ function HomeScreen({
     getDomainInsights(selectedConn)
       .then(d => setDomainInsightCount(Object.values(d).reduce((sum, v) => sum + (v as { insights: unknown[] }).insights.length, 0)))
       .catch(() => {});
-  }, [selectedConn]);
+  }, [selectedConn, workspaceId]);
 
   const tables   = exploration?.tables_total    ?? "—";
   const insights = domainInsightCount ?? "—";
@@ -820,19 +822,19 @@ function HomeScreen({
 
 // ── Recents screen ─────────────────────────────────────────────────────────────
 
-function RecentsScreen({ onGoToChat, onOpenInvestigation }: { onGoToChat: (q?: string) => void; onOpenInvestigation: (id: string, kind: "investigation" | "chat", connectionId?: string, canvasId?: string | null) => void }) {
+function RecentsScreen({ onGoToChat, onOpenInvestigation, workspaceId }: { onGoToChat: (q?: string) => void; onOpenInvestigation: (id: string, kind: "investigation" | "chat", connectionId?: string, canvasId?: string | null) => void; workspaceId?: string }) {
   const [activities, setActivities] = useState<Array<{ id: string; question: string; started_at: string; status: string; headline: string | null; kind?: string; connection_id?: string; canvas_id?: string | null }>>([]);
   const [filter, setFilter] = useState<"all" | "investigation" | "chat">("all");
 
   useEffect(() => {
     const ctrl = new AbortController();
     const to = setTimeout(() => ctrl.abort(), 8_000);
-    fetch(`${API_BASE}/investigations`, { signal: ctrl.signal })
+    fetch(`${API_BASE}/investigations${workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : ""}`, { signal: ctrl.signal })
       .then(r => r.json())
       .then(d => setActivities(Array.isArray(d) ? d : []))
       .catch(() => {})
       .finally(() => clearTimeout(to));
-  }, []);
+  }, [workspaceId]);
 
   const shown = filter === "all" ? activities : activities.filter(a => (filter === "chat" ? a.kind === "chat" : a.kind !== "chat"));
 
@@ -1700,6 +1702,7 @@ export default function Home() {
               <HomeScreen
                 connections={wsConnections}
                 selectedConn={selectedConn}
+                workspaceId={selectedWorkspace}
                 onGoToChat={goToChat}
                 onNavigate={handleNavigate}
                 onOpenInvestigation={openInvestigation}
@@ -1712,6 +1715,7 @@ export default function Home() {
             {tab === "canvases" && (
               <CanvasBrowser
                 connections={wsConnections}
+                workspaceId={selectedWorkspace}
                 onSelect={handleCanvasSelect}
                 onNew={() => setShowCanvasCreator(true)}
               />
@@ -1813,7 +1817,7 @@ export default function Home() {
             {/* ── RECENTS ── */}
             {tab === "recents" && (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
-                <RecentsScreen onGoToChat={goToChat} onOpenInvestigation={openInvestigation} />
+                <RecentsScreen onGoToChat={goToChat} onOpenInvestigation={openInvestigation} workspaceId={selectedWorkspace} />
               </div>
             )}
 
