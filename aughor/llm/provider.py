@@ -294,6 +294,44 @@ def get_provider(role: Role = "coder") -> LLMProvider:
     return _providers[role]
 
 
+# ── Proxy (cheap) provider — the cascade's helper model ───────────────────────
+# A cheaper/faster model on the active backend, used as the proxy in model cascades
+# (see aughor/llm/cascade.py): it scores the easy cases, only the ambiguous ones
+# escalate to the full `coder` model. Kept off the formal Role/UI surface for now;
+# override per backend with AUGHOR_PROXY_MODEL or the runtime config's models.proxy.
+
+_DEFAULT_PROXY_MODELS: dict[str, str] = {
+    "ollama":    "qwen2.5-coder:7b",
+    "lmstudio":  "local-model",
+    "groq":      "llama-3.1-8b-instant",
+    "together":  "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo",
+    "anthropic": "claude-haiku-4-5-20251001",
+}
+
+_proxy_provider: Optional["LLMProvider"] = None
+_proxy_cache_version = -1
+
+
+def _active_proxy_model(backend: str) -> str:
+    cfg_model = (_cfg().get("models") or {}).get("proxy")
+    if cfg_model:
+        return cfg_model.strip()
+    env = os.getenv("AUGHOR_PROXY_MODEL")
+    if env:
+        return env.strip()
+    return _DEFAULT_PROXY_MODELS.get(backend, _DEFAULT_PROXY_MODELS["ollama"])
+
+
+def get_proxy_provider() -> LLMProvider:
+    """The cheap proxy model for cascades. Rebuilds when the config changes."""
+    global _proxy_provider, _proxy_cache_version
+    if _proxy_cache_version != _config_version or _proxy_provider is None:
+        backend = _active_backend()
+        _proxy_provider = LLMProvider(backend, "coder", model=_active_proxy_model(backend))
+        _proxy_cache_version = _config_version
+    return _proxy_provider
+
+
 # ── Config management (used by the /llm/config API) ───────────────────────────
 
 def current_config() -> dict:
