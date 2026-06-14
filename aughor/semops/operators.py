@@ -276,6 +276,28 @@ def semantic_extract(
     return SemanticOpResult(new_result, "extract", column, len(rows), len(rows), False, notes, llm_calls)
 
 
+def apply_step(
+    result: QueryResult,
+    operator: str,
+    column: str,
+    *,
+    predicate: str = "",
+    fields: list[tuple[str, str]] | None = None,
+    role: Role = DEFAULT_ROLE,
+    max_rows: int = DEFAULT_MAX_ROWS,
+    batch: int = DEFAULT_BATCH,
+    override_cap: bool = False,
+) -> SemanticOpResult:
+    """Dispatch one semantic operator by name — the shared entry point for callers (API + agent)."""
+    if operator == "filter":
+        return semantic_filter(result, column, predicate, role=role, max_rows=max_rows,
+                               batch=batch, override_cap=override_cap)
+    if operator == "extract":
+        return semantic_extract(result, column, fields or [], role=role, max_rows=max_rows,
+                                batch=batch, override_cap=override_cap)
+    raise ValueError(f"unknown semantic operator {operator!r} (expected 'filter' or 'extract')")
+
+
 def _uniquify(existing: list[str], new: list[str]) -> list[str]:
     """Return new column names disambiguated against existing ones and each other."""
     seen = set(existing)

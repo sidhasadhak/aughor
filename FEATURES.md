@@ -3237,8 +3237,23 @@ SQL handles the structured 99% — filtering, aggregation, joins — but can't a
 ### How
 `aughor/semops/operators.py` implements the operators as pure `QueryResult → SemanticOpResult` functions. Rows arrive stringified with no dtypes, so text columns are detected from the **values** (`detect_text_columns` — mostly non-numeric, non-date, non-id). **Cost is bounded by push-down + an explicit per-operator row cap** (default 200; refuses above it with a surfaced message pushing the caller to add SQL `WHERE`/`LIMIT`, never a silent truncation) and by batching rows per LLM call (role `fast`). Every operator is **fail-open**: an LLM/parse failure keeps the row (filter) or leaves fields blank (extract) and is recorded in `notes` — it never raises into the query path. `POST /query/semantic` and `POST /query/semantic/text-columns` re-run the SQL server-side (authoritative — never trusts client-sent rows), then apply the operator; both gated by the new Pro **`SEMANTIC_OPERATORS`** capability.
 
-**Key files.** `aughor/semops/operators.py`, `aughor/semops/__init__.py`, `aughor/routers/query.py`, `aughor/licensing/capabilities.py`, `tests/unit/test_semops.py`, `tests/integration/test_query_semantic.py`. Plan: [`docs/ADAPTIVE_INFERENCE_AND_SEMANTIC_OPERATORS.md`](docs/ADAPTIVE_INFERENCE_AND_SEMANTIC_OPERATORS.md) §4. **Next (Phase 2):** `top_k` + `aggregate`, the Query Builder "semantic step" UI, and an ADA agent tool.
+**Key files.** `aughor/semops/operators.py`, `aughor/semops/__init__.py`, `aughor/routers/query.py`, `aughor/licensing/capabilities.py`, `tests/unit/test_semops.py`, `tests/integration/test_query_semantic.py`. Plan: [`docs/ADAPTIVE_INFERENCE_AND_SEMANTIC_OPERATORS.md`](docs/ADAPTIVE_INFERENCE_AND_SEMANTIC_OPERATORS.md) §4. **Next (Phase 2):** `top_k` + `aggregate`, the Query Builder "semantic step" UI.
 
 ---
 
-*Last updated: 2026-06-15 · 126 active features (#127 semantic operators Phase 1; #126 model-cascade core was built then removed — kept as a tombstone). See `ROADMAP.md` for upcoming milestones; **semantic operators over SQL** is the active adaptive-inference work.*
+## 128. Semantic Operators in the ADA Investigation Agent ✅ Shipped
+
+### What
+The autonomous ADA investigation can now reason over **text** columns mid-investigation. Any ADA phase-plan query may carry an opt-in **semantic step** (`filter`/`extract`); after the SQL runs, the operator transforms that query's result so the phase interpreter reasons over text-derived evidence — e.g. filter support tickets to the ones describing a billing problem, then let the phase narrate over those.
+
+### Why
+Phase 1 made semantic operators callable over a SQL result; this puts them on the agent's real path. ADA investigations could measure the structured signal but were blind to the free-text columns (tickets, reviews, notes) that often explain *why* a metric moved. Now a phase can pull that explanation into evidence.
+
+### How
+`PhaseQueryPlan` gains an optional `semantic: SemanticStep` field; its own description teaches the planner when to attach one (free-text columns only) — **no phase-prompt edits**, the instructor schema surfaces it. Applied at the single shared seam `run_analysis_phase` (so **every** phase — baseline/decompose/dimensional/behavioral — gets it at once) via `_apply_semantic_steps`, right after parallel execution and before interpretation. The integration is **opt-in** (a no-op unless the planner emits a step), **guarded** (`detect_text_columns` skips a step misattached to a numeric/missing column, so it can never corrupt structured evidence), and **fail-open** (any operator error leaves the raw result via `tolerate(...)`). Reuses Phase 1's operators through a shared `apply_step` dispatcher.
+
+**Key files.** `aughor/agent/prompts_investigate.py` (`SemanticStep`/`SemanticField`/`PhaseQueryPlan.semantic`), `aughor/agent/investigate.py` (`_apply_semantic_steps` + the `run_analysis_phase` wiring), `aughor/semops/operators.py` (`apply_step`), `tests/unit/test_ada_semantic_steps.py`. **Next (Phase 2b):** `top_k` + `aggregate` operators and the Query Builder "semantic step" UI.
+
+---
+
+*Last updated: 2026-06-15 · 127 active features (#128 semantic operators in ADA, #127 semantic operators Phase 1; #126 model-cascade core was built then removed — kept as a tombstone). See `ROADMAP.md` for upcoming milestones; **semantic operators over SQL** is the active adaptive-inference work.*

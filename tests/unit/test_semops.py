@@ -17,6 +17,7 @@ from aughor.semops.operators import (
     _ExtractedRow,
     _FilterBatch,
     _RowVerdict,
+    apply_step,
     detect_text_columns,
     semantic_extract,
     semantic_filter,
@@ -227,3 +228,31 @@ def test_semantic_extract_no_fields_is_noop(patch_provider):
     assert p.calls == 0
     assert out.result.columns == ["note"]
     assert "no fields" in out.notes[0]
+
+
+# ── apply_step dispatcher ────────────────────────────────────────────────────────
+
+def test_apply_step_dispatches_filter(patch_provider):
+    patch_provider(FakeProvider(filter_fn=lambda t: "keep" in t))
+    qr = _qr(["note"], [["keep this"], ["drop that"]])
+
+    out = apply_step(qr, "filter", "note", predicate="p")
+
+    assert out.operator == "filter"
+    assert out.result.rows == [["keep this"]]
+
+
+def test_apply_step_dispatches_extract(patch_provider):
+    patch_provider(FakeProvider(extract_fn=lambda t: {"k": "v"}))
+    qr = _qr(["note"], [["x"]])
+
+    out = apply_step(qr, "extract", "note", fields=[("k", "the k")])
+
+    assert out.operator == "extract"
+    assert out.result.columns == ["note", "k"]
+
+
+def test_apply_step_unknown_operator_raises():
+    qr = _qr(["note"], [["x"]])
+    with pytest.raises(ValueError, match="unknown semantic operator"):
+        apply_step(qr, "summarize", "note")

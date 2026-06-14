@@ -555,11 +555,34 @@ class IntakeOutput(BaseModel):
     intake_notes: str = Field(description="Any caveats about the schema or question interpretation")
 
 
+class SemanticField(BaseModel):
+    """One field to pull out of a free-text column."""
+    name: str = Field(description="Short snake_case column name for the extracted value, e.g. 'root_cause'.")
+    description: str = Field(default="", description="What to extract, e.g. 'the product area the complaint is about'.")
+
+
+class SemanticStep(BaseModel):
+    """An LLM operator to run over ONE free-text column of this query's result, after the SQL runs."""
+    operator: Literal["filter", "extract"]
+    column: str = Field(description="The free-TEXT column in this query's result to operate on.")
+    predicate: str = Field(default="", description="filter only: keep rows whose text satisfies this NL predicate, e.g. 'the ticket is a billing complaint'.")
+    fields: list[SemanticField] = Field(default_factory=list, description="extract only: the fields to pull from the text into new columns.")
+
+
 class PhaseQueryPlan(BaseModel):
     title: str
     sql: str
     chart_type: Literal["line", "bar", "bar_horizontal", "stacked_bar", "pie", "pareto", "auto", "none"] = "auto"
     rationale: str
+    semantic: Optional[SemanticStep] = Field(
+        default=None,
+        description=(
+            "OPTIONAL. Attach ONLY when this query returns a free-TEXT column (support tickets, reviews, "
+            "notes, descriptions, comments) that needs reasoning SQL cannot do. 'filter' keeps rows whose "
+            "text matches a natural-language predicate; 'extract' pulls named fields from the text into new "
+            "columns. Leave null for ordinary numeric/aggregate/dimensional queries — most queries."
+        ),
+    )
 
 
 class PhasePlan(BaseModel):
