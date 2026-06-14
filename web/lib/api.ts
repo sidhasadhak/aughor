@@ -2160,6 +2160,27 @@ export async function generateCanvasBriefingNarrative(
   return res.json();
 }
 
+// ── Report export (PDF / PowerPoint) ────────────────────────────────────────────
+
+/** Download URL for a stored investigation's export. `narrate` prepends an
+ *  LLM-authored executive summary (best-effort). */
+export function investigationExportUrl(invId: string, fmt: "pdf" | "pptx", narrate = false): string {
+  const q = new URLSearchParams({ format: fmt });
+  if (narrate) q.set("narrate", "true");
+  return `${BASE}/investigations/${encodeURIComponent(invId)}/export?${q.toString()}`;
+}
+
+/** Trigger a browser download of an investigation export. The endpoint replies
+ *  with Content-Disposition: attachment, so the file saves without navigating. */
+export function downloadInvestigationExport(invId: string, fmt: "pdf" | "pptx", narrate = false): void {
+  const a = document.createElement("a");
+  a.href = investigationExportUrl(invId, fmt, narrate);
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
 // ── Explorer Control ────────────────────────────────────────────────────────────
 
 export interface ExplorerStatus {
