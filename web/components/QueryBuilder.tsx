@@ -773,14 +773,18 @@ function ResultsPane({
 
 // ── Main component ────────────────────────────────────────────────────────────
 
-export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest }: {
+export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, connections: connectionsProp }: {
   initialConnId?: string;
   onOpenCanvas?: (canvas: Canvas) => void;
   /** A query handed in from Insights / Deep Analysis: load the SQL, switch to its
    *  connection, and run it. nonce-keyed so the same request fires exactly once. */
   importRequest?: { connId: string; sql: string; nonce: number };
+  /** Workspace-scoped connection list. When provided, the builder uses it instead
+   *  of fetching the global list — so it can't query outside the active workspace. */
+  connections?: Connection[];
 }) {
-  const [connections,   setConnections]   = useState<Connection[]>([]);
+  const [connectionsState, setConnections] = useState<Connection[]>([]);
+  const connections = connectionsProp ?? connectionsState;
   const [connId,        setConnId]        = useState(initialConnId ?? "");
   const [tableNames,    setTableNames]    = useState<string[]>([]);
   const [tableCols,     setTableCols]     = useState<Record<string,SchemaColumn[]>>({});
@@ -889,10 +893,18 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest }: {
   const [saveName,    setSaveName]    = useState("");
   const [savingState, setSavingState] = useState<"idle"|"saving"|"saved">("idle");
 
+  useEffect(() => { getMetrics().then(setMetrics).catch(()=>{}); }, []);
   useEffect(() => {
+    // Workspace-scoped: use the provided list and keep connId inside it. Otherwise
+    // (standalone use) fall back to the global connection list.
+    if (connectionsProp) {
+      if (connectionsProp.length && !connectionsProp.find(c => c.id === connId)) setConnId(connectionsProp[0].id);
+      else if (!connectionsProp.length) setConnId("");
+      return;
+    }
     getConnections().then(cs => { setConnections(cs); if (!connId && cs.length) setConnId(cs[0].id); }).catch(()=>{});
-    getMetrics().then(setMetrics).catch(()=>{});
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectionsProp]);
 
   useEffect(() => {
     if (!connId) return;

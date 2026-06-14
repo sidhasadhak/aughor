@@ -1638,12 +1638,26 @@ export default function Home() {
     ? connections.filter(c => activeWs.connection_ids.includes(c.id))
     : connections;
 
+  // Switching workspace must not leak the previous one's views — drop the active
+  // canvas and any open chat/history session so only workspace-scoped data shows.
+  const handleWorkspaceChange = (id: string) => {
+    if (id === selectedWorkspace) return;
+    setSelectedWorkspace(id);
+    setActiveCanvas(null);
+    setSelectedChatSessionId(null);
+    setSelectedHistoryInvId(null);
+  };
+
   // Keep the selected connection inside the active workspace. When the user
   // switches workspaces and the current connection isn't a member, jump to the
-  // workspace's first connection.
+  // workspace's first connection — or clear it when the workspace is empty, so an
+  // empty workspace shows no data instead of leaking the previously-selected one.
   useEffect(() => {
     if (!activeWs || connections.length === 0) return;
-    if (wsConnections.length === 0) return;
+    if (wsConnections.length === 0) {
+      if (selectedConn) setSelectedConn("");
+      return;
+    }
     if (!wsConnections.find(c => c.id === selectedConn)) {
       setSelectedConn(wsConnections[0].id);
     }
@@ -1663,7 +1677,7 @@ export default function Home() {
         selectedConn={selectedConn}
         workspaces={workspaces}
         selectedWorkspace={selectedWorkspace}
-        onWorkspaceChange={setSelectedWorkspace}
+        onWorkspaceChange={handleWorkspaceChange}
         onCreateWorkspace={async (name) => {
           const ws = await apiCreateWorkspace(name, []);
           await reloadWorkspaces();
@@ -1810,7 +1824,7 @@ export default function Home() {
                 onInvestigate={goToChat}
                 layer={intelLayer}
                 onLayerChange={setIntelLayer}
-                connections={connections.filter(c => c.briefings_enabled !== false).map(c => ({ id: c.id, name: c.name }))}
+                connections={wsConnections.filter(c => c.briefings_enabled !== false).map(c => ({ id: c.id, name: c.name }))}
                 onConnectionChange={setSelectedConn}
                 domainSection={explorationSection}
               />
@@ -1875,7 +1889,7 @@ export default function Home() {
             {/* ── QUERY BUILDER ── */}
             {tab === "builder" && (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
-                <QueryBuilder initialConnId={selectedConn} onOpenCanvas={handleCanvasSelect} importRequest={builderImport} />
+                <QueryBuilder initialConnId={selectedConn} onOpenCanvas={handleCanvasSelect} importRequest={builderImport} connections={wsConnections} />
               </div>
             )}
 
@@ -1922,8 +1936,8 @@ export default function Home() {
               <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
                 <SemanticLayerPanel
                   connectionId={selectedConn ?? ""}
-                  connName={connections.find(c => c.id === selectedConn)?.name}
-                  connections={connections.map(c => ({ id: c.id, name: c.name }))}
+                  connName={wsConnections.find(c => c.id === selectedConn)?.name}
+                  connections={wsConnections.map(c => ({ id: c.id, name: c.name }))}
                 />
               </div>
             )}
