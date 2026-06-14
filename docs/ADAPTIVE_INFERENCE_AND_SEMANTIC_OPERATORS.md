@@ -303,3 +303,52 @@ core; optionally use an existing prompt-optimizer library for Borrow 2 only).
    after the cascade lands?
 3. Do we want the §3 naming consolidation done as a deliberate product/marketing pass alongside the
    engineering?
+
+---
+
+## Part VII — Build outcomes & learnings (2026-06-14/15)
+
+We built and stress-tested Borrows 1 and 2. Both ended in **honest negative results that the built-in
+guardrails caught** — which is the system working, not failing.
+
+### Borrow 1 — model cascade: BUILT, then PARKED (blocked on a model)
+- **Shipped (#49):** the generic cascade core (`aughor/llm/cascade.py`, Hoeffding guarantee proven on
+  synthetic data), `get_proxy_provider`, and an opt-in cascade on hypothesis scoring
+  (`AUGHOR_CASCADE_HYPOTHESIS`, fail-safe). Calibration harness = **PR #50 (parked-open)**.
+- **The wall:** the proxy signal is the cheap model's self-reported `EvidenceScore.confidence`, and on a
+  live 45-example calibration **every accessible cheap model is miscalibrated** — gemma4:31b,
+  qwen2.5-coder:14b, and Cohere command-r7b all cluster confidence at 0.6–0.8 regardless of the evidence
+  (command-r7b even *confirmed* a clearly-refuting case). So the cascade can't trust them → escalates
+  ~85% → only **~15% oracle-call saving**. The one well-calibrated model tried (Cohere
+  `command-a-reasoning`, confidence spanning 0.0–0.6) is a **slow reasoning model**, not cheap.
+- **The crucial constant:** in *every* run the **recall guarantee held at 1.0** — the cascade never traded
+  accuracy for cost. A bad proxy yields fewer savings, never wrong answers. That's the guarantee doing
+  its job.
+- **The grail, and why it's parked:** the cheap-*and*-calibrated candidate is **Cohere North Mini Code**
+  (30B/3B-active MoE) — but it's **access-gated** (Cohere's enterprise "North" platform; not on the trial
+  API; its 128-expert MoE isn't runnable on Ollama/llama.cpp; needs an H100). Parked until a
+  cheap+calibrated proxy + access exists. (A Cohere backend was wired to test it, then reverted.)
+
+### Borrow 2 — prompt optimization (GEPA-style): BUILT, then DROPPED
+- A reflective hill-climb over `CHAT_SQL_SYSTEM`, scored on the 53-pair golden NL2SQL set with the
+  deterministic `sql_accuracy` scorer, **held-out gated** (a candidate is adopted only if it beats the
+  current best on train).
+- **Result:** it **overfit** — train 0.645 → 0.674 but **held-out 0.645 → 0.644 (no lift)**. The held-out
+  split correctly **refused to certify a fake win**. The conclusion: the hand-tuned `CHAT_SQL_SYSTEM` is
+  already strong, and naive reflective optimization on a thin (53) eval set can't beat it. **Dropped.**
+- **To revisit:** a larger eval set (>53), held-out (not train) selection inside the loop, and a
+  *less-tuned* target prompt (e.g. an explore-mode prompt) — there isn't enough headroom on the
+  battle-tested chat prompt.
+
+### Model decision
+Kept **`qwen3-coder-next:cloud`** as the main coder model. In a 53-question golden-SQL bake-off,
+`kimi-k2.7-code:cloud` was *more accurate* (+0.047 mean, +4 pass@80, winning the medium-difficulty band)
+but **~6× slower** (~20s vs ~3s) — unacceptable latency for the interactive coder role.
+
+### Borrow 3 — semantic operators over SQL: NOT STARTED
+The remaining, highest-upside borrow (§4). Unblocked by the above (it doesn't depend on the cascade
+landing) and the clearest *new capability* — see §3/§4. The recommended next adaptive-inference step.
+
+**Meta-learning:** the two guardrails we designed in — the cascade's recall **guarantee** and GEPA's
+**held-out split** — each independently caught a result that *looked* like a win but wasn't. Measuring
+honestly saved us from shipping a miscalibrated cascade and an overfit prompt.

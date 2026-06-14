@@ -3182,4 +3182,49 @@ One fail-closed gate — `workspace_connection_ids(workspace_id)`: `None` when u
 
 ---
 
-*Last updated: 2026-06-14 · 123 features — all shipped. See `ROADMAP.md` for upcoming milestones.*
+## 124. Workspace Tenancy — Monitors/Alerts + Home-Dashboard Flash ✅ Shipped
+
+### What
+The last two surfaces that still leaked across workspaces are closed. Opening **Monitors** in an empty workspace no longer lists every workspace's monitors/alerts, and the **Home dashboard** no longer briefly flashes another connection's tables/queries/insights on first load.
+
+### Why
+Two residual leaks of the same class as the original tenancy bug: `MonitorsPanel` fired `GET /monitors` + `/alerts` with no filter when no connection was selected (→ all workspaces), and `selectedConn` was restored from `localStorage` before the workspace boundary resolved (→ the Home stats fetched the builtin connection for a beat, then self-corrected).
+
+### How
+`/monitors` + `/alerts` now accept `?workspace_id=` and apply the same fail-closed `workspace_connection_ids` gate; the panel passes the active workspace. And `selectedConn` is now **derived** and clamped to the active workspace (fail-closed until it resolves) instead of stored-then-corrected — fixing the whole class of connection-scoped consumers at once. A 6-test regression guard locks the gate.
+
+**Key files.** `aughor/routers/monitors.py`, `web/components/MonitorsPanel.tsx`, `web/app/page.tsx`, `web/lib/api.ts`, `tests/unit/test_monitor_workspace_scope.py`. (#45)
+
+---
+
+## 125. Licensing Extension + 402 → Upsell ✅ Shipped
+
+### What
+The capability gate now covers the platform's expensive/autonomous surfaces, and a locked capability raises a real **upgrade modal** instead of a silent error.
+
+### Why
+`gate()` was wired only on actions/briefs/metrics/monitors; the core autonomous + edit surfaces (investigations, exploration, ontology, semantic) had zero gates, and the frontend had no `402` handling at all.
+
+### How
+25 gates added across investigations / exploration / ontology / semantic (mutations only — reads/deletes stay open), each mapping to the right capability (`DEEP_ANALYSIS`, `AUTO_EXPLORATION`, `ONTOLOGY_EDIT`, `SEMANTIC_EDIT`, …). A one-time `window.fetch` interceptor screens every response for `402 capability_locked` and raises an app-wide `UpgradeModal` — covering all current *and future* gates with no change to the ~100 API call sites. Verified live: free tier → 402; default enterprise tier → transparent.
+
+**Key files.** `aughor/routers/{investigations,exploration,ontology,semantic}.py`, `web/lib/upsell.ts`, `web/components/UpgradeModal.tsx`, `tests/integration/test_licensing_enforcement.py`. (#46)
+
+---
+
+## 126. Model-Cascade Core (Adaptive Inference) ✅ Shipped · ◑ Parked
+
+### What
+Infrastructure for **cost-bounded LLM inference with an accuracy guarantee**: a cheap proxy model answers the easy cases and only the ambiguous ones escalate to the expensive "oracle," with a *proven* recall/precision bound. A reusable core + an opt-in pilot on hypothesis scoring.
+
+### Why
+Aughor makes many graded LLM judgments (hypothesis scoring, finding-trust, LLM-judge). A cascade can cut their cost/latency *without* sacrificing accuracy.
+
+### How
+`aughor/llm/cascade.py` learns two thresholds `(τ⁺, τ⁻)` from a calibration corpus using Hoeffding confidence bounds (guarantee proven on synthetic data); `get_proxy_provider` resolves a cheaper model on the active backend; `score_evidence` gains an opt-in cascade (`AUGHOR_CASCADE_HYPOTHESIS`, fail-safe to the oracle). **Parked** pending a cheap *and* well-calibrated proxy — every accessible cheap model proved miscalibrated (the calibration harness, parked in PR #50, surfaced this empirically; the accuracy guarantee always held). Plan: [`docs/ADAPTIVE_INFERENCE_AND_SEMANTIC_OPERATORS.md`](docs/ADAPTIVE_INFERENCE_AND_SEMANTIC_OPERATORS.md).
+
+**Key files.** `aughor/llm/cascade.py`, `aughor/llm/provider.py`, `aughor/agent/hypothesis_cascade.py`, `tests/unit/test_cascade.py`. (#49)
+
+---
+
+*Last updated: 2026-06-15 · 126 features shipped (+ adaptive-inference research/plan #48, the model bake-off, and a calibration harness parked in PR #50). See `ROADMAP.md` for upcoming milestones.*

@@ -65,9 +65,13 @@ Grouped by area; each ✅ is verified shipped (git + code). Representative commi
 
 ### Trust, security, licensing
 - ✅ **Secrets-at-rest vault** — Fernet-encrypted DSNs, trigger URLs/headers, connector tokens (`aed5640`, `af7138b`).
-- ✅ **Licensing capability gate (core)** — `gate()` wired across actions/briefs/investigations/metrics/monitors (`3a8da8b`).
-- ✅ **Workspace data-path tenancy isolation** — every connection-tied surface (pickers, `/canvases`, `/investigations`, Recommendation Inbox, Catalog tree) scoped to the active workspace via a fail-closed `workspace_connection_ids` gate; both UI + server layers (#38, #39, #41, #42). See [FEATURES #123](FEATURES.md).
+- ✅ **Licensing capability gate** — `gate()` wired across actions/briefs/metrics/monitors (`3a8da8b`) and **extended** to investigations / exploration / ontology / semantic writes (25 gates), with a frontend **402 → upsell** modal that surfaces any locked capability via a one-time `fetch` interceptor (#46). Reads/deletes stay open; lands dark at the default enterprise tier.
+- ✅ **Workspace data-path tenancy isolation** — every connection-tied surface (pickers, `/canvases`, `/investigations`, Recommendation Inbox, Catalog tree, **Monitors/Alerts**, and the **Home-dashboard first-load flash**) scoped to the active workspace via a fail-closed `workspace_connection_ids` gate + a derived workspace-clamped `selectedConn`; both UI + server layers (#38, #39, #41, #42, #45). An empty workspace shows none of another's data. See [FEATURES](FEATURES.md).
 - ✅ **Query cancellation** + orphaned-run reconciliation (kernel).
+
+### Adaptive Inference (2026-06-14/15)
+- ✅ **Model-cascade core** — a generic, Hoeffding-bounded threshold learner (`aughor/llm/cascade.py`, guarantee proven on synthetic data) + a cheap `get_proxy_provider` + an **opt-in cascade on hypothesis scoring** (`AUGHOR_CASCADE_HYPOTHESIS`, fail-safe to the oracle) (#49). *Parked* pending a cheap **and** well-calibrated proxy — see §3.
+- ✅ **Adaptive-inference research + plan** — [`docs/ADAPTIVE_INFERENCE_AND_SEMANTIC_OPERATORS.md`](docs/ADAPTIVE_INFERENCE_AND_SEMANTIC_OPERATORS.md) (#48): model cascades · prompt optimization · semantic operators — what's borrowable (and what isn't — *not* NL2SQL), plus a naming-spine consolidation of Aughor's capabilities. Main coder model set to `qwen3-coder-next:cloud` (won the golden-SQL bake-off at acceptable latency).
 
 ### UX & platform
 - ✅ **Motion system** — tokens + primitives (`web/components/ui/motion.tsx`) + ~12 keyframes, rolled out to the worst offenders (`245b166`).
@@ -81,8 +85,12 @@ Grouped by area; each ✅ is verified shipped (git + code). Representative commi
 Verified pending against code/git. `⬜` not started · `◑` partial.
 
 ### Commercialization / deploy
-- ◑ **#12 Enterprise auth / tenancy** *(L — needs a product call)* — **Workspace data-path isolation is now comprehensive** across every connection-tied surface: connection pickers (#38), `/canvases` + `/investigations` (#39), Recommendation Inbox (#41), Catalog tree (#42) — all via the fail-closed `workspace_connection_ids` gate; an empty workspace shows none of another's data. Genuinely-remaining tenancy: connection-registry **ownership** (`/connections` is still a *shared* registry — the frontend filters it; per-tenant ownership belongs with auth), and platform **OAuth2/OIDC login + user RBAC** (still unbuilt — only connector-level OAuth exists). Shared resources (metrics catalog, action triggers, org-intelligence) are global *by design*, not leaks. The remainder needs the auth/ownership model decided first.
-- ⬜ **Licensing extension** *(M — proven pattern)* — extend `gate()` to the ungated surfaces (**exploration / ontology / semantic / catalog / connections each have 0 gates today**) + a frontend `402 → upsell` flow.
+- ◑ **#12 Enterprise auth / tenancy** *(L — needs a product call)* — **Workspace data-path isolation is now comprehensive** across every connection-tied surface: connection pickers (#38), `/canvases` + `/investigations` (#39), Recommendation Inbox (#41), Catalog tree (#42), Monitors/Alerts + the Home-dashboard flash (#45) — all via the fail-closed `workspace_connection_ids` gate; an empty workspace shows none of another's data. Genuinely-remaining tenancy: connection-registry **ownership** (`/connections` is still a *shared* registry — the frontend filters it; per-tenant ownership belongs with auth), and platform **OAuth2/OIDC login + user RBAC** (still unbuilt — only connector-level OAuth exists). Shared resources (metrics catalog, action triggers, org-intelligence) are global *by design*, not leaks. The remainder needs the auth/ownership model decided first.
+
+### Adaptive Inference (next)
+- ⬜ **Semantic operators over SQL** *(M–L · product expansion · Borrow 3)* — run LLM `filter / extract / top-k / agg` client-side over the **text** columns of a SQL result set (tickets, reviews, notes, incident write-ups — what SQL can't reason over), cost-bounded by the cascade. The remaining, highest-upside borrow: SQL push-down for the structured 99% + an LLM only on the text residue. See the [plan doc](docs/ADAPTIVE_INFERENCE_AND_SEMANTIC_OPERATORS.md).
+- ◑ **Model cascade — resume** *(S · blocked on a model)* — core shipped (#49); calibration harness ready (**PR #50, parked-open**). **Learning:** every accessible *cheap* model (gemma4:31b, qwen2.5-coder:14b, command-r7b) is **miscalibrated** — self-reported confidence clusters high → ~85% escalation → only ~15% oracle-call saving; the well-calibrated models (command-a-reasoning) are slow/costly; the cheap+calibrated candidate (Cohere **North Mini Code**) is access-gated. The accuracy guarantee *always held* (recall 1.0) — resumes when a cheap **and** calibrated proxy + access exists.
+- ⬜ **Prompt optimization — dropped (revisit later)** — a GEPA-style reflective optimizer was built then dropped: it **overfit** the already-strong hand-tuned `CHAT_SQL_SYSTEM` (train +0.029, held-out ~0 — the held-out gate correctly refused the fake win). The hand-built prompt is the better one. Revisit needs a larger eval set (>53 golden pairs) + held-out selection + a less-tuned target prompt.
 
 ### Strategic arc
 - ⬜ **M12 — Org Intelligence** *(XL)* — entirely unbuilt; no `aughor/org/` package. Lineage ingestor → multi-source federation → org knowledge graph → graph-traversal tools → structural-question router. Plan in [`M12_ORG_INTELLIGENCE_ROADMAP.md`](M12_ORG_INTELLIGENCE_ROADMAP.md).
@@ -106,4 +114,4 @@ Verified pending against code/git. `⬜` not started · `◑` partial.
 
 ---
 
-*Recommended next, if sequencing by leverage:* **Licensing extension** (clean M on a proven, tested pattern — completes the commercialization story alongside B-7/B-8 governance + provider config), then **#12 enterprise auth** once the auth-provider / tenancy model is decided. **Hypothesis-eval parallelization** is the quickest standalone perf win.
+*Recommended next, if sequencing by leverage:* **Semantic operators over SQL** (the highest-upside remaining borrow — a genuinely new capability for unstructured/text analysis), or **hypothesis-eval parallelization** (the quickest standalone perf win, independent of the parked cascade). **#12 enterprise auth** remains gated on the auth/tenancy product call.
