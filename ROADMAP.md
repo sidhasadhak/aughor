@@ -88,6 +88,22 @@ graph (M12c) → graph-traversal tool layer (M12d) → structural-question route
 
 ---
 
+### 🟡 Planned — to scope (raised 2026-06-14; nothing to build yet)
+
+Five product directions to consider/plan. Research was **partially interrupted by a session usage limit** — items flagged ⚠️ need a current-state pass before planning.
+
+1. **Onboarding for a fresh install** ✅ (mapped). There is NO onboarding/welcome/wizard — the app boots straight to a Home tab (`web/app/page.tsx:655`) rendering cards + stats (dashes when empty) with **no "add your first connection" CTA**. Connection creation exists but is only reachable from Catalog/Settings, invisible from Home: an `AddConnectionForm` modal (`page.tsx:1133`, 13 connector types) and a richer full-page `AddDataPanel.tsx` (connector cards + CSV/Parquet/Excel upload). A demo DB ALREADY exists — `aughor/samples/setup.py` seeds `samples.duckdb` (ecommerce: 500 customers / 150 products / 5k orders / 12k items / 3k reviews), auto-registered as connection `samples` — but it's never surfaced as a "try it". Gaps: a welcome/empty-state with a prominent "Add your first connection" CTA, an explicit "Explore the demo data" path, a getting-started checklist. Low-effort/high-impact — the pieces exist, they need an orchestrated first-run funnel (and the existing `samples` DB is the demo to extend for #5).
+
+2. **Quality PDF + PowerPoint export, per Insight / Deep-Analysis response** ⚠️ (research interrupted — no existing pptx/PDF generation surfaced). Each finding already carries executable `.sql` + structured `{columns, rows}`, and reports render via Vega-Lite (see #3). Direction: an LLM-authored narrative + the response's charts/tables rendered to a polished PDF and a `.pptx` deck. To scope: a server-side render path (e.g. `python-pptx` for slides; HTML→PDF via a headless renderer) reusing the existing chart specs.
+
+3. **Briefing tab → actionable dashboard (LLM-powered charts/graphs/tables)** ✅ (mapped). Today the Briefing is LLM narrative + clickable citations + **one** CSS bar chart (`DomainCoverageChart`); it's prose, not a dashboard. But the charting stack is already proven and deployed: **Vega-Lite** via `web/components/Chart.tsx` (auto-infers line/bar/pie/heatmap/… from `{columns, rows}`), `VegaChart.tsx`, `InvestigationChart.tsx`, `charts/chartTypeInference.ts`, `Sparkline.tsx` — used in Chat, Query Builder, Exploration/Investigation reports. Every briefing finding has a `.sql` → its result can auto-render. Gap: no data-driven charts, KPI tiles, or tables in the briefing. Plan: a `BriefingChart` wrapper + extend the briefing JSON (`aughor/knowledge/briefing.py`) to emit `chart_specs` + `metrics` alongside the narrative; lay out headline + supporting charts above the fold. Low-risk (reuse, not greenfield).
+
+4. **Selectable / swappable LLM inference provider** ⚠️ (provider layer partially mapped from session work). A provider abstraction exists — `aughor/llm/provider.py`, `get_provider(role)`, role→model mapping, env-config (`AUGHOR_CODER_MODEL`, Ollama/cloud backend). To scope: enumerate which backends are actually wired (local Ollama / cloud gateway / Anthropic / OpenAI / OpenRouter / Kimi / Qwen), then add **runtime** provider+model selection + a settings UI + credential handling (reuse the `secretvault` for API keys). Pin down what's hardcoded vs configurable first.
+
+5. **A mature demo workspace ("beautycommerce")** ⚠️ (storage paths known from session work; create-paths need confirming). Seed a realistic workspace: a connection (`data/connections.db` via `aughor/db/registry.py`) + several **metrics** (semantic layer) + a **Slack** alert trigger (`aughor/actions/`, `action_triggers.json`) + **Canvas** entries — insights & deep analyses (`canvases.db`) + saved **Query Builder** entries. To scope: a seed script; check for existing fixtures (the `samples`/`workspace` connections, `episodes_samples.jsonl`) to extend rather than build fresh.
+
+---
+
 ## 🧱 ARC STATUS — Shared SQL-Analysis Facade (2026-06-12 pt6)
 
 **Same branch `2026-06-12-investigations-as-jobs`.** Started the `analyze()` facade (backlog
