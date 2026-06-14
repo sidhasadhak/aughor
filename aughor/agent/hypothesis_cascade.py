@@ -22,7 +22,7 @@ from aughor.llm.provider import get_provider, get_proxy_provider
 
 logger = logging.getLogger(__name__)
 
-_THRESHOLDS_PATH = Path(__file__).parent.parent.parent / "data" / "hypothesis_cascade.json"
+THRESHOLDS_PATH = Path(__file__).parent.parent.parent / "data" / "hypothesis_cascade.json"
 
 
 def cascade_enabled() -> bool:
@@ -33,8 +33,8 @@ def load_thresholds() -> CascadeThresholds:
     """Learned thresholds from ``data/hypothesis_cascade.json`` if a calibration has been run,
     else a conservative uncalibrated default."""
     try:
-        if _THRESHOLDS_PATH.exists():
-            d = json.loads(_THRESHOLDS_PATH.read_text())
+        if THRESHOLDS_PATH.exists():
+            d = json.loads(THRESHOLDS_PATH.read_text())
             return CascadeThresholds(
                 tau_pos=float(d["tau_pos"]),
                 tau_neg=float(d["tau_neg"]),
