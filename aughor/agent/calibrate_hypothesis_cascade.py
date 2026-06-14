@@ -126,12 +126,22 @@ def main(argv=None) -> int:
     ap.add_argument("--precision", type=float, default=0.85, help="target precision vs the oracle")
     ap.add_argument("--delta", type=float, default=0.1, help="failure probability")
     ap.add_argument("--write", action="store_true", help="write data/hypothesis_cascade.json")
+    ap.add_argument("--oracle-model", default=None, help="override the oracle model (default: the coder role)")
+    ap.add_argument("--proxy-model", default=None, help="override the proxy model (default: get_proxy_provider)")
     args = ap.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     examples = load_corpus(args.corpus)
     logger.info("Calibrating on %d examples (live proxy + oracle calls)…", len(examples))
-    rows = collect_rows(examples)
+
+    # Optional explicit model override (e.g. a cloud oracle + a cheaper proxy on the same backend).
+    oracle = proxy = None
+    if args.oracle_model or args.proxy_model:
+        from aughor.llm.provider import LLMProvider, current_config
+        backend = current_config()["backend"]
+        oracle = LLMProvider(backend, "coder", model=args.oracle_model) if args.oracle_model else None
+        proxy = LLMProvider(backend, "coder", model=args.proxy_model) if args.proxy_model else None
+    rows = collect_rows(examples, proxy=proxy, oracle=oracle)
     cfg = CascadeConfig(recall_target=args.recall, precision_target=args.precision, failure_probability=args.delta)
     t, report = calibrate(rows, cfg)
     print(json.dumps(report, indent=2))
