@@ -421,8 +421,9 @@ export interface CatalogTree {
   sections: CatalogSection[];
 }
 
-export async function getCatalogTree(): Promise<CatalogTree> {
-  const res = await fetch(`${BASE}/catalog/tree`);
+export async function getCatalogTree(workspaceId?: string): Promise<CatalogTree> {
+  const qs = workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : "";
+  const res = await fetch(`${BASE}/catalog/tree${qs}`);
   if (!res.ok) throw new Error("Failed to fetch catalog tree");
   return res.json();
 }
