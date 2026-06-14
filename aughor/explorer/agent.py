@@ -2258,6 +2258,33 @@ class SchemaExplorer:
                     tolerate(_exc, "identifier repair is best-effort; on failure execute the "
                              "original SQL (the retry loop still catches a casing error)",
                              counter="explorer.repair_failed")
+                # ── Semantic column repair (#invention-starvation, deterministic) ─
+                # Casing is fixed; now fix SEMANTIC renames — a real-sounding column the schema
+                # lacks but that MEANS a real one (location_country→country, region→state,
+                # total_amount→totalPrice). The generator invents these from a strong prior even
+                # though the real columns are in the schema block, and a domain can burn its whole
+                # budget on them → 0 findings (the gate skips every one, so errors stay 0, but
+                # nothing is produced). Map to the real column ONLY on an unambiguous concept
+                # match, BEFORE the gate, so the question runs instead of being skipped. High-
+                # precision: a no-concept invention (`segment`) or an ambiguous one is left for
+                # the gate; the metric-drift / grain / dry_run guards downstream backstop a bad map.
+                try:
+                    from aughor.sql.semantic_repair import repair_semantic_columns
+                    _pre_sem = sql
+                    sql = repair_semantic_columns(sql, sql_writer.table_cols,
+                                                  getattr(self._conn, "dialect", "duckdb"))
+                    if sql != _pre_sem:
+                        from aughor.stats import stats as _s; _s.inc("explorer.semantic_repairs")
+                        logger.info(
+                            "[explorer:%s] Phase 8: %s/%s — semantic column repair applied "
+                            "(mapped an invented column to the schema's real one)",
+                            self.connection_id, domain, nq.angle,
+                        )
+                except Exception as _exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_exc, "semantic column repair is best-effort; on failure the gate "
+                             "still skips an unresolved column (no worse than before)",
+                             counter="explorer.semantic_repair_failed")
                 # ── Schema-grounding pre-flight (#residual, deterministic) ───────
                 # Casing slips are now repaired; what survives is a genuine invention —
                 # `segment`/`region`/generic `id`, or an invented table (`product_items`).
