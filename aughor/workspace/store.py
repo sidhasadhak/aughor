@@ -136,6 +136,24 @@ def delete_workspace(workspace_id: str) -> bool:
     return affected > 0
 
 
+# ── Workspace scope (data-path tenancy) ───────────────────────────────────────
+
+def workspace_connection_ids(workspace_id: Optional[str]) -> Optional[set]:
+    """The set of connection ids visible in a workspace — the data-path tenancy gate.
+
+    Returns:
+      • ``None``  when no workspace is given (blank/omitted) → caller stays UNSCOPED,
+        preserving the global behaviour for management flows that need all data.
+      • the workspace's ``connection_ids`` for a known workspace.
+      • an EMPTY set for an *unknown* workspace id → fail-closed (an unrecognised
+        workspace must not leak another's data).
+    """
+    if not workspace_id:
+        return None
+    ws = get_workspace(workspace_id)
+    return set(ws.connection_ids) if ws else set()
+
+
 # ── Default-workspace migration ───────────────────────────────────────────────
 
 def ensure_default_workspace() -> bool:

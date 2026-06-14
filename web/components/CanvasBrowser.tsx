@@ -72,9 +72,11 @@ interface Props {
   connections: Connection[];
   onSelect: (canvas: Canvas) => void;
   onNew: () => void;
+  /** Active workspace — scopes the canvas list to its connections. */
+  workspaceId?: string;
 }
 
-export function CanvasBrowser({ connections, onSelect, onNew }: Props) {
+export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Props) {
   const [canvases, setCanvases]         = useState<Canvas[]>([]);
   const [loading, setLoading]           = useState(true);
   const [search, setSearch]             = useState("");
@@ -86,10 +88,10 @@ export function CanvasBrowser({ connections, onSelect, onNew }: Props) {
 
   const load = () => {
     setLoading(true);
-    getCanvases().then(setCanvases).catch(() => setCanvases([]))
+    getCanvases(workspaceId).then(setCanvases).catch(() => setCanvases([]))
       .finally(() => setLoading(false));
   };
-  useEffect(load, []);
+  useEffect(load, [workspaceId]);
 
   const handleDelete = async () => {
     if (!pendingDelete) return;

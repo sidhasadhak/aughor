@@ -52,12 +52,20 @@ class SuggestNameRequest(BaseModel):
 
 
 @router.get("/canvases")
-def get_canvases(include_legacy: bool = True):
+def get_canvases(include_legacy: bool = True, workspace_id: str | None = None):
+    """List canvases. When `workspace_id` is given, only canvases whose connection
+    belongs to that workspace are returned (data-path tenancy)."""
     from aughor.canvas.store import list_canvases
     from aughor.db.history import last_activity_by_canvas
+    from aughor.workspace.store import workspace_connection_ids
+    allowed = workspace_connection_ids(workspace_id)
     activity = last_activity_by_canvas()
     out = []
     for c in list_canvases(include_legacy=include_legacy):
+        if allowed is not None:
+            conn = getattr(c, "primary_connection_id", None) or (c.scopes[0].connection_id if c.scopes else None)
+            if conn not in allowed:
+                continue
         d = c.model_dump()
         # Most recent investigation/chat timestamp for this canvas (drives the
         # "latest investigation" sort and the recently-used section).

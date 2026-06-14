@@ -1898,8 +1898,18 @@ async def submit_feedback(inv_id: str, req: FeedbackRequest, request: Request):
 
 
 @router.get("/investigations")
-def get_investigations(limit: int = 50):
-    return list_investigations(limit=limit)
+def get_investigations(limit: int = 50, workspace_id: str | None = None):
+    """Recent investigations/chats. When `workspace_id` is given, only those whose
+    connection belongs to that workspace are returned (data-path tenancy)."""
+    from aughor.workspace.store import workspace_connection_ids
+    allowed = workspace_connection_ids(workspace_id)
+    if allowed is None:
+        return list_investigations(limit=limit)
+    # Fetch wider when scoping so a workspace's items aren't truncated by the global
+    # newest-first limit before filtering, then trim back to `limit`.
+    rows = list_investigations(limit=max(limit, 200))
+    scoped = [r for r in rows if r.get("connection_id") in allowed]
+    return scoped[:limit]
 
 
 @router.get("/investigations/indexed-ids")
