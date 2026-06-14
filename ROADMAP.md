@@ -80,7 +80,7 @@ Grouped by area; each ✅ is verified shipped (git + code). Representative commi
 Verified pending against code/git. `⬜` not started · `◑` partial.
 
 ### Commercialization / deploy
-- ⬜ **#12 Enterprise auth** *(L — needs a product call)* — platform **OAuth2/OIDC login + user RBAC + workspace tenancy**. Today only *connector-level* OAuth exists; no platform auth.
+- ◑ **#12 Enterprise auth / tenancy** *(L — needs a product call)* — platform **OAuth2/OIDC login + user RBAC** are still unbuilt (only *connector-level* OAuth exists). **Workspace data-path isolation is now enforced** (#38 connection pickers; #39 `workspace_connection_ids` gate on `/canvases` + `/investigations`, fail-closed) — an empty workspace no longer leaks another's data. Remaining tenancy bits: scope the **Recommendation Inbox** (`/investigations` unscoped), decide connection-registry **ownership** (`/connections` is still a shared registry), then real user auth/RBAC on top.
 - ⬜ **Licensing extension** *(M — proven pattern)* — extend `gate()` to the ungated surfaces (**exploration / ontology / semantic / catalog / connections each have 0 gates today**) + a frontend `402 → upsell` flow.
 
 ### Strategic arc
