@@ -33,6 +33,8 @@ from aughor.routers._shared import (
 )
 
 logger = logging.getLogger(__name__)
+from aughor.licensing import Capability, gate
+
 router = APIRouter(tags=["investigations"])
 
 
@@ -1850,7 +1852,7 @@ async def _investigation_job_streamed(
         yield item
 
 
-@router.post("/investigate")
+@router.post("/investigate", dependencies=[gate(Capability.DEEP_ANALYSIS)])
 async def investigate(req: InvestigateRequest, request: Request):
     conn_id = req.connection_id
     if req.canvas_id:
@@ -1961,7 +1963,7 @@ def delete_investigation_endpoint(inv_id: str):
         raise HTTPException(status_code=404, detail="Investigation not found")
 
 
-@router.post("/investigations/reindex")
+@router.post("/investigations/reindex", dependencies=[gate(Capability.DEEP_ANALYSIS)])
 def reindex_investigations():
     from aughor.tools.prior_analyses import index_investigation
     rows = list_investigations(limit=1000)
