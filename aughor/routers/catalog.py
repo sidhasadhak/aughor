@@ -14,8 +14,9 @@ router = APIRouter(tags=["catalog"])
 
 
 @router.get("/catalog/tree")
-async def get_catalog_tree():
-    """Return the full 4-level catalog hierarchy: Section → Catalog → Schema → Table."""
+async def get_catalog_tree(workspace_id: str | None = None):
+    """Return the full 4-level catalog hierarchy: Section → Catalog → Schema → Table.
+    Scoped to `workspace_id`'s connections when given (data-path tenancy)."""
     loop = asyncio.get_event_loop()
 
     def _quick_schemas(conn_id: str, conn_type: str) -> list[dict]:
@@ -97,12 +98,16 @@ async def get_catalog_tree():
 
     def _build_tree() -> dict:
         from aughor.db.registry import list_connections
+        from aughor.workspace.store import workspace_connection_ids
 
+        allowed = workspace_connection_ids(workspace_id)
         # Single catalog list. The Workspace (which now folds in the sample
         # ecommerce tables) is returned first by list_connections.
         entries = []
         for conn_info in list_connections():
             cid = conn_info["id"]
+            if allowed is not None and cid not in allowed:
+                continue  # not in the active workspace — don't surface its schema
             schemas = _quick_schemas(cid, conn_info.get("conn_type", "duckdb"))
             entries.append({
                 "conn_id": cid,

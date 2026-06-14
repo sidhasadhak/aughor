@@ -1924,6 +1924,7 @@ export default function Home() {
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
                 <CatalogScreen
                   connections={wsConnections}
+                  workspaceId={selectedWorkspace}
                   selectedConn={selectedConn}
                   onSelect={setSelectedConn}
                   onDeleteConn={conn => setPendingDeleteConn(conn)}

@@ -1339,9 +1339,11 @@ interface Props {
   onSelect:         (id: string) => void;
   onDeleteConn:     (conn: Connection) => void;
   onChatWithTable?: (table: string, connId: string) => void;
+  /** Active workspace — scopes the catalog tree to its connections' schemas. */
+  workspaceId?:     string;
 }
 
-export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteConn, onChatWithTable }: Props) {
+export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteConn, onChatWithTable, workspaceId }: Props) {
   const { refresh: refreshSchema } = useSchema();
   const [tree, setTree]         = useState<CatalogTree | null>(null);
   const [treeLoading, setTreeL] = useState(true);
@@ -1356,7 +1358,7 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
 
   const loadTree = () => {
     setTreeL(true);
-    getCatalogTree()
+    getCatalogTree(workspaceId)
       .then(t => {
         setTree(t);
         const uc = t.sections.find(s => s.id === "connections");
@@ -1374,7 +1376,7 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
       .finally(() => setTreeL(false));
   };
 
-  useEffect(() => { loadTree(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { loadTree(); }, [workspaceId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggle = (key: string) => setExpanded(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
   const isOpen = (key: string) => expanded.has(key);
