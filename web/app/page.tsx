@@ -1397,7 +1397,7 @@ const THEME_KEY = "aughor_theme";
 export default function Home() {
   const [tab, setTab] = useState<NavTab>("home");
   const [theme, setThemeState] = useState<Theme>("dark");
-  const [selectedConn, setSelectedConn] = useState("");
+  const [rawSelectedConn, setSelectedConn] = useState("");
   const [builderImport, setBuilderImport] = useState<{ connId: string; sql: string; nonce: number } | undefined>(undefined);
   const [activeCanvas, setActiveCanvas] = useState<Canvas | null>(null);
   const [initialCanvasInvId, setInitialCanvasInvId] = useState<string | null>(null);
@@ -1418,6 +1418,22 @@ export default function Home() {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [selectedWorkspace, setSelectedWorkspace] = useState("");
+
+  // ── Workspace-scoped connections (the tenancy boundary) ───────────────────
+  // Everything below the topbar sees only the connections belonging to the
+  // active workspace (Databricks-style). The Default workspace tracks every
+  // connection, so for users who never create a custom workspace this is a no-op.
+  const activeWs = workspaces.find(w => w.id === selectedWorkspace) ?? null;
+  const wsConnections = activeWs
+    ? connections.filter(c => activeWs.connection_ids.includes(c.id))
+    : connections;
+  // The ACTIVE connection, clamped to the workspace and *derived* (not stored) so
+  // it can never lag the tenancy boundary. It reads "" until the workspace resolves,
+  // or when the restored connection isn't a member — so an empty/foreign workspace
+  // shows no data instead of briefly flashing the localStorage-restored default
+  // connection's tables/queries/insights on first load (a fail-closed read).
+  const selectedConn =
+    activeWs && wsConnections.some(c => c.id === rawSelectedConn) ? rawSelectedConn : "";
 
   // Theme effect — apply data-theme to <html>
   useEffect(() => {
@@ -1629,16 +1645,8 @@ export default function Home() {
     reloadConnections();
   };
 
-  // ── Workspace-scoped connections ──────────────────────────────────────────
-  // Everything below the topbar sees only the connections belonging to the
-  // active workspace (Databricks-style). The Default workspace tracks every
-  // connection, so for users who never create a custom workspace this is a
-  // no-op. If a workspace's membership can't be resolved yet, fall back to the
-  // full set so the UI never goes blank.
-  const activeWs = workspaces.find(w => w.id === selectedWorkspace) ?? null;
-  const wsConnections = activeWs
-    ? connections.filter(c => activeWs.connection_ids.includes(c.id))
-    : connections;
+  // (Workspace-scoped connections + the clamped active connection are derived
+  // near the top of the component, just after the useState block.)
 
   // Switching workspace must not leak the previous one's views — drop the active
   // canvas and any open chat/history session so only workspace-scoped data shows.
@@ -1900,7 +1908,7 @@ export default function Home() {
             {/* ── MONITORS ── */}
             {tab === "monitors" && (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
-                <MonitorsPanel connId={selectedConn ?? undefined} />
+                <MonitorsPanel connId={selectedConn ?? undefined} workspaceId={selectedWorkspace} />
               </div>
             )}
 

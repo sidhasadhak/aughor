@@ -70,9 +70,10 @@ function blankForm(connId: string): Partial<MonitorDef> & { conn_id: string; nam
 
 interface Props {
   connId?: string;
+  workspaceId?: string;
 }
 
-export function MonitorsPanel({ connId }: Props) {
+export function MonitorsPanel({ connId, workspaceId }: Props) {
   const [view, setView]           = useState<View>("list");
   const [monitors, setMonitors]   = useState<MonitorDef[]>([]);
   const [alerts, setAlerts]       = useState<MonitorAlert[]>([]);
@@ -91,8 +92,8 @@ export function MonitorsPanel({ connId }: Props) {
     setLoading(true);
     try {
       const [ms, as, mets] = await Promise.all([
-        getMonitors(connId),
-        getAllAlerts(connId, 100),
+        getMonitors(connId, workspaceId),
+        getAllAlerts(connId, 100, workspaceId),
         getMetrics().catch(() => []),
       ]);
       setMonitors(ms);
@@ -103,7 +104,7 @@ export function MonitorsPanel({ connId }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [connId]);
+  }, [connId, workspaceId]);
 
   useEffect(() => { load(); }, [load]);
 
