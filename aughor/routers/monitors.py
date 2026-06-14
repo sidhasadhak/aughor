@@ -70,8 +70,19 @@ class UpdateMonitorRequest(BaseModel):
 # ── Monitor CRUD ───────────────────────────────────────────────────────────────
 
 @router.get("/monitors")
-def list_monitors_route(conn_id: Optional[str] = None) -> list[dict]:
-    return [m.model_dump() for m in list_monitors(conn_id=conn_id)]
+def list_monitors_route(
+    conn_id: Optional[str] = None, workspace_id: Optional[str] = None
+) -> list[dict]:
+    # Fail-closed workspace tenancy gate: None => unscoped (management/default view),
+    # a set => only those connections, empty-set => an unknown workspace surfaces nothing.
+    from aughor.workspace.store import workspace_connection_ids
+
+    allowed = workspace_connection_ids(workspace_id)
+    return [
+        m.model_dump()
+        for m in list_monitors(conn_id=conn_id)
+        if allowed is None or m.conn_id in allowed
+    ]
 
 
 @router.get("/monitors/{monitor_id}")
@@ -196,11 +207,21 @@ def get_all_alerts(
     conn_id: Optional[str] = None,
     limit: int = 100,
     unacknowledged_only: bool = False,
+    workspace_id: Optional[str] = None,
 ) -> list[dict]:
-    """All recent alerts across all monitors, optionally filtered by connection."""
-    return [a.model_dump() for a in get_alerts(
-        conn_id=conn_id, limit=limit, unacknowledged_only=unacknowledged_only
-    )]
+    """All recent alerts across all monitors, optionally filtered by connection
+    and/or scoped to the active workspace (fail-closed: an unknown workspace
+    surfaces nothing)."""
+    from aughor.workspace.store import workspace_connection_ids
+
+    allowed = workspace_connection_ids(workspace_id)
+    return [
+        a.model_dump()
+        for a in get_alerts(
+            conn_id=conn_id, limit=limit, unacknowledged_only=unacknowledged_only
+        )
+        if allowed is None or a.conn_id in allowed
+    ]
 
 
 @router.post("/alerts/{alert_id}/acknowledge")

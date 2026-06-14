@@ -1836,9 +1836,12 @@ export interface DigestResult {
   markdown: string;
 }
 
-export async function getMonitors(connId?: string): Promise<MonitorDef[]> {
-  const qs = connId ? `?conn_id=${connId}` : "";
-  const res = await fetch(`${BASE}/monitors${qs}`);
+export async function getMonitors(connId?: string, workspaceId?: string): Promise<MonitorDef[]> {
+  const qs = new URLSearchParams();
+  if (connId) qs.set("conn_id", connId);
+  if (workspaceId) qs.set("workspace_id", workspaceId);
+  const q = qs.toString();
+  const res = await fetch(`${BASE}/monitors${q ? `?${q}` : ""}`);
   if (!res.ok) throw new Error("Failed to fetch monitors");
   return res.json();
 }
@@ -1880,10 +1883,11 @@ export async function getMonitorAlerts(monitorId: string, limit = 50): Promise<M
   return res.json();
 }
 
-export async function getAllAlerts(connId?: string, limit = 100): Promise<MonitorAlert[]> {
+export async function getAllAlerts(connId?: string, limit = 100, workspaceId?: string): Promise<MonitorAlert[]> {
   const qs = new URLSearchParams();
   if (connId) qs.set("conn_id", connId);
   qs.set("limit", String(limit));
+  if (workspaceId) qs.set("workspace_id", workspaceId);
   const res = await fetch(`${BASE}/alerts?${qs}`);
   if (!res.ok) throw new Error("Failed to fetch alerts");
   return res.json();
