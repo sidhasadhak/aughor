@@ -66,6 +66,7 @@ Grouped by area; each ✅ is verified shipped (git + code). Representative commi
 ### Trust, security, licensing
 - ✅ **Secrets-at-rest vault** — Fernet-encrypted DSNs, trigger URLs/headers, connector tokens (`aed5640`, `af7138b`).
 - ✅ **Licensing capability gate (core)** — `gate()` wired across actions/briefs/investigations/metrics/monitors (`3a8da8b`).
+- ✅ **Workspace data-path tenancy isolation** — every connection-tied surface (pickers, `/canvases`, `/investigations`, Recommendation Inbox, Catalog tree) scoped to the active workspace via a fail-closed `workspace_connection_ids` gate; both UI + server layers (#38, #39, #41, #42). See [FEATURES #123](FEATURES.md).
 - ✅ **Query cancellation** + orphaned-run reconciliation (kernel).
 
 ### UX & platform
