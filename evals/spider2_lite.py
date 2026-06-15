@@ -324,6 +324,82 @@ def _sqlite_exec(db_path: Path, sql: str):
         return ExecResult(ok=False, error=str(e))
 
 
+_REASONER = None
+
+
+def _reasoner():
+    """Lazily build a strong-reasoning provider (kimi) for the reflection pass."""
+    global _REASONER
+    if _REASONER is None:
+        from aughor.llm.provider import LLMProvider
+        model = os.getenv("AUGHOR_REASONER_MODEL", "kimi-k2.6:cloud")
+        _REASONER = LLMProvider(backend="ollama", role="narrator", model=model)
+    return _REASONER
+
+
+def _reflect_revise(question: str, schema: str, doc_section: str,
+                    sql: str, db_path: Path) -> tuple[str, dict]:
+    """Reflection pass: a reasoning model judges whether the result answers the
+    question; if not, it proposes a fix. The revision is adopted ONLY if it
+    executes cleanly and returns rows — so reflection can correct but never break.
+
+    Returns (possibly-revised sql, trace_step).
+    """
+    from pydantic import BaseModel
+    from typing import Optional
+
+    # Build a compact preview of the actual result the query produces
+    res = _sqlite_exec(db_path, sql)
+    if not res.ok:
+        return sql, {"action": "reflection", "detail": "skipped (winner did not execute)"}
+    rows = res.rows or []
+    preview = rows[:8]
+    preview_str = "\n".join(" | ".join(str(v)[:40] for v in r) for r in preview) or "(no rows)"
+
+    class Reflection(BaseModel):
+        answers_question: bool
+        problem: str = ""
+        corrected_sql: Optional[str] = None
+
+    judge_prompt = (
+        f"{doc_section}"
+        f"QUESTION: {question}\n\n"
+        f"CANDIDATE SQL:\n{sql}\n\n"
+        f"ACTUAL RESULT ({len(rows)} rows, showing first {len(preview)}):\n{preview_str}\n\n"
+        "Judge whether this result actually answers the question. Check carefully:\n"
+        "- CARDINALITY: 'which/the [single entity]' expects 1 row; 'top N' expects N rows; "
+        "a per-group question expects one row per group. Does the row count fit?\n"
+        "- COLUMNS: does the result expose the value(s) the question asks for?\n"
+        "- AGGREGATION GRAIN: is the metric computed at the right level (per entity vs per row)?\n"
+        "- FILTERS: are all constraints in the question reflected in the result?\n\n"
+        "If it correctly answers, set answers_question=true. "
+        "If NOT, set answers_question=false, describe the problem briefly, and provide corrected_sql "
+        "(a complete SQLite SELECT). Only provide corrected_sql when you are confident it is better."
+    )
+
+    try:
+        r: Reflection = _reasoner().complete(
+            system="You are a meticulous SQL reviewer. You judge whether a query's result truly answers "
+                   "the user's question, focusing on cardinality, grain, columns, and filters.",
+            user=judge_prompt, response_model=Reflection, temperature=0.0,
+        )
+    except Exception as e:
+        return sql, {"action": "reflection", "detail": f"skipped (reasoner error: {str(e)[:80]})"}
+
+    if r.answers_question or not r.corrected_sql:
+        return sql, {"action": "reflection", "detail": "winner judged correct",
+                     "verdict": r.answers_question}
+
+    revised = r.corrected_sql.strip()
+    rev_res = _sqlite_exec(db_path, revised)
+    if rev_res.ok and rev_res.rows:
+        return revised, {"action": "reflection", "detail": f"revised: {r.problem[:140]}",
+                         "verdict": False, "applied": True, "output": revised}
+    return sql, {"action": "reflection",
+                 "detail": f"flagged but revision rejected (ran={rev_res.ok}, rows={len(rev_res.rows or [])}): {r.problem[:100]}",
+                 "verdict": False, "applied": False}
+
+
 def _recover_empty(question: str, schema: str, doc_section: str,
                    sql: str, _msg: str, temperature: float) -> str:
     """Recover from a 0-row result — usually a wrong literal or over-tight filter."""
@@ -409,7 +485,7 @@ def _fix_sql(question: str, schema: str, doc_section: str,
 # ── per-instance worker ───────────────────────────────────────────────────────
 
 def run_instance(inst: dict, spider_root: Path, out_dir: Path, temperature: float,
-                 consensus_k: int = 1) -> dict:
+                 consensus_k: int = 1, reflect: bool = False) -> dict:
     iid = inst["instance_id"]
     db_name = inst["db"]
     started_at = datetime.now(timezone.utc).isoformat()
@@ -512,6 +588,15 @@ def run_instance(inst: dict, spider_root: Path, out_dir: Path, temperature: floa
                         if ok2:
                             sql = fixed_sql
 
+        # ── Result-reflection pass: a reasoning model checks the winner answers
+        # the question (cardinality/grain/columns/filters) and revises if not.
+        if reflect and sql and db_path.exists():
+            revised, refl_step = _reflect_revise(inst["question"], schema, doc, sql, db_path)
+            refl_step["step"] = 6
+            refl_step["timestamp"] = datetime.now(timezone.utc).isoformat()
+            steps.append(refl_step)
+            sql = revised
+
         # Write prediction SQL
         (out_dir / f"{iid}.sql").write_text(sql + "\n")
 
@@ -542,7 +627,7 @@ def run_instance(inst: dict, spider_root: Path, out_dir: Path, temperature: floa
 
 def generate(spider_root: Path, out_dir: Path, limit: int | None,
              ids: set[str] | None, workers: int, temperature: float,
-             consensus_k: int = 1) -> None:
+             consensus_k: int = 1, reflect: bool = False) -> None:
     instances = load_local_instances(spider_root)
     if ids:
         instances = [r for r in instances if r["instance_id"] in ids]
@@ -552,6 +637,8 @@ def generate(spider_root: Path, out_dir: Path, limit: int | None,
     out_dir.mkdir(parents=True, exist_ok=True)
     run_ts = datetime.now(timezone.utc).isoformat()
     mode = f"consensus k={consensus_k}" if consensus_k > 1 else "single-shot"
+    if reflect:
+        mode += " +reflect"
     print(f"[{run_ts}] Generating {len(instances)} local predictions → {out_dir} "
           f"(workers={workers}, temp={temperature}, mode={mode})")
 
@@ -559,7 +646,7 @@ def generate(spider_root: Path, out_dir: Path, limit: int | None,
     fails: list[dict] = []
 
     with ThreadPoolExecutor(max_workers=workers) as ex:
-        futs = {ex.submit(run_instance, r, spider_root, out_dir, temperature, consensus_k): r["instance_id"]
+        futs = {ex.submit(run_instance, r, spider_root, out_dir, temperature, consensus_k, reflect): r["instance_id"]
                 for r in instances}
         for fut in as_completed(futs):
             res = fut.result()
@@ -687,6 +774,8 @@ def main() -> None:
     ap.add_argument("--temperature", type=float, default=0.0)
     ap.add_argument("--consensus", type=int, default=1,
                     help="Number of candidates for self-consistency voting (1 = single-shot)")
+    ap.add_argument("--reflect", action="store_true",
+                    help="Run a reasoning-model reflection pass on the consensus winner")
     ap.add_argument("--score", action="store_true",
                     help="Run Spider's evaluator after generation")
     ap.add_argument("--score-only", action="store_true",
@@ -699,7 +788,7 @@ def main() -> None:
 
     if not args.score_only:
         generate(args.spider_root, args.out, args.limit, ids, args.workers,
-                 args.temperature, args.consensus)
+                 args.temperature, args.consensus, args.reflect)
 
     if args.score or args.score_only:
         score(args.spider_root, args.out, args.workers)
