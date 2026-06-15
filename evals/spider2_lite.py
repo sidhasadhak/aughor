@@ -348,6 +348,57 @@ def generate_sql_engine(question: str, db_name: str, reader, temperature: float,
     return (generate_sql_full_pipeline(q, f"spider_{db_name}", reader, temperature) or "").strip()
 
 
+_TABLE_COLS_CACHE: dict = {}
+
+
+def _table_cols(db_path: Path) -> dict:
+    key = str(db_path)
+    if key not in _TABLE_COLS_CACHE:
+        cols = {}
+        try:
+            conn = sqlite3.connect(str(db_path))
+            tables = [r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")]
+            for t in tables:
+                cols[t] = set(r[1] for r in conn.execute(f"PRAGMA table_info({t})"))
+            conn.close()
+        except Exception:
+            pass
+        _TABLE_COLS_CACHE[key] = cols
+    return _TABLE_COLS_CACHE[key]
+
+
+def _guard_composite_key(sql: str, db_path: Path) -> str:
+    """Deterministic composite-key completeness guard: if a join uses only a subset
+    of the key-like columns two tables share AND a probe confirms it fans out, add
+    the missing key column(s). Fixes the silent over-counting that defeats even
+    strong models. Returns repaired SQL (verified to execute) or the original."""
+    if not sql or not db_path.exists():
+        return sql
+    try:
+        from aughor.sql.composite_key import detect_partial_keys, confirm_fanout, repair_partial_key
+        tc = _table_cols(db_path)
+        if not tc:
+            return sql
+        findings = detect_partial_keys(sql, tc, dialect="sqlite")
+        if not findings:
+            return sql
+
+        def _probe(s):
+            r = _sqlite_exec(db_path, s)
+            return r.ok, r.rows, r.error
+
+        fixed = sql
+        for f in findings:
+            if confirm_fanout(f, _probe):
+                rw = repair_partial_key(fixed, f, dialect="sqlite")
+                if rw and _sqlite_exec(db_path, rw).ok:
+                    fixed = rw
+        return fixed
+    except Exception:
+        return sql
+
+
 def _propose_probes(question: str, schema: str, doc_section: str, temperature: float):
     """Ask the model what to VERIFY about the data before writing SQL.
 
@@ -772,11 +823,14 @@ def run_instance(inst: dict, spider_root: Path, out_dir: Path, temperature: floa
             if explore and db_path.exists():
                 # Probe-and-ground: discover real join keys / encodings / grain
                 # before writing. Strategy still varies for candidate diversity.
-                return generate_sql_explore(q, schema, doc, db_path, temp,
-                                            strategy=strat if strat != "direct" else "decompose")
-            if engine:
-                return generate_sql_engine(q, db_name, reader, temp, doc, strat)
-            return generate_sql(q, schema, doc, temp, strat)
+                raw = generate_sql_explore(q, schema, doc, db_path, temp,
+                                           strategy=strat if strat != "direct" else "decompose")
+            elif engine:
+                raw = generate_sql_engine(q, db_name, reader, temp, doc, strat)
+            else:
+                raw = generate_sql(q, schema, doc, temp, strat)
+            # Deterministic composite-key completeness guard (always on).
+            return _guard_composite_key(raw, db_path)
 
         if consensus_k > 1 and db_path.exists():
             # ── Self-consistency path: generate K, execute, vote ──
