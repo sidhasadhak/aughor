@@ -5180,3 +5180,166 @@ tables:
         description: Last four digits or masked version of the card number used for
           payment
         caveats: May be null or partially masked for security/compliance
+  beauty.campaigns:
+    description: This table stores information about marketing campaigns run by the
+      beauty brand, including campaign details, timing, budget, actual spend, and
+      discount percentage applied.
+    grain: one row per campaign_id
+    auto_generated: true
+    columns:
+      campaign_id:
+        description: Unique identifier for each campaign
+      campaign_name:
+        description: Human-readable name of the campaign
+        values: Clean Beauty 2024, Spring Glow 2023, New You 2023, Summer Radiance
+          2024, VIP Rewards 2024, Holiday Edit 2023
+      channel:
+        description: Marketing channel used to run the campaign
+        values: email, paid_social, influencer
+      start_date:
+        description: Date the campaign started
+      end_date:
+        description: Date the campaign ended
+      budget:
+        description: Planned budget for the campaign in USD
+      spend:
+        description: Actual amount spent on the campaign in USD
+      discount_pct:
+        description: Discount percentage applied during the campaign
+        caveats: NULL values may indicate campaigns without a discount component
+  beauty.customers:
+    description: Customer profile data for the beauty brand, capturing demographic,
+      geographic, and behavioral attributes for marketing and segmentation purposes.
+    grain: one row per unique customer
+    auto_generated: true
+    columns:
+      customer_id:
+        description: Unique identifier for each customer
+      full_name:
+        description: Customer's full legal or preferred name
+      email:
+        description: Customer's email address used for account and communication
+      city:
+        description: City where the customer resides
+      country:
+        description: Country code (ISO 2-letter) where the customer resides
+        values: AU, KR, GB, FR, IT, AE, US, SG, CA
+      skin_type:
+        description: Customer's self-reported or assessed skin type
+        values: Oily, Dry, Sensitive, Combination, Normal
+      loyalty_tier:
+        description: Customer's current membership tier in the brand's loyalty program
+        values: Bronze, Silver, Gold, Platinum
+      age_group:
+        description: Customer's age range category
+        values: 18-24, 25-34, 35-44, 45+
+      marketing_opt_in:
+        description: Whether the customer has opted in to receive marketing communications
+        values: True, False
+      signup_date:
+        description: Date the customer created their account
+  beauty.order_items:
+    description: Contains individual line items from beauty product orders, capturing
+      the products purchased, quantities, and pricing details per item.
+    grain: one row per order item (i.e., one row per unique combination of order_id
+      and product_id in an order)
+    auto_generated: true
+    columns:
+      item_id:
+        description: Unique identifier for this specific line item
+      order_id:
+        description: Reference to the parent order containing this item
+      product_id:
+        description: Identifier for the product included in this line item
+      quantity:
+        description: Number of units of the product purchased in this line item
+      unit_price:
+        description: Price per unit of the product at the time of purchase
+      line_total:
+        description: Total price for this line item (quantity × unit_price)
+  beauty.orders:
+    description: Stores individual beauty product orders with details on pricing,
+      status, channel, and payment.
+    grain: one row per order_id
+    auto_generated: true
+    columns:
+      order_id:
+        description: Unique identifier for each order
+      customer_id:
+        description: Identifier for the customer who placed the order
+      status:
+        description: Current fulfillment status of the order
+        values: delivered, shipped, cancelled, refunded, processing, pending
+      channel:
+        description: Sales channel through which the order was placed
+        values: web, app, store
+      subtotal:
+        description: Sum of line item prices before discounts and taxes
+      discount_amount:
+        description: Total discount applied to the order
+      order_date:
+        description: Date the order was placed
+      payment_method:
+        description: Method used to pay for the order
+        values: card, paypal, klarna, apple_pay
+      campaign_id:
+        description: Marketing campaign associated with the order (if any)
+      total_amount:
+        description: Final amount paid by the customer after discounts
+  beauty.products:
+    description: Product catalog for a beauty brand, containing details about each
+      product including pricing, cost, organic status, and inventory.
+    grain: one row per product_id
+    auto_generated: true
+    columns:
+      product_id:
+        description: Unique identifier for each product
+      brand:
+        description: Brand name under which the product is sold
+        values: Noir, Velvet, Botanica, Hydra, Pure Glow, Éclat, AuraBeauté, Lumière
+      category:
+        description: Product category
+        values: Makeup, Fragrance, Tools, Skincare, Haircare
+      product_name:
+        description: Name of the product
+        values: Eau de Parfum Limited, Serum Limited, Shampoo Sensitive, Serum Sensitive,
+          Shampoo Limited, Serum Classic, Brush Set Sensitive, Shampoo Pro, Serum
+          Pro, Shampoo Classic, Brush Set Pro, Eau de Parfum Classic, Brush Set Classic,
+          Foundation Limited, Eau de Parfum Sensitive, Foundation Sensitive, Brush
+          Set Limited, Eau de Parfum Pro, Foundation Classic, Foundation Pro
+      price:
+        description: Retail price of the product
+      unit_cost:
+        description: Cost to produce or acquire one unit of the product
+      is_organic:
+        description: Whether the product is certified organic
+        values: False, True
+      stock_quantity:
+        description: Current inventory count of the product
+      launch_date:
+        description: Date the product was first launched or released
+  beauty.reviews:
+    description: Customer reviews for beauty products, including ratings, text, and
+      metadata such as purchase verification and helpfulness.
+    grain: one row per review_id
+    auto_generated: true
+    columns:
+      review_id:
+        description: Unique identifier for each review
+      product_id:
+        description: Identifier of the product being reviewed
+      customer_id:
+        description: Identifier of the customer who wrote the review
+      rating:
+        description: Numerical rating given by the customer (e.g., 1–5 stars)
+        values: 1, 2, 3, 4, 5
+      review_text:
+        description: Free-text feedback provided by the customer
+      verified_purchase:
+        description: Whether the reviewer purchased the product (vs. being a non-purchaser
+          or reviewer from another source)
+        values: True, False
+      helpful_votes:
+        description: Number of times other users marked this review as helpful
+      review_date:
+        description: Date the review was submitted
