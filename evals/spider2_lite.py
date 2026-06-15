@@ -548,7 +548,7 @@ def _fix_sql(question: str, schema: str, doc_section: str,
 # ── per-instance worker ───────────────────────────────────────────────────────
 
 def run_instance(inst: dict, spider_root: Path, out_dir: Path, temperature: float,
-                 consensus_k: int = 1, reflect: bool = False) -> dict:
+                 consensus_k: int = 1, reflect: bool = False, select: bool = False) -> dict:
     iid = inst["instance_id"]
     db_name = inst["db"]
     started_at = datetime.now(timezone.utc).isoformat()
@@ -590,7 +590,7 @@ def run_instance(inst: dict, spider_root: Path, out_dir: Path, temperature: floa
             # ── Self-consistency path: generate K, execute, vote ──
             from aughor.agent.sql_consensus import generate_consensus_sql
             q = inst["question"]
-            selector = _make_selector(q, doc, db_path) if reflect else None
+            selector = _make_selector(q, doc, db_path) if select else None
             result = generate_consensus_sql(
                 generate_fn=lambda temp: generate_sql(q, schema, doc, temp),
                 execute_fn=lambda s: _sqlite_exec(db_path, s),
@@ -693,7 +693,7 @@ def run_instance(inst: dict, spider_root: Path, out_dir: Path, temperature: floa
 
 def generate(spider_root: Path, out_dir: Path, limit: int | None,
              ids: set[str] | None, workers: int, temperature: float,
-             consensus_k: int = 1, reflect: bool = False) -> None:
+             consensus_k: int = 1, reflect: bool = False, select: bool = False) -> None:
     instances = load_local_instances(spider_root)
     if ids:
         instances = [r for r in instances if r["instance_id"] in ids]
@@ -703,6 +703,8 @@ def generate(spider_root: Path, out_dir: Path, limit: int | None,
     out_dir.mkdir(parents=True, exist_ok=True)
     run_ts = datetime.now(timezone.utc).isoformat()
     mode = f"consensus k={consensus_k}" if consensus_k > 1 else "single-shot"
+    if select:
+        mode += " +select"
     if reflect:
         mode += " +reflect"
     print(f"[{run_ts}] Generating {len(instances)} local predictions → {out_dir} "
@@ -712,7 +714,7 @@ def generate(spider_root: Path, out_dir: Path, limit: int | None,
     fails: list[dict] = []
 
     with ThreadPoolExecutor(max_workers=workers) as ex:
-        futs = {ex.submit(run_instance, r, spider_root, out_dir, temperature, consensus_k, reflect): r["instance_id"]
+        futs = {ex.submit(run_instance, r, spider_root, out_dir, temperature, consensus_k, reflect, select): r["instance_id"]
                 for r in instances}
         for fut in as_completed(futs):
             res = fut.result()
@@ -840,6 +842,8 @@ def main() -> None:
     ap.add_argument("--temperature", type=float, default=0.0)
     ap.add_argument("--consensus", type=int, default=1,
                     help="Number of candidates for self-consistency voting (1 = single-shot)")
+    ap.add_argument("--select", action="store_true",
+                    help="Pairwise candidate selection (reasoning judge) on consensus ties")
     ap.add_argument("--reflect", action="store_true",
                     help="Run a reasoning-model reflection pass on the consensus winner")
     ap.add_argument("--score", action="store_true",
@@ -854,7 +858,7 @@ def main() -> None:
 
     if not args.score_only:
         generate(args.spider_root, args.out, args.limit, ids, args.workers,
-                 args.temperature, args.consensus, args.reflect)
+                 args.temperature, args.consensus, args.reflect, args.select)
 
     if args.score or args.score_only:
         score(args.spider_root, args.out, args.workers)
