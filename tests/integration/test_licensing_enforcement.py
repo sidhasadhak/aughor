@@ -91,13 +91,15 @@ class TestExtendedSurfaceGating:
         ("post", "/exploration/c1/trigger-intel", "intel.domain"),
         ("post", "/exploration/c1/fix-all", "fix.save"),
         ("put", "/ontology/entities/e1", "ontology.edit"),
+        ("post", "/ontology/entities/merge", "ontology.edit"),
         ("post", "/semantic/c1/knowledge", "semantic.edit"),
         ("post", "/query/semantic", "semantic.operators"),
     ]
     # subset whose handler validates a body first → safe to call at enterprise (422/404,
     # never a real side effect) to prove the gate is transparent there.
     BODY_VALIDATED = [g for g in GATED if g[1] in
-                      ("/investigate", "/ontology/entities/e1", "/semantic/c1/knowledge", "/query/semantic")]
+                      ("/investigate", "/ontology/entities/e1", "/ontology/entities/merge",
+                       "/semantic/c1/knowledge", "/query/semantic")]
 
     def test_free_tier_402s_every_gated_surface(self, client: TestClient, monkeypatch):
         monkeypatch.setenv("AUGHOR_TIER", "free")

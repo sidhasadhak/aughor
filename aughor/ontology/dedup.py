@@ -63,6 +63,104 @@ def cluster_by_similarity(
     return [sorted(g) for g in groups.values() if len(g) > 1]
 
 
+def merge_entities(graph: Any, merge_ids: list[str], canonical_id: str) -> Any:
+    """Merge ``merge_ids`` into ``canonical_id``, returning a NEW graph with every cross-reference
+    repointed consistently — relationships (from/to, regenerated id, self-loops dropped, deduped),
+    interfaces' ``implementing_entities``, metrics' / actions' ``entity``, and the three reverse maps
+    (``entity_to_tables`` / ``table_to_entity`` / ``relationship_index``). The canonical entity absorbs
+    the others' ``source_tables`` / ``properties`` / ``object_sets`` (deduped by name); all other fields
+    are the canonical's. Deterministic, no LLM. Raises ``ValueError`` for an unknown entity id."""
+    entities = getattr(graph, "entities", {})
+    if canonical_id not in entities:
+        raise ValueError(f"canonical entity {canonical_id!r} is not in the graph")
+    unknown = [e for e in merge_ids if e not in entities]
+    if unknown:
+        raise ValueError(f"unknown entities: {unknown}")
+    remove = set(merge_ids) - {canonical_id}
+    if not remove:
+        return graph  # nothing to merge
+
+    def repoint(eid: str) -> str:
+        return canonical_id if eid in remove else eid
+
+    g = graph.model_copy(deep=True)
+
+    # 1) entities — canonical absorbs the others' tables/properties/object-sets, then drop the rest
+    canon = g.entities[canonical_id]
+    tables = list(canon.source_tables)
+    prop_names = {p.name for p in canon.properties}
+    set_names = {s.name for s in canon.object_sets}
+    for m in merge_ids:
+        if m == canonical_id:
+            continue
+        me = g.entities[m]
+        for t in me.source_tables:
+            if t not in tables:
+                tables.append(t)
+        for p in me.properties:
+            if p.name not in prop_names:
+                canon.properties.append(p); prop_names.add(p.name)
+        for s in me.object_sets:
+            if s.name not in set_names:
+                canon.object_sets.append(s); set_names.add(s.name)
+    canon.source_tables = tables
+    g.entities = {eid: e for eid, e in g.entities.items() if eid not in remove}
+    g.entities[canonical_id] = canon
+
+    # 2) relationships — repoint, drop self-loops, regenerate id, dedup
+    new_rels: dict = {}
+    for rel in graph.relationships.values():
+        fe, te = repoint(rel.from_entity), repoint(rel.to_entity)
+        if fe == te:
+            continue  # now internal to the merged entity
+        r = rel.model_copy(deep=True)
+        r.from_entity, r.to_entity = fe, te
+        r.id = f"{fe}_RELATES_TO_{te}"
+        new_rels.setdefault(r.id, r)
+    g.relationships = new_rels
+
+    # 3) interfaces — repoint implementing_entities (dedup, preserve order)
+    for iface in g.interfaces.values():
+        seen: list[str] = []
+        for eid in iface.implementing_entities:
+            r = repoint(eid)
+            if r not in seen:
+                seen.append(r)
+        iface.implementing_entities = seen
+
+    # 4/5) metrics & actions — repoint .entity
+    for m in g.metrics.values():
+        m.entity = repoint(m.entity)
+    for a in g.actions.values():
+        a.entity = repoint(a.entity)
+
+    # 6) entity_to_tables — union under canonical, drop removed keys
+    e2t: dict[str, list[str]] = {}
+    for eid, tbls in graph.entity_to_tables.items():
+        tgt = repoint(eid)
+        bucket = e2t.setdefault(tgt, [])
+        for t in tbls:
+            if t not in bucket:
+                bucket.append(t)
+    g.entity_to_tables = e2t
+
+    # 7) table_to_entity — repoint values
+    g.table_to_entity = {t: repoint(eid) for t, eid in graph.table_to_entity.items()}
+
+    # 8) relationship_index — rebuild from the rewritten relationships
+    idx: dict[str, list[str]] = {eid: [] for eid in g.entities}
+    for rel in g.relationships.values():
+        idx.setdefault(rel.from_entity, [])
+        if rel.to_entity not in idx[rel.from_entity]:
+            idx[rel.from_entity].append(rel.to_entity)
+        idx.setdefault(rel.to_entity, [])
+        if rel.from_entity not in idx[rel.to_entity]:
+            idx[rel.to_entity].append(rel.from_entity)
+    g.relationship_index = idx
+
+    return g
+
+
 def _entity_text(e: Any) -> str:
     """The text we embed for an entity — name + description + its source tables."""
     parts = [getattr(e, "display_name", "") or getattr(e, "id", "")]

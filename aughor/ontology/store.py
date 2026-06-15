@@ -147,6 +147,36 @@ def patch_entity(
     return graph
 
 
+def apply_entity_merge(
+    connection_id: str,
+    schema_name: str,
+    fingerprint: str,
+    merge_ids: list[str],
+    canonical_id: str,
+) -> Optional[OntologyGraph]:
+    """Merge ``merge_ids`` into ``canonical_id`` within a cached graph and persist. Returns the merged
+    graph, or None if the cache entry is missing or the merge is invalid (unknown entity)."""
+    cache = _load()
+    k = _key(connection_id, schema_name, fingerprint)
+    entry = cache.get(k)
+    if not entry:
+        return None
+    try:
+        graph = OntologyGraph.model_validate(entry["graph"])
+    except Exception:
+        return None
+
+    from aughor.ontology.dedup import merge_entities
+    try:
+        merged = merge_entities(graph, merge_ids, canonical_id)
+    except ValueError:
+        return None
+
+    cache[k] = {"graph": merged.model_dump()}
+    _save(cache)
+    return merged
+
+
 def load_latest_ontology(
     connection_id: str,
     schema_name: Optional[str] = None,

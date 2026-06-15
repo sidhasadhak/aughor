@@ -275,9 +275,11 @@ when synthesising many findings; partition-aware so it won't blend unrelated dom
 ### Borrow 5 — Semantic dedup + calibrated confidence  ·  **effort S**
 
 - **Ontology entity merging:** embedding self-similarity-join + threshold + connected-components to
-  collapse near-duplicate entities (cleaner ontology board). ✅ **Detection shipped** — `aughor/ontology/dedup.py`
-  + `GET /ontology/duplicate-entities` returns merge *suggestions* (never auto-merges — a wrong merge
-  would corrupt the ontology; apply-on-confirm is the gated follow-up).
+  collapse near-duplicate entities (cleaner ontology board). ✅ **Detection + apply-merge shipped (backend)** —
+  `aughor/ontology/dedup.py`: `detect_duplicate_entities` + `GET /ontology/duplicate-entities` returns
+  *suggestions*; `merge_entities` + `POST /ontology/entities/merge` (gated `ONTOLOGY_EDIT`) applies a
+  confirmed merge as a pure, deterministic rewrite of every cross-reference. Never auto-merges — explicit
+  and user-confirmed only. Remaining: the ontology-board UI to drive it.
 - **Calibrated trust numbers:** the `P(true)/(P(true)+P(false))` logprob technique gives a real
   confidence for finding-trust scores (feeds the Trust Layer in §3). ⛔ **Blocked** — the provider layer
   (instructor over OpenAI-compat) doesn't expose `top_logprobs`, the same wall that removed the cascade.
