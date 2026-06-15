@@ -648,6 +648,9 @@ def execute_planned_queries(state: AgentState, conn: "DatabaseConnection") -> di
         from aughor.tools.semantic_validator import check_entity_column_alignment
         ambiguity_warnings = detect_ambiguous_columns(sql, state["schema_context"])
         join_warnings = detect_invalid_joins(sql, state["schema_context"])
+        # ── Value-domain join guard: catch joins whose key values don't overlap ─
+        from aughor.sql.join_guard import check_join_value_domains
+        join_warnings = join_warnings + check_join_value_domains(conn, sql)
         # ── Semantic column alignment: catch wrong identifier columns ─────────
         semantic_warnings = check_entity_column_alignment(
             state["question"], sql, state["schema_context"]
