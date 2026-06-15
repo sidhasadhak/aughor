@@ -379,8 +379,10 @@ The remaining, highest-upside borrow (§4) and the one genuinely-new capability 
   `aggregate` (synthesize many text rows → one answer) — wired through the operator core, the
   `apply_step` dispatcher, `POST /query/semantic`, and the ADA `SemanticStep`. The four-operator set
   (filter / extract / top_k / aggregate) is complete; same opt-in / guarded / fail-open contract.
-- **Phase 2b UI (next):** the Query Builder "semantic step" affordance — the visible *user*-path
-  leverage proof (the agent path is already covered).
+- **Phase 2b UI shipped — Borrow 3 COMPLETE:** the Query Builder **"Semantic step"** panel under any
+  result (operator + client-side-detected text column → Apply → in-place transform with surfaced notes
+  + Revert). Verified end-to-end in the browser on real review data (8 rows → 6 "positive", one call).
+  Both surfaces — user (Query Builder) and agent (ADA) — are wired; the four-operator set is done.
 
 **Meta-learning:** the two guardrails we designed in — the cascade's recall **guarantee** and GEPA's
 **held-out split** — each independently caught a result that *looked* like a win but wasn't. Measuring

@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { compactNumber } from "@/lib/format";
 import {
   getConnections, getSchemaRich, getTableColumns, getMetrics, runDirectQuery, getCatalogTree,
   createCanvas, updateCanvas, suggestCanvasName, getMeasureGrains, getColumnDistinct,
-  listSavedQueries, createSavedQuery, updateSavedQuery, deleteSavedQuery,
+  listSavedQueries, createSavedQuery, updateSavedQuery, deleteSavedQuery, runSemanticOp,
   type Connection, type SchemaColumn, type SchemaJoin, type Metric, type DirectQueryResult,
-  type CatalogEntry, type SavedQuery, type Canvas,
+  type CatalogEntry, type SavedQuery, type Canvas, type SemanticOpResult, type SemanticOpRequest,
 } from "@/lib/api";
 import { InvestigationChart } from "@/components/InvestigationChart";
 import { type ChartCustom } from "@/components/Chart";
@@ -17,8 +17,150 @@ import { PivotTable } from "@/components/PivotTable";
 import { ChartWrapper }       from "@/components/charts/ChartWrapper";
 import { inferChartType, availableChartTypes, type ChartType } from "@/components/charts/chartTypeInference";
 
+/** Client-side text-column detection mirroring aughor/semops/operators.py — the rows are already
+ *  fetched, so the semantic-step UI can suggest operable columns without a server round-trip. */
+function detectTextColumnsLocal(columns: string[], rows: unknown[][], sample = 50, minFraction = 0.5): string[] {
+  const numericRe = /^-?[\d,]*\.?\d+%?$/;
+  const dateRe = /^\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}|$)/;
+  const idRe = /^[0-9a-fA-F][0-9a-fA-F-]{7,}$/;
+  const looksTextual = (v: string): boolean => {
+    const s = (v ?? "").trim();
+    if (!s || s === "NULL") return false;
+    if (numericRe.test(s) || dateRe.test(s)) return false;
+    return s.includes(" ") || (s.length >= 16 && !idRe.test(s));
+  };
+  const out: string[] = [];
+  columns.forEach((col, ci) => {
+    const vals: string[] = [];
+    for (const row of rows.slice(0, sample)) {
+      const v = row[ci];
+      if (v != null && v !== "NULL" && v !== "") vals.push(String(v));
+    }
+    if (vals.length && vals.filter(looksTextual).length / vals.length >= minFraction) out.push(col);
+  });
+  return out;
+}
+
 /** The Query Builder result display: a chart type, "auto" (engine infers), the raw table, or a pivot. */
 type VizMode = ChartType | "auto" | "table" | "pivot";
+
+/** Collapsible "Semantic step" control under a result — run an LLM operator over a text column.
+ *  Fully controlled by ResultsPane (which owns the overlay state + the apply/revert handlers). */
+function SemanticStepPanel({
+  open, setOpen, columns, textCols, op, setOp, col, setCol,
+  predicate, setPredicate, criterion, setCriterion, k, setK,
+  instruction, setInstruction, fields, setFields,
+  applying, error, result, onApply, onRevert,
+}: {
+  open: boolean; setOpen: (v: boolean) => void;
+  columns: string[]; textCols: string[];
+  op: SemanticOpRequest["operator"]; setOp: (v: SemanticOpRequest["operator"]) => void;
+  col: string; setCol: (v: string) => void;
+  predicate: string; setPredicate: (v: string) => void;
+  criterion: string; setCriterion: (v: string) => void;
+  k: number; setK: (v: number) => void;
+  instruction: string; setInstruction: (v: string) => void;
+  fields: { name: string; description: string }[]; setFields: (v: { name: string; description: string }[]) => void;
+  applying: boolean; error: string | null;
+  result: SemanticOpResult | null;
+  onApply: () => void; onRevert: () => void;
+}) {
+  const inputCls = "text-[11px] px-2 py-1 rounded border border-zinc-700 bg-transparent text-zinc-200 focus:border-violet-500/60 outline-none";
+  const canApply = Boolean(col && (
+    op === "filter" ? predicate.trim()
+    : op === "extract" ? fields.some(f => f.name.trim())
+    : op === "top_k" ? criterion.trim() && k >= 1
+    : op === "aggregate" ? instruction.trim()
+    : false
+  ));
+  return (
+    <div className="rounded border border-violet-500/25 bg-violet-500/[0.04]">
+      <button onClick={() => setOpen(!open)}
+        className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] text-violet-300 hover:text-violet-200 transition">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 3l1.9 5.8L20 10l-5.1 2.2L12 18l-2.9-5.8L4 10l6.1-1.2z"/></svg>
+        Semantic step
+        <span className="text-zinc-500">— reason over a text column with an LLM</span>
+        <svg className={`ml-auto transition-transform ${open ? "rotate-180" : ""}`} width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      {open && (
+        <div className="px-2.5 pb-2.5 flex flex-col gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <select value={op} onChange={e => setOp(e.target.value as SemanticOpRequest["operator"])} className={inputCls}>
+              <option value="filter">filter — keep matching rows</option>
+              <option value="extract">extract — pull fields into columns</option>
+              <option value="top_k">top-k — rank &amp; keep best</option>
+              <option value="aggregate">aggregate — summarize to one</option>
+            </select>
+            <span className="text-[11px] text-zinc-500">on</span>
+            <select value={col} onChange={e => setCol(e.target.value)} className={inputCls}>
+              {columns.map(c => (
+                <option key={c} value={c}>{c}{textCols.includes(c) ? "" : " (not text?)"}</option>
+              ))}
+            </select>
+          </div>
+
+          {op === "filter" && (
+            <input value={predicate} onChange={e => setPredicate(e.target.value)}
+              placeholder="keep rows where… e.g. 'the ticket is a billing complaint'" className={inputCls} />
+          )}
+          {op === "top_k" && (
+            <div className="flex items-center gap-2">
+              <input value={criterion} onChange={e => setCriterion(e.target.value)}
+                placeholder="rank by… e.g. 'most severe outage'" className={`${inputCls} flex-1`} />
+              <span className="text-[11px] text-zinc-500">keep</span>
+              <input type="number" min={1} value={k}
+                onChange={e => setK(Math.max(1, parseInt(e.target.value) || 1))} className={`${inputCls} w-16`} />
+            </div>
+          )}
+          {op === "aggregate" && (
+            <input value={instruction} onChange={e => setInstruction(e.target.value)}
+              placeholder="synthesize… e.g. 'summarize the recurring complaint themes'" className={inputCls} />
+          )}
+          {op === "extract" && (
+            <div className="flex flex-col gap-1.5">
+              {fields.map((f, i) => (
+                <div key={i} className="flex items-center gap-1.5">
+                  <input value={f.name} onChange={e => setFields(fields.map((x, j) => j === i ? { ...x, name: e.target.value } : x))}
+                    placeholder="field name e.g. root_cause" className={`${inputCls} w-40`} />
+                  <input value={f.description} onChange={e => setFields(fields.map((x, j) => j === i ? { ...x, description: e.target.value } : x))}
+                    placeholder="what to extract" className={`${inputCls} flex-1`} />
+                  {fields.length > 1 && (
+                    <button onClick={() => setFields(fields.filter((_, j) => j !== i))}
+                      className="text-zinc-500 hover:text-zinc-300 text-sm px-1" title="remove field">×</button>
+                  )}
+                </div>
+              ))}
+              <button onClick={() => setFields([...fields, { name: "", description: "" }])}
+                className="text-[11px] text-violet-400 hover:text-violet-300 self-start">+ field</button>
+            </div>
+          )}
+
+          <div className="flex items-center gap-2">
+            <button onClick={onApply} disabled={!canApply || applying}
+              className="text-[11px] px-3 py-1 rounded border border-violet-500/40 bg-violet-500/15 text-violet-200 hover:bg-violet-500/25 transition disabled:opacity-40 flex items-center gap-1.5">
+              {applying && <span className="w-3 h-3 border border-violet-300 border-t-transparent rounded-full animate-spin" />}
+              {applying ? "Applying…" : "Apply"}
+            </button>
+            {result && (
+              <button onClick={onRevert}
+                className="text-[11px] px-2 py-1 rounded border border-zinc-700 text-zinc-400 hover:text-zinc-200 transition">Revert</button>
+            )}
+            {result && !result.error && (
+              <span className="text-[11px] text-zinc-400">{result.input_rows} → {result.output_rows} rows · {result.llm_calls} call{result.llm_calls === 1 ? "" : "s"}</span>
+            )}
+          </div>
+
+          {error && <div className="text-[11px] text-red-400">{error}</div>}
+          {result?.notes?.length ? (
+            <ul className="text-[11px] text-zinc-500 list-disc pl-4">
+              {result.notes.map((n, i) => <li key={i}>{n}</li>)}
+            </ul>
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ── Aggregation catalogue ─────────────────────────────────────────────────────
 
@@ -644,6 +786,51 @@ function ResultsPane({
 }) {
   const [creatingCanvas, setCreatingCanvas] = useState(false);
 
+  // ── Semantic step: run an LLM operator over a text column of this result ──
+  const textCols = useMemo(
+    () => detectTextColumnsLocal(result.columns, result.rows as unknown[][]),
+    [result.columns, result.rows],
+  );
+  const [semOpen, setSemOpen] = useState(false);
+  const [semOp, setSemOp] = useState<SemanticOpRequest["operator"]>("filter");
+  const [semCol, setSemCol] = useState("");
+  const [semPredicate, setSemPredicate] = useState("");
+  const [semCriterion, setSemCriterion] = useState("");
+  const [semK, setSemK] = useState(10);
+  const [semInstruction, setSemInstruction] = useState("");
+  const [semFields, setSemFields] = useState<{ name: string; description: string }[]>([{ name: "", description: "" }]);
+  const [semResult, setSemResult] = useState<SemanticOpResult | null>(null);
+  const [semApplying, setSemApplying] = useState(false);
+  const [semError, setSemError] = useState<string | null>(null);
+
+  // Reset the overlay + default the target column whenever a new query result arrives.
+  useEffect(() => {
+    setSemResult(null);
+    setSemError(null);
+    setSemCol(textCols[0] ?? result.columns[0] ?? "");
+  }, [result.sql, result.columns, textCols]);
+
+  const applySemantic = useCallback(async () => {
+    if (!semCol) return;
+    setSemApplying(true);
+    setSemError(null);
+    try {
+      const op: SemanticOpRequest = {
+        operator: semOp,
+        column: semCol,
+        ...(semOp === "filter" ? { predicate: semPredicate } : {}),
+        ...(semOp === "extract" ? { fields: semFields.filter(f => f.name.trim()) } : {}),
+        ...(semOp === "top_k" ? { criterion: semCriterion, k: semK } : {}),
+        ...(semOp === "aggregate" ? { instruction: semInstruction } : {}),
+      };
+      setSemResult(await runSemanticOp(connId, sql, op));
+    } catch (e) {
+      setSemError((e as Error).message || "Semantic step failed");
+    } finally {
+      setSemApplying(false);
+    }
+  }, [connId, sql, semOp, semCol, semPredicate, semFields, semCriterion, semK, semInstruction]);
+
   if (result.error) {
     return (
       <ChartWrapper error={result.error} empty={false}>
@@ -660,22 +847,29 @@ function ResultsPane({
     );
   }
 
-  const rows = result.rows as unknown[][];
-  const chartable = inferChartType(result.columns, rows);
+  // The semantic overlay (if applied) replaces the displayed result; the base stays available to revert.
+  const view: DirectQueryResult = semResult
+    ? { columns: semResult.columns, rows: semResult.rows, row_count: semResult.row_count,
+        sql: semResult.sql, error: semResult.error, duration_ms: 0, cached: false }
+    : result;
+
+  const rows = view.rows as unknown[][];
+  const chartable = inferChartType(view.columns, rows);
   // The display mode is owned by the DATA-tab dropdown (vizType). "pivot" → cross-tab,
   // "table" → raw table; anything else → chart. Non-chartable results fall back to the table.
   const showPivot = vizType === "pivot";
   const showTable = !showPivot && (vizType === "table" || !chartable);
 
   const meta = [
-    `${result.row_count ?? result.rows.length} rows`,
-    result.duration_ms != null ? `${result.duration_ms}ms` : null,
-    result.cached ? "cached" : null,
+    `${view.row_count ?? view.rows.length} rows`,
+    !semResult && result.duration_ms != null ? `${result.duration_ms}ms` : null,
+    !semResult && result.cached ? "cached" : null,
+    semResult ? `semantic: ${semResult.operator}` : null,
   ].filter(Boolean).join(" · ");
 
   const exportCsv = () => {
     const esc = (v: unknown) => { const s = v == null ? "" : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
-    const csv = [result.columns.map(esc).join(","), ...rows.map(r => r.map(esc).join(","))].join("\n");
+    const csv = [view.columns.map(esc).join(","), ...rows.map(r => r.map(esc).join(","))].join("\n");
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -724,21 +918,36 @@ function ResultsPane({
 
       {/* Pivot — client-side cross-tab (works on any tabular result) */}
       {showPivot && (
-        <PivotTable columns={result.columns} rows={rows} />
+        <PivotTable columns={view.columns} rows={rows} />
       )}
 
       {/* Chart — controlled by the Explore rail (type / labels / title) */}
       {!showPivot && !showTable && chartable && (
         <div className="overflow-x-auto overflow-y-auto" style={{ maxHeight: 560 }}>
-          <InvestigationChart columns={result.columns} rows={rows}
+          <InvestigationChart columns={view.columns} rows={rows}
             controlled typeOverride={vizType} showLabels={showDataLabels} title={chartTitle} custom={custom} />
         </div>
       )}
 
       {/* Table */}
       {showTable && (
-        <SqlResultTable columns={result.columns} rows={rows} maxHeight={420} />
+        <SqlResultTable columns={view.columns} rows={rows} maxHeight={420} />
       )}
+
+      {/* Semantic step — run an LLM operator over a text column of this result */}
+      <SemanticStepPanel
+        open={semOpen} setOpen={setSemOpen}
+        columns={result.columns} textCols={textCols}
+        op={semOp} setOp={setSemOp}
+        col={semCol} setCol={setSemCol}
+        predicate={semPredicate} setPredicate={setSemPredicate}
+        criterion={semCriterion} setCriterion={setSemCriterion}
+        k={semK} setK={setSemK}
+        instruction={semInstruction} setInstruction={setSemInstruction}
+        fields={semFields} setFields={setSemFields}
+        applying={semApplying} error={semError}
+        result={semResult} onApply={applySemantic} onRevert={() => { setSemResult(null); setSemError(null); }}
+      />
 
       {/* Start Canvas */}
       {primaryTable && (

@@ -1696,6 +1696,52 @@ export async function runDirectQuery(
   return res.json();
 }
 
+// ── Semantic operators over a result's text columns (filter/extract/top_k/aggregate) ──
+
+export interface SemanticField { name: string; description?: string }
+
+export interface SemanticOpRequest {
+  operator: "filter" | "extract" | "top_k" | "aggregate";
+  column: string;
+  predicate?: string;            // filter
+  fields?: SemanticField[];      // extract
+  criterion?: string;            // top_k
+  k?: number;                    // top_k
+  instruction?: string;          // aggregate
+  out_column?: string;           // aggregate
+  limit?: number;
+  max_rows?: number;
+  override_cap?: boolean;
+}
+
+export interface SemanticOpResult {
+  columns: string[];
+  rows: string[][];
+  row_count: number;
+  sql: string;
+  error: string | null;
+  operator: string;
+  column: string;
+  input_rows: number;
+  output_rows: number;
+  truncated: boolean;
+  notes: string[];
+  llm_calls: number;
+}
+
+export async function runSemanticOp(connId: string, sql: string, op: SemanticOpRequest): Promise<SemanticOpResult> {
+  const res = await fetch(`${BASE}/query/semantic`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ conn_id: connId, sql, ...op }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { detail?: string }).detail ?? "Semantic step failed");
+  }
+  return res.json();
+}
+
 export interface BuildSqlMeasure {
   expr: string;
   alias: string;
