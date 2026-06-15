@@ -92,12 +92,16 @@ def _result_signature(rows: Optional[list]) -> str:
     return hashlib.sha1(blob.encode("utf-8", "replace")).hexdigest()
 
 
+SelectorFn = Callable[[list["Candidate"]], Optional["Candidate"]]
+
+
 def generate_consensus_sql(
     *,
     generate_fn: GenerateFn,
     execute_fn: ExecuteFn,
     repair_fn: RepairFn,
     empty_recovery_fn: Optional[RepairFn] = None,
+    selector_fn: Optional[SelectorFn] = None,
     k: int = 5,
     repair_rounds: int = 2,
     base_temperature: float = 0.0,
@@ -186,11 +190,31 @@ def generate_consensus_sql(
         return (len(g), -fewest_repairs, -shortest)
 
     win_sig, win_group = max(pool.items(), key=group_rank)
-    # Within the winning group, pick the cleanest representative
     best = min(win_group, key=lambda c: (c.repairs, len(c.sql)))
 
+    # PAIRWISE SELECTION (CHASE-SQL style): when the vote is NOT decisive — i.e.
+    # the top non-empty groups tie on size, so majority is a coin flip (the
+    # classic 1-1-1 split) — defer to a learned/reasoning selector that compares
+    # the distinct candidates head-to-head instead of trusting an arbitrary
+    # tie-break. A decisive plurality is left to the (cheaper, reliable) vote.
+    max_size = max(len(g) for g in pool.values())
+    top_groups = [g for g in pool.values() if len(g) == max_size]
+    decision = "majority_vote"
+    if len(top_groups) > 1 and selector_fn is not None:
+        reps = [min(g, key=lambda c: (c.repairs, len(c.sql))) for g in top_groups]
+        try:
+            chosen = selector_fn(reps)
+        except Exception:
+            chosen = None
+        if chosen is not None:
+            best, win_sig, win_group = chosen, chosen.signature, [chosen]
+            decision = "pairwise_selection"
+        steps.append({"decision": "tie_break", "method": decision,
+                      "tied_groups": len(top_groups),
+                      "chosen_signature": (best.signature or "")[:12]})
+
     steps.append({
-        "decision": "majority_vote",
+        "decision": decision,
         "winning_signature": win_sig[:12],
         "vote_count": len(win_group),
         "total_valid": len(candidates),

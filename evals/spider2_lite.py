@@ -337,6 +337,69 @@ def _reasoner():
     return _REASONER
 
 
+def _preview(db_path: Path, sql: str, n: int = 8) -> tuple[int, str]:
+    """Return (row_count, preview_text) for a query — for the selection judge."""
+    res = _sqlite_exec(db_path, sql)
+    if not res.ok:
+        return -1, f"(error: {res.error[:80]})"
+    rows = res.rows or []
+    body = "\n".join(" | ".join(str(v)[:40] for v in r) for r in rows[:n]) or "(no rows)"
+    return len(rows), body
+
+
+def _judge_pair(question: str, doc_section: str, db_path: Path,
+                a_sql: str, b_sql: str) -> str:
+    """Pairwise judge (CHASE-SQL style): which query better answers the question?
+    Returns 'A', 'B', or '' (no decision). Uses the strong reasoning model."""
+    from pydantic import BaseModel
+    from typing import Literal
+
+    a_n, a_prev = _preview(db_path, a_sql)
+    b_n, b_prev = _preview(db_path, b_sql)
+
+    class Verdict(BaseModel):
+        better: Literal["A", "B"]
+        reason: str = ""
+
+    prompt = (
+        f"{doc_section}QUESTION: {question}\n\n"
+        f"--- CANDIDATE A ({a_n} rows) ---\nSQL:\n{a_sql}\nRESULT:\n{a_prev}\n\n"
+        f"--- CANDIDATE B ({b_n} rows) ---\nSQL:\n{b_sql}\nRESULT:\n{b_prev}\n\n"
+        "Which candidate's RESULT more correctly and completely answers the question? "
+        "Judge by: correct cardinality (does the row count fit 'which/top-N/per-group'?), "
+        "correct aggregation grain, the right columns, and all question constraints applied. "
+        "Return 'A' or 'B'."
+    )
+    try:
+        v: Verdict = _reasoner().complete(
+            system="You are a meticulous SQL judge choosing the query whose result best answers the question.",
+            user=prompt, response_model=Verdict, temperature=0.0,
+        )
+        return v.better
+    except Exception:
+        return ""
+
+
+def _make_selector(question: str, doc_section: str, db_path: Path):
+    """Build a selector_fn for consensus: a round-robin pairwise tournament
+    judged by the reasoning model. Returns the candidate with the most wins."""
+    def selector(reps):
+        if len(reps) < 2:
+            return reps[0] if reps else None
+        wins = {id(c): 0 for c in reps}
+        for i in range(len(reps)):
+            for j in range(i + 1, len(reps)):
+                a, b = reps[i], reps[j]
+                verdict = _judge_pair(question, doc_section, db_path, a.sql, b.sql)
+                if verdict == "A":
+                    wins[id(a)] += 1
+                elif verdict == "B":
+                    wins[id(b)] += 1
+        # winner = most wins; tie-break toward fewer repairs then shorter SQL
+        return max(reps, key=lambda c: (wins[id(c)], -c.repairs, -len(c.sql)))
+    return selector
+
+
 def _reflect_revise(question: str, schema: str, doc_section: str,
                     sql: str, db_path: Path) -> tuple[str, dict]:
     """Reflection pass: a reasoning model judges whether the result answers the
@@ -527,11 +590,13 @@ def run_instance(inst: dict, spider_root: Path, out_dir: Path, temperature: floa
             # ── Self-consistency path: generate K, execute, vote ──
             from aughor.agent.sql_consensus import generate_consensus_sql
             q = inst["question"]
+            selector = _make_selector(q, doc, db_path) if reflect else None
             result = generate_consensus_sql(
                 generate_fn=lambda temp: generate_sql(q, schema, doc, temp),
                 execute_fn=lambda s: _sqlite_exec(db_path, s),
                 repair_fn=lambda bad, err, temp: _fix_sql(q, schema, doc, bad, err, temp),
                 empty_recovery_fn=lambda bad, msg, temp: _recover_empty(q, schema, doc, bad, msg, temp),
+                selector_fn=selector,
                 k=consensus_k,
                 repair_rounds=2,
             )
@@ -546,6 +611,7 @@ def run_instance(inst: dict, spider_root: Path, out_dir: Path, temperature: floa
                     execute_fn=lambda s: _sqlite_exec(db_path, s),
                     repair_fn=lambda bad, err, temp: _fix_sql(q, full_schema, doc, bad, err, temp),
                     empty_recovery_fn=lambda bad, msg, temp: _recover_empty(q, full_schema, doc, bad, msg, temp),
+                    selector_fn=selector,
                     k=consensus_k, repair_rounds=2,
                 )
                 sql = result.sql
