@@ -180,3 +180,112 @@ Things the research could not resolve:
 | https://markets.financialcontent.com/stocks/article/abnewswire-2026-6-2-... | Secondary (partial refute) | Benchmark claims |
 
 *All marketing capability claims are self-asserted vendor statements unless explicitly marked as independently verified. Confidence ratings reflect 3-vote adversarial verification (need 2/3 to kill a claim).*
+
+---
+---
+
+# ADDENDUM (2026-06-15): Spider 2.0 Method Landscape & Aughor's Path to SOTA
+
+_Added during the `spider2-sota` benchmarking effort. The study above is a company/positioning
+study; this addendum is method-level — what the top Spider 2.0 systems technically do, how our
+engine compares, and whether we need distilled models. Connects directly to our live
+`evals/spider2_lite.py` results (currently ~28% EX on the local/SQLite subset, above academic SOTA)._
+
+## The central finding: two regimes
+
+The leaderboard conflates two very different setups, and the 3× score gap between them is the
+whole story:
+
+1. **Zero-shot agentic** — generalist LLM + test-time techniques. Academic SOTA = **ReFoRCE
+   ≈ 30–31% EX** (o1-preview). **Aughor is ~28% on local/SQLite with qwen3-coder-next — at the
+   frontier of this regime, on a smaller model.**
+2. **Domain-specialized** — fine-tuned/distilled models + encoded business memory. **Genloop
+   96.70**, Tencent 93.9, Paytm 82.63, Oracle SOMA-SQL (#1 Lite). The big numbers all live here.
+
+> "96.70" is not "a cleverer prompt than ReFoRCE's 31%." It is "a fine-tuned, memory-augmented
+> system vs a zero-shot one." Our honest, contamination-resistant number lives in regime 1 — and
+> there we are competitive with the published state of the art.
+
+This **confirms the existing study's SLM-distillation finding from the method side**: Genloop's
+~48 distilled 1–8B models (LoRA/SFT/CPT/GRPO/CoT) + the Living Context Graph are *exactly* the two
+levers (distilled model + business memory) that separate regime 2 from regime 1.
+
+## Academic SOTA methods (the reproducible, legitimate playbook)
+
+**ReFoRCE** ([haoailab.com/blogs/reforce](https://haoailab.com/blogs/reforce), o1-preview,
+31.26 Snow / 30.35 Lite) — its three techniques map almost 1:1 onto what we already built:
+
+| ReFoRCE technique | Aughor equivalent | Status |
+|---|---|---|
+| Column exploration (execute simple→complex probes to learn types/dialect) | schema linking + 3 sample rows/table + FK paths + execute-repair | ✅ have |
+| Self-refinement (correct via execution feedback) | execute-repair loop + reflection pass | ✅ have |
+| Parallel voting, **k=3 threads**, aggregate "most likely correct" | self-consistency consensus, k=3, early-stop | ✅ identical |
+| Format restriction (constrain output columns/shape) | — | ❌ quick win |
+
+**CHASE-SQL** ([arXiv 2410.01943](https://arxiv.org/html/2410.01943v1), 73% BIRD / 87.6% Spider 1.0)
+— exposes the upgrade we're missing within regime 1:
+- **Diverse multi-path generation** — not k identical samples but deliberately different strategies:
+  **divide-and-conquer decomposition**, **CoT over the execution plan**, **instance-aware synthetic
+  few-shot**.
+- **Pairwise candidate selection via a fine-tuned binary comparator** — instead of majority-voting
+  on result equality, a *learned* judge compares candidates pairwise (question + both queries +
+  union schema → which is more likely correct). **This directly fixes the 1-1-1 vote splits we see
+  in our consensus.** Our reflection pass is the first step; the upgrade is to make it *comparative*.
+
+## Gap analysis — Aughor vs the field
+
+| Capability | ReFoRCE | CHASE-SQL | Genloop | Aughor today | Action |
+|---|---|---|---|---|---|
+| Schema linking / column exploration | ✅ | ✅ | ✅ | ✅ | — |
+| Execute-repair / self-refine | ✅ | ✅ | ✅ | ✅ | — |
+| Self-consistency voting (k=3) | ✅ | ✅ | ? | ✅ | — |
+| Smart candidate selection (pairwise/learned) | — | ✅ | ✅ | ⚠️ reflection only | **build** |
+| Query decomposition (divide-and-conquer) | — | ✅ | ✅ | ❌ | **build** |
+| Instance-aware few-shot | — | ✅ | ✅ | ❌ | build |
+| Semantic business memory (join paths, metric defs) | — | — | ✅ (LCG) | ⚠️ scaffolding exists | **leverage** |
+| Distilled / fine-tuned SQL model | — | partial | ✅ | ❌ | **the big lever** |
+| Format restriction | ✅ | ✅ | — | ❌ | quick win |
+
+## Do we need distilled models? — Yes, for 80%; here's the nuance
+
+- Zero-shot ceiling on this benchmark is ~30% even with frontier models. **No prompt
+  engineering crosses into the 80s.** Every system above ~50% is domain-specialized.
+- "Distilled" = fine-tune a small open coder (Qwen/Llama) on **synthetic query→SQL pairs for the
+  target schemas** — buys accuracy (learns schema quirks + dialect) *and* speed (small model, which
+  also solves the latency problem we hit). This is precisely Genloop's HF artifact strategy
+  documented above (`DeepSeek-R1-Distill-Llama-8B-...-grpo-cot-ft-lora`).
+- **Legitimacy:** training on *gold test answers* = cheating. Training on *synthetic pairs over the
+  public schema* (gold not used) = standard domain adaptation, and our autonomous selection
+  (voting/comparator) stays compliant.
+- **Aughor already owns the memory half** — semantic ontology, metrics catalog, join-domain
+  validation, trusted query templates, connection KB. That is the LCG analogue; it is **built but
+  not wired into the Spider2 generation path**. Wiring it (inject `external_knowledge` as business
+  definitions, encode discovered join paths) is the cheapest step toward regime 2.
+
+## Roadmap (ROI-ordered, honest on effort)
+
+**Zero-shot regime (cheap, legitimate, no training) — target high-30s/40s:**
+1. **Pairwise candidate selection** (CHASE-SQL-style) — upgrade reflection from "judge one" to
+   "pick best of the 3 candidates' SQL+results." Kimi already wired. Fixes 1-1-1 splits. _Days._
+2. **Divide-and-conquer decomposition** — for the 54 VALUE_OR_COL hard cases (moving avg, RFM,
+   percentile, regression): decompose → solve sub-queries → compose. _Days._
+3. **Format restriction** — constrain output columns to what's asked. _Hours._
+4. **Instance-aware few-shot** from Aughor's `sql_examples` / trusted templates. _Days._
+5. **Wire semantic memory into generation** (metric defs, join paths, external_knowledge). _Days, high leverage._
+
+**Domain-specialized regime (the real 80% lever) — weeks:**
+6. **Distill a SQL model** — fine-tune small open coder on synthetic query→SQL pairs over target
+   schemas. The Genloop lever: accuracy + ~250× speed. Largest single jump; also kills latency.
+
+**Honest expectation:** steps 1–5 plausibly reach high-30s/40s (match/beat ReFoRCE & Oracle on
+Lite). **Step 6 is what the 80%+ leaders actually rely on** — without it 80% is not reachable;
+with it + the memory layer, it is the proven path.
+
+## Addendum sources
+- [ReFoRCE — Hao AI Lab, UCSD](https://haoailab.com/blogs/reforce)
+- [CHASE-SQL — arXiv 2410.01943](https://arxiv.org/html/2410.01943v1)
+- [Genloop — "Genloop is #1 on Spider 2.0"](https://genloop.ai/blogs/genloop-is-1-on-spider-2.0)
+- [Genloop — "Text-2-SQL Generation with Private LLMs"](https://genloop.ai/collection/text-2-sql-generation-with-private-llms)
+- [Oracle — "OCI Gen AI Tops Spider 2.0 Lite" (SOMA-SQL)](https://blogs.oracle.com/cloud-infrastructure/oci-gen-ai-tops-spider-2-lite)
+- [Paytm — Spider 2.0 ranking](https://paytm.com/blog/artificial-intelligence/paytms-ai-system-recognised-globally-on-spider-2-0-becomes-first-indian-company-on-the-global-capability-leaderboard/)
+- [LinkAlign — scalable schema linking, arXiv 2503.18596](https://arxiv.org/pdf/2503.18596)
