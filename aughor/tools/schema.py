@@ -136,6 +136,12 @@ def parse_schema_tables(schema_str: str) -> dict[str, list[str]]:
     return _parse_schema_tables(schema_str)
 
 
+def compute_join_map(table_cols: dict[str, list[str]]) -> dict:
+    """Public alias for the join-map inferrer (companion to parse_schema_tables);
+    lets out-of-module callers build a join map without importing internals."""
+    return _compute_join_map(table_cols)
+
+
 def _table_base(t: str) -> str:
     """Bare table name for owner matching: last path segment, lowercased, with
     dim_/fact_/_dim wrappers and a trailing plural 's' removed."""

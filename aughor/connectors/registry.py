@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 
 DSN_PREVIEWS: dict[str, str] = {
     "duckdb":       "*.duckdb",
+    "sqlite":       "*.sqlite / *.db",
     "postgres":     "postgresql://***",
     "bigquery":     "bigquery://project-id",
     "snowflake":    "snowflake://account.region",
@@ -58,6 +59,9 @@ FORM_FIELDS: dict[str, list[dict]] = {
     "duckdb": [
         {"key": "dsn", "label": "File path", "placeholder": "/path/to/file.duckdb", "secret": False},
         {"key": "schema_name", "label": "Schema (optional)", "placeholder": "main", "secret": False},
+    ],
+    "sqlite": [
+        {"key": "dsn", "label": "File path", "placeholder": "/path/to/file.sqlite", "secret": False},
     ],
     "postgres": [
         {"key": "dsn", "label": "Connection string", "placeholder": "postgresql://user:pass@host:5432/db", "secret": True},
@@ -179,6 +183,7 @@ def _register_defaults() -> None:
     # File
     REGISTRY.register("local_upload", "aughor.connectors.file.local_upload",   "LocalUploadConnection")
     REGISTRY.register("s3",           "aughor.connectors.file.s3",             "S3Connection")
+    REGISTRY.register("sqlite",       "aughor.connectors.file.sqlite",         "SQLiteConnection")
     # Federation
     REGISTRY.register("federated",    "aughor.connectors.federated",           "FederatedConnection")
     # API/CRM
