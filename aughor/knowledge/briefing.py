@@ -89,6 +89,7 @@ def _build_user_prompt(
     top_insights: list[dict],
     top_patterns: list[dict],
     macro_context: Optional[dict] = None,
+    coverage_digest: str = "",
 ) -> str:
     lines = []
     # Tier 2: lead with the long-arc context so the narrator can juxtapose the recent
@@ -106,6 +107,16 @@ def _build_user_prompt(
         angle = ins.get("angle", "")
         finding = ins.get("finding", "")
         lines.append(f"[{i}] Domain: {domain} | Novelty: {novelty:.1f} | Angle: {angle}\n    \"{finding}\"")
+
+    # Full-coverage digest: a per-domain fold of ALL findings (not just the cited top-N) so the
+    # narrator's synthesis reflects everything. Context only — it carries no citation numbers.
+    if coverage_digest:
+        lines.append("")
+        lines.append(
+            "FULL COVERAGE (every finding, summarized per domain — use for context and breadth; "
+            "do NOT cite these as numbered findings, only the FINDINGS above are citable):"
+        )
+        lines.append(coverage_digest)
 
     if top_patterns:
         lines.append("\nCROSS-DOMAIN PATTERNS:")
@@ -126,6 +137,61 @@ def _build_user_prompt(
         "\nGenerate a 2-3 sentence executive briefing narrative with inline citation markers."
     )
     return "\n".join(lines)
+
+
+# ── Coverage digest (hierarchical tree-reduce over ALL findings) ──────────────
+# The narrative cites only the top-N findings; when more exist, fold ALL of them into a compact,
+# partition-aware (per-domain) digest so the synthesis reflects the full picture instead of silently
+# dropping findings N+1.. Within a domain the findings are themselves tree-reduced (pack → summarize
+# → recurse). Fail-open: any LLM error returns "" → the briefing falls back to the top-N-only prompt.
+
+class _Digest(BaseModel):
+    text: str = Field(description="One tight sentence — the key signal only, no preamble, no citations.")
+
+
+_DIGEST_SYSTEM = (
+    "You compress analytical findings into ONE tight sentence capturing the key signal. "
+    "No preamble, no citation markers, business language a CFO would understand."
+)
+_DIGEST_FANOUT = 8
+
+
+def _coverage_digest(domain_data: dict[str, list[dict]], cited_ids: set[str]) -> str:
+    """Per-domain fold of every finding, for the narrator's context. ``""`` when nothing was dropped
+    (the top-N prompt already holds everything) or on any failure (fail-open)."""
+    groups = {d: ins for d, ins in domain_data.items() if ins}
+    total = sum(len(v) for v in groups.values())
+    if total <= len(cited_ids):
+        return ""
+    try:
+        from aughor.llm.provider import get_provider
+        from aughor.llm.reduce import hierarchical_reduce, partitioned_reduce
+
+        provider = get_provider("fast")
+
+        def _one(prompt: str) -> str:
+            return provider.complete(system=_DIGEST_SYSTEM, user=prompt,
+                                     response_model=_Digest, temperature=0.2).text.strip()
+
+        def summarize_group(domain: str, findings: list[dict]) -> str:
+            def leaf(batch: list[dict]) -> str:
+                listing = "\n".join(f"- {f.get('finding', '')}" for f in batch)
+                return _one(f"Domain: {domain}\nFindings:\n{listing}\n\nOne sentence capturing the key signal.")
+
+            def comb(parts: list[str]) -> str:
+                listing = "\n".join(f"- {p}" for p in parts)
+                return _one(f"Domain: {domain}\nPartial summaries:\n{listing}\n\nMerge into one sentence.")
+
+            digest = hierarchical_reduce(findings, summarize=leaf, combine=comb, fanout=_DIGEST_FANOUT)
+            return f"{domain}: {digest}"
+
+        # Domains are distinct buckets — keep them on separate lines, never blended.
+        return partitioned_reduce(
+            groups, summarize_group=summarize_group,
+            combine=lambda parts: "\n".join(parts), fanout=_DIGEST_FANOUT,
+        )
+    except Exception:
+        return ""
 
 
 def generate_narrative(
@@ -184,10 +250,14 @@ def generate_narrative(
             "generated_at":   _now_iso(),
         }
 
+    # Full-coverage digest: when findings were dropped from the top-8, fold ALL of them (per domain,
+    # tree-reduced) so the narrative reflects the whole picture, not just the cited few.
+    coverage = _coverage_digest(domain_data, {ins.get("id", "") for ins in top[:8]})
+
     # Build prompt and call LLM
     from aughor.llm.provider import get_provider
     provider = get_provider("narrator")
-    user_prompt = _build_user_prompt(top[:8], patterns[:3], macro_context)
+    user_prompt = _build_user_prompt(top[:8], patterns[:3], macro_context, coverage_digest=coverage)
 
     result: BriefingNarrative = provider.complete(
         system=_SYSTEM,

@@ -261,7 +261,11 @@ composable tool for ADA.
 touches the text residue — never the bulk scan the row-wise systems pay for. This fills the gap in our
 offering (text/unstructured analytics) _without_ giving up our efficiency or grounding.
 
-### Borrow 4 — Hierarchical synthesis for Briefings  ·  **effort S**
+### Borrow 4 — Hierarchical synthesis for Briefings  ·  **effort S** · ✅ SHIPPED
+> ✅ **Shipped.** Pure primitive `aughor/llm/reduce.py` (`hierarchical_reduce` / `partitioned_reduce`)
+> + wired into the briefing's `_coverage_digest` (`aughor/knowledge/briefing.py`): when findings exceed
+> the cited top-8, all of them are folded into a per-domain digest (tree-reduced within a domain,
+> partition-aware across them, fail-open). Reusable for `ada_synthesize` / the Hub next.
 
 Replace any single-stuffed-prompt synthesis in the Briefing/Hub with the hierarchical
 map-reduce-over-context-windows pattern (pack → summarise → recurse). Better long-context fidelity
