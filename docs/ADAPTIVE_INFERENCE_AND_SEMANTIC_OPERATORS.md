@@ -263,9 +263,10 @@ offering (text/unstructured analytics) _without_ giving up our efficiency or gro
 
 ### Borrow 4 — Hierarchical synthesis for Briefings  ·  **effort S** · ✅ SHIPPED
 > ✅ **Shipped.** Pure primitive `aughor/llm/reduce.py` (`hierarchical_reduce` / `partitioned_reduce`)
-> + wired into the briefing's `_coverage_digest` (`aughor/knowledge/briefing.py`): when findings exceed
-> the cited top-8, all of them are folded into a per-domain digest (tree-reduced within a domain,
-> partition-aware across them, fail-open). Reusable for `ada_synthesize` / the Hub next.
+> wired into **two** synthesis sites: the briefing's `_coverage_digest` (folds findings beyond the cited
+> top-8 into a per-domain digest), and **`ada_synthesize`** (`_phases_evidence_budgeted` keeps phases
+> verbatim up to the budget for grounding, then folds overflow phases into a number-preserving digest
+> instead of truncating the evidence log at 6 000 chars). Partition-aware, fail-open. Hub next.
 
 Replace any single-stuffed-prompt synthesis in the Briefing/Hub with the hierarchical
 map-reduce-over-context-windows pattern (pack → summarise → recurse). Better long-context fidelity
