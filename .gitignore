@@ -70,3 +70,6 @@ evals/_log*.txt
 data/system.db
 data/system.db-shm
 data/system.db-wal
+
+# Spider 2.0 benchmark predictions/outputs (large, regenerable)
+evals/spider2_out/

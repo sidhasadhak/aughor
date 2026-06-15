@@ -5343,3 +5343,1022 @@ tables:
         description: Number of times other users marked this review as helpful
       review_date:
         description: Date the review was submitted
+  all_star:
+    description: Records of all-star game appearances by players, including details
+      about the game and their participation.
+    grain: one row per player appearance in an all-star game
+    auto_generated: true
+    columns:
+      player_id:
+        description: Unique identifier for the player
+      year:
+        description: Year of the all-star game
+      game_num:
+        description: Sequential number of the all-star game within the year (e.g.,
+          Game 1 or Game 2 for years with multiple games)
+      game_id:
+        description: Unique identifier for the all-star game
+      team_id:
+        description: Team the player represented in the all-star game (e.g., AL or
+          NL)
+      league_id:
+        description: League the player belongs to (e.g., AL, NL)
+      gp:
+        description: Whether the player participated in the game (1 = played, 0 =
+          did not play)
+        values: 0, 1
+      starting_pos:
+        description: Position the player started in, if they were a starter (NULL
+          if not a starter)
+        caveats: NULL indicates the player was not a starter (e.g., came in as a substitute
+          or did not play)
+  appearances:
+    description: Records player appearances by team and year, tracking how many games
+      each player participated in across various positions and roles.
+    grain: one row per player per team per year
+    auto_generated: true
+    columns:
+      year:
+        description: The year of the appearance record
+      team_id:
+        description: Identifier for the team the player appeared for
+      league_id:
+        description: Identifier for the league in which the team played
+      player_id:
+        description: Unique identifier for the player
+      g_all:
+        description: Total number of games the player appeared in (all roles combined)
+      gs:
+        description: Number of games the player started
+      g_batting:
+        description: Number of games the player batted in (including as DH or PH)
+      g_defense:
+        description: Number of games the player appeared in on defense
+      g_p:
+        description: Number of games the player appeared as a pitcher
+      g_c:
+        description: Number of games the player appeared as a catcher
+      g_1b:
+        description: Number of games the player appeared as a first baseman
+      g_2b:
+        description: Number of games the player appeared as a second baseman
+      g_3b:
+        description: Number of games the player appeared as a third baseman
+      g_ss:
+        description: Number of games the player appeared as a shortstop
+      g_lf:
+        description: Number of games the player appeared as a left fielder
+      g_cf:
+        description: Number of games the player appeared as a center fielder
+      g_rf:
+        description: Number of games the player appeared as a right fielder
+      g_of:
+        description: Number of games the player appeared as an outfielder (sum of
+          LF, CF, RF)
+      g_dh:
+        description: Number of games the player appeared as a designated hitter
+      g_ph:
+        description: Number of games the player appeared as a pinch hitter
+      g_pr:
+        description: Number of games the player appeared as a pinch runner
+  batting:
+    description: Season-level batting statistics for players, aggregating performance
+      across all teams and leagues they played for in a given year (stint tracks team-specific
+      stints within a year).
+    grain: one row per player_id, year, stint (i.e., per team assignment within a
+      season)
+    auto_generated: true
+    columns:
+      player_id:
+        description: Unique identifier for the player
+      year:
+        description: Season year of the statistics
+      stint:
+        description: Order of the team assignment within the year (e.g., 1 = first
+          team, 2 = second team if traded mid-season)
+      team_id:
+        description: Team the player was on during this stint
+      league_id:
+        description: League the team belongs to (e.g., NL, AL)
+      g:
+        description: Games played
+      ab:
+        description: At bats
+      r:
+        description: Runs scored
+      h:
+        description: Hits
+      double:
+        description: Doubles
+      triple:
+        description: Triples
+      hr:
+        description: Home runs
+      rbi:
+        description: Runs batted in
+      sb:
+        description: Stolen bases
+      cs:
+        description: Caught stealing
+      bb:
+        description: Base on balls (walks)
+      so:
+        description: Strikeouts
+      ibb:
+        description: Intentional walks
+      hbp:
+        description: Hit by pitch
+      sh:
+        description: Sacrifice hits (bunts)
+      sf:
+        description: Sacrifice flies
+      g_idp:
+        description: Grounded into double plays
+  batting_postseason:
+    description: This table contains postseason batting statistics for Major League
+      Baseball players, capturing performance metrics across playoff rounds by year.
+    grain: One row represents a player's batting statistics in a specific postseason
+      round for a given year.
+    auto_generated: true
+    columns:
+      year:
+        description: The year of the postseason series
+      round:
+        description: The postseason round (e.g., Wild Card Series, Division Series,
+          Championship Series, World Series)
+        values: WS, LCS, LDS, WC
+      player_id:
+        description: Unique identifier for the player
+      team_id:
+        description: The team the player represented in the postseason
+      league_id:
+        description: The league the team belongs to (e.g., NL, AL)
+        values: NL, AL
+      g:
+        description: Games played
+      ab:
+        description: At bats
+      r:
+        description: Runs scored
+      h:
+        description: Hits
+      double:
+        description: Doubles
+      triple:
+        description: Triples
+      hr:
+        description: Home runs
+      rbi:
+        description: Runs batted in
+      sb:
+        description: Stolen bases
+      cs:
+        description: Caught stealing
+      bb:
+        description: Base on balls (walks)
+      so:
+        description: Strikeouts
+      ibb:
+        description: Intentional walks
+      hbp:
+        description: Hit by pitch
+      sh:
+        description: Sacrifice hits (bunts)
+      sf:
+        description: Sacrifice flies
+      g_idp:
+        description: Grounded into double plays
+  college:
+    description: A reference table containing basic information about colleges and
+      universities.
+    grain: one row per college or university
+    auto_generated: true
+    columns:
+      college_id:
+        description: Unique identifier for the college or university
+      name_full:
+        description: Full official name of the college or university
+      city:
+        description: City where the college or university is located
+      state:
+        description: State or province where the college or university is located
+      country:
+        description: Country where the college or university is located
+  fielding:
+    description: Fielding statistics for baseball players, tracking defensive performance
+      across seasons, teams, and positions.
+    grain: one row per player-season-team-stint (a player's defensive record for a
+      specific team in a given year, where a 'stint' may represent multiple stints
+      if the player changed teams mid-season).
+    auto_generated: true
+    columns:
+      player_id:
+        description: Unique identifier for the player
+      year:
+        description: Season year of the fielding record
+      stint:
+        description: Stint number for the player with the team in that year (e.g.,
+          1 for first stint, 2 for second if traded mid-season)
+      team_id:
+        description: Team identifier for the team the player represented in that stint
+      league_id:
+        description: League identifier (e.g., 'NL', 'AL') for the team in that stint
+      pos:
+        description: Primary position played by the player during this stint (e.g.,
+          'P', 'C', '1B', '2B', 'SS', '3B', 'OF')
+      g:
+        description: Total games played in the field
+      gs:
+        description: Games started as a fielder
+      inn_outs:
+        description: Total innings played, recorded as outs (e.g., 1 inning = 3 outs)
+      po:
+        description: Putouts recorded by the player
+      a:
+        description: Assists recorded by the player
+      e:
+        description: Errors committed by the player
+      dp:
+        description: Double plays participated in
+      pb:
+        description: Passed balls (primarily for catchers)
+      wp:
+        description: Wild pitches allowed (primarily for catchers)
+      sb:
+        description: Stolen bases allowed (primarily for catchers)
+      cs:
+        description: Caught stealing (number of runners caught stealing)
+      zr:
+        description: Zone rating, a defensive metric estimating plays made relative
+          to league average
+  fielding_outfield:
+    description: Fielding statistics for outfield positions (left field, center field,
+      right field) by player, year, and stint
+    grain: one row per player per year per stint with outfield fielding data
+    auto_generated: true
+    columns:
+      player_id:
+        description: Unique identifier for the player
+      year:
+        description: Season year of the fielding data
+      stint:
+        description: Order of the player's tenure with a team in that year (e.g.,
+          1 for first team, 2 for second team if traded)
+      glf:
+        description: Games played in left field
+      gcf:
+        description: Games played in center field
+      grf:
+        description: Games played in right field
+  fielding_postseason:
+    description: Fielding statistics for players in postseason baseball games, tracking
+      defensive performance metrics per player per round per team.
+    grain: one row per player per postseason round per team
+    auto_generated: true
+    columns:
+      player_id:
+        description: Unique identifier for the player
+      year:
+        description: Year of the postseason
+      team_id:
+        description: Identifier for the team the player represented in that postseason
+      league_id:
+        description: League (e.g., AL, NL) the team belonged to during the postseason
+      round:
+        description: Postseason round (e.g., LCS, World Series, Wild Card Game)
+      pos:
+        description: Primary defensive position played by the player in that round
+      g:
+        description: Number of games played
+      gs:
+        description: Number of games started
+      inn_outs:
+        description: Total outs recorded (3 × innings played)
+      po:
+        description: Putouts
+      a:
+        description: Assists
+      e:
+        description: Errors
+      dp:
+        description: Double plays turned
+      tp:
+        description: Triple plays turned
+      pb:
+        description: Passed balls (by catcher)
+      sb:
+        description: Stolen bases allowed
+      cs:
+        description: Caught stealing
+  hall_of_fame:
+    description: Records Hall of Fame induction decisions for baseball players, including
+      voting details and outcomes.
+    grain: one row per player-year-vote combination (i.e., one row represents a specific
+      player's candidacy in a specific voting year)
+    auto_generated: true
+    columns:
+      player_id:
+        description: Unique identifier for the player being considered for Hall of
+          Fame induction
+      yearid:
+        description: Year in which the Hall of Fame voting occurred
+      votedby:
+        description: Entity or group that cast the vote (e.g., 'BBWAA' for Baseball
+          Writers'' Association of America)
+        values: BBWAA, Veterans Committee, etc.
+      ballots:
+        description: Total number of ballots cast in the voting
+      needed:
+        description: Number of votes required for induction (typically a threshold
+          like 75% of ballots)
+      votes:
+        description: Number of votes the player received
+      inducted:
+        description: Whether the player was inducted ('Y' or 'N')
+        values: Y, N
+      category:
+        description: Category of Hall of Fame eligibility (e.g., 'Player', 'Manager',
+          'Umpire', 'Pioneer/Executive')
+        values: Player, Manager, Umpire, Pioneer/Executive
+      needed_note:
+        description: Additional notes explaining the vote threshold or special circumstances
+          for that year's election
+  home_game:
+    description: Contains annual records of home games played by each team at each
+      park, including attendance and game counts.
+    grain: one row per team per park per year
+    auto_generated: true
+    columns:
+      year:
+        description: The calendar year of the recorded games
+      league_id:
+        description: Identifier for the league (e.g., 'NL', 'AL')
+        values: NL, AL, etc.
+      team_id:
+        description: Identifier for the team
+        values: e.g., 'BOS', 'NYA', etc.
+      park_id:
+        description: Identifier for the ballpark where home games were played
+        values: e.g., 'BOS01', 'NYA01', etc.
+      span_first:
+        description: Date of the first game played at the park that year (YYYY-MM-DD
+          format)
+      span_last:
+        description: Date of the last game played at the park that year (YYYY-MM-DD
+          format)
+      games:
+        description: Total number of games played at this park by this team in this
+          year
+      openings:
+        description: Number of scheduled home games (openings) at this park by this
+          team in this year
+      attendance:
+        description: Total attendance across all games played at this park by this
+          team in this year
+  manager:
+    description: Records managerial stints for individuals in baseball seasons, tracking
+      team assignments, performance metrics (games, wins, losses), and league context.
+    grain: one row per manager stint per team per season (a manager may have multiple
+      rows if they managed multiple teams or were replaced mid-season)
+    auto_generated: true
+    columns:
+      player_id:
+        description: Unique identifier for the manager (using player ID system, possibly
+          indicating former players who became managers)
+      year:
+        description: Season year of the managerial stint
+      team_id:
+        description: Identifier for the team the manager coached
+      league_id:
+        description: Identifier for the league the team belongs to (e.g., NL, AL)
+      inseason:
+        description: Flag indicating whether the manager served for the entire season
+          (1) or was replaced mid-season (0)
+        values: 0, 1
+      g:
+        description: Total games managed during the stint
+      w:
+        description: Wins recorded during the manager's tenure
+      l:
+        description: Losses recorded during the manager's tenure
+      rank:
+        description: Final standing rank of the team in its division/league at season
+          end under this manager
+      plyr_mgr:
+        description: Indicator if the manager was also a player-manager (1) or pure
+          manager (0)
+        values: 0, 1
+  manager_award:
+    description: Records awards given to managers, linking them to specific years,
+      leagues, and award types.
+    grain: one row per manager award (i.e., one row per unique combination of player_id,
+      award_id, and year)
+    auto_generated: true
+    columns:
+      player_id:
+        description: Unique identifier for the manager who received the award
+      award_id:
+        description: Identifier for the type of award received
+      year:
+        description: Year in which the award was given
+      league_id:
+        description: Identifier for the league in which the manager was active when
+          receiving the award
+      tie:
+        description: Indicates whether the award was shared with another manager;
+          values likely include 'Y' or 'N' (though stored as TEXT)
+        values: Y, N, or possibly NULL
+        caveats: Stored as TEXT instead of BOOLEAN or CHAR(1), which may complicate
+          filtering or analysis
+      notes:
+        description: Additional textual notes about the award, stored as NUMERIC (likely
+          an error or placeholder column)
+        caveats: Column named 'notes' is defined as NUMERIC, which is likely a schema
+          error—should probably be TEXT
+  manager_award_vote:
+    description: Records voting results for manager awards, including vote counts
+      and point totals for each candidate in a given year and league.
+    grain: one row per manager award vote (i.e., one row per candidate manager in
+      a specific award year and league)
+    auto_generated: true
+    columns:
+      award_id:
+        description: Identifier for the specific award being voted on (e.g., 'Manager
+          of the Year')
+        values: See award_id reference table
+      year:
+        description: Year the award was given
+        values: e.g., 2020, 2021
+      league_id:
+        description: Identifier for the league in which the award is given (e.g.,
+          'AL', 'NL')
+        values: e.g., 'AL', 'NL', 'ML'
+      player_id:
+        description: 'Unique identifier for the manager (note: column name likely
+          misnamed; should be ''manager_id'')'
+        caveats: Column name 'player_id' is unusual for a manager award table — possible
+          schema error
+      points_won:
+        description: Total points received by this manager from the voting
+        values: Non-negative integers
+      points_max:
+        description: Maximum possible points for this award in this year/league (e.g.,
+          if 1st-place vote = 20 points and there are X voters, points_max = 20 *
+          X)
+        values: Positive integer
+      votes_first:
+        description: Number of first-place votes received by this manager
+        values: Non-negative integer
+  manager_half:
+    description: Records a manager's performance for each half of a season, including
+      games managed, wins, losses, and rank.
+    grain: one row per manager per half-season (identified by year, half, team_id,
+      and league_id)
+    auto_generated: true
+    columns:
+      player_id:
+        description: Unique identifier for the manager (using player ID convention,
+          possibly legacy)
+      year:
+        description: Calendar year of the season
+      team_id:
+        description: Unique identifier for the team managed
+      league_id:
+        description: Identifier for the league (e.g., NL, AL)
+      inseason:
+        description: Indicates if the manager was active during that half (1 = yes,
+          0 = no)
+        values: 0, 1
+      half:
+        description: Half of the season (1 = first half, 2 = second half)
+        values: 1, 2
+      g:
+        description: Total games managed during the half
+      w:
+        description: Wins recorded during the half
+      l:
+        description: Losses recorded during the half
+      rank:
+        description: Team's final standing rank in the league for that half
+  park:
+    description: A reference table listing parks with their identifiers, names, aliases,
+      and geographic location details (city, state, country).
+    grain: one row per unique park
+    auto_generated: true
+    columns:
+      park_id:
+        description: Unique identifier for the park
+      park_name:
+        description: Official name of the park
+      park_alias:
+        description: Alternative or commonly used name for the park
+      city:
+        description: City where the park is located
+      state:
+        description: State or province where the park is located
+      country:
+        description: Country where the park is located
+  pitching:
+    description: Season-level pitching statistics for individual players, including
+      performance metrics and game participation details.
+    grain: one row per player per year per team (a player may have multiple rows in
+      a year if they played for multiple teams)
+    auto_generated: true
+    columns:
+      player_id:
+        description: Unique identifier for the player
+      year:
+        description: Season year of the pitching performance
+      stint:
+        description: Stint number for the player in that year (used when a player
+          played for multiple teams in the same year)
+      team_id:
+        description: Team identifier for which the player pitched
+      league_id:
+        description: League identifier (e.g., NL, AL)
+        values: NL, AL, other leagues depending on era
+      w:
+        description: Wins
+      l:
+        description: Losses
+      g:
+        description: Games played (appeared in)
+      gs:
+        description: Games started
+      cg:
+        description: Complete games
+      sho:
+        description: Shutouts
+      sv:
+        description: Saves
+      ipouts:
+        description: Innings pitched (calculated as outs recorded; 3 ipouts = 1.0
+          IP)
+      h:
+        description: Hits allowed
+      er:
+        description: Earned runs allowed
+      hr:
+        description: Home runs allowed
+      bb:
+        description: Walks allowed
+      so:
+        description: Strikeouts
+      baopp:
+        description: Opponent batting average (H / AB)
+      era:
+        description: Earned run average
+      ibb:
+        description: Intentional walks allowed
+      wp:
+        description: Wild pitches
+      hbp:
+        description: Hit batters
+      bk:
+        description: Balks
+      bfp:
+        description: Batters faced
+      gf:
+        description: Games finished
+      r:
+        description: Runs allowed (total, not just earned)
+      sh:
+        description: Sacrifice hits (bunts)
+      sf:
+        description: Sacrifice flies
+      g_idp:
+        description: Grounded into double plays
+  pitching_postseason:
+    description: Postseason pitching statistics for individual players, tracking performance
+      in playoff games across different rounds and teams.
+    grain: one row per player-round-team combination (i.e., one row represents a player's
+      performance in a specific postseason round for a specific team)
+    auto_generated: true
+    columns:
+      player_id:
+        description: Unique identifier for the player
+      year:
+        description: Year of the postseason
+      round:
+        description: Postseason round (e.g., ALCS, World Series)
+        values: ALCS, NLCS, World Series, Division Series, Wild Card Game
+      team_id:
+        description: Identifier for the team the player represented in that postseason
+      league_id:
+        description: League the team belongs to (e.g., AL, NL)
+        values: AL, NL
+      w:
+        description: Wins
+      l:
+        description: Losses
+      g:
+        description: Games played
+      gs:
+        description: Games started
+      cg:
+        description: Complete games
+      sho:
+        description: Shutouts
+      sv:
+        description: Saves
+      ipouts:
+        description: Outs recorded (innings pitched × 3)
+      h:
+        description: Hits allowed
+      er:
+        description: Earned runs allowed
+      hr:
+        description: Home runs allowed
+      bb:
+        description: Walks allowed
+      so:
+        description: Strikeouts
+      baopp:
+        description: Batting average against (opponents)
+      era:
+        description: Earned run average
+      ibb:
+        description: Intentional walks allowed
+      wp:
+        description: Wild pitches
+      hbp:
+        description: Hit batters
+      bk:
+        description: Balks
+      bfp:
+        description: Batters faced
+      gf:
+        description: Games finished
+      r:
+        description: Runs allowed (total, not just earned)
+      sh:
+        description: Sacrifice hits (bunts)
+      sf:
+        description: Sacrifice flies
+      g_idp:
+        description: Grounded into double plays
+  player:
+    description: Contains biographical and career information for baseball players,
+      including birth/death details, physical attributes, and career start/end dates.
+    grain: one row per unique player (identified by player_id)
+    auto_generated: true
+    columns:
+      player_id:
+        description: Unique identifier for the player
+      birth_year:
+        description: Year the player was born
+      birth_month:
+        description: Month the player was born
+      birth_day:
+        description: Day the player was born
+      birth_country:
+        description: Country where the player was born
+      birth_state:
+        description: State where the player was born
+      birth_city:
+        description: City where the player was born
+      death_year:
+        description: Year the player died (NULL if still alive)
+        caveats: NULL indicates the player is still alive
+      death_month:
+        description: Month the player died
+        caveats: NULL if the player is still alive
+      death_day:
+        description: Day the player died
+        caveats: NULL if the player is still alive
+      death_country:
+        description: Country where the player died
+        caveats: NULL if the player is still alive
+      death_state:
+        description: State where the player died
+        caveats: NULL if the player is still alive
+      death_city:
+        description: City where the player died
+        caveats: NULL if the player is still alive
+      name_first:
+        description: Player's first name
+      name_last:
+        description: Player's last name
+      name_given:
+        description: Player's given (middle) name(s)
+      weight:
+        description: Player's weight in pounds
+      height:
+        description: Player's height in inches
+      bats:
+        description: Hand the player uses to bat
+        values: L, R, B
+      throws:
+        description: Hand the player uses to throw
+        values: L, R
+      debut:
+        description: Date of the player's first professional game (YYYY-MM-DD format)
+      final_game:
+        description: Date of the player's last professional game (YYYY-MM-DD format)
+        caveats: NULL for active players
+      retro_id:
+        description: Retrosheet ID for the player
+      bbref_id:
+        description: Baseball-Reference ID for the player
+  player_award:
+    description: Records individual player awards, including the year, league, and
+      any tie or note information.
+    grain: one row per player award (i.e., one row per unique combination of player_id,
+      award_id, and year)
+    auto_generated: true
+    columns:
+      player_id:
+        description: Unique identifier for the player who received the award
+      award_id:
+        description: Identifier for the specific award (e.g., MVP, Cy Young)
+      year:
+        description: Year the award was given
+      league_id:
+        description: League in which the award was granted (e.g., AL, NL)
+      tie:
+        description: Indicates if the award was shared/tied (e.g., 'Y' for yes, 'N'
+          for no, or blank if not applicable)
+        values: Y, N, or blank
+      notes:
+        description: Additional context or remarks about the award (e.g., special
+          circumstances, shared award details)
+  player_award_vote:
+    description: Records voting results for player awards, including vote counts and
+      point allocations for each player in each award, year, and league.
+    grain: one row per player per award per year per league
+    auto_generated: true
+    columns:
+      award_id:
+        description: Identifier for the award being voted on (e.g., MVP, Cy Young)
+        values: MVP, Cy Young, Gold Glove, Silver Slugger, etc.
+      year:
+        description: Year of the award voting
+        values: e.g., 1901–2023
+      league_id:
+        description: League in which the award is given (e.g., AL, NL)
+        values: AL, NL
+      player_id:
+        description: Unique identifier for the player who received votes
+        caveats: May include players with no votes (points_won = 0)
+      points_won:
+        description: Total points the player received from the voting
+        caveats: Points are typically calculated as votes_first × 14 + votes_second
+          × 4 + votes_third × 1 (MLB standard), but exact formula may vary by award
+      points_max:
+        description: Maximum possible points a player could receive (e.g., total voters
+          × 14 for first-place votes)
+        caveats: May differ by award; not always equal to points_won + points_remaining
+      votes_first:
+        description: Number of first-place votes the player received
+        caveats: NULL or 0 if no first-place votes
+  player_college:
+    description: Links players to the colleges they attended, with the year of attendance
+    grain: one row per player-college-year combination
+    auto_generated: true
+    columns:
+      player_id:
+        description: Unique identifier for a player
+      college_id:
+        description: Unique identifier for a college
+      year:
+        description: Year the player attended the college
+  postseason:
+    description: Records the outcomes of postseason series, including winners, losers,
+      and series win-loss-tie records.
+    grain: one row per postseason series (e.g., World Series, League Championship
+      Series)
+    auto_generated: true
+    columns:
+      year:
+        description: The calendar year in which the postseason occurred.
+      round:
+        description: The name or level of the postseason round (e.g., World Series,
+          LCS, Division Series).
+      team_id_winner:
+        description: Identifier of the winning team in the series.
+      league_id_winner:
+        description: League of the winning team (e.g., NL, AL).
+      team_id_loser:
+        description: Identifier of the losing team in the series.
+      league_id_loser:
+        description: League of the losing team (e.g., NL, AL).
+      wins:
+        description: Number of games won by the winning team in the series.
+      losses:
+        description: Number of games lost by the winning team (i.e., games won by
+          the losing team) in the series.
+      ties:
+        description: Number of tied games in the series (rare, mostly historical).
+  salary:
+    description: Annual salary records for baseball players, showing how much each
+      player was paid by each team in a given year.
+    grain: one row per player per team per year
+    auto_generated: true
+    columns:
+      year:
+        description: The calendar year of the salary record
+      team_id:
+        description: Identifier for the team the player was paid by
+      league_id:
+        description: Identifier for the league the team belongs to
+      player_id:
+        description: Unique identifier for the player
+      salary:
+        description: The player's salary in USD for that year with that team
+  team:
+    description: Annual team-level baseball statistics and performance metrics, likely
+      from Major League Baseball (MLB) and affiliated leagues, covering regular season
+      and postseason outcomes, offensive and defensive stats, and team identifiers
+      across multiple historical databases.
+    grain: one row per team per year
+    auto_generated: true
+    columns:
+      year:
+        description: Calendar year of the season
+        values: e.g., 1871–2023
+      league_id:
+        description: Identifier for the league (e.g., NL, AL, AA, UA)
+        values: e.g., 'NL', 'AL', 'AA', 'UA', 'FL', 'PL'
+      team_id:
+        description: Internal team identifier (likely unique per franchise/year)
+        values: e.g., 'BSN', 'CHN', 'NYA'
+      franchise_id:
+        description: Stable identifier for the franchise across years and league changes
+        values: e.g., 'BOS', 'NYN', 'CHA'
+      div_id:
+        description: Division the team played in during the season
+        values: e.g., 'W', 'E', 'C' (West, East, Central)
+      rank:
+        description: Final standing rank within the division or league
+        values: 1–8 (typical range for divisions)
+      g:
+        description: Total games played by the team
+        values: e.g., 154 or 162 in modern era
+      ghome:
+        description: Number of games played at home
+        values: ≤ g
+      w:
+        description: Number of wins
+        values: 0–g
+      l:
+        description: Number of losses
+        values: 0–g
+      div_win:
+        description: Whether the team won its division (Y/N)
+        values: '''Y'', ''N'''
+      wc_win:
+        description: Whether the team won the Wild Card (Y/N)
+        values: '''Y'', ''N'''
+      lg_win:
+        description: Whether the team won its league championship (Y/N)
+        values: '''Y'', ''N'''
+      ws_win:
+        description: Whether the team won the World Series (Y/N)
+        values: '''Y'', ''N'''
+      r:
+        description: Runs scored by the team
+        values: non-negative integer
+      ab:
+        description: At-bats
+        values: non-negative integer
+      h:
+        description: Hits
+        values: non-negative integer
+      double:
+        description: Doubles
+        values: non-negative integer
+      triple:
+        description: Triples
+        values: non-negative integer
+      hr:
+        description: Home runs
+        values: non-negative integer
+      bb:
+        description: Base on balls (walks)
+        values: non-negative integer
+      so:
+        description: Strikeouts
+        values: non-negative integer
+      sb:
+        description: Stolen bases
+        values: non-negative integer
+      cs:
+        description: Caught stealing
+        values: non-negative integer
+      hbp:
+        description: Hit by pitch
+        values: non-negative integer
+      sf:
+        description: Sacrifice flies
+        values: non-negative integer
+      ra:
+        description: Runs allowed (opponent runs)
+        values: non-negative integer
+      er:
+        description: Earned runs allowed
+        values: non-negative integer
+      era:
+        description: Earned run average (earned runs per 9 innings)
+        values: e.g., 1.00–8.00
+      cg:
+        description: Complete games pitched
+        values: non-negative integer
+      sho:
+        description: Shutouts
+        values: non-negative integer
+      sv:
+        description: Saves
+        values: non-negative integer
+      ipouts:
+        description: Innings pitched (in outs; 3 ipouts = 1 IP)
+        values: non-negative integer
+      ha:
+        description: Hits allowed
+        values: non-negative integer
+      hra:
+        description: Home runs allowed
+        values: non-negative integer
+      bba:
+        description: Walks allowed
+        values: non-negative integer
+      soa:
+        description: Strikeouts allowed
+        values: non-negative integer
+      e:
+        description: Errors committed
+        values: non-negative integer
+      dp:
+        description: Double plays turned
+        values: non-negative integer
+      fp:
+        description: Fielding percentage
+        values: e.g., 0.900–1.000
+      name:
+        description: Full team name (e.g., 'Boston Red Stockings')
+        values: e.g., 'Boston Red Sox', 'New York Yankees'
+      park:
+        description: Primary home ballpark name
+        values: e.g., 'Fenway Park', 'Yankee Stadium'
+      attendance:
+        description: Total home attendance for the season
+        values: non-negative integer
+      bpf:
+        description: Batting performance factor (park factor for batting)
+        values: e.g., 90–110 (100 = league average)
+      ppf:
+        description: Pitching performance factor (park factor for pitching)
+        values: e.g., 90–110 (100 = league average)
+      team_id_br:
+        description: Team identifier used in Baseball-Reference
+        values: e.g., 'BOS', 'NYY'
+      team_id_lahman45:
+        description: Team identifier used in Lahman Database v4.5
+        values: e.g., 'BSN', 'CHN'
+      team_id_retro:
+        description: Team identifier used in Retrosheet
+        values: e.g., 'BOS', 'NYA'
+  team_franchise:
+    description: Lists sports franchises, including their identifiers, names, active
+      status, and North American association affiliations.
+    grain: one row per franchise_id
+    auto_generated: true
+    columns:
+      franchise_id:
+        description: Unique identifier for the franchise
+      franchise_name:
+        description: Name of the franchise
+      active:
+        description: Whether the franchise is currently active
+        values: likely 'true' or 'false' (stored as TEXT)
+      na_assoc:
+        description: North American association the franchise belongs to (e.g., league
+          or conference)
+        caveats: May contain NULLs if association is unknown or not applicable
+  team_half:
+    description: Records team performance split by half-season (first and second half)
+      for each year and league, including division and win-loss records.
+    grain: one row per team per half-season (year + league + half)
+    auto_generated: true
+    columns:
+      year:
+        description: The calendar year of the season
+      league_id:
+        description: Identifier for the league (e.g., 'NL', 'AL')
+      team_id:
+        description: Unique identifier for the team
+      half:
+        description: 'Half of the season: 1 for first half, 2 for second half'
+      div_id:
+        description: Identifier for the division the team belongs to in that half
+      div_win:
+        description: Whether the team won its division ('Y' or 'N')
+        values: Y, N
+      rank:
+        description: Final standing/rank of the team within its division for that
+          half
+      g:
+        description: Total games played by the team in that half
+      w:
+        description: Wins in that half
+      l:
+        description: Losses in that half

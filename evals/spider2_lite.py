@@ -33,6 +33,7 @@ import argparse
 import csv
 import json
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -73,8 +74,36 @@ def _norm(name: str) -> str:
     return name.lower().replace("-", "_").replace(" ", "_")
 
 
-def build_schema(spider_root: Path, db_name: str) -> str:
-    """Return schema context: DDL + FK join paths + 3 sample rows per table."""
+def _table_of_ddl(ddl: str) -> str:
+    """Extract the table name from a CREATE TABLE statement."""
+    m = re.search(r'CREATE\s+TABLE\s+["\[\']?(\w+)', ddl, re.IGNORECASE)
+    return m.group(1) if m else ""
+
+
+def list_tables(spider_root: Path, db_name: str) -> list[str]:
+    """Return the table names for a database (from the live SQLite file)."""
+    db_path = spider_root / "resource" / "databases" / f"{db_name}.sqlite"
+    if not db_path.exists():
+        return []
+    try:
+        conn = sqlite3.connect(str(db_path))
+        tables = [r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+        ).fetchall()]
+        conn.close()
+        return tables
+    except Exception:
+        return []
+
+
+def build_schema(spider_root: Path, db_name: str,
+                 only_tables: set[str] | None = None) -> str:
+    """Return schema context: DDL + FK join paths + 3 sample rows per table.
+
+    When ``only_tables`` is given, the schema is trimmed to those tables plus any
+    table reachable from them by a foreign key (so joins still resolve). This is
+    how schema-linking shrinks huge-database prompts without breaking joins.
+    """
     sqlite_meta = spider_root / "resource" / "databases" / "sqlite"
     ddl_path = sqlite_meta / db_name / "DDL.csv"
     if not ddl_path.exists():
@@ -87,15 +116,15 @@ def build_schema(spider_root: Path, db_name: str) -> str:
     if not ddl_path.exists():
         return ""
 
-    ddl_parts = []
+    ddl_by_table: dict[str, str] = {}
     for row in csv.DictReader(ddl_path.open()):
         ddl = (row.get("DDL") or "").strip()
         if ddl:
-            ddl_parts.append(ddl)
+            ddl_by_table[_table_of_ddl(ddl) or f"_{len(ddl_by_table)}"] = ddl
 
     db_path = spider_root / "resource" / "databases" / f"{db_name}.sqlite"
     if not db_path.exists():
-        return "\n\n".join(ddl_parts)
+        return "\n\n".join(ddl_by_table.values())
 
     try:
         conn = sqlite3.connect(str(db_path))
@@ -103,36 +132,56 @@ def build_schema(spider_root: Path, db_name: str) -> str:
             "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
         ).fetchall()]
 
-        # FK join paths from PRAGMA
-        fk_lines = []
+        # FK edges from PRAGMA: (table, from_col, ref_table, to_col)
+        fk_edges: list[tuple[str, str, str, str]] = []
         for tbl in tables:
             try:
-                fks = conn.execute(f"PRAGMA foreign_key_list({tbl})").fetchall()
-                for fk in fks:
-                    # (id, seq, table, from, to, ...)
-                    fk_lines.append(f"  {tbl}.{fk[3]} → {fk[2]}.{fk[4]}")
+                for fk in conn.execute(f"PRAGMA foreign_key_list({tbl})").fetchall():
+                    fk_edges.append((tbl, fk[3], fk[2], fk[4]))
             except Exception:
                 pass
 
-        # Sample rows (3 per table, truncated to 80 chars per value)
+        # Schema-link trim: keep selected tables + their FK neighbours
+        keep: set[str] | None = None
+        if only_tables:
+            ci = {t.lower(): t for t in tables}
+            keep = {ci[t.lower()] for t in only_tables if t.lower() in ci}
+            for (a, _c1, b, _c2) in fk_edges:
+                if a in keep or b in keep:
+                    keep.add(a); keep.add(b)
+            if not keep:           # linking produced nothing usable → keep all
+                keep = None
+
+        sel_tables = [t for t in tables if (keep is None or t in keep)]
+
+        fk_lines = [f"  {a}.{c1} → {b}.{c2}" for (a, c1, b, c2) in fk_edges
+                    if keep is None or (a in keep or b in keep)]
+
         sample_parts = []
-        for tbl in tables:
+        for tbl in sel_tables:
             try:
                 cols = [r[1] for r in conn.execute(f"PRAGMA table_info({tbl})").fetchall()]
                 rows = conn.execute(f"SELECT * FROM {tbl} LIMIT 3").fetchall()
                 if rows:
                     header = " | ".join(cols)
                     sample_rows = [" | ".join(str(v)[:40] for v in r) for r in rows]
-                    sample_parts.append(
-                        f"-- {tbl} sample rows:\n-- " +
-                        f"\n-- ".join([header] + sample_rows)
-                    )
+                    sample_parts.append(f"-- {tbl} sample rows:\n-- " +
+                                        "\n-- ".join([header] + sample_rows))
             except Exception:
                 pass
 
         conn.close()
     except Exception:
-        return "\n\n".join(ddl_parts)
+        return "\n\n".join(ddl_by_table.values())
+
+    # Assemble DDL for selected tables (match by name, case-insensitive)
+    if keep is not None:
+        keep_lc = {t.lower() for t in keep}
+        ddl_parts = [d for name, d in ddl_by_table.items() if name.lower() in keep_lc]
+        if not ddl_parts:
+            ddl_parts = list(ddl_by_table.values())
+    else:
+        ddl_parts = list(ddl_by_table.values())
 
     result = "\n\n".join(ddl_parts)
     if fk_lines:
@@ -173,6 +222,42 @@ _SQLITE_HINT = (
     "CAST(x AS REAL) for division). Do NOT use DuckDB/BigQuery/Snowflake-only "
     "functions. Return a single SELECT statement.\n\n"
 )
+
+
+def link_tables(question: str, table_names: list[str], doc_section: str) -> list[str]:
+    """Schema linking: pick the tables relevant to the question (one cheap call).
+
+    Returns a subset of table_names. On any failure or empty result, returns
+    the full list (caller falls back to the complete schema). This shrinks the
+    prompt for wide databases — both faster and more accurate, since the model
+    isn't distracted by dozens of irrelevant tables.
+    """
+    from aughor.llm.provider import get_provider
+    from pydantic import BaseModel, Field
+
+    prompt = (
+        f"{doc_section}"
+        f"QUESTION: {question}\n\n"
+        f"AVAILABLE TABLES:\n{', '.join(table_names)}\n\n"
+        "Select ONLY the tables needed to answer the question. Include tables required "
+        "for JOINs (e.g. a bridge/lookup table connecting two others). Be inclusive when "
+        "unsure — a missing table makes the query impossible, an extra one is harmless. "
+        "Return the table names exactly as listed above."
+    )
+
+    class Linked(BaseModel):
+        tables: list[str] = Field(default_factory=list)
+
+    try:
+        ans: Linked = get_provider("coder").complete(
+            system="You are a database expert selecting relevant tables for a SQL query.",
+            user=prompt, response_model=Linked, temperature=0.0,
+        )
+        valid = {t.lower() for t in table_names}
+        picked = [t for t in ans.tables if t.lower() in valid]
+        return picked or table_names
+    except Exception:
+        return table_names
 
 
 def generate_sql(question: str, schema: str, doc_section: str, temperature: float = 0.0) -> str:
@@ -331,18 +416,34 @@ def run_instance(inst: dict, spider_root: Path, out_dir: Path, temperature: floa
     t0 = time.monotonic()
 
     try:
-        schema = build_schema(spider_root, db_name)
+        doc = load_external_knowledge(spider_root, inst.get("external_knowledge"))
+        db_path = spider_root / "resource" / "databases" / f"{db_name}.sqlite"
+
+        # Schema linking for wide databases: pick relevant tables first so the
+        # prompt isn't bloated with dozens of irrelevant tables (faster + sharper).
+        all_tables = list_tables(spider_root, db_name)
+        linked: set[str] | None = None
+        link_detail = "skipped (small schema)"
+        if len(all_tables) > 6:
+            picked = link_tables(inst["question"], all_tables, doc)
+            if 0 < len(picked) < len(all_tables):
+                linked = set(picked)
+                link_detail = f"selected {len(picked)}/{len(all_tables)} tables: {', '.join(sorted(picked))}"
+            else:
+                link_detail = f"kept all {len(all_tables)} tables"
+
+        schema = build_schema(spider_root, db_name, only_tables=linked)
         if not schema:
             return {"id": iid, "ok": False, "error": f"no DDL for db '{db_name}'"}
 
-        doc = load_external_knowledge(spider_root, inst.get("external_knowledge"))
         schema_fetched_at = datetime.now(timezone.utc).isoformat()
-        db_path = spider_root / "resource" / "databases" / f"{db_name}.sqlite"
 
         steps = [
-            {"step": 1, "timestamp": schema_fetched_at, "action": "schema_extraction",
-             "detail": f"Extracted DDL + FK paths + sample rows for database '{db_name}'"},
-            {"step": 2, "timestamp": schema_fetched_at, "action": "external_knowledge",
+            {"step": 1, "timestamp": schema_fetched_at, "action": "schema_linking",
+             "detail": link_detail},
+            {"step": 2, "timestamp": schema_fetched_at, "action": "schema_extraction",
+             "detail": f"Built DDL + FK paths + sample rows for database '{db_name}'"},
+            {"step": 3, "timestamp": schema_fetched_at, "action": "external_knowledge",
              "detail": f"Loaded external knowledge: {inst.get('external_knowledge') or 'none'}"},
         ]
 
@@ -359,10 +460,26 @@ def run_instance(inst: dict, spider_root: Path, out_dir: Path, temperature: floa
                 repair_rounds=2,
             )
             sql = result.sql
+            # Full-schema fallback: if linking trimmed too aggressively and every
+            # candidate failed, retry consensus on the COMPLETE schema. Schema
+            # linking then only ever helps (speed) — it can never lose a question.
+            if not sql and linked is not None:
+                full_schema = build_schema(spider_root, db_name, only_tables=None)
+                result = generate_consensus_sql(
+                    generate_fn=lambda temp: generate_sql(q, full_schema, doc, temp),
+                    execute_fn=lambda s: _sqlite_exec(db_path, s),
+                    repair_fn=lambda bad, err, temp: _fix_sql(q, full_schema, doc, bad, err, temp),
+                    empty_recovery_fn=lambda bad, msg, temp: _recover_empty(q, full_schema, doc, bad, msg, temp),
+                    k=consensus_k, repair_rounds=2,
+                )
+                sql = result.sql
+                steps.append({"step": 4, "timestamp": datetime.now(timezone.utc).isoformat(),
+                              "action": "schema_link_fallback",
+                              "detail": "Linked schema yielded no valid candidate — retried on full schema"})
             if not sql:
                 return {"id": iid, "ok": False, "error": "no valid candidate after consensus"}
             steps.append({
-                "step": 3, "timestamp": datetime.now(timezone.utc).isoformat(),
+                "step": 5, "timestamp": datetime.now(timezone.utc).isoformat(),
                 "action": "self_consistency_vote",
                 "detail": f"Generated {consensus_k} candidates, {result.total_valid} executed, "
                           f"winner agreed by {result.vote_count}/{result.total_valid}",
@@ -377,7 +494,7 @@ def run_instance(inst: dict, spider_root: Path, out_dir: Path, temperature: floa
             if not sql:
                 return {"id": iid, "ok": False, "error": "empty SQL from model"}
             steps.append({
-                "step": 3, "timestamp": sql_generated_at, "action": "nl2sql_generation",
+                "step": 4, "timestamp": sql_generated_at, "action": "nl2sql_generation",
                 "detail": "NL2SQL via Aughor chat prompt (SQLite dialect)", "output": sql,
             })
             if db_path.exists():

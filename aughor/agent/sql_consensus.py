@@ -114,6 +114,7 @@ def generate_consensus_sql(
     """
     candidates: list[Candidate] = []
     steps: list[dict] = []
+    majority = k // 2 + 1   # votes needed to clinch the result early
 
     for i in range(k):
         temp = base_temperature if i == 0 else diverse_temperature
@@ -155,6 +156,15 @@ def generate_consensus_sql(
         steps.append({"candidate": i, "temperature": temp, "status": "ok",
                       "rows": len(res.rows or []), "repairs": repairs,
                       "signature": sig[:12]})
+
+        # EARLY STOP: if a non-empty result has already secured a majority of all
+        # k votes, further candidates cannot change the winner — stop generating.
+        if sig != "EMPTY":
+            agree = sum(1 for c in candidates if c.signature == sig)
+            if agree >= majority:
+                steps.append({"early_stop": True, "after_candidate": i,
+                              "signature": sig[:12], "votes": agree})
+                break
 
     if not candidates:
         return ConsensusResult(sql="", steps=steps, total_valid=0)
