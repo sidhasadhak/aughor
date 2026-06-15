@@ -13,12 +13,15 @@ import {
   getConnectionSettings,
   updateConnectionSettings,
   rebuildOntology,
+  getDuplicateEntities,
+  mergeOntologyEntities,
   type OntologyGraph,
   type OntologyEntity,
   type OntologyAction,
   type OntologyRelationship,
   type LifecycleCount,
   type ConnectionSettings,
+  type DuplicateCluster,
 } from "@/lib/api";
 import { OntologyCanvas } from "./OntologyCanvas";
 import { OntologyOrgCanvas } from "./OntologyOrgCanvas";
@@ -840,6 +843,87 @@ function OntologySettings({
   );
 }
 
+// ── Duplicate-entity suggestions drawer (Borrow 5) ────────────────────────────
+// Shows embedding-detected near-duplicate entity clusters; the user picks which entity each cluster
+// merges INTO (the survivor). The merge is the explicit, gated POST — never automatic.
+function DuplicatesDrawer({ connId, onClose, onMerged }: {
+  connId: string; onClose: () => void; onMerged: () => void;
+}) {
+  const [clusters, setClusters] = useState<DuplicateCluster[] | null>(null);
+  const [loading,  setLoading]  = useState(true);
+  const [merging,  setMerging]  = useState<string | null>(null);
+  const [error,    setError]    = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    setLoading(true); setError(null);
+    getDuplicateEntities(connId)
+      .then(setClusters)
+      .catch(() => setError("Couldn't load duplicate suggestions."))
+      .finally(() => setLoading(false));
+  }, [connId]);
+  useEffect(() => { load(); }, [load]);
+
+  const doMerge = async (cluster: DuplicateCluster, canonicalId: string) => {
+    setMerging(canonicalId); setError(null);
+    try {
+      await mergeOntologyEntities(connId, cluster.entities.map(e => e.id), canonicalId);
+      onMerged();   // parent re-fetches the graph
+      load();       // refresh suggestions
+    } catch (e) {
+      setError((e as Error).message || "Merge failed");
+    } finally {
+      setMerging(null);
+    }
+  };
+
+  return (
+    <div className="w-[340px] shrink-0 border-l border-zinc-700/70 bg-zinc-900/40 flex flex-col overflow-hidden">
+      <div className="flex items-center gap-2 px-3 py-2.5 border-b border-zinc-700/70">
+        <p className="text-xs font-semibold text-zinc-300">Possible duplicate entities</p>
+        <button onClick={onClose} className="ml-auto text-zinc-500 hover:text-zinc-300 transition">
+          <CloseIcon label="Close" size="small" />
+        </button>
+      </div>
+      <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
+        {loading && <p className="text-[11px] text-zinc-500">Scanning for duplicates…</p>}
+        {error && <p className="text-[11px] text-red-400">{error}</p>}
+        {!loading && !error && clusters?.length === 0 && (
+          <p className="text-[11px] text-zinc-500">
+            No likely duplicates found. (Detection uses embeddings; if none are configured it returns nothing.)
+          </p>
+        )}
+        {clusters?.map((c, i) => (
+          <div key={i} className="rounded border border-violet-500/25 bg-violet-500/[0.04] p-2.5 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] text-violet-300">{c.entities.length} entities</span>
+              <span className="text-[10px] text-zinc-500">similarity {Math.round(c.similarity * 100)}%</span>
+            </div>
+            <ul className="space-y-0.5">
+              {c.entities.map(e => (
+                <li key={e.id} className="text-[11px] text-zinc-300">
+                  {e.display_name} <span className="text-zinc-500">({e.source_tables.join(", ") || "—"})</span>
+                </li>
+              ))}
+            </ul>
+            <div className="flex flex-col gap-1 pt-0.5">
+              <span className="text-[10px] text-zinc-500">Merge all into:</span>
+              <div className="flex flex-wrap gap-1">
+                {c.entities.map(e => (
+                  <button key={e.id} onClick={() => doMerge(c, e.id)} disabled={merging !== null}
+                    className="text-[10px] px-2 py-0.5 rounded border border-violet-500/40 bg-violet-500/15 text-violet-200 hover:bg-violet-500/25 transition disabled:opacity-40">
+                    {merging === e.id ? "Merging…" : e.display_name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+
 export function OntologyPanel({ connectionId, onInvestigate }: Props) {
   const [graph,             setGraph]            = useState<OntologyGraph | null>(null);
   const [loading,           setLoading]          = useState(false);
@@ -848,6 +932,7 @@ export function OntologyPanel({ connectionId, onInvestigate }: Props) {
   const [selectedEdge,      setSelectedEdge]     = useState<OntologyRelationship | null>(null);
   const [selectedConnId,    setSelectedConnId]   = useState(connectionId);
   const [showSettings,      setShowSettings]     = useState(false);
+  const [showDuplicates,    setShowDuplicates]   = useState(false);
   const [orgMode,           setOrgMode]          = useState(false);
 
   useEffect(() => { setSelectedConnId(connectionId); }, [connectionId]);
@@ -859,6 +944,7 @@ export function OntologyPanel({ connectionId, onInvestigate }: Props) {
     setGraph(null);
     setSelectedEntityId(null);
     setShowSettings(false);
+    setShowDuplicates(false);
     getOntology(selectedConnId)
       .then(setGraph)
       .catch(() =>
@@ -920,7 +1006,19 @@ export function OntologyPanel({ connectionId, onInvestigate }: Props) {
             · {Object.keys(graph.relationships).length} relationships
           </span>
           <button
-            onClick={() => { setShowSettings(v => !v); setSelectedEntityId(null); setSelectedEdge(null); }}
+            onClick={() => { setShowDuplicates(v => !v); setSelectedEntityId(null); setSelectedEdge(null); setShowSettings(false); }}
+            className={cn(
+              "text-[11px] px-2 py-0.5 rounded border transition",
+              showDuplicates
+                ? "border-violet-500/40 bg-violet-500/15 text-violet-300"
+                : "border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500",
+            )}
+            title="Find near-duplicate entities to merge"
+          >
+            Find duplicates
+          </button>
+          <button
+            onClick={() => { setShowSettings(v => !v); setSelectedEntityId(null); setSelectedEdge(null); setShowDuplicates(false); }}
             className={cn(
               "text-zinc-500 hover:text-zinc-300 transition ml-1",
               showSettings && "text-violet-400",
@@ -1029,6 +1127,15 @@ export function OntologyPanel({ connectionId, onInvestigate }: Props) {
             graph={graph}
             onClose={() => setShowSettings(false)}
             onRebuilt={(g) => setGraph(g)}
+          />
+        )}
+
+        {/* Duplicate-entity suggestions */}
+        {showDuplicates && (
+          <DuplicatesDrawer
+            connId={selectedConnId}
+            onClose={() => setShowDuplicates(false)}
+            onMerged={() => { getOntology(selectedConnId).then(setGraph).catch(() => {}); }}
           />
         )}
       </div>

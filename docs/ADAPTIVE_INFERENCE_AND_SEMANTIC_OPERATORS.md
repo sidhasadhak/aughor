@@ -279,7 +279,8 @@ when synthesising many findings; partition-aware so it won't blend unrelated dom
   `aughor/ontology/dedup.py`: `detect_duplicate_entities` + `GET /ontology/duplicate-entities` returns
   *suggestions*; `merge_entities` + `POST /ontology/entities/merge` (gated `ONTOLOGY_EDIT`) applies a
   confirmed merge as a pure, deterministic rewrite of every cross-reference. Never auto-merges — explicit
-  and user-confirmed only. Remaining: the ontology-board UI to drive it.
+  and user-confirmed only. **UI shipped:** a "Find duplicates" drawer in the `OntologyPanel` (detect →
+  list clusters → pick the survivor → merge → reload). Verified live in-browser. **Borrow 5 fully landed.**
 - **Calibrated trust numbers:** the `P(true)/(P(true)+P(false))` logprob technique gives a real
   confidence for finding-trust scores (feeds the Trust Layer in §3). ⛔ **Blocked** — the provider layer
   (instructor over OpenAI-compat) doesn't expose `top_logprobs`, the same wall that removed the cascade.
