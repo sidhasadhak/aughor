@@ -33,6 +33,11 @@ class _ActionOverride(BaseModel):
     returns: Optional[str] = None
 
 
+class _MergeEntitiesRequest(BaseModel):
+    merge_ids: list[str]      # the cluster of entity ids to merge (must include canonical_id)
+    canonical_id: str         # the survivor — others are merged into it
+
+
 def _resolve_schema(connection_id: str, schema_name: Optional[str]) -> str:
     """Return the effective schema name: explicit param > connection meta > 'default'."""
     if schema_name:
@@ -259,6 +264,40 @@ def override_ontology_entity(
     if updated is None:
         raise HTTPException(status_code=404, detail=f"Entity '{entity_id}' not found")
     return updated.entities[entity_id].model_dump()
+
+
+@router.post("/ontology/entities/merge", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def merge_ontology_entities(
+    body: _MergeEntitiesRequest,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Apply a duplicate-entity merge (the confirm step for `/ontology/duplicate-entities`). Collapses
+    `merge_ids` into `canonical_id`, repointing every cross-reference, and persists. Gated + explicit —
+    never automatic, because a wrong merge would corrupt the ontology."""
+    if len(set(body.merge_ids)) < 2:
+        raise HTTPException(status_code=400, detail="merge_ids must list at least 2 distinct entities")
+    if body.canonical_id not in body.merge_ids:
+        raise HTTPException(status_code=400, detail="canonical_id must be one of merge_ids")
+
+    from aughor.ontology.store import apply_entity_merge
+    effective = _resolve_schema(connection_id, schema_name)
+    fingerprint = _latest_fingerprint(connection_id, effective)
+    if not fingerprint:
+        graph = _get_ontology_graph(connection_id, effective)
+        if graph is None:
+            raise HTTPException(status_code=404, detail="Ontology not available")
+        fingerprint = graph.schema_fingerprint
+
+    merged = apply_entity_merge(connection_id, effective, fingerprint, body.merge_ids, body.canonical_id)
+    if merged is None:
+        raise HTTPException(status_code=404, detail="Ontology not available, or an entity id was unknown")
+    return {
+        "merged_into": body.canonical_id,
+        "removed": [e for e in body.merge_ids if e != body.canonical_id],
+        "entity": merged.entities[body.canonical_id].model_dump(),
+        "entity_count": len(merged.entities),
+    }
 
 
 @router.put("/ontology/actions/{action_id}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])

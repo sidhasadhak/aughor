@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
+import aughor.ontology.store as onto_store
 import aughor.routers.ontology as onto
 import aughor.semantic.embedder as embedder
 
@@ -63,4 +64,42 @@ def test_duplicate_entities_fail_open_when_embeddings_unavailable(client: TestCl
 def test_duplicate_entities_404_without_ontology(client: TestClient, monkeypatch):
     monkeypatch.setattr(onto, "_get_ontology_graph", lambda *a, **k: None)
     r = client.get("/ontology/duplicate-entities", params={"connection_id": "nope"})
+    assert r.status_code == 404
+
+
+# ── apply-merge endpoint ──────────────────────────────────────────────────────
+
+def test_merge_requires_two_distinct(client: TestClient):
+    r = client.post("/ontology/entities/merge", json={"merge_ids": ["A"], "canonical_id": "A"})
+    assert r.status_code == 400
+
+
+def test_merge_canonical_must_be_in_list(client: TestClient):
+    r = client.post("/ontology/entities/merge", json={"merge_ids": ["A", "B"], "canonical_id": "C"})
+    assert r.status_code == 400
+
+
+def test_merge_applies_and_returns_shape(client: TestClient, monkeypatch):
+    fake_merged = SimpleNamespace(entities={
+        "Customer": SimpleNamespace(model_dump=lambda: {"id": "Customer", "source_tables": ["customers", "clients"]}),
+        "Order": SimpleNamespace(model_dump=lambda: {"id": "Order"}),
+    })
+    monkeypatch.setattr(onto, "_latest_fingerprint", lambda *a, **k: "fp")
+    monkeypatch.setattr(onto_store, "apply_entity_merge", lambda *a, **k: fake_merged)
+
+    r = client.post("/ontology/entities/merge",
+                    json={"merge_ids": ["Customer", "Client"], "canonical_id": "Customer"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["merged_into"] == "Customer"
+    assert body["removed"] == ["Client"]
+    assert body["entity_count"] == 2
+    assert body["entity"]["id"] == "Customer"
+
+
+def test_merge_404_on_unknown_entity(client: TestClient, monkeypatch):
+    monkeypatch.setattr(onto, "_latest_fingerprint", lambda *a, **k: "fp")
+    monkeypatch.setattr(onto_store, "apply_entity_merge", lambda *a, **k: None)  # store rejects → None
+    r = client.post("/ontology/entities/merge",
+                    json={"merge_ids": ["Customer", "Ghost"], "canonical_id": "Customer"})
     assert r.status_code == 404
