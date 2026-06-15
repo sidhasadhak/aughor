@@ -691,11 +691,11 @@ def _parallel_execute_safe(
 def _apply_semantic_steps(results: list[tuple]) -> list[tuple]:
     """Apply any planner-attached semantic operator to its query's result (opt-in, fail-open).
 
-    A ``PhaseQueryPlan`` may carry a ``.semantic`` step (filter/extract over a free-text column). When
-    it does — and the target column actually reads as text — the operator transforms that result so the
-    phase interpreter reasons over the text-derived evidence (filtered rows / extracted columns). A step
-    attached to a missing or non-text column is skipped safely, and any operator failure leaves the raw
-    result in place. Returns the same ``(PlanQuery, QueryResult)`` shape; never raises."""
+    A ``PhaseQueryPlan`` may carry a ``.semantic`` step (filter/extract/top_k/aggregate over a free-text
+    column). When it does — and the target column actually reads as text — the operator transforms that
+    result so the phase interpreter reasons over the text-derived evidence. A step attached to a missing
+    or non-text column is skipped safely, and any operator failure leaves the raw result in place.
+    Returns the same ``(PlanQuery, QueryResult)`` shape; never raises."""
     from aughor.stats import stats as _s
 
     out: list[tuple] = []
@@ -709,6 +709,9 @@ def _apply_semantic_steps(results: list[tuple]) -> list[tuple]:
                         r, step.operator, step.column,
                         predicate=(step.predicate or ""),
                         fields=[(f.name, f.description) for f in step.fields],
+                        criterion=(getattr(step, "criterion", "") or ""),
+                        k=getattr(step, "k", 10),
+                        instruction=(getattr(step, "instruction", "") or ""),
                     )
                     r = op.result
                     _s.inc("ada.semantic_steps_applied")

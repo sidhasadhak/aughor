@@ -375,8 +375,12 @@ The remaining, highest-upside borrow (§4) and the one genuinely-new capability 
   planner emits a step), **guarded** (`detect_text_columns` skips a step misattached to a non-text column
   — it can't corrupt numeric evidence), **fail-open**. The field's own description teaches the planner —
   no phase-prompt edits. One seam covers baseline/decompose/dimensional/behavioral.
-- **Phase 2b (next):** `top_k` + `aggregate` operators; the Query Builder "semantic step" UI affordance
-  (the visible user-path leverage proof).
+- **Phase 2b operators shipped:** `top_k` (rank rows by an NL criterion, keep the best *k*) +
+  `aggregate` (synthesize many text rows → one answer) — wired through the operator core, the
+  `apply_step` dispatcher, `POST /query/semantic`, and the ADA `SemanticStep`. The four-operator set
+  (filter / extract / top_k / aggregate) is complete; same opt-in / guarded / fail-open contract.
+- **Phase 2b UI (next):** the Query Builder "semantic step" affordance — the visible *user*-path
+  leverage proof (the agent path is already covered).
 
 **Meta-learning:** the two guardrails we designed in — the cascade's recall **guarantee** and GEPA's
 **held-out split** — each independently caught a result that *looked* like a win but wasn't. Measuring

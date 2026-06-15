@@ -276,6 +276,146 @@ def semantic_extract(
     return SemanticOpResult(new_result, "extract", column, len(rows), len(rows), False, notes, llm_calls)
 
 
+# ── Operator: semantic top-k ──────────────────────────────────────────────────
+
+class _RowScore(BaseModel):
+    index: int
+    score: float  # 0..1, higher = stronger match to the criterion
+
+
+class _ScoreBatch(BaseModel):
+    scores: list[_RowScore]
+
+
+_TOPK_SYS = (
+    "You rank rows of a SQL result set by how well ONE text column matches a natural-language "
+    "criterion. For each row you are given its index and the text. Return a score in [0,1] for EVERY "
+    "index: 1 = strongest match to the criterion, 0 = no match. Judge only the text shown; do not "
+    "invent facts."
+)
+
+_NEUTRAL_SCORE = 0.5  # fail-open: an unscored row is neither buried nor falsely promoted
+
+
+def semantic_top_k(
+    result: QueryResult,
+    column: str,
+    criterion: str,
+    k: int,
+    *,
+    role: Role = DEFAULT_ROLE,
+    max_rows: int = DEFAULT_MAX_ROWS,
+    batch: int = DEFAULT_BATCH,
+    override_cap: bool = False,
+) -> SemanticOpResult:
+    """Rank rows by how well ``column``'s text matches ``criterion``; keep the top ``k`` (reordered)."""
+    if result.error:
+        return SemanticOpResult(result, "top_k", column, 0, 0, False, [f"upstream SQL error: {result.error}"])
+
+    ci = _col_index(result, column)
+    if ci < 0:
+        return SemanticOpResult(
+            result, "top_k", column, result.row_count, result.row_count, False,
+            [f"column {column!r} is not in the result ({', '.join(result.columns) or 'no columns'}); no-op"],
+        )
+    if k < 1:
+        return SemanticOpResult(result, "top_k", column, result.row_count, result.row_count, False,
+                                [f"k must be >= 1 (got {k}); no-op"])
+
+    refusal = _cap_refusal(result, max_rows, override_cap)
+    if refusal:
+        return SemanticOpResult(result, "top_k", column, result.row_count, result.row_count, True, [refusal])
+
+    rows = result.rows
+    notes = _materialized_note(result)
+    scores: dict[int, float] = {}
+    llm_calls = 0
+    provider = get_provider(role)
+
+    for start in range(0, len(rows), max(1, batch)):
+        chunk = rows[start:start + batch]
+        listing = "\n".join(
+            f"[{start + i}] {str(chunk[i][ci])[:_MAX_CELL]}" for i in range(len(chunk))
+        )
+        try:
+            resp = provider.complete(
+                system=_TOPK_SYS,
+                user=f"Criterion: {criterion}\n\nRows (index: text):\n{listing}\n\nScore every index above in [0,1].",
+                response_model=_ScoreBatch,
+            )
+            llm_calls += 1
+            for s in resp.scores:
+                scores[s.index] = s.score
+        except Exception as e:  # noqa: BLE001 — operator must never raise into the query path
+            logger.warning("semantic_top_k: batch [%d:%d] failed: %s", start, start + len(chunk), e)
+            notes.append(f"batch [{start}:{start + len(chunk)}] failed ({str(e)[:80]}) — rows scored neutral")
+
+    keep = min(k, len(rows))
+    # stable sort by score desc; ties and unscored rows (neutral) keep original order
+    order = sorted(range(len(rows)), key=lambda i: scores.get(i, _NEUTRAL_SCORE), reverse=True)[:keep]
+    new_rows = [rows[i] for i in order]
+    new_result = result.model_copy(update={"rows": new_rows, "row_count": len(new_rows)})
+    notes.insert(0, f"ranked {len(rows)} rows by '{criterion}', kept top {len(new_rows)}")
+    return SemanticOpResult(new_result, "top_k", column, len(rows), len(new_rows), False, notes, llm_calls)
+
+
+# ── Operator: semantic aggregate ──────────────────────────────────────────────
+
+class _Aggregation(BaseModel):
+    answer: str
+
+
+_AGG_SYS = (
+    "You synthesize ONE answer from the text values of a single column across many rows of a SQL "
+    "result set, following the user's instruction. Base the answer ONLY on the provided text — do not "
+    "invent facts or numbers. Be concise and specific."
+)
+
+
+def semantic_aggregate(
+    result: QueryResult,
+    column: str,
+    instruction: str,
+    *,
+    role: Role = DEFAULT_ROLE,
+    max_rows: int = DEFAULT_MAX_ROWS,
+    override_cap: bool = False,
+    out_column: str = "answer",
+) -> SemanticOpResult:
+    """Synthesize the text values of ``column`` across all rows into ONE answer (a 1-row result)."""
+    if result.error:
+        return SemanticOpResult(result, "aggregate", column, 0, 0, False, [f"upstream SQL error: {result.error}"])
+
+    ci = _col_index(result, column)
+    if ci < 0:
+        return SemanticOpResult(
+            result, "aggregate", column, result.row_count, result.row_count, False,
+            [f"column {column!r} is not in the result ({', '.join(result.columns) or 'no columns'}); no-op"],
+        )
+
+    refusal = _cap_refusal(result, max_rows, override_cap)
+    if refusal:
+        return SemanticOpResult(result, "aggregate", column, result.row_count, result.row_count, True, [refusal])
+
+    rows = result.rows
+    notes = _materialized_note(result)
+    listing = "\n".join(f"[{i}] {str(rows[i][ci])[:_MAX_CELL]}" for i in range(len(rows)))
+    try:
+        resp = get_provider(role).complete(
+            system=_AGG_SYS,
+            user=f"Instruction: {instruction}\n\nText values (one per row):\n{listing}\n\nReturn one synthesized answer.",
+            response_model=_Aggregation,
+        )
+    except Exception as e:  # noqa: BLE001 — operator must never raise into the query path
+        logger.warning("semantic_aggregate: synthesis failed: %s", e)
+        notes.insert(0, f"aggregation failed ({str(e)[:80]}) — raw result kept unchanged")
+        return SemanticOpResult(result, "aggregate", column, len(rows), len(rows), False, notes, 0)
+
+    answer_result = result.model_copy(update={"columns": [out_column], "rows": [[resp.answer]], "row_count": 1})
+    notes.insert(0, f"aggregated {len(rows)} rows of {column} into one answer")
+    return SemanticOpResult(answer_result, "aggregate", column, len(rows), 1, False, notes, 1)
+
+
 def apply_step(
     result: QueryResult,
     operator: str,
@@ -283,6 +423,10 @@ def apply_step(
     *,
     predicate: str = "",
     fields: list[tuple[str, str]] | None = None,
+    criterion: str = "",
+    k: int = 10,
+    instruction: str = "",
+    out_column: str = "answer",
     role: Role = DEFAULT_ROLE,
     max_rows: int = DEFAULT_MAX_ROWS,
     batch: int = DEFAULT_BATCH,
@@ -295,7 +439,15 @@ def apply_step(
     if operator == "extract":
         return semantic_extract(result, column, fields or [], role=role, max_rows=max_rows,
                                 batch=batch, override_cap=override_cap)
-    raise ValueError(f"unknown semantic operator {operator!r} (expected 'filter' or 'extract')")
+    if operator == "top_k":
+        return semantic_top_k(result, column, criterion, k, role=role, max_rows=max_rows,
+                              batch=batch, override_cap=override_cap)
+    if operator == "aggregate":
+        return semantic_aggregate(result, column, instruction, role=role, max_rows=max_rows,
+                                  override_cap=override_cap, out_column=out_column)
+    raise ValueError(
+        f"unknown semantic operator {operator!r} (expected 'filter', 'extract', 'top_k', or 'aggregate')"
+    )
 
 
 def _uniquify(existing: list[str], new: list[str]) -> list[str]:
