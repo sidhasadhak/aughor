@@ -3301,4 +3301,19 @@ Briefing synthesis was single-prompt: `generate_narrative` hard-capped at the to
 
 ---
 
-*Last updated: 2026-06-15 · 130 active features (#131 hierarchical tree-reduce synthesis — Borrow 4; #130 Query Builder semantic-step UI — Borrow 3 complete; #127–#129 semantic operators; #126 model-cascade core was built then removed — kept as a tombstone). See `ROADMAP.md` for upcoming milestones.*
+## 132. Embedding entity dedup — duplicate detection (Borrow 5) ✅ Shipped
+
+### What
+Surfaces **near-duplicate ontology entities** (e.g. `Customer` vs `Client`, `Order` vs `SalesOrder`) as merge *suggestions*, via an embedding self-similarity join + connected-components clustering. Read-only — it never merges anything.
+
+### Why
+Ontology entity extraction is name/structural only — two tables with semantically similar but differently-spelled names stay separate entities, cluttering the board. Embeddings catch the semantic near-duplicates string matching can't. **Detection, not auto-merge:** a wrong merge would corrupt the ontology (and every query built on it), so collapsing entities must stay an explicit, user-confirmed action — this just finds the candidates.
+
+### How
+`aughor/ontology/dedup.py`: `cluster_by_similarity` is a **pure** connected-components clustering over the cosine-similarity graph (any pair ≥ threshold is an edge; transitive, so A~B~C cluster even if A and C aren't directly similar) — testable with hand-made vectors, no model. `detect_duplicate_entities` embeds each entity's name+description+source-tables (via `aughor/semantic/embedder.py`), clusters at a conservative 0.85 default, and returns `{entities, similarity}` suggestions (weakest-link similarity, strongest first). **Fail-open**: no Ollama / embed model → no suggestions, never a crash. Exposed at `GET /ontology/duplicate-entities` (a read; stays open).
+
+**Key files.** `aughor/ontology/dedup.py`, `aughor/routers/ontology.py` (`/ontology/duplicate-entities`), `tests/unit/test_dedup.py`, `tests/integration/test_ontology_duplicates.py`. **Next:** apply-merge-on-confirm (explicit, `ONTOLOGY_EDIT`-gated). *(The list's other half — logprob-calibrated confidence — stays blocked: the provider layer doesn't expose `top_logprobs`, the same wall that removed the cascade.)*
+
+---
+
+*Last updated: 2026-06-15 · 131 active features (#132 embedding entity dedup detection — Borrow 5; #131 hierarchical tree-reduce — Borrow 4; #130 Query Builder semantic-step UI — Borrow 3 complete; #127–#129 semantic operators; #126 model-cascade core was built then removed — kept as a tombstone). See `ROADMAP.md` for upcoming milestones.*

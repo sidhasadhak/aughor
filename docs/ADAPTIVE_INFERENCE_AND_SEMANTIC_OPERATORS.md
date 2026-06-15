@@ -274,9 +274,13 @@ when synthesising many findings; partition-aware so it won't blend unrelated dom
 ### Borrow 5 — Semantic dedup + calibrated confidence  ·  **effort S**
 
 - **Ontology entity merging:** embedding self-similarity-join + threshold + connected-components to
-  collapse near-duplicate entities (cleaner ontology board).
+  collapse near-duplicate entities (cleaner ontology board). ✅ **Detection shipped** — `aughor/ontology/dedup.py`
+  + `GET /ontology/duplicate-entities` returns merge *suggestions* (never auto-merges — a wrong merge
+  would corrupt the ontology; apply-on-confirm is the gated follow-up).
 - **Calibrated trust numbers:** the `P(true)/(P(true)+P(false))` logprob technique gives a real
-  confidence for finding-trust scores (feeds the Trust Layer in §3).
+  confidence for finding-trust scores (feeds the Trust Layer in §3). ⛔ **Blocked** — the provider layer
+  (instructor over OpenAI-compat) doesn't expose `top_logprobs`, the same wall that removed the cascade.
+  Today's confidence is self-reported + an evidence-depth ceiling; needs a logprob-surfacing provider.
 
 ---
 
@@ -289,8 +293,10 @@ prompt-optimization was **dropped**. Semantic operators is now the active, first
   expansion. Start with `filter` + `extract` over a result set's text column, cost-bounded by
   push-down + explicit row caps (not a cascade), surfaced in Query Builder + ADA.
 - **Phase 2:** add `top-k` + `aggregate`; compose operators into an investigation step.
-- **Later / deferred:** hierarchical Briefing synthesis (Borrow 4) and embedding dedup for the ontology
-  (Borrow 5) — both small, independent. The cascade (Borrow 1) and prompt-opt (Borrow 2) are closed out.
+- **Shipped:** hierarchical Briefing synthesis (Borrow 4 ✅) and embedding-dedup *detection* for the
+  ontology (Borrow 5a ✅). Remaining: dedup apply-merge-on-confirm (gated), and logprob-calibrated
+  confidence (Borrow 5b — blocked on a logprob-surfacing provider). The cascade (Borrow 1) and
+  prompt-opt (Borrow 2) are closed out.
 
 ---
 

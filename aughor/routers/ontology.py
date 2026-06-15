@@ -156,6 +156,21 @@ def get_ontology_relationships(
     return {rid: r.model_dump() for rid, r in graph.relationships.items()}
 
 
+@router.get("/ontology/duplicate-entities")
+def get_duplicate_entities(
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+    threshold: float = Query(default=0.85, ge=0.5, le=1.0),
+):
+    """Near-duplicate entity clusters (embedding self-similarity + connected components), as merge
+    SUGGESTIONS — never applied. A read; empty when embeddings are unavailable or nothing clusters."""
+    graph = _get_ontology_graph(connection_id, schema_name)
+    if graph is None:
+        raise HTTPException(status_code=404, detail="Ontology not available")
+    from aughor.ontology.dedup import detect_duplicate_entities
+    return {"clusters": detect_duplicate_entities(graph, threshold=threshold)}
+
+
 @router.get("/ontology/actions")
 def get_ontology_actions(
     connection_id: str = BUILTIN_ID,
