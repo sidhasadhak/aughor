@@ -249,7 +249,7 @@ def link_tables(question: str, table_names: list[str], doc_section: str) -> list
         tables: list[str] = Field(default_factory=list)
 
     try:
-        ans: Linked = get_provider("coder").complete(
+        ans: Linked = _coder().complete(
             system="You are a database expert selecting relevant tables for a SQL query.",
             user=prompt, response_model=Linked, temperature=0.0,
         )
@@ -260,8 +260,96 @@ def link_tables(question: str, table_names: list[str], doc_section: str) -> list
         return table_names
 
 
-def generate_sql(question: str, schema: str, doc_section: str, temperature: float = 0.0) -> str:
-    from aughor.llm.provider import get_provider
+# B1/B2 — diverse generation strategies (CHASE-SQL style). Each consensus
+# candidate uses a DIFFERENT strategy, not just a different temperature, so the
+# candidate pool genuinely explores the solution space (and the decompose
+# strategy can crack multi-step questions the direct one collapses).
+_STRATEGY_HINTS = {
+    "direct": "",
+    "decompose": (
+        "SOLVE BY DECOMPOSITION (divide-and-conquer): In your reasoning, first break the "
+        "question into an ordered list of sub-steps (e.g. 1. compute per-entity totals, "
+        "2. rank them, 3. take top-N, 4. aggregate over those). Then write ONE SQL query "
+        "that implements each sub-step as a chained CTE (step_1, step_2, ...), where each "
+        "CTE fully materialises before the next references it. Do NOT collapse sequential "
+        "steps into a single SELECT — this is essential for multi-step analytical questions.\n\n"
+    ),
+    "plan": (
+        "SOLVE BY PLANNING (reason first): Before writing SQL, explicitly determine "
+        "(a) the UNIT OF ANALYSIS / grain, (b) EVERY filter the question requires "
+        "(time, entity, status, threshold), and (c) the exact sequence of operations and "
+        "the expected result cardinality ('which X' => 1 row; 'top N' => N rows). Then write "
+        "SQL that implements that plan precisely.\n\n"
+    ),
+}
+
+_STRATEGIES = ["direct", "decompose", "plan"]
+
+# Optional coder-model override (e.g. gpt-oss:120b-cloud) for A/B experiments.
+# The runtime config (data/llm_config.json) takes precedence over env, so we
+# must construct an explicit provider to override it.
+_CODER_MODEL: str | None = None
+_CODER_PROVIDER = None
+
+
+def _coder():
+    global _CODER_PROVIDER
+    if _CODER_MODEL is None:
+        from aughor.llm.provider import get_provider
+        return get_provider("coder")
+    if _CODER_PROVIDER is None:
+        from aughor.llm.provider import LLMProvider
+        _CODER_PROVIDER = LLMProvider(
+            backend=os.getenv("AUGHOR_BACKEND", "ollama"), role="coder", model=_CODER_MODEL)
+    return _CODER_PROVIDER
+
+
+# ── Full Aughor engine path ───────────────────────────────────────────────────
+# Route generation through the REAL production pipeline (generate_sql_full_pipeline
+# in run_golden.py): schema-linker → data catalog → FK-neighbour expansion →
+# semantic ontology layer → metrics catalog → trusted templates → coder LLM →
+# semantic-alignment + fan-out + lint guards → execute-retry — against a real
+# SQLiteConnection with profiles + ontology built. "Aughor is the engine."
+import threading as _threading
+_ENGINE_LOCK = _threading.Lock()
+_ENGINE_BASE: dict = {}   # db_name -> base SQLiteConnection (intelligence built once)
+
+
+def _engine_conn(spider_root: Path, db_name: str):
+    """Return a thread-safe reader connection for db_name, building heavy
+    intelligence (value profiles + ontology) once per DB and caching it."""
+    with _ENGINE_LOCK:
+        if db_name not in _ENGINE_BASE:
+            from aughor.connectors.file.sqlite import SQLiteConnection
+            path = spider_root / "resource" / "databases" / f"{db_name}.sqlite"
+            base = SQLiteConnection(dsn=str(path), connection_id=f"spider_{db_name}")
+            t0 = time.monotonic()
+            try:
+                base.build_intelligence()
+                print(f"  [intel] {db_name}: built in {time.monotonic()-t0:.0f}s")
+            except Exception as e:
+                print(f"  [intel] {db_name}: build_intelligence failed ({str(e)[:60]}) — fast schema")
+            _ENGINE_BASE[db_name] = base
+        base = _ENGINE_BASE[db_name]
+    return base.make_reader()
+
+
+def generate_sql_engine(question: str, db_name: str, reader, temperature: float,
+                        doc_section: str, strategy: str = "direct") -> str:
+    """Generate via the full Aughor engine. External knowledge + strategy hint are
+    prepended to the question (the pipeline builds all other context itself)."""
+    from run_golden import generate_sql_full_pipeline
+    q = question
+    hint = _STRATEGY_HINTS.get(strategy, "")
+    if hint:
+        q = hint + q
+    if doc_section:
+        q = doc_section + "\n\n" + q
+    return (generate_sql_full_pipeline(q, f"spider_{db_name}", reader, temperature) or "").strip()
+
+
+def generate_sql(question: str, schema: str, doc_section: str,
+                 temperature: float = 0.0, strategy: str = "direct") -> str:
     from aughor.agent.prompts import CHAT_SQL_SYSTEM, CHAT_PROMPT
     from pydantic import BaseModel, Field
 
@@ -273,7 +361,7 @@ def generate_sql(question: str, schema: str, doc_section: str, temperature: floa
         conn_kb_section="",
         exploration_section="",
         causal_section="",
-        document_section=_SQLITE_HINT + doc_section,
+        document_section=_STRATEGY_HINTS.get(strategy, "") + _SQLITE_HINT + doc_section,
         sql_examples_section="",
         kb_patterns_section="",
     )
@@ -289,7 +377,7 @@ def generate_sql(question: str, schema: str, doc_section: str, temperature: floa
 
         model_config = {"arbitrary_types_allowed": True}
 
-    ans: Answer = get_provider("coder").complete(
+    ans: Answer = _coder().complete(
         system=CHAT_SQL_SYSTEM,
         user=prompt,
         response_model=Answer,
@@ -493,7 +581,7 @@ def _recover_empty(question: str, schema: str, doc_section: str,
         approach: Any = None
         model_config = {"arbitrary_types_allowed": True}
 
-    ans: FixAnswer = get_provider("coder").complete(
+    ans: FixAnswer = _coder().complete(
         system=CHAT_SQL_SYSTEM, user=prompt,
         response_model=FixAnswer, temperature=temperature,
     )
@@ -536,7 +624,7 @@ def _fix_sql(question: str, schema: str, doc_section: str,
         approach: Any = None
         model_config = {"arbitrary_types_allowed": True}
 
-    ans: FixAnswer = get_provider("coder").complete(
+    ans: FixAnswer = _coder().complete(
         system=CHAT_SQL_SYSTEM,
         user=fix_prompt,
         response_model=FixAnswer,
@@ -548,7 +636,8 @@ def _fix_sql(question: str, schema: str, doc_section: str,
 # ── per-instance worker ───────────────────────────────────────────────────────
 
 def run_instance(inst: dict, spider_root: Path, out_dir: Path, temperature: float,
-                 consensus_k: int = 1, reflect: bool = False, select: bool = False) -> dict:
+                 consensus_k: int = 1, reflect: bool = False, select: bool = False,
+                 engine: bool = False) -> dict:
     iid = inst["instance_id"]
     db_name = inst["db"]
     started_at = datetime.now(timezone.utc).isoformat()
@@ -557,23 +646,34 @@ def run_instance(inst: dict, spider_root: Path, out_dir: Path, temperature: floa
     try:
         doc = load_external_knowledge(spider_root, inst.get("external_knowledge"))
         db_path = spider_root / "resource" / "databases" / f"{db_name}.sqlite"
+        q = inst["question"]
 
-        # Schema linking for wide databases: pick relevant tables first so the
-        # prompt isn't bloated with dozens of irrelevant tables (faster + sharper).
-        all_tables = list_tables(spider_root, db_name)
-        linked: set[str] | None = None
-        link_detail = "skipped (small schema)"
-        if len(all_tables) > 6:
-            picked = link_tables(inst["question"], all_tables, doc)
-            if 0 < len(picked) < len(all_tables):
-                linked = set(picked)
-                link_detail = f"selected {len(picked)}/{len(all_tables)} tables: {', '.join(sorted(picked))}"
-            else:
-                link_detail = f"kept all {len(all_tables)} tables"
+        if engine:
+            # ── Full Aughor engine: real SQLiteConnection + production pipeline ──
+            reader = _engine_conn(spider_root, db_name)
+            try:
+                schema = reader.get_schema()
+            except Exception:
+                schema = build_schema(spider_root, db_name)
+            link_detail = "full Aughor engine (schema-linker + ontology + guards)"
+            linked = None
+        else:
+            # ── Lite path: hand-built schema + harness schema-linking ──
+            all_tables = list_tables(spider_root, db_name)
+            linked = None
+            link_detail = "skipped (small schema)"
+            if len(all_tables) > 6:
+                picked = link_tables(q, all_tables, doc)
+                if 0 < len(picked) < len(all_tables):
+                    linked = set(picked)
+                    link_detail = f"selected {len(picked)}/{len(all_tables)} tables: {', '.join(sorted(picked))}"
+                else:
+                    link_detail = f"kept all {len(all_tables)} tables"
+            schema = build_schema(spider_root, db_name, only_tables=linked)
+            reader = None
 
-        schema = build_schema(spider_root, db_name, only_tables=linked)
         if not schema:
-            return {"id": iid, "ok": False, "error": f"no DDL for db '{db_name}'"}
+            return {"id": iid, "ok": False, "error": f"no schema for db '{db_name}'"}
 
         schema_fetched_at = datetime.now(timezone.utc).isoformat()
 
@@ -581,18 +681,24 @@ def run_instance(inst: dict, spider_root: Path, out_dir: Path, temperature: floa
             {"step": 1, "timestamp": schema_fetched_at, "action": "schema_linking",
              "detail": link_detail},
             {"step": 2, "timestamp": schema_fetched_at, "action": "schema_extraction",
-             "detail": f"Built DDL + FK paths + sample rows for database '{db_name}'"},
+             "detail": ("Aughor build_intelligence (profiles + ontology)" if engine
+                        else f"Built DDL + FK paths + sample rows for '{db_name}'")},
             {"step": 3, "timestamp": schema_fetched_at, "action": "external_knowledge",
              "detail": f"Loaded external knowledge: {inst.get('external_knowledge') or 'none'}"},
         ]
 
+        def _gen(idx, temp):
+            strat = _STRATEGIES[idx % len(_STRATEGIES)]
+            if engine:
+                return generate_sql_engine(q, db_name, reader, temp, doc, strat)
+            return generate_sql(q, schema, doc, temp, strat)
+
         if consensus_k > 1 and db_path.exists():
             # ── Self-consistency path: generate K, execute, vote ──
             from aughor.agent.sql_consensus import generate_consensus_sql
-            q = inst["question"]
             selector = _make_selector(q, doc, db_path) if select else None
             result = generate_consensus_sql(
-                generate_fn=lambda temp: generate_sql(q, schema, doc, temp),
+                generate_fn=_gen,
                 execute_fn=lambda s: _sqlite_exec(db_path, s),
                 repair_fn=lambda bad, err, temp: _fix_sql(q, schema, doc, bad, err, temp),
                 empty_recovery_fn=lambda bad, msg, temp: _recover_empty(q, schema, doc, bad, msg, temp),
@@ -607,7 +713,7 @@ def run_instance(inst: dict, spider_root: Path, out_dir: Path, temperature: floa
             if not sql and linked is not None:
                 full_schema = build_schema(spider_root, db_name, only_tables=None)
                 result = generate_consensus_sql(
-                    generate_fn=lambda temp: generate_sql(q, full_schema, doc, temp),
+                    generate_fn=lambda idx, temp: generate_sql(q, full_schema, doc, temp, _STRATEGIES[idx % len(_STRATEGIES)]),
                     execute_fn=lambda s: _sqlite_exec(db_path, s),
                     repair_fn=lambda bad, err, temp: _fix_sql(q, full_schema, doc, bad, err, temp),
                     empty_recovery_fn=lambda bad, msg, temp: _recover_empty(q, full_schema, doc, bad, msg, temp),
@@ -631,7 +737,7 @@ def run_instance(inst: dict, spider_root: Path, out_dir: Path, temperature: floa
             sql_generated_at = datetime.now(timezone.utc).isoformat()
         else:
             # ── Single-shot path with 1 repair on error ──
-            sql = generate_sql(inst["question"], schema, doc, temperature)
+            sql = _gen(0, temperature)
             sql_generated_at = datetime.now(timezone.utc).isoformat()
             if not sql:
                 return {"id": iid, "ok": False, "error": "empty SQL from model"}
@@ -693,7 +799,8 @@ def run_instance(inst: dict, spider_root: Path, out_dir: Path, temperature: floa
 
 def generate(spider_root: Path, out_dir: Path, limit: int | None,
              ids: set[str] | None, workers: int, temperature: float,
-             consensus_k: int = 1, reflect: bool = False, select: bool = False) -> None:
+             consensus_k: int = 1, reflect: bool = False, select: bool = False,
+             engine: bool = False) -> None:
     instances = load_local_instances(spider_root)
     if ids:
         instances = [r for r in instances if r["instance_id"] in ids]
@@ -703,6 +810,8 @@ def generate(spider_root: Path, out_dir: Path, limit: int | None,
     out_dir.mkdir(parents=True, exist_ok=True)
     run_ts = datetime.now(timezone.utc).isoformat()
     mode = f"consensus k={consensus_k}" if consensus_k > 1 else "single-shot"
+    if engine:
+        mode += " +ENGINE"
     if select:
         mode += " +select"
     if reflect:
@@ -714,7 +823,7 @@ def generate(spider_root: Path, out_dir: Path, limit: int | None,
     fails: list[dict] = []
 
     with ThreadPoolExecutor(max_workers=workers) as ex:
-        futs = {ex.submit(run_instance, r, spider_root, out_dir, temperature, consensus_k, reflect, select): r["instance_id"]
+        futs = {ex.submit(run_instance, r, spider_root, out_dir, temperature, consensus_k, reflect, select, engine): r["instance_id"]
                 for r in instances}
         for fut in as_completed(futs):
             res = fut.result()
@@ -839,6 +948,11 @@ def main() -> None:
                     help="Comma-separated instance IDs to (re)generate")
     ap.add_argument("--dev", action="store_true",
                     help="Run only the fixed 19-instance dev set (evals/spider2_dev_set.json)")
+    ap.add_argument("--coder-model", type=str, default=None,
+                    help="Override the coder model for generation (e.g. gpt-oss:120b-cloud)")
+    ap.add_argument("--engine", action="store_true",
+                    help="Route generation through the FULL Aughor engine (SQLiteConnection + "
+                         "build_intelligence + generate_sql_full_pipeline guards)")
     ap.add_argument("--workers", type=int, default=4,
                     help="Concurrent generation / eval workers")
     ap.add_argument("--temperature", type=float, default=0.0)
@@ -862,9 +976,14 @@ def main() -> None:
         ids = {d["id"] for tier in ds.values() for d in tier}
         print(f"Dev mode: {len(ids)} instances (7 easy / 7 medium / 5 hard)")
 
+    if args.coder_model:
+        global _CODER_MODEL
+        _CODER_MODEL = args.coder_model
+        print(f"Coder model override: {_CODER_MODEL}")
+
     if not args.score_only:
         generate(args.spider_root, args.out, args.limit, ids, args.workers,
-                 args.temperature, args.consensus, args.reflect, args.select)
+                 args.temperature, args.consensus, args.reflect, args.select, args.engine)
 
     if args.score or args.score_only:
         score(args.spider_root, args.out, args.workers)

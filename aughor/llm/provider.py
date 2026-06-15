@@ -173,7 +173,7 @@ def _build_ollama_client(model: str, base_url: str) -> instructor.Instructor:
     # Reasoning models (qwen3, kimi, deepseek-r1, qwq) support native tool calling.
     # Use TOOLS mode so <think>…</think> tokens are isolated from structured output.
     # JSON mode causes reasoning tokens to pollute the output and trigger retries.
-    _TOOLS_MODELS = ("qwen3", "kimi", "deepseek-r1", "qwq", "qwen-coder")
+    _TOOLS_MODELS = ("qwen3", "kimi", "deepseek-r1", "qwq", "qwen-coder", "gpt-oss")
     use_tools = any(kw in model.lower() for kw in _TOOLS_MODELS)
     mode = instructor.Mode.TOOLS if use_tools else instructor.Mode.JSON
     return instructor.from_openai(raw, mode=mode)
