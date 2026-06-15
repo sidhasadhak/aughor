@@ -3267,8 +3267,23 @@ The two operators that complete the semantic set, over a result's free-**text** 
 ### How
 `semantic_top_k` scores every row in [0,1] (batched), then stable-sorts by score and keeps the top *k*; a failed batch scores rows **neutral** (0.5) so nothing is unfairly buried — fail-open. `semantic_aggregate` makes one synthesis call over the (capped) text values and returns a **1-row** result in an `answer` column; on failure it leaves the raw result untouched. Both honor the same push-down + row-cap discipline. They're wired everywhere `filter`/`extract` already were — the shared `apply_step` dispatcher, `POST /query/semantic` (with `criterion`/`k` and `instruction`/`out_column` params), and the ADA `SemanticStep` — so the agent gains them too.
 
-**Key files.** `aughor/semops/operators.py` (`semantic_top_k`, `semantic_aggregate`, `apply_step`), `aughor/routers/query.py`, `aughor/agent/prompts_investigate.py` (`SemanticStep`), `tests/unit/test_semops.py`, `tests/integration/test_query_semantic.py`, `tests/unit/test_ada_semantic_steps.py`. **Next:** the Query Builder "semantic step" UI (the visible user-path surface).
+**Key files.** `aughor/semops/operators.py` (`semantic_top_k`, `semantic_aggregate`, `apply_step`), `aughor/routers/query.py`, `aughor/agent/prompts_investigate.py` (`SemanticStep`), `tests/unit/test_semops.py`, `tests/integration/test_query_semantic.py`, `tests/unit/test_ada_semantic_steps.py`.
 
 ---
 
-*Last updated: 2026-06-15 · 128 active features (#129 semantic top_k+aggregate, #128 semantic operators in ADA, #127 semantic operators Phase 1; #126 model-cascade core was built then removed — kept as a tombstone). See `ROADMAP.md` for upcoming milestones; **semantic operators over SQL** is the active adaptive-inference work.*
+## 130. Query Builder "Semantic step" UI ✅ Shipped
+
+### What
+The user-facing surface for semantic operators: a collapsible **"Semantic step"** panel under any Query Builder result. Pick an operator (filter / extract / top-k / aggregate), pick a text column, fill the operator's params, and **Apply** — the result table transforms in place, with the operator's notes surfaced and a one-click **Revert**.
+
+### Why
+The semantic operators were reachable by API and by the ADA agent (#127–#129) but not by a person in the product. This closes the loop: the analyst running ad-hoc SQL can now reason over the free-text columns (reviews, tickets, notes) right where the result lands — the *visible* leverage proof of the whole borrow.
+
+### How
+`ResultsPane` holds a local `semResult` overlay (`view = semResult ?? result`) so applying an operator swaps the displayed table while the base result stays available to revert; a new query resets it. **Text columns are detected client-side** (`detectTextColumnsLocal`, mirroring the backend heuristic) from the already-fetched rows — no extra round-trip — and the column picker defaults to the first text column, flagging others "(not text?)". `runSemanticOp` calls `POST /query/semantic`; the panel shows `input → output rows · N calls`, the surfaced `notes` (incl. a refuse-over-cap message), and any error. Licensing 402s are caught by the global upsell interceptor. **Verified end-to-end in the browser** on real review data: an 8-row result filtered to 6 "positive" reviews in one LLM call, then reverted.
+
+**Key files.** `web/components/QueryBuilder.tsx` (`SemanticStepPanel`, `ResultsPane` overlay, `detectTextColumnsLocal`), `web/lib/api.ts` (`runSemanticOp`, `SemanticOpRequest`, `SemanticOpResult`). Completes **Borrow 3** (semantic operators over SQL) — both the user and agent surfaces are now wired.
+
+---
+
+*Last updated: 2026-06-15 · 129 active features (#130 Query Builder semantic-step UI — Borrow 3 complete; #129 semantic top_k+aggregate, #128 semantic operators in ADA, #127 semantic operators Phase 1; #126 model-cascade core was built then removed — kept as a tombstone). See `ROADMAP.md` for upcoming milestones.*
