@@ -3286,4 +3286,19 @@ The semantic operators were reachable by API and by the ADA agent (#127–#129) 
 
 ---
 
-*Last updated: 2026-06-15 · 129 active features (#130 Query Builder semantic-step UI — Borrow 3 complete; #129 semantic top_k+aggregate, #128 semantic operators in ADA, #127 semantic operators Phase 1; #126 model-cascade core was built then removed — kept as a tombstone). See `ROADMAP.md` for upcoming milestones.*
+## 131. Hierarchical tree-reduce synthesis (Borrow 4) ✅ Shipped
+
+### What
+A reusable map-reduce-over-context-windows primitive for synthesizing from **many** items, wired into the Briefing so the executive narrative reflects *every* finding — not just the cited top-8.
+
+### Why
+Briefing synthesis was single-prompt: `generate_narrative` hard-capped at the top-8 findings (breadth-first) and **dropped the rest**, and `ada_synthesize` truncates evidence to 6 000 chars. With many findings, the synthesis silently lost the long tail. Stuffing everything into one prompt is lossy too (the model loses the middle). Tree-reduce folds the full set in bounded batches instead.
+
+### How
+`aughor/llm/reduce.py` is a **pure** primitive — `hierarchical_reduce(items, summarize, combine, fanout, max_depth)` (≤fanout → one `summarize`; else map each batch then fold the summaries with `combine`, depth-bounded) and `partitioned_reduce` (summarize each group independently, never blending). It takes callables and never touches an LLM, so it's trivially testable. In the briefing, `_coverage_digest` (`aughor/knowledge/briefing.py`) detects when findings were dropped and folds **all** of them into a per-domain digest — tree-reduced *within* each domain, **partition-aware** across domains, on the cheap `fast` role — injected as a "FULL COVERAGE" context block (not citable; the top-8 stay the citation anchors). **Fail-open**: any digest error falls back to the original top-8 prompt.
+
+**Key files.** `aughor/llm/reduce.py` (`hierarchical_reduce`, `partitioned_reduce`), `aughor/knowledge/briefing.py` (`_coverage_digest`, `_build_user_prompt`), `tests/unit/test_reduce.py`, `tests/unit/test_briefing_coverage.py`. The primitive is reusable for `ada_synthesize` and the Intelligence Hub next.
+
+---
+
+*Last updated: 2026-06-15 · 130 active features (#131 hierarchical tree-reduce synthesis — Borrow 4; #130 Query Builder semantic-step UI — Borrow 3 complete; #127–#129 semantic operators; #126 model-cascade core was built then removed — kept as a tombstone). See `ROADMAP.md` for upcoming milestones.*
