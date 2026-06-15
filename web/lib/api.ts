@@ -794,6 +794,39 @@ export async function getOntology(connectionId: string, schemaName?: string): Pr
   return res.json();
 }
 
+// ── Duplicate-entity detection + merge (Borrow 5) ─────────────────────────────
+
+export interface DuplicateEntityRef { id: string; display_name: string; source_tables: string[] }
+export interface DuplicateCluster { entities: DuplicateEntityRef[]; similarity: number }
+
+export async function getDuplicateEntities(
+  connectionId: string, schemaName?: string, threshold?: number,
+): Promise<DuplicateCluster[]> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
+  if (threshold != null) q.set("threshold", String(threshold));
+  const res = await fetch(`${BASE}/ontology/duplicate-entities?${q}`);
+  if (!res.ok) throw new Error("Failed to load duplicate suggestions");
+  return (await res.json()).clusters ?? [];
+}
+
+export async function mergeOntologyEntities(
+  connectionId: string, mergeIds: string[], canonicalId: string, schemaName?: string,
+): Promise<{ merged_into: string; removed: string[]; entity_count: number }> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
+  const res = await fetch(`${BASE}/ontology/entities/merge?${q}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ merge_ids: mergeIds, canonical_id: canonicalId }),
+  });
+  if (!res.ok) {
+    const e = await res.json().catch(() => ({}));
+    throw new Error((e as { detail?: string }).detail ?? "Merge failed");
+  }
+  return res.json();
+}
+
 export async function patchOntologyEntity(
   connectionId: string,
   entityId: string,
