@@ -3297,7 +3297,9 @@ Briefing synthesis was single-prompt: `generate_narrative` hard-capped at the to
 ### How
 `aughor/llm/reduce.py` is a **pure** primitive — `hierarchical_reduce(items, summarize, combine, fanout, max_depth)` (≤fanout → one `summarize`; else map each batch then fold the summaries with `combine`, depth-bounded) and `partitioned_reduce` (summarize each group independently, never blending). It takes callables and never touches an LLM, so it's trivially testable. In the briefing, `_coverage_digest` (`aughor/knowledge/briefing.py`) detects when findings were dropped and folds **all** of them into a per-domain digest — tree-reduced *within* each domain, **partition-aware** across domains, on the cheap `fast` role — injected as a "FULL COVERAGE" context block (not citable; the top-8 stay the citation anchors). **Fail-open**: any digest error falls back to the original top-8 prompt.
 
-**Key files.** `aughor/llm/reduce.py` (`hierarchical_reduce`, `partitioned_reduce`), `aughor/knowledge/briefing.py` (`_coverage_digest`, `_build_user_prompt`), `tests/unit/test_reduce.py`, `tests/unit/test_briefing_coverage.py`. The primitive is reusable for `ada_synthesize` and the Intelligence Hub next.
+**Key files.** `aughor/llm/reduce.py` (`hierarchical_reduce`, `partitioned_reduce`), `aughor/knowledge/briefing.py` (`_coverage_digest`, `_build_user_prompt`), `tests/unit/test_reduce.py`, `tests/unit/test_briefing_coverage.py`.
+
+**Also leveraged in `ada_synthesize`** (`aughor/agent/investigate.py`): the investigation report's evidence log no longer truncates at 6 000 chars — `_phases_evidence_budgeted` keeps phases **verbatim** up to the budget (exact numbers preserved for grounding) and folds **overflow** phases into a number-preserving per-phase digest (`partitioned_reduce`) rather than dropping them. Fail-open to the old truncation; if nothing fits verbatim it truncates (never digest-only — verbatim numbers must remain to ground on). Tests: `tests/unit/test_phase_evidence_budget.py`.
 
 ---
 

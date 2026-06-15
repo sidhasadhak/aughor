@@ -1020,24 +1020,93 @@ def _phases_summary(phases: list[InvestigationPhaseResult]) -> str:
     return "\n".join(lines)
 
 
-def _phases_evidence(phases: list[InvestigationPhaseResult]) -> str:
-    lines = []
-    for p in phases:
-        lines.append(f"\n=== {p['phase_name']} ===")
-        for f in p["findings"]:
-            if f["sql"]:
-                lines.append(f"SQL: {f['sql']}")
-            if f["error"]:
-                lines.append(f"ERROR: {f['error']}")
-            elif f["columns"] and f["rows"]:
-                col_str = " | ".join(f["columns"])
-                lines.append(col_str)
-                lines.append("-" * len(col_str))
-                for row in f["rows"][:20]:
-                    lines.append(" | ".join(str(v) for v in row))
-                if f["row_count"] > 20:
-                    lines.append(f"... ({f['row_count'] - 20} more rows)")
+def _one_phase_evidence(p: InvestigationPhaseResult) -> str:
+    """Verbatim evidence block for ONE phase — its findings' SQL + result tables (≤20 rows each)."""
+    lines = [f"\n=== {p['phase_name']} ==="]
+    for f in p["findings"]:
+        if f["sql"]:
+            lines.append(f"SQL: {f['sql']}")
+        if f["error"]:
+            lines.append(f"ERROR: {f['error']}")
+        elif f["columns"] and f["rows"]:
+            col_str = " | ".join(f["columns"])
+            lines.append(col_str)
+            lines.append("-" * len(col_str))
+            for row in f["rows"][:20]:
+                lines.append(" | ".join(str(v) for v in row))
+            if f["row_count"] > 20:
+                lines.append(f"... ({f['row_count'] - 20} more rows)")
     return "\n".join(lines)
+
+
+def _phases_evidence(phases: list[InvestigationPhaseResult]) -> str:
+    return "\n".join(_one_phase_evidence(p) for p in phases)
+
+
+_EVIDENCE_BUDGET = 6000
+_EV_DIGEST_SYS = (
+    "You compress a single investigation phase's query evidence into 1-2 sentences, PRESERVING the key "
+    "numbers (values, deltas, percentages, counts). No preamble, no commentary — just the facts."
+)
+
+
+def _phases_evidence_budgeted(phases: list[InvestigationPhaseResult], budget: int = _EVIDENCE_BUDGET) -> str:
+    """Per-phase evidence packed VERBATIM up to ``budget`` chars (exact numbers preserved for grounding);
+    phases that overflow are folded into a number-preserving digest (tree-reduce) rather than truncated
+    away. Replaces the old ``evidence_log[:6000]``; fails open to plain truncation. Small investigations
+    (under budget) are returned unchanged with no LLM call."""
+    blocks = [(p["phase_name"], _one_phase_evidence(p)) for p in phases]
+    full = "\n".join(b for _, b in blocks)
+    if len(full) <= budget:
+        return full
+
+    try:
+        from pydantic import BaseModel
+
+        from aughor.llm.provider import get_provider
+        from aughor.llm.reduce import partitioned_reduce
+
+        class _EvidenceDigest(BaseModel):
+            text: str
+
+        provider = get_provider("fast")
+
+        kept: list[str] = []
+        overflow: list[tuple[str, str]] = []
+        used = 0
+        for name, block in blocks:
+            if used + len(block) <= budget:
+                kept.append(block)
+                used += len(block)
+            else:
+                overflow.append((name, block))
+
+        if not overflow:                       # everything fit (the >budget was just join slack)
+            return full
+        if not kept:                           # nothing fit verbatim — truncate rather than a
+            return full[:budget]               # digest-only evidence log (no verbatim to ground on)
+
+        def _summ(name: str, blocks_: list[str]) -> str:
+            body = blocks_[0][:4000]
+            out = provider.complete(
+                system=_EV_DIGEST_SYS,
+                user=f"Phase evidence:\n{body}\n\nCompress to 1-2 sentences, keeping the key numbers.",
+                response_model=_EvidenceDigest, temperature=0.2,
+            )
+            return f"[{name}] {out.text.strip()}"
+
+        digest = partitioned_reduce(
+            {name: [block] for name, block in overflow},
+            summarize_group=_summ,
+            combine=lambda parts: "\n".join(parts),
+        )
+        return (
+            "\n".join(kept)
+            + f"\n\n=== ADDITIONAL EVIDENCE (summarized — {len(overflow)} phase(s) beyond the "
+            f"verbatim budget) ===\n{digest}"
+        )
+    except Exception:
+        return full[:budget]                   # fail-open to today's behavior
 
 
 # ── Phase nodes ───────────────────────────────────────────────────────────────
@@ -2343,7 +2412,9 @@ def ada_synthesize(state: AgentState) -> dict:
         )
 
     phases_summary = _phases_summary(phases)
-    evidence_log = _phases_evidence(phases)
+    # Budget-aware: phases are kept verbatim (exact numbers, for grounding) up to the budget; any
+    # overflow is folded into a number-preserving digest (tree-reduce) instead of being truncated away.
+    evidence_log = _phases_evidence_budgeted(phases)
 
     # ── Cross-phase contradiction detection ───────────────────────────────────
     # Before synthesis, deterministically check phase summaries for contradictions.
@@ -2425,7 +2496,7 @@ def ada_synthesize(state: AgentState) -> dict:
     synth_prompt = ADA_SYNTHESIZE_PROMPT.format(
         question=question,
         phases_summary=phases_summary,
-        evidence_log=evidence_log[:6000],
+        evidence_log=evidence_log,
         events_section=events_section,
         metric_targets_section=metric_targets_section,
         playbook_section=playbook_section,
