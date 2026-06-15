@@ -3322,4 +3322,4 @@ Ontology entity extraction is name/structural only — two tables with semantica
 
 ---
 
-*Last updated: 2026-06-15 · 131 active features (#132 embedding entity dedup detection — Borrow 5; #131 hierarchical tree-reduce — Borrow 4; #130 Query Builder semantic-step UI — Borrow 3 complete; #127–#129 semantic operators; #126 model-cascade core was built then removed — kept as a tombstone). See `ROADMAP.md` for upcoming milestones.*
+*Last updated: 2026-06-15 · 131 active features (#132 embedding entity dedup — Borrow 5, detection + apply-merge + board UI; #131 hierarchical tree-reduce — Borrow 4, briefing + ada_synthesize; #130 Query Builder semantic-step UI — Borrow 3 complete; #127–#129 semantic operators; #126 model-cascade core was built then removed — kept as a tombstone). **Adaptive-inference list worked through** (B5b logprob-confidence blocked); next up = the two ROADMAP "Parked ideas" (value-domain join guard, external NL2SQL benchmarking). See `ROADMAP.md`.*

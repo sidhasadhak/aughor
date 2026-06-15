@@ -128,4 +128,4 @@ Verified pending against code/git. `⬜` not started · `◑` partial.
 
 ---
 
-*In progress:* **Semantic operators over SQL** — the highest-upside remaining borrow and a genuinely new capability for unstructured/text analysis. *Also available standalone:* **hypothesis-eval parallelization** (the quickest perf win — `score_evidence` runs serially today). **#12 enterprise auth** remains gated on the auth/tenancy product call.
+*Next up (after this point):* the two **Parked ideas** above — (1) the **value-domain join guard** ("fool-proof joins") and (2) **external NL2SQL benchmarking** (Spider 2.0 / LiveSQLBench). The whole adaptive-inference borrow list is now worked through (semantic operators, tree-reduce, and entity dedup all shipped; only logprob-calibrated confidence is blocked, on a provider that exposes `top_logprobs`). *Also available standalone:* **hypothesis-eval parallelization** (the quickest perf win — `score_evidence` runs serially today). **#12 enterprise auth** remains gated on the auth/tenancy product call.
