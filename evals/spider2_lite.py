@@ -348,6 +348,86 @@ def generate_sql_engine(question: str, db_name: str, reader, temperature: float,
     return (generate_sql_full_pipeline(q, f"spider_{db_name}", reader, temperature) or "").strip()
 
 
+def _propose_probes(question: str, schema: str, doc_section: str, temperature: float):
+    """Ask the model what to VERIFY about the data before writing SQL.
+
+    Uses a SINGLE string field (not a list-of-models) so reasoning models in
+    TOOLS mode don't emit multiple tool calls (instructor rejects that). We parse
+    the 'purpose :: sql' lines ourselves — robust across model/provider quirks.
+    """
+    from aughor.agent.sql_explore import Probe
+    from pydantic import BaseModel
+
+    class ProbePlan(BaseModel):
+        plan: str = ""
+
+    prompt = (
+        f"DATABASE SCHEMA:\n{schema}\n\n{doc_section}"
+        f"QUESTION: {question}\n\n"
+        "Before writing the final SQL, decide what you must VERIFY about the ACTUAL DATA — "
+        "facts the schema alone cannot tell you. List up to 5 small read-only diagnostic "
+        "SQL queries (SQLite). Prioritise:\n"
+        "1. JOIN-KEY UNIQUENESS — joining on multiple columns: check a subset is unique or FANS OUT: "
+        "SELECT COUNT(*), COUNT(DISTINCT k1||'-'||k2||'-'||k3) FROM t. If they differ you need more keys.\n"
+        "2. VALUE FORMAT/ENCODING — sample a column (comma-separated lists? date formats?): SELECT col FROM t LIMIT 5.\n"
+        "3. FILTER LITERALS — confirm exact spelling/case: SELECT DISTINCT col FROM t WHERE LOWER(col) LIKE '%italy%'.\n"
+        "4. GRAIN — rows per entity: SELECT COUNT(*), COUNT(DISTINCT entity_id) FROM t.\n\n"
+        "Put ALL probes in the 'plan' field, ONE PER LINE, in EXACTLY this format:\n"
+        "purpose :: <single read-only SELECT, valid SQLite, use LIMIT>\n"
+        "No other text. Example line:\n"
+        "check ball_by_ball/batsman_scored key fans out :: SELECT COUNT(*), COUNT(DISTINCT match_id||over_id||ball_id) FROM batsman_scored"
+    )
+    try:
+        ans: ProbePlan = _coder().complete(
+            system="You are a data analyst planning diagnostic probes before writing SQL.",
+            user=prompt, response_model=ProbePlan, temperature=temperature,
+        )
+    except Exception:
+        return []
+
+    probes = []
+    for line in (ans.plan or "").splitlines():
+        line = line.strip().lstrip("-*0123456789. ").strip()
+        if "::" not in line:
+            continue
+        purpose, _, sql = line.partition("::")
+        sql = sql.strip().rstrip(";")
+        if sql:
+            probes.append(Probe(purpose=purpose.strip(), sql=sql))
+    return probes
+
+
+def _generate_grounded(question: str, schema: str, doc_section: str,
+                       observations: str, temperature: float, strategy: str = "decompose") -> str:
+    """Final generation grounded in probe observations."""
+    obs_section = ""
+    if observations.strip():
+        obs_section = (
+            "OBSERVATIONS FROM PROBING THE LIVE DATABASE (ground your SQL in these — they reveal "
+            "the real join keys, value encodings, and grain; do NOT contradict them):\n"
+            f"{observations}\n\n"
+        )
+    return generate_sql(question, schema, obs_section + doc_section, temperature, strategy)
+
+
+def generate_sql_explore(question: str, schema: str, doc_section: str, db_path: Path,
+                         temperature: float = 0.0, strategy: str = "decompose") -> str:
+    """Probe-and-ground: decompose → probe live DB → generate grounded SQL."""
+    from aughor.agent.sql_explore import explore_and_generate
+
+    def _exec(sql):
+        r = _sqlite_exec(db_path, sql)
+        return r.ok, r.rows, r.error
+
+    result = explore_and_generate(
+        propose_fn=lambda: _propose_probes(question, schema, doc_section, temperature),
+        execute_fn=_exec,
+        generate_fn=lambda obs: _generate_grounded(question, schema, doc_section, obs, temperature, strategy),
+        max_probes=5,
+    )
+    return result.sql
+
+
 def generate_sql(question: str, schema: str, doc_section: str,
                  temperature: float = 0.0, strategy: str = "direct") -> str:
     from aughor.agent.prompts import CHAT_SQL_SYSTEM, CHAT_PROMPT
@@ -637,7 +717,7 @@ def _fix_sql(question: str, schema: str, doc_section: str,
 
 def run_instance(inst: dict, spider_root: Path, out_dir: Path, temperature: float,
                  consensus_k: int = 1, reflect: bool = False, select: bool = False,
-                 engine: bool = False) -> dict:
+                 engine: bool = False, explore: bool = False) -> dict:
     iid = inst["instance_id"]
     db_name = inst["db"]
     started_at = datetime.now(timezone.utc).isoformat()
@@ -689,6 +769,11 @@ def run_instance(inst: dict, spider_root: Path, out_dir: Path, temperature: floa
 
         def _gen(idx, temp):
             strat = _STRATEGIES[idx % len(_STRATEGIES)]
+            if explore and db_path.exists():
+                # Probe-and-ground: discover real join keys / encodings / grain
+                # before writing. Strategy still varies for candidate diversity.
+                return generate_sql_explore(q, schema, doc, db_path, temp,
+                                            strategy=strat if strat != "direct" else "decompose")
             if engine:
                 return generate_sql_engine(q, db_name, reader, temp, doc, strat)
             return generate_sql(q, schema, doc, temp, strat)
@@ -800,7 +885,7 @@ def run_instance(inst: dict, spider_root: Path, out_dir: Path, temperature: floa
 def generate(spider_root: Path, out_dir: Path, limit: int | None,
              ids: set[str] | None, workers: int, temperature: float,
              consensus_k: int = 1, reflect: bool = False, select: bool = False,
-             engine: bool = False) -> None:
+             engine: bool = False, explore: bool = False) -> None:
     instances = load_local_instances(spider_root)
     if ids:
         instances = [r for r in instances if r["instance_id"] in ids]
@@ -810,6 +895,8 @@ def generate(spider_root: Path, out_dir: Path, limit: int | None,
     out_dir.mkdir(parents=True, exist_ok=True)
     run_ts = datetime.now(timezone.utc).isoformat()
     mode = f"consensus k={consensus_k}" if consensus_k > 1 else "single-shot"
+    if explore:
+        mode += " +EXPLORE"
     if engine:
         mode += " +ENGINE"
     if select:
@@ -823,7 +910,7 @@ def generate(spider_root: Path, out_dir: Path, limit: int | None,
     fails: list[dict] = []
 
     with ThreadPoolExecutor(max_workers=workers) as ex:
-        futs = {ex.submit(run_instance, r, spider_root, out_dir, temperature, consensus_k, reflect, select, engine): r["instance_id"]
+        futs = {ex.submit(run_instance, r, spider_root, out_dir, temperature, consensus_k, reflect, select, engine, explore): r["instance_id"]
                 for r in instances}
         for fut in as_completed(futs):
             res = fut.result()
@@ -953,6 +1040,9 @@ def main() -> None:
     ap.add_argument("--engine", action="store_true",
                     help="Route generation through the FULL Aughor engine (SQLiteConnection + "
                          "build_intelligence + generate_sql_full_pipeline guards)")
+    ap.add_argument("--explore", action="store_true",
+                    help="Probe-and-ground: issue diagnostic queries against the live DB to "
+                         "discover join keys / encodings / grain before writing final SQL")
     ap.add_argument("--workers", type=int, default=4,
                     help="Concurrent generation / eval workers")
     ap.add_argument("--temperature", type=float, default=0.0)
@@ -983,7 +1073,7 @@ def main() -> None:
 
     if not args.score_only:
         generate(args.spider_root, args.out, args.limit, ids, args.workers,
-                 args.temperature, args.consensus, args.reflect, args.select, args.engine)
+                 args.temperature, args.consensus, args.reflect, args.select, args.engine, args.explore)
 
     if args.score or args.score_only:
         score(args.spider_root, args.out, args.workers)
