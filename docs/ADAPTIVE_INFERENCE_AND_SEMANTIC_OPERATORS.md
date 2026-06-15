@@ -288,19 +288,23 @@ when synthesising many findings; partition-aware so it won't blend unrelated dom
 
 ---
 
-## Part V — Sequencing
+## Part V — Sequencing (status as of 2026-06-15)
 
-_Updated after the Borrow 1/2 outcomes (Part VII): the cascade was built then **removed**, and
-prompt-optimization was **dropped**. Semantic operators is now the active, first-class work._
+The adaptive-inference list is **worked through** — every actionable borrow is shipped; one is blocked.
 
-- **Phase 1 (now):** the **Semantic-Operator layer** over SQL results (Borrow 3) — the product
-  expansion. Start with `filter` + `extract` over a result set's text column, cost-bounded by
-  push-down + explicit row caps (not a cascade), surfaced in Query Builder + ADA.
-- **Phase 2:** add `top-k` + `aggregate`; compose operators into an investigation step.
-- **Shipped:** hierarchical Briefing synthesis (Borrow 4 ✅) and embedding-dedup *detection* for the
-  ontology (Borrow 5a ✅). Remaining: dedup apply-merge-on-confirm (gated), and logprob-calibrated
-  confidence (Borrow 5b — blocked on a logprob-surfacing provider). The cascade (Borrow 1) and
-  prompt-opt (Borrow 2) are closed out.
+- ✅ **Borrow 3 — Semantic operators over SQL** (`filter`/`extract`/`top-k`/`aggregate`): backend,
+  the ADA agent tool, and the Query Builder "Semantic step" UI. Complete.
+- ✅ **Borrow 4 — Hierarchical tree-reduce synthesis**: the pure primitive, wired into the briefing's
+  coverage digest *and* `ada_synthesize`'s evidence log (verbatim-then-fold). Complete.
+- ✅ **Borrow 5 — Embedding entity dedup**: detection (`/ontology/duplicate-entities`), the
+  deterministic apply-merge (`/ontology/entities/merge`), and the "Find duplicates" board UI. Complete.
+- ⛔ **Borrow 5b — Logprob-calibrated confidence**: blocked on a provider that exposes `top_logprobs`.
+- ❌ **Borrow 1 — model cascade** (removed) and **Borrow 2 — prompt-opt** (dropped): closed out, see Part VII.
+
+**What's next (parked, to start after this point):** two ideas the user raised, captured in the ROADMAP
+"Parked ideas" section — (1) a **value-domain join guard** ("fool-proof joins": catch joins whose keys
+share a name/type but have disjoint value domains, via value-overlap/containment), and (2) **external
+NL2SQL benchmarking** on contamination-resistant suites (Spider 2.0, LiveSQLBench).
 
 ---
 
