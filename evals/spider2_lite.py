@@ -837,6 +837,8 @@ def main() -> None:
                     help="Only the first N instances (smoke test)")
     ap.add_argument("--ids", type=str, default=None,
                     help="Comma-separated instance IDs to (re)generate")
+    ap.add_argument("--dev", action="store_true",
+                    help="Run only the fixed 19-instance dev set (evals/spider2_dev_set.json)")
     ap.add_argument("--workers", type=int, default=4,
                     help="Concurrent generation / eval workers")
     ap.add_argument("--temperature", type=float, default=0.0)
@@ -855,6 +857,10 @@ def main() -> None:
     args = ap.parse_args()
 
     ids = set(s.strip() for s in args.ids.split(",")) if args.ids else None
+    if args.dev:
+        ds = json.loads((_REPO_ROOT / "evals" / "spider2_dev_set.json").read_text())
+        ids = {d["id"] for tier in ds.values() for d in tier}
+        print(f"Dev mode: {len(ids)} instances (7 easy / 7 medium / 5 hard)")
 
     if not args.score_only:
         generate(args.spider_root, args.out, args.limit, ids, args.workers,
