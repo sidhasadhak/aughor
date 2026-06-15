@@ -92,10 +92,10 @@ async def query_run(body: _QueryRunRequest):
 
 
 # ── Semantic operators over SQL result text ────────────────────────────────────
-# Run an LLM operator (filter / extract) over ONE text column of a SQL result set — the
-# unstructured residue SQL can't reason over (tickets, reviews, notes). SQL does the structured
-# push-down first; the LLM only touches the small text residue. Cost is bounded by push-down +
-# an explicit per-operator row cap (refuse over the cap, surfaced). See aughor/semops/operators.py.
+# Run an LLM operator (filter / extract / top_k / aggregate) over ONE text column of a SQL result
+# set — the unstructured residue SQL can't reason over (tickets, reviews, notes). SQL does the
+# structured push-down first; the LLM only touches the small text residue. Cost is bounded by
+# push-down + an explicit per-operator row cap (refuse over the cap, surfaced). See aughor/semops.
 
 class _ExtractFieldReq(BaseModel):
     name: str
@@ -105,10 +105,14 @@ class _ExtractFieldReq(BaseModel):
 class _SemanticOpRequest(BaseModel):
     conn_id: str
     sql: str
-    operator: Literal["filter", "extract"]
+    operator: Literal["filter", "extract", "top_k", "aggregate"]
     column: str
     predicate: Optional[str] = None          # required for filter
     fields: list[_ExtractFieldReq] = []      # required for extract
+    criterion: Optional[str] = None          # required for top_k
+    k: int = 10                              # top_k: how many rows to keep
+    instruction: Optional[str] = None        # required for aggregate
+    out_column: str = "answer"               # aggregate: name of the synthesized column
     limit: int = 500
     max_rows: int = 200
     override_cap: bool = False
@@ -122,12 +126,12 @@ def _wrap_limited(sql: str, limit: int) -> str:
 
 @router.post("/query/semantic", dependencies=[gate(Capability.SEMANTIC_OPERATORS)])
 async def query_semantic(body: _SemanticOpRequest):
-    """Apply a semantic operator (LLM filter/extract over a text column) to a SQL result set.
+    """Apply a semantic operator (filter / extract / top_k / aggregate over a text column) to a result.
 
     Re-runs the SQL server-side (authoritative — never trusts client-sent rows), then applies the
     operator to the text residue. Returns the transformed result plus surfaced operator metadata."""
     from aughor.db.connection import open_connection_for
-    from aughor.semops.operators import semantic_extract, semantic_filter
+    from aughor.semops.operators import apply_step
 
     if not body.sql.strip():
         raise HTTPException(status_code=400, detail="sql is required")
@@ -137,6 +141,12 @@ async def query_semantic(body: _SemanticOpRequest):
         raise HTTPException(status_code=400, detail="predicate is required for the filter operator")
     if body.operator == "extract" and not body.fields:
         raise HTTPException(status_code=400, detail="fields is required for the extract operator")
+    if body.operator == "top_k" and not (body.criterion or "").strip():
+        raise HTTPException(status_code=400, detail="criterion is required for the top_k operator")
+    if body.operator == "top_k" and body.k < 1:
+        raise HTTPException(status_code=400, detail="k must be >= 1 for the top_k operator")
+    if body.operator == "aggregate" and not (body.instruction or "").strip():
+        raise HTTPException(status_code=400, detail="instruction is required for the aggregate operator")
 
     try:
         db = open_connection_for(body.conn_id)
@@ -156,12 +166,17 @@ async def query_semantic(body: _SemanticOpRequest):
                 tolerate(_e, "query/semantic: best-effort connection close", counter="query.semantic.close_failed")
         if base.error:
             return None, base
-        if body.operator == "filter":
-            op = semantic_filter(base, body.column, body.predicate or "",
-                                 max_rows=body.max_rows, override_cap=body.override_cap)
-        else:
-            op = semantic_extract(base, body.column, [(f.name, f.description) for f in body.fields],
-                                  max_rows=body.max_rows, override_cap=body.override_cap)
+        op = apply_step(
+            base, body.operator, body.column,
+            predicate=body.predicate or "",
+            fields=[(f.name, f.description) for f in body.fields],
+            criterion=body.criterion or "",
+            k=body.k,
+            instruction=body.instruction or "",
+            out_column=body.out_column,
+            max_rows=body.max_rows,
+            override_cap=body.override_cap,
+        )
         return op, base
 
     loop = asyncio.get_event_loop()

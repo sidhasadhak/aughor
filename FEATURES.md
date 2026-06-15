@@ -3252,8 +3252,23 @@ Phase 1 made semantic operators callable over a SQL result; this puts them on th
 ### How
 `PhaseQueryPlan` gains an optional `semantic: SemanticStep` field; its own description teaches the planner when to attach one (free-text columns only) — **no phase-prompt edits**, the instructor schema surfaces it. Applied at the single shared seam `run_analysis_phase` (so **every** phase — baseline/decompose/dimensional/behavioral — gets it at once) via `_apply_semantic_steps`, right after parallel execution and before interpretation. The integration is **opt-in** (a no-op unless the planner emits a step), **guarded** (`detect_text_columns` skips a step misattached to a numeric/missing column, so it can never corrupt structured evidence), and **fail-open** (any operator error leaves the raw result via `tolerate(...)`). Reuses Phase 1's operators through a shared `apply_step` dispatcher.
 
-**Key files.** `aughor/agent/prompts_investigate.py` (`SemanticStep`/`SemanticField`/`PhaseQueryPlan.semantic`), `aughor/agent/investigate.py` (`_apply_semantic_steps` + the `run_analysis_phase` wiring), `aughor/semops/operators.py` (`apply_step`), `tests/unit/test_ada_semantic_steps.py`. **Next (Phase 2b):** `top_k` + `aggregate` operators and the Query Builder "semantic step" UI.
+**Key files.** `aughor/agent/prompts_investigate.py` (`SemanticStep`/`SemanticField`/`PhaseQueryPlan.semantic`), `aughor/agent/investigate.py` (`_apply_semantic_steps` + the `run_analysis_phase` wiring), `aughor/semops/operators.py` (`apply_step`), `tests/unit/test_ada_semantic_steps.py`.
 
 ---
 
-*Last updated: 2026-06-15 · 127 active features (#128 semantic operators in ADA, #127 semantic operators Phase 1; #126 model-cascade core was built then removed — kept as a tombstone). See `ROADMAP.md` for upcoming milestones; **semantic operators over SQL** is the active adaptive-inference work.*
+## 129. Semantic Operators — `top_k` + `aggregate` (the four-operator set) ✅ Shipped
+
+### What
+The two operators that complete the semantic set, over a result's free-**text** column: **`top_k`** (rank rows by a natural-language criterion and keep the best *k* — e.g. the 5 most severe incident notes) and **`aggregate`** (synthesize many text rows into ONE answer — e.g. summarize the recurring complaint themes into a single row).
+
+### Why
+`filter`/`extract` reshape a result row-by-row; `top_k` and `aggregate` are the *reducing* operators — rank-and-cut, and many-rows-to-one. Together the four cover the LLM analogues of `ORDER BY … LIMIT` and `GROUP BY`-style synthesis over text that SQL can't express.
+
+### How
+`semantic_top_k` scores every row in [0,1] (batched), then stable-sorts by score and keeps the top *k*; a failed batch scores rows **neutral** (0.5) so nothing is unfairly buried — fail-open. `semantic_aggregate` makes one synthesis call over the (capped) text values and returns a **1-row** result in an `answer` column; on failure it leaves the raw result untouched. Both honor the same push-down + row-cap discipline. They're wired everywhere `filter`/`extract` already were — the shared `apply_step` dispatcher, `POST /query/semantic` (with `criterion`/`k` and `instruction`/`out_column` params), and the ADA `SemanticStep` — so the agent gains them too.
+
+**Key files.** `aughor/semops/operators.py` (`semantic_top_k`, `semantic_aggregate`, `apply_step`), `aughor/routers/query.py`, `aughor/agent/prompts_investigate.py` (`SemanticStep`), `tests/unit/test_semops.py`, `tests/integration/test_query_semantic.py`, `tests/unit/test_ada_semantic_steps.py`. **Next:** the Query Builder "semantic step" UI (the visible user-path surface).
+
+---
+
+*Last updated: 2026-06-15 · 128 active features (#129 semantic top_k+aggregate, #128 semantic operators in ADA, #127 semantic operators Phase 1; #126 model-cascade core was built then removed — kept as a tombstone). See `ROADMAP.md` for upcoming milestones; **semantic operators over SQL** is the active adaptive-inference work.*

@@ -11,7 +11,15 @@ import pytest
 from fastapi.testclient import TestClient
 
 from aughor.semops import operators as ops
-from aughor.semops.operators import _ExtractBatch, _ExtractedRow, _FilterBatch, _RowVerdict
+from aughor.semops.operators import (
+    _Aggregation,
+    _ExtractBatch,
+    _ExtractedRow,
+    _FilterBatch,
+    _RowScore,
+    _RowVerdict,
+    _ScoreBatch,
+)
 
 _LINE = re.compile(r"^\[(\d+)\]\s?(.*)$", re.M)
 
@@ -32,6 +40,10 @@ class _Fake:
                 _ExtractedRow(index=i, values={"status": "open" if "open" in t.lower() else "closed"})
                 for i, t in items
             ])
+        if response_model is _ScoreBatch:
+            return _ScoreBatch(scores=[_RowScore(index=i, score=1.0 if "open" in t.lower() else 0.0) for i, t in items])
+        if response_model is _Aggregation:
+            return _Aggregation(answer=f"{len(items)} tickets summarized")
         raise AssertionError(f"unexpected response_model {response_model!r}")
 
 
@@ -71,6 +83,32 @@ def test_extract_appends_a_column(client: TestClient, builtin_conn_id: str, _moc
     assert statuses == ["open", "closed", "open"]
 
 
+def test_top_k_ranks_and_truncates(client: TestClient, builtin_conn_id: str, _mock_llm):
+    r = client.post("/query/semantic", json={
+        "conn_id": builtin_conn_id, "sql": _SQL,
+        "operator": "top_k", "column": "note", "criterion": "open tickets", "k": 2,
+    })
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["operator"] == "top_k"
+    assert body["output_rows"] == 2
+    assert body["row_count"] == 2
+    assert all("open" in row[0].lower() for row in body["rows"])  # the two 'open' rows ranked first
+
+
+def test_aggregate_returns_one_answer_row(client: TestClient, builtin_conn_id: str, _mock_llm):
+    r = client.post("/query/semantic", json={
+        "conn_id": builtin_conn_id, "sql": _SQL,
+        "operator": "aggregate", "column": "note", "instruction": "summarize the tickets",
+    })
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["operator"] == "aggregate"
+    assert body["columns"] == ["answer"]
+    assert body["row_count"] == 1
+    assert body["rows"] == [["3 tickets summarized"]]
+
+
 def test_text_columns_detection(client: TestClient, builtin_conn_id: str):
     r = client.post("/query/semantic/text-columns", json={"conn_id": builtin_conn_id, "sql": _SQL})
     assert r.status_code == 200, r.text
@@ -87,6 +125,20 @@ def test_filter_without_predicate_is_400(client: TestClient, builtin_conn_id: st
 def test_extract_without_fields_is_400(client: TestClient, builtin_conn_id: str):
     r = client.post("/query/semantic", json={
         "conn_id": builtin_conn_id, "sql": _SQL, "operator": "extract", "column": "note",
+    })
+    assert r.status_code == 400
+
+
+def test_top_k_without_criterion_is_400(client: TestClient, builtin_conn_id: str):
+    r = client.post("/query/semantic", json={
+        "conn_id": builtin_conn_id, "sql": _SQL, "operator": "top_k", "column": "note", "k": 2,
+    })
+    assert r.status_code == 400
+
+
+def test_aggregate_without_instruction_is_400(client: TestClient, builtin_conn_id: str):
+    r = client.post("/query/semantic", json={
+        "conn_id": builtin_conn_id, "sql": _SQL, "operator": "aggregate", "column": "note",
     })
     assert r.status_code == 400
 

@@ -563,10 +563,13 @@ class SemanticField(BaseModel):
 
 class SemanticStep(BaseModel):
     """An LLM operator to run over ONE free-text column of this query's result, after the SQL runs."""
-    operator: Literal["filter", "extract"]
+    operator: Literal["filter", "extract", "top_k", "aggregate"]
     column: str = Field(description="The free-TEXT column in this query's result to operate on.")
     predicate: str = Field(default="", description="filter only: keep rows whose text satisfies this NL predicate, e.g. 'the ticket is a billing complaint'.")
     fields: list[SemanticField] = Field(default_factory=list, description="extract only: the fields to pull from the text into new columns.")
+    criterion: str = Field(default="", description="top_k only: rank rows by how well the text matches this criterion, keep the best k, e.g. 'most severe outage'.")
+    k: int = Field(default=10, description="top_k only: how many top rows to keep.")
+    instruction: str = Field(default="", description="aggregate only: synthesize ONE answer from all the rows' text per this instruction, e.g. 'summarize the recurring complaint themes'.")
 
 
 class PhaseQueryPlan(BaseModel):

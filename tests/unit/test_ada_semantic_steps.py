@@ -15,7 +15,15 @@ from aughor.agent.investigate import _apply_semantic_steps
 from aughor.agent.prompts_investigate import PhaseQueryPlan, SemanticField, SemanticStep
 from aughor.agent.state import QueryResult
 from aughor.semops import operators as ops
-from aughor.semops.operators import _ExtractBatch, _ExtractedRow, _FilterBatch, _RowVerdict
+from aughor.semops.operators import (
+    _Aggregation,
+    _ExtractBatch,
+    _ExtractedRow,
+    _FilterBatch,
+    _RowScore,
+    _RowVerdict,
+    _ScoreBatch,
+)
 
 _LINE = re.compile(r"^\[(\d+)\]\s?(.*)$", re.M)
 
@@ -31,6 +39,10 @@ class _Fake:
             return _FilterBatch(verdicts=[_RowVerdict(index=i, keep="open" in t.lower()) for i, t in items])
         if response_model is _ExtractBatch:
             return _ExtractBatch(rows=[_ExtractedRow(index=i, values={"status": "open"}) for i, t in items])
+        if response_model is _ScoreBatch:
+            return _ScoreBatch(scores=[_RowScore(index=i, score=1.0 if "open" in t.lower() else 0.0) for i, t in items])
+        if response_model is _Aggregation:
+            return _Aggregation(answer=f"{len(items)} tickets")
         raise AssertionError(response_model)
 
 
@@ -76,6 +88,29 @@ def test_extract_step_appends_column(fake_llm):
     _, r = out[0]
     assert r.columns == ["note", "status"]
     assert r.rows[0] == ["open: server is down", "open"]
+
+
+def test_top_k_step_ranks_and_truncates(fake_llm):
+    step = SemanticStep(operator="top_k", column="note", criterion="open tickets", k=2)
+    results = [(_q(semantic=step), _res(["note"], _TEXT_ROWS))]
+
+    out = _apply_semantic_steps(results)
+
+    _, r = out[0]
+    assert r.row_count == 2
+    assert all("open" in row[0].lower() for row in r.rows)
+
+
+def test_aggregate_step_synthesizes_one_row(fake_llm):
+    step = SemanticStep(operator="aggregate", column="note", instruction="summarize")
+    results = [(_q(semantic=step), _res(["note"], _TEXT_ROWS))]
+
+    out = _apply_semantic_steps(results)
+
+    _, r = out[0]
+    assert r.columns == ["answer"]
+    assert r.row_count == 1
+    assert r.rows == [["3 tickets"]]
 
 
 def test_no_step_is_passthrough(fake_llm):

@@ -13,14 +13,19 @@ import pytest
 from aughor.agent.state import QueryResult
 from aughor.semops import operators as ops
 from aughor.semops.operators import (
+    _Aggregation,
     _ExtractBatch,
     _ExtractedRow,
     _FilterBatch,
+    _RowScore,
     _RowVerdict,
+    _ScoreBatch,
     apply_step,
     detect_text_columns,
+    semantic_aggregate,
     semantic_extract,
     semantic_filter,
+    semantic_top_k,
 )
 
 _LINE = re.compile(r"^\[(\d+)\]\s?(.*)$", re.M)
@@ -29,9 +34,11 @@ _LINE = re.compile(r"^\[(\d+)\]\s?(.*)$", re.M)
 class FakeProvider:
     """Parses the operator's row listing and applies a python rule per row."""
 
-    def __init__(self, *, filter_fn=None, extract_fn=None, fail=False):
+    def __init__(self, *, filter_fn=None, extract_fn=None, score_fn=None, aggregate_fn=None, fail=False):
         self.filter_fn = filter_fn
         self.extract_fn = extract_fn
+        self.score_fn = score_fn
+        self.aggregate_fn = aggregate_fn
         self.fail = fail
         self.calls = 0
 
@@ -44,6 +51,10 @@ class FakeProvider:
             return _FilterBatch(verdicts=[_RowVerdict(index=i, keep=bool(self.filter_fn(t))) for i, t in items])
         if response_model is _ExtractBatch:
             return _ExtractBatch(rows=[_ExtractedRow(index=i, values=self.extract_fn(t)) for i, t in items])
+        if response_model is _ScoreBatch:
+            return _ScoreBatch(scores=[_RowScore(index=i, score=float(self.score_fn(t))) for i, t in items])
+        if response_model is _Aggregation:
+            return _Aggregation(answer=self.aggregate_fn([t for _, t in items]))
         raise AssertionError(f"unexpected response_model {response_model!r}")
 
 
@@ -256,3 +267,124 @@ def test_apply_step_unknown_operator_raises():
     qr = _qr(["note"], [["x"]])
     with pytest.raises(ValueError, match="unknown semantic operator"):
         apply_step(qr, "summarize", "note")
+
+
+def test_apply_step_dispatches_top_k(patch_provider):
+    patch_provider(FakeProvider(score_fn=lambda t: len(t)))
+    qr = _qr(["note"], [["aa"], ["aaaa"], ["a"]])
+    out = apply_step(qr, "top_k", "note", criterion="longest", k=2)
+    assert out.operator == "top_k"
+    assert out.result.rows == [["aaaa"], ["aa"]]
+
+
+def test_apply_step_dispatches_aggregate(patch_provider):
+    patch_provider(FakeProvider(aggregate_fn=lambda texts: f"{len(texts)} rows"))
+    qr = _qr(["note"], [["a"], ["b"]])
+    out = apply_step(qr, "aggregate", "note", instruction="count")
+    assert out.operator == "aggregate"
+    assert out.result.rows == [["2 rows"]]
+
+
+# ── top_k ─────────────────────────────────────────────────────────────────────
+
+def test_semantic_top_k_ranks_and_truncates(patch_provider):
+    # score = text length → longest first
+    p = patch_provider(FakeProvider(score_fn=lambda t: len(t)))
+    qr = _qr(["note"], [["short"], ["the longest one here"], ["mid length"]])
+
+    out = semantic_top_k(qr, "note", "longest", 2)
+
+    assert out.output_rows == 2
+    assert out.result.rows == [["the longest one here"], ["mid length"]]
+    assert out.result.row_count == 2
+    assert out.llm_calls == 1
+    assert "kept top 2" in out.notes[0]
+
+
+def test_semantic_top_k_k_ge_n_returns_all_sorted(patch_provider):
+    p = patch_provider(FakeProvider(score_fn=lambda t: float(t)))
+    qr = _qr(["note"], [["1"], ["3"], ["2"]])
+
+    out = semantic_top_k(qr, "note", "biggest", 10)
+
+    assert out.output_rows == 3
+    assert out.result.rows == [["3"], ["2"], ["1"]]
+
+
+def test_semantic_top_k_invalid_k_is_noop(patch_provider):
+    p = patch_provider(FakeProvider(score_fn=lambda t: 1.0))
+    qr = _qr(["note"], [["a"], ["b"]])
+
+    out = semantic_top_k(qr, "note", "c", 0)
+
+    assert out.output_rows == 2
+    assert p.calls == 0
+    assert "k must be >= 1" in out.notes[0]
+
+
+def test_semantic_top_k_fail_open_scores_neutral(patch_provider):
+    # batch fails → all rows neutral → original order preserved (stable), nothing dropped from contention
+    p = patch_provider(FakeProvider(fail=True))
+    qr = _qr(["note"], [["a"], ["b"], ["c"]])
+
+    out = semantic_top_k(qr, "note", "x", 2)
+
+    assert out.output_rows == 2
+    assert out.result.rows == [["a"], ["b"]]   # stable top-2 of all-neutral
+    assert any("failed" in n for n in out.notes)
+
+
+def test_semantic_top_k_refuses_over_cap(patch_provider):
+    p = patch_provider(FakeProvider(score_fn=lambda t: 1.0))
+    qr = _qr(["note"], [["a"]], row_count=5000)
+
+    out = semantic_top_k(qr, "note", "x", 5, max_rows=200)
+
+    assert out.truncated is True
+    assert p.calls == 0
+
+
+# ── aggregate ─────────────────────────────────────────────────────────────────
+
+def test_semantic_aggregate_synthesizes_one_row(patch_provider):
+    p = patch_provider(FakeProvider(aggregate_fn=lambda texts: f"summary of {len(texts)}: " + "; ".join(texts)))
+    qr = _qr(["note"], [["billing issue"], ["login bug"], ["billing again"]])
+
+    out = semantic_aggregate(qr, "note", "summarize the themes")
+
+    assert out.result.columns == ["answer"]
+    assert out.result.row_count == 1
+    assert out.result.rows[0][0].startswith("summary of 3:")
+    assert out.input_rows == 3
+    assert out.output_rows == 1
+    assert out.llm_calls == 1
+
+
+def test_semantic_aggregate_custom_out_column(patch_provider):
+    p = patch_provider(FakeProvider(aggregate_fn=lambda texts: "ok"))
+    qr = _qr(["note"], [["a"]])
+
+    out = semantic_aggregate(qr, "note", "x", out_column="themes")
+
+    assert out.result.columns == ["themes"]
+
+
+def test_semantic_aggregate_fail_open_keeps_raw(patch_provider):
+    p = patch_provider(FakeProvider(fail=True))
+    qr = _qr(["note"], [["a"], ["b"]])
+
+    out = semantic_aggregate(qr, "note", "x")
+
+    assert out.result.rows == [["a"], ["b"]]    # raw result kept, not replaced
+    assert out.llm_calls == 0
+    assert any("aggregation failed" in n for n in out.notes)
+
+
+def test_semantic_aggregate_missing_column_is_noop(patch_provider):
+    p = patch_provider(FakeProvider(aggregate_fn=lambda texts: "x"))
+    qr = _qr(["note"], [["a"]])
+
+    out = semantic_aggregate(qr, "nope", "x")
+
+    assert p.calls == 0
+    assert "not in the result" in out.notes[0]
