@@ -34,6 +34,7 @@ import csv
 import json
 import os
 import shutil
+import sqlite3
 import subprocess
 import sys
 import time
@@ -73,7 +74,7 @@ def _norm(name: str) -> str:
 
 
 def build_schema(spider_root: Path, db_name: str) -> str:
-    """Return CREATE TABLE DDL for all tables in the database."""
+    """Return schema context: DDL + FK join paths + 3 sample rows per table."""
     sqlite_meta = spider_root / "resource" / "databases" / "sqlite"
     ddl_path = sqlite_meta / db_name / "DDL.csv"
     if not ddl_path.exists():
@@ -85,12 +86,71 @@ def build_schema(spider_root: Path, db_name: str) -> str:
         ddl_path = match / "DDL.csv"
     if not ddl_path.exists():
         return ""
-    parts = []
+
+    ddl_parts = []
     for row in csv.DictReader(ddl_path.open()):
         ddl = (row.get("DDL") or "").strip()
         if ddl:
-            parts.append(ddl)
-    return "\n\n".join(parts)
+            ddl_parts.append(ddl)
+
+    db_path = spider_root / "resource" / "databases" / f"{db_name}.sqlite"
+    if not db_path.exists():
+        return "\n\n".join(ddl_parts)
+
+    try:
+        conn = sqlite3.connect(str(db_path))
+        tables = [r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+        ).fetchall()]
+
+        # FK join paths from PRAGMA
+        fk_lines = []
+        for tbl in tables:
+            try:
+                fks = conn.execute(f"PRAGMA foreign_key_list({tbl})").fetchall()
+                for fk in fks:
+                    # (id, seq, table, from, to, ...)
+                    fk_lines.append(f"  {tbl}.{fk[3]} → {fk[2]}.{fk[4]}")
+            except Exception:
+                pass
+
+        # Sample rows (3 per table, truncated to 80 chars per value)
+        sample_parts = []
+        for tbl in tables:
+            try:
+                cols = [r[1] for r in conn.execute(f"PRAGMA table_info({tbl})").fetchall()]
+                rows = conn.execute(f"SELECT * FROM {tbl} LIMIT 3").fetchall()
+                if rows:
+                    header = " | ".join(cols)
+                    sample_rows = [" | ".join(str(v)[:40] for v in r) for r in rows]
+                    sample_parts.append(
+                        f"-- {tbl} sample rows:\n-- " +
+                        f"\n-- ".join([header] + sample_rows)
+                    )
+            except Exception:
+                pass
+
+        conn.close()
+    except Exception:
+        return "\n\n".join(ddl_parts)
+
+    result = "\n\n".join(ddl_parts)
+    if fk_lines:
+        result += (
+            "\n\nFOREIGN KEY RELATIONSHIPS (from database schema — use these exact columns for JOINs):\n"
+            + "\n".join(fk_lines)
+            + "\nNote: These are directional FK declarations. Only join in the direction the question requires — "
+            "do not automatically expand to include both sides of a relationship unless the question explicitly asks for both."
+        )
+    if sample_parts:
+        result += (
+            "\n\nSAMPLE DATA (3 rows per table — reveals actual value formats and encodings):\n"
+            "Use sample data to understand how values are stored (e.g. comma-separated IDs, date formats, encodings). "
+            "Do NOT copy column formatting or concatenation patterns from sample rows into your SELECT output — "
+            "return columns separately as the question requires.\n\n"
+            + "\n\n".join(sample_parts)
+        )
+    return result
 
 
 # ── external knowledge ────────────────────────────────────────────────────────
@@ -153,9 +213,118 @@ def generate_sql(question: str, schema: str, doc_section: str, temperature: floa
     return (ans.sql or "").strip()
 
 
+# ── SQLite execute-and-retry ──────────────────────────────────────────────────
+
+def _sqlite_try(db_path: Path, sql: str) -> tuple[bool, str]:
+    """Try executing sql against the SQLite DB. Returns (ok, error_message)."""
+    try:
+        conn = sqlite3.connect(str(db_path))
+        conn.execute(sql).fetchmany(5)
+        conn.close()
+        return True, ""
+    except Exception as e:
+        return False, str(e)
+
+
+def _sqlite_exec(db_path: Path, sql: str):
+    """Execute sql and return an ExecResult (ok, rows, error) for consensus voting."""
+    from aughor.agent.sql_consensus import ExecResult
+    try:
+        conn = sqlite3.connect(str(db_path))
+        cur = conn.execute(sql)
+        rows = cur.fetchall()
+        conn.close()
+        return ExecResult(ok=True, rows=rows)
+    except Exception as e:
+        return ExecResult(ok=False, error=str(e))
+
+
+def _recover_empty(question: str, schema: str, doc_section: str,
+                   sql: str, _msg: str, temperature: float) -> str:
+    """Recover from a 0-row result — usually a wrong literal or over-tight filter."""
+    from aughor.llm.provider import get_provider
+    from aughor.agent.prompts import CHAT_SQL_SYSTEM
+    from pydantic import BaseModel
+    from typing import Any
+
+    prompt = (
+        f"DATABASE SCHEMA:\n{schema}\n\n"
+        f"{_SQLITE_HINT}{doc_section}"
+        f"QUESTION: {question}\n\n"
+        f"PREVIOUS SQL returned ZERO rows:\n{sql}\n\n"
+        "A 0-row result for an analytical question almost always means a filter is wrong. "
+        "Check each WHERE/HAVING literal against the SAMPLE DATA in the schema:\n"
+        "1. Literal spelling/case may be wrong ('Italy' vs 'ITALY' vs 'IT').\n"
+        "2. A date format may not match the stored format (check sample rows).\n"
+        "3. A filter may be too restrictive or join may drop all rows.\n"
+        "Fix the filter(s) so the query returns the intended rows. Preserve all other logic. "
+        "Return the corrected SELECT statement."
+    )
+
+    class FixAnswer(BaseModel):
+        sql: str = ""
+        headline: str = ""
+        chart_type: str = "auto"
+        intent: str = ""
+        approach: Any = None
+        model_config = {"arbitrary_types_allowed": True}
+
+    ans: FixAnswer = get_provider("coder").complete(
+        system=CHAT_SQL_SYSTEM, user=prompt,
+        response_model=FixAnswer, temperature=temperature,
+    )
+    return (ans.sql or "").strip()
+
+
+def _fix_sql(question: str, schema: str, doc_section: str,
+             bad_sql: str, error: str, temperature: float) -> str:
+    """Ask the model to surgically fix the SQL given the execution error.
+
+    The repair must be MINIMAL — fix only the specific error (wrong column name,
+    syntax issue, missing table alias). Do NOT restructure, simplify, or rewrite
+    the query logic. Preserve CTEs, CASE WHEN, PARTITION BY, LIMIT, and all
+    semantic structure from the original SQL.
+    """
+    from aughor.llm.provider import get_provider
+    from aughor.agent.prompts import CHAT_SQL_SYSTEM
+    from pydantic import BaseModel
+    from typing import Any
+
+    fix_prompt = (
+        f"DATABASE SCHEMA:\n{schema}\n\n"
+        f"{_SQLITE_HINT}{doc_section}"
+        f"QUESTION: {question}\n\n"
+        f"PREVIOUS SQL (failed with the error below):\n{bad_sql}\n\n"
+        f"EXECUTION ERROR:\n{error}\n\n"
+        "Fix ONLY the specific error above. Rules:\n"
+        "1. Make the minimal change needed — fix the column name, syntax, or alias that caused the error.\n"
+        "2. Preserve ALL query structure: CTEs, CASE WHEN, PARTITION BY, ORDER BY, LIMIT, HAVING.\n"
+        "3. Do NOT rewrite or simplify. Do NOT remove steps. Do NOT change the logic.\n"
+        "4. If the error is an unknown column, look it up in the schema and substitute the correct name.\n"
+        "Return the corrected SELECT statement with the same structure as the original."
+    )
+
+    class FixAnswer(BaseModel):
+        sql: str = ""
+        headline: str = ""
+        chart_type: str = "auto"
+        intent: str = ""
+        approach: Any = None
+        model_config = {"arbitrary_types_allowed": True}
+
+    ans: FixAnswer = get_provider("coder").complete(
+        system=CHAT_SQL_SYSTEM,
+        user=fix_prompt,
+        response_model=FixAnswer,
+        temperature=temperature,
+    )
+    return (ans.sql or "").strip()
+
+
 # ── per-instance worker ───────────────────────────────────────────────────────
 
-def run_instance(inst: dict, spider_root: Path, out_dir: Path, temperature: float) -> dict:
+def run_instance(inst: dict, spider_root: Path, out_dir: Path, temperature: float,
+                 consensus_k: int = 1) -> dict:
     iid = inst["instance_id"]
     db_name = inst["db"]
     started_at = datetime.now(timezone.utc).isoformat()
@@ -168,12 +337,63 @@ def run_instance(inst: dict, spider_root: Path, out_dir: Path, temperature: floa
 
         doc = load_external_knowledge(spider_root, inst.get("external_knowledge"))
         schema_fetched_at = datetime.now(timezone.utc).isoformat()
+        db_path = spider_root / "resource" / "databases" / f"{db_name}.sqlite"
 
-        sql = generate_sql(inst["question"], schema, doc, temperature)
-        sql_generated_at = datetime.now(timezone.utc).isoformat()
+        steps = [
+            {"step": 1, "timestamp": schema_fetched_at, "action": "schema_extraction",
+             "detail": f"Extracted DDL + FK paths + sample rows for database '{db_name}'"},
+            {"step": 2, "timestamp": schema_fetched_at, "action": "external_knowledge",
+             "detail": f"Loaded external knowledge: {inst.get('external_knowledge') or 'none'}"},
+        ]
 
-        if not sql:
-            return {"id": iid, "ok": False, "error": "empty SQL from model"}
+        if consensus_k > 1 and db_path.exists():
+            # ── Self-consistency path: generate K, execute, vote ──
+            from aughor.agent.sql_consensus import generate_consensus_sql
+            q = inst["question"]
+            result = generate_consensus_sql(
+                generate_fn=lambda temp: generate_sql(q, schema, doc, temp),
+                execute_fn=lambda s: _sqlite_exec(db_path, s),
+                repair_fn=lambda bad, err, temp: _fix_sql(q, schema, doc, bad, err, temp),
+                empty_recovery_fn=lambda bad, msg, temp: _recover_empty(q, schema, doc, bad, msg, temp),
+                k=consensus_k,
+                repair_rounds=2,
+            )
+            sql = result.sql
+            if not sql:
+                return {"id": iid, "ok": False, "error": "no valid candidate after consensus"}
+            steps.append({
+                "step": 3, "timestamp": datetime.now(timezone.utc).isoformat(),
+                "action": "self_consistency_vote",
+                "detail": f"Generated {consensus_k} candidates, {result.total_valid} executed, "
+                          f"winner agreed by {result.vote_count}/{result.total_valid}",
+                "candidates": result.steps,
+                "output": sql,
+            })
+            sql_generated_at = datetime.now(timezone.utc).isoformat()
+        else:
+            # ── Single-shot path with 1 repair on error ──
+            sql = generate_sql(inst["question"], schema, doc, temperature)
+            sql_generated_at = datetime.now(timezone.utc).isoformat()
+            if not sql:
+                return {"id": iid, "ok": False, "error": "empty SQL from model"}
+            steps.append({
+                "step": 3, "timestamp": sql_generated_at, "action": "nl2sql_generation",
+                "detail": "NL2SQL via Aughor chat prompt (SQLite dialect)", "output": sql,
+            })
+            if db_path.exists():
+                ok, err = _sqlite_try(db_path, sql)
+                if not ok:
+                    fixed_sql = _fix_sql(inst["question"], schema, doc, sql, err, temperature)
+                    steps.append({"step": 4, "timestamp": datetime.now(timezone.utc).isoformat(),
+                                  "action": "execute_error", "detail": f"Execution failed: {err[:200]}"})
+                    if fixed_sql:
+                        ok2, err2 = _sqlite_try(db_path, fixed_sql)
+                        steps.append({"step": 5, "timestamp": datetime.now(timezone.utc).isoformat(),
+                                      "action": "self_correction",
+                                      "detail": f"Retry {'succeeded' if ok2 else 'also failed: ' + err2[:200]}",
+                                      "output": fixed_sql})
+                        if ok2:
+                            sql = fixed_sql
 
         # Write prediction SQL
         (out_dir / f"{iid}.sql").write_text(sql + "\n")
@@ -190,27 +410,7 @@ def run_instance(inst: dict, spider_root: Path, out_dir: Path, temperature: floa
                 "schema_fetched": schema_fetched_at,
                 "sql_generated": sql_generated_at,
             },
-            "steps": [
-                {
-                    "step": 1,
-                    "timestamp": schema_fetched_at,
-                    "action": "schema_extraction",
-                    "detail": f"Extracted DDL for database '{db_name}' from DDL.csv",
-                },
-                {
-                    "step": 2,
-                    "timestamp": schema_fetched_at,
-                    "action": "external_knowledge",
-                    "detail": f"Loaded external knowledge: {inst.get('external_knowledge') or 'none'}",
-                },
-                {
-                    "step": 3,
-                    "timestamp": sql_generated_at,
-                    "action": "nl2sql_generation",
-                    "detail": "Single-shot NL2SQL via Aughor chat prompt (SQLite dialect)",
-                    "output": sql,
-                },
-            ],
+            "steps": steps,
             "elapsed_seconds": round(time.monotonic() - t0, 2),
         }
         (out_dir / f"{iid}_trace.json").write_text(json.dumps(trace, indent=2))
@@ -224,7 +424,8 @@ def run_instance(inst: dict, spider_root: Path, out_dir: Path, temperature: floa
 # ── generation loop ───────────────────────────────────────────────────────────
 
 def generate(spider_root: Path, out_dir: Path, limit: int | None,
-             ids: set[str] | None, workers: int, temperature: float) -> None:
+             ids: set[str] | None, workers: int, temperature: float,
+             consensus_k: int = 1) -> None:
     instances = load_local_instances(spider_root)
     if ids:
         instances = [r for r in instances if r["instance_id"] in ids]
@@ -233,14 +434,15 @@ def generate(spider_root: Path, out_dir: Path, limit: int | None,
 
     out_dir.mkdir(parents=True, exist_ok=True)
     run_ts = datetime.now(timezone.utc).isoformat()
+    mode = f"consensus k={consensus_k}" if consensus_k > 1 else "single-shot"
     print(f"[{run_ts}] Generating {len(instances)} local predictions → {out_dir} "
-          f"(workers={workers}, temp={temperature})")
+          f"(workers={workers}, temp={temperature}, mode={mode})")
 
     done = ok = 0
     fails: list[dict] = []
 
     with ThreadPoolExecutor(max_workers=workers) as ex:
-        futs = {ex.submit(run_instance, r, spider_root, out_dir, temperature): r["instance_id"]
+        futs = {ex.submit(run_instance, r, spider_root, out_dir, temperature, consensus_k): r["instance_id"]
                 for r in instances}
         for fut in as_completed(futs):
             res = fut.result()
@@ -366,6 +568,8 @@ def main() -> None:
     ap.add_argument("--workers", type=int, default=4,
                     help="Concurrent generation / eval workers")
     ap.add_argument("--temperature", type=float, default=0.0)
+    ap.add_argument("--consensus", type=int, default=1,
+                    help="Number of candidates for self-consistency voting (1 = single-shot)")
     ap.add_argument("--score", action="store_true",
                     help="Run Spider's evaluator after generation")
     ap.add_argument("--score-only", action="store_true",
@@ -377,7 +581,8 @@ def main() -> None:
     ids = set(s.strip() for s in args.ids.split(",")) if args.ids else None
 
     if not args.score_only:
-        generate(args.spider_root, args.out, args.limit, ids, args.workers, args.temperature)
+        generate(args.spider_root, args.out, args.limit, ids, args.workers,
+                 args.temperature, args.consensus)
 
     if args.score or args.score_only:
         score(args.spider_root, args.out, args.workers)

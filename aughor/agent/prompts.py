@@ -143,6 +143,44 @@ CHAT_SQL_SYSTEM = (
     ""
     "Default to 'auto' only when none of the above rules clearly apply. "
     ""
+    "AGGREGATION GRAIN — CRITICAL: "
+    "Before writing any SQL, identify the UNIT OF ANALYSIS the question is asking about. "
+    "Tables often have MULTIPLE ROWS per entity (one row per game, per ball bowled, per transaction) — "
+    "but the question may ask about that entity's TOTAL or CAREER figure. "
+    "RULE: When the answer is about an entity's cumulative/career/total stat, GROUP BY the entity and SUM()/COUNT() — NEVER take MAX() of a single row's value as if it were the career total. "
+    "  WRONG:  SELECT player_id, MAX(hits) FROM batting                → returns one row's hits, not career total "
+    "  RIGHT:  SELECT player_id, SUM(h) AS career_hits FROM batting GROUP BY player_id "
+    "GRAIN PATTERNS — recognise these question shapes: "
+    "  'player's career [stat]'          → GROUP BY player_id, SUM(stat_col) across all their rows "
+    "  'team's season [stat]'            → GROUP BY team_id, season_id, SUM(col) "
+    "  'customer's total / lifetime'     → GROUP BY customer_id, SUM(amount) "
+    "  'match / game / event total'      → GROUP BY match_id, SUM(col) — do NOT filter at row level before aggregating "
+    "  '[N]+ in a match / event'         → HAVING SUM(col) >= N — NOT WHERE col >= N (that checks per-row, not per-match total) "
+    "  'average [stat] per player/team'  → SUM(col) / COUNT(DISTINCT entity_id), not AVG(col) "
+    "IMPORTANT EXCEPTIONS — do NOT oversimplify: "
+    "  When the question asks about ranked/tiered segments (e.g. 'top tier', 'bottom tier', 'tier 1'), "
+    "  preserve CASE WHEN logic and PARTITION BY clauses — these are intentional, not errors. "
+    "  When the question has 'per [dimension]' ranking (e.g. 'top category per region'), "
+    "  keep PARTITION BY [dimension] in window functions — do not collapse to a global rank. "
+    "  NEVER remove a LIMIT N from a 'which [entity]' / 'the top N' question — LIMIT is the answer shape. "
+    "MULTI-STEP QUERIES — when a question has sequential logic ('find top N of X, then compute Y from those N'), "
+    "use chained CTEs where each step fully materialises before the next: "
+    "  step_1 AS (SELECT ... GROUP BY ...), "
+    "  step_2 AS (SELECT ... FROM step_1 WHERE rank <= N), "
+    "  step_3 AS (SELECT AVG(...) FROM step_2) "
+    "NEVER collapse sequential steps into a single SELECT — the inner step must complete before the outer references it. "
+    ""
+    "FILTER COMPLETENESS — MANDATORY: "
+    "Before writing SQL, extract EVERY constraint stated in the question and verify each maps to a WHERE or HAVING clause. "
+    "A missing filter produces silently wrong results that execute without error. "
+    "CONSTRAINT CHECKLIST — scan the question for: "
+    "  Time scope ('in 2021', 'for season 5', 'last 30 days', 'December')  → WHERE date_col BETWEEN/= ... "
+    "  Category/entity scope ('Italian customers', 'season 5', 'for album X') → WHERE col = value "
+    "  Status filter ('delivered', 'won', 'active')                         → WHERE status_col = '...' "
+    "  Threshold ('players scoring 100+ runs IN A MATCH')                   → HAVING SUM(col) >= 100 (not WHERE) "
+    "  Exclusion ('excluding cancelled', 'not including X')                 → WHERE col NOT IN (...) AND col IS NOT NULL "
+    "Each constraint in the question MUST appear as a filter in the SQL. If it does not, the query is wrong. "
+    ""
     "SQL CORRECTNESS RULES: "
     "  NULL-SAFE FILTERS: col NOT IN (...) silently passes NULL rows — always add AND col IS NOT NULL alongside every NOT IN filter. "
     "  TEXT TIMESTAMPS: when a timestamp column is stored as TEXT and you filter with != '', also add AND col IS NOT NULL to exclude NULLs. "
@@ -181,6 +219,11 @@ DATABASE SCHEMA:
 {schema}
 
 {metrics_section}{conn_kb_section}{exploration_section}{causal_section}{document_section}{sql_examples_section}{kb_patterns_section}{history_section}QUESTION: {question}
+
+PRE-WRITE CHECKLIST (complete mentally before writing SQL):
+1. GRAIN: What is the unit of analysis? (per player, per match, per customer?) Does the table have multiple rows per entity? If yes → GROUP BY entity, SUM/COUNT across rows.
+2. FILTERS: List every constraint in the question (time, category, entity, status, threshold). Each one MUST appear as a WHERE or HAVING clause. Missing = wrong answer.
+3. STEPS: Does the question have sequential logic? ('find X, then average those X') → use chained CTEs, do not collapse.
 
 Write a single SELECT query using ONLY tables and columns that are explicitly listed in the schema above.
 NEVER invent column names — if a column is not in the schema, it does not exist.
@@ -381,6 +424,12 @@ SCHEMA:
 7. If a table is marked "⚠ No date/timestamp columns", join to a table that has one instead of adding a date filter directly.
 8. If an ACTION:name() token is listed in the ontology section, you may use it in the query — it will be expanded before execution.
 9. NULL-SAFE FILTERS: col NOT IN (...) silently passes NULL rows — always pair with AND col IS NOT NULL.
+9a. AGGREGATION GRAIN — CRITICAL: identify the unit of analysis before writing SQL. Tables often have multiple rows per entity (one row per game/ball/transaction). When the question asks about an entity's total/career/cumulative stat, GROUP BY the entity and SUM()/COUNT() — NEVER MAX() of a single row.
+    WRONG:  SELECT player_id, MAX(hits) FROM batting                → one row's hits, not career total
+    RIGHT:  SELECT player_id, SUM(h) AS career_hits FROM batting GROUP BY player_id
+    'N+ in a match/event' → HAVING SUM(col) >= N, NOT WHERE col >= N (per-match total, not per-row check).
+9b. FILTER COMPLETENESS — MANDATORY: extract every constraint from the hypothesis (time scope, category, entity, status, threshold) and verify each maps to a WHERE or HAVING clause. A missing filter silently returns wrong results.
+9c. MULTI-STEP LOGIC: when the intent has sequential steps ('top N of X, then compute Y from those N'), use chained CTEs — each step fully materialises before the next references it. Never collapse sequential steps into a single SELECT.
 10. WINDOW FUNCTIONS: never repeat the same LAG/LEAD/RANK expression more than once — compute it in a CTE first, then reference the alias.
 11. RATIO METRICS — CRITICAL: ratio-of-aggregates (freight-to-price, cost ratio, return rate by value, spend share) MUST use
     SUM(numerator) / NULLIF(SUM(denominator), 0). NEVER AVG(x/y) — it is statistically wrong for group-level ratios.

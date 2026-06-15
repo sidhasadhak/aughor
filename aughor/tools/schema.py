@@ -707,6 +707,21 @@ def build_schema_context(
                 "Do NOT fabricate a date column. Join a table that has one if a time range is needed."
             )
 
+        # Sample rows (3 per table) — reveals actual value formats and encodings.
+        # Skipped when table is very wide (>25 cols) to avoid bloating context.
+        if len(cols) <= 25:
+            try:
+                sample_rows = conn.execute(f"SELECT * FROM {fqn} LIMIT 3").fetchall()
+                if sample_rows:
+                    col_names = [c[0] for c in cols]
+                    header = " | ".join(col_names)
+                    rows_str = [" | ".join(str(v)[:40] for v in r) for r in sample_rows]
+                    parts.append(f"  -- sample rows: {header}")
+                    for rs in rows_str:
+                        parts.append(f"  --             {rs}")
+            except Exception:
+                pass
+
         # Enumerate values for ALL low-cardinality categorical columns (frequency-ordered).
         # Using LIMIT 51: if ≤ 50 rows come back we know cardinality is low enough to list.
         for col_name, col_type in [(c[0], c[1]) for c in cols]:
