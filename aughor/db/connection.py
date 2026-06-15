@@ -139,6 +139,23 @@ def _security_post(
         pass  # security failures must never break query execution
     return result
 
+
+# ── Public security gate (stable interface for out-of-module connectors) ──────
+# Connectors living outside this module (aughor/connectors/**) should gate
+# execution through these, rather than reaching for the leading-underscore
+# internals. Thin forwarders — the policy lives in _security_pre/_security_post.
+
+def security_pre(connection_id: str, hypothesis_id: str, sql: str) -> "QueryResult | None":
+    """Pre-execution safety gate. Returns a blocked QueryResult, or None to proceed."""
+    return _security_pre(connection_id, hypothesis_id, sql)
+
+
+def security_post(connection_id: str, hypothesis_id: str, sql: str,
+                  result: "QueryResult", duration_ms: float) -> "QueryResult":
+    """Post-execution PII redaction + audit + budget. Returns the (possibly modified) result."""
+    return _security_post(connection_id, hypothesis_id, sql, result, duration_ms)
+
+
 # ── Proactive PostgreSQL dialect transforms ───────────────────────────────────
 # Applied to every Postgres query *before* execution to prevent the most
 # common class of type errors without needing a retry round-trip.
