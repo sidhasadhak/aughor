@@ -589,7 +589,19 @@ def _execute_safe(conn: "DatabaseConnection", phase_id: str, sql: str, schema: O
     if not result.error and result.row_count == 0:
         _zero_diag = _zero_row_suspicious(sql)
 
-    if result.error or _zero_diag:
+    # Value-domain join guard: a join on value-disjoint keys produces an
+    # unreliable result (0 rows on inner joins, all-NULL right side on outer)
+    # without ever erroring. Detect it and feed the regenerate loop below.
+    _domain_warnings = []
+    try:
+        from aughor.sql.join_guard import check_join_value_domains
+        _domain_warnings = check_join_value_domains(conn, sql)
+    except Exception as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "ada join-guard probe best-effort; query proceeds",
+                 counter="join_guard.ada_probe")
+
+    if result.error or _zero_diag or _domain_warnings:
         class _Fix(BaseModel):
             fixed_sql: str
             explanation: str
@@ -610,9 +622,20 @@ def _execute_safe(conn: "DatabaseConnection", phase_id: str, sql: str, schema: O
             else:
                 _diag = ""
 
-            # For zero-row retries, synthesise a fake "error" message so FIX_SQL_PROMPT
-            # has something useful in the ERROR MESSAGE field
-            fix_error = _err if _err else "Query returned 0 rows — the SQL logic is likely wrong (see DIAGNOSIS)."
+            # Append the value-domain mismatch to the diagnosis (it may co-occur
+            # with a zero-row diagnosis, or be the sole reason for the retry).
+            if _domain_warnings:
+                _dw_text = "\n".join(w.to_prompt_text() for w in _domain_warnings)
+                _diag = (f"{_diag}\n{_dw_text}" if _diag else f"DIAGNOSIS: {_dw_text}").strip() + "\n"
+
+            # Synthesise a fake "error" message so FIX_SQL_PROMPT has something
+            # useful in the ERROR MESSAGE field when there was no hard error.
+            if _err:
+                fix_error = _err
+            elif _domain_warnings:
+                fix_error = "A join is on value-disjoint columns (see DIAGNOSIS) — the result is unreliable."
+            else:
+                fix_error = "Query returned 0 rows — the SQL logic is likely wrong (see DIAGNOSIS)."
 
             fix_prompt = FIX_SQL_PROMPT.format(
                 dialect=conn.dialect,
@@ -620,6 +643,7 @@ def _execute_safe(conn: "DatabaseConnection", phase_id: str, sql: str, schema: O
                 error=fix_error,
                 schema=schema if schema else conn.get_schema(),
                 kb_patterns_section="",
+                metrics_section="",
                 error_diagnosis=_diag,
             )
             fix = _provider("coder").complete(
@@ -628,8 +652,18 @@ def _execute_safe(conn: "DatabaseConnection", phase_id: str, sql: str, schema: O
                 response_model=_Fix,
             )
             retry = conn.execute(phase_id, fix.fixed_sql)
-            # Accept the fix if: hard error resolved, OR zero-row and fix got rows
-            if not retry.error and (retry.row_count > 0 or not _zero_diag):
+            # Accept the fix if: hard error resolved, OR zero-row and fix got rows.
+            # For a domain-mismatch retry, additionally require the regeneration to
+            # actually CLEAR the mismatch — never replace a query with one that still
+            # joins on value-disjoint keys (prevention > recovery; never go backwards).
+            _accept = not retry.error and (retry.row_count > 0 or not _zero_diag)
+            if _accept and _domain_warnings:
+                try:
+                    from aughor.sql.join_guard import check_join_value_domains as _cjvd
+                    _accept = not _cjvd(conn, fix.fixed_sql)
+                except Exception:
+                    _accept = False
+            if _accept:
                 retry.sql = fix.fixed_sql
                 result = retry
         except Exception:

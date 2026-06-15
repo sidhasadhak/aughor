@@ -133,8 +133,11 @@ SELECT
 
         result = conn.execute("__domain_probe__", probe_sql)
         if result and result.rows:
-            total, matched = result.rows[0][0], result.rows[0][1]
-            if total and total > 0:
+            # The connection stringifies all result values (no dtype passthrough),
+            # so coerce to int before any numeric comparison.
+            total = int(result.rows[0][0])
+            matched = int(result.rows[0][1])
+            if total > 0:
                 return matched / total
     except Exception as exc:
         from aughor.kernel.errors import tolerate

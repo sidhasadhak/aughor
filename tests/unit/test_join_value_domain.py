@@ -160,4 +160,52 @@ def test_caps_at_max_probes():
     assert conn.execute.call_count <= 4
 
 
+# ── Real-connection regression (the mock can't catch value stringification) ──
+# DuckDBConnection.execute() stringifies every result value for JSON
+# serialisation, so the probe's COUNT(*) comes back as '93' not 93. A mock
+# returning ints hid this; only a real connection exercises the int() coercion.
+
+def _real_conn():
+    import duckdb
+    from pathlib import Path
+    from aughor.db.connection import DuckDBConnection
+
+    conn = DuckDBConnection.__new__(DuckDBConnection)
+    conn._path = Path(":memory:")
+    conn._conn = duckdb.connect(":memory:")
+    conn._connection_id = "test"
+    conn._schema_name = None
+    # Two tables: a real FK pair (orders.cust ⊆ customers.id) and a disjoint pair.
+    conn._conn.execute("CREATE TABLE customers (id VARCHAR)")
+    conn._conn.execute("INSERT INTO customers VALUES ('C001'),('C002'),('C003'),('C004'),('C005')")
+    conn._conn.execute("CREATE TABLE orders (cust VARCHAR, camp VARCHAR)")
+    conn._conn.execute("INSERT INTO orders VALUES ('C001','CMP1'),('C002','CMP2'),('C003','CMP1')")
+    conn._conn.execute("CREATE TABLE campaigns (id VARCHAR)")
+    conn._conn.execute("INSERT INTO campaigns VALUES ('CMP1'),('CMP2'),('CMP3')")
+    return conn
+
+
+def test_real_connection_good_fk_no_warning():
+    conn = _real_conn()
+    sql = "SELECT * FROM orders o JOIN customers c ON o.cust = c.id"
+    assert check_join_value_domains(conn, sql) == []
+
+
+def test_real_connection_disjoint_join_warns():
+    conn = _real_conn()
+    # orders.cust (C00x) vs campaigns.id (CMPx) — same VARCHAR type, disjoint values
+    sql = "SELECT * FROM orders o JOIN campaigns c ON o.cust = c.id"
+    warnings = check_join_value_domains(conn, sql)
+    assert len(warnings) == 1
+    assert warnings[0].overlap == 0.0
+    assert "MISMATCH" in warnings[0].to_prompt_text()
+
+
+def test_real_connection_correct_camp_join_no_warning():
+    conn = _real_conn()
+    # The CORRECT campaign join (orders.camp ⊆ campaigns.id) must not warn
+    sql = "SELECT * FROM orders o JOIN campaigns c ON o.camp = c.id"
+    assert check_join_value_domains(conn, sql) == []
+
+
 import pytest

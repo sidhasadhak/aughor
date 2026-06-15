@@ -649,8 +649,11 @@ def execute_planned_queries(state: AgentState, conn: "DatabaseConnection") -> di
         ambiguity_warnings = detect_ambiguous_columns(sql, state["schema_context"])
         join_warnings = detect_invalid_joins(sql, state["schema_context"])
         # ── Value-domain join guard: catch joins whose key values don't overlap ─
+        # Kept separate from name-based join_warnings: domain mismatches are
+        # empirically grounded (0% sampled overlap) and strong enough to drive a
+        # regeneration even when the query executes cleanly.
         from aughor.sql.join_guard import check_join_value_domains
-        join_warnings = join_warnings + check_join_value_domains(conn, sql)
+        domain_warnings = check_join_value_domains(conn, sql)
         # ── Semantic column alignment: catch wrong identifier columns ─────────
         semantic_warnings = check_entity_column_alignment(
             state["question"], sql, state["schema_context"]
@@ -686,7 +689,7 @@ def execute_planned_queries(state: AgentState, conn: "DatabaseConnection") -> di
             from aughor.tools.error_classifier import classify_sql_error
             kb_fix_patterns = retrieve_for_fix_sql(original_error, sql)
             diagnosis = classify_sql_error(original_error, sql, conn.dialect)
-            pre_flight = ambiguity_warnings + join_warnings + semantic_warnings
+            pre_flight = ambiguity_warnings + join_warnings + domain_warnings + semantic_warnings
             if pre_flight:
                 warn_text = "\n".join(w.to_prompt_text() for w in pre_flight)
                 diagnosis = f"{diagnosis}\n{warn_text}".strip()
@@ -730,6 +733,57 @@ def execute_planned_queries(state: AgentState, conn: "DatabaseConnection") -> di
             ))
 
             result = _attach_stats(retry)
+            results.append(result)
+        elif domain_warnings:
+            # Query executed cleanly but joins on value-disjoint keys → the result
+            # is unreliable. Regenerate ONCE with the mismatch as the diagnosis;
+            # adopt the rewrite only if it executes clean AND clears the mismatch
+            # (never replace a query with one that still has a disjoint join).
+            _stats.inc("join_domain_repairs")
+            warn_text = "\n".join(w.to_prompt_text() for w in domain_warnings)
+            try:
+                fix: SQLFix = get_provider("coder").complete(
+                    system="You are a SQL expert. Fix the broken query.",
+                    user=FIX_SQL_PROMPT.format(
+                        dialect=conn.dialect,
+                        sql=sql,
+                        error="A join is on value-disjoint columns — the result is unreliable.",
+                        error_diagnosis=f"DIAGNOSIS:\n{warn_text}\n",
+                        schema=state["schema_context"],
+                        kb_patterns_section="",
+                        metrics_section="",
+                    ),
+                    response_model=SQLFix,
+                )
+                retry = conn.execute(h.id, fix.fixed_sql)
+                retry_domain = check_join_value_domains(conn, fix.fixed_sql)
+                if not retry.error and not retry_domain:
+                    _stats.inc("join_domain_repair_successes")
+                    new_pitfalls.append(Pitfall(
+                        original_sql=sql,
+                        error=warn_text,
+                        fixed_sql=fix.fixed_sql,
+                        fix_explanation=fix.fix_explanation,
+                        data_quality_issue=fix.data_quality_issue,
+                    ))
+                    result = _attach_stats(retry)
+                else:
+                    # Regeneration didn't clear it — keep the original result but
+                    # carry the warning forward as a data-quality pitfall so the
+                    # narrator flags the join rather than reporting a clean number.
+                    new_pitfalls.append(Pitfall(
+                        original_sql=sql,
+                        error=warn_text,
+                        fixed_sql=sql,
+                        fix_explanation=warn_text,
+                        data_quality_issue=warn_text,
+                    ))
+                    result = _attach_stats(result)
+            except Exception as _exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_exc, "join-domain repair best-effort; original result kept",
+                         counter="join_guard.repair_error")
+                result = _attach_stats(result)
             results.append(result)
         else:
             results.append(_attach_stats(result))
