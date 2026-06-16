@@ -7,7 +7,7 @@ they must FIRE on the bug and stay SILENT on legitimate SQL (the false-positive 
 the whole point: a clumsy version would suppress valid insights)."""
 from aughor.sql.fanout import (
     integer_division_risk, count_star_entity_fanout, count_star_chasm_fanout,
-    avg_over_chasm_fanout,
+    avg_over_chasm_fanout, sum_over_chasm_fanout,
 )
 
 # products is the PARENT (order_items.product_id references it); orders is a many-side child.
@@ -174,3 +174,48 @@ class TestAvgOverChasm:
     def test_malformed_sql_never_raises(self):
         assert avg_over_chasm_fanout("this is not sql", CHASM_TC) is None
         assert avg_over_chasm_fanout("", CHASM_TC) is None
+
+
+class TestSumOverChasm:
+    def test_sum_over_chasm_flagged(self):
+        # SUM(clicks.amount) over campaigns⋈clicks⋈impressions — over-counted by the
+        # impressions fan-out (each click row repeated per impression). The ROAS
+        # $48T fan-out trap is this shape: SUM of one satellite's measure across a
+        # join to a SECOND independent satellite of the same hub.
+        sql = f"SELECT c.name, SUM(k.ts) FROM campaigns c {_J} GROUP BY c.name"
+        reason = sum_over_chasm_fanout(sql, CHASM_TC)
+        assert reason and "chasm" in reason.lower()
+
+    def test_sum_of_hub_column_also_flagged(self):
+        # even SUM of a hub column over-counts — the hub row is duplicated by the
+        # satellite cross-product (the campaigns.spend → 2.3M× over-count)
+        sql = f"SELECT SUM(c.budget) FROM campaigns c {_J}"
+        assert sum_over_chasm_fanout(sql, CHASM_TC)
+
+    def test_sum_distinct_not_flagged(self):
+        assert sum_over_chasm_fanout(f"SELECT SUM(DISTINCT k.ts) FROM campaigns c {_J}", CHASM_TC) is None
+
+    def test_windowed_sum_not_flagged(self):
+        # SUM(...) OVER (...) doesn't collapse rows — different construct
+        sql = f"SELECT SUM(k.ts) OVER (PARTITION BY c.name) FROM campaigns c {_J}"
+        assert sum_over_chasm_fanout(sql, CHASM_TC) is None
+
+    def test_single_join_not_a_chasm(self):
+        sql = "SELECT SUM(k.ts) FROM campaigns c JOIN clicks k ON c.campaign_id=k.campaign_id"
+        assert sum_over_chasm_fanout(sql, CHASM_TC) is None
+
+    def test_no_sum_not_flagged(self):
+        sql = f"SELECT AVG(k.ts) FROM campaigns c {_J}"
+        assert sum_over_chasm_fanout(sql, CHASM_TC) is None
+
+    def test_pre_aggregated_ctes_are_the_fix_not_flagged(self):
+        # pre-aggregating each satellite to the hub key in its own CTE is the FIX
+        sql = ("WITH k AS (SELECT campaign_id, SUM(ts) s FROM clicks GROUP BY 1), "
+               "i AS (SELECT campaign_id, SUM(ts) s FROM impressions GROUP BY 1) "
+               "SELECT SUM(k.s) FROM campaigns c JOIN k ON c.campaign_id=k.campaign_id "
+               "JOIN i ON c.campaign_id=i.campaign_id")
+        assert sum_over_chasm_fanout(sql, CHASM_TC) is None
+
+    def test_malformed_sql_never_raises(self):
+        assert sum_over_chasm_fanout("this is not sql", CHASM_TC) is None
+        assert sum_over_chasm_fanout("", CHASM_TC) is None

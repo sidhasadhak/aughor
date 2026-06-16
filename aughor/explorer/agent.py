@@ -2698,7 +2698,7 @@ class SchemaExplorer:
                     try:
                         from aughor.sql.fanout import (
                             integer_division_risk, count_star_entity_fanout, count_star_chasm_fanout,
-                            avg_over_chasm_fanout,
+                            avg_over_chasm_fanout, sum_over_chasm_fanout,
                         )
                         _tc = getattr(sql_writer, "table_cols", {})
                         # Measure-additivity: per-unit measure summed without ×quantity
@@ -2712,6 +2712,7 @@ class SchemaExplorer:
                                   or count_star_entity_fanout(sql, _tc)
                                   or count_star_chasm_fanout(sql, _tc, dialect=getattr(self._conn, "dialect", "duckdb"))
                                   or avg_over_chasm_fanout(sql, _tc, dialect=getattr(self._conn, "dialect", "duckdb"))
+                                  or sum_over_chasm_fanout(sql, _tc, dialect=getattr(self._conn, "dialect", "duckdb"))
                                   or (measure_grain_misuse(sql, _mg, _qc, dialect=getattr(self._conn, "dialect", "duckdb")) if _mg else None))
                         if _grain:
                             from aughor.stats import stats as _s; _s.inc("explorer.grain_skips")

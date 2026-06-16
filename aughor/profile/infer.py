@@ -93,6 +93,28 @@ def infer_business_profile(connection_id: str,
     except Exception as exc:
         logger.warning("[profile:%s] recipe resolution failed (non-fatal): %s", connection_id, exc)
 
+    # Audit each metric's value_sql through the SAME grain/join guards the explorer
+    # uses, plus a live range/boundary check (a bounded rate that exceeds its bound
+    # or rounds to a boundary is a grain artifact). A failing value_sql is BLANKED so
+    # the Briefing shows nothing rather than a wrong KPI. Then, for any metric we
+    # blanked that HAS a curated recipe, regenerate its value_sql FROM the recipe's
+    # canonical formula+grain (the recipe is the SQL-accuracy authority) and re-audit
+    # — turning "drop the wrong number" into "show the right one" where we can.
+    try:
+        from aughor.profile.validate import audit_profile
+        from aughor.db.connection import open_connection_for
+        _conn = open_connection_for(connection_id)
+        failed = audit_profile(profile, _conn, schema)
+        if failed:
+            logger.info("[profile:%s] value_sql audit dropped %d metric(s): %s",
+                        connection_id, len(failed), failed)
+            repaired = _regenerate_value_sql(profile, recipes, schema, _conn, set(failed))
+            if repaired:
+                logger.info("[profile:%s] recipe-grounded regeneration recovered %d metric(s): %s",
+                            connection_id, len(repaired), sorted(repaired))
+    except Exception as exc:
+        logger.warning("[profile:%s] value_sql audit failed (non-fatal): %s", connection_id, exc)
+
     store.save(
         connection_id, profile,
         schema_name=schema_name,
@@ -106,6 +128,94 @@ def infer_business_profile(connection_id: str,
         len(profile.north_star_metrics), len(profile.key_questions), len(recipes), profile.confidence,
     )
     return profile
+
+
+def _norm_name(s: str) -> str:
+    import re as _re
+    return _re.sub(r"[^a-z0-9]+", "", (s or "").lower())
+
+
+def _regenerate_value_sql(profile, recipes: list, schema: str, conn, only: set) -> set:
+    """For each blanked metric in `only` that has a curated/LLM recipe, generate a
+    fresh value_sql FROM the recipe's canonical formula+grain+anti_patterns (not the
+    LLM's free-form first draft), then RE-AUDIT it through the same guards. Sets the
+    metric's value_sql in place and returns the set of metric names actually
+    recovered. Best-effort: one batched LLM call; failure leaves the metrics blank.
+
+    This is the root-cause fix for the conversion=100% class of bug: the recipe
+    says the denominator is COUNT(DISTINCT cart_id) over ALL carts, so the
+    regenerated SQL can't fall into the `WHERE abandoned = 0` denominator trap the
+    free-form draft did."""
+    from aughor.profile.validate import audit_value_sql
+    from aughor.tools.schema import _parse_schema_tables
+
+    by_name = {_norm_name(r.get("metric", "")): r for r in (recipes or []) if r.get("formula")}
+    targets = []  # (metric_obj, recipe)
+    for m in getattr(profile, "north_star_metrics", []) or []:
+        if m.name in only:
+            r = by_name.get(_norm_name(m.name))
+            if r:
+                targets.append((m, r))
+    if not targets:
+        return set()
+
+    from pydantic import BaseModel, Field
+
+    class _MetricSql(BaseModel):
+        name: str = Field(description="The metric name, copied EXACTLY from the request")
+        value_sql: str = Field(description="A runnable SELECT-only scalar query (one row, one numeric column)")
+
+    class _Out(BaseModel):
+        metrics: list[_MetricSql]
+
+    spec = "\n\n".join(
+        f"METRIC: {m.name}\n"
+        f"  maps_to: {m.maps_to}\n"
+        f"  unit/range: {m.unit_or_range}\n"
+        f"  canonical formula: {r.get('formula')}\n"
+        f"  grain (compute at this grain): {r.get('grain')}\n"
+        f"  AVOID: {' | '.join(r.get('anti_patterns', []) or [])}"
+        for m, r in targets
+    )
+    system = (
+        "You are a precise analytics engineer. For each metric, write value_sql: a "
+        "runnable DuckDB SELECT-only query returning the metric's CURRENT value as a "
+        "SINGLE scalar (one row, one numeric column with a readable alias). You MUST "
+        "follow the metric's canonical FORMULA and GRAIN exactly and AVOID the listed "
+        "anti-patterns. Use only real tables/columns from the schema. A bounded rate "
+        "(0..1 or 0..100%) MUST be computed so its denominator is the FULL population "
+        "(e.g. ALL carts, not just converted ones) — never filter the denominator down "
+        "to the success condition. Pre-aggregate each side of a multi-table join to the "
+        "shared key in its own CTE before joining (avoid fan-out over-counting)."
+    )
+    user = f"SCHEMA:\n{schema}\n\nWrite value_sql for EACH metric below:\n\n{spec}"
+
+    from aughor.llm.provider import get_provider
+    llm = get_provider("coder")
+    try:
+        out: _Out = llm.complete(system=system, user=user, response_model=_Out, temperature=0.0)
+    except Exception as exc:
+        logger.warning("[profile] value_sql regeneration LLM call failed (non-fatal): %s", exc)
+        return set()
+
+    table_cols = {}
+    try:
+        table_cols = _parse_schema_tables(schema)
+    except Exception:
+        pass
+    fresh = {_norm_name(x.name): (x.value_sql or "").strip() for x in out.metrics}
+    recovered: set = set()
+    for m, _r in targets:
+        cand = fresh.get(_norm_name(m.name), "")
+        if not cand:
+            continue
+        ok, reason = audit_value_sql(cand, table_cols, conn, m.unit_or_range)
+        if ok:
+            m.value_sql = cand
+            recovered.add(m.name)
+        else:
+            logger.info("[profile] regenerated value_sql for %r still failed audit: %s", m.name, reason)
+    return recovered
 
 
 def get_or_infer(connection_id: str,

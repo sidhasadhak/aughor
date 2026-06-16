@@ -16,15 +16,22 @@ from types import SimpleNamespace
 # A chasm schema: clicks and impressions are each on the many-side of `campaign`.
 CHASM_TC = {
     "campaigns":   ["campaign_id", "name", "budget"],
-    "clicks":      ["click_id", "campaign_id", "ts"],
+    "clicks":      ["click_id", "campaign_id", "ts", "amount"],
     "impressions": ["impression_id", "campaign_id", "ts"],
 }
-CHASM_SQL = ("SELECT c.name, COUNT(*) FROM campaigns c "
+CHASM_SQL =("SELECT c.name, COUNT(*) FROM campaigns c "
              "JOIN clicks k ON c.campaign_id=k.campaign_id "
              "JOIN impressions i ON c.campaign_id=i.campaign_id GROUP BY c.name")
 # AVG over the SAME chasm — the mean is biased by the cross-product (each click
 # row repeated per impression), which SUM/COUNT-targeted guards don't catch.
 AVG_CHASM_SQL = ("SELECT c.name, AVG(k.ts) FROM campaigns c "
+                 "JOIN clicks k ON c.campaign_id=k.campaign_id "
+                 "JOIN impressions i ON c.campaign_id=i.campaign_id GROUP BY c.name")
+# SUM over the SAME chasm — a single satellite's measure summed across the join to
+# a SECOND independent satellite over-counts (the ROAS $48T fan-out trap). detect_fanout
+# only de-FANS this (and silently proceeds if it can't rewrite); sum_over_chasm_fanout
+# is the DROP backstop.
+SUM_CHASM_SQL = ("SELECT c.name, SUM(k.amount) FROM campaigns c "
                  "JOIN clicks k ON c.campaign_id=k.campaign_id "
                  "JOIN impressions i ON c.campaign_id=i.campaign_id GROUP BY c.name")
 
@@ -71,6 +78,12 @@ def _run_phase8_with_forced_sql(monkeypatch, forced_sql: str) -> list[str]:
     lg.setLevel(logging.INFO)
     try:
         ex = SchemaExplorer("fixture", open_connection_for("fixture"))
+        # The forced chasm SQL references campaigns/clicks/impressions, which need
+        # not exist in the fixture warehouse — the grain guard reads the static
+        # CHASM_TC from FakeSqlWriter, so only the pre-flight bind check needs to
+        # pass. Stub dry_run green to exercise the guard hermetically (no live DDL,
+        # and the fixture DB is attached read-only anyway).
+        monkeypatch.setattr(ex._conn, "dry_run", lambda _sql: (True, ""))
         ex._state = {}
         monkeypatch.setattr(ex, "_save_state", lambda: None)
 
@@ -106,6 +119,12 @@ def test_explorer_phase8_drops_avg_chasm(monkeypatch) -> None:
     records = _run_phase8_with_forced_sql(monkeypatch, AVG_CHASM_SQL)
     fired = [m for m in records if "grain bug" in m and "AVG" in m and "chasm" in m.lower()]
     assert fired, "the AVG-over-chasm grain guard never fired on the real Phase-8 loop"
+
+
+def test_explorer_phase8_drops_sum_chasm(monkeypatch) -> None:
+    records = _run_phase8_with_forced_sql(monkeypatch, SUM_CHASM_SQL)
+    fired = [m for m in records if "grain bug" in m and "SUM" in m and "chasm" in m.lower()]
+    assert fired, "the SUM-over-chasm grain guard never fired on the real Phase-8 loop"
 
 
 def test_explorer_phase7_emits_cross_table_insight(monkeypatch) -> None:

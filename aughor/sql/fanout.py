@@ -409,6 +409,72 @@ def avg_over_chasm_fanout(sql: str, table_cols: dict | None = None, dialect: str
     return None
 
 
+def sum_over_chasm_fanout(sql: str, table_cols: dict | None = None, dialect: str = "duckdb") -> str | None:
+    """``SUM(x)`` over a CHASM — ≥2 RAW satellites of the SAME hub joined directly —
+    sums a measure across the cross-product of the satellites, so the total is
+    inflated by the OTHER satellite's fan-out multiplicity. The real-path scar: a
+    ROAS query joined ``attribution``, ``invoices`` AND ``order_items`` (three
+    satellites of ``order_id``) and computed ``SUM(weight*revenue_net) / SUM(spend)``
+    — every satellite's measure repeated by the product of the others' row counts
+    (spend over-counted 2.3M×, $48T vs $21M).
+
+    detect_fanout DOES flag this chasm, but it is wired ONLY to the de-fan REWRITE
+    path: when ``defan()`` can't build a clean pre-aggregated rewrite (multi-key
+    chasms, fabricated joins), the over-counting SUM silently proceeds to
+    interpretation and becomes a Briefing number. This is the DROP fallback that
+    closes that gap — the SUM analogue of ``count_star_chasm_fanout`` /
+    ``avg_over_chasm_fanout``, on the identical chasm structure: ≥2 RAW satellites
+    of one hub (CTE/subquery sources excluded — pre-aggregating is the fix) + a
+    non-DISTINCT, non-windowed SUM in the OUTER scope. Static analysis; returns a
+    reason string or None; never raises.
+
+    Conservative by construction: a chasm with the satellites pre-aggregated in
+    CTEs is NOT flagged (the CTE refs aren't RAW base tables), so it fires only on
+    the genuinely-fanned form and stays silent on the correct one — and only as a
+    backstop after the de-fan rewrite has already had its chance."""
+    try:
+        import sqlglot
+        from sqlglot import exp
+        from sqlglot.optimizer.scope import build_scope
+    except Exception:
+        return None
+    try:
+        tree = sqlglot.parse_one(sql, read=dialect)
+    except Exception:
+        return None
+    if tree is None:
+        return None
+    try:
+        root = build_scope(tree)
+    except Exception:
+        root = None
+    if root is None:
+        return None
+
+    chasm = _chasm_roots(tree, root, table_cols)
+    if not chasm:
+        return None
+
+    # A non-DISTINCT SUM in the OUTER scope. Windowed SUM (SUM(x) OVER (...)) is a
+    # different construct — it doesn't collapse the rows — so exclude it.
+    outer = root.expression
+    for s in outer.find_all(exp.Sum):
+        if isinstance(s.this, exp.Distinct):
+            continue
+        if isinstance(s.parent, exp.Window):
+            continue
+        r = sorted(chasm)[0]
+        sats = sorted(chasm[r])
+        col = s.this.sql() if s.this else "x"
+        return (
+            f"SUM({col}) over a chasm join ({', '.join(sats)} are each on the many-side "
+            f"of '{r}') sums across the cross-product of the satellites, so the total is "
+            f"inflated by the other satellites' fan-out — pre-aggregate EACH satellite in "
+            f"its own CTE keyed by '{r}' first, then join"
+        )
+    return None
+
+
 def build_parent_fanout_rewrite(sql: str, finding: "FanoutFinding", dialect: str = "duckdb"):
     """Deterministic de-fan for a parent_fanout: wrap the source in a DISTINCT
     subquery keyed by the parent's join column, so the parent's measure is summed

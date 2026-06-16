@@ -19,10 +19,12 @@ function formatMetric(v: number, unit: string): { display: string; ok: boolean }
   const u = (unit || "").toLowerCase();
   let display: string;
   if (/ratio|0-1|0\.\.1/.test(u) && !/0-100|0\.\.100/.test(u)) {
-    if (v < -0.001 || v > 1.05) return { display: "", ok: false };   // broken bounded rate
+    if (v < -0.001 || v > 1.05) return { display: "", ok: false };   // broken bounded rate (>1)
+    if (v >= 0.9995) return { display: "", ok: false };              // rounds to 100% — degenerate (e.g. abandoned=0 denominator bug)
     display = `${(v * 100).toFixed(1)}%`;
   } else if (/percent|0-100|0\.\.100|%/.test(u)) {
     if (v < -0.5 || v > 105) return { display: "", ok: false };
+    if (v >= 99.95) return { display: "", ok: false };               // rounds to 100% — degenerate
     display = `${v.toFixed(1)}%`;
   } else if (/day/.test(u)) {
     display = `${v.toFixed(1)}d`;
