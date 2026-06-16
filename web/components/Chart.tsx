@@ -337,6 +337,19 @@ export function Chart({
     const y2F = ccY2;
     const cF = ccColor;
     const bFmt = ccFmt ?? "~s";
+    // Per-AXIS format. A multi-measure chart (combo / dual-encoding) must not apply one
+    // format to axes of different units — the LLM's chart_config carried a single percent
+    // format, so count axes (converted_carts / total_carts) rendered as "16000000000.00%".
+    // Rule: a true 0–1 share column → percent; otherwise NEVER inherit a percent format
+    // (fall back to SI), but keep a non-percent LLM format (e.g. currency).
+    const bIsPct = /%/.test(bFmt);
+    const maxAbs = (f?: string) =>
+      !f ? 0 : Math.max(0, ...data.map((d) => Math.abs(Number(d[f]))).filter((v) => !isNaN(v)));
+    const fmtFor = (f?: string): string => {
+      if (!f) return bFmt;
+      if (SHARE_COL.test(f) && maxAbs(f) <= 1.0001) return ".2%";
+      return bIsPct ? "~s" : bFmt;
+    };
     const bTitle = cc?.title as string | undefined;
 
     if (bType === "combo" && y2F) {
@@ -345,20 +358,20 @@ export function Chart({
           {
             mark: { type: "bar", color: "#818cf8", opacity: 0.8, cornerRadiusEnd: 2 },
             encoding: {
-              y: { field: yF, type: "quantitative", axis: { format: bFmt, grid: true, title: cleanLabel(yF) } },
+              y: { field: yF, type: "quantitative", axis: { format: fmtFor(yF), grid: true, title: cleanLabel(yF) } },
               tooltip: [
                 { field: xF, type: "nominal" },
-                { field: yF, type: "quantitative", format: bFmt, title: cleanLabel(yF) },
+                { field: yF, type: "quantitative", format: fmtFor(yF), title: cleanLabel(yF) },
               ],
             },
           },
           {
             mark: { type: "line", color: "#E64848", strokeWidth: 2, point: { size: 30, filled: true, opacity: 0.9 } },
             encoding: {
-              y: { field: y2F, type: "quantitative", axis: { format: bFmt, title: cleanLabel(y2F) } },
+              y: { field: y2F, type: "quantitative", axis: { format: fmtFor(y2F), title: cleanLabel(y2F) } },
               tooltip: [
                 { field: xF, type: "nominal" },
-                { field: y2F, type: "quantitative", format: bFmt, title: cleanLabel(y2F) },
+                { field: y2F, type: "quantitative", format: fmtFor(y2F), title: cleanLabel(y2F) },
               ],
             },
           },
@@ -372,19 +385,19 @@ export function Chart({
       defaultH = 350;
     } else if (bType === "line" || bType === "multi_line") {
       const xEnc: Record<string, unknown> = { field: xF, type: "temporal", axis: { labelAngle: 0, title: cleanLabel(xF) } };
-      const yEnc: Record<string, unknown> = { field: yF, type: "quantitative", axis: { format: bFmt, grid: true, title: cleanLabel(yF) } };
+      const yEnc: Record<string, unknown> = { field: yF, type: "quantitative", axis: { format: fmtFor(yF), grid: true, title: cleanLabel(yF) } };
       spec = {
         mark: { type: "line", strokeWidth: 1.5 },
         encoding: xEnc,
         ...(cF ? {
           layer: [
             { mark: { type: "line" }, encoding: { x: xEnc, y: yEnc, color: { field: cF, type: "nominal" } } },
-            { mark: { type: "point", filled: true, size: 30 }, encoding: { x: xEnc, y: yEnc, color: { field: cF, type: "nominal" }, tooltip: [{ field: xF, type: "temporal" }, { field: cF, type: "nominal" }, { field: yF, type: "quantitative", format: bFmt }] } },
+            { mark: { type: "point", filled: true, size: 30 }, encoding: { x: xEnc, y: yEnc, color: { field: cF, type: "nominal" }, tooltip: [{ field: xF, type: "temporal" }, { field: cF, type: "nominal" }, { field: yF, type: "quantitative", format: fmtFor(yF) }] } },
           ],
         } : {
           layer: [
             { mark: { type: "line" }, encoding: { x: xEnc, y: yEnc } },
-            { mark: { type: "point", filled: true, size: 30 }, encoding: { x: xEnc, y: yEnc, tooltip: [{ field: xF, type: "temporal" }, { field: yF, type: "quantitative", format: bFmt }] } },
+            { mark: { type: "point", filled: true, size: 30 }, encoding: { x: xEnc, y: yEnc, tooltip: [{ field: xF, type: "temporal" }, { field: yF, type: "quantitative", format: fmtFor(yF) }] } },
           ],
         }),
       };
@@ -394,10 +407,10 @@ export function Chart({
         mark: { type: "bar", color: "#818cf8", opacity: 0.85, cornerRadiusEnd: 2 },
         encoding: {
           x: { field: xF, type: "ordinal", sort: { field: yF, order: "descending" }, axis: { labelLimit: 160, labelAngle: 0, labelOverlap: true, title: cleanLabel(xF) } },
-          y: { field: yF, type: "quantitative", axis: { format: bFmt, grid: true, title: cleanLabel(yF) } },
+          y: { field: yF, type: "quantitative", axis: { format: fmtFor(yF), grid: true, title: cleanLabel(yF) } },
           tooltip: [
             { field: xF, type: "nominal", title: cleanLabel(xF) },
-            { field: yF, type: "quantitative", format: bFmt, title: cleanLabel(yF) },
+            { field: yF, type: "quantitative", format: fmtFor(yF), title: cleanLabel(yF) },
           ],
         },
       };
@@ -407,10 +420,10 @@ export function Chart({
         mark: { type: "point", filled: true, size: 60, opacity: 0.7 },
         encoding: {
           x: { field: xF, type: "quantitative", axis: { title: cleanLabel(xF) } },
-          y: { field: yF, type: "quantitative", axis: { format: bFmt, grid: true, title: cleanLabel(yF) } },
+          y: { field: yF, type: "quantitative", axis: { format: fmtFor(yF), grid: true, title: cleanLabel(yF) } },
           tooltip: [
             { field: xF, type: "quantitative", title: cleanLabel(xF) },
-            { field: yF, type: "quantitative", format: bFmt, title: cleanLabel(yF) },
+            { field: yF, type: "quantitative", format: fmtFor(yF), title: cleanLabel(yF) },
           ],
         },
       };
@@ -426,7 +439,7 @@ export function Chart({
           color: { field: "label", type: "nominal", legend: { title: cleanLabel(xF), orient: "right" } },
           tooltip: [
             { field: "label", type: "nominal", title: cleanLabel(xF) },
-            { field: "value", type: "quantitative", format: bFmt, title: cleanLabel(yF) },
+            { field: "value", type: "quantitative", format: fmtFor(yF), title: cleanLabel(yF) },
           ],
         },
       };

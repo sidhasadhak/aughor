@@ -2231,7 +2231,13 @@ class SchemaExplorer:
                         "This applies equally to COUNT(DISTINCT x) / COUNT(*) — both are banned.\n"
                         "5. RESPECT the TIME WINDOW in the user prompt — scope every query touching a "
                         "timestamped table to the specified date range. Trends, seasonality, and "
-                        "growth metrics are only meaningful within a bounded, recent window."
+                        "growth metrics are only meaningful within a bounded, recent window.\n"
+                        "6. ONE metric per query, with the population THAT metric needs. Do NOT bolt a "
+                        "second metric onto a query whose WHERE/JOIN filter is wrong for it — a "
+                        "conversion query filtered to status='DELIVERED' will silently return ZERO for a "
+                        "refund metric whose refunds live on status='RETURNED' orders, producing a false "
+                        "'no refunds' finding. If you want another metric, ask it as a SEPARATE question "
+                        "with its own correct filter."
                     )
                     time_window_block = ""
                     # The window must reflect THIS domain's dataset, not the connection's
@@ -2435,10 +2441,19 @@ class SchemaExplorer:
                              counter="explorer.preflight_failed")
                 # Tier 3: on a large connection, swap exact COUNT(DISTINCT) for the HLL
                 # approximation — orders of magnitude cheaper on big facts, ~1-3% off.
+                # EXCEPT for ratio/rate queries: the per-count HLL error compounds across
+                # a division and flips rankings of near-tied values (the conversion-rate
+                # query that crowned the wrong channel). Keep those exact — a distinct
+                # count over a few-million-row fact is cheap enough in DuckDB.
+                _dialect = getattr(self._conn, "dialect", "duckdb")
                 if self._cost_large:
                     try:
-                        from aughor.sql.cost import approximate_aggregates
-                        sql = approximate_aggregates(sql, getattr(self._conn, "dialect", "duckdb"))
+                        from aughor.sql.cost import approximate_aggregates, has_count_ratio
+                        if has_count_ratio(sql, _dialect):
+                            logger.info("[explorer:%s] Tier 3: keeping COUNT exact — query computes a ratio",
+                                        self.connection_id)
+                        else:
+                            sql = approximate_aggregates(sql, _dialect)
                     except Exception as _exc:
                         from aughor.kernel.errors import tolerate
                         tolerate(_exc, "HLL approximation is an optional cost optimisation; on "

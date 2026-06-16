@@ -71,6 +71,27 @@ def approximate_aggregates(sql: str, dialect: str = "duckdb") -> str:
         return sql
 
 
+def has_count_ratio(sql: str, dialect: str = "duckdb") -> bool:
+    """True when the query divides a COUNT (i.e. computes a rate/ratio/share).
+
+    HLL approximation is ~1-3% off PER count — acceptable for a magnitude, but for a
+    ratio of two close counts that error flips rankings (a conversion 'leader' that's
+    actually 4th in a dead heat). So callers skip approximation when this is True and
+    keep the ratio exact. Parse failure → False (caller proceeds as before)."""
+    if not sql:
+        return False
+    try:
+        import sqlglot
+        from sqlglot import exp
+        tree = sqlglot.parse_one(sql, read=dialect)
+    except Exception:
+        return False
+    for div in tree.find_all(exp.Div):
+        if list(div.find_all(exp.Count)):
+            return True
+    return False
+
+
 def _single_table(tree, exp) -> bool:
     return len(list(tree.find_all(exp.Table))) == 1 and not list(tree.find_all(exp.Join))
 
