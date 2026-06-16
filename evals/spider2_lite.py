@@ -771,7 +771,8 @@ def _fix_sql(question: str, schema: str, doc_section: str,
 
 def run_instance(inst: dict, spider_root: Path, out_dir: Path, temperature: float,
                  consensus_k: int = 1, reflect: bool = False, select: bool = False,
-                 engine: bool = False, explore: bool = False, adaptive: bool = False) -> dict:
+                 engine: bool = False, explore: bool = False, adaptive: bool = False,
+                 diverse_temp: float = 0.0) -> dict:
     iid = inst["instance_id"]
     db_name = inst["db"]
     started_at = datetime.now(timezone.utc).isoformat()
@@ -883,6 +884,7 @@ def run_instance(inst: dict, spider_root: Path, out_dir: Path, temperature: floa
                 selector_fn=selector,
                 k=consensus_k,
                 repair_rounds=2,
+                diverse_temperature=diverse_temp,
             )
             sql = result.sql
             # Full-schema fallback: if linking trimmed too aggressively and every
@@ -897,6 +899,7 @@ def run_instance(inst: dict, spider_root: Path, out_dir: Path, temperature: floa
                     empty_recovery_fn=lambda bad, msg, temp: _recover_empty(q, full_schema, doc, bad, msg, temp),
                     selector_fn=selector,
                     k=consensus_k, repair_rounds=2,
+                    diverse_temperature=diverse_temp,
                 )
                 sql = result.sql
                 steps.append({"step": 4, "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -978,7 +981,8 @@ def run_instance(inst: dict, spider_root: Path, out_dir: Path, temperature: floa
 def generate(spider_root: Path, out_dir: Path, limit: int | None,
              ids: set[str] | None, workers: int, temperature: float,
              consensus_k: int = 1, reflect: bool = False, select: bool = False,
-             engine: bool = False, explore: bool = False, adaptive: bool = False) -> None:
+             engine: bool = False, explore: bool = False, adaptive: bool = False,
+             diverse_temp: float = 0.0) -> None:
     instances = load_local_instances(spider_root)
     if ids:
         instances = [r for r in instances if r["instance_id"] in ids]
@@ -1005,7 +1009,7 @@ def generate(spider_root: Path, out_dir: Path, limit: int | None,
     fails: list[dict] = []
 
     with ThreadPoolExecutor(max_workers=workers) as ex:
-        futs = {ex.submit(run_instance, r, spider_root, out_dir, temperature, consensus_k, reflect, select, engine, explore, adaptive): r["instance_id"]
+        futs = {ex.submit(run_instance, r, spider_root, out_dir, temperature, consensus_k, reflect, select, engine, explore, adaptive, diverse_temp): r["instance_id"]
                 for r in instances}
         for fut in as_completed(futs):
             res = fut.result()
@@ -1143,6 +1147,8 @@ def main() -> None:
                          "explore+strong-model only on disagreement")
     ap.add_argument("--strong-model", type=str, default=None,
                     help="Escalation model for --adaptive Stage B (e.g. gpt-oss:120b-cloud)")
+    ap.add_argument("--diverse-temp", type=float, default=0.0,
+                    help="Temperature for diversity candidates (0 = deterministic; diversity from strategies only)")
     ap.add_argument("--workers", type=int, default=4,
                     help="Concurrent generation / eval workers")
     ap.add_argument("--temperature", type=float, default=0.0)
@@ -1177,7 +1183,8 @@ def main() -> None:
 
     if not args.score_only:
         generate(args.spider_root, args.out, args.limit, ids, args.workers,
-                 args.temperature, args.consensus, args.reflect, args.select, args.engine, args.explore, args.adaptive)
+                 args.temperature, args.consensus, args.reflect, args.select, args.engine, args.explore, args.adaptive,
+                 args.diverse_temp)
 
     if args.score or args.score_only:
         score(args.spider_root, args.out, args.workers)
