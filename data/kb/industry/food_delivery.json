@@ -1,0 +1,127 @@
+{
+  "industry": "Food Delivery / On-Demand Marketplace",
+  "aliases": ["food delivery", "on-demand", "on demand", "marketplace", "courier", "restaurant delivery", "quick commerce", "q-commerce", "qcommerce", "delivery", "last mile", "last-mile", "rideshare", "gig economy", "three-sided marketplace", "logistics"],
+  "description": "A three-sided on-demand marketplace matching diners (demand), restaurants/merchants (supply), and couriers (fulfillment). Levers are liquidity (matching demand to available couriers), unit economics (basket size, take rate, delivery cost), reliability (delivery time, cancellation), and retention (repeat ordering).",
+  "metrics": [
+    {
+      "name": "Average Delivery Time",
+      "aliases": ["delivery time", "ETA accuracy", "order-to-door time", "fulfillment time", "delivery duration"],
+      "definition": "Average elapsed time from order placed to order delivered.",
+      "formula": "AVG(delivered_at - placed_at) over delivered orders, expressed in minutes",
+      "grain": "Order grain — exactly one placed and one delivered timestamp per order. Compute the duration per order FIRST, then average. Restrict to orders that actually reached delivered status; cancelled/undelivered orders have no delivered_at and must be excluded, not treated as zero.",
+      "anti_patterns": [
+        "Joining orders to multiple courier-leg or status-event rows before averaging duplicates each order and biases the mean toward multi-leg orders — collapse to one row per order first.",
+        "AVG over all orders including cancelled ones (NULL delivered_at) either errors or, if coalesced to 0/now(), corrupts the mean.",
+        "Mixing units — subtracting epoch seconds but labeling the result minutes inflates the value 60x; pick a unit and convert once.",
+        "Using courier-accepted or picked-up time as the start instead of order placed understates the diner-experienced time."
+      ],
+      "sane_range": "minutes, strictly positive; typically 20–60 min. Sub-5 or >180 usually signals a unit error or stuck/abandoned orders.",
+      "needs_concepts": ["orders", "order placed timestamp", "order delivered timestamp", "order status"]
+    },
+    {
+      "name": "Orders per Active User",
+      "aliases": ["order frequency", "purchase frequency", "orders per active customer", "OPAU", "ordering frequency"],
+      "definition": "Average number of orders placed per active user within a defined period.",
+      "formula": "COUNT(DISTINCT order_id) / NULLIF(COUNT(DISTINCT active_customer_id), 0) within the period",
+      "grain": "Customer grain over a fixed period. 'Active' MUST be defined by the period (e.g. customers with ≥1 order in the month / week); the denominator is distinct active customers, not all-time registered users. Numerator and denominator must cover the SAME window.",
+      "anti_patterns": [
+        "Dividing by all registered users (including dormant/never-ordered) collapses frequency toward zero — count only users active in the window.",
+        "Counting order line-items or basket rows instead of distinct orders fans out the numerator.",
+        "Mismatched windows (orders this month ÷ users active all-time) produces a meaningless ratio.",
+        "Joining orders to customers without DISTINCT can multiply customers that have multiple addresses/payment methods."
+      ],
+      "sane_range": "ratio ≥ 1 within an active window (an active user has at least 1 order); typically 1–10 per month. A value < 1 means the denominator is wrong (non-active users included).",
+      "needs_concepts": ["orders", "customers", "order timestamp", "period / active-user definition"]
+    },
+    {
+      "name": "Average Order Value (AOV)",
+      "aliases": ["AOV", "basket size", "average basket value", "average ticket", "average check"],
+      "definition": "Average gross merchandise value per order (typically food subtotal, before or after fees depending on definition — be consistent).",
+      "formula": "SUM(order_gmv) / COUNT(DISTINCT order_id)",
+      "grain": "Order grain. If value lives on basket/menu-item rows, SUM the line value and divide by COUNT(DISTINCT order_id) — never average line totals or item prices.",
+      "anti_patterns": [
+        "AVG(order_items.line_total) computes average ITEM/LINE value, not order value.",
+        "After joining orders to basket items, COUNT(*) counts items not orders — dividing GMV by it understates AOV.",
+        "Joining orders to courier or restaurant rows before summing duplicates GMV (fan-out) and inflates the total; aggregate at order grain first.",
+        "Inconsistently including/excluding delivery fee, service fee, tip, and tax across queries makes AOV non-comparable."
+      ],
+      "sane_range": "currency, strictly positive; typically low tens to ~100 per order. Negative or zero indicates refunds/voids leaking into GMV.",
+      "needs_concepts": ["orders", "order or basket-item value (GMV)"]
+    },
+    {
+      "name": "Cancellation Rate",
+      "aliases": ["cancel rate", "order cancellation rate", "failed order rate", "drop rate"],
+      "definition": "Share of orders that are cancelled, optionally split by who cancelled (customer / restaurant / courier / system).",
+      "formula": "COUNT(DISTINCT cancelled_order_id) / NULLIF(COUNT(DISTINCT order_id), 0); split by cancelled_by for attribution",
+      "grain": "Order grain. The DENOMINATOR is ALL orders placed (delivered + cancelled + in-progress), NOT just delivered orders. Numerator and denominator are the same order population. For per-party rates, partition the numerator by cancellation initiator while keeping the SAME all-orders denominator.",
+      "anti_patterns": [
+        "Denominator = delivered orders only → mathematically excludes cancellations from the base and overstates the rate (or makes per-party rates not sum correctly).",
+        "Counting status-event rows (an order can log multiple status changes) instead of distinct cancelled orders inflates the numerator.",
+        "Summing customer + restaurant + courier rates computed against different denominators — they won't add up; use one shared denominator.",
+        "Joining to courier rows fans out orders and double-counts both numerator and denominator."
+      ],
+      "sane_range": "ratio 0..1; healthy marketplaces typically 0.02–0.10 overall. A rate > 1 is a join fan-out bug, not real data.",
+      "needs_concepts": ["orders", "order status", "cancellation initiator / cancelled_by"]
+    },
+    {
+      "name": "Courier Utilization (Deliveries per Online Hour)",
+      "aliases": ["courier utilization", "deliveries per online hour", "DPOH", "courier productivity", "fleet utilization", "rider efficiency"],
+      "definition": "Average number of deliveries completed per hour a courier is online/available.",
+      "formula": "SUM(deliveries_completed) / NULLIF(SUM(online_hours), 0)  per courier then aggregate",
+      "grain": "Courier-period grain. Aggregate deliveries and online hours per courier (and time window) at the SAME grain before dividing; online time comes from shift/availability logs, deliveries from completed orders. A courier with zero online hours yields NULL (undefined), not zero.",
+      "anti_patterns": [
+        "Joining couriers to their online-session rows AND to delivery rows in one query is a chasm join — it multiplies hours by deliveries; pre-aggregate each side per courier first.",
+        "Counting order rows assigned to a courier that were later reassigned/cancelled overstates completed deliveries — count only deliveries the courier actually completed.",
+        "Dividing total deliveries by total online hours across all couriers without aligning the same population/window hides idle couriers.",
+        "Treating couriers with NULL online hours as 0 utilization conflates 'never logged on' with 'unproductive'."
+      ],
+      "sane_range": "ratio 0..~4 deliveries/hour typical; > ~6/hr is unusual and suggests double-counted deliveries or undercounted hours.",
+      "needs_concepts": ["couriers", "completed deliveries", "courier online / shift hours"]
+    },
+    {
+      "name": "Repeat / Retention Rate (Cohort)",
+      "aliases": ["retention rate", "repeat rate", "returning customer rate", "cohort retention", "reorder rate"],
+      "definition": "Share of a first-order cohort that places another order in a later period.",
+      "formula": "COUNT(DISTINCT retained_customer_id) / NULLIF(COUNT(DISTINCT cohort_customer_id), 0), where the cohort = customers whose FIRST order fell in period P and retained = those with ≥1 order in a later period",
+      "grain": "Customer grain, cohorted by first-order period. Compute each customer's first-order date FIRST (MIN over their orders), assign to a cohort, then measure later-period activity. Numerator customers must be a subset of the cohort denominator.",
+      "anti_patterns": [
+        "COUNT(orders) / COUNT(customers) is orders-per-customer, NOT retention.",
+        "Defining the cohort by order date instead of FIRST-order date double-assigns repeat customers to multiple cohorts.",
+        "Counting a customer as retained from any order including those in the cohort period itself — retention must be a LATER period than acquisition.",
+        "Windowing over an orders⋈customers join without pre-aggregating to one row per customer double-counts the denominator."
+      ],
+      "sane_range": "ratio 0..1; month-1 retention often 0.2–0.5, declining over later periods.",
+      "needs_concepts": ["customers", "orders linked to customers", "order timestamp", "first-order date / cohort"]
+    },
+    {
+      "name": "Take Rate",
+      "aliases": ["take rate", "commission rate", "marketplace rate", "monetization rate", "rake"],
+      "definition": "Marketplace revenue (commissions + fees retained) as a share of gross merchandise value.",
+      "formula": "SUM(marketplace_commission) / NULLIF(SUM(order_gmv), 0)",
+      "grain": "Order grain. Commission and GMV MUST be summed at the SAME order grain before dividing — both numerator and denominator are per-order amounts. Never compute commission from one table and GMV from another at mismatched grains.",
+      "anti_patterns": [
+        "Summing GMV from an orders⋈basket-items join (fanned out) while commission stays per-order, or vice-versa, makes the denominator and numerator inconsistent — collapse both to order grain first.",
+        "Including or excluding delivery/service fees inconsistently between commission and GMV (e.g. commission counts fees but GMV doesn't) distorts the rate.",
+        "Joining orders to courier/restaurant rows duplicates both amounts; the ratio may survive but per-segment breakdowns will be wrong.",
+        "AVG of per-order take-rate percentages is unweighted — a $5 order and a $200 order count equally; aggregate commission and GMV, then divide."
+      ],
+      "sane_range": "ratio 0..1, typically 0.10–0.30 (10–30%). A value > 1 means commission was summed against a fanned-out (too-small) or mismatched GMV.",
+      "needs_concepts": ["orders", "marketplace commission / fees retained", "order GMV"]
+    },
+    {
+      "name": "Courier Acceptance Rate",
+      "aliases": ["acceptance rate", "offer acceptance rate", "courier accept rate", "dispatch acceptance"],
+      "definition": "Share of delivery offers/dispatches that couriers accept.",
+      "formula": "COUNT(DISTINCT accepted_offer_id) / NULLIF(COUNT(DISTINCT offer_id), 0)",
+      "grain": "Offer/dispatch grain — one row per offer made to a courier. The denominator is all offers sent (accepted + declined + expired/ignored), the numerator is accepted offers. A single order can generate several offers (re-dispatches); count OFFERS, not orders.",
+      "anti_patterns": [
+        "Using orders as the denominator instead of offers undercounts dispatch attempts (re-offers after declines) and overstates acceptance.",
+        "Treating expired/timed-out offers as neither accepted nor offered drops them from the denominator and inflates the rate — they belong in the base.",
+        "Counting offer-status events (an offer logs sent→accepted) instead of distinct offers double-counts the numerator.",
+        "Joining offers to courier rows without DISTINCT fans out when a courier has multiple profiles/vehicles."
+      ],
+      "sane_range": "ratio 0..1; typically 0.6–0.95. A rate > 1 is a join fan-out bug.",
+      "needs_concepts": ["delivery offers / dispatches", "offer outcome (accepted / declined / expired)", "couriers"]
+    }
+  ]
+}

@@ -1,0 +1,813 @@
+[
+  {
+    "id": "fd_delivery_time",
+    "title": "Average Delivery Time",
+    "intent_tags": [
+      "delivery time",
+      "average delivery time",
+      "delivery duration",
+      "how long do deliveries take",
+      "order to door time",
+      "total delivery time",
+      "fulfillment time",
+      "delivery speed",
+      "eta accuracy",
+      "time to deliver",
+      "average delivery duration",
+      "how fast are deliveries"
+    ],
+    "sql_features": [
+      "aggregation",
+      "timestamp_diff",
+      "nullif",
+      "filtering"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "measure end-to-end fulfillment speed from order placement to delivery",
+      "track delivery time trends to detect courier supply or kitchen throughput issues",
+      "compare delivery times across cities, dayparts, or restaurant cohorts",
+      "evaluate ETA promise accuracy against actuals",
+      "diagnose customer satisfaction and refund drivers tied to slow deliveries"
+    ],
+    "related_patterns": [
+      "fd_cancellation_rate",
+      "fd_courier_utilization",
+      "fd_orders_per_active_user"
+    ],
+    "business_definition": "Average elapsed wall-clock time, in minutes, from when a diner places an order (placed_at) to when the courier marks it delivered (delivered_at), across successfully delivered orders in a period. Only orders with status = 'delivered' and both timestamps populated are included.",
+    "metric_nature": {
+      "what_it_measures": "The full customer-experienced fulfillment latency: kitchen prep, courier assignment, pickup, and drive time combined. It is the time a diner waits from tapping order to food at the door.",
+      "what_it_does_not_measure": "It does not decompose the wait into prep time vs. dispatch wait vs. drive time. A 40-minute delivery could be 35 min in the kitchen or 35 min waiting for a courier. It also ignores cancelled and failed orders, which often had the worst experience.",
+      "common_misconception": "Average delivery time is not the same as the ETA shown to the customer. ETA is a forward prediction; delivery time is the realized actual. Reporting only delivered orders also survivorship-biases the number downward because the slowest, abandoned orders are excluded."
+    },
+    "template": "SELECT AVG(EXTRACT(EPOCH FROM (o.delivered_at - o.placed_at)) / 60.0) AS avg_delivery_minutes FROM orders o WHERE o.status = 'delivered' AND o.delivered_at IS NOT NULL AND o.placed_at IS NOT NULL AND o.placed_at BETWEEN {start_date} AND {end_date}",
+    "inflation_causes": [
+      {
+        "cause": "Scheduled / pre-orders measured from placement instead of target time",
+        "how_it_inflates": "A diner who schedules dinner at 7pm but places the order at 2pm produces a 5-hour 'delivery time' if measured from placed_at. These scheduled orders push the average up dramatically even though the actual fulfillment was fast.",
+        "detection_sql": "SELECT o.is_scheduled, COUNT(*) AS orders, ROUND(AVG(EXTRACT(EPOCH FROM (o.delivered_at - o.placed_at)) / 60.0), 1) AS avg_minutes_from_placed FROM orders o WHERE o.status = 'delivered' GROUP BY o.is_scheduled ORDER BY avg_minutes_from_placed DESC",
+        "fix": "For scheduled orders, measure delivery time from the requested fulfillment window start (scheduled_for) or the kitchen accepted_at, not from placed_at. Exclude is_scheduled = true from the standard ASAP delivery-time metric."
+      },
+      {
+        "cause": "Courier forgot to tap 'delivered' until later",
+        "how_it_inflates": "If couriers mark delivery late (e.g., at end of shift or next stop), delivered_at is recorded well after the food actually arrived, inflating the measured duration for those orders.",
+        "detection_sql": "SELECT courier_id, COUNT(*) AS orders, ROUND(AVG(EXTRACT(EPOCH FROM (delivered_at - placed_at)) / 60.0), 1) AS avg_minutes, MAX(EXTRACT(EPOCH FROM (delivered_at - placed_at)) / 60.0) AS max_minutes FROM orders WHERE status = 'delivered' GROUP BY courier_id HAVING AVG(EXTRACT(EPOCH FROM (delivered_at - placed_at)) / 60.0) > 90 ORDER BY avg_minutes DESC LIMIT 20",
+        "fix": "Winsorize or cap outliers above a sane threshold (e.g., 120 min for urban ASAP) and report median alongside mean. Flag couriers with systematically late delivery taps for app-behavior coaching."
+      },
+      {
+        "cause": "Timezone mismatch between placed_at and delivered_at",
+        "how_it_inflates": "If placed_at is stored in UTC and delivered_at in local time (or vice versa) due to a connector bug, the difference can be off by whole hours, inflating (or going negative) by the UTC offset.",
+        "detection_sql": "SELECT COUNT(*) AS negative_or_huge FROM orders WHERE status = 'delivered' AND (delivered_at < placed_at OR EXTRACT(EPOCH FROM (delivered_at - placed_at)) / 60.0 > 240)",
+        "fix": "Normalize all timestamps to a single timezone (UTC) at ingestion. Add a guard rejecting rows where delivered_at < placed_at."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Excluding cancelled and failed orders that ran long before failing",
+        "how_it_deflates": "Orders that were eventually cancelled or failed often sat the longest (no courier found, restaurant slow). Filtering status = 'delivered' only keeps the successful, faster orders, biasing the average down and hiding the worst customer experiences.",
+        "detection_sql": "SELECT o.status, COUNT(*) AS orders, ROUND(AVG(EXTRACT(EPOCH FROM (COALESCE(o.delivered_at, o.cancelled_at, o.failed_at) - o.placed_at)) / 60.0), 1) AS avg_minutes FROM orders o WHERE COALESCE(o.delivered_at, o.cancelled_at, o.failed_at) IS NOT NULL GROUP BY o.status ORDER BY avg_minutes DESC",
+        "fix": "Report a companion 'time-to-resolution' metric across all terminal statuses, and track delivery time only on delivered orders but always alongside cancellation rate so the survivorship bias is visible."
+      },
+      {
+        "cause": "Measuring from accepted_at instead of placed_at",
+        "how_it_deflates": "Using accepted_at (when the restaurant accepts) as the start excludes the queue time between placement and acceptance. On busy nights this acceptance lag can be 5-10 minutes, so the customer-experienced time is understated.",
+        "detection_sql": "SELECT ROUND(AVG(EXTRACT(EPOCH FROM (accepted_at - placed_at)) / 60.0), 1) AS avg_accept_lag_min, ROUND(AVG(EXTRACT(EPOCH FROM (delivered_at - placed_at)) / 60.0), 1) AS avg_from_placed, ROUND(AVG(EXTRACT(EPOCH FROM (delivered_at - accepted_at)) / 60.0), 1) AS avg_from_accepted FROM orders WHERE status = 'delivered' AND accepted_at IS NOT NULL",
+        "fix": "Define the customer-facing delivery time from placed_at. Use accepted_at only for the operational sub-metric 'kitchen + drive time' and label it clearly."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the delivery-time change concentrated in specific cities, dayparts (lunch/dinner peak), or restaurant cohorts?",
+      "Did the mix of scheduled vs. ASAP orders change in this period?",
+      "Is the slowdown in kitchen prep time (placed_at to picked_up_at) or in courier drive time (picked_up_at to delivered_at)?",
+      "Did courier supply (online_hours per active order) drop, lengthening dispatch wait?",
+      "Are there timezone or late-tap data artifacts producing impossible durations?",
+      "Did average delivery distance increase due to zone expansion or restaurant mix?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "fd_delivery_time up, fd_courier_utilization up",
+        "then": "Couriers are stretched thin (too many deliveries per online hour), so dispatch and batching wait grows. This is a courier supply shortage, not a kitchen problem. Check fd_courier_utilization by zone and daypart."
+      },
+      {
+        "if": "fd_delivery_time up, fd_cancellation_rate up",
+        "then": "Slow fulfillment is driving diner-initiated cancellations and courier no-shows. The delivery-time number you see is survivorship-biased downward; the true experience is worse. Cross-check cancellation reason codes."
+      },
+      {
+        "if": "fd_delivery_time up only at dinner peak",
+        "then": "Capacity is saturating at peak (kitchen throughput or courier supply) while off-peak is fine. This is a peak-staffing/marketplace-balance problem, not a structural one."
+      },
+      {
+        "if": "fd_delivery_time up, average delivery distance flat",
+        "then": "The slowdown is not geographic. Look at prep time or dispatch wait rather than drive time."
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Average delivery time rises >5 minutes week-over-week",
+        "and_also": "fd_courier_utilization (deliveries per online hour) is also rising",
+        "shared_root_cause": "Courier supply is not keeping pace with order demand. Each courier is handling more deliveries, so orders wait longer for assignment and get batched more aggressively. The shared root cause is a demand/supply imbalance in the courier marketplace, fixable with incentives or surge pay, not kitchen changes.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', o.placed_at) AS week, o.city, ROUND(AVG(EXTRACT(EPOCH FROM (o.delivered_at - o.placed_at)) / 60.0), 1) AS avg_delivery_min, COUNT(*) AS delivered_orders, COUNT(DISTINCT o.courier_id) AS active_couriers, ROUND(COUNT(*) * 1.0 / NULLIF(COUNT(DISTINCT o.courier_id), 0), 2) AS deliveries_per_courier FROM orders o WHERE o.status = 'delivered' AND NOT o.is_scheduled GROUP BY 1, 2 ORDER BY 1 DESC, avg_delivery_min DESC"
+      },
+      {
+        "if_this_metric": "Delivery time is rising",
+        "and_also": "fd_orders_per_active_user is flat or falling for affected zones",
+        "shared_root_cause": "Slow deliveries are eroding diner frequency: customers who wait too long order less often next period. Slow service today predicts demand softness tomorrow. Pair delivery-time degradation with a forward look at repeat ordering in the same zone.",
+        "diagnostic_sql": "SELECT o.city, DATE_TRUNC('month', o.placed_at) AS month, ROUND(AVG(EXTRACT(EPOCH FROM (o.delivered_at - o.placed_at)) / 60.0), 1) AS avg_delivery_min, COUNT(DISTINCT o.customer_id) AS active_users, COUNT(*) AS orders, ROUND(COUNT(*) * 1.0 / NULLIF(COUNT(DISTINCT o.customer_id), 0), 2) AS orders_per_active_user FROM orders o WHERE o.status = 'delivered' GROUP BY 1, 2 ORDER BY 1, 2"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Averaging delivery time over a courier/order fan-out join",
+        "why_wrong": "If you join orders to a courier_assignments table (which has one row per assignment attempt, including reassignments), an order with 2 assignment attempts appears twice and is double-weighted in the AVG. The grain must stay one row per order.",
+        "bad_sql": "SELECT AVG(EXTRACT(EPOCH FROM (o.delivered_at - o.placed_at)) / 60.0) AS avg_min FROM orders o JOIN courier_assignments ca ON o.order_id = ca.order_id WHERE o.status = 'delivered'",
+        "good_sql": "SELECT AVG(EXTRACT(EPOCH FROM (o.delivered_at - o.placed_at)) / 60.0) AS avg_min FROM orders o WHERE o.status = 'delivered' AND o.delivered_at IS NOT NULL AND o.placed_at IS NOT NULL"
+      },
+      {
+        "pattern": "Reporting only the mean and ignoring the long tail",
+        "why_wrong": "Delivery times are right-skewed: a few very-late orders inflate the mean while most are fine. The mean alone hides whether the typical experience or the tail degraded. Customer pain lives in the p90/p95, not the average.",
+        "bad_sql": "SELECT AVG(EXTRACT(EPOCH FROM (delivered_at - placed_at)) / 60.0) AS avg_min FROM orders WHERE status = 'delivered'",
+        "good_sql": "SELECT ROUND(AVG(EXTRACT(EPOCH FROM (delivered_at - placed_at)) / 60.0), 1) AS avg_min, ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (delivered_at - placed_at)) / 60.0), 1) AS median_min, ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (delivered_at - placed_at)) / 60.0), 1) AS p95_min FROM orders WHERE status = 'delivered' AND delivered_at IS NOT NULL AND placed_at IS NOT NULL"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT ROUND(AVG(EXTRACT(EPOCH FROM (o.delivered_at - o.placed_at)) / 60.0), 1) AS avg_delivery_minutes FROM orders o WHERE o.status = 'delivered' AND o.delivered_at IS NOT NULL AND o.placed_at IS NOT NULL AND NOT o.is_scheduled AND o.placed_at BETWEEN '2024-01-01' AND '2024-01-31'",
+      "intermediate_sql": "SELECT o.city, DATE_TRUNC('day', o.placed_at) AS day, EXTRACT(HOUR FROM o.placed_at) AS hour_of_day, COUNT(*) AS delivered_orders, ROUND(AVG(EXTRACT(EPOCH FROM (o.delivered_at - o.placed_at)) / 60.0), 1) AS avg_delivery_min, ROUND(AVG(EXTRACT(EPOCH FROM (o.picked_up_at - o.placed_at)) / 60.0), 1) AS avg_prep_min, ROUND(AVG(EXTRACT(EPOCH FROM (o.delivered_at - o.picked_up_at)) / 60.0), 1) AS avg_drive_min FROM orders o WHERE o.status = 'delivered' AND NOT o.is_scheduled GROUP BY 1, 2, 3 ORDER BY 1, 2, avg_delivery_min DESC",
+      "advanced_sql": "WITH delivered AS (\n  -- Grain: one row per delivered ASAP order, with decomposed segments\n  SELECT\n    o.order_id,\n    o.city,\n    DATE_TRUNC('week', o.placed_at) AS week,\n    EXTRACT(EPOCH FROM (o.accepted_at - o.placed_at)) / 60.0 AS accept_lag_min,\n    EXTRACT(EPOCH FROM (o.picked_up_at - o.accepted_at)) / 60.0 AS prep_min,\n    EXTRACT(EPOCH FROM (o.delivered_at - o.picked_up_at)) / 60.0 AS drive_min,\n    EXTRACT(EPOCH FROM (o.delivered_at - o.placed_at)) / 60.0 AS total_min\n  FROM orders o\n  WHERE o.status = 'delivered'\n    AND NOT o.is_scheduled\n    AND o.delivered_at IS NOT NULL\n    AND o.placed_at IS NOT NULL\n    AND o.delivered_at > o.placed_at\n    AND EXTRACT(EPOCH FROM (o.delivered_at - o.placed_at)) / 60.0 <= 120\n)\nSELECT\n  week,\n  city,\n  COUNT(*) AS orders,\n  ROUND(AVG(total_min), 1) AS avg_total_min,\n  ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY total_min), 1) AS median_min,\n  ROUND(PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY total_min), 1) AS p95_min,\n  ROUND(AVG(accept_lag_min), 1) AS avg_accept_lag_min,\n  ROUND(AVG(prep_min), 1) AS avg_prep_min,\n  ROUND(AVG(drive_min), 1) AS avg_drive_min\nFROM delivered\nGROUP BY 1, 2\nORDER BY 1 DESC, avg_total_min DESC"
+    }
+  },
+  {
+    "id": "fd_orders_per_active_user",
+    "title": "Orders per Active User (Ordering Frequency)",
+    "intent_tags": [
+      "orders per active user",
+      "ordering frequency",
+      "order frequency",
+      "purchase frequency",
+      "how often do users order",
+      "orders per customer",
+      "frequency per diner",
+      "active user frequency",
+      "average orders per user",
+      "engagement frequency",
+      "repeat ordering rate",
+      "how many orders per active diner"
+    ],
+    "sql_features": [
+      "aggregation",
+      "count_distinct",
+      "nullif",
+      "date_filtering"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "ratio",
+    "when_to_use": [
+      "measure how frequently active diners order within a fixed period",
+      "track engagement and habit formation on the demand side",
+      "segment frequency by city, cohort, or acquisition channel",
+      "evaluate the impact of subscription (e.g., free-delivery membership) on frequency",
+      "feed marketplace health and LTV models with a frequency input"
+    ],
+    "related_patterns": [
+      "fd_retention_cohort_rate",
+      "fd_delivery_time",
+      "fd_cancellation_rate"
+    ],
+    "business_definition": "Total completed orders in a period divided by the number of distinct active diners in that same period, where an active diner is any customer who placed at least one non-cancelled order in the period. Orders per Active User = COUNT(order_id) / COUNT(DISTINCT customer_id), scoped to a defined window (e.g., monthly).",
+    "metric_nature": {
+      "what_it_measures": "How intensively the diners who are using the app in a period are ordering. It is a per-active-user intensity signal: among people who showed up, how many times did they order?",
+      "what_it_does_not_measure": "It does not measure total demand growth (that needs order count) nor reach (that needs active-user count). Frequency can rise purely because casual users churned out, leaving only heavy users — a composition effect, not real engagement growth.",
+      "common_misconception": "Frequency is meaningless without a fixed period. 'Orders per user' over all time grows mechanically as the dataset ages. The metric only makes sense per period (orders per active user per month). Also, the denominator is ACTIVE users in the period, not all registered users."
+    },
+    "template": "SELECT COUNT(o.order_id) * 1.0 / NULLIF(COUNT(DISTINCT o.customer_id), 0) AS orders_per_active_user FROM orders o WHERE o.status NOT IN ('cancelled', 'test', 'fraud') AND o.placed_at BETWEEN {start_date} AND {end_date}",
+    "inflation_causes": [
+      {
+        "cause": "Counting cancelled or failed orders in the numerator",
+        "how_it_inflates": "If the order count includes cancelled, failed, or test orders, a diner who placed 1 order and cancelled 2 looks like a 3-order user. Frequency is overstated because non-completed attempts inflate the numerator.",
+        "detection_sql": "SELECT o.status, COUNT(*) AS orders, COUNT(DISTINCT o.customer_id) AS users FROM orders o WHERE o.placed_at BETWEEN {start_date} AND {end_date} GROUP BY o.status ORDER BY orders DESC",
+        "fix": "Restrict the numerator to completed orders: status NOT IN ('cancelled', 'test', 'fraud'). Report a separate attempt-frequency if needed, but keep the headline metric on completed orders."
+      },
+      {
+        "cause": "Order fan-out by joining to order_items or courier rows",
+        "how_it_inflates": "If orders is joined to order_items (one row per dish) or to a courier_assignments table and COUNT(order_id) is used without DISTINCT, each order is counted once per item or assignment, multiplying the numerator and producing an impossibly high frequency.",
+        "detection_sql": "SELECT COUNT(*) AS joined_rows, COUNT(DISTINCT o.order_id) AS distinct_orders, ROUND(COUNT(*) * 1.0 / NULLIF(COUNT(DISTINCT o.order_id), 0), 2) AS rows_per_order FROM orders o JOIN order_items oi ON o.order_id = oi.order_id WHERE o.status NOT IN ('cancelled', 'test', 'fraud')",
+        "fix": "Compute frequency directly from the orders table at order grain. If a line-item join is unavoidable, use COUNT(DISTINCT o.order_id) in the numerator."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Denominator counts all registered users, not active users",
+        "how_it_deflates": "Dividing period orders by all registered customers (including dormant accounts that never ordered this period) inflates the denominator and crushes frequency toward zero. It answers a different question (orders per registered account).",
+        "detection_sql": "SELECT (SELECT COUNT(*) FROM customers) AS all_registered, COUNT(DISTINCT o.customer_id) AS active_in_period FROM orders o WHERE o.status NOT IN ('cancelled', 'test', 'fraud') AND o.placed_at BETWEEN {start_date} AND {end_date}",
+        "fix": "Define the denominator as COUNT(DISTINCT customer_id) among customers with at least one completed order in the period. Keep 'all registered' for penetration metrics, not frequency."
+      },
+      {
+        "cause": "Period too long relative to natural ordering cadence",
+        "how_it_deflates": "A monthly frequency averaged over a quarter dilutes: users active in only one of three months still divide the full-quarter order count by an inflated three-month active set. Stretching the window flattens frequency.",
+        "detection_sql": "SELECT DATE_TRUNC('month', o.placed_at) AS month, COUNT(o.order_id) AS orders, COUNT(DISTINCT o.customer_id) AS active_users, ROUND(COUNT(o.order_id) * 1.0 / NULLIF(COUNT(DISTINCT o.customer_id), 0), 2) AS orders_per_user FROM orders o WHERE o.status NOT IN ('cancelled', 'test', 'fraud') GROUP BY 1 ORDER BY 1",
+        "fix": "Fix a consistent period (typically monthly) and compute frequency within each period, then trend the per-period values rather than averaging across a long window."
+      }
+    ],
+    "diagnostic_questions": [
+      "Over what fixed period is 'active' defined — monthly, weekly, trailing 28 days?",
+      "Is the denominator active diners in the period, or all registered accounts?",
+      "Did frequency change because heavy users ordered more, or because casual users churned (composition shift)?",
+      "Did a subscription / membership program launch that concentrates orders among members?",
+      "Are cancelled and failed orders excluded from the numerator?",
+      "Is frequency rising in tandem with active-user count, or only because active users shrank?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "fd_orders_per_active_user up, active-user count down",
+        "then": "Composition effect: casual low-frequency diners churned out, leaving heavier users. This is shrinkage masquerading as engagement growth. Cross-check total order volume before celebrating."
+      },
+      {
+        "if": "fd_orders_per_active_user up, active-user count flat or up",
+        "then": "Genuine engagement deepening — the same or growing base is ordering more often. Check whether a membership program or improved delivery time drove the habit."
+      },
+      {
+        "if": "fd_orders_per_active_user down, fd_delivery_time up",
+        "then": "Service degradation is suppressing repeat ordering. Slow deliveries this period reduce how often diners come back. Investigate by city where delivery time worsened."
+      },
+      {
+        "if": "fd_orders_per_active_user up only among membership subscribers",
+        "then": "Free-delivery / subscription perks are concentrating frequency in members. Healthy if member base is growing; a vanity gain if it is just reclassifying existing heavy users."
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Orders per active user is rising month over month",
+        "and_also": "fd_retention_cohort_rate is flat or declining for recent cohorts",
+        "shared_root_cause": "Frequency is being propped up by a shrinking, self-selecting core of heavy users while new cohorts fail to stick. The marketplace looks more engaged per-head but is leaking its acquisition funnel. Examine frequency split by tenure cohort.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', first_order.first_order_month) AS cohort_month, DATE_TRUNC('month', o.placed_at) AS activity_month, COUNT(DISTINCT o.customer_id) AS active_users, COUNT(o.order_id) AS orders, ROUND(COUNT(o.order_id) * 1.0 / NULLIF(COUNT(DISTINCT o.customer_id), 0), 2) AS orders_per_user FROM orders o JOIN (SELECT customer_id, DATE_TRUNC('month', MIN(placed_at)) AS first_order_month FROM orders WHERE status NOT IN ('cancelled', 'test', 'fraud') GROUP BY 1) first_order ON o.customer_id = first_order.customer_id WHERE o.status NOT IN ('cancelled', 'test', 'fraud') GROUP BY 1, 2 ORDER BY 1, 2"
+      },
+      {
+        "if_this_metric": "Frequency jumps in a city",
+        "and_also": "fd_take_rate in that city is falling",
+        "shared_root_cause": "An aggressive promo or free-delivery push drove more frequent ordering at the cost of margin (more commission given back as promo). The frequency gain is bought, not organic. Check promo spend per order in the same city-month.",
+        "diagnostic_sql": "SELECT o.city, DATE_TRUNC('month', o.placed_at) AS month, COUNT(o.order_id) AS orders, COUNT(DISTINCT o.customer_id) AS active_users, ROUND(COUNT(o.order_id) * 1.0 / NULLIF(COUNT(DISTINCT o.customer_id), 0), 2) AS orders_per_user, ROUND(SUM(o.commission) / NULLIF(SUM(o.gmv), 0) * 100, 2) AS take_rate_pct, ROUND(SUM(o.promo_cost) / NULLIF(COUNT(o.order_id), 0), 2) AS promo_per_order FROM orders o WHERE o.status NOT IN ('cancelled', 'test', 'fraud') GROUP BY 1, 2 ORDER BY 1, 2"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Computing frequency with no fixed period (all-time)",
+        "why_wrong": "Orders per user over the entire dataset grows simply as the data accumulates, making any trend uninterpretable. Frequency must be scoped to a period (e.g., monthly) for the ratio to mean anything.",
+        "bad_sql": "SELECT COUNT(order_id) * 1.0 / COUNT(DISTINCT customer_id) AS orders_per_user FROM orders WHERE status = 'delivered'",
+        "good_sql": "SELECT DATE_TRUNC('month', placed_at) AS month, COUNT(order_id) * 1.0 / NULLIF(COUNT(DISTINCT customer_id), 0) AS orders_per_active_user FROM orders WHERE status NOT IN ('cancelled', 'test', 'fraud') GROUP BY 1 ORDER BY 1"
+      },
+      {
+        "pattern": "Dividing by all registered users instead of active users",
+        "why_wrong": "Using total customers (including dormant accounts) as the denominator answers 'orders per account' not 'orders per active diner'. It conflates reach with frequency and collapses as the registered base ages.",
+        "bad_sql": "SELECT COUNT(o.order_id) * 1.0 / (SELECT COUNT(*) FROM customers) AS orders_per_user FROM orders o WHERE o.placed_at BETWEEN '2024-01-01' AND '2024-01-31'",
+        "good_sql": "SELECT COUNT(o.order_id) * 1.0 / NULLIF(COUNT(DISTINCT o.customer_id), 0) AS orders_per_active_user FROM orders o WHERE o.status NOT IN ('cancelled', 'test', 'fraud') AND o.placed_at BETWEEN '2024-01-01' AND '2024-01-31'"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT COUNT(o.order_id) * 1.0 / NULLIF(COUNT(DISTINCT o.customer_id), 0) AS orders_per_active_user FROM orders o WHERE o.status NOT IN ('cancelled', 'test', 'fraud') AND o.placed_at BETWEEN '2024-01-01' AND '2024-01-31'",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', o.placed_at) AS month, o.city, COUNT(o.order_id) AS orders, COUNT(DISTINCT o.customer_id) AS active_users, ROUND(COUNT(o.order_id) * 1.0 / NULLIF(COUNT(DISTINCT o.customer_id), 0), 2) AS orders_per_active_user FROM orders o WHERE o.status NOT IN ('cancelled', 'test', 'fraud') GROUP BY 1, 2 ORDER BY 1, orders_per_active_user DESC",
+      "advanced_sql": "WITH monthly_user AS (\n  -- Grain: one row per (customer, month) with that user's completed order count\n  SELECT\n    o.customer_id,\n    DATE_TRUNC('month', o.placed_at) AS month,\n    COUNT(o.order_id) AS user_orders\n  FROM orders o\n  WHERE o.status NOT IN ('cancelled', 'test', 'fraud')\n  GROUP BY 1, 2\n),\nmonthly AS (\n  SELECT\n    month,\n    COUNT(DISTINCT customer_id) AS active_users,\n    SUM(user_orders) AS orders,\n    ROUND(SUM(user_orders) * 1.0 / NULLIF(COUNT(DISTINCT customer_id), 0), 2) AS orders_per_active_user,\n    ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY user_orders), 1) AS median_orders_per_user,\n    COUNT(DISTINCT CASE WHEN user_orders >= 4 THEN customer_id END) AS heavy_users_4plus\n  FROM monthly_user\n  GROUP BY 1\n)\nSELECT\n  month,\n  active_users,\n  orders,\n  orders_per_active_user,\n  median_orders_per_user,\n  ROUND(heavy_users_4plus * 100.0 / NULLIF(active_users, 0), 1) AS pct_heavy_users,\n  ROUND((orders_per_active_user - LAG(orders_per_active_user) OVER (ORDER BY month)) / NULLIF(LAG(orders_per_active_user) OVER (ORDER BY month), 0) * 100, 1) AS freq_mom_pct\nFROM monthly\nORDER BY month"
+    }
+  },
+  {
+    "id": "fd_cancellation_rate",
+    "title": "Cancellation Rate (by Party)",
+    "intent_tags": [
+      "cancellation rate",
+      "order cancellation rate",
+      "cancel rate",
+      "what percent of orders are cancelled",
+      "cancellation by party",
+      "diner cancellation rate",
+      "restaurant cancellation rate",
+      "courier cancellation rate",
+      "failed order rate",
+      "why are orders cancelled",
+      "cancellation trend",
+      "order failure rate"
+    ],
+    "sql_features": [
+      "aggregation",
+      "conditional_count",
+      "nullif",
+      "group_by"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "ratio",
+    "when_to_use": [
+      "measure what fraction of placed orders are cancelled, overall and by responsible party",
+      "attribute cancellations to diner, restaurant, courier, or platform to target fixes",
+      "track cancellation trends as a marketplace-health and reliability signal",
+      "compare cancellation rates across cities, restaurants, or dayparts",
+      "quantify lost GMV and refund exposure from cancellations"
+    ],
+    "related_patterns": [
+      "fd_delivery_time",
+      "fd_courier_utilization",
+      "fd_take_rate"
+    ],
+    "business_definition": "Count of cancelled orders divided by the count of ALL placed orders in a period, expressed as a percentage, optionally broken out by the party responsible for the cancellation (diner, restaurant, courier, platform). Denominator is every order placed — delivered, cancelled, and failed alike — not just completed ones.",
+    "metric_nature": {
+      "what_it_measures": "The reliability of the marketplace: of every order a diner places, what share never completes. Splitting by party localizes the failure to the side of the three-sided market that broke (kitchen rejected, no courier, diner changed mind).",
+      "what_it_does_not_measure": "The financial magnitude of cancellations (a count metric weights a $10 and a $200 cancel equally) nor the downstream churn cost. It also does not capture orders that completed but were terrible (very late) — those need delivery time.",
+      "common_misconception": "The denominator is NOT delivered orders. Dividing cancellations by delivered orders understates the rate because the denominator already excludes the failures. The correct denominator is all placed orders. Also, an unattributed cancellation rate hides which party is at fault — by-party breakout is essential."
+    },
+    "template": "SELECT ROUND(COUNT(CASE WHEN o.status = 'cancelled' THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS cancellation_rate_pct FROM orders o WHERE o.status NOT IN ('test', 'fraud') AND o.placed_at BETWEEN {start_date} AND {end_date}",
+    "inflation_causes": [
+      {
+        "cause": "Restaurant auto-rejects counted alongside true cancellations",
+        "how_it_inflates": "When a restaurant is offline or auto-rejects an order at peak, some systems log it as a cancellation. If these are lumped into the headline rate without party attribution, restaurant-side capacity failures inflate the overall cancellation number and obscure the cause.",
+        "detection_sql": "SELECT o.cancelled_by, o.cancellation_reason, COUNT(*) AS cancellations FROM orders o WHERE o.status = 'cancelled' AND o.placed_at BETWEEN {start_date} AND {end_date} GROUP BY 1, 2 ORDER BY cancellations DESC",
+        "fix": "Always break cancellation rate out by cancelled_by (diner / restaurant / courier / platform). Report restaurant auto-rejects as a distinct sub-rate so they can be routed to supply ops, not lumped with diner cancels."
+      },
+      {
+        "cause": "Test and fraud orders left in the denominator and numerator",
+        "how_it_inflates": "Synthetic test orders are frequently created and immediately cancelled. If status IN ('test','fraud') rows are not filtered, they swell the cancellation count and distort the rate, especially in low-volume zones.",
+        "detection_sql": "SELECT o.status, COUNT(*) AS orders FROM orders o WHERE o.placed_at BETWEEN {start_date} AND {end_date} GROUP BY o.status ORDER BY orders DESC",
+        "fix": "Exclude test and fraud orders from both numerator and denominator. Keep the denominator as genuine placed orders (delivered + cancelled + failed)."
+      },
+      {
+        "cause": "Double-counted orders from a status-history fan-out",
+        "how_it_inflates": "Joining orders to an order_status_history table (one row per status transition) and counting cancelled rows counts an order once per transition that touched 'cancelled', or counts re-tried orders multiple times, inflating the cancellation count.",
+        "detection_sql": "SELECT order_id, COUNT(*) AS status_rows FROM order_status_history WHERE new_status = 'cancelled' GROUP BY order_id HAVING COUNT(*) > 1 ORDER BY status_rows DESC LIMIT 20",
+        "fix": "Compute cancellation from the orders table's final status at order grain, or take the latest status per order from the history table via ROW_NUMBER() before counting."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Using delivered orders as the denominator",
+        "how_it_deflates": "Dividing cancellations by delivered orders (instead of all placed orders) removes the failures from the denominator. With a denominator that already excludes the bad outcomes, the rate is structurally understated.",
+        "detection_sql": "SELECT COUNT(CASE WHEN status = 'cancelled' THEN 1 END) AS cancels, COUNT(CASE WHEN status = 'delivered' THEN 1 END) AS delivered, COUNT(*) AS all_placed, ROUND(COUNT(CASE WHEN status = 'cancelled' THEN 1 END) * 100.0 / NULLIF(COUNT(CASE WHEN status = 'delivered' THEN 1 END), 0), 2) AS wrong_rate_vs_delivered, ROUND(COUNT(CASE WHEN status = 'cancelled' THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS correct_rate_vs_all FROM orders WHERE status NOT IN ('test', 'fraud')",
+        "fix": "Use COUNT(*) over all placed orders (delivered + cancelled + failed) as the denominator. The two rates differ materially; only the all-placed denominator is the true cancellation rate."
+      },
+      {
+        "cause": "Failed orders bucketed separately and silently dropped",
+        "how_it_deflates": "If 'failed' (e.g., undeliverable, no-courier) is a distinct status from 'cancelled' and the metric only counts status='cancelled', genuine non-completions are excluded, understating how often orders fail to reach the diner.",
+        "detection_sql": "SELECT o.status, COUNT(*) AS orders FROM orders o WHERE o.placed_at BETWEEN {start_date} AND {end_date} GROUP BY o.status ORDER BY orders DESC",
+        "fix": "Decide explicitly whether 'failed' belongs in the numerator. Report a combined non-completion rate (cancelled + failed) and a pure cancellation rate, and label each clearly."
+      }
+    ],
+    "diagnostic_questions": [
+      "What is the denominator — all placed orders, or only delivered orders?",
+      "Which party is driving the change — diner, restaurant, courier, or platform (cancelled_by)?",
+      "Is the spike concentrated in specific restaurants, cities, or dayparts?",
+      "Are 'failed' orders counted, and are test/fraud orders excluded?",
+      "Did courier supply drop, causing more no-courier cancellations?",
+      "Did a restaurant go offline or hit capacity, driving auto-rejects?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "fd_cancellation_rate up, courier-attributed cancels up, fd_courier_utilization up",
+        "then": "Courier shortage: orders cancel because no courier accepts within SLA. This is a supply-side marketplace imbalance — fix with courier incentives, not restaurant changes."
+      },
+      {
+        "if": "fd_cancellation_rate up, restaurant-attributed cancels up",
+        "then": "Kitchens are rejecting orders (offline, out of stock, at capacity). Investigate restaurant onboarding quality and menu-availability sync rather than logistics."
+      },
+      {
+        "if": "fd_cancellation_rate up, fd_delivery_time up",
+        "then": "Slow fulfillment is driving diner-initiated cancellations (the diner gives up waiting). The two metrics share a capacity root cause. Check diner-attributed cancel reasons for 'too slow'."
+      },
+      {
+        "if": "fd_cancellation_rate up only at dinner peak",
+        "then": "Capacity saturates at peak on one side of the market. Compare restaurant vs courier attribution at peak to localize which side breaks."
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Cancellation rate rises, driven by courier-attributed cancels",
+        "and_also": "fd_courier_utilization (deliveries per online hour) is at its ceiling",
+        "shared_root_cause": "Courier supply cannot absorb demand. When utilization saturates, marginal orders go unassigned and cancel. Both metrics trace to a single demand/supply gap in the courier marketplace; the fix is more online courier hours at peak, not order-flow changes.",
+        "diagnostic_sql": "SELECT o.city, DATE_TRUNC('day', o.placed_at) AS day, COUNT(*) AS placed_orders, COUNT(CASE WHEN o.status = 'cancelled' AND o.cancelled_by = 'courier' THEN 1 END) AS courier_cancels, ROUND(COUNT(CASE WHEN o.status = 'cancelled' AND o.cancelled_by = 'courier' THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS courier_cancel_pct, COUNT(DISTINCT o.courier_id) AS active_couriers, ROUND(COUNT(CASE WHEN o.status = 'delivered' THEN 1 END) * 1.0 / NULLIF(COUNT(DISTINCT o.courier_id), 0), 2) AS deliveries_per_courier FROM orders o WHERE o.status NOT IN ('test', 'fraud') GROUP BY 1, 2 ORDER BY 1, 2"
+      },
+      {
+        "if_this_metric": "Cancellation rate rises for a restaurant cohort",
+        "and_also": "fd_take_rate looks artificially high for that cohort",
+        "shared_root_cause": "Cancelled orders that still recorded commission, or refunds not netted, can both inflate take rate and signal restaurant reliability problems. A reliability issue and an accounting artifact often share the same cancelled-order rows. Reconcile commission on cancelled orders.",
+        "diagnostic_sql": "SELECT o.restaurant_id, COUNT(*) AS placed_orders, ROUND(COUNT(CASE WHEN o.status = 'cancelled' THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS cancel_pct, SUM(CASE WHEN o.status = 'cancelled' THEN o.commission ELSE 0 END) AS commission_on_cancels, ROUND(SUM(o.commission) / NULLIF(SUM(o.gmv), 0) * 100, 2) AS take_rate_pct FROM orders o WHERE o.status NOT IN ('test', 'fraud') GROUP BY 1 HAVING COUNT(*) > 50 ORDER BY cancel_pct DESC LIMIT 20"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Cancellation rate over delivered orders instead of all placed orders",
+        "why_wrong": "The denominator must be every order placed. Using delivered orders removes the failures from the denominator, structurally understating the rate and making a worsening trend look stable.",
+        "bad_sql": "SELECT COUNT(CASE WHEN status = 'cancelled' THEN 1 END) * 100.0 / COUNT(CASE WHEN status = 'delivered' THEN 1 END) AS cancel_rate FROM orders",
+        "good_sql": "SELECT ROUND(COUNT(CASE WHEN status = 'cancelled' THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS cancel_rate_pct FROM orders WHERE status NOT IN ('test', 'fraud')"
+      },
+      {
+        "pattern": "Reporting one blended cancellation rate with no party attribution",
+        "why_wrong": "A single number cannot be acted on. Diner, restaurant, and courier cancellations have different owners and fixes. A blended rate hides which side of the three-sided marketplace is failing.",
+        "bad_sql": "SELECT COUNT(CASE WHEN status = 'cancelled' THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0) AS cancel_rate FROM orders WHERE status NOT IN ('test', 'fraud')",
+        "good_sql": "SELECT o.cancelled_by, COUNT(CASE WHEN o.status = 'cancelled' THEN 1 END) AS cancels, ROUND(COUNT(CASE WHEN o.status = 'cancelled' THEN 1 END) * 100.0 / NULLIF(COUNT(*) OVER (), 0), 2) AS share_of_all_orders_pct FROM orders o WHERE o.status NOT IN ('test', 'fraud') GROUP BY o.cancelled_by ORDER BY cancels DESC"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT ROUND(COUNT(CASE WHEN o.status = 'cancelled' THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS cancellation_rate_pct FROM orders o WHERE o.status NOT IN ('test', 'fraud') AND o.placed_at BETWEEN '2024-01-01' AND '2024-01-31'",
+      "intermediate_sql": "SELECT o.city, o.cancelled_by, COUNT(*) AS placed_orders, COUNT(CASE WHEN o.status = 'cancelled' THEN 1 END) AS cancellations, ROUND(COUNT(CASE WHEN o.status = 'cancelled' THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS cancellation_rate_pct FROM orders o WHERE o.status NOT IN ('test', 'fraud') AND o.placed_at BETWEEN '2024-01-01' AND '2024-01-31' GROUP BY 1, 2 ORDER BY 1, cancellations DESC",
+      "advanced_sql": "WITH placed AS (\n  -- Grain: one row per placed order (delivered + cancelled + failed), test/fraud excluded\n  SELECT\n    o.order_id,\n    o.city,\n    DATE_TRUNC('week', o.placed_at) AS week,\n    o.status,\n    o.cancelled_by,\n    o.gmv\n  FROM orders o\n  WHERE o.status NOT IN ('test', 'fraud')\n)\nSELECT\n  week,\n  city,\n  COUNT(*) AS placed_orders,\n  ROUND(COUNT(CASE WHEN status = 'cancelled' THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS total_cancel_pct,\n  ROUND(COUNT(CASE WHEN status = 'cancelled' AND cancelled_by = 'diner' THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS diner_cancel_pct,\n  ROUND(COUNT(CASE WHEN status = 'cancelled' AND cancelled_by = 'restaurant' THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS restaurant_cancel_pct,\n  ROUND(COUNT(CASE WHEN status = 'cancelled' AND cancelled_by = 'courier' THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS courier_cancel_pct,\n  SUM(CASE WHEN status = 'cancelled' THEN gmv ELSE 0 END) AS lost_gmv\nFROM placed\nGROUP BY 1, 2\nORDER BY 1 DESC, total_cancel_pct DESC"
+    }
+  },
+  {
+    "id": "fd_courier_utilization",
+    "title": "Courier Utilization (Deliveries per Online Hour)",
+    "intent_tags": [
+      "courier utilization",
+      "deliveries per online hour",
+      "courier productivity",
+      "driver utilization",
+      "deliveries per hour",
+      "courier efficiency",
+      "rider productivity",
+      "how busy are couriers",
+      "courier idle time",
+      "fleet utilization",
+      "orders per courier hour",
+      "courier throughput"
+    ],
+    "sql_features": [
+      "aggregation",
+      "join",
+      "nullif",
+      "pre_aggregation"
+    ],
+    "difficulty": "advanced",
+    "pattern_type": "ratio",
+    "when_to_use": [
+      "measure how productively courier supply is being used (deliveries completed per paid online hour)",
+      "balance the courier marketplace — detect oversupply (idle) or undersupply (saturated)",
+      "set courier incentives and surge zones by daypart and city",
+      "evaluate batching and dispatch efficiency",
+      "diagnose delivery-time and cancellation issues rooted in courier capacity"
+    ],
+    "related_patterns": [
+      "fd_delivery_time",
+      "fd_cancellation_rate",
+      "fd_orders_per_active_user"
+    ],
+    "business_definition": "Total completed deliveries divided by total courier online hours in a period. Courier Utilization = COUNT(delivered orders) / SUM(online_hours), where online_hours is the time couriers were logged in and available (whether or not actively delivering). Measured per city/daypart for actionable balance.",
+    "metric_nature": {
+      "what_it_measures": "How much delivery output the marketplace extracts per paid hour of courier availability. A productivity-and-balance signal: high values mean couriers are busy (and possibly stretched), low values mean idle supply (couriers logged in with nothing to do).",
+      "what_it_does_not_measure": "Courier earnings or satisfaction, nor whether utilization is 'good' in isolation. Very high utilization correlates with long delivery times and cancellations (undersupply); very low utilization means wasted incentive spend (oversupply). The healthy band is a range, not a maximum.",
+      "common_misconception": "Higher utilization is not always better. Pushing it too high saturates the fleet, lengthening delivery times and causing no-courier cancellations. It is a balance metric with a target band, not a number to maximize. Also, the denominator must be online hours, not active-delivery hours — idle paid time is the cost being measured."
+    },
+    "template": "SELECT COUNT(o.order_id) * 1.0 / NULLIF(SUM(cs.online_hours), 0) AS deliveries_per_online_hour FROM (SELECT courier_id, SUM(online_hours) AS online_hours FROM courier_shifts WHERE shift_date BETWEEN {start_date} AND {end_date} GROUP BY courier_id) cs LEFT JOIN orders o ON o.courier_id = cs.courier_id AND o.status = 'delivered' AND o.placed_at BETWEEN {start_date} AND {end_date}",
+    "inflation_causes": [
+      {
+        "cause": "Online hours under-counted (idle/break time excluded)",
+        "how_it_inflates": "If online_hours only sums time spent actively on a delivery (active-delivery hours) and excludes idle-but-logged-in time, the denominator shrinks and utilization is overstated, hiding real idle supply cost.",
+        "detection_sql": "SELECT courier_id, SUM(online_hours) AS logged_online_hours, SUM(active_delivery_hours) AS active_hours, ROUND(SUM(active_delivery_hours) / NULLIF(SUM(online_hours), 0) * 100, 1) AS active_share_pct FROM courier_shifts WHERE shift_date BETWEEN {start_date} AND {end_date} GROUP BY courier_id ORDER BY active_share_pct DESC LIMIT 20",
+        "fix": "Define online_hours as total logged-in available time (including idle waiting). Use active_delivery_hours only for a separate 'on-task share' metric, never as the utilization denominator."
+      },
+      {
+        "cause": "Delivery count fanned out by order_items or assignment join",
+        "how_it_inflates": "Joining orders to order_items (one row per dish) or counting every courier_assignment row (including reassignments) without DISTINCT inflates the delivery count numerator, producing an impossible utilization above physical limits.",
+        "detection_sql": "SELECT COUNT(*) AS joined_rows, COUNT(DISTINCT o.order_id) AS distinct_deliveries FROM orders o JOIN order_items oi ON o.order_id = oi.order_id WHERE o.status = 'delivered'",
+        "fix": "Count COUNT(DISTINCT o.order_id) for deliveries, computed at order grain before relating to shift hours."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Double-counting online hours from overlapping shift rows",
+        "how_it_deflates": "If a courier has overlapping or duplicated shift rows (e.g., a logout/login glitch creating two open shifts), SUM(online_hours) over-counts the denominator, deflating utilization and making the fleet look idler than it is.",
+        "detection_sql": "SELECT courier_id, shift_date, COUNT(*) AS shift_rows, SUM(online_hours) AS total_hours FROM courier_shifts GROUP BY courier_id, shift_date HAVING SUM(online_hours) > 18 ORDER BY total_hours DESC LIMIT 20",
+        "fix": "Deduplicate overlapping shifts and cap daily online_hours at a physical maximum (e.g., 14h). Merge overlapping intervals before summing hours."
+      },
+      {
+        "cause": "Couriers with online hours but zero deliveries left in via LEFT JOIN nulls",
+        "how_it_deflates": "A LEFT JOIN correctly keeps idle couriers (which is intended), but if the same idle couriers represent test accounts or couriers in a different city than the orders, their hours inflate the denominator for no real demand, deflating measured utilization.",
+        "detection_sql": "SELECT cs.courier_id, cs.online_hours, COUNT(o.order_id) AS deliveries FROM courier_shifts cs LEFT JOIN orders o ON o.courier_id = cs.courier_id AND o.status = 'delivered' WHERE cs.shift_date BETWEEN {start_date} AND {end_date} GROUP BY cs.courier_id, cs.online_hours HAVING COUNT(o.order_id) = 0 AND cs.online_hours > 2 ORDER BY cs.online_hours DESC LIMIT 20",
+        "fix": "Scope couriers and orders to the same city/zone in the join, and exclude test courier accounts so denominator hours match the demand pool being measured."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is online_hours total logged-in time, or only active-delivery time?",
+      "Is utilization computed at the right grain — per city and daypart, not blended nationally?",
+      "Are delivery counts at order grain (DISTINCT order_id), or fanned out by items/assignments?",
+      "Are overlapping or duplicate shift rows inflating online hours?",
+      "Is utilization above the healthy band (saturation) or below it (idle oversupply)?",
+      "Are couriers and orders scoped to the same zone so supply matches the demand measured?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "fd_courier_utilization up, fd_delivery_time up",
+        "then": "The fleet is saturating: too few couriers for demand, so each does more and orders wait longer for assignment. Add courier supply or cap order intake at peak."
+      },
+      {
+        "if": "fd_courier_utilization up, fd_cancellation_rate up (courier-attributed)",
+        "then": "Demand exceeds courier capacity to the point of unassigned, cancelling orders. Classic undersupply — fix with surge incentives in the affected zone/daypart."
+      },
+      {
+        "if": "fd_courier_utilization down, courier online hours up",
+        "then": "Oversupply: more couriers logged in than demand needs, idle paid time rising. Reduce incentives or shrink the active fleet for that zone/daypart."
+      },
+      {
+        "if": "fd_courier_utilization flat, fd_delivery_time up",
+        "then": "Utilization is not the bottleneck — look upstream at kitchen prep time or dispatch logic, not courier supply."
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Courier utilization is climbing toward saturation",
+        "and_also": "fd_delivery_time and fd_cancellation_rate are both rising in the same zone/daypart",
+        "shared_root_cause": "A courier supply shortfall relative to order demand. All three metrics are symptoms of one imbalance: not enough online courier hours for the orders flowing in. The lever is courier supply (incentives, recruiting), and the diagnostic is the same zone-daypart panel for all three.",
+        "diagnostic_sql": "SELECT o.city, DATE_TRUNC('hour', o.placed_at) AS hour, COUNT(DISTINCT CASE WHEN o.status = 'delivered' THEN o.order_id END) AS deliveries, COUNT(DISTINCT o.courier_id) AS active_couriers, ROUND(AVG(CASE WHEN o.status = 'delivered' THEN EXTRACT(EPOCH FROM (o.delivered_at - o.placed_at)) / 60.0 END), 1) AS avg_delivery_min, ROUND(COUNT(CASE WHEN o.status = 'cancelled' AND o.cancelled_by = 'courier' THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS courier_cancel_pct FROM orders o WHERE o.status NOT IN ('test', 'fraud') GROUP BY 1, 2 ORDER BY 1, 2"
+      },
+      {
+        "if_this_metric": "Utilization is very low (idle fleet)",
+        "and_also": "fd_orders_per_active_user is flat — demand is not growing to fill the supply",
+        "shared_root_cause": "Over-recruited courier supply without matching demand. The marketplace is paying for idle hours. Either demand-generation (promos to lift frequency) or supply reduction is needed; the diagnostic compares delivered orders to online hours by zone.",
+        "diagnostic_sql": "SELECT cs.city, DATE_TRUNC('week', cs.shift_date) AS week, SUM(cs.online_hours) AS online_hours, COUNT(DISTINCT o.order_id) AS deliveries, ROUND(COUNT(DISTINCT o.order_id) * 1.0 / NULLIF(SUM(cs.online_hours), 0), 2) AS deliveries_per_hour FROM courier_shifts cs LEFT JOIN orders o ON o.courier_id = cs.courier_id AND o.status = 'delivered' AND DATE_TRUNC('week', o.placed_at) = DATE_TRUNC('week', cs.shift_date) GROUP BY 1, 2 ORDER BY deliveries_per_hour ASC LIMIT 20"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Joining shifts to orders at raw grain then summing online_hours",
+        "why_wrong": "If you join courier_shifts (rows per shift) directly to orders (rows per delivery) and SUM(online_hours), the shift hours fan out and are summed once per delivery the courier made — a courier with 8 hours and 20 deliveries contributes 160 hours. You must pre-aggregate hours and deliveries separately.",
+        "bad_sql": "SELECT COUNT(o.order_id) * 1.0 / SUM(cs.online_hours) AS util FROM courier_shifts cs JOIN orders o ON o.courier_id = cs.courier_id WHERE o.status = 'delivered'",
+        "good_sql": "WITH hours AS (SELECT courier_id, SUM(online_hours) AS online_hours FROM courier_shifts GROUP BY courier_id), deliv AS (SELECT courier_id, COUNT(*) AS deliveries FROM orders WHERE status = 'delivered' GROUP BY courier_id) SELECT SUM(d.deliveries) * 1.0 / NULLIF(SUM(h.online_hours), 0) AS deliveries_per_hour FROM hours h LEFT JOIN deliv d ON h.courier_id = d.courier_id"
+      },
+      {
+        "pattern": "A utilization value above the physical maximum signals a fan-out bug",
+        "why_wrong": "Deliveries per online hour has a hard physical ceiling (a courier cannot complete, say, more than ~4-5 deliveries/hour even batched). A computed value far above that is not real productivity — it is a join fan-out inflating the numerator or under-counted hours in the denominator.",
+        "bad_sql": "SELECT courier_id, COUNT(*) * 1.0 / SUM(active_delivery_hours) AS util FROM orders o JOIN order_items oi ON o.order_id = oi.order_id JOIN courier_shifts cs ON cs.courier_id = o.courier_id GROUP BY courier_id",
+        "good_sql": "WITH hours AS (SELECT courier_id, SUM(online_hours) AS online_hours FROM courier_shifts GROUP BY courier_id), deliv AS (SELECT courier_id, COUNT(DISTINCT order_id) AS deliveries FROM orders WHERE status = 'delivered' GROUP BY courier_id) SELECT h.courier_id, ROUND(d.deliveries * 1.0 / NULLIF(h.online_hours, 0), 2) AS deliveries_per_hour FROM hours h LEFT JOIN deliv d ON h.courier_id = d.courier_id WHERE d.deliveries * 1.0 / NULLIF(h.online_hours, 0) <= 6"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "WITH hours AS (SELECT SUM(online_hours) AS online_hours FROM courier_shifts WHERE shift_date BETWEEN '2024-01-01' AND '2024-01-31'), deliv AS (SELECT COUNT(*) AS deliveries FROM orders WHERE status = 'delivered' AND placed_at BETWEEN '2024-01-01' AND '2024-01-31') SELECT ROUND(deliv.deliveries * 1.0 / NULLIF(hours.online_hours, 0), 2) AS deliveries_per_online_hour FROM hours, deliv",
+      "intermediate_sql": "WITH hours AS (SELECT city, DATE_TRUNC('week', shift_date) AS week, SUM(online_hours) AS online_hours FROM courier_shifts GROUP BY 1, 2), deliv AS (SELECT city, DATE_TRUNC('week', placed_at) AS week, COUNT(*) AS deliveries FROM orders WHERE status = 'delivered' GROUP BY 1, 2) SELECT h.week, h.city, h.online_hours, COALESCE(d.deliveries, 0) AS deliveries, ROUND(COALESCE(d.deliveries, 0) * 1.0 / NULLIF(h.online_hours, 0), 2) AS deliveries_per_online_hour FROM hours h LEFT JOIN deliv d ON h.city = d.city AND h.week = d.week ORDER BY h.week DESC, deliveries_per_online_hour DESC",
+      "advanced_sql": "WITH hours AS (\n  -- Grain: one row per (city, daypart, week) of total online courier hours\n  SELECT\n    city,\n    DATE_TRUNC('week', shift_date) AS week,\n    CASE WHEN EXTRACT(HOUR FROM shift_start) BETWEEN 11 AND 14 THEN 'lunch'\n         WHEN EXTRACT(HOUR FROM shift_start) BETWEEN 17 AND 21 THEN 'dinner'\n         ELSE 'offpeak' END AS daypart,\n    SUM(online_hours) AS online_hours,\n    COUNT(DISTINCT courier_id) AS couriers\n  FROM courier_shifts\n  GROUP BY 1, 2, 3\n),\ndeliv AS (\n  SELECT\n    city,\n    DATE_TRUNC('week', placed_at) AS week,\n    CASE WHEN EXTRACT(HOUR FROM placed_at) BETWEEN 11 AND 14 THEN 'lunch'\n         WHEN EXTRACT(HOUR FROM placed_at) BETWEEN 17 AND 21 THEN 'dinner'\n         ELSE 'offpeak' END AS daypart,\n    COUNT(DISTINCT order_id) AS deliveries\n  FROM orders\n  WHERE status = 'delivered'\n  GROUP BY 1, 2, 3\n)\nSELECT\n  h.week,\n  h.city,\n  h.daypart,\n  h.couriers,\n  h.online_hours,\n  COALESCE(d.deliveries, 0) AS deliveries,\n  ROUND(COALESCE(d.deliveries, 0) * 1.0 / NULLIF(h.online_hours, 0), 2) AS deliveries_per_online_hour,\n  CASE\n    WHEN COALESCE(d.deliveries, 0) * 1.0 / NULLIF(h.online_hours, 0) > 3.0 THEN 'saturated_undersupply'\n    WHEN COALESCE(d.deliveries, 0) * 1.0 / NULLIF(h.online_hours, 0) < 1.0 THEN 'idle_oversupply'\n    ELSE 'healthy_band'\n  END AS balance_state\nFROM hours h\nLEFT JOIN deliv d ON h.city = d.city AND h.week = d.week AND h.daypart = d.daypart\nORDER BY h.week DESC, deliveries_per_online_hour DESC"
+    }
+  },
+  {
+    "id": "fd_retention_cohort_rate",
+    "title": "Repeat / Retention Cohort Rate",
+    "intent_tags": [
+      "retention rate",
+      "repeat rate",
+      "cohort retention",
+      "customer retention",
+      "repeat order rate",
+      "month over month retention",
+      "how many customers come back",
+      "diner retention",
+      "cohort analysis",
+      "returning customers",
+      "retention curve",
+      "do customers reorder"
+    ],
+    "sql_features": [
+      "cte",
+      "self_join",
+      "count_distinct",
+      "date_trunc",
+      "nullif"
+    ],
+    "difficulty": "advanced",
+    "pattern_type": "ratio",
+    "when_to_use": [
+      "measure what fraction of a first-order cohort returns to order in later periods",
+      "build retention curves to assess habit formation and product-market fit",
+      "compare retention across acquisition channels, cities, or first-order experiences",
+      "feed LTV models with cohort survival inputs",
+      "evaluate whether onboarding, delivery quality, or promos improve stickiness"
+    ],
+    "related_patterns": [
+      "fd_orders_per_active_user",
+      "fd_delivery_time",
+      "fd_cancellation_rate"
+    ],
+    "business_definition": "For a cohort of diners defined by their first-order period, the percentage who place at least one completed order in a later period N. Retention(N) = distinct cohort members active in period N / cohort size at period 0. Cohorting is by the diner's FIRST completed order period; activity in period N is any completed order that period.",
+    "metric_nature": {
+      "what_it_measures": "Whether newly acquired diners form a habit. It tracks a fixed group (a cohort) forward in time, isolating retention from the noise of new acquisition. The retention curve's shape reveals product-market fit and the size of a durable repeat base.",
+      "what_it_does_not_measure": "Overall active-user growth (which mixes new acquisition with retention) or order frequency among the retained (use orders-per-active-user). It also does not measure revenue retention — a retained diner who orders less still counts as retained.",
+      "common_misconception": "Retention is not the same as 'repeat customers / total customers' computed without cohorting. Without anchoring each diner to their first-order period, you blend cohorts of different ages and the number is uninterpretable. Retention REQUIRES cohorting by first-order period, and period N must be measured relative to that anchor, not on a fixed calendar."
+    },
+    "template": "WITH cohort AS (SELECT customer_id, DATE_TRUNC('month', MIN(placed_at)) AS cohort_month FROM orders WHERE status NOT IN ('cancelled','test','fraud') GROUP BY customer_id), activity AS (SELECT DISTINCT customer_id, DATE_TRUNC('month', placed_at) AS active_month FROM orders WHERE status NOT IN ('cancelled','test','fraud')) SELECT c.cohort_month, (EXTRACT(YEAR FROM a.active_month) - EXTRACT(YEAR FROM c.cohort_month)) * 12 + (EXTRACT(MONTH FROM a.active_month) - EXTRACT(MONTH FROM c.cohort_month)) AS month_n, COUNT(DISTINCT a.customer_id) AS retained, COUNT(DISTINCT a.customer_id) * 100.0 / NULLIF(MAX(cs.cohort_size) OVER (PARTITION BY c.cohort_month), 0) AS retention_pct FROM cohort c JOIN activity a ON c.customer_id = a.customer_id JOIN (SELECT cohort_month, COUNT(*) AS cohort_size FROM cohort GROUP BY cohort_month) cs ON c.cohort_month = cs.cohort_month GROUP BY c.cohort_month, month_n, cs.cohort_size",
+    "inflation_causes": [
+      {
+        "cause": "Counting cancelled orders as retained activity",
+        "how_it_inflates": "If a diner's only activity in period N was a cancelled order and the activity table does not filter status, they are counted as retained. Retention is overstated by treating non-completed attempts as genuine returns.",
+        "detection_sql": "SELECT DATE_TRUNC('month', placed_at) AS month, COUNT(DISTINCT CASE WHEN status NOT IN ('cancelled','test','fraud') THEN customer_id END) AS completed_active, COUNT(DISTINCT customer_id) AS any_status_active FROM orders GROUP BY 1 ORDER BY 1 DESC LIMIT 12",
+        "fix": "Filter activity to completed orders (status NOT IN ('cancelled','test','fraud')) before flagging a diner as active/retained in period N."
+      },
+      {
+        "cause": "Cohort anchored to registration date instead of first-order date",
+        "how_it_inflates": "Anchoring the cohort to signup date means diners who registered but never ordered until much later get a long apparent gap, and the period-0 base is registrations not first-orderers — making early-period retention look artificially high because the real first order is counted as a 'return'.",
+        "detection_sql": "SELECT c.customer_id, c.signup_date, MIN(o.placed_at) AS first_order, EXTRACT(DAY FROM MIN(o.placed_at) - c.signup_date) AS days_signup_to_first_order FROM customers c JOIN orders o ON c.customer_id = o.customer_id WHERE o.status NOT IN ('cancelled','test','fraud') GROUP BY 1, 2 ORDER BY days_signup_to_first_order DESC LIMIT 20",
+        "fix": "Anchor the cohort to the first COMPLETED order period (MIN(placed_at) over completed orders), not the signup date. Period 0 is the first-order month by definition."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Recent cohorts whose later periods have not elapsed yet",
+        "how_it_deflates": "A cohort formed last month cannot have month-3 retention yet — those periods are in the future. Including immature cohorts in a blended retention(N) drags the average down because their later cells are structurally empty.",
+        "detection_sql": "SELECT cohort_month, MAX((EXTRACT(YEAR FROM CURRENT_DATE) - EXTRACT(YEAR FROM cohort_month)) * 12 + (EXTRACT(MONTH FROM CURRENT_DATE) - EXTRACT(MONTH FROM cohort_month))) AS max_observable_month_n FROM (SELECT customer_id, DATE_TRUNC('month', MIN(placed_at)) AS cohort_month FROM orders WHERE status NOT IN ('cancelled','test','fraud') GROUP BY customer_id) c GROUP BY cohort_month ORDER BY cohort_month DESC",
+        "fix": "Only report retention(N) for cohorts old enough to have observed period N. Blank out (do not zero) future cells, and compare cohorts only at equal maturity."
+      },
+      {
+        "cause": "Customer identity fragmentation across accounts/devices",
+        "how_it_deflates": "If the same diner appears under multiple customer_ids (guest checkout, re-registration, device change), their return is attributed to a new identity, so the original cohort looks like it churned. Retention is understated by identity splitting.",
+        "detection_sql": "SELECT email_hash, COUNT(DISTINCT customer_id) AS distinct_ids FROM customers GROUP BY email_hash HAVING COUNT(DISTINCT customer_id) > 1 ORDER BY distinct_ids DESC LIMIT 20",
+        "fix": "Resolve identities to a stable person key (e.g., email_hash or phone) before cohorting, so returns under a new account_id still credit the original cohort."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the cohort anchored to first COMPLETED order period, or to signup/registration?",
+      "Is period N measured relative to each cohort's anchor, or on a fixed calendar?",
+      "Are only completed orders counted as retained activity (cancelled excluded)?",
+      "Are immature cohorts (whose period N has not elapsed) wrongly included in the average?",
+      "Could identity fragmentation be hiding returns under new customer_ids?",
+      "Is the retention drop concentrated in a specific acquisition channel or city cohort?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "fd_retention_cohort_rate down for recent cohorts, fd_delivery_time up",
+        "then": "New diners are experiencing slow first deliveries and not coming back. The first-order experience drives stickiness. Check delivery time for first orders specifically."
+      },
+      {
+        "if": "fd_retention_cohort_rate down, fd_orders_per_active_user up",
+        "then": "Fewer diners stick, but those who do order more. The base is narrowing to a loyal core while acquisition leaks. Inspect retention by channel to find the leaky source."
+      },
+      {
+        "if": "fd_retention_cohort_rate up for a cohort acquired via a specific promo",
+        "then": "That promo attracted higher-intent diners (or the onboarding offer built a habit). Compare promo-cohort month-2/3 retention to organic to confirm durability vs. a one-off bump."
+      },
+      {
+        "if": "fd_retention_cohort_rate down, first-order fd_cancellation_rate up",
+        "then": "A bad first order (cancelled/failed) is poisoning retention. The diner's debut experience failed. Route to first-order reliability work."
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Month-1 retention is declining cohort over cohort",
+        "and_also": "fd_delivery_time or fd_cancellation_rate for first orders is rising",
+        "shared_root_cause": "The first-order experience is degrading, and a poor debut is the strongest predictor of churn. Acquisition may even be growing while the funnel leaks at the moment of truth. Diagnose by joining each cohort to its members' first-order delivery experience.",
+        "diagnostic_sql": "WITH first_order AS (SELECT customer_id, MIN(placed_at) AS first_at, MIN(order_id) AS first_order_id FROM orders WHERE status NOT IN ('cancelled','test','fraud') GROUP BY customer_id) SELECT DATE_TRUNC('month', fo.first_at) AS cohort_month, COUNT(*) AS cohort_size, ROUND(AVG(EXTRACT(EPOCH FROM (o.delivered_at - o.placed_at)) / 60.0), 1) AS avg_first_delivery_min, ROUND(COUNT(DISTINCT CASE WHEN o2.active_month = DATE_TRUNC('month', fo.first_at) + INTERVAL '1 month' THEN fo.customer_id END) * 100.0 / NULLIF(COUNT(*), 0), 1) AS month1_retention_pct FROM first_order fo JOIN orders o ON o.order_id = fo.first_order_id LEFT JOIN (SELECT DISTINCT customer_id, DATE_TRUNC('month', placed_at) AS active_month FROM orders WHERE status NOT IN ('cancelled','test','fraud')) o2 ON o2.customer_id = fo.customer_id GROUP BY 1 ORDER BY 1 DESC"
+      },
+      {
+        "if_this_metric": "Retention is strong but flat",
+        "and_also": "fd_orders_per_active_user among retained diners is climbing",
+        "shared_root_cause": "A healthy, deepening core: the same retained base is ordering more often. This is the signature of product-market fit — value concentrates in a sticky cohort whose frequency rises. Confirm by trending frequency within a single mature cohort.",
+        "diagnostic_sql": "WITH cohort AS (SELECT customer_id, DATE_TRUNC('month', MIN(placed_at)) AS cohort_month FROM orders WHERE status NOT IN ('cancelled','test','fraud') GROUP BY customer_id) SELECT c.cohort_month, DATE_TRUNC('month', o.placed_at) AS activity_month, COUNT(DISTINCT o.customer_id) AS retained_users, COUNT(o.order_id) AS orders, ROUND(COUNT(o.order_id) * 1.0 / NULLIF(COUNT(DISTINCT o.customer_id), 0), 2) AS orders_per_retained_user FROM cohort c JOIN orders o ON c.customer_id = o.customer_id WHERE o.status NOT IN ('cancelled','test','fraud') GROUP BY 1, 2 ORDER BY 1, 2"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Repeat rate = repeat customers / total customers with no cohorting",
+        "why_wrong": "Without anchoring each diner to a first-order period, you blend cohorts of every age into one number. A maturing dataset mechanically shifts it, and you cannot tell whether retention is improving or just aging. Retention requires cohorting by first-order period.",
+        "bad_sql": "SELECT COUNT(DISTINCT CASE WHEN order_count > 1 THEN customer_id END) * 100.0 / COUNT(DISTINCT customer_id) AS repeat_rate FROM (SELECT customer_id, COUNT(*) AS order_count FROM orders GROUP BY customer_id) t",
+        "good_sql": "WITH cohort AS (SELECT customer_id, DATE_TRUNC('month', MIN(placed_at)) AS cohort_month FROM orders WHERE status NOT IN ('cancelled','test','fraud') GROUP BY customer_id), activity AS (SELECT DISTINCT customer_id, DATE_TRUNC('month', placed_at) AS active_month FROM orders WHERE status NOT IN ('cancelled','test','fraud')) SELECT c.cohort_month, a.active_month, COUNT(DISTINCT a.customer_id) AS retained FROM cohort c JOIN activity a ON c.customer_id = a.customer_id GROUP BY 1, 2 ORDER BY 1, 2"
+      },
+      {
+        "pattern": "Measuring retention on a fixed calendar period instead of relative period N",
+        "why_wrong": "Counting 'who ordered in March' lumps together cohorts at month-1, month-5, and month-12 of their lifecycle. Retention must be measured as period N relative to each cohort's own anchor, otherwise the curve mixes lifecycle stages.",
+        "bad_sql": "SELECT DATE_TRUNC('month', placed_at) AS month, COUNT(DISTINCT customer_id) AS active FROM orders WHERE status NOT IN ('cancelled','test','fraud') GROUP BY 1",
+        "good_sql": "WITH cohort AS (SELECT customer_id, DATE_TRUNC('month', MIN(placed_at)) AS cohort_month FROM orders WHERE status NOT IN ('cancelled','test','fraud') GROUP BY customer_id), activity AS (SELECT DISTINCT customer_id, DATE_TRUNC('month', placed_at) AS active_month FROM orders WHERE status NOT IN ('cancelled','test','fraud')) SELECT c.cohort_month, (EXTRACT(YEAR FROM a.active_month) - EXTRACT(YEAR FROM c.cohort_month)) * 12 + (EXTRACT(MONTH FROM a.active_month) - EXTRACT(MONTH FROM c.cohort_month)) AS month_n, COUNT(DISTINCT a.customer_id) AS retained FROM cohort c JOIN activity a ON c.customer_id = a.customer_id GROUP BY 1, 2 ORDER BY 1, 2"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "WITH cohort AS (SELECT customer_id, DATE_TRUNC('month', MIN(placed_at)) AS cohort_month FROM orders WHERE status NOT IN ('cancelled','test','fraud') GROUP BY customer_id), m1 AS (SELECT DISTINCT customer_id, DATE_TRUNC('month', placed_at) AS active_month FROM orders WHERE status NOT IN ('cancelled','test','fraud')) SELECT c.cohort_month, COUNT(DISTINCT c.customer_id) AS cohort_size, COUNT(DISTINCT CASE WHEN m1.active_month = c.cohort_month + INTERVAL '1 month' THEN c.customer_id END) AS retained_month1, ROUND(COUNT(DISTINCT CASE WHEN m1.active_month = c.cohort_month + INTERVAL '1 month' THEN c.customer_id END) * 100.0 / NULLIF(COUNT(DISTINCT c.customer_id), 0), 1) AS month1_retention_pct FROM cohort c LEFT JOIN m1 ON c.customer_id = m1.customer_id GROUP BY c.cohort_month ORDER BY c.cohort_month",
+      "intermediate_sql": "WITH cohort AS (SELECT customer_id, DATE_TRUNC('month', MIN(placed_at)) AS cohort_month FROM orders WHERE status NOT IN ('cancelled','test','fraud') GROUP BY customer_id), activity AS (SELECT DISTINCT customer_id, DATE_TRUNC('month', placed_at) AS active_month FROM orders WHERE status NOT IN ('cancelled','test','fraud')), sizes AS (SELECT cohort_month, COUNT(*) AS cohort_size FROM cohort GROUP BY cohort_month) SELECT c.cohort_month, s.cohort_size, (EXTRACT(YEAR FROM a.active_month) - EXTRACT(YEAR FROM c.cohort_month)) * 12 + (EXTRACT(MONTH FROM a.active_month) - EXTRACT(MONTH FROM c.cohort_month)) AS month_n, COUNT(DISTINCT a.customer_id) AS retained, ROUND(COUNT(DISTINCT a.customer_id) * 100.0 / NULLIF(s.cohort_size, 0), 1) AS retention_pct FROM cohort c JOIN activity a ON c.customer_id = a.customer_id JOIN sizes s ON c.cohort_month = s.cohort_month GROUP BY c.cohort_month, s.cohort_size, month_n ORDER BY c.cohort_month, month_n",
+      "advanced_sql": "WITH cohort AS (\n  -- Grain: one row per diner, anchored to first COMPLETED order month\n  SELECT customer_id, DATE_TRUNC('month', MIN(placed_at)) AS cohort_month\n  FROM orders\n  WHERE status NOT IN ('cancelled','test','fraud')\n  GROUP BY customer_id\n),\nactivity AS (\n  -- Grain: one row per (diner, active month) of completed activity\n  SELECT DISTINCT customer_id, DATE_TRUNC('month', placed_at) AS active_month\n  FROM orders\n  WHERE status NOT IN ('cancelled','test','fraud')\n),\nsizes AS (\n  SELECT cohort_month, COUNT(*) AS cohort_size FROM cohort GROUP BY cohort_month\n),\nretention AS (\n  SELECT\n    c.cohort_month,\n    s.cohort_size,\n    (EXTRACT(YEAR FROM a.active_month) - EXTRACT(YEAR FROM c.cohort_month)) * 12\n      + (EXTRACT(MONTH FROM a.active_month) - EXTRACT(MONTH FROM c.cohort_month)) AS month_n,\n    COUNT(DISTINCT a.customer_id) AS retained\n  FROM cohort c\n  JOIN activity a ON c.customer_id = a.customer_id\n  JOIN sizes s ON c.cohort_month = s.cohort_month\n  GROUP BY c.cohort_month, s.cohort_size, month_n\n)\nSELECT\n  cohort_month,\n  cohort_size,\n  month_n,\n  retained,\n  ROUND(retained * 100.0 / NULLIF(cohort_size, 0), 1) AS retention_pct\nFROM retention\n-- only report cells whose period N has actually elapsed for this cohort\nWHERE cohort_month + (month_n || ' months')::interval <= DATE_TRUNC('month', CURRENT_DATE)\nORDER BY cohort_month, month_n"
+    }
+  },
+  {
+    "id": "fd_take_rate",
+    "title": "Take Rate (Commission / GMV)",
+    "intent_tags": [
+      "take rate",
+      "commission rate",
+      "platform take rate",
+      "monetization rate",
+      "commission over gmv",
+      "what is our take rate",
+      "platform commission percentage",
+      "marketplace take rate",
+      "net revenue margin",
+      "how much do we keep per order",
+      "rake",
+      "take rate trend"
+    ],
+    "sql_features": [
+      "aggregation",
+      "ratio",
+      "nullif",
+      "filtering"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "ratio",
+    "when_to_use": [
+      "measure the share of GMV the platform monetizes as commission",
+      "track monetization efficiency across restaurants, cities, and time",
+      "evaluate the margin impact of promotions and fee changes",
+      "compare blended take rate against contracted commission tiers",
+      "feed unit-economics and contribution-margin models"
+    ],
+    "related_patterns": [
+      "fd_orders_per_active_user",
+      "fd_cancellation_rate",
+      "fd_delivery_time"
+    ],
+    "business_definition": "Total platform commission divided by total GMV over a period, expressed as a percentage. Take Rate = SUM(commission) / SUM(gmv) * 100, computed at the order grain over completed orders. Commission is the platform's share of the restaurant's food sales; GMV is the gross food value of those orders (typically excluding customer-paid delivery/service fees and taxes, per the platform's definition).",
+    "metric_nature": {
+      "what_it_measures": "How efficiently the marketplace converts transaction volume (GMV) into platform revenue (commission). It is the monetization yield per dollar of food sold through the platform.",
+      "what_it_does_not_measure": "Profitability — take rate ignores courier pay, support, and promo costs that the commission must cover. Nor does it measure total revenue level (a high take rate on tiny GMV is small money). It is a yield ratio, not a profit or scale metric.",
+      "common_misconception": "Take rate is commission / GMV at the SAME order grain — both numerator and denominator must come from the same set of orders. Counting customer-paid delivery fees or service fees as 'commission' inflates it; including those fees in GMV or mixing grains distorts it. Take rate is the platform's cut of restaurant sales, not the all-in margin on the order."
+    },
+    "template": "SELECT ROUND(SUM(o.commission) / NULLIF(SUM(o.gmv), 0) * 100, 2) AS take_rate_pct FROM orders o WHERE o.status = 'delivered' AND o.placed_at BETWEEN {start_date} AND {end_date}",
+    "inflation_causes": [
+      {
+        "cause": "Customer-paid delivery and service fees counted as commission",
+        "how_it_inflates": "If the commission field actually sums restaurant commission PLUS the delivery fee and service fee the diner paid, the numerator includes money that is not the platform's cut of restaurant sales. Take rate jumps well above contracted commission tiers.",
+        "detection_sql": "SELECT ROUND(AVG(o.commission / NULLIF(o.gmv, 0)) * 100, 2) AS avg_take_pct, ROUND(AVG((o.commission - o.delivery_fee - o.service_fee) / NULLIF(o.gmv, 0)) * 100, 2) AS avg_commission_only_pct, COUNT(*) AS orders FROM orders o WHERE o.status = 'delivered' AND o.gmv > 0",
+        "fix": "Define commission as the restaurant-commission component only. Keep diner-paid delivery_fee and service_fee in separate columns and out of the take-rate numerator (or report them as a distinct fee-take metric)."
+      },
+      {
+        "cause": "Commission counted on cancelled orders but GMV excluded",
+        "how_it_inflates": "If cancelled orders still carry a commission value (a billing artifact) and the query filters GMV to delivered orders only, the numerator picks up commission rows the denominator does not, pushing the ratio up.",
+        "detection_sql": "SELECT o.status, COUNT(*) AS orders, SUM(o.commission) AS commission, SUM(o.gmv) AS gmv FROM orders o GROUP BY o.status ORDER BY commission DESC",
+        "fix": "Apply the identical status filter to both commission and GMV. Zero out or exclude commission on cancelled/failed orders so numerator and denominator share the same order set."
+      },
+      {
+        "cause": "GMV reported net of restaurant discounts the platform funds",
+        "how_it_inflates": "If GMV is stored after subtracting platform-funded promo discounts but commission is computed on the gross menu price, the denominator shrinks relative to the numerator and take rate is overstated.",
+        "detection_sql": "SELECT ROUND(SUM(o.commission) / NULLIF(SUM(o.gmv), 0) * 100, 2) AS take_on_net_gmv, ROUND(SUM(o.commission) / NULLIF(SUM(o.gmv + o.promo_funded_by_platform), 0) * 100, 2) AS take_on_gross_gmv FROM orders o WHERE o.status = 'delivered'",
+        "fix": "Compute commission and GMV on a consistent basis — both gross or both net of platform-funded promos. Document which GMV definition the take rate uses."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Promotional commission rebates not netted into commission",
+        "how_it_deflates": "When the platform rebates part of its commission to win restaurant signups (reduced-commission promo), if the rebate sits in a separate column and the headline commission still shows the contracted rate, you'd actually overstate — conversely, if commission is recorded net of rebate but GMV is gross, take rate deflates below the contracted tier.",
+        "detection_sql": "SELECT o.restaurant_id, ROUND(AVG(o.commission / NULLIF(o.gmv, 0)) * 100, 2) AS effective_take_pct, COUNT(*) AS orders, SUM(o.commission_rebate) AS total_rebates FROM orders o WHERE o.status = 'delivered' AND o.gmv > 0 GROUP BY o.restaurant_id HAVING AVG(o.commission / NULLIF(o.gmv, 0)) * 100 < 10 ORDER BY total_rebates DESC LIMIT 20",
+        "fix": "Decide whether take rate is gross-of-rebate (contracted) or net-of-rebate (effective) and apply rebates consistently. Report effective take rate (net of rebates) for true monetization."
+      },
+      {
+        "cause": "High-GMV, low-commission restaurant mix shift",
+        "how_it_deflates": "If GMV grows in restaurant segments on lower contracted commission tiers (e.g., enterprise chains negotiate down), blended take rate falls even though every individual rate is unchanged — a Simpson-paradox mix effect.",
+        "detection_sql": "SELECT o.restaurant_tier, DATE_TRUNC('month', o.placed_at) AS month, SUM(o.gmv) AS gmv, ROUND(SUM(o.commission) / NULLIF(SUM(o.gmv), 0) * 100, 2) AS take_rate_pct FROM orders o WHERE o.status = 'delivered' GROUP BY 1, 2 ORDER BY 2, gmv DESC",
+        "fix": "Report take rate by restaurant tier alongside the blend. If the blend falls but per-tier rates are stable, the driver is GMV mix shifting toward low-commission tiers, not a fee change."
+      }
+    ],
+    "diagnostic_questions": [
+      "Are commission and GMV computed at the same order grain and over the same status filter?",
+      "Does the commission numerator include diner-paid delivery/service fees that are not the platform's restaurant cut?",
+      "Is GMV gross or net of platform-funded promos, and does commission match that basis?",
+      "Are commission rebates / reduced-commission promos netted consistently?",
+      "Is a blended-rate change a real fee change or a restaurant-tier mix shift?",
+      "Are cancelled orders contributing commission without contributing GMV?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "fd_take_rate down, GMV up, per-tier rates flat",
+        "then": "Mix shift toward lower-commission restaurants (often large chains). Volume grew where the platform earns less per dollar. Confirm with take rate by restaurant_tier."
+      },
+      {
+        "if": "fd_take_rate down, promo spend up",
+        "then": "Commission rebates / reduced-commission deals to acquire restaurants or fund diner promos are eating the take. Effective monetization fell to buy growth. Check commission_rebate and promo_cost per order."
+      },
+      {
+        "if": "fd_take_rate up sharply with no fee change",
+        "then": "Likely a definitional/accounting artifact — delivery or service fees leaking into commission, or commission on cancelled orders without matching GMV. Audit the numerator composition before reporting margin gains."
+      },
+      {
+        "if": "fd_take_rate up, fd_orders_per_active_user down",
+        "then": "Raising fees may be suppressing demand frequency. Higher monetization per order but fewer orders per diner — watch for a volume backlash."
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Take rate rises unexpectedly",
+        "and_also": "fd_cancellation_rate is also elevated for the same restaurant cohort",
+        "shared_root_cause": "Commission is being recorded on cancelled orders whose GMV is filtered out, inflating the ratio. The same cancelled-order rows drive both the cancellation spike and the take-rate artifact. Reconcile commission against GMV on identical order sets.",
+        "diagnostic_sql": "SELECT o.restaurant_id, COUNT(*) AS orders, ROUND(COUNT(CASE WHEN o.status='cancelled' THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS cancel_pct, SUM(CASE WHEN o.status='delivered' THEN o.commission ELSE 0 END) AS delivered_commission, SUM(CASE WHEN o.status='cancelled' THEN o.commission ELSE 0 END) AS cancelled_commission, ROUND(SUM(CASE WHEN o.status='delivered' THEN o.commission ELSE 0 END) / NULLIF(SUM(CASE WHEN o.status='delivered' THEN o.gmv ELSE 0 END), 0) * 100, 2) AS clean_take_pct FROM orders o WHERE o.status NOT IN ('test','fraud') GROUP BY o.restaurant_id HAVING COUNT(*) > 50 ORDER BY cancelled_commission DESC LIMIT 20"
+      },
+      {
+        "if_this_metric": "Blended take rate is declining month over month",
+        "and_also": "fd_orders_per_active_user (frequency) is rising in the same cities",
+        "shared_root_cause": "A promo / reduced-fee growth push is trading monetization for engagement: take rate falls as commission is rebated or fees discounted, while frequency climbs on the cheaper experience. Both move because of one deliberate growth-over-margin strategy. Quantify promo cost per incremental order.",
+        "diagnostic_sql": "SELECT o.city, DATE_TRUNC('month', o.placed_at) AS month, ROUND(SUM(o.commission) / NULLIF(SUM(o.gmv), 0) * 100, 2) AS take_rate_pct, COUNT(o.order_id) AS orders, COUNT(DISTINCT o.customer_id) AS active_users, ROUND(COUNT(o.order_id) * 1.0 / NULLIF(COUNT(DISTINCT o.customer_id), 0), 2) AS orders_per_user, ROUND(SUM(o.promo_cost) / NULLIF(COUNT(o.order_id), 0), 2) AS promo_per_order FROM orders o WHERE o.status = 'delivered' GROUP BY 1, 2 ORDER BY 1, 2"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Take rate with commission and GMV at different grains",
+        "why_wrong": "If commission is summed from an order-header table but GMV is summed from a fanned-out order_items join, GMV is multiplied by the line-item count while commission is not — the ratio collapses. Both must be at the same order grain.",
+        "bad_sql": "SELECT SUM(o.commission) / NULLIF(SUM(oi.quantity * oi.unit_price), 0) * 100 AS take_rate FROM orders o JOIN order_items oi ON o.order_id = oi.order_id WHERE o.status = 'delivered'",
+        "good_sql": "WITH order_grain AS (SELECT order_id, MAX(commission) AS commission, MAX(gmv) AS gmv FROM orders WHERE status = 'delivered' GROUP BY order_id) SELECT ROUND(SUM(commission) / NULLIF(SUM(gmv), 0) * 100, 2) AS take_rate_pct FROM order_grain"
+      },
+      {
+        "pattern": "A take rate above ~40% (or above the contracted tier) is a composition/definition bug",
+        "why_wrong": "Restaurant commission tiers are typically 15-30%. A computed take rate far above that almost never means the platform is keeping that much — it means diner-paid fees leaked into commission, or commission is divided by a too-small (net or fanned) GMV. Treat out-of-band ratios as a data bug, not a finding.",
+        "bad_sql": "SELECT SUM(commission + delivery_fee + service_fee) / NULLIF(SUM(gmv), 0) * 100 AS take_rate FROM orders WHERE status = 'delivered'",
+        "good_sql": "SELECT ROUND(SUM(commission) / NULLIF(SUM(gmv), 0) * 100, 2) AS take_rate_pct FROM orders WHERE status = 'delivered' AND gmv > 0 AND commission <= gmv"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT ROUND(SUM(o.commission) / NULLIF(SUM(o.gmv), 0) * 100, 2) AS take_rate_pct FROM orders o WHERE o.status = 'delivered' AND o.placed_at BETWEEN '2024-01-01' AND '2024-01-31'",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', o.placed_at) AS month, o.restaurant_tier, SUM(o.gmv) AS gmv, SUM(o.commission) AS commission, ROUND(SUM(o.commission) / NULLIF(SUM(o.gmv), 0) * 100, 2) AS take_rate_pct, COUNT(*) AS orders FROM orders o WHERE o.status = 'delivered' GROUP BY 1, 2 ORDER BY 1, gmv DESC",
+      "advanced_sql": "WITH order_grain AS (\n  -- Grain: one row per delivered order with its own GMV and commission\n  SELECT\n    o.order_id,\n    o.city,\n    o.restaurant_tier,\n    DATE_TRUNC('month', o.placed_at) AS month,\n    o.gmv,\n    o.commission,\n    o.commission_rebate,\n    o.promo_cost\n  FROM orders o\n  WHERE o.status = 'delivered'\n    AND o.gmv > 0\n    AND o.commission <= o.gmv\n),\nmonthly AS (\n  SELECT\n    month,\n    city,\n    SUM(gmv) AS gmv,\n    SUM(commission) AS gross_commission,\n    SUM(commission - COALESCE(commission_rebate, 0)) AS net_commission,\n    SUM(promo_cost) AS promo_cost,\n    ROUND(SUM(commission) / NULLIF(SUM(gmv), 0) * 100, 2) AS gross_take_pct,\n    ROUND(SUM(commission - COALESCE(commission_rebate, 0)) / NULLIF(SUM(gmv), 0) * 100, 2) AS net_take_pct\n  FROM order_grain\n  GROUP BY 1, 2\n)\nSELECT\n  month,\n  city,\n  gmv,\n  gross_take_pct,\n  net_take_pct,\n  ROUND((net_take_pct - LAG(net_take_pct) OVER (PARTITION BY city ORDER BY month)), 2) AS net_take_change_pp,\n  ROUND(promo_cost / NULLIF(gmv, 0) * 100, 2) AS promo_pct_of_gmv\nFROM monthly\nORDER BY city, month\n"
+    }
+  }
+]

@@ -411,11 +411,24 @@ def rebuild_ontology(
             import logging
             logging.getLogger(__name__).debug("ontology.build failure-emit skipped", exc_info=True)
         raise HTTPException(status_code=422, detail=detail)
+    # Industry-aware intelligence keystone: (re)infer the Business Profile whenever
+    # the ontology is rebuilt, so the explorer's industry-specific angles are ready
+    # before exploration. Best-effort — a profile failure must not fail the rebuild.
+    profile_industry = None
+    try:
+        from aughor.profile.infer import infer_business_profile
+        bp = infer_business_profile(connection_id, effective)
+        profile_industry = bp.industry
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning(
+            "Business-profile inference after ontology rebuild failed (non-fatal): %s", exc)
     return {
         "ok": True,
         "schema_name": graph.schema_name,
         "generated_at": graph.generated_at,
         "entities": len(graph.entities),
+        "industry": profile_industry,
     }
 
 

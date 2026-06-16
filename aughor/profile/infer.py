@@ -1,0 +1,118 @@
+"""Infer a connection's Business/Industry Profile from its schema + glossary.
+
+Leverages the model's world knowledge of how different industries operate, while
+forcing every metric/question to be grounded in the ACTUAL columns present.
+"""
+from __future__ import annotations
+
+import logging
+from datetime import datetime, timezone
+from typing import Optional
+
+from aughor.profile.models import BusinessProfile
+from aughor.profile import store
+
+logger = logging.getLogger(__name__)
+
+_SYSTEM = (
+    "You are a senior business+industry analyst. Given a database schema (tables, "
+    "columns, types, row counts) with glossary annotations, determine what KIND of "
+    "business this data represents and what matters for THAT specific industry.\n\n"
+    "Use your knowledge of how different industries actually operate — e-commerce, "
+    "airlines, SaaS, banking, healthcare, logistics, manufacturing, media, etc. An "
+    "airline cares about load factor, on-time performance, fleet utilization and "
+    "ancillary revenue; an e-commerce retailer cares about AOV, repeat-purchase rate, "
+    "contribution margin and inventory turnover. The metrics that matter are "
+    "industry-specific — name the ones that matter for THIS one.\n\n"
+    "HARD RULES:\n"
+    "1. Ground EVERY metric and question in the REAL tables/columns shown. Only "
+    "propose metrics this data can actually compute; name the real columns in maps_to.\n"
+    "2. For each metric, state its sane unit/range (unit_or_range) so downstream code "
+    "can sanity-check results — e.g. a conversion rate is a ratio 0-1 (NEVER >1), a "
+    "margin is a percent 0-100, revenue is USD at a human-readable magnitude.\n"
+    "3. Be specific about the vertical (e.g. 'DTC Beauty E-commerce', not just 'Retail').\n"
+    "4. key_questions are what a real analyst in this vertical asks on Monday morning, "
+    "answerable from this data."
+)
+
+
+def _gather_context(connection_id: str, schema_name: Optional[str]) -> tuple[str, list[str]]:
+    """Return (glossary-enriched schema text, existing domain labels)."""
+    from aughor.db.connection import open_connection_for
+    from aughor.semantic.glossary import apply_glossary
+
+    db = open_connection_for(connection_id)
+    schema = db.get_schema()
+    try:
+        schema = apply_glossary(schema)
+    except Exception as exc:
+        logger.debug("apply_glossary failed (non-fatal): %s", exc)
+
+    domains: list[str] = []
+    try:
+        from aughor.ontology.store import load_latest_ontology
+        graph = load_latest_ontology(connection_id, schema_name or None)
+        if graph is not None:
+            domains = sorted({e.domain for e in graph.entities.values() if getattr(e, "domain", None)})
+    except Exception as exc:
+        logger.debug("ontology domain hint unavailable (non-fatal): %s", exc)
+    return schema, domains
+
+
+def infer_business_profile(connection_id: str,
+                           schema_name: Optional[str] = None) -> BusinessProfile:
+    """Infer + persist the profile. Raises on connection/LLM failure."""
+    from aughor.llm.provider import get_provider
+
+    schema, domains = _gather_context(connection_id, schema_name)
+    user = (
+        "SCHEMA (tables, columns, types, row counts; with business glossary notes):\n"
+        f"{schema}\n\n"
+        f"GENERIC DOMAINS already assigned (for reference, may be too generic): {domains or 'none'}\n\n"
+        "Identify the industry/vertical and business model, then list the 6-8 metrics "
+        "and 6-8 questions that matter MOST for this specific business — each grounded "
+        "in the real columns above."
+    )
+    llm = get_provider("coder")
+    profile: BusinessProfile = llm.complete(
+        system=_SYSTEM, user=user, response_model=BusinessProfile, temperature=0.2,
+    )
+    # Resolve each metric to a computation recipe (curated industry KB + LLM
+    # fallback) HERE — at build time, not in the hot Phase-8 loop — so the explorer
+    # just reads them. This is the SQL-accuracy knowledge (formula + grain + anti-
+    # patterns). Best-effort: failure leaves recipes empty, profile still saved.
+    recipes: list = []
+    try:
+        from aughor.profile import metric_kb
+        recipes = metric_kb.resolve_recipes(profile, schema)
+    except Exception as exc:
+        logger.warning("[profile:%s] recipe resolution failed (non-fatal): %s", connection_id, exc)
+
+    store.save(
+        connection_id, profile,
+        schema_name=schema_name,
+        model=getattr(llm, "_model", None),
+        generated_at=datetime.now(timezone.utc).isoformat(),
+        recipes=recipes,
+    )
+    logger.info(
+        "[profile:%s] inferred industry=%r model=%r — %d metrics, %d questions, %d recipes (conf=%.2f)",
+        connection_id, profile.industry, profile.business_model,
+        len(profile.north_star_metrics), len(profile.key_questions), len(recipes), profile.confidence,
+    )
+    return profile
+
+
+def get_or_infer(connection_id: str,
+                 schema_name: Optional[str] = None) -> Optional[BusinessProfile]:
+    """Cached profile if present; else infer once. Best-effort — None on failure
+    so callers (e.g. the explorer) degrade gracefully to generic behavior."""
+    cached = store.load(connection_id)
+    if cached is not None:
+        return cached
+    try:
+        return infer_business_profile(connection_id, schema_name)
+    except Exception as exc:
+        logger.warning("[profile:%s] inference failed (degrading to generic): %s",
+                       connection_id, exc)
+        return None

@@ -1,0 +1,837 @@
+[
+  {
+    "id": "saas_mrr",
+    "title": "Monthly Recurring Revenue (MRR / ARR)",
+    "intent_tags": [
+      "mrr",
+      "monthly recurring revenue",
+      "arr",
+      "annual recurring revenue",
+      "recurring revenue",
+      "what is my mrr",
+      "subscription revenue",
+      "run rate revenue",
+      "current mrr",
+      "mrr trend",
+      "how much recurring revenue",
+      "active subscription revenue"
+    ],
+    "sql_features": [
+      "aggregation",
+      "point_in_time",
+      "filter",
+      "case_when"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "current run-rate of recurring subscription revenue at a point in time",
+      "MRR trend month over month to measure recurring growth",
+      "ARR for investor reporting and valuation (MRR * 12)",
+      "normalize annual and monthly plans to a comparable monthly figure",
+      "top-of-funnel input for NRR, churn, and LTV calculations"
+    ],
+    "related_patterns": [
+      "saas_nrr",
+      "saas_revenue_churn",
+      "saas_ltv",
+      "saas_cac_payback"
+    ],
+    "business_definition": "The normalized monthly value of all currently active recurring subscriptions at a point in time. Each subscription contributes its plan_mrr (annual contracts divided by 12), summed across subscriptions whose status is active on the as-of date. ARR is MRR * 12. Excludes one-time charges, setup fees, usage overages billed ad hoc, and cancelled/trial subscriptions.",
+    "metric_nature": {
+      "what_it_measures": "The point-in-time recurring run-rate: the predictable monthly revenue the business would collect if no subscription changed. It is a snapshot of the active subscription book, normalized to a monthly cadence.",
+      "what_it_does_not_measure": "Cash collected or revenue recognized in a period. MRR is not invoiced cash (an annual plan bills 12x its MRR upfront) and not GAAP revenue. It also excludes non-recurring items like one-time implementation fees or usage spikes.",
+      "common_misconception": "MRR is not the sum of invoice amounts in a month. Billing annual contracts at their full invoiced value instead of dividing by 12 is the single most common MRR overstatement — a $12,000/yr plan is $1,000 MRR, not $12,000."
+    },
+    "template": "SELECT SUM(CASE WHEN s.billing_period = 'annual' THEN s.plan_mrr / 12.0 ELSE s.plan_mrr END) AS mrr FROM subscriptions s WHERE s.status = 'active' AND s.started_at <= {as_of_date} AND (s.canceled_at IS NULL OR s.canceled_at > {as_of_date})",
+    "inflation_causes": [
+      {
+        "cause": "Annual contracts counted at full contract value instead of divided by 12",
+        "how_it_inflates": "If plan_mrr stores the annual contract amount for annual billing_period rows, summing it directly counts each annual customer at 12x their true monthly recurring value, massively overstating MRR and ARR.",
+        "detection_sql": "SELECT billing_period, COUNT(*) AS subs, AVG(plan_mrr) AS avg_plan_amount, SUM(plan_mrr) AS raw_sum FROM subscriptions WHERE status = 'active' GROUP BY billing_period ORDER BY raw_sum DESC",
+        "fix": "Normalize to monthly: CASE WHEN billing_period = 'annual' THEN plan_mrr / 12.0 WHEN billing_period = 'quarterly' THEN plan_mrr / 3.0 ELSE plan_mrr END. Store a derived normalized_mrr column in the base model."
+      },
+      {
+        "cause": "One-time charges and setup fees summed as recurring",
+        "how_it_inflates": "If MRR is computed from an invoices table by SUM(amount), one-time implementation fees, overage charges, and setup fees are added to the recurring run-rate, inflating MRR in months with heavy onboarding.",
+        "detection_sql": "SELECT i.line_type, COUNT(*) AS line_count, SUM(i.amount) AS total_amount FROM invoices i WHERE i.billing_period = DATE_TRUNC('month', CURRENT_DATE) GROUP BY i.line_type ORDER BY total_amount DESC",
+        "fix": "Compute MRR from the subscriptions table (the recurring plan), not from invoices. If using invoices, filter to line_type = 'recurring' and exclude 'one_time', 'setup', 'overage', 'usage'."
+      },
+      {
+        "cause": "Trialing or past_due subscriptions counted as active",
+        "how_it_inflates": "Subscriptions in trial (not yet paying) or past_due (payment failing) carry a plan_mrr but are not realized recurring revenue. Counting them inflates the active book with revenue that may never convert.",
+        "detection_sql": "SELECT status, COUNT(*) AS subs, SUM(plan_mrr) AS plan_mrr_sum FROM subscriptions GROUP BY status ORDER BY plan_mrr_sum DESC",
+        "fix": "Restrict to status = 'active' only. Report trial MRR and past_due MRR as separate pipeline/at-risk lines, never inside committed MRR."
+      },
+      {
+        "cause": "Duplicate active subscription rows per account after plan changes",
+        "how_it_inflates": "When a customer upgrades, some systems insert a new subscription row without closing the old one (canceled_at stays NULL). Both rows count as active, double-counting that account's MRR.",
+        "detection_sql": "SELECT account_id, COUNT(*) AS active_rows, SUM(plan_mrr) AS summed_mrr FROM subscriptions WHERE status = 'active' AND canceled_at IS NULL GROUP BY account_id HAVING COUNT(*) > 1 ORDER BY summed_mrr DESC LIMIT 20",
+        "fix": "Ensure plan changes close the prior row (set canceled_at) or keep one active subscription per account. Deduplicate with ROW_NUMBER() OVER (PARTITION BY account_id ORDER BY started_at DESC) = 1 in the base model."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Subscriptions cancelled in the future excluded from current MRR",
+        "how_it_deflates": "A subscription with status = 'active' but canceled_at set to a future date (scheduled cancellation) is still active today. Filtering canceled_at IS NULL drops it, understating current MRR.",
+        "detection_sql": "SELECT COUNT(*) AS scheduled_cancels, SUM(plan_mrr) AS at_risk_mrr FROM subscriptions WHERE status = 'active' AND canceled_at > CURRENT_DATE",
+        "fix": "Use (canceled_at IS NULL OR canceled_at > {as_of_date}) so subscriptions cancelling in the future still count toward today's MRR."
+      },
+      {
+        "cause": "Multi-currency plans summed without FX normalization",
+        "how_it_deflates": "If plan_mrr is stored in local currency and a large share of subscriptions are in weaker currencies, summing raw values without converting to a base currency produces a meaningless total that may understate (or overstate) reported MRR.",
+        "detection_sql": "SELECT currency_code, COUNT(*) AS subs, SUM(plan_mrr) AS raw_mrr FROM subscriptions WHERE status = 'active' GROUP BY currency_code ORDER BY raw_mrr DESC",
+        "fix": "Join to an fx_rates table on (currency_code, rate_date) and multiply plan_mrr by exchange_rate_to_usd before summing."
+      }
+    ],
+    "diagnostic_questions": [
+      "Are annual and quarterly plans being normalized to a monthly value, or summed at full contract amount?",
+      "Is MRR computed from the recurring subscription plan or from raw invoice amounts that include one-time fees?",
+      "Are trial and past_due subscriptions excluded from committed MRR?",
+      "Does any account have more than one active subscription row after an upgrade?",
+      "Are subscriptions with a future canceled_at still counted in today's MRR?",
+      "Is the MRR change driven by new logos, expansion, contraction, or churn — which movement type?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "MRR up, account count flat",
+        "then": "Expansion (upgrades, seat adds, price increases) drove growth, not new logos — verify with saas_nrr and per-account MRR change."
+      },
+      {
+        "if": "MRR up, account count up proportionally",
+        "then": "New-logo acquisition is the driver with stable average plan size — check new subscription started_at counts."
+      },
+      {
+        "if": "MRR flat, account count up",
+        "then": "New customers are landing on smaller plans than the average, or churn of high-MRR accounts is offsetting new-logo gains — check the MRR movement waterfall."
+      },
+      {
+        "if": "MRR down, account count flat",
+        "then": "Contraction (downgrades, seat reductions) is shrinking existing accounts without losing logos — investigate downgrade reasons by segment."
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "MRR jumps sharply in a single month",
+        "and_also": "saas_nrr shows no corresponding expansion and new-logo count is flat",
+        "shared_root_cause": "Annual contracts are being counted at full value instead of /12, or one-time setup fees leaked into the recurring sum. Real MRR jumps come with either new logos or expansion. A jump with neither is almost always a normalization or one-time-charge bug.",
+        "diagnostic_sql": "SELECT billing_period, COUNT(*) AS subs, SUM(plan_mrr) AS raw_sum, SUM(CASE WHEN billing_period = 'annual' THEN plan_mrr / 12.0 WHEN billing_period = 'quarterly' THEN plan_mrr / 3.0 ELSE plan_mrr END) AS normalized_mrr FROM subscriptions WHERE status = 'active' GROUP BY billing_period ORDER BY raw_sum DESC"
+      },
+      {
+        "if_this_metric": "MRR is growing steadily",
+        "and_also": "saas_revenue_churn is also rising in the same period",
+        "shared_root_cause": "Net new MRR is masking gross churn: strong new-logo or expansion bookings hide a deteriorating retention base. Healthy on the surface but the leaky bucket is widening. Decompose MRR into new / expansion / contraction / churned movements before declaring growth healthy.",
+        "diagnostic_sql": "WITH movements AS (\n  SELECT DATE_TRUNC('month', started_at) AS month, 'new' AS movement, SUM(CASE WHEN billing_period = 'annual' THEN plan_mrr/12.0 ELSE plan_mrr END) AS mrr FROM subscriptions GROUP BY 1\n  UNION ALL\n  SELECT DATE_TRUNC('month', canceled_at), 'churned', -SUM(CASE WHEN billing_period = 'annual' THEN plan_mrr/12.0 ELSE plan_mrr END) FROM subscriptions WHERE canceled_at IS NOT NULL GROUP BY 1\n)\nSELECT month, movement, SUM(mrr) AS mrr_delta FROM movements GROUP BY 1, 2 ORDER BY 1, 2"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Summing invoice amounts as MRR",
+        "why_wrong": "Invoices include one-time fees, annual prepayments billed at 12x, usage overages, and proration credits. SUM(invoices.amount) in a month is cash billed, not the normalized recurring run-rate. An annual customer who paid in January shows $12k that month and $0 for the next 11.",
+        "bad_sql": "SELECT DATE_TRUNC('month', billing_period) AS month, SUM(amount) AS mrr FROM invoices GROUP BY 1",
+        "good_sql": "SELECT SUM(CASE WHEN s.billing_period = 'annual' THEN s.plan_mrr / 12.0 WHEN s.billing_period = 'quarterly' THEN s.plan_mrr / 3.0 ELSE s.plan_mrr END) AS mrr FROM subscriptions s WHERE s.status = 'active' AND (s.canceled_at IS NULL OR s.canceled_at > CURRENT_DATE)"
+      },
+      {
+        "pattern": "Counting subscription rows instead of distinct accounts for ARPA",
+        "why_wrong": "When a customer can hold multiple subscriptions (e.g., per product line), dividing MRR by COUNT(subscription_id) understates average revenue per account. ARPA must divide by DISTINCT account_id.",
+        "bad_sql": "SELECT SUM(plan_mrr) / COUNT(*) AS arpa FROM subscriptions WHERE status = 'active'",
+        "good_sql": "SELECT SUM(CASE WHEN billing_period = 'annual' THEN plan_mrr/12.0 ELSE plan_mrr END) / NULLIF(COUNT(DISTINCT account_id), 0) AS arpa FROM subscriptions WHERE status = 'active'"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT SUM(CASE WHEN s.billing_period = 'annual' THEN s.plan_mrr / 12.0 ELSE s.plan_mrr END) AS mrr FROM subscriptions s WHERE s.status = 'active' AND s.started_at <= '2024-01-31' AND (s.canceled_at IS NULL OR s.canceled_at > '2024-01-31')",
+      "intermediate_sql": "SELECT a.plan_tier, COUNT(DISTINCT s.account_id) AS accounts, SUM(CASE WHEN s.billing_period = 'annual' THEN s.plan_mrr / 12.0 WHEN s.billing_period = 'quarterly' THEN s.plan_mrr / 3.0 ELSE s.plan_mrr END) AS mrr, SUM(CASE WHEN s.billing_period = 'annual' THEN s.plan_mrr / 12.0 WHEN s.billing_period = 'quarterly' THEN s.plan_mrr / 3.0 ELSE s.plan_mrr END) * 12 AS arr FROM subscriptions s JOIN accounts a ON s.account_id = a.account_id WHERE s.status = 'active' AND (s.canceled_at IS NULL OR s.canceled_at > CURRENT_DATE) GROUP BY 1 ORDER BY mrr DESC",
+      "advanced_sql": "WITH month_spine AS (\n  -- One row per month-end snapshot date for the trailing 12 months\n  SELECT DATE_TRUNC('month', d)::date AS as_of FROM generate_series(CURRENT_DATE - INTERVAL '12 months', CURRENT_DATE, INTERVAL '1 month') d\n),\nnormalized AS (\n  SELECT\n    account_id,\n    started_at,\n    canceled_at,\n    CASE WHEN billing_period = 'annual' THEN plan_mrr / 12.0 WHEN billing_period = 'quarterly' THEN plan_mrr / 3.0 ELSE plan_mrr END AS norm_mrr\n  FROM subscriptions\n),\nsnapshot AS (\n  SELECT\n    m.as_of,\n    SUM(n.norm_mrr) AS mrr,\n    COUNT(DISTINCT n.account_id) AS active_accounts\n  FROM month_spine m\n  JOIN normalized n\n    ON n.started_at <= m.as_of\n   AND (n.canceled_at IS NULL OR n.canceled_at > m.as_of)\n  GROUP BY 1\n)\nSELECT\n  as_of,\n  ROUND(mrr, 2) AS mrr,\n  ROUND(mrr * 12, 2) AS arr,\n  active_accounts,\n  ROUND(mrr / NULLIF(active_accounts, 0), 2) AS arpa,\n  ROUND((mrr - LAG(mrr) OVER (ORDER BY as_of)) / NULLIF(LAG(mrr) OVER (ORDER BY as_of), 0) * 100, 2) AS mrr_mom_pct\nFROM snapshot\nORDER BY as_of"
+    }
+  },
+  {
+    "id": "saas_nrr",
+    "title": "Net Revenue Retention (NRR)",
+    "intent_tags": [
+      "nrr",
+      "net revenue retention",
+      "net dollar retention",
+      "ndr",
+      "revenue retention",
+      "what is my nrr",
+      "expansion revenue",
+      "how much revenue did we retain",
+      "cohort revenue retention",
+      "net retention rate",
+      "dollar retention"
+    ],
+    "sql_features": [
+      "cohort",
+      "aggregation",
+      "self_join",
+      "nullif"
+    ],
+    "difficulty": "advanced",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "measure how much recurring revenue from an existing cohort grew or shrank over a window, excluding new logos",
+      "quantify expansion vs contraction vs churn within the installed base",
+      "investor-grade retention metric (NRR > 100% signals a healthy expansion engine)",
+      "compare retention across segments, plan tiers, or signup cohorts",
+      "identify whether growth is acquisition-led or expansion-led"
+    ],
+    "related_patterns": [
+      "saas_mrr",
+      "saas_revenue_churn",
+      "saas_ltv",
+      "saas_cac_payback"
+    ],
+    "business_definition": "For a fixed cohort of accounts active at the start of a window, NRR = (their MRR at the end of the window, including expansion and contraction and churn but EXCLUDING any new accounts acquired during the window) / (their MRR at the start of the window), expressed as a percentage. Starting cohort is frozen; the denominator never includes new logos.",
+    "metric_nature": {
+      "what_it_measures": "How the recurring revenue of an existing customer base evolves over time on its own. It nets expansion (upgrades, seat adds) against contraction (downgrades) and churn within a frozen cohort. NRR above 100% means the base grows even with zero new customers.",
+      "what_it_does_not_measure": "New-logo growth. NRR deliberately excludes accounts acquired during the window. It also is not logo retention — a business can lose many small logos yet have NRR > 100% if a few accounts expand heavily.",
+      "common_misconception": "NRR > 100% is NORMAL and desirable — it reflects expansion within the existing base and is a hallmark of best-in-class SaaS (120%+ is elite). This is unlike logo/customer churn, where a value above 100% is always a bug. Confusing the two leads teams to 'fix' healthy NRR or to ignore broken churn math."
+    },
+    "template": "WITH cohort AS (SELECT s.account_id, SUM(CASE WHEN s.billing_period = 'annual' THEN s.plan_mrr/12.0 ELSE s.plan_mrr END) AS start_mrr FROM subscriptions s WHERE s.started_at <= {window_start} AND (s.canceled_at IS NULL OR s.canceled_at > {window_start}) GROUP BY s.account_id), ending AS (SELECT s.account_id, SUM(CASE WHEN s.billing_period = 'annual' THEN s.plan_mrr/12.0 ELSE s.plan_mrr END) AS end_mrr FROM subscriptions s WHERE s.started_at <= {window_end} AND (s.canceled_at IS NULL OR s.canceled_at > {window_end}) GROUP BY s.account_id) SELECT ROUND(SUM(COALESCE(e.end_mrr, 0)) / NULLIF(SUM(c.start_mrr), 0) * 100, 2) AS nrr_pct FROM cohort c LEFT JOIN ending e ON c.account_id = e.account_id",
+    "inflation_causes": [
+      {
+        "cause": "New accounts acquired during the window leaking into the numerator",
+        "how_it_inflates": "If the ending MRR is computed over ALL active accounts (including those that signed up after window_start) rather than restricting to the frozen starting cohort, new-logo revenue inflates the numerator, making retention look far higher than it is — sometimes well above any plausible expansion.",
+        "detection_sql": "SELECT COUNT(*) AS accounts_in_end_not_in_cohort, SUM(CASE WHEN s.billing_period='annual' THEN s.plan_mrr/12.0 ELSE s.plan_mrr END) AS leaked_mrr FROM subscriptions s WHERE s.started_at > {window_start} AND s.started_at <= {window_end} AND (s.canceled_at IS NULL OR s.canceled_at > {window_end})",
+        "fix": "Join ending MRR back to the frozen starting cohort with an INNER or LEFT JOIN on account_id from the cohort CTE. Never recompute ending MRR over the full active base."
+      },
+      {
+        "cause": "Double-counting expansion when an account holds multiple subscriptions",
+        "how_it_inflates": "If an account has two subscription rows and the cohort CTE doesn't aggregate to account grain first, expansion on one row plus the unchanged second row can be summed inconsistently between start and end, overstating the end/start ratio.",
+        "detection_sql": "SELECT account_id, COUNT(*) AS sub_rows FROM subscriptions WHERE status = 'active' GROUP BY account_id HAVING COUNT(*) > 1 ORDER BY sub_rows DESC LIMIT 20",
+        "fix": "Aggregate to one MRR figure per account_id (GROUP BY account_id) in BOTH the cohort and ending CTEs before computing the ratio, so each account contributes exactly one start and one end value."
+      },
+      {
+        "cause": "Reactivated churned accounts counted as retention",
+        "how_it_deflates_or_inflates": "If an account churned mid-window then reactivated before window_end, including its reactivated MRR in the numerator inflates NRR for the frozen cohort even though it was lost and re-won (which belongs to win-back, not retention).",
+        "how_it_inflates": "Reactivation MRR appears in the ending snapshot for a cohort member, lifting the numerator as if the account never churned.",
+        "detection_sql": "SELECT account_id, COUNT(*) AS sub_spells, MIN(started_at) AS first_start, MAX(started_at) AS last_start FROM subscriptions GROUP BY account_id HAVING COUNT(*) > 1 AND MAX(started_at) > MIN(started_at) ORDER BY sub_spells DESC LIMIT 20",
+        "fix": "Decide on a policy: either treat reactivation as new-logo (exclude from cohort numerator) or document it as win-back retention. Apply consistently across periods."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Future-dated cancellations dropped from the ending snapshot",
+        "how_it_deflates": "An account active at window_end but with canceled_at set just after window_end may be excluded if the filter uses canceled_at IS NULL, understating ending MRR and therefore NRR.",
+        "detection_sql": "SELECT COUNT(*) AS future_cancels, SUM(CASE WHEN billing_period='annual' THEN plan_mrr/12.0 ELSE plan_mrr END) AS mrr FROM subscriptions WHERE canceled_at > {window_end}",
+        "fix": "Use (canceled_at IS NULL OR canceled_at > {window_end}) consistently in the ending CTE so accounts cancelling after the window boundary still count."
+      },
+      {
+        "cause": "Annual plans not normalized, breaking the start/end ratio asymmetrically",
+        "how_it_deflates": "If some cohort members switch from monthly to annual billing within the window and plan_mrr is summed raw, the end value collapses (annual stored as one-twelfth equivalent isn't applied) or explodes inconsistently, distorting NRR in either direction.",
+        "detection_sql": "SELECT billing_period, COUNT(*) AS subs, SUM(plan_mrr) AS raw_sum FROM subscriptions WHERE status = 'active' GROUP BY billing_period",
+        "fix": "Apply the same CASE-based monthly normalization in both the cohort and ending CTEs so a monthly-to-annual switch is revenue-neutral when the underlying price is unchanged."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the ending MRR restricted to the frozen starting cohort, or recomputed over all active accounts (which would leak new logos)?",
+      "Is MRR aggregated to one value per account_id in both the start and end snapshots?",
+      "Are reactivated/win-back accounts being counted as retention or as new logos — and is the policy consistent?",
+      "Are annual plans normalized identically at both window boundaries?",
+      "Is the NRR change driven by expansion, contraction, or churn within the cohort — decompose the three?",
+      "Which segment or plan tier is driving the NRR movement — a few large expansions or broad-based change?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "NRR > 100%, logo count down",
+        "then": "Expansion within retained accounts is outpacing the revenue lost to churned logos — the classic healthy land-and-expand pattern. Confirm expansion is broad-based, not one whale."
+      },
+      {
+        "if": "NRR down, saas_revenue_churn up",
+        "then": "Gross churn is eroding the cohort faster than expansion can offset — the leaky bucket is winning. Decompose into contraction vs full churn."
+      },
+      {
+        "if": "NRR flat near 100%, MRR up",
+        "then": "Growth is acquisition-led, not expansion-led — the existing base is treading water while new logos drive MRR. Sustainable only while CAC stays efficient."
+      },
+      {
+        "if": "NRR up sharply in one quarter",
+        "then": "Likely a price increase pushed through the base or a large account expanded — verify it is durable expansion, not a one-time pricing event or a single whale."
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "NRR reported above 130% across all segments",
+        "and_also": "saas_mrr new-logo additions are large in the same window",
+        "shared_root_cause": "New-logo revenue is leaking into the NRR numerator because the ending snapshot wasn't restricted to the frozen cohort. True NRR rarely exceeds ~130% broadly; an implausibly high figure usually means the cohort join is missing.",
+        "diagnostic_sql": "WITH cohort AS (SELECT DISTINCT account_id FROM subscriptions WHERE started_at <= {window_start} AND (canceled_at IS NULL OR canceled_at > {window_start})) SELECT (SELECT COUNT(*) FROM cohort) AS cohort_accounts, COUNT(DISTINCT s.account_id) AS end_active_accounts, COUNT(DISTINCT s.account_id) - (SELECT COUNT(*) FROM cohort) AS new_logos_in_window FROM subscriptions s WHERE s.started_at <= {window_end} AND (s.canceled_at IS NULL OR s.canceled_at > {window_end})"
+      },
+      {
+        "if_this_metric": "NRR is healthy (>105%) but Gross Revenue Retention is much lower",
+        "and_also": "saas_revenue_churn is elevated",
+        "shared_root_cause": "A few large expansions are masking heavy underlying churn. NRR nets expansion against churn, so it can stay above 100% while many accounts contract or leave. Always read NRR alongside Gross Revenue Retention (which floors at expansion = 0) to see the true leak.",
+        "diagnostic_sql": "WITH cohort AS (SELECT account_id, SUM(CASE WHEN billing_period='annual' THEN plan_mrr/12.0 ELSE plan_mrr END) AS start_mrr FROM subscriptions WHERE started_at <= {window_start} AND (canceled_at IS NULL OR canceled_at > {window_start}) GROUP BY account_id), ending AS (SELECT account_id, SUM(CASE WHEN billing_period='annual' THEN plan_mrr/12.0 ELSE plan_mrr END) AS end_mrr FROM subscriptions WHERE started_at <= {window_end} AND (canceled_at IS NULL OR canceled_at > {window_end}) GROUP BY account_id) SELECT ROUND(SUM(COALESCE(e.end_mrr,0))/NULLIF(SUM(c.start_mrr),0)*100,2) AS nrr_pct, ROUND(SUM(LEAST(COALESCE(e.end_mrr,0), c.start_mrr))/NULLIF(SUM(c.start_mrr),0)*100,2) AS grr_pct FROM cohort c LEFT JOIN ending e ON c.account_id = e.account_id"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Including new logos in the NRR numerator",
+        "why_wrong": "NRR measures retention of an EXISTING cohort. Computing ending MRR over all currently active accounts adds revenue from customers acquired during the window, conflating retention with acquisition and inflating NRR past any real expansion ceiling.",
+        "bad_sql": "SELECT (SELECT SUM(plan_mrr) FROM subscriptions WHERE status='active') / (SELECT SUM(plan_mrr) FROM subscriptions WHERE started_at <= '2024-01-01') * 100 AS nrr",
+        "good_sql": "WITH cohort AS (SELECT account_id, SUM(CASE WHEN billing_period='annual' THEN plan_mrr/12.0 ELSE plan_mrr END) AS start_mrr FROM subscriptions WHERE started_at <= '2024-01-01' AND (canceled_at IS NULL OR canceled_at > '2024-01-01') GROUP BY account_id), ending AS (SELECT account_id, SUM(CASE WHEN billing_period='annual' THEN plan_mrr/12.0 ELSE plan_mrr END) AS end_mrr FROM subscriptions WHERE started_at <= '2024-04-01' AND (canceled_at IS NULL OR canceled_at > '2024-04-01') GROUP BY account_id) SELECT ROUND(SUM(COALESCE(e.end_mrr,0))/NULLIF(SUM(c.start_mrr),0)*100,2) AS nrr_pct FROM cohort c LEFT JOIN ending e ON c.account_id = e.account_id"
+      },
+      {
+        "pattern": "Treating NRR > 100% as an error and capping it",
+        "why_wrong": "Unlike a retention RATE of accounts (which cannot exceed 100%), net REVENUE retention legitimately exceeds 100% when expansion outpaces churn. Capping NRR at 100% hides the expansion engine that is the whole point of the metric.",
+        "bad_sql": "SELECT LEAST(SUM(e.end_mrr) / NULLIF(SUM(c.start_mrr), 0) * 100, 100) AS nrr_capped FROM cohort c LEFT JOIN ending e ON c.account_id = e.account_id",
+        "good_sql": "SELECT ROUND(SUM(COALESCE(e.end_mrr,0)) / NULLIF(SUM(c.start_mrr), 0) * 100, 2) AS nrr_pct, ROUND(SUM(LEAST(COALESCE(e.end_mrr,0), c.start_mrr)) / NULLIF(SUM(c.start_mrr), 0) * 100, 2) AS grr_pct FROM cohort c LEFT JOIN ending e ON c.account_id = e.account_id"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "WITH cohort AS (SELECT account_id, SUM(CASE WHEN billing_period='annual' THEN plan_mrr/12.0 ELSE plan_mrr END) AS start_mrr FROM subscriptions WHERE started_at <= '2024-01-01' AND (canceled_at IS NULL OR canceled_at > '2024-01-01') GROUP BY account_id), ending AS (SELECT account_id, SUM(CASE WHEN billing_period='annual' THEN plan_mrr/12.0 ELSE plan_mrr END) AS end_mrr FROM subscriptions WHERE started_at <= '2024-04-01' AND (canceled_at IS NULL OR canceled_at > '2024-04-01') GROUP BY account_id) SELECT ROUND(SUM(COALESCE(e.end_mrr,0)) / NULLIF(SUM(c.start_mrr),0) * 100, 2) AS nrr_pct FROM cohort c LEFT JOIN ending e ON c.account_id = e.account_id",
+      "intermediate_sql": "WITH cohort AS (SELECT s.account_id, a.segment, SUM(CASE WHEN s.billing_period='annual' THEN s.plan_mrr/12.0 ELSE s.plan_mrr END) AS start_mrr FROM subscriptions s JOIN accounts a ON s.account_id = a.account_id WHERE s.started_at <= '2024-01-01' AND (s.canceled_at IS NULL OR s.canceled_at > '2024-01-01') GROUP BY s.account_id, a.segment), ending AS (SELECT account_id, SUM(CASE WHEN billing_period='annual' THEN plan_mrr/12.0 ELSE plan_mrr END) AS end_mrr FROM subscriptions WHERE started_at <= '2024-04-01' AND (canceled_at IS NULL OR canceled_at > '2024-04-01') GROUP BY account_id) SELECT c.segment, COUNT(*) AS cohort_accounts, ROUND(SUM(c.start_mrr),2) AS start_mrr, ROUND(SUM(COALESCE(e.end_mrr,0)),2) AS end_mrr, ROUND(SUM(COALESCE(e.end_mrr,0))/NULLIF(SUM(c.start_mrr),0)*100,2) AS nrr_pct FROM cohort c LEFT JOIN ending e ON c.account_id = e.account_id GROUP BY c.segment ORDER BY nrr_pct DESC",
+      "advanced_sql": "WITH cohort AS (\n  -- Frozen base: accounts active at window_start, MRR at account grain\n  SELECT account_id, SUM(CASE WHEN billing_period='annual' THEN plan_mrr/12.0 ELSE plan_mrr END) AS start_mrr\n  FROM subscriptions\n  WHERE started_at <= '2024-01-01' AND (canceled_at IS NULL OR canceled_at > '2024-01-01')\n  GROUP BY account_id\n),\nending AS (\n  SELECT account_id, SUM(CASE WHEN billing_period='annual' THEN plan_mrr/12.0 ELSE plan_mrr END) AS end_mrr\n  FROM subscriptions\n  WHERE started_at <= '2024-04-01' AND (canceled_at IS NULL OR canceled_at > '2024-04-01')\n  GROUP BY account_id\n),\nmovements AS (\n  SELECT\n    c.account_id,\n    c.start_mrr,\n    COALESCE(e.end_mrr, 0) AS end_mrr,\n    CASE\n      WHEN COALESCE(e.end_mrr, 0) = 0 THEN 'churned'\n      WHEN e.end_mrr > c.start_mrr THEN 'expansion'\n      WHEN e.end_mrr < c.start_mrr THEN 'contraction'\n      ELSE 'flat'\n    END AS movement\n  FROM cohort c\n  LEFT JOIN ending e ON c.account_id = e.account_id\n)\nSELECT\n  ROUND(SUM(start_mrr), 2) AS start_mrr,\n  ROUND(SUM(end_mrr), 2) AS end_mrr,\n  ROUND(SUM(CASE WHEN movement='expansion' THEN end_mrr - start_mrr END), 2) AS expansion_mrr,\n  ROUND(SUM(CASE WHEN movement='contraction' THEN start_mrr - end_mrr END), 2) AS contraction_mrr,\n  ROUND(SUM(CASE WHEN movement='churned' THEN start_mrr END), 2) AS churned_mrr,\n  ROUND(SUM(end_mrr) / NULLIF(SUM(start_mrr), 0) * 100, 2) AS nrr_pct,\n  ROUND(SUM(LEAST(end_mrr, start_mrr)) / NULLIF(SUM(start_mrr), 0) * 100, 2) AS grr_pct\nFROM movements"
+    }
+  },
+  {
+    "id": "saas_revenue_churn",
+    "title": "Gross Revenue Churn, Logo Churn & Customer Churn",
+    "intent_tags": [
+      "churn",
+      "revenue churn",
+      "gross revenue churn",
+      "mrr churn",
+      "logo churn",
+      "customer churn",
+      "churn rate",
+      "what is my churn",
+      "how much revenue did we lose",
+      "monthly churn rate",
+      "subscriber churn",
+      "why is churn high"
+    ],
+    "sql_features": [
+      "aggregation",
+      "cohort",
+      "conditional_count",
+      "nullif"
+    ],
+    "difficulty": "advanced",
+    "pattern_type": "ratio",
+    "when_to_use": [
+      "measure recurring revenue lost to downgrades and cancellations in a period (gross revenue churn)",
+      "measure the fraction of customers who left (logo / customer churn)",
+      "distinguish dollar-weighted churn from count-weighted churn",
+      "track the leaky-bucket rate that net growth must overcome",
+      "diagnose whether churn is concentrated in small accounts (low revenue impact) or large ones"
+    ],
+    "related_patterns": [
+      "saas_mrr",
+      "saas_nrr",
+      "saas_ltv",
+      "saas_cac_payback"
+    ],
+    "business_definition": "Gross Revenue Churn = (MRR lost to cancellations + contractions during the period) / (MRR at the start of the period), as a percentage; it never nets in expansion. Logo (Customer) Churn = (count of accounts active at period start that fully cancelled during the period) / (count of accounts active at period start), as a percentage. Both use the starting cohort as the denominator.",
+    "metric_nature": {
+      "what_it_measures": "Gross revenue churn is the dollar-weighted rate at which recurring revenue leaks from the existing base. Logo churn is the count-weighted rate at which customers leave. Together they show both the financial and the relationship erosion of the book.",
+      "what_it_does_not_measure": "Net growth. Gross churn deliberately excludes expansion (that is what NRR nets in). Logo churn ignores how big the lost customers were — losing 10 tiny accounts and 10 whales look identical in logo churn but very different in revenue churn.",
+      "common_misconception": "Logo/customer churn can NEVER exceed 100% — you cannot lose more customers than you started with. A logo churn above 100% is always a bug (usually counting cancellation EVENTS instead of distinct accounts, or a wrong denominator). This is the opposite of NRR, where >100% is healthy. Revenue churn likewise tops out at 100% for the gross (cancellation+contraction) definition over a frozen cohort."
+    },
+    "template": "WITH start_cohort AS (SELECT s.account_id, SUM(CASE WHEN s.billing_period='annual' THEN s.plan_mrr/12.0 ELSE s.plan_mrr END) AS start_mrr FROM subscriptions s WHERE s.started_at <= {period_start} AND (s.canceled_at IS NULL OR s.canceled_at > {period_start}) GROUP BY s.account_id), churned AS (SELECT account_id, start_mrr FROM start_cohort WHERE account_id IN (SELECT account_id FROM subscriptions WHERE canceled_at > {period_start} AND canceled_at <= {period_end})) SELECT ROUND(SUM(ch.start_mrr) / NULLIF(SUM(sc.start_mrr), 0) * 100, 2) AS gross_revenue_churn_pct, ROUND(COUNT(DISTINCT ch.account_id) * 100.0 / NULLIF(COUNT(DISTINCT sc.account_id), 0), 2) AS logo_churn_pct FROM start_cohort sc LEFT JOIN churned ch ON sc.account_id = ch.account_id",
+    "inflation_causes": [
+      {
+        "cause": "Counting cancellation events instead of distinct churned accounts (logo churn > 100%)",
+        "how_it_inflates": "An account that cancels, reactivates, and cancels again produces multiple cancellation rows. COUNT(canceled_at) instead of COUNT(DISTINCT account_id) counts that account multiple times, and can push logo churn above 100% — an impossible value that signals the bug.",
+        "detection_sql": "SELECT account_id, COUNT(*) AS cancel_events FROM subscriptions WHERE canceled_at IS NOT NULL GROUP BY account_id HAVING COUNT(*) > 1 ORDER BY cancel_events DESC LIMIT 20",
+        "fix": "Use COUNT(DISTINCT account_id) for churned accounts and for the starting cohort. Logo churn must mathematically fall between 0% and 100%."
+      },
+      {
+        "cause": "Wrong denominator — dividing by end-of-period accounts instead of start cohort",
+        "how_it_inflates": "If churned accounts are divided by the smaller end-of-period active count (which excludes the very accounts that churned) instead of the start-of-period cohort, the rate is overstated and can exceed 100%.",
+        "detection_sql": "SELECT (SELECT COUNT(DISTINCT account_id) FROM subscriptions WHERE started_at <= {period_start} AND (canceled_at IS NULL OR canceled_at > {period_start})) AS start_cohort_n, (SELECT COUNT(DISTINCT account_id) FROM subscriptions WHERE started_at <= {period_end} AND (canceled_at IS NULL OR canceled_at > {period_end})) AS end_active_n",
+        "fix": "Always divide churn (revenue or logos) by the START-of-period cohort, fixed before any losses are subtracted."
+      },
+      {
+        "cause": "Netting expansion into gross churn",
+        "how_it_inflates_or_distorts": "Gross revenue churn must only sum losses (cancellations + downgrades). If the calculation accidentally nets in expansion (turning it into net churn), a period with heavy expansion can show near-zero or negative churn, hiding real revenue loss.",
+        "how_it_inflates": "Mixing expansion into the loss figure distorts the gross churn rate, typically masking it downward but breaking the metric's meaning entirely.",
+        "detection_sql": "SELECT SUM(CASE WHEN delta < 0 THEN -delta ELSE 0 END) AS gross_loss, SUM(CASE WHEN delta > 0 THEN delta ELSE 0 END) AS gross_expansion FROM (SELECT account_id, end_mrr - start_mrr AS delta FROM (SELECT s.account_id, SUM(s.plan_mrr) AS start_mrr, 0 AS end_mrr FROM subscriptions s GROUP BY s.account_id) x) y",
+        "fix": "Gross revenue churn = SUM of negative MRR deltas (downgrades) + churned-account MRR, divided by start MRR. Never add positive deltas."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Involuntary / payment-failure churn excluded",
+        "how_it_deflates": "Accounts that churn because a credit card failed often sit in status = 'past_due' or 'unpaid' rather than 'canceled'. Filtering churn to status = 'canceled' only misses involuntary churn, understating the true churn rate — often the largest single churn category.",
+        "detection_sql": "SELECT status, COUNT(DISTINCT account_id) AS accounts, SUM(CASE WHEN billing_period='annual' THEN plan_mrr/12.0 ELSE plan_mrr END) AS mrr FROM subscriptions WHERE status IN ('past_due','unpaid','canceled') GROUP BY status ORDER BY mrr DESC",
+        "fix": "Define churn to include involuntary churn: treat past_due/unpaid subscriptions beyond the dunning grace period as churned. Report voluntary vs involuntary churn separately."
+      },
+      {
+        "cause": "Churn attributed to cancellation-request date, not effective end date, pushing losses out of the period",
+        "how_it_deflates": "If an annual subscription is cancelled in March but remains active until its paid term ends in December, attributing the churn to December (effective end) vs March (request) shifts the loss between periods. Using request date when the customer still pays understates current-period retained revenue churn, or vice versa.",
+        "detection_sql": "SELECT DATE_TRUNC('month', cancel_requested_at) AS requested_month, DATE_TRUNC('month', canceled_at) AS effective_month, COUNT(*) AS subs FROM subscriptions WHERE canceled_at IS NOT NULL GROUP BY 1, 2 HAVING DATE_TRUNC('month', cancel_requested_at) <> DATE_TRUNC('month', canceled_at) ORDER BY 1 DESC LIMIT 20",
+        "fix": "Attribute revenue churn to the effective service-end date (canceled_at), since the account keeps paying until then. Track the request date separately for leading-indicator analysis."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is logo churn computed with COUNT(DISTINCT account_id), and does it fall between 0% and 100%?",
+      "Is the denominator the START-of-period cohort, not the shrunken end-of-period active count?",
+      "Does the churn definition include involuntary (payment-failure / past_due) churn, or only voluntary cancellations?",
+      "Is gross revenue churn summing only losses, with expansion kept out?",
+      "Is churn attributed to the effective end date (canceled_at) or the cancellation-request date?",
+      "Is the churn concentrated in small accounts (low revenue impact) or large accounts (high impact)?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "Gross revenue churn up, logo churn flat",
+        "then": "A few large accounts downgraded or left — high dollar impact, low count impact. Investigate top-account health and contraction reasons."
+      },
+      {
+        "if": "Logo churn up, gross revenue churn flat",
+        "then": "Many small accounts left but their combined MRR is minor — a low-end/SMB retention problem, possibly onboarding or product-fit at the entry tier."
+      },
+      {
+        "if": "Gross revenue churn up, involuntary churn up",
+        "then": "Payment failures / dunning is the driver, not product dissatisfaction — check card expiry waves, failed-payment retry logic, and billing provider issues."
+      },
+      {
+        "if": "Gross revenue churn down, saas_nrr up",
+        "then": "The base is stabilizing and expanding — healthy retention. Confirm the churn drop is real and not an ingestion lag hiding recent cancellations."
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Gross revenue churn spikes in a month",
+        "and_also": "saas_mrr growth stalls while new-logo count is unchanged",
+        "shared_root_cause": "The leaky bucket widened: existing-base losses (often an involuntary-churn wave from expiring cards or a failed billing migration) are offsetting steady new bookings. Decompose churn into voluntary vs involuntary and check dunning health.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', canceled_at) AS churn_month, CASE WHEN prior_status IN ('past_due','unpaid') THEN 'involuntary' ELSE 'voluntary' END AS churn_type, COUNT(DISTINCT account_id) AS churned_accounts, SUM(CASE WHEN billing_period='annual' THEN plan_mrr/12.0 ELSE plan_mrr END) AS churned_mrr FROM subscriptions WHERE canceled_at IS NOT NULL GROUP BY 1, 2 ORDER BY 1 DESC, churned_mrr DESC"
+      },
+      {
+        "if_this_metric": "Logo churn rises in the SMB segment",
+        "and_also": "saas_cac_payback for that segment is lengthening",
+        "shared_root_cause": "SMB accounts are churning before they pay back their acquisition cost — a unit-economics death spiral where the segment is acquired faster than it is retained. Compare time-to-churn against the payback period to see if the segment is structurally unprofitable.",
+        "diagnostic_sql": "SELECT a.segment, COUNT(DISTINCT s.account_id) AS churned, ROUND(AVG(EXTRACT(EPOCH FROM (s.canceled_at - s.started_at)) / 86400.0 / 30.0), 1) AS avg_months_to_churn FROM subscriptions s JOIN accounts a ON s.account_id = a.account_id WHERE s.canceled_at IS NOT NULL GROUP BY a.segment ORDER BY avg_months_to_churn ASC"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Logo churn that can exceed 100% by counting cancellation events",
+        "why_wrong": "Using COUNT(*) or COUNT(canceled_at) counts every cancellation row, so an account that churned twice is counted twice. The result can exceed the starting account count, producing churn > 100% — a mathematically impossible value that proves the grain is wrong.",
+        "bad_sql": "SELECT COUNT(canceled_at) * 100.0 / (SELECT COUNT(*) FROM subscriptions WHERE started_at <= '2024-01-01') AS logo_churn FROM subscriptions WHERE canceled_at BETWEEN '2024-01-01' AND '2024-01-31'",
+        "good_sql": "WITH start_cohort AS (SELECT DISTINCT account_id FROM subscriptions WHERE started_at <= '2024-01-01' AND (canceled_at IS NULL OR canceled_at > '2024-01-01')) SELECT COUNT(DISTINCT s.account_id) * 100.0 / NULLIF((SELECT COUNT(*) FROM start_cohort), 0) AS logo_churn_pct FROM subscriptions s WHERE s.account_id IN (SELECT account_id FROM start_cohort) AND s.canceled_at > '2024-01-01' AND s.canceled_at <= '2024-01-31'"
+      },
+      {
+        "pattern": "Defining churn as status = 'canceled' only, ignoring involuntary churn",
+        "why_wrong": "Payment-failure churn lands in past_due/unpaid, not canceled. Excluding it understates total churn — often by the largest single component — and makes retention look better than reality while revenue silently leaks through failed payments.",
+        "bad_sql": "SELECT COUNT(DISTINCT account_id) AS churned FROM subscriptions WHERE status = 'canceled' AND canceled_at BETWEEN '2024-01-01' AND '2024-01-31'",
+        "good_sql": "SELECT COUNT(DISTINCT account_id) AS churned FROM subscriptions WHERE ((status = 'canceled' AND canceled_at BETWEEN '2024-01-01' AND '2024-01-31') OR (status IN ('past_due','unpaid') AND last_payment_failed_at < CURRENT_DATE - INTERVAL '21 days'))"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "WITH start_cohort AS (SELECT account_id, SUM(CASE WHEN billing_period='annual' THEN plan_mrr/12.0 ELSE plan_mrr END) AS start_mrr FROM subscriptions WHERE started_at <= '2024-01-01' AND (canceled_at IS NULL OR canceled_at > '2024-01-01') GROUP BY account_id) SELECT ROUND(SUM(CASE WHEN sc.account_id IN (SELECT account_id FROM subscriptions WHERE canceled_at > '2024-01-01' AND canceled_at <= '2024-01-31') THEN sc.start_mrr ELSE 0 END) / NULLIF(SUM(sc.start_mrr),0) * 100, 2) AS gross_revenue_churn_pct, ROUND(COUNT(DISTINCT CASE WHEN sc.account_id IN (SELECT account_id FROM subscriptions WHERE canceled_at > '2024-01-01' AND canceled_at <= '2024-01-31') THEN sc.account_id END) * 100.0 / NULLIF(COUNT(DISTINCT sc.account_id),0), 2) AS logo_churn_pct FROM start_cohort sc",
+      "intermediate_sql": "WITH start_cohort AS (SELECT s.account_id, a.segment, SUM(CASE WHEN s.billing_period='annual' THEN s.plan_mrr/12.0 ELSE s.plan_mrr END) AS start_mrr FROM subscriptions s JOIN accounts a ON s.account_id = a.account_id WHERE s.started_at <= '2024-01-01' AND (s.canceled_at IS NULL OR s.canceled_at > '2024-01-01') GROUP BY s.account_id, a.segment), churned AS (SELECT DISTINCT account_id FROM subscriptions WHERE canceled_at > '2024-01-01' AND canceled_at <= '2024-01-31') SELECT sc.segment, COUNT(DISTINCT sc.account_id) AS cohort_accounts, COUNT(DISTINCT ch.account_id) AS churned_accounts, ROUND(COUNT(DISTINCT ch.account_id) * 100.0 / NULLIF(COUNT(DISTINCT sc.account_id),0), 2) AS logo_churn_pct, ROUND(SUM(CASE WHEN ch.account_id IS NOT NULL THEN sc.start_mrr ELSE 0 END) / NULLIF(SUM(sc.start_mrr),0) * 100, 2) AS revenue_churn_pct FROM start_cohort sc LEFT JOIN churned ch ON sc.account_id = ch.account_id GROUP BY sc.segment ORDER BY revenue_churn_pct DESC",
+      "advanced_sql": "WITH month_spine AS (\n  SELECT DATE_TRUNC('month', d)::date AS period_start, (DATE_TRUNC('month', d) + INTERVAL '1 month')::date AS period_end\n  FROM generate_series(CURRENT_DATE - INTERVAL '12 months', CURRENT_DATE, INTERVAL '1 month') d\n),\nnormalized AS (\n  SELECT account_id, started_at, canceled_at,\n         CASE WHEN billing_period='annual' THEN plan_mrr/12.0 ELSE plan_mrr END AS norm_mrr,\n         status, last_payment_failed_at\n  FROM subscriptions\n),\nper_period AS (\n  SELECT\n    ms.period_start,\n    -- start cohort\n    COUNT(DISTINCT CASE WHEN n.started_at <= ms.period_start AND (n.canceled_at IS NULL OR n.canceled_at > ms.period_start) THEN n.account_id END) AS start_accounts,\n    SUM(CASE WHEN n.started_at <= ms.period_start AND (n.canceled_at IS NULL OR n.canceled_at > ms.period_start) THEN n.norm_mrr ELSE 0 END) AS start_mrr,\n    -- churned within period (voluntary + involuntary)\n    COUNT(DISTINCT CASE WHEN n.canceled_at > ms.period_start AND n.canceled_at <= ms.period_end THEN n.account_id END) AS churned_accounts,\n    SUM(CASE WHEN n.canceled_at > ms.period_start AND n.canceled_at <= ms.period_end THEN n.norm_mrr ELSE 0 END) AS churned_mrr\n  FROM month_spine ms\n  JOIN normalized n ON n.started_at <= ms.period_end\n  GROUP BY ms.period_start\n)\nSELECT\n  period_start,\n  start_accounts,\n  churned_accounts,\n  ROUND(churned_accounts * 100.0 / NULLIF(start_accounts, 0), 2) AS logo_churn_pct,\n  ROUND(start_mrr, 2) AS start_mrr,\n  ROUND(churned_mrr, 2) AS churned_mrr,\n  ROUND(churned_mrr / NULLIF(start_mrr, 0) * 100, 2) AS gross_revenue_churn_pct\nFROM per_period\nORDER BY period_start"
+    }
+  },
+  {
+    "id": "saas_cac",
+    "title": "Customer Acquisition Cost (CAC)",
+    "intent_tags": [
+      "cac",
+      "customer acquisition cost",
+      "cost to acquire a customer",
+      "acquisition cost",
+      "what is my cac",
+      "blended cac",
+      "paid cac",
+      "cost per new customer",
+      "marketing efficiency",
+      "how much to acquire a customer",
+      "sales and marketing cost per customer"
+    ],
+    "sql_features": [
+      "aggregation",
+      "join",
+      "date_filter",
+      "nullif"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "ratio",
+    "when_to_use": [
+      "measure the fully-loaded cost to acquire one new customer in a period",
+      "compare acquisition efficiency across channels (blended vs paid CAC)",
+      "input to LTV:CAC ratio and CAC payback period",
+      "evaluate whether a growth channel is sustainable",
+      "track CAC trend as spend scales to detect diminishing returns"
+    ],
+    "related_patterns": [
+      "saas_ltv",
+      "saas_cac_payback",
+      "saas_mrr",
+      "saas_revenue_churn"
+    ],
+    "business_definition": "Total sales and marketing spend in a period divided by the number of NEW customers acquired in that same period. CAC = SUM(sales_and_marketing_spend) / COUNT(DISTINCT new accounts). Blended CAC uses all spend and all new customers; paid CAC uses only paid-channel spend over only paid-acquired customers.",
+    "metric_nature": {
+      "what_it_measures": "The average fully-loaded cost to win one new paying customer, capturing the efficiency of the go-to-market motion. It is the denominator of unit economics (LTV:CAC) and the amount that must be recouped via the payback period.",
+      "what_it_does_not_measure": "The cost to retain or expand existing customers (that is a separate retention cost), nor the quality or lifetime value of those customers. A low CAC is meaningless if the acquired customers churn immediately — always pair CAC with LTV.",
+      "common_misconception": "CAC is not just ad spend / signups. It must include fully-loaded sales and marketing costs (salaries, tools, commissions, overhead), and the denominator must be NEW paying customers — not signups, not trials, not leads. Counting free trial signups in the denominator drastically understates true CAC."
+    },
+    "template": "WITH new_customers AS (SELECT COUNT(DISTINCT account_id) AS new_count FROM accounts WHERE signup_date BETWEEN {start_date} AND {end_date} AND first_paid_at IS NOT NULL), spend AS (SELECT SUM(amount) AS sm_spend FROM marketing_spend WHERE spend_date BETWEEN {start_date} AND {end_date}) SELECT ROUND(spend.sm_spend / NULLIF(new_customers.new_count, 0), 2) AS cac FROM spend, new_customers",
+    "inflation_causes": [
+      {
+        "cause": "Counting paid customers in denominator but blended spend in numerator (or vice versa)",
+        "how_it_inflates": "If the numerator includes all S&M spend (paid + organic content + brand) but the denominator counts only paid-channel-attributed customers, CAC is inflated because organic spend is divided over a too-small customer count.",
+        "detection_sql": "SELECT acquisition_channel, COUNT(DISTINCT account_id) AS new_customers FROM accounts WHERE signup_date BETWEEN {start_date} AND {end_date} AND first_paid_at IS NOT NULL GROUP BY acquisition_channel ORDER BY new_customers DESC",
+        "fix": "Match the grain: blended CAC = all S&M spend / all new customers; paid CAC = paid spend / paid-attributed customers. Never cross the two."
+      },
+      {
+        "cause": "Spend booked in the period but customers attributed to a later period (lag mismatch)",
+        "how_it_inflates": "Sales cycles mean spend in January often produces customers in March. Dividing January spend by January's (smaller) new-customer count inflates CAC; the customers that spend bought show up later.",
+        "detection_sql": "SELECT DATE_TRUNC('month', a.signup_date) AS signup_month, ROUND(AVG(EXTRACT(EPOCH FROM (a.first_paid_at - a.first_touch_at)) / 86400.0), 1) AS avg_days_lead_to_paid FROM accounts a WHERE a.first_paid_at IS NOT NULL GROUP BY 1 ORDER BY 1 DESC",
+        "fix": "Use a trailing-window or lagged-attribution CAC (e.g., spend from period N divided by customers acquired in period N+lag), or cohort spend to the customers it actually generated."
+      },
+      {
+        "cause": "Including non-acquisition spend (customer success, retention marketing) in the numerator",
+        "how_it_inflates": "If the S&M cost pool includes customer-success salaries, expansion/upsell campaigns, or retention tooling, those costs (which serve existing customers) inflate the acquisition numerator.",
+        "detection_sql": "SELECT spend_category, SUM(amount) AS total FROM marketing_spend WHERE spend_date BETWEEN {start_date} AND {end_date} GROUP BY spend_category ORDER BY total DESC",
+        "fix": "Scope the numerator to acquisition-only S&M (paid media, SDR/AE comp on new business, top-of-funnel content). Exclude CS and retention/expansion spend."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Counting free trial signups or leads as acquired customers",
+        "how_it_deflates": "If the denominator counts all signups (including free trials that never convert) instead of new PAID customers, the customer count is inflated and CAC is understated — making acquisition look far cheaper than it is.",
+        "detection_sql": "SELECT COUNT(*) AS total_signups, COUNT(first_paid_at) AS paid_conversions, ROUND(COUNT(first_paid_at) * 100.0 / NULLIF(COUNT(*), 0), 2) AS trial_to_paid_pct FROM accounts WHERE signup_date BETWEEN {start_date} AND {end_date}",
+        "fix": "Restrict the denominator to accounts with first_paid_at IS NOT NULL (became paying customers). Track trial-to-paid conversion as a separate funnel metric."
+      },
+      {
+        "cause": "Salaries, commissions, and overhead omitted from spend (only ad spend counted)",
+        "how_it_deflates": "If the numerator is only paid-media ad spend and omits sales/marketing salaries, sales commissions, and tooling/overhead, CAC is dramatically understated versus the fully-loaded figure finance and investors expect.",
+        "detection_sql": "SELECT spend_category, SUM(amount) AS total FROM marketing_spend GROUP BY spend_category ORDER BY total DESC",
+        "fix": "Build a fully-loaded S&M cost pool: ad spend + S&M salaries + commissions + tooling + allocated overhead. Document the inclusion list."
+      }
+    ],
+    "diagnostic_questions": [
+      "Does the numerator (spend) and denominator (customers) use the SAME scope — both blended or both paid-only?",
+      "Is the denominator new PAID customers, or is it counting free trials / leads / signups?",
+      "Is spend fully-loaded (salaries, commissions, tools, overhead) or only ad spend?",
+      "Is there a lag between when spend is booked and when the customers it generated convert?",
+      "Does the spend pool include retention / customer-success costs that should be excluded?",
+      "Is CAC rising because spend is scaling into less efficient channels (diminishing returns)?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "CAC up, new-customer count flat",
+        "then": "Spend increased without yielding more customers — channel saturation or diminishing returns. Break out CAC by channel to find the inefficient one."
+      },
+      {
+        "if": "CAC up, new-customer count up",
+        "then": "Scaling into higher-cost channels or audiences as cheap inventory exhausts — expected at scale, but watch LTV:CAC stays healthy."
+      },
+      {
+        "if": "CAC down, new-customer count up",
+        "then": "An efficient channel is scaling well, or organic/word-of-mouth is contributing — verify the new customers retain (check their cohort churn) before celebrating."
+      },
+      {
+        "if": "CAC down, saas_revenue_churn up",
+        "then": "Cheap acquisition may be bringing in low-fit customers who churn fast — a false economy. Cross-check LTV:CAC and time-to-churn for the cheap cohort."
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "CAC is falling",
+        "and_also": "saas_revenue_churn for recent cohorts is rising",
+        "shared_root_cause": "Cheaper acquisition is sourcing lower-quality, poorly-fit customers who churn quickly. The apparent efficiency gain is illusory because LTV is collapsing in step. Always evaluate CAC jointly with the retained value of the cohorts it produced.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', a.signup_date) AS cohort_month, COUNT(DISTINCT a.account_id) AS new_paid, ROUND(AVG(EXTRACT(EPOCH FROM (s.canceled_at - s.started_at))/86400.0/30.0), 1) AS avg_months_retained FROM accounts a JOIN subscriptions s ON a.account_id = s.account_id WHERE a.first_paid_at IS NOT NULL GROUP BY 1 ORDER BY 1 DESC"
+      },
+      {
+        "if_this_metric": "CAC rises sharply quarter over quarter",
+        "and_also": "saas_cac_payback is lengthening past the target threshold",
+        "shared_root_cause": "Acquisition efficiency is deteriorating faster than monetization can keep up. Either channels are saturating or the customers being bought monetize less. Both metrics share the CAC numerator, so a CAC spike mechanically lengthens payback — confirm ARPA isn't also falling.",
+        "diagnostic_sql": "WITH q AS (SELECT DATE_TRUNC('quarter', a.signup_date) AS qtr, COUNT(DISTINCT a.account_id) AS new_paid FROM accounts a WHERE a.first_paid_at IS NOT NULL GROUP BY 1), spend AS (SELECT DATE_TRUNC('quarter', spend_date) AS qtr, SUM(amount) AS sm_spend FROM marketing_spend GROUP BY 1) SELECT q.qtr, q.new_paid, spend.sm_spend, ROUND(spend.sm_spend / NULLIF(q.new_paid, 0), 2) AS cac FROM q JOIN spend ON q.qtr = spend.qtr ORDER BY q.qtr"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Dividing spend by signups instead of new paying customers",
+        "why_wrong": "Signups include free trials and leads that never pay. Using them as the denominator inflates the customer count and understates CAC, hiding the true cost of acquiring a customer who actually generates revenue.",
+        "bad_sql": "SELECT (SELECT SUM(amount) FROM marketing_spend WHERE spend_date BETWEEN '2024-01-01' AND '2024-01-31') / COUNT(*) AS cac FROM accounts WHERE signup_date BETWEEN '2024-01-01' AND '2024-01-31'",
+        "good_sql": "SELECT (SELECT SUM(amount) FROM marketing_spend WHERE spend_date BETWEEN '2024-01-01' AND '2024-01-31') / NULLIF(COUNT(DISTINCT account_id), 0) AS cac FROM accounts WHERE signup_date BETWEEN '2024-01-01' AND '2024-01-31' AND first_paid_at IS NOT NULL"
+      },
+      {
+        "pattern": "Mixing blended spend over paid-only customer count",
+        "why_wrong": "Putting total S&M spend (including organic and brand) in the numerator but only paid-attributed customers in the denominator double-penalizes paid channels and overstates CAC, because organic-acquired customers are excluded from the count they helped produce.",
+        "bad_sql": "SELECT (SELECT SUM(amount) FROM marketing_spend) / NULLIF(COUNT(DISTINCT account_id), 0) AS cac FROM accounts WHERE acquisition_channel = 'paid' AND first_paid_at IS NOT NULL",
+        "good_sql": "SELECT (SELECT SUM(amount) FROM marketing_spend WHERE channel = 'paid') / NULLIF(COUNT(DISTINCT account_id), 0) AS paid_cac FROM accounts WHERE acquisition_channel = 'paid' AND first_paid_at IS NOT NULL"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "WITH new_customers AS (SELECT COUNT(DISTINCT account_id) AS new_count FROM accounts WHERE signup_date BETWEEN '2024-01-01' AND '2024-01-31' AND first_paid_at IS NOT NULL), spend AS (SELECT SUM(amount) AS sm_spend FROM marketing_spend WHERE spend_date BETWEEN '2024-01-01' AND '2024-01-31') SELECT ROUND(spend.sm_spend / NULLIF(new_customers.new_count, 0), 2) AS cac FROM spend, new_customers",
+      "intermediate_sql": "WITH new_by_channel AS (SELECT acquisition_channel, COUNT(DISTINCT account_id) AS new_count FROM accounts WHERE signup_date BETWEEN '2024-01-01' AND '2024-01-31' AND first_paid_at IS NOT NULL GROUP BY acquisition_channel), spend_by_channel AS (SELECT channel, SUM(amount) AS sm_spend FROM marketing_spend WHERE spend_date BETWEEN '2024-01-01' AND '2024-01-31' GROUP BY channel) SELECT n.acquisition_channel, n.new_count, s.sm_spend, ROUND(s.sm_spend / NULLIF(n.new_count, 0), 2) AS cac FROM new_by_channel n LEFT JOIN spend_by_channel s ON n.acquisition_channel = s.channel ORDER BY cac DESC",
+      "advanced_sql": "WITH monthly_spend AS (\n  SELECT DATE_TRUNC('month', spend_date) AS month, channel, SUM(amount) AS sm_spend\n  FROM marketing_spend\n  GROUP BY 1, 2\n),\nmonthly_new AS (\n  -- New PAID customers only, by channel and signup month\n  SELECT DATE_TRUNC('month', signup_date) AS month, acquisition_channel AS channel, COUNT(DISTINCT account_id) AS new_paid\n  FROM accounts\n  WHERE first_paid_at IS NOT NULL\n  GROUP BY 1, 2\n),\njoined AS (\n  SELECT\n    COALESCE(s.month, n.month) AS month,\n    COALESCE(s.channel, n.channel) AS channel,\n    COALESCE(s.sm_spend, 0) AS sm_spend,\n    COALESCE(n.new_paid, 0) AS new_paid\n  FROM monthly_spend s\n  FULL OUTER JOIN monthly_new n ON s.month = n.month AND s.channel = n.channel\n)\nSELECT\n  month,\n  channel,\n  sm_spend,\n  new_paid,\n  ROUND(sm_spend / NULLIF(new_paid, 0), 2) AS cac,\n  ROUND((sm_spend / NULLIF(new_paid, 0)) - LAG(sm_spend / NULLIF(new_paid, 0)) OVER (PARTITION BY channel ORDER BY month), 2) AS cac_mom_change\nFROM joined\nORDER BY month, channel"
+    }
+  },
+  {
+    "id": "saas_ltv",
+    "title": "Customer Lifetime Value (LTV) & LTV:CAC",
+    "intent_tags": [
+      "ltv",
+      "customer lifetime value",
+      "clv",
+      "lifetime value",
+      "ltv cac ratio",
+      "ltv to cac",
+      "what is my ltv",
+      "how much is a customer worth",
+      "unit economics",
+      "lifetime value to acquisition cost",
+      "customer value"
+    ],
+    "sql_features": [
+      "aggregation",
+      "join",
+      "nullif",
+      "cohort"
+    ],
+    "difficulty": "advanced",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "estimate the total gross-margin revenue a customer generates over their lifetime",
+      "compute LTV:CAC to judge whether acquisition is profitable (>3:1 is a common healthy bar)",
+      "compare customer value across segments, plans, or acquisition channels",
+      "input to payback and growth-investment decisions",
+      "sanity-check whether cheap acquisition is producing valuable customers"
+    ],
+    "related_patterns": [
+      "saas_cac",
+      "saas_cac_payback",
+      "saas_mrr",
+      "saas_revenue_churn"
+    ],
+    "business_definition": "Predictive LTV = (Average MRR per account * Gross Margin %) / Monthly Revenue Churn Rate. This is the standard SaaS closed-form: average recurring gross-margin revenue divided by the churn rate gives the expected lifetime value, because 1 / churn_rate is the expected customer lifetime in months. LTV:CAC = LTV / CAC.",
+    "metric_nature": {
+      "what_it_measures": "The expected gross-margin revenue a typical customer contributes before churning, derived from ARPA, gross margin, and churn. LTV:CAC then expresses how many dollars of lifetime value each acquisition dollar buys.",
+      "what_it_does_not_measure": "Actual realized cash from any single customer (it is a probabilistic average), and it is acutely sensitive to the churn-rate denominator — small churn errors swing LTV wildly. It also assumes churn is constant, which understates value for customers whose churn declines with tenure.",
+      "common_misconception": "LTV is not lifetime REVENUE — it must be margin-adjusted (multiply by gross margin %), or you overstate the value of a customer by the full cost of serving them. And LTV computed on a near-zero churn denominator explodes to absurd values; a churn rate of 0 makes LTV infinite, which is a denominator artifact, not real value."
+    },
+    "template": "WITH arpa AS (SELECT SUM(CASE WHEN billing_period='annual' THEN plan_mrr/12.0 ELSE plan_mrr END) / NULLIF(COUNT(DISTINCT account_id), 0) AS avg_mrr FROM subscriptions WHERE status = 'active'), churn AS (SELECT {monthly_revenue_churn_rate} AS churn_rate), margin AS (SELECT {gross_margin_pct} AS gm) SELECT ROUND(arpa.avg_mrr * margin.gm / NULLIF(churn.churn_rate, 0), 2) AS ltv FROM arpa, churn, margin",
+    "inflation_causes": [
+      {
+        "cause": "Using revenue instead of gross-margin revenue",
+        "how_it_inflates": "If LTV uses full ARPA without multiplying by gross margin %, it counts revenue the company never keeps (COGS, hosting, support are ignored). A 75%-margin business overstates LTV by ~33% if it omits the margin factor.",
+        "detection_sql": "SELECT AVG(gross_margin_pct) AS avg_gm FROM financials WHERE period >= CURRENT_DATE - INTERVAL '12 months'",
+        "fix": "Multiply ARPA by gross_margin_pct in the LTV formula. Document the gross-margin source and keep it current."
+      },
+      {
+        "cause": "Churn-rate denominator too low (or zero) exploding LTV",
+        "how_it_inflates": "LTV = margin_revenue / churn_rate. As churn approaches zero (e.g., a young cohort whose return window hasn't elapsed, or a period with a churn-data lag), the denominator shrinks and LTV explodes toward infinity — a pure artifact.",
+        "detection_sql": "SELECT DATE_TRUNC('month', period) AS month, monthly_revenue_churn_rate FROM churn_metrics ORDER BY 1 DESC LIMIT 12",
+        "fix": "Use a stable trailing-12-month average churn rate, floor it at a minimum plausible value, and flag LTV as unreliable when churn < a threshold. Never compute LTV on a single low-churn month."
+      },
+      {
+        "cause": "ARPA inflated by counting subscription rows instead of distinct accounts",
+        "how_it_inflates": "If average MRR is computed as total MRR / COUNT(subscription_id) but accounts hold multiple subscriptions, the denominator is too large — wait, that deflates ARPA; conversely if total MRR double-counts duplicate active rows, ARPA and thus LTV inflate.",
+        "detection_sql": "SELECT account_id, COUNT(*) AS active_subs FROM subscriptions WHERE status='active' GROUP BY account_id HAVING COUNT(*) > 1 ORDER BY active_subs DESC LIMIT 20",
+        "fix": "Compute ARPA as total normalized MRR / COUNT(DISTINCT account_id), and deduplicate active subscription rows per account before summing MRR."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Churn rate overstated by including involuntary churn that gets recovered",
+        "how_it_deflates": "If the churn-rate denominator counts past_due accounts as churned but many recover after dunning retries, the churn rate is overstated, shrinking LTV below its true value.",
+        "detection_sql": "SELECT COUNT(*) FILTER (WHERE status = 'past_due') AS now_past_due, COUNT(*) FILTER (WHERE status = 'active' AND recovered_from_past_due) AS recovered FROM subscriptions",
+        "fix": "Use NET churn that accounts for dunning recoveries (failed payments that later succeed), not gross failed-payment counts, in the LTV denominator."
+      },
+      {
+        "cause": "Annual plans not normalized, deflating ARPA",
+        "how_it_deflates": "If annual plan_mrr is summed at full contract value the MRR inflates, but if instead annual rows are dropped or mis-normalized to zero, ARPA collapses and LTV is understated. Inconsistent normalization distorts ARPA either way.",
+        "detection_sql": "SELECT billing_period, COUNT(DISTINCT account_id) AS accounts, SUM(plan_mrr) AS raw_sum FROM subscriptions WHERE status='active' GROUP BY billing_period",
+        "fix": "Normalize all billing periods to monthly with a consistent CASE expression before computing ARPA."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is LTV margin-adjusted (multiplied by gross margin %), or is it using raw revenue?",
+      "What churn rate is in the denominator — is it a stable trailing average, and is it implausibly low?",
+      "Is ARPA computed over DISTINCT accounts, and are duplicate active subscriptions deduplicated?",
+      "Does the churn rate account for dunning recoveries (net vs gross involuntary churn)?",
+      "Is LTV:CAC computed with a CAC scoped to the SAME customer cohort/segment as the LTV?",
+      "Is LTV being reported per segment, since blended LTV can hide a money-losing segment?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "LTV up, saas_revenue_churn down",
+        "then": "Lower churn lengthens expected lifetime, mechanically raising LTV — the healthiest driver. Confirm the churn drop is durable, not a data-lag artifact."
+      },
+      {
+        "if": "LTV up, ARPA up",
+        "then": "Customers are worth more because they pay more (price increase or expansion) — verify churn didn't rise in response to higher prices."
+      },
+      {
+        "if": "LTV:CAC down, saas_cac up",
+        "then": "Acquisition got more expensive without a matching rise in customer value — unit economics are deteriorating. Check whether to pull back on the saturating channel."
+      },
+      {
+        "if": "LTV:CAC below 3, payback lengthening",
+        "then": "The acquisition motion is approaching unprofitability — either CAC must fall, ARPA must rise, or churn must drop. Drill into the weakest segment."
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Blended LTV:CAC looks healthy (>3)",
+        "and_also": "one segment's saas_revenue_churn is very high",
+        "shared_root_cause": "A profitable enterprise segment is masking a money-losing SMB segment in the blended ratio. Blended unit economics hide segment-level losses; a high-churn segment can have LTV:CAC well below 1 while the average looks fine. Always compute LTV:CAC per segment.",
+        "diagnostic_sql": "SELECT a.segment, ROUND(AVG(CASE WHEN s.billing_period='annual' THEN s.plan_mrr/12.0 ELSE s.plan_mrr END), 2) AS arpa, COUNT(DISTINCT a.account_id) AS accounts, ROUND(COUNT(DISTINCT CASE WHEN s.canceled_at IS NOT NULL THEN a.account_id END) * 1.0 / NULLIF(COUNT(DISTINCT a.account_id), 0), 4) AS rough_churn FROM accounts a JOIN subscriptions s ON a.account_id = s.account_id GROUP BY a.segment ORDER BY arpa DESC"
+      },
+      {
+        "if_this_metric": "LTV jumps sharply between two reports",
+        "and_also": "the churn rate used in the denominator dropped near zero",
+        "shared_root_cause": "LTV's inverse dependence on churn means a small churn-denominator drop (often a churn-data ingestion lag or a too-short measurement window) produces an outsized LTV jump. The value change is a denominator artifact, not real lifetime-value growth. Check churn-data freshness before trusting the LTV delta.",
+        "diagnostic_sql": "SELECT period, monthly_revenue_churn_rate, ROUND(1.0 / NULLIF(monthly_revenue_churn_rate, 0), 1) AS implied_lifetime_months, MAX(loaded_at) AS churn_data_loaded_at FROM churn_metrics GROUP BY period, monthly_revenue_churn_rate ORDER BY period DESC LIMIT 12"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "LTV using revenue instead of gross-margin revenue",
+        "why_wrong": "Lifetime VALUE is what the business keeps, not what it bills. Omitting the gross-margin multiplier counts COGS and support cost as if it were profit, overstating LTV and making LTV:CAC look better than the true unit economics.",
+        "bad_sql": "SELECT (SELECT AVG(plan_mrr) FROM subscriptions WHERE status='active') / 0.03 AS ltv",
+        "good_sql": "WITH arpa AS (SELECT SUM(CASE WHEN billing_period='annual' THEN plan_mrr/12.0 ELSE plan_mrr END) / NULLIF(COUNT(DISTINCT account_id), 0) AS avg_mrr FROM subscriptions WHERE status='active') SELECT ROUND(arpa.avg_mrr * 0.78 / NULLIF(0.03, 0), 2) AS ltv FROM arpa"
+      },
+      {
+        "pattern": "Dividing by a single-month churn rate that can be zero",
+        "why_wrong": "LTV = margin_revenue / churn. A single month with zero recorded churn makes the denominator 0 (division error or infinite LTV). Even a tiny churn value from a noisy single month produces wildly unstable LTV.",
+        "bad_sql": "SELECT avg_margin_mrr / (SELECT churn_rate FROM churn_metrics WHERE month = '2024-01-01') AS ltv FROM arpa_cte",
+        "good_sql": "SELECT ROUND(avg_margin_mrr / NULLIF(GREATEST((SELECT AVG(monthly_revenue_churn_rate) FROM churn_metrics WHERE period >= CURRENT_DATE - INTERVAL '12 months'), 0.005), 0), 2) AS ltv FROM arpa_cte"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "WITH arpa AS (SELECT SUM(CASE WHEN billing_period='annual' THEN plan_mrr/12.0 ELSE plan_mrr END) / NULLIF(COUNT(DISTINCT account_id), 0) AS avg_mrr FROM subscriptions WHERE status = 'active') SELECT ROUND(arpa.avg_mrr * 0.78 / NULLIF(0.03, 0), 2) AS ltv FROM arpa",
+      "intermediate_sql": "WITH seg AS (SELECT a.segment, SUM(CASE WHEN s.billing_period='annual' THEN s.plan_mrr/12.0 ELSE s.plan_mrr END) / NULLIF(COUNT(DISTINCT a.account_id), 0) AS arpa FROM accounts a JOIN subscriptions s ON a.account_id = s.account_id WHERE s.status='active' GROUP BY a.segment), churn AS (SELECT segment, AVG(monthly_revenue_churn_rate) AS churn_rate FROM churn_metrics WHERE period >= CURRENT_DATE - INTERVAL '12 months' GROUP BY segment), cac AS (SELECT segment, AVG(cac) AS cac FROM cac_metrics GROUP BY segment) SELECT seg.segment, ROUND(seg.arpa, 2) AS arpa, ROUND(seg.arpa * 0.78 / NULLIF(churn.churn_rate, 0), 2) AS ltv, ROUND(cac.cac, 2) AS cac, ROUND((seg.arpa * 0.78 / NULLIF(churn.churn_rate, 0)) / NULLIF(cac.cac, 0), 2) AS ltv_cac_ratio FROM seg JOIN churn ON seg.segment = churn.segment JOIN cac ON seg.segment = cac.segment ORDER BY ltv_cac_ratio DESC",
+      "advanced_sql": "WITH params AS (\n  -- Stable, trailing-12-month inputs; churn floored to avoid explosion\n  SELECT\n    GREATEST(AVG(monthly_revenue_churn_rate), 0.005) AS churn_rate\n  FROM churn_metrics\n  WHERE period >= CURRENT_DATE - INTERVAL '12 months'\n),\narpa AS (\n  SELECT SUM(CASE WHEN billing_period='annual' THEN plan_mrr/12.0 ELSE plan_mrr END) / NULLIF(COUNT(DISTINCT account_id), 0) AS avg_mrr\n  FROM subscriptions\n  WHERE status = 'active'\n),\ngm AS (\n  SELECT AVG(gross_margin_pct) AS gross_margin FROM financials WHERE period >= CURRENT_DATE - INTERVAL '12 months'\n),\ncac AS (\n  SELECT AVG(cac) AS cac FROM cac_metrics WHERE period >= CURRENT_DATE - INTERVAL '12 months'\n)\nSELECT\n  ROUND(arpa.avg_mrr, 2) AS arpa,\n  ROUND(gm.gross_margin, 4) AS gross_margin_pct,\n  ROUND(params.churn_rate, 4) AS monthly_churn_rate,\n  ROUND(1.0 / NULLIF(params.churn_rate, 0), 1) AS expected_lifetime_months,\n  ROUND(arpa.avg_mrr * gm.gross_margin / NULLIF(params.churn_rate, 0), 2) AS ltv,\n  ROUND(cac.cac, 2) AS cac,\n  ROUND((arpa.avg_mrr * gm.gross_margin / NULLIF(params.churn_rate, 0)) / NULLIF(cac.cac, 0), 2) AS ltv_cac_ratio\nFROM arpa, gm, params, cac"
+    }
+  },
+  {
+    "id": "saas_cac_payback",
+    "title": "CAC Payback Period",
+    "intent_tags": [
+      "cac payback",
+      "cac payback period",
+      "payback period",
+      "months to recover cac",
+      "time to recover acquisition cost",
+      "what is my payback period",
+      "how long to pay back cac",
+      "acquisition payback",
+      "months to recoup cac",
+      "cac recovery time",
+      "payback months"
+    ],
+    "sql_features": [
+      "aggregation",
+      "join",
+      "nullif",
+      "ratio"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "ratio",
+    "when_to_use": [
+      "measure how many months of gross-margin revenue it takes to recover the cost of acquiring a customer",
+      "assess cash efficiency of the growth motion (shorter is more capital-efficient)",
+      "compare payback across segments and channels to prioritize spend",
+      "evaluate whether the business can self-fund growth or needs external capital",
+      "complement LTV:CAC with a cash-timing view of unit economics"
+    ],
+    "related_patterns": [
+      "saas_cac",
+      "saas_ltv",
+      "saas_mrr",
+      "saas_revenue_churn"
+    ],
+    "business_definition": "CAC Payback (months) = CAC / (Average MRR per new customer * Gross Margin %). It is the number of months of gross-margin recurring revenue from a new customer required to recoup the fully-loaded cost of acquiring them. A payback under 12 months is generally strong; over 18-24 months strains cash.",
+    "metric_nature": {
+      "what_it_measures": "The cash-recovery horizon for an acquisition dollar: how long until a new customer's gross-margin revenue repays their CAC. It is a capital-efficiency and cash-flow lens on the same unit economics that LTV:CAC views as a profitability lens.",
+      "what_it_does_not_measure": "Lifetime profitability (use LTV:CAC) or whether the customer survives the payback window. A short payback is meaningless if customers churn before reaching it — payback must be read against time-to-churn.",
+      "common_misconception": "Payback is not CAC / revenue — it must use gross-margin revenue in the denominator, or it understates the true recovery time by ignoring the cost of serving the customer. Using ARPA without the margin factor makes payback look faster than it really is."
+    },
+    "template": "WITH cac AS (SELECT SUM(amount) AS sm_spend FROM marketing_spend WHERE spend_date BETWEEN {start_date} AND {end_date}), new_cust AS (SELECT COUNT(DISTINCT account_id) AS new_count FROM accounts WHERE signup_date BETWEEN {start_date} AND {end_date} AND first_paid_at IS NOT NULL), arpa AS (SELECT SUM(CASE WHEN s.billing_period='annual' THEN s.plan_mrr/12.0 ELSE s.plan_mrr END) / NULLIF(COUNT(DISTINCT s.account_id), 0) AS new_arpa FROM subscriptions s JOIN accounts a ON s.account_id = a.account_id WHERE a.signup_date BETWEEN {start_date} AND {end_date}) SELECT ROUND((cac.sm_spend / NULLIF(new_cust.new_count, 0)) / NULLIF(arpa.new_arpa * {gross_margin_pct}, 0), 1) AS payback_months FROM cac, new_cust, arpa",
+    "inflation_causes": [
+      {
+        "cause": "CAC numerator understated (only ad spend) making payback look short",
+        "how_it_inflates_or_distorts": "If the CAC used in the numerator omits salaries, commissions, and overhead, the payback period is understated — acquisition appears to pay back faster than it truly does.",
+        "how_it_inflates": "A too-small CAC numerator shrinks the payback months, flattering the cash-efficiency story.",
+        "detection_sql": "SELECT spend_category, SUM(amount) AS total FROM marketing_spend WHERE spend_date BETWEEN {start_date} AND {end_date} GROUP BY spend_category ORDER BY total DESC",
+        "fix": "Use the same fully-loaded CAC (ad spend + S&M salaries + commissions + tooling + overhead) as the CAC metric. Keep the two definitions identical."
+      },
+      {
+        "cause": "Using blended ARPA instead of new-customer ARPA in the denominator",
+        "how_it_inflates_or_distorts": "If the denominator uses ARPA across ALL accounts (including large tenured ones) rather than the new cohort's ARPA, and new customers land on smaller plans, payback is understated because the denominator overstates what a new customer actually pays.",
+        "how_it_inflates": "A denominator inflated by tenured high-ARPA accounts shrinks payback months below the real new-customer recovery time.",
+        "detection_sql": "SELECT CASE WHEN a.signup_date >= CURRENT_DATE - INTERVAL '3 months' THEN 'new' ELSE 'tenured' END AS cohort, ROUND(AVG(CASE WHEN s.billing_period='annual' THEN s.plan_mrr/12.0 ELSE s.plan_mrr END), 2) AS arpa FROM accounts a JOIN subscriptions s ON a.account_id = s.account_id WHERE s.status='active' GROUP BY 1",
+        "fix": "Use the ARPA of the NEW customer cohort acquired in the period, not blended ARPA across the whole base."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Gross margin omitted from the denominator",
+        "how_it_deflates_or_distorts": "Dividing CAC by raw ARPA (not margin-adjusted ARPA) makes the denominator too large, shrinking payback below its true value — the business recovers gross-margin dollars, not revenue dollars.",
+        "how_it_deflates": "Omitting the margin factor inflates the monthly recovery amount, understating the number of months to pay back.",
+        "detection_sql": "SELECT AVG(gross_margin_pct) AS avg_gm FROM financials WHERE period >= CURRENT_DATE - INTERVAL '12 months'",
+        "fix": "Multiply new-customer ARPA by gross_margin_pct in the denominator so payback reflects gross-margin recovery, not gross revenue."
+      },
+      {
+        "cause": "Annual-plan ARPA inflated to full contract value, collapsing payback",
+        "how_it_deflates": "If new annual customers' plan_mrr is taken at full annual value (not /12) in the ARPA denominator, the monthly recovery amount is overstated 12x, collapsing payback to an implausibly low number of months.",
+        "detection_sql": "SELECT a.first_billing_period, ROUND(AVG(s.plan_mrr), 2) AS avg_plan_amount FROM accounts a JOIN subscriptions s ON a.account_id = s.account_id WHERE a.signup_date >= CURRENT_DATE - INTERVAL '3 months' GROUP BY 1",
+        "fix": "Normalize annual plans to monthly (plan_mrr/12) in the ARPA denominator consistently with the MRR definition."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the CAC numerator the same fully-loaded figure used in the CAC metric, or only ad spend?",
+      "Is the denominator the NEW cohort's ARPA, or blended ARPA across all accounts?",
+      "Is the ARPA margin-adjusted (multiplied by gross margin %)?",
+      "Are annual plans normalized to monthly in the ARPA denominator?",
+      "Do new customers survive past the payback window — how does payback compare to time-to-churn?",
+      "Is payback lengthening because CAC is rising or because new-customer ARPA is falling?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "Payback lengthening, saas_cac up",
+        "then": "Acquisition got more expensive while monetization held — the CAC numerator is driving the deterioration. Check the saturating channel."
+      },
+      {
+        "if": "Payback lengthening, new-customer ARPA down",
+        "then": "New customers are landing on smaller plans — a downmarket mix shift or discounting. The denominator is the driver; check plan-tier mix of new logos."
+      },
+      {
+        "if": "Payback under 12 months, saas_revenue_churn for new cohort low",
+        "then": "Capital-efficient acquisition with sticky customers — the growth motion can largely self-fund. Confirm churn stays low past the payback window."
+      },
+      {
+        "if": "Payback under 12 months, but new-cohort time-to-churn under payback",
+        "then": "Customers churn before they pay back CAC — a structurally unprofitable acquisition despite a nominally short payback. Urgent: fix retention or stop acquiring this segment."
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Payback period is acceptable (<14 months)",
+        "and_also": "saas_revenue_churn shows new cohorts churning within ~10 months",
+        "shared_root_cause": "Customers are leaving before they recoup their acquisition cost, so a nominally fine payback hides real losses. Payback only matters if the customer survives it. Compare median time-to-churn for the new cohort against the payback months.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('quarter', a.signup_date) AS cohort, COUNT(DISTINCT a.account_id) AS new_paid, ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (COALESCE(s.canceled_at, CURRENT_DATE) - s.started_at)) / 86400.0 / 30.0), 1) AS median_months_active FROM accounts a JOIN subscriptions s ON a.account_id = s.account_id WHERE a.first_paid_at IS NOT NULL GROUP BY 1 ORDER BY 1 DESC"
+      },
+      {
+        "if_this_metric": "Payback lengthens sharply",
+        "and_also": "saas_ltv LTV:CAC ratio is also falling",
+        "shared_root_cause": "Both metrics share the CAC numerator and the margin-ARPA denominator, so a CAC spike or an ARPA/margin drop moves them together. Unit economics are deteriorating on both the profitability (LTV:CAC) and cash-timing (payback) axes. Decompose into CAC vs ARPA vs margin to find the lever.",
+        "diagnostic_sql": "WITH q AS (SELECT DATE_TRUNC('quarter', spend_date) AS qtr, SUM(amount) AS spend FROM marketing_spend GROUP BY 1), n AS (SELECT DATE_TRUNC('quarter', signup_date) AS qtr, COUNT(DISTINCT account_id) AS new_paid FROM accounts WHERE first_paid_at IS NOT NULL GROUP BY 1), arpa AS (SELECT DATE_TRUNC('quarter', a.signup_date) AS qtr, AVG(CASE WHEN s.billing_period='annual' THEN s.plan_mrr/12.0 ELSE s.plan_mrr END) AS new_arpa FROM accounts a JOIN subscriptions s ON a.account_id = s.account_id GROUP BY 1) SELECT q.qtr, ROUND(q.spend / NULLIF(n.new_paid, 0), 2) AS cac, ROUND(arpa.new_arpa, 2) AS new_arpa, ROUND((q.spend / NULLIF(n.new_paid, 0)) / NULLIF(arpa.new_arpa * 0.78, 0), 1) AS payback_months FROM q JOIN n ON q.qtr = n.qtr JOIN arpa ON q.qtr = arpa.qtr ORDER BY q.qtr"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Payback = CAC / ARPA (omitting gross margin)",
+        "why_wrong": "The customer repays CAC out of gross-margin dollars, not revenue dollars. Dividing by full ARPA ignores COGS/support cost and understates recovery time, making the growth motion look more cash-efficient than it is.",
+        "bad_sql": "SELECT (SELECT SUM(amount) FROM marketing_spend WHERE spend_date BETWEEN '2024-01-01' AND '2024-01-31') / NULLIF((SELECT COUNT(DISTINCT account_id) FROM accounts WHERE signup_date BETWEEN '2024-01-01' AND '2024-01-31' AND first_paid_at IS NOT NULL), 0) / NULLIF((SELECT AVG(plan_mrr) FROM subscriptions WHERE status='active'), 0) AS payback_months",
+        "good_sql": "WITH cac AS (SELECT (SELECT SUM(amount) FROM marketing_spend WHERE spend_date BETWEEN '2024-01-01' AND '2024-01-31') / NULLIF((SELECT COUNT(DISTINCT account_id) FROM accounts WHERE signup_date BETWEEN '2024-01-01' AND '2024-01-31' AND first_paid_at IS NOT NULL), 0) AS cac_value), arpa AS (SELECT AVG(CASE WHEN s.billing_period='annual' THEN s.plan_mrr/12.0 ELSE s.plan_mrr END) AS new_arpa FROM accounts a JOIN subscriptions s ON a.account_id = s.account_id WHERE a.signup_date BETWEEN '2024-01-01' AND '2024-01-31') SELECT ROUND(cac.cac_value / NULLIF(arpa.new_arpa * 0.78, 0), 1) AS payback_months FROM cac, arpa"
+      },
+      {
+        "pattern": "Using blended ARPA over all accounts instead of new-cohort ARPA",
+        "why_wrong": "Tenured accounts that have expanded over years inflate blended ARPA. A new customer pays the new-cohort ARPA, which is typically lower. Using blended ARPA understates payback by overstating what a new customer contributes each month.",
+        "bad_sql": "SELECT cac_value / NULLIF((SELECT AVG(CASE WHEN billing_period='annual' THEN plan_mrr/12.0 ELSE plan_mrr END) FROM subscriptions WHERE status='active') * 0.78, 0) AS payback_months FROM cac_cte",
+        "good_sql": "SELECT cac_value / NULLIF((SELECT AVG(CASE WHEN s.billing_period='annual' THEN s.plan_mrr/12.0 ELSE s.plan_mrr END) FROM accounts a JOIN subscriptions s ON a.account_id = s.account_id WHERE a.signup_date >= CURRENT_DATE - INTERVAL '1 month') * 0.78, 0) AS payback_months FROM cac_cte"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "WITH cac AS (SELECT SUM(amount) AS sm_spend FROM marketing_spend WHERE spend_date BETWEEN '2024-01-01' AND '2024-01-31'), new_cust AS (SELECT COUNT(DISTINCT account_id) AS new_count FROM accounts WHERE signup_date BETWEEN '2024-01-01' AND '2024-01-31' AND first_paid_at IS NOT NULL), arpa AS (SELECT AVG(CASE WHEN s.billing_period='annual' THEN s.plan_mrr/12.0 ELSE s.plan_mrr END) AS new_arpa FROM accounts a JOIN subscriptions s ON a.account_id = s.account_id WHERE a.signup_date BETWEEN '2024-01-01' AND '2024-01-31') SELECT ROUND((cac.sm_spend / NULLIF(new_cust.new_count, 0)) / NULLIF(arpa.new_arpa * 0.78, 0), 1) AS payback_months FROM cac, new_cust, arpa",
+      "intermediate_sql": "WITH spend AS (SELECT channel, SUM(amount) AS sm_spend FROM marketing_spend WHERE spend_date BETWEEN '2024-01-01' AND '2024-01-31' GROUP BY channel), new_cust AS (SELECT a.acquisition_channel AS channel, COUNT(DISTINCT a.account_id) AS new_count, AVG(CASE WHEN s.billing_period='annual' THEN s.plan_mrr/12.0 ELSE s.plan_mrr END) AS new_arpa FROM accounts a JOIN subscriptions s ON a.account_id = s.account_id WHERE a.signup_date BETWEEN '2024-01-01' AND '2024-01-31' AND a.first_paid_at IS NOT NULL GROUP BY a.acquisition_channel) SELECT n.channel, ROUND(s.sm_spend / NULLIF(n.new_count, 0), 2) AS cac, ROUND(n.new_arpa, 2) AS new_arpa, ROUND((s.sm_spend / NULLIF(n.new_count, 0)) / NULLIF(n.new_arpa * 0.78, 0), 1) AS payback_months FROM new_cust n LEFT JOIN spend s ON n.channel = s.channel ORDER BY payback_months",
+      "advanced_sql": "WITH monthly_spend AS (\n  SELECT DATE_TRUNC('month', spend_date) AS month, SUM(amount) AS sm_spend FROM marketing_spend GROUP BY 1\n),\nnew_cohort AS (\n  -- New PAID customers per signup month with their cohort ARPA (normalized monthly)\n  SELECT\n    DATE_TRUNC('month', a.signup_date) AS month,\n    COUNT(DISTINCT a.account_id) AS new_paid,\n    AVG(CASE WHEN s.billing_period='annual' THEN s.plan_mrr/12.0 ELSE s.plan_mrr END) AS new_arpa\n  FROM accounts a\n  JOIN subscriptions s ON a.account_id = s.account_id\n  WHERE a.first_paid_at IS NOT NULL\n  GROUP BY 1\n),\ngm AS (\n  SELECT AVG(gross_margin_pct) AS gross_margin FROM financials WHERE period >= CURRENT_DATE - INTERVAL '12 months'\n)\nSELECT\n  c.month,\n  c.new_paid,\n  ROUND(s.sm_spend / NULLIF(c.new_paid, 0), 2) AS cac,\n  ROUND(c.new_arpa, 2) AS new_arpa,\n  ROUND((SELECT gross_margin FROM gm), 4) AS gross_margin_pct,\n  ROUND((s.sm_spend / NULLIF(c.new_paid, 0)) / NULLIF(c.new_arpa * (SELECT gross_margin FROM gm), 0), 1) AS payback_months,\n  ROUND(((s.sm_spend / NULLIF(c.new_paid, 0)) / NULLIF(c.new_arpa * (SELECT gross_margin FROM gm), 0)) - LAG((s.sm_spend / NULLIF(c.new_paid, 0)) / NULLIF(c.new_arpa * (SELECT gross_margin FROM gm), 0)) OVER (ORDER BY c.month), 1) AS payback_mom_change\nFROM new_cohort c\nJOIN monthly_spend s ON c.month = s.month\nORDER BY c.month"
+    }
+  }
+]

@@ -1739,12 +1739,127 @@ class SchemaExplorer:
             logger.info("[explorer:%s] Phase 8: multi-dataset connection %s — isolating datasets",
                         self.connection_id, sorted(_all_datasets))
 
-        for domain, entities in domain_entities.items():
+        # ── Per-dataset domain passes (the "every dataset gets understood" guarantee) ──
+        # A domain's entities can span unrelated uploaded datasets (a Marketing domain over
+        # BOTH bakehouse and netflix). The old behaviour kept only the DOMINANT dataset's
+        # entities and DROPPED the rest — so a single-table catalog like netflix.netflix_titles,
+        # which loses every dominance contest, got ZERO exploration and ZERO briefing (it just
+        # vanished, silently). That breaks the core promise: whether or not a dataset has joins
+        # or measures, the explorer must still understand it and surface reasonable insights.
+        #
+        # Fix: split each multi-dataset domain into ONE pass PER dataset. Every pass is already
+        # single-dataset (so the in-loop dataset-isolation guards below are no-ops, and the SQL
+        # stays join-valid), and no dataset is ever dropped. Each pass carries its own budget /
+        # coverage / novelty state via a unique label; the original domain name (`_base_domain`)
+        # still drives the angle checklist and is what the insight is tagged with for grouping.
+        def _entity_ds(e) -> str:
+            from collections import Counter as _C
+            dss = [_ds(t) for t in e.source_tables if _ds(t)]
+            return _C(dss).most_common(1)[0][0] if dss else ""
+
+        passes: list[tuple[str, str, list]] = []   # (pass_label, base_domain, entities)
+        for _domain, _entities in domain_entities.items():
+            if not multi_dataset:
+                passes.append((_domain, _domain, _entities))
+                continue
+            _by_ds: dict[str, list] = {}
+            for _e in _entities:
+                _by_ds.setdefault(_entity_ds(_e), []).append(_e)
+            _real = {k: v for k, v in _by_ds.items() if k}
+            if len(_real) <= 1:
+                # One (or zero) identifiable dataset — keep the domain whole.
+                passes.append((_domain, _domain, _entities))
+            else:
+                # Split: a labelled pass per dataset. Entities whose dataset can't be
+                # determined ride with the largest group so they're not dropped either.
+                _unknown = _by_ds.get("", [])
+                _primary = max(sorted(_real), key=lambda d: len(_real[d]))
+                for _ds_name in sorted(_real):
+                    _ents = list(_real[_ds_name])
+                    if _ds_name == _primary:
+                        _ents += _unknown
+                    passes.append((f"{_domain} · {_ds_name}", _domain, _ents))
+                logger.info(
+                    "[explorer:%s] Phase 8: %s domain spans %s — splitting into one pass per dataset",
+                    self.connection_id, _domain, sorted(_real),
+                )
+
+        # ── Industry-aware steering (Business Profile) ──────────────────────────
+        # The keystone for industry-aware intelligence. Load the connection's
+        # Business Profile and let it DRIVE Phase 8: (a) DERIVE extra angles from its
+        # north-star metrics — the per-domain column-feasibility gate below trims any
+        # that don't fit a domain's tables — and (b) INJECT an authoritative industry
+        # block into the question prompt so generated SQL targets what matters for
+        # THIS vertical (AOV/repeat-rate for ecommerce, load-factor/OTP for an
+        # airline) instead of generic volume/value, and respects each metric's sane
+        # range (no more "conversion rate = 1.42"). Best-effort: no profile → the
+        # hardcoded DOMAIN_ANGLES still apply unchanged.
+        profile_block = ""
+        profile_angles: list[str] = []
+        try:
+            from aughor.profile.infer import get_or_infer
+            _bp = await _loop.run_in_executor(None, lambda: get_or_infer(self.connection_id))
+            if _bp is not None:
+                import re as _re
+                def _slug(s: str) -> str:
+                    return _re.sub(r"[^a-z0-9]+", "_", (s or "").lower()).strip("_")[:40]
+                profile_angles = [a for a in (_slug(m.name) for m in _bp.north_star_metrics) if a][:8]
+                _mlines = "\n".join(
+                    f"  - {m.name}: {m.definition} [from {m.maps_to}] (sane value: {m.unit_or_range})"
+                    for m in _bp.north_star_metrics[:8]
+                )
+                _qlines = "\n".join(f"  - {q}" for q in _bp.key_questions[:8])
+                # Computation recipes (curated industry KB + LLM fallback) — the
+                # SQL-ACCURACY knowledge: each metric's canonical formula, the grain
+                # to compute at, and the anti-pattern that produces a wrong number
+                # (e.g. COUNT(orders)/COUNT(carts) → conversion > 1). Injected
+                # authoritatively so generated SQL gets the join/grain right.
+                from aughor.profile import store as _pstore
+                _recipes = _pstore.load_recipes(self.connection_id)
+                _rlines = ""
+                if _recipes:
+                    _parts = []
+                    for r in _recipes[:8]:
+                        _aps = "; ".join((r.get("anti_patterns") or [])[:2])
+                        _parts.append(
+                            f"  • {r.get('metric')}:\n"
+                            f"      formula: {r.get('formula')}\n"
+                            f"      grain: {r.get('grain')}\n"
+                            f"      AVOID: {_aps}"
+                        )
+                    _rlines = (
+                        "COMPUTATION RECIPES — when a question targets one of these metrics, follow "
+                        "the formula and grain EXACTLY and avoid the named anti-patterns (this is how "
+                        "you keep the SQL correct — a conversion rate must come out 0..1, not 1.4):\n"
+                        + "\n".join(_parts) + "\n"
+                    )
+                profile_block = (
+                    f"INDUSTRY CONTEXT — this is a {_bp.industry} business ({_bp.business_model}). "
+                    f"{_bp.summary}\n"
+                    f"PRIORITY METRICS for this industry (prefer these; honour each metric's sane "
+                    f"value — NEVER report an impossible figure like a ratio > 1 or a near-zero "
+                    f"per-unit revenue):\n{_mlines}\n"
+                    f"{_rlines}"
+                    f"QUESTIONS THAT MATTER for this industry:\n{_qlines}\n\n"
+                )
+                logger.info(
+                    "[explorer:%s] Phase 8: industry-aware steering — %r (%d priority metrics, %d recipes)",
+                    self.connection_id, _bp.industry, len(profile_angles), len(_recipes),
+                )
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "business-profile steering is best-effort; on failure fall back to "
+                     "the generic DOMAIN_ANGLES", counter="explorer.profile_steer_failed")
+
+        for domain, _base_domain, entities in passes:
             await self._gate()
             if self._stopped:
                 return
 
-            angles = DOMAIN_ANGLES.get(domain, DEFAULT_ANGLES)
+            # Derive: profile metrics lead the angle checklist; generic angles remain
+            # as fallback. The column-feasibility gate downstream drops any that don't
+            # fit this domain's tables, so cross-domain metrics self-scope.
+            angles = list(dict.fromkeys(profile_angles + DOMAIN_ANGLES.get(_base_domain, DEFAULT_ANGLES)))
             budgets = self._state.setdefault("domain_budgets", {})
             coverage = self._state.setdefault("domain_coverage", {})
             domain_insights: list[dict] = [
@@ -2174,6 +2289,7 @@ class SchemaExplorer:
                         )
                     _usr1 = (
                         f"DOMAIN: {domain}\n\n"
+                        f"{profile_block}"
                         f"ENTITIES IN THIS DOMAIN:\n{entity_context}\n\n"
                         f"RELATIONSHIPS:\n{relationship_context}\n\n"
                         f"{domain_schema_block}\n\n"
