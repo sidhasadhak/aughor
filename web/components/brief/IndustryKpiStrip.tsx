@@ -17,22 +17,31 @@ interface Kpi { name: string; display: string; }
 /** Format a raw scalar by its declared unit/range, and gate out broken values. */
 function formatMetric(v: number, unit: string): { display: string; ok: boolean } {
   const u = (unit || "").toLowerCase();
+  let display: string;
   if (/ratio|0-1|0\.\.1/.test(u) && !/0-100|0\.\.100/.test(u)) {
     if (v < -0.001 || v > 1.05) return { display: "", ok: false };   // broken bounded rate
-    return { display: `${(v * 100).toFixed(1)}%`, ok: true };
-  }
-  if (/percent|0-100|0\.\.100|%/.test(u)) {
+    display = `${(v * 100).toFixed(1)}%`;
+  } else if (/percent|0-100|0\.\.100|%/.test(u)) {
     if (v < -0.5 || v > 105) return { display: "", ok: false };
-    return { display: `${v.toFixed(1)}%`, ok: true };
+    display = `${v.toFixed(1)}%`;
+  } else if (/day/.test(u)) {
+    display = `${v.toFixed(1)}d`;
+  } else {
+    const a = Math.abs(v);
+    const s = a >= 1e9 ? `${(v / 1e9).toFixed(1)}B`
+            : a >= 1e6 ? `${(v / 1e6).toFixed(1)}M`
+            : a >= 1e3 ? `${(v / 1e3).toFixed(1)}K`
+            : Number.isInteger(v) ? String(v) : v.toFixed(2);
+    const pre = /usd|\$|revenue|spend|cost|gmv|sales/.test(u) ? "$" : "";
+    display = pre + s;
   }
-  if (/day/.test(u)) return { display: `${v.toFixed(1)}d`, ok: true };
-  const a = Math.abs(v);
-  const s = a >= 1e9 ? `${(v / 1e9).toFixed(1)}B`
-          : a >= 1e6 ? `${(v / 1e6).toFixed(1)}M`
-          : a >= 1e3 ? `${(v / 1e3).toFixed(1)}K`
-          : Number.isInteger(v) ? String(v) : v.toFixed(2);
-  const pre = /usd|\$|revenue|spend|cost|gmv|sales/.test(u) ? "$" : "";
-  return { display: pre + s, ok: true };
+  // No zero values on cards: a "$0 / 0.0% / 0d" KPI is noise — almost always a
+  // rounding/join bug (e.g. ROUND(weight,4) zeroing a 2e-07 attribution weight), not a
+  // real result. Drop it once it has rounded to zero at the shown precision.
+  if (Math.abs(parseFloat(display.replace(/[^0-9.eE-]/g, "")) || 0) === 0) {
+    return { display: "", ok: false };
+  }
+  return { display, ok: true };
 }
 
 export function IndustryKpiStrip({ connectionId }: { connectionId: string }) {

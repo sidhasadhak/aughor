@@ -357,15 +357,17 @@ def _is_degenerate_result(rows, finding_text: str = "") -> bool:
     insight (and so never reaches the Briefing). Three cases:
 
       1. the whole result is NULL (empty join/filter matched nothing), OR
-      2. ANY column is NULL across EVERY row — a metric that never computed because a
-         join/linkage is broken (e.g. a `touchpoint_type = channel` join that matches
-         nothing leaves revenue / ROAS / refund_rate all NULL). RULE: a NULL metric must
-         not appear in a Briefing — it reads as a confident "data gap" finding when it is
-         really a query bug. Reported intact data ($491M of revenue) is sitting elsewhere.
+      2. ANY numeric column is NULL across EVERY row, OR ZERO across every row — a metric
+         that never computed because a join/linkage is broken (a `touchpoint_type=channel`
+         join that matches nothing → revenue/ROAS all NULL) or a value was destroyed
+         (`ROUND(weight, 4)` on a ~2e-07 weight → every ROAS = 0.0). RULE: a NULL **or
+         all-zero** metric must not appear in a Briefing — it reads as a confident finding
+         ("$0 ROAS — no revenue captured") when it is really a query bug; the underlying
+         data ($491M revenue) is intact. OR
       3. the interpretation text explicitly says "no data".
 
-    High-precision: a real ``COUNT(...) = 0`` returns 0 (not NULL), so genuine "zero X"
-    findings survive — only entirely-NULL columns are dropped."""
+    A column with MIXED values (some 0, some not) is real signal and survives — only a
+    metric that is flat NULL or flat zero across the whole result is dropped."""
     if rows:
         # Normalise to row-lists (dict rows → values in stable key order).
         if isinstance(rows[0], dict):
@@ -376,8 +378,16 @@ def _is_degenerate_result(rows, finding_text: str = "") -> bool:
         ncols = max((len(r) for r in norm), default=0)
         for i in range(ncols):
             col = [r[i] for r in norm if i < len(r)]
-            if col and all(c is None for c in col):
-                return True          # an entirely-NULL column → broken/empty linkage
+            if not col:
+                continue
+            nonnull = [c for c in col if c is not None and c != "" and c != "NULL"]
+            if not nonnull:
+                return True          # entirely-NULL column → broken/empty linkage
+            try:
+                if all(float(c) == 0.0 for c in nonnull):
+                    return True      # a NUMERIC column that is ZERO everywhere → no signal
+            except (TypeError, ValueError):
+                pass                 # non-numeric (a dimension) — not a dead measure
     return bool(finding_text and _NO_DATA_RE.search(finding_text))
 
 
