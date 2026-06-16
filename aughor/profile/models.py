@@ -22,6 +22,16 @@ class NorthStarMetric(BaseModel):
     maps_to: str = Field(description="The REAL tables/columns this is computed from (must exist in the schema)")
     why_it_matters: str = Field(description="Why an operator in this industry watches this")
     unit_or_range: str = Field(description="Expected unit and sane range, e.g. 'ratio 0-1', 'USD', 'days', 'percent 0-100'")
+    value_sql: str = Field(
+        default="",
+        description=(
+            "A SELECT-only SQL query that computes the CURRENT value of this metric as a "
+            "SINGLE scalar (one row, one numeric column aliased to a readable name) using "
+            "ONLY the real columns above. Use the correct grain (e.g. SUM(numerator)/"
+            "NULLIF(SUM(denominator),0) for a rate — never AVG of a ratio). Bounded rates "
+            "must come out in range. Leave empty only if the data genuinely cannot compute it."
+        ),
+    )
 
 
 class BusinessProfile(BaseModel):

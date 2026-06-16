@@ -32,7 +32,12 @@ _SYSTEM = (
     "margin is a percent 0-100, revenue is USD at a human-readable magnitude.\n"
     "3. Be specific about the vertical (e.g. 'DTC Beauty E-commerce', not just 'Retail').\n"
     "4. key_questions are what a real analyst in this vertical asks on Monday morning, "
-    "answerable from this data."
+    "answerable from this data.\n"
+    "5. For EVERY north-star metric you MUST also write value_sql: a runnable SELECT-only "
+    "query that returns the metric's CURRENT value as a SINGLE scalar (one row, one numeric "
+    "column with a readable alias), using only the real columns. Use correct grain — "
+    "SUM(numerator)/NULLIF(SUM(denominator),0) for a rate, never AVG of a per-row ratio; "
+    "a bounded rate must come out in its stated range. Do NOT leave value_sql empty."
 )
 
 
