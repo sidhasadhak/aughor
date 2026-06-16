@@ -1596,6 +1596,54 @@ export function BriefingPanel({
         </div>
       </div>
 
+      {/* ── AI Synthesis ── always at the very top of the briefing */}
+      {(hasNarrative || narrativeLoading || narrativeError) && (
+        <div>
+          <div className="aug-label" style={{ marginBottom: 10 }}>AI Synthesis</div>
+          {narrativeLoading && (
+            <div style={{
+              background: "color-mix(in srgb, var(--blue4) 6%, var(--bg-2))",
+              border: "1px solid color-mix(in srgb, var(--blue4) 18%, var(--b1))",
+              borderRadius: "var(--r3)", padding: "18px 22px",
+              display: "flex", alignItems: "center", gap: 10,
+            }}>
+              <span style={{
+                width: 14, height: 14, border: "2px solid var(--b2)",
+                borderTop: "2px solid var(--blue4)", borderRadius: "50%",
+                animation: "aug-spin var(--dur-breath) linear infinite", flexShrink: 0,
+              }} />
+              <span style={{ fontSize: 12, color: "var(--t3)" }}>
+                Writing intelligence brief…
+              </span>
+            </div>
+          )}
+          {!narrativeLoading && narrativeError && (
+            <div style={{
+              padding: "10px 14px", borderRadius: "var(--r2)",
+              background: "var(--red1)", border: "1px solid var(--red2)",
+              fontSize: 11, color: "var(--red4)",
+            }}>
+              {narrativeError}
+            </div>
+          )}
+          {!narrativeLoading && hasNarrative && narrative && (
+            <NarrativeCard
+              narrative={narrative}
+              ctx={{
+                insightById:    briefing.insightById,
+                connectionId,
+                canvasId,
+                triggers,
+                onEvidence:     openEvidence,
+                onTriggersHint: showTriggersHint,
+                onDismissed:    load,
+                onInvestigate,
+              }}
+            />
+          )}
+        </div>
+      )}
+
       {/* ── Live dashboard ── charts + KPIs from the top findings' own queries (#3) */}
       <BriefingDashboard
         findings={[briefing.headline, ...briefing.signals].filter(Boolean) as { insight: ExplorationInsight; domain: string }[]}
@@ -1615,53 +1663,7 @@ export function BriefingPanel({
         {/* ── Main column ── */}
         <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" as const, gap: 24 }}>
 
-          {/* AI Narrative (M24b) */}
-          {(hasNarrative || narrativeLoading || narrativeError) && (
-            <div>
-              <div className="aug-label" style={{ marginBottom: 10 }}>AI Synthesis</div>
-              {narrativeLoading && (
-                <div style={{
-                  background: "color-mix(in srgb, var(--blue4) 6%, var(--bg-2))",
-                  border: "1px solid color-mix(in srgb, var(--blue4) 18%, var(--b1))",
-                  borderRadius: "var(--r3)", padding: "18px 22px",
-                  display: "flex", alignItems: "center", gap: 10,
-                }}>
-                  <span style={{
-                    width: 14, height: 14, border: "2px solid var(--b2)",
-                    borderTop: "2px solid var(--blue4)", borderRadius: "50%",
-                    animation: "aug-spin var(--dur-breath) linear infinite", flexShrink: 0,
-                  }} />
-                  <span style={{ fontSize: 12, color: "var(--t3)" }}>
-                    Writing intelligence brief…
-                  </span>
-                </div>
-              )}
-              {!narrativeLoading && narrativeError && (
-                <div style={{
-                  padding: "10px 14px", borderRadius: "var(--r2)",
-                  background: "var(--red1)", border: "1px solid var(--red2)",
-                  fontSize: 11, color: "var(--red4)",
-                }}>
-                  {narrativeError}
-                </div>
-              )}
-              {!narrativeLoading && hasNarrative && narrative && (
-                <NarrativeCard
-                  narrative={narrative}
-                  ctx={{
-                    insightById:    briefing.insightById,
-                    connectionId,
-                    canvasId,
-                    triggers,
-                    onEvidence:     openEvidence,
-                    onTriggersHint: showTriggersHint,
-                    onDismissed:    load,
-                    onInvestigate,
-                  }}
-                />
-              )}
-            </div>
-          )}
+          {/* AI Synthesis rendered at the very top of the briefing (see above). */}
 
           {/* Headline finding */}
           {briefing.headline && (

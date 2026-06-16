@@ -121,10 +121,10 @@ function KpiTile({ kpi, onInvestigate }: { kpi: Kpi; onInvestigate: (q: string) 
       onClick={() => onInvestigate(kpi.finding)}
       title={kpi.finding}
       style={{
-        display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-start",
-        textAlign: "left", padding: "12px 14px", borderRadius: "var(--r2)",
+        display: "flex", flexDirection: "column", gap: 5, alignItems: "flex-start",
+        textAlign: "left", padding: "9px 11px", borderRadius: "var(--r2)",
         background: "var(--bg-2)", border: "1px solid var(--b1)", cursor: "pointer",
-        minWidth: 150, flex: "1 1 150px", transition: "border-color .1s",
+        minWidth: 0, transition: "border-color .1s",
       }}
       onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--b2)"; }}
       onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--b1)"; }}
@@ -163,8 +163,8 @@ function FigureCard({
 }) {
   return (
     <div style={{
-      display: "flex", flexDirection: "column", gap: 8,
-      padding: "12px 14px", borderRadius: "var(--r3)",
+      display: "flex", flexDirection: "column", gap: 6,
+      padding: "9px 11px", borderRadius: "var(--r3)",
       background: "var(--bg-2)", border: "1px solid var(--b1)", minWidth: 0,
     }}>
       <button
@@ -172,7 +172,7 @@ function FigureCard({
         title="Investigate this finding"
         style={{
           textAlign: "left", background: "transparent", border: "none", padding: 0,
-          fontSize: 12, lineHeight: 1.5, color: "var(--t2)", cursor: "pointer",
+          fontSize: 11, lineHeight: 1.45, color: "var(--t2)", cursor: "pointer",
         }}
         onMouseEnter={e => { e.currentTarget.style.color = "var(--t1)"; }}
         onMouseLeave={e => { e.currentTarget.style.color = "var(--t2)"; }}
@@ -180,7 +180,8 @@ function FigureCard({
         {figure.finding}
       </button>
       <div style={{ minWidth: 0 }}>
-        <InvestigationChart columns={figure.columns} rows={figure.rows} />
+        {/* Compact briefing chart — 25% shorter than the default render. */}
+        <InvestigationChart columns={figure.columns} rows={figure.rows} heightScale={0.75} />
       </div>
       {actions && <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{actions}</div>}
     </div>
@@ -247,29 +248,38 @@ export function BriefingDashboard({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [runKey]);
 
-  // Split renderable results into KPI tiles and chart figures.
-  const { kpis, figures } = useMemo(() => {
-    const kpis: Kpi[] = [];
-    const figures: Figure[] = [];
+  // Renderable results → ONE impact-ranked list that MIXES chart figures and
+  // non-chart KPI tiles (no more "all KPIs then all charts" segregation). Impact =
+  // novelty + confidence (the explorer's own signals): a surprising, well-evidenced
+  // finding floats up whether it draws as a chart or a number.
+  type DashCard =
+    | { kind: "kpi"; id: string; impact: number; kpi: Kpi }
+    | { kind: "figure"; id: string; impact: number; figure: Figure };
+  const cards = useMemo<DashCard[]>(() => {
+    const out: DashCard[] = [];
     for (const f of runnable) {
       const r = results[f.insight.id];
       if (!r || r.status !== "ok" || r.rows.length < 1) continue;
+      const impact = (f.insight.novelty ?? 0) + (f.insight.confidence ?? 0);
       const kpi = asKpi(f, r.columns, r.rows);
-      if (kpi) { kpis.push(kpi); continue; }
-      // Not a KPI — render as a chart only if the engine can actually draw it.
+      if (kpi) { out.push({ kind: "kpi", id: kpi.id, impact, kpi }); continue; }
+      // Not a KPI — a chart only if the engine can actually draw it.
       if (r.rows.length < 2) continue;
       const inferred = inferChartType(r.columns, r.rows as unknown[][]);
       if (!inferred || inferred.type === "table") continue;
-      figures.push({
-        id: f.insight.id, columns: r.columns, rows: r.rows,
-        finding: f.insight.finding, insight: f.insight, domain: f.domain,
+      out.push({
+        kind: "figure", id: f.insight.id, impact,
+        figure: {
+          id: f.insight.id, columns: r.columns, rows: r.rows,
+          finding: f.insight.finding, insight: f.insight, domain: f.domain,
+        },
       });
     }
-    return { kpis, figures };
+    return out.sort((a, b) => b.impact - a.impact);   // rank by impact, mixed
   }, [runnable, results]);
 
   const anyLoading = runnable.some(f => results[f.insight.id]?.status === "loading");
-  const hasContent = kpis.length > 0 || figures.length > 0;
+  const hasContent = cards.length > 0;
 
   // Nothing to draw and nothing pending → render nothing (the prose/cards still show).
   if (!runnable.length || (!hasContent && !anyLoading)) return null;
@@ -289,24 +299,19 @@ export function BriefingDashboard({
         )}
       </div>
 
-      {/* KPI strip — headline numbers + trend at a glance */}
-      {kpis.length > 0 && (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-          {kpis.map(k => <KpiTile key={k.id} kpi={k} onInvestigate={onInvestigate} />)}
-        </div>
-      )}
-
-      {/* Figures grid — the charts behind the cross-domain findings */}
-      {figures.length > 0 && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14 }}>
-          {figures.map(fig => (
-            <FigureCard
-              key={fig.id}
-              figure={fig}
-              onInvestigate={onInvestigate}
-              actions={renderActions?.(fig.insight, fig.domain)}
-            />
-          ))}
+      {/* One impact-ranked grid — chart cards and non-chart KPI cards interleaved,
+          not segregated. alignItems:start lets short KPI cards sit beside tall charts. */}
+      {cards.length > 0 && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 11, alignItems: "start" }}>
+          {cards.map(c => c.kind === "kpi"
+            ? <KpiTile key={c.id} kpi={c.kpi} onInvestigate={onInvestigate} />
+            : <FigureCard
+                key={c.id}
+                figure={c.figure}
+                onInvestigate={onInvestigate}
+                actions={renderActions?.(c.figure.insight, c.figure.domain)}
+              />
+          )}
         </div>
       )}
     </div>

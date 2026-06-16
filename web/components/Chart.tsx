@@ -136,12 +136,15 @@ export function Chart({
   chrome = true,
   showLabels: showLabelsProp,
   custom = null,
+  heightScale = 1,
 }: {
   columns: string[];
   rows: unknown[][];
   chartType?: string | null;
   chartConfig?: Record<string, unknown> | null;
   title?: string;
+  /** Scale the computed chart height (e.g. 0.75 for a compact briefing card). */
+  heightScale?: number;
   /** Render the hover toolbar (labels + download) and drag-to-resize handle.
    *  Set false when an outer wrapper (e.g. InvestigationChart) supplies the chrome. */
   chrome?: boolean;
@@ -1292,7 +1295,7 @@ export function Chart({
   if (!spec) return null;
 
   // Base chart height fills the 350px component; grows only if y-axis labels would overlap.
-  const chartH  = userH ?? defaultH;
+  const chartH  = Math.round((userH ?? defaultH) * heightScale);
 
   return (
     <div className="mt-2 w-full group/chart">
