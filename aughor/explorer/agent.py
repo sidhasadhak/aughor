@@ -353,21 +353,31 @@ def _crosses_datasets(sql: str) -> bool:
 
 
 def _is_degenerate_result(rows, finding_text: str = "") -> bool:
-    """True when a Phase-8 result carries no real data — an all-NULL single/leading row
-    (the filter/join matched nothing) or an interpretation that explicitly says so.
+    """True when a Phase-8 result carries no trustworthy data — so it never becomes an
+    insight (and so never reaches the Briefing). Three cases:
 
-    High-precision by design: a legitimate ``COUNT(...) = 0`` returns 0 (not NULL), so
-    real "zero X" findings survive; only genuinely empty results are dropped."""
+      1. the whole result is NULL (empty join/filter matched nothing), OR
+      2. ANY column is NULL across EVERY row — a metric that never computed because a
+         join/linkage is broken (e.g. a `touchpoint_type = channel` join that matches
+         nothing leaves revenue / ROAS / refund_rate all NULL). RULE: a NULL metric must
+         not appear in a Briefing — it reads as a confident "data gap" finding when it is
+         really a query bug. Reported intact data ($491M of revenue) is sitting elsewhere.
+      3. the interpretation text explicitly says "no data".
+
+    High-precision: a real ``COUNT(...) = 0`` returns 0 (not NULL), so genuine "zero X"
+    findings survive — only entirely-NULL columns are dropped."""
     if rows:
-        total = non_null = 0
-        for r in rows[:5]:
-            cells = list(r.values()) if isinstance(r, dict) else list(r)
-            for c in cells:
-                total += 1
-                if c is not None:
-                    non_null += 1
-        if total > 0 and non_null == 0:
-            return True
+        # Normalise to row-lists (dict rows → values in stable key order).
+        if isinstance(rows[0], dict):
+            keys = list(rows[0].keys())
+            norm = [[r.get(k) for k in keys] for r in rows]
+        else:
+            norm = [list(r) for r in rows]
+        ncols = max((len(r) for r in norm), default=0)
+        for i in range(ncols):
+            col = [r[i] for r in norm if i < len(r)]
+            if col and all(c is None for c in col):
+                return True          # an entirely-NULL column → broken/empty linkage
     return bool(finding_text and _NO_DATA_RE.search(finding_text))
 
 
@@ -2499,6 +2509,35 @@ class SchemaExplorer:
                     tolerate(_exc, "pre-flight bind-check is best-effort; on failure fall "
                              "through to the execute+retry loop (no worse than before)",
                              counter="explorer.bindcheck_failed")
+
+                # Join value-domain guard: probe each explicit JOIN's value overlap and
+                # SKIP a query that joins columns whose values don't overlap. The model
+                # invented `attribution.touchpoint_type = campaigns.channel` (ad_click/
+                # organic/… vs YouTube/TikTok/… → 0% overlap) — it binds and runs but
+                # matches nothing, so revenue/ROAS come back all-NULL and the finding
+                # reads as a confident "critical data gap" when it's just a fabricated
+                # join. The ADA/investigation paths already run this guard; the background
+                # explorer (which feeds the Briefing) did not — wire it in here. Probes the
+                # DB, so it runs once per query AFTER the bind-check has finalised the SQL.
+                try:
+                    from aughor.sql.join_guard import check_join_value_domains
+                    _jw = check_join_value_domains(self._conn, sql)
+                    if _jw:
+                        from aughor.stats import stats as _s; _s.inc("explorer.join_domain_skips")
+                        logger.info(
+                            "[explorer:%s] Phase 8: %s/%s — skipping fabricated join (no value overlap): %s",
+                            self.connection_id, domain, nq.angle,
+                            "; ".join(str(w) for w in _jw[:3]),
+                        )
+                        used += 1
+                        budgets[domain] = used
+                        self._state["domain_budgets"] = budgets
+                        continue
+                except Exception as _exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_exc, "join value-domain guard is best-effort; on failure run the "
+                             "query (no worse than before the explorer had the guard)",
+                             counter="explorer.join_guard_failed")
                 rows = None
 
                 for attempt in range(MAX_ATTEMPTS):
