@@ -231,15 +231,20 @@ export function Chart({
     return typeof v === "string" && DATE_VALUE_RE.test(v);
   };
 
+  // All-NULL columns carry no information; drop them up front so an empty numeric
+  // column can't become a phantom "NULL" categorical legend/stack dimension.
+  const isDead = (i: number) =>
+    rows.every(r => { const v = (r as unknown[])[i]; return v === null || v === undefined || v === "" || v === "NULL"; });
+
   const dateCol =
-    columns.find(c => DATE_COL.test(c)) ||
-    columns.find((c, i) => !isNumeric(firstNonNull(rows, i)) && looksLikeDate(i));
+    columns.find((c, i) => DATE_COL.test(c) && !isDead(i)) ||
+    columns.find((c, i) => !isDead(i) && !isNumeric(firstNonNull(rows, i)) && looksLikeDate(i));
 
   const catCols = columns.filter(
-    (c, i) => c !== dateCol && !DATE_COL.test(c) && !isNumeric(firstNonNull(rows, i)),
+    (c, i) => c !== dateCol && !DATE_COL.test(c) && !isDead(i) && !isNumeric(firstNonNull(rows, i)),
   );
   const PREFER_COL = /(pct|percent|share|rate|ratio|proportion)/i;
-  const numericCols = columns.filter((c, i) => !DATE_COL.test(c) && isNumeric(firstNonNull(rows, i)));
+  const numericCols = columns.filter((c, i) => !DATE_COL.test(c) && !isDead(i) && isNumeric(firstNonNull(rows, i)));
   // True when ANY numeric column is a change/delta/growth metric.
   // These are COMPARISON questions — heatmap/stacked-bar are inappropriate.
   const _isChangeMetric = numericCols.some(c => CHANGE_METRIC_COL.test(c));
@@ -1116,9 +1121,38 @@ export function Chart({
           config: { axisX: { labelAngle: 0, labelOverlap: "parity" } },
         };
         defaultH = 350;
+      } else if (decision.groupIdxs.length >= 2) {
+        // Same UNIT, similar scale (e.g. spend + revenue, or two rates) → a GROUPED
+        // bar shows them side by side on one honest shared axis: no dropped series,
+        // no misleading independent dual axes. Build long-format data with clean
+        // measure labels (a fold transform would expose raw column names).
+        const fields = decision.groupIdxs.map(i => columns[i]);
+        const long: Record<string, unknown>[] = [];
+        for (const row of data) {
+          for (const f of fields) {
+            const v = Number(row[f]);
+            if (!isNaN(v)) long.push({ [catCol]: row[catCol], measure: cleanLabel(f), mvalue: v });
+          }
+        }
+        vegaData = long;
+        spec = {
+          mark: { type: "bar", cornerRadiusEnd: 2 },
+          encoding: {
+            x: { field: catCol, type: "ordinal",
+                 axis: { labelLimit: 160, labelAngle: 0, labelOverlap: true, title: cleanLabel(catCol) } },
+            xOffset: { field: "measure", type: "nominal" },
+            y: { field: "mvalue", type: "quantitative", axis: { format: fmtCol(fields[0]), grid: true, title: "" } },
+            color: { field: "measure", type: "nominal", legend: { title: null, orient: "top" } },
+            tooltip: [
+              { field: catCol, type: "nominal" },
+              { field: "measure", type: "nominal" },
+              { field: "mvalue", type: "quantitative", format: lblCol(fields[0]) },
+            ],
+          },
+        };
+        defaultH = 300;
       } else {
-        // Same-unit / similar-scale measures → a single honest bar of the primary
-        // magnitude (independent dual axes here make unequal series look equal).
+        // One honest bar of the primary magnitude.
         spec = {
           mark: { type: "bar", color: "#818cf8", opacity: 0.85, cornerRadiusEnd: 2 },
           encoding: {

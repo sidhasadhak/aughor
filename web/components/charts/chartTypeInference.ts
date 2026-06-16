@@ -91,6 +91,14 @@ export function classifyColumns(
   const catIdxs: number[]     = [];
 
   columns.forEach((col, i) => {
+    // All-NULL column → carries no information; never plot it. Otherwise an empty
+    // numeric column (no non-null value) fails the numeric test, gets treated as a
+    // CATEGORY, and surfaces as a phantom "NULL" legend / stack dimension.
+    const allNull = rows.every((r) => {
+      const v = (r as unknown[])[i];
+      return v === null || v === undefined || v === "" || v === "NULL";
+    });
+    if (allNull) return;
     const firstVal = firstNonNull(rows, i);
 
     const isDate =
@@ -124,31 +132,40 @@ export function scoreDualAxis(
   columns: string[],
   rows: unknown[][],
   numericIdxs: number[],
-): { combo: boolean; barIdx: number; lineIdx?: number; reason: string } {
+): { combo: boolean; barIdx: number; lineIdx?: number; groupIdxs: number[]; reason: string } {
   const nums = (i: number) => rows.map((r) => Number((r as unknown[])[i])).filter((v) => !isNaN(v));
   const maxAbs = (i: number) => { const v = nums(i); return v.length ? Math.max(...v.map(Math.abs)) : 0; };
   const isShare = (i: number) => {
     const v = nums(i);
     return v.length > 0 && SHARE_COL.test(columns[i]) && v.every((n) => Math.abs(n) <= 1.0001);
   };
-  const measures = numericIdxs.filter((i) => !SKIP_ID.test(columns[i]));   // drop id/key columns
+  // Real measures only: not an id/key, and has at least one non-null numeric value
+  // (an all-null column carries nothing and must never reach a chart).
+  const measures = numericIdxs.filter((i) => !SKIP_ID.test(columns[i]) && nums(i).length > 0);
   const rates     = measures.filter(isShare).sort((a, b) => maxAbs(b) - maxAbs(a));
   const absolutes = measures.filter((i) => !isShare(i)).sort((a, b) => maxAbs(b) - maxAbs(a));
   const primary   = absolutes[0] ?? rates[0] ?? measures[0] ?? numericIdxs[0];
 
-  if (measures.length < 2) return { combo: false, barIdx: primary, reason: "single measure" };
+  if (measures.length < 2) return { combo: false, barIdx: primary, groupIdxs: [primary], reason: "single measure" };
 
   // (1) magnitude + rate → genuinely different units → dual axis clarifies
   if (absolutes.length >= 1 && rates.length >= 1) {
-    return { combo: true, barIdx: absolutes[0], lineIdx: rates[0], reason: "magnitude + rate" };
+    return { combo: true, barIdx: absolutes[0], lineIdx: rates[0], groupIdxs: [absolutes[0], rates[0]], reason: "magnitude + rate" };
   }
   // (2) two absolutes with a large scale gap → the smaller would vanish on a shared axis
   if (absolutes.length >= 2) {
     const ratio = maxAbs(absolutes[1]) > 0 ? maxAbs(absolutes[0]) / maxAbs(absolutes[1]) : Infinity;
-    if (ratio >= 25) return { combo: true, barIdx: absolutes[0], lineIdx: absolutes[1], reason: `scale gap ${Math.round(ratio)}x` };
+    if (ratio >= 25) return { combo: true, barIdx: absolutes[0], lineIdx: absolutes[1], groupIdxs: [absolutes[0], absolutes[1]], reason: `scale gap ${Math.round(ratio)}x` };
   }
-  // Otherwise same-unit / similar-scale → one honest bar of the primary magnitude
-  return { combo: false, barIdx: primary, reason: "same-scale measures" };
+  // Same UNIT (multiple absolutes, or multiple rates), similar scale → a GROUPED bar
+  // shows them side by side on one honest shared axis (no dropped series, no
+  // misleading independent axes). Cap at 4 series for readability.
+  const sameUnit = absolutes.length >= 2 ? absolutes : rates;
+  if (sameUnit.length >= 2) {
+    return { combo: false, barIdx: primary, groupIdxs: sameUnit.slice(0, 4), reason: "grouped (same-unit measures)" };
+  }
+  // Fallback → one honest bar of the primary magnitude
+  return { combo: false, barIdx: primary, groupIdxs: [primary], reason: "single bar" };
 }
 
 /**
