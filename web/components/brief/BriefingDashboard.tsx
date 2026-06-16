@@ -180,8 +180,14 @@ function FigureCard({
         {figure.finding}
       </button>
       <div style={{ minWidth: 0 }}>
-        {/* Compact briefing chart — 25% shorter than the default render. */}
-        <InvestigationChart columns={figure.columns} rows={figure.rows} heightScale={0.75} />
+        {/* Compact briefing chart — 25% shorter than the default render, with an
+            explicit title (the finding's angle) rather than a generic "Metrics". */}
+        <InvestigationChart
+          columns={figure.columns}
+          rows={figure.rows}
+          heightScale={0.75}
+          title={figure.insight.angle || figure.finding.slice(0, 60)}
+        />
       </div>
       {actions && <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{actions}</div>}
     </div>
@@ -275,7 +281,11 @@ export function BriefingDashboard({
         },
       });
     }
-    return out.sort((a, b) => b.impact - a.impact);   // rank by impact, mixed
+    const ranked = out.sort((a, b) => b.impact - a.impact);   // rank by impact, mixed
+    // Cap CHARTS at 3 — a briefing should be glanceable, not a wall of charts. KPI
+    // cards are kept; figures are already impact-ranked, so the top 3 survive.
+    let figs = 0;
+    return ranked.filter(c => c.kind !== "figure" || ++figs <= 3);
   }, [runnable, results]);
 
   const anyLoading = runnable.some(f => results[f.insight.id]?.status === "loading");

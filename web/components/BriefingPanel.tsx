@@ -238,38 +238,8 @@ function NarrativeCard({
         />
       </div>
 
-      {/* Citation legend */}
-      {narrative.citations.length > 0 && (
-        <div style={{ marginTop: 14, display: "flex", flexDirection: "column" as const, gap: 4 }}>
-          {narrative.citations.map(c => (
-            <div
-              key={c.ref}
-              onClick={e => onCitationClick(c, e)}
-              style={{
-                display: "flex", gap: 8, alignItems: "flex-start",
-                cursor: "pointer", borderRadius: "var(--r2)", padding: "4px 6px",
-                transition: "background .1s",
-              }}
-              onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = "var(--bg-3)"; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
-            >
-              <span style={{
-                width: 16, height: 16, borderRadius: "50%", flexShrink: 0, marginTop: 1,
-                fontSize: 8, fontWeight: 700, fontFamily: "var(--font-mono)",
-                background: "var(--blue3)", color: "var(--bg-0)",
-                display: "inline-flex", alignItems: "center", justifyContent: "center",
-              }}>
-                {c.ref}
-              </span>
-              <span style={{ fontSize: 10, color: "var(--t3)", lineHeight: 1.5 }}>
-                <span style={{ color: "var(--t2)", fontWeight: 500 }}>{c.domain}</span>
-                {c.angle ? ` · ${c.angle}` : ""} —{" "}
-                {c.finding.length > 100 ? c.finding.slice(0, 100) + "…" : c.finding}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
+      {/* Citation legend removed — the inline [n] chips in the prose are the pointers;
+          the repeated list below was redundant. */}
 
       {active && (
         <CitationActionsPopover
