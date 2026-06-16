@@ -288,20 +288,23 @@ _STRATEGIES = ["direct", "decompose", "plan"]
 # Optional coder-model override (e.g. gpt-oss:120b-cloud) for A/B experiments.
 # The runtime config (data/llm_config.json) takes precedence over env, so we
 # must construct an explicit provider to override it.
-_CODER_MODEL: str | None = None
-_CODER_PROVIDER = None
+_CODER_MODEL: str | None = None       # default coder override (e.g. gpt-oss)
+_STRONG_MODEL: str | None = None      # escalation model for adaptive Stage B
+_CODER_PROVIDERS: dict = {}
 
 
-def _coder():
-    global _CODER_PROVIDER
-    if _CODER_MODEL is None:
+def _coder(model: str | None = None):
+    """Return a coder provider. `model` selects/caches a specific model; otherwise
+    the configured default (or _CODER_MODEL override)."""
+    m = model or _CODER_MODEL
+    if m is None:
         from aughor.llm.provider import get_provider
         return get_provider("coder")
-    if _CODER_PROVIDER is None:
+    if m not in _CODER_PROVIDERS:
         from aughor.llm.provider import LLMProvider
-        _CODER_PROVIDER = LLMProvider(
-            backend=os.getenv("AUGHOR_BACKEND", "ollama"), role="coder", model=_CODER_MODEL)
-    return _CODER_PROVIDER
+        _CODER_PROVIDERS[m] = LLMProvider(
+            backend=os.getenv("AUGHOR_BACKEND", "ollama"), role="coder", model=m)
+    return _CODER_PROVIDERS[m]
 
 
 # ── Full Aughor engine path ───────────────────────────────────────────────────
@@ -399,7 +402,7 @@ def _guard_composite_key(sql: str, db_path: Path) -> str:
         return sql
 
 
-def _propose_probes(question: str, schema: str, doc_section: str, temperature: float):
+def _propose_probes(question: str, schema: str, doc_section: str, temperature: float, model: str | None = None):
     """Ask the model what to VERIFY about the data before writing SQL.
 
     Uses a SINGLE string field (not a list-of-models) so reasoning models in
@@ -429,7 +432,7 @@ def _propose_probes(question: str, schema: str, doc_section: str, temperature: f
         "check ball_by_ball/batsman_scored key fans out :: SELECT COUNT(*), COUNT(DISTINCT match_id||over_id||ball_id) FROM batsman_scored"
     )
     try:
-        ans: ProbePlan = _coder().complete(
+        ans: ProbePlan = _coder(model).complete(
             system="You are a data analyst planning diagnostic probes before writing SQL.",
             user=prompt, response_model=ProbePlan, temperature=temperature,
         )
@@ -449,7 +452,7 @@ def _propose_probes(question: str, schema: str, doc_section: str, temperature: f
 
 
 def _generate_grounded(question: str, schema: str, doc_section: str,
-                       observations: str, temperature: float, strategy: str = "decompose") -> str:
+                       observations: str, temperature: float, strategy: str = "decompose", model: str | None = None) -> str:
     """Final generation grounded in probe observations."""
     obs_section = ""
     if observations.strip():
@@ -458,11 +461,11 @@ def _generate_grounded(question: str, schema: str, doc_section: str,
             "the real join keys, value encodings, and grain; do NOT contradict them):\n"
             f"{observations}\n\n"
         )
-    return generate_sql(question, schema, obs_section + doc_section, temperature, strategy)
+    return generate_sql(question, schema, obs_section + doc_section, temperature, strategy, model)
 
 
 def generate_sql_explore(question: str, schema: str, doc_section: str, db_path: Path,
-                         temperature: float = 0.0, strategy: str = "decompose") -> str:
+                         temperature: float = 0.0, strategy: str = "decompose", model: str | None = None) -> str:
     """Probe-and-ground: decompose → probe live DB → generate grounded SQL."""
     from aughor.agent.sql_explore import explore_and_generate
 
@@ -471,16 +474,16 @@ def generate_sql_explore(question: str, schema: str, doc_section: str, db_path: 
         return r.ok, r.rows, r.error
 
     result = explore_and_generate(
-        propose_fn=lambda: _propose_probes(question, schema, doc_section, temperature),
+        propose_fn=lambda: _propose_probes(question, schema, doc_section, temperature, model),
         execute_fn=_exec,
-        generate_fn=lambda obs: _generate_grounded(question, schema, doc_section, obs, temperature, strategy),
+        generate_fn=lambda obs: _generate_grounded(question, schema, doc_section, obs, temperature, strategy, model),
         max_probes=5,
     )
     return result.sql
 
 
 def generate_sql(question: str, schema: str, doc_section: str,
-                 temperature: float = 0.0, strategy: str = "direct") -> str:
+                 temperature: float = 0.0, strategy: str = "direct", model: str | None = None) -> str:
     from aughor.agent.prompts import CHAT_SQL_SYSTEM, CHAT_PROMPT
     from pydantic import BaseModel, Field
 
@@ -508,7 +511,7 @@ def generate_sql(question: str, schema: str, doc_section: str,
 
         model_config = {"arbitrary_types_allowed": True}
 
-    ans: Answer = _coder().complete(
+    ans: Answer = _coder(model).complete(
         system=CHAT_SQL_SYSTEM,
         user=prompt,
         response_model=Answer,
@@ -683,7 +686,7 @@ def _reflect_revise(question: str, schema: str, doc_section: str,
 
 
 def _recover_empty(question: str, schema: str, doc_section: str,
-                   sql: str, _msg: str, temperature: float) -> str:
+                   sql: str, _msg: str, temperature: float, model: str | None = None) -> str:
     """Recover from a 0-row result — usually a wrong literal or over-tight filter."""
     from aughor.llm.provider import get_provider
     from aughor.agent.prompts import CHAT_SQL_SYSTEM
@@ -712,7 +715,7 @@ def _recover_empty(question: str, schema: str, doc_section: str,
         approach: Any = None
         model_config = {"arbitrary_types_allowed": True}
 
-    ans: FixAnswer = _coder().complete(
+    ans: FixAnswer = _coder(model).complete(
         system=CHAT_SQL_SYSTEM, user=prompt,
         response_model=FixAnswer, temperature=temperature,
     )
@@ -720,7 +723,7 @@ def _recover_empty(question: str, schema: str, doc_section: str,
 
 
 def _fix_sql(question: str, schema: str, doc_section: str,
-             bad_sql: str, error: str, temperature: float) -> str:
+             bad_sql: str, error: str, temperature: float, model: str | None = None) -> str:
     """Ask the model to surgically fix the SQL given the execution error.
 
     The repair must be MINIMAL — fix only the specific error (wrong column name,
@@ -755,7 +758,7 @@ def _fix_sql(question: str, schema: str, doc_section: str,
         approach: Any = None
         model_config = {"arbitrary_types_allowed": True}
 
-    ans: FixAnswer = _coder().complete(
+    ans: FixAnswer = _coder(model).complete(
         system=CHAT_SQL_SYSTEM,
         user=fix_prompt,
         response_model=FixAnswer,
@@ -768,7 +771,7 @@ def _fix_sql(question: str, schema: str, doc_section: str,
 
 def run_instance(inst: dict, spider_root: Path, out_dir: Path, temperature: float,
                  consensus_k: int = 1, reflect: bool = False, select: bool = False,
-                 engine: bool = False, explore: bool = False) -> dict:
+                 engine: bool = False, explore: bool = False, adaptive: bool = False) -> dict:
     iid = inst["instance_id"]
     db_name = inst["db"]
     started_at = datetime.now(timezone.utc).isoformat()
@@ -818,21 +821,57 @@ def run_instance(inst: dict, spider_root: Path, out_dir: Path, temperature: floa
              "detail": f"Loaded external knowledge: {inst.get('external_knowledge') or 'none'}"},
         ]
 
-        def _gen(idx, temp):
-            strat = _STRATEGIES[idx % len(_STRATEGIES)]
-            if explore and db_path.exists():
-                # Probe-and-ground: discover real join keys / encodings / grain
-                # before writing. Strategy still varies for candidate diversity.
-                raw = generate_sql_explore(q, schema, doc, db_path, temp,
-                                           strategy=strat if strat != "direct" else "decompose")
-            elif engine:
-                raw = generate_sql_engine(q, db_name, reader, temp, doc, strat)
-            else:
-                raw = generate_sql(q, schema, doc, temp, strat)
-            # Deterministic composite-key completeness guard (always on).
-            return _guard_composite_key(raw, db_path)
+        def _make_gen(use_explore: bool, gen_model: str | None):
+            def g(idx, temp):
+                strat = _STRATEGIES[idx % len(_STRATEGIES)]
+                if use_explore and db_path.exists():
+                    raw = generate_sql_explore(q, schema, doc, db_path, temp,
+                                               strategy=strat if strat != "direct" else "decompose",
+                                               model=gen_model)
+                elif engine:
+                    raw = generate_sql_engine(q, db_name, reader, temp, doc, strat)
+                else:
+                    raw = generate_sql(q, schema, doc, temp, strat, model=gen_model)
+                # Deterministic composite-key completeness guard (always on).
+                return _guard_composite_key(raw, db_path)
+            return g
 
-        if consensus_k > 1 and db_path.exists():
+        _gen = _make_gen(explore, None)
+
+        if adaptive and db_path.exists():
+            # ── Adaptive effort cascade ──
+            # Stage A (cheap default coder, no explore): 2 candidates. If they AGREE
+            # on a non-empty result, accept — easy cases stay cheap + stable (no
+            # gpt-oss/explore variance destabilising them). Otherwise ESCALATE.
+            from aughor.agent.sql_consensus import generate_consensus_sql
+            rA = generate_consensus_sql(
+                generate_fn=_make_gen(False, None),
+                execute_fn=lambda s: _sqlite_exec(db_path, s),
+                repair_fn=lambda bad, err, temp: _fix_sql(q, schema, doc, bad, err, temp),
+                empty_recovery_fn=lambda bad, msg, temp: _recover_empty(q, schema, doc, bad, msg, temp),
+                k=2, repair_rounds=1, diverse_temperature=0.3,
+            )
+            confident = bool(rA.sql) and rA.vote_count >= 2 and not _sqlite_exec(db_path, rA.sql).is_empty
+            if confident:
+                sql, result, stage = rA.sql, rA, "A-cheap (agreed)"
+            else:
+                strong = _STRONG_MODEL or _CODER_MODEL
+                rB = generate_consensus_sql(
+                    generate_fn=_make_gen(True, strong),
+                    execute_fn=lambda s: _sqlite_exec(db_path, s),
+                    repair_fn=lambda bad, err, temp: _fix_sql(q, schema, doc, bad, err, temp, strong),
+                    empty_recovery_fn=lambda bad, msg, temp: _recover_empty(q, schema, doc, bad, msg, temp, strong),
+                    selector_fn=_make_selector(q, doc, db_path),
+                    k=max(3, consensus_k), repair_rounds=2,
+                )
+                sql, result, stage = (rB.sql or rA.sql), rB, "B-escalated (explore+strong)"
+            if not sql:
+                return {"id": iid, "ok": False, "error": "no valid candidate (adaptive)"}
+            steps.append({"step": 5, "timestamp": datetime.now(timezone.utc).isoformat(),
+                          "action": "adaptive_cascade", "detail": f"stage={stage}",
+                          "candidates": result.steps, "output": sql})
+            sql_generated_at = datetime.now(timezone.utc).isoformat()
+        elif consensus_k > 1 and db_path.exists():
             # ── Self-consistency path: generate K, execute, vote ──
             from aughor.agent.sql_consensus import generate_consensus_sql
             selector = _make_selector(q, doc, db_path) if select else None
@@ -939,7 +978,7 @@ def run_instance(inst: dict, spider_root: Path, out_dir: Path, temperature: floa
 def generate(spider_root: Path, out_dir: Path, limit: int | None,
              ids: set[str] | None, workers: int, temperature: float,
              consensus_k: int = 1, reflect: bool = False, select: bool = False,
-             engine: bool = False, explore: bool = False) -> None:
+             engine: bool = False, explore: bool = False, adaptive: bool = False) -> None:
     instances = load_local_instances(spider_root)
     if ids:
         instances = [r for r in instances if r["instance_id"] in ids]
@@ -949,6 +988,8 @@ def generate(spider_root: Path, out_dir: Path, limit: int | None,
     out_dir.mkdir(parents=True, exist_ok=True)
     run_ts = datetime.now(timezone.utc).isoformat()
     mode = f"consensus k={consensus_k}" if consensus_k > 1 else "single-shot"
+    if adaptive:
+        mode += " +ADAPTIVE"
     if explore:
         mode += " +EXPLORE"
     if engine:
@@ -964,7 +1005,7 @@ def generate(spider_root: Path, out_dir: Path, limit: int | None,
     fails: list[dict] = []
 
     with ThreadPoolExecutor(max_workers=workers) as ex:
-        futs = {ex.submit(run_instance, r, spider_root, out_dir, temperature, consensus_k, reflect, select, engine, explore): r["instance_id"]
+        futs = {ex.submit(run_instance, r, spider_root, out_dir, temperature, consensus_k, reflect, select, engine, explore, adaptive): r["instance_id"]
                 for r in instances}
         for fut in as_completed(futs):
             res = fut.result()
@@ -1097,6 +1138,11 @@ def main() -> None:
     ap.add_argument("--explore", action="store_true",
                     help="Probe-and-ground: issue diagnostic queries against the live DB to "
                          "discover join keys / encodings / grain before writing final SQL")
+    ap.add_argument("--adaptive", action="store_true",
+                    help="Adaptive effort cascade: cheap agreeing path for easy cases, escalate "
+                         "explore+strong-model only on disagreement")
+    ap.add_argument("--strong-model", type=str, default=None,
+                    help="Escalation model for --adaptive Stage B (e.g. gpt-oss:120b-cloud)")
     ap.add_argument("--workers", type=int, default=4,
                     help="Concurrent generation / eval workers")
     ap.add_argument("--temperature", type=float, default=0.0)
@@ -1124,10 +1170,14 @@ def main() -> None:
         global _CODER_MODEL
         _CODER_MODEL = args.coder_model
         print(f"Coder model override: {_CODER_MODEL}")
+    if args.strong_model:
+        global _STRONG_MODEL
+        _STRONG_MODEL = args.strong_model
+        print(f"Strong (escalation) model: {_STRONG_MODEL}")
 
     if not args.score_only:
         generate(args.spider_root, args.out, args.limit, ids, args.workers,
-                 args.temperature, args.consensus, args.reflect, args.select, args.engine, args.explore)
+                 args.temperature, args.consensus, args.reflect, args.select, args.engine, args.explore, args.adaptive)
 
     if args.score or args.score_only:
         score(args.spider_root, args.out, args.workers)
