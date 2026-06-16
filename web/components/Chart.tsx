@@ -312,6 +312,14 @@ export function Chart({
   // Data-label format: 3 significant figures SI (e.g. "2.14M", "891k" not "2.14438M")
   // Percentages always 2 decimal places
   const lblFmt = isPctFraction ? ".2%" : ".3s";
+  // Per-COLUMN format. yFmt/lblFmt above are derived from a single column (numCol),
+  // which is fine for single-measure charts but WRONG for multi-measure ones (combo,
+  // dual-encoding): there, numCol is often the rate column → yFmt=".2%" → and that
+  // percent gets applied to the count axes too ("total_carts" → "153888700.00%").
+  // Format each field by ITS OWN values instead: a true 0-1 share → percent, else SI.
+  const _maxAbs = (f: string) => Math.max(0, ...data.map(d => Math.abs(Number(d[f]))).filter(v => !isNaN(v)));
+  const fmtCol = (f: string) => (SHARE_COL.test(f) && _maxAbs(f) <= 1.0001) ? ".2%" : "~s";
+  const lblCol = (f: string) => (SHARE_COL.test(f) && _maxAbs(f) <= 1.0001) ? ".2%" : ".3s";
 
   // ── Build spec ─────────────────────────────────────────────────────────────
   const xTitle = catCol  ? cleanLabel(catCol)  : (dateCol ? cleanLabel(dateCol) : "");
@@ -1076,11 +1084,11 @@ export function Chart({
             encoding: {
               y: {
                 field: primary, type: "quantitative",
-                axis: { format: yFmt, grid: true, title: cleanLabel(primary) },
+                axis: { format: fmtCol(primary), grid: true, title: cleanLabel(primary) },
               },
               tooltip: [
                 { field: catCol, type: "nominal" },
-                { field: primary, type: "quantitative", format: lblFmt, title: cleanLabel(primary) },
+                { field: primary, type: "quantitative", format: lblCol(primary), title: cleanLabel(primary) },
               ],
             },
           },
@@ -1089,11 +1097,11 @@ export function Chart({
             encoding: {
               y: {
                 field: secondary, type: "quantitative",
-                axis: { format: yFmt, title: cleanLabel(secondary) },
+                axis: { format: fmtCol(secondary), title: cleanLabel(secondary) },
               },
               tooltip: [
                 { field: catCol, type: "nominal" },
-                { field: secondary, type: "quantitative", format: lblFmt, title: cleanLabel(secondary) },
+                { field: secondary, type: "quantitative", format: lblCol(secondary), title: cleanLabel(secondary) },
               ],
             },
           },
