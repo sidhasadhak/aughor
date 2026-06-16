@@ -194,6 +194,44 @@ function FigureCard({
   );
 }
 
+// ── Domain (prose) card ─────────────────────────────────────────────────────────
+// A finding that isn't a KPI or one of the (max 3) charts still belongs in the mix —
+// rendered as a compact text card so charts and non-chart cards interleave by impact.
+
+function DomainCard({
+  finding, domain, onInvestigate, actions,
+}: {
+  finding: string;
+  domain: string;
+  onInvestigate: (q: string) => void;
+  actions?: ReactNode;
+}) {
+  return (
+    <div style={{
+      display: "flex", flexDirection: "column", gap: 6,
+      padding: "9px 11px", borderRadius: "var(--r3)",
+      background: "var(--bg-2)", border: "1px solid var(--b1)", minWidth: 0,
+    }}>
+      <div style={{ fontSize: 9, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".05em", fontWeight: 600 }}>
+        {domain}
+      </div>
+      <button
+        onClick={() => onInvestigate(finding)}
+        title="Investigate this finding"
+        style={{
+          textAlign: "left", background: "transparent", border: "none", padding: 0,
+          fontSize: 11.5, lineHeight: 1.5, color: "var(--t1)", cursor: "pointer",
+        }}
+        onMouseEnter={e => { e.currentTarget.style.color = "var(--blue4)"; }}
+        onMouseLeave={e => { e.currentTarget.style.color = "var(--t1)"; }}
+      >
+        {finding}
+      </button>
+      {actions && <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: "auto" }}>{actions}</div>}
+    </div>
+  );
+}
+
 // ── Dashboard ───────────────────────────────────────────────────────────────────
 
 export function BriefingDashboard({
@@ -260,32 +298,53 @@ export function BriefingDashboard({
   // finding floats up whether it draws as a chart or a number.
   type DashCard =
     | { kind: "kpi"; id: string; impact: number; kpi: Kpi }
-    | { kind: "figure"; id: string; impact: number; figure: Figure };
+    | { kind: "figure"; id: string; impact: number; figure: Figure }
+    | { kind: "domain"; id: string; impact: number; finding: string; insight: ExplorationInsight; domain: string };
   const cards = useMemo<DashCard[]>(() => {
-    const out: DashCard[] = [];
+    // Classify each renderable finding, rank by impact, THEN assign card kinds so charts
+    // and non-chart (KPI / domain prose) cards interleave by importance — and the chart
+    // cap turns overflow into prose cards instead of dropping the finding.
+    type Item = { f: DashboardFinding; r: Extract<RunResult, { status: "ok" }> | null; impact: number; kpi: Kpi | null; chartable: boolean };
+    const items: Item[] = [];
     for (const f of runnable) {
       const r = results[f.insight.id];
-      if (!r || r.status !== "ok" || r.rows.length < 1) continue;
+      if (!r || r.status === "loading") continue;          // still running → wait
       const impact = (f.insight.novelty ?? 0) + (f.insight.confidence ?? 0);
+      if (r.status !== "ok" || r.rows.length < 1) {        // errored/empty → prose card, never lost
+        items.push({ f, r: null, impact, kpi: null, chartable: false });
+        continue;
+      }
       const kpi = asKpi(f, r.columns, r.rows);
-      if (kpi) { out.push({ kind: "kpi", id: kpi.id, impact, kpi }); continue; }
-      // Not a KPI — a chart only if the engine can actually draw it.
-      if (r.rows.length < 2) continue;
-      const inferred = inferChartType(r.columns, r.rows as unknown[][]);
-      if (!inferred || inferred.type === "table") continue;
-      out.push({
-        kind: "figure", id: f.insight.id, impact,
-        figure: {
-          id: f.insight.id, columns: r.columns, rows: r.rows,
-          finding: f.insight.finding, insight: f.insight, domain: f.domain,
-        },
-      });
+      let chartable = false;
+      if (!kpi && r.rows.length >= 2) {
+        const inf = inferChartType(r.columns, r.rows as unknown[][]);
+        chartable = !!inf && inf.type !== "table";
+      }
+      items.push({ f, r, impact, kpi, chartable });
     }
-    const ranked = out.sort((a, b) => b.impact - a.impact);   // rank by impact, mixed
-    // Cap CHARTS at 3 — a briefing should be glanceable, not a wall of charts. KPI
-    // cards are kept; figures are already impact-ranked, so the top 3 survive.
+    items.sort((a, b) => b.impact - a.impact);
+
+    const out: DashCard[] = [];
     let figs = 0;
-    return ranked.filter(c => c.kind !== "figure" || ++figs <= 3);
+    for (const it of items) {
+      if (it.kpi) { out.push({ kind: "kpi", id: it.kpi.id, impact: it.impact, kpi: it.kpi }); continue; }
+      if (it.chartable && it.r && figs < 3) {   // max 3 charts; the top-impact ones win
+        figs++;
+        out.push({
+          kind: "figure", id: it.f.insight.id, impact: it.impact,
+          figure: {
+            id: it.f.insight.id, columns: it.r.columns, rows: it.r.rows,
+            finding: it.f.insight.finding, insight: it.f.insight, domain: it.f.domain,
+          },
+        });
+      } else {                               // non-chartable or chart-overflow → prose card
+        out.push({
+          kind: "domain", id: it.f.insight.id, impact: it.impact,
+          finding: it.f.insight.finding, insight: it.f.insight, domain: it.f.domain,
+        });
+      }
+    }
+    return out;
   }, [runnable, results]);
 
   const anyLoading = runnable.some(f => results[f.insight.id]?.status === "loading");
@@ -313,15 +372,17 @@ export function BriefingDashboard({
           not segregated. alignItems:start lets short KPI cards sit beside tall charts. */}
       {cards.length > 0 && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 11, alignItems: "start" }}>
-          {cards.map(c => c.kind === "kpi"
-            ? <KpiTile key={c.id} kpi={c.kpi} onInvestigate={onInvestigate} />
-            : <FigureCard
-                key={c.id}
-                figure={c.figure}
-                onInvestigate={onInvestigate}
-                actions={renderActions?.(c.figure.insight, c.figure.domain)}
-              />
-          )}
+          {cards.map(c => {
+            if (c.kind === "kpi") return <KpiTile key={c.id} kpi={c.kpi} onInvestigate={onInvestigate} />;
+            if (c.kind === "figure") return (
+              <FigureCard key={c.id} figure={c.figure} onInvestigate={onInvestigate}
+                actions={renderActions?.(c.figure.insight, c.figure.domain)} />
+            );
+            return (
+              <DomainCard key={c.id} finding={c.finding} domain={c.domain} onInvestigate={onInvestigate}
+                actions={renderActions?.(c.insight, c.domain)} />
+            );
+          })}
         </div>
       )}
     </div>

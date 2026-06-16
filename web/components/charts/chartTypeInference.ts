@@ -225,17 +225,17 @@ export function inferChartType(
     return { type: "scatter", xCol: numericIdxs[0], yCols: [numericIdxs[1]] };
   }
 
-  // Category present
+  // Category present, no time axis. WHEN-TO-USE (pick the chart by data shape + intent,
+  // not "bar+line for everything"):
+  //   • ≥2 measures           → scoreDualAxis: COMBO only for genuinely different units
+  //                             (magnitude + 0-1 rate) or ≥25x scale; else GROUPED/BAR.
+  //   • 1 ADDITIVE measure, ≤6 categories  → PIE       (parts of a whole, few slices)
+  //   • 1 ADDITIVE measure, 7-24 categories → TREEMAP  (composition across many parts —
+  //                             a 20-slice pie is unreadable, a 20-bar long tail buries it)
+  //   • otherwise (rates, averages, ranking) → BAR     (comparison / ranking)
   if (catIdx !== undefined) {
     const uniqueCatCount = countUnique(rows, catIdx);
 
-    // Very few categories → pie (parts of whole)
-    if (uniqueCatCount <= 6 && numericIdxs.length === 1) {
-      return { type: "pie", xCol: catIdx, yCols: numericIdxs };
-    }
-
-    // Multiple numeric columns → score whether a dual-axis combo is actually
-    // warranted (different units / scales); otherwise a single honest bar.
     if (numericIdxs.length >= 2) {
       const d = scoreDualAxis(columns, rows, numericIdxs);
       return d.combo
@@ -243,7 +243,17 @@ export function inferChartType(
         : { type: "bar",   xCol: catIdx, yCols: [d.barIdx] };
     }
 
-    // Single numeric, any cardinality → bar
+    // Single measure: composition (pie/treemap) only for ADDITIVE measures — you don't
+    // pie a conversion rate. Rates/averages always read as a bar comparison.
+    const ADDITIVE = /(revenue|sales|amount|count|spend|cost|total|value|gmv|qty|quantity|orders|units|profit|volume)/i;
+    const additive = ADDITIVE.test(columns[numIdx]) && !SHARE_COL.test(columns[numIdx]);
+
+    if (additive && uniqueCatCount <= 6) {
+      return { type: "pie", xCol: catIdx, yCols: numericIdxs };
+    }
+    if (additive && uniqueCatCount > 6 && uniqueCatCount <= 24) {
+      return { type: "treemap", xCol: catIdx, yCols: numericIdxs };
+    }
     return { type: "bar", xCol: catIdx, yCols: numericIdxs };
   }
 

@@ -54,6 +54,7 @@ import {
 import { subscribeKernelEvents } from "@/lib/events";
 import { Spinner } from "@/components/ui/motion";
 import { BriefingDashboard } from "@/components/brief/BriefingDashboard";
+import { IndustryKpiStrip } from "@/components/brief/IndustryKpiStrip";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -1614,6 +1615,9 @@ export function BriefingPanel({
         </div>
       )}
 
+      {/* ── Industry key metrics ── the vertical's north-star KPIs, computed live */}
+      <IndustryKpiStrip connectionId={connectionId} />
+
       {/* ── Live dashboard ── charts + KPIs from the top findings' own queries (#3) */}
       <BriefingDashboard
         findings={[briefing.headline, ...briefing.signals].filter(Boolean) as { insight: ExplorationInsight; domain: string }[]}
@@ -1633,49 +1637,9 @@ export function BriefingPanel({
         {/* ── Main column ── */}
         <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" as const, gap: 24 }}>
 
-          {/* AI Synthesis rendered at the very top of the briefing (see above). */}
-
-          {/* Headline finding */}
-          {briefing.headline && (
-            <div>
-              <div className="aug-label" style={{ marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
-                <span>Headline Finding</span>
-                <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: "var(--r1)", background: "var(--bg-3)", border: "1px solid var(--b1)", color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".06em", fontWeight: 600 }}>
-                  Top signal
-                </span>
-              </div>
-              <HeadlineCard signal={briefing.headline} onInvestigate={onInvestigate}
-                actions={
-                  <FindingActions insight={briefing.headline.insight} domain={briefing.headline.domain}
-                    connectionId={connectionId} canvasId={canvasId} triggers={triggers}
-                    onEvidence={(ins) => openEvidence(ins, briefing.headline!.domain)} onTriggersHint={showTriggersHint}
-                    onDismissed={() => load()} />
-                } />
-            </div>
-          )}
-
-          {/* Supporting signals */}
-          {briefing.signals.length > 0 && (
-            <div>
-              <div className="aug-label" style={{ marginBottom: 10 }}>
-                Supporting Signals
-                <span style={{ marginLeft: 6, fontWeight: 400, color: "var(--t4)" }}>
-                  — cross-domain findings by novelty
-                </span>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12 }}>
-                {briefing.signals.map(s => (
-                  <SignalCard key={s.insight.id} signal={s} onInvestigate={onInvestigate}
-                    actions={
-                      <FindingActions insight={s.insight} domain={s.domain}
-                        connectionId={connectionId} canvasId={canvasId} triggers={triggers}
-                        onEvidence={(ins) => openEvidence(ins, s.domain)} onTriggersHint={showTriggersHint}
-                        onDismissed={() => load()} />
-                    } />
-                ))}
-              </div>
-            </div>
-          )}
+          {/* AI Synthesis + Headline + Signals all render above now: the Dashboard grid
+              mixes charts, KPI cards and domain (finding) prose cards in one impact-ranked
+              section, so the separate Headline/Supporting-Signals lists are gone. */}
         </div>
 
         {/* ── Sidebar ── */}
