@@ -86,3 +86,31 @@ def is_structural_duplicate(sql: str, prior_sqls, dialect: str = "duckdb") -> bo
         if query_signature(p, dialect) == sig:
             return True
     return False
+
+
+def is_redundant_insight(sql: str, prior_sqls, dialect: str = "duckdb") -> bool:
+    """Coarser than `is_structural_duplicate`: True when `sql` asks the SAME analytical
+    question as a prior one — same group-keys AND same measures AND at least one shared
+    table — even if a secondary join/column makes the full signature differ (e.g. a
+    "conversion by traffic_source" query that also tacks a refund column + the refunds
+    table onto the same grain). That mismatch is exactly what let two DIFFERENT findings
+    render as the same briefing chart. Used for CROSS-domain dedup.
+
+    Guards against over-matching: requires non-empty group_keys (only grouped analyses)
+    and a shared table — so "orders by status" and "customers by status" (same grain +
+    COUNT but disjoint tables) are NOT treated as redundant. Fail-safe: unparseable →
+    not redundant."""
+    sig = query_signature(sql, dialect)
+    if sig is None:
+        return False
+    tables, gkeys, measures = sig
+    if not gkeys:
+        return False
+    for p in prior_sqls or ():
+        psig = query_signature(p, dialect)
+        if psig is None:
+            continue
+        ptables, pg, pm = psig
+        if gkeys == pg and measures == pm and (tables & ptables):
+            return True
+    return False

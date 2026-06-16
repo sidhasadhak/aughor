@@ -2838,6 +2838,32 @@ class SchemaExplorer:
                 # grain or measure has a different signature and is kept. After a few in a
                 # row the domain is clearly out of fresh structural questions — stop it
                 # rather than burn the rest of the budget regenerating variants.
+                # Cross-domain redundancy gate: the structural-dup gate below only sees
+                # THIS domain's findings, so two domains can each surface "conversion by
+                # traffic_source" (same grain + measures, overlapping tables) → two
+                # near-identical briefing charts. Check against ALL insights so far and
+                # drop the later one. Coarser than the per-domain gate (tolerates a tacked-
+                # on secondary column/table) but guarded by shared-table + grouped-only.
+                try:
+                    from aughor.sql.shape import is_redundant_insight
+                    _all_prior_sqls = [i.get("sql", "") for i in self._state.get("insights", [])]
+                    if is_redundant_insight(sql, _all_prior_sqls, getattr(self._conn, "dialect", "duckdb")):
+                        from aughor.stats import stats as _s; _s.inc("explorer.redundant_skips")
+                        logger.info(
+                            "[explorer:%s] Phase 8: %s/%s — dropping cross-domain redundant finding "
+                            "(same grain+measures as an existing insight)",
+                            self.connection_id, domain, nq.angle,
+                        )
+                        used += 1
+                        budgets[domain] = used
+                        self._state["domain_budgets"] = budgets
+                        continue
+                except Exception as _exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_exc, "cross-domain redundancy check is best-effort; on failure keep "
+                             "the finding (no worse than the per-domain gate alone)",
+                             counter="explorer.redundancy_failed")
+
                 try:
                     from aughor.sql.shape import is_structural_duplicate
                     _prior_sqls = [i.get("sql", "") for i in domain_insights]
