@@ -28,10 +28,12 @@ from typing import Callable, Optional
 
 
 # Callback contracts (injected by the caller so this module is backend-agnostic):
-#   GenerateFn(temperature: float) -> sql_string
+#   GenerateFn(index: int, temperature: float) -> sql_string
+#       index lets the caller vary the GENERATION STRATEGY per candidate
+#       (direct / decompose / plan) for genuine diversity, not just temperature.
 #   ExecuteFn(sql: str)            -> ExecResult
 #   RepairFn(bad_sql, error, temp) -> sql_string
-GenerateFn = Callable[[float], str]
+GenerateFn = Callable[[int, float], str]
 RepairFn = Callable[[str, str, float], str]
 
 
@@ -122,7 +124,7 @@ def generate_consensus_sql(
 
     for i in range(k):
         temp = base_temperature if i == 0 else diverse_temperature
-        sql = (generate_fn(temp) or "").strip()
+        sql = (generate_fn(i, temp) or "").strip()
         if not sql:
             continue
 

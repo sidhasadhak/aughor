@@ -102,7 +102,7 @@ def generate_sql_chat(question: str, connection_id: str, schema: str, temperatur
     return answer.sql.strip()
 
 
-def generate_sql_full_pipeline(question: str, connection_id: str, db, temperature: float = 0.0) -> str:
+def generate_sql_full_pipeline(question: str, connection_id: str, db, temperature: float = 0.0, return_answer: bool = False):
     """Generate SQL through the FULL production chat pipeline (intelligence-injected).
 
     Faithfully mirrors the SQL-generation core of `_stream_chat`
@@ -296,7 +296,7 @@ def generate_sql_full_pipeline(question: str, connection_id: str, db, temperatur
     )
     final_sql = (answer.sql or "").strip()
     if not final_sql:
-        return final_sql
+        return (final_sql, answer) if return_answer else final_sql
 
     # ── Semantic column alignment (pre-execution) ────────────────────────────
     _semantic_fix_hint = ""
@@ -362,6 +362,8 @@ def generate_sql_full_pipeline(question: str, connection_id: str, db, temperatur
         except Exception:
             pass
 
+    if return_answer:
+        return final_sql.strip(), answer
     return final_sql.strip()
 
 
