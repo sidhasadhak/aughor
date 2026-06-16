@@ -111,6 +111,47 @@ export function classifyColumns(
 }
 
 /**
+ * Score whether a multi-measure, single-category chart should be a dual-axis COMBO
+ * (bar + line on independent y-axes) or a plain single-measure BAR.
+ *
+ * A dual axis only EARNS its complexity when the two measures can't honestly share
+ * one axis — they're different UNITS (a magnitude + a 0–1 rate) or wildly different
+ * SCALES (>=25x). Two same-unit, similar-scale counts on independent axes are
+ * actively MISLEADING (they look equal when they aren't), so those collapse to a
+ * single bar of the primary magnitude. Returns the chosen bar (+ line) column idx.
+ */
+export function scoreDualAxis(
+  columns: string[],
+  rows: unknown[][],
+  numericIdxs: number[],
+): { combo: boolean; barIdx: number; lineIdx?: number; reason: string } {
+  const nums = (i: number) => rows.map((r) => Number((r as unknown[])[i])).filter((v) => !isNaN(v));
+  const maxAbs = (i: number) => { const v = nums(i); return v.length ? Math.max(...v.map(Math.abs)) : 0; };
+  const isShare = (i: number) => {
+    const v = nums(i);
+    return v.length > 0 && SHARE_COL.test(columns[i]) && v.every((n) => Math.abs(n) <= 1.0001);
+  };
+  const measures = numericIdxs.filter((i) => !SKIP_ID.test(columns[i]));   // drop id/key columns
+  const rates     = measures.filter(isShare).sort((a, b) => maxAbs(b) - maxAbs(a));
+  const absolutes = measures.filter((i) => !isShare(i)).sort((a, b) => maxAbs(b) - maxAbs(a));
+  const primary   = absolutes[0] ?? rates[0] ?? measures[0] ?? numericIdxs[0];
+
+  if (measures.length < 2) return { combo: false, barIdx: primary, reason: "single measure" };
+
+  // (1) magnitude + rate → genuinely different units → dual axis clarifies
+  if (absolutes.length >= 1 && rates.length >= 1) {
+    return { combo: true, barIdx: absolutes[0], lineIdx: rates[0], reason: "magnitude + rate" };
+  }
+  // (2) two absolutes with a large scale gap → the smaller would vanish on a shared axis
+  if (absolutes.length >= 2) {
+    const ratio = maxAbs(absolutes[1]) > 0 ? maxAbs(absolutes[0]) / maxAbs(absolutes[1]) : Infinity;
+    if (ratio >= 25) return { combo: true, barIdx: absolutes[0], lineIdx: absolutes[1], reason: `scale gap ${Math.round(ratio)}x` };
+  }
+  // Otherwise same-unit / similar-scale → one honest bar of the primary magnitude
+  return { combo: false, barIdx: primary, reason: "same-scale measures" };
+}
+
+/**
  * Infer the best chart type for the given columns + rows.
  * Returns null when the data is not chartable (< 2 rows, no numeric cols, etc.)
  */
@@ -176,9 +217,13 @@ export function inferChartType(
       return { type: "pie", xCol: catIdx, yCols: numericIdxs };
     }
 
-    // Multiple numeric columns → combo chart (bar + line, dual axes)
+    // Multiple numeric columns → score whether a dual-axis combo is actually
+    // warranted (different units / scales); otherwise a single honest bar.
     if (numericIdxs.length >= 2) {
-      return { type: "combo", xCol: catIdx, yCols: numericIdxs };
+      const d = scoreDualAxis(columns, rows, numericIdxs);
+      return d.combo
+        ? { type: "combo", xCol: catIdx, yCols: [d.barIdx, d.lineIdx!] }
+        : { type: "bar",   xCol: catIdx, yCols: [d.barIdx] };
     }
 
     // Single numeric, any cardinality → bar

@@ -33,6 +33,7 @@ import {
   isNumeric,
   firstNonNull,
 } from "@/components/charts/columnRoles";
+import { scoreDualAxis } from "@/components/charts/chartTypeInference";
 
 /** User chart styling applied as a generic post-pass over the built Vega-Lite spec — lets the
  *  Query Builder Customize tab override colors / number format / legend / axis titles without
@@ -1072,52 +1073,66 @@ export function Chart({
       agg.set(k, (agg.get(k) ?? 0) + Number(d[numCol]));
     });
 
-    // ── COMBO CHART — multiple metrics with different mark types ───────────
+    // ── COMBO vs BAR — score whether a dual axis is actually warranted ──────
+    // Don't force every multi-numeric chart into a misleading dual-axis combo.
+    // scoreDualAxis picks combo ONLY when the two measures are different units
+    // (magnitude + 0-1 rate) or scales (>=25x); otherwise one honest bar of the
+    // primary magnitude (other measures stay on the chart-type toggle).
     if (numericCols.length >= 2 && catCols.length === 1) {
-      const primary   = numericCols[0];  // bars
-      const secondary = numericCols[1];  // line
+      const numericIdxs = numericCols.map(n => columns.indexOf(n)).filter(i => i >= 0);
+      const decision = scoreDualAxis(columns, rows, numericIdxs);
+      const primary = columns[decision.barIdx] ?? numericCols[0];
       vegaData = data;
-      spec = {
-        layer: [
-          {
-            mark: { type: "bar", color: "#818cf8", opacity: 0.8, cornerRadiusEnd: 2 },
-            encoding: {
-              y: {
-                field: primary, type: "quantitative",
-                axis: { format: fmtCol(primary), grid: true, title: cleanLabel(primary) },
+      if (decision.combo && decision.lineIdx != null) {
+        const secondary = columns[decision.lineIdx];
+        spec = {
+          layer: [
+            {
+              mark: { type: "bar", color: "#818cf8", opacity: 0.8, cornerRadiusEnd: 2 },
+              encoding: {
+                y: { field: primary, type: "quantitative", axis: { format: fmtCol(primary), grid: true, title: cleanLabel(primary) } },
+                tooltip: [
+                  { field: catCol, type: "nominal" },
+                  { field: primary, type: "quantitative", format: lblCol(primary), title: cleanLabel(primary) },
+                ],
               },
-              tooltip: [
-                { field: catCol, type: "nominal" },
-                { field: primary, type: "quantitative", format: lblCol(primary), title: cleanLabel(primary) },
-              ],
             },
-          },
-          {
-            mark: { type: "line", color: "#E64848", strokeWidth: 2, point: { size: 30, filled: true, opacity: 0.9 } },
-            encoding: {
-              y: {
-                field: secondary, type: "quantitative",
-                axis: { format: fmtCol(secondary), title: cleanLabel(secondary) },
+            {
+              mark: { type: "line", color: "#E64848", strokeWidth: 2, point: { size: 30, filled: true, opacity: 0.9 } },
+              encoding: {
+                y: { field: secondary, type: "quantitative", axis: { format: fmtCol(secondary), title: cleanLabel(secondary) } },
+                tooltip: [
+                  { field: catCol, type: "nominal" },
+                  { field: secondary, type: "quantitative", format: lblCol(secondary), title: cleanLabel(secondary) },
+                ],
               },
-              tooltip: [
-                { field: catCol, type: "nominal" },
-                { field: secondary, type: "quantitative", format: lblCol(secondary), title: cleanLabel(secondary) },
-              ],
             },
+          ],
+          encoding: {
+            x: { field: catCol, type: "ordinal", sort: { field: primary, order: "descending" },
+                 axis: { labelLimit: 160, labelAngle: 0, labelOverlap: true, title: cleanLabel(catCol) } },
           },
-        ],
-        encoding: {
-          x: {
-            field: catCol, type: "ordinal",
-            sort: { field: primary, order: "descending" },
-            axis: { labelLimit: 160, labelAngle: 0, labelOverlap: true, title: cleanLabel(catCol) },
+          resolve: { scale: { y: "independent" } },
+          config: { axisX: { labelAngle: 0, labelOverlap: "parity" } },
+        };
+        defaultH = 350;
+      } else {
+        // Same-unit / similar-scale measures → a single honest bar of the primary
+        // magnitude (independent dual axes here make unequal series look equal).
+        spec = {
+          mark: { type: "bar", color: "#818cf8", opacity: 0.85, cornerRadiusEnd: 2 },
+          encoding: {
+            x: { field: catCol, type: "ordinal", sort: { field: primary, order: "descending" },
+                 axis: { labelLimit: 160, labelAngle: 0, labelOverlap: true, title: cleanLabel(catCol) } },
+            y: { field: primary, type: "quantitative", axis: { format: fmtCol(primary), grid: true, title: cleanLabel(primary) } },
+            tooltip: [
+              { field: catCol, type: "nominal" },
+              { field: primary, type: "quantitative", format: lblCol(primary), title: cleanLabel(primary) },
+            ],
           },
-        },
-        resolve: { scale: { y: "independent" } },
-        config: { axisX: { labelAngle: 0, labelOverlap: "parity" } },
-      };
-      const groupCount = new Set(data.map(d => String(d[catCol]))).size;
-      defaultH = 350;
+        };
+        defaultH = 280;
+      }
     } else if (!spec && _isChangeMetric) {
       // ── CHANGE METRIC BAR ──────────────────────────────────────────────────
       // Sort by absolute magnitude so biggest movers (positive OR negative) appear first.
