@@ -21,6 +21,7 @@ Most AI data tools are query wrappers — you ask, they translate. Aughor explor
 | Explores data on its own to learn your business | ❌ | ❌ | ✅ |
 | Answers business questions with evidence + citations | ❌ | ❌ | ✅ |
 | Builds a living ontology from real data | ❌ | ❌ | ✅ |
+| Adapts metrics to your industry automatically | ❌ | ❌ | ✅ |
 | Deterministic guards against wrong numbers | ❌ | ❌ | ✅ |
 | Discovers *when matters* (adaptive time window) | ❌ | ❌ | ✅ |
 | Runs fully local | ⚠️ Some | ❌ | ✅ |
@@ -32,6 +33,9 @@ The moment you connect, Aughor starts exploring — no prompts — through struc
 
 ### 🧠 Auto-built business ontology
 A queryable ontology built from your data, not docs you write: **entities** (mapped to tables, with grain + domain), **relationships** (inferred cardinality + join paths), **metrics** (formulas with governance: owner, SLA, quality tests, lineage), **lifecycle states** (terminal vs active, false-positive-guarded), and deterministic **actions**. Rendered as an interactive canvas that refreshes automatically.
+
+### 🏭 Industry-aware intelligence
+Aughor detects what **kind of business** the data represents and adapts what it measures. A `BusinessProfile` — industry, business model, and 6–8 **north-star metrics** grounded to your real columns — is inferred per connection, then resolved against a **per-industry metric knowledge base** (retail, airline, SaaS, logistics, food-delivery, manufacturing: ~50 formula + grain + anti-pattern recipes). So an airline gets load-factor / on-time-performance / fleet-utilization and a DTC retailer gets AOV / contribution-margin / repeat-rate — not one generic lens. Each metric carries **build-time audited SQL** (a scalar value, a trend/breakdown chart, and the answer to each key question), validated through the same fan-out/grain/range guards and recipe-grounded-regenerated if a draft is wrong — so the Briefing computes the right number, reproducibly, every run.
 
 ### 🕰 Adaptive Temporal Scope — the USP
 *We don't ask you when — we discover when matters.* Aughor anchors the analytical window to the data itself, in four tiers:
@@ -53,14 +57,16 @@ For "why did revenue drop 8%?" Aughor runs a LangGraph investigative loop: **dec
 The layer that separates Aughor from a plausible-sounding demo. Deterministic, engine-driven guards keep wrong numbers out of the intelligence:
 - **Numeral grounding** — every magnitude-bearing figure in a finding is verified against the actual result cells (catches the "2.49M" for a 2.49 cell, the `$3T` product-of-aggregates).
 - **Measure-additivity (grain) awareness** — detects from the data whether a measure is *per-unit* (a unit price → `SUM(price × quantity)`) or *per-line* (an already-totalled margin → `SUM(margin)`), so a SUM aggregates at the right grain. Catches the ~50% revenue under-count *and* the margin double-count that come from treating the two the same.
-- **Fan-out / symmetric-aggregate guard** (incl. chasm `COUNT(*)` and integer-division-of-aggregates lints), **dataset isolation** (no cross-dataset hallucinated joins), **timestamp typing** (a date-named integer can't pose as a date), **dead-reference memory** (stops re-proposing hallucinated columns), shared **repair-diagnosis branches**.
+- **Fan-out / symmetric-aggregate guard** — chasm `COUNT(*)` / `AVG` / **`SUM`** drops, integer-division-of-aggregates, and the **grain-mismatch-CTE** case the chasm guards miss (two pre-aggregated CTEs joined on only the coarser one's grain — the bug behind a fabricated −149% margin). Plus **dataset isolation** (no cross-dataset hallucinated joins), **timestamp typing** (a date-named integer can't pose as a date), **dead-reference memory** (stops re-proposing hallucinated columns), shared **repair-diagnosis branches**.
+- **Declared-range degenerate gate** — a finding's metric is matched to its profile-declared range, so a bounded conversion at 1.41 (or pinned at 100% across every segment) is dropped while an *unbounded* ROAS at 2.3 is kept; the page never shows an impossible rate as a confident result.
+- **Three-tier de-duplication** — structural (same grain + measures), token-semantic (same claim, different SQL), and **embedding/paraphrase** (cosine similarity over the finding text) so the same insight doesn't surface three times under three domains.
 - **Metric unification** — one canonical, governance-approved formula per metric, schema-filtered so a metric authored for one connection can never leak its (column-mismatched) formula into another's prompt.
 - **Narration-inversion guard** — drops/caveats a claim that over-generalises a per-group value into a universal one ("3 orders × 1 item" narrated as "all orders have 3 items").
 - **Angle-feasibility + intent-preservation** — won't ask a time-based question of a dateless table, and drops/flags a repair that silently changed the question's meaning.
 - **Graceful by contract** — bad inputs, dead dependencies, and crashes surface an error or recover; never a 500, a hang, or a silent-wrong success (locked by a failure-path + fault-injection + crash-recovery test suite).
 
 ### 📡 Intelligence surfaces + actionability
-One corpus at three altitudes — **Briefing → Hub → Domains** — plus the **Evidence** layer. Findings are actionable: **Monitor**, **Promote to Org**, **Share** (Slack/webhook/Jira), and scheduled **Brief delivery**. From the Activity log, a successful **Run fix** is *saved* as a finding (through the same guards), and **Fix all** repairs the errored set visible under your current filter — never starting a fresh crawl.
+One corpus at three altitudes — **Briefing → Hub → Domains** — plus the **Evidence** layer. The Briefing leads with an AI synthesis, a live **industry KPI strip**, and **top-3 key-metric explainer charts** (each metric drawn as the trend or breakdown that explains it), with the new findings as impact-ranked text cards. Findings are actionable: **Monitor**, **Promote to Org**, **Share** (Slack/webhook/Jira), and scheduled **Brief delivery**. From the Activity log, a successful **Run fix** is *saved* as a finding (through the same guards), and **Fix all** repairs the errored set visible under your current filter — never starting a fresh crawl.
 
 ### 🔌 Connectors & federation
 DuckDB · PostgreSQL · BigQuery · Snowflake · MySQL · local upload (CSV/Parquet/Excel) · S3 · Google Sheets · Stripe / HubSpot / Salesforce · Confluence / Notion. Connections are **pooled** and credentials **Fernet-encrypted at rest**; a virtual **federation** layer joins across sources.

@@ -3352,4 +3352,41 @@ SQLite support surfaced as a real capability gap while standing up the Spider 2.
 
 ---
 
-*Last updated: 2026-06-15 · 133 active features (#134 first-class SQLite connector — read-only sqlite3 reader, two-tier schema, registry-wired, PR #66; #133 value-domain join guard — overlap probe + active repair on all 3 SQL paths, PR #65; #132 embedding entity dedup — Borrow 5, detection + apply-merge + board UI; #131 hierarchical tree-reduce — Borrow 4, briefing + ada_synthesize; #130 Query Builder semantic-step UI — Borrow 3 complete; #127–#129 semantic operators; #126 model-cascade core was built then removed — kept as a tombstone). **Adaptive-inference list worked through** (B5b logprob-confidence blocked); next up = external NL2SQL benchmarking (Spider 2.0 — SQLite reader now in place) + promoting the join guard to prevention (`joinable_with` edges). See `ROADMAP.md`.*
+## 135. Industry-aware intelligence — BusinessProfile + per-industry metric KB ✅ Shipped
+
+### What
+The platform now **detects a dataset's industry/vertical** and adapts which metrics and questions matter. An airline gets load-factor / on-time-performance / fleet-utilization; a DTC beauty retailer gets AOV / contribution-margin / repeat-rate / inventory-turnover — instead of one generic Commerce/Finance/Marketing lens. Each metric carries a build-time **audited** SQL so the Briefing computes it correctly and reproducibly.
+
+### Why
+The explorer was ecommerce-biased (hardcoded angles, generic KB) with no industry detection, so it asked the wrong questions of a non-ecommerce dataset and computed rates at the wrong grain (a "conversion rate" of 1.36 — impossible). What matters is the *right* industry assessment, the *right* metrics, and *correct* SQL — not clamping messy data.
+
+### How
+- **`aughor/profile/`** — `BusinessProfile` (industry + business-model + 6–8 north-star metrics + key questions), LLM-inferred from schema + glossary and **grounded to real columns**; persisted per connection (`data/business_profile_{conn}.json`). Inferred on every `/ontology/rebuild` and exposed at `GET/POST /business-profile[/rebuild]`.
+- **Per-industry metric KB** — `data/kb/industry/{retail,airline,saas,logistics,food_delivery,manufacturing}.json` (~50 recipes): each metric's **formula, grain, anti-patterns, sane range**. `aughor/profile/metric_kb.py` resolves curated-preferred + a single batched LLM fallback. The recipe is injected into Phase-8 as authoritative "COMPUTATION RECIPES" so generated SQL gets the grain right (cart-to-order conversion fixed 1.36 → ~18%).
+- **Audited metric SQL at build time** — each metric gets a scalar `value_sql` (the KPI strip's current value), a series `chart_sql` (a trend or top-N breakdown explainer), and each key-question gets a `key_question_sql`; all routed through the same authorities (`aughor/profile/validate.py`: dry-run + the fan-out/grain guards + join value-domain + a range/shape check) and, for metrics with a recipe, **regenerated recipe-grounded** when a draft fails — so a wrong number is dropped or fixed, not shown.
+- **Wired into Phase-8** — the profile derives the per-domain coverage angles and a **pinned key-questions pass** asks the curated questions deterministically every run (each through the full guard chain) so the high-value findings are reproducible, not left to LLM chance.
+
+**Key files.** `aughor/profile/{models,infer,store,metric_kb,validate}.py`, `data/kb/industry/*.json`, `aughor/explorer/agent.py` (Phase-8 steering + pinned pass), `aughor/routers/profile.py`, `web/components/brief/IndustryKpiStrip.tsx`.
+
+---
+
+## 136. Briefing trust hardening — SQL-trust guards + multi-tier dedup + metric-explainer charts ✅ Shipped
+
+### What
+A pass of correctness + de-duplication + UX work that makes the Briefing show **right, non-redundant** numbers: new fan-out/range guards close the SQL classes that reached the page as confident artifacts, three dedup tiers collapse repeats, and the dashboard's charts now **explain the industry's key metrics** while findings read as text.
+
+### Why
+Live review of real briefings surfaced confident-but-wrong cards — a $48T ROAS (fan-out), a 100% / 141% conversion (broken denominator / declared-range violation), a −149% gross margin (CTE grain-mismatch fan-out), plus the *same* finding repeated under several domains. Each is a number a CEO would act on; each is a query bug, not the data.
+
+### How
+- **SUM-over-chasm fan-out DROP** (`aughor/sql/fanout.py::sum_over_chasm_fanout`) — the SUM analogue of the existing COUNT/AVG-over-chasm drops; closes the case where `detect_fanout` flagged a chasm but `defan()` couldn't rewrite it, so the over-counting SUM proceeded ($48T ROAS).
+- **Grain-mismatch-join fan-out DROP** (`cte_grain_mismatch_fanout`) — the chasm guards exclude CTE sources by design, so two CTEs joined on only the *coarser* one's grain (a strict subset of the finer's) with a non-distinct SUM/AVG that **accumulates** the coarse measure slipped past. High-precision: requires the coarse measure to be unambiguous and exempts a per-row *divisor* (`SUM(rev/total)` cancels; `SUM(rev-cogs)` doesn't). Caught the −149% margin.
+- **Declared-range degenerate gate** (`agent._is_degenerate_result` + `profile.validate.profile_metric_ranges`) — extends the all-NULL/all-zero drop to a bounded rate **out of its profile-declared range** (conversion 1.41, or pinned at 100% across every segment), while an *unbounded* metric (ROAS) is exempt (2.3 is fine). Uses what the profile *knows*, not a text guess.
+- **Three dedup tiers** — structural (`is_redundant_insight`, same grain+measures), **semantic/token** (`is_semantically_redundant`, same claim different SQL — Jaccard + shared anchor), and **embedding/paraphrase** (`aughor/semantic/finding_dedup.py`, cosine ≥ 0.85 via the existing `nomic-embed-text` infra; calibrated so paraphrase dupes 0.87–0.93 drop and distinct-but-related ≤0.78 survive; fail-open).
+- **Briefing UX** — AI synthesis pinned top → live **Industry KPI strip** → **top-3 key-metric explainer charts** (`chart_sql` trends/breakdowns, the right Vega-Lite mark per shape) → impact-ranked **finding text cards**; "when-to-use" chart selection (`scoreDualAxis`, combo only for dual-unit); the redundant citation list and the Domain-Coverage / Org-Intelligence sections removed.
+
+**Key files.** `aughor/sql/fanout.py`, `aughor/sql/shape.py`, `aughor/semantic/finding_dedup.py`, `aughor/explorer/agent.py` (degenerate gate, dedup gates, pinned pass), `aughor/profile/validate.py`, `web/components/brief/{BriefingDashboard,IndustryKpiStrip}.tsx`, `web/components/BriefingPanel.tsx`, `web/components/charts/chartTypeInference.ts`. Tests across `tests/unit/test_explorer_grain_lint.py`, `test_degenerate_finding.py`, `test_query_shape.py`, `test_finding_dedup.py`, `test_profile_value_sql_audit.py`.
+
+---
+
+*Last updated: 2026-06-17 · 135 active features (#136 briefing trust hardening — SUM-over-chasm + grain-mismatch-CTE fan-out drops, profile-declared-range degenerate gate, 3-tier dedup incl. embedding paraphrase, metric-explainer charts; #135 industry-aware intelligence — BusinessProfile keystone + per-industry metric KB + build-time audited value_sql/chart_sql/key_question_sql + pinned key-questions; #134 first-class SQLite connector — PR #66; #133 value-domain join guard — PR #65; #132 embedding entity dedup — Borrow 5; #131 hierarchical tree-reduce — Borrow 4; #130 Query Builder semantic-step UI; #127–#129 semantic operators; #126 model-cascade tombstone). **Adaptive-inference list worked through** (B5b logprob-confidence blocked); next up = external NL2SQL benchmarking (Spider 2.0 — SQLite reader in place) + promoting the join guard to prevention (`joinable_with` edges). See `ROADMAP.md`.*
