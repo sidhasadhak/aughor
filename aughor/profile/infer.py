@@ -126,6 +126,20 @@ def infer_business_profile(connection_id: str,
     except Exception as exc:
         logger.warning("[profile:%s] value_sql audit failed (non-fatal): %s", connection_id, exc)
 
+    # Build-time SQL for each key_question — generated ONCE here, with full schema +
+    # recipe grounding and the composite-question rules, then audited. The explorer's
+    # pinned pass runs these deterministically every run, so the hardest questions (the
+    # SKU margin-leak: ">90% margin AND >10% returns") are answered REPRODUCIBLY instead
+    # of depending on the hot loop's one-shot generation, which fails to bind them.
+    try:
+        from aughor.db.connection import open_connection_for as _open
+        _generate_key_question_sql(profile, recipes, schema, _open(connection_id))
+        _n = sum(1 for s in (profile.key_question_sql or []) if s.strip())
+        logger.info("[profile:%s] generated %d/%d key-question SQLs", connection_id, _n,
+                    len(profile.key_questions or []))
+    except Exception as exc:
+        logger.warning("[profile:%s] key-question SQL generation failed (non-fatal): %s", connection_id, exc)
+
     store.save(
         connection_id, profile,
         schema_name=schema_name,
@@ -241,6 +255,93 @@ def _regenerate_value_sql(profile, recipes: list, schema: str, conn, only: set) 
             else:
                 logger.info("[profile] regenerated chart_sql for %r still failed audit: %s", m.name, reason)
     return recovered
+
+
+def _generate_key_question_sql(profile, recipes: list, schema: str, conn) -> None:
+    """Generate + audit build-time SQL for each of the profile's key_questions, in
+    place into `profile.key_question_sql` (aligned by index; "" where none survives the
+    audit). One batched LLM call with full schema + recipe + composite-question grounding,
+    then a one-shot batched repair for the ones that fail to bind. Best-effort: any error
+    leaves the list as-is. The build affords this care once so every run is deterministic."""
+    from aughor.profile.validate import audit_finding_sql
+    from aughor.tools.schema import _parse_schema_tables
+    from aughor.llm.provider import get_provider
+    from pydantic import BaseModel, Field
+
+    questions = [q for q in (getattr(profile, "key_questions", None) or []) if q.strip()]
+    if not questions:
+        profile.key_question_sql = []
+        return
+    try:
+        table_cols = _parse_schema_tables(schema)
+    except Exception:
+        table_cols = {}
+
+    _rlines = ""
+    for r in (recipes or [])[:8]:
+        _aps = "; ".join((r.get("anti_patterns") or [])[:2])
+        _rlines += f"  • {r.get('metric')}: formula={r.get('formula')}; grain={r.get('grain')}; AVOID={_aps}\n"
+
+    system = (
+        "You are a precise analytics engineer. For each numbered business question, write ONE "
+        "runnable DuckDB SELECT that ANSWERS it using only real tables/columns from the schema. "
+        "Rules: for a COMPOSITE question (two conditions on different metrics, e.g. high margin "
+        "AND high return rate), compute EACH metric in its OWN CTE keyed by the entity, then JOIN "
+        "the CTEs on the entity key and filter in the outer query — NEVER aggregate across a "
+        "multi-table join directly (fan-out). Every rate = SUM(numerator)/NULLIF(SUM(denominator),0) "
+        "at the correct grain (0..1, never >1). Follow the computation recipes. If a question truly "
+        "cannot be answered from the schema, return an empty string for its sql."
+    )
+
+    class _QSql(BaseModel):
+        index: int = Field(description="The question number, exactly as given")
+        sql: str = Field(description="A runnable SELECT that answers it, or empty if impossible")
+
+    class _Out(BaseModel):
+        items: list[_QSql]
+
+    def _ask(qs_with_idx: list[tuple[int, str]], note: str = "") -> dict[int, str]:
+        spec = "\n".join(f"  [{i}] {q}" for i, q in qs_with_idx)
+        user = f"SCHEMA:\n{schema}\n\nCOMPUTATION RECIPES:\n{_rlines}\n{note}\nQUESTIONS:\n{spec}"
+        llm = get_provider("coder")
+        out: _Out = llm.complete(system=system, user=user, response_model=_Out, temperature=0.0)
+        return {it.index: (it.sql or "").strip() for it in out.items}
+
+    result: list[str] = ["" for _ in questions]
+    try:
+        gen = _ask(list(enumerate(questions)))
+    except Exception as exc:
+        logger.warning("[profile] key-question SQL batch failed: %s", exc)
+        profile.key_question_sql = result
+        return
+
+    failed: list[tuple[int, str]] = []
+    for i, q in enumerate(questions):
+        cand = gen.get(i, "")
+        if not cand:
+            continue
+        ok, reason = audit_finding_sql(cand, table_cols, conn)
+        if ok:
+            result[i] = cand
+        else:
+            failed.append((i, q))
+            logger.info("[profile] key-question[%d] SQL failed audit (%s); will retry", i, reason)
+
+    # One-shot batched repair for the hard ones (the composite SKU-leak usually lands here).
+    if failed:
+        try:
+            regen = _ask(failed, note=(
+                "These questions' first SQL drafts failed to bind or over-counted. Rewrite them "
+                "MORE carefully — pre-aggregate each metric in its own CTE keyed by the entity, "
+                "use only columns that exist, and avoid fan-out.\n"))
+            for i, q in failed:
+                cand = regen.get(i, "")
+                if cand and audit_finding_sql(cand, table_cols, conn)[0]:
+                    result[i] = cand
+        except Exception as exc:
+            logger.info("[profile] key-question SQL repair batch failed: %s", exc)
+
+    profile.key_question_sql = result
 
 
 def get_or_infer(connection_id: str,

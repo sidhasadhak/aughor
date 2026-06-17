@@ -260,6 +260,59 @@ def audit_chart_sql(chart_sql: str, table_cols: dict, conn) -> tuple[bool, str]:
         return (True, "")
 
 
+def audit_finding_sql(sql: str, table_cols: dict, conn) -> tuple[bool, str]:
+    """Audit a key-question SQL — a filtered/composite query that RETURNS ROWS (e.g.
+    "the SKUs with >90% margin AND >10% returns"). Same structural authorities as the
+    others (dry-run + grain/fan-out guards + join value-domain guard); the result check
+    is "answers the question": ≥1 row with at least one non-null cell. (A 0-row result
+    is a valid 'none qualify' answer but makes a vacuous finding, so it's rejected.)
+    Fail-open on internal error."""
+    s = (sql or "").strip()
+    if not s:
+        return (False, "empty")
+    try:
+        dialect = getattr(conn, "dialect", "duckdb")
+        try:
+            ok, why = conn.dry_run(s)
+            if not ok:
+                return (False, f"does not bind: {why}")
+        except Exception:
+            pass
+        from aughor.sql.fanout import (
+            integer_division_risk, count_star_entity_fanout, count_star_chasm_fanout,
+            avg_over_chasm_fanout, sum_over_chasm_fanout,
+        )
+        grain = (integer_division_risk(s)
+                 or count_star_entity_fanout(s, table_cols)
+                 or count_star_chasm_fanout(s, table_cols, dialect=dialect)
+                 or avg_over_chasm_fanout(s, table_cols, dialect=dialect)
+                 or sum_over_chasm_fanout(s, table_cols, dialect=dialect))
+        if grain:
+            return (False, f"grain bug: {grain}")
+        try:
+            from aughor.sql.join_guard import check_join_value_domains
+            warns = check_join_value_domains(conn, s)
+            if warns:
+                return (False, f"fabricated join: {warns[0].to_prompt_text()}")
+        except Exception:
+            pass
+        try:
+            res = conn.execute("profile-finding-sql", s)
+            if getattr(res, "error", None):
+                return (False, f"errors: {res.error}")
+            rows = getattr(res, "rows", []) or []
+            if not rows:
+                return (False, "no rows (question has no answer)")
+            if not any(c not in (None, "", "NULL") for r in rows for c in r):
+                return (False, "all-NULL result")
+        except Exception:
+            pass
+        return (True, "")
+    except Exception as exc:
+        logger.debug("finding_sql audit errored (fail-open): %s", exc)
+        return (True, "")
+
+
 def audit_profile(profile, conn, schema: str) -> dict[str, str]:
     """Audit every metric's value_sql AND chart_sql IN PLACE: blank either if it
     fails and return {metric_name: reason} for the value_sql failures (so the caller

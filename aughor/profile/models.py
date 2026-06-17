@@ -58,5 +58,14 @@ class BusinessProfile(BaseModel):
     key_questions: List[str] = Field(
         description="6-8 canonical questions an analyst in THIS vertical asks, answerable from this data"
     )
+    key_question_sql: List[str] = Field(
+        default_factory=list,
+        description=(
+            "Build-time audited SQL for each key_question (aligned by index; empty string "
+            "where none could be produced). The explorer runs these deterministically every "
+            "run so the high-value questions are answered reproducibly, not by LLM chance. "
+            "Populated by the profiler, not the inference LLM."
+        ),
+    )
     confidence: float = Field(description="0-1 confidence in the industry classification")
     evidence: str = Field(description="Which schema signals (tables/columns) led to this inference")

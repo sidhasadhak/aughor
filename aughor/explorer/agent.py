@@ -1721,9 +1721,14 @@ class SchemaExplorer:
         from aughor.sql.shape import is_redundant_insight, is_semantically_redundant
         from aughor.sql.join_guard import check_join_value_domains
 
-        questions = [q for q in (getattr(profile, "key_questions", None) or []) if q.strip()][:6]
+        _all_q = [q for q in (getattr(profile, "key_questions", None) or []) if q.strip()]
+        questions = _all_q[:6]
         if not questions:
             return 0
+        # Build-time audited SQL per key_question (aligned by index) — deterministic and
+        # reproducible. Prefer it over live one-shot generation, which can't bind the hard
+        # composites (the SKU margin-leak). Falls back to live gen where none was produced.
+        _kq_sql = list(getattr(profile, "key_question_sql", None) or [])
 
         # Composite key-questions (the SKU margin-leak: ">90% margin AND >10% returns")
         # need the same SQL-correctness grounding the per-domain loop gives its generator,
@@ -1768,7 +1773,11 @@ class SchemaExplorer:
             if self._stopped:
                 break
             try:
-                sql = await _loop.run_in_executor(None, lambda: sql_writer.write(q, extra_context=_pin_context))
+                _cached = _kq_sql[qi].strip() if qi < len(_kq_sql) and _kq_sql[qi] else ""
+                if _cached:
+                    sql = _cached                                  # build-time audited; deterministic
+                else:
+                    sql = await _loop.run_in_executor(None, lambda: sql_writer.write(q, extra_context=_pin_context))
                 if not sql or not sql.strip():
                     continue
 
