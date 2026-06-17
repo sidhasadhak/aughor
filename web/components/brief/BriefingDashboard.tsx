@@ -40,6 +40,26 @@ const MAX_CHARTS = 3;
 // Row cap per chart query. Plenty for a trend or a top-N breakdown.
 const ROW_LIMIT = 200;
 
+/** True when NO numeric column carries a non-zero, non-null value across the series —
+ *  a flat all-zero / all-null chart (e.g. CAC that computes to 0 every month). Mirrors
+ *  the backend chart_sql audit so a degenerate metric never draws ("no zero on cards"). */
+function isDegenerateSeries(rows: string[][]): boolean {
+  const width = rows[0]?.length ?? 0;
+  for (let c = 0; c < width; c++) {
+    let isNumericCol = true;
+    let hasLive = false;
+    for (const row of rows) {
+      const cell = row[c];
+      if (cell == null || cell === "" || cell === "NULL") continue;
+      const n = Number(cell);
+      if (Number.isNaN(n)) { isNumericCol = false; break; }   // a label/date column, not the measure
+      if (n !== 0) hasLive = true;
+    }
+    if (isNumericCol && hasLive) return false;                // found a real measure → not degenerate
+  }
+  return true;
+}
+
 interface MetricFigure {
   id: string;        // metric name (stable)
   name: string;      // chart title
@@ -141,6 +161,7 @@ export function BriefingDashboard({
             const r = await runDirectQuery(connectionId, m.chart_sql!, ROW_LIMIT, { useCache: true });
             if (!alive) return;
             if (r.error || !r.rows || r.rows.length < 2) continue;
+            if (isDegenerateSeries(r.rows)) continue;            // flat all-zero/all-null → no card ("no zero on cards")
             const inf = inferChartType(r.columns, r.rows as unknown[][]);
             if (!inf || inf.type === "table") continue;          // not chartable → skip
             figs.push({ id: m.name, name: m.name, columns: r.columns, rows: r.rows });

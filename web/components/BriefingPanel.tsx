@@ -1439,8 +1439,6 @@ export function BriefingPanel({
   }
 
   const hasPatterns    = (briefing?.patterns?.length ?? 0) > 0;
-  const hasOrgInsights = (briefing?.orgInsights?.length ?? 0) > 0;
-  const hasSidebar     = hasPatterns || hasOrgInsights || ((briefing?.domainCount ?? 0) > 0);
   const hasNarrative   = !!narrative?.narrative;
   const isEmpty        = !briefing || briefing.totalInsights === 0;
 
@@ -1631,48 +1629,19 @@ export function BriefingPanel({
         )}
       />
 
-      {/* ── Domain coverage · patterns · org intelligence ── a full-width row below the
-          mixed dashboard (the prior two-column main was emptied by the layout change, so
-          these were orphaned in a right rail). */}
-      {hasSidebar && (
+      {/* ── Top patterns ── a full-width row below the dashboard. (Domain Coverage and
+          Org Intelligence were removed by request — the dashboard's metric charts +
+          finding cards carry the briefing.) */}
+      {hasPatterns && (
         <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap" }}>
-
-          {/* Domain coverage — findings per domain (where intelligence concentrates) */}
           <div style={{ flex: "1 1 280px", minWidth: 240 }}>
-            <div className="aug-label" style={{ marginBottom: 10, display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-              <span>Domain Coverage</span>
-              <span style={{ fontSize: 10, fontWeight: 400, color: "var(--t4)", fontFamily: "var(--font-mono)" }}>
-                {briefing.domainCount} · {briefing.totalInsights} findings
-              </span>
-            </div>
-            <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: "14px 16px" }}>
-              <DomainCoverageChart domains={briefing.domains} />
+            <div className="aug-label" style={{ marginBottom: 10 }}>Top Patterns</div>
+            <div style={{ display: "flex", flexDirection: "column" as const, gap: 6 }}>
+              {briefing.patterns.map(p => (
+                <PatternRow key={p.id} pattern={p} onInvestigate={onInvestigate} />
+              ))}
             </div>
           </div>
-
-          {/* Top patterns */}
-          {hasPatterns && (
-            <div style={{ flex: "1 1 280px", minWidth: 240 }}>
-              <div className="aug-label" style={{ marginBottom: 10 }}>Top Patterns</div>
-              <div style={{ display: "flex", flexDirection: "column" as const, gap: 6 }}>
-                {briefing.patterns.map(p => (
-                  <PatternRow key={p.id} pattern={p} onInvestigate={onInvestigate} />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Org intel */}
-          {hasOrgInsights && (
-            <div style={{ flex: "1 1 280px", minWidth: 240 }}>
-              <div className="aug-label" style={{ marginBottom: 10 }}>Org Intelligence</div>
-              <div style={{ display: "flex", flexDirection: "column" as const, gap: 6 }}>
-                {briefing.orgInsights.map(o => (
-                  <OrgSignalRow key={o.id} insight={o} />
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       )}
     </>
