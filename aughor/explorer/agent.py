@@ -1845,6 +1845,17 @@ class SchemaExplorer:
                 _prior_findings = [i.get("finding", "") for i in self._state.get("insights", [])]
                 if is_semantically_redundant(interp.finding, _prior_findings):
                     continue
+                # Embedding (paraphrase) dedup vs all prior insights.
+                _pvec = None
+                try:
+                    from aughor.semantic.finding_dedup import embed_text, is_paraphrase_duplicate
+                    _pvec = embed_text(interp.finding)
+                    if is_paraphrase_duplicate(_pvec, getattr(self, "_insight_vecs", [])):
+                        logger.info("[explorer:%s] Phase 8 (pinned): skipping Q%d — paraphrase of an existing insight",
+                                    self.connection_id, qi)
+                        continue
+                except Exception:
+                    _pvec = None
 
                 insight = {
                     "id": f"pinned__{qi}",
@@ -1865,6 +1876,8 @@ class SchemaExplorer:
                     "pinned": True,
                 }
                 self._state.setdefault("insights", []).append(insight)
+                if hasattr(self, "_insight_vecs"):
+                    self._insight_vecs.append(_pvec)
                 self._emit_insight(insight, sql, journal_extra={"pinned": True})
                 stored += 1
             except Exception as _exc:
@@ -2106,6 +2119,15 @@ class SchemaExplorer:
             from aughor.kernel.errors import tolerate
             tolerate(_exc, "business-profile steering is best-effort; on failure fall back to "
                      "the generic DOMAIN_ANGLES", counter="explorer.profile_steer_failed")
+
+        # Embedding vectors for paraphrase dedup, aligned to self._state["insights"].
+        # Seed from any insights already present (e.g. Phase-7 cross-table) so Phase-8
+        # dedups against them too. Fail-open: no embed model → empty list, dedup is a no-op.
+        try:
+            from aughor.semantic.finding_dedup import embed_text as _embf
+            self._insight_vecs = [_embf(i.get("finding", "")) for i in self._state.get("insights", [])]
+        except Exception:
+            self._insight_vecs = []
 
         # ── Pinned key-questions (deterministic must-ask) ───────────────────────
         # Ask the profile's curated key_questions FIRST, with the same guards, so the
@@ -3188,6 +3210,29 @@ class SchemaExplorer:
                     tolerate(_exc, "semantic dedup is best-effort; on failure keep the finding",
                              counter="explorer.semantic_dedup_failed")
 
+                # Embedding (paraphrase) dedup — catches the same claim worded differently
+                # with different numbers (cosine ~0.87), which the token check (Jaccard ~0.23)
+                # misses. Embed once here; reuse the vector at store time. Fail-open.
+                _fvec = None
+                try:
+                    from aughor.semantic.finding_dedup import embed_text, is_paraphrase_duplicate
+                    _fvec = embed_text(interp.finding)
+                    if is_paraphrase_duplicate(_fvec, getattr(self, "_insight_vecs", [])):
+                        from aughor.stats import stats as _s; _s.inc("explorer.embed_dup_skips")
+                        logger.info(
+                            "[explorer:%s] Phase 8: %s/%s — dropping paraphrase-redundant finding "
+                            "(embedding match to an existing insight)",
+                            self.connection_id, domain, nq.angle,
+                        )
+                        used += 1
+                        budgets[domain] = used
+                        self._state["domain_budgets"] = budgets
+                        continue
+                except Exception as _exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_exc, "embedding dedup is best-effort; on failure keep the finding",
+                             counter="explorer.embed_dedup_failed")
+
                 try:
                     from aughor.sql.shape import is_structural_duplicate
                     _prior_sqls = [i.get("sql", "") for i in domain_insights]
@@ -3236,6 +3281,8 @@ class SchemaExplorer:
                     "promotion_confidence": 0.0,
                 }
                 self._state.setdefault("insights", []).append(insight)
+                if hasattr(self, "_insight_vecs"):
+                    self._insight_vecs.append(_fvec)   # keep paraphrase-dedup vectors aligned
                 domain_insights.append(insight)
                 self._emit_insight(insight, sql, journal_extra={"domain": domain})
 
