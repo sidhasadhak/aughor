@@ -1703,6 +1703,32 @@ class SchemaExplorer:
         if not questions:
             return 0
 
+        # Composite key-questions (the SKU margin-leak: ">90% margin AND >10% returns")
+        # need the same SQL-correctness grounding the per-domain loop gives its generator,
+        # not just the industry block — otherwise the multi-condition join fails to bind
+        # and the highest-value question silently drops. Add the join-safety rules
+        # (pre-aggregate each metric in its OWN CTE keyed by the entity, then join) so the
+        # generator builds a bindable, fan-out-free composite.
+        _jv = self._state.get("join_verifications", []) or []
+        _jrules = []
+        for _j in _jv[:12]:
+            _ft, _tt, _fc = _j.get("from_table", ""), _j.get("to_table", ""), _j.get("from_col", "")
+            _card = _j.get("cardinality", "")
+            if _ft and _tt and ("many" in _card.lower() or _card in ("N:1", "1:N", "N:M")):
+                _jrules.append(f"  {_ft} ↔ {_tt} via {_fc} ({_card}): COUNT(*) after this JOIN counts {_ft} rows.")
+        _pin_rules = (
+            "\nSQL RULES FOR THIS QUESTION (follow exactly so it binds and the numbers are right):\n"
+            "- Use ONLY tables/columns shown in the schema; never invent a column.\n"
+            "- For a COMPOSITE question (two conditions on different metrics, e.g. high margin AND "
+            "high return rate), compute EACH metric in its OWN CTE keyed by the entity (one CTE for "
+            "per-SKU margin, one for per-SKU return rate), then JOIN the CTEs on the entity key and "
+            "filter in the outer query — NEVER aggregate across a multi-table join directly (fan-out).\n"
+            "- Every rate = SUM(numerator)/NULLIF(SUM(denominator),0) at the correct grain (0..1, never >1).\n"
+            "- Follow the COMPUTATION RECIPES above for any named metric.\n"
+            + ("JOIN CARDINALITIES (verified):\n" + "\n".join(_jrules) + "\n" if _jrules else "")
+        )
+        _pin_context = profile_block + _pin_rules
+
         class _PinInterp(_BM):
             finding: str
             novelty: int
@@ -1718,14 +1744,15 @@ class SchemaExplorer:
             if self._stopped:
                 break
             try:
-                sql = await _loop.run_in_executor(None, lambda: sql_writer.write(q, extra_context=profile_block))
+                sql = await _loop.run_in_executor(None, lambda: sql_writer.write(q, extra_context=_pin_context))
                 if not sql or not sql.strip():
                     continue
 
-                # Bind-check (repair once) — never run an unbindable draft.
+                # Bind-check (repair up to 3×) — never run an unbindable draft. Composite
+                # pinned questions are the hardest to bind, so give the repair loop headroom.
                 ok, berr = self._conn.dry_run(sql)
                 if not ok:
-                    fix = await _loop.run_in_executor(None, lambda: sql_writer.fix(sql, berr, max_retries=2))
+                    fix = await _loop.run_in_executor(None, lambda: sql_writer.fix(sql, berr, max_retries=3))
                     if not (getattr(fix, "ok", False) and getattr(fix, "sql", "")):
                         continue
                     sql = fix.sql
