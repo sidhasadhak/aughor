@@ -3389,4 +3389,29 @@ Live review of real briefings surfaced confident-but-wrong cards — a $48T ROAS
 
 ---
 
-*Last updated: 2026-06-17 · 135 active features (#136 briefing trust hardening — SUM-over-chasm + grain-mismatch-CTE fan-out drops, profile-declared-range degenerate gate, 3-tier dedup incl. embedding paraphrase, metric-explainer charts; #135 industry-aware intelligence — BusinessProfile keystone + per-industry metric KB + build-time audited value_sql/chart_sql/key_question_sql + pinned key-questions; #134 first-class SQLite connector — PR #66; #133 value-domain join guard — PR #65; #132 embedding entity dedup — Borrow 5; #131 hierarchical tree-reduce — Borrow 4; #130 Query Builder semantic-step UI; #127–#129 semantic operators; #126 model-cascade tombstone). **Adaptive-inference list worked through** (B5b logprob-confidence blocked); next up = external NL2SQL benchmarking (Spider 2.0 — SQLite reader in place) + promoting the join guard to prevention (`joinable_with` edges). See `ROADMAP.md`.*
+## 137. Design Language v2 + conclusion-first Briefing + section polish ✅ Shipped
+
+### What
+A token-first visual re-skin of the whole app (deeper surfaces, real elevation, rounded panels, theme-aware charts) plus three UX upgrades adopted from an external "Aughor v2" design mockup: a **conclusion-first Briefing** (Verdict Hero), a **nav information-architecture** change, and **real-count summary rows** across the list screens.
+
+### Why
+The mockup proposed a bolder design language and a conclusion-first hierarchy. Auditing it against the codebase showed its *features* (Investigations, hypotheses, Action Hub triggers, Monitors, Playbook, Semantic Layer, Catalog, Query Builder) **already existed and were richer** than the hardcoded comp — so the real value was presentation + information hierarchy, not new capabilities. We adopted the design language and the genuinely-better UX patterns, and deliberately skipped the mockup's fake controls (a period segmented control that filtered nothing; a fabricated "$1.2M Tracked ARR" stat — recommendations are free-text, there is no structured impact field).
+
+### How
+- **Design language (3 tiers, additive `web/aughor-v2/`):** Tier 1 = a primitive **token override layer** (`theme/tokens-v2.css` + `elevation-motion.css`) imported after `styles/tokens.css`, so every Tailwind/shadcn bridge and `.aug-*` class inherits the new look via `var()` with no markup changes. Tier 2 = `components-v2.css` re-skins `.aug-*` (gradient primary, lifted cards, pill tags, focus rings) — loaded in `layout.tsx` *after* `globals.css` so it wins the cascade over the inline base rules. Tier 3 = the existing Vega engine themed centrally in `VegaChart.tsx`: `vegaV2Config()` merged at the one spec chokepoint (token-driven axes/grid/palette/rounded bars), a `remapLegacyColors()` deep-walk swapping the legacy hardcoded mark hexes → `--chart-*`/`--bg-2` tokens (no per-builder edits), and a `MutationObserver` on `data-theme` re-embedding charts on dark/light flip; PNG export bg reads `--bg-2`.
+- **Conclusion-first Briefing** (`BriefingPanel.tsx`): a new `VerdictHero` leads with the synthesized verdict (`narrative.headline_theme`), the top finding as lead, proof-stat tiles (domains / findings / lead-confidence), and the primary action (Investigate + the existing `FindingActions` menu). Falls back to the deterministic top finding when no AI narrative exists. A `SupportingSignals` 3-up confidence-meter row renders the strongest `briefing.signals` beneath it; the full prose + interactive citations move below under "Full synthesis" (`NarrativeCard` gains `hideHeadline`).
+- **Nav IA** (`page.tsx`): default landing changed to the Briefing; **Investigations** promoted into the Intelligence nav, pointing at the existing Recents/investigations history.
+- **Section summary rows + QB badge:** new shared `components/ui/MiniStat.tsx`; **real-count** `MiniStatRow`s on Inbox (Open / Implemented / Verified / Total — from outcomes), Investigations (Total / Investigations / Completed), and Monitors (Total / Active / Unacked — guarded to only show when monitors exist). Query Builder gains a `valid`/`error` SQL badge in the Run toolbar (the exec-time chip already existed at the result meta line).
+
+### Key files
+- `web/aughor-v2/` *(new — token/chart package + handoff docs)*, `web/app/globals.css`, `web/app/layout.tsx`
+- `web/components/VegaChart.tsx`, `web/components/Chart.tsx`
+- `web/components/BriefingPanel.tsx`
+- `web/app/page.tsx`, `web/components/ui/MiniStat.tsx` *(new)*, `web/components/RecommendationInbox.tsx`, `web/components/MonitorsPanel.tsx`, `web/components/QueryBuilder.tsx`
+
+### Note on the Tailwind v4 pipeline
+Two non-obvious wiring facts surfaced: a CSS `@import` with a trailing **same-line comment** is silently dropped by the Tailwind v4 (`@tailwindcss/postcss`) bundler — keep import lines bare; and Lightning CSS strips the unprefixed `backdrop-filter` (keeps only `-webkit-`), so the glass topbar degrades to its background tint in Chrome.
+
+---
+
+*Last updated: 2026-06-17 · 136 active features (#137 design language v2 — token override + `.aug-*` re-skin + central Vega theming/reactivity, conclusion-first Briefing Verdict Hero + supporting signals, Briefing-as-home nav IA, real-count MiniStat rows + QB validity badge; #136 briefing trust hardening — SUM-over-chasm + grain-mismatch-CTE fan-out drops, profile-declared-range degenerate gate, 3-tier dedup incl. embedding paraphrase, metric-explainer charts; #135 industry-aware intelligence — BusinessProfile keystone + per-industry metric KB + build-time audited value_sql/chart_sql/key_question_sql + pinned key-questions; #134 first-class SQLite connector — PR #66; #133 value-domain join guard — PR #65; #132 embedding entity dedup — Borrow 5; #131 hierarchical tree-reduce — Borrow 4; #130 Query Builder semantic-step UI; #127–#129 semantic operators; #126 model-cascade tombstone). **Adaptive-inference list worked through** (B5b logprob-confidence blocked); next up = external NL2SQL benchmarking (Spider 2.0 — SQLite reader in place) + promoting the join guard to prevention (`joinable_with` edges). See `ROADMAP.md`.*
