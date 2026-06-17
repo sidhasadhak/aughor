@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from aughor.profile.validate import audit_value_sql, audit_profile, _range_kind
+from aughor.profile.validate import audit_value_sql, audit_chart_sql, audit_profile, _range_kind
 
 # A chasm: attribution and invoices are each on the many-side of `order`.
 TC = {
@@ -102,6 +102,48 @@ class TestRangeBoundary:
         # no card should read $0 / 0.0 for an open-ended metric
         ok, reason = audit_value_sql("SELECT 0 AS r", TC, FakeConn(0.0), "USD")
         assert not ok
+
+
+class TestChartSqlAudit:
+    TREND = ("SELECT date_trunc('week', order_date) AS wk, AVG(total_amount) aov "
+             "FROM orders GROUP BY 1 ORDER BY 1")
+    TC = {"orders": ["order_id", "order_date", "total_amount"]}
+
+    def _conn(self, rows):
+        class C:
+            dialect = "duckdb"
+            def dry_run(self, _s):
+                return (True, "")
+            def execute(self, _h, _s):
+                r = _Res(0)
+                r.rows = rows
+                return r
+        return C()
+
+    def test_valid_series_kept(self):
+        ok, _ = audit_chart_sql(self.TREND, self.TC, self._conn([["2025-01-01", "42.1"], ["2025-01-08", "45.3"]]))
+        assert ok
+
+    def test_single_row_not_a_series(self):
+        ok, reason = audit_chart_sql(self.TREND, self.TC, self._conn([["2025-01-01", "42.1"]]))
+        assert not ok and "series" in reason
+
+    def test_all_zero_measure_degenerate(self):
+        ok, reason = audit_chart_sql(self.TREND, self.TC, self._conn([["a", "0"], ["b", "0"]]))
+        assert not ok and "degenerate" in reason
+
+    def test_all_null_measure_degenerate(self):
+        ok, reason = audit_chart_sql(self.TREND, self.TC, self._conn([["a", "NULL"], ["b", "NULL"]]))
+        assert not ok and "degenerate" in reason
+
+    def test_chasm_sum_series_dropped(self):
+        # a trend that fans out over a chasm is still wrong as a series
+        sql = ("SELECT date_trunc('week', a.ts) wk, SUM(a.weight * i.rev) v "
+               "FROM attribution a JOIN invoices i ON a.order_id = i.order_id GROUP BY 1")
+        tc = {"attribution": ["attribution_id", "order_id", "weight", "ts"],
+              "invoices": ["invoice_id", "order_id", "rev"]}
+        ok, reason = audit_chart_sql(sql, tc, self._conn([["a", "1"], ["b", "2"]]))
+        assert not ok and "grain bug" in reason
 
 
 class TestAuditProfile:

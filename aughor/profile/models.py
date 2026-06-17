@@ -32,6 +32,19 @@ class NorthStarMetric(BaseModel):
             "must come out in range. Leave empty only if the data genuinely cannot compute it."
         ),
     )
+    chart_sql: str = Field(
+        default="",
+        description=(
+            "A SELECT-only SQL query that EXPLAINS this metric as a small SERIES for a "
+            "chart — NOT a scalar. Pick the shape that explains THIS metric: a time TREND "
+            "(bucket the natural date to day/week with date_trunc, compute the metric per "
+            "bucket, ORDER BY the bucket) for a flow/rate metric like AOV or gross margin; "
+            "or a TOP-N BREAKDOWN (the metric by a category, ORDER BY the metric DESC LIMIT "
+            "5-10) for a composition metric like 'top return reasons' or 'revenue by "
+            "channel'. Return 2 columns (label/date + numeric) and ≥2 rows, same correct "
+            "grain as value_sql. Leave empty if the data cannot support a series."
+        ),
+    )
 
 
 class BusinessProfile(BaseModel):

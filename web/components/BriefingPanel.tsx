@@ -1618,7 +1618,7 @@ export function BriefingPanel({
       {/* ── Industry key metrics ── the vertical's north-star KPIs, computed live */}
       <IndustryKpiStrip connectionId={connectionId} />
 
-      {/* ── Live dashboard ── charts + KPIs from the top findings' own queries (#3) */}
+      {/* ── Live dashboard ── top-3 key-metric explainer charts + finding text cards (#3) */}
       <BriefingDashboard
         findings={[briefing.headline, ...briefing.signals].filter(Boolean) as { insight: ExplorationInsight; domain: string }[]}
         connectionId={connectionId}

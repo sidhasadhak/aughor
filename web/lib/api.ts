@@ -49,6 +49,7 @@ export interface NorthStarMetric {
   why_it_matters: string;
   unit_or_range: string;
   value_sql: string;
+  chart_sql?: string;
 }
 export interface BusinessProfileResponse {
   available: boolean;

@@ -37,7 +37,13 @@ _SYSTEM = (
     "query that returns the metric's CURRENT value as a SINGLE scalar (one row, one numeric "
     "column with a readable alias), using only the real columns. Use correct grain — "
     "SUM(numerator)/NULLIF(SUM(denominator),0) for a rate, never AVG of a per-row ratio; "
-    "a bounded rate must come out in its stated range. Do NOT leave value_sql empty."
+    "a bounded rate must come out in its stated range. Do NOT leave value_sql empty.\n"
+    "6. For EVERY north-star metric ALSO write chart_sql: a runnable SELECT-only query that "
+    "EXPLAINS the metric as a small SERIES (NOT a scalar) — a time TREND (date_trunc the "
+    "natural date to day/week, metric per bucket, ORDER BY bucket) for a flow/rate metric "
+    "(AOV, gross margin), or a TOP-N BREAKDOWN (metric by category, ORDER BY metric DESC "
+    "LIMIT 5-10) for a composition metric (top return reasons, revenue by channel). Two "
+    "columns, ≥2 rows, same correct grain as value_sql."
 )
 
 
@@ -105,12 +111,17 @@ def infer_business_profile(connection_id: str,
         from aughor.db.connection import open_connection_for
         _conn = open_connection_for(connection_id)
         failed = audit_profile(profile, _conn, schema)
+        # Regenerate any metric (with a recipe) that lost EITHER its value_sql or its
+        # chart_sql in the audit — recipe-grounded SQL is the SQL-accuracy authority.
+        need_regen = {m.name for m in (profile.north_star_metrics or [])
+                      if not (m.value_sql or "").strip() or not (m.chart_sql or "").strip()}
         if failed:
             logger.info("[profile:%s] value_sql audit dropped %d metric(s): %s",
                         connection_id, len(failed), failed)
-            repaired = _regenerate_value_sql(profile, recipes, schema, _conn, set(failed))
+        if need_regen:
+            repaired = _regenerate_value_sql(profile, recipes, schema, _conn, need_regen)
             if repaired:
-                logger.info("[profile:%s] recipe-grounded regeneration recovered %d metric(s): %s",
+                logger.info("[profile:%s] recipe-grounded regeneration recovered SQL for %d metric(s): %s",
                             connection_id, len(repaired), sorted(repaired))
     except Exception as exc:
         logger.warning("[profile:%s] value_sql audit failed (non-fatal): %s", connection_id, exc)
@@ -136,17 +147,17 @@ def _norm_name(s: str) -> str:
 
 
 def _regenerate_value_sql(profile, recipes: list, schema: str, conn, only: set) -> set:
-    """For each blanked metric in `only` that has a curated/LLM recipe, generate a
-    fresh value_sql FROM the recipe's canonical formula+grain+anti_patterns (not the
-    LLM's free-form first draft), then RE-AUDIT it through the same guards. Sets the
-    metric's value_sql in place and returns the set of metric names actually
-    recovered. Best-effort: one batched LLM call; failure leaves the metrics blank.
+    """For each blanked metric in `only` that has a curated/LLM recipe, generate fresh
+    value_sql AND chart_sql FROM the recipe's canonical formula+grain+anti_patterns
+    (not the LLM's free-form first draft), then RE-AUDIT each through the same guards.
+    Sets whichever passes in place and returns the set of metric names where at least
+    one was recovered. Best-effort: one batched LLM call; failure leaves blanks.
 
-    This is the root-cause fix for the conversion=100% class of bug: the recipe
-    says the denominator is COUNT(DISTINCT cart_id) over ALL carts, so the
-    regenerated SQL can't fall into the `WHERE abandoned = 0` denominator trap the
-    free-form draft did."""
-    from aughor.profile.validate import audit_value_sql
+    Root-cause fix for the conversion=100% class of bug: the recipe says the
+    denominator is COUNT(DISTINCT cart_id) over ALL carts, so the regenerated SQL
+    can't fall into the `WHERE abandoned = 0` denominator trap the draft did — and the
+    chart_sql explainer inherits the same correct grain."""
+    from aughor.profile.validate import audit_value_sql, audit_chart_sql
     from aughor.tools.schema import _parse_schema_tables
 
     by_name = {_norm_name(r.get("metric", "")): r for r in (recipes or []) if r.get("formula")}
@@ -164,6 +175,7 @@ def _regenerate_value_sql(profile, recipes: list, schema: str, conn, only: set) 
     class _MetricSql(BaseModel):
         name: str = Field(description="The metric name, copied EXACTLY from the request")
         value_sql: str = Field(description="A runnable SELECT-only scalar query (one row, one numeric column)")
+        chart_sql: str = Field(description="A runnable SELECT-only SERIES query (a trend or top-N breakdown; 2 cols, ≥2 rows)")
 
     class _Out(BaseModel):
         metrics: list[_MetricSql]
@@ -178,17 +190,22 @@ def _regenerate_value_sql(profile, recipes: list, schema: str, conn, only: set) 
         for m, r in targets
     )
     system = (
-        "You are a precise analytics engineer. For each metric, write value_sql: a "
-        "runnable DuckDB SELECT-only query returning the metric's CURRENT value as a "
-        "SINGLE scalar (one row, one numeric column with a readable alias). You MUST "
-        "follow the metric's canonical FORMULA and GRAIN exactly and AVOID the listed "
-        "anti-patterns. Use only real tables/columns from the schema. A bounded rate "
-        "(0..1 or 0..100%) MUST be computed so its denominator is the FULL population "
-        "(e.g. ALL carts, not just converted ones) — never filter the denominator down "
-        "to the success condition. Pre-aggregate each side of a multi-table join to the "
-        "shared key in its own CTE before joining (avoid fan-out over-counting)."
+        "You are a precise analytics engineer. For each metric write TWO runnable DuckDB "
+        "SELECT-only queries:\n"
+        "• value_sql — the metric's CURRENT value as a SINGLE scalar (one row, one numeric "
+        "column with a readable alias).\n"
+        "• chart_sql — the metric as a small SERIES that EXPLAINS it: a time TREND "
+        "(date_trunc the natural date to day/week, metric per bucket, ORDER BY bucket) for a "
+        "flow/rate metric, or a TOP-N BREAKDOWN (metric by category, ORDER BY metric DESC "
+        "LIMIT 5-10) for a composition metric. Two columns, ≥2 rows.\n"
+        "Both MUST follow the metric's canonical FORMULA and GRAIN exactly and AVOID the "
+        "listed anti-patterns, using only real tables/columns from the schema. A bounded "
+        "rate (0..1 or 0..100%) MUST keep its denominator the FULL population (e.g. ALL "
+        "carts, not just converted ones) — never filter the denominator to the success "
+        "condition. Pre-aggregate each side of a multi-table join to the shared key in its "
+        "own CTE before joining (avoid fan-out over-counting)."
     )
-    user = f"SCHEMA:\n{schema}\n\nWrite value_sql for EACH metric below:\n\n{spec}"
+    user = f"SCHEMA:\n{schema}\n\nWrite value_sql and chart_sql for EACH metric below:\n\n{spec}"
 
     from aughor.llm.provider import get_provider
     llm = get_provider("coder")
@@ -203,18 +220,26 @@ def _regenerate_value_sql(profile, recipes: list, schema: str, conn, only: set) 
         table_cols = _parse_schema_tables(schema)
     except Exception:
         pass
-    fresh = {_norm_name(x.name): (x.value_sql or "").strip() for x in out.metrics}
+    fresh = {_norm_name(x.name): x for x in out.metrics}
     recovered: set = set()
     for m, _r in targets:
-        cand = fresh.get(_norm_name(m.name), "")
+        cand = fresh.get(_norm_name(m.name))
         if not cand:
             continue
-        ok, reason = audit_value_sql(cand, table_cols, conn, m.unit_or_range)
-        if ok:
-            m.value_sql = cand
-            recovered.add(m.name)
-        else:
-            logger.info("[profile] regenerated value_sql for %r still failed audit: %s", m.name, reason)
+        if not (m.value_sql or "").strip() and (cand.value_sql or "").strip():
+            ok, reason = audit_value_sql(cand.value_sql.strip(), table_cols, conn, m.unit_or_range)
+            if ok:
+                m.value_sql = cand.value_sql.strip()
+                recovered.add(m.name)
+            else:
+                logger.info("[profile] regenerated value_sql for %r still failed audit: %s", m.name, reason)
+        if not (m.chart_sql or "").strip() and (cand.chart_sql or "").strip():
+            ok, reason = audit_chart_sql(cand.chart_sql.strip(), table_cols, conn)
+            if ok:
+                m.chart_sql = cand.chart_sql.strip()
+                recovered.add(m.name)
+            else:
+                logger.info("[profile] regenerated chart_sql for %r still failed audit: %s", m.name, reason)
     return recovered
 
 

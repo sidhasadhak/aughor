@@ -142,10 +142,83 @@ def audit_value_sql(value_sql: str, table_cols: dict, conn, unit_or_range: str) 
         return (True, "")
 
 
+def audit_chart_sql(chart_sql: str, table_cols: dict, conn) -> tuple[bool, str]:
+    """Audit a metric's chart_sql — the SERIES that explains the metric (a trend or a
+    top-N breakdown) on the Briefing. Same structural authorities as value_sql (dry-run +
+    grain/fan-out guards + join value-domain guard), but the result check is shape-based,
+    not range-based: a chart needs ≥2 rows and at least one non-degenerate numeric column
+    (a single point, or an all-NULL/all-zero measure, is not a chart). Fail-open."""
+    sql = (chart_sql or "").strip()
+    if not sql:
+        return (False, "empty")
+    try:
+        dialect = getattr(conn, "dialect", "duckdb")
+        try:
+            ok, why = conn.dry_run(sql)
+            if not ok:
+                return (False, f"does not bind: {why}")
+        except Exception:
+            pass
+
+        from aughor.sql.fanout import (
+            integer_division_risk, count_star_entity_fanout, count_star_chasm_fanout,
+            avg_over_chasm_fanout, sum_over_chasm_fanout,
+        )
+        grain = (integer_division_risk(sql)
+                 or count_star_entity_fanout(sql, table_cols)
+                 or count_star_chasm_fanout(sql, table_cols, dialect=dialect)
+                 or avg_over_chasm_fanout(sql, table_cols, dialect=dialect)
+                 or sum_over_chasm_fanout(sql, table_cols, dialect=dialect))
+        if grain:
+            return (False, f"grain bug: {grain}")
+        try:
+            from aughor.sql.join_guard import check_join_value_domains
+            warns = check_join_value_domains(conn, sql)
+            if warns:
+                return (False, f"fabricated join: {warns[0].to_prompt_text()}")
+        except Exception:
+            pass
+
+        try:
+            res = conn.execute("profile-chart-sql", sql)
+            if getattr(res, "error", None):
+                return (False, f"errors: {res.error}")
+            rows = getattr(res, "rows", []) or []
+            if len(rows) < 2:
+                return (False, "not a series (need ≥2 rows)")
+            # At least one numeric column must carry a non-degenerate value across the
+            # series — an all-NULL or all-zero measure draws a flat, meaningless chart.
+            width = len(rows[0]) if rows else 0
+            has_live_measure = False
+            for ci in range(width):
+                col = [r[ci] for r in rows if ci < len(r)]
+                nums = []
+                for c in col:
+                    if c is None or c == "" or c == "NULL":
+                        continue
+                    try:
+                        nums.append(float(c))
+                    except (TypeError, ValueError):
+                        nums = None
+                        break  # a text column (label) — not the measure
+                if nums and any(n != 0.0 for n in nums):
+                    has_live_measure = True
+                    break
+            if not has_live_measure:
+                return (False, "degenerate series (no live numeric column)")
+        except Exception:
+            pass
+        return (True, "")
+    except Exception as exc:
+        logger.debug("chart_sql audit errored (fail-open): %s", exc)
+        return (True, "")
+
+
 def audit_profile(profile, conn, schema: str) -> dict[str, str]:
-    """Audit every metric's value_sql IN PLACE: blank the value_sql of any that
-    fails and return {metric_name: reason} for the failures (so the caller can try
-    a recipe-grounded regeneration). Never raises."""
+    """Audit every metric's value_sql AND chart_sql IN PLACE: blank either if it
+    fails and return {metric_name: reason} for the value_sql failures (so the caller
+    can try a recipe-grounded regeneration). chart_sql failures are blanked silently
+    (the Briefing just shows one fewer explainer chart). Never raises."""
     failures: dict[str, str] = {}
     try:
         from aughor.tools.schema import _parse_schema_tables
@@ -154,10 +227,15 @@ def audit_profile(profile, conn, schema: str) -> dict[str, str]:
         table_cols = {}
     for m in getattr(profile, "north_star_metrics", []) or []:
         vs = (getattr(m, "value_sql", "") or "").strip()
-        if not vs:
-            continue
-        ok, reason = audit_value_sql(vs, table_cols, conn, getattr(m, "unit_or_range", ""))
-        if not ok:
-            failures[m.name] = reason
-            m.value_sql = ""  # drop it — KPI strip shows nothing rather than a wrong number
+        if vs:
+            ok, reason = audit_value_sql(vs, table_cols, conn, getattr(m, "unit_or_range", ""))
+            if not ok:
+                failures[m.name] = reason
+                m.value_sql = ""  # drop it — KPI strip shows nothing rather than a wrong number
+        cs = (getattr(m, "chart_sql", "") or "").strip()
+        if cs:
+            ok, reason = audit_chart_sql(cs, table_cols, conn)
+            if not ok:
+                logger.info("[profile] chart_sql dropped for %r: %s", m.name, reason)
+                m.chart_sql = ""  # no explainer chart for this metric rather than a broken one
     return failures
