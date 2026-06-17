@@ -14,10 +14,51 @@ def test_all_null_single_row_is_degenerate():
     assert _is_degenerate_result([{"a": None, "b": None}]) is True
 
 
-def test_zero_count_is_not_degenerate():
-    # COUNT(...) = 0 is a REAL finding (0 ≠ NULL) and must survive.
-    assert _is_degenerate_result([(0,)]) is False
-    assert _is_degenerate_result([("EU", 0, 0.0)]) is False
+def test_all_zero_is_degenerate():
+    # "No zero on cards" (f224d2e): an all-zero numeric result is a query/grain artifact
+    # (broken join, ROUND-destroyed weight), not a finding — dropped. This supersedes the
+    # older "a 0 COUNT is a real finding" stance.
+    assert _is_degenerate_result([(0,)]) is True
+    assert _is_degenerate_result([("EU", 0, 0.0)]) is True
+
+
+def test_mixed_zero_and_nonzero_survives():
+    # Only a FLAT-zero metric is dropped; a column with some zero and some non-zero
+    # values is real signal and survives.
+    assert _is_degenerate_result([("EU", 0), ("US", 1200)]) is False
+
+
+def test_rate_pinned_at_ceiling_is_degenerate():
+    # A bounded rate at its MAX across every segment is the same artifact as all-zero,
+    # one boundary up — a broken denominator (cart→order conversion counting only
+    # converted carts → "100% conversion across all traffic sources", impossible).
+    conv = [("Google", "Mobile", "1.0"), ("TikTok", "Mobile", "1.0"), ("Email", "Desktop", "1.0")]
+    assert _is_degenerate_result(conv, "cart-to-order conversion rate of exactly 1.0 (100%)",
+                                 "SELECT traffic_source, device, ... AS conversion_rate") is True
+    pct = [("Google", "100.0"), ("Meta", "100.0")]
+    assert _is_degenerate_result(pct, "conversion rate 100% in every segment", "AS conversion_pct") is True
+
+
+def test_rate_not_at_ceiling_survives():
+    # A real, varying rate is signal; payment success ~89% is below the ceiling → survives.
+    varying = [("Google", "0.15"), ("Email", "0.28"), ("TikTok", "0.21")]
+    assert _is_degenerate_result(varying, "conversion varies by channel", "AS conversion_rate") is False
+    success = [("CC", "0.8923"), ("PayPal", "0.8926"), ("ApplePay", "0.8935")]
+    assert _is_degenerate_result(success, "payment success rate ~89%", "AS success_rate") is False
+
+
+def test_constant_one_without_rate_context_survives():
+    # A count-of-1 or an always-true flag is legitimately constant at 1 — NOT a saturated
+    # rate. Without a rate signal in the SQL/text it must survive (no false positive).
+    counts = [("cust1", "1"), ("cust2", "1"), ("cust3", "1")]
+    assert _is_degenerate_result(counts, "each customer placed exactly 1 order",
+                                 "SELECT customer_id, COUNT(*) AS order_count") is False
+
+
+def test_single_row_at_ceiling_survives():
+    # The ceiling rule needs ≥2 rows ("all segments") — a single 100% could be a real
+    # small-sample result, so it isn't dropped on shape alone.
+    assert _is_degenerate_result([("x", "1.0")], "conversion rate", "AS conversion_rate") is False
 
 
 def test_real_rows_not_degenerate():

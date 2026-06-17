@@ -352,9 +352,16 @@ def _crosses_datasets(sql: str) -> bool:
     return len(datasets) > 1
 
 
-def _is_degenerate_result(rows, finding_text: str = "") -> bool:
+_RATE_CTX_RE = re.compile(
+    r"\b(?:conversion|convert|rate|ratio|share|percent|pct|margin|occupancy|"
+    r"utiliz|attach|win[\s_-]?rate|success[\s_-]?rate|load[\s_-]?factor)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_degenerate_result(rows, finding_text: str = "", sql: str = "") -> bool:
     """True when a Phase-8 result carries no trustworthy data — so it never becomes an
-    insight (and so never reaches the Briefing). Three cases:
+    insight (and so never reaches the Briefing). Cases:
 
       1. the whole result is NULL (empty join/filter matched nothing), OR
       2. ANY numeric column is NULL across EVERY row, OR ZERO across every row — a metric
@@ -364,10 +371,18 @@ def _is_degenerate_result(rows, finding_text: str = "") -> bool:
          all-zero** metric must not appear in a Briefing — it reads as a confident finding
          ("$0 ROAS — no revenue captured") when it is really a query bug; the underlying
          data ($491M revenue) is intact. OR
-      3. the interpretation text explicitly says "no data".
+      3. a bounded RATE pinned at its MAX across every row — a 0..1 rate that is ≈1.0 (or a
+         0..100% rate ≈100) in EVERY segment is the same artifact as all-zero, one boundary
+         up: it's a broken denominator (cart→order conversion that counts only converted
+         carts → "100% conversion across all traffic sources", impossible) sold as a
+         glowing result. Gated on a rate signal in the SQL/finding text so a count-of-1 or
+         an always-true flag (legitimately constant at 1) is NOT mistaken for a saturated
+         rate. OR
+      4. the interpretation text explicitly says "no data".
 
-    A column with MIXED values (some 0, some not) is real signal and survives — only a
-    metric that is flat NULL or flat zero across the whole result is dropped."""
+    A column with MIXED values (some at the boundary, some not) is real signal and
+    survives — only a metric flat NULL / flat zero / flat-at-its-ceiling is dropped."""
+    rate_ctx = bool(_RATE_CTX_RE.search(f"{sql}\n{finding_text}"))
     if rows:
         # Normalise to row-lists (dict rows → values in stable key order).
         if isinstance(rows[0], dict):
@@ -384,10 +399,19 @@ def _is_degenerate_result(rows, finding_text: str = "") -> bool:
             if not nonnull:
                 return True          # entirely-NULL column → broken/empty linkage
             try:
-                if all(float(c) == 0.0 for c in nonnull):
-                    return True      # a NUMERIC column that is ZERO everywhere → no signal
+                nums = [float(c) for c in nonnull]
             except (TypeError, ValueError):
-                pass                 # non-numeric (a dimension) — not a dead measure
+                continue             # non-numeric (a dimension) — not a dead measure
+            if all(n == 0.0 for n in nums):
+                return True          # a NUMERIC column that is ZERO everywhere → no signal
+            # Bounded rate saturated at its ceiling across EVERY row (≥2 rows = "all
+            # segments"). Thresholds match the value_sql audit (round-to-boundary).
+            if rate_ctx and len(norm) >= 2:
+                lo, hi = min(nums), max(nums)
+                if 0.0 <= lo and hi <= 1.0005 and all(n >= 0.9995 for n in nums):
+                    return True      # 0..1 rate pinned at 1.0 in every segment
+                if 0.0 <= lo and hi <= 100.05 and all(n >= 99.95 for n in nums):
+                    return True      # 0..100% rate pinned at 100 in every segment
     return bool(finding_text and _NO_DATA_RE.search(finding_text))
 
 
@@ -2775,9 +2799,10 @@ class SchemaExplorer:
 
                 # Drop "no data" findings — an empty/all-NULL result or an interpretation
                 # that says as much. They pollute the Briefing and turn into broken monitors.
-                if _is_degenerate_result(rows, interp.finding):
+                if _is_degenerate_result(rows, interp.finding, sql):
                     logger.info(
-                        "[explorer:%s] Phase 8: %s/%s — skipping degenerate (no-data) finding",
+                        "[explorer:%s] Phase 8: %s/%s — skipping degenerate finding "
+                        "(flat NULL / zero / rate-at-ceiling)",
                         self.connection_id, domain, nq.angle,
                     )
                     continue
