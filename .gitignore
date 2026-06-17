@@ -70,3 +70,12 @@ evals/_log*.txt
 data/system.db
 data/system.db-shm
 data/system.db-wal
+
+# Runtime/session artifacts — auto-created backups from platform resets, purges and
+# quarantines; runtime finding-dismissal state; and eval output dumps. All disposable
+# or regenerable, none belong in the repo. (data/*.json already covers profile/exploration.)
+data/_*backup*/
+data/_stale_findings_backup_*/
+data/finding_dismissals.jsonl
+evals/spider2_out/
+evals/llm_exp/
