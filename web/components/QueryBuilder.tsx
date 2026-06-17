@@ -1686,6 +1686,21 @@ export function QueryBuilder({ initialConnId, onOpenCanvas, importRequest, conne
               ↺ Regenerate SQL
             </button>
           )}
+          {!running && (runError || result) && (() => {
+            const ok = !runError && !result?.error;
+            return (
+              <span style={{
+                display: "inline-flex", alignItems: "center", gap: 5,
+                fontSize: 10.5, fontWeight: 600, padding: "2px 9px", borderRadius: 999,
+                background: ok ? "var(--grn1)" : "var(--red1)",
+                border: `1px solid ${ok ? "var(--grn2)" : "var(--red2)"}`,
+                color: ok ? "var(--grn4)" : "var(--red4)",
+              }}>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: ok ? "var(--grn4)" : "var(--red4)" }} />
+                {ok ? "valid" : "error"}
+              </span>
+            );
+          })()}
           <label className="flex items-center gap-1.5 cursor-pointer">
             <input type="checkbox" checked={useCache} onChange={e=>setUseCache(e.target.checked)} className="w-3 h-3 accent-violet-500" />
             <span className="text-[11px] text-zinc-500">Cache</span>
