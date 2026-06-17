@@ -1675,6 +1675,149 @@ class SchemaExplorer:
                         continue
 
 
+    # ── Phase 8: pinned key-questions (deterministic must-ask) ─────────────────
+
+    async def _phase8_pinned_questions(self, profile, sql_writer, profile_block: str) -> int:
+        """Deterministically ASK each of the profile's curated `key_questions` — the
+        must-ask analyst questions for this vertical (e.g. "which SKUs have >90% margin
+        but >10% WRONG_SHADE returns?") — so the high-value angles are covered EVERY run
+        instead of by the LLM's whim. The free per-domain loop is great at breadth but is
+        non-deterministic, so a profitable finding can vanish between runs; pinning the
+        curated questions makes the briefing REPRODUCIBLE on what matters.
+
+        Each question is run through the SAME authorities the main loop uses (bind-check +
+        the fan-out/grain DROP guards + degenerate + join value-domain + structural &
+        semantic dedup), then interpreted and stored FIRST — so the per-domain loop later
+        dedups against them instead of re-deriving them. Best-effort per question; returns
+        the count stored. Runs before the domain passes so its findings seed `insights`."""
+        from pydantic import BaseModel as _BM
+        from aughor.llm.provider import get_provider
+        from aughor.sql.fanout import (
+            integer_division_risk, count_star_entity_fanout, count_star_chasm_fanout,
+            avg_over_chasm_fanout, sum_over_chasm_fanout,
+        )
+        from aughor.sql.shape import is_redundant_insight, is_semantically_redundant
+        from aughor.sql.join_guard import check_join_value_domains
+
+        questions = [q for q in (getattr(profile, "key_questions", None) or []) if q.strip()][:6]
+        if not questions:
+            return 0
+
+        class _PinInterp(_BM):
+            finding: str
+            novelty: int
+
+        _loop = asyncio.get_running_loop()
+        llm = get_provider("coder")
+        _tc = getattr(sql_writer, "table_cols", {})
+        _dialect = getattr(self._conn, "dialect", "duckdb")
+        stored = 0
+
+        for qi, q in enumerate(questions):
+            await self._gate()
+            if self._stopped:
+                break
+            try:
+                sql = await _loop.run_in_executor(None, lambda: sql_writer.write(q, extra_context=profile_block))
+                if not sql or not sql.strip():
+                    continue
+
+                # Bind-check (repair once) — never run an unbindable draft.
+                ok, berr = self._conn.dry_run(sql)
+                if not ok:
+                    fix = await _loop.run_in_executor(None, lambda: sql_writer.fix(sql, berr, max_retries=2))
+                    if not (getattr(fix, "ok", False) and getattr(fix, "sql", "")):
+                        continue
+                    sql = fix.sql
+
+                # Fan-out / grain DROP guards (same as the main loop).
+                grain = (integer_division_risk(sql)
+                         or count_star_entity_fanout(sql, _tc)
+                         or count_star_chasm_fanout(sql, _tc, dialect=_dialect)
+                         or avg_over_chasm_fanout(sql, _tc, dialect=_dialect)
+                         or sum_over_chasm_fanout(sql, _tc, dialect=_dialect))
+                if grain:
+                    logger.info("[explorer:%s] Phase 8 (pinned): skipping Q%d — grain bug: %s",
+                                self.connection_id, qi, grain)
+                    continue
+
+                # Fabricated join (value-domain mismatch).
+                try:
+                    if check_join_value_domains(self._conn, sql):
+                        continue
+                except Exception:
+                    pass
+
+                # Structural dedup vs everything found so far.
+                _prior_sqls = [i.get("sql", "") for i in self._state.get("insights", [])]
+                if is_redundant_insight(sql, _prior_sqls, _dialect):
+                    continue
+
+                rows = await self._run(sql, think=f"[pinned] {q[:60]}")
+                if not rows:
+                    continue
+                if _is_degenerate_result(rows, "", sql):
+                    logger.info("[explorer:%s] Phase 8 (pinned): skipping Q%d — degenerate result",
+                                self.connection_id, qi)
+                    continue
+                if _has_fabricated_dimension(sql):
+                    continue
+
+                # Interpret.
+                result_text = "\n".join(str(r) for r in rows[:20])
+                try:
+                    interp: _PinInterp = await _loop.run_in_executor(
+                        None,
+                        lambda: llm.complete(
+                            system=("You are a precise analyst. Interpret the query result as ONE specific, "
+                                    "number-bearing business insight that answers the question. Do not invent "
+                                    "per-row ratios from totals. novelty is 1-5."),
+                            user=f"QUESTION: {q}\n\nRESULT (first 20 rows):\n{result_text}",
+                            response_model=_PinInterp,
+                        ),
+                    )
+                except Exception:
+                    continue
+
+                if _is_degenerate_result(rows, interp.finding, sql):
+                    continue
+                _prior_findings = [i.get("finding", "") for i in self._state.get("insights", [])]
+                if is_semantically_redundant(interp.finding, _prior_findings):
+                    continue
+
+                insight = {
+                    "id": f"pinned__{qi}",
+                    "domain": "Key Questions",
+                    "angle": "pinned-question",
+                    "question": q,
+                    "entities_involved": [],
+                    "dimensions": [],
+                    "measures": [],
+                    "finding": interp.finding,
+                    "sql": sql,
+                    "confidence": min(0.95, 0.4 + _clamp_novelty(interp.novelty) * 0.1),
+                    "novelty": _clamp_novelty(interp.novelty),
+                    "generated_at": datetime.now(timezone.utc).isoformat(),
+                    "canvas_id": self.canvas_id,
+                    "promoted_to_org": False,
+                    "promotion_confidence": 0.0,
+                    "pinned": True,
+                }
+                self._state.setdefault("insights", []).append(insight)
+                self._emit_insight(insight, sql, journal_extra={"pinned": True})
+                stored += 1
+            except Exception as _exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_exc, "a pinned key-question is best-effort; on failure skip it and "
+                         "continue", counter="explorer.pinned_question_failed")
+
+        if stored:
+            self._save_state()
+            logger.info("[explorer:%s] Phase 8: pinned pass stored %d/%d key-question findings",
+                        self.connection_id, stored, len(questions))
+        return stored
+
+
     # ── Phase 8: Domain intelligence curiosity loop ───────────────────────────
 
     async def _phase8_domain_intelligence(
@@ -1840,10 +1983,12 @@ class SchemaExplorer:
         # hardcoded DOMAIN_ANGLES still apply unchanged.
         profile_block = ""
         profile_angles: list[str] = []
+        _profile_for_pin = None
         try:
             from aughor.profile.infer import get_or_infer
             _bp = await _loop.run_in_executor(None, lambda: get_or_infer(self.connection_id))
             if _bp is not None:
+                _profile_for_pin = _bp
                 import re as _re
                 def _slug(s: str) -> str:
                     return _re.sub(r"[^a-z0-9]+", "_", (s or "").lower()).strip("_")[:40]
@@ -1894,6 +2039,19 @@ class SchemaExplorer:
             from aughor.kernel.errors import tolerate
             tolerate(_exc, "business-profile steering is best-effort; on failure fall back to "
                      "the generic DOMAIN_ANGLES", counter="explorer.profile_steer_failed")
+
+        # ── Pinned key-questions (deterministic must-ask) ───────────────────────
+        # Ask the profile's curated key_questions FIRST, with the same guards, so the
+        # high-value angles (the SKU margin-leak, conversion validity, …) are covered
+        # every run and seeded into `insights` before the free per-domain exploration —
+        # which then dedups against them instead of re-deriving them.
+        if _profile_for_pin is not None:
+            try:
+                await self._phase8_pinned_questions(_profile_for_pin, sql_writer, profile_block)
+            except Exception as _exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_exc, "pinned key-questions pass is best-effort; on failure the free "
+                         "per-domain loop still runs", counter="explorer.pinned_pass_failed")
 
         for domain, _base_domain, entities in passes:
             await self._gate()
@@ -2938,6 +3096,29 @@ class SchemaExplorer:
                     tolerate(_exc, "cross-domain redundancy check is best-effort; on failure keep "
                              "the finding (no worse than the per-domain gate alone)",
                              counter="explorer.redundancy_failed")
+
+                # Semantic (text) dedup: the structural gates key on SQL shape, so the
+                # SAME claim written with DIFFERENT SQL survives — "top refund reason is
+                # 'WRONG_SHADE' (59,314, 21.19%)" surfaced twice under two domains. Compare
+                # the FINDING TEXT against every prior finding and drop the later twin.
+                try:
+                    from aughor.sql.shape import is_semantically_redundant
+                    _prior_findings = [i.get("finding", "") for i in self._state.get("insights", [])]
+                    if is_semantically_redundant(interp.finding, _prior_findings):
+                        from aughor.stats import stats as _s; _s.inc("explorer.semantic_dup_skips")
+                        logger.info(
+                            "[explorer:%s] Phase 8: %s/%s — dropping semantically-redundant finding "
+                            "(same claim as an existing insight, different SQL)",
+                            self.connection_id, domain, nq.angle,
+                        )
+                        used += 1
+                        budgets[domain] = used
+                        self._state["domain_budgets"] = budgets
+                        continue
+                except Exception as _exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_exc, "semantic dedup is best-effort; on failure keep the finding",
+                             counter="explorer.semantic_dedup_failed")
 
                 try:
                     from aughor.sql.shape import is_structural_duplicate
