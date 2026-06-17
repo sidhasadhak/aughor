@@ -1,0 +1,90 @@
+/* ════════════════════════════════════════════════════════════════════════════
+   AUGHOR v2 — ELEVATION & MOTION (additive)
+   ────────────────────────────────────────────────────────────────────────────
+   NEW tokens + utility classes that don't exist in the current system. Safe to
+   import alongside the originals — nothing here overrides an existing name
+   except by ADDING longer shadow/easing scales. Import AFTER tokens-v2.css.
+
+       @import "./aughor-v2/tokens-v2.css";
+       @import "./aughor-v2/elevation-motion.css";
+
+   Motion is GATED behind `html.av2-animate`, added via requestAnimationFrame
+   (see INTEGRATION.md). Resting state is always the finished/visible state, so
+   SSR, print, reduced-motion, and frozen-timeline capture never show blanks.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* Extended elevation scale (--shadow-sm/md already set in tokens-v2) */
+  --shadow-lg: 0 8px 28px rgba(0,0,0,.50), 0 2px 8px rgba(0,0,0,.40);
+  --shadow-xl: 0 20px 60px rgba(0,0,0,.60), 0 6px 18px rgba(0,0,0,.45);
+
+  /* Accent-tinted helpers, derived from the canonical accent (--blue3) */
+  --acc-dim:  color-mix(in srgb, var(--blue3) 16%, transparent);
+  --acc-soft: color-mix(in srgb, var(--blue3) 26%, transparent);
+  --acc-glow: color-mix(in srgb, var(--blue3) 42%, transparent);
+  --shadow-acc: 0 4px 20px var(--acc-glow);
+
+  /* Glass surface (topbar / sticky headers) */
+  --glass-bg: color-mix(in srgb, var(--bg-1) 78%, transparent);
+
+  /* Extra easing (originals: --ease-out, --ease-pop, --ease-flow) */
+  --ease-spring: cubic-bezier(.16, 1, .3, 1);
+}
+
+[data-theme="light"] {
+  --shadow-lg: 0 10px 30px rgba(20,40,80,.12), 0 2px 8px rgba(20,40,80,.06);
+  --shadow-xl: 0 24px 64px rgba(20,40,80,.16), 0 6px 18px rgba(20,40,80,.08);
+  --shadow-acc: 0 4px 20px color-mix(in srgb, var(--blue3) 28%, transparent);
+}
+
+/* ── Surfaces ────────────────────────────────────────────────────────────── */
+.av2-glass {
+  background: var(--glass-bg);
+  backdrop-filter: blur(14px) saturate(1.4);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+}
+.av2-hover-lift {
+  transition: transform var(--dur-norm) var(--ease-spring),
+              box-shadow var(--dur-norm) var(--ease-spring),
+              border-color var(--dur-norm) var(--ease-spring);
+}
+.av2-hover-lift:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-lg);
+  border-color: var(--b2);
+}
+/* Smooth theme cross-fade for surface-level elements (opt-in via class) */
+.av2-theme-fade {
+  transition: background-color var(--dur-slow) var(--ease-flow),
+              border-color var(--dur-slow) var(--ease-flow),
+              color var(--dur-slow) var(--ease-flow);
+}
+
+/* ── Entrance animations (gated) ─────────────────────────────────────────── */
+@keyframes av2-rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes av2-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes av2-pop  { 0% { opacity: 0; transform: scale(.94); } 100% { opacity: 1; transform: scale(1); } }
+@keyframes av2-growy { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes av2-growx { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes av2-draw  { from { stroke-dashoffset: var(--len, 0); } to { stroke-dashoffset: 0; } }
+
+html.av2-animate .av2-rise { animation: av2-rise var(--dur-slow) var(--ease-spring) both; }
+html.av2-animate .av2-fade { animation: av2-fade var(--dur-slow) var(--ease-out) both; }
+html.av2-animate .av2-pop  { animation: av2-pop  var(--dur-norm) var(--ease-pop) both; }
+/* stagger: set style="--i:0..n" on children of a [data-av2-stagger] parent */
+html.av2-animate [data-av2-stagger] > * { animation: av2-rise var(--dur-slow) var(--ease-spring) both; animation-delay: calc(var(--i, 0) * 60ms); }
+
+/* Chart grow/draw — resting = fully grown/drawn; transforms scale from 0 only when ticking */
+.av2-gv-bar  { transform-origin: bottom; }
+.av2-gv-barx { transform-origin: left; }
+html.av2-animate .av2-gv-bar  { animation: av2-growy 700ms var(--ease-spring) both; }
+html.av2-animate .av2-gv-barx { animation: av2-growx var(--dur-breath) var(--ease-spring) both; }
+html.av2-animate .av2-gv-draw { animation: av2-draw 1100ms var(--ease-spring) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  html.av2-animate .av2-rise, html.av2-animate .av2-fade, html.av2-animate .av2-pop,
+  html.av2-animate [data-av2-stagger] > *,
+  html.av2-animate .av2-gv-bar, html.av2-animate .av2-gv-barx, html.av2-animate .av2-gv-draw {
+    animation: none !important;
+  }
+}

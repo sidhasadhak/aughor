@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { IBM_Plex_Mono } from "next/font/google";
 import "./globals.css";
+// v2 Tier 2: .aug-* component overrides — loaded after globals.css so it wins the
+// cascade over the inline base rules (CSS @import can't sit below them). Revert: delete this line.
+import "../aughor-v2/theme/components-v2.css";
 
 const dmSans = localFont({
   src: [

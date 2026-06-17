@@ -1,6 +1,9 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "../styles/tokens.css";
+/* v2 Tier 1: elevated primitive values, then shadows/glass/motion (override layer) */
+@import "../aughor-v2/theme/tokens-v2.css";
+@import "../aughor-v2/theme/elevation-motion.css";
 @import "../styles/type.css";
 
 @custom-variant dark (&:is(.dark *));

@@ -191,9 +191,13 @@ interface CitationActionContext {
 function NarrativeCard({
   narrative,
   ctx,
+  hideHeadline = false,
 }: {
   narrative: BriefingNarrativeResponse;
   ctx: CitationActionContext;
+  /** When the VerdictHero already leads with the conclusion, suppress this card's
+   *  header so the headline_theme / "AI Synthesis" tag aren't shown twice. */
+  hideHeadline?: boolean;
 }) {
   const [active, setActive] = useState<{ citation: BriefingCitation; x: number; y: number } | null>(null);
   const onCitationClick = (citation: BriefingCitation, e: { clientX: number; clientY: number }) =>
@@ -206,6 +210,7 @@ function NarrativeCard({
       borderRadius: "var(--r3)", padding: "18px 22px",
     }}>
       {/* Header */}
+      {!hideHeadline && (
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
         <span style={{
           fontSize: 9, fontWeight: 700, padding: "2px 7px", borderRadius: "var(--r1)",
@@ -226,6 +231,7 @@ function NarrativeCard({
           </span>
         )}
       </div>
+      )}
 
       {/* Narrative prose with inline citations */}
       <div style={{
@@ -952,6 +958,168 @@ function HeadlineCard({ signal, onInvestigate, actions }: {
   );
 }
 
+// ── Verdict hero ────────────────────────────────────────────────────────────────
+/** Conclusion-first briefing lede (v2 redesign pattern): leads with the synthesized
+ *  verdict, the single most important finding, proof-stat tiles, and the primary
+ *  action — instead of opening with multi-paragraph prose. Falls back to the
+ *  deterministic top finding when no AI narrative has been generated yet, so the
+ *  layout is always populated from real data. */
+function VerdictHero({
+  narrative, headline, domainCount, totalInsights, synthesizedAt,
+  onInvestigate, controls, actions,
+}: {
+  narrative:     BriefingNarrativeResponse | null;
+  headline:      SynthesisSignal | null;
+  domainCount:   number;
+  totalInsights: number;
+  synthesizedAt: string;
+  onInvestigate: (q: string) => void;
+  controls?:     ReactNode;   // Generate / Reload buttons (top-right)
+  actions?:      ReactNode;   // FindingActions menu for the headline finding
+}) {
+  const theme   = narrative?.headline_theme?.trim();
+  const finding = headline?.insight.finding?.trim();
+  const title   = theme || finding || "Intelligence briefing";
+  // When the AI theme is the headline, the top finding becomes the supporting lead.
+  const lead    = theme ? finding : undefined;
+  const conf    = headline ? Math.round((headline.insight.confidence ?? 0) * 100) : 0;
+  const confColor = conf >= 80 ? "var(--grn4)" : conf >= 50 ? "var(--amb4)" : "var(--red4)";
+
+  const stats: { k: string; l: string; c: string }[] = [
+    { k: String(domainCount),   l: domainCount === 1 ? "domain" : "domains",   c: "var(--t1)" },
+    { k: String(totalInsights), l: totalInsights === 1 ? "finding" : "findings", c: "var(--t1)" },
+    ...(conf > 0 ? [{ k: `${conf}%`, l: "lead confidence", c: confColor }] : []),
+  ];
+
+  return (
+    <div style={{
+      position: "relative", overflow: "hidden",
+      background: "linear-gradient(135deg, color-mix(in srgb, var(--blue4) 9%, var(--bg-2)), var(--bg-2))",
+      border: "1px solid color-mix(in srgb, var(--blue4) 22%, var(--b1))",
+      borderRadius: "var(--r3)", boxShadow: "var(--shadow-md)",
+    }}>
+      <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 4, background: "var(--blue4)" }} />
+      <div style={{ padding: "22px 26px 22px 28px" }}>
+        {/* top row: tag + scope + controls */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16, flexWrap: "wrap" as const }}>
+          <span style={{
+            fontSize: 9, fontWeight: 700, padding: "2px 7px", borderRadius: "var(--r1)",
+            background: "color-mix(in srgb, var(--blue4) 16%, transparent)",
+            border: "1px solid color-mix(in srgb, var(--blue4) 30%, transparent)",
+            color: "var(--blue4)", textTransform: "uppercase" as const, letterSpacing: ".09em",
+          }}>{narrative ? "AI Synthesis" : "Top finding"}</span>
+          <span style={{ fontSize: 11, color: "var(--t3)" }}>
+            Synthesized from{" "}
+            <span style={{ color: "var(--t2)", fontWeight: 500 }}>{domainCount} domains</span>
+            {" "}·{" "}
+            <span style={{ color: "var(--t2)", fontWeight: 500 }}>{totalInsights} findings</span>
+            <span style={{ color: "var(--t4)", marginLeft: 6 }}>· {timeAgo(synthesizedAt)}</span>
+          </span>
+          {controls && (
+            <span style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>{controls}</span>
+          )}
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: stats.length ? "1fr auto" : "1fr", gap: 28, alignItems: "center" }}>
+          <div>
+            <div style={{
+              fontSize: 21, fontWeight: 650, lineHeight: 1.35, color: "var(--t1)",
+              letterSpacing: "-.01em", maxWidth: 660, textWrap: "pretty" as const,
+              marginBottom: lead ? 10 : 0,
+            }}>{title}</div>
+            {lead && (
+              <p style={{ fontSize: 13, color: "var(--t2)", lineHeight: 1.6, maxWidth: 640, margin: 0 }}>{lead}</p>
+            )}
+            {(headline || actions) && (
+              <div style={{ display: "flex", gap: 9, marginTop: 18, flexWrap: "wrap" as const, alignItems: "center" }}>
+                {headline && (
+                  <button
+                    onClick={() => onInvestigate(`Investigate: ${headline.insight.finding}`)}
+                    className="aug-btn aug-btn-primary"
+                    style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", fontSize: 12.5, fontWeight: 600, borderRadius: "var(--r2)", cursor: "pointer" }}
+                  >Investigate →</button>
+                )}
+                {actions}
+              </div>
+            )}
+          </div>
+
+          {stats.length > 0 && (
+            <div style={{ display: "flex", gap: 12 }}>
+              {stats.map((s, i) => (
+                <div key={i} style={{
+                  textAlign: "center" as const, padding: "14px 16px", minWidth: 88,
+                  background: "var(--bg-3)", border: "1px solid var(--b1)", borderRadius: "var(--r3)",
+                }}>
+                  <div style={{ fontSize: 24, fontWeight: 700, color: s.c, letterSpacing: "-.02em", lineHeight: 1, fontVariantNumeric: "tabular-nums" as const }}>{s.k}</div>
+                  <div style={{ fontSize: 10, color: "var(--t3)", marginTop: 6, lineHeight: 1.3 }}>{s.l}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Supporting signals ──────────────────────────────────────────────────────────
+/** A 3-up row of the strongest supporting findings under the verdict (v2 mockup's
+ *  hypothesis-card row), each with a confidence meter. Driven by real briefing
+ *  signals — every card is a live finding with its own confidence + novelty. */
+function SupportingSignals({ signals, onInvestigate }: {
+  signals:       SynthesisSignal[];
+  onInvestigate: (q: string) => void;
+}) {
+  const top = signals.slice(0, 3);
+  if (top.length === 0) return null;
+  return (
+    <div>
+      <div className="aug-label" style={{ marginBottom: 10 }}>Supporting signals</div>
+      <div style={{ display: "grid", gridTemplateColumns: `repeat(${top.length}, 1fr)`, gap: 14 }}>
+        {top.map(({ insight, domain }) => {
+          const conf      = Math.round((insight.confidence ?? 0) * 100);
+          const confColor = conf >= 80 ? "var(--grn4)" : conf >= 50 ? "var(--amb4)" : "var(--red4)";
+          const nColor    = noveltyColor(insight.novelty);
+          return (
+            <div key={insight.id} style={{
+              background: "var(--bg-2)", border: "1px solid var(--b1)",
+              borderLeft: `3px solid ${nColor}`, borderRadius: "var(--r3)",
+              padding: "16px 18px", display: "flex", flexDirection: "column" as const, gap: 10,
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <DomainTag domain={domain} />
+                {insight.angle && <span style={{ fontSize: 10, color: "var(--t4)" }}>{insight.angle}</span>}
+                <span style={{ marginLeft: "auto", fontSize: 9.5, fontWeight: 700, color: nColor, textTransform: "uppercase" as const, letterSpacing: ".06em" }}>
+                  {noveltyLabel(insight.novelty)}
+                </span>
+              </div>
+              <div style={{
+                fontSize: 13, fontWeight: 500, color: "var(--t1)", lineHeight: 1.5,
+                textWrap: "pretty" as const, display: "-webkit-box",
+                WebkitLineClamp: 4, WebkitBoxOrient: "vertical" as const, overflow: "hidden",
+              }}>{insight.finding}</div>
+              <div style={{ marginTop: "auto" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 5 }}>
+                  <span style={{ color: "var(--t3)" }}>Confidence</span>
+                  <span style={{ color: confColor, fontWeight: 600, fontVariantNumeric: "tabular-nums" as const }}>{conf}%</span>
+                </div>
+                <div style={{ height: 6, borderRadius: 999, background: "var(--bg-4)", overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${conf}%`, background: confColor, borderRadius: 999, transition: "width var(--dur-breath) var(--ease-out)" }} />
+                </div>
+              </div>
+              <button
+                onClick={() => onInvestigate(`Investigate: ${insight.finding}`)}
+                style={{ alignSelf: "flex-start", fontSize: 11, color: "var(--blue4)", background: "none", border: "none", padding: 0, cursor: "pointer" }}
+              >Investigate →</button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ── Signal card ────────────────────────────────────────────────────────────────
 
 function SignalCard({ signal, onInvestigate, actions }: {
@@ -1534,41 +1702,54 @@ export function BriefingPanel({
       ) : (
         <>
 
-      {/* ── Meta strip ── (schema selection now lives in the shared workspace header) */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
-        <span style={{ fontSize: 11, color: "var(--t3)" }}>
-          Synthesized from{" "}
-          <span style={{ color: "var(--t2)", fontWeight: 500 }}>{briefing.domainCount} domains</span>
-          {" "}·{" "}
-          <span style={{ color: "var(--t2)", fontWeight: 500 }}>{briefing.totalInsights} findings</span>
-          <span style={{ color: "var(--t4)", marginLeft: 6 }}>· {timeAgo(briefing.synthesizedAt)}</span>
-        </span>
-        <div style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>
-          <GenerateBriefButton
-            loading={narrativeLoading}
-            hasNarrative={hasNarrative}
-            onClick={() => generateNarrative(hasNarrative)}
-          />
-          <button
-            onClick={load}
-            style={{
-              display: "inline-flex", alignItems: "center", gap: 5,
-              padding: "4px 10px", borderRadius: "var(--r2)", fontSize: 11,
-              background: "var(--bg-2)", border: "1px solid var(--b1)",
-              color: "var(--t3)", cursor: "pointer", transition: "all .1s",
-            }}
-            onMouseEnter={e => { e.currentTarget.style.color = "var(--t1)"; e.currentTarget.style.borderColor = "var(--b2)"; }}
-            onMouseLeave={e => { e.currentTarget.style.color = "var(--t3)"; e.currentTarget.style.borderColor = "var(--b1)"; }}
-          >
-            ↻ Reload
-          </button>
-        </div>
-      </div>
+      {/* ── Verdict hero ── conclusion-first lede: the synthesized verdict + the top
+          finding + proof stats + the primary action, ahead of the full prose. */}
+      <VerdictHero
+        narrative={hasNarrative ? narrative : null}
+        headline={briefing.headline}
+        domainCount={briefing.domainCount}
+        totalInsights={briefing.totalInsights}
+        synthesizedAt={briefing.synthesizedAt}
+        onInvestigate={onInvestigate}
+        controls={
+          <>
+            <GenerateBriefButton
+              loading={narrativeLoading}
+              hasNarrative={hasNarrative}
+              onClick={() => generateNarrative(hasNarrative)}
+            />
+            <button
+              onClick={load}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 5,
+                padding: "4px 10px", borderRadius: "var(--r2)", fontSize: 11,
+                background: "var(--bg-2)", border: "1px solid var(--b1)",
+                color: "var(--t3)", cursor: "pointer", transition: "all .1s",
+              }}
+              onMouseEnter={e => { e.currentTarget.style.color = "var(--t1)"; e.currentTarget.style.borderColor = "var(--b2)"; }}
+              onMouseLeave={e => { e.currentTarget.style.color = "var(--t3)"; e.currentTarget.style.borderColor = "var(--b1)"; }}
+            >
+              ↻ Reload
+            </button>
+          </>
+        }
+        actions={briefing.headline && (
+          <FindingActions
+            insight={briefing.headline.insight} domain={briefing.headline.domain}
+            connectionId={connectionId} canvasId={canvasId} triggers={triggers}
+            onEvidence={(ins) => openEvidence(ins, briefing.headline!.domain)}
+            onTriggersHint={showTriggersHint} onDismissed={() => load()} />
+        )}
+      />
 
-      {/* ── AI Synthesis ── always at the very top of the briefing */}
+      {/* ── Supporting signals ── 3-up confidence-meter cards of the strongest findings. */}
+      <SupportingSignals signals={briefing.signals} onInvestigate={onInvestigate} />
+
+      {/* ── Full synthesis ── the multi-paragraph narrative + interactive citations.
+          The hero above already carries the conclusion, so this card hides its header. */}
       {(hasNarrative || narrativeLoading || narrativeError) && (
         <div>
-          <div className="aug-label" style={{ marginBottom: 10 }}>AI Synthesis</div>
+          <div className="aug-label" style={{ marginBottom: 10 }}>Full synthesis</div>
           {narrativeLoading && (
             <div style={{
               background: "color-mix(in srgb, var(--blue4) 6%, var(--bg-2))",
@@ -1598,6 +1779,7 @@ export function BriefingPanel({
           {!narrativeLoading && hasNarrative && narrative && (
             <NarrativeCard
               narrative={narrative}
+              hideHeadline
               ctx={{
                 insightById:    briefing.insightById,
                 connectionId,

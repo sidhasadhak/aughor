@@ -8,6 +8,7 @@ import {
   type RecStatus,
 } from "@/lib/api";
 import type { InvestigationSummary } from "@/lib/types";
+import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
 
 import { API_BASE as BASE } from "@/lib/config";
 
@@ -336,6 +337,13 @@ export function RecommendationInbox({ onOpenInvestigation, workspaceId }: Props)
     }).length;
   }, 0);
 
+  // Summary stats — all derived from real outcomes (recs are free-text, so there is
+  // no $/ARR figure to total; we surface the action lifecycle instead).
+  const totalRecs       = items.reduce((acc, d) => acc + d.actions.length, 0);
+  const countStatus     = (s: RecStatus) => items.reduce((acc, d) => acc + d.outcomes.filter(o => o.status === s).length, 0);
+  const implementedCount = countStatus("implemented");
+  const verifiedCount    = countStatus("verified");
+
   return (
     <div className="space-y-4">
       {/* Header */}
@@ -369,6 +377,16 @@ export function RecommendationInbox({ onOpenInvestigation, workspaceId }: Props)
           </div>
         </div>
       </div>
+
+      {/* Summary — real counts across all loaded investigations */}
+      {!loading && items.length > 0 && (
+        <MiniStatRow>
+          <MiniStat value={pendingCount}      label="Open recommendations" tone="var(--blue4)" />
+          <MiniStat value={implementedCount}  label="Implemented"          tone="var(--vio4)" />
+          <MiniStat value={verifiedCount}     label="Verified"             tone="var(--grn4)" />
+          <MiniStat value={totalRecs}         label="Total recommendations" />
+        </MiniStatRow>
+      )}
 
       {/* Content */}
       {loading ? (

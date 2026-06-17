@@ -13,6 +13,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { AUG_PALETTE } from "@/lib/palette";
+import { vegaV2Config, vegaV2Marks } from "@/aughor-v2/charts/vega-theme-v2";
 
 // Minimal type alias — avoids importing the full heavy vega-lite types at component load time.
 export type VLSpec = Record<string, unknown>;
@@ -58,6 +59,32 @@ const AUG_CONFIG = {
   view: { stroke: null },
   mark: { tooltip: true },
 };
+
+/** v2: remap the legacy hardcoded mark hexes (baked into Chart.tsx spec builders)
+ *  to the current theme's --chart-* / --bg-2 tokens. Resolved at call time so it
+ *  follows dark/light. Deep-walks the spec replacing only exact-match hex strings,
+ *  so it's safe across all chart types without editing each builder. */
+function remapLegacyColors(spec: VLSpec): VLSpec {
+  const map: Record<string, string> = {
+    "#818cf8": vegaV2Marks.bar,         // single-series bar fill   → --chart-1
+    "#10b981": vegaV2Marks.line,        // line / area              → --chart-2
+    "#f59e0b": vegaV2Marks.paretoLine,  // pareto cumulative line   → --chart-3
+    "#71717a": vegaV2Marks.reference,   // reference / 80% rule     → --chart-tick
+    "#0e1520": vegaV2Marks.pngBg,       // heatmap null / stroke    → --bg-2
+    "#131c27": vegaV2Marks.pngBg,       // treemap stroke / bg      → --bg-2
+  };
+  const walk = (v: unknown): unknown => {
+    if (typeof v === "string") { const hit = map[v.toLowerCase()]; return hit || v; }
+    if (Array.isArray(v)) return v.map(walk);
+    if (v && typeof v === "object") {
+      const out: Record<string, unknown> = {};
+      for (const [k, val] of Object.entries(v as Record<string, unknown>)) out[k] = walk(val);
+      return out;
+    }
+    return v;
+  };
+  return walk(spec) as VLSpec;
+}
 
 let tooltipCssInjected = false;
 
@@ -161,6 +188,8 @@ export function VegaChart({ spec, data, height, width, className, showLabels }: 
   const viewRef = useRef<{ finalize: () => void } | null>(null);
   const [w, setW] = useState(0);
   const [err, setErr] = useState<string | null>(null);
+  // v2: bump on dark/light flip so the spec rebuilds with fresh --chart-* token values.
+  const [themeTick, setThemeTick] = useState(0);
 
   // Track container width for responsive sizing
   useEffect(() => {
@@ -175,6 +204,13 @@ export function VegaChart({ spec, data, height, width, className, showLabels }: 
     return () => ro.disconnect();
   }, []);
 
+  // v2: re-theme charts when the app toggles data-theme on <html>.
+  useEffect(() => {
+    const obs = new MutationObserver(() => setThemeTick(t => t + 1));
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "class"] });
+    return () => obs.disconnect();
+  }, []);
+
   // Render whenever spec, data, or container width changes
   useEffect(() => {
     setErr(null);
@@ -182,7 +218,9 @@ export function VegaChart({ spec, data, height, width, className, showLabels }: 
 
     injectTooltipCss();
 
-    const specWithLabels = showLabels ? injectLabels(spec, data) : spec;
+    const labeled = showLabels ? injectLabels(spec, data) : spec;
+    // v2: swap legacy hardcoded mark hexes for current-theme tokens (no per-builder edits).
+    const specWithLabels = remapLegacyColors(labeled);
     const isVega = typeof specWithLabels.$schema === "string" && specWithLabels.$schema.includes("/vega/");
     const safeW = Math.max(w, 320) - 2;
 
@@ -212,7 +250,10 @@ export function VegaChart({ spec, data, height, width, className, showLabels }: 
         $schema: "https://vega.github.io/schema/vega-lite/v5.json",
         ...baseSpec,
         config: {
+          // AUG_CONFIG keeps header/tooltip/legend extras; vegaV2Config() (theme-aware,
+          // token-driven axes/grid/palette/rounded bars) overrides on top; per-spec config wins last.
           ...AUG_CONFIG,
+          ...vegaV2Config(),
           ...(baseSpec.config as Record<string, unknown> | undefined ?? {}),
         },
         autosize: { type: "fit", contains: "padding" },
@@ -254,7 +295,7 @@ export function VegaChart({ spec, data, height, width, className, showLabels }: 
     });
 
     return () => { cancelled = true; };
-  }, [spec, data, w, height]);
+  }, [spec, data, w, height, themeTick]);
 
   // Cleanup on unmount
   useEffect(() => {

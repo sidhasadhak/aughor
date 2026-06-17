@@ -13,6 +13,7 @@ import {
   getMetrics,
   Metric,
 } from "@/lib/api";
+import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -247,6 +248,15 @@ export function MonitorsPanel({ connId, workspaceId }: Props) {
       <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
         {loading && <p style={{ color: "var(--t3)", fontSize: 13 }}>Loading…</p>}
         {error && <p style={{ color: "var(--r2)", fontSize: 13, marginBottom: 12 }}>{error}</p>}
+
+        {/* ── Summary ── real counts across the workspace's monitors/alerts */}
+        {view === "list" && !loading && monitors.length > 0 && (
+          <MiniStatRow>
+            <MiniStat value={monitors.length} label="Total monitors" />
+            <MiniStat value={monitors.filter(m => m.enabled).length} label="Active" tone="var(--grn4)" />
+            <MiniStat value={unackedCount} label="Unacked alerts" tone={unackedCount > 0 ? "var(--amb4)" : "var(--t1)"} />
+          </MiniStatRow>
+        )}
 
         {/* ── Monitor list ── */}
         {view === "list" && !loading && (

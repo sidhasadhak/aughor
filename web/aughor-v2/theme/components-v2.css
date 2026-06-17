@@ -1,0 +1,69 @@
+/* ════════════════════════════════════════════════════════════════════════════
+   AUGHOR v2 — COMPONENT OVERRIDES (.aug-*)  [OPTIONAL]
+   ────────────────────────────────────────────────────────────────────────────
+   Elevates the EXISTING component classes defined in app/globals.css so the
+   whole app upgrades without touching component markup. Targets the same class
+   names — only the look changes (gradient primary, layered shadow + hover lift
+   on cards, pill tags, focus ring on inputs, glass topbar, softer rows).
+
+   Import LAST, after globals.css:
+
+       @import "../app/globals.css";          // defines .aug-* base
+       @import "./aughor-v2/components-v2.css"; // elevates them
+
+   To revert any single element, delete its rule here. Purely additive cascade —
+   no markup or class changes required. Pair with tokens-v2.css + elevation-motion.css.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+.aug-btn { border-radius: var(--r2); font-weight: 600; transition: all var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-pop); }
+.aug-btn:active { transform: translateY(1px) scale(.985); }
+.aug-btn-primary {
+  background: linear-gradient(180deg, var(--blue4), var(--blue3));
+  border-color: transparent; color: #fff;
+  box-shadow: var(--shadow-acc, 0 4px 20px rgba(59,130,246,.32)), inset 0 1px 0 rgba(255,255,255,.2);
+}
+.aug-btn-primary:hover { background: linear-gradient(180deg, var(--blue4), var(--blue4)); transform: translateY(-1px); box-shadow: 0 6px 26px var(--acc-glow, rgba(59,130,246,.42)), inset 0 1px 0 rgba(255,255,255,.25); }
+.aug-btn-secondary { background: var(--bg-3); border-color: var(--b2); }
+.aug-btn-secondary:hover { background: var(--bg-4); border-color: var(--b3); }
+
+/* ── Cards / panels — real elevation + hover lift ────────────────────────── */
+.aug-panel {
+  border-radius: var(--r3);
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--dur-norm) var(--ease-spring, cubic-bezier(.16,1,.3,1)),
+              box-shadow var(--dur-norm) var(--ease-spring, cubic-bezier(.16,1,.3,1)),
+              border-color var(--dur-norm) var(--ease-out);
+}
+/* Add class `aug-panel-interactive` to clickable cards for the lift */
+.aug-panel-interactive:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg, 0 8px 28px rgba(0,0,0,.5)); border-color: var(--b2); }
+
+/* ── Tags → pills ────────────────────────────────────────────────────────── */
+.aug-tag { border-radius: 999px; padding: 2px 9px; font-weight: 600; }
+
+/* ── Inputs — focus ring ─────────────────────────────────────────────────── */
+.aug-input { border-radius: var(--r2); }
+.aug-input:focus { border-color: var(--bfocus); box-shadow: 0 0 0 3px var(--acc-dim, rgba(59,130,246,.16)); }
+
+/* ── Data table — roomier, smoother hover ────────────────────────────────── */
+.aug-dt thead th { font-size: 10.5px; letter-spacing: .08em; padding: 9px 16px; }
+.aug-dt tbody td { padding: 11px 16px; font-size: 12.5px; }
+.aug-dt tbody tr { transition: background var(--dur-fast) var(--ease-out); }
+
+/* ── Topbar — glass ──────────────────────────────────────────────────────── */
+.aug-topbar {
+  background: var(--glass-bg, var(--bg-1));
+  backdrop-filter: blur(14px) saturate(1.4);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+}
+
+/* ── Nav item — glowing active rail ──────────────────────────────────────── */
+.aug-nav-item { border-radius: var(--r2); transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out); }
+.aug-nav-item.active::before { box-shadow: 0 0 10px var(--acc-glow, rgba(59,130,246,.42)); width: 3px; height: 18px; }
+
+/* ── Progress / meters — spring fill ─────────────────────────────────────── */
+.aug-progress-track { height: 6px; border-radius: 999px; }
+.aug-progress-fill  { border-radius: 999px; transition: width var(--dur-breath) var(--ease-spring, cubic-bezier(.16,1,.3,1)); }
+
+/* ── Callouts — match softened radius ────────────────────────────────────── */
+.aug-callout { border-radius: var(--r3); }

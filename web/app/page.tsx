@@ -11,6 +11,7 @@ import { SchemaProvider } from "@/lib/schema-context";
 import { OpenInBuilderProvider } from "@/lib/openInBuilder";
 import { getCanvases } from "@/lib/api";
 import { CommandPalette } from "@/components/CommandPalette";
+import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import type { IntelLayer } from "@/components/IntelligenceWorkspace";
 
@@ -444,6 +445,7 @@ const NAV_SECTIONS = [
     label: "Intelligence", // what Aughor knows about your data
     items: [
       { id: "intelligence", icon: "brief",    label: "Briefing" },
+      { id: "recents",      icon: "search",   label: "Investigations" },
       { id: "health",       icon: "activity", label: "Health" },
       { id: "playbook",     icon: "playbook", label: "Playbook" },
     ],
@@ -858,6 +860,13 @@ function RecentsScreen({ onGoToChat, onOpenInvestigation, workspaceId }: { onGoT
         </div>
       </div>
       <div style={{ flex: 1, overflowY: "auto", padding: "18px 20px" }}>
+        {activities.length > 0 && (
+          <MiniStatRow>
+            <MiniStat value={activities.length} label="Total" />
+            <MiniStat value={activities.filter(a => a.kind !== "chat").length} label="Investigations" tone="var(--blue4)" />
+            <MiniStat value={activities.filter(a => a.status === "complete").length} label="Completed" tone="var(--grn4)" />
+          </MiniStatRow>
+        )}
         {shown.length === 0 ? (
           <div style={{ padding: "40px 0", textAlign: "center" }}>
             <p style={{ fontSize: 12, color: "var(--t3)" }}>No activity yet — start by asking a question.</p>
@@ -1396,7 +1405,8 @@ const LAST_WS_KEY = "aughor_last_workspace";
 const THEME_KEY = "aughor_theme";
 
 export default function Home() {
-  const [tab, setTab] = useState<NavTab>("home");
+  // v2 nav IA: land on the Briefing (the intelligence digest), not the Home overview.
+  const [tab, setTab] = useState<NavTab>("intelligence");
   const [theme, setThemeState] = useState<Theme>("dark");
   const [rawSelectedConn, setSelectedConn] = useState("");
   const [builderImport, setBuilderImport] = useState<{ connId: string; sql: string; nonce: number } | undefined>(undefined);
