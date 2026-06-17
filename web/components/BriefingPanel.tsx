@@ -54,6 +54,7 @@ import {
 import { subscribeKernelEvents } from "@/lib/events";
 import { Spinner } from "@/components/ui/motion";
 import { BriefingDashboard } from "@/components/brief/BriefingDashboard";
+import { IndustryKpiStrip } from "@/components/brief/IndustryKpiStrip";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -238,38 +239,8 @@ function NarrativeCard({
         />
       </div>
 
-      {/* Citation legend */}
-      {narrative.citations.length > 0 && (
-        <div style={{ marginTop: 14, display: "flex", flexDirection: "column" as const, gap: 4 }}>
-          {narrative.citations.map(c => (
-            <div
-              key={c.ref}
-              onClick={e => onCitationClick(c, e)}
-              style={{
-                display: "flex", gap: 8, alignItems: "flex-start",
-                cursor: "pointer", borderRadius: "var(--r2)", padding: "4px 6px",
-                transition: "background .1s",
-              }}
-              onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = "var(--bg-3)"; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
-            >
-              <span style={{
-                width: 16, height: 16, borderRadius: "50%", flexShrink: 0, marginTop: 1,
-                fontSize: 8, fontWeight: 700, fontFamily: "var(--font-mono)",
-                background: "var(--blue3)", color: "var(--bg-0)",
-                display: "inline-flex", alignItems: "center", justifyContent: "center",
-              }}>
-                {c.ref}
-              </span>
-              <span style={{ fontSize: 10, color: "var(--t3)", lineHeight: 1.5 }}>
-                <span style={{ color: "var(--t2)", fontWeight: 500 }}>{c.domain}</span>
-                {c.angle ? ` · ${c.angle}` : ""} —{" "}
-                {c.finding.length > 100 ? c.finding.slice(0, 100) + "…" : c.finding}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
+      {/* Citation legend removed — the inline [n] chips in the prose are the pointers;
+          the repeated list below was redundant. */}
 
       {active && (
         <CitationActionsPopover
@@ -1596,7 +1567,58 @@ export function BriefingPanel({
         </div>
       </div>
 
-      {/* ── Live dashboard ── charts + KPIs from the top findings' own queries (#3) */}
+      {/* ── AI Synthesis ── always at the very top of the briefing */}
+      {(hasNarrative || narrativeLoading || narrativeError) && (
+        <div>
+          <div className="aug-label" style={{ marginBottom: 10 }}>AI Synthesis</div>
+          {narrativeLoading && (
+            <div style={{
+              background: "color-mix(in srgb, var(--blue4) 6%, var(--bg-2))",
+              border: "1px solid color-mix(in srgb, var(--blue4) 18%, var(--b1))",
+              borderRadius: "var(--r3)", padding: "18px 22px",
+              display: "flex", alignItems: "center", gap: 10,
+            }}>
+              <span style={{
+                width: 14, height: 14, border: "2px solid var(--b2)",
+                borderTop: "2px solid var(--blue4)", borderRadius: "50%",
+                animation: "aug-spin var(--dur-breath) linear infinite", flexShrink: 0,
+              }} />
+              <span style={{ fontSize: 12, color: "var(--t3)" }}>
+                Writing intelligence brief…
+              </span>
+            </div>
+          )}
+          {!narrativeLoading && narrativeError && (
+            <div style={{
+              padding: "10px 14px", borderRadius: "var(--r2)",
+              background: "var(--red1)", border: "1px solid var(--red2)",
+              fontSize: 11, color: "var(--red4)",
+            }}>
+              {narrativeError}
+            </div>
+          )}
+          {!narrativeLoading && hasNarrative && narrative && (
+            <NarrativeCard
+              narrative={narrative}
+              ctx={{
+                insightById:    briefing.insightById,
+                connectionId,
+                canvasId,
+                triggers,
+                onEvidence:     openEvidence,
+                onTriggersHint: showTriggersHint,
+                onDismissed:    load,
+                onInvestigate,
+              }}
+            />
+          )}
+        </div>
+      )}
+
+      {/* ── Industry key metrics ── the vertical's north-star KPIs, computed live */}
+      <IndustryKpiStrip connectionId={connectionId} />
+
+      {/* ── Live dashboard ── top-3 key-metric explainer charts + finding text cards (#3) */}
       <BriefingDashboard
         findings={[briefing.headline, ...briefing.signals].filter(Boolean) as { insight: ExplorationInsight; domain: string }[]}
         connectionId={connectionId}
@@ -1609,149 +1631,50 @@ export function BriefingPanel({
         )}
       />
 
-      {/* ── Two-column layout ── */}
-      <div style={{ display: "flex", gap: 24, alignItems: "flex-start" }}>
+      {/* ── Domain coverage · patterns · org intelligence ── a full-width row below the
+          mixed dashboard (the prior two-column main was emptied by the layout change, so
+          these were orphaned in a right rail). */}
+      {hasSidebar && (
+        <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap" }}>
 
-        {/* ── Main column ── */}
-        <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column" as const, gap: 24 }}>
+          {/* Domain coverage — findings per domain (where intelligence concentrates) */}
+          <div style={{ flex: "1 1 280px", minWidth: 240 }}>
+            <div className="aug-label" style={{ marginBottom: 10, display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
+              <span>Domain Coverage</span>
+              <span style={{ fontSize: 10, fontWeight: 400, color: "var(--t4)", fontFamily: "var(--font-mono)" }}>
+                {briefing.domainCount} · {briefing.totalInsights} findings
+              </span>
+            </div>
+            <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: "14px 16px" }}>
+              <DomainCoverageChart domains={briefing.domains} />
+            </div>
+          </div>
 
-          {/* AI Narrative (M24b) */}
-          {(hasNarrative || narrativeLoading || narrativeError) && (
-            <div>
-              <div className="aug-label" style={{ marginBottom: 10 }}>AI Synthesis</div>
-              {narrativeLoading && (
-                <div style={{
-                  background: "color-mix(in srgb, var(--blue4) 6%, var(--bg-2))",
-                  border: "1px solid color-mix(in srgb, var(--blue4) 18%, var(--b1))",
-                  borderRadius: "var(--r3)", padding: "18px 22px",
-                  display: "flex", alignItems: "center", gap: 10,
-                }}>
-                  <span style={{
-                    width: 14, height: 14, border: "2px solid var(--b2)",
-                    borderTop: "2px solid var(--blue4)", borderRadius: "50%",
-                    animation: "aug-spin var(--dur-breath) linear infinite", flexShrink: 0,
-                  }} />
-                  <span style={{ fontSize: 12, color: "var(--t3)" }}>
-                    Writing intelligence brief…
-                  </span>
-                </div>
-              )}
-              {!narrativeLoading && narrativeError && (
-                <div style={{
-                  padding: "10px 14px", borderRadius: "var(--r2)",
-                  background: "var(--red1)", border: "1px solid var(--red2)",
-                  fontSize: 11, color: "var(--red4)",
-                }}>
-                  {narrativeError}
-                </div>
-              )}
-              {!narrativeLoading && hasNarrative && narrative && (
-                <NarrativeCard
-                  narrative={narrative}
-                  ctx={{
-                    insightById:    briefing.insightById,
-                    connectionId,
-                    canvasId,
-                    triggers,
-                    onEvidence:     openEvidence,
-                    onTriggersHint: showTriggersHint,
-                    onDismissed:    load,
-                    onInvestigate,
-                  }}
-                />
-              )}
+          {/* Top patterns */}
+          {hasPatterns && (
+            <div style={{ flex: "1 1 280px", minWidth: 240 }}>
+              <div className="aug-label" style={{ marginBottom: 10 }}>Top Patterns</div>
+              <div style={{ display: "flex", flexDirection: "column" as const, gap: 6 }}>
+                {briefing.patterns.map(p => (
+                  <PatternRow key={p.id} pattern={p} onInvestigate={onInvestigate} />
+                ))}
+              </div>
             </div>
           )}
 
-          {/* Headline finding */}
-          {briefing.headline && (
-            <div>
-              <div className="aug-label" style={{ marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
-                <span>Headline Finding</span>
-                <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: "var(--r1)", background: "var(--bg-3)", border: "1px solid var(--b1)", color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".06em", fontWeight: 600 }}>
-                  Top signal
-                </span>
-              </div>
-              <HeadlineCard signal={briefing.headline} onInvestigate={onInvestigate}
-                actions={
-                  <FindingActions insight={briefing.headline.insight} domain={briefing.headline.domain}
-                    connectionId={connectionId} canvasId={canvasId} triggers={triggers}
-                    onEvidence={(ins) => openEvidence(ins, briefing.headline!.domain)} onTriggersHint={showTriggersHint}
-                    onDismissed={() => load()} />
-                } />
-            </div>
-          )}
-
-          {/* Supporting signals */}
-          {briefing.signals.length > 0 && (
-            <div>
-              <div className="aug-label" style={{ marginBottom: 10 }}>
-                Supporting Signals
-                <span style={{ marginLeft: 6, fontWeight: 400, color: "var(--t4)" }}>
-                  — cross-domain findings by novelty
-                </span>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12 }}>
-                {briefing.signals.map(s => (
-                  <SignalCard key={s.insight.id} signal={s} onInvestigate={onInvestigate}
-                    actions={
-                      <FindingActions insight={s.insight} domain={s.domain}
-                        connectionId={connectionId} canvasId={canvasId} triggers={triggers}
-                        onEvidence={(ins) => openEvidence(ins, s.domain)} onTriggersHint={showTriggersHint}
-                        onDismissed={() => load()} />
-                    } />
+          {/* Org intel */}
+          {hasOrgInsights && (
+            <div style={{ flex: "1 1 280px", minWidth: 240 }}>
+              <div className="aug-label" style={{ marginBottom: 10 }}>Org Intelligence</div>
+              <div style={{ display: "flex", flexDirection: "column" as const, gap: 6 }}>
+                {briefing.orgInsights.map(o => (
+                  <OrgSignalRow key={o.id} insight={o} />
                 ))}
               </div>
             </div>
           )}
         </div>
-
-        {/* ── Sidebar ── */}
-        {hasSidebar && (
-          <div style={{ width: 272, flexShrink: 0, display: "flex", flexDirection: "column" as const, gap: 20 }}>
-
-            {/* Domain coverage — a bar chart of findings per domain (where intelligence concentrates) */}
-            <div>
-              <div className="aug-label" style={{ marginBottom: 10, display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-                <span>Domain Coverage</span>
-                <span style={{ fontSize: 10, fontWeight: 400, color: "var(--t4)", fontFamily: "var(--font-mono)" }}>
-                  {briefing.domainCount} · {briefing.totalInsights} findings
-                </span>
-              </div>
-              <div style={{
-                background: "var(--bg-2)", border: "1px solid var(--b1)",
-                borderRadius: "var(--r3)", padding: "14px 16px",
-              }}>
-                <DomainCoverageChart domains={briefing.domains} />
-              </div>
-            </div>
-
-            {/* Top patterns */}
-            {hasPatterns && (
-              <div>
-                <div className="aug-label" style={{ marginBottom: 10 }}>Top Patterns</div>
-                <div style={{ display: "flex", flexDirection: "column" as const, gap: 6 }}>
-                  {briefing.patterns.map(p => (
-                    <PatternRow key={p.id} pattern={p} onInvestigate={onInvestigate} />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Org intel */}
-            {hasOrgInsights && (
-              <div>
-                <div className="aug-label" style={{ marginBottom: 10 }}>Org Intelligence</div>
-                <div style={{ display: "flex", flexDirection: "column" as const, gap: 6 }}>
-                  {briefing.orgInsights.map(o => (
-                    <OrgSignalRow key={o.id} insight={o} />
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
+      )}
     </>
   )}
 

@@ -33,6 +33,7 @@ import {
   isNumeric,
   firstNonNull,
 } from "@/components/charts/columnRoles";
+import { scoreDualAxis } from "@/components/charts/chartTypeInference";
 
 /** User chart styling applied as a generic post-pass over the built Vega-Lite spec — lets the
  *  Query Builder Customize tab override colors / number format / legend / axis titles without
@@ -135,12 +136,15 @@ export function Chart({
   chrome = true,
   showLabels: showLabelsProp,
   custom = null,
+  heightScale = 1,
 }: {
   columns: string[];
   rows: unknown[][];
   chartType?: string | null;
   chartConfig?: Record<string, unknown> | null;
   title?: string;
+  /** Scale the computed chart height (e.g. 0.75 for a compact briefing card). */
+  heightScale?: number;
   /** Render the hover toolbar (labels + download) and drag-to-resize handle.
    *  Set false when an outer wrapper (e.g. InvestigationChart) supplies the chrome. */
   chrome?: boolean;
@@ -230,15 +234,20 @@ export function Chart({
     return typeof v === "string" && DATE_VALUE_RE.test(v);
   };
 
+  // All-NULL columns carry no information; drop them up front so an empty numeric
+  // column can't become a phantom "NULL" categorical legend/stack dimension.
+  const isDead = (i: number) =>
+    rows.every(r => { const v = (r as unknown[])[i]; return v === null || v === undefined || v === "" || v === "NULL"; });
+
   const dateCol =
-    columns.find(c => DATE_COL.test(c)) ||
-    columns.find((c, i) => !isNumeric(firstNonNull(rows, i)) && looksLikeDate(i));
+    columns.find((c, i) => DATE_COL.test(c) && !isDead(i)) ||
+    columns.find((c, i) => !isDead(i) && !isNumeric(firstNonNull(rows, i)) && looksLikeDate(i));
 
   const catCols = columns.filter(
-    (c, i) => c !== dateCol && !DATE_COL.test(c) && !isNumeric(firstNonNull(rows, i)),
+    (c, i) => c !== dateCol && !DATE_COL.test(c) && !isDead(i) && !isNumeric(firstNonNull(rows, i)),
   );
   const PREFER_COL = /(pct|percent|share|rate|ratio|proportion)/i;
-  const numericCols = columns.filter((c, i) => !DATE_COL.test(c) && isNumeric(firstNonNull(rows, i)));
+  const numericCols = columns.filter((c, i) => !DATE_COL.test(c) && !isDead(i) && isNumeric(firstNonNull(rows, i)));
   // True when ANY numeric column is a change/delta/growth metric.
   // These are COMPARISON questions — heatmap/stacked-bar are inappropriate.
   const _isChangeMetric = numericCols.some(c => CHANGE_METRIC_COL.test(c));
@@ -312,6 +321,14 @@ export function Chart({
   // Data-label format: 3 significant figures SI (e.g. "2.14M", "891k" not "2.14438M")
   // Percentages always 2 decimal places
   const lblFmt = isPctFraction ? ".2%" : ".3s";
+  // Per-COLUMN format. yFmt/lblFmt above are derived from a single column (numCol),
+  // which is fine for single-measure charts but WRONG for multi-measure ones (combo,
+  // dual-encoding): there, numCol is often the rate column → yFmt=".2%" → and that
+  // percent gets applied to the count axes too ("total_carts" → "153888700.00%").
+  // Format each field by ITS OWN values instead: a true 0-1 share → percent, else SI.
+  const _maxAbs = (f: string) => Math.max(0, ...data.map(d => Math.abs(Number(d[f]))).filter(v => !isNaN(v)));
+  const fmtCol = (f: string) => (SHARE_COL.test(f) && _maxAbs(f) <= 1.0001) ? ".2%" : "~s";
+  const lblCol = (f: string) => (SHARE_COL.test(f) && _maxAbs(f) <= 1.0001) ? ".2%" : ".3s";
 
   // ── Build spec ─────────────────────────────────────────────────────────────
   const xTitle = catCol  ? cleanLabel(catCol)  : (dateCol ? cleanLabel(dateCol) : "");
@@ -337,6 +354,19 @@ export function Chart({
     const y2F = ccY2;
     const cF = ccColor;
     const bFmt = ccFmt ?? "~s";
+    // Per-AXIS format. A multi-measure chart (combo / dual-encoding) must not apply one
+    // format to axes of different units — the LLM's chart_config carried a single percent
+    // format, so count axes (converted_carts / total_carts) rendered as "16000000000.00%".
+    // Rule: a true 0–1 share column → percent; otherwise NEVER inherit a percent format
+    // (fall back to SI), but keep a non-percent LLM format (e.g. currency).
+    const bIsPct = /%/.test(bFmt);
+    const maxAbs = (f?: string) =>
+      !f ? 0 : Math.max(0, ...data.map((d) => Math.abs(Number(d[f]))).filter((v) => !isNaN(v)));
+    const fmtFor = (f?: string): string => {
+      if (!f) return bFmt;
+      if (SHARE_COL.test(f) && maxAbs(f) <= 1.0001) return ".2%";
+      return bIsPct ? "~s" : bFmt;
+    };
     const bTitle = cc?.title as string | undefined;
 
     if (bType === "combo" && y2F) {
@@ -345,20 +375,20 @@ export function Chart({
           {
             mark: { type: "bar", color: "#818cf8", opacity: 0.8, cornerRadiusEnd: 2 },
             encoding: {
-              y: { field: yF, type: "quantitative", axis: { format: bFmt, grid: true, title: cleanLabel(yF) } },
+              y: { field: yF, type: "quantitative", axis: { format: fmtFor(yF), grid: true, title: cleanLabel(yF) } },
               tooltip: [
                 { field: xF, type: "nominal" },
-                { field: yF, type: "quantitative", format: bFmt, title: cleanLabel(yF) },
+                { field: yF, type: "quantitative", format: fmtFor(yF), title: cleanLabel(yF) },
               ],
             },
           },
           {
             mark: { type: "line", color: "#E64848", strokeWidth: 2, point: { size: 30, filled: true, opacity: 0.9 } },
             encoding: {
-              y: { field: y2F, type: "quantitative", axis: { format: bFmt, title: cleanLabel(y2F) } },
+              y: { field: y2F, type: "quantitative", axis: { format: fmtFor(y2F), title: cleanLabel(y2F) } },
               tooltip: [
                 { field: xF, type: "nominal" },
-                { field: y2F, type: "quantitative", format: bFmt, title: cleanLabel(y2F) },
+                { field: y2F, type: "quantitative", format: fmtFor(y2F), title: cleanLabel(y2F) },
               ],
             },
           },
@@ -372,19 +402,19 @@ export function Chart({
       defaultH = 350;
     } else if (bType === "line" || bType === "multi_line") {
       const xEnc: Record<string, unknown> = { field: xF, type: "temporal", axis: { labelAngle: 0, title: cleanLabel(xF) } };
-      const yEnc: Record<string, unknown> = { field: yF, type: "quantitative", axis: { format: bFmt, grid: true, title: cleanLabel(yF) } };
+      const yEnc: Record<string, unknown> = { field: yF, type: "quantitative", axis: { format: fmtFor(yF), grid: true, title: cleanLabel(yF) } };
       spec = {
         mark: { type: "line", strokeWidth: 1.5 },
         encoding: xEnc,
         ...(cF ? {
           layer: [
             { mark: { type: "line" }, encoding: { x: xEnc, y: yEnc, color: { field: cF, type: "nominal" } } },
-            { mark: { type: "point", filled: true, size: 30 }, encoding: { x: xEnc, y: yEnc, color: { field: cF, type: "nominal" }, tooltip: [{ field: xF, type: "temporal" }, { field: cF, type: "nominal" }, { field: yF, type: "quantitative", format: bFmt }] } },
+            { mark: { type: "point", filled: true, size: 30 }, encoding: { x: xEnc, y: yEnc, color: { field: cF, type: "nominal" }, tooltip: [{ field: xF, type: "temporal" }, { field: cF, type: "nominal" }, { field: yF, type: "quantitative", format: fmtFor(yF) }] } },
           ],
         } : {
           layer: [
             { mark: { type: "line" }, encoding: { x: xEnc, y: yEnc } },
-            { mark: { type: "point", filled: true, size: 30 }, encoding: { x: xEnc, y: yEnc, tooltip: [{ field: xF, type: "temporal" }, { field: yF, type: "quantitative", format: bFmt }] } },
+            { mark: { type: "point", filled: true, size: 30 }, encoding: { x: xEnc, y: yEnc, tooltip: [{ field: xF, type: "temporal" }, { field: yF, type: "quantitative", format: fmtFor(yF) }] } },
           ],
         }),
       };
@@ -394,10 +424,10 @@ export function Chart({
         mark: { type: "bar", color: "#818cf8", opacity: 0.85, cornerRadiusEnd: 2 },
         encoding: {
           x: { field: xF, type: "ordinal", sort: { field: yF, order: "descending" }, axis: { labelLimit: 160, labelAngle: 0, labelOverlap: true, title: cleanLabel(xF) } },
-          y: { field: yF, type: "quantitative", axis: { format: bFmt, grid: true, title: cleanLabel(yF) } },
+          y: { field: yF, type: "quantitative", axis: { format: fmtFor(yF), grid: true, title: cleanLabel(yF) } },
           tooltip: [
             { field: xF, type: "nominal", title: cleanLabel(xF) },
-            { field: yF, type: "quantitative", format: bFmt, title: cleanLabel(yF) },
+            { field: yF, type: "quantitative", format: fmtFor(yF), title: cleanLabel(yF) },
           ],
         },
       };
@@ -407,10 +437,10 @@ export function Chart({
         mark: { type: "point", filled: true, size: 60, opacity: 0.7 },
         encoding: {
           x: { field: xF, type: "quantitative", axis: { title: cleanLabel(xF) } },
-          y: { field: yF, type: "quantitative", axis: { format: bFmt, grid: true, title: cleanLabel(yF) } },
+          y: { field: yF, type: "quantitative", axis: { format: fmtFor(yF), grid: true, title: cleanLabel(yF) } },
           tooltip: [
             { field: xF, type: "quantitative", title: cleanLabel(xF) },
-            { field: yF, type: "quantitative", format: bFmt, title: cleanLabel(yF) },
+            { field: yF, type: "quantitative", format: fmtFor(yF), title: cleanLabel(yF) },
           ],
         },
       };
@@ -426,7 +456,7 @@ export function Chart({
           color: { field: "label", type: "nominal", legend: { title: cleanLabel(xF), orient: "right" } },
           tooltip: [
             { field: "label", type: "nominal", title: cleanLabel(xF) },
-            { field: "value", type: "quantitative", format: bFmt, title: cleanLabel(yF) },
+            { field: "value", type: "quantitative", format: fmtFor(yF), title: cleanLabel(yF) },
           ],
         },
       };
@@ -1051,52 +1081,95 @@ export function Chart({
       agg.set(k, (agg.get(k) ?? 0) + Number(d[numCol]));
     });
 
-    // ── COMBO CHART — multiple metrics with different mark types ───────────
+    // ── COMBO vs BAR — score whether a dual axis is actually warranted ──────
+    // Don't force every multi-numeric chart into a misleading dual-axis combo.
+    // scoreDualAxis picks combo ONLY when the two measures are different units
+    // (magnitude + 0-1 rate) or scales (>=25x); otherwise one honest bar of the
+    // primary magnitude (other measures stay on the chart-type toggle).
     if (numericCols.length >= 2 && catCols.length === 1) {
-      const primary   = numericCols[0];  // bars
-      const secondary = numericCols[1];  // line
+      const numericIdxs = numericCols.map(n => columns.indexOf(n)).filter(i => i >= 0);
+      const decision = scoreDualAxis(columns, rows, numericIdxs);
+      const primary = columns[decision.barIdx] ?? numericCols[0];
       vegaData = data;
-      spec = {
-        layer: [
-          {
-            mark: { type: "bar", color: "#818cf8", opacity: 0.8, cornerRadiusEnd: 2 },
-            encoding: {
-              y: {
-                field: primary, type: "quantitative",
-                axis: { format: yFmt, grid: true, title: cleanLabel(primary) },
+      if (decision.combo && decision.lineIdx != null) {
+        const secondary = columns[decision.lineIdx];
+        spec = {
+          layer: [
+            {
+              mark: { type: "bar", color: "#818cf8", opacity: 0.8, cornerRadiusEnd: 2 },
+              encoding: {
+                y: { field: primary, type: "quantitative", axis: { format: fmtCol(primary), grid: true, title: cleanLabel(primary) } },
+                tooltip: [
+                  { field: catCol, type: "nominal" },
+                  { field: primary, type: "quantitative", format: lblCol(primary), title: cleanLabel(primary) },
+                ],
               },
-              tooltip: [
-                { field: catCol, type: "nominal" },
-                { field: primary, type: "quantitative", format: lblFmt, title: cleanLabel(primary) },
-              ],
             },
-          },
-          {
-            mark: { type: "line", color: "#E64848", strokeWidth: 2, point: { size: 30, filled: true, opacity: 0.9 } },
-            encoding: {
-              y: {
-                field: secondary, type: "quantitative",
-                axis: { format: yFmt, title: cleanLabel(secondary) },
+            {
+              mark: { type: "line", color: "#E64848", strokeWidth: 2, point: { size: 30, filled: true, opacity: 0.9 } },
+              encoding: {
+                y: { field: secondary, type: "quantitative", axis: { format: fmtCol(secondary), title: cleanLabel(secondary) } },
+                tooltip: [
+                  { field: catCol, type: "nominal" },
+                  { field: secondary, type: "quantitative", format: lblCol(secondary), title: cleanLabel(secondary) },
+                ],
               },
-              tooltip: [
-                { field: catCol, type: "nominal" },
-                { field: secondary, type: "quantitative", format: lblFmt, title: cleanLabel(secondary) },
-              ],
             },
+          ],
+          encoding: {
+            x: { field: catCol, type: "ordinal", sort: { field: primary, order: "descending" },
+                 axis: { labelLimit: 160, labelAngle: 0, labelOverlap: true, title: cleanLabel(catCol) } },
           },
-        ],
-        encoding: {
-          x: {
-            field: catCol, type: "ordinal",
-            sort: { field: primary, order: "descending" },
-            axis: { labelLimit: 160, labelAngle: 0, labelOverlap: true, title: cleanLabel(catCol) },
+          resolve: { scale: { y: "independent" } },
+          config: { axisX: { labelAngle: 0, labelOverlap: "parity" } },
+        };
+        defaultH = 350;
+      } else if (decision.groupIdxs.length >= 2) {
+        // Same UNIT, similar scale (e.g. spend + revenue, or two rates) → a GROUPED
+        // bar shows them side by side on one honest shared axis: no dropped series,
+        // no misleading independent dual axes. Build long-format data with clean
+        // measure labels (a fold transform would expose raw column names).
+        const fields = decision.groupIdxs.map(i => columns[i]);
+        const long: Record<string, unknown>[] = [];
+        for (const row of data) {
+          for (const f of fields) {
+            const v = Number(row[f]);
+            if (!isNaN(v)) long.push({ [catCol]: row[catCol], measure: cleanLabel(f), mvalue: v });
+          }
+        }
+        vegaData = long;
+        spec = {
+          mark: { type: "bar", cornerRadiusEnd: 2 },
+          encoding: {
+            x: { field: catCol, type: "ordinal",
+                 axis: { labelLimit: 160, labelAngle: 0, labelOverlap: true, title: cleanLabel(catCol) } },
+            xOffset: { field: "measure", type: "nominal" },
+            y: { field: "mvalue", type: "quantitative", axis: { format: fmtCol(fields[0]), grid: true, title: "" } },
+            color: { field: "measure", type: "nominal", legend: { title: null, orient: "top" } },
+            tooltip: [
+              { field: catCol, type: "nominal" },
+              { field: "measure", type: "nominal" },
+              { field: "mvalue", type: "quantitative", format: lblCol(fields[0]) },
+            ],
           },
-        },
-        resolve: { scale: { y: "independent" } },
-        config: { axisX: { labelAngle: 0, labelOverlap: "parity" } },
-      };
-      const groupCount = new Set(data.map(d => String(d[catCol]))).size;
-      defaultH = 350;
+        };
+        defaultH = 300;
+      } else {
+        // One honest bar of the primary magnitude.
+        spec = {
+          mark: { type: "bar", color: "#818cf8", opacity: 0.85, cornerRadiusEnd: 2 },
+          encoding: {
+            x: { field: catCol, type: "ordinal", sort: { field: primary, order: "descending" },
+                 axis: { labelLimit: 160, labelAngle: 0, labelOverlap: true, title: cleanLabel(catCol) } },
+            y: { field: primary, type: "quantitative", axis: { format: fmtCol(primary), grid: true, title: cleanLabel(primary) } },
+            tooltip: [
+              { field: catCol, type: "nominal" },
+              { field: primary, type: "quantitative", format: lblCol(primary), title: cleanLabel(primary) },
+            ],
+          },
+        };
+        defaultH = 280;
+      }
     } else if (!spec && _isChangeMetric) {
       // ── CHANGE METRIC BAR ──────────────────────────────────────────────────
       // Sort by absolute magnitude so biggest movers (positive OR negative) appear first.
@@ -1222,7 +1295,7 @@ export function Chart({
   if (!spec) return null;
 
   // Base chart height fills the 350px component; grows only if y-axis labels would overlap.
-  const chartH  = userH ?? defaultH;
+  const chartH  = Math.round((userH ?? defaultH) * heightScale);
 
   return (
     <div className="mt-2 w-full group/chart">

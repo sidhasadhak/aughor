@@ -353,21 +353,41 @@ def _crosses_datasets(sql: str) -> bool:
 
 
 def _is_degenerate_result(rows, finding_text: str = "") -> bool:
-    """True when a Phase-8 result carries no real data — an all-NULL single/leading row
-    (the filter/join matched nothing) or an interpretation that explicitly says so.
+    """True when a Phase-8 result carries no trustworthy data — so it never becomes an
+    insight (and so never reaches the Briefing). Three cases:
 
-    High-precision by design: a legitimate ``COUNT(...) = 0`` returns 0 (not NULL), so
-    real "zero X" findings survive; only genuinely empty results are dropped."""
+      1. the whole result is NULL (empty join/filter matched nothing), OR
+      2. ANY numeric column is NULL across EVERY row, OR ZERO across every row — a metric
+         that never computed because a join/linkage is broken (a `touchpoint_type=channel`
+         join that matches nothing → revenue/ROAS all NULL) or a value was destroyed
+         (`ROUND(weight, 4)` on a ~2e-07 weight → every ROAS = 0.0). RULE: a NULL **or
+         all-zero** metric must not appear in a Briefing — it reads as a confident finding
+         ("$0 ROAS — no revenue captured") when it is really a query bug; the underlying
+         data ($491M revenue) is intact. OR
+      3. the interpretation text explicitly says "no data".
+
+    A column with MIXED values (some 0, some not) is real signal and survives — only a
+    metric that is flat NULL or flat zero across the whole result is dropped."""
     if rows:
-        total = non_null = 0
-        for r in rows[:5]:
-            cells = list(r.values()) if isinstance(r, dict) else list(r)
-            for c in cells:
-                total += 1
-                if c is not None:
-                    non_null += 1
-        if total > 0 and non_null == 0:
-            return True
+        # Normalise to row-lists (dict rows → values in stable key order).
+        if isinstance(rows[0], dict):
+            keys = list(rows[0].keys())
+            norm = [[r.get(k) for k in keys] for r in rows]
+        else:
+            norm = [list(r) for r in rows]
+        ncols = max((len(r) for r in norm), default=0)
+        for i in range(ncols):
+            col = [r[i] for r in norm if i < len(r)]
+            if not col:
+                continue
+            nonnull = [c for c in col if c is not None and c != "" and c != "NULL"]
+            if not nonnull:
+                return True          # entirely-NULL column → broken/empty linkage
+            try:
+                if all(float(c) == 0.0 for c in nonnull):
+                    return True      # a NUMERIC column that is ZERO everywhere → no signal
+            except (TypeError, ValueError):
+                pass                 # non-numeric (a dimension) — not a dead measure
     return bool(finding_text and _NO_DATA_RE.search(finding_text))
 
 
@@ -1739,12 +1759,127 @@ class SchemaExplorer:
             logger.info("[explorer:%s] Phase 8: multi-dataset connection %s — isolating datasets",
                         self.connection_id, sorted(_all_datasets))
 
-        for domain, entities in domain_entities.items():
+        # ── Per-dataset domain passes (the "every dataset gets understood" guarantee) ──
+        # A domain's entities can span unrelated uploaded datasets (a Marketing domain over
+        # BOTH bakehouse and netflix). The old behaviour kept only the DOMINANT dataset's
+        # entities and DROPPED the rest — so a single-table catalog like netflix.netflix_titles,
+        # which loses every dominance contest, got ZERO exploration and ZERO briefing (it just
+        # vanished, silently). That breaks the core promise: whether or not a dataset has joins
+        # or measures, the explorer must still understand it and surface reasonable insights.
+        #
+        # Fix: split each multi-dataset domain into ONE pass PER dataset. Every pass is already
+        # single-dataset (so the in-loop dataset-isolation guards below are no-ops, and the SQL
+        # stays join-valid), and no dataset is ever dropped. Each pass carries its own budget /
+        # coverage / novelty state via a unique label; the original domain name (`_base_domain`)
+        # still drives the angle checklist and is what the insight is tagged with for grouping.
+        def _entity_ds(e) -> str:
+            from collections import Counter as _C
+            dss = [_ds(t) for t in e.source_tables if _ds(t)]
+            return _C(dss).most_common(1)[0][0] if dss else ""
+
+        passes: list[tuple[str, str, list]] = []   # (pass_label, base_domain, entities)
+        for _domain, _entities in domain_entities.items():
+            if not multi_dataset:
+                passes.append((_domain, _domain, _entities))
+                continue
+            _by_ds: dict[str, list] = {}
+            for _e in _entities:
+                _by_ds.setdefault(_entity_ds(_e), []).append(_e)
+            _real = {k: v for k, v in _by_ds.items() if k}
+            if len(_real) <= 1:
+                # One (or zero) identifiable dataset — keep the domain whole.
+                passes.append((_domain, _domain, _entities))
+            else:
+                # Split: a labelled pass per dataset. Entities whose dataset can't be
+                # determined ride with the largest group so they're not dropped either.
+                _unknown = _by_ds.get("", [])
+                _primary = max(sorted(_real), key=lambda d: len(_real[d]))
+                for _ds_name in sorted(_real):
+                    _ents = list(_real[_ds_name])
+                    if _ds_name == _primary:
+                        _ents += _unknown
+                    passes.append((f"{_domain} · {_ds_name}", _domain, _ents))
+                logger.info(
+                    "[explorer:%s] Phase 8: %s domain spans %s — splitting into one pass per dataset",
+                    self.connection_id, _domain, sorted(_real),
+                )
+
+        # ── Industry-aware steering (Business Profile) ──────────────────────────
+        # The keystone for industry-aware intelligence. Load the connection's
+        # Business Profile and let it DRIVE Phase 8: (a) DERIVE extra angles from its
+        # north-star metrics — the per-domain column-feasibility gate below trims any
+        # that don't fit a domain's tables — and (b) INJECT an authoritative industry
+        # block into the question prompt so generated SQL targets what matters for
+        # THIS vertical (AOV/repeat-rate for ecommerce, load-factor/OTP for an
+        # airline) instead of generic volume/value, and respects each metric's sane
+        # range (no more "conversion rate = 1.42"). Best-effort: no profile → the
+        # hardcoded DOMAIN_ANGLES still apply unchanged.
+        profile_block = ""
+        profile_angles: list[str] = []
+        try:
+            from aughor.profile.infer import get_or_infer
+            _bp = await _loop.run_in_executor(None, lambda: get_or_infer(self.connection_id))
+            if _bp is not None:
+                import re as _re
+                def _slug(s: str) -> str:
+                    return _re.sub(r"[^a-z0-9]+", "_", (s or "").lower()).strip("_")[:40]
+                profile_angles = [a for a in (_slug(m.name) for m in _bp.north_star_metrics) if a][:8]
+                _mlines = "\n".join(
+                    f"  - {m.name}: {m.definition} [from {m.maps_to}] (sane value: {m.unit_or_range})"
+                    for m in _bp.north_star_metrics[:8]
+                )
+                _qlines = "\n".join(f"  - {q}" for q in _bp.key_questions[:8])
+                # Computation recipes (curated industry KB + LLM fallback) — the
+                # SQL-ACCURACY knowledge: each metric's canonical formula, the grain
+                # to compute at, and the anti-pattern that produces a wrong number
+                # (e.g. COUNT(orders)/COUNT(carts) → conversion > 1). Injected
+                # authoritatively so generated SQL gets the join/grain right.
+                from aughor.profile import store as _pstore
+                _recipes = _pstore.load_recipes(self.connection_id)
+                _rlines = ""
+                if _recipes:
+                    _parts = []
+                    for r in _recipes[:8]:
+                        _aps = "; ".join((r.get("anti_patterns") or [])[:2])
+                        _parts.append(
+                            f"  • {r.get('metric')}:\n"
+                            f"      formula: {r.get('formula')}\n"
+                            f"      grain: {r.get('grain')}\n"
+                            f"      AVOID: {_aps}"
+                        )
+                    _rlines = (
+                        "COMPUTATION RECIPES — when a question targets one of these metrics, follow "
+                        "the formula and grain EXACTLY and avoid the named anti-patterns (this is how "
+                        "you keep the SQL correct — a conversion rate must come out 0..1, not 1.4):\n"
+                        + "\n".join(_parts) + "\n"
+                    )
+                profile_block = (
+                    f"INDUSTRY CONTEXT — this is a {_bp.industry} business ({_bp.business_model}). "
+                    f"{_bp.summary}\n"
+                    f"PRIORITY METRICS for this industry (prefer these; honour each metric's sane "
+                    f"value — NEVER report an impossible figure like a ratio > 1 or a near-zero "
+                    f"per-unit revenue):\n{_mlines}\n"
+                    f"{_rlines}"
+                    f"QUESTIONS THAT MATTER for this industry:\n{_qlines}\n\n"
+                )
+                logger.info(
+                    "[explorer:%s] Phase 8: industry-aware steering — %r (%d priority metrics, %d recipes)",
+                    self.connection_id, _bp.industry, len(profile_angles), len(_recipes),
+                )
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "business-profile steering is best-effort; on failure fall back to "
+                     "the generic DOMAIN_ANGLES", counter="explorer.profile_steer_failed")
+
+        for domain, _base_domain, entities in passes:
             await self._gate()
             if self._stopped:
                 return
 
-            angles = DOMAIN_ANGLES.get(domain, DEFAULT_ANGLES)
+            # Derive: profile metrics lead the angle checklist; generic angles remain
+            # as fallback. The column-feasibility gate downstream drops any that don't
+            # fit this domain's tables, so cross-domain metrics self-scope.
+            angles = list(dict.fromkeys(profile_angles + DOMAIN_ANGLES.get(_base_domain, DEFAULT_ANGLES)))
             budgets = self._state.setdefault("domain_budgets", {})
             coverage = self._state.setdefault("domain_coverage", {})
             domain_insights: list[dict] = [
@@ -2116,7 +2251,13 @@ class SchemaExplorer:
                         "This applies equally to COUNT(DISTINCT x) / COUNT(*) — both are banned.\n"
                         "5. RESPECT the TIME WINDOW in the user prompt — scope every query touching a "
                         "timestamped table to the specified date range. Trends, seasonality, and "
-                        "growth metrics are only meaningful within a bounded, recent window."
+                        "growth metrics are only meaningful within a bounded, recent window.\n"
+                        "6. ONE metric per query, with the population THAT metric needs. Do NOT bolt a "
+                        "second metric onto a query whose WHERE/JOIN filter is wrong for it — a "
+                        "conversion query filtered to status='DELIVERED' will silently return ZERO for a "
+                        "refund metric whose refunds live on status='RETURNED' orders, producing a false "
+                        "'no refunds' finding. If you want another metric, ask it as a SEPARATE question "
+                        "with its own correct filter."
                     )
                     time_window_block = ""
                     # The window must reflect THIS domain's dataset, not the connection's
@@ -2174,6 +2315,7 @@ class SchemaExplorer:
                         )
                     _usr1 = (
                         f"DOMAIN: {domain}\n\n"
+                        f"{profile_block}"
                         f"ENTITIES IN THIS DOMAIN:\n{entity_context}\n\n"
                         f"RELATIONSHIPS:\n{relationship_context}\n\n"
                         f"{domain_schema_block}\n\n"
@@ -2319,10 +2461,19 @@ class SchemaExplorer:
                              counter="explorer.preflight_failed")
                 # Tier 3: on a large connection, swap exact COUNT(DISTINCT) for the HLL
                 # approximation — orders of magnitude cheaper on big facts, ~1-3% off.
+                # EXCEPT for ratio/rate queries: the per-count HLL error compounds across
+                # a division and flips rankings of near-tied values (the conversion-rate
+                # query that crowned the wrong channel). Keep those exact — a distinct
+                # count over a few-million-row fact is cheap enough in DuckDB.
+                _dialect = getattr(self._conn, "dialect", "duckdb")
                 if self._cost_large:
                     try:
-                        from aughor.sql.cost import approximate_aggregates
-                        sql = approximate_aggregates(sql, getattr(self._conn, "dialect", "duckdb"))
+                        from aughor.sql.cost import approximate_aggregates, has_count_ratio
+                        if has_count_ratio(sql, _dialect):
+                            logger.info("[explorer:%s] Tier 3: keeping COUNT exact — query computes a ratio",
+                                        self.connection_id)
+                        else:
+                            sql = approximate_aggregates(sql, _dialect)
                     except Exception as _exc:
                         from aughor.kernel.errors import tolerate
                         tolerate(_exc, "HLL approximation is an optional cost optimisation; on "
@@ -2368,6 +2519,35 @@ class SchemaExplorer:
                     tolerate(_exc, "pre-flight bind-check is best-effort; on failure fall "
                              "through to the execute+retry loop (no worse than before)",
                              counter="explorer.bindcheck_failed")
+
+                # Join value-domain guard: probe each explicit JOIN's value overlap and
+                # SKIP a query that joins columns whose values don't overlap. The model
+                # invented `attribution.touchpoint_type = campaigns.channel` (ad_click/
+                # organic/… vs YouTube/TikTok/… → 0% overlap) — it binds and runs but
+                # matches nothing, so revenue/ROAS come back all-NULL and the finding
+                # reads as a confident "critical data gap" when it's just a fabricated
+                # join. The ADA/investigation paths already run this guard; the background
+                # explorer (which feeds the Briefing) did not — wire it in here. Probes the
+                # DB, so it runs once per query AFTER the bind-check has finalised the SQL.
+                try:
+                    from aughor.sql.join_guard import check_join_value_domains
+                    _jw = check_join_value_domains(self._conn, sql)
+                    if _jw:
+                        from aughor.stats import stats as _s; _s.inc("explorer.join_domain_skips")
+                        logger.info(
+                            "[explorer:%s] Phase 8: %s/%s — skipping fabricated join (no value overlap): %s",
+                            self.connection_id, domain, nq.angle,
+                            "; ".join(str(w) for w in _jw[:3]),
+                        )
+                        used += 1
+                        budgets[domain] = used
+                        self._state["domain_budgets"] = budgets
+                        continue
+                except Exception as _exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_exc, "join value-domain guard is best-effort; on failure run the "
+                             "query (no worse than before the explorer had the guard)",
+                             counter="explorer.join_guard_failed")
                 rows = None
 
                 for attempt in range(MAX_ATTEMPTS):
@@ -2518,7 +2698,7 @@ class SchemaExplorer:
                     try:
                         from aughor.sql.fanout import (
                             integer_division_risk, count_star_entity_fanout, count_star_chasm_fanout,
-                            avg_over_chasm_fanout,
+                            avg_over_chasm_fanout, sum_over_chasm_fanout,
                         )
                         _tc = getattr(sql_writer, "table_cols", {})
                         # Measure-additivity: per-unit measure summed without ×quantity
@@ -2532,6 +2712,7 @@ class SchemaExplorer:
                                   or count_star_entity_fanout(sql, _tc)
                                   or count_star_chasm_fanout(sql, _tc, dialect=getattr(self._conn, "dialect", "duckdb"))
                                   or avg_over_chasm_fanout(sql, _tc, dialect=getattr(self._conn, "dialect", "duckdb"))
+                                  or sum_over_chasm_fanout(sql, _tc, dialect=getattr(self._conn, "dialect", "duckdb"))
                                   or (measure_grain_misuse(sql, _mg, _qc, dialect=getattr(self._conn, "dialect", "duckdb")) if _mg else None))
                         if _grain:
                             from aughor.stats import stats as _s; _s.inc("explorer.grain_skips")
@@ -2707,6 +2888,32 @@ class SchemaExplorer:
                 # grain or measure has a different signature and is kept. After a few in a
                 # row the domain is clearly out of fresh structural questions — stop it
                 # rather than burn the rest of the budget regenerating variants.
+                # Cross-domain redundancy gate: the structural-dup gate below only sees
+                # THIS domain's findings, so two domains can each surface "conversion by
+                # traffic_source" (same grain + measures, overlapping tables) → two
+                # near-identical briefing charts. Check against ALL insights so far and
+                # drop the later one. Coarser than the per-domain gate (tolerates a tacked-
+                # on secondary column/table) but guarded by shared-table + grouped-only.
+                try:
+                    from aughor.sql.shape import is_redundant_insight
+                    _all_prior_sqls = [i.get("sql", "") for i in self._state.get("insights", [])]
+                    if is_redundant_insight(sql, _all_prior_sqls, getattr(self._conn, "dialect", "duckdb")):
+                        from aughor.stats import stats as _s; _s.inc("explorer.redundant_skips")
+                        logger.info(
+                            "[explorer:%s] Phase 8: %s/%s — dropping cross-domain redundant finding "
+                            "(same grain+measures as an existing insight)",
+                            self.connection_id, domain, nq.angle,
+                        )
+                        used += 1
+                        budgets[domain] = used
+                        self._state["domain_budgets"] = budgets
+                        continue
+                except Exception as _exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(_exc, "cross-domain redundancy check is best-effort; on failure keep "
+                             "the finding (no worse than the per-domain gate alone)",
+                             counter="explorer.redundancy_failed")
+
                 try:
                     from aughor.sql.shape import is_structural_duplicate
                     _prior_sqls = [i.get("sql", "") for i in domain_insights]

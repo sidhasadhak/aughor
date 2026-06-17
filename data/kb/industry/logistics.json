@@ -1,0 +1,133 @@
+{
+  "industry": "Transport / Logistics",
+  "aliases": ["logistics", "transport", "transportation", "freight", "shipping", "supply chain", "last mile", "last-mile", "3pl", "courier", "trucking", "carrier", "fleet", "parcel", "delivery", "distribution", "haulage", "fulfillment"],
+  "description": "Movement of goods from origin to destination across legs, modes, and carriers. Levers are service quality (on-time, in-full, low damage), speed (transit and dwell time), and cost/asset efficiency (cost per shipment/mile, vehicle and container load factor, routes per driver).",
+  "metrics": [
+    {
+      "name": "On-Time Delivery Rate (OTD)",
+      "aliases": ["OTD", "on-time delivery", "on-time rate", "service level"],
+      "definition": "Share of deliveries completed on or before the promised/committed time.",
+      "formula": "COUNT(DISTINCT shipment_id WHERE actual_delivery_time <= promised_delivery_time) / NULLIF(COUNT(DISTINCT delivered_shipment_id), 0)",
+      "grain": "Shipment/delivery grain. Compare actual vs promised at the SAME entity. Denominator = shipments that were actually delivered (or due) in the window, not all created shipments. A rate is bounded 0..1 BY CONSTRUCTION.",
+      "anti_patterns": [
+        "Counting tracking-event rows or legs instead of distinct shipments fans out the numerator → a rate >1, which means a join fan-out, not great service.",
+        "Denominator = all shipments (including in-transit/not-yet-due) understates OTD; restrict to delivered or past-promise shipments.",
+        "Comparing actual delivery time against carrier pickup time or order time instead of the PROMISED/committed delivery time measures the wrong SLA."
+      ],
+      "sane_range": "ratio 0..1 (never > 1); operators target 0.90–0.99.",
+      "needs_concepts": ["shipments/deliveries", "promised vs actual delivery time", "delivery status"]
+    },
+    {
+      "name": "OTIF (On-Time In-Full)",
+      "aliases": ["OTIF", "on-time in-full", "perfect order rate", "DIFOT"],
+      "definition": "Share of orders delivered BOTH on time AND complete (full ordered quantity, no shortages).",
+      "formula": "COUNT(DISTINCT order_id WHERE on_time = TRUE AND in_full = TRUE) / NULLIF(COUNT(DISTINCT eligible_order_id), 0)",
+      "grain": "Order grain — both conditions evaluated on the SAME order population. 'In full' is per-order: ALL lines delivered at ordered qty (use a per-order aggregate like MIN(delivered_qty >= ordered_qty) over lines, not a line-level rate). Do NOT compute on-time on one population and in-full on another and multiply the two rates.",
+      "anti_patterns": [
+        "Computing OTD% and in-full% on different row sets then multiplying them — OTIF is a conjunction at the order grain, not a product of two independent marginals.",
+        "Evaluating in-full at the line grain (a 4-of-5-lines order counts as 80% full) instead of collapsing to a boolean per order first.",
+        "Denominator population differs from OTD's — keep the eligible-order set identical so OTIF <= OTD always holds."
+      ],
+      "sane_range": "ratio 0..1; always <= On-Time Delivery Rate. Typical retail-supplier targets 0.95+.",
+      "needs_concepts": ["orders and order lines", "ordered vs delivered quantity", "promised vs actual delivery time"]
+    },
+    {
+      "name": "Average Transit Time",
+      "aliases": ["transit time", "lead time", "delivery time", "time in transit"],
+      "definition": "Average elapsed time from dispatch/pickup to final delivery.",
+      "formula": "SUM(delivery_time - pickup_time) / COUNT(DISTINCT shipment_id)  -- end-to-end per shipment",
+      "grain": "Shipment grain for end-to-end transit. If a shipment has multiple legs and you want a per-leg or modal average, DISTANCE-WEIGHT it: SUM(leg_duration) / SUM(leg_distance) gives time-per-distance; a plain AVG(leg_duration) over legs lets a 5-mile cross-dock hop count the same as a 2,000-mile linehaul.",
+      "anti_patterns": [
+        "AVG over leg rows instead of per-shipment end-to-end double-counts multi-leg shipments and biases toward shipments with more legs.",
+        "Unweighted average of per-leg times when you actually want network speed — weight by distance (or leg count consistently), never mix.",
+        "Including dwell/idle hold time silently inflates transit; decide explicitly whether stops count and apply it uniformly."
+      ],
+      "sane_range": "hours or days, strictly positive; last-mile parcel hours-to-days, ocean freight days-to-weeks. Negative or zero ⇒ swapped timestamps.",
+      "needs_concepts": ["shipments and/or legs", "pickup/dispatch and delivery timestamps", "leg distance (for weighting)"]
+    },
+    {
+      "name": "Cost per Shipment / Cost per Mile (km)",
+      "aliases": ["cost per shipment", "cost per mile", "cost per km", "CPM", "freight cost per unit", "cost to serve"],
+      "definition": "Average transportation cost per delivered shipment, or per distance unit moved.",
+      "formula": "Per shipment: SUM(cost) / COUNT(DISTINCT shipment_id). Per mile: SUM(cost) / NULLIF(SUM(distance), 0).",
+      "grain": "Sum cost and the denominator (shipments or distance) at the SAME grain before dividing. For cost-per-mile, SUM both cost and distance then divide — never AVG(cost_per_mile) per trip (that is distance-unweighted and lets short trips dominate).",
+      "anti_patterns": [
+        "AVG(row_cost_per_mile) instead of SUM(cost)/SUM(distance) — unweighted, so a 2-mile trip skews the network rate.",
+        "Joining cost (one row per shipment) to legs/stops (many rows) before summing duplicates cost across legs → inflated total.",
+        "Mixing accessorial/fuel-surcharge lines into a per-mile linehaul rate without aligning scope."
+      ],
+      "sane_range": "currency per shipment or per mile/km, strictly positive. Sub-cent or scientific-notation values ⇒ a units/grain mismatch (e.g. cost summed once, distance fanned out).",
+      "needs_concepts": ["shipment cost (freight/accessorial)", "shipments", "distance traveled"]
+    },
+    {
+      "name": "Vehicle / Asset Capacity Utilization (Load Factor)",
+      "aliases": ["load factor", "capacity utilization", "fill rate", "truck utilization", "container utilization", "cube utilization"],
+      "definition": "How full vehicles/containers are — used capacity against available capacity (by weight, volume/cube, or pallet positions).",
+      "formula": "SUM(used_capacity) / NULLIF(SUM(available_capacity), 0)  -- capacity-weighted across trips",
+      "grain": "Trip/vehicle grain, but CAPACITY-WEIGHTED: sum used and available capacity across trips, then divide. Do NOT AVG(per-trip ratio) — a near-empty van and a full linehaul truck would count equally. Pick ONE basis (weight OR cube OR pallets) and keep it consistent; the binding constraint is often cube, not weight.",
+      "anti_patterns": [
+        "AVG(used/available) per trip instead of SUM(used)/SUM(available) — unweighted, ignores that trips carry different capacities.",
+        "Mixing weight-based and volume-based utilization in one number; a truck can be 100% cube-full at 60% weight.",
+        "A utilization >1 means used exceeds rated capacity — a data error or a fan-out (capacity joined per-line), not an overloaded truck."
+      ],
+      "sane_range": "ratio 0..1 (occasionally slightly >1 on legitimate overload, otherwise a bug). Healthy linehaul often 0.7–0.95.",
+      "needs_concepts": ["vehicles/containers with rated capacity", "loaded weight or volume per trip", "trips/dispatches"]
+    },
+    {
+      "name": "First-Attempt Delivery Success Rate",
+      "aliases": ["first attempt success", "FADS", "right first time", "first-time delivery rate"],
+      "definition": "Share of deliveries successfully completed on the first delivery attempt (no redelivery/failed-attempt).",
+      "formula": "COUNT(DISTINCT shipment_id WHERE first_attempt_outcome = 'delivered') / NULLIF(COUNT(DISTINCT attempted_shipment_id), 0)",
+      "grain": "Shipment grain. A shipment can have MANY attempt rows; collapse to per-shipment first — was the EARLIEST attempt (MIN attempt_time / attempt_seq = 1) successful? Denominator = shipments that had at least one attempt, not total attempt rows.",
+      "anti_patterns": [
+        "COUNT(successful_attempts) / COUNT(all_attempts) measures attempt-level success, not first-attempt-per-shipment — redelivered parcels that eventually succeed inflate it.",
+        "Not pinning to the FIRST attempt (use attempt sequence or earliest timestamp); any-attempt success ≠ first-attempt success.",
+        "Counting attempt rows in the denominator fans out shipments with multiple attempts."
+      ],
+      "sane_range": "ratio 0..1; last-mile B2C typically 0.85–0.97.",
+      "needs_concepts": ["shipments", "delivery attempts with outcome", "attempt sequence or timestamp"]
+    },
+    {
+      "name": "Dwell Time",
+      "aliases": ["dwell time", "detention time", "turnaround time", "yard time", "wait time", "loading time"],
+      "definition": "Time a vehicle/driver/shipment spends idle at a facility (dock, yard, port, terminal) between arrival and departure.",
+      "formula": "SUM(departure_time - arrival_time) / COUNT(DISTINCT stop_id)  -- average per stop/visit",
+      "grain": "Stop/visit grain (one arrival→departure interval per facility visit). Aggregate at the level you report (per facility, per carrier). Each interval is independent; do not sum overlapping intervals or count a vehicle's multiple visits as one.",
+      "anti_patterns": [
+        "Averaging dwell across shipments when many shipments share ONE vehicle stop double-counts the same dwell interval — measure at the stop, not the shipment.",
+        "Using order/created time as arrival; dwell is gate-in to gate-out (or arrival to departure), not order-to-departure.",
+        "Negative or zero dwell ⇒ swapped/duplicate arrival-departure timestamps; filter and surface, don't average them in."
+      ],
+      "sane_range": "minutes to hours, non-negative; cross-dock minutes, port detention hours-to-days. Negative ⇒ timestamp error.",
+      "needs_concepts": ["facility stops/visits", "arrival and departure timestamps"]
+    },
+    {
+      "name": "Damage / Exception / Loss Rate",
+      "aliases": ["damage rate", "exception rate", "loss rate", "claims rate", "shrinkage", "OS&D rate"],
+      "definition": "Share of shipments (or units) flagged as damaged, lost, or exception (mis-delivery, shortage, claim).",
+      "formula": "COUNT(DISTINCT shipment_id WHERE has_exception = TRUE) / NULLIF(COUNT(DISTINCT shipped_shipment_id), 0)",
+      "grain": "Shipment (or unit) grain — choose one and keep numerator and denominator on the SAME population. A shipment with multiple exception/claim rows counts ONCE; use DISTINCT shipment_id, not COUNT of exception records.",
+      "anti_patterns": [
+        "COUNT(exception_rows) / COUNT(shipments): one shipment with 3 exception lines inflates the numerator → rate can exceed 1.",
+        "Denominator = delivered shipments while numerator includes lost (never-delivered) shipments — mismatched populations; denominator should be all SHIPPED.",
+        "Mixing unit-level damage (numerator) with shipment-level totals (denominator) without aligning grain."
+      ],
+      "sane_range": "ratio 0..1, typically very small (0.001–0.05); a value near 1 or >1 signals row fan-out.",
+      "needs_concepts": ["shipments or units shipped", "damage/loss/exception flags or claims"]
+    },
+    {
+      "name": "Deliveries per Route / Driver",
+      "aliases": ["stops per route", "drops per route", "deliveries per driver", "productivity per route", "stops per driver"],
+      "definition": "Average number of successful deliveries (stops) completed per route or per driver per period.",
+      "formula": "COUNT(DISTINCT delivered_stop_id) / NULLIF(COUNT(DISTINCT route_id), 0)  -- or per driver_id per day",
+      "grain": "Route or driver-day grain. Aggregate deliveries to the route/driver-day FIRST, then average — pin the denominator to a clear unit (a route, or a driver+date), otherwise a driver running 3 routes a day skews the ratio. Count DISTINCT delivered stops, not delivery-event/scan rows.",
+      "anti_patterns": [
+        "COUNT(deliveries) / COUNT(drivers) without a time dimension conflates a busy day with a slow one — fix the period (per driver-day).",
+        "Counting scan/tracking events instead of distinct delivered stops fans out the numerator.",
+        "Including failed/attempted-only stops in 'deliveries' overstates productivity; count completed deliveries."
+      ],
+      "sane_range": "count, strictly positive; urban last-mile routes often 80–200 stops/route/day.",
+      "needs_concepts": ["routes or drivers", "deliveries/stops with outcome", "date (for per-day productivity)"]
+    }
+  ]
+}

@@ -30,6 +30,8 @@ interface Props {
   typeOverride?: ChartType | "auto";
   showLabels?: boolean;
   custom?: ChartCustom | null;
+  /** Scale the chart height (e.g. 0.75 for compact briefing cards). */
+  heightScale?: number;
 }
 
 const TYPE_TO_HINT: Record<ChartType, string> = {
@@ -48,7 +50,7 @@ const TYPE_TO_HINT: Record<ChartType, string> = {
   "table":       "auto",
 };
 
-export function InvestigationChart({ columns, rows, title, controlled, typeOverride, showLabels: showLabelsProp, custom }: Props) {
+export function InvestigationChart({ columns, rows, title, controlled, typeOverride, showLabels: showLabelsProp, custom, heightScale }: Props) {
   const inferred = inferChartType(columns, rows);
   const [overrideState, setOverride] = useState<ChartType | "auto">("auto");
   const [showLabelsState, setShowLabels] = useState(false);
@@ -105,6 +107,7 @@ export function InvestigationChart({ columns, rows, title, controlled, typeOverr
         showLabels={showLabels}
         custom={custom}
         title={chartTitle}
+        heightScale={heightScale}
       />
     </ChartWrapper>
   );

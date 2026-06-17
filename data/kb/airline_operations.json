@@ -1,0 +1,837 @@
+[
+  {
+    "id": "air_load_factor",
+    "title": "Passenger Load Factor (PLF)",
+    "intent_tags": [
+      "load factor",
+      "passenger load factor",
+      "plf",
+      "seat fill rate",
+      "how full are flights",
+      "rpk over ask",
+      "capacity utilization",
+      "seats sold percentage",
+      "occupancy rate",
+      "how full are planes",
+      "what is our load factor",
+      "rpk ask ratio",
+      "seat occupancy"
+    ],
+    "sql_features": [
+      "aggregation",
+      "join",
+      "nullif",
+      "case_filter"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "measure how full flights are over a period or route",
+      "compare capacity utilization across routes, fleet types, or seasons",
+      "assess whether revenue weakness is a demand (load) or pricing (yield) problem",
+      "evaluate the impact of capacity changes on seat fill",
+      "network planning and schedule optimization reporting"
+    ],
+    "related_patterns": [
+      "air_yield",
+      "air_rasm_casm",
+      "air_fleet_utilization",
+      "air_otp"
+    ],
+    "business_definition": "Revenue Passenger Kilometers (RPK) divided by Available Seat Kilometers (ASK), expressed as a percentage. RPK = passengers * distance flown; ASK = seats_available * distance flown. The capacity-weighted share of available seat-distance that was actually sold. Excludes ferry, positioning, training, and cancelled flights, which carry no revenue passengers but may consume capacity.",
+    "metric_nature": {
+      "what_it_measures": "The capacity-weighted proportion of available seat-distance that was filled by paying passengers. A pure volume/utilization signal that tells you how full the aircraft were, weighted by how far each seat flew.",
+      "what_it_does_not_measure": "Profitability or revenue quality. A 95% load factor at deeply discounted fares can be less profitable than 80% at full fare. Load factor says nothing about what those passengers paid — use air_yield for that.",
+      "common_misconception": "Load factor is not the simple average of per-flight fill percentages. The correct figure is capacity-weighted: SUM(rpk_km) / SUM(ask_km). Averaging each flight's fill rate equally over-weights short regional hops and under-weights long-haul wide-bodies, producing a different (usually higher) number than the true network load factor."
+    },
+    "template": "SELECT ROUND(SUM(s.passengers * s.distance_km) / NULLIF(SUM(s.seats_available * s.distance_km), 0) * 100, 2) AS load_factor_pct FROM segments s JOIN flights f ON s.flight_id = f.flight_id WHERE f.flight_type = 'revenue' AND f.status = 'completed' AND f.scheduled_departure BETWEEN {start_date} AND {end_date}",
+    "inflation_causes": [
+      {
+        "cause": "Ferry and positioning flights excluded from ASK but their seats still counted elsewhere, or revenue legs double-counted via join fan-out",
+        "how_it_inflates": "If a segment row is joined to a fare or booking table that has multiple rows per segment, passengers fan out and the passenger*distance numerator is multiplied while seats stay fixed, pushing load factor above 100%. A load factor above 100% is always a join-grain or overbooking artifact, never real.",
+        "detection_sql": "SELECT s.segment_id, s.passengers, s.seats_available, COUNT(*) AS row_count, ROUND(s.passengers * 100.0 / NULLIF(s.seats_available, 0), 1) AS seg_lf FROM segments s JOIN bookings b ON s.segment_id = b.segment_id GROUP BY s.segment_id, s.passengers, s.seats_available HAVING COUNT(*) > 1 OR s.passengers > s.seats_available ORDER BY seg_lf DESC LIMIT 20",
+        "fix": "Aggregate passengers to segment grain before joining, and compute load factor only from the segments table (passengers, seats_available, distance_km). Never multiply through a one-to-many booking/fare join."
+      },
+      {
+        "cause": "Standby, non-revenue, and infant passengers counted in the numerator",
+        "how_it_inflates": "If passengers includes staff travel, award redemptions flagged non-revenue, or lap infants who occupy no seat, the numerator exceeds true revenue seats sold, inflating load factor versus the revenue definition.",
+        "detection_sql": "SELECT s.passenger_type, COUNT(*) AS pax, SUM(s.distance_km) AS pax_km FROM segments s GROUP BY s.passenger_type ORDER BY pax DESC",
+        "fix": "Restrict the numerator to revenue passengers (exclude passenger_type IN ('staff','infant','non_rev')). Keep infants and standby in a separate operational headcount, not in RPK."
+      },
+      {
+        "cause": "Seats_available understated by blocked/unsold capacity (e.g. weight-restricted seats) removed from denominator",
+        "how_it_inflates": "On weight-and-balance restricted flights, an airline may sell fewer seats but record seats_available as the saleable count rather than the physical configuration. If blocked seats are dropped from ASK, the denominator shrinks and load factor looks artificially high.",
+        "detection_sql": "SELECT f.aircraft_type, AVG(s.seats_available) AS avg_seats_avail, MAX(ac.seat_config) AS physical_seats FROM segments s JOIN flights f ON s.flight_id = f.flight_id JOIN aircraft ac ON f.aircraft_id = ac.aircraft_id GROUP BY f.aircraft_type HAVING AVG(s.seats_available) < MAX(ac.seat_config) * 0.95 ORDER BY 1",
+        "fix": "Define ASK consistently against the physical/published seat configuration. Report weight-restricted seat blocks as a separate spilled-capacity line, not by shrinking the denominator."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Ferry, positioning, and training flights included in ASK",
+        "how_it_deflates": "Ferry and positioning legs fly with crew but no (or almost no) revenue passengers. If their seats_available * distance contributes to the ASK denominator while their passengers are near zero, network load factor is dragged down by capacity that was never offered for sale.",
+        "detection_sql": "SELECT f.flight_type, COUNT(*) AS legs, SUM(s.passengers * s.distance_km) AS rpk, SUM(s.seats_available * s.distance_km) AS ask, ROUND(SUM(s.passengers * s.distance_km) / NULLIF(SUM(s.seats_available * s.distance_km), 0) * 100, 2) AS lf_pct FROM segments s JOIN flights f ON s.flight_id = f.flight_id GROUP BY f.flight_type ORDER BY ask DESC",
+        "fix": "Filter flight_type = 'revenue' in every load factor query. Track ferry/positioning ASK separately as non-revenue block, never in the published load factor denominator."
+      },
+      {
+        "cause": "Cancelled flights with bookings but zero flown passengers left in the denominator",
+        "how_it_deflates": "A cancelled flight has seats_available and distance but flew no passengers. If status is not filtered, its full ASK enters the denominator with zero RPK, deflating load factor for the affected route/period.",
+        "detection_sql": "SELECT f.status, COUNT(*) AS legs, SUM(s.passengers) AS pax, SUM(s.seats_available * s.distance_km) AS ask FROM segments s JOIN flights f ON s.flight_id = f.flight_id GROUP BY f.status ORDER BY ask DESC",
+        "fix": "Restrict to f.status = 'completed' (flown legs only). Cancelled and diverted-to-cancel legs must not contribute ASK to a flown load factor."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the load factor change on a specific route, fleet type, or just the network blended figure?",
+      "Did capacity (ASK) change — new frequencies, up-gauge to larger aircraft — or did demand (RPK) move?",
+      "Are ferry, positioning, or training flights leaking into the ASK denominator?",
+      "Is the figure capacity-weighted (SUM(rpk)/SUM(ask)) or a naive average of per-flight fill rates?",
+      "Are non-revenue, staff, or infant passengers inflating the RPK numerator?",
+      "Did a seasonal or schedule change shift the mix toward longer/shorter haul that moves blended load factor?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "load factor up, air_yield down",
+        "then": "Seats were filled by stimulating demand with lower fares — a price-for-volume trade. Verify whether total passenger revenue (RASM) actually rose or just shifted."
+      },
+      {
+        "if": "load factor down, ASK up",
+        "then": "Capacity was added faster than demand could absorb it — check for recent frequency adds or up-gauging on the affected routes."
+      },
+      {
+        "if": "load factor up, ASK flat, RPK up",
+        "then": "Genuine demand growth on stable capacity — the healthy case. Confirm yield held so the extra passengers are accretive."
+      },
+      {
+        "if": "load factor flat at network level but down on a route",
+        "then": "A mix shift is masking a route-level problem — a strong route is offsetting a weak one in the blended number. Decompose by route."
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Load factor rises while air_yield falls in the same period",
+        "and_also": "air_rasm_casm shows flat or declining RASM",
+        "shared_root_cause": "The airline filled seats by discounting fares (demand stimulation) but did not convert the extra passengers into incremental unit revenue. Higher load factor at lower yield is only accretive if RASM rises; if RASM is flat, the discount fully offset the volume gain. Check fare-class mix shift toward deep-discount buckets.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', f.scheduled_departure) AS month, ROUND(SUM(s.passengers * s.distance_km) / NULLIF(SUM(s.seats_available * s.distance_km), 0) * 100, 2) AS load_factor_pct, ROUND(SUM(s.fare_revenue) / NULLIF(SUM(s.passengers * s.distance_km), 0), 4) AS yield_per_rpk, ROUND(SUM(s.fare_revenue) / NULLIF(SUM(s.seats_available * s.distance_km), 0), 4) AS rasm FROM segments s JOIN flights f ON s.flight_id = f.flight_id WHERE f.flight_type = 'revenue' AND f.status = 'completed' GROUP BY 1 ORDER BY 1"
+      },
+      {
+        "if_this_metric": "Load factor drops on a route",
+        "and_also": "air_fleet_utilization rose (larger aircraft or added frequency) on that route",
+        "shared_root_cause": "Capacity was up-gauged or frequencies added faster than the market grew. The same demand spread across more ASK lowers load factor. This is a network-planning decision, not a demand collapse — confirm RPK is flat (not falling) before treating it as a sales problem.",
+        "diagnostic_sql": "SELECT f.route_id, DATE_TRUNC('month', f.scheduled_departure) AS month, COUNT(*) AS legs, SUM(s.seats_available * s.distance_km) AS ask, SUM(s.passengers * s.distance_km) AS rpk, ROUND(SUM(s.passengers * s.distance_km) / NULLIF(SUM(s.seats_available * s.distance_km), 0) * 100, 2) AS lf_pct FROM segments s JOIN flights f ON s.flight_id = f.flight_id WHERE f.flight_type = 'revenue' AND f.status = 'completed' GROUP BY 1, 2 ORDER BY 1, 2"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Averaging per-flight load factors equally instead of capacity-weighting",
+        "why_wrong": "AVG of each leg's fill percentage gives every flight equal weight regardless of size or stage length. A 50-seat regional jet on a 300km hop counts as much as a 350-seat wide-body on a 12,000km haul. The true network load factor is capacity-weighted: SUM(rpk) / SUM(ask). The naive average can differ by several points and usually overstates because small short legs often run fuller.",
+        "bad_sql": "SELECT AVG(s.passengers * 100.0 / NULLIF(s.seats_available, 0)) AS load_factor_pct FROM segments s",
+        "good_sql": "SELECT ROUND(SUM(s.passengers * s.distance_km) / NULLIF(SUM(s.seats_available * s.distance_km), 0) * 100, 2) AS load_factor_pct FROM segments s JOIN flights f ON s.flight_id = f.flight_id WHERE f.flight_type = 'revenue' AND f.status = 'completed'"
+      },
+      {
+        "pattern": "Using passengers/seats without distance weighting and ignoring load factor > 100%",
+        "why_wrong": "Computing SUM(passengers)/SUM(seats_available) ignores stage length, and any result above 100% is silently accepted as 'a very full flight' when it is actually an overbooking-counted-as-flown error or a join fan-out. A load factor over 100% is physically impossible for flown revenue passengers and must be treated as a data bug.",
+        "bad_sql": "SELECT SUM(passengers) * 100.0 / SUM(seats_available) AS load_factor_pct FROM segments",
+        "good_sql": "SELECT ROUND(SUM(s.passengers * s.distance_km) / NULLIF(SUM(s.seats_available * s.distance_km), 0) * 100, 2) AS load_factor_pct, MAX(CASE WHEN s.passengers > s.seats_available THEN 1 ELSE 0 END) AS overbook_flag FROM segments s JOIN flights f ON s.flight_id = f.flight_id WHERE f.flight_type = 'revenue' AND f.status = 'completed'"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT ROUND(SUM(s.passengers * s.distance_km) / NULLIF(SUM(s.seats_available * s.distance_km), 0) * 100, 2) AS load_factor_pct FROM segments s JOIN flights f ON s.flight_id = f.flight_id WHERE f.flight_type = 'revenue' AND f.status = 'completed' AND f.scheduled_departure BETWEEN '2024-01-01' AND '2024-01-31'",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', f.scheduled_departure) AS month, f.route_id, SUM(s.passengers * s.distance_km) AS rpk_km, SUM(s.seats_available * s.distance_km) AS ask_km, ROUND(SUM(s.passengers * s.distance_km) / NULLIF(SUM(s.seats_available * s.distance_km), 0) * 100, 2) AS load_factor_pct FROM segments s JOIN flights f ON s.flight_id = f.flight_id WHERE f.flight_type = 'revenue' AND f.status = 'completed' GROUP BY 1, 2 ORDER BY 1, 3 DESC",
+      "advanced_sql": "WITH leg_capacity AS (\n  -- Grain: one row per flown revenue segment. RPK and ASK weighted by distance.\n  SELECT\n    f.flight_id,\n    f.route_id,\n    f.aircraft_type,\n    DATE_TRUNC('month', f.scheduled_departure) AS month,\n    s.passengers * s.distance_km AS rpk_km,\n    s.seats_available * s.distance_km AS ask_km\n  FROM segments s\n  JOIN flights f ON s.flight_id = f.flight_id\n  WHERE f.flight_type = 'revenue' AND f.status = 'completed'\n),\nmonthly AS (\n  SELECT\n    month,\n    route_id,\n    SUM(rpk_km) AS rpk_km,\n    SUM(ask_km) AS ask_km,\n    ROUND(SUM(rpk_km) / NULLIF(SUM(ask_km), 0) * 100, 2) AS load_factor_pct\n  FROM leg_capacity\n  GROUP BY 1, 2\n),\nwith_trend AS (\n  SELECT\n    month,\n    route_id,\n    load_factor_pct,\n    ask_km,\n    rpk_km,\n    LAG(load_factor_pct) OVER (PARTITION BY route_id ORDER BY month) AS prev_lf,\n    load_factor_pct - LAG(load_factor_pct) OVER (PARTITION BY route_id ORDER BY month) AS lf_change_pp\n  FROM monthly\n)\nSELECT * FROM with_trend ORDER BY route_id, month"
+    }
+  },
+  {
+    "id": "air_otp",
+    "title": "On-Time Performance (OTP)",
+    "intent_tags": [
+      "on time performance",
+      "otp",
+      "on-time arrival",
+      "departure punctuality",
+      "a14",
+      "d0",
+      "percent flights on time",
+      "delay rate",
+      "how punctual are flights",
+      "arrival within 15 minutes",
+      "flight delays",
+      "on time rate",
+      "schedule reliability"
+    ],
+    "sql_features": [
+      "aggregation",
+      "join",
+      "case_filter",
+      "nullif",
+      "date_diff"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "ratio",
+    "when_to_use": [
+      "measure the share of flights that arrived/departed within the on-time threshold",
+      "compare punctuality across hubs, routes, time-of-day, or fleet",
+      "diagnose operational reliability and connection risk",
+      "benchmark against regulatory on-time reporting (e.g. A14 — arrival within 14/15 minutes)",
+      "evaluate the impact of schedule padding or turn-time changes"
+    ],
+    "related_patterns": [
+      "air_fleet_utilization",
+      "air_load_factor",
+      "air_rasm_casm"
+    ],
+    "business_definition": "The share of completed flights that arrived (or departed) within the on-time threshold — conventionally within 15 minutes (sometimes 14, 'A14') of scheduled time. OTP = COUNT(flights with delay_minutes <= 15) / COUNT(completed flights) * 100. Cancelled and diverted flights are reported separately; including or excluding them materially changes the figure.",
+    "metric_nature": {
+      "what_it_measures": "The probability that a flight is not meaningfully late against its published schedule. An operational reliability signal driving passenger satisfaction and connection integrity.",
+      "what_it_does_not_measure": "How late the late flights are (severity), nor whether the schedule itself is honest. A 90% OTP says nothing about the 10% that were 4 hours late, and it can be 'bought' by padding scheduled times. Pair with average delay minutes and cancellation rate.",
+      "common_misconception": "OTP is not robust to schedule padding. An airline can inflate OTP simply by lengthening scheduled block/arrival times so flights 'arrive early' against a soft schedule. A rising OTP with rising scheduled block time is schedule manipulation, not improved operations."
+    },
+    "template": "SELECT ROUND(COUNT(CASE WHEN (EXTRACT(EPOCH FROM (f.actual_arrival - f.scheduled_arrival)) / 60.0) <= 15 THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS otp_pct FROM flights f WHERE f.status = 'completed' AND f.flight_type = 'revenue' AND f.scheduled_departure BETWEEN {start_date} AND {end_date}",
+    "inflation_causes": [
+      {
+        "cause": "Scheduled block/arrival times padded over time",
+        "how_it_inflates": "If the published scheduled_arrival is steadily lengthened (block padding), the same physical operation arrives 'on time' against a softer target. OTP rises with no real operational improvement — the gain is entirely in the schedule, not the aircraft.",
+        "detection_sql": "SELECT f.route_id, DATE_TRUNC('quarter', f.scheduled_departure) AS qtr, AVG(EXTRACT(EPOCH FROM (f.scheduled_arrival - f.scheduled_departure)) / 60.0) AS avg_scheduled_block_min, AVG(EXTRACT(EPOCH FROM (f.actual_arrival - f.actual_departure)) / 60.0) AS avg_actual_block_min FROM flights f WHERE f.status = 'completed' GROUP BY 1, 2 ORDER BY 1, 2",
+        "fix": "Track scheduled block time alongside OTP. Report OTP against a stable historical baseline schedule, and surface block-time creep as a separate metric so padding-driven gains are visible."
+      },
+      {
+        "cause": "Cancelled and diverted flights excluded from the denominator",
+        "how_it_inflates": "The worst operational outcomes — cancellations — are not 'late', they simply do not arrive. If only completed flights are in the denominator, a day where the airline cancels its most-delayed flights shows a higher OTP than a day where it flew them late. OTP improves precisely by cancelling the problem flights.",
+        "detection_sql": "SELECT f.status, COUNT(*) AS flights FROM flights f WHERE f.scheduled_departure >= CURRENT_DATE - INTERVAL '30 days' GROUP BY f.status ORDER BY flights DESC",
+        "fix": "Always report OTP next to cancellation rate. Consider a 'completion factor' (flown / scheduled) so cancelling delayed flights cannot quietly boost OTP."
+      },
+      {
+        "cause": "On-time threshold applied to departure (D0/D15) when stakeholders expect arrival (A15)",
+        "how_it_inflates": "Departure punctuality is almost always higher than arrival punctuality because en-route and approach delays accrue after pushback. Reporting departure OTP while labeling it 'on-time performance' inflates the headline versus the arrival figure passengers actually experience.",
+        "detection_sql": "SELECT ROUND(COUNT(CASE WHEN EXTRACT(EPOCH FROM (f.actual_departure - f.scheduled_departure))/60.0 <= 15 THEN 1 END)*100.0/NULLIF(COUNT(*),0),2) AS dep_otp, ROUND(COUNT(CASE WHEN EXTRACT(EPOCH FROM (f.actual_arrival - f.scheduled_arrival))/60.0 <= 15 THEN 1 END)*100.0/NULLIF(COUNT(*),0),2) AS arr_otp FROM flights f WHERE f.status = 'completed'",
+        "fix": "Define and label the threshold explicitly (D0, D15, A14/A15). Report arrival OTP as the customer-facing figure; use departure OTP only for ramp/turn diagnostics."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Delays attributed to a flight that were inherited from the inbound rotation",
+        "how_it_deflates": "A flight can depart late purely because its aircraft arrived late from the prior leg (reactionary/knock-on delay). Counting it against the route or crew as if locally caused makes a route's OTP look worse than its own controllable performance.",
+        "detection_sql": "SELECT f.flight_id, f.route_id, f.delay_minutes, prev.flight_id AS inbound_flight, prev.delay_minutes AS inbound_delay FROM flights f JOIN flights prev ON f.aircraft_id = prev.aircraft_id AND prev.actual_arrival = (SELECT MAX(p2.actual_arrival) FROM flights p2 WHERE p2.aircraft_id = f.aircraft_id AND p2.actual_arrival < f.scheduled_departure) WHERE f.delay_minutes > 15 AND prev.delay_minutes > 15 ORDER BY f.delay_minutes DESC LIMIT 20",
+        "fix": "Separate reactionary (inbound-inherited) delay from primary delay using a delay-code/cause field. Report controllable OTP excluding reactionary causes for fair route/crew comparison."
+      },
+      {
+        "cause": "Missing actual_arrival timestamps treated as delayed",
+        "how_it_deflates": "If a flight's actual_arrival is NULL due to a feed gap, a naive CASE that does not handle NULL classifies it as not-on-time, deflating OTP for periods with telemetry outages rather than real delays.",
+        "detection_sql": "SELECT DATE_TRUNC('day', f.scheduled_departure) AS day, COUNT(*) AS flights, COUNT(CASE WHEN f.actual_arrival IS NULL THEN 1 END) AS missing_arrival FROM flights f WHERE f.status = 'completed' GROUP BY 1 HAVING COUNT(CASE WHEN f.actual_arrival IS NULL THEN 1 END) > 0 ORDER BY 1 DESC",
+        "fix": "Exclude rows with NULL actual timestamps from both numerator and denominator (or backfill from the ops feed) so feed gaps do not masquerade as delays."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the OTP movement on departures or arrivals, and which threshold (D0, A14, A15) is being applied?",
+      "Did scheduled block times change — is an OTP gain real or schedule padding?",
+      "Are cancelled and diverted flights in or out of the denominator, and did cancellation rate move with OTP?",
+      "Is the delay primary (locally caused) or reactionary (inherited from a late inbound aircraft)?",
+      "Is the change concentrated at a specific hub, time-of-day bank, or fleet?",
+      "Are NULL actual timestamps from feed gaps being miscounted as late?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "OTP up, scheduled block time up",
+        "then": "The improvement is likely schedule padding, not operational gains — actual block time and taxi performance may be unchanged. Compare actual block trend before crediting operations."
+      },
+      {
+        "if": "OTP up, cancellation rate up",
+        "then": "The airline may be improving OTP by cancelling its most-delayed flights. Check completion factor; OTP and cancellations should be read together."
+      },
+      {
+        "if": "OTP down, air_fleet_utilization up",
+        "then": "Tighter turns and higher aircraft utilization left no buffer to absorb delays, so reactionary delay propagated through the day. Check turn-time vs minimum-turn."
+      },
+      {
+        "if": "OTP down at one hub only",
+        "then": "A localized cause — weather, ATC flow, ramp staffing, or a congested bank — rather than a systemic schedule problem. Decompose by departure hour at that hub."
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "OTP deteriorates across the network",
+        "and_also": "air_fleet_utilization (block hours per aircraft per day) increased in the same period",
+        "shared_root_cause": "The schedule was tightened to squeeze more flying out of each tail, cutting ground buffer below the time needed to absorb normal variability. Once one leg slips, the lack of slack propagates reactionary delay through every subsequent rotation. The fix is schedule design (turn buffers), not crew effort.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', f.scheduled_departure) AS week, ROUND(COUNT(CASE WHEN EXTRACT(EPOCH FROM (f.actual_arrival - f.scheduled_arrival))/60.0 <= 15 THEN 1 END)*100.0/NULLIF(COUNT(*),0),2) AS otp_pct, ROUND(SUM(f.block_hours) / NULLIF(COUNT(DISTINCT f.aircraft_id), 0), 2) AS block_hrs_per_tail FROM flights f WHERE f.status = 'completed' AND f.flight_type = 'revenue' GROUP BY 1 ORDER BY 1"
+      },
+      {
+        "if_this_metric": "Arrival OTP falls but departure OTP holds steady",
+        "and_also": "average actual block time rose versus scheduled",
+        "shared_root_cause": "Flights are pushing back on time but losing time en route or on approach — ATC flow restrictions, airspace congestion, or weather routing. Because departures are fine, the ramp/turn process is not the issue; the schedule's en-route assumptions are too optimistic for current conditions.",
+        "diagnostic_sql": "SELECT f.route_id, ROUND(AVG(EXTRACT(EPOCH FROM (f.actual_departure - f.scheduled_departure))/60.0),1) AS avg_dep_delay, ROUND(AVG(EXTRACT(EPOCH FROM (f.actual_arrival - f.scheduled_arrival))/60.0),1) AS avg_arr_delay, ROUND(AVG(EXTRACT(EPOCH FROM (f.actual_arrival - f.actual_departure))/60.0 - EXTRACT(EPOCH FROM (f.scheduled_arrival - f.scheduled_departure))/60.0),1) AS block_overrun_min FROM flights f WHERE f.status = 'completed' GROUP BY 1 HAVING AVG(EXTRACT(EPOCH FROM (f.actual_arrival - f.scheduled_arrival))/60.0) > 15 ORDER BY block_overrun_min DESC LIMIT 20"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Excluding cancellations from the denominator without reporting them",
+        "why_wrong": "OTP = on-time / completed silently rewards cancelling delayed flights. An operation that cancels its 10 worst flights posts a higher OTP than one that flies them 90 minutes late. The metric must be read with cancellation/completion rate or it incentivizes the wrong behavior.",
+        "bad_sql": "SELECT COUNT(CASE WHEN f.delay_minutes <= 15 THEN 1 END) * 100.0 / COUNT(*) AS otp FROM flights f WHERE f.status = 'completed'",
+        "good_sql": "SELECT ROUND(COUNT(CASE WHEN f.status = 'completed' AND f.delay_minutes <= 15 THEN 1 END) * 100.0 / NULLIF(COUNT(CASE WHEN f.status = 'completed' THEN 1 END), 0), 2) AS otp_pct, ROUND(COUNT(CASE WHEN f.status = 'cancelled' THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS cancel_pct FROM flights f WHERE f.flight_type = 'revenue'"
+      },
+      {
+        "pattern": "Comparing OTP across periods without normalizing for scheduled block time",
+        "why_wrong": "Delay is measured against scheduled_arrival. If the schedule was padded between periods, a flat actual operation shows rising OTP. Comparing raw OTP across schedule versions credits the airline for slack it added, not punctuality it earned.",
+        "bad_sql": "SELECT DATE_TRUNC('quarter', f.scheduled_departure) AS qtr, COUNT(CASE WHEN f.delay_minutes <= 15 THEN 1 END)*100.0/COUNT(*) AS otp FROM flights f WHERE f.status='completed' GROUP BY 1",
+        "good_sql": "SELECT DATE_TRUNC('quarter', f.scheduled_departure) AS qtr, ROUND(COUNT(CASE WHEN f.delay_minutes <= 15 THEN 1 END)*100.0/NULLIF(COUNT(*),0),2) AS otp_pct, ROUND(AVG(EXTRACT(EPOCH FROM (f.scheduled_arrival - f.scheduled_departure))/60.0),1) AS avg_sched_block_min, ROUND(AVG(EXTRACT(EPOCH FROM (f.actual_arrival - f.actual_departure))/60.0),1) AS avg_actual_block_min FROM flights f WHERE f.status='completed' AND f.flight_type='revenue' GROUP BY 1 ORDER BY 1"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT ROUND(COUNT(CASE WHEN EXTRACT(EPOCH FROM (f.actual_arrival - f.scheduled_arrival)) / 60.0 <= 15 THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS otp_pct FROM flights f WHERE f.status = 'completed' AND f.flight_type = 'revenue' AND f.scheduled_departure BETWEEN '2024-01-01' AND '2024-01-31'",
+      "intermediate_sql": "SELECT f.origin_airport, DATE_TRUNC('week', f.scheduled_departure) AS week, COUNT(*) AS flights, ROUND(COUNT(CASE WHEN EXTRACT(EPOCH FROM (f.actual_arrival - f.scheduled_arrival))/60.0 <= 15 THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS arr_otp_pct, ROUND(AVG(EXTRACT(EPOCH FROM (f.actual_arrival - f.scheduled_arrival))/60.0), 1) AS avg_arr_delay_min FROM flights f WHERE f.status = 'completed' AND f.flight_type = 'revenue' GROUP BY 1, 2 ORDER BY 2, arr_otp_pct ASC",
+      "advanced_sql": "WITH leg_delay AS (\n  -- Grain: one row per completed revenue flight with arrival delay and scheduled block\n  SELECT\n    f.flight_id,\n    f.origin_airport,\n    DATE_TRUNC('month', f.scheduled_departure) AS month,\n    EXTRACT(EPOCH FROM (f.actual_arrival - f.scheduled_arrival)) / 60.0 AS arr_delay_min,\n    EXTRACT(EPOCH FROM (f.scheduled_arrival - f.scheduled_departure)) / 60.0 AS sched_block_min,\n    EXTRACT(EPOCH FROM (f.actual_arrival - f.actual_departure)) / 60.0 AS actual_block_min\n  FROM flights f\n  WHERE f.status = 'completed' AND f.flight_type = 'revenue' AND f.actual_arrival IS NOT NULL\n),\nmonthly AS (\n  SELECT\n    month,\n    origin_airport,\n    COUNT(*) AS flights,\n    ROUND(COUNT(CASE WHEN arr_delay_min <= 15 THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS otp_pct,\n    ROUND(AVG(arr_delay_min), 1) AS avg_delay_min,\n    ROUND(AVG(sched_block_min), 1) AS avg_sched_block,\n    ROUND(AVG(actual_block_min), 1) AS avg_actual_block\n  FROM leg_delay\n  GROUP BY 1, 2\n)\nSELECT\n  month,\n  origin_airport,\n  flights,\n  otp_pct,\n  avg_delay_min,\n  avg_sched_block,\n  avg_actual_block,\n  ROUND(avg_sched_block - avg_actual_block, 1) AS schedule_padding_min,\n  LAG(otp_pct) OVER (PARTITION BY origin_airport ORDER BY month) AS prev_otp,\n  ROUND(otp_pct - LAG(otp_pct) OVER (PARTITION BY origin_airport ORDER BY month), 2) AS otp_change_pp\nFROM monthly\nORDER BY origin_airport, month"
+    }
+  },
+  {
+    "id": "air_yield",
+    "title": "Passenger Yield (Revenue per RPK)",
+    "intent_tags": [
+      "yield",
+      "passenger yield",
+      "revenue per rpk",
+      "revenue per passenger kilometer",
+      "fare yield",
+      "price per seat mile",
+      "how much per passenger km",
+      "average fare per distance",
+      "yield analysis",
+      "ticket revenue per rpk",
+      "passenger revenue yield",
+      "what is our yield"
+    ],
+    "sql_features": [
+      "aggregation",
+      "join",
+      "nullif",
+      "case_filter"
+    ],
+    "difficulty": "advanced",
+    "pattern_type": "ratio",
+    "when_to_use": [
+      "measure the average fare revenue earned per unit of passenger distance",
+      "compare pricing power across routes, cabins, or booking channels",
+      "separate revenue weakness into a pricing (yield) vs volume (load) problem",
+      "evaluate fare-mix and discounting strategy effectiveness",
+      "long-haul vs short-haul pricing comparison normalized for distance"
+    ],
+    "related_patterns": [
+      "air_load_factor",
+      "air_rasm_casm",
+      "air_ancillary_per_pax"
+    ],
+    "business_definition": "Total passenger fare revenue divided by Revenue Passenger Kilometers (RPK), typically expressed in currency per RPK (or per RPM). Yield = SUM(fare_revenue) / SUM(passengers * distance_km). It is the average price paid per passenger per kilometer flown, normalized so routes of different lengths can be compared. Excludes ancillary revenue, cargo, ferry, and non-revenue passengers.",
+    "metric_nature": {
+      "what_it_measures": "Pricing power per unit of distance — what passengers actually paid per kilometer flown. Isolates the price dimension of revenue, holding distance constant.",
+      "what_it_does_not_measure": "How full the aircraft was (that is air_load_factor) or revenue per seat offered (that is RASM). High yield with low load factor can still mean a half-empty, unprofitable flight. Yield x load factor approximates RASM.",
+      "common_misconception": "Yield naturally falls as stage length rises — long-haul yields are structurally lower per km than short-haul because the fixed cost of a ticket is spread over more distance. Comparing a long-haul route's yield to a short-haul route's yield without controlling for distance wrongly concludes the long route is 'underpriced'."
+    },
+    "template": "SELECT ROUND(SUM(s.fare_revenue) / NULLIF(SUM(s.passengers * s.distance_km), 0), 4) AS yield_per_rpk FROM segments s JOIN flights f ON s.flight_id = f.flight_id WHERE f.flight_type = 'revenue' AND f.status = 'completed' AND s.passenger_type = 'revenue' AND f.scheduled_departure BETWEEN {start_date} AND {end_date}",
+    "inflation_causes": [
+      {
+        "cause": "Ancillary and cargo revenue mixed into fare_revenue numerator",
+        "how_it_inflates": "If fare_revenue actually sums ticket fare plus baggage fees, seat selection, and cargo, the numerator is larger than pure passenger fare while RPK only reflects passengers, inflating yield versus the ticket-only definition. Ancillary belongs in air_ancillary_per_pax, cargo in a separate cargo yield.",
+        "detection_sql": "SELECT s.revenue_component, SUM(s.fare_revenue) AS revenue FROM segments s GROUP BY s.revenue_component ORDER BY revenue DESC",
+        "fix": "Restrict the numerator to ticket/base fare revenue (revenue_component = 'fare'). Report ancillary and cargo yields separately so passenger yield reflects pricing of the seat alone."
+      },
+      {
+        "cause": "Non-revenue passenger distance dropped from denominator while their flights' revenue kept",
+        "how_it_inflates": "If staff/award passengers are excluded from the RPK denominator but any associated revenue (e.g. award taxes/fees) remains in the numerator, yield is computed over a smaller passenger base, overstating per-RPK price.",
+        "detection_sql": "SELECT s.passenger_type, SUM(s.passengers * s.distance_km) AS rpk, SUM(s.fare_revenue) AS revenue, ROUND(SUM(s.fare_revenue)/NULLIF(SUM(s.passengers*s.distance_km),0),4) AS yield FROM segments s GROUP BY s.passenger_type ORDER BY rpk DESC",
+        "fix": "Keep numerator and denominator on the same passenger population. Either include both award fee revenue and award RPK, or exclude both — never mix."
+      },
+      {
+        "cause": "Short-haul mix shift mistaken for a yield improvement",
+        "how_it_inflates": "Because yield is inversely related to stage length, a network-wide yield rise can be pure mix — more short-haul flying (high per-km yield) and less long-haul (low per-km yield) — with no actual price increase on any route. The blended number rises without any fare action.",
+        "detection_sql": "SELECT DATE_TRUNC('month', f.scheduled_departure) AS month, ROUND(AVG(s.distance_km),0) AS avg_stage_km, ROUND(SUM(s.fare_revenue)/NULLIF(SUM(s.passengers*s.distance_km),0),4) AS yield FROM segments s JOIN flights f ON s.flight_id = f.flight_id WHERE f.flight_type='revenue' AND f.status='completed' GROUP BY 1 ORDER BY 1",
+        "fix": "Decompose yield by stage-length band or hold stage length constant. Report yield within haul categories so a mix shift is not misread as pricing power."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Group/wholesale fares booked at net rate but full RPK counted",
+        "how_it_deflates": "Tour-operator and group bookings settle at a deeply discounted net fare. If those passengers' full distance is in RPK but their revenue is the low net amount, blended yield is pulled down. This is real, but it can mask that retail yield is healthy.",
+        "detection_sql": "SELECT s.fare_class_group, SUM(s.passengers * s.distance_km) AS rpk, SUM(s.fare_revenue) AS revenue, ROUND(SUM(s.fare_revenue)/NULLIF(SUM(s.passengers*s.distance_km),0),4) AS yield FROM segments s WHERE s.passenger_type='revenue' GROUP BY s.fare_class_group ORDER BY rpk DESC",
+        "fix": "Report yield by fare-class group (retail vs group/wholesale). A blended yield drop driven by group mix is a sales-channel decision, not a retail pricing failure."
+      },
+      {
+        "cause": "Revenue recognized at a different grain than RPK (interline/codeshare proration)",
+        "how_it_deflates": "On interline or codeshare itineraries, the operating carrier may record only its prorated revenue share while flying the full segment distance. If proration understates the revenue attributable to the flown RPK, yield looks artificially low on those segments.",
+        "detection_sql": "SELECT s.itinerary_type, SUM(s.passengers * s.distance_km) AS rpk, SUM(s.fare_revenue) AS revenue, ROUND(SUM(s.fare_revenue)/NULLIF(SUM(s.passengers*s.distance_km),0),4) AS yield FROM segments s WHERE s.passenger_type='revenue' GROUP BY s.itinerary_type ORDER BY rpk DESC",
+        "fix": "Use a consistent revenue-proration model and compare yield within itinerary type (local vs interline). Do not blend prorated interline revenue with full-fare local yield without flagging it."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the yield change concentrated in a fare-class group (retail vs group/wholesale) or broad?",
+      "Did average stage length shift — is the move a haul-mix effect rather than true pricing?",
+      "Is the numerator strictly ticket fare, or are ancillary/cargo dollars leaking in?",
+      "Are numerator revenue and denominator RPK on the same passenger population?",
+      "Is interline/codeshare proration distorting yield on affected segments?",
+      "Did load factor move at the same time — was yield traded for load (or vice versa)?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "yield down, air_load_factor up",
+        "then": "Fares were cut to stimulate demand — a price-for-volume trade. Check whether RASM (yield x load) actually held or improved."
+      },
+      {
+        "if": "yield up, air_load_factor down",
+        "then": "Higher fares suppressed demand — fewer passengers paying more. Confirm whether net RASM rose; a high yield on empty seats is not a win."
+      },
+      {
+        "if": "yield up, average stage length down",
+        "then": "Likely a haul-mix effect (more short-haul) rather than real pricing power. Re-check yield within haul bands before crediting pricing."
+      },
+      {
+        "if": "yield down only in group/wholesale fare class",
+        "then": "A channel/contract decision drove blended yield down while retail pricing held — investigate group contract terms, not retail fares."
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Yield declines steadily over several months",
+        "and_also": "air_load_factor is flat or only slightly up",
+        "shared_root_cause": "Fare dilution without the volume payoff — prices are eroding (competitive pressure, deeper discount buckets, fare-mix sell-down) but the cheaper seats are not generating offsetting incremental passengers. Yield is falling faster than load is rising, so RASM erodes. Check fare-class booking mix and competitor capacity on the affected routes.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', f.scheduled_departure) AS month, ROUND(SUM(s.fare_revenue)/NULLIF(SUM(s.passengers*s.distance_km),0),4) AS yield_per_rpk, ROUND(SUM(s.passengers*s.distance_km)/NULLIF(SUM(s.seats_available*s.distance_km),0)*100,2) AS load_factor_pct, ROUND(SUM(s.fare_revenue)/NULLIF(SUM(s.seats_available*s.distance_km),0),4) AS rasm FROM segments s JOIN flights f ON s.flight_id=f.flight_id WHERE f.flight_type='revenue' AND f.status='completed' AND s.passenger_type='revenue' GROUP BY 1 ORDER BY 1"
+      },
+      {
+        "if_this_metric": "Yield rises on a route",
+        "and_also": "air_ancillary_per_pax falls on the same route",
+        "shared_root_cause": "A move to bundled/inclusive fares: baggage and seat selection were folded into the ticket price, lifting fare yield while ancillary per passenger drops. Total revenue per passenger may be unchanged — the dollars just moved buckets. Always read fare yield and ancillary together when fare-bundling changes.",
+        "diagnostic_sql": "SELECT f.route_id, DATE_TRUNC('month', f.scheduled_departure) AS month, ROUND(SUM(s.fare_revenue)/NULLIF(SUM(s.passengers*s.distance_km),0),4) AS yield_per_rpk, ROUND(SUM(a.ancillary_amount)/NULLIF(SUM(s.passengers),0),2) AS ancillary_per_pax FROM segments s JOIN flights f ON s.flight_id=f.flight_id LEFT JOIN ancillary_sales a ON s.segment_id=a.segment_id WHERE f.flight_type='revenue' AND f.status='completed' AND s.passenger_type='revenue' GROUP BY 1,2 ORDER BY 1,2"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Dividing total fare revenue by passenger count instead of RPK",
+        "why_wrong": "Revenue / passengers gives average fare per ticket, which is NOT distance-normalized. A long-haul ticket costs more than a short-haul one, so this 'yield' is dominated by stage-length mix and cannot compare routes of different lengths. True yield divides by passenger-kilometers so distance is held constant.",
+        "bad_sql": "SELECT SUM(s.fare_revenue) / NULLIF(SUM(s.passengers), 0) AS yield FROM segments s",
+        "good_sql": "SELECT ROUND(SUM(s.fare_revenue) / NULLIF(SUM(s.passengers * s.distance_km), 0), 4) AS yield_per_rpk FROM segments s JOIN flights f ON s.flight_id = f.flight_id WHERE f.flight_type = 'revenue' AND f.status = 'completed' AND s.passenger_type = 'revenue'"
+      },
+      {
+        "pattern": "Computing yield against ASK (seats) instead of RPK (passengers)",
+        "why_wrong": "Dividing fare revenue by available-seat-km yields RASM (unit revenue per seat offered), not yield. Yield is per passenger flown; RASM is per seat offered. Confusing them hides whether a revenue change is pricing (yield) or fill (load factor), since RASM = yield x load factor.",
+        "bad_sql": "SELECT SUM(s.fare_revenue) / NULLIF(SUM(s.seats_available * s.distance_km), 0) AS yield FROM segments s",
+        "good_sql": "SELECT ROUND(SUM(s.fare_revenue) / NULLIF(SUM(s.passengers * s.distance_km), 0), 4) AS yield_per_rpk, ROUND(SUM(s.fare_revenue) / NULLIF(SUM(s.seats_available * s.distance_km), 0), 4) AS rasm, ROUND(SUM(s.passengers * s.distance_km) / NULLIF(SUM(s.seats_available * s.distance_km), 0) * 100, 2) AS load_factor_pct FROM segments s JOIN flights f ON s.flight_id = f.flight_id WHERE f.flight_type = 'revenue' AND f.status = 'completed' AND s.passenger_type = 'revenue'"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT ROUND(SUM(s.fare_revenue) / NULLIF(SUM(s.passengers * s.distance_km), 0), 4) AS yield_per_rpk FROM segments s JOIN flights f ON s.flight_id = f.flight_id WHERE f.flight_type = 'revenue' AND f.status = 'completed' AND s.passenger_type = 'revenue' AND f.scheduled_departure BETWEEN '2024-01-01' AND '2024-01-31'",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', f.scheduled_departure) AS month, f.route_id, s.cabin, ROUND(SUM(s.fare_revenue) / NULLIF(SUM(s.passengers * s.distance_km), 0), 4) AS yield_per_rpk, SUM(s.passengers * s.distance_km) AS rpk_km, ROUND(AVG(s.distance_km), 0) AS avg_stage_km FROM segments s JOIN flights f ON s.flight_id = f.flight_id WHERE f.flight_type = 'revenue' AND f.status = 'completed' AND s.passenger_type = 'revenue' GROUP BY 1, 2, 3 ORDER BY 1, yield_per_rpk DESC",
+      "advanced_sql": "WITH leg_rev AS (\n  -- Grain: one row per flown revenue segment with fare revenue, RPK, and stage band\n  SELECT\n    f.route_id,\n    s.cabin,\n    DATE_TRUNC('month', f.scheduled_departure) AS month,\n    CASE WHEN s.distance_km < 1500 THEN 'short' WHEN s.distance_km < 4000 THEN 'medium' ELSE 'long' END AS haul_band,\n    s.fare_revenue,\n    s.passengers * s.distance_km AS rpk_km,\n    s.seats_available * s.distance_km AS ask_km\n  FROM segments s\n  JOIN flights f ON s.flight_id = f.flight_id\n  WHERE f.flight_type = 'revenue' AND f.status = 'completed' AND s.passenger_type = 'revenue'\n),\nbanded AS (\n  SELECT\n    month,\n    haul_band,\n    cabin,\n    ROUND(SUM(fare_revenue) / NULLIF(SUM(rpk_km), 0), 4) AS yield_per_rpk,\n    ROUND(SUM(fare_revenue) / NULLIF(SUM(ask_km), 0), 4) AS rasm,\n    ROUND(SUM(rpk_km) / NULLIF(SUM(ask_km), 0) * 100, 2) AS load_factor_pct,\n    SUM(rpk_km) AS rpk_km\n  FROM leg_rev\n  GROUP BY 1, 2, 3\n)\nSELECT\n  month,\n  haul_band,\n  cabin,\n  yield_per_rpk,\n  rasm,\n  load_factor_pct,\n  LAG(yield_per_rpk) OVER (PARTITION BY haul_band, cabin ORDER BY month) AS prev_yield,\n  ROUND((yield_per_rpk - LAG(yield_per_rpk) OVER (PARTITION BY haul_band, cabin ORDER BY month)) / NULLIF(LAG(yield_per_rpk) OVER (PARTITION BY haul_band, cabin ORDER BY month), 0) * 100, 2) AS yield_mom_pct\nFROM banded\nORDER BY haul_band, cabin, month"
+    }
+  },
+  {
+    "id": "air_rasm_casm",
+    "title": "Unit Revenue and Unit Cost (RASM & CASM)",
+    "intent_tags": [
+      "rasm",
+      "casm",
+      "unit revenue",
+      "unit cost",
+      "revenue per available seat mile",
+      "cost per available seat mile",
+      "rask",
+      "cask",
+      "prasm",
+      "casm ex fuel",
+      "spread between revenue and cost",
+      "unit economics airline",
+      "revenue per ask",
+      "cost per ask"
+    ],
+    "sql_features": [
+      "aggregation",
+      "join",
+      "nullif",
+      "case_filter"
+    ],
+    "difficulty": "advanced",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "measure unit revenue (RASM/RASK) and unit cost (CASM/CASK) per seat offered",
+      "evaluate route or network profitability on a per-capacity basis",
+      "track the RASM-CASM spread — the core unit-economics margin of an airline",
+      "compare cost efficiency across fleet types and stage lengths",
+      "separate fuel-driven cost moves from structural cost via CASM ex-fuel"
+    ],
+    "related_patterns": [
+      "air_yield",
+      "air_load_factor",
+      "air_fleet_utilization",
+      "air_ancillary_per_pax"
+    ],
+    "business_definition": "RASM (Revenue per Available Seat Mile/Km, also RASK) = total operating revenue / ASK. CASM (Cost per Available Seat Mile/Km, also CASK) = total operating cost / ASK. The unit-economics pair: revenue and cost both normalized per unit of capacity offered. The RASM minus CASM spread is the per-seat-km operating margin. CASM ex-fuel strips fuel to expose structural cost.",
+    "metric_nature": {
+      "what_it_measures": "Revenue and cost density per unit of capacity supplied. RASM captures total revenue per seat offered (price x fill x ancillary); CASM captures total cost per seat offered. Together the spread is the unit margin.",
+      "what_it_does_not_measure": "Per-passenger economics. Because the denominator is seats offered (ASK), not passengers flown (RPK), RASM blends pricing and fill. A RASM change cannot tell you alone whether yield or load factor moved — decompose into RASM = yield x load factor.",
+      "common_misconception": "RASM and CASM are not comparable across airlines without normalizing for stage length. CASM falls mechanically as stage length rises (fixed per-departure costs spread over more ASK). A long-haul carrier's low CASM is not automatically 'more efficient' than a short-haul carrier's higher CASM — compare CASM at equal stage length (stage-length-adjusted CASM)."
+    },
+    "template": "SELECT ROUND(SUM(s.total_revenue) / NULLIF(SUM(s.seats_available * s.distance_km), 0), 4) AS rasm, ROUND(SUM(c.total_cost) / NULLIF(SUM(s.seats_available * s.distance_km), 0), 4) AS casm FROM segments s JOIN flights f ON s.flight_id = f.flight_id LEFT JOIN flight_costs c ON s.flight_id = c.flight_id WHERE f.flight_type = 'revenue' AND f.status = 'completed' AND f.scheduled_departure BETWEEN {start_date} AND {end_date}",
+    "inflation_causes": [
+      {
+        "cause": "Cost joined at flight grain fanned out across multiple segments (CASM inflated)",
+        "how_it_inflates": "If flight_costs has one row per flight but the query joins it to multi-segment flights and SUMs cost per segment row, the same cost is counted once per segment, multiplying total cost while ASK only grows linearly — inflating CASM. Cost and ASK must be summed at compatible grain.",
+        "detection_sql": "SELECT s.flight_id, COUNT(*) AS segment_rows, MAX(c.total_cost) AS flight_cost, SUM(c.total_cost) AS summed_cost FROM segments s JOIN flight_costs c ON s.flight_id = c.flight_id GROUP BY s.flight_id HAVING COUNT(*) > 1 ORDER BY summed_cost DESC LIMIT 20",
+        "fix": "Aggregate cost to flight grain (MAX or a pre-aggregated CTE) before dividing by total ASK, or join cost at the same grain ASK is summed. Never SUM a flight-level cost across its segment rows."
+      },
+      {
+        "cause": "Ferry/positioning ASK excluded from denominator but their cost kept (CASM inflated)",
+        "how_it_inflates": "Ferry legs incur real cost (fuel, crew) but generate no revenue. If their cost is in the numerator while their ASK is filtered out of the denominator as 'non-revenue', CASM is spread over fewer seat-km than the cost actually consumed, overstating unit cost.",
+        "detection_sql": "SELECT f.flight_type, SUM(c.total_cost) AS cost, SUM(s.seats_available * s.distance_km) AS ask FROM segments s JOIN flights f ON s.flight_id = f.flight_id LEFT JOIN flight_costs c ON s.flight_id = c.flight_id GROUP BY f.flight_type ORDER BY cost DESC",
+        "fix": "Keep cost and ASK on the same flight population. Either include ferry cost and ferry ASK together, or exclude both. For published CASM, exclude ferry from both numerator and denominator."
+      },
+      {
+        "cause": "Non-operating items (interest, special charges) included in CASM cost",
+        "how_it_inflates": "CASM is an operating metric. If total_cost includes interest expense, one-time impairments, or restructuring charges, CASM is inflated by non-operating items that distort period-over-period unit-cost comparison.",
+        "detection_sql": "SELECT c.cost_category, SUM(c.total_cost) AS cost FROM flight_costs c GROUP BY c.cost_category ORDER BY cost DESC",
+        "fix": "Restrict CASM to operating cost categories (fuel, crew, maintenance, ownership, airport, distribution). Report special/non-operating items separately, and publish CASM ex-special."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Ancillary and cargo revenue omitted from RASM numerator",
+        "how_it_deflates": "If RASM uses only ticket fare and ignores baggage, seat, and cargo revenue, unit revenue is understated versus total RASM. Ancillary is a large and growing share of revenue; excluding it makes routes look less profitable than they are.",
+        "detection_sql": "SELECT s.revenue_component, SUM(s.total_revenue) AS revenue FROM segments s GROUP BY s.revenue_component ORDER BY revenue DESC",
+        "fix": "Build RASM from total operating revenue (fare + ancillary + cargo + other), not fare alone. Keep passenger RASM (PRASM, fare-only) as a separate sub-metric if needed."
+      },
+      {
+        "cause": "Fuel cost spike masked in blended CASM, hiding structural cost trend",
+        "how_it_deflates": "A falling fuel price can pull total CASM down even while structural (ex-fuel) cost is rising. Reading only headline CASM 'deflates' the apparent cost problem — the structural deterioration is hidden by the fuel tailwind.",
+        "detection_sql": "SELECT DATE_TRUNC('quarter', f.scheduled_departure) AS qtr, ROUND(SUM(c.total_cost)/NULLIF(SUM(s.seats_available*s.distance_km),0),4) AS casm, ROUND(SUM(CASE WHEN c.cost_category='fuel' THEN 0 ELSE c.total_cost END)/NULLIF(SUM(s.seats_available*s.distance_km),0),4) AS casm_ex_fuel FROM segments s JOIN flights f ON s.flight_id=f.flight_id LEFT JOIN flight_costs c ON s.flight_id=c.flight_id WHERE f.flight_type='revenue' AND f.status='completed' GROUP BY 1 ORDER BY 1",
+        "fix": "Always publish CASM and CASM ex-fuel side by side. Judge structural cost discipline on CASM ex-fuel; treat fuel as a separate, hedge-able line."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the RASM move driven by yield (price) or load factor (fill)? Decompose RASM = yield x load.",
+      "Is the CASM move fuel-driven or structural — what does CASM ex-fuel show?",
+      "Are cost and ASK summed at compatible grain (flight vs segment), avoiding cost fan-out?",
+      "Does RASM include ancillary and cargo, or only fare?",
+      "Did stage length change — is a CASM move just the mechanical stage-length effect?",
+      "Are ferry/positioning cost and ASK handled consistently in both numerator and denominator?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "RASM down, air_yield down, air_load_factor flat",
+        "then": "Pricing weakened with no fill offset — fare dilution is the driver. RASM = yield x load, so a yield drop with flat load flows straight to RASM."
+      },
+      {
+        "if": "RASM flat, air_yield down, air_load_factor up",
+        "then": "The classic discount-for-load trade fully offset — lower fares filled more seats, net unit revenue unchanged. Watch whether CASM also moved."
+      },
+      {
+        "if": "CASM up, CASM ex-fuel flat",
+        "then": "The cost increase is fuel, not structural — a hedge/price-of-oil effect, not an efficiency problem. Do not over-react with structural cost cuts."
+      },
+      {
+        "if": "CASM down, air_fleet_utilization up, stage length flat",
+        "then": "Higher aircraft utilization spread fixed ownership cost over more ASK — genuine structural efficiency gain. Confirm OTP did not deteriorate from tighter turns."
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "CASM rises sharply quarter over quarter",
+        "and_also": "air_fleet_utilization (block hours per aircraft per day) fell in the same period",
+        "shared_root_cause": "Aircraft are flying less, so fixed ownership and crew costs are spread over fewer ASK, pushing unit cost up. The driver is under-utilization (groundings, schedule cuts, delivery delays), not per-unit price inflation. The fix is restoring utilization or right-sizing the fleet, not cutting variable cost.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('quarter', f.scheduled_departure) AS qtr, ROUND(SUM(c.total_cost)/NULLIF(SUM(s.seats_available*s.distance_km),0),4) AS casm, ROUND(SUM(f.block_hours)/NULLIF(COUNT(DISTINCT f.aircraft_id) * COUNT(DISTINCT DATE(f.scheduled_departure)),0),2) AS block_hrs_per_tail_day FROM segments s JOIN flights f ON s.flight_id=f.flight_id LEFT JOIN flight_costs c ON s.flight_id=c.flight_id WHERE f.flight_type='revenue' AND f.status='completed' GROUP BY 1 ORDER BY 1"
+      },
+      {
+        "if_this_metric": "RASM-CASM spread compresses (margin shrinks)",
+        "and_also": "air_load_factor is at or near record highs",
+        "shared_root_cause": "The airline is filling planes but at fares that no longer cover unit cost — a sign of over-discounting or rising CASM outpacing pricing. A high load factor is hiding a margin problem: every seat is sold but the spread is thin. Decompose whether RASM is weak (yield/ancillary) or CASM is high (fuel/utilization).",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', f.scheduled_departure) AS month, ROUND(SUM(s.total_revenue)/NULLIF(SUM(s.seats_available*s.distance_km),0),4) AS rasm, ROUND(SUM(c.total_cost)/NULLIF(SUM(s.seats_available*s.distance_km),0),4) AS casm, ROUND((SUM(s.total_revenue)-SUM(c.total_cost))/NULLIF(SUM(s.seats_available*s.distance_km),0),4) AS spread, ROUND(SUM(s.passengers*s.distance_km)/NULLIF(SUM(s.seats_available*s.distance_km),0)*100,2) AS load_factor_pct FROM segments s JOIN flights f ON s.flight_id=f.flight_id LEFT JOIN flight_costs c ON s.flight_id=c.flight_id WHERE f.flight_type='revenue' AND f.status='completed' GROUP BY 1 ORDER BY 1"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Comparing CASM across routes or airlines without stage-length adjustment",
+        "why_wrong": "CASM falls mechanically as stage length grows because per-departure fixed costs (landing fees, ground handling, one fixed climb/descent fuel burn) are spread over more ASK. A long-haul route will always show lower CASM than a short-haul route flown by the same airline. Ranking routes by raw CASM rewards distance, not efficiency.",
+        "bad_sql": "SELECT f.route_id, SUM(c.total_cost) / SUM(s.seats_available * s.distance_km) AS casm FROM segments s JOIN flights f ON s.flight_id = f.flight_id JOIN flight_costs c ON s.flight_id = c.flight_id GROUP BY f.route_id ORDER BY casm",
+        "good_sql": "SELECT f.route_id, ROUND(AVG(s.distance_km), 0) AS avg_stage_km, ROUND(SUM(c.total_cost) / NULLIF(SUM(s.seats_available * s.distance_km), 0), 4) AS casm, ROUND(SUM(c.total_cost) / NULLIF(SUM(s.seats_available * s.distance_km), 0) * SQRT(AVG(s.distance_km) / 1500.0), 4) AS casm_stage_adjusted FROM segments s JOIN flights f ON s.flight_id = f.flight_id JOIN (SELECT flight_id, SUM(total_cost) AS total_cost FROM flight_costs GROUP BY flight_id) c ON s.flight_id = c.flight_id WHERE f.flight_type = 'revenue' AND f.status = 'completed' GROUP BY f.route_id ORDER BY casm_stage_adjusted"
+      },
+      {
+        "pattern": "Reading headline CASM as a structural-cost signal without removing fuel",
+        "why_wrong": "Fuel is the largest and most volatile cost line and is largely exogenous (oil price). A CASM drop driven by cheaper fuel can mask rising structural cost; a CASM rise from expensive fuel can mask genuine efficiency gains. Structural cost discipline must be judged on CASM ex-fuel.",
+        "bad_sql": "SELECT DATE_TRUNC('quarter', f.scheduled_departure) AS qtr, SUM(c.total_cost) / SUM(s.seats_available * s.distance_km) AS casm FROM segments s JOIN flights f ON s.flight_id = f.flight_id JOIN flight_costs c ON s.flight_id = c.flight_id WHERE f.status='completed' GROUP BY 1",
+        "good_sql": "SELECT DATE_TRUNC('quarter', f.scheduled_departure) AS qtr, ROUND(SUM(c.total_cost) / NULLIF(SUM(s.seats_available * s.distance_km), 0), 4) AS casm, ROUND(SUM(CASE WHEN c.cost_category = 'fuel' THEN 0 ELSE c.total_cost END) / NULLIF(SUM(s.seats_available * s.distance_km), 0), 4) AS casm_ex_fuel FROM segments s JOIN flights f ON s.flight_id = f.flight_id LEFT JOIN flight_costs c ON s.flight_id = c.flight_id WHERE f.flight_type = 'revenue' AND f.status = 'completed' GROUP BY 1 ORDER BY 1"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT ROUND(SUM(s.total_revenue) / NULLIF(SUM(s.seats_available * s.distance_km), 0), 4) AS rasm, ROUND(SUM(c.total_cost) / NULLIF(SUM(s.seats_available * s.distance_km), 0), 4) AS casm FROM segments s JOIN flights f ON s.flight_id = f.flight_id LEFT JOIN (SELECT flight_id, SUM(total_cost) AS total_cost FROM flight_costs GROUP BY flight_id) c ON s.flight_id = c.flight_id WHERE f.flight_type = 'revenue' AND f.status = 'completed' AND f.scheduled_departure BETWEEN '2024-01-01' AND '2024-01-31'",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', f.scheduled_departure) AS month, f.aircraft_type, ROUND(SUM(s.total_revenue) / NULLIF(SUM(s.seats_available * s.distance_km), 0), 4) AS rasm, ROUND(SUM(c.total_cost) / NULLIF(SUM(s.seats_available * s.distance_km), 0), 4) AS casm, ROUND((SUM(s.total_revenue) - SUM(c.total_cost)) / NULLIF(SUM(s.seats_available * s.distance_km), 0), 4) AS spread FROM segments s JOIN flights f ON s.flight_id = f.flight_id LEFT JOIN (SELECT flight_id, SUM(total_cost) AS total_cost FROM flight_costs GROUP BY flight_id) c ON s.flight_id = c.flight_id WHERE f.flight_type = 'revenue' AND f.status = 'completed' GROUP BY 1, 2 ORDER BY 1, spread DESC",
+      "advanced_sql": "WITH flight_cost AS (\n  -- Pre-aggregate cost to flight grain to avoid fan-out across segments\n  SELECT\n    flight_id,\n    SUM(total_cost) AS total_cost,\n    SUM(CASE WHEN cost_category = 'fuel' THEN total_cost ELSE 0 END) AS fuel_cost\n  FROM flight_costs\n  GROUP BY flight_id\n),\nleg AS (\n  -- Grain: one row per flown revenue segment with revenue, cost, ASK, RPK\n  SELECT\n    DATE_TRUNC('month', f.scheduled_departure) AS month,\n    f.aircraft_type,\n    s.total_revenue,\n    fc.total_cost,\n    fc.fuel_cost,\n    s.seats_available * s.distance_km AS ask_km,\n    s.passengers * s.distance_km AS rpk_km,\n    s.distance_km\n  FROM segments s\n  JOIN flights f ON s.flight_id = f.flight_id\n  LEFT JOIN flight_cost fc ON s.flight_id = fc.flight_id\n  WHERE f.flight_type = 'revenue' AND f.status = 'completed'\n),\nunit AS (\n  SELECT\n    month,\n    aircraft_type,\n    ROUND(AVG(distance_km), 0) AS avg_stage_km,\n    ROUND(SUM(total_revenue) / NULLIF(SUM(ask_km), 0), 4) AS rasm,\n    ROUND(SUM(total_cost) / NULLIF(SUM(ask_km), 0), 4) AS casm,\n    ROUND((SUM(total_cost) - SUM(fuel_cost)) / NULLIF(SUM(ask_km), 0), 4) AS casm_ex_fuel,\n    ROUND((SUM(total_revenue) - SUM(total_cost)) / NULLIF(SUM(ask_km), 0), 4) AS spread,\n    ROUND(SUM(rpk_km) / NULLIF(SUM(ask_km), 0) * 100, 2) AS load_factor_pct\n  FROM leg\n  GROUP BY 1, 2\n)\nSELECT\n  month,\n  aircraft_type,\n  avg_stage_km,\n  rasm,\n  casm,\n  casm_ex_fuel,\n  spread,\n  load_factor_pct,\n  LAG(spread) OVER (PARTITION BY aircraft_type ORDER BY month) AS prev_spread,\n  ROUND(spread - LAG(spread) OVER (PARTITION BY aircraft_type ORDER BY month), 4) AS spread_change\nFROM unit\nORDER BY aircraft_type, month"
+    }
+  },
+  {
+    "id": "air_ancillary_per_pax",
+    "title": "Ancillary Revenue per Passenger",
+    "intent_tags": [
+      "ancillary revenue per passenger",
+      "ancillary per pax",
+      "extras revenue per passenger",
+      "baggage and seat revenue per passenger",
+      "non ticket revenue per passenger",
+      "add on revenue per passenger",
+      "how much ancillary per passenger",
+      "merchandising revenue per pax",
+      "ancillary spend per passenger",
+      "fees per passenger",
+      "ancillary yield"
+    ],
+    "sql_features": [
+      "aggregation",
+      "left_join",
+      "coalesce",
+      "nullif"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "ratio",
+    "when_to_use": [
+      "measure non-ticket revenue (bags, seats, priority, onboard, partner) earned per passenger",
+      "track merchandising and unbundling strategy effectiveness",
+      "compare ancillary performance across routes, cabins, or booking channels",
+      "assess the revenue impact of fare-bundling vs unbundling changes",
+      "model total revenue per passenger alongside fare yield"
+    ],
+    "related_patterns": [
+      "air_yield",
+      "air_rasm_casm",
+      "air_load_factor"
+    ],
+    "business_definition": "Total ancillary revenue (baggage fees, seat selection, priority boarding, onboard sales, change fees, partner/commission income) divided by the count of boarded revenue passengers in a period. Ancillary per Pax = COALESCE(SUM(ancillary_amount), 0) / NULLIF(COUNT(boarded revenue passengers), 0). Excludes base ticket fare (that is air_yield) and cargo.",
+    "metric_nature": {
+      "what_it_measures": "Average non-ticket spend captured per passenger. Tracks how effectively the airline merchandises extras beyond the base seat — a growing profit lever for most carriers.",
+      "what_it_does_not_measure": "Total revenue per passenger (add fare for that) or attach rate. A high ancillary-per-pax could be many passengers paying a little or few paying a lot. Pair with attach rate (share of passengers buying any ancillary) to interpret.",
+      "common_misconception": "Ancillary per passenger is not independent of fare strategy. When an airline bundles bags/seats into the fare, ancillary per pax falls while fare yield rises — no revenue is lost, the dollars just move buckets. Reading ancillary in isolation makes a bundling change look like an ancillary decline."
+    },
+    "template": "SELECT ROUND(COALESCE(SUM(a.ancillary_amount), 0) / NULLIF(SUM(s.passengers), 0), 2) AS ancillary_per_pax FROM segments s JOIN flights f ON s.flight_id = f.flight_id LEFT JOIN ancillary_sales a ON s.segment_id = a.segment_id WHERE f.flight_type = 'revenue' AND f.status = 'completed' AND s.passenger_type = 'revenue' AND f.scheduled_departure BETWEEN {start_date} AND {end_date}",
+    "inflation_causes": [
+      {
+        "cause": "Ancillary joined at segment grain double-counted across passengers, or passenger denominator understated",
+        "how_it_inflates": "If ancillary_sales is at segment grain but the passenger denominator only counts unique segments (not passengers), or if a one-to-many join inflates ancillary while passengers stay fixed, the ratio overstates per-passenger spend. The denominator must be boarded passengers, not segments or bookings.",
+        "detection_sql": "SELECT s.segment_id, s.passengers, COUNT(a.ancillary_id) AS ancillary_rows, SUM(a.ancillary_amount) AS ancillary_total FROM segments s LEFT JOIN ancillary_sales a ON s.segment_id = a.segment_id GROUP BY s.segment_id, s.passengers HAVING COUNT(a.ancillary_id) > s.passengers * 5 ORDER BY ancillary_total DESC LIMIT 20",
+        "fix": "Ensure the denominator is SUM(boarded revenue passengers). Aggregate ancillary to segment grain before dividing, and confirm the passenger count is per-person not per-booking."
+      },
+      {
+        "cause": "Change/cancellation fees and refundable-fare premiums counted as ancillary",
+        "how_it_inflates": "Some carriers classify change fees, no-show fees, or fare-rule premiums as ancillary. A spike in irregular operations (lots of changes) inflates ancillary per pax without any real merchandising improvement — it is disruption-driven, not product-driven.",
+        "detection_sql": "SELECT a.ancillary_type, COUNT(*) AS txns, SUM(a.ancillary_amount) AS revenue FROM ancillary_sales a GROUP BY a.ancillary_type ORDER BY revenue DESC",
+        "fix": "Separate merchandised ancillary (bags, seats, priority, onboard) from fee-based items (change/no-show). Report a clean product-ancillary-per-pax and a fee line separately."
+      },
+      {
+        "cause": "Partner/commission revenue recognized gross instead of net",
+        "how_it_inflates": "Hotel, car, and insurance commissions booked through the airline may be recorded at gross transaction value rather than the airline's net commission, inflating ancillary per pax by the partner's share that the airline never keeps.",
+        "detection_sql": "SELECT a.ancillary_type, SUM(a.gross_amount) AS gross, SUM(a.ancillary_amount) AS net, ROUND(SUM(a.ancillary_amount)/NULLIF(SUM(a.gross_amount),0)*100,1) AS net_pct FROM ancillary_sales a WHERE a.ancillary_type IN ('hotel','car','insurance') GROUP BY a.ancillary_type ORDER BY gross DESC",
+        "fix": "Recognize partner ancillary at net commission (ancillary_amount), not gross booking value. Keep gross_amount for volume reporting only."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Fare bundling moved bag/seat revenue into the ticket",
+        "how_it_deflates": "When the airline shifts to inclusive fares (bags and seats bundled into the base fare), those dollars are recognized as fare revenue, not ancillary. Ancillary per pax drops sharply even though total revenue per passenger is unchanged or higher.",
+        "detection_sql": "SELECT f.route_id, DATE_TRUNC('month', f.scheduled_departure) AS month, ROUND(COALESCE(SUM(a.ancillary_amount),0)/NULLIF(SUM(s.passengers),0),2) AS ancillary_per_pax, ROUND(SUM(s.fare_revenue)/NULLIF(SUM(s.passengers),0),2) AS fare_per_pax FROM segments s JOIN flights f ON s.flight_id=f.flight_id LEFT JOIN ancillary_sales a ON s.segment_id=a.segment_id WHERE f.flight_type='revenue' AND f.status='completed' AND s.passenger_type='revenue' GROUP BY 1,2 ORDER BY 1,2",
+        "fix": "Track total revenue per passenger (fare + ancillary) when fare-bundling changes. An ancillary drop offset by a fare rise is a recognition shift, not a revenue loss."
+      },
+      {
+        "cause": "Ancillary feed lag leaving recent passengers with no attached sales",
+        "how_it_deflates": "Onboard and partner ancillary often settle days after the flight. If the ancillary_sales feed lags, recent flights show passengers with zero ancillary, deflating the latest period's per-pax figure versus reality.",
+        "detection_sql": "SELECT DATE_TRUNC('day', f.scheduled_departure) AS day, SUM(s.passengers) AS pax, COALESCE(SUM(a.ancillary_amount),0) AS ancillary, MAX(a.loaded_at) AS last_loaded FROM segments s JOIN flights f ON s.flight_id=f.flight_id LEFT JOIN ancillary_sales a ON s.segment_id=a.segment_id WHERE f.scheduled_departure >= CURRENT_DATE - INTERVAL '7 days' GROUP BY 1 ORDER BY 1 DESC",
+        "fix": "Check ancillary feed freshness before reporting recent periods. Hold the latest days open until onboard/partner settlement completes, or flag them as preliminary."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the denominator boarded revenue passengers (per person), not bookings or segments?",
+      "Did a fare-bundling change move bag/seat revenue into the ticket (fare up, ancillary down)?",
+      "Are change/no-show fees inflating ancillary during an irregular-operations spike?",
+      "Is partner/commission revenue booked net or gross?",
+      "Is the ancillary feed fresh, or are recent flights missing late-settling sales?",
+      "Is the change in attach rate (more buyers) or in spend per buyer?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "ancillary per pax up, air_yield flat",
+        "then": "Genuine merchandising gain — more extras sold without touching the fare. Confirm it is attach rate or basket, not change-fee noise."
+      },
+      {
+        "if": "ancillary per pax down, air_yield up",
+        "then": "Likely a fare-bundling shift — bag/seat dollars moved into the ticket. Check total revenue per passenger before treating it as an ancillary decline."
+      },
+      {
+        "if": "ancillary per pax up, air_load_factor down",
+        "then": "Fewer passengers but higher extras each — possibly a business/premium mix shift, or fewer price-sensitive travelers who decline extras. Check passenger mix."
+      },
+      {
+        "if": "ancillary per pax spikes, change-fee volume spikes",
+        "then": "An irregular-operations event drove change/no-show fees, not merchandising. Strip fee items to see clean product ancillary."
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Ancillary per passenger falls on a route",
+        "and_also": "air_yield rises on the same route",
+        "shared_root_cause": "A fare-bundling change folded bags and seat selection into the base fare. Revenue moved from the ancillary bucket to the fare bucket with no net loss — possibly a net gain if the bundle is priced above the old a-la-carte sum. The diagnostic is total revenue per passenger: if it is flat or up, this is a recognition shift, not a merchandising failure.",
+        "diagnostic_sql": "SELECT f.route_id, DATE_TRUNC('month', f.scheduled_departure) AS month, ROUND(SUM(s.fare_revenue)/NULLIF(SUM(s.passengers),0),2) AS fare_per_pax, ROUND(COALESCE(SUM(a.ancillary_amount),0)/NULLIF(SUM(s.passengers),0),2) AS ancillary_per_pax, ROUND((SUM(s.fare_revenue)+COALESCE(SUM(a.ancillary_amount),0))/NULLIF(SUM(s.passengers),0),2) AS total_rev_per_pax FROM segments s JOIN flights f ON s.flight_id=f.flight_id LEFT JOIN ancillary_sales a ON s.segment_id=a.segment_id WHERE f.flight_type='revenue' AND f.status='completed' AND s.passenger_type='revenue' GROUP BY 1,2 ORDER BY 1,2"
+      },
+      {
+        "if_this_metric": "Ancillary per passenger rises while attach rate is flat",
+        "and_also": "air_load_factor is also rising in the same period",
+        "shared_root_cause": "Either a price increase on existing ancillary products (same buyers paying more) or a mix shift toward higher-spend passengers as planes fill. Flat attach rate with rising per-pax means the gain is price/basket, not penetration. Decompose by ancillary type and by whether per-buyer spend or buyer share moved.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', f.scheduled_departure) AS month, ROUND(COALESCE(SUM(a.ancillary_amount),0)/NULLIF(SUM(s.passengers),0),2) AS ancillary_per_pax, ROUND(COUNT(DISTINCT a.passenger_id)*100.0/NULLIF(SUM(s.passengers),0),2) AS attach_rate_pct, ROUND(COALESCE(SUM(a.ancillary_amount),0)/NULLIF(COUNT(DISTINCT a.passenger_id),0),2) AS spend_per_buyer FROM segments s JOIN flights f ON s.flight_id=f.flight_id LEFT JOIN ancillary_sales a ON s.segment_id=a.segment_id WHERE f.flight_type='revenue' AND f.status='completed' AND s.passenger_type='revenue' GROUP BY 1 ORDER BY 1"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Dividing ancillary revenue by bookings or segments instead of passengers",
+        "why_wrong": "A booking can carry multiple passengers and a segment carries many passengers; dividing by bookings or segment count rather than boarded passenger headcount overstates per-passenger ancillary by the average party size. The industry-standard denominator is boarded revenue passengers.",
+        "bad_sql": "SELECT SUM(a.ancillary_amount) / COUNT(DISTINCT s.segment_id) AS ancillary_per_pax FROM segments s LEFT JOIN ancillary_sales a ON s.segment_id = a.segment_id",
+        "good_sql": "SELECT ROUND(COALESCE(SUM(a.ancillary_amount), 0) / NULLIF(SUM(s.passengers), 0), 2) AS ancillary_per_pax FROM segments s JOIN flights f ON s.flight_id = f.flight_id LEFT JOIN ancillary_sales a ON s.segment_id = a.segment_id WHERE f.flight_type = 'revenue' AND f.status = 'completed' AND s.passenger_type = 'revenue'"
+      },
+      {
+        "pattern": "INNER JOIN to ancillary_sales, dropping passengers who bought nothing",
+        "why_wrong": "An INNER JOIN keeps only passengers/segments with an ancillary purchase, shrinking the denominator to buyers only. The result is 'ancillary per buyer' (much higher), not 'ancillary per passenger'. The whole-fleet per-pax figure must keep zero-ancillary passengers in the denominator via LEFT JOIN + COALESCE.",
+        "bad_sql": "SELECT SUM(a.ancillary_amount) / SUM(s.passengers) AS ancillary_per_pax FROM segments s JOIN ancillary_sales a ON s.segment_id = a.segment_id",
+        "good_sql": "SELECT ROUND(COALESCE(SUM(a.ancillary_amount), 0) / NULLIF(SUM(s.passengers), 0), 2) AS ancillary_per_pax FROM segments s JOIN flights f ON s.flight_id = f.flight_id LEFT JOIN ancillary_sales a ON s.segment_id = a.segment_id WHERE f.flight_type = 'revenue' AND f.status = 'completed' AND s.passenger_type = 'revenue'"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT ROUND(COALESCE(SUM(a.ancillary_amount), 0) / NULLIF(SUM(s.passengers), 0), 2) AS ancillary_per_pax FROM segments s JOIN flights f ON s.flight_id = f.flight_id LEFT JOIN ancillary_sales a ON s.segment_id = a.segment_id WHERE f.flight_type = 'revenue' AND f.status = 'completed' AND s.passenger_type = 'revenue' AND f.scheduled_departure BETWEEN '2024-01-01' AND '2024-01-31'",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', f.scheduled_departure) AS month, a.ancillary_type, ROUND(COALESCE(SUM(a.ancillary_amount), 0) / NULLIF(SUM(s.passengers), 0), 2) AS ancillary_per_pax, COALESCE(SUM(a.ancillary_amount), 0) AS ancillary_total, SUM(s.passengers) AS passengers FROM segments s JOIN flights f ON s.flight_id = f.flight_id LEFT JOIN ancillary_sales a ON s.segment_id = a.segment_id WHERE f.flight_type = 'revenue' AND f.status = 'completed' AND s.passenger_type = 'revenue' GROUP BY 1, 2 ORDER BY 1, ancillary_per_pax DESC",
+      "advanced_sql": "WITH seg_ancillary AS (\n  -- Pre-aggregate ancillary to segment grain to avoid fan-out, split product vs fee\n  SELECT\n    segment_id,\n    SUM(CASE WHEN ancillary_type IN ('baggage','seat','priority','onboard','lounge') THEN ancillary_amount ELSE 0 END) AS product_ancillary,\n    SUM(CASE WHEN ancillary_type IN ('change_fee','no_show_fee') THEN ancillary_amount ELSE 0 END) AS fee_ancillary,\n    COUNT(DISTINCT passenger_id) AS ancillary_buyers\n  FROM ancillary_sales\n  GROUP BY segment_id\n),\nleg AS (\n  -- Grain: one row per flown revenue segment with passengers and split ancillary\n  SELECT\n    DATE_TRUNC('month', f.scheduled_departure) AS month,\n    f.route_id,\n    s.passengers,\n    COALESCE(sa.product_ancillary, 0) AS product_ancillary,\n    COALESCE(sa.fee_ancillary, 0) AS fee_ancillary,\n    COALESCE(sa.ancillary_buyers, 0) AS ancillary_buyers\n  FROM segments s\n  JOIN flights f ON s.flight_id = f.flight_id\n  LEFT JOIN seg_ancillary sa ON s.segment_id = sa.segment_id\n  WHERE f.flight_type = 'revenue' AND f.status = 'completed' AND s.passenger_type = 'revenue'\n),\nmonthly AS (\n  SELECT\n    month,\n    route_id,\n    SUM(passengers) AS passengers,\n    ROUND(SUM(product_ancillary) / NULLIF(SUM(passengers), 0), 2) AS product_ancillary_per_pax,\n    ROUND(SUM(fee_ancillary) / NULLIF(SUM(passengers), 0), 2) AS fee_per_pax,\n    ROUND((SUM(product_ancillary) + SUM(fee_ancillary)) / NULLIF(SUM(passengers), 0), 2) AS total_ancillary_per_pax,\n    ROUND(SUM(ancillary_buyers) * 100.0 / NULLIF(SUM(passengers), 0), 2) AS attach_rate_pct\n  FROM leg\n  GROUP BY 1, 2\n)\nSELECT\n  month,\n  route_id,\n  passengers,\n  product_ancillary_per_pax,\n  fee_per_pax,\n  total_ancillary_per_pax,\n  attach_rate_pct,\n  LAG(total_ancillary_per_pax) OVER (PARTITION BY route_id ORDER BY month) AS prev_per_pax,\n  ROUND(total_ancillary_per_pax - LAG(total_ancillary_per_pax) OVER (PARTITION BY route_id ORDER BY month), 2) AS per_pax_change\nFROM monthly\nORDER BY route_id, month"
+    }
+  },
+  {
+    "id": "air_fleet_utilization",
+    "title": "Aircraft / Fleet Utilization (Block Hours per Aircraft per Day)",
+    "intent_tags": [
+      "fleet utilization",
+      "aircraft utilization",
+      "block hours per aircraft per day",
+      "daily aircraft utilization",
+      "how many hours do planes fly per day",
+      "tail utilization",
+      "aircraft productivity",
+      "block hour utilization",
+      "fleet productivity",
+      "hours per tail per day",
+      "asset utilization airline",
+      "aircraft daily hours"
+    ],
+    "sql_features": [
+      "aggregation",
+      "join",
+      "nullif",
+      "count_distinct",
+      "case_filter"
+    ],
+    "difficulty": "advanced",
+    "pattern_type": "ratio",
+    "when_to_use": [
+      "measure how many block hours each aircraft flies per day on average",
+      "assess capital-asset productivity — the airline's most expensive assets",
+      "diagnose whether unit cost (CASM) moves are driven by utilization",
+      "evaluate schedule density, turn efficiency, and maintenance downtime impact",
+      "compare productivity across fleet types and bases"
+    ],
+    "related_patterns": [
+      "air_rasm_casm",
+      "air_otp",
+      "air_load_factor"
+    ],
+    "business_definition": "Total block hours flown divided by the number of aircraft-days in service over a period. Utilization = SUM(block_hours) / (distinct aircraft in service * days in service). Block hours are gate-to-gate (push-back to arrival at gate). Measures how many hours per day the average aircraft is productively flying. Excludes aircraft in storage, long-term maintenance, or not yet delivered from the aircraft-day denominator.",
+    "metric_nature": {
+      "what_it_measures": "Daily productivity of the fleet's capital assets — how hard each aircraft works. High utilization spreads fixed ownership cost over more flying, lowering unit cost.",
+      "what_it_does_not_measure": "Revenue or how full the flying is. An aircraft can fly 14 hours a day at a 40% load factor — high utilization, poor revenue. Pair with air_load_factor and air_rasm_casm for the economics.",
+      "common_misconception": "Higher utilization is not unconditionally better. Pushing utilization by cutting ground time below safe/operationally-buffered turn times destroys OTP via reactionary delay and raises maintenance/disruption cost. There is an optimum; beyond it, the marginal block hour is bought with delay and recovery cost."
+    },
+    "template": "SELECT ROUND(SUM(f.block_hours) / NULLIF(COUNT(DISTINCT f.aircraft_id) * COUNT(DISTINCT DATE(f.scheduled_departure)), 0), 2) AS block_hours_per_aircraft_day FROM flights f WHERE f.flight_type = 'revenue' AND f.status = 'completed' AND f.scheduled_departure BETWEEN {start_date} AND {end_date}",
+    "inflation_causes": [
+      {
+        "cause": "Aircraft in storage or heavy maintenance excluded from the denominator but never flew",
+        "how_it_inflates": "Utilization = block hours / aircraft-days. If grounded or stored tails are dropped from the aircraft-day count, the denominator shrinks while block hours stay, inflating per-aircraft utilization. The fleet looks more productive than it is because idle assets vanished from the math.",
+        "detection_sql": "SELECT ac.aircraft_id, ac.status AS fleet_status, COUNT(f.flight_id) AS legs, COALESCE(SUM(f.block_hours), 0) AS block_hours FROM aircraft ac LEFT JOIN flights f ON ac.aircraft_id = f.aircraft_id AND f.status = 'completed' AND f.scheduled_departure >= CURRENT_DATE - INTERVAL '30 days' GROUP BY ac.aircraft_id, ac.status HAVING COALESCE(SUM(f.block_hours), 0) = 0 ORDER BY ac.aircraft_id",
+        "fix": "Decide the denominator policy explicitly. For 'in-service utilization' exclude stored/heavy-mx tails consistently; for 'fleet utilization' include all owned aircraft-days. Never silently drop idle tails from an otherwise all-fleet denominator."
+      },
+      {
+        "cause": "Scheduled (not actual) block hours summed in the numerator",
+        "how_it_inflates": "If block_hours is the scheduled value and the schedule is padded, summed scheduled block overstates the productive hours actually flown. Real utilization should use actual gate-to-gate time; scheduled block inflates it by the padding.",
+        "detection_sql": "SELECT f.aircraft_type, ROUND(AVG(f.block_hours), 2) AS avg_scheduled_block, ROUND(AVG(EXTRACT(EPOCH FROM (f.actual_arrival - f.actual_departure))/3600.0), 2) AS avg_actual_block FROM flights f WHERE f.status = 'completed' GROUP BY f.aircraft_type ORDER BY 1",
+        "fix": "Use actual block hours (actual_arrival - actual_departure) in the numerator for true utilization. Reserve scheduled block for planned-utilization views and label it as such."
+      },
+      {
+        "cause": "Ferry/positioning block hours counted but those legs earn no revenue",
+        "how_it_inflates": "Ferry and positioning legs add block hours, lifting utilization, but produce no revenue. A utilization gain driven by repositioning flying overstates productive (revenue) utilization and can mask weak commercial flying.",
+        "detection_sql": "SELECT f.flight_type, SUM(f.block_hours) AS block_hours, COUNT(*) AS legs FROM flights f WHERE f.status = 'completed' AND f.scheduled_departure >= CURRENT_DATE - INTERVAL '30 days' GROUP BY f.flight_type ORDER BY block_hours DESC",
+        "fix": "Report revenue utilization (flight_type='revenue') and total utilization separately. A gap between them is repositioning overhead worth investigating."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Aircraft-day count over-inflated by counting delivery/retirement partial days as full days",
+        "how_it_deflates": "An aircraft delivered mid-month or retired mid-month should contribute only its in-service days. If every owned tail counts as available for all days regardless of when it entered/left service, the aircraft-day denominator is too large and utilization is deflated.",
+        "detection_sql": "SELECT ac.aircraft_id, ac.in_service_date, ac.retire_date, COUNT(DISTINCT DATE(f.scheduled_departure)) AS days_flown FROM aircraft ac LEFT JOIN flights f ON ac.aircraft_id = f.aircraft_id AND f.status='completed' WHERE ac.in_service_date > CURRENT_DATE - INTERVAL '90 days' OR ac.retire_date IS NOT NULL GROUP BY ac.aircraft_id, ac.in_service_date, ac.retire_date ORDER BY ac.in_service_date DESC",
+        "fix": "Build the aircraft-day denominator from each tail's actual in-service window (GREATEST(period_start, in_service_date) to LEAST(period_end, COALESCE(retire_date, period_end))), not a flat days-in-period count for every owned aircraft."
+      },
+      {
+        "cause": "Counting distinct calendar days flown understates idle days that should be in the denominator",
+        "how_it_deflates": "Using COUNT(DISTINCT DATE(scheduled_departure)) for days counts only days the aircraft actually flew. Conversely, if applied per-tail it can hide idle days; if applied globally it under/over-states depending on overlap. The grain mismatch between aircraft and days makes the denominator wrong either way.",
+        "detection_sql": "SELECT COUNT(DISTINCT f.aircraft_id) AS distinct_aircraft, COUNT(DISTINCT DATE(f.scheduled_departure)) AS distinct_days, COUNT(DISTINCT f.aircraft_id) * COUNT(DISTINCT DATE(f.scheduled_departure)) AS naive_aircraft_days, COUNT(DISTINCT f.aircraft_id || DATE(f.scheduled_departure)::text) AS actual_aircraft_days_flown FROM flights f WHERE f.status='completed' AND f.scheduled_departure >= CURRENT_DATE - INTERVAL '30 days'",
+        "fix": "Compute aircraft-days from an explicit per-tail in-service calendar (one row per aircraft per in-service day), not the cross-product of distinct aircraft x distinct days, which double-counts when fleet composition changes over the window."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the aircraft-day denominator built from each tail's in-service window, or a naive aircraft x days cross-product?",
+      "Are stored, heavy-maintenance, or undelivered tails handled consistently in the denominator?",
+      "Is the numerator actual block hours or scheduled (possibly padded) block?",
+      "Is ferry/positioning flying inflating utilization versus revenue utilization?",
+      "Did utilization rise at the expense of OTP — are turn times below buffer?",
+      "Is the change a schedule-density decision or a maintenance/grounding downtime effect?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "utilization up, air_rasm_casm CASM down (stage length flat)",
+        "then": "More flying per tail spread fixed ownership cost over more ASK — a genuine unit-cost efficiency gain. Confirm OTP held."
+      },
+      {
+        "if": "utilization up, air_otp down",
+        "then": "Turns were tightened past the buffer needed to absorb variability — reactionary delay is propagating. The marginal block hour was bought with delay; check turn time vs minimum-turn."
+      },
+      {
+        "if": "utilization down, CASM up",
+        "then": "Idle aircraft (grounding, schedule cuts, delivery delay) are carrying fixed cost with no flying to absorb it — a utilization-driven unit-cost problem, not variable-cost inflation."
+      },
+      {
+        "if": "utilization down on one fleet type only",
+        "then": "A type-specific issue — a grounding (AD/inspection), reliability problem, or seasonal park — rather than a network-wide schedule change. Decompose by aircraft_type."
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Fleet utilization climbs to record levels",
+        "and_also": "air_otp deteriorates across the network in the same period",
+        "shared_root_cause": "The schedule was densified — ground/turn buffers cut to extract more block hours per tail. With no slack, a single delay cascades into reactionary delay across the day's rotation. The utilization gain and the OTP loss are the same decision viewed from two sides. The remedy is reintroducing turn buffer or de-peaking banks, not crew effort.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', f.scheduled_departure) AS week, ROUND(SUM(f.block_hours)/NULLIF(COUNT(DISTINCT f.aircraft_id || DATE(f.scheduled_departure)::text),0),2) AS block_hrs_per_tail_day, ROUND(COUNT(CASE WHEN EXTRACT(EPOCH FROM (f.actual_arrival - f.scheduled_arrival))/60.0 <= 15 THEN 1 END)*100.0/NULLIF(COUNT(*),0),2) AS otp_pct, ROUND(AVG(EXTRACT(EPOCH FROM (f.actual_departure - LAG(f.actual_arrival) OVER (PARTITION BY f.aircraft_id ORDER BY f.scheduled_departure)))/60.0),1) AS avg_turn_min FROM flights f WHERE f.flight_type='revenue' AND f.status='completed' GROUP BY 1 ORDER BY 1"
+      },
+      {
+        "if_this_metric": "Utilization drops sharply",
+        "and_also": "air_rasm_casm CASM rises while RASM is unchanged",
+        "shared_root_cause": "Aircraft are sitting idle (grounding, AD inspection, delivery slip, demand-driven schedule cut) so the fixed ownership and minimum-crew cost is amortized over fewer block hours and fewer ASK, lifting CASM with no change in pricing. The lever is utilization recovery or fleet right-sizing, not commercial action.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', f.scheduled_departure) AS month, f.aircraft_type, ROUND(SUM(f.block_hours)/NULLIF(COUNT(DISTINCT f.aircraft_id || DATE(f.scheduled_departure)::text),0),2) AS block_hrs_per_tail_day, COUNT(DISTINCT f.aircraft_id) AS tails_flown FROM flights f WHERE f.flight_type='revenue' AND f.status='completed' GROUP BY 1, 2 ORDER BY 1, 2"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Denominator = distinct aircraft x distinct days (cross-product) when fleet size changes mid-period",
+        "why_wrong": "Multiplying COUNT(DISTINCT aircraft) by COUNT(DISTINCT days) assumes every aircraft was in service every day. When tails are delivered, retired, or stored mid-period, the cross-product over- or under-counts aircraft-days, distorting utilization. The correct denominator is the count of actual in-service aircraft-days (one row per tail per in-service day).",
+        "bad_sql": "SELECT SUM(f.block_hours) / (COUNT(DISTINCT f.aircraft_id) * COUNT(DISTINCT DATE(f.scheduled_departure))) AS util FROM flights f WHERE f.status = 'completed'",
+        "good_sql": "SELECT ROUND(SUM(f.block_hours) / NULLIF(COUNT(DISTINCT f.aircraft_id || '|' || DATE(f.scheduled_departure)::text), 0), 2) AS block_hours_per_aircraft_day FROM flights f WHERE f.flight_type = 'revenue' AND f.status = 'completed'"
+      },
+      {
+        "pattern": "Summing scheduled block hours and calling it utilization",
+        "why_wrong": "Scheduled block includes padding added to protect OTP. Summing it overstates the productive hours the aircraft actually flew and makes a padding increase look like a productivity gain. True utilization uses actual gate-to-gate block time.",
+        "bad_sql": "SELECT SUM(f.scheduled_block_hours) / NULLIF(COUNT(DISTINCT f.aircraft_id || DATE(f.scheduled_departure)::text), 0) AS util FROM flights f",
+        "good_sql": "SELECT ROUND(SUM(EXTRACT(EPOCH FROM (f.actual_arrival - f.actual_departure))/3600.0) / NULLIF(COUNT(DISTINCT f.aircraft_id || '|' || DATE(f.scheduled_departure)::text), 0), 2) AS actual_block_hours_per_aircraft_day FROM flights f WHERE f.flight_type = 'revenue' AND f.status = 'completed' AND f.actual_arrival IS NOT NULL"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT ROUND(SUM(f.block_hours) / NULLIF(COUNT(DISTINCT f.aircraft_id || '|' || DATE(f.scheduled_departure)::text), 0), 2) AS block_hours_per_aircraft_day FROM flights f WHERE f.flight_type = 'revenue' AND f.status = 'completed' AND f.scheduled_departure BETWEEN '2024-01-01' AND '2024-01-31'",
+      "intermediate_sql": "SELECT DATE_TRUNC('month', f.scheduled_departure) AS month, f.aircraft_type, ROUND(SUM(f.block_hours) / NULLIF(COUNT(DISTINCT f.aircraft_id || '|' || DATE(f.scheduled_departure)::text), 0), 2) AS block_hours_per_aircraft_day, COUNT(DISTINCT f.aircraft_id) AS tails_flown, SUM(f.block_hours) AS total_block_hours FROM flights f WHERE f.flight_type = 'revenue' AND f.status = 'completed' GROUP BY 1, 2 ORDER BY 1, block_hours_per_aircraft_day DESC",
+      "advanced_sql": "WITH in_service_days AS (\n  -- Grain: one row per aircraft per in-service day within the window\n  SELECT\n    ac.aircraft_id,\n    ac.aircraft_type,\n    d.day\n  FROM aircraft ac\n  CROSS JOIN generate_series(DATE '2024-01-01', DATE '2024-03-31', INTERVAL '1 day') AS d(day)\n  WHERE ac.status = 'in_service'\n    AND d.day >= ac.in_service_date\n    AND d.day <= COALESCE(ac.retire_date, DATE '2024-03-31')\n),\ndaily_block AS (\n  -- Grain: one row per aircraft per day with actual block hours flown\n  SELECT\n    f.aircraft_id,\n    DATE(f.scheduled_departure) AS day,\n    SUM(EXTRACT(EPOCH FROM (f.actual_arrival - f.actual_departure)) / 3600.0) AS block_hours\n  FROM flights f\n  WHERE f.flight_type = 'revenue' AND f.status = 'completed' AND f.actual_arrival IS NOT NULL\n  GROUP BY 1, 2\n),\nmonthly AS (\n  SELECT\n    DATE_TRUNC('month', isd.day) AS month,\n    isd.aircraft_type,\n    COUNT(*) AS aircraft_days,\n    COALESCE(SUM(db.block_hours), 0) AS total_block_hours,\n    ROUND(COALESCE(SUM(db.block_hours), 0) / NULLIF(COUNT(*), 0), 2) AS block_hours_per_aircraft_day\n  FROM in_service_days isd\n  LEFT JOIN daily_block db ON isd.aircraft_id = db.aircraft_id AND isd.day = db.day\n  GROUP BY 1, 2\n)\nSELECT\n  month,\n  aircraft_type,\n  aircraft_days,\n  total_block_hours,\n  block_hours_per_aircraft_day,\n  LAG(block_hours_per_aircraft_day) OVER (PARTITION BY aircraft_type ORDER BY month) AS prev_util,\n  ROUND(block_hours_per_aircraft_day - LAG(block_hours_per_aircraft_day) OVER (PARTITION BY aircraft_type ORDER BY month), 2) AS util_change\nFROM monthly\nORDER BY aircraft_type, month"
+    }
+  }
+]

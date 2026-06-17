@@ -1,0 +1,123 @@
+{
+  "industry": "Manufacturing / Industrial Production",
+  "aliases": ["manufacturing", "production", "factory", "industrial", "industrial production", "plant", "assembly", "assembly line", "oem", "shop floor", "fabrication", "machining", "process manufacturing", "discrete manufacturing", "operations"],
+  "description": "Conversion of raw materials into finished goods on machines/lines across shifts. Levers are asset effectiveness (OEE), quality (yield, scrap), flow (cycle/takt time, throughput), reliability (downtime, MTBF/MTTR), and schedule adherence (OTIF).",
+  "metrics": [
+    {
+      "name": "Overall Equipment Effectiveness (OEE)",
+      "aliases": ["OEE", "equipment effectiveness", "asset effectiveness"],
+      "definition": "Single score for how productively a machine ran: the PRODUCT of three rates — Availability x Performance x Quality — each a ratio in 0..1.",
+      "formula": "OEE = Availability * Performance * Quality, computed PER machine PER shift, where Availability = run_time / planned_production_time, Performance = (ideal_cycle_time * total_units) / run_time, Quality = good_units / total_units. Aggregate by run-time-weighting the per-machine-shift OEE, NOT by averaging the three rates.",
+      "grain": "Machine x shift grain. Compute each of the three sub-rates per machine per shift, MULTIPLY them, then roll up. Each sub-rate is bounded 0..1, so OEE is bounded 0..1 by construction.",
+      "anti_patterns": [
+        "Averaging Availability, Performance, and Quality together (e.g. (A+P+Q)/3) — OEE is their PRODUCT, not their mean.",
+        "AVG(oee) across machines unweighted — a machine that ran 8h and one that ran 10min count equally; weight by run_time (or planned_production_time).",
+        "Computing the three rates over different windows/grains and multiplying mismatched values.",
+        "Any sub-rate or final OEE > 1 is a bug: run_time can't exceed planned time, output can't exceed ideal-rate capacity, good can't exceed total."
+      ],
+      "sane_range": "ratio 0..1 (world-class ~0.85; >1 is impossible — a grain/window error).",
+      "needs_concepts": ["machines", "shifts", "planned production time", "run time", "ideal cycle time", "total units produced", "good units"]
+    },
+    {
+      "name": "First Pass Yield (FPY) / Quality Rate",
+      "aliases": ["FPY", "first pass yield", "quality rate", "right first time", "RFT"],
+      "definition": "Share of units that pass inspection on the first attempt without rework or scrap.",
+      "formula": "good_units / NULLIF(total_units_started, 0), where good_units exclude anything reworked or scrapped.",
+      "grain": "Per line/product/shift then aggregate. Denominator = units STARTED (or inspected), not just units that reached the end. Sum good and total at the same grain before dividing.",
+      "anti_patterns": [
+        "Counting reworked units as 'good' — FPY means right the FIRST time; rework belongs in the fail bucket.",
+        "AVG(per_row_yield_pct) instead of SUM(good)/SUM(total) — unweighted average distorts when batch sizes differ.",
+        "Denominator = units finished rather than units started hides scrap that left the line early."
+      ],
+      "sane_range": "ratio 0..1 (mature lines often 0.95–0.999; >1 impossible).",
+      "needs_concepts": ["units started/inspected", "good units", "rework/scrap status"]
+    },
+    {
+      "name": "Scrap / Defect Rate (PPM)",
+      "aliases": ["scrap rate", "defect rate", "reject rate", "PPM", "DPPM", "parts per million"],
+      "definition": "Fraction of produced/inspected units that are defective, often expressed in parts per million.",
+      "formula": "defect_rate = scrapped_or_defective_units / NULLIF(units_produced_or_inspected, 0); PPM = defect_rate * 1000000.",
+      "grain": "Per product/line/period. Denominator MUST be units produced or inspected over the same window as the defect count — never total orders, total rows after a join, or a different period.",
+      "anti_patterns": [
+        "Denominator = number of production runs or joined rows instead of units produced — fans out and meaningless.",
+        "Counting defect records (one defective unit can have several defect codes) instead of distinct defective units inflates the numerator.",
+        "Reporting the raw ratio as if it were PPM (off by 1,000,000x) or vice versa.",
+        "defect_rate > 1 is a bug — more defects than units means double-counted defects or wrong denominator."
+      ],
+      "sane_range": "ratio 0..1; PPM 0..1,000,000 (good processes often <500 PPM).",
+      "needs_concepts": ["units produced/inspected", "defective/scrapped units"]
+    },
+    {
+      "name": "Cycle Time vs Takt Time",
+      "aliases": ["cycle time", "takt time", "actual cycle time", "pace"],
+      "definition": "Cycle time = actual time to produce one unit; takt time = customer-demand pace (available time per unit required). Comparing them shows if the line keeps up with demand.",
+      "formula": "actual_cycle_time = run_time / NULLIF(total_units, 0); takt_time = available_production_time / NULLIF(customer_demand_units, 0). Line keeps pace iff actual_cycle_time <= takt_time.",
+      "grain": "Per line/station/period. Use the SAME time unit (seconds or minutes) for both. Cycle time is run_time divided by units made; takt is available time divided by units DEMANDED — different denominators, do not conflate.",
+      "anti_patterns": [
+        "Dividing total time by number of production ORDERS instead of units yields per-order time, not per-unit cycle time.",
+        "Mixing units (seconds vs minutes) between cycle and takt makes the comparison nonsense.",
+        "Using calendar time instead of available/planned time for takt overstates capacity."
+      ],
+      "sane_range": "time per unit, strictly positive (seconds to minutes for discrete parts); cycle <= takt means demand is met.",
+      "needs_concepts": ["run time / available production time", "units produced", "customer demand quantity"]
+    },
+    {
+      "name": "Throughput (Units per Period)",
+      "aliases": ["throughput", "output", "production rate", "units per hour", "production volume"],
+      "definition": "Good units produced per unit of time over a defined window.",
+      "formula": "SUM(good_units) / time_window, e.g. SUM(good_units) per hour = SUM(good_units) / (run_time_hours).",
+      "grain": "Per line/machine over an explicit time window. ALWAYS state the window (per hour, per shift, per day) — a count with no time basis is not throughput. Sum units over the window, divide by the window length.",
+      "anti_patterns": [
+        "Reporting a raw unit count with no time window — that's volume, not a rate.",
+        "Counting units from a fanned-out join (units multiplied by defect rows or shift rows) overstates output.",
+        "Including scrapped units in throughput when the metric is GOOD output — be explicit about good vs total."
+      ],
+      "sane_range": "units per period, non-negative; bounded above by ideal-rate capacity for the window.",
+      "needs_concepts": ["good (or total) units produced", "time window / run time"]
+    },
+    {
+      "name": "Unplanned Downtime & MTBF / MTTR",
+      "aliases": ["downtime", "unplanned downtime", "MTBF", "MTTR", "mean time between failures", "mean time to repair", "availability loss"],
+      "definition": "Downtime = time a machine was unexpectedly stopped during scheduled time; MTBF = mean operating time between failures; MTTR = mean time to repair a failure.",
+      "formula": "unplanned_downtime = SUM(downtime_event_duration) over the window; MTBF = total_operating_time / NULLIF(COUNT(failure_events), 0); MTTR = SUM(repair_duration) / NULLIF(COUNT(repair_events), 0).",
+      "grain": "Per machine over a calendar window. Downtime must be SUMMED over the SAME window as scheduled/operating time used elsewhere (e.g. OEE availability) — misaligned windows corrupt availability. Count distinct failure events, not log rows.",
+      "anti_patterns": [
+        "Summing downtime over a different calendar window than scheduled time, so downtime + uptime != scheduled time.",
+        "Counting overlapping or duplicate event rows as separate failures inflates the event count and deflates MTBF.",
+        "Mixing planned maintenance into UNPLANNED downtime overstates the loss.",
+        "Dividing by zero failures (a perfect machine) must yield NULL/undefined MTBF, not 0."
+      ],
+      "sane_range": "downtime in minutes/hours <= scheduled time; MTBF/MTTR positive durations (MTBF >> MTTR for healthy assets).",
+      "needs_concepts": ["machines", "scheduled/operating time", "downtime events with duration", "failure events", "repair durations"]
+    },
+    {
+      "name": "Capacity Utilization",
+      "aliases": ["capacity utilization", "utilization rate", "plant utilization", "asset utilization"],
+      "definition": "Share of available/theoretical capacity that was actually used to produce.",
+      "formula": "actual_output / NULLIF(theoretical_max_output, 0)  -- or used_machine_time / available_machine_time, over the same window.",
+      "grain": "Per machine/line/plant over a defined window. Numerator and denominator must use the SAME basis (both in units, or both in machine-hours) and the same window. Roll up by summing capacities, not averaging utilization percentages.",
+      "anti_patterns": [
+        "Comparing actual units to a capacity measured over a different time span.",
+        "AVG(utilization_pct) across machines of different sizes — weight by capacity (or machine-hours) instead.",
+        "Utilization > 1 signals capacity understated or output double-counted (a join fan-out), not genuine overproduction."
+      ],
+      "sane_range": "ratio 0..1 (commonly 0.6–0.9; brief >1 only from overtime above nameplate, otherwise a bug).",
+      "needs_concepts": ["actual output or used machine time", "theoretical/available capacity", "time window"]
+    },
+    {
+      "name": "On-Time-In-Full (OTIF) / Schedule Adherence",
+      "aliases": ["OTIF", "on time in full", "schedule adherence", "on-time delivery", "OTD", "fill rate", "plan attainment"],
+      "definition": "Share of orders (or scheduled production jobs) delivered/completed ON time AND IN FULL — both conditions must hold.",
+      "formula": "COUNT(DISTINCT order_id WHERE delivered_on_time AND delivered_in_full) / NULLIF(COUNT(DISTINCT eligible_order_id), 0).",
+      "grain": "Order/job grain. An order counts only if BOTH on-time and in-full are true — it's a logical AND, not two separate rates multiplied unless measured independently. Denominator = orders DUE in the window.",
+      "anti_patterns": [
+        "Reporting on-time% and in-full% separately and calling either OTIF — OTIF requires both per order.",
+        "Counting shipment/line rows instead of distinct orders fans out the numerator.",
+        "Denominator = all orders instead of orders DUE/eligible in the window inflates or deflates the rate.",
+        "OTIF > 1 means the numerator population isn't a subset of the denominator — fix the join/filter."
+      ],
+      "sane_range": "ratio 0..1 (strong supply chains 0.9–0.98; >1 impossible).",
+      "needs_concepts": ["orders/jobs with due date and quantity", "actual delivery/completion date and quantity"]
+    }
+  ]
+}

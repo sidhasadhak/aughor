@@ -115,20 +115,22 @@ def _probe_overlap(
         qa = f'"{col_a}"'
         qb = f'"{col_b}"'
 
+        # Containment, not sample-vs-sample: take a small DISTINCT sample of the LHS
+        # (FK side) and check each value against the FULL RHS column. Sampling BOTH
+        # sides was the original bug — for a high-cardinality key (millions of distinct
+        # order_id), two independent samples almost never intersect, so a perfectly
+        # valid FK reported ~0% overlap and got flagged as fabricated. Checking the
+        # sampled LHS values against the entire RHS gives the true containment fraction
+        # (real FK → ~1.0; a bogus join like touchpoint_type=channel → 0.0).
         probe_sql = f"""
 WITH s_a AS (
     SELECT DISTINCT CAST({qa} AS VARCHAR) AS v
     FROM {ta}
     USING SAMPLE {_SAMPLE_A} ROWS
-),
-s_b AS (
-    SELECT DISTINCT CAST({qb} AS VARCHAR) AS v
-    FROM {tb}
-    USING SAMPLE {_SAMPLE_B} ROWS
 )
 SELECT
     (SELECT COUNT(*) FROM s_a) AS total,
-    (SELECT COUNT(*) FROM s_a WHERE v IN (SELECT v FROM s_b)) AS matched
+    (SELECT COUNT(*) FROM s_a WHERE v IN (SELECT CAST({qb} AS VARCHAR) FROM {tb})) AS matched
 """.strip()
 
         result = conn.execute("__domain_probe__", probe_sql)

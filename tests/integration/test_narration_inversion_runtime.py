@@ -107,8 +107,23 @@ def test_explorer_phase8_drops_inversion_on_real_loop(monkeypatch) -> None:
 
     import aughor.llm.provider as prov
     import aughor.ontology.store as ostore
+    import aughor.sql.writer as wmod
     from aughor.db.connection import open_connection_for
     from aughor.explorer.agent import SchemaExplorer
+
+    # SqlWriter reporting a schema where the forced SQL's columns are REAL, so the
+    # schema-grounding pre-flight (invented-identifiers guard) doesn't drop the
+    # query before it reaches the narration-inversion guard under test. The fixture
+    # warehouse needn't actually contain these columns — only the static
+    # table_cols + a green dry_run are needed (and the warehouse is read-only).
+    class FakeSqlWriter:
+        def __init__(self, conn, *a, **k):
+            self.table_cols = {"customers": ["customer_id", "items", "order_count"]}
+
+        def fix(self, *a, **k):
+            return SimpleNamespace(ok=False, sql="", final_error="")
+
+    monkeypatch.setattr(wmod, "SqlWriter", FakeSqlWriter)
 
     # Inject a minimal ontology so Phase 8 runs hermetically (no pre-built ontology
     # in the isolated test system DB). The loop only reads id/display_name/
@@ -136,6 +151,7 @@ def test_explorer_phase8_drops_inversion_on_real_loop(monkeypatch) -> None:
         ex = SchemaExplorer("fixture", open_connection_for("fixture"))
         ex._state = {}                                        # fresh budget so the loop body runs
         monkeypatch.setattr(ex, "_save_state", lambda: None)  # never persist
+        monkeypatch.setattr(ex._conn, "dry_run", lambda _sql: (True, ""))  # bind check green (no live tables)
 
         async def fake_run(sql, think=""):
             return VARYING                                    # every query → a varying distribution

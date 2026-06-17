@@ -1,0 +1,142 @@
+{
+  "industry": "SaaS / Subscription Software",
+  "aliases": ["saas", "subscription", "software", "b2b saas", "b2c saas", "subscription software", "recurring revenue", "cloud software", "freemium", "seat-based", "usage-based", "plg", "product-led growth"],
+  "description": "Recurring sale of software access via subscriptions. Levers are recurring revenue (MRR/ARR), expansion vs. churn (retention), unit economics (CAC, LTV), and funnel conversion (trial/free → paid). The defining grain trap is recurring vs. one-time money: only the subscription's periodic price is recurring revenue.",
+  "metrics": [
+    {
+      "name": "Monthly / Annual Recurring Revenue (MRR / ARR)",
+      "aliases": ["MRR", "ARR", "recurring revenue", "monthly recurring revenue", "annual recurring revenue", "run-rate"],
+      "definition": "Normalized recurring revenue from active subscriptions as of a point in time. ARR = MRR * 12.",
+      "formula": "SUM(monthly_normalized_price) over subscriptions ACTIVE on the as-of date; annual plans contribute plan_price/12; ARR = MRR * 12.",
+      "grain": "Subscription grain, evaluated as a point-in-time snapshot on a chosen date — NOT a sum of invoices/payments over a period. Normalize every plan to a monthly amount (annual → /12, quarterly → /3). Only count subscriptions whose status is active and whose start<=as_of<end on that date.",
+      "anti_patterns": [
+        "SUM(invoice_amount) or SUM(payment) over a period mixes one-time charges (setup fees, overages, services) into MRR and double-counts annual prepayments — MRR is a snapshot of recurring price, not collected cash.",
+        "Adding an annual plan's full year price to MRR without dividing by 12 overstates MRR ~12x.",
+        "Summing subscription rows when an account has multiple/overlapping or upgraded subscriptions inflates MRR — dedupe to the currently-active subscription per account.",
+        "Forgetting the as-of date filter (start<=as_of<end) sums historical + cancelled subscriptions as if still active."
+      ],
+      "sane_range": "currency, strictly positive; ARR is exactly 12*MRR by construction.",
+      "needs_concepts": ["subscriptions with start/end dates and status", "plan price", "billing period (monthly/annual)"]
+    },
+    {
+      "name": "Net Revenue Retention (NRR / NDR)",
+      "aliases": ["NRR", "NDR", "net revenue retention", "net dollar retention", "net MRR retention"],
+      "definition": "Recurring revenue retained from a starting cohort over a period, INCLUDING expansion and contraction but EXCLUDING new logos acquired during the period.",
+      "formula": "(starting_MRR + expansion_MRR - contraction_MRR - churned_MRR) / NULLIF(starting_MRR, 0), measured on the SAME cohort of accounts active at period start.",
+      "grain": "Account-cohort grain. Fix the set of accounts active at the start of the window; track ONLY those accounts' MRR at period end. New accounts that signed up during the window must be excluded from both numerator and denominator.",
+      "anti_patterns": [
+        "Including new-logo MRR in the numerator inflates NRR — that is gross new revenue, not retention of the cohort.",
+        "Double-counting expansion: if you compute end_MRR for the cohort directly, do NOT then also ADD an expansion term on top — pick one method (end-of-period cohort MRR ÷ start MRR, OR start + expansion − contraction − churn), never both.",
+        "Counting subscription rows instead of distinct accounts lets one account's plan change register as both a churn and a new sale.",
+        "Comparing period-summed revenue instead of point-in-time MRR conflates billing timing with retention."
+      ],
+      "sane_range": "ratio, typically 0.8..1.4; NRR > 1 is NORMAL and GOOD (expansion outweighs churn) — do not treat >1 as a bug. Best-in-class B2B is ~1.1–1.3. Values far above ~1.5 usually mean new logos leaked into the cohort.",
+      "needs_concepts": ["accounts/customers", "MRR per account at two points in time", "a fixed starting cohort", "expansion/contraction/churn events"]
+    },
+    {
+      "name": "Gross Revenue Churn Rate",
+      "aliases": ["gross MRR churn", "revenue churn", "gross dollar churn", "$ churn"],
+      "definition": "Share of starting recurring revenue lost to cancellations and downgrades over a period. Gross churn EXCLUDES expansion (it cannot net out, so it is bounded 0..1).",
+      "formula": "(churned_MRR + contraction_MRR) / NULLIF(starting_MRR, 0) over the cohort active at period start.",
+      "grain": "Account/MRR-cohort grain. Numerator = MRR lost from accounts in the starting cohort during the window; denominator = that same cohort's starting MRR. Lost MRR is measured against each account's start-of-period price.",
+      "anti_patterns": [
+        "Subtracting expansion in the numerator turns gross churn into NET churn and can go negative — gross churn must never net expansion.",
+        "Using end-of-period or whole-base MRR (including new logos) as the denominator understates churn — the denominator is the STARTING cohort's MRR.",
+        "Counting churned subscription rows rather than churned MRR mixes logo loss with dollar loss.",
+        "A churn rate above 1 or below 0 signals a wrong denominator/cohort, not real data."
+      ],
+      "sane_range": "ratio 0..1; healthy B2B monthly gross revenue churn is ~0.005–0.02 (annualized ~0.05–0.20). Never negative, never > 1.",
+      "needs_concepts": ["starting-cohort MRR", "churned and downgraded MRR in the period", "accounts"]
+    },
+    {
+      "name": "Logo / Customer Churn Rate",
+      "aliases": ["logo churn", "customer churn", "account churn", "churn rate"],
+      "definition": "Share of customers (accounts) active at period start who fully cancelled during the period. Counted in distinct accounts, not dollars and not subscriptions.",
+      "formula": "COUNT(DISTINCT churned_account_id) / NULLIF(COUNT(DISTINCT account_id ACTIVE at period start), 0).",
+      "grain": "Distinct-account grain. Denominator = accounts active at the START of the window; numerator = the subset of THOSE accounts that fully churned (all subscriptions ended) during the window. Pre-aggregate to one row per account before counting.",
+      "anti_patterns": [
+        "Counting subscription rows instead of DISTINCT accounts: a multi-seat or multi-product account looks like several churns and can push the ratio above 1.",
+        "Putting newly-acquired-then-cancelled accounts in the numerator but not the start-of-period denominator breaks the cohort and can exceed 1.",
+        "A downgrade is NOT a logo churn — logo churn is only full account cancellation; mixing in contractions over-counts.",
+        "Logo churn > 1 is ALWAYS a bug (you cannot lose more accounts than you started with) — unlike NRR, this rate has a hard ceiling of 1."
+      ],
+      "sane_range": "ratio 0..1 (never > 1, never negative); SMB B2C runs higher, enterprise B2B often <0.01/month.",
+      "needs_concepts": ["distinct accounts/customers", "account active status at period boundaries", "cancellation date"]
+    },
+    {
+      "name": "Customer Acquisition Cost (CAC)",
+      "aliases": ["CAC", "acquisition cost", "cost per acquisition", "blended CAC"],
+      "definition": "Sales and marketing spend divided by the number of NEW customers acquired in the same period.",
+      "formula": "SUM(sales_and_marketing_spend) / NULLIF(COUNT(DISTINCT new_account_id), 0) over the same period.",
+      "grain": "Account grain for the count; period grain for spend. 'New' = accounts whose first paid subscription started in the window. Spend and new-account counts must cover the SAME period (and same channel/segment if computing a non-blended CAC).",
+      "anti_patterns": [
+        "Dividing spend by ALL customers (not just newly acquired) understates CAC.",
+        "Counting trials or free signups as acquisitions inflates the denominator — CAC denominator is new PAID customers.",
+        "Mismatched windows (this month's spend ÷ cumulative customers) produces a meaningless ratio.",
+        "Counting subscription rows instead of distinct new accounts double-counts multi-product buyers."
+      ],
+      "sane_range": "currency, positive; only meaningful relative to LTV and payback. Self-serve B2C CAC is low; enterprise B2B can be thousands+.",
+      "needs_concepts": ["sales & marketing spend", "accounts with first-paid date", "billing/subscription start"]
+    },
+    {
+      "name": "Customer Lifetime Value (LTV) and LTV:CAC",
+      "aliases": ["LTV", "CLV", "lifetime value", "LTV:CAC", "LTV to CAC ratio"],
+      "definition": "Expected gross-margin recurring revenue from a customer over their lifetime; LTV:CAC compares that value to acquisition cost.",
+      "formula": "LTV = (ARPA_monthly * gross_margin_pct) / NULLIF(monthly_logo_churn_rate, 0); LTV:CAC = LTV / NULLIF(CAC, 0). (Average lifetime in months = 1 / churn_rate.)",
+      "grain": "Account grain, derived from period-level rates. ARPA, gross margin, and churn must all be on a consistent periodicity (e.g. all monthly). Churn must be the logo churn RATE (a fraction), so 1/churn yields lifetime in periods.",
+      "anti_patterns": [
+        "Using revenue ARPA without multiplying by gross margin overstates LTV — LTV is gross-margin value, not top-line.",
+        "Dividing by an annual churn rate while ARPA is monthly (or vice versa) mismatches periods and skews lifetime by 12x.",
+        "Churn rate of 0 makes LTV infinite — guard with NULLIF and treat as 'undefined / use a capped horizon' rather than a huge number.",
+        "Summing historical revenue per customer is realized value, not LTV; do not conflate the two."
+      ],
+      "sane_range": "LTV in currency, positive. LTV:CAC ratio typically 3..5 is healthy; <1 means you lose money per customer; >>5 may mean under-investment in growth (or a churn/margin error).",
+      "needs_concepts": ["ARPA", "gross margin %", "logo churn rate", "CAC"]
+    },
+    {
+      "name": "Average Revenue Per Account / User (ARPA / ARPU)",
+      "aliases": ["ARPA", "ARPU", "average revenue per account", "average revenue per user", "ARPC"],
+      "definition": "Recurring revenue divided by the number of active accounts (ARPA) or active users (ARPU) in a period.",
+      "formula": "total_MRR / NULLIF(COUNT(DISTINCT active_account_id), 0)  -- ARPU divides by distinct active users instead.",
+      "grain": "Recurring-revenue snapshot ÷ distinct active entities for the SAME point in time. Use point-in-time MRR over distinct active accounts; do not average per-subscription prices.",
+      "anti_patterns": [
+        "AVG(plan_price) averages plans, not accounts — a single account on several add-ons should be summed to one account, then averaged across accounts.",
+        "Dividing MRR by subscription-row count instead of distinct accounts deflates ARPA for multi-product accounts.",
+        "Mixing one-time revenue into the numerator (see MRR) inflates ARPA.",
+        "Using all-time accounts in the denominator instead of those active in the period understates ARPA."
+      ],
+      "sane_range": "currency per account/user, strictly positive; B2B ARPA >> B2C ARPU as a rule.",
+      "needs_concepts": ["MRR or recurring revenue", "distinct active accounts or users"]
+    },
+    {
+      "name": "CAC Payback Period",
+      "aliases": ["CAC payback", "payback period", "months to recover CAC"],
+      "definition": "Number of months of gross-margin recurring revenue from a new customer needed to recoup the cost of acquiring them.",
+      "formula": "CAC / NULLIF(ARPA_monthly * gross_margin_pct, 0)  -- result is in months.",
+      "grain": "Account-cohort grain, expressed in months. CAC and ARPA must reference the same customer cohort and currency; ARPA must be monthly and margin-adjusted so the quotient reads as months.",
+      "anti_patterns": [
+        "Using revenue ARPA (no gross margin) understates payback — recovery is on contribution margin, not top-line revenue.",
+        "Annual ARPA with monthly intent (or vice versa) makes the months figure off by ~12x.",
+        "Dividing by per-subscription price rather than per-account ARPA misstates recovery for multi-product accounts.",
+        "Ignoring NULLIF on a zero/near-zero margin yields infinite or absurd payback — flag as 'undefined' instead."
+      ],
+      "sane_range": "months, positive; healthy SaaS payback is <12 months, with <18 acceptable for enterprise; >24 signals weak unit economics or a grain/period error.",
+      "needs_concepts": ["CAC", "ARPA (monthly)", "gross margin %"]
+    },
+    {
+      "name": "Activation / Trial-to-Paid Conversion Rate",
+      "aliases": ["trial conversion", "trial-to-paid", "activation rate", "free-to-paid", "signup conversion"],
+      "definition": "Share of trials or free signups (in a starting cohort) that convert to a paid subscription within the measurement window.",
+      "formula": "COUNT(DISTINCT converted_account_id) / NULLIF(COUNT(DISTINCT trial_or_signup_account_id), 0), where 'converted' iff the account started a paid subscription, measured on the SAME cohort of signups.",
+      "grain": "Signup-cohort grain. Denominator = distinct accounts that started a trial/free plan in the cohort window; numerator = the subset that later converted to paid. A conversion rate is bounded 0..1 BY CONSTRUCTION.",
+      "anti_patterns": [
+        "COUNT(paid) / COUNT(trials) as raw, unaligned totals → can exceed 1 (classic >1 bug); if you get >1 the cohort/join is wrong, not the data.",
+        "Counting paid SUBSCRIPTION rows instead of distinct converted accounts fans out the numerator (a converter who buys multiple products counts once).",
+        "Comparing this period's conversions to a different period's signups breaks the cohort and biases the rate.",
+        "Counting accounts that paid but never had a trial in the denominator population (population mismatch) skews the ratio."
+      ],
+      "sane_range": "ratio 0..1 (never > 1); opt-in free-trial B2B SaaS often 0.15–0.25, freemium B2C typically low single-digit percent.",
+      "needs_concepts": ["trials / free signups with start date", "paid subscriptions with start date", "a key linking signup→paid account", "a fixed signup cohort"]
+    }
+  ]
+}
