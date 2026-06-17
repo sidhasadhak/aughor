@@ -1716,7 +1716,7 @@ class SchemaExplorer:
         from aughor.llm.provider import get_provider
         from aughor.sql.fanout import (
             integer_division_risk, count_star_entity_fanout, count_star_chasm_fanout,
-            avg_over_chasm_fanout, sum_over_chasm_fanout,
+            avg_over_chasm_fanout, sum_over_chasm_fanout, cte_grain_mismatch_fanout,
         )
         from aughor.sql.shape import is_redundant_insight, is_semantically_redundant
         from aughor.sql.join_guard import check_join_value_domains
@@ -1795,7 +1795,8 @@ class SchemaExplorer:
                          or count_star_entity_fanout(sql, _tc)
                          or count_star_chasm_fanout(sql, _tc, dialect=_dialect)
                          or avg_over_chasm_fanout(sql, _tc, dialect=_dialect)
-                         or sum_over_chasm_fanout(sql, _tc, dialect=_dialect))
+                         or sum_over_chasm_fanout(sql, _tc, dialect=_dialect)
+                         or cte_grain_mismatch_fanout(sql, _tc, dialect=_dialect))
                 if grain:
                     logger.info("[explorer:%s] Phase 8 (pinned): skipping Q%d — grain bug: %s",
                                 self.connection_id, qi, grain)
@@ -2961,6 +2962,7 @@ class SchemaExplorer:
                                   or count_star_chasm_fanout(sql, _tc, dialect=getattr(self._conn, "dialect", "duckdb"))
                                   or avg_over_chasm_fanout(sql, _tc, dialect=getattr(self._conn, "dialect", "duckdb"))
                                   or sum_over_chasm_fanout(sql, _tc, dialect=getattr(self._conn, "dialect", "duckdb"))
+                                  or cte_grain_mismatch_fanout(sql, _tc, dialect=getattr(self._conn, "dialect", "duckdb"))
                                   or (measure_grain_misuse(sql, _mg, _qc, dialect=getattr(self._conn, "dialect", "duckdb")) if _mg else None))
                         if _grain:
                             from aughor.stats import stats as _s; _s.inc("explorer.grain_skips")

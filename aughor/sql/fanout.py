@@ -475,6 +475,151 @@ def sum_over_chasm_fanout(sql: str, table_cols: dict | None = None, dialect: str
     return None
 
 
+def _cte_grain_and_outputs(cte_select) -> tuple[set, set, set]:
+    """For a CTE's SELECT, return (grain, measures, all_outputs) as output-name sets:
+      grain    = output names that come from GROUP BY keys (the CTE's row grain);
+      measures = output names whose projection is a NON-DISTINCT additive aggregate;
+      all_outputs = every projected output name.
+    Names are bare/lowercased (the alias if projected with one, else the column name)."""
+    from sqlglot import exp
+
+    def _out_name(proj) -> str:
+        if isinstance(proj, exp.Alias):
+            return (proj.alias or "").lower()
+        if isinstance(proj, exp.Column):
+            return (proj.name or "").lower()
+        return ""
+
+    grp = cte_select.args.get("group")
+    group_cols = set()
+    if grp is not None:
+        for g in grp.expressions:
+            for c in g.find_all(exp.Column):
+                group_cols.add((c.name or "").lower())
+
+    grain, measures, outs = set(), set(), set()
+    for proj in cte_select.expressions:
+        name = _out_name(proj)
+        if name:
+            outs.add(name)
+        # measure = projection containing a non-distinct aggregate
+        aggs = list(proj.find_all(exp.AggFunc))
+        if aggs and not any(isinstance(a.this, exp.Distinct) for a in aggs):
+            if name:
+                measures.add(name)
+        else:
+            # a key/passthrough — grain if it (or its source column) is in GROUP BY
+            cols = {(c.name or "").lower() for c in proj.find_all(exp.Column)}
+            if name and (name in group_cols or (cols & group_cols)):
+                grain.add(name)
+    return grain, measures, outs
+
+
+def cte_grain_mismatch_fanout(sql: str, table_cols: dict | None = None, dialect: str = "duckdb") -> str | None:
+    """Fan-out HIDDEN inside CTEs: two pre-aggregated CTEs at DIFFERENT grains joined on
+    only the coarser one's grain, so the coarser CTE's measure DUPLICATES across the
+    finer CTE's extra grain dimension — and a downstream SUM/AVG over-counts it.
+
+    The real-path scar: a gross-margin query pre-aggregated revenue per (order, category)
+    in one CTE and COGS per (order) in another, joined on order_id, then SUM(revenue-cogs)
+    per category — so every category absorbed the WHOLE order's COGS (~2.4× over-count) →
+    a fabricated −149% margin on every category.
+
+    The chasm detectors deliberately EXCLUDE CTE sources (pre-aggregating in a CTE is the
+    fix for a RAW-table chasm), so this grain-mismatch case slips past them — this closes
+    it. High-precision: fires only when (a) coarse CTE grain is a STRICT SUBSET of the fine
+    CTE grain, (b) the join is on exactly the coarse grain, and (c) a non-distinct SUM/AVG
+    references the coarse CTE's measure by a name the fine CTE does NOT also output (so it's
+    unambiguously the fanned column). A per-row ratio of the two (rev/total) summed is NOT
+    flagged. Static analysis; returns a reason or None; never raises."""
+    try:
+        import sqlglot
+        from sqlglot import exp
+    except Exception:
+        return None
+    try:
+        tree = sqlglot.parse_one(sql, read=dialect)
+    except Exception:
+        return None
+    if tree is None:
+        return None
+
+    ctes = {}
+    for cte in tree.find_all(exp.CTE):
+        sel = cte.this
+        if isinstance(sel, exp.Select):
+            ctes[cte.alias_or_name.lower()] = sel
+    if len(ctes) < 2:
+        return None
+
+    info = {name: _cte_grain_and_outputs(sel) for name, sel in ctes.items()}
+
+    # Find joins where BOTH sides are CTEs and the coarser fans across the finer.
+    fanned: set = set()       # coarse-CTE measure names that duplicate, unambiguously
+    for join in tree.find_all(exp.Join):
+        joined = join.this
+        if not isinstance(joined, exp.Table):
+            continue
+        right = joined.name.lower()
+        # the left source is the FROM table of the enclosing SELECT (the arg key is
+        # "from_" in this sqlglot; accept "from" too for version-robustness).
+        sel = join.parent_select
+        if sel is None:
+            continue
+        from_node = sel.args.get("from_") or sel.args.get("from")
+        if from_node is None:
+            continue
+        _t0 = from_node.this if isinstance(from_node.this, exp.Table) else next(
+            (t for t in from_node.find_all(exp.Table)), None)
+        if _t0 is None:
+            continue
+        left = _t0.name.lower()
+        if left not in ctes or right not in ctes:
+            continue
+        on = join.args.get("on")
+        on_cols = {(c.name or "").lower() for c in on.find_all(exp.Column)} if on else set()
+        if not on_cols:
+            continue
+        for a, b in ((left, right), (right, left)):
+            ga, ma, _ = info[a]
+            gb, _, ob = info[b]
+            # a is the COARSER side; its grain must be a strict subset of b's, and the
+            # join must be on exactly a's grain (so a fans across b's extra grain).
+            if ga and gb and ga < gb and ga <= on_cols:
+                fanned |= {m for m in ma if m not in ob}   # unambiguous coarse measures
+
+    if not fanned:
+        return None
+
+    def _only_in_denominator(col_node, agg) -> bool:
+        """True if `col_node` sits in a DIVISION DENOMINATOR on its way up to `agg` — a
+        per-row divisor (SUM(rev / total)) whose duplication cancels, NOT an additive term
+        (SUM(rev - cogs)) whose duplication accumulates."""
+        node = col_node
+        while node is not None and node is not agg:
+            parent = node.parent
+            if isinstance(parent, exp.Div) and parent.args.get("expression") is node:
+                return True
+            node = parent
+        return False
+
+    # A non-DISTINCT SUM/AVG that ACCUMULATES a fanned coarse measure (additively, not as a
+    # mere divisor) → over-count.
+    for agg in tree.find_all((exp.Sum, exp.Avg)):
+        if isinstance(agg.this, exp.Distinct) or isinstance(agg.parent, exp.Window):
+            continue
+        fanned_nodes = [c for c in agg.find_all(exp.Column) if (c.name or "").lower() in fanned]
+        if fanned_nodes and any(not _only_in_denominator(c, agg) for c in fanned_nodes):
+            hit = sorted({(c.name or "").lower() for c in fanned_nodes})
+            return (
+                f"grain-mismatch fan-out: a coarser CTE's measure ({', '.join(hit)}) is "
+                f"SUM/AVG'd after a join on only its grain, so it duplicates across the finer "
+                f"CTE's extra grain (every group absorbs the whole coarser row). Pre-aggregate "
+                f"both sides to the SAME grain, or join on the full key, before aggregating."
+            )
+    return None
+
+
 def build_parent_fanout_rewrite(sql: str, finding: "FanoutFinding", dialect: str = "duckdb"):
     """Deterministic de-fan for a parent_fanout: wrap the source in a DISTINCT
     subquery keyed by the parent's join column, so the parent's measure is summed
