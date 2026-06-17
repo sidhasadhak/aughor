@@ -1,0 +1,125 @@
+/* ════════════════════════════════════════════════════════════════════════════
+   AUGHOR v2 — TOKEN OVERRIDE LAYER
+   ────────────────────────────────────────────────────────────────────────────
+   Drop-in elevation of the existing design tokens. Re-declares ONLY the
+   primitive tokens (backgrounds, borders, text, intent ramps, accent, radius,
+   shadow, motion, chart palette) with elevated v2 values. Every Tailwind /
+   shadcn bridge and accent-palette bridge in the original tokens.css references
+   these primitives via var(), so they cascade automatically — no other file
+   needs editing for the core re-skin.
+
+   ── HOW TO USE ──────────────────────────────────────────────────────────────
+   Import AFTER the original tokens.css so these win the cascade:
+
+       @import "../styles/tokens.css";      // keeps all bridges/aliases
+       @import "./aughor-v2/tokens-v2.css";  // overrides primitives
+
+   To revert: remove the second import. Nothing else changes.
+
+   Variable NAMES are identical to styles/tokens.css — only VALUES differ.
+   See MAPPING.md for the old→new table and rationale.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* ── DARK (default) ──────────────────────────────────────────────────────── */
+:root {
+  /* Backgrounds — deeper canvas, clearer per-layer lift (was flat/borderless) */
+  --bg-0: #0A0D13;
+  --bg-1: #0E121A;
+  --bg-2: #141925;
+  --bg-3: #1A2030;
+  --bg-4: #232C3E;
+  --bg-hover: rgba(255, 255, 255, 0.045);
+  --bg-sel:   rgba(59, 130, 246, 0.14);
+
+  /* Borders — hairline, slightly cooler */
+  --b0: #11151D;
+  --b1: #1B2130;
+  --b2: #252E40;
+  --b3: #334056;
+  --bfocus: #3B82F6;
+
+  /* Text — unchanged hierarchy, marginally brighter t1 for the deeper canvas */
+  --t1: #EAEDF3;
+  --t2: #9BA6B8;
+  --t3: #6B7689;
+  --t4: #4A5468;
+
+  /* Accent — Blueprint blue brightened for the deeper surfaces.
+     --blue3 is THE accent the bridges read (--primary/--accent/--ring/--sidebar-*). */
+  --blue1: #11233F; --blue2: #1C3A66; --blue3: #3B82F6; --blue4: #5B9DFF; --blue5: #BFDBFF;
+  --grn1:  #0C2417; --grn2:  #134E32; --grn3:  #1FA968; --grn4:  #34D399; --grn5:  #86EFC0;
+  --amb1:  #2A1E05; --amb2:  #5A4109; --amb3:  #D9A013; --amb4:  #F5C542; --amb5:  #FFE08A;
+  --red1:  #2A0F12; --red2:  #591C22; --red3:  #E0444E; --red4:  #F76B73; --red5:  #FFA9AE;
+  --vio1:  #1B1340; --vio2:  #312069; --vio3:  #7C5CE0; --vio4:  #A285F5; --vio5:  #CBB8FF;
+  --cyn1:  #06222E; --cyn2:  #0B4658; --cyn3:  #1AA0C4; --cyn4:  #42C5E6; --cyn5:  #9BE4F7;
+
+  /* Radius — modernised. Controls stay tight; panels/cards soften.
+     If you must hold the original 6px ceiling, comment these three out. */
+  --r1: 4px;
+  --r2: 6px;
+  --r3: 10px;
+
+  /* Layout — slightly roomier shell */
+  --sidebar: 232px;
+  --topbar:  56px;
+
+  /* Elevation — tinted, layered (replaces the two flat shadows) */
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.40), 0 1px 1px rgba(0,0,0,.30);
+  --shadow-md: 0 4px 16px rgba(0,0,0,.45), 0 1px 2px rgba(0,0,0,.40);
+
+  /* Chart palette — same hues, calibrated for the deeper canvas */
+  --chart-1: #4C8EEE; --chart-2: #2EC87B; --chart-3: #E0AD00;
+  --chart-4: #8B68D8; --chart-5: #E64848; --chart-6: #30B8E0;
+  --chart-threshold-warn:   #D9A013;
+  --chart-threshold-crit:   #E0444E;
+  --chart-threshold-target: #1FA968;
+  --chart-axis: rgba(255,255,255,.10);
+  --chart-grid: rgba(255,255,255,.05);
+  --chart-tick: #7C8699;
+
+  --code-bg: #07090E;
+}
+
+/* ── LIGHT ───────────────────────────────────────────────────────────────── */
+[data-theme="light"] {
+  --bg-0: #F4F6FA;
+  --bg-1: #FFFFFF;
+  --bg-2: #FFFFFF;
+  --bg-3: #F7F9FC;
+  --bg-4: #EDF1F7;
+  --bg-hover: rgba(15, 30, 60, 0.04);
+  --bg-sel:   rgba(31, 119, 180, 0.10);
+
+  --b0: #EEF1F6;
+  --b1: #E7ECF3;
+  --b2: #D8E0EB;
+  --b3: #C2CCDA;
+  --bfocus: #1F77B4;
+
+  --t1: #1C2330;
+  --t2: #5A6678;
+  --t3: #8593A6;
+  --t4: #A9B4C4;
+
+  --blue1: #EAF3FA; --blue2: #C3DDF0; --blue3: #1F77B4; --blue4: #175A88; --blue5: #103E5E;
+  --grn1:  #E7F6EE; --grn2:  #BEE6CF; --grn3:  #1FA968; --grn4:  #168A52; --grn5:  #0E5C36;
+  --amb1:  #FCF1DA; --amb2:  #F2D89B; --amb3:  #B97D08; --amb4:  #9A6505; --amb5:  #6E4703;
+  --red1:  #FBE9EB; --red2:  #F2C3C7; --red3:  #D62839; --red4:  #B11D2C; --red5:  #7E1320;
+  --vio1:  #F0EBFA; --vio2:  #D6C7F0; --vio3:  #7C5CE0; --vio4:  #5E3FB8; --vio5:  #3F2A80;
+  --cyn1:  #E3F4F8; --cyn2:  #B6E1EB; --cyn3:  #0F8C9A; --cyn4:  #0B6B77; --cyn5:  #06474F;
+
+  --shadow-sm: 0 1px 2px rgba(20,40,80,.06);
+  --shadow-md: 0 4px 16px rgba(20,40,80,.10), 0 1px 3px rgba(20,40,80,.06);
+
+  /* Tableau-10 chart palette + light axes */
+  --chart-1: #1F77B4; --chart-2: #2CA02C; --chart-3: #FF7F0E;
+  --chart-4: #9467BD; --chart-5: #D62728; --chart-6: #17BECF;
+  --chart-threshold-warn:   #B25D00;
+  --chart-threshold-crit:   #D62728;
+  --chart-threshold-target: #2CA02C;
+  --chart-axis: rgba(20,40,80,.12);
+  --chart-grid: rgba(20,40,80,.06);
+  --chart-tick: #66738A;
+
+  --code-bg: #F0F2F6;
+}

@@ -188,6 +188,8 @@ export function Chart({
     if (!svg) return;
     const w = svg.clientWidth  || 640;
     const h = svg.clientHeight || 320;
+    // v2: export background follows the current theme's card surface (--bg-2) instead of a fixed dark hex.
+    const pngBg = getComputedStyle(document.documentElement).getPropertyValue("--bg-2").trim() || "#131c27";
     const clone = svg.cloneNode(true) as SVGElement;
     clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
     clone.setAttribute("width",  String(w));
@@ -195,7 +197,7 @@ export function Chart({
     const bg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
     bg.setAttribute("width",  String(w));
     bg.setAttribute("height", String(h));
-    bg.setAttribute("fill", "#131c27");
+    bg.setAttribute("fill", pngBg);
     clone.insertBefore(bg, clone.firstChild);
     const svgStr = new XMLSerializer().serializeToString(clone);
     const url    = URL.createObjectURL(new Blob([svgStr], { type: "image/svg+xml;charset=utf-8" }));
@@ -205,7 +207,7 @@ export function Chart({
       const canvas = Object.assign(document.createElement("canvas"), { width: w * scale, height: h * scale });
       const ctx    = canvas.getContext("2d")!;
       ctx.scale(scale, scale);
-      ctx.fillStyle = "#131c27";
+      ctx.fillStyle = pngBg;
       ctx.fillRect(0, 0, w, h);
       ctx.drawImage(img, 0, 0, w, h);
       URL.revokeObjectURL(url);
