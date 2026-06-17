@@ -1,0 +1,124 @@
+{
+  "industry": "Airline / Commercial Aviation",
+  "aliases": ["airline", "airlines", "aviation", "commercial aviation", "carrier", "air carrier", "flights", "flight", "airways", "air travel", "passenger airline", "lcc", "low-cost carrier", "legacy carrier", "fleet"],
+  "description": "Scheduled transport of passengers (and cargo) on aircraft over a network of routes. Levers are capacity deployment (seats x distance flown), demand capture (load factor, yield), operational reliability (on-time, cancellations), and asset/cost efficiency (utilization, unit cost per seat-mile).",
+  "metrics": [
+    {
+      "name": "Load Factor",
+      "aliases": ["load factor", "passenger load factor", "PLF", "seat occupancy", "seat fill rate", "occupancy"],
+      "definition": "Share of available seat capacity that was actually sold/occupied, measured in distance-weighted seat-miles (or seat-kilometers).",
+      "formula": "SUM(RPK) / NULLIF(SUM(ASK), 0)  -- equivalently SUM(passengers * distance) / SUM(seats_available * distance). Only when every flight is the same stage length does it reduce to SUM(passengers) / SUM(seats).",
+      "grain": "Flight (or flight-leg) grain, then capacity-weight. Compute RPK and ASK per leg, SUM each across the population, THEN divide. This weights long/high-capacity flights correctly. Never average per-flight load factors.",
+      "anti_patterns": [
+        "AVG(passengers / seats) over flights gives an unweighted mean — a 50-seat regional jet and a 400-seat widebody count equally, badly skewing the network number. Always SUM(RPK)/SUM(ASK).",
+        "Using seats SOLD as the denominator instead of seats AVAILABLE yields ~100% always; the denominator is capacity, not bookings.",
+        "A result > 1.0 (>100%) means a join fanned passengers out (e.g. legs joined to segments, or bookings double-counted), an overbooking artifact, or passengers counted against the wrong seat count — it is a bug, not a full plane."
+      ],
+      "sane_range": "ratio 0..1 (0..100%); industry-typical 0.75–0.90. Any value > 1.0 is impossible and indicates a grain/join error.",
+      "needs_concepts": ["passengers carried", "seats available (capacity)", "stage/segment distance", "flight legs"]
+    },
+    {
+      "name": "Revenue Passenger Kilometers/Miles vs Available Seat Kilometers/Miles (RPK/ASK)",
+      "aliases": ["RPK", "RPM", "ASK", "ASM", "revenue passenger kilometers", "revenue passenger miles", "available seat kilometers", "available seat miles", "traffic vs capacity", "capacity"],
+      "definition": "RPK/RPM is traffic carried = passengers x distance flown. ASK/ASM is capacity offered = seats available x distance flown. Together they size demand against supply.",
+      "formula": "RPK = SUM(passengers * stage_distance);  ASK = SUM(seats_available * stage_distance)  -- both summed at flight-leg grain over the period/route.",
+      "grain": "Flight-leg grain. Compute the product (count x distance) PER leg first, then SUM. Distance is the actual stage length flown for that leg, not the route's nominal great-circle distance unless that's all you have.",
+      "anti_patterns": [
+        "SUM(passengers) * SUM(distance) (summing each factor separately then multiplying) is wrong — the product must be formed per leg before summing, or you cross-multiply unrelated flights and explode the number.",
+        "Mixing miles and kilometers across legs without a unit conversion silently corrupts the total (1 mile ≈ 1.609 km).",
+        "Counting bookings/tickets (which can span multiple legs) as if each were one leg-passenger inflates RPK; explode multi-leg itineraries to legs first."
+      ],
+      "sane_range": "RPK/ASK are large positive counts (units: passenger-km or seat-km/miles), scaling into billions for a full carrier annually. RPK must always be <= ASK for the same population (RPK > ASK implies load factor > 1, a bug).",
+      "needs_concepts": ["passengers per leg", "seats available per leg", "stage distance per leg", "flight legs"]
+    },
+    {
+      "name": "On-Time Performance (OTP)",
+      "aliases": ["OTP", "on-time performance", "on-time arrival rate", "punctuality", "A14", "on-time departure"],
+      "definition": "Share of flights that arrive (or depart) within an on-time threshold, conventionally less than 15 minutes after scheduled time (the 'A14'/D0:15 standard).",
+      "formula": "COUNT(flights WHERE arrival_delay_minutes < on_time_threshold) / NULLIF(COUNT(operated_flights), 0)  -- threshold conventionally 15 minutes.",
+      "grain": "Flight (leg) grain, one row per operated flight. Denominator is OPERATED flights only — cancelled and diverted flights are excluded from OTP (they belong to cancellation/completion metrics), not counted as 'late'.",
+      "anti_patterns": [
+        "Including cancelled flights in the denominator (or treating their NULL delay as 'on time') distorts OTP — cancellations are a separate metric; an airline could cancel its way to 100% OTP.",
+        "AVG(delay_minutes) is average delay, NOT on-time performance; OTP is a threshold COUNT ratio, not a mean.",
+        "Counting a flight late at <= 15 vs < 15, or measuring departure vs arrival delay inconsistently, shifts the number by points — fix the threshold and the delay basis (arrival is the standard) and apply uniformly.",
+        "Early arrivals have negative delay and ARE on time; treating ABS(delay) > 15 as late wrongly penalizes early flights."
+      ],
+      "sane_range": "ratio 0..1 (0..100%); industry-typical 0.70–0.90. Cannot exceed 1.0.",
+      "needs_concepts": ["flights operated", "scheduled vs actual arrival time (delay minutes)", "cancellation/diversion status"]
+    },
+    {
+      "name": "Cancellation Rate",
+      "aliases": ["cancellation rate", "cancel rate", "flight cancellation rate", "completion factor"],
+      "definition": "Share of scheduled flights that were cancelled (completion factor is its complement: flights operated / flights scheduled).",
+      "formula": "COUNT(DISTINCT cancelled_flight) / NULLIF(COUNT(DISTINCT scheduled_flight), 0)  -- completion_factor = 1 - cancellation_rate.",
+      "grain": "Scheduled-flight grain. Denominator is flights SCHEDULED (the plan), numerator is the subset cancelled. A flight is one scheduled departure key (flight number + date + origin), counted once.",
+      "anti_patterns": [
+        "Using OPERATED flights as the denominator excludes the cancelled flights themselves, understating the rate — the denominator must be everything scheduled.",
+        "Counting cancellation event rows (a flight can log multiple status updates) instead of DISTINCT cancelled flights inflates the numerator.",
+        "Diversions are not cancellations — don't lump them; a diverted flight still operated."
+      ],
+      "sane_range": "ratio 0..1 (0..100%); industry-typical 0.005–0.03 (under 3%). Sustained values above ~0.1 signal an operational crisis or a counting error.",
+      "needs_concepts": ["scheduled flights", "flight status (cancelled/operated/diverted)"]
+    },
+    {
+      "name": "Yield (Passenger Revenue per RPK/RPM)",
+      "aliases": ["yield", "passenger yield", "revenue per RPK", "revenue per RPM", "average fare per mile"],
+      "definition": "Passenger revenue earned per unit of traffic carried — the price of a seat-mile actually sold.",
+      "formula": "SUM(passenger_revenue) / NULLIF(SUM(RPK), 0)  -- where RPK = SUM(passengers * distance) at leg grain.",
+      "grain": "Aggregate passenger revenue and RPK over the SAME population (route/period) at compatible grain, then divide. Revenue must be PASSENGER revenue only (exclude cargo and most ancillary, which distort the fare-per-mile signal).",
+      "anti_patterns": [
+        "Dividing by ASK instead of RPK gives RASM (a capacity metric), not yield — yield is per TRAFFIC (RPK).",
+        "AVG(per-flight yield) is unweighted; weight by traffic via SUM(revenue)/SUM(RPK).",
+        "Including cargo or non-ticket revenue in the numerator overstates passenger yield; keep the numerator to passenger ticket revenue.",
+        "Mixing currencies across markets without FX conversion corrupts the aggregate."
+      ],
+      "sane_range": "currency per km or per mile (small), e.g. ~0.05–0.20 USD per RPM; values near 1+ USD/mile or near-zero scientific-notation indicate a unit/grain mismatch.",
+      "needs_concepts": ["passenger revenue", "RPK/RPM (passengers x distance)"]
+    },
+    {
+      "name": "RASM / CASM (Unit Revenue / Unit Cost per ASM)",
+      "aliases": ["RASM", "CASM", "PRASM", "unit revenue", "unit cost", "revenue per available seat mile", "cost per available seat mile", "CASM-ex", "unit economics"],
+      "definition": "RASM is total operating revenue per unit of capacity (ASM/ASK); CASM is total operating cost per unit of capacity. Their spread is the airline's per-seat-mile profitability.",
+      "formula": "RASM = SUM(operating_revenue) / NULLIF(SUM(ASM), 0);  CASM = SUM(operating_cost) / NULLIF(SUM(ASM), 0)  -- ASM = SUM(seats_available * distance) at leg grain.",
+      "grain": "Aggregate revenue (or cost) and ASM over the SAME period/network at compatible grain, then divide. Unit metrics are CAPACITY-weighted because the denominator is ASM. CASM-ex excludes fuel and special items from the numerator — keep numerator scope consistent.",
+      "anti_patterns": [
+        "Dividing by RPK instead of ASM conflates unit revenue with yield — RASM/CASM are per CAPACITY (ASM), not per traffic.",
+        "AVG(per-flight RASM) is unweighted and ignores stage length; use SUM(revenue)/SUM(ASM).",
+        "Comparing a carrier's RASM to another's CASM that includes/excludes fuel inconsistently is apples-to-oranges; align the cost scope (ex-fuel vs all-in).",
+        "Summing revenue at one grain and ASM at another (e.g. system revenue but only domestic ASM) yields an inflated unit figure."
+      ],
+      "sane_range": "currency per ASM/ASK in cents, typically ~10–20 US cents per ASM for both RASM and CASM; a profitable carrier has RASM > CASM. Values like dollars-per-ASM or 1e-9 indicate a unit/grain error.",
+      "needs_concepts": ["operating revenue", "operating cost", "ASM/ASK (seats x distance)"]
+    },
+    {
+      "name": "Ancillary Revenue per Passenger",
+      "aliases": ["ancillary revenue per passenger", "ancillary per pax", "ancillary RASM", "add-on revenue per passenger", "non-ticket revenue per passenger"],
+      "definition": "Non-ticket (bags, seat selection, priority, onboard, loyalty) revenue earned per passenger carried.",
+      "formula": "SUM(ancillary_revenue) / NULLIF(COUNT(DISTINCT passenger), 0)  -- passengers carried, enplaned segment passengers.",
+      "grain": "Passenger (enplanement) grain. Numerator is ancillary-only revenue (exclude base fare); denominator is passengers actually carried over the SAME period/network as the revenue.",
+      "anti_patterns": [
+        "Dividing by BOOKINGS or itineraries instead of enplaned passengers mismatches the grain when itineraries carry multiple passengers/legs.",
+        "Including base ticket fare in the numerator turns this into total revenue per passenger, not ancillary.",
+        "Counting passengers from one period against ancillary revenue from another inflates/deflates the ratio — align the windows.",
+        "Double-counting passengers across legs of one itinerary shrinks the per-passenger figure; define the passenger population explicitly (enplanements vs unique travelers)."
+      ],
+      "sane_range": "currency per passenger, typically ~5–60 USD/pax (higher for LCCs/ULCCs). Negative or near-zero only on a revenue-mapping error.",
+      "needs_concepts": ["ancillary (non-ticket) revenue", "passengers carried / enplanements"]
+    },
+    {
+      "name": "Aircraft / Fleet Utilization (Block Hours per Aircraft per Day)",
+      "aliases": ["aircraft utilization", "fleet utilization", "block hours per day", "daily utilization", "aircraft daily hours", "asset utilization"],
+      "definition": "Average revenue-flying block hours (gate-out to gate-in) generated per aircraft per day — how hard the fleet's assets work.",
+      "formula": "SUM(block_hours) / NULLIF((COUNT(DISTINCT aircraft) * days_in_period), 0)  -- block hours summed over the period, divided by aircraft-days available.",
+      "grain": "Block-hours summed at flight-leg grain; denominator is aircraft-DAYS (distinct active aircraft x days in the period). Block time is gate-to-gate, not airborne 'flight time'.",
+      "anti_patterns": [
+        "Dividing total block hours by COUNT(flights) gives hours-per-flight (stage time), NOT daily utilization per aircraft.",
+        "Counting aircraft from the whole fleet roster (including stored/parked tails) in the denominator understates utilization; count active aircraft, and pro-rate aircraft that entered/left mid-period.",
+        "Summing airborne/flight hours instead of BLOCK hours undercounts utilization (block includes taxi).",
+        "Using a single day's aircraft count x the full period instead of true aircraft-days when fleet size changes biases the result."
+      ],
+      "sane_range": "hours per aircraft per day, 0..24 (physically capped at 24); industry-typical 8–14 (LCCs/narrowbodies higher, long-haul widebodies can exceed via long sectors). Any value > 24 is impossible.",
+      "needs_concepts": ["block hours per leg", "aircraft (tail) identifier", "operating days / dates", "active fleet count"]
+    }
+  ]
+}

@@ -41,6 +41,33 @@ export async function getCapabilities(connectionId?: string): Promise<Capabiliti
   return res.json();
 }
 
+// ── Business / Industry Profile ─────────────────────────────────────────────
+export interface NorthStarMetric {
+  name: string;
+  definition: string;
+  maps_to: string;
+  why_it_matters: string;
+  unit_or_range: string;
+  value_sql: string;
+  chart_sql?: string;
+}
+export interface BusinessProfileResponse {
+  available: boolean;
+  profile?: {
+    industry: string;
+    business_model: string;
+    summary: string;
+    north_star_metrics: NorthStarMetric[];
+    key_questions: string[];
+    confidence: number;
+  };
+}
+export async function getBusinessProfile(connectionId: string): Promise<BusinessProfileResponse> {
+  const res = await fetch(`${BASE}/business-profile?connection_id=${encodeURIComponent(connectionId)}`);
+  if (!res.ok) return { available: false };
+  return res.json();
+}
+
 // ── Workspaces ─────────────────────────────────────────────────────────────
 // The top-level scope (Databricks-style): a named grouping of connections.
 // Connections, Canvases and intelligence are all viewed through the lens of

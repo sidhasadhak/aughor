@@ -1,0 +1,840 @@
+[
+  {
+    "id": "mfg_oee",
+    "title": "Overall Equipment Effectiveness (OEE)",
+    "intent_tags": [
+      "oee",
+      "overall equipment effectiveness",
+      "equipment effectiveness",
+      "availability performance quality",
+      "machine effectiveness",
+      "what is my oee",
+      "line efficiency",
+      "asset utilization effectiveness",
+      "world class oee",
+      "oee by machine",
+      "oee by shift",
+      "how effective is the line"
+    ],
+    "sql_features": [
+      "aggregation",
+      "nullif",
+      "left_join",
+      "cte"
+    ],
+    "difficulty": "advanced",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "single composite score for how effectively a machine or line is used",
+      "compare effectiveness across machines, shifts, or plants",
+      "identify which of the three loss buckets (availability, performance, quality) dominates",
+      "track effectiveness trend after a kaizen or maintenance change",
+      "benchmark against the 85% world-class OEE threshold"
+    ],
+    "related_patterns": [
+      "mfg_first_pass_yield",
+      "mfg_scrap_rate",
+      "mfg_cycle_time_takt",
+      "mfg_throughput",
+      "mfg_downtime_mtbf_mttr"
+    ],
+    "business_definition": "OEE = Availability x Performance x Quality, computed per machine per shift (the run grain), then aggregated up. Availability = run_time / planned_time. Performance = (ideal_cycle_time * units_produced) / run_time. Quality = units_passed / units_produced. Each of the three factors is a fraction in [0,1], and OEE is their product, also in [0,1]. Planned_time already excludes planned non-production time (no scheduled run, breaks if defined as such); run_time = planned_time - downtime.",
+    "metric_nature": {
+      "what_it_measures": "The fraction of planned production time that was truly productive — producing good parts at the ideal rate. A single 0..1 score that multiplies three independent loss buckets: time lost to stops (availability), speed lost to minor stops and slow cycles (performance), and parts lost to defects (quality).",
+      "what_it_does_not_measure": "Profitability, demand, or whether you should have been running at all. OEE measures effectiveness against the PLANNED schedule, not against calendar time (that is TEEP/utilization). A machine idle because there are no orders has high OEE on the hours it ran but contributes nothing to output.",
+      "common_misconception": "OEE is NOT the average of the three rates and it is NOT computed by averaging machine-level OEE scores unweighted. It is the PRODUCT of three sub-rates at the run grain, and to roll up you must re-derive each factor from summed raw quantities (sum run_time, sum planned_time, etc.) or weight by run_time — never AVG(oee) across machines. A value above 1.0 for any factor is always a data bug (e.g. downtime logged outside the scheduled window, or ideal_cycle_time too high)."
+    },
+    "template": "WITH run_factors AS (SELECT pr.machine_id, pr.shift_id, SUM(pr.run_time) AS run_time, SUM(pr.planned_time) AS planned_time, SUM(pr.units_produced) AS units_produced, SUM(pr.units_passed) AS units_passed, SUM(pr.ideal_cycle_time * pr.units_produced) AS ideal_run_time FROM production_runs pr WHERE pr.run_date BETWEEN {start_date} AND {end_date} GROUP BY pr.machine_id, pr.shift_id) SELECT machine_id, shift_id, run_time / NULLIF(planned_time, 0) AS availability, ideal_run_time / NULLIF(run_time, 0) AS performance, units_passed * 1.0 / NULLIF(units_produced, 0) AS quality, (run_time / NULLIF(planned_time, 0)) * (ideal_run_time / NULLIF(run_time, 0)) * (units_passed * 1.0 / NULLIF(units_produced, 0)) AS oee FROM run_factors",
+    "inflation_causes": [
+      {
+        "cause": "Planned downtime excluded from the availability denominator inconsistently",
+        "how_it_inflates": "If scheduled stops (changeovers, planned maintenance, no-demand idle) are removed from planned_time but the lost run_time is NOT, availability = run_time / planned_time approaches or exceeds 1.0 because the denominator was shrunk while the numerator kept the same hours. Selectively excluding only convenient planned losses is the single most common way OEE is gamed upward.",
+        "detection_sql": "SELECT machine_id, shift_id, SUM(run_time) AS run_time, SUM(planned_time) AS planned_time, ROUND(SUM(run_time) * 1.0 / NULLIF(SUM(planned_time), 0), 4) AS availability FROM production_runs GROUP BY machine_id, shift_id HAVING SUM(run_time) > SUM(planned_time) ORDER BY availability DESC",
+        "fix": "Define planned_time consistently as the scheduled production window for that machine/shift and enforce run_time = planned_time - downtime where downtime is logged over the SAME window. Any availability > 1.0 is a bug — reconcile the downtime ledger against the schedule, do not clip the value."
+      },
+      {
+        "cause": "ideal_cycle_time set too high (slow standard), inflating performance",
+        "how_it_inflates": "Performance = (ideal_cycle_time * units_produced) / run_time. If the ideal_cycle_time standard is set slower than the true engineered rate, the numerator grows and performance can exceed 1.0, making a slow line look fast. Stale or padded standards silently inflate OEE.",
+        "detection_sql": "SELECT machine_id, ROUND(SUM(ideal_cycle_time * units_produced) * 1.0 / NULLIF(SUM(run_time), 0), 4) AS performance, COUNT(*) AS runs FROM production_runs GROUP BY machine_id HAVING SUM(ideal_cycle_time * units_produced) > SUM(run_time) ORDER BY performance DESC",
+        "fix": "Calibrate ideal_cycle_time to the nameplate/engineered best cycle per part-machine. Cap detection at performance <= 1.0; any run above it means the standard is wrong or run_time is under-logged. Maintain ideal_cycle_time per (machine, product), not a global constant."
+      },
+      {
+        "cause": "Rework counted as good in the quality factor",
+        "how_it_inflates": "Quality = units_passed / units_produced should count only first-time-good units. If reworked units are added back into units_passed, quality rises and OEE inflates, hiding the true scrap and rework burden.",
+        "detection_sql": "SELECT machine_id, shift_id, SUM(units_produced) AS produced, SUM(units_passed) AS passed, SUM(units_scrapped) AS scrapped, SUM(units_produced) - SUM(units_passed) - SUM(units_scrapped) AS unexplained FROM production_runs GROUP BY machine_id, shift_id HAVING SUM(units_passed) + SUM(units_scrapped) > SUM(units_produced) ORDER BY unexplained",
+        "fix": "Define quality on FIRST-PASS good units (units_passed excludes anything reworked). Reconcile units_produced = units_passed + units_scrapped + rework so the three buckets sum to production. Use mfg_first_pass_yield as the quality factor source of truth."
+      },
+      {
+        "cause": "Averaging machine-level OEE unweighted across the line",
+        "how_it_inflates": "AVG(oee) over machines gives a small low-utilization machine the same weight as the main bottleneck. A machine that ran 20 minutes at 0.95 OEE drags the plant number up next to the line that ran 8 hours at 0.60, overstating effective plant OEE.",
+        "detection_sql": "SELECT ROUND(AVG(machine_oee), 4) AS unweighted_avg_oee, ROUND(SUM(machine_oee * run_time) / NULLIF(SUM(run_time), 0), 4) AS runtime_weighted_oee FROM (SELECT machine_id, SUM(run_time) AS run_time, (SUM(run_time)/NULLIF(SUM(planned_time),0)) * (SUM(ideal_cycle_time*units_produced)/NULLIF(SUM(run_time),0)) * (SUM(units_passed)*1.0/NULLIF(SUM(units_produced),0)) AS machine_oee FROM production_runs GROUP BY machine_id) m",
+        "fix": "Roll OEE up by re-deriving each factor from summed raw quantities at the plant grain, OR weight machine OEE by run_time. Never AVG(oee) unweighted across machines or shifts."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Downtime logged outside the scheduled window pulling availability down",
+        "how_it_deflates": "If downtime events are timestamped during periods that were never in planned_time (e.g. weekend with no shift scheduled), downtime is subtracted from a window the schedule did not cover, making run_time / planned_time artificially low or negative.",
+        "detection_sql": "SELECT d.machine_id, d.downtime_start, d.downtime_minutes, s.shift_start, s.shift_end FROM downtime d LEFT JOIN shifts s ON d.shift_id = s.shift_id WHERE d.downtime_start < s.shift_start OR d.downtime_start >= s.shift_end ORDER BY d.downtime_minutes DESC LIMIT 20",
+        "fix": "Constrain downtime to fall within the same scheduled window used for planned_time. Reject or re-bucket out-of-window events (they are TEEP/calendar losses, not OEE availability losses)."
+      },
+      {
+        "cause": "Short runs / partial shifts double-counting planned_time",
+        "how_it_deflates": "If planned_time is recorded per run AND a full-shift planned_time row also exists, summing both inflates the denominator so availability collapses far below the true value.",
+        "detection_sql": "SELECT machine_id, shift_id, run_date, COUNT(*) AS run_rows, SUM(planned_time) AS summed_planned, MAX(planned_time) AS max_single FROM production_runs GROUP BY machine_id, shift_id, run_date HAVING SUM(planned_time) > 1.5 * MAX(planned_time) AND COUNT(*) > 1 ORDER BY summed_planned DESC LIMIT 20",
+        "fix": "Pick one grain for planned_time (per run OR per shift) and de-duplicate. If planned_time is shift-level, take MAX/one-row-per-shift rather than SUM across run rows."
+      }
+    ],
+    "diagnostic_questions": [
+      "Which of the three factors (availability, performance, quality) is the largest loss — is the OEE drop driven by stops, slow cycles, or defects?",
+      "Is any factor above 1.0 for any machine/shift? That is always a data bug, not a real value.",
+      "Is the OEE roll-up using run_time weighting, or an unweighted AVG of machine OEE?",
+      "Is planned_time defined consistently across machines, and does run_time = planned_time - downtime hold?",
+      "Is ideal_cycle_time calibrated per (machine, product), or is a stale global standard inflating performance?",
+      "Are reworked units being counted as passed in the quality factor?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "OEE down, availability down, performance and quality flat",
+        "then": "Time lost to stops drove it — investigate unplanned downtime and changeovers via mfg_downtime_mtbf_mttr; check MTBF/MTTR by machine."
+      },
+      {
+        "if": "OEE down, performance down, availability flat",
+        "then": "The machine ran but slower than ideal — minor stops, reduced speed, or a stale ideal_cycle_time. Compare actual cycle to takt via mfg_cycle_time_takt."
+      },
+      {
+        "if": "OEE down, quality down",
+        "then": "Defects/scrap rose — drill into mfg_first_pass_yield and mfg_scrap_rate by product and supplier batch."
+      },
+      {
+        "if": "OEE up but throughput flat",
+        "then": "OEE likely inflated by a shrunken planned_time denominator or a slow ideal_cycle_time standard, not real output gain — reconcile against mfg_throughput before celebrating."
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "OEE rises sharply with no process change",
+        "and_also": "mfg_throughput (units/period) is flat over the same window",
+        "shared_root_cause": "The availability denominator was shrunk (planned downtime excluded inconsistently) or ideal_cycle_time was loosened. Real effectiveness gains show up as more good units. OEE up with flat output is an accounting artifact, not a productivity win.",
+        "diagnostic_sql": "SELECT run_date, SUM(units_passed) AS good_units, ROUND(SUM(run_time)/NULLIF(SUM(planned_time),0),4) AS availability, ROUND(SUM(ideal_cycle_time*units_produced)/NULLIF(SUM(run_time),0),4) AS performance, ROUND(SUM(units_passed)*1.0/NULLIF(SUM(units_produced),0),4) AS quality FROM production_runs GROUP BY run_date ORDER BY run_date"
+      },
+      {
+        "if_this_metric": "OEE is low and dropping",
+        "and_also": "mfg_downtime_mtbf_mttr shows MTBF falling (more frequent failures)",
+        "shared_root_cause": "Reliability degradation is consuming the availability factor. More frequent breakdowns shorten run_time inside the same planned_time. The OEE loss is concentrated in availability and traces to a specific failure mode or asset.",
+        "diagnostic_sql": "SELECT pr.machine_id, ROUND(SUM(pr.run_time)/NULLIF(SUM(pr.planned_time),0),4) AS availability, COUNT(d.downtime_id) AS failures, SUM(d.downtime_minutes) AS total_downtime FROM production_runs pr LEFT JOIN downtime d ON pr.machine_id = d.machine_id AND d.downtime_type = 'unplanned' GROUP BY pr.machine_id ORDER BY availability ASC"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Averaging the three sub-rates instead of multiplying them",
+        "why_wrong": "OEE is defined as Availability x Performance x Quality, a product. (A+P+Q)/3 is a different, meaningless quantity that is always higher than the product (e.g. 0.9 x 0.9 x 0.9 = 0.729 but the average is 0.9), grossly overstating effectiveness.",
+        "bad_sql": "SELECT machine_id, (run_time/NULLIF(planned_time,0) + ideal_run_time/NULLIF(run_time,0) + units_passed*1.0/NULLIF(units_produced,0)) / 3 AS oee FROM run_factors",
+        "good_sql": "SELECT machine_id, (run_time/NULLIF(planned_time,0)) * (ideal_run_time/NULLIF(run_time,0)) * (units_passed*1.0/NULLIF(units_produced,0)) AS oee FROM run_factors"
+      },
+      {
+        "pattern": "AVG(oee) across machines unweighted by run time",
+        "why_wrong": "A 20-minute run at 0.95 OEE should not weigh the same as an 8-hour run at 0.60 when summarizing the plant. Unweighted AVG lets short, idle, or trivial runs distort the plant figure. Effectiveness must be weighted by the time it represents.",
+        "bad_sql": "SELECT AVG(machine_oee) AS plant_oee FROM (SELECT machine_id, (SUM(run_time)/NULLIF(SUM(planned_time),0)) * (SUM(ideal_cycle_time*units_produced)/NULLIF(SUM(run_time),0)) * (SUM(units_passed)*1.0/NULLIF(SUM(units_produced),0)) AS machine_oee FROM production_runs GROUP BY machine_id) m",
+        "good_sql": "SELECT (SUM(run_time)/NULLIF(SUM(planned_time),0)) * (SUM(ideal_cycle_time*units_produced)/NULLIF(SUM(run_time),0)) * (SUM(units_passed)*1.0/NULLIF(SUM(units_produced),0)) AS plant_oee FROM production_runs"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT pr.machine_id, pr.shift_id, ROUND(SUM(pr.run_time)/NULLIF(SUM(pr.planned_time),0),4) AS availability, ROUND(SUM(pr.ideal_cycle_time*pr.units_produced)/NULLIF(SUM(pr.run_time),0),4) AS performance, ROUND(SUM(pr.units_passed)*1.0/NULLIF(SUM(pr.units_produced),0),4) AS quality, ROUND((SUM(pr.run_time)/NULLIF(SUM(pr.planned_time),0)) * (SUM(pr.ideal_cycle_time*pr.units_produced)/NULLIF(SUM(pr.run_time),0)) * (SUM(pr.units_passed)*1.0/NULLIF(SUM(pr.units_produced),0)),4) AS oee FROM production_runs pr WHERE pr.run_date BETWEEN '2024-01-01' AND '2024-01-31' GROUP BY pr.machine_id, pr.shift_id",
+      "intermediate_sql": "SELECT DATE_TRUNC('week', pr.run_date) AS week, pr.machine_id, ROUND(SUM(pr.run_time)/NULLIF(SUM(pr.planned_time),0),4) AS availability, ROUND(SUM(pr.ideal_cycle_time*pr.units_produced)/NULLIF(SUM(pr.run_time),0),4) AS performance, ROUND(SUM(pr.units_passed)*1.0/NULLIF(SUM(pr.units_produced),0),4) AS quality, ROUND((SUM(pr.run_time)/NULLIF(SUM(pr.planned_time),0)) * (SUM(pr.ideal_cycle_time*pr.units_produced)/NULLIF(SUM(pr.run_time),0)) * (SUM(pr.units_passed)*1.0/NULLIF(SUM(pr.units_produced),0)),4) AS oee, SUM(pr.units_passed) AS good_units FROM production_runs pr GROUP BY 1, 2 ORDER BY 1, oee ASC",
+      "advanced_sql": "WITH run_factors AS (\n  -- Grain: one row per machine per shift per day. Each factor re-derived from summed raw quantities.\n  SELECT\n    DATE_TRUNC('month', run_date) AS month,\n    machine_id,\n    SUM(run_time) AS run_time,\n    SUM(planned_time) AS planned_time,\n    SUM(units_produced) AS units_produced,\n    SUM(units_passed) AS units_passed,\n    SUM(ideal_cycle_time * units_produced) AS ideal_run_time\n  FROM production_runs\n  GROUP BY 1, 2\n),\nfactors AS (\n  SELECT\n    month,\n    machine_id,\n    run_time,\n    run_time / NULLIF(planned_time, 0) AS availability,\n    ideal_run_time / NULLIF(run_time, 0) AS performance,\n    units_passed * 1.0 / NULLIF(units_produced, 0) AS quality\n  FROM run_factors\n),\noee_calc AS (\n  SELECT\n    month,\n    machine_id,\n    run_time,\n    availability,\n    performance,\n    quality,\n    availability * performance * quality AS oee,\n    CASE WHEN availability > 1 OR performance > 1 OR quality > 1 THEN 1 ELSE 0 END AS data_bug_flag\n  FROM factors\n)\nSELECT\n  month,\n  ROUND(SUM(oee * run_time) / NULLIF(SUM(run_time), 0), 4) AS runtime_weighted_plant_oee,\n  ROUND(AVG(oee), 4) AS naive_unweighted_oee_do_not_report,\n  SUM(data_bug_flag) AS machines_with_factor_over_1\nFROM oee_calc\nGROUP BY month\nORDER BY month"
+    }
+  },
+  {
+    "id": "mfg_first_pass_yield",
+    "title": "First Pass Yield / Quality Rate",
+    "intent_tags": [
+      "first pass yield",
+      "fpy",
+      "quality rate",
+      "first time yield",
+      "right first time",
+      "rty",
+      "what is my yield",
+      "good parts rate",
+      "pass rate",
+      "yield by product",
+      "rolled throughput yield",
+      "how many parts pass first time"
+    ],
+    "sql_features": [
+      "aggregation",
+      "nullif",
+      "case",
+      "cte"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "ratio",
+    "when_to_use": [
+      "measure the share of units that pass inspection on the first attempt without rework",
+      "feed the Quality factor of OEE",
+      "compare quality across products, machines, suppliers, or shifts",
+      "quantify the hidden cost of rework and the 'hidden factory'",
+      "track quality trend after a process or supplier change"
+    ],
+    "related_patterns": [
+      "mfg_oee",
+      "mfg_scrap_rate",
+      "mfg_throughput"
+    ],
+    "business_definition": "First Pass Yield = units_passed (first-time good, no rework) / units_produced (units started/completed through the step), per product per machine, expressed as a fraction in [0,1] or a percentage. Rolled Throughput Yield (RTY) is the product of per-step FPY across a multi-step process. FPY counts only units that passed WITHOUT rework or repair.",
+    "metric_nature": {
+      "what_it_measures": "The probability a unit goes through the process correctly the first time — good with no rework, no repair, no re-inspection. This is the true quality signal and the Quality factor in OEE.",
+      "what_it_does_not_measure": "Final/shipped yield after rework (that is final yield, which is always >= FPY). FPY deliberately excludes reworked units to expose the 'hidden factory' of corrective work. It also does not measure defect severity — a cosmetic reject and a safety failure count the same.",
+      "common_misconception": "FPY is not final yield. Counting reworked-and-then-passed units as 'passed' inflates FPY toward final yield and hides rework cost. A line with 99% final yield but 20% rework has a poor FPY of ~80%. The denominator is units PRODUCED/INSPECTED, never units shipped."
+    },
+    "template": "SELECT pr.product_id, SUM(pr.units_passed) * 1.0 / NULLIF(SUM(pr.units_produced), 0) AS first_pass_yield FROM production_runs pr WHERE pr.run_date BETWEEN {start_date} AND {end_date} GROUP BY pr.product_id",
+    "inflation_causes": [
+      {
+        "cause": "Reworked units counted as first-pass good",
+        "how_it_inflates": "When a unit fails, gets reworked, and then passes, adding it to units_passed makes FPY climb toward final yield. The rework effort — the hidden factory — disappears from the metric, so a chronically defective process looks healthy.",
+        "detection_sql": "SELECT product_id, SUM(units_produced) AS produced, SUM(units_passed) AS passed, SUM(units_scrapped) AS scrapped, SUM(units_produced) - SUM(units_passed) - SUM(units_scrapped) AS reworked_or_unexplained FROM production_runs GROUP BY product_id HAVING SUM(units_produced) - SUM(units_passed) - SUM(units_scrapped) < 0 ORDER BY reworked_or_unexplained",
+        "fix": "Define units_passed strictly as first-time-good. Track reworked units in a separate column so units_produced = first_pass_passed + reworked + scrapped. Report final yield separately if needed."
+      },
+      {
+        "cause": "Denominator = units_passed + units_scrapped instead of units_produced",
+        "how_it_inflates": "If the denominator silently drops units still in-process or quarantined (counting only resolved units), FPY rises because the harder-to-judge units never reach the denominator.",
+        "detection_sql": "SELECT product_id, SUM(units_produced) AS produced, SUM(units_passed) + SUM(units_scrapped) AS resolved, SUM(units_produced) - (SUM(units_passed) + SUM(units_scrapped)) AS in_process_or_quarantine FROM production_runs GROUP BY product_id HAVING SUM(units_produced) > SUM(units_passed) + SUM(units_scrapped) ORDER BY in_process_or_quarantine DESC",
+        "fix": "Always use units_produced (all units that entered the step) as the denominator. Reconcile in-process/quarantine units rather than excluding them."
+      },
+      {
+        "cause": "Inspection sampling extrapolated as if 100% inspected",
+        "how_it_inflates": "If only a sample is inspected and passes are projected onto the full lot while only caught defects are subtracted, FPY is biased upward because un-inspected defects never enter the numerator or denominator correctly.",
+        "detection_sql": "SELECT product_id, inspection_mode, SUM(units_produced) AS produced, SUM(units_inspected) AS inspected, ROUND(SUM(units_inspected)*1.0/NULLIF(SUM(units_produced),0),3) AS inspection_coverage FROM production_runs GROUP BY product_id, inspection_mode HAVING SUM(units_inspected) < SUM(units_produced) ORDER BY inspection_coverage ASC",
+        "fix": "Compute FPY on the inspected population (units_passed / units_inspected) and label it as sample-based, or apply the sampled defect rate to the full lot consistently. Do not mix sampled passes with full-lot denominators."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Same defect re-failing at multiple inspection stations double-counted",
+        "how_it_deflates": "If a single bad unit fails at station A and again at station B and each failure is subtracted from passed, the unit is counted as a defect twice, pushing FPY below the true value.",
+        "detection_sql": "SELECT unit_id, COUNT(*) AS fail_events, COUNT(DISTINCT station_id) AS stations FROM defects GROUP BY unit_id HAVING COUNT(*) > 1 ORDER BY fail_events DESC LIMIT 20",
+        "fix": "De-duplicate defects to one record per (unit, defect) or count a unit as failed FPY once regardless of how many stations flagged it. Use COUNT(DISTINCT unit_id) for failed units."
+      },
+      {
+        "cause": "Scrapped startup/setup units included in the denominator",
+        "how_it_deflates": "Tuning/setup scrap produced before the run is qualified can be lumped into units_produced, lowering FPY even though those units were never intended to be sellable.",
+        "detection_sql": "SELECT product_id, run_phase, SUM(units_produced) AS produced, SUM(units_scrapped) AS scrapped, ROUND(SUM(units_scrapped)*1.0/NULLIF(SUM(units_produced),0),3) AS scrap_share FROM production_runs GROUP BY product_id, run_phase ORDER BY scrap_share DESC",
+        "fix": "Exclude qualified setup/first-article scrap from the FPY denominator (track as setup loss) or report steady-state FPY separately from startup."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the yield drop concentrated in one product, machine, shift, or supplier batch?",
+      "Are reworked units being counted as passed, masking the true first-pass rate?",
+      "Is the denominator units_produced (all units in) or only resolved units?",
+      "Was inspection 100% or sampled — and is the rate computed on the inspected population?",
+      "Are the same units failing at multiple stations and being counted as defects more than once?",
+      "Does units_produced = units_passed + units_scrapped + reworked reconcile?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "First pass yield down, scrap rate up proportionally",
+        "then": "Defects are being scrapped rather than reworked — a hard quality loss. Trace to product, machine, and supplier batch via mfg_scrap_rate."
+      },
+      {
+        "if": "First pass yield down, scrap rate flat",
+        "then": "Defects are being reworked rather than scrapped — the hidden factory is growing. Rework cost and cycle time will rise even if scrap looks stable."
+      },
+      {
+        "if": "First pass yield down, OEE quality factor down by the same amount",
+        "then": "Confirms FPY is wired as the OEE Quality factor — the OEE loss is a true quality loss, not an availability or performance artifact."
+      },
+      {
+        "if": "First pass yield up but final yield flat",
+        "then": "Real first-time quality improved (less rework needed) — verify rework volume dropped to confirm a genuine process gain."
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "First pass yield drops on one machine",
+        "and_also": "mfg_cycle_time_takt shows actual cycle time rising on that machine",
+        "shared_root_cause": "A process drift (tool wear, miscalibration, material variation) is simultaneously slowing cycles and producing more defects. Both symptoms point at the same machine/tool condition. Check tool-change and calibration logs for that asset.",
+        "diagnostic_sql": "SELECT pr.machine_id, ROUND(SUM(pr.units_passed)*1.0/NULLIF(SUM(pr.units_produced),0),4) AS fpy, ROUND(SUM(pr.run_time)*1.0/NULLIF(SUM(pr.units_produced),0),3) AS actual_cycle_time, ROUND(AVG(pr.ideal_cycle_time),3) AS ideal_cycle_time FROM production_runs pr GROUP BY pr.machine_id ORDER BY fpy ASC"
+      },
+      {
+        "if_this_metric": "First pass yield drops across multiple machines at once",
+        "and_also": "the drop aligns with a specific incoming material lot or supplier",
+        "shared_root_cause": "Defective incoming material is driving multi-machine yield loss. When yield falls on several assets simultaneously, the common cause is upstream (material/supplier), not any single machine. Join defects to the material/supplier dimension.",
+        "diagnostic_sql": "SELECT d.supplier_id, d.material_lot, COUNT(DISTINCT d.unit_id) AS failed_units, COUNT(DISTINCT d.machine_id) AS machines_affected FROM defects d WHERE d.defect_date >= CURRENT_DATE - INTERVAL '30 days' GROUP BY 1, 2 ORDER BY failed_units DESC LIMIT 20"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Counting reworked units in units_passed",
+        "why_wrong": "FPY measures right-FIRST-time. Adding reworked-then-passed units to the numerator converts FPY into final yield and erases the rework signal, the exact loss the metric exists to expose.",
+        "bad_sql": "SELECT product_id, (SUM(units_passed) + SUM(units_reworked)) * 1.0 / NULLIF(SUM(units_produced), 0) AS first_pass_yield FROM production_runs GROUP BY product_id",
+        "good_sql": "SELECT product_id, SUM(units_passed) * 1.0 / NULLIF(SUM(units_produced), 0) AS first_pass_yield FROM production_runs GROUP BY product_id"
+      },
+      {
+        "pattern": "Using passed/(passed+scrapped) as the denominator",
+        "why_wrong": "Dropping in-process and quarantined units from the denominator shrinks it and lifts yield above the true value. The denominator must be units_produced — everything that entered the step.",
+        "bad_sql": "SELECT product_id, SUM(units_passed) * 1.0 / NULLIF(SUM(units_passed) + SUM(units_scrapped), 0) AS first_pass_yield FROM production_runs GROUP BY product_id",
+        "good_sql": "SELECT product_id, SUM(units_passed) * 1.0 / NULLIF(SUM(units_produced), 0) AS first_pass_yield FROM production_runs GROUP BY product_id"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT pr.product_id, ROUND(SUM(pr.units_passed) * 1.0 / NULLIF(SUM(pr.units_produced), 0), 4) AS first_pass_yield FROM production_runs pr WHERE pr.run_date BETWEEN '2024-01-01' AND '2024-01-31' GROUP BY pr.product_id ORDER BY first_pass_yield ASC",
+      "intermediate_sql": "SELECT DATE_TRUNC('week', pr.run_date) AS week, pr.product_id, pr.machine_id, SUM(pr.units_produced) AS produced, SUM(pr.units_passed) AS first_pass_good, SUM(pr.units_scrapped) AS scrapped, ROUND(SUM(pr.units_passed) * 1.0 / NULLIF(SUM(pr.units_produced), 0), 4) AS first_pass_yield FROM production_runs pr GROUP BY 1, 2, 3 ORDER BY 1, first_pass_yield ASC",
+      "advanced_sql": "WITH step_yield AS (\n  -- Grain: one row per product per process step. FPY uses units_produced as denominator.\n  SELECT\n    pr.product_id,\n    pr.process_step,\n    SUM(pr.units_produced) AS produced,\n    SUM(pr.units_passed) AS first_pass_good,\n    SUM(pr.units_passed) * 1.0 / NULLIF(SUM(pr.units_produced), 0) AS step_fpy\n  FROM production_runs pr\n  GROUP BY 1, 2\n),\nrolled AS (\n  -- Rolled Throughput Yield = product of per-step FPY using EXP(SUM(LN(...)))\n  SELECT\n    product_id,\n    EXP(SUM(LN(NULLIF(step_fpy, 0)))) AS rolled_throughput_yield,\n    COUNT(*) AS steps,\n    MIN(step_fpy) AS worst_step_fpy\n  FROM step_yield\n  GROUP BY product_id\n)\nSELECT\n  r.product_id,\n  ROUND(r.rolled_throughput_yield, 4) AS rty,\n  r.steps,\n  ROUND(r.worst_step_fpy, 4) AS worst_step_fpy\nFROM rolled r\nORDER BY r.rolled_throughput_yield ASC"
+    }
+  },
+  {
+    "id": "mfg_scrap_rate",
+    "title": "Scrap / Defect Rate (PPM)",
+    "intent_tags": [
+      "scrap rate",
+      "defect rate",
+      "ppm",
+      "parts per million",
+      "defects per million",
+      "reject rate",
+      "scrap percentage",
+      "what is my scrap rate",
+      "dpmo",
+      "nonconformance rate",
+      "fallout rate",
+      "how many defects per million"
+    ],
+    "sql_features": [
+      "aggregation",
+      "nullif",
+      "case",
+      "cte"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "ratio",
+    "when_to_use": [
+      "measure defect density as a percentage or in parts-per-million (PPM)",
+      "report quality at low defect levels where percentages lose resolution",
+      "compare defect rates across products, machines, or suppliers on a common scale",
+      "feed cost-of-poor-quality (scrap dollars) analysis",
+      "track defect trend toward a PPM target (e.g. six sigma ~3.4 DPMO)"
+    ],
+    "related_patterns": [
+      "mfg_first_pass_yield",
+      "mfg_oee",
+      "mfg_throughput"
+    ],
+    "business_definition": "Scrap/Defect Rate = defects (or units_scrapped) / units_produced (units inspected/produced), expressed as a percentage or multiplied by 1,000,000 for PPM. The denominator is always units PRODUCED or INSPECTED — the opportunity count — never units shipped or units passed. PPM = (units_scrapped / units_produced) * 1,000,000.",
+    "metric_nature": {
+      "what_it_measures": "The density of defective output relative to total output, on a scale (percent or PPM) chosen to keep resolution at low defect levels. The complement of the quality side of yield: high scrap rate means low quality.",
+      "what_it_does_not_measure": "The financial cost of scrap (multiply by unit cost for that), defect severity, or rework volume (reworked units are not scrapped). PPM of defects (DPMO) counts defects against opportunities and can exceed the count of defective units when a unit has multiple defects.",
+      "common_misconception": "The denominator is NOT units passed or units shipped — it is units produced/inspected. Dividing scrap by good units inflates the rate; dividing by shipped units (post-scrap) also inflates it. Any scrap RATE above 1.0 (100%) is a denominator bug. PPM is just the same rate x 1,000,000, not a different metric."
+    },
+    "template": "SELECT pr.product_id, SUM(pr.units_scrapped) * 1000000.0 / NULLIF(SUM(pr.units_produced), 0) AS defect_ppm FROM production_runs pr WHERE pr.run_date BETWEEN {start_date} AND {end_date} GROUP BY pr.product_id",
+    "inflation_causes": [
+      {
+        "cause": "Denominator uses units_passed (good units) instead of units_produced",
+        "how_it_inflates": "Dividing scrap by good units (units_passed) instead of total produced shrinks the denominator, pushing the rate up. At high scrap levels this can even exceed 100%, which is impossible for a true scrap rate.",
+        "detection_sql": "SELECT product_id, SUM(units_scrapped) AS scrapped, SUM(units_passed) AS passed, SUM(units_produced) AS produced, ROUND(SUM(units_scrapped)*100.0/NULLIF(SUM(units_passed),0),3) AS wrong_rate_vs_passed, ROUND(SUM(units_scrapped)*100.0/NULLIF(SUM(units_produced),0),3) AS correct_rate_vs_produced FROM production_runs GROUP BY product_id HAVING SUM(units_scrapped) > SUM(units_passed) ORDER BY correct_rate_vs_produced DESC",
+        "fix": "Always divide by units_produced (total inspected/produced). units_produced = units_passed + units_scrapped + reworked. Any rate > 100% means the wrong denominator was used."
+      },
+      {
+        "cause": "Multiple defects per unit counted as multiple scrapped units",
+        "how_it_inflates": "If a single scrapped unit logs three defect records and the numerator counts defect rows instead of distinct scrapped units, the scrap rate triples. DPMO (defects per opportunity) is valid, but it must not be reported as a unit scrap rate.",
+        "detection_sql": "SELECT unit_id, COUNT(*) AS defect_records FROM defects WHERE disposition = 'scrap' GROUP BY unit_id HAVING COUNT(*) > 1 ORDER BY defect_records DESC LIMIT 20",
+        "fix": "For unit scrap rate use COUNT(DISTINCT unit_id) of scrapped units. For DPMO use defect count / (units * opportunities_per_unit) and label it as DPMO, not scrap rate."
+      },
+      {
+        "cause": "Setup/first-article scrap mixed into steady-state rate",
+        "how_it_inflates": "Tuning scrap produced before the run is qualified inflates the scrap numerator for the steady-state period if both are summed together under one product.",
+        "detection_sql": "SELECT product_id, run_phase, SUM(units_scrapped) AS scrapped, SUM(units_produced) AS produced, ROUND(SUM(units_scrapped)*1000000.0/NULLIF(SUM(units_produced),0),1) AS ppm FROM production_runs GROUP BY product_id, run_phase ORDER BY ppm DESC",
+        "fix": "Segment setup/first-article scrap from steady-state. Report steady-state PPM as the process capability number and setup scrap as a separate loss."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Defects dispositioned as rework excluded from scrap but quality still lost",
+        "how_it_deflates": "If many defective units are reworked (not scrapped), scrap rate stays low even though first-pass quality is poor. The metric understates the true defect burden because rework is invisible to scrap.",
+        "detection_sql": "SELECT product_id, SUM(CASE WHEN disposition = 'scrap' THEN 1 ELSE 0 END) AS scrapped, SUM(CASE WHEN disposition = 'rework' THEN 1 ELSE 0 END) AS reworked, ROUND(SUM(CASE WHEN disposition='rework' THEN 1 ELSE 0 END)*1.0/NULLIF(SUM(CASE WHEN disposition='scrap' THEN 1 ELSE 0 END),0),2) AS rework_to_scrap_ratio FROM defects GROUP BY product_id ORDER BY rework_to_scrap_ratio DESC",
+        "fix": "Report scrap rate alongside first-pass yield (mfg_first_pass_yield) and rework rate so reworked defects are not lost. Scrap rate alone undercounts total nonconformance."
+      },
+      {
+        "cause": "Scrap logged in a later period than production (lag)",
+        "how_it_deflates": "If scrap is recorded when a unit is finally dispositioned days after production, the recent production period shows artificially low scrap because its defects have not been booked yet.",
+        "detection_sql": "SELECT DATE_TRUNC('day', s.scrap_date) AS scrap_day, DATE_TRUNC('day', s.production_date) AS prod_day, COUNT(*) AS scrapped FROM units_scrap_log s WHERE s.scrap_date > s.production_date + INTERVAL '1 day' GROUP BY 1, 2 ORDER BY 1 DESC LIMIT 20",
+        "fix": "Attribute scrap to the production date, not the disposition date, so numerator and denominator align to the same production cohort. Add a freshness check before closing the period."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the denominator units_produced/inspected, or has it accidentally become units_passed or units_shipped?",
+      "Is any scrap rate above 100% — a sure sign of a wrong denominator?",
+      "Is the numerator counting distinct scrapped units, or defect records (which inflate when a unit has multiple defects)?",
+      "Are defects being reworked rather than scrapped, hiding the true defect burden?",
+      "Is setup/first-article scrap mixed into the steady-state rate?",
+      "Is scrap attributed to the production date or the later disposition date?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "Scrap rate up, first pass yield down by the matching amount",
+        "then": "Defects are being scrapped (hard loss), not reworked — the yield and scrap movements reconcile. Trace to product/machine/supplier batch."
+      },
+      {
+        "if": "Scrap rate flat, first pass yield down",
+        "then": "Defects are being reworked instead of scrapped — scrap understates the problem. Check the rework rate and disposition mix."
+      },
+      {
+        "if": "Scrap rate up on one machine only",
+        "then": "Likely tool wear, miscalibration, or fixture issue on that asset — check tool-change logs and SPC charts for that machine."
+      },
+      {
+        "if": "Scrap rate up across many machines at once",
+        "then": "Common upstream cause — incoming material lot or supplier defect. Join defects to material_lot/supplier_id."
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Scrap PPM spikes for a product",
+        "and_also": "mfg_throughput (good units/period) for that product drops",
+        "shared_root_cause": "Defects are consuming output — every scrapped unit is produced capacity that yields nothing sellable. A scrap spike with a throughput drop confirms the loss is real product, not a counting artifact. Quantify scrap dollars by joining to unit cost.",
+        "diagnostic_sql": "SELECT pr.product_id, DATE_TRUNC('week', pr.run_date) AS week, SUM(pr.units_passed) AS good_units, SUM(pr.units_scrapped) AS scrapped, ROUND(SUM(pr.units_scrapped)*1000000.0/NULLIF(SUM(pr.units_produced),0),1) AS defect_ppm FROM production_runs pr GROUP BY 1, 2 ORDER BY 2, defect_ppm DESC"
+      },
+      {
+        "if_this_metric": "Scrap rate rises gradually over weeks on one asset",
+        "and_also": "mfg_oee performance factor on that asset is also declining",
+        "shared_root_cause": "Progressive tool wear or drift degrades both speed (performance) and quality (scrap) on the same machine. A slow simultaneous decline in both points to a maintenance/tooling root cause, not a material lot. Check time-since-last-tool-change.",
+        "diagnostic_sql": "SELECT pr.machine_id, DATE_TRUNC('week', pr.run_date) AS week, ROUND(SUM(pr.units_scrapped)*100.0/NULLIF(SUM(pr.units_produced),0),3) AS scrap_pct, ROUND(SUM(pr.ideal_cycle_time*pr.units_produced)/NULLIF(SUM(pr.run_time),0),4) AS performance FROM production_runs pr GROUP BY 1, 2 ORDER BY 1, 2"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Dividing scrap by units_passed (good units) instead of units_produced",
+        "why_wrong": "The defect-rate denominator must be the population produced/inspected. Dividing by good units shrinks the denominator and inflates the rate, and at high scrap levels yields impossible values above 100%.",
+        "bad_sql": "SELECT product_id, SUM(units_scrapped) * 100.0 / NULLIF(SUM(units_passed), 0) AS scrap_rate_pct FROM production_runs GROUP BY product_id",
+        "good_sql": "SELECT product_id, SUM(units_scrapped) * 100.0 / NULLIF(SUM(units_produced), 0) AS scrap_rate_pct FROM production_runs GROUP BY product_id"
+      },
+      {
+        "pattern": "Counting defect rows as scrapped units for a unit scrap rate",
+        "why_wrong": "A single scrapped unit can carry several defect records. Counting defect rows in the numerator over-counts scrapped units. DPMO (defects/opportunities) is legitimate but is a different metric and must be labeled as such, not as a unit scrap rate.",
+        "bad_sql": "SELECT product_id, COUNT(*) * 1000000.0 / NULLIF(SUM(units_produced), 0) AS scrap_ppm FROM defects d JOIN production_runs pr ON d.product_id = pr.product_id GROUP BY product_id",
+        "good_sql": "SELECT pr.product_id, COUNT(DISTINCT CASE WHEN d.disposition = 'scrap' THEN d.unit_id END) * 1000000.0 / NULLIF(SUM(pr.units_produced), 0) AS scrap_ppm FROM production_runs pr LEFT JOIN defects d ON pr.product_id = d.product_id GROUP BY pr.product_id"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT pr.product_id, ROUND(SUM(pr.units_scrapped) * 1000000.0 / NULLIF(SUM(pr.units_produced), 0), 1) AS defect_ppm, ROUND(SUM(pr.units_scrapped) * 100.0 / NULLIF(SUM(pr.units_produced), 0), 3) AS scrap_rate_pct FROM production_runs pr WHERE pr.run_date BETWEEN '2024-01-01' AND '2024-01-31' GROUP BY pr.product_id ORDER BY defect_ppm DESC",
+      "intermediate_sql": "SELECT DATE_TRUNC('week', pr.run_date) AS week, pr.product_id, pr.machine_id, SUM(pr.units_produced) AS produced, SUM(pr.units_scrapped) AS scrapped, ROUND(SUM(pr.units_scrapped) * 1000000.0 / NULLIF(SUM(pr.units_produced), 0), 1) AS defect_ppm FROM production_runs pr GROUP BY 1, 2, 3 ORDER BY 1, defect_ppm DESC",
+      "advanced_sql": "WITH scrap_by_run AS (\n  -- Grain: one row per machine/product/week. Denominator is units_produced (inspected population).\n  SELECT\n    DATE_TRUNC('week', run_date) AS week,\n    machine_id,\n    product_id,\n    SUM(units_produced) AS produced,\n    SUM(units_scrapped) AS scrapped\n  FROM production_runs\n  GROUP BY 1, 2, 3\n),\nwith_ppm AS (\n  SELECT\n    week,\n    machine_id,\n    product_id,\n    produced,\n    scrapped,\n    scrapped * 1000000.0 / NULLIF(produced, 0) AS defect_ppm\n  FROM scrap_by_run\n),\nwith_trend AS (\n  SELECT\n    week,\n    machine_id,\n    product_id,\n    defect_ppm,\n    LAG(defect_ppm) OVER (PARTITION BY machine_id, product_id ORDER BY week) AS prev_ppm,\n    defect_ppm - LAG(defect_ppm) OVER (PARTITION BY machine_id, product_id ORDER BY week) AS ppm_change\n  FROM with_ppm\n)\nSELECT * FROM with_trend WHERE defect_ppm > 0 ORDER BY week DESC, defect_ppm DESC"
+    }
+  },
+  {
+    "id": "mfg_cycle_time_takt",
+    "title": "Cycle Time vs Takt Time",
+    "intent_tags": [
+      "cycle time",
+      "takt time",
+      "cycle time vs takt",
+      "actual cycle time",
+      "ideal cycle time",
+      "are we meeting takt",
+      "line balance",
+      "bottleneck cycle time",
+      "takt vs cycle",
+      "pace of production",
+      "seconds per unit",
+      "am i fast enough to meet demand"
+    ],
+    "sql_features": [
+      "aggregation",
+      "nullif",
+      "case",
+      "cte"
+    ],
+    "difficulty": "advanced",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "check whether the line is fast enough to meet customer demand (cycle <= takt)",
+      "identify the bottleneck station (highest actual cycle time)",
+      "feed the Performance factor of OEE (ideal_cycle_time / actual_cycle_time)",
+      "balance a line by comparing per-station cycle times against takt",
+      "distinguish a speed loss from a stoppage loss"
+    ],
+    "related_patterns": [
+      "mfg_oee",
+      "mfg_throughput",
+      "mfg_first_pass_yield"
+    ],
+    "business_definition": "Actual Cycle Time = run_time / units_produced (time per unit while running). Takt Time = available_production_time / customer_demand_units (the pace required to meet demand). Ideal Cycle Time is the engineered best time per unit. The line meets demand when actual cycle time <= takt time. The OEE Performance factor = ideal_cycle_time / actual_cycle_time = (ideal_cycle_time * units_produced) / run_time, a fraction in [0,1].",
+    "metric_nature": {
+      "what_it_measures": "Two paces compared: how fast the line actually runs (cycle time) versus how fast it must run to satisfy demand (takt). Cycle time is supply-side and machine-driven; takt is demand-side and customer-driven.",
+      "what_it_does_not_measure": "Total output or downtime. Cycle time is measured only over run_time (while producing), so it ignores stops — a line can have a perfect cycle time yet miss demand because it was down half the shift. Combine with availability/downtime for the full picture.",
+      "common_misconception": "Cycle time and takt time are different concepts with different denominators. Takt is set by demand and available time (not by the machine); cycle is set by the process. Also, lead time (total time through the system, including waiting) is not cycle time. The Performance factor is ideal/actual cycle and must be <= 1.0 — a value above 1.0 means the ideal_cycle_time standard is wrong."
+    },
+    "template": "WITH actual AS (SELECT pr.machine_id, SUM(pr.run_time) AS run_time, SUM(pr.units_produced) AS units_produced, AVG(pr.ideal_cycle_time) AS ideal_cycle_time FROM production_runs pr WHERE pr.run_date BETWEEN {start_date} AND {end_date} GROUP BY pr.machine_id), demand AS (SELECT machine_id, SUM(available_production_time) AS available_time, SUM(customer_demand_units) AS demand_units FROM demand_plan WHERE plan_date BETWEEN {start_date} AND {end_date} GROUP BY machine_id) SELECT a.machine_id, a.run_time * 1.0 / NULLIF(a.units_produced, 0) AS actual_cycle_time, a.ideal_cycle_time, d.available_time * 1.0 / NULLIF(d.demand_units, 0) AS takt_time, a.ideal_cycle_time / NULLIF(a.run_time * 1.0 / NULLIF(a.units_produced, 0), 0) AS performance_factor FROM actual a JOIN demand d ON a.machine_id = d.machine_id",
+    "inflation_causes": [
+      {
+        "cause": "Actual cycle time computed over planned_time instead of run_time (inflated, looks slow)",
+        "how_it_inflates": "Dividing total scheduled time (planned_time) by units instead of run_time folds downtime into cycle time, inflating it so the line looks slower than it actually cycles. Cycle time must use only producing time.",
+        "detection_sql": "SELECT machine_id, ROUND(SUM(run_time)*1.0/NULLIF(SUM(units_produced),0),3) AS cycle_on_run_time, ROUND(SUM(planned_time)*1.0/NULLIF(SUM(units_produced),0),3) AS cycle_on_planned_time, ROUND(SUM(planned_time-run_time),1) AS downtime FROM production_runs GROUP BY machine_id ORDER BY downtime DESC",
+        "fix": "Compute actual cycle time as run_time / units_produced. Capture stop losses separately through availability/downtime, not by inflating cycle time."
+      },
+      {
+        "cause": "Takt time inflated by overstating available_production_time",
+        "how_it_inflates": "If available_production_time includes hours the line is not actually scheduled (breaks, planned maintenance) while demand is unchanged, takt time grows, making it look easy to beat takt when it is not.",
+        "detection_sql": "SELECT machine_id, SUM(available_production_time) AS available_time, SUM(scheduled_time) AS scheduled_time, SUM(available_production_time) - SUM(scheduled_time) AS overstated FROM demand_plan dp JOIN shifts s ON dp.shift_id = s.shift_id GROUP BY machine_id HAVING SUM(available_production_time) > SUM(scheduled_time) ORDER BY overstated DESC",
+        "fix": "Define available_production_time as net scheduled production time (excluding planned non-production). Use the SAME window definition as planned_time so takt and OEE align."
+      },
+      {
+        "cause": "ideal_cycle_time padded so the performance factor exceeds 1.0",
+        "how_it_inflates": "If ideal_cycle_time is set slower than the true engineered cycle, performance = ideal/actual can exceed 1.0, falsely implying the line runs faster than ideal — an impossible result that inflates OEE.",
+        "detection_sql": "SELECT machine_id, ROUND(AVG(ideal_cycle_time),3) AS ideal, ROUND(SUM(run_time)*1.0/NULLIF(SUM(units_produced),0),3) AS actual, ROUND(AVG(ideal_cycle_time) / NULLIF(SUM(run_time)*1.0/NULLIF(SUM(units_produced),0),0),3) AS performance FROM production_runs GROUP BY machine_id HAVING AVG(ideal_cycle_time) > SUM(run_time)*1.0/NULLIF(SUM(units_produced),0) ORDER BY performance DESC",
+        "fix": "Calibrate ideal_cycle_time to the engineered/nameplate best cycle per (machine, product). Any performance factor > 1.0 is a calibration bug — fix the standard, never clip the value."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Units_produced includes scrap, understating cycle time",
+        "how_it_deflates": "If units_produced counts scrapped units, run_time is divided by an inflated unit count, making cycle time per GOOD unit look shorter (faster) than it really is. Good-unit cycle time is the meaningful pace.",
+        "detection_sql": "SELECT machine_id, ROUND(SUM(run_time)*1.0/NULLIF(SUM(units_produced),0),3) AS cycle_all_units, ROUND(SUM(run_time)*1.0/NULLIF(SUM(units_passed),0),3) AS cycle_good_units FROM production_runs GROUP BY machine_id ORDER BY cycle_good_units DESC",
+        "fix": "Report cycle time both over total units (for performance factor) and over good units (units_passed) for the effective good-part pace. Be explicit which denominator each number uses."
+      },
+      {
+        "cause": "Demand spikes shrinking takt time so the line falsely appears behind",
+        "how_it_deflates": "Takt = available_time / demand. A demand surge shrinks takt time, so even an unchanged cycle time now exceeds takt, making the line look like it cannot keep up when nothing about the process changed.",
+        "detection_sql": "SELECT DATE_TRUNC('week', plan_date) AS week, machine_id, ROUND(SUM(available_production_time)*1.0/NULLIF(SUM(customer_demand_units),0),3) AS takt_time, SUM(customer_demand_units) AS demand FROM demand_plan GROUP BY 1, 2 ORDER BY 1, takt_time ASC",
+        "fix": "Track takt time alongside demand. A takt-time drop driven by demand is a capacity-planning signal (add shifts/lines), not a process-speed regression."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is actual cycle time computed over run_time (correct) or planned_time (folds in downtime)?",
+      "Is the performance factor (ideal/actual) above 1.0 for any machine? That means ideal_cycle_time is mis-set.",
+      "Did takt time shrink because demand rose, or did actual cycle time rise because the process slowed?",
+      "Which station has the highest actual cycle time — is that the bottleneck setting line pace?",
+      "Is units_produced (incl. scrap) or units_passed (good only) the right denominator for this question?",
+      "Is available_production_time defined the same way as planned_time so takt and OEE reconcile?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "Actual cycle time > takt time, downtime low",
+        "then": "The process itself is too slow to meet demand — a true speed/line-balance problem. Address the bottleneck station, not availability."
+      },
+      {
+        "if": "Actual cycle time <= takt time but demand still missed",
+        "then": "The line cycles fast enough but is stopping too much — the loss is availability/downtime, not speed. Check mfg_downtime_mtbf_mttr."
+      },
+      {
+        "if": "Actual cycle time rising, OEE performance factor falling",
+        "then": "Confirms cycle time drives the Performance factor — minor stops or slow running. Compare actual vs ideal cycle by station."
+      },
+      {
+        "if": "Takt time falling, actual cycle time flat",
+        "then": "Demand rose; the process did not slow. This is a capacity decision (more time/shifts/lines), not a process fix."
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Actual cycle time rises on the bottleneck station",
+        "and_also": "mfg_throughput (units/period) falls proportionally",
+        "shared_root_cause": "The bottleneck sets line output; a slower bottleneck cycle directly reduces throughput. When cycle time on the slowest station and throughput move together, the bottleneck is the lever. Confirm which station has the max cycle time.",
+        "diagnostic_sql": "SELECT pr.machine_id, pr.process_step, ROUND(SUM(pr.run_time)*1.0/NULLIF(SUM(pr.units_produced),0),3) AS actual_cycle_time, SUM(pr.units_passed) AS good_units FROM production_runs pr GROUP BY 1, 2 ORDER BY actual_cycle_time DESC"
+      },
+      {
+        "if_this_metric": "Actual cycle time creeps up on one machine over weeks",
+        "and_also": "mfg_scrap_rate on that machine also rises",
+        "shared_root_cause": "Tool wear or drift slows the cycle and produces more defects simultaneously. A coupled, gradual rise in cycle time and scrap on one asset is the classic tooling/maintenance signature. Check time-since-last-tool-change and SPC.",
+        "diagnostic_sql": "SELECT pr.machine_id, DATE_TRUNC('week', pr.run_date) AS week, ROUND(SUM(pr.run_time)*1.0/NULLIF(SUM(pr.units_produced),0),3) AS actual_cycle_time, ROUND(SUM(pr.units_scrapped)*100.0/NULLIF(SUM(pr.units_produced),0),3) AS scrap_pct FROM production_runs pr GROUP BY 1, 2 ORDER BY 1, 2"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Computing cycle time over planned_time instead of run_time",
+        "why_wrong": "Cycle time is the producing pace and must exclude stops. Dividing planned_time (which includes downtime) by units inflates cycle time and double-counts the downtime loss already captured by availability.",
+        "bad_sql": "SELECT machine_id, SUM(planned_time) * 1.0 / NULLIF(SUM(units_produced), 0) AS actual_cycle_time FROM production_runs GROUP BY machine_id",
+        "good_sql": "SELECT machine_id, SUM(run_time) * 1.0 / NULLIF(SUM(units_produced), 0) AS actual_cycle_time FROM production_runs GROUP BY machine_id"
+      },
+      {
+        "pattern": "Comparing a per-machine cycle time to a plant-wide takt without aligning the window",
+        "why_wrong": "Takt uses available_production_time and demand over a defined window; cycle uses run_time. If the windows or scheduling definitions differ, cycle and takt are not comparable and the meets-demand verdict is wrong.",
+        "bad_sql": "SELECT a.machine_id, SUM(a.run_time)/NULLIF(SUM(a.units_produced),0) AS cycle, (SELECT 86400.0 / SUM(customer_demand_units) FROM demand_plan) AS takt FROM production_runs a GROUP BY a.machine_id",
+        "good_sql": "WITH actual AS (SELECT machine_id, SUM(run_time) AS run_time, SUM(units_produced) AS units FROM production_runs WHERE run_date BETWEEN '2024-01-01' AND '2024-01-31' GROUP BY machine_id), demand AS (SELECT machine_id, SUM(available_production_time) AS avail, SUM(customer_demand_units) AS dmd FROM demand_plan WHERE plan_date BETWEEN '2024-01-01' AND '2024-01-31' GROUP BY machine_id) SELECT a.machine_id, a.run_time*1.0/NULLIF(a.units,0) AS cycle, d.avail*1.0/NULLIF(d.dmd,0) AS takt FROM actual a JOIN demand d ON a.machine_id = d.machine_id"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT pr.machine_id, ROUND(SUM(pr.run_time) * 1.0 / NULLIF(SUM(pr.units_produced), 0), 3) AS actual_cycle_time, ROUND(AVG(pr.ideal_cycle_time), 3) AS ideal_cycle_time, ROUND(AVG(pr.ideal_cycle_time) / NULLIF(SUM(pr.run_time) * 1.0 / NULLIF(SUM(pr.units_produced), 0), 0), 4) AS performance_factor FROM production_runs pr WHERE pr.run_date BETWEEN '2024-01-01' AND '2024-01-31' GROUP BY pr.machine_id ORDER BY actual_cycle_time DESC",
+      "intermediate_sql": "WITH actual AS (SELECT machine_id, process_step, SUM(run_time) AS run_time, SUM(units_produced) AS units_produced FROM production_runs WHERE run_date BETWEEN '2024-01-01' AND '2024-01-31' GROUP BY 1, 2), demand AS (SELECT SUM(available_production_time) AS avail, SUM(customer_demand_units) AS dmd FROM demand_plan WHERE plan_date BETWEEN '2024-01-01' AND '2024-01-31') SELECT a.machine_id, a.process_step, ROUND(a.run_time * 1.0 / NULLIF(a.units_produced, 0), 3) AS actual_cycle_time, ROUND((SELECT avail * 1.0 / NULLIF(dmd, 0) FROM demand), 3) AS takt_time, CASE WHEN a.run_time * 1.0 / NULLIF(a.units_produced, 0) <= (SELECT avail * 1.0 / NULLIF(dmd, 0) FROM demand) THEN 'meets_takt' ELSE 'over_takt' END AS status FROM actual a ORDER BY actual_cycle_time DESC",
+      "advanced_sql": "WITH actual AS (\n  -- Grain: one row per machine/process step. Cycle time over run_time only.\n  SELECT\n    machine_id,\n    process_step,\n    SUM(run_time) AS run_time,\n    SUM(units_produced) AS units_produced,\n    SUM(units_passed) AS units_passed,\n    AVG(ideal_cycle_time) AS ideal_cycle_time\n  FROM production_runs\n  WHERE run_date BETWEEN '2024-01-01' AND '2024-01-31'\n  GROUP BY 1, 2\n),\ntakt AS (\n  SELECT SUM(available_production_time) * 1.0 / NULLIF(SUM(customer_demand_units), 0) AS takt_time\n  FROM demand_plan\n  WHERE plan_date BETWEEN '2024-01-01' AND '2024-01-31'\n),\nresult AS (\n  SELECT\n    a.machine_id,\n    a.process_step,\n    a.run_time * 1.0 / NULLIF(a.units_produced, 0) AS actual_cycle_time,\n    a.run_time * 1.0 / NULLIF(a.units_passed, 0) AS good_unit_cycle_time,\n    a.ideal_cycle_time,\n    t.takt_time,\n    a.ideal_cycle_time / NULLIF(a.run_time * 1.0 / NULLIF(a.units_produced, 0), 0) AS performance_factor\n  FROM actual a\n  CROSS JOIN takt t\n)\nSELECT\n  machine_id,\n  process_step,\n  ROUND(actual_cycle_time, 3) AS actual_cycle_time,\n  ROUND(takt_time, 3) AS takt_time,\n  ROUND(performance_factor, 4) AS performance_factor,\n  CASE WHEN actual_cycle_time > takt_time THEN 'BOTTLENECK_OVER_TAKT' ELSE 'ok' END AS verdict,\n  CASE WHEN performance_factor > 1 THEN 'IDEAL_CYCLE_MISCALIBRATED' ELSE 'ok' END AS data_check\nFROM result\nORDER BY actual_cycle_time DESC"
+    }
+  },
+  {
+    "id": "mfg_throughput",
+    "title": "Throughput (Units per Period)",
+    "intent_tags": [
+      "throughput",
+      "units per hour",
+      "units per shift",
+      "production output",
+      "production rate",
+      "good units produced",
+      "what is my throughput",
+      "output rate",
+      "parts per hour",
+      "production volume",
+      "how many units did we make",
+      "line output"
+    ],
+    "sql_features": [
+      "aggregation",
+      "nullif",
+      "case",
+      "cte"
+    ],
+    "difficulty": "beginner",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "measure how many good units were produced per hour, shift, or day",
+      "compare output across machines, lines, shifts, or plants",
+      "size capacity against demand",
+      "track output trend after a process or staffing change",
+      "identify the throughput bottleneck on a line"
+    ],
+    "related_patterns": [
+      "mfg_oee",
+      "mfg_cycle_time_takt",
+      "mfg_first_pass_yield",
+      "mfg_downtime_mtbf_mttr"
+    ],
+    "business_definition": "Throughput = good units produced per unit of time. Good throughput = SUM(units_passed) / time_period. It is a COUNT-based rate (not bounded by 1.0). Gross throughput uses units_produced; good (effective) throughput uses units_passed, which is what the business can actually sell or ship. Rate forms: units per run_time hour (productive rate) or units per planned/calendar hour (effective rate).",
+    "metric_nature": {
+      "what_it_measures": "Raw productive output — how many good parts come off the line per period. The bottom-line volume result that OEE, cycle time, and yield all ultimately drive. Unlike rates, throughput is a count and is not capped at 1.0.",
+      "what_it_does_not_measure": "Effectiveness or efficiency. High throughput can come from running extra shifts (more input time) rather than from better OEE. Throughput says how much; OEE says how well. It also does not reflect quality unless you use good throughput (units_passed).",
+      "common_misconception": "Throughput is not OEE and is not a rate bounded by 1.0 — it is a count per time. Reporting gross throughput (units_produced) as if it were sellable output overstates capacity, because scrap is not shippable. Always be explicit whether the figure is per run-hour (productive) or per calendar/planned hour (effective)."
+    },
+    "template": "SELECT pr.machine_id, SUM(pr.units_passed) AS good_units, SUM(pr.units_passed) * 1.0 / NULLIF(SUM(pr.run_time) / 3600.0, 0) AS good_units_per_run_hour FROM production_runs pr WHERE pr.run_date BETWEEN {start_date} AND {end_date} GROUP BY pr.machine_id",
+    "inflation_causes": [
+      {
+        "cause": "Gross throughput (units_produced) reported as sellable output",
+        "how_it_inflates": "Counting all units produced (including scrap and rework) as throughput overstates what can actually be shipped. The scrap and defective units are not sellable, so capacity and fill-rate plans built on gross throughput are too optimistic.",
+        "detection_sql": "SELECT machine_id, SUM(units_produced) AS gross_units, SUM(units_passed) AS good_units, SUM(units_produced) - SUM(units_passed) AS not_sellable, ROUND((SUM(units_produced)-SUM(units_passed))*100.0/NULLIF(SUM(units_produced),0),2) AS pct_not_sellable FROM production_runs GROUP BY machine_id ORDER BY pct_not_sellable DESC",
+        "fix": "Report good throughput (units_passed) for sellable capacity. Show gross throughput separately only to size losses, never as shippable output."
+      },
+      {
+        "cause": "Double-counted runs from ETL replay inflating the unit sum",
+        "how_it_inflates": "If a production run record is ingested twice, its units are summed twice, inflating throughput without any real output change — the classic replay signature.",
+        "detection_sql": "SELECT run_id, COUNT(*) AS row_count FROM production_runs GROUP BY run_id HAVING COUNT(*) > 1 ORDER BY row_count DESC LIMIT 20",
+        "fix": "De-duplicate production_runs on run_id using ROW_NUMBER() OVER (PARTITION BY run_id ORDER BY loaded_at DESC) = 1 in the base model. Add a uniqueness test."
+      },
+      {
+        "cause": "Units summed across a wider time window than the rate denominator",
+        "how_it_inflates": "If the numerator sums units over a multi-shift period but the rate divides by a single shift's hours, the per-hour throughput is inflated because more units are divided by too little time.",
+        "detection_sql": "SELECT machine_id, COUNT(DISTINCT shift_id) AS shifts_in_window, SUM(units_passed) AS units, SUM(run_time)/3600.0 AS run_hours FROM production_runs GROUP BY machine_id HAVING COUNT(DISTINCT shift_id) > 1 ORDER BY units DESC",
+        "fix": "Ensure the numerator (units) and denominator (hours) cover the same window. Sum run_time over exactly the runs whose units you are counting."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Late-arriving production records excluded by ingestion lag",
+        "how_it_deflates": "Runs near the end of a period may not be loaded before reporting runs, so the latest hours show missing units and throughput appears to dip.",
+        "detection_sql": "SELECT DATE_TRUNC('hour', run_end) AS run_hour, MIN(loaded_at) AS first_loaded, SUM(units_passed) AS good_units FROM production_runs WHERE run_end >= CURRENT_DATE - INTERVAL '2 days' GROUP BY 1 ORDER BY 1 DESC",
+        "fix": "Add a freshness/completeness check before closing the period. Use a loaded_at watermark so partially-loaded recent windows are flagged, not reported as a real dip."
+      },
+      {
+        "cause": "Idle (no-demand) hours included in the rate denominator",
+        "how_it_deflates": "Dividing units by calendar hours that include planned idle (no orders) understates the productive rate, conflating a demand shortfall with a capability shortfall.",
+        "detection_sql": "SELECT machine_id, SUM(units_passed) AS good_units, SUM(run_time)/3600.0 AS run_hours, SUM(planned_time)/3600.0 AS planned_hours, ROUND(SUM(units_passed)/NULLIF(SUM(run_time)/3600.0,0),1) AS rate_per_run_hour, ROUND(SUM(units_passed)/NULLIF(SUM(planned_time)/3600.0,0),1) AS rate_per_planned_hour FROM production_runs GROUP BY machine_id ORDER BY machine_id",
+        "fix": "Report productive rate over run_time for capability and effective rate over planned/calendar time for fulfillment. Label which denominator each uses; do not blame the process for idle demand hours."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the throughput figure good units (units_passed) or gross (units_produced including scrap)?",
+      "Is the rate per run-hour (productive) or per planned/calendar hour (effective)?",
+      "Do the numerator units and denominator hours cover exactly the same window?",
+      "Are any runs double-counted from an ETL replay (duplicate run_id)?",
+      "Is a throughput dip real, or an ingestion-lag artifact on the latest period?",
+      "Which station limits the line — is the lowest-throughput machine the bottleneck?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "Throughput down, OEE down",
+        "then": "Effectiveness loss is reducing output — decompose OEE into availability/performance/quality to find which loss bucket drove the throughput drop."
+      },
+      {
+        "if": "Throughput down, OEE flat",
+        "then": "Fewer scheduled/run hours, not lower effectiveness — a demand or staffing/scheduling change. Check planned_time and shifts, not the process."
+      },
+      {
+        "if": "Throughput up, OEE flat, run hours up",
+        "then": "Extra capacity (more shifts/time), not better effectiveness — sustainable only while the added hours continue."
+      },
+      {
+        "if": "Throughput down on one station, others flat",
+        "then": "That station is the bottleneck constraining line output — target it; improving non-bottleneck stations will not raise throughput."
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Throughput drops with no change in scheduled hours",
+        "and_also": "mfg_downtime_mtbf_mttr shows unplanned downtime rising",
+        "shared_root_cause": "Breakdowns are eating producing time inside the same schedule, so fewer units come off the line. A throughput drop with flat schedule and rising downtime localizes the loss to availability and to specific failing assets.",
+        "diagnostic_sql": "SELECT pr.machine_id, SUM(pr.units_passed) AS good_units, SUM(pr.planned_time)/3600.0 AS planned_hours, SUM(pr.run_time)/3600.0 AS run_hours, COALESCE(SUM(d.downtime_minutes),0)/60.0 AS downtime_hours FROM production_runs pr LEFT JOIN downtime d ON pr.machine_id = d.machine_id AND d.downtime_type = 'unplanned' GROUP BY pr.machine_id ORDER BY downtime_hours DESC"
+      },
+      {
+        "if_this_metric": "Good throughput (units_passed) falls but gross throughput (units_produced) is flat",
+        "and_also": "mfg_scrap_rate is rising",
+        "shared_root_cause": "The line still produces the same gross volume but more of it is scrapped, so sellable output falls. The gap between gross and good throughput equals the scrap loss. Quantify it in units and dollars by product.",
+        "diagnostic_sql": "SELECT pr.product_id, DATE_TRUNC('week', pr.run_date) AS week, SUM(pr.units_produced) AS gross, SUM(pr.units_passed) AS good, SUM(pr.units_produced) - SUM(pr.units_passed) AS lost_to_scrap_rework FROM production_runs pr GROUP BY 1, 2 ORDER BY 2, lost_to_scrap_rework DESC"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Reporting gross units (units_produced) as throughput",
+        "why_wrong": "Scrap and defective units are not sellable. Counting them as throughput overstates real capacity and corrupts fulfillment and capacity planning. Good throughput uses units_passed.",
+        "bad_sql": "SELECT machine_id, SUM(units_produced) AS throughput FROM production_runs GROUP BY machine_id",
+        "good_sql": "SELECT machine_id, SUM(units_passed) AS good_throughput FROM production_runs GROUP BY machine_id"
+      },
+      {
+        "pattern": "Mismatched numerator window and denominator hours in the rate",
+        "why_wrong": "If units are summed over several shifts but divided by one shift's hours (or vice versa), the per-hour rate is meaningless. Numerator and denominator must cover the same window.",
+        "bad_sql": "SELECT machine_id, SUM(units_passed) / (SELECT MAX(run_time)/3600.0 FROM production_runs) AS units_per_hour FROM production_runs GROUP BY machine_id",
+        "good_sql": "SELECT machine_id, SUM(units_passed) * 1.0 / NULLIF(SUM(run_time)/3600.0, 0) AS units_per_run_hour FROM production_runs GROUP BY machine_id"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT pr.machine_id, SUM(pr.units_passed) AS good_units, ROUND(SUM(pr.units_passed) * 1.0 / NULLIF(SUM(pr.run_time)/3600.0, 0), 1) AS good_units_per_run_hour FROM production_runs pr WHERE pr.run_date BETWEEN '2024-01-01' AND '2024-01-31' GROUP BY pr.machine_id ORDER BY good_units DESC",
+      "intermediate_sql": "SELECT DATE_TRUNC('day', pr.run_date) AS day, pr.machine_id, pr.shift_id, SUM(pr.units_produced) AS gross_units, SUM(pr.units_passed) AS good_units, ROUND(SUM(pr.units_passed) * 1.0 / NULLIF(SUM(pr.run_time)/3600.0, 0), 1) AS good_per_run_hour, ROUND(SUM(pr.units_passed) * 1.0 / NULLIF(SUM(pr.planned_time)/3600.0, 0), 1) AS good_per_planned_hour FROM production_runs pr GROUP BY 1, 2, 3 ORDER BY 1, good_units DESC",
+      "advanced_sql": "WITH daily_output AS (\n  -- Grain: one row per machine per day. Good throughput uses units_passed.\n  SELECT\n    DATE_TRUNC('day', run_date) AS day,\n    machine_id,\n    SUM(units_produced) AS gross_units,\n    SUM(units_passed) AS good_units,\n    SUM(run_time) AS run_seconds,\n    SUM(planned_time) AS planned_seconds\n  FROM production_runs\n  GROUP BY 1, 2\n),\nrates AS (\n  SELECT\n    day,\n    machine_id,\n    good_units,\n    gross_units,\n    ROUND(good_units * 1.0 / NULLIF(run_seconds / 3600.0, 0), 1) AS good_per_run_hour,\n    ROUND(good_units * 1.0 / NULLIF(planned_seconds / 3600.0, 0), 1) AS good_per_planned_hour\n  FROM daily_output\n),\nwith_trend AS (\n  SELECT\n    day,\n    machine_id,\n    good_units,\n    good_per_run_hour,\n    LAG(good_units) OVER (PARTITION BY machine_id ORDER BY day) AS prev_good_units,\n    ROUND((good_units - LAG(good_units) OVER (PARTITION BY machine_id ORDER BY day)) * 100.0 / NULLIF(LAG(good_units) OVER (PARTITION BY machine_id ORDER BY day), 0), 2) AS dod_pct\n  FROM rates\n)\nSELECT * FROM with_trend ORDER BY day DESC, good_units DESC"
+    }
+  },
+  {
+    "id": "mfg_downtime_mtbf_mttr",
+    "title": "Unplanned Downtime + MTBF / MTTR",
+    "intent_tags": [
+      "downtime",
+      "unplanned downtime",
+      "mtbf",
+      "mttr",
+      "mean time between failures",
+      "mean time to repair",
+      "machine reliability",
+      "breakdown analysis",
+      "availability loss",
+      "why is the machine down",
+      "failure rate",
+      "how reliable is the equipment"
+    ],
+    "sql_features": [
+      "aggregation",
+      "nullif",
+      "case",
+      "left_join",
+      "cte"
+    ],
+    "difficulty": "advanced",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "quantify unplanned downtime as the driver of the OEE availability loss",
+      "measure reliability (MTBF) and maintainability (MTTR) by asset",
+      "prioritize maintenance on the worst-reliability or worst-repair machines",
+      "separate planned from unplanned stops to attribute availability loss correctly",
+      "track downtime trend after a preventive-maintenance change"
+    ],
+    "related_patterns": [
+      "mfg_oee",
+      "mfg_throughput",
+      "mfg_cycle_time_takt"
+    ],
+    "business_definition": "Unplanned Downtime = SUM(downtime_minutes) for unplanned events over a window. MTBF (Mean Time Between Failures) = total run_time / number_of_failures (uptime per failure, reliability). MTTR (Mean Time To Repair) = total unplanned downtime / number_of_failures (repair time per failure, maintainability). Availability = run_time / planned_time = MTBF / (MTBF + MTTR) when stops are unplanned failures. Downtime is summed over the SAME scheduled window as planned_time.",
+    "metric_nature": {
+      "what_it_measures": "Reliability and maintainability of assets. MTBF answers 'how long does it run before it breaks?'; MTTR answers 'how long to fix it when it does?'. Unplanned downtime is the raw time loss that drives the OEE availability factor.",
+      "what_it_does_not_measure": "Speed or quality losses (those are performance and quality in OEE). Downtime is purely a time/availability loss. MTBF/MTTR also do not distinguish failure severity or root cause — a 2-minute jam and a 4-hour breakdown both count as one failure unless weighted.",
+      "common_misconception": "Planned downtime (scheduled maintenance, changeovers) must NOT be mixed into unplanned downtime or into MTBF/MTTR — doing so corrupts reliability metrics. Downtime must be summed over the SAME window used for planned_time/scheduled_time; counting stops from outside the schedule (e.g. a weekend with no shift) wrongly depresses availability. Availability is a fraction in [0,1]; any value > 1.0 means downtime exceeded the scheduled window incorrectly."
+    },
+    "template": "SELECT d.machine_id, SUM(d.downtime_minutes) AS unplanned_downtime_min, COUNT(*) AS failures, SUM(pr.run_time)/60.0 / NULLIF(COUNT(*), 0) AS mtbf_min, SUM(d.downtime_minutes) * 1.0 / NULLIF(COUNT(*), 0) AS mttr_min FROM downtime d JOIN production_runs pr ON d.machine_id = pr.machine_id AND pr.run_date BETWEEN {start_date} AND {end_date} WHERE d.downtime_type = 'unplanned' AND d.downtime_start BETWEEN {start_date} AND {end_date} GROUP BY d.machine_id",
+    "inflation_causes": [
+      {
+        "cause": "Planned stops (PM, changeover) included as unplanned failures",
+        "how_it_inflates": "Counting scheduled maintenance or changeovers as failures inflates the failure count and unplanned downtime. MTBF falls (looks less reliable) and MTTR is distorted because planned, predictable stops are mixed with random breakdowns.",
+        "detection_sql": "SELECT downtime_type, downtime_reason, COUNT(*) AS events, SUM(downtime_minutes) AS total_minutes FROM downtime GROUP BY downtime_type, downtime_reason ORDER BY total_minutes DESC",
+        "fix": "Filter to downtime_type = 'unplanned' for MTBF/MTTR and availability-loss reporting. Keep planned downtime (PM, changeover) in a separate scheduled-loss bucket excluded from reliability metrics."
+      },
+      {
+        "cause": "Downtime events outside the scheduled window counted against availability",
+        "how_it_inflates": "Stops logged during hours never in planned_time (e.g. unscheduled weekend) add downtime to a window the schedule did not cover, so run_time / planned_time drops below the true value (over-inflating the apparent loss).",
+        "detection_sql": "SELECT d.machine_id, d.downtime_start, d.downtime_minutes, s.shift_start, s.shift_end FROM downtime d LEFT JOIN shifts s ON d.shift_id = s.shift_id WHERE s.shift_id IS NULL OR d.downtime_start < s.shift_start OR d.downtime_start >= s.shift_end ORDER BY d.downtime_minutes DESC LIMIT 20",
+        "fix": "Constrain downtime to the SAME scheduled window as planned_time. Out-of-window stops are TEEP/calendar losses, not OEE availability losses, and must not enter the availability denominator math."
+      },
+      {
+        "cause": "Overlapping downtime events double-counted",
+        "how_it_inflates": "If two systems log the same stoppage (e.g. an operator entry and an automatic PLC trip) as separate overlapping events, the downtime minutes are summed twice, overstating total downtime and depressing availability.",
+        "detection_sql": "SELECT a.machine_id, a.downtime_id, b.downtime_id AS overlapping_id, a.downtime_start, b.downtime_start FROM downtime a JOIN downtime b ON a.machine_id = b.machine_id AND a.downtime_id < b.downtime_id AND b.downtime_start < a.downtime_start + (a.downtime_minutes || ' minutes')::interval AND b.downtime_start >= a.downtime_start ORDER BY a.downtime_start LIMIT 20",
+        "fix": "De-duplicate or merge overlapping downtime intervals before summing (interval union). Pick one authoritative source per stop, or coalesce overlapping events into a single interval."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Micro-stops below the logging threshold excluded",
+        "how_it_deflates": "Short minor stops (under a threshold like 2 minutes) often go unlogged, so unplanned downtime is understated and MTBF looks better than reality — yet these micro-stops show up as a performance (speed) loss in OEE instead.",
+        "detection_sql": "SELECT machine_id, MIN(downtime_minutes) AS shortest_logged, COUNT(CASE WHEN downtime_minutes < 2 THEN 1 END) AS sub_2min_events, COUNT(*) AS total_events FROM downtime WHERE downtime_type = 'unplanned' GROUP BY machine_id ORDER BY total_events DESC",
+        "fix": "Lower or remove the logging threshold for minor stops, or reconcile the gap between availability loss and the OEE performance loss (which captures un-logged micro-stops). Do not assume low logged downtime means high reliability."
+      },
+      {
+        "cause": "Open (unclosed) downtime events with no end time excluded from the sum",
+        "how_it_deflates": "If a downtime record has a start but no end (still open or never closed), its minutes may be NULL and dropped from SUM, understating total downtime for the current period.",
+        "detection_sql": "SELECT machine_id, downtime_id, downtime_start, downtime_end, downtime_minutes FROM downtime WHERE downtime_end IS NULL OR downtime_minutes IS NULL ORDER BY downtime_start DESC LIMIT 20",
+        "fix": "Impute duration for open events up to the current time (or shift end) using COALESCE(downtime_end, NOW()) - downtime_start, and flag still-open events rather than silently dropping them."
+      }
+    ],
+    "diagnostic_questions": [
+      "Are planned stops (PM, changeover) excluded so MTBF/MTTR reflect only unplanned failures?",
+      "Is downtime summed over the SAME scheduled window as planned_time?",
+      "Are any downtime events logged outside the schedule, wrongly depressing availability?",
+      "Are overlapping events from multiple logging sources double-counted?",
+      "Are micro-stops below threshold being missed (showing as a performance loss instead)?",
+      "Is the availability loss driven by frequent failures (low MTBF) or slow repairs (high MTTR)?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "Unplanned downtime up, MTBF down, MTTR flat",
+        "then": "Failures are more frequent but repairs are equally fast — a reliability problem (wear, root-cause defect). Target preventive maintenance and root-cause elimination."
+      },
+      {
+        "if": "Unplanned downtime up, MTTR up, MTBF flat",
+        "then": "Failures are not more frequent but each takes longer to fix — a maintainability/spares/skills problem. Target repair process, spare-parts availability, and technician coverage."
+      },
+      {
+        "if": "Unplanned downtime up, OEE availability factor down by the matching amount",
+        "then": "Confirms downtime drives the availability loss — the OEE drop is a stoppage problem, not speed or quality. Prioritize the worst-MTBF assets."
+      },
+      {
+        "if": "Unplanned downtime flat but OEE performance down",
+        "then": "Losses are micro-stops/slow running below the downtime threshold rather than logged breakdowns — look at performance, not availability, and consider lowering the logging threshold."
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Unplanned downtime spikes on an asset",
+        "and_also": "mfg_throughput (good units/period) on that asset drops proportionally",
+        "shared_root_cause": "Breakdowns consume producing time, so fewer units come off the line within the same schedule. A downtime spike with a matching throughput drop confirms the availability loss is real and asset-specific. Rank by failure reason to find the dominant mode.",
+        "diagnostic_sql": "SELECT d.machine_id, d.downtime_reason, COUNT(*) AS failures, SUM(d.downtime_minutes) AS downtime_min, SUM(d.downtime_minutes)*1.0/NULLIF(COUNT(*),0) AS mttr_min FROM downtime d WHERE d.downtime_type = 'unplanned' AND d.downtime_start >= CURRENT_DATE - INTERVAL '30 days' GROUP BY 1, 2 ORDER BY downtime_min DESC LIMIT 20"
+      },
+      {
+        "if_this_metric": "MTBF is declining gradually on an asset",
+        "and_also": "mfg_scrap_rate on that asset is also rising",
+        "shared_root_cause": "Progressive equipment degradation (bearing wear, misalignment) causes both more frequent failures AND more defects as the machine drifts out of spec. A coupled MTBF decline and scrap rise on one asset is a strong predictive-maintenance trigger. Check condition-monitoring and time-since-overhaul.",
+        "diagnostic_sql": "SELECT pr.machine_id, DATE_TRUNC('week', pr.run_date) AS week, SUM(pr.run_time)/60.0 / NULLIF(COUNT(d.downtime_id),0) AS mtbf_min, ROUND(SUM(pr.units_scrapped)*100.0/NULLIF(SUM(pr.units_produced),0),3) AS scrap_pct FROM production_runs pr LEFT JOIN downtime d ON pr.machine_id = d.machine_id AND d.downtime_type='unplanned' AND DATE_TRUNC('week', d.downtime_start) = DATE_TRUNC('week', pr.run_date) GROUP BY 1, 2 ORDER BY 1, 2"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Including planned downtime in MTBF/MTTR and unplanned downtime",
+        "why_wrong": "MTBF and MTTR describe random failures and their repair. Folding in scheduled maintenance and changeovers (which are planned and predictable) inflates failure counts and distorts both reliability and repair-time figures.",
+        "bad_sql": "SELECT machine_id, SUM(run_time)/60.0 / NULLIF(COUNT(*), 0) AS mtbf_min, SUM(downtime_minutes) / NULLIF(COUNT(*), 0) AS mttr_min FROM downtime d JOIN production_runs pr ON d.machine_id = pr.machine_id GROUP BY machine_id",
+        "good_sql": "SELECT machine_id, SUM(run_time)/60.0 / NULLIF(SUM(CASE WHEN downtime_type='unplanned' THEN 1 ELSE 0 END), 0) AS mtbf_min, SUM(CASE WHEN downtime_type='unplanned' THEN downtime_minutes ELSE 0 END) * 1.0 / NULLIF(SUM(CASE WHEN downtime_type='unplanned' THEN 1 ELSE 0 END), 0) AS mttr_min FROM downtime d JOIN production_runs pr ON d.machine_id = pr.machine_id GROUP BY machine_id"
+      },
+      {
+        "pattern": "Summing downtime over a different window than scheduled/planned time",
+        "why_wrong": "Availability = run_time / planned_time requires downtime to come from the SAME scheduled window. Summing downtime over calendar time (incl. unscheduled hours) while planned_time covers only shifts makes availability fall below its true value or even produce nonsensical results.",
+        "bad_sql": "SELECT machine_id, 1 - SUM(downtime_minutes)/60.0 / NULLIF((SELECT SUM(planned_time)/3600.0 FROM production_runs), 0) AS availability FROM downtime GROUP BY machine_id",
+        "good_sql": "SELECT pr.machine_id, ROUND(1 - COALESCE(SUM(CASE WHEN d.downtime_type='unplanned' AND d.downtime_start BETWEEN s.shift_start AND s.shift_end THEN d.downtime_minutes END),0)/60.0 / NULLIF(SUM(pr.planned_time)/3600.0, 0), 4) AS availability FROM production_runs pr JOIN shifts s ON pr.shift_id = s.shift_id LEFT JOIN downtime d ON pr.machine_id = d.machine_id AND pr.shift_id = d.shift_id GROUP BY pr.machine_id"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT d.machine_id, SUM(d.downtime_minutes) AS unplanned_downtime_min, COUNT(*) AS failures, ROUND(SUM(d.downtime_minutes) * 1.0 / NULLIF(COUNT(*), 0), 1) AS mttr_min FROM downtime d WHERE d.downtime_type = 'unplanned' AND d.downtime_start BETWEEN '2024-01-01' AND '2024-01-31' GROUP BY d.machine_id ORDER BY unplanned_downtime_min DESC",
+      "intermediate_sql": "WITH uptime AS (SELECT machine_id, SUM(run_time)/60.0 AS run_minutes FROM production_runs WHERE run_date BETWEEN '2024-01-01' AND '2024-01-31' GROUP BY machine_id), failures AS (SELECT machine_id, COUNT(*) AS failure_count, SUM(downtime_minutes) AS downtime_min FROM downtime WHERE downtime_type = 'unplanned' AND downtime_start BETWEEN '2024-01-01' AND '2024-01-31' GROUP BY machine_id) SELECT u.machine_id, f.failure_count, f.downtime_min, ROUND(u.run_minutes / NULLIF(f.failure_count, 0), 1) AS mtbf_min, ROUND(f.downtime_min * 1.0 / NULLIF(f.failure_count, 0), 1) AS mttr_min, ROUND(u.run_minutes / NULLIF(u.run_minutes + f.downtime_min, 0), 4) AS availability FROM uptime u LEFT JOIN failures f ON u.machine_id = f.machine_id ORDER BY mtbf_min ASC",
+      "advanced_sql": "WITH window_runs AS (\n  -- Grain: machine-level uptime within the scheduled window\n  SELECT\n    machine_id,\n    SUM(run_time) AS run_seconds,\n    SUM(planned_time) AS planned_seconds\n  FROM production_runs\n  WHERE run_date BETWEEN '2024-01-01' AND '2024-01-31'\n  GROUP BY machine_id\n),\nwindow_failures AS (\n  -- Only unplanned events, only those inside the scheduled window\n  SELECT\n    d.machine_id,\n    COUNT(*) AS failure_count,\n    SUM(COALESCE(d.downtime_minutes, EXTRACT(EPOCH FROM (NOW() - d.downtime_start))/60.0)) AS downtime_min\n  FROM downtime d\n  WHERE d.downtime_type = 'unplanned'\n    AND d.downtime_start BETWEEN '2024-01-01' AND '2024-01-31'\n  GROUP BY d.machine_id\n),\nreliability AS (\n  SELECT\n    r.machine_id,\n    COALESCE(f.failure_count, 0) AS failures,\n    COALESCE(f.downtime_min, 0) AS downtime_min,\n    r.run_seconds / 60.0 / NULLIF(f.failure_count, 0) AS mtbf_min,\n    f.downtime_min * 1.0 / NULLIF(f.failure_count, 0) AS mttr_min,\n    r.run_seconds / NULLIF(r.planned_seconds, 0) AS availability\n  FROM window_runs r\n  LEFT JOIN window_failures f ON r.machine_id = f.machine_id\n)\nSELECT\n  machine_id,\n  failures,\n  ROUND(mtbf_min, 1) AS mtbf_min,\n  ROUND(mttr_min, 1) AS mttr_min,\n  ROUND(availability, 4) AS availability,\n  ROUND(mtbf_min / NULLIF(mtbf_min + mttr_min, 0), 4) AS availability_from_mtbf_mttr,\n  CASE WHEN availability > 1 THEN 'DOWNTIME_OUTSIDE_WINDOW_BUG' ELSE 'ok' END AS data_check\nFROM reliability\nORDER BY availability ASC"
+    }
+  }
+]

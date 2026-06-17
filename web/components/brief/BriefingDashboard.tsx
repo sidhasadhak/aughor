@@ -1,39 +1,26 @@
 "use client";
 
 /**
- * BriefingDashboard — the Briefing tab's actionable chart layer (#3).
+ * BriefingDashboard — the Briefing tab's actionable layer (#3).
  *
- * The tab already selects the top cross-domain findings (headline + signals) and
- * writes a prose synthesis over them. Each finding carries its own `.sql` — the
- * exact query behind the claim. This turns those claims into a glanceable
- * dashboard WITHOUT a backend change: it runs each finding's SQL through the same
- * authority the Query Builder uses (`runDirectQuery` → /query/run, matcache-backed)
- * and renders the result with the already-deployed chart stack.
+ * Charts EXPLAIN the industry's key metrics; text cards carry the new findings.
  *
- * Classification reuses the shipped inference (no new rules):
- *   • single-series time trend / single scalar → a KPI tile (value + Sparkline + Δ)
- *   • categorical / multi-series / distribution → a chart figure (InvestigationChart)
- *   • anything not chartable / errored / empty   → dropped (never a broken chart)
+ * The BusinessProfile already knows the vertical's north-star metrics in priority
+ * order, and each carries a `chart_sql` — a small SERIES (a daily/weekly trend, or
+ * a top-N breakdown) that explains that metric. This runs the TOP THREE of those
+ * through the same authority the Query Builder uses (`runDirectQuery` → /query/run,
+ * matcache-backed) and draws them with the deployed chart stack, titled by metric
+ * (AOV over time, Top return reasons, Gross-margin trend…). The explorer's findings
+ * — the new, non-obvious signals — render below as compact text cards.
  *
- * Fail-safe by design: one finding's bad query can never break the dashboard —
- * each runs independently and only the renderable ones surface.
+ * Fail-safe by design: a metric whose chart_sql errors or returns a non-series is
+ * silently skipped (never a broken chart); each query runs independently.
  */
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { runDirectQuery, type ExplorationInsight } from "@/lib/api";
+import { getBusinessProfile, runDirectQuery, type ExplorationInsight, type NorthStarMetric } from "@/lib/api";
 import { InvestigationChart } from "@/components/InvestigationChart";
-import {
-  classifyColumns,
-  inferChartType,
-  isShareColumn,
-} from "@/components/charts/chartTypeInference";
-import { Sparkline, seriesTrend } from "@/components/brief/Sparkline";
-import {
-  formatMetricValue,
-  formatPercent,
-  formatVariance,
-  cleanLabel,
-} from "@/lib/format";
+import { inferChartType } from "@/components/charts/chartTypeInference";
 
 // One top finding to render (matches the panel's SynthesisSignal shape).
 export interface DashboardFinding {
@@ -46,143 +33,93 @@ type RunResult =
   | { status: "error" }
   | { status: "ok"; columns: string[]; rows: string[][] };
 
-// Cap how many finding queries we fire — headline + signals is already ≤ 7.
+// How many findings to surface as text cards (headline + signals is already ≤ 7).
 const MAX_FINDINGS = 8;
-// Row cap per finding query. Plenty for a trend or a top-N breakdown.
+// Render at most THREE metric-explainer charts — the top-priority metrics that draw.
+const MAX_CHARTS = 3;
+// Row cap per chart query. Plenty for a trend or a top-N breakdown.
 const ROW_LIMIT = 200;
 
-// ── Result → display classification (reuses the deployed inference) ─────────────
-
-interface Kpi {
-  id: string;
-  label: string;
-  value: string;
-  values: number[];        // sparkline series (empty for a pure scalar)
-  delta: string | null;    // signed period-over-period, e.g. "+12.5%"
-  period: string;          // MoM / WoW / YoY …
-  up: boolean;
-  finding: string;
-  insight: ExplorationInsight;
-  domain: string;
+/** True when NO numeric column carries a non-zero, non-null value across the series —
+ *  a flat all-zero / all-null chart (e.g. CAC that computes to 0 every month). Mirrors
+ *  the backend chart_sql audit so a degenerate metric never draws ("no zero on cards"). */
+function isDegenerateSeries(rows: string[][]): boolean {
+  const width = rows[0]?.length ?? 0;
+  for (let c = 0; c < width; c++) {
+    let isNumericCol = true;
+    let hasLive = false;
+    for (const row of rows) {
+      const cell = row[c];
+      if (cell == null || cell === "" || cell === "NULL") continue;
+      const n = Number(cell);
+      if (Number.isNaN(n)) { isNumericCol = false; break; }   // a label/date column, not the measure
+      if (n !== 0) hasLive = true;
+    }
+    if (isNumericCol && hasLive) return false;                // found a real measure → not degenerate
+  }
+  return true;
 }
 
-interface Figure {
-  id: string;
+interface MetricFigure {
+  id: string;        // metric name (stable)
+  name: string;      // chart title
   columns: string[];
   rows: string[][];
-  finding: string;
-  insight: ExplorationInsight;
-  domain: string;
 }
 
-/** A KPI is a single metric over time (no breakdown dimension) or a single scalar
- *  row — the shapes that read as ONE headline number rather than a comparison. */
-function asKpi(f: DashboardFinding, columns: string[], rows: string[][]): Kpi | null {
-  if (!columns.length || !rows.length) return null;
-  const { dateIdxs, numericIdxs, catIdxs } = classifyColumns(columns, rows as unknown[][]);
-  if (!numericIdxs.length) return null;
+// ── Metric-explainer chart card ─────────────────────────────────────────────────
 
-  const isTrend  = dateIdxs.length >= 1 && catIdxs.length === 0;
-  const isScalar = rows.length === 1 && dateIdxs.length === 0;
-  if (!isTrend && !isScalar) return null;
-
-  // Prefer a non-share numeric for the headline value (a rate is the Δ story, not the level).
-  const numIdx = numericIdxs.find(i => !isShareColumn(columns[i], rows as unknown[][], i)) ?? numericIdxs[0];
-  const share  = isShareColumn(columns[numIdx], rows as unknown[][], numIdx);
-
-  const trend = isTrend ? seriesTrend(columns, rows as (string | number | null)[][]) : null;
-  const lastNum = trend
-    ? trend.values[trend.values.length - 1]
-    : Number(rows[0][numIdx]);
-  if (lastNum === undefined || isNaN(lastNum)) return null;
-
-  const value = share ? formatPercent(lastNum) : formatMetricValue(lastNum);
-  const delta = trend && trend.lastDelta != null ? formatVariance(trend.lastDelta) : null;
-
-  return {
-    id: f.insight.id,
-    label: cleanLabel(columns[numIdx]),
-    value,
-    values: trend?.values ?? [],
-    delta,
-    period: trend?.periodLabel ?? "",
-    up: (trend?.lastDelta ?? 0) >= 0,
-    finding: f.insight.finding,
-    insight: f.insight,
-    domain: f.domain,
-  };
-}
-
-// ── KPI tile ────────────────────────────────────────────────────────────────────
-
-function KpiTile({ kpi, onInvestigate }: { kpi: Kpi; onInvestigate: (q: string) => void }) {
+function ChartCard({ figure }: { figure: MetricFigure }) {
   return (
-    <button
-      onClick={() => onInvestigate(kpi.finding)}
-      title={kpi.finding}
-      style={{
-        display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-start",
-        textAlign: "left", padding: "12px 14px", borderRadius: "var(--r2)",
-        background: "var(--bg-2)", border: "1px solid var(--b1)", cursor: "pointer",
-        minWidth: 150, flex: "1 1 150px", transition: "border-color .1s",
-      }}
-      onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--b2)"; }}
-      onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--b1)"; }}
-    >
-      <span style={{
-        fontSize: 10, color: "var(--t4)", textTransform: "uppercase",
-        letterSpacing: ".05em", fontWeight: 600, whiteSpace: "nowrap",
-        overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%",
-      }}>{kpi.label}</span>
-      <span style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
-        <span style={{ fontSize: 20, color: "var(--t1)", fontWeight: 600, fontFamily: "var(--font-mono)", lineHeight: 1 }}>
-          {kpi.value}
-        </span>
-        {kpi.delta && (
-          <span style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: kpi.up ? "var(--grn4)" : "var(--red4)" }}>
-            {kpi.delta}
-          </span>
-        )}
-      </span>
-      <span style={{ display: "flex", alignItems: "center", gap: 6, minHeight: 18 }}>
-        {kpi.values.length >= 2 && <Sparkline values={kpi.values} />}
-        {kpi.period && <span style={{ fontSize: 10, color: "var(--t4)" }}>{kpi.period}</span>}
-      </span>
-    </button>
+    <div style={{
+      display: "flex", flexDirection: "column", gap: 6,
+      padding: "9px 11px", borderRadius: "var(--r3)",
+      background: "var(--bg-2)", border: "1px solid var(--b1)", minWidth: 0,
+    }}>
+      {/* Compact briefing chart — 25% shorter than the default render, titled by the
+          metric it explains (e.g. "Average Order Value"). */}
+      <InvestigationChart
+        columns={figure.columns}
+        rows={figure.rows}
+        heightScale={0.75}
+        title={figure.name}
+      />
+    </div>
   );
 }
 
-// ── Figure card ───────────────────────────────────────────────────────────────
+// ── Finding (prose) card ─────────────────────────────────────────────────────────
 
-function FigureCard({
-  figure, onInvestigate, actions,
+function FindingCard({
+  finding, domain, onInvestigate, actions,
 }: {
-  figure: Figure;
+  finding: string;
+  domain: string;
   onInvestigate: (q: string) => void;
   actions?: ReactNode;
 }) {
   return (
     <div style={{
-      display: "flex", flexDirection: "column", gap: 8,
-      padding: "12px 14px", borderRadius: "var(--r3)",
+      display: "flex", flexDirection: "column", gap: 6,
+      padding: "9px 11px", borderRadius: "var(--r3)",
       background: "var(--bg-2)", border: "1px solid var(--b1)", minWidth: 0,
     }}>
+      <div style={{ fontSize: 9, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".05em", fontWeight: 600 }}>
+        {domain}
+      </div>
       <button
-        onClick={() => onInvestigate(figure.finding)}
+        onClick={() => onInvestigate(finding)}
         title="Investigate this finding"
         style={{
           textAlign: "left", background: "transparent", border: "none", padding: 0,
-          fontSize: 12, lineHeight: 1.5, color: "var(--t2)", cursor: "pointer",
+          fontSize: 11.5, lineHeight: 1.5, color: "var(--t1)", cursor: "pointer",
         }}
-        onMouseEnter={e => { e.currentTarget.style.color = "var(--t1)"; }}
-        onMouseLeave={e => { e.currentTarget.style.color = "var(--t2)"; }}
+        onMouseEnter={e => { e.currentTarget.style.color = "var(--blue4)"; }}
+        onMouseLeave={e => { e.currentTarget.style.color = "var(--t1)"; }}
       >
-        {figure.finding}
+        {finding}
       </button>
-      <div style={{ minWidth: 0 }}>
-        <InvestigationChart columns={figure.columns} rows={figure.rows} />
-      </div>
-      {actions && <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{actions}</div>}
+      {actions && <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: "auto" }}>{actions}</div>}
     </div>
   );
 }
@@ -198,81 +135,65 @@ export function BriefingDashboard({
   findings: DashboardFinding[];
   connectionId: string;
   onInvestigate: (q: string) => void;
-  /** Reuse the panel's FindingActions so each figure stays actionable (monitor/share/evidence). */
+  /** Reuse the panel's FindingActions so each finding stays actionable (monitor/share/evidence). */
   renderActions?: (insight: ExplorationInsight, domain: string) => ReactNode;
 }) {
-  // Dedup by insight id (headline can repeat a signal), keep only findings with SQL.
-  const runnable = useMemo(() => {
+  // ── Metric-explainer charts: run the top-priority metrics' chart_sql ────────────
+  const [metricFigs, setMetricFigs] = useState<MetricFigure[]>([]);
+  const [chartsPending, setChartsPending] = useState(false);
+
+  useEffect(() => {
+    if (!connectionId) { setMetricFigs([]); return; }
+    let alive = true;
+    setChartsPending(true);
+    (async () => {
+      try {
+        const p = await getBusinessProfile(connectionId);
+        if (!alive) return;
+        const metrics: NorthStarMetric[] = (p.available && p.profile?.north_star_metrics) || [];
+        // Profile order IS priority order — walk it and keep the first MAX_CHARTS that
+        // actually draw as a chart (a real series, not a table/scalar).
+        const withSql = metrics.filter(m => m.chart_sql?.trim());
+        const figs: MetricFigure[] = [];
+        for (const m of withSql) {
+          if (figs.length >= MAX_CHARTS) break;
+          try {
+            const r = await runDirectQuery(connectionId, m.chart_sql!, ROW_LIMIT, { useCache: true });
+            if (!alive) return;
+            if (r.error || !r.rows || r.rows.length < 2) continue;
+            if (isDegenerateSeries(r.rows)) continue;            // flat all-zero/all-null → no card ("no zero on cards")
+            const inf = inferChartType(r.columns, r.rows as unknown[][]);
+            if (!inf || inf.type === "table") continue;          // not chartable → skip
+            figs.push({ id: m.name, name: m.name, columns: r.columns, rows: r.rows });
+          } catch { /* fail-safe: skip this metric */ }
+        }
+        if (alive) setMetricFigs(figs);
+      } finally {
+        if (alive) setChartsPending(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, [connectionId]);
+
+  // ── Finding text cards: dedup, rank by impact (novelty + confidence) ────────────
+  const findingCards = useMemo(() => {
     const seen = new Set<string>();
     const out: DashboardFinding[] = [];
     for (const f of findings) {
       const id = f.insight?.id;
-      if (!id || seen.has(id) || !f.insight.sql?.trim()) continue;
+      if (!id || seen.has(id)) continue;
       seen.add(id);
       out.push(f);
-      if (out.length >= MAX_FINDINGS) break;
     }
-    return out;
+    out.sort((a, b) =>
+      ((b.insight.novelty ?? 0) + (b.insight.confidence ?? 0)) -
+      ((a.insight.novelty ?? 0) + (a.insight.confidence ?? 0)));
+    return out.slice(0, MAX_FINDINGS);
   }, [findings]);
 
-  const [results, setResults] = useState<Record<string, RunResult>>({});
-  // The effect re-fires only when this key changes (connection or the finding set) — the
-  // parent rebuilds the `findings` array every render, so we key on a stable string, not
-  // its identity. Each run owns an `alive` flag so the latest run's results always win
-  // (and a superseded run's late responses are discarded).
-  const runKey = `${connectionId}|${runnable.map(f => f.insight.id).join(",")}`;
-
-  useEffect(() => {
-    if (!connectionId || !runnable.length) { setResults({}); return; }
-
-    let alive = true;
-    setResults(Object.fromEntries(runnable.map(f => [f.insight.id, { status: "loading" } as RunResult])));
-
-    runnable.forEach(async (f) => {
-      try {
-        const r = await runDirectQuery(connectionId, f.insight.sql, ROW_LIMIT, { useCache: true });
-        if (!alive) return;
-        setResults(prev => ({
-          ...prev,
-          [f.insight.id]: r.error
-            ? { status: "error" }
-            : { status: "ok", columns: r.columns, rows: r.rows },
-        }));
-      } catch {
-        if (alive) setResults(prev => ({ ...prev, [f.insight.id]: { status: "error" } }));
-      }
-    });
-
-    return () => { alive = false; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [runKey]);
-
-  // Split renderable results into KPI tiles and chart figures.
-  const { kpis, figures } = useMemo(() => {
-    const kpis: Kpi[] = [];
-    const figures: Figure[] = [];
-    for (const f of runnable) {
-      const r = results[f.insight.id];
-      if (!r || r.status !== "ok" || r.rows.length < 1) continue;
-      const kpi = asKpi(f, r.columns, r.rows);
-      if (kpi) { kpis.push(kpi); continue; }
-      // Not a KPI — render as a chart only if the engine can actually draw it.
-      if (r.rows.length < 2) continue;
-      const inferred = inferChartType(r.columns, r.rows as unknown[][]);
-      if (!inferred || inferred.type === "table") continue;
-      figures.push({
-        id: f.insight.id, columns: r.columns, rows: r.rows,
-        finding: f.insight.finding, insight: f.insight, domain: f.domain,
-      });
-    }
-    return { kpis, figures };
-  }, [runnable, results]);
-
-  const anyLoading = runnable.some(f => results[f.insight.id]?.status === "loading");
-  const hasContent = kpis.length > 0 || figures.length > 0;
-
-  // Nothing to draw and nothing pending → render nothing (the prose/cards still show).
-  if (!runnable.length || (!hasContent && !anyLoading)) return null;
+  const hasCharts = metricFigs.length > 0;
+  const hasFindings = findingCards.length > 0;
+  if (!hasCharts && !hasFindings && !chartsPending) return null;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16, marginBottom: 24 }}>
@@ -281,31 +202,27 @@ export function BriefingDashboard({
         <span style={{ fontSize: 9, padding: "1px 5px", borderRadius: "var(--r1)", background: "var(--bg-3)", border: "1px solid var(--b1)", color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".06em", fontWeight: 600 }}>
           Live
         </span>
-        {anyLoading && (
+        {chartsPending && (
           <span style={{ fontSize: 10, color: "var(--t4)", display: "inline-flex", alignItems: "center", gap: 5 }}>
             <span style={{ width: 9, height: 9, border: "1.5px solid var(--b2)", borderTop: "1.5px solid var(--blue4)", borderRadius: "50%", animation: "aug-spin var(--dur-breath) linear infinite" }} />
-            rendering charts…
+            charting key metrics…
           </span>
         )}
       </div>
 
-      {/* KPI strip — headline numbers + trend at a glance */}
-      {kpis.length > 0 && (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-          {kpis.map(k => <KpiTile key={k.id} kpi={k} onInvestigate={onInvestigate} />)}
+      {/* Key-metric explainer charts — the top-priority metrics drawn as trends/breakdowns. */}
+      {hasCharts && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 11, alignItems: "start" }}>
+          {metricFigs.map(f => <ChartCard key={f.id} figure={f} />)}
         </div>
       )}
 
-      {/* Figures grid — the charts behind the cross-domain findings */}
-      {figures.length > 0 && (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 14 }}>
-          {figures.map(fig => (
-            <FigureCard
-              key={fig.id}
-              figure={fig}
-              onInvestigate={onInvestigate}
-              actions={renderActions?.(fig.insight, fig.domain)}
-            />
+      {/* New findings — the non-obvious signals, as compact text cards ranked by impact. */}
+      {hasFindings && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 11, alignItems: "start" }}>
+          {findingCards.map(f => (
+            <FindingCard key={f.insight.id} finding={f.insight.finding} domain={f.domain}
+              onInvestigate={onInvestigate} actions={renderActions?.(f.insight, f.domain)} />
           ))}
         </div>
       )}

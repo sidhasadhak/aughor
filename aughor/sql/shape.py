@@ -86,3 +86,87 @@ def is_structural_duplicate(sql: str, prior_sqls, dialect: str = "duckdb") -> bo
         if query_signature(p, dialect) == sig:
             return True
     return False
+
+
+def is_redundant_insight(sql: str, prior_sqls, dialect: str = "duckdb") -> bool:
+    """Coarser than `is_structural_duplicate`: True when `sql` asks the SAME analytical
+    question as a prior one — same group-keys AND same measures AND at least one shared
+    table — even if a secondary join/column makes the full signature differ (e.g. a
+    "conversion by traffic_source" query that also tacks a refund column + the refunds
+    table onto the same grain). That mismatch is exactly what let two DIFFERENT findings
+    render as the same briefing chart. Used for CROSS-domain dedup.
+
+    Guards against over-matching: requires non-empty group_keys (only grouped analyses)
+    and a shared table — so "orders by status" and "customers by status" (same grain +
+    COUNT but disjoint tables) are NOT treated as redundant. Fail-safe: unparseable →
+    not redundant."""
+    sig = query_signature(sql, dialect)
+    if sig is None:
+        return False
+    tables, gkeys, measures = sig
+    if not gkeys:
+        return False
+    for p in prior_sqls or ():
+        psig = query_signature(p, dialect)
+        if psig is None:
+            continue
+        ptables, pg, pm = psig
+        if gkeys == pg and measures == pm and (tables & ptables):
+            return True
+    return False
+
+
+# ── Semantic (text) dedup ──────────────────────────────────────────────────────
+# The structural gates above key on SQL shape, so two findings that describe the
+# SAME result with DIFFERENT SQL slip through — e.g. "the top refund reason is
+# 'WRONG_SHADE' (59,314, 21.19%)" surfaced twice, once as a plain top-N and once as
+# a breakdown-with-a-tail, landing under two domains. They read identically to a
+# user. This compares the FINDING TEXT instead of the SQL.
+
+import re as _re
+
+_STOPWORDS = frozenset(
+    "the a an of to in on for and or is are was were be been being with by at from "
+    "as that this these those it its their there has have had not no all any each per "
+    "across among into over under more most than then but which who whom whose how "
+    "show shows showing indicate indicates within only also both same other".split()
+)
+
+
+def _claim_tokens(text: str) -> tuple[frozenset, frozenset]:
+    """Return (significant tokens, anchors) for a finding. Tokens are content words
+    plus normalised numbers; anchors are the high-signal identifiers — QUOTED or
+    ALL-CAPS literals (WRONG_SHADE, 'CHANGED_MIND') and multi-digit numbers (59314,
+    21.19) — that pin a claim to a specific entity/value."""
+    t = text or ""
+    quoted = set()
+    for g1, g2 in _re.findall(r"'([^']+)'|\"([^\"]+)\"", t):
+        v = (g1 or g2).strip().lower()
+        if v:
+            quoted.add(v)
+    caps = {m.lower() for m in _re.findall(r"\b([A-Z][A-Z0-9_]{3,})\b", t)}          # WRONG_SHADE, CHANGED_MIND
+    nums = {m.replace(",", "") for m in _re.findall(r"\d[\d,]*\.?\d*", t) if len(m.replace(",", "").replace(".", "")) >= 3}
+    words = {w for w in _re.findall(r"[a-z][a-z_]{2,}", t.lower()) if w not in _STOPWORDS}
+    anchors = frozenset(quoted | caps | nums)
+    tokens = frozenset(words | anchors)
+    return tokens, anchors
+
+
+def is_semantically_redundant(finding_text: str, prior_texts, threshold: float = 0.55) -> bool:
+    """True when `finding_text` describes the same claim as a prior finding — high
+    token (Jaccard) overlap AND at least one shared anchor (a quoted/CAPS literal or a
+    multi-digit number). Requiring a shared anchor keeps it high-precision: two findings
+    about *different* entities won't collide just because they share generic words like
+    'refund' and 'rate'. Fail-safe: empty/short text → not redundant."""
+    toks, anch = _claim_tokens(finding_text)
+    if len(toks) < 4:
+        return False
+    for prior in prior_texts or ():
+        ptoks, panch = _claim_tokens(prior)
+        if not ptoks or not (anch & panch):           # must pin to the same entity/value
+            continue
+        inter = len(toks & ptoks)
+        union = len(toks | ptoks)
+        if union and inter / union >= threshold:
+            return True
+    return False

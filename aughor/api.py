@@ -395,6 +395,7 @@ from aughor.routers import (  # noqa: E402
     briefs,
     events,
     llm,
+    profile,
 )
 
 app.include_router(system.router)
@@ -415,3 +416,4 @@ app.include_router(semantic.router)
 app.include_router(briefs.router)
 app.include_router(events.router)
 app.include_router(llm.router)
+app.include_router(profile.router)

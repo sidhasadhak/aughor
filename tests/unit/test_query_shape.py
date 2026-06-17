@@ -5,7 +5,7 @@ that were all "customer count by continent/country" in cosmetic disguises. The s
 must collapse the cosmetic variants and keep the genuinely-distinct cuts (different grain,
 different measure, different tables).
 """
-from aughor.sql.shape import query_signature, is_structural_duplicate
+from aughor.sql.shape import query_signature, is_structural_duplicate, is_semantically_redundant
 
 # The four findings the live run actually produced (verbatim shapes).
 F1 = ("SELECT continent, country, COUNT(DISTINCT customerID) AS customer_count "
@@ -74,3 +74,41 @@ class TestIsDuplicate:
         assert is_structural_duplicate("this <<< not sql", [F1]) is False
         assert is_structural_duplicate(F1, []) is False
         assert query_signature("") is None
+
+
+# ── Semantic (text) dedup — same claim, different SQL ─────────────────────────────
+# Origin: the briefing showed "top refund reason is 'WRONG_SHADE' (59,314, 21.19%)"
+# twice, under two domains, because the two queries had different SQL shape.
+
+_WS_A = ("The top refund reason among delivered orders is 'WRONG_SHADE' with 59,314 "
+         "refunds, accounting for 21.19% of all refunds")
+_WS_B = ("The top refund reason is 'WRONG_SHADE' with 59,314 refunds (21.19% of all "
+         "refunds), followed by 'CHANGED_MIND'")
+
+
+class TestSemanticRedundancy:
+    def test_same_claim_different_wording_is_redundant(self):
+        assert is_semantically_redundant(_WS_A, [_WS_B]) is True
+        assert is_semantically_redundant(_WS_B, [_WS_A]) is True
+
+    def test_different_claim_survives(self):
+        other = "Payment success rates across methods are nearly identical at ~89%"
+        assert is_semantically_redundant(other, [_WS_A, _WS_B]) is False
+
+    def test_shared_anchor_but_different_claim_survives(self):
+        # Mentions WRONG_SHADE but is a DIFFERENT finding (SKU margin leak) — the anchor
+        # is shared yet token overlap is low, so it must NOT collapse.
+        sku = ("20 SKUs have >90% gross margin and >10% WRONG_SHADE refund rate; the top "
+               "SKU-B6459D82258B has 12 orders, 3 refunds and a 94.5% margin")
+        assert is_semantically_redundant(sku, [_WS_A, _WS_B]) is False
+
+    def test_no_shared_anchor_not_redundant(self):
+        # High generic-word overlap but no shared entity/number anchor → not a dup.
+        a = "The top refund reason is leakage during shipping with a high share of refunds"
+        b = "The top refund reason is changed mind with a high share of refunds"
+        assert is_semantically_redundant(a, [b]) is False
+
+    def test_empty_and_short_are_safe(self):
+        assert is_semantically_redundant("", [_WS_A]) is False
+        assert is_semantically_redundant(_WS_A, []) is False
+        assert is_semantically_redundant("too short", [_WS_A]) is False

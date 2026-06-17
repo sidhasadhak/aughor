@@ -1,0 +1,112 @@
+{
+  "industry": "Retail / E-commerce",
+  "aliases": ["retail", "ecommerce", "e-commerce", "dtc", "direct-to-consumer", "online retail", "commerce", "consumer goods", "marketplace", "beauty", "cosmetics", "apparel", "cpg"],
+  "description": "Transactional sale of physical goods to consumers, online or in-store. Levers are demand generation (acquisition, conversion), unit economics (AOV, margin), retention (repeat purchase), and inventory efficiency.",
+  "metrics": [
+    {
+      "name": "Average Order Value (AOV)",
+      "aliases": ["AOV", "average basket value", "average ticket"],
+      "definition": "Average revenue per completed order.",
+      "formula": "SUM(order_revenue) / COUNT(DISTINCT order_id)",
+      "grain": "Order grain. If revenue lives on line items, SUM the line revenue and divide by COUNT(DISTINCT order_id) — never average line totals.",
+      "anti_patterns": [
+        "AVG(order_items.line_total) computes average LINE value, not order value.",
+        "After joining orders to items, COUNT(*) counts lines, not orders — dividing revenue by it understates AOV."
+      ],
+      "sane_range": "USD, strictly positive; typically tens to low-hundreds for DTC.",
+      "needs_concepts": ["orders", "order or line revenue"]
+    },
+    {
+      "name": "Cart-to-Order Conversion Rate",
+      "aliases": ["conversion rate", "cart conversion", "checkout conversion"],
+      "definition": "Share of shopping carts (or sessions) that result in a placed/paid order.",
+      "formula": "COUNT(DISTINCT converted_cart_id) / COUNT(DISTINCT cart_id), where a cart is 'converted' iff an order references it (cart_id / session_id / anon_id).",
+      "grain": "Cart grain. Carts and orders are each per session/visitor; relate them at the cart key. A conversion rate is bounded 0..1 BY CONSTRUCTION.",
+      "anti_patterns": [
+        "COUNT(orders) / COUNT(carts) as raw totals → can exceed 1 (the classic >1 bug). If you get >1, the join grain is wrong, not the data.",
+        "Counting order_items instead of distinct orders fans out the numerator.",
+        "A chasm join (carts ⋈ orders both many-side of a session) multiplies counts — pre-aggregate each side to the cart key first."
+      ],
+      "sane_range": "ratio 0..1 (never > 1).",
+      "needs_concepts": ["carts or sessions", "orders", "a key linking cart→order"]
+    },
+    {
+      "name": "Gross Margin %",
+      "aliases": ["gross margin", "contribution margin", "product margin"],
+      "definition": "Share of revenue left after cost of goods sold.",
+      "formula": "SUM(revenue - cogs) / NULLIF(SUM(revenue), 0)",
+      "grain": "Line-item or order grain; sum revenue and COGS at the SAME grain before dividing. Do NOT average per-row margin percentages (revenue-weighting matters).",
+      "anti_patterns": [
+        "AVG(line_margin_pct) is unweighted — a $1 line and a $1,000 line count equally. Aggregate revenue and cogs, then divide.",
+        "Mixing pre-discount price with post-discount revenue inflates margin."
+      ],
+      "sane_range": "percent 0..100 (negative only on loss-leaders / data error).",
+      "needs_concepts": ["revenue", "cogs / unit cost"]
+    },
+    {
+      "name": "Inventory Turnover",
+      "aliases": ["stock turn", "inventory turns", "turnover ratio"],
+      "definition": "How many times inventory is sold and replaced over a period.",
+      "formula": "SUM(units_sold) / NULLIF(AVG(units_on_hand), 0)  -- or COGS / average inventory value",
+      "grain": "Per SKU then aggregate; average the stock level over the period (snapshots), not a single point. A SKU with zero average stock yields NULL/undefined turnover, not zero.",
+      "anti_patterns": [
+        "Dividing by a single end-of-period snapshot overstates turnover for seasonal SKUs.",
+        "Treating NULL average-stock as 0 turnover hides slow-movers; surface them as 'no stock data / overstock' instead."
+      ],
+      "sane_range": "ratio 0..∞ (typical retail 2–12/yr; >50 suggests a grain error).",
+      "needs_concepts": ["units sold / COGS", "inventory snapshots or movements"]
+    },
+    {
+      "name": "Return / Refund Rate",
+      "aliases": ["return rate", "refund rate", "RMA rate"],
+      "definition": "Share of orders (or units) that are returned/refunded.",
+      "formula": "COUNT(DISTINCT refunded_order_id) / NULLIF(COUNT(DISTINCT eligible_order_id), 0)",
+      "grain": "Order grain. Denominator must be orders ELIGIBLE to be returned (e.g. delivered), not all rows. Match numerator and denominator population.",
+      "anti_patterns": [
+        "Numerator = refunds but denominator = all orders including undelivered → a 100%-looking rate or a meaningless ratio.",
+        "Counting refund rows (a refund can have multiple lines) instead of distinct refunded orders inflates the numerator."
+      ],
+      "sane_range": "ratio 0..1; apparel/beauty often 0.1–0.4.",
+      "needs_concepts": ["orders with status", "refunds / returns"]
+    },
+    {
+      "name": "Repeat Purchase Rate",
+      "aliases": ["repeat rate", "returning customer rate", "reorder rate"],
+      "definition": "Share of customers who place more than one order.",
+      "formula": "COUNT(DISTINCT customer_id WITH order_count > 1) / NULLIF(COUNT(DISTINCT customer_id), 0)",
+      "grain": "Customer grain. Aggregate orders per customer FIRST (subquery), then count those with >1.",
+      "anti_patterns": [
+        "COUNT(orders) / COUNT(customers) is orders-per-customer, NOT repeat rate.",
+        "Window over a join without pre-aggregating customers double-counts."
+      ],
+      "sane_range": "ratio 0..1.",
+      "needs_concepts": ["customers", "orders linked to customers"]
+    },
+    {
+      "name": "Customer Acquisition Cost (CAC)",
+      "aliases": ["CAC", "acquisition cost", "cost per acquisition"],
+      "definition": "Marketing/sales spend divided by newly acquired customers.",
+      "formula": "SUM(marketing_spend) / NULLIF(COUNT(DISTINCT new_customer_id), 0)",
+      "grain": "Spend and new-customers must cover the SAME period and ideally the same channel. 'New' = first-order customers in the window.",
+      "anti_patterns": [
+        "Dividing total spend by ALL customers (not just newly acquired) understates CAC.",
+        "Attributing all spend to one channel when spend spans channels."
+      ],
+      "sane_range": "USD, positive; compare against LTV.",
+      "needs_concepts": ["marketing spend", "customers with first-order date"]
+    },
+    {
+      "name": "ROAS (Return on Ad Spend) by Channel",
+      "aliases": ["ROAS", "return on ad spend", "marketing efficiency"],
+      "definition": "Attributed revenue per dollar of ad spend, by channel.",
+      "formula": "SUM(attributed_revenue) / NULLIF(SUM(spend), 0)  per channel",
+      "grain": "Channel grain. Use a consistent attribution weight; revenue and spend at the same channel+period grain.",
+      "anti_patterns": [
+        "Summing fractional attribution weights as if whole orders double-counts revenue.",
+        "Per-unit revenue divided by total spend yields meaningless ~0 values (e.g. 5.69e-11) — align magnitudes."
+      ],
+      "sane_range": "ratio 0..∞ (typical 1–10x); near-zero scientific-notation = a units/grain error.",
+      "needs_concepts": ["ad spend by channel", "attributed revenue"]
+    }
+  ]
+}

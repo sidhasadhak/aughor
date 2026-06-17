@@ -1,0 +1,826 @@
+[
+  {
+    "id": "log_otd",
+    "title": "On-Time Delivery Rate (OTD)",
+    "intent_tags": [
+      "otd",
+      "on-time delivery",
+      "on time delivery rate",
+      "delivery performance",
+      "on-time percentage",
+      "what percent delivered on time",
+      "late delivery rate",
+      "sla compliance delivery",
+      "how reliable is delivery",
+      "delivery punctuality",
+      "shipment on-time rate",
+      "on time arrival rate"
+    ],
+    "sql_features": [
+      "aggregation",
+      "conditional_count",
+      "nullif",
+      "date_comparison"
+    ],
+    "difficulty": "beginner",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "measure the share of shipments delivered by their promised date",
+      "report carrier or lane SLA compliance",
+      "track delivery reliability trends over time",
+      "compare on-time performance across carriers, routes, or service levels",
+      "support customer-facing delivery promise commitments"
+    ],
+    "related_patterns": [
+      "log_otif",
+      "log_transit_time",
+      "log_first_attempt"
+    ],
+    "business_definition": "Count of shipments delivered on or before their promised_delivery datetime, divided by the count of shipments that reached a delivered status in the period, expressed as a percentage. A shipment is on-time when actual_delivery <= promised_delivery. Excludes cancelled, lost, and undelivered shipments from the denominator.",
+    "metric_nature": {
+      "what_it_measures": "The proportion of completed deliveries that met their delivery promise. A reliability signal for the delivery network as experienced by the customer.",
+      "what_it_does_not_measure": "Whether the order was complete or correct (that is OTIF) or how fast delivery was (that is transit time). A shipment can be on-time but missing items, or on-time yet slow because the promise itself was generous.",
+      "common_misconception": "OTD is not measured against order date or ship date by default. It is measured against the promised_delivery commitment. A network can show high OTD simply because promised dates are padded, not because it is fast."
+    },
+    "template": "SELECT ROUND(COUNT(CASE WHEN s.actual_delivery <= s.promised_delivery THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS otd_pct FROM shipments s WHERE s.status = 'delivered' AND s.actual_delivery IS NOT NULL AND s.promised_delivery IS NOT NULL AND s.order_date BETWEEN {start_date} AND {end_date}",
+    "inflation_causes": [
+      {
+        "cause": "Carrier-updated promised_delivery dates (promise inflation)",
+        "how_it_inflates": "When a carrier or TMS pushes the promised_delivery forward after a delay is detected, the original commitment is overwritten and the late shipment now compares against a relaxed promise, scoring as on-time. OTD rises without any real improvement in speed.",
+        "detection_sql": "SELECT s.shipment_id, s.promised_delivery, s.original_promised_delivery, s.actual_delivery, (s.promised_delivery - s.original_promised_delivery) AS promise_slip FROM shipments s WHERE s.original_promised_delivery IS NOT NULL AND s.promised_delivery > s.original_promised_delivery ORDER BY promise_slip DESC LIMIT 20",
+        "fix": "Always evaluate OTD against the FIRST committed promise. Use original_promised_delivery (or the earliest promise snapshot) in the comparison, not the latest overwritten value."
+      },
+      {
+        "cause": "Undelivered and lost shipments excluded from the denominator",
+        "how_it_inflates": "Filtering status = 'delivered' drops shipments that are still in transit, lost, or returned-to-sender. Those are the worst-performing shipments. Excluding them leaves only successful deliveries in the denominator, biasing OTD upward (survivorship).",
+        "detection_sql": "SELECT s.status, COUNT(*) AS shipments, COUNT(CASE WHEN s.actual_delivery > s.promised_delivery THEN 1 END) AS late FROM shipments s WHERE s.order_date >= CURRENT_DATE - INTERVAL '30 days' GROUP BY s.status ORDER BY shipments DESC",
+        "fix": "For an honest service metric, include all shipments whose promised_delivery has passed in the denominator and count never-delivered ones as failures, or report OTD alongside the lost/undelivered rate."
+      },
+      {
+        "cause": "Timezone mismatch between actual_delivery and promised_delivery",
+        "how_it_inflates": "If promised_delivery is stored in destination local time but actual_delivery is captured in UTC (or vice versa), a delivery that was actually late by a few hours can compare as on-time when the offset works in the shipment's favor.",
+        "detection_sql": "SELECT s.destination, COUNT(*) AS shipments, COUNT(CASE WHEN s.actual_delivery <= s.promised_delivery THEN 1 END) AS on_time, AVG(EXTRACT(EPOCH FROM (s.promised_delivery - s.actual_delivery))/3600.0) AS avg_hours_margin FROM shipments s WHERE s.status = 'delivered' GROUP BY s.destination ORDER BY avg_hours_margin ASC LIMIT 20",
+        "fix": "Normalize both timestamps to a single timezone (UTC) before comparison, applying the destination UTC offset consistently."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Missing actual_delivery scans counted as late",
+        "how_it_deflates": "When a driver fails to scan a proof-of-delivery, actual_delivery is NULL even though the parcel arrived on time. If the query treats NULL actual_delivery as 'not on-time' (e.g. NULL <= promised is false), genuinely on-time deliveries are scored as late, deflating OTD.",
+        "detection_sql": "SELECT COUNT(*) AS delivered_status, COUNT(s.actual_delivery) AS with_scan, COUNT(*) - COUNT(s.actual_delivery) AS missing_scan FROM shipments s WHERE s.status = 'delivered'",
+        "fix": "Require actual_delivery IS NOT NULL in the denominator filter so scan gaps are treated as data-quality exclusions, and separately track the missing-scan rate. Do not silently bucket NULLs as late."
+      },
+      {
+        "cause": "Promised_delivery using order date instead of ship date",
+        "how_it_deflates": "If promised_delivery is computed from order placement but fulfillment SLA should start at dispatch, orders that sat in a warehouse backlog get an unrealistically early promise, making downstream transit look late and deflating OTD for delays that were upstream of the carrier.",
+        "detection_sql": "SELECT s.carrier, AVG(EXTRACT(EPOCH FROM (s.ship_date - s.order_date))/3600.0) AS avg_dwell_hours, COUNT(CASE WHEN s.actual_delivery > s.promised_delivery THEN 1 END) AS late FROM shipments s WHERE s.status = 'delivered' GROUP BY s.carrier ORDER BY avg_dwell_hours DESC",
+        "fix": "Attribute the carrier OTD to a promise anchored on ship_date, and measure warehouse dwell (ship_date - order_date) as a separate upstream metric so the delay is assigned to the right owner."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the OTD change concentrated in a specific carrier, lane (origin-destination), or service level?",
+      "Was the promised_delivery date overwritten after dispatch, and are we comparing against the original commitment?",
+      "Are undelivered, lost, or in-transit shipments excluded from the denominator, inflating the rate?",
+      "Are actual_delivery and promised_delivery in the same timezone?",
+      "Are missing delivery scans (NULL actual_delivery) being miscounted as late?",
+      "Did warehouse dwell time (order to ship) change, pushing delays upstream of the carrier?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "log_otd down, log_transit_time up",
+        "then": "Actual transit slowed relative to the promise. The network got slower, not the promise tighter. Investigate carrier hub delays or capacity on the affected lanes."
+      },
+      {
+        "if": "log_otd down, log_transit_time flat",
+        "then": "Transit speed is unchanged but the promise tightened, or volume shifted to lanes with tighter promises. Check promised_delivery generation logic and lane mix."
+      },
+      {
+        "if": "log_otd up, original promise slip detected",
+        "then": "OTD improvement is an artifact of promised_delivery being pushed forward. Re-evaluate against original_promised_delivery before celebrating."
+      },
+      {
+        "if": "log_otd down only on one lane",
+        "then": "A localized capacity, weather, or hub-sort issue on that origin-destination pair, not a network-wide regression. Scope investigation to that lane."
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "OTD drops sharply in a week",
+        "and_also": "log_first_attempt success rate also drops in the same window",
+        "shared_root_cause": "A last-mile capacity shortage or address-quality problem is causing both missed delivery windows and failed first attempts. Drivers are overloaded, skipping stops, and missing promise times. Check driver route density and attempt logs by depot.",
+        "diagnostic_sql": "SELECT s.destination AS region, DATE_TRUNC('week', s.actual_delivery) AS week, ROUND(COUNT(CASE WHEN s.actual_delivery <= s.promised_delivery THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS otd_pct, ROUND(COUNT(CASE WHEN s.delivery_attempts = 1 THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS first_attempt_pct FROM shipments s WHERE s.status = 'delivered' GROUP BY 1, 2 ORDER BY 2 DESC, otd_pct ASC LIMIT 20"
+      },
+      {
+        "if_this_metric": "OTD is high but customer complaints about lateness rise",
+        "and_also": "log_transit_time is also rising",
+        "shared_root_cause": "The promised_delivery dates are padded, so OTD stays green while actual journeys slow down and customers perceive lateness against their own expectations. The promise is hiding a real speed regression. Compare actual transit to a fixed historical baseline, not to the promise.",
+        "diagnostic_sql": "SELECT s.carrier, DATE_TRUNC('month', s.ship_date) AS month, ROUND(COUNT(CASE WHEN s.actual_delivery <= s.promised_delivery THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS otd_pct, ROUND(AVG(EXTRACT(EPOCH FROM (s.actual_delivery - s.ship_date))/86400.0), 2) AS avg_transit_days, ROUND(AVG(EXTRACT(EPOCH FROM (s.promised_delivery - s.ship_date))/86400.0), 2) AS avg_promised_days FROM shipments s WHERE s.status = 'delivered' GROUP BY 1, 2 ORDER BY 2"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Comparing actual_delivery to order_date instead of promised_delivery",
+        "why_wrong": "OTD is compliance against a commitment, not raw speed. Comparing to order_date measures total fulfillment latency and penalizes shipments whose generous promise was actually met, conflating two different metrics.",
+        "bad_sql": "SELECT COUNT(CASE WHEN s.actual_delivery <= s.order_date + INTERVAL '3 days' THEN 1 END) * 100.0 / COUNT(*) AS otd FROM shipments s WHERE s.status = 'delivered'",
+        "good_sql": "SELECT ROUND(COUNT(CASE WHEN s.actual_delivery <= s.promised_delivery THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS otd_pct FROM shipments s WHERE s.status = 'delivered' AND s.actual_delivery IS NOT NULL AND s.promised_delivery IS NOT NULL"
+      },
+      {
+        "pattern": "Counting NULL actual_delivery as on-time or as late without a rule",
+        "why_wrong": "A NULL actual_delivery (missing scan) silently evaluates the comparison to false, so it lands in whichever bucket the CASE default assigns. Either way it corrupts the rate. NULLs must be explicitly excluded or classified as a data-quality bucket.",
+        "bad_sql": "SELECT COUNT(CASE WHEN s.actual_delivery <= s.promised_delivery THEN 1 END) * 100.0 / COUNT(*) AS otd FROM shipments s WHERE s.status = 'delivered'",
+        "good_sql": "SELECT ROUND(COUNT(CASE WHEN s.actual_delivery <= s.promised_delivery THEN 1 END) * 100.0 / NULLIF(COUNT(s.actual_delivery), 0), 2) AS otd_pct FROM shipments s WHERE s.status = 'delivered' AND s.actual_delivery IS NOT NULL AND s.promised_delivery IS NOT NULL"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT ROUND(COUNT(CASE WHEN s.actual_delivery <= s.promised_delivery THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS otd_pct FROM shipments s WHERE s.status = 'delivered' AND s.actual_delivery IS NOT NULL AND s.promised_delivery IS NOT NULL AND s.order_date BETWEEN '2024-01-01' AND '2024-01-31'",
+      "intermediate_sql": "SELECT s.carrier, s.service_level, DATE_TRUNC('month', s.ship_date) AS month, COUNT(*) AS delivered, COUNT(CASE WHEN s.actual_delivery <= s.promised_delivery THEN 1 END) AS on_time, ROUND(COUNT(CASE WHEN s.actual_delivery <= s.promised_delivery THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS otd_pct FROM shipments s WHERE s.status = 'delivered' AND s.actual_delivery IS NOT NULL AND s.promised_delivery IS NOT NULL GROUP BY 1, 2, 3 ORDER BY 3, otd_pct ASC",
+      "advanced_sql": "WITH delivered AS (\n  -- Grain: one row per delivered shipment, OTD judged against the ORIGINAL promise\n  SELECT\n    s.shipment_id,\n    s.carrier,\n    s.origin,\n    s.destination,\n    DATE_TRUNC('month', s.ship_date) AS month,\n    CASE WHEN s.actual_delivery <= COALESCE(s.original_promised_delivery, s.promised_delivery) THEN 1 ELSE 0 END AS is_on_time\n  FROM shipments s\n  WHERE s.status = 'delivered'\n    AND s.actual_delivery IS NOT NULL\n    AND COALESCE(s.original_promised_delivery, s.promised_delivery) IS NOT NULL\n),\nmonthly AS (\n  SELECT\n    month,\n    carrier,\n    COUNT(*) AS delivered,\n    SUM(is_on_time) AS on_time,\n    ROUND(SUM(is_on_time) * 100.0 / NULLIF(COUNT(*), 0), 2) AS otd_pct\n  FROM delivered\n  GROUP BY 1, 2\n),\nwith_trend AS (\n  SELECT\n    month,\n    carrier,\n    delivered,\n    otd_pct,\n    LAG(otd_pct) OVER (PARTITION BY carrier ORDER BY month) AS prev_otd_pct,\n    otd_pct - LAG(otd_pct) OVER (PARTITION BY carrier ORDER BY month) AS otd_change_pp\n  FROM monthly\n)\nSELECT * FROM with_trend ORDER BY carrier, month"
+    }
+  },
+  {
+    "id": "log_otif",
+    "title": "OTIF (On-Time In-Full)",
+    "intent_tags": [
+      "otif",
+      "on-time in-full",
+      "on time in full rate",
+      "perfect order rate",
+      "delivery in full and on time",
+      "complete and on-time delivery",
+      "otif compliance",
+      "what percent of orders were perfect",
+      "in full on time percentage",
+      "order fulfillment quality",
+      "perfect delivery rate"
+    ],
+    "sql_features": [
+      "aggregation",
+      "conditional_count",
+      "nullif",
+      "date_comparison",
+      "boolean_logic"
+    ],
+    "difficulty": "advanced",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "measure the share of orders delivered both on-time AND complete",
+      "report supplier or carrier perfect-order performance",
+      "evaluate end-to-end fulfillment quality for B2B contracts",
+      "diagnose whether failures come from lateness or from short-shipping",
+      "support service-level penalty/bonus contract calculations"
+    ],
+    "related_patterns": [
+      "log_otd",
+      "log_first_attempt",
+      "log_transit_time"
+    ],
+    "business_definition": "Count of orders where every constituent shipment was delivered on-time (actual_delivery <= promised_delivery) AND in-full (delivered_qty >= ordered_qty for all lines), divided by the count of orders due in the period, expressed as a percentage. OTIF is a conjunctive (AND) metric evaluated on a single order population: an order fails if it is either late OR short.",
+    "metric_nature": {
+      "what_it_measures": "The proportion of orders that were perfect on two dimensions at once: delivered by the promise and complete with no shortages. The strictest customer-experience fulfillment metric.",
+      "what_it_does_not_measure": "Why an order failed. OTIF collapses lateness and incompleteness into one fail flag. To attribute, decompose into the OT component and the IF component separately.",
+      "common_misconception": "OTIF is not the average of on-time rate and in-full rate, and it is not their product unless the two failures are independent. It must be computed as a single AND condition on the SAME order population. Computing OTD on delivered shipments and in-full on a different invoice population, then combining, gives a number that corresponds to no real order set."
+    },
+    "template": "SELECT ROUND(COUNT(CASE WHEN o.is_on_time = 1 AND o.is_in_full = 1 THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS otif_pct FROM (SELECT o.order_id, MIN(CASE WHEN s.actual_delivery <= s.promised_delivery THEN 1 ELSE 0 END) AS is_on_time, MIN(CASE WHEN s.delivered_qty >= s.ordered_qty THEN 1 ELSE 0 END) AS is_in_full FROM orders o JOIN shipments s ON o.order_id = s.order_id WHERE o.status NOT IN ('cancelled', 'test') AND o.promised_delivery BETWEEN {start_date} AND {end_date} GROUP BY o.order_id) o",
+    "inflation_causes": [
+      {
+        "cause": "OT and IF computed on different denominators then multiplied",
+        "how_it_inflates": "Computing OTD = 95% over delivered shipments and IF = 97% over invoiced lines, then reporting OTIF = 0.95 * 0.97 = 92%, assumes the two failures never co-occur and that both rates share a population. In reality late orders are often also short (same root cause), so the true AND rate is lower; the product overstates OTIF.",
+        "detection_sql": "SELECT COUNT(*) AS orders, ROUND(AVG(is_on_time)*100,2) AS ot_only_pct, ROUND(AVG(is_in_full)*100,2) AS if_only_pct, ROUND(AVG(CASE WHEN is_on_time=1 AND is_in_full=1 THEN 1 ELSE 0 END)*100,2) AS true_otif_pct, ROUND(AVG(is_on_time)*AVG(is_in_full)*100,2) AS naive_product_pct FROM (SELECT o.order_id, MIN(CASE WHEN s.actual_delivery <= s.promised_delivery THEN 1 ELSE 0 END) AS is_on_time, MIN(CASE WHEN s.delivered_qty >= s.ordered_qty THEN 1 ELSE 0 END) AS is_in_full FROM orders o JOIN shipments s ON o.order_id = s.order_id WHERE o.status NOT IN ('cancelled','test') GROUP BY o.order_id) t",
+        "fix": "Always compute OTIF as a single AND flag per order on one order population. Never multiply or average independently-derived OT and IF rates."
+      },
+      {
+        "cause": "Short-shipped lines silently dropped from the in-full check",
+        "how_it_inflates": "If the in-full evaluation only inspects shipped lines (INNER JOIN shipments) and an ordered line that was never shipped produces no shipment row, that missing line is invisible and the order is judged in-full when it was actually short.",
+        "detection_sql": "SELECT o.order_id, COUNT(DISTINCT ol.line_id) AS ordered_lines, COUNT(DISTINCT s.line_id) AS shipped_lines FROM orders o JOIN order_lines ol ON o.order_id = ol.order_id LEFT JOIN shipments s ON ol.line_id = s.line_id WHERE o.status NOT IN ('cancelled','test') GROUP BY o.order_id HAVING COUNT(DISTINCT s.line_id) < COUNT(DISTINCT ol.line_id) ORDER BY ordered_lines DESC LIMIT 20",
+        "fix": "Evaluate in-full from the ORDER LINE population with a LEFT JOIN to shipments, treating an unshipped line as delivered_qty = 0 so missing lines fail the in-full test."
+      },
+      {
+        "cause": "Promise overwrite inflating the on-time component",
+        "how_it_inflates": "As with OTD, if promised_delivery is pushed forward after a delay, the OT half of OTIF passes for late orders, lifting the conjunctive rate.",
+        "detection_sql": "SELECT COUNT(*) AS slipped FROM shipments s WHERE s.original_promised_delivery IS NOT NULL AND s.promised_delivery > s.original_promised_delivery",
+        "fix": "Use original_promised_delivery for the on-time half of the OTIF condition."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Backorder lines that ship later counted against the original window",
+        "how_it_deflates": "If a customer agreed to a split shipment for a backordered line, the later shipment legitimately has a revised promise. Holding it to the original order window marks an acceptable split as short/late, deflating OTIF.",
+        "detection_sql": "SELECT s.fulfillment_type, COUNT(DISTINCT s.order_id) AS orders, COUNT(CASE WHEN s.actual_delivery > s.promised_delivery THEN 1 END) AS late_lines FROM shipments s GROUP BY s.fulfillment_type ORDER BY orders DESC",
+        "fix": "For agreed split/backorder shipments, evaluate each shipment against its own revised promise, or scope OTIF to single-shipment orders plus contractually-agreed splits."
+      },
+      {
+        "cause": "Over-delivery treated as not-in-full",
+        "how_it_deflates": "If the in-full test uses delivered_qty = ordered_qty (strict equality) instead of >=, an order that received a bonus or rounding overage is wrongly marked not-in-full, deflating OTIF.",
+        "detection_sql": "SELECT COUNT(*) AS over_delivered_lines FROM shipments s WHERE s.delivered_qty > s.ordered_qty",
+        "fix": "Use delivered_qty >= ordered_qty for the in-full condition so legitimate over-delivery is not penalized."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is the OTIF failure driven by the on-time component, the in-full component, or both?",
+      "Are OT and IF being computed on the exact same order population, or stitched from different denominators?",
+      "Are unshipped order lines being captured as in-full failures, or invisibly dropped?",
+      "Are agreed split shipments and backorders being judged against revised promises or the original window?",
+      "Is the on-time half using the original promise or an overwritten one?",
+      "Which suppliers or lanes contribute most of the joint (late AND short) failures?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "log_otif down, log_otd flat",
+        "then": "The in-full component is failing while on-time holds. Short-shipping or stockouts are the driver, not delivery speed. Investigate inventory availability and pick accuracy."
+      },
+      {
+        "if": "log_otif down, log_otd down",
+        "then": "The on-time component is dragging OTIF. A delivery network slowdown is the primary driver. Confirm in-full is stable before chasing inventory."
+      },
+      {
+        "if": "log_otif gap widens vs naive OT*IF product",
+        "then": "Late and short failures are correlated (same orders fail both), indicating a shared upstream cause such as a constrained DC shipping incomplete and late together."
+      },
+      {
+        "if": "log_otif down on one supplier only",
+        "then": "A supplier-specific availability or lead-time problem, not a carrier issue. Scope to that supplier's fill rate and promised lead times."
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "OTIF drops while log_otd stays flat",
+        "and_also": "in-full component falls and stockout flags rise",
+        "shared_root_cause": "Inventory shortfalls are short-shipping orders. Deliveries arrive on time but incomplete, so the conjunctive OTIF fails on the in-full leg. The fix is upstream replenishment, not the carrier. Decompose OTIF into its two legs to confirm.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('month', o.promised_delivery) AS month, ROUND(AVG(is_on_time)*100,2) AS ot_pct, ROUND(AVG(is_in_full)*100,2) AS if_pct, ROUND(AVG(CASE WHEN is_on_time=1 AND is_in_full=1 THEN 1 ELSE 0 END)*100,2) AS otif_pct FROM (SELECT o.order_id, o.promised_delivery, MIN(CASE WHEN s.actual_delivery <= s.promised_delivery THEN 1 ELSE 0 END) AS is_on_time, MIN(CASE WHEN s.delivered_qty >= s.ordered_qty THEN 1 ELSE 0 END) AS is_in_full FROM orders o JOIN shipments s ON o.order_id = s.order_id WHERE o.status NOT IN ('cancelled','test') GROUP BY o.order_id, o.promised_delivery) t GROUP BY 1 ORDER BY 1"
+      },
+      {
+        "if_this_metric": "OTIF declines",
+        "and_also": "log_first_attempt success also declines",
+        "shared_root_cause": "Last-mile execution problems cause both failed first attempts (which push delivery past the promise, failing OT) and the cascade of redelivery that can split orders. A depot or driver capacity issue degrades both. Investigate by depot.",
+        "diagnostic_sql": "SELECT s.depot, DATE_TRUNC('week', s.actual_delivery) AS week, ROUND(COUNT(CASE WHEN s.delivery_attempts = 1 THEN 1 END)*100.0/NULLIF(COUNT(*),0),2) AS first_attempt_pct, ROUND(COUNT(CASE WHEN s.actual_delivery <= s.promised_delivery THEN 1 END)*100.0/NULLIF(COUNT(*),0),2) AS on_time_pct FROM shipments s WHERE s.status='delivered' GROUP BY 1,2 ORDER BY 2 DESC, first_attempt_pct ASC LIMIT 20"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Computing OTD and IF on different populations then combining",
+        "why_wrong": "OTD over delivered shipments and IF over invoice lines are different denominators. Averaging or multiplying them yields a number tied to no actual order set, and it hides the correlation between late and short failures, overstating perfect-order performance.",
+        "bad_sql": "SELECT (SELECT AVG(CASE WHEN actual_delivery <= promised_delivery THEN 1.0 ELSE 0 END) FROM shipments WHERE status='delivered') * (SELECT AVG(CASE WHEN delivered_qty >= ordered_qty THEN 1.0 ELSE 0 END) FROM invoice_lines) AS otif",
+        "good_sql": "SELECT ROUND(AVG(CASE WHEN is_on_time=1 AND is_in_full=1 THEN 1.0 ELSE 0 END)*100,2) AS otif_pct FROM (SELECT o.order_id, MIN(CASE WHEN s.actual_delivery <= s.promised_delivery THEN 1 ELSE 0 END) AS is_on_time, MIN(CASE WHEN s.delivered_qty >= s.ordered_qty THEN 1 ELSE 0 END) AS is_in_full FROM orders o JOIN shipments s ON o.order_id = s.order_id WHERE o.status NOT IN ('cancelled','test') GROUP BY o.order_id) t"
+      },
+      {
+        "pattern": "Evaluating in-full only over shipped lines (INNER JOIN)",
+        "why_wrong": "An order line that was ordered but never shipped produces no shipment row. An INNER JOIN drops it, so the order looks complete when a whole line is missing. In-full must be anchored on the order-line population, not the shipment population.",
+        "bad_sql": "SELECT o.order_id, MIN(CASE WHEN s.delivered_qty >= s.ordered_qty THEN 1 ELSE 0 END) AS is_in_full FROM orders o JOIN shipments s ON o.order_id = s.order_id GROUP BY o.order_id",
+        "good_sql": "SELECT ol.order_id, MIN(CASE WHEN COALESCE(s.delivered_qty,0) >= ol.ordered_qty THEN 1 ELSE 0 END) AS is_in_full FROM order_lines ol LEFT JOIN shipments s ON ol.line_id = s.line_id GROUP BY ol.order_id"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT ROUND(COUNT(CASE WHEN t.is_on_time = 1 AND t.is_in_full = 1 THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS otif_pct FROM (SELECT o.order_id, MIN(CASE WHEN s.actual_delivery <= s.promised_delivery THEN 1 ELSE 0 END) AS is_on_time, MIN(CASE WHEN s.delivered_qty >= s.ordered_qty THEN 1 ELSE 0 END) AS is_in_full FROM orders o JOIN shipments s ON o.order_id = s.order_id WHERE o.status NOT IN ('cancelled','test') AND o.promised_delivery BETWEEN '2024-01-01' AND '2024-01-31' GROUP BY o.order_id) t",
+      "intermediate_sql": "SELECT o.supplier_id, DATE_TRUNC('month', o.promised_delivery) AS month, COUNT(*) AS orders, ROUND(AVG(o.is_on_time)*100,2) AS ot_pct, ROUND(AVG(o.is_in_full)*100,2) AS if_pct, ROUND(AVG(CASE WHEN o.is_on_time=1 AND o.is_in_full=1 THEN 1 ELSE 0 END)*100,2) AS otif_pct FROM (SELECT o.order_id, o.supplier_id, o.promised_delivery, MIN(CASE WHEN s.actual_delivery <= s.promised_delivery THEN 1 ELSE 0 END) AS is_on_time, MIN(CASE WHEN COALESCE(s.delivered_qty,0) >= s.ordered_qty THEN 1 ELSE 0 END) AS is_in_full FROM orders o JOIN shipments s ON o.order_id = s.order_id WHERE o.status NOT IN ('cancelled','test') GROUP BY o.order_id, o.supplier_id, o.promised_delivery) o GROUP BY 1, 2 ORDER BY 2, otif_pct ASC",
+      "advanced_sql": "WITH order_flags AS (\n  -- Grain: one row per order. in-full anchored on ORDER LINES (LEFT JOIN) so unshipped lines fail.\n  SELECT\n    ol.order_id,\n    o.supplier_id,\n    DATE_TRUNC('month', o.promised_delivery) AS month,\n    MIN(CASE WHEN s.actual_delivery <= COALESCE(s.original_promised_delivery, s.promised_delivery) THEN 1 ELSE 0 END) AS is_on_time,\n    MIN(CASE WHEN COALESCE(s.delivered_qty, 0) >= ol.ordered_qty THEN 1 ELSE 0 END) AS is_in_full\n  FROM orders o\n  JOIN order_lines ol ON o.order_id = ol.order_id\n  LEFT JOIN shipments s ON ol.line_id = s.line_id\n  WHERE o.status NOT IN ('cancelled', 'test')\n  GROUP BY ol.order_id, o.supplier_id, DATE_TRUNC('month', o.promised_delivery)\n),\nmonthly AS (\n  SELECT\n    month,\n    supplier_id,\n    COUNT(*) AS orders,\n    ROUND(AVG(is_on_time) * 100, 2) AS ot_pct,\n    ROUND(AVG(is_in_full) * 100, 2) AS if_pct,\n    ROUND(AVG(CASE WHEN is_on_time = 1 AND is_in_full = 1 THEN 1 ELSE 0 END) * 100, 2) AS otif_pct,\n    ROUND(AVG(is_on_time) * AVG(is_in_full) * 100, 2) AS naive_product_pct\n  FROM order_flags\n  GROUP BY 1, 2\n)\nSELECT\n  month,\n  supplier_id,\n  orders,\n  ot_pct,\n  if_pct,\n  otif_pct,\n  naive_product_pct,\n  ROUND(naive_product_pct - otif_pct, 2) AS correlation_gap_pp\nFROM monthly\nORDER BY supplier_id, month"
+    }
+  },
+  {
+    "id": "log_transit_time",
+    "title": "Average Transit Time",
+    "intent_tags": [
+      "transit time",
+      "average transit time",
+      "delivery time",
+      "lead time",
+      "how long does delivery take",
+      "shipping duration",
+      "time in transit",
+      "door to door time",
+      "average delivery days",
+      "speed of delivery",
+      "transit days"
+    ],
+    "sql_features": [
+      "aggregation",
+      "date_diff",
+      "weighted_average",
+      "nullif"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "metric",
+    "when_to_use": [
+      "measure the average elapsed time from ship to delivery",
+      "compare lane or carrier speed",
+      "benchmark service levels against the delivery promise",
+      "track network speed trends to detect slowdowns",
+      "input to setting realistic promised_delivery dates"
+    ],
+    "related_patterns": [
+      "log_otd",
+      "log_otif",
+      "log_cost_per_shipment"
+    ],
+    "business_definition": "The average elapsed time between dispatch (ship_date) and delivery (actual_delivery) across delivered shipments in a period, typically expressed in days or hours. For multi-leg journeys, transit time is the end-to-end door-to-door duration of the shipment, not the sum or unweighted average of individual leg durations.",
+    "metric_nature": {
+      "what_it_measures": "How long, on average, a shipment spends moving from origin to destination. A raw speed signal independent of any promise.",
+      "what_it_does_not_measure": "Promise compliance (that is OTD) or whether the speed was acceptable. It also does not measure warehouse dwell unless explicitly anchored on order_date instead of ship_date.",
+      "common_misconception": "The average of per-leg transit times is not the network transit time. A short final-mile leg and a long line-haul leg averaged equally understates door-to-door duration. Transit time must be the door-to-door span, and when aggregating across lanes it should be weighted by shipment volume (or distance for a per-km view), not a flat average of leg or lane means."
+    },
+    "template": "SELECT ROUND(AVG(EXTRACT(EPOCH FROM (s.actual_delivery - s.ship_date)) / 86400.0), 2) AS avg_transit_days FROM shipments s WHERE s.status = 'delivered' AND s.actual_delivery IS NOT NULL AND s.ship_date IS NOT NULL AND s.ship_date BETWEEN {start_date} AND {end_date}",
+    "inflation_causes": [
+      {
+        "cause": "Warehouse dwell folded into transit by anchoring on order_date",
+        "how_it_inflates": "If transit is computed as actual_delivery - order_date instead of actual_delivery - ship_date, the time the parcel sat in the warehouse before dispatch is counted as transit, inflating the carrier's apparent transit time.",
+        "detection_sql": "SELECT s.carrier, ROUND(AVG(EXTRACT(EPOCH FROM (s.ship_date - s.order_date))/86400.0), 2) AS avg_dwell_days, ROUND(AVG(EXTRACT(EPOCH FROM (s.actual_delivery - s.ship_date))/86400.0), 2) AS avg_transit_days FROM shipments s WHERE s.status='delivered' GROUP BY s.carrier ORDER BY avg_dwell_days DESC",
+        "fix": "Anchor transit on ship_date (dispatch). Report warehouse dwell (ship_date - order_date) as a separate upstream metric."
+      },
+      {
+        "cause": "Stuck or lost shipments with very late scans skewing the mean",
+        "how_it_inflates": "A handful of exception shipments that were lost and rescanned weeks later produce huge transit durations. Because the mean is sensitive to outliers, these inflate average transit even though the typical shipment is fast.",
+        "detection_sql": "SELECT s.shipment_id, EXTRACT(EPOCH FROM (s.actual_delivery - s.ship_date))/86400.0 AS transit_days FROM shipments s WHERE s.status='delivered' ORDER BY transit_days DESC LIMIT 20",
+        "fix": "Report median transit (PERCENTILE_CONT 0.5) alongside the mean, and/or cap/flag shipments above a service-level-specific threshold as exceptions."
+      },
+      {
+        "cause": "Unweighted average across lanes over-weighting low-volume long lanes",
+        "how_it_inflates": "Averaging the per-lane mean transit (AVG of AVGs) gives a rural lane with 5 shipments and 9-day transit the same weight as a city lane with 50,000 shipments and 1-day transit, pulling the network average up toward the rare slow lanes.",
+        "detection_sql": "SELECT ROUND(AVG(lane_avg),2) AS unweighted_avg, ROUND(SUM(lane_avg*lane_n)/NULLIF(SUM(lane_n),0),2) AS volume_weighted_avg FROM (SELECT s.origin, s.destination, AVG(EXTRACT(EPOCH FROM (s.actual_delivery - s.ship_date))/86400.0) AS lane_avg, COUNT(*) AS lane_n FROM shipments s WHERE s.status='delivered' GROUP BY s.origin, s.destination) lanes",
+        "fix": "Compute transit at the shipment grain (one AVG over all shipments), or when rolling up lane means, weight by shipment volume."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Same-timestamp ship and delivery scans for relabeled parcels",
+        "how_it_deflates": "Parcels that are relabeled or rescanned at the destination depot can get ship_date and actual_delivery set to nearly the same time, producing near-zero transit that drags the average down.",
+        "detection_sql": "SELECT COUNT(*) AS near_zero FROM shipments s WHERE s.status='delivered' AND EXTRACT(EPOCH FROM (s.actual_delivery - s.ship_date)) < 3600",
+        "fix": "Exclude or investigate shipments with implausibly short transit (e.g. under 1 hour for inter-city lanes); confirm scan integrity."
+      },
+      {
+        "cause": "Fast intra-city shipments dominating the mix",
+        "how_it_deflates": "If volume shifts toward short same-city lanes (e.g. a new micro-fulfillment center), the blended average transit drops even though long-haul transit is unchanged. This is a mix effect, not a speed improvement.",
+        "detection_sql": "SELECT s.lane_type, DATE_TRUNC('month', s.ship_date) AS month, COUNT(*) AS shipments, ROUND(AVG(EXTRACT(EPOCH FROM (s.actual_delivery - s.ship_date))/86400.0),2) AS avg_transit_days FROM shipments s WHERE s.status='delivered' GROUP BY 1, 2 ORDER BY 2, 1",
+        "fix": "Segment transit by lane_type or distance band. Report blended transit alongside per-segment transit so mix shifts are visible."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is transit anchored on ship_date (dispatch) or order_date (which folds in warehouse dwell)?",
+      "Is the metric using a door-to-door span or an unweighted average of per-leg durations?",
+      "When rolling up across lanes, is the average weighted by shipment volume or distance?",
+      "Are outlier lost/stuck shipments skewing the mean, and is median reported alongside?",
+      "Did the lane or distance-band mix shift, changing blended transit without changing speed?",
+      "Are there near-zero-transit relabel artifacts dragging the average down?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "log_transit_time up, log_otd down",
+        "then": "The network genuinely slowed and is now breaching promises. A real speed regression. Investigate hub capacity and lane congestion."
+      },
+      {
+        "if": "log_transit_time up, log_otd flat",
+        "then": "Transit slowed but promises were padded enough to absorb it, or promise dates slipped too. Customers may still perceive slowness despite green OTD."
+      },
+      {
+        "if": "log_transit_time down, lane mix shifted to short lanes",
+        "then": "The improvement is a mix effect from more intra-city volume, not faster per-lane delivery. Verify with per-lane-type transit."
+      },
+      {
+        "if": "log_transit_time up only on long-haul lanes",
+        "then": "A line-haul or hub-sort bottleneck, not last-mile. Scope to the affected origin-destination distance band."
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Average transit time rises",
+        "and_also": "log_cost_per_shipment also rises on the same lanes",
+        "shared_root_cause": "A carrier or fuel constraint is forcing slower, more expensive routing (e.g. rerouting around a closed hub, more handling touches). Both speed and cost degrade together because each extra leg adds time and cost. Investigate routing changes by lane.",
+        "diagnostic_sql": "SELECT s.origin, s.destination, DATE_TRUNC('month', s.ship_date) AS month, COUNT(*) AS shipments, ROUND(AVG(EXTRACT(EPOCH FROM (s.actual_delivery - s.ship_date))/86400.0),2) AS avg_transit_days, ROUND(AVG(s.cost),2) AS avg_cost, ROUND(AVG(s.leg_count),2) AS avg_legs FROM shipments s WHERE s.status='delivered' GROUP BY 1,2,3 ORDER BY 3, avg_transit_days DESC LIMIT 20"
+      },
+      {
+        "if_this_metric": "Transit time spikes",
+        "and_also": "log_otif drops via its on-time leg",
+        "shared_root_cause": "A network slowdown is breaching promises and dragging OTIF down through its on-time component. If in-full is stable, the OTIF damage is purely speed-driven. Decompose OTIF and align to the slow lanes.",
+        "diagnostic_sql": "SELECT DATE_TRUNC('week', s.ship_date) AS week, ROUND(AVG(EXTRACT(EPOCH FROM (s.actual_delivery - s.ship_date))/86400.0),2) AS avg_transit_days, ROUND(COUNT(CASE WHEN s.actual_delivery <= s.promised_delivery THEN 1 END)*100.0/NULLIF(COUNT(*),0),2) AS on_time_pct FROM shipments s WHERE s.status='delivered' GROUP BY 1 ORDER BY 1 DESC LIMIT 12"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Averaging per-leg transit times unweighted",
+        "why_wrong": "A shipment may have a 6-hour final-mile leg and a 48-hour line-haul leg. AVG over legs treats both equally and reports 27 hours, but the door-to-door duration the customer experiences is 54 hours. Leg durations must be summed per shipment (or the door-to-door span used), and lane rollups weighted by volume.",
+        "bad_sql": "SELECT AVG(EXTRACT(EPOCH FROM (l.leg_arrival - l.leg_departure))/86400.0) AS avg_transit_days FROM legs l JOIN shipments s ON l.shipment_id = s.shipment_id WHERE s.status='delivered'",
+        "good_sql": "SELECT ROUND(AVG(EXTRACT(EPOCH FROM (s.actual_delivery - s.ship_date))/86400.0), 2) AS avg_transit_days FROM shipments s WHERE s.status='delivered' AND s.actual_delivery IS NOT NULL AND s.ship_date IS NOT NULL"
+      },
+      {
+        "pattern": "Averaging lane-level mean transit (AVG of AVGs)",
+        "why_wrong": "Taking AVG over a per-lane transit summary weights every lane equally regardless of shipment count, so rare slow lanes distort the network number. The correct rollup weights each lane mean by its shipment volume.",
+        "bad_sql": "SELECT AVG(lane_avg) AS network_transit FROM (SELECT origin, destination, AVG(EXTRACT(EPOCH FROM (actual_delivery - ship_date))/86400.0) AS lane_avg FROM shipments WHERE status='delivered' GROUP BY origin, destination) t",
+        "good_sql": "SELECT ROUND(SUM(lane_avg * lane_n) / NULLIF(SUM(lane_n), 0), 2) AS network_transit FROM (SELECT origin, destination, AVG(EXTRACT(EPOCH FROM (actual_delivery - ship_date))/86400.0) AS lane_avg, COUNT(*) AS lane_n FROM shipments WHERE status='delivered' GROUP BY origin, destination) t"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT ROUND(AVG(EXTRACT(EPOCH FROM (s.actual_delivery - s.ship_date)) / 86400.0), 2) AS avg_transit_days FROM shipments s WHERE s.status = 'delivered' AND s.actual_delivery IS NOT NULL AND s.ship_date IS NOT NULL AND s.ship_date BETWEEN '2024-01-01' AND '2024-01-31'",
+      "intermediate_sql": "SELECT s.origin, s.destination, s.carrier, COUNT(*) AS shipments, ROUND(AVG(EXTRACT(EPOCH FROM (s.actual_delivery - s.ship_date))/86400.0), 2) AS avg_transit_days, ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY EXTRACT(EPOCH FROM (s.actual_delivery - s.ship_date))/86400.0), 2) AS median_transit_days FROM shipments s WHERE s.status='delivered' AND s.actual_delivery IS NOT NULL AND s.ship_date IS NOT NULL GROUP BY 1, 2, 3 ORDER BY avg_transit_days DESC",
+      "advanced_sql": "WITH shipment_transit AS (\n  -- Grain: one row per delivered shipment, door-to-door transit anchored on ship_date\n  SELECT\n    s.shipment_id,\n    s.origin,\n    s.destination,\n    s.distance_km,\n    DATE_TRUNC('month', s.ship_date) AS month,\n    EXTRACT(EPOCH FROM (s.actual_delivery - s.ship_date)) / 86400.0 AS transit_days\n  FROM shipments s\n  WHERE s.status = 'delivered'\n    AND s.actual_delivery IS NOT NULL\n    AND s.ship_date IS NOT NULL\n    AND EXTRACT(EPOCH FROM (s.actual_delivery - s.ship_date)) >= 3600\n),\nlane_month AS (\n  SELECT\n    month,\n    origin,\n    destination,\n    COUNT(*) AS shipments,\n    AVG(transit_days) AS lane_avg_transit,\n    SUM(distance_km) AS lane_distance\n  FROM shipment_transit\n  GROUP BY 1, 2, 3\n),\nnetwork_month AS (\n  -- Volume-weighted rollup, not AVG of AVGs\n  SELECT\n    month,\n    SUM(shipments) AS shipments,\n    ROUND(SUM(lane_avg_transit * shipments) / NULLIF(SUM(shipments), 0), 2) AS volume_weighted_transit_days\n  FROM lane_month\n  GROUP BY 1\n)\nSELECT\n  month,\n  shipments,\n  volume_weighted_transit_days,\n  ROUND(volume_weighted_transit_days - LAG(volume_weighted_transit_days) OVER (ORDER BY month), 2) AS mom_change_days\nFROM network_month\nORDER BY month"
+    }
+  },
+  {
+    "id": "log_cost_per_shipment",
+    "title": "Cost per Shipment / per km",
+    "intent_tags": [
+      "cost per shipment",
+      "cost per km",
+      "cost per kilometer",
+      "freight cost per delivery",
+      "shipping cost per order",
+      "unit logistics cost",
+      "delivery cost",
+      "how much does each shipment cost",
+      "transportation cost per unit",
+      "cost per mile",
+      "freight unit cost"
+    ],
+    "sql_features": [
+      "aggregation",
+      "nullif",
+      "ratio",
+      "weighted_average"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "ratio",
+    "when_to_use": [
+      "measure average cost to move one shipment",
+      "normalize freight cost by distance (cost per km) for fair lane comparison",
+      "track unit logistics cost trends and detect inflation",
+      "benchmark carrier rates across lanes and service levels",
+      "build unit economics for delivery profitability"
+    ],
+    "related_patterns": [
+      "log_transit_time",
+      "log_capacity_utilization",
+      "log_otd"
+    ],
+    "business_definition": "Total transportation cost divided by the number of shipments (cost per shipment), or total cost divided by total distance traveled (cost per km). Cost per shipment = SUM(cost) / COUNT(DISTINCT shipment_id). Cost per km = SUM(cost) / SUM(distance_km). The per-km view normalizes for trip length so long and short lanes can be compared.",
+    "metric_nature": {
+      "what_it_measures": "The unit cost of moving freight, either per shipment or normalized per kilometer. The per-km form isolates rate efficiency from trip-length mix.",
+      "what_it_does_not_measure": "Profitability (needs revenue) or whether the cost was justified by speed/service. Cost per shipment also says nothing about how full the vehicle was; a cheap shipment on an empty truck can still be unprofitable at the lane level (see capacity utilization).",
+      "common_misconception": "Cost per km is not the average of per-shipment cost-per-km values. Dividing each shipment's cost by its distance then averaging over-weights short shipments (where fixed handling cost is spread over few km, inflating their per-km rate). The correct ratio sums total cost over total distance."
+    },
+    "template": "SELECT ROUND(SUM(s.cost) / NULLIF(COUNT(DISTINCT s.shipment_id), 0), 2) AS cost_per_shipment, ROUND(SUM(s.cost) / NULLIF(SUM(s.distance_km), 0), 4) AS cost_per_km FROM shipments s WHERE s.status = 'delivered' AND s.cost IS NOT NULL AND s.ship_date BETWEEN {start_date} AND {end_date}",
+    "inflation_causes": [
+      {
+        "cause": "Accessorial and surcharge lines double-counted via a fan-out join",
+        "how_it_inflates": "If cost lives in a shipment_costs table with one row per charge (line-haul, fuel, detention) and you JOIN it to a shipment-leg table, each charge fans out per leg, multiplying total cost and inflating cost per shipment.",
+        "detection_sql": "SELECT s.shipment_id, COUNT(*) AS cost_rows, COUNT(DISTINCT sc.charge_id) AS distinct_charges, SUM(sc.amount) AS summed FROM shipments s JOIN shipment_costs sc ON s.shipment_id = sc.shipment_id JOIN legs l ON s.shipment_id = l.shipment_id GROUP BY s.shipment_id HAVING COUNT(*) > COUNT(DISTINCT sc.charge_id) ORDER BY summed DESC LIMIT 20",
+        "fix": "Pre-aggregate cost to the shipment grain in a CTE (SUM(amount) GROUP BY shipment_id) before joining to any leg- or item-level table."
+      },
+      {
+        "cause": "Per-shipment cost-per-km averaged instead of total cost over total distance",
+        "how_it_inflates": "AVG(cost / distance_km) gives short shipments (where a fixed minimum charge is divided by a few km) an outsized per-km rate, inflating the network cost-per-km versus the true SUM(cost)/SUM(distance) ratio.",
+        "detection_sql": "SELECT ROUND(AVG(s.cost / NULLIF(s.distance_km,0)), 4) AS avg_of_ratios, ROUND(SUM(s.cost) / NULLIF(SUM(s.distance_km),0), 4) AS ratio_of_sums FROM shipments s WHERE s.status='delivered' AND s.distance_km > 0",
+        "fix": "Compute cost per km as SUM(cost) / SUM(distance_km), never AVG of per-shipment ratios."
+      },
+      {
+        "cause": "Empty deadhead/return legs adding cost with no billable shipment",
+        "how_it_inflates": "If repositioning or empty return legs carry a cost but no shipment_id, attributing their cost to the delivered-shipment count inflates cost per shipment because the denominator excludes the empty legs that drove the numerator.",
+        "detection_sql": "SELECT l.leg_type, COUNT(*) AS legs, SUM(l.cost) AS total_cost, COUNT(CASE WHEN l.shipment_id IS NULL THEN 1 END) AS empty_legs FROM legs l GROUP BY l.leg_type ORDER BY total_cost DESC",
+        "fix": "Decide the costing basis explicitly: either allocate deadhead cost across paid shipments on the route, or report a separate empty-mile cost line. Keep numerator and denominator on the same basis."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Accrued fuel surcharges or detention not yet posted",
+        "how_it_deflates": "Carrier invoices often post fuel surcharges and detention fees weeks after the move. If recent periods only have base line-haul cost loaded, cost per shipment looks artificially low until the accessorials arrive.",
+        "detection_sql": "SELECT DATE_TRUNC('month', s.ship_date) AS month, COUNT(DISTINCT s.shipment_id) AS shipments, SUM(s.cost) AS total_cost, MAX(sc.loaded_at) AS last_cost_load FROM shipments s LEFT JOIN shipment_costs sc ON s.shipment_id = sc.shipment_id GROUP BY 1 ORDER BY 1 DESC LIMIT 6",
+        "fix": "Apply an accrual estimate for unposted accessorials in recent periods, or flag the latest months as cost-incomplete until invoices fully load."
+      },
+      {
+        "cause": "Multi-stop shipments counted once but covering many drops",
+        "how_it_deflates": "If a single shipment_id covers a multi-drop route with several deliveries, dividing its cost by COUNT(DISTINCT shipment_id) spreads the route cost over one unit, understating per-delivery cost relative to single-drop shipments.",
+        "detection_sql": "SELECT s.shipment_id, COUNT(DISTINCT s.stop_id) AS drops, s.cost, ROUND(s.cost / NULLIF(COUNT(DISTINCT s.stop_id),0), 2) AS cost_per_drop FROM shipments s WHERE s.status='delivered' GROUP BY s.shipment_id, s.cost HAVING COUNT(DISTINCT s.stop_id) > 1 ORDER BY drops DESC LIMIT 20",
+        "fix": "Define the unit clearly: cost per shipment vs cost per delivery/drop. For per-delivery cost, divide by the count of stops/deliveries, not shipments."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is cost per km computed as SUM(cost)/SUM(distance) or as an average of per-shipment ratios?",
+      "Are cost rows being fanned out by a join to legs, stops, or items?",
+      "Are empty/deadhead legs included in the numerator but excluded from the denominator?",
+      "Have all accessorials (fuel, detention) posted for the recent periods, or is cost incomplete?",
+      "Is the unit a shipment or a delivery/drop, and is multi-stop handled consistently?",
+      "Did lane mix, fuel price, or carrier rate shift to explain the change?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "log_cost_per_shipment up, log_cost_per_km flat",
+        "then": "Average trip distance grew (mix shifted to longer lanes), not the rate. Per-km efficiency is unchanged. Verify with average distance_km trend."
+      },
+      {
+        "if": "log_cost_per_km up, distance flat",
+        "then": "A genuine rate increase: fuel surcharge, carrier price hike, or more handling touches per km. Investigate carrier rate cards and fuel index."
+      },
+      {
+        "if": "log_cost_per_shipment up, log_capacity_utilization down",
+        "then": "Trucks are running emptier, so fixed trip cost is spread over fewer shipments/kg. Consolidate loads to dilute cost. Cross-check load factor."
+      },
+      {
+        "if": "log_cost_per_km up, log_transit_time up on same lanes",
+        "then": "Rerouting or congestion is adding legs/handling, raising both cost and time. Scope to the affected lanes and routing changes."
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Cost per shipment rises",
+        "and_also": "log_capacity_utilization falls in the same period",
+        "shared_root_cause": "Vehicles are running below capacity, so the fixed cost of each trip is amortized over fewer shipments and kilograms. Demand softening or poor load planning leaves trucks half-empty. The fix is consolidation/load planning, not carrier renegotiation. Check load factor by lane.",
+        "diagnostic_sql": "SELECT s.origin, s.destination, DATE_TRUNC('month', s.ship_date) AS month, ROUND(SUM(s.cost)/NULLIF(COUNT(DISTINCT s.shipment_id),0),2) AS cost_per_shipment, ROUND(SUM(s.weight_kg)/NULLIF(SUM(v.capacity_kg),0)*100,2) AS load_factor_pct FROM shipments s JOIN vehicles v ON s.vehicle_id = v.vehicle_id WHERE s.status='delivered' GROUP BY 1,2,3 ORDER BY 3, cost_per_shipment DESC LIMIT 20"
+      },
+      {
+        "if_this_metric": "Cost per km rises",
+        "and_also": "log_transit_time also rises",
+        "shared_root_cause": "Routing disruption (hub closure, congestion, mode downgrade) adds handling legs and detour distance, increasing both cost and time per shipment together. Each extra touch costs money and adds dwell. Investigate leg_count and routing by lane.",
+        "diagnostic_sql": "SELECT s.origin, s.destination, DATE_TRUNC('month', s.ship_date) AS month, ROUND(SUM(s.cost)/NULLIF(SUM(s.distance_km),0),4) AS cost_per_km, ROUND(AVG(EXTRACT(EPOCH FROM (s.actual_delivery - s.ship_date))/86400.0),2) AS avg_transit_days, ROUND(AVG(s.leg_count),2) AS avg_legs FROM shipments s WHERE s.status='delivered' GROUP BY 1,2,3 ORDER BY 3, cost_per_km DESC LIMIT 20"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Computing cost per km as AVG(cost / distance_km)",
+        "why_wrong": "Averaging per-shipment ratios over-weights short shipments, where a fixed minimum/handling charge spread over few km produces a very high per-km rate. The network rate must be total cost divided by total distance so every kilometer is weighted equally.",
+        "bad_sql": "SELECT AVG(s.cost / s.distance_km) AS cost_per_km FROM shipments s WHERE s.status='delivered'",
+        "good_sql": "SELECT ROUND(SUM(s.cost) / NULLIF(SUM(s.distance_km), 0), 4) AS cost_per_km FROM shipments s WHERE s.status='delivered' AND s.cost IS NOT NULL AND s.distance_km > 0"
+      },
+      {
+        "pattern": "Summing cost after joining to a leg or item table",
+        "why_wrong": "Shipment-level cost fans out once per leg or item in the join, multiplying the cost by the number of legs/items. The result inflates total cost and cost per shipment. Cost must be aggregated to the shipment grain before any fan-out join.",
+        "bad_sql": "SELECT SUM(s.cost) / COUNT(DISTINCT s.shipment_id) AS cost_per_shipment FROM shipments s JOIN legs l ON s.shipment_id = l.shipment_id",
+        "good_sql": "WITH cost_per_shp AS (\n  SELECT shipment_id, SUM(amount) AS cost FROM shipment_costs GROUP BY shipment_id\n)\nSELECT ROUND(SUM(c.cost) / NULLIF(COUNT(DISTINCT c.shipment_id), 0), 2) AS cost_per_shipment FROM cost_per_shp c"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT ROUND(SUM(s.cost) / NULLIF(COUNT(DISTINCT s.shipment_id), 0), 2) AS cost_per_shipment, ROUND(SUM(s.cost) / NULLIF(SUM(s.distance_km), 0), 4) AS cost_per_km FROM shipments s WHERE s.status = 'delivered' AND s.cost IS NOT NULL AND s.ship_date BETWEEN '2024-01-01' AND '2024-01-31'",
+      "intermediate_sql": "SELECT s.carrier, s.lane_type, COUNT(DISTINCT s.shipment_id) AS shipments, SUM(s.distance_km) AS total_km, ROUND(SUM(s.cost)/NULLIF(COUNT(DISTINCT s.shipment_id),0),2) AS cost_per_shipment, ROUND(SUM(s.cost)/NULLIF(SUM(s.distance_km),0),4) AS cost_per_km FROM shipments s WHERE s.status='delivered' AND s.cost IS NOT NULL GROUP BY 1, 2 ORDER BY cost_per_km DESC",
+      "advanced_sql": "WITH shipment_cost AS (\n  -- Grain: one row per shipment with cost pre-aggregated to avoid leg/charge fan-out\n  SELECT\n    s.shipment_id,\n    s.carrier,\n    s.origin,\n    s.destination,\n    s.distance_km,\n    DATE_TRUNC('month', s.ship_date) AS month,\n    COALESCE(c.cost, s.cost) AS cost\n  FROM shipments s\n  LEFT JOIN (\n    SELECT shipment_id, SUM(amount) AS cost FROM shipment_costs GROUP BY shipment_id\n  ) c ON s.shipment_id = c.shipment_id\n  WHERE s.status = 'delivered'\n),\nmonthly AS (\n  SELECT\n    month,\n    carrier,\n    COUNT(DISTINCT shipment_id) AS shipments,\n    SUM(distance_km) AS total_km,\n    ROUND(SUM(cost) / NULLIF(COUNT(DISTINCT shipment_id), 0), 2) AS cost_per_shipment,\n    ROUND(SUM(cost) / NULLIF(SUM(distance_km), 0), 4) AS cost_per_km\n  FROM shipment_cost\n  GROUP BY 1, 2\n)\nSELECT\n  month,\n  carrier,\n  shipments,\n  cost_per_shipment,\n  cost_per_km,\n  ROUND((cost_per_km - LAG(cost_per_km) OVER (PARTITION BY carrier ORDER BY month)) / NULLIF(LAG(cost_per_km) OVER (PARTITION BY carrier ORDER BY month), 0) * 100, 2) AS cost_per_km_mom_pct\nFROM monthly\nORDER BY carrier, month"
+    }
+  },
+  {
+    "id": "log_capacity_utilization",
+    "title": "Vehicle Capacity Utilization (Load Factor)",
+    "intent_tags": [
+      "capacity utilization",
+      "load factor",
+      "vehicle utilization",
+      "truck fill rate",
+      "how full are the trucks",
+      "weight utilization",
+      "payload utilization",
+      "fleet load factor",
+      "asset utilization logistics",
+      "container fill rate",
+      "how efficiently are vehicles loaded"
+    ],
+    "sql_features": [
+      "aggregation",
+      "nullif",
+      "weighted_average",
+      "ratio"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "ratio",
+    "when_to_use": [
+      "measure how full vehicles are relative to their capacity",
+      "identify under-loaded trips and consolidation opportunities",
+      "track fleet efficiency and asset productivity",
+      "support cost-per-shipment reduction via better load planning",
+      "compare utilization across vehicle types, lanes, or depots"
+    ],
+    "related_patterns": [
+      "log_cost_per_shipment",
+      "log_transit_time",
+      "log_otd"
+    ],
+    "business_definition": "Total weight (or volume) carried divided by total available capacity across trips in a period, expressed as a percentage. Load factor = SUM(weight_kg) / SUM(capacity_kg) at the trip grain. It must be capacity-weighted (total used over total available), not a flat average of per-trip percentages, so large-capacity vehicles count proportionally.",
+    "metric_nature": {
+      "what_it_measures": "How effectively vehicle capacity is being used. A high load factor means trucks run full and fixed trip costs are well amortized.",
+      "what_it_does_not_measure": "Whether the trip was necessary or profitable, or volumetric fill when freight is light-but-bulky (weight utilization can be low while the truck is physically full). Track volume utilization separately for cube-out cases.",
+      "common_misconception": "Load factor is not the simple average of each trip's fill percentage. Averaging per-trip percentages weights a tiny van and a full semi equally. It also is not computed over all vehicles in the fleet; empty repositioning/return legs and idle vehicles must be handled deliberately, because counting empty return legs in the denominator deflates utilization."
+    },
+    "template": "SELECT ROUND(SUM(t.weight_kg) / NULLIF(SUM(v.capacity_kg), 0) * 100, 2) AS load_factor_pct FROM trips t JOIN vehicles v ON t.vehicle_id = v.vehicle_id WHERE t.leg_type = 'loaded' AND t.trip_date BETWEEN {start_date} AND {end_date}",
+    "inflation_causes": [
+      {
+        "cause": "Using max observed load instead of trip-time load",
+        "how_it_inflates": "If weight_kg reflects the peak load at any point on a multi-stop route (before any drops) rather than the average or the load on each leg, utilization is computed against the fullest moment and overstates how full the vehicle was across the whole trip.",
+        "detection_sql": "SELECT t.trip_id, MAX(t.leg_weight_kg) AS peak_leg, AVG(t.leg_weight_kg) AS avg_leg, v.capacity_kg FROM trips t JOIN vehicles v ON t.vehicle_id = v.vehicle_id GROUP BY t.trip_id, v.capacity_kg ORDER BY peak_leg DESC LIMIT 20",
+        "fix": "Compute utilization per leg (load on that leg / capacity) and aggregate, or use a distance-weighted average load across legs, rather than the peak."
+      },
+      {
+        "cause": "Capacity understated by using net payload after equipment weight inconsistently",
+        "how_it_inflates": "If capacity_kg is sometimes the net legal payload and sometimes a smaller usable figure, dividing actual weight by the smaller capacity overstates the fill percentage above what is physically meaningful.",
+        "detection_sql": "SELECT v.vehicle_type, MIN(v.capacity_kg) AS min_cap, MAX(v.capacity_kg) AS max_cap, COUNT(*) AS vehicles FROM vehicles v GROUP BY v.vehicle_type ORDER BY vehicles DESC",
+        "fix": "Standardize capacity_kg to a single consistent definition (legal payload) per vehicle_type and validate against vehicle master data."
+      },
+      {
+        "cause": "Light-but-bulky freight scored on weight while truck is cubed out",
+        "how_it_inflates": "Weight-based load factor can read high or be misinterpreted as headroom when a truck is physically full of low-density freight. Reporting only weight utilization hides that no more volume fits, mis-signaling consolidation room.",
+        "detection_sql": "SELECT t.trip_id, ROUND(t.weight_kg / NULLIF(v.capacity_kg,0)*100,2) AS weight_pct, ROUND(t.volume_m3 / NULLIF(v.volume_capacity_m3,0)*100,2) AS volume_pct FROM trips t JOIN vehicles v ON t.vehicle_id = v.vehicle_id WHERE t.leg_type='loaded' ORDER BY volume_pct DESC LIMIT 20",
+        "fix": "Report both weight and volume utilization; use MAX(weight_pct, volume_pct) as the effective fill so cube-out trips are not flagged as having capacity."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Empty return/deadhead legs counted in the denominator",
+        "how_it_deflates": "Including empty return legs (leg_type = 'empty') adds their full capacity_kg to the denominator while contributing zero weight to the numerator, halving load factor on out-and-back routes even when the loaded leg was full.",
+        "detection_sql": "SELECT t.leg_type, COUNT(*) AS legs, SUM(t.weight_kg) AS total_weight, SUM(v.capacity_kg) AS total_capacity, ROUND(SUM(t.weight_kg)/NULLIF(SUM(v.capacity_kg),0)*100,2) AS load_factor_pct FROM trips t JOIN vehicles v ON t.vehicle_id = v.vehicle_id GROUP BY t.leg_type",
+        "fix": "Scope loaded utilization to leg_type = 'loaded'. Report empty-mile percentage as a separate efficiency metric rather than diluting load factor."
+      },
+      {
+        "cause": "Idle/unused vehicles in the fleet included in the denominator",
+        "how_it_deflates": "If utilization is computed over the entire vehicle master (every truck's capacity) rather than over trips actually dispatched, parked vehicles add capacity with no load, deflating the operational load factor.",
+        "detection_sql": "SELECT COUNT(*) AS total_vehicles, COUNT(DISTINCT t.vehicle_id) AS dispatched_vehicles, COUNT(*) - COUNT(DISTINCT t.vehicle_id) AS idle_vehicles FROM vehicles v LEFT JOIN trips t ON v.vehicle_id = t.vehicle_id AND t.trip_date >= CURRENT_DATE - INTERVAL '30 days'",
+        "fix": "Compute load factor over dispatched trips, not the full fleet. Track fleet idle/availability as a distinct utilization-of-assets metric."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is load factor capacity-weighted (SUM used / SUM available) or a flat average of per-trip percentages?",
+      "Are empty return/deadhead legs included in the denominator, deflating the rate?",
+      "Are idle, undispatched vehicles being counted in available capacity?",
+      "Is utilization measured against trip-time load or against a peak/max load that overstates fill?",
+      "Is the freight cubing out on volume while weight utilization looks low?",
+      "Is capacity_kg defined consistently across vehicle types?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "log_capacity_utilization down, log_cost_per_shipment up",
+        "then": "Emptier trucks spread fixed trip cost over fewer shipments. Under-loading is driving unit cost up. Consolidate loads or right-size vehicles."
+      },
+      {
+        "if": "log_capacity_utilization down, empty-mile pct up",
+        "then": "More repositioning/deadhead is dragging utilization. A network balance problem (inbound/outbound imbalance). Investigate backhaul opportunities."
+      },
+      {
+        "if": "log_capacity_utilization low on weight, high on volume",
+        "then": "Freight is light-but-bulky and cubing out. The truck is full physically; weight headroom is illusory. Use the volume constraint for planning."
+      },
+      {
+        "if": "log_capacity_utilization up, log_otd down",
+        "then": "Packing trucks fuller may add stops/handling that slow delivery. Check whether consolidation extended routes past promise windows."
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "Load factor drops",
+        "and_also": "log_cost_per_shipment rises in the same period",
+        "shared_root_cause": "Trucks are running below capacity, so each trip's fixed cost is amortized over less freight. Demand softness or poor load consolidation leaves capacity unused. The two metrics move inversely off the same root cause; fixing load planning improves both. Check load factor and cost by lane and depot.",
+        "diagnostic_sql": "SELECT t.depot, DATE_TRUNC('month', t.trip_date) AS month, ROUND(SUM(t.weight_kg)/NULLIF(SUM(v.capacity_kg),0)*100,2) AS load_factor_pct, ROUND(SUM(t.cost)/NULLIF(COUNT(DISTINCT t.shipment_id),0),2) AS cost_per_shipment FROM trips t JOIN vehicles v ON t.vehicle_id = v.vehicle_id WHERE t.leg_type='loaded' GROUP BY 1,2 ORDER BY 2, load_factor_pct ASC LIMIT 20"
+      },
+      {
+        "if_this_metric": "Load factor is high but empty-mile percentage is also high",
+        "and_also": "log_cost_per_km is elevated",
+        "shared_root_cause": "Loaded legs are full but the network runs many empty return legs (directional imbalance), so total cost per km across the round trip is high despite good loaded utilization. The signal is a backhaul/network-balance problem. Look at loaded vs empty km by lane direction.",
+        "diagnostic_sql": "SELECT t.origin, t.destination, ROUND(SUM(CASE WHEN t.leg_type='loaded' THEN t.distance_km ELSE 0 END),0) AS loaded_km, ROUND(SUM(CASE WHEN t.leg_type='empty' THEN t.distance_km ELSE 0 END),0) AS empty_km, ROUND(SUM(CASE WHEN t.leg_type='empty' THEN t.distance_km ELSE 0 END)*100.0/NULLIF(SUM(t.distance_km),0),2) AS empty_mile_pct, ROUND(SUM(t.cost)/NULLIF(SUM(t.distance_km),0),4) AS cost_per_km FROM trips t GROUP BY 1,2 ORDER BY empty_mile_pct DESC LIMIT 20"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Averaging per-trip fill percentages (AVG of ratios)",
+        "why_wrong": "AVG(weight_kg / capacity_kg) weights a 1-ton van and a 24-ton semi equally. A fleet with many tiny full vans and a few empty semis reads as high utilization even though most capacity is idle. Load factor must be SUM(weight)/SUM(capacity) so each kg of capacity counts equally.",
+        "bad_sql": "SELECT AVG(t.weight_kg / v.capacity_kg) * 100 AS load_factor FROM trips t JOIN vehicles v ON t.vehicle_id = v.vehicle_id",
+        "good_sql": "SELECT ROUND(SUM(t.weight_kg) / NULLIF(SUM(v.capacity_kg), 0) * 100, 2) AS load_factor_pct FROM trips t JOIN vehicles v ON t.vehicle_id = v.vehicle_id WHERE t.leg_type='loaded'"
+      },
+      {
+        "pattern": "Including empty return legs in the capacity denominator",
+        "why_wrong": "Empty deadhead legs add their full capacity to the denominator with zero weight in the numerator, mechanically halving load factor on out-and-back routes and conflating loaded efficiency with network balance. Loaded utilization and empty-mile percentage are different metrics.",
+        "bad_sql": "SELECT SUM(t.weight_kg) / SUM(v.capacity_kg) * 100 AS load_factor FROM trips t JOIN vehicles v ON t.vehicle_id = v.vehicle_id",
+        "good_sql": "SELECT ROUND(SUM(t.weight_kg) / NULLIF(SUM(v.capacity_kg), 0) * 100, 2) AS load_factor_pct FROM trips t JOIN vehicles v ON t.vehicle_id = v.vehicle_id WHERE t.leg_type = 'loaded'"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT ROUND(SUM(t.weight_kg) / NULLIF(SUM(v.capacity_kg), 0) * 100, 2) AS load_factor_pct FROM trips t JOIN vehicles v ON t.vehicle_id = v.vehicle_id WHERE t.leg_type = 'loaded' AND t.trip_date BETWEEN '2024-01-01' AND '2024-01-31'",
+      "intermediate_sql": "SELECT v.vehicle_type, t.depot, COUNT(DISTINCT t.trip_id) AS loaded_trips, ROUND(SUM(t.weight_kg)/NULLIF(SUM(v.capacity_kg),0)*100,2) AS weight_load_factor_pct, ROUND(SUM(t.volume_m3)/NULLIF(SUM(v.volume_capacity_m3),0)*100,2) AS volume_load_factor_pct FROM trips t JOIN vehicles v ON t.vehicle_id = v.vehicle_id WHERE t.leg_type='loaded' GROUP BY 1, 2 ORDER BY weight_load_factor_pct ASC",
+      "advanced_sql": "WITH loaded_legs AS (\n  -- Grain: one row per loaded leg. Empty legs tracked separately, idle vehicles excluded.\n  SELECT\n    t.trip_id,\n    t.depot,\n    v.vehicle_type,\n    DATE_TRUNC('month', t.trip_date) AS month,\n    t.weight_kg,\n    t.volume_m3,\n    v.capacity_kg,\n    v.volume_capacity_m3\n  FROM trips t\n  JOIN vehicles v ON t.vehicle_id = v.vehicle_id\n  WHERE t.leg_type = 'loaded'\n),\nempty_summary AS (\n  SELECT\n    DATE_TRUNC('month', t.trip_date) AS month,\n    t.depot,\n    SUM(CASE WHEN t.leg_type = 'empty' THEN t.distance_km ELSE 0 END) AS empty_km,\n    SUM(t.distance_km) AS total_km\n  FROM trips t\n  GROUP BY 1, 2\n),\nutil AS (\n  SELECT\n    month,\n    depot,\n    COUNT(DISTINCT trip_id) AS loaded_trips,\n    ROUND(SUM(weight_kg) / NULLIF(SUM(capacity_kg), 0) * 100, 2) AS weight_load_factor_pct,\n    ROUND(SUM(volume_m3) / NULLIF(SUM(volume_capacity_m3), 0) * 100, 2) AS volume_load_factor_pct\n  FROM loaded_legs\n  GROUP BY 1, 2\n)\nSELECT\n  u.month,\n  u.depot,\n  u.loaded_trips,\n  u.weight_load_factor_pct,\n  u.volume_load_factor_pct,\n  GREATEST(u.weight_load_factor_pct, u.volume_load_factor_pct) AS effective_fill_pct,\n  ROUND(e.empty_km * 100.0 / NULLIF(e.total_km, 0), 2) AS empty_mile_pct\nFROM util u\nLEFT JOIN empty_summary e ON u.month = e.month AND u.depot = e.depot\nORDER BY u.depot, u.month"
+    }
+  },
+  {
+    "id": "log_first_attempt",
+    "title": "First-Attempt Delivery Success Rate",
+    "intent_tags": [
+      "first attempt delivery",
+      "first attempt success rate",
+      "fads",
+      "first time delivery rate",
+      "delivered on first try",
+      "failed delivery rate",
+      "redelivery rate",
+      "what percent delivered first time",
+      "first pass delivery success",
+      "delivery attempt success",
+      "right first time delivery"
+    ],
+    "sql_features": [
+      "aggregation",
+      "conditional_count",
+      "nullif",
+      "window_function"
+    ],
+    "difficulty": "intermediate",
+    "pattern_type": "ratio",
+    "when_to_use": [
+      "measure the share of shipments delivered on the first attempt",
+      "quantify the cost and delay impact of redeliveries",
+      "diagnose address-quality and recipient-availability problems",
+      "compare last-mile execution across depots, drivers, and regions",
+      "track customer-experience friction in the final mile"
+    ],
+    "related_patterns": [
+      "log_otd",
+      "log_otif",
+      "log_cost_per_shipment"
+    ],
+    "business_definition": "Count of shipments that reached delivered status on their first delivery attempt, divided by the count of shipments that were ultimately delivered (or attempted) in the period, expressed as a percentage. First-attempt success = COUNT(shipments where delivery_attempts = 1 and status = 'delivered') / COUNT(delivered shipments). Each failed attempt triggers a costly redelivery.",
+    "metric_nature": {
+      "what_it_measures": "How often a parcel is successfully handed over on the very first try. A direct signal of last-mile efficiency, address quality, and recipient availability.",
+      "what_it_does_not_measure": "Whether the delivery was on-time (a first-attempt success can still be late) or in-full. It also does not capture deliveries left in safe/parcel locker if those are recorded as a distinct outcome rather than a successful first attempt.",
+      "common_misconception": "First-attempt success is per shipment, not per attempt. Dividing successful attempts by total attempts gives a per-attempt success rate (which can read artificially high because most attempts after the first do succeed). The metric must count, among delivered shipments, those whose attempt_number = 1."
+    },
+    "template": "SELECT ROUND(COUNT(CASE WHEN s.delivery_attempts = 1 THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS first_attempt_pct FROM shipments s WHERE s.status = 'delivered' AND s.delivery_attempts IS NOT NULL AND s.actual_delivery BETWEEN {start_date} AND {end_date}",
+    "inflation_causes": [
+      {
+        "cause": "Attempts before the first scan not recorded",
+        "how_it_inflates": "If a driver marks a stop as 'not attempted' or skips logging a failed knock, delivery_attempts undercounts real attempts and a shipment that actually took two tries records as delivery_attempts = 1, inflating first-attempt success.",
+        "detection_sql": "SELECT s.shipment_id, s.delivery_attempts, COUNT(a.attempt_id) AS logged_attempts FROM shipments s LEFT JOIN delivery_attempts_log a ON s.shipment_id = a.shipment_id WHERE s.status='delivered' GROUP BY s.shipment_id, s.delivery_attempts HAVING COUNT(a.attempt_id) > s.delivery_attempts ORDER BY logged_attempts DESC LIMIT 20",
+        "fix": "Derive delivery_attempts from the attempt-log table (COUNT of attempt events) rather than a driver-entered counter, so unlogged failed attempts are captured."
+      },
+      {
+        "cause": "Safe-place/locker drops counted as first-attempt successes for at-door deliveries",
+        "how_it_inflates": "If a parcel left in a safe place or locker after a failed knock is recorded as delivered on attempt 1, shipments that the recipient was not available for inflate the at-door first-attempt rate.",
+        "detection_sql": "SELECT s.delivery_outcome, COUNT(*) AS shipments, ROUND(AVG(s.delivery_attempts),2) AS avg_attempts FROM shipments s WHERE s.status='delivered' GROUP BY s.delivery_outcome ORDER BY shipments DESC",
+        "fix": "Separate delivery_outcome (handed-to-recipient vs safe-place vs locker) and report at-door first-attempt success distinctly from leave-safe outcomes."
+      },
+      {
+        "cause": "Redelivered shipments dropped from the denominator",
+        "how_it_inflates": "If a failed-then-redelivered parcel is recorded as a new shipment_id on redelivery and only the successful redelivery row is kept, the original failed attempt vanishes from the denominator, inflating first-attempt success.",
+        "detection_sql": "SELECT s.parent_shipment_id, COUNT(*) AS shipment_rows FROM shipments s WHERE s.parent_shipment_id IS NOT NULL GROUP BY s.parent_shipment_id HAVING COUNT(*) > 0 ORDER BY shipment_rows DESC LIMIT 20",
+        "fix": "Collapse redelivery chains to the original shipment via parent_shipment_id and compute attempts across the whole chain so the first failure counts."
+      }
+    ],
+    "deflation_causes": [
+      {
+        "cause": "Recipient-caused failures (not home, refused) counted against the carrier",
+        "how_it_deflates": "Attempts that failed because the recipient was absent or refused are outside the carrier's control. Counting them as first-attempt failures deflates the operational success rate that should measure carrier execution.",
+        "detection_sql": "SELECT a.failure_reason, COUNT(*) AS failed_attempts FROM delivery_attempts_log a WHERE a.attempt_number = 1 AND a.outcome = 'failed' GROUP BY a.failure_reason ORDER BY failed_attempts DESC",
+        "fix": "Report two rates: overall first-attempt success, and carrier-controllable first-attempt success that excludes recipient-not-home/refused reasons from the failure numerator."
+      },
+      {
+        "cause": "In-flight shipments with one pending attempt counted as failures",
+        "how_it_deflates": "A shipment still in the delivery process with one attempt logged but not yet delivered (status = 'in_transit') should not be in the success denominator yet. Including it understates first-attempt success because it has no success outcome yet.",
+        "detection_sql": "SELECT s.status, COUNT(*) AS shipments, ROUND(AVG(s.delivery_attempts),2) AS avg_attempts FROM shipments s WHERE s.delivery_attempts >= 1 GROUP BY s.status ORDER BY shipments DESC",
+        "fix": "Restrict the denominator to terminal-status shipments (status = 'delivered' or 'returned_to_sender') so in-flight parcels are excluded until resolved."
+      }
+    ],
+    "diagnostic_questions": [
+      "Is first-attempt success counted per shipment (attempt 1 of delivered) or per attempt (successes / all attempts)?",
+      "Is delivery_attempts derived from the attempt log or a driver-entered counter that may undercount?",
+      "Are safe-place/locker drops being treated as first-attempt successes for at-door deliveries?",
+      "Are redelivery chains collapsed to the original shipment, or do new shipment_ids hide the first failure?",
+      "Are recipient-caused failures (not home, refused) separated from carrier-controllable ones?",
+      "Is the denominator restricted to terminal-status shipments, excluding in-flight ones?"
+    ],
+    "causal_relationships": [
+      {
+        "if": "log_first_attempt down, log_otd down",
+        "then": "Failed attempts push deliveries past the promise. Last-mile execution is breaching SLAs. Investigate driver route density and address quality together."
+      },
+      {
+        "if": "log_first_attempt down, redelivery cost up",
+        "then": "Each failed attempt triggers a second costly trip. Failed first attempts are directly inflating last-mile cost per shipment. Quantify redelivery cost."
+      },
+      {
+        "if": "log_first_attempt down, recipient-not-home is top reason",
+        "then": "The cause is recipient availability, not carrier execution. Time-window scheduling or locker drops would help more than driver coaching."
+      },
+      {
+        "if": "log_first_attempt down on one depot",
+        "then": "A localized routing, staffing, or address-data problem at that depot, not a network issue. Scope to the depot's drivers and lanes."
+      }
+    ],
+    "cross_metric_signals": [
+      {
+        "if_this_metric": "First-attempt success drops",
+        "and_also": "log_cost_per_shipment rises in the last mile",
+        "shared_root_cause": "Failed first attempts each spawn a redelivery, adding a second trip's cost to the same parcel. The two metrics move together because every missed attempt is an extra paid trip. The fix is improving first-attempt success (address validation, time windows, lockers), which directly lowers cost. Quantify redelivery legs by depot.",
+        "diagnostic_sql": "SELECT s.depot, DATE_TRUNC('month', s.actual_delivery) AS month, ROUND(COUNT(CASE WHEN s.delivery_attempts = 1 THEN 1 END)*100.0/NULLIF(COUNT(*),0),2) AS first_attempt_pct, ROUND(AVG(s.delivery_attempts),2) AS avg_attempts, ROUND(SUM(s.last_mile_cost)/NULLIF(COUNT(DISTINCT s.shipment_id),0),2) AS last_mile_cost_per_shipment FROM shipments s WHERE s.status='delivered' GROUP BY 1,2 ORDER BY 2, first_attempt_pct ASC LIMIT 20"
+      },
+      {
+        "if_this_metric": "First-attempt success drops",
+        "and_also": "log_otif declines via its on-time leg",
+        "shared_root_cause": "Redeliveries delay final handover past the promise, failing the on-time component of OTIF. A last-mile execution problem cascades from first-attempt failures into SLA breaches. If in-full is stable, the OTIF damage is entirely first-attempt driven. Investigate by depot and failure reason.",
+        "diagnostic_sql": "SELECT s.depot, a.failure_reason, COUNT(DISTINCT s.shipment_id) AS shipments, ROUND(COUNT(CASE WHEN s.delivery_attempts = 1 THEN 1 END)*100.0/NULLIF(COUNT(*),0),2) AS first_attempt_pct, ROUND(COUNT(CASE WHEN s.actual_delivery <= s.promised_delivery THEN 1 END)*100.0/NULLIF(COUNT(*),0),2) AS on_time_pct FROM shipments s LEFT JOIN delivery_attempts_log a ON s.shipment_id = a.shipment_id AND a.attempt_number = 1 AND a.outcome = 'failed' WHERE s.status='delivered' GROUP BY 1, 2 ORDER BY shipments DESC LIMIT 20"
+      }
+    ],
+    "anti_patterns": [
+      {
+        "pattern": "Dividing successful attempts by total attempts (per-attempt rate)",
+        "why_wrong": "This computes the success rate of attempts, not of shipments. Because nearly every redelivery eventually succeeds, the per-attempt rate is biased high and masks how many shipments needed more than one try. The metric must be, among delivered shipments, the share with attempt 1.",
+        "bad_sql": "SELECT COUNT(CASE WHEN a.outcome='success' THEN 1 END) * 100.0 / COUNT(*) AS first_attempt_rate FROM delivery_attempts_log a",
+        "good_sql": "SELECT ROUND(COUNT(CASE WHEN s.delivery_attempts = 1 THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS first_attempt_pct FROM shipments s WHERE s.status = 'delivered' AND s.delivery_attempts IS NOT NULL"
+      },
+      {
+        "pattern": "Counting redelivery rows as separate shipments (rate over 1 from fan-out)",
+        "why_wrong": "If each redelivery attempt is its own shipment row and you count delivered rows over distinct original shipments, a parcel delivered on the third try contributes multiple delivered rows, and the ratio of successes to shipments can exceed 100%. A rate above 1 is the tell-tale sign of join fan-out. Collapse the redelivery chain first.",
+        "bad_sql": "SELECT COUNT(CASE WHEN s.status='delivered' THEN 1 END) * 100.0 / COUNT(DISTINCT s.parent_shipment_id) AS first_attempt_rate FROM shipments s",
+        "good_sql": "WITH chains AS (\n  SELECT COALESCE(parent_shipment_id, shipment_id) AS original_id, MAX(CASE WHEN status='delivered' THEN 1 ELSE 0 END) AS delivered, SUM(delivery_attempts) AS total_attempts FROM shipments GROUP BY COALESCE(parent_shipment_id, shipment_id)\n)\nSELECT ROUND(COUNT(CASE WHEN delivered=1 AND total_attempts=1 THEN 1 END) * 100.0 / NULLIF(COUNT(CASE WHEN delivered=1 THEN 1 END), 0), 2) AS first_attempt_pct FROM chains"
+      }
+    ],
+    "sql_assets": {
+      "basic_sql": "SELECT ROUND(COUNT(CASE WHEN s.delivery_attempts = 1 THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS first_attempt_pct FROM shipments s WHERE s.status = 'delivered' AND s.delivery_attempts IS NOT NULL AND s.actual_delivery BETWEEN '2024-01-01' AND '2024-01-31'",
+      "intermediate_sql": "SELECT s.depot, s.region, DATE_TRUNC('month', s.actual_delivery) AS month, COUNT(*) AS delivered, COUNT(CASE WHEN s.delivery_attempts = 1 THEN 1 END) AS first_attempt_ok, ROUND(COUNT(CASE WHEN s.delivery_attempts = 1 THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS first_attempt_pct, ROUND(AVG(s.delivery_attempts), 2) AS avg_attempts FROM shipments s WHERE s.status='delivered' AND s.delivery_attempts IS NOT NULL GROUP BY 1, 2, 3 ORDER BY 3, first_attempt_pct ASC",
+      "advanced_sql": "WITH delivery_chain AS (\n  -- Grain: one row per original shipment, collapsing redelivery rows via parent_shipment_id\n  SELECT\n    COALESCE(s.parent_shipment_id, s.shipment_id) AS original_id,\n    MAX(s.depot) AS depot,\n    DATE_TRUNC('month', MAX(s.actual_delivery)) AS month,\n    MAX(CASE WHEN s.status = 'delivered' THEN 1 ELSE 0 END) AS delivered,\n    SUM(COALESCE(s.delivery_attempts, 0)) AS total_attempts\n  FROM shipments s\n  WHERE s.status IN ('delivered', 'returned_to_sender')\n  GROUP BY COALESCE(s.parent_shipment_id, s.shipment_id)\n),\nmonthly AS (\n  SELECT\n    month,\n    depot,\n    COUNT(CASE WHEN delivered = 1 THEN 1 END) AS delivered_shipments,\n    COUNT(CASE WHEN delivered = 1 AND total_attempts = 1 THEN 1 END) AS first_attempt_ok,\n    ROUND(COUNT(CASE WHEN delivered = 1 AND total_attempts = 1 THEN 1 END) * 100.0 / NULLIF(COUNT(CASE WHEN delivered = 1 THEN 1 END), 0), 2) AS first_attempt_pct\n  FROM delivery_chain\n  GROUP BY 1, 2\n)\nSELECT\n  month,\n  depot,\n  delivered_shipments,\n  first_attempt_pct,\n  LAG(first_attempt_pct) OVER (PARTITION BY depot ORDER BY month) AS prev_pct,\n  ROUND(first_attempt_pct - LAG(first_attempt_pct) OVER (PARTITION BY depot ORDER BY month), 2) AS change_pp\nFROM monthly\nORDER BY depot, month"
+    }
+  }
+]
