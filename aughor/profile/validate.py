@@ -52,6 +52,52 @@ def _range_kind(unit_or_range: str) -> tuple[str, float | None]:
     return ("open", None)
 
 
+# Generic words in a metric name that don't identify WHICH metric it is — excluded
+# so the distinctive tokens are the entity nouns (conversion, roas, margin, …).
+_METRIC_GENERIC = frozenset(
+    "rate ratio percent pct total average avg per the of and a an level overall "
+    "current value score index amount number count share".split()
+)
+
+
+def profile_metric_ranges(profile) -> list[tuple]:
+    """Build [(distinctive_tokens, kind, max_bound)] from a profile's north-star
+    metrics so a FINDING can be checked against the metric's DECLARED sane range —
+    the authoritative answer to "is a conversion of 1.41 a bug?" (yes, it's 'ratio
+    0-1') vs "is a ROAS of 2.3 a bug?" (no, it's 'ratio 0-∞'). The text/keyword guess
+    can't tell those apart; the profile can."""
+    import re as _re
+    out: list[tuple] = []
+    for m in (getattr(profile, "north_star_metrics", None) or []):
+        name = getattr(m, "name", "") or ""
+        toks = frozenset(
+            t for t in _re.findall(r"[a-z][a-z0-9]{2,}", name.lower())
+            if t not in _METRIC_GENERIC
+        )
+        if not toks:
+            continue
+        kind, mx = _range_kind(getattr(m, "unit_or_range", "") or "")
+        out.append((toks, kind, mx))
+    return out
+
+
+def match_metric_range(text: str, ranges: list[tuple]) -> tuple | None:
+    """Return (kind, max_bound) of the profile metric whose distinctive tokens best
+    match `text` (a finding/SQL), or None. A metric matches only if a MAJORITY of its
+    distinctive tokens appear — so "cart-to-order conversion … 1.41" matches the
+    Conversion metric (bounded 0-1) but a finding that merely mentions 'channel' won't
+    spuriously bind to 'Channel-Level ROAS'."""
+    if not text or not ranges:
+        return None
+    low = text.lower()
+    best, best_hits = None, 0
+    for toks, kind, mx in ranges:
+        hits = sum(1 for t in toks if t in low)
+        if hits and hits >= (len(toks) + 1) // 2 and hits > best_hits:
+            best, best_hits = (kind, mx), hits
+    return best
+
+
 def _first_numeric(rows: list[list]) -> float | None:
     """The single scalar a value_sql is supposed to return — first numeric cell of
     the first row. None if absent/NULL/non-numeric (a value_sql that can't produce

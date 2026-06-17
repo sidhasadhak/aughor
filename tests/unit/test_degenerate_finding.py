@@ -66,6 +66,54 @@ def test_real_rows_not_degenerate():
     assert _is_degenerate_result([{"region": "EU", "rev": 1200}]) is False
 
 
+# ── Profile sane-range applied to findings ───────────────────────────────────────
+# The profile DECLARES each metric's range, which tells a bounded conversion (0-1, so
+# 1.41 is impossible) from an unbounded ROAS (0-∞, so 2.3 is fine) — a distinction the
+# keyword guess can't make. Origin: a "conversion 1.4138 by channel" card leaked.
+
+from types import SimpleNamespace as _NS
+from aughor.profile.validate import profile_metric_ranges as _ranges
+
+_PROFILE = _NS(north_star_metrics=[
+    _NS(name="Cart-to-Order Conversion Rate", unit_or_range="ratio 0-1"),
+    _NS(name="Channel-Level Marketing ROAS", unit_or_range="ratio 0-∞"),
+    _NS(name="Gross Margin %", unit_or_range="percent 0-100"),
+])
+_R = _ranges(_PROFILE)
+
+
+class TestProfileRange:
+    def test_conversion_above_one_is_dropped(self):
+        rows = [("ad_impression", "1.4138"), ("organic", "1.21"), ("email", "0.98")]
+        assert _is_degenerate_result(rows, "cart-to-order conversion rate: ad_impression leads at 1.4138",
+                                     "AS conversion_rate", _R) is True
+
+    def test_conversion_at_ceiling_is_dropped(self):
+        rows = [("a", "1.0"), ("b", "1.0")]
+        assert _is_degenerate_result(rows, "cart-to-order conversion rate of 1.0", "AS conversion_rate", _R) is True
+
+    def test_unbounded_roas_above_one_survives(self):
+        rows = [("TikTok", "2.3"), ("Meta", "1.1"), ("Google", "3.4")]
+        assert _is_degenerate_result(rows, "channel-level marketing ROAS: TikTok at 2.3", "AS roas", _R) is False
+
+    def test_unbounded_roas_at_one_survives(self):
+        # an OPEN metric must NOT be ceiling-dropped (1.0 is a real ROAS)
+        rows = [("a", "1.0"), ("b", "1.0")]
+        assert _is_degenerate_result(rows, "marketing ROAS is 1.0 across channels", "AS roas", _R) is False
+
+    def test_margin_in_range_survives(self):
+        rows = [("w1", "64.2"), ("w2", "64.3")]
+        assert _is_degenerate_result(rows, "gross margin percent trend", "AS gross_margin_pct", _R) is False
+
+    def test_margin_above_100_is_dropped(self):
+        rows = [("w1", "140.0"), ("w2", "64.0")]
+        assert _is_degenerate_result(rows, "gross margin percent", "AS gross_margin_pct", _R) is True
+
+    def test_no_profile_match_falls_back_to_keyword_ceiling(self):
+        rows = [("a", "1.0"), ("b", "1.0")]
+        assert _is_degenerate_result(rows, "some rate is 1.0 everywhere", "AS some_rate", _R) is True
+
+
 def test_no_data_interpretation_text_is_degenerate():
     rows = [("EU", 5)]  # rows look fine, but the interpreter said there's no data
     assert _is_degenerate_result(rows, "The query returned no data: 0 customers were found") is True

@@ -359,7 +359,7 @@ _RATE_CTX_RE = re.compile(
 )
 
 
-def _is_degenerate_result(rows, finding_text: str = "", sql: str = "") -> bool:
+def _is_degenerate_result(rows, finding_text: str = "", sql: str = "", metric_ranges=None) -> bool:
     """True when a Phase-8 result carries no trustworthy data — so it never becomes an
     insight (and so never reaches the Briefing). Cases:
 
@@ -371,17 +371,27 @@ def _is_degenerate_result(rows, finding_text: str = "", sql: str = "") -> bool:
          all-zero** metric must not appear in a Briefing — it reads as a confident finding
          ("$0 ROAS — no revenue captured") when it is really a query bug; the underlying
          data ($491M revenue) is intact. OR
-      3. a bounded RATE pinned at its MAX across every row — a 0..1 rate that is ≈1.0 (or a
-         0..100% rate ≈100) in EVERY segment is the same artifact as all-zero, one boundary
-         up: it's a broken denominator (cart→order conversion that counts only converted
-         carts → "100% conversion across all traffic sources", impossible) sold as a
-         glowing result. Gated on a rate signal in the SQL/finding text so a count-of-1 or
-         an always-true flag (legitimately constant at 1) is NOT mistaken for a saturated
-         rate. OR
+      3. a bounded RATE OUT OF its declared range — a 0..1 rate that comes out ≈1.0 in every
+         segment (broken denominator → "100% conversion across all traffic sources") OR
+         ABOVE 1 (a 141% conversion). The AUTHORITY is the profile when available: a finding
+         is matched to its north-star metric and its DECLARED sane range applied — so a
+         conversion (ratio 0-1) at 1.41 is dropped while a ROAS (ratio 0-∞) at 2.3 is kept.
+         Without a profile match it falls back to a keyword rate-signal + boundary check
+         (so a count-of-1 / always-true flag is not mistaken for a saturated rate). OR
       4. the interpretation text explicitly says "no data".
 
     A column with MIXED values (some at the boundary, some not) is real signal and
-    survives — only a metric flat NULL / flat zero / flat-at-its-ceiling is dropped."""
+    survives — only a metric flat NULL / flat zero / out-of-range is dropped."""
+    # The profile's declared range for THIS finding's metric, when we can match it —
+    # the precise authority that tells a bounded conversion from an unbounded ROAS.
+    matched = None
+    if metric_ranges:
+        try:
+            from aughor.profile.validate import match_metric_range
+            matched = match_metric_range(f"{finding_text}\n{sql}", metric_ranges)
+        except Exception:
+            matched = None
+    m_kind, m_max = (matched if matched else (None, None))
     rate_ctx = bool(_RATE_CTX_RE.search(f"{sql}\n{finding_text}"))
     if rows:
         # Normalise to row-lists (dict rows → values in stable key order).
@@ -404,10 +414,22 @@ def _is_degenerate_result(rows, finding_text: str = "", sql: str = "") -> bool:
                 continue             # non-numeric (a dimension) — not a dead measure
             if all(n == 0.0 for n in nums):
                 return True          # a NUMERIC column that is ZERO everywhere → no signal
-            # Bounded rate saturated at its ceiling across EVERY row (≥2 rows = "all
-            # segments"). Thresholds match the value_sql audit (round-to-boundary).
-            if rate_ctx and len(norm) >= 2:
-                lo, hi = min(nums), max(nums)
+            hi = max(nums)
+            # (a) Profile-authoritative range check: the matched metric is a BOUNDED rate
+            # and this column overshoots its ceiling → grain bug (conversion 1.41, 105%).
+            # Applies to a single column too (a per-channel rate need not span ≥2 rows to
+            # be impossible). A matched OPEN metric (ROAS) is explicitly exempt.
+            if m_max is not None and 0.0 <= min(nums) and hi <= m_max * 1.5:
+                # within plausible "rate domain" (not a count column that dwarfs the bound)
+                if hi > m_max * 1.05:
+                    return True      # above the declared bound → impossible rate
+                if len(norm) >= 2 and all(n >= m_max * 0.9995 for n in nums):
+                    return True      # pinned at the declared ceiling in every segment
+            # (b) Keyword fallback when no profile match — saturated-at-ceiling only (the
+            # >bound case is unsafe without knowing bounded-vs-unbounded). Skip entirely
+            # when we matched an OPEN metric (don't ceiling-drop a real ROAS=1.0).
+            elif matched is None and rate_ctx and len(norm) >= 2:
+                lo = min(nums)
                 if 0.0 <= lo and hi <= 1.0005 and all(n >= 0.9995 for n in nums):
                     return True      # 0..1 rate pinned at 1.0 in every segment
                 if 0.0 <= lo and hi <= 100.05 and all(n >= 99.95 for n in nums):
@@ -1737,6 +1759,8 @@ class SchemaExplorer:
         llm = get_provider("coder")
         _tc = getattr(sql_writer, "table_cols", {})
         _dialect = getattr(self._conn, "dialect", "duckdb")
+        from aughor.profile.validate import profile_metric_ranges
+        _mranges = profile_metric_ranges(profile)
         stored = 0
 
         for qi, q in enumerate(questions):
@@ -1783,7 +1807,7 @@ class SchemaExplorer:
                 rows = await self._run(sql, think=f"[pinned] {q[:60]}")
                 if not rows:
                     continue
-                if _is_degenerate_result(rows, "", sql):
+                if _is_degenerate_result(rows, q, sql, _mranges):
                     logger.info("[explorer:%s] Phase 8 (pinned): skipping Q%d — degenerate result",
                                 self.connection_id, qi)
                     continue
@@ -1806,7 +1830,7 @@ class SchemaExplorer:
                 except Exception:
                     continue
 
-                if _is_degenerate_result(rows, interp.finding, sql):
+                if _is_degenerate_result(rows, interp.finding, sql, _mranges):
                     continue
                 _prior_findings = [i.get("finding", "") for i in self._state.get("insights", [])]
                 if is_semantically_redundant(interp.finding, _prior_findings):
@@ -2011,11 +2035,17 @@ class SchemaExplorer:
         profile_block = ""
         profile_angles: list[str] = []
         _profile_for_pin = None
+        _metric_ranges: list = []   # (distinctive tokens, kind, max) per north-star metric
         try:
             from aughor.profile.infer import get_or_infer
             _bp = await _loop.run_in_executor(None, lambda: get_or_infer(self.connection_id))
             if _bp is not None:
                 _profile_for_pin = _bp
+                try:
+                    from aughor.profile.validate import profile_metric_ranges
+                    _metric_ranges = profile_metric_ranges(_bp)
+                except Exception:
+                    _metric_ranges = []
                 import re as _re
                 def _slug(s: str) -> str:
                     return _re.sub(r"[^a-z0-9]+", "_", (s or "").lower()).strip("_")[:40]
@@ -2984,10 +3014,10 @@ class SchemaExplorer:
 
                 # Drop "no data" findings — an empty/all-NULL result or an interpretation
                 # that says as much. They pollute the Briefing and turn into broken monitors.
-                if _is_degenerate_result(rows, interp.finding, sql):
+                if _is_degenerate_result(rows, interp.finding, sql, _metric_ranges):
                     logger.info(
                         "[explorer:%s] Phase 8: %s/%s — skipping degenerate finding "
-                        "(flat NULL / zero / rate-at-ceiling)",
+                        "(flat NULL / zero / out-of-range rate)",
                         self.connection_id, domain, nq.angle,
                     )
                     continue
