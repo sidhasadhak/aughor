@@ -154,6 +154,35 @@ def _explorer_for(conn_id: str, schema: str | None):
         return _explorers.get(f"{conn_id}__{schema}")
     return _explorers.get(conn_id)
 
+
+def _load_state(conn_id: str, schema: str | None) -> dict:
+    """Exploration state for a (connection, schema): the per-schema run for a specific
+    schema; the merged 'All schemas' aggregate when none is selected and the connection ran
+    per-schema; else the connection-level state."""
+    from aughor.explorer import store as _s
+    if schema:
+        return _s.load(_store_key(conn_id, schema))
+    if _s.schema_run_keys(conn_id):
+        return _s.load_aggregate(conn_id)
+    return _s.load(conn_id)
+
+
+def _domain_insights_for(conn_id: str, schema: str | None) -> dict:
+    """by_domain insights for a (connection, schema) — per-schema, aggregate, or conn-level."""
+    from aughor.explorer import store as _s
+    if schema:
+        return _s.get_domain_insights(_store_key(conn_id, schema))
+    if _s.schema_run_keys(conn_id):
+        return _s.get_aggregate_domain_insights(conn_id)
+    return _s.get_domain_insights(conn_id)
+
+
+def _needs_filter(conn_id: str, schema: str | None) -> bool:
+    """A specific-schema view needs the qualified post-filter ONLY when it falls back to the
+    connection-level state (the legacy single-run case). A per-schema run is already isolated;
+    the aggregate is intentionally the union — neither is filtered."""
+    return bool(schema) and _store_key(conn_id, schema) == conn_id
+
 from aughor.licensing import Capability, gate
 
 router = APIRouter(tags=["exploration"])
@@ -193,7 +222,7 @@ def get_exploration_status(conn_id: str, schema: str | None = None):
     explorer = _explorer_for(conn_id, schema)
     if explorer:
         return explorer._status.to_dict()
-    state = _expl_store.load(_store_key(conn_id, schema))
+    state = _load_state(conn_id, schema)
     # Restore counters persisted at completion time (survive server restarts)
     return {
         "connection_id": conn_id,
@@ -216,6 +245,8 @@ def get_exploration_status(conn_id: str, schema: str | None = None):
         "error": None,
         "domain_intel_skipped": state.get("domain_intel_skipped", False),
         "domain_intel_note": state.get("domain_intel_note"),
+        # {schema: phase} for the 'All schemas' aggregate — lets the UI show per-schema progress.
+        "per_schema": state.get("per_schema"),
     }
 
 
@@ -260,7 +291,7 @@ def time_to_first_insight_kpi(limit: int = 200):
 @router.get("/exploration/{conn_id}/findings")
 def get_exploration_findings(conn_id: str, schema: str | None = None):
     from aughor.explorer import store as _expl_store
-    state = _expl_store.load(_store_key(conn_id, schema))
+    state = _load_state(conn_id, schema)
     distributions = state.get("distributions", {})
 
     if distributions and any("col_type" not in v for v in distributions.values()):
@@ -292,7 +323,7 @@ def get_exploration_findings(conn_id: str, schema: str | None = None):
         "insights": state.get("insights", []),
     }
     # Scope to the shared schema selector (Domains layer) when one is supplied.
-    if schema:
+    if _needs_filter(conn_id, schema):
         result = _filter_findings_by_schema(result, conn_id, schema)
     return result
 
@@ -300,12 +331,11 @@ def get_exploration_findings(conn_id: str, schema: str | None = None):
 @router.get("/exploration/{conn_id}/domains")
 def get_domain_insights(conn_id: str, schema: str | None = None):
     from aughor.explorer import store as _expl_store
-    _k = _store_key(conn_id, schema)
-    state = _expl_store.load(_k)
+    state = _load_state(conn_id, schema)
     budgets  = state.get("domain_budgets", {})
     coverage = state.get("domain_coverage", {})
-    by_domain = _expl_store.get_domain_insights(_k)
-    if schema:
+    by_domain = _domain_insights_for(conn_id, schema)
+    if _needs_filter(conn_id, schema):
         by_domain = _filter_by_schema(by_domain, conn_id, schema)
     result = {}
     for domain, insights in by_domain.items():
@@ -323,8 +353,8 @@ def get_connection_patterns(conn_id: str, refresh: bool = False, schema: str | N
     """Return extracted patterns from domain intelligence for this connection."""
     from aughor.explorer import store as _expl_store
     from aughor.knowledge.patterns import get_patterns
-    by_domain = _expl_store.get_domain_insights(_store_key(conn_id, schema))
-    if schema:
+    by_domain = _domain_insights_for(conn_id, schema)
+    if _needs_filter(conn_id, schema):
         by_domain = _filter_by_schema(by_domain, conn_id, schema)
     patterns = get_patterns(conn_id, by_domain, force_refresh=refresh)
     return {"patterns": patterns, "count": len(patterns)}
@@ -355,8 +385,8 @@ def generate_briefing(conn_id: str, refresh: bool = False, schema: str | None = 
     from aughor.knowledge.patterns import get_patterns
     from aughor.knowledge.briefing import get_briefing
 
-    by_domain = _expl_store.get_domain_insights(_store_key(conn_id, schema))
-    if schema:
+    by_domain = _domain_insights_for(conn_id, schema)
+    if _needs_filter(conn_id, schema):
         by_domain = _filter_by_schema(by_domain, conn_id, schema)
     if not by_domain:
         return {
@@ -368,7 +398,7 @@ def generate_briefing(conn_id: str, refresh: bool = False, schema: str | None = 
         }
 
     patterns = get_patterns(conn_id, by_domain, force_refresh=False)
-    macro = _expl_store.load(_store_key(conn_id, schema)).get("macro_context")
+    macro = _load_state(conn_id, schema).get("macro_context")
     # Scope the cache key per schema so a schema-filtered briefing never returns the
     # connection-wide (or another schema's) cached narrative — the AI Synthesis card
     # was staying stale on schema change because every schema shared one cache key.

@@ -1509,10 +1509,10 @@ export function BriefingPanel({
     setExplorerBusy(true);
     try {
       if (canvasId) await resumeCanvasExploration(canvasId);
-      else          await startExplorer(connectionId);
+      else          await startExplorer(connectionId, schema);
     } catch {}
     setExplorerBusy(false);
-  }, [connectionId, canvasId]);
+  }, [connectionId, canvasId, schema]);
 
   const runTriggerIntel = useCallback(async () => {
     if (!canvasId && !connectionId) return;
@@ -1568,7 +1568,7 @@ export function BriefingPanel({
     if (!scopeId) return;
     let mounted = true;
     const poll = () => {
-      const req = canvasId ? getCanvasExplorationStatus(canvasId) : getExplorerStatus(connectionId);
+      const req = canvasId ? getCanvasExplorationStatus(canvasId) : getExplorerStatus(connectionId, schema);
       req
         .then(s => { if (mounted) setExplorerStatus(s); })
         .catch(() => { if (mounted) setExplorerStatus(null); });
@@ -1582,7 +1582,7 @@ export function BriefingPanel({
       ...(canvasId ? { canvasId } : { connId: connectionId }),
     });
     return () => { mounted = false; clearInterval(iv); unsub(); };
-  }, [connectionId, canvasId]);
+  }, [connectionId, canvasId, schema]);
 
   // Auto-refresh the briefing the moment an exploration run reaches "complete" —
   // newly-synthesised domain intelligence would otherwise stay hidden until a manual Reload.

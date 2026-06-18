@@ -79,6 +79,66 @@ def get_domain_insights(connection_id: str, include_invalid: bool = False) -> di
     return grouped
 
 
+# ── 'All schemas' aggregate ───────────────────────────────────────────────────
+# A multi-schema connection runs PER schema (state keyed {conn}__{schema}). These helpers
+# merge those per-schema states into one connection-level view for the 'All schemas'
+# selection — so the Briefing shows EVERY schema's findings together, while a specific
+# schema selection still reads just that schema's (natively isolated) state.
+
+def schema_run_keys(connection_id: str) -> list[str]:
+    """Store keys ({conn}__{schema}) of this connection's per-schema runs, or [] if none."""
+    return sorted(p.stem[len("exploration_"):]
+                  for p in _DATA_DIR.glob(f"exploration_{connection_id}__*.json"))
+
+
+def _agg_phase(phases: list[str]) -> str:
+    terminal = {ExplorationPhase.COMPLETE.value, ExplorationPhase.FAILED.value}
+    if phases and all(p in terminal for p in phases):
+        return ExplorationPhase.COMPLETE.value
+    for p in phases:                      # any schema still running → report its live phase
+        if p not in terminal:
+            return p
+    return ExplorationPhase.PENDING.value
+
+
+def load_aggregate(connection_id: str) -> dict:
+    """Merge every per-schema run into one connection-level state. Falls back to the bare
+    connection state when there are no per-schema runs."""
+    keys = schema_run_keys(connection_id)
+    if not keys:
+        return load(connection_id)
+    agg = _empty()
+    phases: list[str] = []
+    per_schema: dict[str, str] = {}
+    q = tt = 0
+    for k in keys:
+        st = load(k)
+        schema = k.split("__", 1)[1] if "__" in k else k
+        per_schema[schema] = st.get("phase", "pending")
+        agg["insights"].extend(st.get("insights", []) or [])
+        agg["join_verifications"].extend(st.get("join_verifications", []) or [])
+        for sect in ("null_meanings", "distributions", "lifecycle_maps",
+                     "domain_budgets", "domain_coverage"):
+            agg[sect].update(st.get(sect, {}) or {})
+        phases.append(st.get("phase", "pending"))
+        q += int(st.get("queries_executed", 0) or 0)
+        tt += int(st.get("tables_total", 0) or 0)
+    agg["phase"] = _agg_phase(phases)
+    agg["queries_executed"] = q
+    agg["tables_total"] = tt
+    agg["per_schema"] = per_schema          # {schema: phase} — lets the UI show per-schema progress
+    return agg
+
+
+def get_aggregate_domain_insights(connection_id: str, include_invalid: bool = False) -> dict[str, list[dict]]:
+    """by_domain insights merged across all per-schema runs of a connection."""
+    grouped: dict[str, list[dict]] = {}
+    for k in schema_run_keys(connection_id):
+        for d, ins in get_domain_insights(k, include_invalid=include_invalid).items():
+            grouped.setdefault(d, []).extend(ins)
+    return grouped
+
+
 def extend_domain_budget(connection_id: str, domain: str, extra: int = 5) -> int:
     """Add `extra` queries to a domain's budget cap. Returns the new cap value."""
     state = load(connection_id)
