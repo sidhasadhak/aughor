@@ -24,13 +24,24 @@ logger = logging.getLogger(__name__)
 import re as _re
 
 _SQL_TABLE_RE = _re.compile(
-    r"(?:FROM|JOIN|INTO|UPDATE|MERGE\s+INTO|DELETE\s+FROM)\s+(?:\"?\w+\"?\.)?\"?(\w+)\"?(?:\s+(?:AS\s+)?\w+)?(?=\s|$|[,;])",
+    r"(?:FROM|JOIN|INTO|UPDATE|MERGE\s+INTO|DELETE\s+FROM)\s+(?:\"?(\w+)\"?\.)?\"?(\w+)\"?(?:\s+(?:AS\s+)?\w+)?(?=\s|$|[,;])",
     _re.IGNORECASE,
 )
 
 
 def _tables_from_sql(sql: str) -> set[str]:
-    return {m.group(1) for m in _SQL_TABLE_RE.finditer(sql) if m.group(1)}
+    """Lowercased table refs in a query — BOTH the bare name and, when the query qualifies
+    it, the ``schema.table`` form. The qualified form is what lets schema isolation tell
+    ``ecommerce.orders`` from ``missimi.orders`` (both schemas have an ``orders`` table)."""
+    out: set[str] = set()
+    for m in _SQL_TABLE_RE.finditer(sql):
+        sch, tbl = m.group(1), m.group(2)
+        if not tbl:
+            continue
+        out.add(tbl.lower())
+        if sch:
+            out.add(f"{sch.lower()}.{tbl.lower()}")
+    return out
 
 
 def _schema_table_set(conn_id: str, schema: str | None) -> set[str] | None:
@@ -70,15 +81,31 @@ def _insight_refs(ins: dict) -> set[str]:
     return sql_tables | entities | snake
 
 
+def _qualified_set(schema: str, bare: set[str]) -> set[str]:
+    return {f"{schema.lower()}.{t}" for t in bare}
+
+
+def _refs_in_schema(refs: set[str], bare: set[str], qual: set[str]) -> bool:
+    """True if an insight's table refs belong to the schema. When the refs are SCHEMA-
+    QUALIFIED (e.g. 'ecommerce.orders'), match the QUALIFIED set — so 'missimi.orders' is
+    NOT mistaken for 'ecommerce.orders' (both schemas have an 'orders' table). Only when an
+    insight is fully unqualified (single-schema connections) do we fall back to bare names."""
+    quals = {r for r in refs if "." in r}
+    if quals:
+        return bool(quals & qual)
+    return bool(refs & bare)
+
+
 def _filter_by_schema(domain_data: dict, conn_id: str, schema: str | None) -> dict:
     """Filter domain insights to only those referencing tables in the given schema."""
     tables_in_schema = _schema_table_set(conn_id, schema)
     if tables_in_schema is None:
         return domain_data
+    qual = _qualified_set(schema, tables_in_schema)
     filtered = {}
     for domain, data in domain_data.items():
         insights = data if isinstance(data, list) else data.get("insights", [])
-        kept = [ins for ins in insights if _insight_refs(ins) & tables_in_schema]
+        kept = [ins for ins in insights if _refs_in_schema(_insight_refs(ins), tables_in_schema, qual)]
         if kept:
             filtered[domain] = kept if isinstance(data, list) else {**data, "insights": kept}
     return filtered
@@ -93,15 +120,19 @@ def _filter_findings_by_schema(findings: dict, conn_id: str, schema: str | None)
     tset = _schema_table_set(conn_id, schema)
     if tset is None:
         return findings
+    qual = _qualified_set(schema, tset)
 
-    def _tbl(key: str) -> str:
-        return key.split(":", 1)[0].split(".")[-1].lower()
+    def _key_in_schema(key: str) -> bool:
+        # keys are 'schema.table:col', 'schema.table', or bare 'table[:col]'. Match the
+        # QUALIFIED form when present (so ecommerce.orders ≠ missimi.orders), else bare.
+        kt = key.split(":", 1)[0].lower()
+        return (kt in qual) if "." in kt else (kt in tset)
 
     out = dict(findings)
-    out["null_meanings"] = {k: v for k, v in (findings.get("null_meanings") or {}).items() if _tbl(k) in tset}
-    out["distributions"] = {k: v for k, v in (findings.get("distributions") or {}).items() if _tbl(k) in tset}
-    out["lifecycle_maps"] = {k: v for k, v in (findings.get("lifecycle_maps") or {}).items() if k.split(".")[-1].lower() in tset}
-    out["insights"] = [i for i in (findings.get("insights") or []) if _insight_refs(i) & tset]
+    out["null_meanings"] = {k: v for k, v in (findings.get("null_meanings") or {}).items() if _key_in_schema(k)}
+    out["distributions"] = {k: v for k, v in (findings.get("distributions") or {}).items() if _key_in_schema(k)}
+    out["lifecycle_maps"] = {k: v for k, v in (findings.get("lifecycle_maps") or {}).items() if _key_in_schema(k)}
+    out["insights"] = [i for i in (findings.get("insights") or []) if _refs_in_schema(_insight_refs(i), tset, qual)]
     return out
 
 from aughor.licensing import Capability, gate
