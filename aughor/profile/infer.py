@@ -114,29 +114,25 @@ def _calibrate_ranges(profile, conn) -> None:
     value_sql once, append '(measured ≈ X)' so the band reflects this dataset. Keeps the
     KIND (ratio/pct/usd) from world knowledge — only the magnitude is data-anchored.
     Best-effort, mutates in place."""
-    import re as _re
+    def _as_num(x):
+        try:
+            return float(x)
+        except (TypeError, ValueError):
+            return None
+
     for m in (getattr(profile, "north_star_metrics", None) or []):
         sql = (getattr(m, "value_sql", "") or "").strip()
         if not sql or "measured" in (m.unit_or_range or "").lower():
             continue
         try:
             res = conn.execute("profile-calibrate", sql)
-            if getattr(res, "error", None):
-                continue
-            rows = getattr(res, "rows", None) or []
-            val = None
-            for cell in (rows[0] if rows else []):
-                try:
-                    val = float(cell)
-                    break
-                except (TypeError, ValueError):
-                    continue
-            if val is None:
-                continue
-            mag = f"{val:,.2f}".rstrip("0").rstrip(".")
-            m.unit_or_range = f"{(m.unit_or_range or '').strip()} (measured ≈ {mag})".strip()
-        except Exception:
-            continue
+            rows = (getattr(res, "rows", None) or []) if not getattr(res, "error", None) else []
+            val = next((n for n in (_as_num(c) for c in (rows[0] if rows else [])) if n is not None), None)
+            if val is not None:
+                mag = f"{val:,.2f}".rstrip("0").rstrip(".")
+                m.unit_or_range = f"{(m.unit_or_range or '').strip()} (measured ≈ {mag})".strip()
+        except Exception as exc:
+            logger.debug("[profile] range calibration skipped for %s: %s", getattr(m, "name", "?"), exc)
 
 
 def _gather_context(connection_id: str, schema_name: Optional[str]) -> tuple[str, list[str]]:
