@@ -62,8 +62,9 @@ export interface BusinessProfileResponse {
     confidence: number;
   };
 }
-export async function getBusinessProfile(connectionId: string): Promise<BusinessProfileResponse> {
-  const res = await fetch(`${BASE}/business-profile?connection_id=${encodeURIComponent(connectionId)}`);
+export async function getBusinessProfile(connectionId: string, schema?: string): Promise<BusinessProfileResponse> {
+  const q = schema ? `&schema_name=${encodeURIComponent(schema)}` : "";
+  const res = await fetch(`${BASE}/business-profile?connection_id=${encodeURIComponent(connectionId)}${q}`);
   if (!res.ok) return { available: false };
   return res.json();
 }

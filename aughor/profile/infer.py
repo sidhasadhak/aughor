@@ -460,7 +460,7 @@ def get_or_infer(connection_id: str,
                  schema_name: Optional[str] = None) -> Optional[BusinessProfile]:
     """Cached profile if present; else infer once. Best-effort — None on failure
     so callers (e.g. the explorer) degrade gracefully to generic behavior."""
-    cached = store.load(connection_id)
+    cached = store.load(connection_id, schema_name)
     if cached is not None:
         return cached
     try:

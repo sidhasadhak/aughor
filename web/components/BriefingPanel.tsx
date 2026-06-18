@@ -1796,12 +1796,13 @@ export function BriefingPanel({
       )}
 
       {/* ── Industry key metrics ── the vertical's north-star KPIs, computed live */}
-      <IndustryKpiStrip connectionId={connectionId} />
+      <IndustryKpiStrip connectionId={connectionId} schema={schema} />
 
       {/* ── Live dashboard ── top-3 key-metric explainer charts + finding text cards (#3) */}
       <BriefingDashboard
         findings={[briefing.headline, ...briefing.signals].filter(Boolean) as { insight: ExplorationInsight; domain: string }[]}
         connectionId={connectionId}
+        schema={schema}
         onInvestigate={onInvestigate}
         renderActions={(insight, domain) => (
           <FindingActions insight={insight} domain={domain}

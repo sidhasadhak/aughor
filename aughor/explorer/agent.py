@@ -2318,7 +2318,14 @@ class SchemaExplorer:
         _metric_ranges: list = []   # (distinctive tokens, kind, max) per north-star metric
         try:
             from aughor.profile.infer import get_or_infer
-            _bp = await _loop.run_in_executor(None, lambda: get_or_infer(self.connection_id))
+            # Key the profile by the connection's configured schema so the Briefing's
+            # schema selector can fetch the matching one (a connection can expose several).
+            try:
+                from aughor.db.registry import get_meta
+                _conn_schema = (get_meta(self.connection_id) or {}).get("schema_name") or None
+            except Exception:
+                _conn_schema = None
+            _bp = await _loop.run_in_executor(None, lambda: get_or_infer(self.connection_id, _conn_schema))
             if _bp is not None:
                 _profile_for_pin = _bp
                 try:
@@ -2341,7 +2348,7 @@ class SchemaExplorer:
                 # (e.g. COUNT(orders)/COUNT(carts) → conversion > 1). Injected
                 # authoritatively so generated SQL gets the join/grain right.
                 from aughor.profile import store as _pstore
-                _recipes = _pstore.load_recipes(self.connection_id)
+                _recipes = _pstore.load_recipes(self.connection_id, _conn_schema)
                 _rlines = ""
                 if _recipes:
                     _parts = []

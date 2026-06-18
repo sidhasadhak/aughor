@@ -129,11 +129,15 @@ function FindingCard({
 export function BriefingDashboard({
   findings,
   connectionId,
+  schema,
   onInvestigate,
   renderActions,
 }: {
   findings: DashboardFinding[];
   connectionId: string;
+  /** Shared schema scope from the workspace header — the metric charts re-fetch the
+   *  matching profile when it changes. Undefined = all schemas / connection default. */
+  schema?: string;
   onInvestigate: (q: string) => void;
   /** Reuse the panel's FindingActions so each finding stays actionable (monitor/share/evidence). */
   renderActions?: (insight: ExplorationInsight, domain: string) => ReactNode;
@@ -148,7 +152,7 @@ export function BriefingDashboard({
     setChartsPending(true);
     (async () => {
       try {
-        const p = await getBusinessProfile(connectionId);
+        const p = await getBusinessProfile(connectionId, schema);
         if (!alive) return;
         const metrics: NorthStarMetric[] = (p.available && p.profile?.north_star_metrics) || [];
         // Profile order IS priority order — walk it and keep the first MAX_CHARTS that
@@ -173,7 +177,7 @@ export function BriefingDashboard({
       }
     })();
     return () => { alive = false; };
-  }, [connectionId]);
+  }, [connectionId, schema]);
 
   // ── Finding text cards: dedup, rank by impact (novelty + confidence) ────────────
   const findingCards = useMemo(() => {

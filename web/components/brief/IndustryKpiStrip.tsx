@@ -46,7 +46,7 @@ function formatMetric(v: number, unit: string): { display: string; ok: boolean }
   return { display, ok: true };
 }
 
-export function IndustryKpiStrip({ connectionId }: { connectionId: string }) {
+export function IndustryKpiStrip({ connectionId, schema }: { connectionId: string; schema?: string }) {
   const [industry, setIndustry] = useState("");
   const [kpis, setKpis] = useState<Kpi[]>([]);
 
@@ -54,7 +54,8 @@ export function IndustryKpiStrip({ connectionId }: { connectionId: string }) {
     if (!connectionId) return;
     let alive = true;
     (async () => {
-      const p = await getBusinessProfile(connectionId);
+      const p = await getBusinessProfile(connectionId, schema);
+      if (alive && (!p.available || !p.profile)) { setIndustry(""); setKpis([]); }
       if (!alive || !p.available || !p.profile) return;
       setIndustry(p.profile.industry || "");
       const metrics = (p.profile.north_star_metrics || []).filter(m => m.value_sql?.trim());
@@ -72,7 +73,7 @@ export function IndustryKpiStrip({ connectionId }: { connectionId: string }) {
       if (alive) setKpis(out);
     })();
     return () => { alive = false; };
-  }, [connectionId]);
+  }, [connectionId, schema]);
 
   if (!kpis.length) return null;
 
