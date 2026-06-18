@@ -915,9 +915,15 @@ class SchemaExplorer:
         conn: "DatabaseConnection",
         canvas_id: Optional[str] = None,
         tables_filter: Optional[list[str]] = None,
+        schema_name: Optional[str] = None,
     ) -> None:
         self.connection_id = connection_id
         self.canvas_id = canvas_id
+        # When a multi-schema connection is explored per-schema, this run is scoped to ONE
+        # schema: state/episodes/profile/ontology are keyed by (connection, schema) so each
+        # schema gets its OWN intelligence (the missimi=0 fix). None = connection-level (the
+        # single-schema / 'All schemas' case) — fully backward-compatible.
+        self.schema_name = schema_name
         self.tables_filter = tables_filter  # non-empty list = restrict phases 3-7 to these tables
         self._conn = conn
         self._status = ExplorationStatus(
@@ -925,14 +931,20 @@ class SchemaExplorer:
             canvas_id=canvas_id,
             started_at=datetime.now(timezone.utc).isoformat(),
         )
-        # Canvas-scoped explorer uses a separate state/episode key
-        _store_key = f"canvas_{canvas_id}" if canvas_id else connection_id
+        # State/episode key: canvas → its own key; a schema-scoped run → conn__schema;
+        # otherwise the bare connection (unchanged).
+        if canvas_id:
+            _store_key = f"canvas_{canvas_id}"
+        elif schema_name:
+            _store_key = f"{connection_id}__{schema_name}"
+        else:
+            _store_key = connection_id
         self._store_key = _store_key
         self._episodes = EpisodeCollector(_store_key)
         self._can_run = asyncio.Event()
         self._can_run.set()
         self._stopped = False
-        self._state = _store.load_canvas(canvas_id) if canvas_id else _store.load(connection_id)
+        self._state = _store.load_canvas(canvas_id) if canvas_id else _store.load(self._store_key)
         # Restore the time-to-first-insight milestone if this run is resuming a
         # prior one, so TTFI isn't re-stamped (and re-emitted) on every restart.
         self._status.first_insight_at = self._state.get("first_insight_at")
@@ -961,7 +973,7 @@ class SchemaExplorer:
         if self.canvas_id:
             _store.save_canvas(self.canvas_id, self._state)
         else:
-            _store.save(self.connection_id, self._state)
+            _store.save(self._store_key, self._state)
 
     # ── External control ──────────────────────────────────────────────────────
 
@@ -1354,7 +1366,7 @@ class SchemaExplorer:
             # /ontology API request) may not have happened yet.  get_schema()
             # is idempotent + cached — instant on the second call.
             from aughor.ontology.store import load_latest_ontology as _load_onto
-            if not _load_onto(self.connection_id):
+            if not _load_onto(self.connection_id, self.schema_name):
                 logger.info(
                     "[explorer:%s] Ontology not found before Phase 8 — building now…",
                     self.connection_id,
@@ -2177,7 +2189,7 @@ class SchemaExplorer:
         from aughor.ontology.store import load_latest_ontology
         from aughor.sql.writer import SqlWriter
 
-        ontology = load_latest_ontology(self.connection_id)
+        ontology = load_latest_ontology(self.connection_id, self.schema_name)
         if not ontology:
             # Surface the SPECIFIC failure the build recorded (stage + reason) so the user
             # gets an actionable message + Retry instead of a silent empty Hub.
@@ -2318,13 +2330,15 @@ class SchemaExplorer:
         _metric_ranges: list = []   # (distinctive tokens, kind, max) per north-star metric
         try:
             from aughor.profile.infer import get_or_infer
-            # Key the profile by the connection's configured schema so the Briefing's
-            # schema selector can fetch the matching one (a connection can expose several).
-            try:
-                from aughor.db.registry import get_meta
-                _conn_schema = (get_meta(self.connection_id) or {}).get("schema_name") or None
-            except Exception:
-                _conn_schema = None
+            # Key the profile by THIS run's schema (a per-schema run) or the connection's
+            # configured schema, so the Briefing's schema selector fetches the matching one.
+            _conn_schema = self.schema_name
+            if not _conn_schema:
+                try:
+                    from aughor.db.registry import get_meta
+                    _conn_schema = (get_meta(self.connection_id) or {}).get("schema_name") or None
+                except Exception:
+                    _conn_schema = None
             _bp = await _loop.run_in_executor(None, lambda: get_or_infer(self.connection_id, _conn_schema))
             if _bp is not None:
                 _profile_for_pin = _bp

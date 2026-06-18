@@ -30,8 +30,11 @@ def _safe(s: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]", "_", s)
 
 
-def _path(connection_id: str) -> Path:
-    return _DATA_DIR / f"business_profile_{_safe(connection_id)}.json"
+def _path(connection_id: str, schema_name: Optional[str] = None) -> Path:
+    base = f"business_profile_{_safe(connection_id)}"
+    if schema_name:
+        base += f"__{_safe(schema_name)}"
+    return _DATA_DIR / f"{base}.json"
 
 
 def save(connection_id: str, profile: BusinessProfile, *,
@@ -49,27 +52,38 @@ def save(connection_id: str, profile: BusinessProfile, *,
         # SQL-accuracy knowledge the explorer injects into Phase-8 generation.
         "recipes": recipes or [],
     }
-    _path(connection_id).write_text(json.dumps(payload, indent=2, default=str))
+    _path(connection_id, schema_name).write_text(json.dumps(payload, indent=2, default=str))
 
 
-def load_raw(connection_id: str, schema_name: Optional[str] = None) -> Optional[dict]:
-    """The full stored payload (profile + metadata), or None.
-
-    The explorer stores ONE profile per connection (its configured schema), tagging the
-    schema it describes. A schema-scoped read returns it only when it MATCHES the requested
-    schema — so the Briefing's KPI strip / dashboard show that schema's metrics or nothing,
-    never another schema's (mismatch → None → available=False, and the strip/charts cleanly
-    collapse). schema_name=None ('All schemas') always returns the connection default."""
-    p = _path(connection_id)
+def _read(p: Path) -> Optional[dict]:
     if not p.exists():
         return None
     try:
-        raw = json.loads(p.read_text())
+        return json.loads(p.read_text())
     except Exception:
         return None
-    if schema_name and raw.get("schema_name") != schema_name:
-        return None
-    return raw
+
+
+def load_raw(connection_id: str, schema_name: Optional[str] = None) -> Optional[dict]:
+    """The stored payload for a (connection, schema), or None.
+
+    Each schema of a multi-schema connection has its OWN profile file
+    (business_profile_{conn}__{schema}.json). A schema-scoped read returns that schema's
+    profile or None (never another schema's) — so the Briefing's KPI strip / dashboard show
+    the selected schema's metrics or cleanly collapse. schema_name=None ('All schemas')
+    returns the connection-level file if present, else — for a connection that has exactly
+    ONE schema profile — that single profile (so a single-schema connection's default view
+    still resolves). With several schema profiles and no connection-level one, None (the
+    aggregate view supplies the summary)."""
+    if schema_name:
+        return _read(_path(connection_id, schema_name))
+    conn_level = _read(_path(connection_id))
+    if conn_level is not None:
+        return conn_level
+    scoped = sorted(_DATA_DIR.glob(f"business_profile_{_safe(connection_id)}__*.json"))
+    if len(scoped) == 1:
+        return _read(scoped[0])
+    return None
 
 
 def load(connection_id: str, schema_name: Optional[str] = None) -> Optional[BusinessProfile]:

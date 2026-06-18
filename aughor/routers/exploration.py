@@ -135,6 +135,25 @@ def _filter_findings_by_schema(findings: dict, conn_id: str, schema: str | None)
     out["insights"] = [i for i in (findings.get("insights") or []) if _refs_in_schema(_insight_refs(i), tset, qual)]
     return out
 
+
+def _store_key(conn_id: str, schema: str | None) -> str:
+    """Resolve the exploration store key for a (connection, schema). When a per-schema run
+    exists (its own state file), read THAT — it's natively isolated to the schema. Otherwise
+    fall back to the connection-level state (the single-run case, then schema-FILTERED by the
+    callers). Lets the same endpoints serve per-schema runs and the legacy connection run."""
+    if schema:
+        from pathlib import Path
+        if (Path("data") / f"exploration_{conn_id}__{schema}.json").exists():
+            return f"{conn_id}__{schema}"
+    return conn_id
+
+
+def _explorer_for(conn_id: str, schema: str | None):
+    """The in-memory explorer for a (connection, schema) — per-schema run if present."""
+    if schema and f"{conn_id}__{schema}" in _explorers:
+        return _explorers.get(f"{conn_id}__{schema}")
+    return _explorers.get(conn_id)
+
 from aughor.licensing import Capability, gate
 
 router = APIRouter(tags=["exploration"])
@@ -169,12 +188,12 @@ class FixAllRequest(BaseModel):
 # ── Connection-scoped ─────────────────────────────────────────────────────────
 
 @router.get("/exploration/{conn_id}/status")
-def get_exploration_status(conn_id: str):
+def get_exploration_status(conn_id: str, schema: str | None = None):
     from aughor.explorer import store as _expl_store
-    explorer = _explorers.get(conn_id)
+    explorer = _explorer_for(conn_id, schema)
     if explorer:
         return explorer._status.to_dict()
-    state = _expl_store.load(conn_id)
+    state = _expl_store.load(_store_key(conn_id, schema))
     # Restore counters persisted at completion time (survive server restarts)
     return {
         "connection_id": conn_id,
@@ -241,7 +260,7 @@ def time_to_first_insight_kpi(limit: int = 200):
 @router.get("/exploration/{conn_id}/findings")
 def get_exploration_findings(conn_id: str, schema: str | None = None):
     from aughor.explorer import store as _expl_store
-    state = _expl_store.load(conn_id)
+    state = _expl_store.load(_store_key(conn_id, schema))
     distributions = state.get("distributions", {})
 
     if distributions and any("col_type" not in v for v in distributions.values()):
@@ -281,10 +300,11 @@ def get_exploration_findings(conn_id: str, schema: str | None = None):
 @router.get("/exploration/{conn_id}/domains")
 def get_domain_insights(conn_id: str, schema: str | None = None):
     from aughor.explorer import store as _expl_store
-    state = _expl_store.load(conn_id)
+    _k = _store_key(conn_id, schema)
+    state = _expl_store.load(_k)
     budgets  = state.get("domain_budgets", {})
     coverage = state.get("domain_coverage", {})
-    by_domain = _expl_store.get_domain_insights(conn_id)
+    by_domain = _expl_store.get_domain_insights(_k)
     if schema:
         by_domain = _filter_by_schema(by_domain, conn_id, schema)
     result = {}
@@ -303,7 +323,7 @@ def get_connection_patterns(conn_id: str, refresh: bool = False, schema: str | N
     """Return extracted patterns from domain intelligence for this connection."""
     from aughor.explorer import store as _expl_store
     from aughor.knowledge.patterns import get_patterns
-    by_domain = _expl_store.get_domain_insights(conn_id)
+    by_domain = _expl_store.get_domain_insights(_store_key(conn_id, schema))
     if schema:
         by_domain = _filter_by_schema(by_domain, conn_id, schema)
     patterns = get_patterns(conn_id, by_domain, force_refresh=refresh)
@@ -335,7 +355,7 @@ def generate_briefing(conn_id: str, refresh: bool = False, schema: str | None = 
     from aughor.knowledge.patterns import get_patterns
     from aughor.knowledge.briefing import get_briefing
 
-    by_domain = _expl_store.get_domain_insights(conn_id)
+    by_domain = _expl_store.get_domain_insights(_store_key(conn_id, schema))
     if schema:
         by_domain = _filter_by_schema(by_domain, conn_id, schema)
     if not by_domain:
@@ -348,7 +368,7 @@ def generate_briefing(conn_id: str, refresh: bool = False, schema: str | None = 
         }
 
     patterns = get_patterns(conn_id, by_domain, force_refresh=False)
-    macro = _expl_store.load(conn_id).get("macro_context")
+    macro = _expl_store.load(_store_key(conn_id, schema)).get("macro_context")
     # Scope the cache key per schema so a schema-filtered briefing never returns the
     # connection-wide (or another schema's) cached narrative — the AI Synthesis card
     # was staying stale on schema change because every schema shared one cache key.
@@ -554,14 +574,16 @@ def fix_all(conn_id: str, body: FixAllRequest):
 # ── Explorer control ─────────────────────────────────────────────────────────
 
 @router.post("/exploration/{conn_id}/start", dependencies=[gate(Capability.AUTO_EXPLORATION)])
-async def start_exploration(conn_id: str):
-    """Start a fresh explorer run if none is active."""
-    existing = _explorers.get(conn_id)
+async def start_exploration(conn_id: str, schema: str | None = None):
+    """Start a fresh explorer run if none is active. With ?schema=, explores just that
+    schema; without it, a multi-schema connection fans out into one run per schema."""
+    key = f"{conn_id}__{schema}" if schema else conn_id
+    existing = _explorers.get(key)
     if existing and existing.status.phase not in (ExplorationPhase.COMPLETE, ExplorationPhase.FAILED):
         return {"ok": False, "reason": "already running", "phase": existing.status.phase.value}
 
     # Same background open+test+explore path used by connection auto-onboarding.
-    started = kickoff_exploration(conn_id)
+    started = kickoff_exploration(conn_id, schema)
     return {"ok": started}
 
 

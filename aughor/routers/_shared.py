@@ -64,6 +64,7 @@ async def spawn_explorer(
     canvas_id: str | None = None,
     tables_filter: list | None = None,
     domain_intel_only: bool = False,
+    schema_name: str | None = None,
 ) -> dict:
     """THE explorer spawn path — every surface (start, resume, restart, extend,
     trigger-intel, canvas start/restart, boot recovery) goes through here, so an
@@ -82,7 +83,9 @@ async def spawn_explorer(
 
     registry = canvas_explorers if canvas_id else explorers
     tasks_registry = canvas_explorer_tasks if canvas_id else explorer_tasks
-    key = canvas_id or conn_id
+    # A per-schema run gets its OWN registry/state/idempotency key so several schemas of
+    # one connection can explore independently (and concurrently, under the cap).
+    key = canvas_id or (f"{conn_id}__{schema_name}" if schema_name else conn_id)
 
     existing = registry.get(key)
     if existing is not None:
@@ -91,10 +94,12 @@ async def spawn_explorer(
             return {"ok": False, "reason": "already running", "job_id": None}
 
     loop = asyncio.get_running_loop()
-    from aughor.db.connection import open_connection_for
+    from aughor.db.connection import open_connection_for, open_connection_for_with_schema
 
     def _open_and_test():
-        db = open_connection_for(conn_id)
+        # Schema-scoped open so a per-schema run resolves ONLY that schema's tables.
+        db = (open_connection_for_with_schema(conn_id, schema_name)
+              if schema_name else open_connection_for(conn_id))
         ok, msg = db.test()
         if not ok:
             db.close()
@@ -110,7 +115,8 @@ async def spawn_explorer(
         return {"ok": False, "reason": f"connection not ready: {msg}", "job_id": None}
 
     from aughor.explorer.agent import SchemaExplorer
-    explorer = SchemaExplorer(conn_id, db, canvas_id=canvas_id, tables_filter=tables_filter)
+    explorer = SchemaExplorer(conn_id, db, canvas_id=canvas_id, tables_filter=tables_filter,
+                              schema_name=schema_name)
     registry[key] = explorer
 
     def _cleanup(_job_id: str, _final: str) -> None:
@@ -122,7 +128,7 @@ async def spawn_explorer(
         lambda: explorer.explore(domain_intel_only=domain_intel_only),
         conn_id=conn_id,
         canvas_id=canvas_id,
-        idempotency_key=f"explore:{'canvas:' + canvas_id if canvas_id else conn_id}",
+        idempotency_key=f"explore:{'canvas:' + canvas_id if canvas_id else key}",
         payload={"domain_intel_only": domain_intel_only,
                  "tables_filter": tables_filter or None},
         on_finish=_cleanup,
@@ -136,23 +142,50 @@ async def spawn_explorer(
     return {"ok": True, "reason": None, "job_id": job_id}
 
 
-def kickoff_exploration(conn_id: str) -> bool:
-    """Schedule a background schema-exploration run for a connection, unless one
-    is already active. Returns True if a run was scheduled, False if skipped.
+def schemas_of_connection(conn_id: str) -> list[str]:
+    """The non-system schemas a connection exposes. Used to fan exploration out per schema
+    so a multi-schema connection (e.g. a workspace folding ecommerce + missimi + …) gives
+    EACH schema its own intelligence instead of one run that starves the smaller schemas.
+    Best-effort: returns [] on any failure (caller falls back to a connection-level run)."""
+    try:
+        from aughor.db.connection import open_connection_for
+        db = open_connection_for(conn_id)
+        res = db.execute(
+            "__schemas__",
+            "SELECT DISTINCT table_schema FROM information_schema.tables "
+            "WHERE table_type = 'BASE TABLE' AND table_schema NOT IN "
+            "('information_schema', 'pg_catalog', 'temp', 'main') ORDER BY 1",
+        )
+        return [str(r[0]) for r in (getattr(res, "rows", None) or []) if r and r[0]]
+    except Exception:
+        return []
 
-    Thin sync wrapper over ``spawn_explorer`` (the guard runs here so the caller
-    gets an honest bool; the open+test+explore work runs as a kernel job).
-    Must be called from within a running event loop.
+
+def kickoff_exploration(conn_id: str, schema_name: str | None = None) -> bool:
+    """Schedule background schema-exploration, unless already active. Returns True if any run
+    was scheduled. An explicit schema_name explores just that schema; otherwise a MULTI-schema
+    connection fans out into one run PER schema (the 'every schema gets understood' guarantee),
+    and a single-schema connection runs connection-level (unchanged).
+
+    Thin sync wrapper over ``spawn_explorer``. Must be called from within a running event loop.
     """
     import asyncio
-
     from aughor.explorer.models import ExplorationPhase
 
-    existing = explorers.get(conn_id)
-    if existing is not None:
-        phase = getattr(getattr(existing, "status", None), "phase", None)
-        if phase not in (ExplorationPhase.COMPLETE, ExplorationPhase.FAILED, None):
-            return False  # already running — don't double-start
+    if schema_name:
+        targets: list[str | None] = [schema_name]
+    else:
+        _schemas = schemas_of_connection(conn_id)
+        targets = list(_schemas) if len(_schemas) >= 2 else [None]
 
-    asyncio.create_task(spawn_explorer(conn_id), name=f"kickoff-{conn_id}")
-    return True
+    started = False
+    for sch in targets:
+        key = f"{conn_id}__{sch}" if sch else conn_id
+        existing = explorers.get(key)
+        if existing is not None:
+            phase = getattr(getattr(existing, "status", None), "phase", None)
+            if phase not in (ExplorationPhase.COMPLETE, ExplorationPhase.FAILED, None):
+                continue  # this schema's run is already active
+        asyncio.create_task(spawn_explorer(conn_id, schema_name=sch), name=f"kickoff-{key}")
+        started = True
+    return started

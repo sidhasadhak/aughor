@@ -18,6 +18,8 @@ def _bare_explorer():
     ex = SchemaExplorer.__new__(SchemaExplorer)
     ex.canvas_id = None
     ex.connection_id = "testconn"
+    ex.schema_name = None
+    ex._store_key = "testconn"   # connection-level run keys state by the bare connection id
     ex._state = {"phase": "pending"}
 
     class _Status:
@@ -36,6 +38,27 @@ def test_save_state_mirrors_live_phase(monkeypatch):
     assert captured["cid"] == "testconn"
     # disk phase now tracks the live status phase, not the stale 'pending'
     assert captured["state"]["phase"] == ExplorationPhase.DISTRIBUTION.value
+
+
+def test_schema_scoped_run_keys_state_by_conn_and_schema(monkeypatch):
+    # A per-schema run must persist state under {conn}__{schema} so each schema of a
+    # multi-schema connection gets its OWN exploration state (the missimi=0 fix).
+    ex = SchemaExplorer.__new__(SchemaExplorer)
+    ex.canvas_id = None
+    ex.connection_id = "workspace"
+    ex.schema_name = "missimi"
+    ex._store_key = "workspace__missimi"
+
+    class _Status:
+        phase = ExplorationPhase.DOMAIN_INTEL
+
+    ex._status = _Status()
+    ex._state = {"phase": "pending"}
+    captured = {}
+    monkeypatch.setattr(agent_mod._store, "save",
+                        lambda cid, state: captured.update(cid=cid))
+    ex._save_state()
+    assert captured["cid"] == "workspace__missimi"
 
 
 def test_save_state_accepts_plain_string_phase(monkeypatch):
