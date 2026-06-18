@@ -13,10 +13,13 @@ router = APIRouter(tags=["profile"])
 
 @router.get("/business-profile")
 def get_business_profile(connection_id: str, schema_name: Optional[str] = Query(default=None)):
-    """The cached Business Profile for a connection (with metadata), or available=False."""
-    raw = store.load_raw(connection_id)
+    """The cached Business Profile for a (connection, schema), with metadata, or
+    available=False. A schema selection with no matching profile returns available=False
+    (rather than another schema's metrics) so the Briefing's KPI strip and dashboard OBEY
+    the schema selector instead of showing stale, wrong-schema figures."""
+    raw = store.load_raw(connection_id, schema_name)
     if not raw:
-        return {"available": False, "connection_id": connection_id}
+        return {"available": False, "connection_id": connection_id, "schema_name": schema_name}
     return {"available": True, **raw}
 
 

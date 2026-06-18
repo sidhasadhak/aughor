@@ -1238,6 +1238,18 @@ async def _stream_chat(
                 payload_extra={"chart_type": answer.chart_type, "row_count": len(result.rows)},
             )
 
+            # Self-improving loop: notice ontology gaps from this real query (e.g. a
+            # currency measure aggregated with no canonical metric covering it) and
+            # accrue a reviewable recommendation. Best-effort, post-answer — never
+            # touches the response stream.
+            try:
+                from aughor.ontology.recommendations import observe as _observe_gaps
+                from aughor.ontology.store import load_latest_ontology as _llo
+                _observe_gaps(connection_id, getattr(db, "_schema_name", None) or "default",
+                              question, final_sql, _llo(connection_id), dialect=db.dialect)
+            except Exception:
+                pass
+
         # Carry the turn id so the client can fetch this answer's Trust Receipt.
         yield _sse("done", {"inv_id": _chat_inv_id, "has_receipt": bool(_chat_inv_id and final_sql)})
 

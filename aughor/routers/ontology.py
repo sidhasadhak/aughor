@@ -38,6 +38,28 @@ class _MergeEntitiesRequest(BaseModel):
     canonical_id: str         # the survivor — others are merged into it
 
 
+class _ComputedPropertyOverride(BaseModel):
+    label: Optional[str] = None
+    formula_sql: Optional[str] = None
+    unit: Optional[str] = None
+
+
+class _ObjectSetOverride(BaseModel):
+    display_name: Optional[str] = None
+    description: Optional[str] = None
+    filter_sql: Optional[str] = None
+    is_default: Optional[bool] = None
+
+
+class _MetricOverride(BaseModel):
+    display_name: Optional[str] = None
+    description: Optional[str] = None
+    formula_sql: Optional[str] = None
+    grain: Optional[str] = None
+    unit: Optional[str] = None
+    entity: Optional[str] = None   # required only when authoring a brand-new metric
+
+
 def _resolve_schema(connection_id: str, schema_name: Optional[str]) -> str:
     """Return the effective schema name: explicit param > connection meta > 'default'."""
     if schema_name:
@@ -66,6 +88,8 @@ def _get_ontology_graph(connection_id: str, schema_name: Optional[str] = None):
         if graph is None and schema_name:
             graph = load_latest_ontology(connection_id, None)
         if graph is not None:
+            # load_latest_ontology already overlays human overrides (the shared
+            # authority seam), so the read APIs / UI reflect edits for free.
             return graph
     except Exception:
         pass
@@ -243,6 +267,55 @@ def get_ontology_metrics(
 
 
 # ── Override (write) endpoints ─────────────────────────────────────────────────
+#
+# Overrides are persisted to the fingerprint-INDEPENDENT YAML overlay
+# (aughor/ontology/overrides.py), NOT the structural fingerprint cache, so they
+# survive every rebuild (a row-count change re-fingerprints and rebuilds). SQL
+# fields are EXPLAIN-bound against the live DB before they can earn authority.
+
+def _explain_for(connection_id: str):
+    """Return (explain_fn, closer): explain_fn(sql) -> error-or-None via dry_run."""
+    db = open_connection_for(connection_id)
+
+    def _explain(sql: str) -> Optional[str]:
+        ok, msg = db.dry_run(sql)
+        return None if ok else (msg or "did not bind")
+
+    def _close():
+        try:
+            db.close()
+        except Exception:
+            pass
+
+    return _explain, _close
+
+
+def _bind_and_persist(connection_id: str, schema: str, ov):
+    """EXPLAIN-bind the override's SQL fields, persist it, and return (ov, graph)."""
+    from aughor.ontology.overrides import bind_overrides, save_override
+    graph = _get_ontology_graph(connection_id, schema)
+    try:
+        explain, close = _explain_for(connection_id)
+        try:
+            bind_overrides(ov, graph, explain)
+        finally:
+            close()
+    except Exception:
+        pass  # binding is best-effort; unbound SQL simply won't earn `verified`
+    save_override(connection_id, schema, ov)
+    return ov, graph
+
+
+def _override_result(ov) -> dict:
+    """Response shape: the saved override + whether its SQL bound + any warnings."""
+    warnings = [f"{f}: {b.get('note')}" for f, b in ov.binding.items() if not b.get("bound")]
+    return {
+        "override": ov.model_dump(),
+        # verified == every SQL field bound (no-SQL override is trivially verified)
+        "verified": all(b.get("bound") for b in ov.binding.values()) if ov.binding else True,
+        "warnings": warnings,
+    }
+
 
 @router.put("/ontology/entities/{entity_id}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
 def override_ontology_entity(
@@ -251,19 +324,224 @@ def override_ontology_entity(
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
 ):
-    from aughor.ontology.store import patch_entity
+    from aughor.ontology.overrides import OntologyOverride
+    effective = _resolve_schema(connection_id, schema_name)
+    fields = {k: v for k, v in body.model_dump().items() if v is not None}
+    if not fields:
+        raise HTTPException(status_code=400, detail="no override fields provided")
+    ov = OntologyOverride(target_kind="entity", target_id=entity_id, fields=fields)
+    ov, graph = _bind_and_persist(connection_id, effective, ov)
+    if graph is not None and entity_id not in graph.entities:
+        raise HTTPException(status_code=404, detail=f"Entity '{entity_id}' not found")
+    return _override_result(ov)
+
+
+@router.put(
+    "/ontology/entities/{entity_id}/computed-properties/{prop_id}",
+    dependencies=[gate(Capability.ONTOLOGY_EDIT)],
+)
+def override_ontology_computed_property(
+    entity_id: str,
+    prop_id: str,
+    body: _ComputedPropertyOverride,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Assert (or correct) a derived metric on an entity. Once its formula EXPLAIN-binds,
+    it is injected into the NL2SQL prompt with authority — overriding the auto-derived one."""
+    from aughor.ontology.overrides import OntologyOverride
+    effective = _resolve_schema(connection_id, schema_name)
+    fields = {k: v for k, v in body.model_dump().items() if v is not None}
+    if not fields:
+        raise HTTPException(status_code=400, detail="no override fields provided")
+    ov = OntologyOverride(
+        target_kind="computed_property", target_id=f"{entity_id}::{prop_id}", fields=fields)
+    ov, graph = _bind_and_persist(connection_id, effective, ov)
+    if graph is not None and entity_id not in graph.entities:
+        raise HTTPException(status_code=404, detail=f"Entity '{entity_id}' not found")
+    return _override_result(ov)
+
+
+@router.put(
+    "/ontology/entities/{entity_id}/object-sets/{set_id}",
+    dependencies=[gate(Capability.ONTOLOGY_EDIT)],
+)
+def override_ontology_object_set(
+    entity_id: str,
+    set_id: str,
+    body: _ObjectSetOverride,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Define (or correct) a named row-filter (object set) on an entity."""
+    from aughor.ontology.overrides import OntologyOverride
+    effective = _resolve_schema(connection_id, schema_name)
+    fields = {k: v for k, v in body.model_dump().items() if v is not None}
+    if not fields:
+        raise HTTPException(status_code=400, detail="no override fields provided")
+    ov = OntologyOverride(
+        target_kind="object_set", target_id=f"{entity_id}::{set_id}", fields=fields)
+    ov, graph = _bind_and_persist(connection_id, effective, ov)
+    if graph is not None and entity_id not in graph.entities:
+        raise HTTPException(status_code=404, detail=f"Entity '{entity_id}' not found")
+    return _override_result(ov)
+
+
+@router.put("/ontology/metrics/{metric_id}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def override_ontology_metric(
+    metric_id: str,
+    body: _MetricOverride,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Assert (or correct) a metric's canonical formula. EXPLAIN-bound, then injected
+    with authority through the unified metrics catalog."""
+    from aughor.ontology.overrides import OntologyOverride
+    effective = _resolve_schema(connection_id, schema_name)
+    fields = {k: v for k, v in body.model_dump().items() if v is not None}
+    if not fields:
+        raise HTTPException(status_code=400, detail="no override fields provided")
+    ov = OntologyOverride(target_kind="metric", target_id=metric_id, fields=fields)
+    ov, _ = _bind_and_persist(connection_id, effective, ov)
+    return _override_result(ov)
+
+
+@router.delete("/ontology/overrides/{kind}/{target_id:path}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def delete_ontology_override(
+    kind: str,
+    target_id: str,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Remove a human override so the auto-derived value is restored on next read."""
+    from aughor.ontology.overrides import delete_override
+    if kind not in ("entity", "object_set", "computed_property", "metric"):
+        raise HTTPException(status_code=400, detail=f"unknown override kind '{kind}'")
+    effective = _resolve_schema(connection_id, schema_name)
+    removed = delete_override(connection_id, effective, kind, target_id)  # type: ignore[arg-type]
+    return {"removed": removed, "kind": kind, "target_id": target_id}
+
+
+@router.get("/ontology/overrides", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def list_ontology_overrides(
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """List all human overrides for this connection+schema (the version-controlled set)."""
+    from aughor.ontology.overrides import load_overrides
+    effective = _resolve_schema(connection_id, schema_name)
+    return {"overrides": [o.model_dump() for o in load_overrides(connection_id, effective)]}
+
+
+# ── Self-improving loop: engine-proposed recommendations ────────────────────────
+
+@router.get("/ontology/recommendations", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def list_ontology_recommendations(
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+    ripe_only: bool = Query(default=True),
+):
+    """List engine-proposed ontology fixes (the self-improving loop's output).
+
+    ripe_only (default) hides one-off sightings — only recommendations seen enough
+    times to be worth a human's review are returned.
+    """
+    from aughor.ontology.recommendations import load_recommendations
+    effective = _resolve_schema(connection_id, schema_name)
+    recs = load_recommendations(connection_id, effective)
+    if ripe_only:
+        recs = [r for r in recs if r.ripe]
+    return {"recommendations": [r.model_dump() for r in recs]}
+
+
+@router.post("/ontology/recommendations/{rec_id}/accept", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def accept_ontology_recommendation(
+    rec_id: str,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Promote a recommendation into an EXPLAIN-bound human override (override-wins path)."""
+    from aughor.ontology.recommendations import accept
+    effective = _resolve_schema(connection_id, schema_name)
+    graph = _get_ontology_graph(connection_id, effective)
+    explain, close = _explain_for(connection_id)
+    try:
+        res = accept(connection_id, effective, rec_id, graph, explain)
+    finally:
+        close()
+    if res is None:
+        raise HTTPException(status_code=404, detail=f"recommendation '{rec_id}' not found")
+    return res
+
+
+@router.post("/ontology/recommendations/{rec_id}/dismiss", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def dismiss_ontology_recommendation(
+    rec_id: str,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Dismiss a recommendation so the loop won't resurface it."""
+    from aughor.ontology.recommendations import get_recommendation, save_recommendation
+    effective = _resolve_schema(connection_id, schema_name)
+    rec = get_recommendation(connection_id, effective, rec_id)
+    if rec is None:
+        raise HTTPException(status_code=404, detail=f"recommendation '{rec_id}' not found")
+    rec.status = "dismissed"
+    save_recommendation(connection_id, effective, rec)
+    return {"dismissed": True, "id": rec_id}
+
+
+# ── Version-control round-trip: export ontology to files / import edits ─────────
+
+@router.post("/ontology/export", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def export_ontology_tree(
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Write the live ontology to a readable, version-controllable YAML tree."""
+    from aughor.ontology.filetree import export_tree, export_root
+    effective = _resolve_schema(connection_id, schema_name)
+    graph = _get_ontology_graph(connection_id, effective)
+    if graph is None:
+        raise HTTPException(status_code=404, detail="Ontology not available")
+    root = export_root(connection_id, effective)
+    paths = export_tree(root, graph)
+    return {"root": str(root), "files": len(paths)}
+
+
+@router.post("/ontology/import", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def import_ontology_tree(
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Re-import on-disk edits to the exported tree as EXPLAIN-bound overrides.
+
+    Edits are diffed against the PRE-override auto-built graph, so re-importing an
+    unedited export is a no-op and only changed fields become overrides.
+    """
+    from aughor.ontology.filetree import import_tree, export_root
+    from aughor.ontology.overrides import bind_overrides, save_override
+    from aughor.ontology.store import load_ontology
     effective = _resolve_schema(connection_id, schema_name)
     fingerprint = _latest_fingerprint(connection_id, effective)
-    if not fingerprint:
-        graph = _get_ontology_graph(connection_id, effective)
-        if graph is None:
-            raise HTTPException(status_code=404, detail="Ontology not available")
-        fingerprint = graph.schema_fingerprint
-    overrides = {k: v for k, v in body.model_dump().items() if v is not None}
-    updated = patch_entity(connection_id, effective, fingerprint, entity_id, overrides)
-    if updated is None:
-        raise HTTPException(status_code=404, detail=f"Entity '{entity_id}' not found")
-    return updated.entities[entity_id].model_dump()
+    base = load_ontology(connection_id, effective, fingerprint) if fingerprint else None
+    if base is None:
+        base = _get_ontology_graph(connection_id, effective)
+    if base is None:
+        raise HTTPException(status_code=404, detail="Ontology not available")
+
+    candidates = import_tree(export_root(connection_id, effective), base)
+    explain, close = _explain_for(connection_id)
+    saved = []
+    try:
+        for ov in candidates:
+            bind_overrides(ov, base, explain)
+            save_override(connection_id, effective, ov)
+            saved.append({"kind": ov.target_kind, "target": ov.target_id,
+                          "bound": all(b.get("bound") for b in ov.binding.values()) if ov.binding else True})
+    finally:
+        close()
+    return {"imported": len(saved), "overrides": saved}
 
 
 @router.post("/ontology/entities/merge", dependencies=[gate(Capability.ONTOLOGY_EDIT)])

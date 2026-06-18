@@ -18,8 +18,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
 import time
+
+from aughor.kernel.errors import tolerate
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, TYPE_CHECKING
@@ -52,6 +55,26 @@ logger = logging.getLogger(__name__)
 _RATE_SECONDS_SCHEMA = 0.0   # schema phases (3-7) run as fast as the DB allows
 _RATE_SECONDS_INTEL  = 5.0   # domain intel phase runs at 1 query per 5 seconds
 _COST_LARGE_ROWS     = 5_000_000  # Tier 3 — at/above this, prefer approximate aggregates
+
+# Bound how many explorations run their phases at once. The kernel spawns each as its
+# own asyncio.Task with no cap, so onboarding N connections at once (or boot recovery)
+# put N explorers on the event loop together — each firing run_in_executor SQL + LLM
+# calls — which saturated the shared executor and starved cheap requests like /status
+# (the UI then looked like only one connection was exploring). The single local LLM
+# serializes generations anyway, so a small cap costs ~nothing and keeps the API
+# responsive. Excess explorers queue at the semaphore (phase stays PENDING) and proceed
+# as slots free. Override with AUGHOR_MAX_CONCURRENT_EXPLORERS (default 2).
+_MAX_CONCURRENT_EXPLORERS = max(1, int(os.getenv("AUGHOR_MAX_CONCURRENT_EXPLORERS", "2")))
+_explorer_semaphore: "asyncio.Semaphore | None" = None
+
+
+def _get_explorer_semaphore() -> "asyncio.Semaphore":
+    """Lazily create the shared explorer semaphore. Safe on a single-threaded event
+    loop — first caller (always inside the running loop) creates it, the rest reuse it."""
+    global _explorer_semaphore
+    if _explorer_semaphore is None:
+        _explorer_semaphore = asyncio.Semaphore(_MAX_CONCURRENT_EXPLORERS)
+    return _explorer_semaphore
 
 # State-value vocabulary for lifecycle classification
 _TERMINAL = frozenset({
@@ -419,12 +442,24 @@ def _is_degenerate_result(rows, finding_text: str = "", sql: str = "", metric_ra
             # and this column overshoots its ceiling → grain bug (conversion 1.41, 105%).
             # Applies to a single column too (a per-channel rate need not span ≥2 rows to
             # be impossible). A matched OPEN metric (ROAS) is explicitly exempt.
-            if m_max is not None and 0.0 <= min(nums) and hi <= m_max * 1.5:
-                # within plausible "rate domain" (not a count column that dwarfs the bound)
-                if hi > m_max * 1.05:
-                    return True      # above the declared bound → impossible rate
-                if len(norm) >= 2 and all(n >= m_max * 0.9995 for n in nums):
-                    return True      # pinned at the declared ceiling in every segment
+            if m_max is not None:
+                # Normalise to a 0..1 fraction, TOLERATING the SQL emitting the other scale
+                # than declared — a metric declared 'ratio 0-1' whose query returns 100.0, OR
+                # declared 'percent 0-100' whose query returns 1.0. Both are the broken-
+                # denominator / saturation signature; the old check missed them because the
+                # raw value sat far from the declared ceiling. Works on a single segment too.
+                fracs: list | None = [v / m_max for v in nums]
+                if hi > m_max * 1.5:
+                    alt = 100.0 if m_max == 1.0 else 1.0
+                    if min(nums) >= 0.0 and hi <= alt * 1.5:
+                        fracs = [v / alt for v in nums]   # SQL used the OTHER scale
+                    else:
+                        fracs = None                       # a count-like column, not this rate
+                if fracs is not None:
+                    if any(f > 1.05 for f in fracs):
+                        return True      # above the bound → impossible rate (conversion 1.41)
+                    if all(f >= 0.9995 for f in fracs):
+                        return True      # saturated at the ceiling (100% repeat / 100% approved)
             # (b) Keyword fallback when no profile match — saturated-at-ceiling only (the
             # >bound case is unsafe without knowing bounded-vs-unbounded). Skip entirely
             # when we matched an OPEN metric (don't ceiling-drop a real ROAS=1.0).
@@ -435,6 +470,200 @@ def _is_degenerate_result(rows, finding_text: str = "", sql: str = "", metric_ra
                 if 0.0 <= lo and hi <= 100.05 and all(n >= 99.95 for n in nums):
                     return True      # 0..100% rate pinned at 100 in every segment
     return bool(finding_text and _NO_DATA_RE.search(finding_text))
+
+
+# Tokens that mark a SUM(... × weight) as the NORMALIZED multi-touch attribution idiom —
+# where the per-order weights sum to 1, so SUM(measure × weight) over a fact⋈attribution
+# join is NOT inflated (the F2 case). Such a SUM is exempt from the chasm DROP.
+_WEIGHT_FACTOR_RE = re.compile(r"sum\s*\([^)]*\b(weight|share|alloc\w*|attribution)\b", re.IGNORECASE)
+# Salient numbers a narration asserts — currency, comma-grouped counts, percentages.
+_CLAIM_NUM_RE = re.compile(r"\$\s?\d[\d,]*(?:\.\d+)?|\b\d{1,3}(?:,\d{3})+(?:\.\d+)?\b|\b\d+(?:\.\d+)?\s?%")
+
+
+def _safe_float(x):
+    """float(x) or None — expected non-numeric cells are control flow, not an error."""
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return None
+
+
+def _uniqueness_oracle_for(conn):
+    """Build (and cache on conn) the cardinality oracle the fan-out chasm guards use to
+    treat a 1:1 dimension as a non-satellite. Returns None if conn/schema unavailable."""
+    if conn is None:
+        return None
+    try:
+        from aughor.profile.validate import make_uniqueness_oracle
+        from aughor.tools.schema import _parse_schema_tables
+        tc = getattr(conn, "_insight_table_cols", None)
+        if tc is None:
+            tc = _parse_schema_tables(conn.get_schema())
+            if hasattr(conn, "__dict__"):
+                conn._insight_table_cols = tc
+        return make_uniqueness_oracle(conn, tc)
+    except Exception as _e:
+        tolerate(_e, "insight-gate: cardinality oracle unavailable", counter="insight_gate.oracle_failed")
+        return None
+
+
+def _insight_sql_unsound(sql: str, conn=None) -> str | None:
+    """Static SQL-trust battery for a CANDIDATE INSIGHT's query — the same authorities the
+    profile audit applies, now enforced BEFORE an explorer finding can be emitted. Returns a
+    one-line reason the query is untrustworthy, or None. High precision (errs toward keeping):
+
+      • self-ratio tautology (X/X → always 1.0),
+      • parent fan-out (SUM/AVG of a parent table's measure across a join to its child),
+      • chasm fan-out (≥2 many-side satellites of one hub) for SUM/COUNT(*)/AVG — with the
+        cardinality oracle (a 1:1 dimension is not a satellite) AND a carve-out for the
+        normalized SUM(measure × weight) attribution idiom, which is fan-out-safe."""
+    s = (sql or "").strip()
+    if not s:
+        return None
+    try:
+        from aughor.sql.fanout import (
+            self_ratio_tautology, detect_fanout, sum_over_chasm_fanout,
+            count_star_chasm_fanout, avg_over_chasm_fanout,
+        )
+    except Exception:
+        return None
+
+    taut = self_ratio_tautology(s)
+    if taut:
+        return taut
+
+    # Build the oracle FIRST — it parses + caches conn._insight_table_cols, so the fan-out
+    # guards reuse that schema parse (no second private import of _parse_schema_tables).
+    oracle = _uniqueness_oracle_for(conn)
+    table_cols = getattr(conn, "_insight_table_cols", None) or {}
+
+    # Fan-out battery (one guarded block; fail-open via tolerate, never silent):
+    #   • detect_fanout — high-precision multi-satellite/parent detector ("category GMV
+    #     $457k > total GMV $251k"); exempt the normalized SUM(measure × weight) idiom.
+    #   • chasm SUM/COUNT/AVG with the cardinality oracle (a 1:1 dimension isn't a satellite).
+    #   • the SAME chasm battery re-run on each CTE BODY — the outer-scope guards miss a
+    #     chasm HIDDEN inside a CTE (the ROAS bug: channel_revenue AS (SELECT SUM(...) FROM
+    #     order_items JOIN attribution ...)).
+    try:
+        weighted = bool(_WEIGHT_FACTOR_RE.search(s))
+        if not weighted:
+            f = detect_fanout(s, table_cols)
+            if f is not None:
+                return f"fan-out: {f.to_prompt_text()[:160]}"
+        if oracle is not None:
+            if not weighted:
+                r = sum_over_chasm_fanout(s, table_cols, is_unique_on=oracle)
+                if r:
+                    return f"fan-out: {r[:160]}"
+            for fn in (count_star_chasm_fanout, avg_over_chasm_fanout):
+                r = fn(s, table_cols, is_unique_on=oracle)
+                if r:
+                    return f"fan-out: {r[:160]}"
+            import sqlglot
+            from sqlglot import exp as _exp
+            for cte in sqlglot.parse_one(s, read="duckdb").find_all(_exp.CTE):
+                body = cte.this.sql(dialect="duckdb")
+                if _WEIGHT_FACTOR_RE.search(body):
+                    continue
+                rc = (sum_over_chasm_fanout(body, table_cols, is_unique_on=oracle)
+                      or count_star_chasm_fanout(body, table_cols, is_unique_on=oracle)
+                      or avg_over_chasm_fanout(body, table_cols, is_unique_on=oracle))
+                if rc:
+                    return f"fan-out in CTE '{cte.alias_or_name}': {rc[:140]}"
+    except Exception as _e:
+        tolerate(_e, "insight-gate: fan-out analysis", counter="insight_gate.fanout_failed")
+    return None
+
+
+def _part_exceeds_whole(rows) -> str | None:
+    """Internal-consistency check: a column that is CONSTANT across the result is a candidate
+    grand total; if another numeric column has a value that EXCEEDS it, the 'parts' are bigger
+    than the 'whole' — the signature of a fan-out total (the 'category GMV $457k > total GMV
+    $251k' bug). Conservative: needs ≥2 rows, both columns at money/count magnitude (≥100), and
+    a clear >5% overshoot — so a constant rate next to a count never trips it."""
+    if not rows or len(rows) < 2:
+        return None
+    norm = [list(r.values()) if isinstance(r, dict) else list(r) for r in rows]
+    ncols = min((len(r) for r in norm), default=0)
+    cols = []
+    for i in range(ncols):
+        parsed = [_safe_float(r[i]) for r in norm]
+        cols.append(parsed if all(v is not None for v in parsed) else None)
+    for i, ci in enumerate(cols):
+        if not ci or len(set(ci)) != 1:
+            continue                      # column i must be CONSTANT (a candidate total)
+        total = ci[0]
+        if abs(total) < 100:
+            continue                      # too small to be a money/count total — skip (rates)
+        for j, cj in enumerate(cols):
+            if j == i or not cj:
+                continue
+            if max(cj) > abs(total) * 1.05 and max(cj) >= 100:
+                return (f"component exceeds total: a value {max(cj):.0f} exceeds the constant "
+                        f"total {total:.0f} in the same result — fan-out over-count")
+    return None
+
+
+def _claim_numbers_grounded(finding_text: str, rows) -> str | None:
+    """Conservative claim-grounding: every salient number the NARRATION asserts (currency,
+    comma-grouped counts, percentages) should trace to the actual result. Flags ONLY gross
+    fabrication — ≥2 salient numbers asserted and NONE found in the rows (a percentage is
+    matched against both its raw value and its 0..1 fraction; magnitudes within 1%). Rounding,
+    abbreviations ($1.3M) and a single derived figure never trip it — false positives here
+    would drop good insights, so the bar is deliberately high."""
+    if not finding_text or not rows:
+        return None
+    vals = []
+    for tok in _CLAIM_NUM_RE.findall(finding_text):
+        v = _safe_float(re.sub(r"[\$,%\s]", "", tok))
+        if v is not None:
+            vals.append((tok, v))
+    if len(vals) < 2:
+        return None
+    # flatten numeric cells from the result
+    cells = []
+    for r in rows[:200]:
+        row = r.values() if isinstance(r, dict) else r
+        cells.extend(v for v in (_safe_float(c) for c in row) if v is not None)
+    if not cells:
+        return None
+
+    def grounded(v):
+        for c in cells:
+            for cand in (c, c * 100.0, c / 100.0):  # percent ↔ fraction
+                if cand == 0:
+                    continue
+                if abs(v - cand) <= abs(cand) * 0.01 + 1e-6:
+                    return True
+        return v == 0.0
+    if not any(grounded(v) for _, v in vals):
+        return (f"claim not grounded: none of the asserted figures "
+                f"{[t for t, _ in vals][:4]} appear in the query result")
+    return None
+
+
+def verify_insight(rows, finding_text: str = "", sql: str = "", metric_ranges=None, conn=None) -> tuple[bool, str]:
+    """THE pre-emission trust gate: a candidate finding is surfaced ONLY if it passes every
+    deterministic check. Returns (ok, reason). A SOTA platform treats generated claims as
+    untrusted until verified — so the explorer self-weeds (tautologies, fan-out artifacts,
+    boundary-saturated rates, fabricated numbers) instead of shipping confident nonsense to
+    a Briefing. Supersedes the bare degenerate check at every emission site; fail-open only
+    on internal error (never silently drops a sound finding due to a gate bug)."""
+    try:
+        why = _insight_sql_unsound(sql, conn)
+        if why:
+            return (False, why)
+        if _is_degenerate_result(rows, finding_text, sql, metric_ranges):
+            return (False, "degenerate result (flat NULL / zero / boundary-pinned rate)")
+        pw = _part_exceeds_whole(rows)
+        if pw:
+            return (False, pw)
+        cg = _claim_numbers_grounded(finding_text, rows)
+        if cg:
+            return (False, cg)
+        return (True, "")
+    except Exception:
+        return (True, "")  # fail-open: a gate bug must not suppress real findings
 
 
 _LITERAL_DIM_RE = re.compile(r"""['"][^'"]*['"]\s+AS\s+(\w+)""", re.IGNORECASE)
@@ -686,9 +915,15 @@ class SchemaExplorer:
         conn: "DatabaseConnection",
         canvas_id: Optional[str] = None,
         tables_filter: Optional[list[str]] = None,
+        schema_name: Optional[str] = None,
     ) -> None:
         self.connection_id = connection_id
         self.canvas_id = canvas_id
+        # When a multi-schema connection is explored per-schema, this run is scoped to ONE
+        # schema: state/episodes/profile/ontology are keyed by (connection, schema) so each
+        # schema gets its OWN intelligence (the missimi=0 fix). None = connection-level (the
+        # single-schema / 'All schemas' case) — fully backward-compatible.
+        self.schema_name = schema_name
         self.tables_filter = tables_filter  # non-empty list = restrict phases 3-7 to these tables
         self._conn = conn
         self._status = ExplorationStatus(
@@ -696,14 +931,20 @@ class SchemaExplorer:
             canvas_id=canvas_id,
             started_at=datetime.now(timezone.utc).isoformat(),
         )
-        # Canvas-scoped explorer uses a separate state/episode key
-        _store_key = f"canvas_{canvas_id}" if canvas_id else connection_id
+        # State/episode key: canvas → its own key; a schema-scoped run → conn__schema;
+        # otherwise the bare connection (unchanged).
+        if canvas_id:
+            _store_key = f"canvas_{canvas_id}"
+        elif schema_name:
+            _store_key = f"{connection_id}__{schema_name}"
+        else:
+            _store_key = connection_id
         self._store_key = _store_key
         self._episodes = EpisodeCollector(_store_key)
         self._can_run = asyncio.Event()
         self._can_run.set()
         self._stopped = False
-        self._state = _store.load_canvas(canvas_id) if canvas_id else _store.load(connection_id)
+        self._state = _store.load_canvas(canvas_id) if canvas_id else _store.load(self._store_key)
         # Restore the time-to-first-insight milestone if this run is resuming a
         # prior one, so TTFI isn't re-stamped (and re-emitted) on every restart.
         self._status.first_insight_at = self._state.get("first_insight_at")
@@ -718,10 +959,32 @@ class SchemaExplorer:
     # ── State persistence helpers ─────────────────────────────────────────────
 
     def _save_state(self) -> None:
+        # Mirror the LIVE phase into the persisted state on EVERY save. Mid-run phase
+        # transitions only update self._status.phase (in-memory, served by /status);
+        # without this, the persisted exploration JSON stayed "pending" until the
+        # terminal COMPLETE/FAILED write, so any disk-based view (restart recovery,
+        # offline monitoring, a busy event loop that times out /status) under-reported
+        # progress. Now disk == live phase.
+        self._state["phase"] = (
+            self._status.phase.value
+            if isinstance(self._status.phase, ExplorationPhase)
+            else self._status.phase
+        )
         if self.canvas_id:
             _store.save_canvas(self.canvas_id, self._state)
         else:
-            _store.save(self.connection_id, self._state)
+            _store.save(self._store_key, self._state)
+
+    def _leaks_schema(self, sql: str) -> bool:
+        """For a schema-SCOPED run, True if the SQL references a table in a DIFFERENT schema.
+        Scoping filters get_schema() but the underlying DuckDB can still EXECUTE a cross-schema
+        query, so a pinned/profile-seeded SQL could escape the schema — drop such findings so a
+        per-schema view stays pure. No-op for connection-level runs (schema_name=None)."""
+        if not self.schema_name:
+            return False
+        mine = self.schema_name.lower()
+        other = {_dataset_of(t).lower() for t in _tables_in_sql(sql)} - {mine, ""}
+        return bool(other)
 
     # ── External control ──────────────────────────────────────────────────────
 
@@ -1007,7 +1270,20 @@ class SchemaExplorer:
     # ── Main loop ─────────────────────────────────────────────────────────────
 
     async def explore(self, domain_intel_only: bool = False) -> None:
-        """Full exploration run — schedule this as an asyncio.Task.
+        """Concurrency-bounded entry point for an exploration run (scheduled as an
+        asyncio.Task by the kernel). Acquires a shared slot so at most
+        AUGHOR_MAX_CONCURRENT_EXPLORERS run their phases at once; excess explorers wait
+        here (phase stays PENDING) rather than piling onto the event loop and starving
+        the API. `async with` releases the slot correctly even on cancellation."""
+        sem = _get_explorer_semaphore()
+        if sem.locked():
+            logger.info("[explorer:%s] queued — waiting for an exploration slot (max %d concurrent)",
+                        self.connection_id, _MAX_CONCURRENT_EXPLORERS)
+        async with sem:
+            await self._explore_run(domain_intel_only=domain_intel_only)
+
+    async def _explore_run(self, domain_intel_only: bool = False) -> None:
+        """Full exploration run.
 
         If domain_intel_only=True (triggered by "Explore 5 more") skips phases 3-7
         and runs only Phase 8, consuming the extended budget.
@@ -1101,7 +1377,7 @@ class SchemaExplorer:
             # /ontology API request) may not have happened yet.  get_schema()
             # is idempotent + cached — instant on the second call.
             from aughor.ontology.store import load_latest_ontology as _load_onto
-            if not _load_onto(self.connection_id):
+            if not _load_onto(self.connection_id, self.schema_name):
                 logger.info(
                     "[explorer:%s] Ontology not found before Phase 8 — building now…",
                     self.connection_id,
@@ -1817,9 +2093,14 @@ class SchemaExplorer:
                 rows = await self._run(sql, think=f"[pinned] {q[:60]}")
                 if not rows:
                     continue
-                if _is_degenerate_result(rows, q, sql, _mranges):
-                    logger.info("[explorer:%s] Phase 8 (pinned): skipping Q%d — degenerate result",
-                                self.connection_id, qi)
+                if self._leaks_schema(sql):
+                    logger.info("[explorer:%s] Phase 8 (pinned): skipping Q%d — SQL escapes schema %s",
+                                self.connection_id, qi, self.schema_name)
+                    continue
+                _ok, _why = verify_insight(rows, q, sql, _mranges, conn=self._conn)
+                if not _ok:
+                    logger.info("[explorer:%s] Phase 8 (pinned): skipping Q%d — %s",
+                                self.connection_id, qi, _why)
                     continue
                 if _has_fabricated_dimension(sql):
                     continue
@@ -1840,7 +2121,12 @@ class SchemaExplorer:
                 except Exception:
                     continue
 
-                if _is_degenerate_result(rows, interp.finding, sql, _mranges):
+                if self._leaks_schema(sql):
+                    continue
+                _ok, _why = verify_insight(rows, interp.finding, sql, _mranges, conn=self._conn)
+                if not _ok:
+                    logger.info("[explorer:%s] Phase 8 (pinned): dropping interpreted finding — %s",
+                                self.connection_id, _why)
                     continue
                 _prior_findings = [i.get("finding", "") for i in self._state.get("insights", [])]
                 if is_semantically_redundant(interp.finding, _prior_findings):
@@ -1920,7 +2206,7 @@ class SchemaExplorer:
         from aughor.ontology.store import load_latest_ontology
         from aughor.sql.writer import SqlWriter
 
-        ontology = load_latest_ontology(self.connection_id)
+        ontology = load_latest_ontology(self.connection_id, self.schema_name)
         if not ontology:
             # Surface the SPECIFIC failure the build recorded (stage + reason) so the user
             # gets an actionable message + Retry instead of a silent empty Hub.
@@ -2061,7 +2347,16 @@ class SchemaExplorer:
         _metric_ranges: list = []   # (distinctive tokens, kind, max) per north-star metric
         try:
             from aughor.profile.infer import get_or_infer
-            _bp = await _loop.run_in_executor(None, lambda: get_or_infer(self.connection_id))
+            # Key the profile by THIS run's schema (a per-schema run) or the connection's
+            # configured schema, so the Briefing's schema selector fetches the matching one.
+            _conn_schema = self.schema_name
+            if not _conn_schema:
+                try:
+                    from aughor.db.registry import get_meta
+                    _conn_schema = (get_meta(self.connection_id) or {}).get("schema_name") or None
+                except Exception:
+                    _conn_schema = None
+            _bp = await _loop.run_in_executor(None, lambda: get_or_infer(self.connection_id, _conn_schema))
             if _bp is not None:
                 _profile_for_pin = _bp
                 try:
@@ -2084,7 +2379,7 @@ class SchemaExplorer:
                 # (e.g. COUNT(orders)/COUNT(carts) → conversion > 1). Injected
                 # authoritatively so generated SQL gets the join/grain right.
                 from aughor.profile import store as _pstore
-                _recipes = _pstore.load_recipes(self.connection_id)
+                _recipes = _pstore.load_recipes(self.connection_id, _conn_schema)
                 _rlines = ""
                 if _recipes:
                     _parts = []
@@ -3047,11 +3342,15 @@ class SchemaExplorer:
 
                 # Drop "no data" findings — an empty/all-NULL result or an interpretation
                 # that says as much. They pollute the Briefing and turn into broken monitors.
-                if _is_degenerate_result(rows, interp.finding, sql, _metric_ranges):
+                if self._leaks_schema(sql):
+                    logger.info("[explorer:%s] Phase 8: %s/%s — dropping finding: SQL escapes schema %s",
+                                self.connection_id, domain, nq.angle, self.schema_name)
+                    continue
+                _ok, _why = verify_insight(rows, interp.finding, sql, _metric_ranges, conn=self._conn)
+                if not _ok:
                     logger.info(
-                        "[explorer:%s] Phase 8: %s/%s — skipping degenerate finding "
-                        "(flat NULL / zero / out-of-range rate)",
-                        self.connection_id, domain, nq.angle,
+                        "[explorer:%s] Phase 8: %s/%s — dropping finding: %s",
+                        self.connection_id, domain, nq.angle, _why,
                     )
                     continue
 

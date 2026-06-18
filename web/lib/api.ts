@@ -62,8 +62,9 @@ export interface BusinessProfileResponse {
     confidence: number;
   };
 }
-export async function getBusinessProfile(connectionId: string): Promise<BusinessProfileResponse> {
-  const res = await fetch(`${BASE}/business-profile?connection_id=${encodeURIComponent(connectionId)}`);
+export async function getBusinessProfile(connectionId: string, schema?: string): Promise<BusinessProfileResponse> {
+  const q = schema ? `&schema_name=${encodeURIComponent(schema)}` : "";
+  const res = await fetch(`${BASE}/business-profile?connection_id=${encodeURIComponent(connectionId)}${q}`);
   if (!res.ok) return { available: false };
   return res.json();
 }
@@ -2371,16 +2372,20 @@ export interface ExplorerStatus {
    *  ontology could not be built — distinguishes "couldn't generate" from "never ran". */
   domain_intel_skipped?: boolean;
   domain_intel_note?: string | null;
+  /** {schema: phase} for the 'All schemas' aggregate of a multi-schema connection. */
+  per_schema?: Record<string, string> | null;
 }
 
-export async function getExplorerStatus(connectionId: string): Promise<ExplorerStatus> {
-  const res = await fetch(`${BASE}/exploration/${encodeURIComponent(connectionId)}/status`);
+export async function getExplorerStatus(connectionId: string, schema?: string): Promise<ExplorerStatus> {
+  const q = schema ? `?schema=${encodeURIComponent(schema)}` : "";
+  const res = await fetch(`${BASE}/exploration/${encodeURIComponent(connectionId)}/status${q}`);
   if (!res.ok) throw new Error("Failed to fetch explorer status");
   return res.json();
 }
 
-export async function startExplorer(connectionId: string): Promise<{ ok: boolean; reason?: string }> {
-  const res = await fetch(`${BASE}/exploration/${encodeURIComponent(connectionId)}/start`, { method: "POST" });
+export async function startExplorer(connectionId: string, schema?: string): Promise<{ ok: boolean; reason?: string }> {
+  const q = schema ? `?schema=${encodeURIComponent(schema)}` : "";
+  const res = await fetch(`${BASE}/exploration/${encodeURIComponent(connectionId)}/start${q}`, { method: "POST" });
   if (!res.ok) throw new Error("Failed to start explorer");
   return res.json();
 }

@@ -193,9 +193,14 @@ def load_latest_ontology(
         return None
     last_entry = list(matches.values())[-1]
     try:
-        return OntologyGraph.model_validate(last_entry["graph"])
+        graph = OntologyGraph.model_validate(last_entry["graph"])
     except Exception:
         return None
+    # THE shared authority point: chat (investigations._stream_chat), the metrics
+    # catalog (semantic.metrics.build_metrics_block) and the eval harness all read
+    # the semantic layer through load_latest_ontology. Overlaying human overrides
+    # here makes override-wins reach every semantic-layer consumer at once.
+    return overlay_human_overrides(graph, connection_id, graph.schema_name)
 
 
 def patch_action(
@@ -326,4 +331,36 @@ def _overlay_learned_actions(graph, connection_id: str, schema_name: str):
             graph.actions.setdefault(aid, action)
     except Exception:
         pass
+    return graph
+
+
+def overlay_human_overrides(graph, connection_id: str, schema_name: str):
+    """Apply human ontology overrides onto ``graph`` and persist nothing.
+
+    Distinct from ``_overlay_learned_actions`` (the get_or_build seam) on purpose:
+    human edits must be applied LAST — after M12b enrichment and M24c validation —
+    so a human-asserted ``verified`` flag wins over the validator's verdict. So
+    the call site is the end of ``build_intelligence`` (post-validate), not inside
+    get_or_build. Idempotent, so a second apply on a read path is harmless.
+
+    Emits a fired/skipped counter and an info log: a human override that silently
+    didn't apply must be visible, never a bare ``except: pass``.
+    """
+    if graph is None:
+        return graph
+    try:
+        from aughor.ontology.overrides import apply_overrides
+        _, report = apply_overrides(graph, connection_id, schema_name)
+        if report.applied or report.skipped:
+            from aughor.stats import stats as _st
+            _st.inc("ontology.human_overrides_applied", len(report.applied))
+            _st.inc("ontology.human_overrides_skipped", len(report.skipped))
+            import logging
+            logging.getLogger(__name__).info(
+                "human ontology overrides [%s:%s] applied=%s skipped=%s",
+                connection_id, schema_name, report.applied, report.skipped)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "human overrides are additive; ontology is usable without them",
+                 counter="ontology.human_overrides", conn_id=connection_id or None)
     return graph

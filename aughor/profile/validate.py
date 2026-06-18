@@ -98,6 +98,52 @@ def match_metric_range(text: str, ranges: list[tuple]) -> tuple | None:
     return best
 
 
+def make_uniqueness_oracle(conn, table_cols: dict):
+    """Build an `is_unique_on(table_bare, key_col) -> bool | None` for the fan-out
+    chasm guards, backed by a live `COUNT(*) = COUNT(DISTINCT key)` probe (cached on
+    the conn). Lets the guards tell a 1:1 DIMENSION (e.g. invoices, one-per-order)
+    from a real fan-out SATELLITE (e.g. attribution, many-per-order) so they stop
+    blanking correct `SUM(measure × weight)` / `COUNT(*)` queries over a fact⋈dimension
+    join. Returns None if no conn (guards then stay conservative)."""
+    if conn is None:
+        return None
+    qualified: dict[str, str] = {}
+    for t in (table_cols or {}):
+        qualified.setdefault(str(t).split(".")[-1].lower(), str(t))
+    # Cache probes on the conn when it has a normal __dict__ (so repeated audits in a
+    # build share results); fall back to a local cache for slotted conns — no silent
+    # swallow either way.
+    cache = getattr(conn, "_fanout_uniq_cache", None)
+    if cache is None:
+        cache = {}
+        if hasattr(conn, "__dict__"):
+            conn._fanout_uniq_cache = cache
+
+    def is_unique_on(bare: str, col: str):
+        key = (bare.lower(), col.lower())
+        if key in cache:
+            return cache[key]
+        tbl = qualified.get(bare.lower(), bare)
+        val = None
+        try:
+            res = conn.execute("fanout-uniq-probe",
+                               f'SELECT COUNT(*) = COUNT(DISTINCT "{col}") FROM {tbl}')
+            if not getattr(res, "error", None):
+                rows = getattr(res, "rows", None) or []
+                if rows and rows[0] and rows[0][0] is not None:
+                    cell = rows[0][0]
+                    # results come back stringified ('True'/'False') — bool('False') is
+                    # truthy, so parse the value rather than coercing the string.
+                    val = cell if isinstance(cell, bool) else \
+                        str(cell).strip().lower() in ("true", "t", "1")
+        except Exception:
+            val = None
+        cache[key] = val
+        return val
+
+    return is_unique_on
+
+
 def _first_numeric(rows: list[list]) -> float | None:
     """The single scalar a value_sql is supposed to return — first numeric cell of
     the first row. None if absent/NULL/non-numeric (a value_sql that can't produce
@@ -133,15 +179,18 @@ def audit_value_sql(value_sql: str, table_cols: dict, conn, unit_or_range: str) 
             pass  # dry_run unavailable → fall through to execution, which also binds
 
         # 2. static grain/fan-out guards — the same DROP signals the explorer uses.
+        # A cardinality oracle lets the chasm guards skip 1:1 dimensions (e.g. invoices)
+        # so a correct fact⋈dimension SUM(measure × weight) isn't blanked as a chasm.
         from aughor.sql.fanout import (
             integer_division_risk, count_star_entity_fanout, count_star_chasm_fanout,
             avg_over_chasm_fanout, sum_over_chasm_fanout, cte_grain_mismatch_fanout,
         )
+        uniq = make_uniqueness_oracle(conn, table_cols)
         grain = (integer_division_risk(sql)
                  or count_star_entity_fanout(sql, table_cols)
-                 or count_star_chasm_fanout(sql, table_cols, dialect=dialect)
-                 or avg_over_chasm_fanout(sql, table_cols, dialect=dialect)
-                 or sum_over_chasm_fanout(sql, table_cols, dialect=dialect)
+                 or count_star_chasm_fanout(sql, table_cols, dialect=dialect, is_unique_on=uniq)
+                 or avg_over_chasm_fanout(sql, table_cols, dialect=dialect, is_unique_on=uniq)
+                 or sum_over_chasm_fanout(sql, table_cols, dialect=dialect, is_unique_on=uniq)
                  or cte_grain_mismatch_fanout(sql, table_cols, dialect=dialect))
         if grain:
             return (False, f"grain bug: {grain}")
@@ -211,11 +260,12 @@ def audit_chart_sql(chart_sql: str, table_cols: dict, conn) -> tuple[bool, str]:
             integer_division_risk, count_star_entity_fanout, count_star_chasm_fanout,
             avg_over_chasm_fanout, sum_over_chasm_fanout, cte_grain_mismatch_fanout,
         )
+        uniq = make_uniqueness_oracle(conn, table_cols)
         grain = (integer_division_risk(sql)
                  or count_star_entity_fanout(sql, table_cols)
-                 or count_star_chasm_fanout(sql, table_cols, dialect=dialect)
-                 or avg_over_chasm_fanout(sql, table_cols, dialect=dialect)
-                 or sum_over_chasm_fanout(sql, table_cols, dialect=dialect)
+                 or count_star_chasm_fanout(sql, table_cols, dialect=dialect, is_unique_on=uniq)
+                 or avg_over_chasm_fanout(sql, table_cols, dialect=dialect, is_unique_on=uniq)
+                 or sum_over_chasm_fanout(sql, table_cols, dialect=dialect, is_unique_on=uniq)
                  or cte_grain_mismatch_fanout(sql, table_cols, dialect=dialect))
         if grain:
             return (False, f"grain bug: {grain}")
@@ -284,11 +334,12 @@ def audit_finding_sql(sql: str, table_cols: dict, conn) -> tuple[bool, str]:
             integer_division_risk, count_star_entity_fanout, count_star_chasm_fanout,
             avg_over_chasm_fanout, sum_over_chasm_fanout, cte_grain_mismatch_fanout,
         )
+        uniq = make_uniqueness_oracle(conn, table_cols)
         grain = (integer_division_risk(s)
                  or count_star_entity_fanout(s, table_cols)
-                 or count_star_chasm_fanout(s, table_cols, dialect=dialect)
-                 or avg_over_chasm_fanout(s, table_cols, dialect=dialect)
-                 or sum_over_chasm_fanout(s, table_cols, dialect=dialect)
+                 or count_star_chasm_fanout(s, table_cols, dialect=dialect, is_unique_on=uniq)
+                 or avg_over_chasm_fanout(s, table_cols, dialect=dialect, is_unique_on=uniq)
+                 or sum_over_chasm_fanout(s, table_cols, dialect=dialect, is_unique_on=uniq)
                  or cte_grain_mismatch_fanout(s, table_cols, dialect=dialect))
         if grain:
             return (False, f"grain bug: {grain}")

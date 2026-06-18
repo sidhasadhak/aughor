@@ -73,6 +73,16 @@ def _table_fk_roots(cols: list[str]) -> set[str]:
     return roots
 
 
+def _fk_col_for_root(cols: list[str], root: str) -> str | None:
+    """The column on a table that roots to `root` (e.g. root 'order' → 'order_id') —
+    i.e. the key this table joins to the hub on. Used to ask a cardinality oracle
+    whether the table is 1:1 on that key."""
+    for c in cols:
+        if _fk_root(c) == root:
+            return c
+    return None
+
+
 def _singular(t: str) -> str:
     """Crude singular stem of a table name — used to tell the hub (stem == FK root)
     from its satellites (many-side tables that merely carry the hub's FK)."""
@@ -264,12 +274,23 @@ def count_star_entity_fanout(sql: str, table_cols: dict | None = None) -> str | 
     return None
 
 
-def _chasm_roots(tree, root, table_cols: dict | None) -> dict[str, set[str]]:
+def _chasm_roots(tree, root, table_cols: dict | None, is_unique_on=None) -> dict[str, set[str]]:
     """Hubs that have ≥2 RAW base-table satellites joined directly in the OUTER
     scope — i.e. a chasm. Returns {hub_fk_root: {satellite tables}} with ≥2 sats
     each, or {} when there's no chasm. Shared by the COUNT(*) and AVG chasm
     linters so they detect the SAME structure identically. CTE/subquery sources
-    are excluded (pre-aggregating in a CTE is the fix)."""
+    are excluded (pre-aggregating in a CTE is the fix).
+
+    `is_unique_on(table_bare, key_col) -> bool | None` is an optional cardinality
+    oracle. A "satellite" that is UNIQUE (1:1) on the hub key is a DIMENSION, not a
+    fan-out source — it attaches exactly one row and multiplies nothing — so it is
+    excluded from the satellite set. This removes the canonical false positive where
+    a fact (e.g. `attribution`, many-per-order) is joined to a 1:1 table (e.g.
+    `invoices`, one-per-order): without cardinality the two look like a chasm, but
+    `SUM(measure × weight)` / `COUNT(*)` over that join does NOT over-count. When the
+    oracle is absent or returns None (unknown), behaviour is unchanged — conservative,
+    still flags — so this is purely additive precision, never new false negatives on
+    the genuine ≥2-fact chasm."""
     from sqlglot import exp
     cte_names = {c.alias_or_name.lower() for c in tree.find_all(exp.CTE)}
     base_tables: set[str] = set()
@@ -294,11 +315,18 @@ def _chasm_roots(tree, root, table_cols: dict | None) -> dict[str, set[str]]:
     for bt in base_tables:
         for r in roots_by_table[bt]:
             if _singular(bt) != r and bt != r:   # bt is a satellite of hub r, not the hub
+                # Cardinality-aware demotion: a table that is 1:1 on the hub key is a
+                # dimension, not a fan-out satellite — it can't multiply rows.
+                if is_unique_on is not None:
+                    key_col = _fk_col_for_root(_schema_cols(bt), r)
+                    if key_col and is_unique_on(bt, key_col) is True:
+                        continue
                 sat_by_root.setdefault(r, set()).add(bt)
     return {r: sats for r, sats in sat_by_root.items() if len(sats) >= 2}
 
 
-def count_star_chasm_fanout(sql: str, table_cols: dict | None = None, dialect: str = "duckdb") -> str | None:
+def count_star_chasm_fanout(sql: str, table_cols: dict | None = None, dialect: str = "duckdb",
+                            is_unique_on=None) -> str | None:
     """``COUNT(*)`` over a CHASM — ≥2 base tables on the many-side of the SAME hub key
     joined directly — counts the cross-product of the satellites, not either entity.
     The textbook case `campaigns JOIN clicks JOIN impressions ... COUNT(*)` returns
@@ -332,7 +360,7 @@ def count_star_chasm_fanout(sql: str, table_cols: dict | None = None, dialect: s
 
     # A chasm needs ≥2 satellites of the SAME hub joined directly — a single
     # hub⋈satellite join is not a chasm.
-    chasm = _chasm_roots(tree, root, table_cols)
+    chasm = _chasm_roots(tree, root, table_cols, is_unique_on=is_unique_on)
     if not chasm:
         return None
 
@@ -356,7 +384,8 @@ def count_star_chasm_fanout(sql: str, table_cols: dict | None = None, dialect: s
     return None
 
 
-def avg_over_chasm_fanout(sql: str, table_cols: dict | None = None, dialect: str = "duckdb") -> str | None:
+def avg_over_chasm_fanout(sql: str, table_cols: dict | None = None, dialect: str = "duckdb",
+                          is_unique_on=None) -> str | None:
     """``AVG(x)`` over a CHASM — every row is the cross-product of ≥2 satellites of
     one hub, so each distinct value is repeated by the OTHER satellite's fan-out
     multiplicity. Unlike SUM/COUNT (which merely inflate) the mean comes out
@@ -385,7 +414,7 @@ def avg_over_chasm_fanout(sql: str, table_cols: dict | None = None, dialect: str
     if root is None:
         return None
 
-    chasm = _chasm_roots(tree, root, table_cols)
+    chasm = _chasm_roots(tree, root, table_cols, is_unique_on=is_unique_on)
     if not chasm:
         return None
 
@@ -409,7 +438,8 @@ def avg_over_chasm_fanout(sql: str, table_cols: dict | None = None, dialect: str
     return None
 
 
-def sum_over_chasm_fanout(sql: str, table_cols: dict | None = None, dialect: str = "duckdb") -> str | None:
+def sum_over_chasm_fanout(sql: str, table_cols: dict | None = None, dialect: str = "duckdb",
+                          is_unique_on=None) -> str | None:
     """``SUM(x)`` over a CHASM — ≥2 RAW satellites of the SAME hub joined directly —
     sums a measure across the cross-product of the satellites, so the total is
     inflated by the OTHER satellite's fan-out multiplicity. The real-path scar: a
@@ -451,7 +481,7 @@ def sum_over_chasm_fanout(sql: str, table_cols: dict | None = None, dialect: str
     if root is None:
         return None
 
-    chasm = _chasm_roots(tree, root, table_cols)
+    chasm = _chasm_roots(tree, root, table_cols, is_unique_on=is_unique_on)
     if not chasm:
         return None
 
@@ -472,6 +502,47 @@ def sum_over_chasm_fanout(sql: str, table_cols: dict | None = None, dialect: str
             f"inflated by the other satellites' fan-out — pre-aggregate EACH satellite in "
             f"its own CTE keyed by '{r}' first, then join"
         )
+    return None
+
+
+def self_ratio_tautology(sql: str, dialect: str = "duckdb") -> str | None:
+    """A rate whose NUMERATOR and DENOMINATOR are the SAME aggregate expression —
+    ``SUM(x) / NULLIF(SUM(x), 0)``, ``COUNT(y) / COUNT(y)`` — is identically 1.0 for
+    every non-zero bucket, REGARDLESS of the data. It is never a real metric: a rate
+    divides by a DIFFERENT base (margin/revenue, converted/total). This is the
+    `gross_margin_usd / gross_margin_usd → 100%` trap that then gets narrated as "no
+    COGS recorded". Pure structural analysis on the parse tree (so `SUM(a)/SUM(a+b)` is
+    NOT flagged — different denominator); returns a reason or None; never raises."""
+    try:
+        import sqlglot
+        from sqlglot import exp
+    except Exception:
+        return None
+    try:
+        tree = sqlglot.parse_one(sql, read=dialect)
+    except Exception:
+        return None
+    if tree is None:
+        return None
+
+    def _agg_key(node) -> str | None:
+        # canonical "FUNC(arg)" for an aggregate, ignoring whitespace/case; None if not an agg
+        if isinstance(node, (exp.Sum, exp.Count, exp.Avg, exp.Min, exp.Max)):
+            inner = node.this
+            arg = "" if inner is None else inner.sql(dialect=dialect)
+            arg_norm = re.sub(r"\s+", "", arg).lower()
+            return type(node).__name__.lower() + "(" + arg_norm + ")"
+        return None
+
+    for div in tree.find_all(exp.Div):
+        num, den = div.this, div.expression
+        # denominator is often wrapped in NULLIF(<agg>, 0) — unwrap to the first arg
+        if isinstance(den, exp.Nullif):
+            den = den.this if den.this is not None else den.expressions[0] if den.expressions else den
+        nk, dk = _agg_key(num), _agg_key(den)
+        if nk and dk and nk == dk:
+            return (f"self-referential ratio: numerator and denominator are the same "
+                    f"aggregate ({num.sql(dialect=dialect)}) — identically 1.0, not a real rate")
     return None
 
 

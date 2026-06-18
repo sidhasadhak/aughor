@@ -1509,10 +1509,10 @@ export function BriefingPanel({
     setExplorerBusy(true);
     try {
       if (canvasId) await resumeCanvasExploration(canvasId);
-      else          await startExplorer(connectionId);
+      else          await startExplorer(connectionId, schema);
     } catch {}
     setExplorerBusy(false);
-  }, [connectionId, canvasId]);
+  }, [connectionId, canvasId, schema]);
 
   const runTriggerIntel = useCallback(async () => {
     if (!canvasId && !connectionId) return;
@@ -1568,7 +1568,7 @@ export function BriefingPanel({
     if (!scopeId) return;
     let mounted = true;
     const poll = () => {
-      const req = canvasId ? getCanvasExplorationStatus(canvasId) : getExplorerStatus(connectionId);
+      const req = canvasId ? getCanvasExplorationStatus(canvasId) : getExplorerStatus(connectionId, schema);
       req
         .then(s => { if (mounted) setExplorerStatus(s); })
         .catch(() => { if (mounted) setExplorerStatus(null); });
@@ -1582,7 +1582,7 @@ export function BriefingPanel({
       ...(canvasId ? { canvasId } : { connId: connectionId }),
     });
     return () => { mounted = false; clearInterval(iv); unsub(); };
-  }, [connectionId, canvasId]);
+  }, [connectionId, canvasId, schema]);
 
   // Auto-refresh the briefing the moment an exploration run reaches "complete" —
   // newly-synthesised domain intelligence would otherwise stay hidden until a manual Reload.
@@ -1796,12 +1796,13 @@ export function BriefingPanel({
       )}
 
       {/* ── Industry key metrics ── the vertical's north-star KPIs, computed live */}
-      <IndustryKpiStrip connectionId={connectionId} />
+      <IndustryKpiStrip connectionId={connectionId} schema={schema} />
 
       {/* ── Live dashboard ── top-3 key-metric explainer charts + finding text cards (#3) */}
       <BriefingDashboard
         findings={[briefing.headline, ...briefing.signals].filter(Boolean) as { insight: ExplorationInsight; domain: string }[]}
         connectionId={connectionId}
+        schema={schema}
         onInvestigate={onInvestigate}
         renderActions={(insight, domain) => (
           <FindingActions insight={insight} domain={domain}
