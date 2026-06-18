@@ -1,0 +1,117 @@
+=== analytics — 13 tables ===
+
+TABLE analytics.attribution  (6,930 rows)
+    order_id                 dtype=VARCHAR distinct=4620 null%=0.0 sample=['ORD000001', 'ORD000002', 'ORD000003']
+    channel                  dtype=VARCHAR distinct=6 null%=0.0 values=['Google', 'Direct', 'Meta', 'Organic', 'Email', 'TikTok']
+    weight                   dtype=DECIMAL(2,1) distinct=3 null%=0.0 range=[0.4..1.0] avg=0.67
+
+TABLE analytics.campaigns  (16 rows)
+    campaign_id              dtype=VARCHAR distinct=16 null%=0.0 sample=['CMP01', 'CMP02', 'CMP03']  [PK?]
+    campaign_name            dtype=VARCHAR distinct=6 null%=0.0 values=['New You 2023', 'VIP Rewards 2024', 'Clean Beauty 2024', 'Spring Glow 2023', 'Holiday Edit 2023', 'Summer Radiance 2024']
+    channel                  dtype=VARCHAR distinct=4 null%=0.0 values=['Google', 'Meta', 'TikTok', 'Email']
+    start_date               dtype=DATE distinct=16 null%=0.0 span=[2023-01-21..2024-11-06]  [PK?]
+    end_date                 dtype=DATE distinct=16 null%=0.0 span=[2023-02-20..2024-12-06]  [PK?]
+    budget_usd               dtype=BIGINT distinct=16 null%=0.0 range=[6700..32200] avg=19450.0  [PK?]
+
+TABLE analytics.carts  (9,000 rows)
+    cart_id                  dtype=VARCHAR distinct=9000 null%=0.0 sample=['CART000011', 'CART000016', 'CART000026']  [PK?]
+    customer_id              dtype=VARCHAR distinct=800 null%=0.0 sample=['CUST00078', 'CUST00113', 'CUST00183']
+    traffic_source           dtype=VARCHAR distinct=6 null%=0.0 values=['Google', 'Organic', 'Direct', 'Meta', 'TikTok', 'Email']
+    device                   dtype=VARCHAR distinct=2 null%=0.0 values=['mobile', 'desktop']
+    abandoned                dtype=BOOLEAN distinct=2 null%=0.0 values=[False, True]
+    created_date             dtype=DATE distinct=730 null%=0.0 span=[2023-01-01..2024-12-30]
+
+TABLE analytics.customers  (800 rows)
+    customer_id              dtype=VARCHAR distinct=800 null%=0.0 sample=['CUST00001', 'CUST00002', 'CUST00003']  [PK?]
+    full_name                dtype=VARCHAR distinct=24 null%=0.0 sample=['Mia Chen', 'Zoe Rossi', 'Leah Patel']
+    middle_name              dtype=INTEGER distinct=0 null%=100.0 range=[None..None] avg=None
+    email                    dtype=VARCHAR distinct=800 null%=0.0 sample=['cust1@icloud.com', 'cust2@outlook.com', 'cust3@mail.com']  [PK?]
+    country                  dtype=VARCHAR distinct=9 null%=0.0 values=['AU', 'CA', 'US', 'GB', 'KR', 'SG', 'FR', 'IT', 'AE']
+    skin_type                dtype=VARCHAR distinct=5 null%=0.0 values=['Combination', 'Oily', 'Sensitive', 'Dry', 'Normal']
+    loyalty_tier             dtype=VARCHAR distinct=4 null%=0.0 values=['Gold', 'Platinum', 'Bronze', 'Silver']
+    age_group                dtype=VARCHAR distinct=4 null%=0.0 values=['35-44', '18-24', '25-34', '45+']
+    acquisition_channel      dtype=VARCHAR distinct=6 null%=0.0 values=['Organic', 'Email', 'Meta', 'Google', 'Referral', 'TikTok']
+    marketing_opt_in         dtype=BOOLEAN distinct=2 null%=0.0 values=[False, True]
+    signup_date              dtype=DATE distinct=180 null%=0.0 span=[2022-01-01..2024-06-14]
+
+TABLE analytics.inventory_movements  (8,000 rows)
+    movement_id              dtype=VARCHAR distinct=8000 null%=0.0 sample=['MV0000001', 'MV0000002', 'MV0000003']  [PK?]
+    product_id               dtype=VARCHAR distinct=150 null%=0.0 sample=['SKU0012', 'SKU0023', 'SKU0034']
+    warehouse                dtype=VARCHAR distinct=3 null%=0.0 values=['Bayview', 'Riverside', 'Hillcrest']
+    movement_type            dtype=VARCHAR distinct=3 null%=0.0 values=['inbound', 'adjustment', 'outbound']
+    quantity                 dtype=BIGINT distinct=48 null%=0.0 range=[-26..245] avg=20.5
+    movement_date            dtype=DATE distinct=730 null%=0.0 span=[2023-01-01..2024-12-30]
+
+TABLE analytics.inventory_snapshots  (5,400 rows)
+    snapshot_date            dtype=DATE distinct=12 null%=0.0 span=[2023-01-01..2023-12-01]
+    product_id               dtype=VARCHAR distinct=150 null%=0.0 sample=['SKU0011', 'SKU0016', 'SKU0026']
+    warehouse                dtype=VARCHAR distinct=3 null%=0.0 values=['Bayview', 'Riverside', 'Hillcrest']
+    stock_level              dtype=BIGINT distinct=33 null%=0.0 range=[0..587] avg=199.97
+
+TABLE analytics.invoices  (4,620 rows)
+    invoice_id               dtype=VARCHAR distinct=4620 null%=0.0 sample=['INV000001', 'INV000002', 'INV000003']  [PK?]
+    order_id                 dtype=VARCHAR distinct=4620 null%=0.0 sample=['ORD000001', 'ORD000002', 'ORD000003']  [PK?]
+    revenue_net_usd          dtype=HUGEINT distinct=320 null%=0.0 range=[59..2250] avg=536.84
+    tax_usd                  dtype=DECIMAL(38,2) distinct=320 null%=0.0 range=[4.72..180.00] avg=42.95
+    shipping_usd             dtype=DECIMAL(22,2) distinct=1 null%=0.0 range=[4.99..4.99] avg=4.99
+    invoice_date             dtype=DATE distinct=730 null%=0.0 span=[2023-01-01..2024-12-30]
+
+TABLE analytics.marketing_ledger  (1,460 rows)
+    ledger_id                dtype=VARCHAR distinct=1460 null%=0.0 sample=['ML000001', 'ML000002', 'ML000003']  [PK?]
+    channel                  dtype=VARCHAR distinct=4 null%=0.0 values=['Google', 'TikTok', 'Meta', 'Email']
+    spend_date               dtype=DATE distinct=365 null%=0.0 span=[2023-01-01..2023-12-31]
+    spend_usd                dtype=BIGINT distinct=1000 null%=0.0 range=[80..1199] avg=677.18
+    impressions              dtype=BIGINT distinct=1460 null%=0.0 range=[3200..40999] avg=23726.82  [PK?]
+    clicks                   dtype=BIGINT distinct=750 null%=0.0 range=[80..1099] avg=632.03
+
+TABLE analytics.order_items  (16,000 rows)
+    order_item_id            dtype=VARCHAR distinct=16000 null%=0.0 sample=['OI000001', 'OI000002', 'OI000003']  [PK?]
+    order_id                 dtype=VARCHAR distinct=4620 null%=0.0 sample=['ORD000014', 'ORD000027', 'ORD000040']
+    product_id               dtype=VARCHAR distinct=150 null%=0.0 sample=['SKU0012', 'SKU0023', 'SKU0034']
+    quantity                 dtype=BIGINT distinct=5 null%=0.0 range=[1..5] avg=2.66
+    unit_price_usd           dtype=BIGINT distinct=35 null%=0.0 range=[13..125] avg=58.3
+    unit_cogs_usd            dtype=BIGINT distinct=13 null%=0.0 range=[5..17] avg=10.7
+    traffic_source           dtype=VARCHAR distinct=6 null%=0.0 values=['Google', 'Organic', 'Direct', 'TikTok', 'Meta', 'Email']
+    line_revenue_usd         dtype=BIGINT distinct=117 null%=0.0 range=[13..600] avg=155.01
+    line_cogs_usd            dtype=BIGINT distinct=45 null%=0.0 range=[6..80] avg=28.25
+
+TABLE analytics.orders  (4,620 rows)
+    order_id                 dtype=VARCHAR distinct=4620 null%=0.0 sample=['ORD000001', 'ORD000002', 'ORD000003']  [PK?]
+    cart_id                  dtype=VARCHAR distinct=4620 null%=0.0 sample=['CART000002', 'CART000003', 'CART000005']  [PK?]
+    customer_id              dtype=VARCHAR distinct=504 null%=0.0 sample=['CUST00015', 'CUST00022', 'CUST00036']
+    channel                  dtype=VARCHAR distinct=6 null%=0.0 values=['Google', 'Organic', 'TikTok', 'Direct', 'Email', 'Meta']
+    loyalty_tier             dtype=VARCHAR distinct=4 null%=0.0 values=['Gold', 'Platinum', 'Bronze', 'Silver']
+    order_date               dtype=DATE distinct=730 null%=0.0 span=[2023-01-01..2024-12-30]
+    order_status             dtype=VARCHAR distinct=6 null%=0.0 values=['cancelled', 'pending', 'shipped', 'refunded', 'processing', 'delivered']
+    payment_method           dtype=VARCHAR distinct=4 null%=0.0 values=['paypal', 'apple_pay', 'card', 'klarna']
+    warehouse                dtype=VARCHAR distinct=4 null%=0.0 values=['Riverside', 'Bayview', 'Hillcrest', 'Lakeside']
+
+TABLE analytics.payments  (4,991 rows)
+    payment_id               dtype=VARCHAR distinct=4991 null%=0.0 sample=['PAY0000001', 'PAY0000002', 'PAY0000003']  [PK?]
+    order_id                 dtype=VARCHAR distinct=4620 null%=0.0 sample=['ORD000001', 'ORD000002', 'ORD000003']
+    payment_method           dtype=VARCHAR distinct=4 null%=0.0 values=['klarna', 'apple_pay', 'card', 'paypal']
+    attempt_no               dtype=INTEGER distinct=2 null%=0.0 range=[1..2] avg=1.07
+    amount_usd               dtype=HUGEINT distinct=320 null%=0.0 range=[59..2250] avg=536.84
+    success                  dtype=BOOLEAN distinct=2 null%=0.0 values=[False, True]
+    fraud_flag               dtype=BOOLEAN distinct=2 null%=0.0 values=[False, True]
+
+TABLE analytics.products  (150 rows)
+    product_id               dtype=VARCHAR distinct=150 null%=0.0 sample=['SKU0011', 'SKU0016', 'SKU0026']  [PK?]
+    brand                    dtype=VARCHAR distinct=8 null%=0.0 values=['Noir', 'AuraBeaute', 'Velvet', 'Pure Glow', 'Botanica', 'Hydra', 'Eclat', 'Lumiere']
+    category                 dtype=VARCHAR distinct=5 null%=0.0 values=['Tools', 'Haircare', 'Makeup', 'Fragrance', 'Skincare']
+    product_name             dtype=VARCHAR distinct=20 null%=0.0 sample=['Shampoo Limited', 'Shampoo Classic', 'Shampoo Sensitive']
+    shade                    dtype=VARCHAR distinct=6 null%=80.0 values=['Caramel', 'Porcelain', 'Sand', 'Honey', 'Espresso', 'Ivory']
+    list_price_usd           dtype=BIGINT distinct=35 null%=0.0 range=[13..125] avg=58.3
+    unit_cogs_usd            dtype=BIGINT distinct=13 null%=0.0 range=[5..17] avg=10.7
+    is_organic               dtype=BOOLEAN distinct=2 null%=0.0 values=[False, True]
+    gift_message             dtype=VARCHAR distinct=1 null%=95.3 values=['Happy Birthday!']
+    launch_date              dtype=DATE distinct=150 null%=0.0 span=[2022-06-04..2024-01-19]  [PK?]
+
+TABLE analytics.refunds  (463 rows)
+    refund_id                dtype=VARCHAR distinct=463 null%=0.0 sample=['RF00001', 'RF00002', 'RF00003']  [PK?]
+    order_id                 dtype=VARCHAR distinct=463 null%=0.0 sample=['ORD000010', 'ORD000015', 'ORD000020']  [PK?]
+    refund_reason            dtype=VARCHAR distinct=6 null%=0.0 values=['Scent too strong', 'Damaged in transit', 'Late delivery', 'Changed mind', 'Allergic reaction', 'Shade mismatch']
+    logistics_related        dtype=BOOLEAN distinct=2 null%=0.0 values=[False, True]
+    refund_amount_usd        dtype=DECIMAL(38,1) distinct=174 null%=0.0 range=[59.0..1575.0] avg=554.78
+    refund_completed_date    dtype=DATE distinct=339 null%=0.0 span=[2023-01-11..2025-01-09]
+

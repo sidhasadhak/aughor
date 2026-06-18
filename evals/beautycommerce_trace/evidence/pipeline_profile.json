@@ -1,0 +1,197 @@
+{
+  "industry": "DTC Beauty E-commerce",
+  "business_model": "direct-to-consumer (DTC) subscription & one-time purchase retail",
+  "summary": "A beauty and personal care brand selling skincare, makeup, haircare, fragrance, and tools directly to consumers via owned e-commerce channels, with loyalty programs, multi-channel marketing (Email, Meta, Google, TikTok), and multi-warehouse fulfillment.",
+  "confidence": 0.95,
+  "evidence": "- Products table: beauty categories (Skincare, Makeup, Haircare, Fragrance, Tools), organic flags, shades, brands like 'Velvet', 'Noir', 'AuraBeaute' \u2014 classic DTC beauty naming.\n- Customers table: skin_type, loyalty_tier, age_group, acquisition_channel \u2014 behavioral segmentation typical of beauty brands.\n- Orders + carts + attribution + campaigns: multi-touch attribution, channel mix (Email, Meta, Google, TikTok), cart abandonment tracking \u2014 standard DTC stack.\n- Refunds table: reasons like 'Shade mismatch', 'Scent too strong', 'Allergic reaction' \u2014 product-fit issues common in beauty.\n- Inventory snapshots + movements: multi-warehouse fulfillment (Bayview, Hillcrest, Riverside) \u2014 typical for scaling DTC.\n- No B2B or wholesale indicators; all channels are consumer-facing (DTC).",
+  "north_star_metrics": [
+    {
+      "name": "Gross Margin %",
+      "definition": "Total line revenue minus COGS, divided by total line revenue, across all orders.",
+      "maps_to": "order_items.line_revenue_usd, order_items.line_cogs_usd",
+      "unit_or_range": "percent 0\u2013100",
+      "value_sql": "SELECT ROUND((SUM(line_revenue_usd) - SUM(line_cogs_usd)) * 100.0 / NULLIF(SUM(line_revenue_usd), 0), 2) AS gross_margin_pct FROM analytics.order_items",
+      "chart_sql": "SELECT date_trunc('month', o.order_date) AS month, ROUND((SUM(oi.line_revenue_usd) - SUM(oi.line_cogs_usd)) * 100.0 / NULLIF(SUM(oi.line_revenue_usd), 0), 2) AS gross_margin_pct FROM analytics.order_items oi JOIN analytics.orders o ON oi.order_id = o.order_id GROUP BY 1 ORDER BY 1 DESC LIMIT 12",
+      "why_it_matters": "Core profitability metric for DTC beauty \u2014 margins are thin and highly sensitive to discounts, returns, and shipping costs. A 5\u201310pp swing can make/break unit economics."
+    },
+    {
+      "name": "Repeat Purchase Rate",
+      "definition": "Customers who placed \u22652 orders / total customers with \u22651 order.",
+      "maps_to": "orders.customer_id, orders.order_id",
+      "unit_or_range": "ratio 0\u20131",
+      "value_sql": "",
+      "chart_sql": "SELECT date_trunc('month', order_date) AS month, ROUND(COUNT(DISTINCT CASE WHEN order_count >= 2 THEN customer_id END) * 1.0 / COUNT(DISTINCT customer_id), 3) AS repeat_purchase_rate FROM (SELECT customer_id, order_date, COUNT(*) OVER (PARTITION BY customer_id) AS order_count FROM analytics.orders) sub GROUP BY 1 ORDER BY 1 DESC LIMIT 12",
+      "why_it_matters": "Loyalty and retention are critical in beauty \u2014 repeat customers have 3\u20135\u00d7 higher LTV and lower CAC. This is a leading indicator of product-market fit and brand stickiness."
+    },
+    {
+      "name": "Cart Abandonment Rate",
+      "definition": "Abandoned carts / total carts created.",
+      "maps_to": "carts.abandoned, carts.cart_id",
+      "unit_or_range": "ratio 0\u20131",
+      "value_sql": "SELECT ROUND(SUM(CASE WHEN abandoned THEN 1 ELSE 0 END) * 1.0 / COUNT(*), 3) AS cart_abandonment_rate FROM analytics.carts",
+      "chart_sql": "SELECT date_trunc('week', created_date) AS week, ROUND(SUM(CASE WHEN abandoned THEN 1 ELSE 0 END) * 1.0 / COUNT(*), 3) AS cart_abandonment_rate FROM analytics.carts GROUP BY 1 ORDER BY 1 DESC LIMIT 12",
+      "why_it_matters": "High abandonment in beauty often signals pricing friction, shipping cost shock, or trust issues (e.g., no free returns). It's a leading indicator of conversion leakage."
+    },
+    {
+      "name": "Refund Rate (by revenue)",
+      "definition": "Refund amount / total net revenue for delivered orders.",
+      "maps_to": "refunds.refund_amount_usd, invoices.revenue_net_usd, orders.order_status",
+      "unit_or_range": "percent 0\u2013100",
+      "value_sql": "",
+      "chart_sql": "",
+      "why_it_matters": "Beauty has high return rates due to shade, scent, and texture mismatches. Tracking refund rate by revenue (not just count) captures financial impact \u2014 >5% is a red flag."
+    },
+    {
+      "name": "Top 5 Return Reasons (by volume)",
+      "definition": "Count of refunds grouped by refund_reason, ordered descending.",
+      "maps_to": "refunds.refund_reason",
+      "unit_or_range": "count (0\u2013\u221e)",
+      "value_sql": "",
+      "chart_sql": "SELECT refund_reason AS reason, COUNT(*) AS count FROM analytics.refunds GROUP BY 1 ORDER BY 2 DESC LIMIT 5",
+      "why_it_matters": "Root-cause analysis: Is it shade mismatch (product fit), scent too strong (formulation), or logistics (damaged in transit)? This drives product development, packaging, and fulfillment fixes."
+    },
+    {
+      "name": "Channel Contribution to Revenue (Attribution)",
+      "definition": "Sum of (order revenue \u00d7 attribution weight) per channel.",
+      "maps_to": "attribution.order_id, attribution.weight, invoices.revenue_net_usd",
+      "unit_or_range": "USD",
+      "value_sql": "",
+      "chart_sql": "",
+      "why_it_matters": "DTC beauty relies heavily on paid acquisition (Meta, Google, TikTok) and email. Attribution helps allocate budget \u2014 e.g., is TikTok driving high-intent buyers or just low-value clicks?"
+    },
+    {
+      "name": "Average Order Value (AOV)",
+      "definition": "Total net revenue / number of orders.",
+      "maps_to": "invoices.revenue_net_usd, orders.order_id",
+      "unit_or_range": "USD (human scale: 20\u2013150)",
+      "value_sql": "SELECT ROUND(AVG(invoices.revenue_net_usd), 2) AS aov FROM analytics.invoices JOIN analytics.orders ON invoices.order_id = orders.order_id",
+      "chart_sql": "SELECT date_trunc('month', o.order_date) AS month, ROUND(AVG(i.revenue_net_usd), 2) AS aov FROM analytics.invoices i JOIN analytics.orders o ON i.order_id = o.order_id GROUP BY 1 ORDER BY 1 DESC LIMIT 12",
+      "why_it_matters": "AOV drives LTV and CAC efficiency. In beauty, bundling (e.g., \u2018skincare routine\u2019 kits) and upsells (e.g., tools with serum) are key levers."
+    },
+    {
+      "name": "Inventory Turnover (by product category)",
+      "definition": "Units sold (from order_items) / average stock level (from inventory_snapshots) for each category.",
+      "maps_to": "order_items.product_id, order_items.quantity, inventory_snapshots.product_id, inventory_snapshots.stock_level, products.category",
+      "unit_or_range": "ratio (units sold / avg units in stock)",
+      "value_sql": "",
+      "chart_sql": "",
+      "why_it_matters": "Beauty has short product lifecycles (seasonal launches, limited shades). Slow turnover = markdown risk; fast turnover = stockout risk. Turnover by category guides buying and promotions."
+    }
+  ],
+  "key_questions": [
+    "Which marketing channels drive the highest-quality (revenue-weighted) orders, and how does their ROI compare?",
+    "What are the top 5 reasons for refunds, and are they logistics-related or product-related?",
+    "How has gross margin trended over the last 6 months \u2014 and is it driven by pricing, discounts, or COGS changes?",
+    "Which customer segments (by loyalty tier, skin type, or acquisition channel) have the highest repeat purchase rates?",
+    "Are mobile users more likely to abandon carts than desktop users?",
+    "Which product categories have the highest/lowest inventory turnover, and are they aligned with campaign focus?",
+    "What is the current cart abandonment rate by traffic source, and has it changed recently?",
+    "How does refund rate vary by warehouse (fulfillment center) \u2014 indicating shipping/damage issues?"
+  ],
+  "key_question_sql": [
+    "WITH channel_revenue AS (\n  SELECT \n    ao.channel,\n    SUM(oi.line_revenue_usd) AS total_revenue,\n    SUM(oi.line_cogs_usd) AS total_cogs\n  FROM analytics.order_items oi\n  JOIN analytics.orders ao ON oi.order_id = ao.order_id\n  GROUP BY ao.channel\n),\nchannel_attribution AS (\n  SELECT \n    a.channel,\n    SUM(i.revenue_net_usd * a.weight) AS attributed_revenue\n  FROM analytics.attribution a\n  JOIN analytics.invoices i ON a.order_id = i.order_id\n  GROUP BY a.channel\n)\nSELECT \n  cr.channel,\n  cr.total_revenue,\n  cr.total_cogs,\n  cr.total_revenue - cr.total_cogs AS gross_profit,\n  CASE WHEN cr.total_revenue > 0 THEN (cr.total_revenue - cr.total_cogs) * 1.0 / cr.total_revenue ELSE NULL END AS gross_margin_pct,\n  ca.attributed_revenue,\n  CASE WHEN ca.attributed_revenue > 0 THEN (cr.total_revenue - cr.total_cogs) * 1.0 / ca.attributed_revenue ELSE NULL END AS roi\nFROM channel_revenue cr\nLEFT JOIN channel_attribution ca ON cr.channel = ca.channel\nORDER BY cr.total_revenue DESC;",
+    "",
+    "",
+    "",
+    "",
+    "",
+    "",
+    ""
+  ],
+  "recipes": [
+    {
+      "metric": "Gross Margin %",
+      "formula": "SUM(revenue - cogs) / NULLIF(SUM(revenue), 0)",
+      "grain": "Line-item or order grain; sum revenue and COGS at the SAME grain before dividing. Do NOT average per-row margin percentages (revenue-weighting matters).",
+      "anti_patterns": [
+        "AVG(line_margin_pct) is unweighted \u2014 a $1 line and a $1,000 line count equally. Aggregate revenue and cogs, then divide.",
+        "Mixing pre-discount price with post-discount revenue inflates margin."
+      ],
+      "sane_range": "percent 0..100 (negative only on loss-leaders / data error).",
+      "source": "curated:Retail / E-commerce"
+    },
+    {
+      "metric": "Repeat Purchase Rate",
+      "formula": "COUNT(DISTINCT customer_id WITH order_count > 1) / NULLIF(COUNT(DISTINCT customer_id), 0)",
+      "grain": "Customer grain. Aggregate orders per customer FIRST (subquery), then count those with >1.",
+      "anti_patterns": [
+        "COUNT(orders) / COUNT(customers) is orders-per-customer, NOT repeat rate.",
+        "Window over a join without pre-aggregating customers double-counts."
+      ],
+      "sane_range": "ratio 0..1.",
+      "source": "curated:Retail / E-commerce"
+    },
+    {
+      "metric": "Return / Refund Rate",
+      "formula": "COUNT(DISTINCT refunded_order_id) / NULLIF(COUNT(DISTINCT eligible_order_id), 0)",
+      "grain": "Order grain. Denominator must be orders ELIGIBLE to be returned (e.g. delivered), not all rows. Match numerator and denominator population.",
+      "anti_patterns": [
+        "Numerator = refunds but denominator = all orders including undelivered \u2192 a 100%-looking rate or a meaningless ratio.",
+        "Counting refund rows (a refund can have multiple lines) instead of distinct refunded orders inflates the numerator."
+      ],
+      "sane_range": "ratio 0..1; apparel/beauty often 0.1\u20130.4.",
+      "source": "curated:Retail / E-commerce"
+    },
+    {
+      "metric": "Average Order Value (AOV)",
+      "formula": "SUM(order_revenue) / COUNT(DISTINCT order_id)",
+      "grain": "Order grain. If revenue lives on line items, SUM the line revenue and divide by COUNT(DISTINCT order_id) \u2014 never average line totals.",
+      "anti_patterns": [
+        "AVG(order_items.line_total) computes average LINE value, not order value.",
+        "After joining orders to items, COUNT(*) counts lines, not orders \u2014 dividing revenue by it understates AOV."
+      ],
+      "sane_range": "USD, strictly positive; typically tens to low-hundreds for DTC.",
+      "source": "curated:Retail / E-commerce"
+    },
+    {
+      "metric": "Inventory Turnover",
+      "formula": "SUM(units_sold) / NULLIF(AVG(units_on_hand), 0)  -- or COGS / average inventory value",
+      "grain": "Per SKU then aggregate; average the stock level over the period (snapshots), not a single point. A SKU with zero average stock yields NULL/undefined turnover, not zero.",
+      "anti_patterns": [
+        "Dividing by a single end-of-period snapshot overstates turnover for seasonal SKUs.",
+        "Treating NULL average-stock as 0 turnover hides slow-movers; surface them as 'no stock data / overstock' instead."
+      ],
+      "sane_range": "ratio 0..\u221e (typical retail 2\u201312/yr; >50 suggests a grain error).",
+      "source": "curated:Retail / E-commerce"
+    },
+    {
+      "metric": "Cart Abandonment Rate",
+      "formula": "COUNT_IF(abandoned = True) / COUNT(*)",
+      "grain": "cart_id",
+      "anti_patterns": [
+        "\u274c Using carts.created_date without filtering for a date range (will compute lifetime rate, not period-specific)",
+        "\u274c Aggregating at customer_id level first (distorts rate by weighting heavy cart creators)",
+        "\u274c Using abandoned = 'True' string instead of boolean (type mismatch)",
+        "\u274c Dividing by COUNT_IF(abandoned = False) instead of total carts (inverted denominator)"
+      ],
+      "sane_range": "0.0 to 1.0 (0% to 100%)",
+      "source": "llm-fallback"
+    },
+    {
+      "metric": "Top 5 Return Reasons (by volume)",
+      "formula": "COUNT(*) GROUP BY refund_reason ORDER BY COUNT(*) DESC LIMIT 5",
+      "grain": "refund_id",
+      "anti_patterns": [
+        "\u274c Aggregating at order_id level first (multiple refunds per order possible)",
+        "\u274c Using refunds.refund_completed_date without date filter (returns lifetime top reasons, not period)",
+        "\u274c Including refunds with NULL refund_reason without explicit handling",
+        "\u274c Using SUM(refund_amount_usd) instead of COUNT(*) (measures monetary value, not frequency)"
+      ],
+      "sane_range": "N/A (ranked list; each count is non-negative integer)",
+      "source": "llm-fallback"
+    },
+    {
+      "metric": "Channel Contribution to Revenue (Attribution)",
+      "formula": "SUM(invoices.revenue_net_usd * attribution.weight)",
+      "grain": "attribution.order_id, attribution.channel",
+      "anti_patterns": [
+        "\u274c Joining attribution to orders instead of invoices/order_items (missing revenue link)",
+        "\u274c Using SUM(attribution.weight) / COUNT(*) (misinterprets weights as raw counts)",
+        "\u274c Not filtering to delivered orders only (includes cancelled/refunded revenue)",
+        "\u274c Aggregating at channel level before joining (premature aggregation loses weight per-order precision)"
+      ],
+      "sane_range": "0.0 to total revenue (non-negative USD)",
+      "source": "llm-fallback"
+    }
+  ]
+}
