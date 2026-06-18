@@ -349,6 +349,30 @@ def _apply_ontology_overlay(
         if new_sql.strip() and new_sql.strip() != (m.sql or "").strip():
             m = m.model_copy(update={"sql": new_sql})  # corrected formula
         out.append(m)
+
+    # Additive: inject VERIFIED ontology metrics that have NO catalog counterpart
+    # (e.g. a human-authored metric override). The loop above only *corrects* an
+    # existing catalog metric's formula — so without this a brand-new human metric
+    # binds, persists, and then silently never reaches the prompt. Name-matched
+    # metrics are already handled above; only genuinely-new verified ones are added.
+    present = {re.sub(r"[^\w]", "_", m.name.lower()) for m in out}
+    for om in graph.metrics.values():
+        if not getattr(om, "verified", False):
+            continue
+        key = re.sub(r"[^\w]", "_", (om.display_name or om.id).lower())
+        if key in present:
+            continue
+        note = getattr(om, "verification_note", "") or ""
+        out.append(MetricDefinition(
+            name=om.id,
+            label=om.display_name or om.id,
+            sql=om.formula_sql or "",
+            unit=getattr(om, "unit", "") or "",
+            tables=list(getattr(om, "tables", []) or []),
+            caveats=getattr(om, "description", "") or "",
+            approved_by=("Human-curated" if note.startswith("human") else ""),
+        ))
+        present.add(key)
     return out
 
 

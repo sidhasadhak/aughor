@@ -854,6 +854,12 @@ class DuckDBConnection(DatabaseConnection):
                                  "unvalidated", counter="ontology.validation",
                                  conn_id=self._connection_id or None)
                 _apply_explorer_to_ontology(graph, self._connection_id or "fixture")
+                # Human overrides win LAST — after enrichment + M24c validation +
+                # explorer overlay — so a human-asserted formula/filter overrides the
+                # auto-derived verdict instead of being reset by it.
+                from aughor.ontology.store import overlay_human_overrides
+                graph = overlay_human_overrides(
+                    graph, self._connection_id or "fixture", graph.schema_name)
                 self._ontology = graph
                 onto_block = render_ontology_annotations(graph)
                 if onto_block:
