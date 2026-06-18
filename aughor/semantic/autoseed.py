@@ -103,6 +103,29 @@ def _parse_table_blocks(schema_str: str) -> dict[str, str]:
     return blocks
 
 
+def _block_columns(block: str) -> set[str]:
+    """Column names declared in a schema block — the `  <col>  <type>` detail lines
+    (skip the TABLE: header, `--` comments, and hint lines)."""
+    cols: set[str] = set()
+    for line in block.splitlines():
+        if line.startswith("TABLE:") or line.lstrip().startswith("--"):
+            continue
+        m = re.match(r"^  (\w+)\s+\S", line)
+        if m:
+            cols.add(m.group(1).lower())
+    return cols
+
+
+def _columns_drifted(stored: set[str], live: set[str]) -> bool:
+    """True when an auto-generated glossary entry's columns no longer match the live
+    table — the cross-warehouse contamination signature (a new connection's analytics.orders
+    inheriting a DELETED warehouse's columns). Jaccard overlap < 0.6 ⇒ stale ⇒ re-seed."""
+    if not stored or not live:
+        return False
+    overlap = len(stored & live) / len(stored | live)
+    return overlap < 0.6
+
+
 # ── Main entry point ──────────────────────────────────────────────────────────
 
 def seed_missing_tables(raw_schema: str) -> bool:
@@ -132,8 +155,23 @@ def _seed(raw_schema: str) -> bool:
 
     # But write new entries only to the YAML file (not dbt manifest)
     glossary = load_glossary()
+    yaml_tables = glossary.get("tables") or {}
     table_blocks = _parse_table_blocks(raw_schema)
     missing = {t: b for t, b in table_blocks.items() if t not in existing}
+
+    # Schema-drift invalidation (F6): glossary is keyed by bare schema.table, so a new
+    # connection's `analytics.orders` used to inherit a DELETED warehouse's annotations
+    # (phantom columns + hallucinated enum values). Re-seed any AUTO-generated entry whose
+    # stored columns no longer match the live table. User-curated entries are never touched.
+    for t, block in table_blocks.items():
+        if t in missing:
+            continue
+        ent = yaml_tables.get(t)
+        if not isinstance(ent, dict) or not ent.get("auto_generated"):
+            continue
+        if _columns_drifted(set((ent.get("columns") or {}).keys()), _block_columns(block)):
+            logger.info("autoseed: re-seeding %r — stored glossary columns drifted from live schema", t)
+            missing[t] = block
 
     # Fast-path: schema fingerprint matches a previously fully-seeded schema
     fp = compute_fingerprint(table_blocks)
