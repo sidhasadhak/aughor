@@ -180,9 +180,18 @@ def check_join_value_domains(
     try:
         conditions = _extract_join_conditions(sql)
         for t_a, c_a, t_b, c_b in conditions[:_MAX_PROBES]:
-            overlap = _probe_overlap(conn, t_a, c_a, t_b, c_b)
-            if overlap is not None and overlap < threshold:
-                warnings.append(JoinDomainWarning(t_a, c_a, t_b, c_b, overlap))
+            # Direction-aware containment: a real FK is contained in ONE direction
+            # (child ⊆ parent), even when the parent has many keys the child lacks. The
+            # single-direction check false-flagged a legitimate parent⋈child subset join
+            # (orders ⋈ refunds: only ~10% of orders are refunded, so orders→refunds reads
+            # 10%, but refunds→orders is ~100%). Probe BOTH ways and take the MAX — a truly
+            # fabricated join (different entities, e.g. touchpoint_type = channel) is low
+            # BOTH ways and still flags; a subset FK is high one way and passes.
+            ov_ab = _probe_overlap(conn, t_a, c_a, t_b, c_b)
+            ov_ba = _probe_overlap(conn, t_b, c_b, t_a, c_a)
+            overlaps = [o for o in (ov_ab, ov_ba) if o is not None]
+            if overlaps and max(overlaps) < threshold:
+                warnings.append(JoinDomainWarning(t_a, c_a, t_b, c_b, max(overlaps)))
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "join_guard: domain check failed — no warnings emitted",

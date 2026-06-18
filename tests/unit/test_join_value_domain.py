@@ -156,8 +156,8 @@ def test_caps_at_max_probes():
     JOIN f ON e.f_id = f.id
     """
     check_join_value_domains(conn, sql)
-    # At most 4 probes fired (_MAX_PROBES = 4)
-    assert conn.execute.call_count <= 4
+    # At most 4 join CONDITIONS probed (_MAX_PROBES = 4), each in 2 directions → ≤8 calls
+    assert conn.execute.call_count <= 8
 
 
 # ── Real-connection regression (the mock can't catch value stringification) ──
@@ -209,3 +209,22 @@ def test_real_connection_correct_camp_join_no_warning():
 
 
 import pytest
+
+
+# ── direction-aware containment (F8) ─────────────────────────────────────────
+
+def test_subset_join_not_flagged_direction_aware():
+    # child ⊆ parent (orders ⋈ refunds): parent→child low (6%), child→parent high
+    # (100%) → MAX passes. The single-direction check used to false-flag this.
+    conn = MagicMock()
+    conn.execute.side_effect = [_qr(6, 100), _qr(100, 100)]
+    sql = "SELECT * FROM orders o JOIN refunds r ON o.order_id = r.order_id"
+    assert check_join_value_domains(conn, sql) == []
+
+
+def test_fabricated_join_flagged_both_directions_low():
+    # genuinely different vocabularies (refund_reason ↔ warehouse) → low BOTH ways → flag
+    conn = MagicMock()
+    conn.execute.side_effect = [_qr(0, 100), _qr(0, 100)]
+    sql = "SELECT * FROM refunds r JOIN orders o ON r.refund_reason = o.warehouse"
+    assert len(check_join_value_domains(conn, sql)) == 1
