@@ -1451,7 +1451,21 @@ def render_profile_annotations(
             elif cp.value_range and cp.semantic_type == "measure":
                 parts.append(f"range {cp.value_range[0]:.2g}–{cp.value_range[1]:.2g}")
 
-            if cp.null_rate > 0.01:
+            # Null semantics (F3): distinguish a DEAD column (100% null), a STRUCTURAL
+            # sparse column (populated only for a subset — a real attribute with ≥2 distinct
+            # values among non-nulls, e.g. `shade` only for Makeup), and NOISE (one value
+            # sprinkled across a few rows, e.g. a 95%-null `gift_message` with 1 distinct
+            # value). Uses null_rate + distinct_count — both already computed, no extra scan.
+            if cp.null_rate >= 0.999:
+                parts.append("| ⚠ 100% NULL — dead column, exclude from analysis")
+            elif cp.null_rate >= 0.80:
+                if (cp.distinct_count or 0) >= 2:
+                    parts.append(f"| {cp.null_rate * 100:.0f}% null — STRUCTURAL (populated for "
+                                 f"a subset only; a real attribute for that subset, not noise)")
+                else:
+                    parts.append(f"| {cp.null_rate * 100:.0f}% null — NOISE (one value in a few "
+                                 f"rows; low-signal, exclude as a dimension/finding)")
+            elif cp.null_rate > 0.01:
                 parts.append(f"| {cp.null_rate * 100:.0f}% null")
 
             if cp.value_range and cp.value_interpretation:
