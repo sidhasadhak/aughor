@@ -267,3 +267,44 @@ class TestCteGrainMismatch:
     def test_malformed_never_raises(self):
         assert cte_grain_mismatch_fanout("not sql at all") is None
         assert cte_grain_mismatch_fanout("") is None
+
+
+# Cardinality-aware chasm: a "satellite" that is 1:1 on the hub key is a DIMENSION,
+# not a fan-out source — so SUM(measure × weight) over fact⋈dimension must NOT be
+# flagged. The canonical false positive (F2): weighted attribution joined to invoices.
+ATTR_TC = {
+    "shop.attribution": ["order_id", "channel", "weight"],          # many per order (fact)
+    "shop.invoices":    ["invoice_id", "order_id", "revenue_net"],  # 1:1 per order (dimension)
+    "shop.order_items": ["order_item_id", "order_id", "line_revenue"],  # many per order (fact)
+}
+# stub oracle: only invoices is unique (1:1) on order_id
+_UNIQ = lambda t, c: t == "invoices" and c == "order_id"
+
+_CORRECT = ("SELECT a.channel, SUM(i.revenue_net * a.weight) rev "
+            "FROM attribution a JOIN invoices i ON i.order_id = a.order_id GROUP BY a.channel")
+_GENUINE = ("SELECT a.channel, SUM(i.revenue_net * a.weight) rev, SUM(oi.line_revenue) ir "
+            "FROM attribution a JOIN invoices i ON i.order_id = a.order_id "
+            "JOIN order_items oi ON oi.order_id = a.order_id GROUP BY a.channel")
+
+
+class TestChasmCardinalityAware:
+    def test_without_oracle_flags_conservatively(self):
+        # no cardinality info → both look like a chasm → flagged (unchanged behaviour)
+        assert sum_over_chasm_fanout(_CORRECT, ATTR_TC)
+
+    def test_one_to_one_dimension_not_a_chasm(self):
+        # invoices is 1:1 on order_id → a dimension, not a satellite → must PASS
+        assert sum_over_chasm_fanout(_CORRECT, ATTR_TC, is_unique_on=_UNIQ) is None
+
+    def test_genuine_two_fact_chasm_still_flagged(self):
+        # attribution + order_items are BOTH many-per-order → real chasm, still caught
+        # even after the 1:1 invoices dimension is excluded
+        assert sum_over_chasm_fanout(_GENUINE, ATTR_TC, is_unique_on=_UNIQ)
+
+    def test_count_star_dimension_not_a_chasm(self):
+        sql = "SELECT COUNT(*) FROM attribution a JOIN invoices i ON i.order_id = a.order_id"
+        assert count_star_chasm_fanout(sql, ATTR_TC, is_unique_on=_UNIQ) is None
+
+    def test_unknown_cardinality_stays_conservative(self):
+        # oracle returns None (unknown) → behave as before (flag)
+        assert sum_over_chasm_fanout(_CORRECT, ATTR_TC, is_unique_on=lambda t, c: None)

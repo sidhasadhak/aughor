@@ -312,36 +312,56 @@ def _generate_key_question_sql(profile, recipes: list, schema: str, conn) -> Non
         gen = _ask(list(enumerate(questions)))
     except Exception as exc:
         logger.warning("[profile] key-question SQL batch failed: %s", exc)
-        profile.key_question_sql = result
-        return
+        gen = {}
 
-    failed: list[tuple[int, str]] = []
+    # Pass 1 (batched) collects the easy ones. Everything else — whether the batch
+    # returned an EMPTY string (the model bailing via the "impossible" escape hatch on
+    # a question that IS answerable — the dominant blank cause) or SQL that failed the
+    # audit — goes to a PER-QUESTION retry. The old code `continue`d on empty, so the
+    # bailed questions were never retried; a single batched repair shared the same
+    # bail-prone format. Isolating each question (one job, no escape hatch) is what
+    # actually recovers them.
+    pending: list[tuple[int, str, str]] = []  # (index, question, why-it-needs-retry)
     for i, q in enumerate(questions):
         cand = gen.get(i, "")
         if not cand:
+            pending.append((i, q, "the batch returned no SQL for it"))
             continue
         ok, reason = audit_finding_sql(cand, table_cols, conn)
         if ok:
             result[i] = cand
         else:
-            failed.append((i, q))
-            logger.info("[profile] key-question[%d] SQL failed audit (%s); will retry", i, reason)
+            pending.append((i, q, f"the first draft failed: {reason}"))
 
-    # One-shot batched repair for the hard ones (the composite SKU-leak usually lands here).
-    if failed:
-        try:
-            regen = _ask(failed, note=(
-                "These questions' first SQL drafts failed to bind or over-counted. Rewrite them "
-                "MORE carefully — pre-aggregate each metric in its own CTE keyed by the entity, "
-                "use only columns that exist, and avoid fan-out.\n"))
-            for i, q in failed:
-                cand = regen.get(i, "")
-                if cand and audit_finding_sql(cand, table_cols, conn)[0]:
-                    result[i] = cand
-        except Exception as exc:
-            logger.info("[profile] key-question SQL repair batch failed: %s", exc)
+    # Pass 2: focused, single-question retries (≤2 attempts each). The model gets ONE
+    # question, the prior failure reason, and an explicit no-bail instruction — these
+    # questions were selected by the profiler BECAUSE the schema can answer them.
+    for i, q, why in pending:
+        for _attempt in range(2):
+            note = (
+                f"This is the ONLY question to answer. A previous attempt did not work: {why}. "
+                "This question WAS selected because the schema CAN answer it — return a runnable "
+                "SELECT, do NOT return an empty string. Pre-aggregate each metric in its own CTE "
+                "keyed by the entity, use only columns that exist, and avoid fan-out.\n")
+            try:
+                cand = _ask([(i, q)], note=note).get(i, "")
+            except Exception as exc:
+                logger.info("[profile] key-question[%d] retry call failed: %s", i, exc)
+                break
+            if not cand:
+                why = "the retry returned an empty string"
+                continue
+            ok, reason = audit_finding_sql(cand, table_cols, conn)
+            if ok:
+                result[i] = cand
+                break
+            why = f"the retry failed: {reason}"
 
     profile.key_question_sql = result
+    n_empty = sum(1 for s in result if not s)
+    if n_empty:
+        logger.info("[profile] %d/%d key-question SQLs still empty after per-question retry",
+                    n_empty, len(questions))
 
 
 def get_or_infer(connection_id: str,
