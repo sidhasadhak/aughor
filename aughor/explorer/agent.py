@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
 import time
 from datetime import datetime, timezone
@@ -52,6 +53,26 @@ logger = logging.getLogger(__name__)
 _RATE_SECONDS_SCHEMA = 0.0   # schema phases (3-7) run as fast as the DB allows
 _RATE_SECONDS_INTEL  = 5.0   # domain intel phase runs at 1 query per 5 seconds
 _COST_LARGE_ROWS     = 5_000_000  # Tier 3 — at/above this, prefer approximate aggregates
+
+# Bound how many explorations run their phases at once. The kernel spawns each as its
+# own asyncio.Task with no cap, so onboarding N connections at once (or boot recovery)
+# put N explorers on the event loop together — each firing run_in_executor SQL + LLM
+# calls — which saturated the shared executor and starved cheap requests like /status
+# (the UI then looked like only one connection was exploring). The single local LLM
+# serializes generations anyway, so a small cap costs ~nothing and keeps the API
+# responsive. Excess explorers queue at the semaphore (phase stays PENDING) and proceed
+# as slots free. Override with AUGHOR_MAX_CONCURRENT_EXPLORERS (default 2).
+_MAX_CONCURRENT_EXPLORERS = max(1, int(os.getenv("AUGHOR_MAX_CONCURRENT_EXPLORERS", "2")))
+_explorer_semaphore: "asyncio.Semaphore | None" = None
+
+
+def _get_explorer_semaphore() -> "asyncio.Semaphore":
+    """Lazily create the shared explorer semaphore. Safe on a single-threaded event
+    loop — first caller (always inside the running loop) creates it, the rest reuse it."""
+    global _explorer_semaphore
+    if _explorer_semaphore is None:
+        _explorer_semaphore = asyncio.Semaphore(_MAX_CONCURRENT_EXPLORERS)
+    return _explorer_semaphore
 
 # State-value vocabulary for lifecycle classification
 _TERMINAL = frozenset({
@@ -718,6 +739,17 @@ class SchemaExplorer:
     # ── State persistence helpers ─────────────────────────────────────────────
 
     def _save_state(self) -> None:
+        # Mirror the LIVE phase into the persisted state on EVERY save. Mid-run phase
+        # transitions only update self._status.phase (in-memory, served by /status);
+        # without this, the persisted exploration JSON stayed "pending" until the
+        # terminal COMPLETE/FAILED write, so any disk-based view (restart recovery,
+        # offline monitoring, a busy event loop that times out /status) under-reported
+        # progress. Now disk == live phase.
+        self._state["phase"] = (
+            self._status.phase.value
+            if isinstance(self._status.phase, ExplorationPhase)
+            else self._status.phase
+        )
         if self.canvas_id:
             _store.save_canvas(self.canvas_id, self._state)
         else:
@@ -1007,7 +1039,20 @@ class SchemaExplorer:
     # ── Main loop ─────────────────────────────────────────────────────────────
 
     async def explore(self, domain_intel_only: bool = False) -> None:
-        """Full exploration run — schedule this as an asyncio.Task.
+        """Concurrency-bounded entry point for an exploration run (scheduled as an
+        asyncio.Task by the kernel). Acquires a shared slot so at most
+        AUGHOR_MAX_CONCURRENT_EXPLORERS run their phases at once; excess explorers wait
+        here (phase stays PENDING) rather than piling onto the event loop and starving
+        the API. `async with` releases the slot correctly even on cancellation."""
+        sem = _get_explorer_semaphore()
+        if sem.locked():
+            logger.info("[explorer:%s] queued — waiting for an exploration slot (max %d concurrent)",
+                        self.connection_id, _MAX_CONCURRENT_EXPLORERS)
+        async with sem:
+            await self._explore_run(domain_intel_only=domain_intel_only)
+
+    async def _explore_run(self, domain_intel_only: bool = False) -> None:
+        """Full exploration run.
 
         If domain_intel_only=True (triggered by "Explore 5 more") skips phases 3-7
         and runs only Phase 8, consuming the extended budget.
