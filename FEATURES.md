@@ -3414,4 +3414,91 @@ Two non-obvious wiring facts surfaced: a CSS `@import` with a trailing **same-li
 
 ---
 
-*Last updated: 2026-06-17 · 136 active features (#137 design language v2 — token override + `.aug-*` re-skin + central Vega theming/reactivity, conclusion-first Briefing Verdict Hero + supporting signals, Briefing-as-home nav IA, real-count MiniStat rows + QB validity badge; #136 briefing trust hardening — SUM-over-chasm + grain-mismatch-CTE fan-out drops, profile-declared-range degenerate gate, 3-tier dedup incl. embedding paraphrase, metric-explainer charts; #135 industry-aware intelligence — BusinessProfile keystone + per-industry metric KB + build-time audited value_sql/chart_sql/key_question_sql + pinned key-questions; #134 first-class SQLite connector — PR #66; #133 value-domain join guard — PR #65; #132 embedding entity dedup — Borrow 5; #131 hierarchical tree-reduce — Borrow 4; #130 Query Builder semantic-step UI; #127–#129 semantic operators; #126 model-cascade tombstone). **Adaptive-inference list worked through** (B5b logprob-confidence blocked); next up = external NL2SQL benchmarking (Spider 2.0 — SQLite reader in place) + promoting the join guard to prevention (`joinable_with` edges). See `ROADMAP.md`.*
+## 138. Human-Editable, Version-Controlled Ontology Overrides ✅ Shipped
+
+### What
+The auto-built business ontology (entities, metrics, relationships) is no longer a black box the explorer alone owns. It is now a **human-editable YAML tree** that lives in version control, and **human edits win** over the machine's inference — an "override-wins" merge, Nao-inspired.
+
+### Why
+Auto-inference is a strong first draft, never gospel. Domain experts know things the data can't show (a column is deprecated, two tables are the *same* entity under a rename, a metric should exclude internal accounts). Before this, the only way to correct the ontology was to fight the inference. Two confirmed real-world drifts were traced to the machine overruling a correct human view. The fix: make the ontology a reviewable artifact, and let a checked-in human override always take precedence over re-inference.
+
+### How
+- The ontology is serialized to a YAML tree that a human can open, diff, and edit in a PR.
+- On every re-inference, machine output is **merged under** the human overrides — fields a human has set are preserved verbatim; everything else re-infers freely.
+- Because it is version-controlled, the ontology gets the same review/rollback story as code: drift is visible in a diff, not silently overwritten.
+
+### Key files
+- `aughor/explorer/store.py`, `aughor/explorer/agent.py` (override-aware load/merge)
+- ontology YAML under `data/`
+
+---
+
+## 139. Pre-Emission Insight Verification Gate ✅ Shipped
+
+### What
+A **last-line-of-defense gate** that every candidate finding must pass *before* it is allowed into a briefing. It re-checks the claim against live SQL and kills insights that are tautological, fan-out-inflated, boundary-saturation artifacts, part-greater-than-whole, or not actually grounded in the result it cites.
+
+### Why
+A SOTA analytics platform cannot emit a confident-sounding number that is secretly nonsense. The BeautyCommerce cold-trace surfaced several classes of "plausible trap" the pipeline would otherwise ship: a ratio of a column against itself (always 100%), a SUM inflated by a one-to-many join fan-out, a "max" that is really a saturated boundary, a part exceeding its whole. Structure alone didn't catch these — they had to be screened claim-by-claim.
+
+### How
+- **Self-ratio tautology** — flags `X / X`-shaped ratios that are 1.0 by construction.
+- **Fan-out detection** — `detect_fanout` + a **live cardinality oracle** (`make_uniqueness_oracle`: `COUNT(*) = COUNT(DISTINCT key)` probed on the real connection) re-run on CTE bodies, with a normalized-weight carve-out so legitimate weighted attribution survives.
+- **Scale-robust boundary saturation** — distinguishes a real extremum from a clamped/saturated boundary.
+- **Part > whole** and **claim-grounding** — the cited number must actually exist in the cited result set.
+- Wired at all three `verify_insight` call sites in the explorer; covered by `tests/unit/test_insight_gate.py`.
+
+### Key files
+- `aughor/explorer/agent.py` (`verify_insight` + helpers), `aughor/sql/fanout.py` (`self_ratio_tautology`, cardinality-aware chasm roots), `aughor/sql/validate.py` (`make_uniqueness_oracle`)
+- `tests/unit/test_insight_gate.py`
+
+---
+
+## 140. Briefing-Trust Round 2 — BeautyCommerce Cold-Trace Learnings ✅ Shipped
+
+### What
+A bundle of trust + grounding fixes (the **F1–F10** findings) distilled from a deliberate experiment: approaching a rich BeautyCommerce warehouse *cold* (as an analyst would) and diffing that against what Aughor's live pipeline produced, then closing every gap.
+
+### Why
+The cold-trace exposed where the pipeline under-performed a careful human: it gave up after one failed SQL attempt, inflated SUMs across chasm joins, hallucinated a business model the data didn't support, mis-declared metric ranges, treated high-null columns as uniformly meaningless, and lacked mid-run observability.
+
+### How
+- **F1 — per-question SQL retry:** each key question now retries its own SQL independently (1/8 → 8/8 answered on the trace).
+- **F2 — cardinality-aware chasm guard:** SUM-over-fan-out drops use the live uniqueness oracle, not a heuristic.
+- **F3 — structural-vs-noise NULL classification:** high-null columns are classified (structural / noise / dead) instead of blanket-ignored.
+- **F6 — glossary keyed per connection + column-fingerprint:** auto-seed re-seeds on schema drift with no cross-warehouse contamination.
+- **F7 — evidence-cited business model:** the inferred model must cite data evidence or it's dropped.
+- **F4 — range calibration** from the audited value; **F5 — cross-domain + key-questions seeding**; **F8 — direction-aware join guard** (child ⊂ parent is valid).
+- **Observability:** `_save_state()` mirrors the live phase to disk mid-run; a shared semaphore (`AUGHOR_MAX_CONCURRENT_EXPLORERS`) caps concurrent explorers.
+
+### Key files
+- `aughor/explorer/agent.py`, `aughor/profile/infer.py`, `aughor/autoseed/*`, `aughor/sql/fanout.py`
+- `tests/unit/test_explorer_phase_persist.py`, `tests/unit/test_explorer_grain_lint.py`
+
+---
+
+## 141. Per-Schema Intelligence — True Multi-Schema Isolation ✅ Shipped
+
+### What
+The unit of intelligence is now **(connection × schema)**, not the connection. A multi-schema connection like `workspace` (ecommerce, missimi, bakehouse, netflix) gets a **fully isolated** profile, ontology, exploration state, and briefing per schema — plus an **"All schemas"** aggregate view — instead of one blended, leaky profile.
+
+### Why
+A single connection routinely hosts several unrelated businesses. Before this, exploring `workspace` produced one profile that bled the dominant schema's identity onto the others (a bakery schema was described as "Missimi-focused"), and schema selection in Briefings was cosmetic — certain cards/charts ignored it. Isolation has to be real, not labeled.
+
+### How
+- **Schema-scoped everything:** profile store writes `business_profile_{conn}__{schema}.json`; exploration/ontology stores key by `{conn}__{schema}`; `_gather_context` opens the connection via `open_connection_for_with_schema` so inference only ever sees one schema.
+- **Per-schema fan-out:** `kickoff_exploration(conn, schema=None)` fans out across `schemas_of_connection`, each schema running the proven single-schema pipeline once.
+- **Schema-qualified isolation:** findings are matched on `schema.table` (not bare names), and a `_leaks_schema` guard drops any finding whose SQL references a *different* schema — because a schema-scoped DuckDB can still physically execute another schema's tables.
+- **Aggregate view:** `load_aggregate` / `get_aggregate_domain_insights` compose an "All schemas" rollup.
+- **Full-stack wiring:** `/start?schema=` and `/status?schema=` (returns `per_schema`); `getBusinessProfile/getExplorerStatus/startExplorer(connectionId, schema?)`; `BriefingPanel` threads `schema` into the KPI strip, dashboard, and status poll.
+- **Live-verified:** a clean fan-out re-run produced four distinct, correctly-grounded profiles (e-commerce / beauty / bakery / SVOD streaming) with zero cross-contamination.
+
+### Key files
+- `aughor/profile/store.py`, `aughor/profile/infer.py`, `aughor/explorer/store.py`, `aughor/explorer/agent.py`
+- `aughor/routers/_shared.py`, `aughor/routers/exploration.py`
+- `web/lib/api.ts`, `web/components/BriefingPanel.tsx`
+- `tests/unit/test_schema_isolation.py`, `tests/unit/test_explorer_phase_persist.py`
+
+---
+
+*Last updated: 2026-06-19 · 141 active features (#141 per-schema intelligence — connection×schema unit: isolated profile/ontology/exploration/briefing per schema + "All schemas" aggregate + schema-qualified `_leaks_schema` guard, live-verified 4 distinct profiles; #140 briefing-trust round 2 — BeautyCommerce cold-trace F1–F10: per-question SQL retry, cardinality-aware chasm guard, structural-vs-noise NULL, evidence-cited business model, mid-run phase observability + concurrency cap; #139 pre-emission insight verification gate — self-ratio tautology, fan-out cardinality oracle, boundary-saturation, part>whole, claim-grounding screens before emission; #138 human-editable version-controlled ontology overrides — YAML tree, override-wins merge; #137 design language v2 — token override + `.aug-*` re-skin + central Vega theming/reactivity, conclusion-first Briefing Verdict Hero + supporting signals, Briefing-as-home nav IA, real-count MiniStat rows + QB validity badge; #136 briefing trust hardening — SUM-over-chasm + grain-mismatch-CTE fan-out drops, profile-declared-range degenerate gate, 3-tier dedup incl. embedding paraphrase, metric-explainer charts; #135 industry-aware intelligence — BusinessProfile keystone + per-industry metric KB + build-time audited value_sql/chart_sql/key_question_sql + pinned key-questions; #134 first-class SQLite connector — PR #66; #133 value-domain join guard — PR #65; #132 embedding entity dedup — Borrow 5; #131 hierarchical tree-reduce — Borrow 4; #130 Query Builder semantic-step UI; #127–#129 semantic operators; #126 model-cascade tombstone). **Adaptive-inference list worked through** (B5b logprob-confidence blocked); next up = external NL2SQL benchmarking (Spider 2.0 — SQLite reader in place) + promoting the join guard to prevention (`joinable_with` edges). See `ROADMAP.md`.*
