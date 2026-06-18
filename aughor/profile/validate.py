@@ -98,7 +98,7 @@ def match_metric_range(text: str, ranges: list[tuple]) -> tuple | None:
     return best
 
 
-def _make_uniqueness_oracle(conn, table_cols: dict):
+def make_uniqueness_oracle(conn, table_cols: dict):
     """Build an `is_unique_on(table_bare, key_col) -> bool | None` for the fan-out
     chasm guards, backed by a live `COUNT(*) = COUNT(DISTINCT key)` probe (cached on
     the conn). Lets the guards tell a 1:1 DIMENSION (e.g. invoices, one-per-order)
@@ -185,7 +185,7 @@ def audit_value_sql(value_sql: str, table_cols: dict, conn, unit_or_range: str) 
             integer_division_risk, count_star_entity_fanout, count_star_chasm_fanout,
             avg_over_chasm_fanout, sum_over_chasm_fanout, cte_grain_mismatch_fanout,
         )
-        uniq = _make_uniqueness_oracle(conn, table_cols)
+        uniq = make_uniqueness_oracle(conn, table_cols)
         grain = (integer_division_risk(sql)
                  or count_star_entity_fanout(sql, table_cols)
                  or count_star_chasm_fanout(sql, table_cols, dialect=dialect, is_unique_on=uniq)
@@ -260,7 +260,7 @@ def audit_chart_sql(chart_sql: str, table_cols: dict, conn) -> tuple[bool, str]:
             integer_division_risk, count_star_entity_fanout, count_star_chasm_fanout,
             avg_over_chasm_fanout, sum_over_chasm_fanout, cte_grain_mismatch_fanout,
         )
-        uniq = _make_uniqueness_oracle(conn, table_cols)
+        uniq = make_uniqueness_oracle(conn, table_cols)
         grain = (integer_division_risk(sql)
                  or count_star_entity_fanout(sql, table_cols)
                  or count_star_chasm_fanout(sql, table_cols, dialect=dialect, is_unique_on=uniq)
@@ -334,7 +334,7 @@ def audit_finding_sql(sql: str, table_cols: dict, conn) -> tuple[bool, str]:
             integer_division_risk, count_star_entity_fanout, count_star_chasm_fanout,
             avg_over_chasm_fanout, sum_over_chasm_fanout, cte_grain_mismatch_fanout,
         )
-        uniq = _make_uniqueness_oracle(conn, table_cols)
+        uniq = make_uniqueness_oracle(conn, table_cols)
         grain = (integer_division_risk(s)
                  or count_star_entity_fanout(s, table_cols)
                  or count_star_chasm_fanout(s, table_cols, dialect=dialect, is_unique_on=uniq)

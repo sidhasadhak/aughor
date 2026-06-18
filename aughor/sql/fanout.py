@@ -505,6 +505,47 @@ def sum_over_chasm_fanout(sql: str, table_cols: dict | None = None, dialect: str
     return None
 
 
+def self_ratio_tautology(sql: str, dialect: str = "duckdb") -> str | None:
+    """A rate whose NUMERATOR and DENOMINATOR are the SAME aggregate expression —
+    ``SUM(x) / NULLIF(SUM(x), 0)``, ``COUNT(y) / COUNT(y)`` — is identically 1.0 for
+    every non-zero bucket, REGARDLESS of the data. It is never a real metric: a rate
+    divides by a DIFFERENT base (margin/revenue, converted/total). This is the
+    `gross_margin_usd / gross_margin_usd → 100%` trap that then gets narrated as "no
+    COGS recorded". Pure structural analysis on the parse tree (so `SUM(a)/SUM(a+b)` is
+    NOT flagged — different denominator); returns a reason or None; never raises."""
+    try:
+        import sqlglot
+        from sqlglot import exp
+    except Exception:
+        return None
+    try:
+        tree = sqlglot.parse_one(sql, read=dialect)
+    except Exception:
+        return None
+    if tree is None:
+        return None
+
+    def _agg_key(node) -> str | None:
+        # canonical "FUNC(arg)" for an aggregate, ignoring whitespace/case; None if not an agg
+        if isinstance(node, (exp.Sum, exp.Count, exp.Avg, exp.Min, exp.Max)):
+            inner = node.this
+            arg = "" if inner is None else inner.sql(dialect=dialect)
+            arg_norm = re.sub(r"\s+", "", arg).lower()
+            return type(node).__name__.lower() + "(" + arg_norm + ")"
+        return None
+
+    for div in tree.find_all(exp.Div):
+        num, den = div.this, div.expression
+        # denominator is often wrapped in NULLIF(<agg>, 0) — unwrap to the first arg
+        if isinstance(den, exp.Nullif):
+            den = den.this if den.this is not None else den.expressions[0] if den.expressions else den
+        nk, dk = _agg_key(num), _agg_key(den)
+        if nk and dk and nk == dk:
+            return (f"self-referential ratio: numerator and denominator are the same "
+                    f"aggregate ({num.sql(dialect=dialect)}) — identically 1.0, not a real rate")
+    return None
+
+
 def _cte_grain_and_outputs(cte_select) -> tuple[set, set, set]:
     """For a CTE's SELECT, return (grain, measures, all_outputs) as output-name sets:
       grain    = output names that come from GROUP BY keys (the CTE's row grain);
