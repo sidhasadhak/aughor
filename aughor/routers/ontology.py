@@ -433,6 +433,117 @@ def list_ontology_overrides(
     return {"overrides": [o.model_dump() for o in load_overrides(connection_id, effective)]}
 
 
+# ── Self-improving loop: engine-proposed recommendations ────────────────────────
+
+@router.get("/ontology/recommendations", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def list_ontology_recommendations(
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+    ripe_only: bool = Query(default=True),
+):
+    """List engine-proposed ontology fixes (the self-improving loop's output).
+
+    ripe_only (default) hides one-off sightings — only recommendations seen enough
+    times to be worth a human's review are returned.
+    """
+    from aughor.ontology.recommendations import load_recommendations
+    effective = _resolve_schema(connection_id, schema_name)
+    recs = load_recommendations(connection_id, effective)
+    if ripe_only:
+        recs = [r for r in recs if r.ripe]
+    return {"recommendations": [r.model_dump() for r in recs]}
+
+
+@router.post("/ontology/recommendations/{rec_id}/accept", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def accept_ontology_recommendation(
+    rec_id: str,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Promote a recommendation into an EXPLAIN-bound human override (override-wins path)."""
+    from aughor.ontology.recommendations import accept
+    effective = _resolve_schema(connection_id, schema_name)
+    graph = _get_ontology_graph(connection_id, effective)
+    explain, close = _explain_for(connection_id)
+    try:
+        res = accept(connection_id, effective, rec_id, graph, explain)
+    finally:
+        close()
+    if res is None:
+        raise HTTPException(status_code=404, detail=f"recommendation '{rec_id}' not found")
+    return res
+
+
+@router.post("/ontology/recommendations/{rec_id}/dismiss", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def dismiss_ontology_recommendation(
+    rec_id: str,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Dismiss a recommendation so the loop won't resurface it."""
+    from aughor.ontology.recommendations import get_recommendation, save_recommendation
+    effective = _resolve_schema(connection_id, schema_name)
+    rec = get_recommendation(connection_id, effective, rec_id)
+    if rec is None:
+        raise HTTPException(status_code=404, detail=f"recommendation '{rec_id}' not found")
+    rec.status = "dismissed"
+    save_recommendation(connection_id, effective, rec)
+    return {"dismissed": True, "id": rec_id}
+
+
+# ── Version-control round-trip: export ontology to files / import edits ─────────
+
+@router.post("/ontology/export", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def export_ontology_tree(
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Write the live ontology to a readable, version-controllable YAML tree."""
+    from aughor.ontology.filetree import export_tree, export_root
+    effective = _resolve_schema(connection_id, schema_name)
+    graph = _get_ontology_graph(connection_id, effective)
+    if graph is None:
+        raise HTTPException(status_code=404, detail="Ontology not available")
+    root = export_root(connection_id, effective)
+    paths = export_tree(root, graph)
+    return {"root": str(root), "files": len(paths)}
+
+
+@router.post("/ontology/import", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def import_ontology_tree(
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Re-import on-disk edits to the exported tree as EXPLAIN-bound overrides.
+
+    Edits are diffed against the PRE-override auto-built graph, so re-importing an
+    unedited export is a no-op and only changed fields become overrides.
+    """
+    from aughor.ontology.filetree import import_tree, export_root
+    from aughor.ontology.overrides import bind_overrides, save_override
+    from aughor.ontology.store import load_ontology
+    effective = _resolve_schema(connection_id, schema_name)
+    fingerprint = _latest_fingerprint(connection_id, effective)
+    base = load_ontology(connection_id, effective, fingerprint) if fingerprint else None
+    if base is None:
+        base = _get_ontology_graph(connection_id, effective)
+    if base is None:
+        raise HTTPException(status_code=404, detail="Ontology not available")
+
+    candidates = import_tree(export_root(connection_id, effective), base)
+    explain, close = _explain_for(connection_id)
+    saved = []
+    try:
+        for ov in candidates:
+            bind_overrides(ov, base, explain)
+            save_override(connection_id, effective, ov)
+            saved.append({"kind": ov.target_kind, "target": ov.target_id,
+                          "bound": all(b.get("bound") for b in ov.binding.values()) if ov.binding else True})
+    finally:
+        close()
+    return {"imported": len(saved), "overrides": saved}
+
+
 @router.post("/ontology/entities/merge", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
 def merge_ontology_entities(
     body: _MergeEntitiesRequest,
