@@ -975,6 +975,17 @@ class SchemaExplorer:
         else:
             _store.save(self._store_key, self._state)
 
+    def _leaks_schema(self, sql: str) -> bool:
+        """For a schema-SCOPED run, True if the SQL references a table in a DIFFERENT schema.
+        Scoping filters get_schema() but the underlying DuckDB can still EXECUTE a cross-schema
+        query, so a pinned/profile-seeded SQL could escape the schema — drop such findings so a
+        per-schema view stays pure. No-op for connection-level runs (schema_name=None)."""
+        if not self.schema_name:
+            return False
+        mine = self.schema_name.lower()
+        other = {_dataset_of(t).lower() for t in _tables_in_sql(sql)} - {mine, ""}
+        return bool(other)
+
     # ── External control ──────────────────────────────────────────────────────
 
     def _journal(self, kind: str, payload: dict | None = None) -> None:
@@ -2082,6 +2093,10 @@ class SchemaExplorer:
                 rows = await self._run(sql, think=f"[pinned] {q[:60]}")
                 if not rows:
                     continue
+                if self._leaks_schema(sql):
+                    logger.info("[explorer:%s] Phase 8 (pinned): skipping Q%d — SQL escapes schema %s",
+                                self.connection_id, qi, self.schema_name)
+                    continue
                 _ok, _why = verify_insight(rows, q, sql, _mranges, conn=self._conn)
                 if not _ok:
                     logger.info("[explorer:%s] Phase 8 (pinned): skipping Q%d — %s",
@@ -2106,6 +2121,8 @@ class SchemaExplorer:
                 except Exception:
                     continue
 
+                if self._leaks_schema(sql):
+                    continue
                 _ok, _why = verify_insight(rows, interp.finding, sql, _mranges, conn=self._conn)
                 if not _ok:
                     logger.info("[explorer:%s] Phase 8 (pinned): dropping interpreted finding — %s",
@@ -3325,6 +3342,10 @@ class SchemaExplorer:
 
                 # Drop "no data" findings — an empty/all-NULL result or an interpretation
                 # that says as much. They pollute the Briefing and turn into broken monitors.
+                if self._leaks_schema(sql):
+                    logger.info("[explorer:%s] Phase 8: %s/%s — dropping finding: SQL escapes schema %s",
+                                self.connection_id, domain, nq.angle, self.schema_name)
+                    continue
                 _ok, _why = verify_insight(rows, interp.finding, sql, _metric_ranges, conn=self._conn)
                 if not _ok:
                     logger.info(

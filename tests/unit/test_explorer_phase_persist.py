@@ -61,6 +61,17 @@ def test_schema_scoped_run_keys_state_by_conn_and_schema(monkeypatch):
     assert captured["cid"] == "workspace__missimi"
 
 
+def test_leaks_schema_drops_cross_schema_sql():
+    # A schema-scoped run must reject SQL that escapes its schema (the scoped DuckDB can
+    # still execute another schema's tables).
+    ex = SchemaExplorer.__new__(SchemaExplorer)
+    ex.schema_name = "bakehouse"
+    assert ex._leaks_schema("SELECT * FROM missimi.orders") is True
+    assert ex._leaks_schema("SELECT * FROM bakehouse.sales_transactions b JOIN bakehouse.suppliers s ON 1=1") is False
+    ex.schema_name = None   # connection-level run never restricts
+    assert ex._leaks_schema("SELECT * FROM missimi.orders") is False
+
+
 def test_save_state_accepts_plain_string_phase(monkeypatch):
     ex = _bare_explorer()
     ex._status.phase = "domain_intel"  # already a string (defensive)

@@ -137,10 +137,15 @@ def _calibrate_ranges(profile, conn) -> None:
 
 def _gather_context(connection_id: str, schema_name: Optional[str]) -> tuple[str, list[str]]:
     """Return (glossary-enriched schema text, existing domain labels)."""
-    from aughor.db.connection import open_connection_for
+    from aughor.db.connection import open_connection_for, open_connection_for_with_schema
     from aughor.semantic.glossary import apply_glossary
 
-    db = open_connection_for(connection_id)
+    # Scope to the requested schema so a per-schema profile is inferred from ONLY that
+    # schema's tables — otherwise a multi-schema connection's get_schema() returns every
+    # table and the largest schema dominates (e.g. every schema getting a "Missimi-focused"
+    # profile). None → connection-level (unchanged for single-schema connections).
+    db = (open_connection_for_with_schema(connection_id, schema_name)
+          if schema_name else open_connection_for(connection_id))
     schema = db.get_schema()
     try:
         schema = apply_glossary(schema)
@@ -199,8 +204,9 @@ def infer_business_profile(connection_id: str,
     # — turning "drop the wrong number" into "show the right one" where we can.
     try:
         from aughor.profile.validate import audit_profile
-        from aughor.db.connection import open_connection_for
-        _conn = open_connection_for(connection_id)
+        from aughor.db.connection import open_connection_for, open_connection_for_with_schema
+        _conn = (open_connection_for_with_schema(connection_id, schema_name)
+                 if schema_name else open_connection_for(connection_id))
         failed = audit_profile(profile, _conn, schema)
         # Regenerate any metric (with a recipe) that lost EITHER its value_sql or its
         # chart_sql in the audit — recipe-grounded SQL is the SQL-accuracy authority.
@@ -224,8 +230,9 @@ def infer_business_profile(connection_id: str,
     # SKU margin-leak: ">90% margin AND >10% returns") are answered REPRODUCIBLY instead
     # of depending on the hot loop's one-shot generation, which fails to bind them.
     try:
-        from aughor.db.connection import open_connection_for as _open
-        _generate_key_question_sql(profile, recipes, schema, _open(connection_id))
+        from aughor.db.connection import open_connection_for as _open, open_connection_for_with_schema as _opens
+        _kqconn = _opens(connection_id, schema_name) if schema_name else _open(connection_id)
+        _generate_key_question_sql(profile, recipes, schema, _kqconn)
         _n = sum(1 for s in (profile.key_question_sql or []) if s.strip())
         logger.info("[profile:%s] generated %d/%d key-question SQLs", connection_id, _n,
                     len(profile.key_questions or []))
