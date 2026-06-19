@@ -951,6 +951,61 @@ def _chart_primary_is_metric(finding) -> None:
     finding["rows"] = [[row[i] for i in keep] for row in (finding.get("rows") or [])]
 
 
+_RATIO_AGG_RE = re.compile(r"\b(sum|count|avg|min|max|median|stddev|variance|var_pop|var_samp)\s*\(", re.I)
+_RATIO_LABEL_RE = re.compile(r"%|percent|\brate\b|ratio|share of|average|\bavg\b|\bmean\b|per[ -](order|unit|customer|capita|record)", re.I)
+
+
+def _metric_is_ratio(metric_sql: str, metric_label: str = "") -> bool:
+    """Deterministic gate: is the metric a RATIO / percentage / per-unit average rather than a
+    plain additive total? A ratio (SUM(num)/SUM(den), anything *100, an AVG/mean) must be
+    re-aggregated per group as numerator/denominator — it can NEVER be SUM'd across groups or
+    divided by COUNT(*). The cross-sectional weakness scan used an additive-SUM template that
+    silently dropped the denominator and reported SUM(numerator) as the metric; this detector
+    routes such metrics to the ratio-aware plan/interpret path instead.
+
+    Detection (any one): a top-level *100 scaling; a division between two aggregate expressions;
+    or a label that names a percentage / rate / ratio / average / per-unit measure."""
+    s = metric_sql or ""
+    compact = s.replace(" ", "")
+    if "*100" in compact:
+        return True
+    if "/" in s and len(_RATIO_AGG_RE.findall(s)) >= 2:
+        return True
+    # a bare AVG/MEAN/MEDIAN aggregate is a per-record mean — non-additive
+    if re.search(r"\b(avg|mean|median)\s*\(", s, re.I):
+        return True
+    if _RATIO_LABEL_RE.search(metric_label or ""):
+        return True
+    return False
+
+
+_RATIO_METRIC_COL_RE = re.compile(r"metric_total|metric_value|\bratio\b|pct|percent|\brate\b", re.I)
+
+
+def _chart_ratio_primary(finding) -> None:
+    """For a RATIO metric, plot metric_total (the ratio itself), not the large numerator/
+    denominator dollar aggregates it was built from. Keep the dimension column + the ratio
+    column in the rendered table/chart; drop n / numerator_total / denominator_total from the
+    VIEW (the narrator still saw them in results_text). Mirror image of _chart_primary_is_metric,
+    which drops share columns to plot a magnitude — here we drop magnitudes to plot the ratio."""
+    cols = finding.get("columns") or []
+    if len(cols) <= 2:
+        return
+    keep = [0]  # the dimension column always leads
+    for i, c in enumerate(cols):
+        if i == 0:
+            continue
+        if _RATIO_METRIC_COL_RE.search(c):
+            keep.append(i)
+            break
+    if len(keep) < 2:
+        keep = [0, 1]  # fallback: dimension + first metric column
+    if len(keep) == len(cols):
+        return
+    finding["columns"] = [cols[i] for i in keep]
+    finding["rows"] = [[row[i] for i in keep] for row in (finding.get("rows") or [])]
+
+
 def _skipped_finding(phase_id: str, reason: str) -> InvestigationFinding:
     return InvestigationFinding(
         finding_id=f"{phase_id}_skip",
@@ -2427,6 +2482,8 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection") -> dict:
     most-concentrated values, instead of a temporal baseline."""
     from aughor.agent.prompts_investigate import (
         CROSS_SECTION_PLAN_PROMPT, CROSS_SECTION_INTERPRET_PROMPT,
+        CROSS_SECTION_ADDITIVE_BLOCK, CROSS_SECTION_RATIO_BLOCK,
+        CROSS_SECTION_RATIO_INTERPRET_PROMPT,
         PhasePlan, PhaseInterpretation,
     )
     question = state["question"]
@@ -2440,6 +2497,15 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection") -> dict:
 
     prioritized = _prioritize_dimensions(dimensions)
     dimensions_list = "\n".join(f"  - {d}" for d in prioritized[:6]) if prioritized else "  (none identified)"
+
+    # RATIO vs ADDITIVE metric. A ratio/percentage/per-unit metric (SUM(num)/SUM(den), *100, AVG)
+    # cannot be SUM'd across groups or divided by COUNT(*) — the additive template silently dropped
+    # the denominator and reported SUM(numerator) as the metric (mislabelling $/order as a %).
+    # Intake's metric_is_ratio is an OR signal; the deterministic detector is the actual gate.
+    is_ratio = bool(intake_data.get("metric_is_ratio")) or _metric_is_ratio(metric_sql, metric_label)
+    metric_computation_block = (
+        CROSS_SECTION_RATIO_BLOCK if is_ratio else CROSS_SECTION_ADDITIVE_BLOCK
+    ).format(metric_sql=metric_sql)
 
     # DRIVER questions ("do late deliveries lower reviews") carry a derived comparison
     # segment from intake — compare the metric ACROSS that condition (true vs false) as
@@ -2466,8 +2532,16 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection") -> dict:
         plan_user=CROSS_SECTION_PLAN_PROMPT.format(
             question=question, metric_label=metric_label, metric_sql=metric_sql,
             metric_table=metric_table, schema=schema, dimensions_list=dimensions_list,
+            metric_computation_block=metric_computation_block,
             comparison_segment_section=comparison_segment_section),
         interpret_system=(
+            "Interpret a cross-sectional ranking scan of a RATIO / percentage metric. Read "
+            "metric_total AS that ratio in its own units — NEVER as a dollar total or per-record "
+            "average. DIRECTION matters: a LOW ratio is often GOOD (low cost-%, low defect-rate); "
+            "judge by what the ratio measures, do not assume the minimum is the problem. Only call a "
+            "value 'weak'/'underperforming' if clearly adverse vs a benchmark or a real outlier; "
+            "otherwise use relative language and say the spread is tight/healthy."
+            if is_ratio else
             "Interpret a cross-sectional ranking scan. Name the LOWEST-RANKED values and any "
             "concentration. SEVERITY GROUNDING: only call a value 'weak', 'critically low', "
             "'underperforming', or 'the weakest' if it is below a stated benchmark/target or far "
@@ -2475,8 +2549,11 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection") -> dict:
             "evidence it is unhealthy. Otherwise use relative language ('the lowest at X vs the ~Y "
             "average'). Be explicit when the spread is tight and all values are healthy."
         ),
-        interpret_user_fn=lambda results_text: CROSS_SECTION_INTERPRET_PROMPT.format(
-            question=question, metric_label=metric_label, results_text=results_text),
+        interpret_user_fn=(lambda results_text: CROSS_SECTION_RATIO_INTERPRET_PROMPT.format(
+            question=question, metric_label=metric_label, results_text=results_text))
+        if is_ratio else
+        (lambda results_text: CROSS_SECTION_INTERPRET_PROMPT.format(
+            question=question, metric_label=metric_label, results_text=results_text)),
         plan_error_msg="Cross-sectional planning failed.",
         exec_error_msg="Cross-sectional queries failed.",
     )
@@ -2499,9 +2576,13 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection") -> dict:
         ]
         summary = "Cross-sectional scan complete."
 
-    # Make the bar plot the metric magnitude, not its share-of-total (see helper).
+    # Make the bar plot the metric itself: for a ratio, plot metric_total (the %/rate) and drop the
+    # large numerator/denominator aggregates; for an additive metric, plot the magnitude not its share.
     for f in findings:
-        _chart_primary_is_metric(f)
+        if is_ratio:
+            _chart_ratio_primary(f)
+        else:
+            _chart_primary_is_metric(f)
 
     phase = _phase_result(
         "cross_section", "Cross-Sectional Scan", "🧭",
@@ -2573,6 +2654,18 @@ def ada_synthesize(state: AgentState) -> dict:
             "the spread is tight and all values are healthy, say the dimension is healthy and DROP "
             "the weakness framing (an empty waterfall is correct when nothing is actually weak)."
         )
+        if intake_data.get("metric_is_ratio") or _metric_is_ratio(
+            intake_data.get("metric_sql", ""), intake_data.get("metric_label", "")
+        ):
+            cross_section_note += (
+                "\n\nRATIO METRIC: the metric is a RATIO / percentage / per-unit rate (e.g. "
+                f"'{intake_data.get('metric_label', 'the metric')}'), NOT a dollar total. Report every "
+                "value in the metric's OWN units (%, rate) — NEVER restate it as a dollar amount or a "
+                "per-order average, and NEVER manufacture a percentage from a dollar column. DIRECTION: "
+                "for a cost/defect/freight-style ratio a LOW value is FAVOURABLE; do not call the lowest "
+                "ratio a weakness unless the ratio's meaning makes low genuinely bad. total_change_label "
+                "should be the overall ratio or 'N/A', not a summed percentage."
+            )
 
     # Build metric targets block for synthesis guidance
     metric_targets_section = ""

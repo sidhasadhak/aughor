@@ -1715,7 +1715,7 @@ async def _stream_investigation(
                 scores = merged.get("evidence_scores", [])
                 if scores:
                     yield _sse("score", {"iteration": merged.get("iteration", 0), "score": scores[-1].model_dump(), "hypotheses": [h.model_dump() for h in merged.get("hypotheses", [])]})
-            elif node_name in ("ada_intake", "ada_baseline", "ada_decompose", "ada_dimensional", "ada_behavioral"):
+            elif node_name in ("ada_intake", "ada_baseline", "ada_cross_section", "ada_decompose", "ada_dimensional", "ada_behavioral"):
                 phases = merged.get("investigation_phases", [])
                 if phases:
                     yield _sse("phase_complete", {"phase": phases[-1], "all_phases": phases})
