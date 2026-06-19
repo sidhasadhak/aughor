@@ -20,6 +20,21 @@ def get_business_profile(connection_id: str, schema_name: Optional[str] = Query(
     raw = store.load_raw(connection_id, schema_name)
     if not raw:
         return {"available": False, "connection_id": connection_id, "schema_name": schema_name}
+    # RC3 — serve-time coherence: blank the value_sql of a category-named metric declared as
+    # a scalar percent/ratio ("Top Return Reason 0.4%") so the KPI strip drops it, without
+    # waiting for a re-inference. New profiles are already gated at build time (audit_profile).
+    try:
+        from aughor.profile.validate import name_sql_coherent
+        for m in (raw.get("profile", {}).get("north_star_metrics") or []):
+            if (m.get("value_sql") or "").strip():
+                ok, _ = name_sql_coherent(m.get("name", ""), m.get("unit_or_range", ""))
+                if not ok:
+                    m["value_sql"] = ""
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "serve-time metric coherence filter is best-effort; the raw profile is "
+                 "still returned (build-time audit_profile is the primary gate)",
+                 counter="profile.coherence_filter")
     return {"available": True, **raw}
 
 

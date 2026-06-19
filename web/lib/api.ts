@@ -975,10 +975,18 @@ export interface ExplorationInsight {
   canvas_id?: string | null;
   promoted_to_org?: boolean;
   promotion_confidence?: number;
+  /** Origin schema, set only on the "All schemas" aggregate — disambiguates findings whose
+   *  per-schema ids collide (e.g. each schema's pinned questions start at pinned__0). */
+  source_schema?: string;
   /** Briefing-triage annotations (stamped by the /domains endpoint): `impact` is the
    *  ranking score; `plausibility` flags a finding the trust gate distrusts. */
   impact?: number;
   plausibility?: "implausible" | "confound" | null;
+}
+
+/** Stable identity for a finding across the aggregate union, where bare `id`s collide. */
+export function insightKey(ins: { id: string; source_schema?: string }): string {
+  return ins.source_schema ? `${ins.source_schema}::${ins.id}` : ins.id;
 }
 
 export interface DomainInsights {
@@ -2483,6 +2491,52 @@ export async function getInsightReceipt(connId: string, insightId: string): Prom
     `${BASE}/exploration/${encodeURIComponent(connId)}/insights/${encodeURIComponent(insightId)}/receipt`,
   );
   if (!res.ok) return null;
+  return res.json();
+}
+
+// ── "Show the receipt" — ground a specific briefing number against live result cells ──
+
+export interface GroundedNumeral {
+  text: string;
+  value: number;
+  enforce: boolean;
+  grounded: boolean;
+  matched_cell: number | null;
+}
+
+export interface GroundingReceipt {
+  insight_id: string;
+  finding: string;
+  sql: string;
+  numerals: GroundedNumeral[];
+  columns: string[];
+  sample_rows: string[][];
+  error?: string;
+}
+
+/** Re-run a cited finding's query and ground a specific number ("show the receipt").
+ *  `text` is the exact token clicked in the brief; omit to ground the whole finding.
+ *  `insightIds` (all citations) lets the backend find the number's TRUE source, not just
+ *  the nearest citation. */
+export async function groundBriefingNumber(
+  connId: string,
+  insightId: string,
+  opts: { text?: string; schema?: string; insightIds?: string[] } = {},
+): Promise<GroundingReceipt> {
+  const res = await fetch(`${BASE}/exploration/${encodeURIComponent(connId)}/briefing/ground`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      insight_id: insightId,
+      insight_ids: opts.insightIds ?? [],
+      text: opts.text ?? "",
+      schema: opts.schema ?? null,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { detail?: string }).detail ?? "Grounding failed");
+  }
   return res.json();
 }
 

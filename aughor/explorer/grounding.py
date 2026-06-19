@@ -176,6 +176,44 @@ def verify_finding(finding: str, rows, extra: Optional[Iterable] = None) -> Grou
     return GroundingResult(grounded=not ungrounded, ungrounded=ungrounded, checked=checked)
 
 
+def ground_numerals(finding: str, rows, extra: Optional[Iterable] = None) -> list[dict]:
+    """Per-numeral grounding map for the "show the receipt" UI.
+
+    Where :func:`verify_finding` returns only a pass/fail verdict, this returns one
+    record *per numeral* in ``finding`` so a UI can make each number clickable and
+    show exactly which result cell backs it. Reuses the same extraction + matching
+    logic, so the verdict here is consistent with the guard that gates the finding.
+
+    Each record::
+
+        {"text": "2.49M",          # the token as written
+         "value": 2_490_000.0,     # magnitude-expanded value
+         "enforce": True,          # was grounding required for this token?
+         "grounded": True,         # for enforced tokens: backed by a real cell?
+         "matched_cell": 2_490_000.0}  # the first cell that grounds it, else None
+
+    Non-enforced tokens (percentages, ranks, small counts, calendar years) carry
+    ``enforce=False`` / ``grounded=True`` / ``matched_cell=None`` — they are shown as
+    "derived, not enforced" rather than flagged, mirroring the conservative policy
+    in :func:`extract_numerals`."""
+    cells = cell_values(rows, extra)
+    out: list[dict] = []
+    for n in extract_numerals(finding):
+        matched: Optional[float] = None
+        grounded = True
+        if n.enforce:
+            matched = next((c for c in cells if _grounds(n, c)), None)
+            grounded = matched is not None
+        out.append({
+            "text": n.text,
+            "value": n.value,
+            "enforce": n.enforce,
+            "grounded": grounded,
+            "matched_cell": matched,
+        })
+    return out
+
+
 def numeric_cells_block(rows, limit: int = 40) -> str:
     """A compact, de-duplicated list of the actual numeric result values, for a
     corrective re-grounding prompt. Preserves natural magnitude, sorted descending."""

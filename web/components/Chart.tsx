@@ -137,6 +137,7 @@ export function Chart({
   showLabels: showLabelsProp,
   custom = null,
   heightScale = 1,
+  onSelect,
 }: {
   columns: string[];
   rows: unknown[][];
@@ -145,6 +146,8 @@ export function Chart({
   title?: string;
   /** Scale the computed chart height (e.g. 0.75 for a compact briefing card). */
   heightScale?: number;
+  /** Click a mark to drill in — receives the datum behind the clicked bar/point. */
+  onSelect?: (datum: Record<string, unknown>) => void;
   /** Render the hover toolbar (labels + download) and drag-to-resize handle.
    *  Set false when an outer wrapper (e.g. InvestigationChart) supplies the chrome. */
   chrome?: boolean;
@@ -1330,7 +1333,7 @@ export function Chart({
       {/* Chart viewport — fixed 350px with internal scroll; Vega renders at full natural height */}
       <div ref={outerRef} style={{ maxHeight: 350, overflowY: 'auto', overflowX: 'auto', width: '100%' }}>
         <div ref={chartRef}>
-          <VegaChart spec={applyCustom(withYHeadroom(spec, vegaData), custom)!} data={vegaData} height={chartH} showLabels={showLabels} />
+          <VegaChart spec={applyCustom(withYHeadroom(spec, vegaData), custom)!} data={vegaData} height={chartH} showLabels={showLabels} onSelect={onSelect} />
         </div>
       </div>
 

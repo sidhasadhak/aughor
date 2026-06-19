@@ -51,11 +51,16 @@ import {
   type ActionTrigger,
   getInsightReceipt,
   type InsightReceipt,
+  groundBriefingNumber,
+  insightKey,
 } from "@/lib/api";
 import { subscribeKernelEvents } from "@/lib/events";
 import { Spinner } from "@/components/ui/motion";
 import { BriefingDashboard } from "@/components/brief/BriefingDashboard";
 import { IndustryKpiStrip } from "@/components/brief/IndustryKpiStrip";
+import { InlineInvestigationThread } from "@/components/brief/InlineInvestigationThread";
+import { GroundedNumber, withGroundedNumbers } from "@/components/brief/GroundedNumber";
+import { BriefAskBox } from "@/components/brief/BriefAskBox";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -145,14 +150,33 @@ function NarrativeText({
   text,
   citations,
   onCitationClick,
+  connectionId,
+  schema,
 }: {
   text: string;
   citations: BriefingCitation[];
   onCitationClick: (citation: BriefingCitation, e: { clientX: number; clientY: number }) => void;
+  /** Connection + schema scope so each magnitude number can be grounded ("show the receipt"). */
+  connectionId: string;
+  schema?: string;
 }) {
   const citationMap = Object.fromEntries(citations.map(c => [c.ref, c]));
+  // Every cited insight — a synthesized number may have come from any of them, so we
+  // ground against all (primary = nearest) rather than only the nearest citation.
+  const allInsightIds = Array.from(new Set(citations.map(c => c.insight_id).filter(Boolean)));
   // Split on [N] markers
   const parts = text.split(/(\[\d+\])/g);
+  // The insight a number is grounded against = the NEAREST citation marker (claims usually
+  // precede their [N], so prefer the following marker, falling back to the preceding one).
+  const markerRefAt = (i: number): string | null => {
+    for (let d = 0; d < parts.length; d++) {
+      const after = parts[i + d]?.match(/^\[(\d+)\]$/);
+      if (after) return after[1];
+      const before = parts[i - d]?.match(/^\[(\d+)\]$/);
+      if (before) return before[1];
+    }
+    return null;
+  };
 
   return (
     <span>
@@ -168,7 +192,29 @@ function NarrativeText({
             />
           );
         }
-        return <span key={i}>{part}</span>;
+        const ref = markerRefAt(i);
+        const insightId = ref ? citationMap[ref]?.insight_id : undefined;
+        if (!insightId) return <span key={i}>{part}</span>;
+        return (
+          <span key={i}>
+            {withGroundedNumbers(part, (tok, key) => (
+              <GroundedNumber
+                key={key}
+                token={tok}
+                resolve={async () => {
+                  const r = await groundBriefingNumber(connectionId, insightId, { text: tok, schema, insightIds: allInsightIds });
+                  if (r.error) return { sql: r.sql, grounded: null, matchedCell: null, error: r.error };
+                  const rec = r.numerals[0];
+                  return {
+                    sql: r.sql,
+                    grounded: rec ? (rec.enforce ? rec.grounded : null) : null,
+                    matchedCell: rec?.matched_cell ?? null,
+                  };
+                }}
+              />
+            ), `p${i}`)}
+          </span>
+        );
       })}
     </span>
   );
@@ -182,6 +228,8 @@ interface CitationActionContext {
   insightById:    Map<string, SynthesisSignal>;
   connectionId:   string;
   canvasId?:      string;
+  /** Shared schema scope — threaded into a citation's inline investigation. */
+  schema?:        string;
   triggers:       ActionTrigger[];
   onEvidence:     (insight: ExplorationInsight, domain: string) => void;
   onTriggersHint: () => void;
@@ -232,6 +280,8 @@ function NarrativeCard({
   const [active, setActive] = useState<{ citation: BriefingCitation; x: number; y: number } | null>(null);
   const onCitationClick = (citation: BriefingCitation, e: { clientX: number; clientY: number }) =>
     setActive({ citation, x: e.clientX, y: e.clientY });
+  // Capability A — an inline investigation pulled from a citation, streamed below the prose.
+  const [thread, setThread] = useState<{ question: string; seedSql: string | null; seedContext: string; key: string } | null>(null);
 
   return (
     <div style={{
@@ -272,6 +322,8 @@ function NarrativeCard({
           text={narrative.narrative}
           citations={narrative.citations}
           onCitationClick={onCitationClick}
+          connectionId={ctx.connectionId}
+          schema={ctx.schema}
         />
       </div>
 
@@ -287,7 +339,25 @@ function NarrativeCard({
           x={active.x}
           y={active.y}
           ctx={ctx}
+          onPull={(t) => { setThread(t); setActive(null); }}
           onClose={() => setActive(null)}
+        />
+      )}
+
+      {/* Inline investigation pulled from a citation — seeded with the cited finding's SQL. */}
+      {thread && (
+        <InlineInvestigationThread
+          key={thread.key}
+          question={thread.question}
+          opts={{
+            connectionId: ctx.connectionId,
+            schema: ctx.schema ?? null,
+            canvasId: ctx.canvasId ?? null,
+            seedSql: thread.seedSql,
+            seedContext: thread.seedContext,
+          }}
+          onClose={() => setThread(null)}
+          onOpenInAsk={ctx.onInvestigate}
         />
       )}
     </div>
@@ -302,12 +372,14 @@ function CitationActionsPopover({
   x,
   y,
   ctx,
+  onPull,
   onClose,
 }: {
   citation: BriefingCitation;
   x: number;
   y: number;
   ctx: CitationActionContext;
+  onPull: (t: { question: string; seedSql: string | null; seedContext: string; key: string }) => void;
   onClose: () => void;
 }) {
   const resolved = ctx.insightById.get(citation.insight_id);
@@ -348,17 +420,37 @@ function CitationActionsPopover({
           onTriggersHint={ctx.onTriggersHint}
           onDismissed={() => { ctx.onDismissed(); onClose(); }}
         />
-        <button
-          onClick={() => { ctx.onInvestigate(`Investigate: ${citation.finding}`); onClose(); }}
-          className="aug-btn"
-          style={{
-            alignSelf: "flex-start", fontSize: 11, color: "var(--blue5)",
-            background: "var(--bg-sel)", border: "1px solid var(--b1)",
-            borderRadius: "var(--r2)", padding: "4px 10px", cursor: "pointer",
-          }}
-        >
-          Investigate →
-        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            onClick={() => onPull({
+              question: `Why is this happening? ${citation.finding}`,
+              seedSql: insight.sql || null,
+              seedContext: `SEED FINDING (the briefing claim being investigated): ${citation.finding}`,
+              key: citation.insight_id,
+            })}
+            className="aug-btn"
+            style={{
+              alignSelf: "flex-start", fontSize: 11, color: "var(--bg-0)",
+              background: "var(--blue5)", border: "1px solid var(--blue5)",
+              borderRadius: "var(--r2)", padding: "4px 10px", cursor: "pointer", fontWeight: 600,
+            }}
+            title="Investigate this citation in place"
+          >
+            Pull the thread →
+          </button>
+          <button
+            onClick={() => { ctx.onInvestigate(`Investigate: ${citation.finding}`); onClose(); }}
+            className="aug-btn"
+            style={{
+              alignSelf: "flex-start", fontSize: 11, color: "var(--blue5)",
+              background: "var(--bg-sel)", border: "1px solid var(--b1)",
+              borderRadius: "var(--r2)", padding: "4px 10px", cursor: "pointer",
+            }}
+            title="Open in the Ask workspace"
+          >
+            Open in Ask ↗
+          </button>
+        </div>
       </div>
     </>
   );
@@ -489,17 +581,18 @@ function synthesize(
 
   const headline = allSignals[0] ?? null;
 
-  // Build supporting signals: breadth first (one per domain), then fill to 6
-  const seenIds    = new Set<string>(headline ? [headline.insight.id] : []);
+  // Build supporting signals: breadth first (one per domain), then fill to 6.
+  // Dedup by composite identity — bare ids collide across schemas in the aggregate.
+  const seenIds    = new Set<string>(headline ? [insightKey(headline.insight)] : []);
   const seenDomains = new Set<string>();
   const signals: SynthesisSignal[] = [];
 
   // Pass 1 — breadth
   for (const s of allSignals) {
     if (signals.length >= 6) break;
-    if (seenIds.has(s.insight.id)) continue;
+    if (seenIds.has(insightKey(s.insight))) continue;
     if (seenDomains.has(s.domain)) continue;
-    seenIds.add(s.insight.id);
+    seenIds.add(insightKey(s.insight));
     seenDomains.add(s.domain);
     signals.push(s);
   }
@@ -507,8 +600,8 @@ function synthesize(
   // Pass 2 — fill with highest-novelty remainder
   for (const s of allSignals) {
     if (signals.length >= 6) break;
-    if (seenIds.has(s.insight.id)) continue;
-    seenIds.add(s.insight.id);
+    if (seenIds.has(insightKey(s.insight))) continue;
+    seenIds.add(insightKey(s.insight));
     signals.push(s);
   }
 
@@ -1120,7 +1213,7 @@ function SupportingSignals({ signals, onInvestigate }: {
           const confColor = conf >= 80 ? "var(--grn4)" : conf >= 50 ? "var(--amb4)" : "var(--red4)";
           const nColor    = noveltyColor(insight.novelty);
           return (
-            <div key={insight.id} style={{
+            <div key={insightKey(insight)} style={{
               background: "var(--bg-2)", border: "1px solid var(--b1)",
               borderLeft: `3px solid ${nColor}`, borderRadius: "var(--r3)",
               padding: "16px 18px", display: "flex", flexDirection: "column" as const, gap: 10,
@@ -1780,6 +1873,20 @@ export function BriefingPanel({
         )}
       />
 
+      {/* ── Living brief ── ask anything anchored to this briefing's context; answers
+          stream inline as a stack of investigations (capability E). */}
+      <BriefAskBox
+        connectionId={connectionId}
+        schema={schema}
+        canvasId={canvasId}
+        briefContext={[
+          narrative?.headline_theme ? `BRIEFING THEME: ${narrative.headline_theme}` : "",
+          briefing.headline ? `HEADLINE FINDING: ${briefing.headline.insight.finding}` : "",
+          ...briefing.signals.slice(0, 3).map(s => `- ${s.insight.finding}`),
+        ].filter(Boolean).join("\n")}
+        onOpenInAsk={onInvestigate}
+      />
+
       {/* ── Supporting signals ── 3-up confidence-meter cards of the strongest findings. */}
       <SupportingSignals signals={briefing.signals} onInvestigate={onInvestigate} />
 
@@ -1822,6 +1929,7 @@ export function BriefingPanel({
                 insightById:    briefing.insightById,
                 connectionId,
                 canvasId,
+                schema,
                 triggers,
                 onEvidence:     openEvidence,
                 onTriggersHint: showTriggersHint,
@@ -1841,6 +1949,7 @@ export function BriefingPanel({
         findings={[briefing.headline, ...briefing.signals].filter(Boolean) as { insight: ExplorationInsight; domain: string }[]}
         connectionId={connectionId}
         schema={schema}
+        canvasId={canvasId}
         onInvestigate={onInvestigate}
         renderActions={(insight, domain) => (
           <FindingActions insight={insight} domain={domain}

@@ -11,8 +11,9 @@
  */
 import { useEffect, useState } from "react";
 import { getBusinessProfile, runDirectQuery, currencySymbol } from "@/lib/api";
+import { GroundedNumber } from "@/components/brief/GroundedNumber";
 
-interface Kpi { name: string; display: string; }
+interface Kpi { name: string; display: string; sql: string; raw: number; }
 
 /** Format a raw scalar by its declared unit/range, and gate out broken values. The
  *  business's currency symbol is used for money metrics — a €-company never shows '$'. */
@@ -69,7 +70,7 @@ export function IndustryKpiStrip({ connectionId, schema }: { connectionId: strin
           const cell = r.rows[0].find(c => c != null && c !== "" && !isNaN(Number(c)));
           if (cell == null) return;
           const f = formatMetric(Number(cell), m.unit_or_range, sym);
-          if (f.ok) out.push({ name: m.name, display: f.display });
+          if (f.ok) out.push({ name: m.name, display: f.display, sql: m.value_sql, raw: Number(cell) });
         } catch { /* fail-safe: skip this metric */ }
       }));
       if (alive) setKpis(out);
@@ -97,7 +98,17 @@ export function IndustryKpiStrip({ connectionId, schema }: { connectionId: strin
             <div style={{
               fontSize: 18, color: "var(--t1)", fontWeight: 600,
               fontFamily: "var(--font-mono)", marginTop: 3, lineHeight: 1,
-            }}>{k.display}</div>
+            }}>
+              <GroundedNumber
+                token={k.display}
+                resolve={async () => ({
+                  sql: k.sql,
+                  grounded: true,
+                  matchedCell: k.raw,
+                  note: "Live value — the result of this query.",
+                })}
+              />
+            </div>
           </div>
         ))}
       </div>

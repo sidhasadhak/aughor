@@ -84,12 +84,29 @@ Rules:
 - Highlight urgency or opportunity where the data supports it.
 """
 
+# Used for the "All schemas" aggregate brief, where findings come from SEPARATE businesses.
+# Drawing cross-domain connections (the single-business rule above) would invent links
+# between unrelated companies — so this variant forbids it and summarizes per business.
+_SYSTEM_MULTI = """\
+You are an intelligence analyst writing a Monday morning executive briefing that spans SEVERAL
+SEPARATE, UNRELATED businesses (each finding is tagged with its Business).
+
+Rules:
+- Write exactly 2-3 sentences. Be concise and direct.
+- These findings come from DIFFERENT businesses — do NOT draw connections, comparisons, or
+  shared causes across them. Treat each business independently.
+- Lead with the single most important signal and NAME its business; cover at least two businesses.
+- Use business language a CFO would understand: no SQL, no technical jargon.
+- Embed citation markers like [1], [2], [3] inline; every marker MUST appear in the citations list.
+"""
+
 
 def _build_user_prompt(
     top_insights: list[dict],
     top_patterns: list[dict],
     macro_context: Optional[dict] = None,
     coverage_digest: str = "",
+    multi_schema: bool = False,
     currency_sym: str = "$",
 ) -> str:
     lines = []
@@ -103,12 +120,21 @@ def _build_user_prompt(
             lines.append("")
     # Findings arrive impact-ranked (magnitude-of-change × north-star × confidence), NOT by
     # novelty — so [1] is the single biggest business move and the narrator must lead with it.
-    lines.append("FINDINGS (ordered by business impact — [1] is the single most important signal):")
+    if multi_schema:
+        lines.append(
+            "FINDINGS (ordered by business impact; [1] is the single most important signal) — these "
+            "come from SEPARATE, UNRELATED businesses (see Business tag). Do NOT connect findings "
+            "across businesses:"
+        )
+    else:
+        lines.append("FINDINGS (ordered by business impact — [1] is the single most important signal):")
     for i, ins in enumerate(top_insights, 1):
         domain = ins.get("domain", "Unknown")
         angle = ins.get("angle", "")
         finding = ins.get("finding", "")
-        lines.append(f"[{i}] Domain: {domain} | Angle: {angle}\n    \"{finding}\"")
+        biz = ins.get("source_schema", "")
+        prefix = f"Business: {biz} | " if (multi_schema and biz) else ""
+        lines.append(f"[{i}] {prefix}Domain: {domain} | Angle: {angle}\n    \"{finding}\"")
 
     # Full-coverage digest: a per-domain fold of ALL findings (not just the cited top-N) so the
     # narrator's synthesis reflects everything. Context only — it carries no citation numbers.
@@ -135,11 +161,19 @@ def _build_user_prompt(
             "growth that is flattening a longer climb). Do not cite the macro context as a "
             "numbered finding."
         )
-    lines.append(
-        f"\nLEAD the narrative with finding [1] — it is the highest-impact signal; open on it, "
-        f"then connect the rest. Report any monetary figure in {currency_sym} (this business "
-        f"reports in that currency), never another currency symbol."
-    )
+    if multi_schema:
+        lines.append(
+            f"\nLEAD with finding [1] (the highest-impact signal); then summarize the single most "
+            f"important signal from EACH of the other distinct businesses separately (name the "
+            f"business) — do NOT imply any connection or shared cause across businesses. Report any "
+            f"monetary figure in {currency_sym}, never another currency symbol."
+        )
+    else:
+        lines.append(
+            f"\nLEAD the narrative with finding [1] — it is the highest-impact signal; open on it, "
+            f"then connect the rest. Report any monetary figure in {currency_sym} (this business "
+            f"reports in that currency), never another currency symbol."
+        )
     lines.append(
         "\nGenerate a 2-3 sentence executive briefing narrative with inline citation markers."
     )
@@ -332,15 +366,21 @@ def generate_narrative(
         trusted_by_domain.setdefault(ins.get("domain", ""), []).append(ins)
     coverage = _coverage_digest(trusted_by_domain, {ins.get("id", "") for ins in top[:8]})
 
+    # RC6 — when the cited findings span multiple businesses (the "All schemas" aggregate),
+    # forbid cross-business synthesis: a beauty-ecommerce finding and a bakery finding must
+    # not be woven into one causal story.
+    multi_schema = len({ins.get("source_schema") for ins in top[:8] if ins.get("source_schema")}) > 1
+
     # Build prompt and call LLM
     from aughor.llm.provider import get_provider
     provider = get_provider("narrator")
     user_prompt = _build_user_prompt(
-        top[:8], patterns[:3], macro_context, coverage_digest=coverage, currency_sym=currency_sym
+        top[:8], patterns[:3], macro_context, coverage_digest=coverage,
+        multi_schema=multi_schema, currency_sym=currency_sym,
     )
 
     result: BriefingNarrative = provider.complete(
-        system=_SYSTEM,
+        system=_SYSTEM_MULTI if multi_schema else _SYSTEM,
         user=user_prompt,
         response_model=BriefingNarrative,
         temperature=0.3,

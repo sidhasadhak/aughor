@@ -8,6 +8,7 @@ from aughor.explorer.grounding import (
     Numeral,
     cell_values,
     extract_numerals,
+    ground_numerals,
     numeric_cells_block,
     verify_finding,
 )
@@ -164,6 +165,57 @@ def test_no_numeric_cells_but_magnitude_claim_is_flagged():
 def test_empty_finding_is_trivially_grounded():
     assert verify_finding("", [[1]]).grounded is True
     assert verify_finding("No numbers here at all.", [[1]]).grounded is True
+
+
+# ── ground_numerals: the per-numeral receipt map ─────────────────────────────
+
+def _by_text(records):
+    return {r["text"]: r for r in records}
+
+
+def test_ground_numerals_maps_each_token_to_its_cell():
+    rows = [[2_490_000, 5]]
+    recs = _by_text(ground_numerals("2.49M across 5 regions", rows))
+    assert recs["2.49M"]["enforce"] is True
+    assert recs["2.49M"]["grounded"] is True
+    assert recs["2.49M"]["matched_cell"] == 2_490_000.0
+    # "5" is a small rank → not enforced, shown as derived (matched_cell None)
+    assert recs["5"]["enforce"] is False
+    assert recs["5"]["grounded"] is True
+    assert recs["5"]["matched_cell"] is None
+
+
+def test_ground_numerals_flags_the_2p49M_bug_with_no_match():
+    rows = [[2.49]]
+    [rec] = ground_numerals("Attribution credit totals 2.49M.", rows)
+    assert rec["enforce"] is True
+    assert rec["grounded"] is False
+    assert rec["matched_cell"] is None
+
+
+def test_ground_numerals_mixed_good_and_bad():
+    rows = [[1_200_000, 5]]
+    recs = _by_text(ground_numerals("1.2M orders across 5 regions, worth 9.9B.", rows))
+    assert recs["1.2M"]["grounded"] is True and recs["1.2M"]["matched_cell"] == 1_200_000.0
+    assert recs["9.9B"]["grounded"] is False and recs["9.9B"]["matched_cell"] is None
+
+
+def test_ground_numerals_percentages_and_years_not_enforced():
+    rows = [["north", 0.51]]
+    recs = _by_text(ground_numerals("In 2024 North held 51% share.", rows))
+    assert recs["51%"]["enforce"] is False and recs["51%"]["grounded"] is True
+    assert recs["2024"]["enforce"] is False and recs["2024"]["grounded"] is True
+
+
+def test_ground_numerals_negative_cell_grounds_loss():
+    rows = [[-2_400_000]]
+    [rec] = ground_numerals("a loss of 2.4M this quarter", rows)
+    assert rec["grounded"] is True
+    assert rec["matched_cell"] == -2_400_000.0   # the actual (signed) cell, not abs
+
+
+def test_ground_numerals_empty_finding():
+    assert ground_numerals("No numbers here.", [[1]]) == []
 
 
 # ── numeric_cells_block ──────────────────────────────────────────────────────

@@ -117,6 +117,8 @@ interface Props {
   width?: number;          // deprecated: chart always fits container width
   className?: string;
   showLabels?: boolean;
+  /** Click a mark to drill in — receives the datum behind the clicked bar/point. */
+  onSelect?: (datum: Record<string, unknown>) => void;
 }
 
 /** Inject data-label text layers into a Vega-Lite spec, avoiding overlap.
@@ -183,9 +185,13 @@ function injectLabels(spec: VLSpec, data?: Record<string, unknown>[]): VLSpec {
   return { ...spec, layer: wrapped };
 }
 
-export function VegaChart({ spec, data, height, width, className, showLabels }: Props) {
+export function VegaChart({ spec, data, height, width, className, showLabels, onSelect }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<{ finalize: () => void } | null>(null);
+  // Hold the latest onSelect in a ref so the click listener (registered once per embed)
+  // always calls the current callback without re-running the render effect.
+  const onSelectRef = useRef(onSelect);
+  onSelectRef.current = onSelect;
   const [w, setW] = useState(0);
   const [err, setErr] = useState<string | null>(null);
   // v2: bump on dark/light flip so the spec rebuilds with fresh --chart-* token values.
@@ -288,7 +294,20 @@ export function VegaChart({ spec, data, height, width, className, showLabels }: 
         renderer: "svg",
         tooltip: { theme: "custom" },
       }).then(result => {
-        if (!cancelled) viewRef.current = result.view;
+        if (cancelled) return;
+        viewRef.current = result.view;
+        // Drill-down: clicking a mark hands the datum behind it back to the caller.
+        // `cursor: pointer` only when interactive so the affordance reads as clickable.
+        const view = result.view as unknown as {
+          addEventListener?: (t: string, h: (event: unknown, item: unknown) => void) => void;
+        };
+        if (onSelectRef.current && typeof view.addEventListener === "function") {
+          view.addEventListener("click", (_event, item) => {
+            const datum = (item as { datum?: Record<string, unknown> } | null)?.datum;
+            if (datum) onSelectRef.current?.(datum);
+          });
+          if (containerRef.current) containerRef.current.style.cursor = "pointer";
+        }
       }).catch((e: Error) => {
         if (!cancelled) setErr(e.message || "Chart render failed");
       });

@@ -32,6 +32,8 @@ interface Props {
   custom?: ChartCustom | null;
   /** Scale the chart height (e.g. 0.75 for compact briefing cards). */
   heightScale?: number;
+  /** Click a mark to drill in — receives the datum behind the clicked bar/point. */
+  onSelect?: (datum: Record<string, unknown>) => void;
 }
 
 const TYPE_TO_HINT: Record<ChartType, string> = {
@@ -50,7 +52,7 @@ const TYPE_TO_HINT: Record<ChartType, string> = {
   "table":       "auto",
 };
 
-export function InvestigationChart({ columns, rows, title, controlled, typeOverride, showLabels: showLabelsProp, custom, heightScale }: Props) {
+export function InvestigationChart({ columns, rows, title, controlled, typeOverride, showLabels: showLabelsProp, custom, heightScale, onSelect }: Props) {
   const inferred = inferChartType(columns, rows);
   const [overrideState, setOverride] = useState<ChartType | "auto">("auto");
   const [showLabelsState, setShowLabels] = useState(false);
@@ -108,6 +110,7 @@ export function InvestigationChart({ columns, rows, title, controlled, typeOverr
         custom={custom}
         title={chartTitle}
         heightScale={heightScale}
+        onSelect={onSelect}
       />
     </ChartWrapper>
   );

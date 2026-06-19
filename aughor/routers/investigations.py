@@ -396,6 +396,14 @@ class InvestigateRequest(BaseModel):
     canvas_id: Optional[str] = None
     hitl: bool = False
     skip_cache: bool = False
+    # Scope a non-canvas investigation to a specific schema (multi-schema
+    # connections) — mirrors how a canvas scopes. None = whole connection.
+    schema: Optional[str] = None
+    # Seed context for "pull the thread" from a briefing: the originating finding
+    # text (seed_context) and the exact query that produced it (seed_sql). ada_intake
+    # already reads scan_context, so seeding is additive — no graph change.
+    seed_sql: Optional[str] = None
+    seed_context: str = ""
 
 
 class FeedbackRequest(BaseModel):
@@ -1352,6 +1360,9 @@ async def _stream_investigation(
     hitl: bool = False,
     skip_cache: bool = False,
     canvas_id: Optional[str] = None,
+    schema_scope: Optional[str] = None,
+    seed_sql: Optional[str] = None,
+    seed_context: str = "",
 ) -> AsyncGenerator[str, None]:
     _TIMEOUT = int(os.getenv("AUGHOR_TIMEOUT_SECONDS", "600"))
 
@@ -1369,10 +1380,16 @@ async def _stream_investigation(
         except Exception:
             pass
 
+    # A non-canvas investigation (e.g. a briefing "pull the thread") can scope to a
+    # specific schema the same way a canvas does: open the connection bound to that
+    # schema and inject the DEFAULT SCHEMA prefix below. Canvas scope wins when both
+    # are present.
+    scope_schema = canvas_scope_schema or (schema_scope if not canvas_id else None)
+
     try:
-        if canvas_id and canvas_scope_schema:
+        if scope_schema:
             from aughor.db.connection import open_connection_for_with_schema
-            db = open_connection_for_with_schema(connection_id, schema_name=canvas_scope_schema)
+            db = open_connection_for_with_schema(connection_id, schema_name=scope_schema)
         else:
             db = open_connection_for(connection_id)
     except KeyError as e:
@@ -1442,11 +1459,11 @@ async def _stream_investigation(
         # agent only sees the tables selected for that Canvas.
         schema = canvas_schema_context if canvas_schema_context else full_schema
         # Inject a schema-prefix note so the LLM always uses fully-qualified names
-        if canvas_scope_schema:
+        if scope_schema:
             schema = (
-                f"DEFAULT SCHEMA: {canvas_scope_schema}\n"
+                f"DEFAULT SCHEMA: {scope_schema}\n"
                 "CRITICAL: Every table reference in SQL MUST include this schema prefix "
-                f"(e.g. {canvas_scope_schema}.table_name). Do NOT use bare table names.\n\n"
+                f"(e.g. {scope_schema}.table_name). Do NOT use bare table names.\n\n"
                 + schema
             )
         # Schema-linking pre-filter: narrow to relevant tables/columns per question.
@@ -1498,7 +1515,9 @@ async def _stream_investigation(
             # Pass the schema we already fetched (full_schema, cached above) so the metric
             # schema-filter doesn't RE-INTROSPECT it — that redundant fetch was ~16s per
             # investigation on big warehouses (profiled), duplicating this same schema.
-            _canon = canonical_metrics_block(connection_id, canvas_scope_schema, schema_text=full_schema)
+            # Use the EFFECTIVE scope schema (canvas OR an explicit schema-scoped run) so the
+            # connection's GOVERNED north-star metrics for THIS schema are injected (RC2).
+            _canon = canonical_metrics_block(connection_id, scope_schema, schema_text=full_schema)
             if _canon:
                 schema_for_agent = f"{schema_for_agent}\n\n{_canon}"
         except Exception:
@@ -1507,10 +1526,22 @@ async def _stream_investigation(
         from aughor.agent.graph import build_graph_generic
         agent = build_graph_generic(db, hitl=hitl)
 
+        # Seed context for a briefing "pull the thread": hand ADA the originating
+        # finding AND the exact query that produced it. ada_intake folds scan_context
+        # into its intake prompt, so this anchors the investigation on the real
+        # tables/window without polluting the natural-language `question` that drives
+        # phase routing.
+        _seed_blocks: list[str] = []
+        if seed_context and seed_context.strip():
+            _seed_blocks.append(seed_context.strip())
+        if seed_sql and seed_sql.strip():
+            _seed_blocks.append("REFERENCE QUERY (the data this question came from):\n" + seed_sql.strip())
+        _scan_seed = "\n\n".join(_seed_blocks)
+
         initial_state: AgentState = {
             "question": question, "connection_id": connection_id, "investigation_id": inv_id,
             "trace_id": trace_id,
-            "schema_context": schema_for_agent, "unresolved_tensions": [], "scan_context": "", "events_context": "",
+            "schema_context": schema_for_agent, "unresolved_tensions": [], "scan_context": _scan_seed, "events_context": "",
             "hypotheses": [], "current_hypothesis_idx": 0, "query_history": [], "evidence_scores": [],
             "pitfalls": [], "prior_analyses": [], "iteration": 0,
             "max_iterations": int(os.getenv("AUGHOR_MAX_ITER", "6")),
@@ -1825,6 +1856,9 @@ async def _investigation_job_streamed(
     hitl: bool = False,
     skip_cache: bool = False,
     canvas_id: Optional[str] = None,
+    schema_scope: Optional[str] = None,
+    seed_sql: Optional[str] = None,
+    seed_context: str = "",
 ) -> AsyncGenerator[str, None]:
     """Run the investigation as a first-class supervised kernel job (K1).
 
@@ -1845,6 +1879,7 @@ async def _investigation_job_streamed(
             async for sse in _stream_investigation(
                 question, connection_id, request,
                 hitl=hitl, skip_cache=skip_cache, canvas_id=canvas_id,
+                schema_scope=schema_scope, seed_sql=seed_sql, seed_context=seed_context,
             ):
                 await queue.put(sse)
         finally:
@@ -1873,7 +1908,11 @@ async def investigate(req: InvestigateRequest, request: Request):
         if resolved:
             conn_id = resolved
     return StreamingResponse(
-        _investigation_job_streamed(req.question, conn_id, request, hitl=req.hitl, skip_cache=req.skip_cache, canvas_id=req.canvas_id),
+        _investigation_job_streamed(
+            req.question, conn_id, request,
+            hitl=req.hitl, skip_cache=req.skip_cache, canvas_id=req.canvas_id,
+            schema_scope=req.schema, seed_sql=req.seed_sql, seed_context=req.seed_context,
+        ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

@@ -1511,6 +1511,21 @@ def ada_intake(state: AgentState) -> dict:
             except Exception:
                 pass
 
+    # RC1 — metric-feasibility caveat: when the question needs a metric the schema can't
+    # support (margin/profit with no cost column; efficiency with no spend/outcome), record
+    # it so synthesis reports what IS measurable instead of fabricating a verdict from an
+    # assumed cost (the bakehouse "COGS = price·qty·0.5 → constant 50% margin" class).
+    if intake is not None:
+        try:
+            from aughor.semantic.metric_feasibility import unsupported_metric_gap
+            _feas = unsupported_metric_gap(question, schema)
+        except Exception:
+            _feas = None
+        if _feas:
+            intake.intake_notes = (
+                (intake.intake_notes or "").rstrip() + f" FEASIBILITY: {_feas}"
+            ).strip()
+
     # Deterministic cross-sectional trigger — the intake LLM is unreliable at
     # setting the flag, so force it for diagnostic "where/which is weakest / where
     # are we losing money" questions OR when there is no usable time axis (no date
@@ -2389,7 +2404,14 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection") -> dict:
         plan_user=CROSS_SECTION_PLAN_PROMPT.format(
             question=question, metric_label=metric_label, metric_sql=metric_sql,
             metric_table=metric_table, schema=schema, dimensions_list=dimensions_list),
-        interpret_system="Interpret a cross-sectional weakness scan. Name the weakest values and any concentration; be honest about healthy areas.",
+        interpret_system=(
+            "Interpret a cross-sectional ranking scan. Name the LOWEST-RANKED values and any "
+            "concentration. SEVERITY GROUNDING: only call a value 'weak', 'critically low', "
+            "'underperforming', or 'the weakest' if it is below a stated benchmark/target or far "
+            "below the in-result average — being the minimum of a ranking is NOT, by itself, "
+            "evidence it is unhealthy. Otherwise use relative language ('the lowest at X vs the ~Y "
+            "average'). Be explicit when the spread is tight and all values are healthy."
+        ),
         interpret_user_fn=lambda results_text: CROSS_SECTION_INTERPRET_PROMPT.format(
             question=question, metric_label=metric_label, results_text=results_text),
         plan_error_msg="Cross-sectional planning failed.",
@@ -2482,7 +2504,11 @@ def ada_synthesize(state: AgentState) -> dict:
             "or most concentrated across the dimensions scanned; total_change_label should be the "
             "metric total or 'N/A'; the attribution_waterfall should attribute the weakness across "
             "those dimensions (signed negative as loss contributors); recommendations target the "
-            "weakest areas. Be honest about which areas are healthy and NOT a problem."
+            "weakest areas. Be honest about which areas are healthy and NOT a problem. "
+            "SEVERITY GROUNDING: do NOT label the lowest-ranked value 'weak', 'critically low', or "
+            "'underperforming' unless it is below a benchmark/target or far below the average — if "
+            "the spread is tight and all values are healthy, say the dimension is healthy and DROP "
+            "the weakness framing (an empty waterfall is correct when nothing is actually weak)."
         )
 
     # Build metric targets block for synthesis guidance
@@ -2599,6 +2625,19 @@ def ada_synthesize(state: AgentState) -> dict:
                 "No usable data was gathered — every query errored or returned zero rows, so no "
                 "finding can be confirmed. " + (synth.confidence_justification or "")
             ).strip()
+            # RC5 — with NO usable data, the confidence floor alone left a LOW-confidence
+            # report still carrying a confident, fabricated waterfall ("apparel −7.0pp =
+            # −100%") and recommendations built from queries that all failed. Suppress them
+            # deterministically and replace the confident prose with an honest verdict, so a
+            # failed investigation reads as "could not analyze", never as invented causes.
+            synth.attribution_waterfall = []
+            synth.recommendations = []
+            _ml = intake_data.get("metric_label") or "the requested metric"
+            synth.headline = f"Data unavailable — {_ml} could not be analyzed"
+            synth.executive_summary = (
+                "Every diagnostic query failed or returned zero rows, so no cause can be "
+                "attributed and no recommendation can be made. " + (synth.executive_summary or "")
+            ).strip()[:600]
 
     def _coerce_amount_sign(label: str, pct: float) -> str:
         """Keep a waterfall amount_label's leading sign in agreement with its

@@ -465,6 +465,20 @@ def generate_briefing(conn_id: str, refresh: bool = False, schema: str | None = 
     from aughor.knowledge.patterns import get_patterns
     from aughor.knowledge.briefing import get_briefing
 
+    # RC5b — re-validate the findings that can headline this brief against LIVE data before
+    # synthesizing. Re-runs the top-N by novelty and re-applies the same gate (verify_insight
+    # + grounding); anything that no longer reproduces / is degenerate / implausible is
+    # flagged invalid (reversible) so it's dropped from BOTH the headline and the synthesis.
+    # Bounded + cached + fail-open. Skipped for a cached narrative (only matters when building).
+    if refresh:
+        try:
+            from aughor.explorer.revalidate_live import revalidate_for_briefing
+            revalidate_for_briefing(conn_id, schema)
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "pre-brief re-validation is best-effort; the brief still builds from "
+                     "stored findings", counter="briefing.revalidate")
+
     by_domain = _domain_insights_for(conn_id, schema)
     if _needs_filter(conn_id, schema):
         by_domain = _filter_by_schema(by_domain, conn_id, schema)
@@ -593,32 +607,61 @@ async def resume_exploration(conn_id: str):
     return {"ok": res["ok"], **({"reason": res["reason"]} if res["reason"] else {})}
 
 
-@router.post("/exploration/{conn_id}/restart", dependencies=[gate(Capability.AUTO_EXPLORATION)])
-async def restart_exploration(conn_id: str):
-    explorer = _explorers.get(conn_id)
-    if explorer:
-        explorer.stop()
-    task = _explorer_tasks.get(conn_id)
-    if task and not task.done():
-        task.cancel()
+def _purge_exploration_state(conn_id: str) -> list[str]:
+    """Stop EVERY explorer bound to this connection — the connection-level run AND each
+    per-schema run (``{conn}__{schema}``) — and delete ALL their state + episode files.
+    `restart`/`reset` previously cleared only the connection-level files, so a multi-schema
+    connection's stale per-schema findings (where the garbage lived) survived a 'restart'.
+    Returns the deleted filenames. Also busts the profile cache so columns re-classify."""
+    from aughor.kernel.errors import tolerate
+    keys = [k for k in list(_explorers.keys()) if k == conn_id or k.startswith(f"{conn_id}__")]
+    for key in keys:
+        e = _explorers.get(key)
+        if e is not None:
+            try:
+                e.stop()
+            except Exception as exc:
+                tolerate(exc, "explorer stop is best-effort during purge", counter="explorer.purge_stop")
+        t = _explorer_tasks.get(key)
+        if t is not None and not t.done():
+            t.cancel()
+        _explorers.pop(key, None)
+        _explorer_tasks.pop(key, None)
+
+    deleted: list[str] = []
+    data = Path("data")
     for fname in (f"exploration_{conn_id}.json", f"episodes_{conn_id}.jsonl"):
-        p = Path("data") / fname
+        p = data / fname
         if p.exists():
-            p.unlink()
-    # Also bust the profile cache so the profiler re-classifies all columns
-    # with the latest semantic-type heuristics (e.g. geo/zip → key, not measure)
+            try:
+                p.unlink()
+                deleted.append(fname)
+            except Exception as exc:
+                tolerate(exc, f"could not delete {fname} during purge", counter="explorer.purge_unlink")
+    for pat in (f"exploration_{conn_id}__*.json", f"episodes_{conn_id}__*.jsonl"):
+        for p in data.glob(pat):
+            try:
+                p.unlink()
+                deleted.append(p.name)
+            except Exception as exc:
+                tolerate(exc, f"could not delete {p.name} during purge", counter="explorer.purge_unlink")
     try:
         from aughor.tools.profile_cache import invalidate as invalidate_profiles
         invalidate_profiles(conn_id)
     except Exception as _exc:
         logger.warning("Could not invalidate profile cache for %s: %s", conn_id, _exc)
-    # Drop the stopped explorer or spawn_explorer's already-running guard refuses.
-    _explorers.pop(conn_id, None)
-    _explorer_tasks.pop(conn_id, None)
-    res = await spawn_explorer(conn_id)
-    if not res["ok"]:
-        raise HTTPException(status_code=500, detail=res["reason"] or "could not start explorer")
-    return {"ok": True}
+    return deleted
+
+
+@router.post("/exploration/{conn_id}/restart", dependencies=[gate(Capability.AUTO_EXPLORATION)])
+async def restart_exploration(conn_id: str):
+    """Wipe ALL exploration state for the connection (connection-level + every per-schema run)
+    and start fresh — fanning out one run PER schema for a multi-schema connection."""
+    deleted = _purge_exploration_state(conn_id)
+    started = kickoff_exploration(conn_id)   # fans out per schema (or connection-level if single)
+    if not started:
+        raise HTTPException(status_code=500, detail="could not start explorer after reset")
+    return {"ok": True, "purged": deleted}
 
 
 @router.post("/exploration/{conn_id}/retry-query")
@@ -726,23 +769,10 @@ async def trigger_domain_intelligence(conn_id: str):
 
 @router.post("/exploration/{conn_id}/reset")
 def reset_exploration(conn_id: str):
-    """Clear exploration state without restarting. Use /restart to reset+start."""
-    explorer = _explorers.get(conn_id)
-    if explorer:
-        explorer.stop()
-    task = _explorer_tasks.get(conn_id)
-    if task and not task.done():
-        task.cancel()
-    for fname in (f"exploration_{conn_id}.json", f"episodes_{conn_id}.jsonl"):
-        p = Path("data") / fname
-        if p.exists():
-            p.unlink()
-    try:
-        from aughor.tools.profile_cache import invalidate as invalidate_profiles
-        invalidate_profiles(conn_id)
-    except Exception:
-        pass
-    return {"ok": True, "reset": True}
+    """Clear ALL exploration state (connection-level + every per-schema run) without
+    restarting. Use /restart to reset+start."""
+    deleted = _purge_exploration_state(conn_id)
+    return {"ok": True, "reset": True, "purged": deleted}
 
 
 # ── Canvas-scoped ─────────────────────────────────────────────────────────────
@@ -1016,6 +1046,87 @@ def get_insight_receipt(connection_id: str, insight_id: str):
     if rec is None:
         raise HTTPException(status_code=404, detail="No receipt — finding predates provenance tracking; re-explore to generate one")
     return rec
+
+
+class GroundRequest(BaseModel):
+    """Resolve + re-run a cited finding's query to back a specific number ("show the
+    receipt"). `text` is the exact token clicked in the brief (e.g. "2.49M"). A
+    synthesized narrative number may have come from any of the cited insights, not just
+    the nearest — so `insight_ids` lets the caller pass every citation and we ground the
+    number against whichever insight actually produced it. `insight_id` is the primary
+    (tried first); when empty the whole finding is grounded."""
+    insight_id: str = ""
+    insight_ids: list[str] = []
+    schema: str | None = None
+    text: str = ""
+
+
+@router.post("/exploration/{conn_id}/briefing/ground")
+def ground_briefing_number(conn_id: str, body: GroundRequest):
+    """Show the receipt for a briefing number. Resolves the cited insight(s) from the
+    SAME domain insights the brief is built from, RE-RUNS the recorded query live, and
+    grounds the claimed numeral against the actual result cells via the same
+    deterministic guard that gates findings (`ground_numerals`). When several citations
+    are passed it tries each (primary first) and returns the one whose cells actually
+    contain the number — so a synthesized figure is proven against its true source, not
+    falsely flagged just because the *nearest* citation wasn't its origin."""
+    by_domain = _domain_insights_for(conn_id, body.schema)
+    index: dict[str, dict] = {}
+    for items in by_domain.values():
+        for i in (items or []):
+            if i.get("id"):
+                index.setdefault(i["id"], i)
+
+    # Candidate insights, primary first, de-duped, dropping any without a query.
+    ordered: list[str] = []
+    for iid in ([body.insight_id] if body.insight_id else []) + list(body.insight_ids):
+        if iid and iid not in ordered and index.get(iid) and (index[iid].get("sql") or "").strip():
+            ordered.append(iid)
+    if not ordered:
+        raise HTTPException(status_code=404, detail="No cited insight with a query to ground against")
+
+    use_schema = body.schema if (body.schema and _store_key(conn_id, body.schema) != conn_id) else None
+    try:
+        if use_schema:
+            from aughor.db.connection import open_connection_for_with_schema
+            db = open_connection_for_with_schema(conn_id, schema_name=use_schema)
+        else:
+            db = open_connection_for(conn_id)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Connection not found: {e}")
+
+    from aughor.explorer.grounding import ground_numerals
+
+    def _receipt(iid: str, result, numerals) -> dict:
+        ins = index[iid]
+        return {
+            "insight_id": iid,
+            "finding": ins.get("finding", ""),
+            "sql": (ins.get("sql") or "").strip(),
+            "numerals": numerals,
+            "columns": result.columns or [],
+            "sample_rows": [[str(c) for c in r] for r in (result.rows or [])[:20]],
+        }
+
+    fallback: dict | None = None
+    for iid in ordered[:6]:   # bounded: usually grounds on the first (the nearest citation)
+        result = db.execute("__ground__", (index[iid].get("sql") or "").strip())
+        if result.error:
+            if fallback is None:
+                fallback = {"insight_id": iid, "finding": index[iid].get("finding", ""),
+                            "sql": (index[iid].get("sql") or "").strip(), "error": result.error,
+                            "numerals": [], "columns": [], "sample_rows": []}
+            continue
+        text_to_ground = body.text.strip() or index[iid].get("finding", "")
+        numerals = ground_numerals(text_to_ground, result.rows or [])
+        receipt = _receipt(iid, result, numerals)
+        if fallback is None or fallback.get("error"):
+            fallback = receipt
+        # Short-circuit: this insight's cells actually contain the clicked number.
+        if body.text.strip() and numerals and numerals[0].get("enforce") and numerals[0].get("grounded"):
+            return receipt
+    return fallback or {"insight_id": ordered[0], "finding": "", "sql": "",
+                        "numerals": [], "columns": [], "sample_rows": []}
 
 
 @router.post("/exploration/canvas/{canvas_id}/insights/{insight_id}/dismiss")

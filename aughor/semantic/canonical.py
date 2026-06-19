@@ -19,7 +19,9 @@ from typing import Optional
 
 
 # Higher rank wins when the same metric name appears in more than one store.
-_SOURCE_RANK = {"catalog": 3, "ontology_verified": 2, "ontology_unverified": 1}
+# profile_governed = the connection's BusinessProfile north-star metrics: build-time
+# audited, connection-specific governed SQL — above the ontology, below the human catalog.
+_SOURCE_RANK = {"catalog": 4, "profile_governed": 3, "ontology_verified": 2, "ontology_unverified": 1}
 
 
 @dataclass
@@ -140,6 +142,34 @@ def resolve_canonical_metrics(
             source="ontology_verified" if verified else "ontology_unverified",
             verified=verified,
         ))
+
+    # 3. BusinessProfile north-star metrics — the connection's GOVERNED, build-time-audited
+    # formulas (the same value_sql the Briefing/KPI strip run). These are the source of
+    # truth for connection-specific metrics like missimi's gross margin; injecting them is
+    # what lets ADA BIND to the real formula instead of re-deriving (RC2). The full value_sql
+    # (with its FROM/WHERE) is the most faithful reference — it also makes the absence of a
+    # 'quantity' column explicit.
+    if connection_id:
+        try:
+            from aughor.profile.store import load as _load_profile
+            _prof = _load_profile(connection_id, schema_name)
+            for nsm in (getattr(_prof, "north_star_metrics", None) or []):
+                vsql = (getattr(nsm, "value_sql", "") or "").strip()
+                if not vsql:
+                    continue
+                _consider(CanonicalMetric(
+                    name=getattr(nsm, "name", "") or "",
+                    label=getattr(nsm, "name", "") or "",
+                    sql=vsql,
+                    unit=getattr(nsm, "unit_or_range", "") or "",
+                    source="profile_governed",
+                    verified=True,
+                    caveats=(getattr(nsm, "definition", "") or "")[:160],
+                ))
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "profile north-star injection is best-effort; catalog + ontology "
+                     "metrics still resolve without it", counter="canonical.north_star")
 
     return sorted(by_name.values(), key=lambda m: m.name)
 

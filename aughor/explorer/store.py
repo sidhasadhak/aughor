@@ -131,10 +131,16 @@ def load_aggregate(connection_id: str) -> dict:
 
 
 def get_aggregate_domain_insights(connection_id: str, include_invalid: bool = False) -> dict[str, list[dict]]:
-    """by_domain insights merged across all per-schema runs of a connection."""
+    """by_domain insights merged across all per-schema runs of a connection. Each insight is
+    tagged with its `source_schema` so the briefing can keep UNRELATED businesses apart
+    (a beauty-ecommerce finding and a bakery finding must not be synthesized as one story)."""
     grouped: dict[str, list[dict]] = {}
     for k in schema_run_keys(connection_id):
+        sch = k.split("__", 1)[1] if "__" in k else ""
         for d, ins in get_domain_insights(k, include_invalid=include_invalid).items():
+            for i in ins:
+                if sch:
+                    i.setdefault("source_schema", sch)
             grouped.setdefault(d, []).extend(ins)
     return grouped
 

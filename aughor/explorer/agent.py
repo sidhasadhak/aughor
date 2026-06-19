@@ -642,6 +642,56 @@ def _claim_numbers_grounded(finding_text: str, rows) -> str | None:
     return None
 
 
+# RC4 — implausible ratio/turnover magnitude. A turnover or multiplier is bounded by
+# reality (inventory turns a few × per year; a multiplier rarely exceeds tens). When a
+# finding asserts a turnover/ratio/×-multiplier in the thousands it is virtually always a
+# grain bug (e.g. SUM(units_sold)/AVG(units_on_hand) across all product-months → 96,295)
+# — never a real signal. Deliberately conservative: a high cap and a narrow keyword set so
+# it only fires on genuine grain explosions, never on a legitimate large count or revenue.
+# A number DIRECTLY bound to a ratio word — "turnover of 96,295.6", "turnover (25.0x)",
+# "ratio: 1,200", "turnover is 96295". No other digit may sit between the word and the
+# number, so a nearby revenue figure ("$175.06M" two words away) is never captured — that
+# loose-window false-positive is exactly what wrongly flagged a healthy 25× tier.
+_RATIO_NUM_RE = re.compile(
+    r"\b(?:turnover|multiplier|ratio)\b\s*(?:of|is|at|was|=|:|reached|hit|stands at)?\s*[\(\[]?\s*"
+    r"(\d[\d,]*(?:\.\d+)?)\s*([kmb])?",
+    re.I,
+)
+# "<number>x"/"<number>×" multiplier, and "<number> turnover/multiplier".
+_TIMES_MULT_RE = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*([kmb])?\s*[x×]\b", re.I)
+_NUM_RATIO_RE = re.compile(r"(\d[\d,]*(?:\.\d+)?)\s*([kmb])?\s*\b(?:turnover|multiplier)\b", re.I)
+_IMPLAUSIBLE_RATIO_CAP = 1000.0
+
+
+def _parse_magnitude(num: str, suf: str = "") -> "Optional[float]":
+    """Expand a numeric token ('96,295.6' + 'M') to a float; None if unparseable."""
+    s = (num or "").strip().replace(",", "")
+    try:
+        base = float(s)
+    except ValueError:
+        return None
+    return base * {"k": 1e3, "m": 1e6, "b": 1e9}.get((suf or "").lower(), 1.0)
+
+
+def _implausible_ratio_claim(finding_text: str, cap: float = _IMPLAUSIBLE_RATIO_CAP) -> str:
+    """Return a reason when the finding asserts a turnover/ratio/×-multiplier DIRECTLY bound
+    to a number far beyond a sane bound (a grain-bug signature), else ''. Tightly scoped to
+    the number that belongs to the ratio word so a legitimate large revenue/count nearby is
+    never flagged."""
+    t = finding_text or ""
+    if not t:
+        return ""
+    candidates: list[tuple[str, str]] = []
+    for rx in (_RATIO_NUM_RE, _TIMES_MULT_RE, _NUM_RATIO_RE):
+        candidates += [(m.group(1), m.group(2) or "") for m in rx.finditer(t)]
+    for num, suf in candidates:
+        v = _parse_magnitude(num, suf)
+        if v is not None and abs(v) > cap:
+            return (f"implausible turnover/ratio magnitude in finding ({num.strip()}{suf} ≫ {cap:g}) "
+                    "— almost certainly a grain bug, not a real signal")
+    return ""
+
+
 def verify_insight(rows, finding_text: str = "", sql: str = "", metric_ranges=None, conn=None) -> tuple[bool, str]:
     """THE pre-emission trust gate: a candidate finding is surfaced ONLY if it passes every
     deterministic check. Returns (ok, reason). A SOTA platform treats generated claims as
@@ -674,6 +724,12 @@ def verify_insight(rows, finding_text: str = "", sql: str = "", metric_ranges=No
                 return (False, _pv.reason)
         except Exception as _e:
             tolerate(_e, "insight-gate: plausibility band check", counter="insight_gate.plausibility_failed")
+        # RC4 backstop — a generic implausible turnover/ratio CLAIM in the finding text that
+        # the structural + operating-band checks above didn't already catch (runs last so the
+        # more-specific reasons — vacuous CASE, operating band — win when they apply).
+        ir = _implausible_ratio_claim(finding_text)
+        if ir:
+            return (False, ir)
         cg = _claim_numbers_grounded(finding_text, rows)
         if cg:
             return (False, cg)
@@ -3004,6 +3060,34 @@ class SchemaExplorer:
                     budgets[domain] = used
                     continue
 
+                # RC1 — metric-feasibility gate: don't generate a finding for a metric the
+                # data can't support (a margin/profit question against a schema with no cost
+                # column → the LLM fabricates COGS = price·qty·0.5 → a constant 50% margin).
+                # Scope the column check to the question's OWN tables so a sibling dataset's
+                # cost column (missimi) can't mask a cost-less one (bakehouse).
+                try:
+                    from aughor.semantic.metric_feasibility import unsupported_metric_gap
+                    _q_tables = {t.lower() for t in _tables_in_sql(nq.sql)}
+                    _q_bare = {t.split(".")[-1] for t in _q_tables}
+                    _q_cols = {
+                        c for tk, cols in (sql_writer.table_cols or {}).items()
+                        if tk.lower() in _q_tables or tk.lower().split(".")[-1] in _q_bare
+                        for c in (cols or [])
+                    }
+                    if not _q_cols:   # table resolution missed — over-include rather than false-skip
+                        _q_cols = {c for cols in (sql_writer.table_cols or {}).values() for c in (cols or [])}
+                    _feas = unsupported_metric_gap(nq.question, _q_cols)
+                except Exception:
+                    _feas = None
+                if _feas:
+                    logger.info(
+                        "[explorer:%s] Phase 8: %s/%s — skipping unsupported-metric question: %s",
+                        self.connection_id, domain, nq.angle, _feas[:90],
+                    )
+                    used += 1
+                    budgets[domain] = used
+                    continue
+
                 # Step 2: Execute SQL — repair loop: run → fail → fix with real error → repeat
                 MAX_ATTEMPTS = 3
                 think_str = f"Domain {domain} | angle={nq.angle} | {nq.question}"
@@ -3374,6 +3458,11 @@ class SchemaExplorer:
                         "from a subquery with per-grain counts).\n"
                         "- Only use ratio language ('per order', 'per customer') when the SQL computed "
                         "a genuine per-grain aggregation.\n"
+                        "- SEVERITY GROUNDING: do NOT call a value 'weak', 'critically low', 'poor', "
+                        "'underperforming', or 'the weakest' unless it is below a stated benchmark/target. "
+                        "Being the LOWEST in a ranking is NOT evidence it is bad. Use relative language "
+                        "instead ('the lowest of the group at X, vs ~Y typical'); a 47% margin that is "
+                        "merely the smallest of several healthy margins is NOT 'critically low'.\n"
                         "- Novelty score: 1=already known/trivial, 5=genuinely new and surprising."
                     )
                     _usr3 = (
