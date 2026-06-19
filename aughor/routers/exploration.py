@@ -517,32 +517,60 @@ async def resume_exploration(conn_id: str):
     return {"ok": res["ok"], **({"reason": res["reason"]} if res["reason"] else {})}
 
 
-@router.post("/exploration/{conn_id}/restart", dependencies=[gate(Capability.AUTO_EXPLORATION)])
-async def restart_exploration(conn_id: str):
-    explorer = _explorers.get(conn_id)
-    if explorer:
-        explorer.stop()
-    task = _explorer_tasks.get(conn_id)
-    if task and not task.done():
-        task.cancel()
+def _purge_exploration_state(conn_id: str) -> list[str]:
+    """Stop EVERY explorer bound to this connection — the connection-level run AND each
+    per-schema run (``{conn}__{schema}``) — and delete ALL their state + episode files.
+    `restart`/`reset` previously cleared only the connection-level files, so a multi-schema
+    connection's stale per-schema findings (where the garbage lived) survived a 'restart'.
+    Returns the deleted filenames. Also busts the profile cache so columns re-classify."""
+    keys = [k for k in list(_explorers.keys()) if k == conn_id or k.startswith(f"{conn_id}__")]
+    for key in keys:
+        e = _explorers.get(key)
+        if e is not None:
+            try:
+                e.stop()
+            except Exception:
+                pass
+        t = _explorer_tasks.get(key)
+        if t is not None and not t.done():
+            t.cancel()
+        _explorers.pop(key, None)
+        _explorer_tasks.pop(key, None)
+
+    deleted: list[str] = []
+    data = Path("data")
     for fname in (f"exploration_{conn_id}.json", f"episodes_{conn_id}.jsonl"):
-        p = Path("data") / fname
+        p = data / fname
         if p.exists():
-            p.unlink()
-    # Also bust the profile cache so the profiler re-classifies all columns
-    # with the latest semantic-type heuristics (e.g. geo/zip → key, not measure)
+            try:
+                p.unlink()
+                deleted.append(fname)
+            except Exception:
+                pass
+    for pat in (f"exploration_{conn_id}__*.json", f"episodes_{conn_id}__*.jsonl"):
+        for p in data.glob(pat):
+            try:
+                p.unlink()
+                deleted.append(p.name)
+            except Exception:
+                pass
     try:
         from aughor.tools.profile_cache import invalidate as invalidate_profiles
         invalidate_profiles(conn_id)
     except Exception as _exc:
         logger.warning("Could not invalidate profile cache for %s: %s", conn_id, _exc)
-    # Drop the stopped explorer or spawn_explorer's already-running guard refuses.
-    _explorers.pop(conn_id, None)
-    _explorer_tasks.pop(conn_id, None)
-    res = await spawn_explorer(conn_id)
-    if not res["ok"]:
-        raise HTTPException(status_code=500, detail=res["reason"] or "could not start explorer")
-    return {"ok": True}
+    return deleted
+
+
+@router.post("/exploration/{conn_id}/restart", dependencies=[gate(Capability.AUTO_EXPLORATION)])
+async def restart_exploration(conn_id: str):
+    """Wipe ALL exploration state for the connection (connection-level + every per-schema run)
+    and start fresh — fanning out one run PER schema for a multi-schema connection."""
+    deleted = _purge_exploration_state(conn_id)
+    started = kickoff_exploration(conn_id)   # fans out per schema (or connection-level if single)
+    if not started:
+        raise HTTPException(status_code=500, detail="could not start explorer after reset")
+    return {"ok": True, "purged": deleted}
 
 
 @router.post("/exploration/{conn_id}/retry-query")
@@ -650,23 +678,10 @@ async def trigger_domain_intelligence(conn_id: str):
 
 @router.post("/exploration/{conn_id}/reset")
 def reset_exploration(conn_id: str):
-    """Clear exploration state without restarting. Use /restart to reset+start."""
-    explorer = _explorers.get(conn_id)
-    if explorer:
-        explorer.stop()
-    task = _explorer_tasks.get(conn_id)
-    if task and not task.done():
-        task.cancel()
-    for fname in (f"exploration_{conn_id}.json", f"episodes_{conn_id}.jsonl"):
-        p = Path("data") / fname
-        if p.exists():
-            p.unlink()
-    try:
-        from aughor.tools.profile_cache import invalidate as invalidate_profiles
-        invalidate_profiles(conn_id)
-    except Exception:
-        pass
-    return {"ok": True, "reset": True}
+    """Clear ALL exploration state (connection-level + every per-schema run) without
+    restarting. Use /restart to reset+start."""
+    deleted = _purge_exploration_state(conn_id)
+    return {"ok": True, "reset": True, "purged": deleted}
 
 
 # ── Canvas-scoped ─────────────────────────────────────────────────────────────
