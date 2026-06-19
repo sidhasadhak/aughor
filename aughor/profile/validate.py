@@ -367,6 +367,23 @@ def audit_finding_sql(sql: str, table_cols: dict, conn) -> tuple[bool, str]:
         return (True, "")
 
 
+# RC3 — a metric NAMED for a category/label ("Top Return Reason", "… by category",
+# "distribution", "breakdown") must not be a scalar percent/ratio KPI: "Top Return Reason
+# 0.4%" is nonsense — a reason is a label, not a number. Drop its value_sql so the strip
+# never renders it as a scalar (the chart_sql breakdown, if any, still stands).
+_LABEL_NAME_RE = re.compile(r"\b(reason|categor(?:y|ies)|distribution|breakdown|mix)\b", re.I)
+_PCT_RATIO_UNIT_RE = re.compile(r"percent|ratio|\b0\s*-\s*1\b|0\s*-\s*100|%", re.I)
+
+
+def _name_sql_coherent(name: str, unit_or_range: str) -> tuple[bool, str]:
+    """False when a category/label-named metric is declared as a scalar percent/ratio —
+    the name↔value mismatch that renders 'Top Return Reason 0.4%'."""
+    if _LABEL_NAME_RE.search(name or "") and _PCT_RATIO_UNIT_RE.search(unit_or_range or ""):
+        return (False, f"name '{name}' implies a category/label but it is declared as a scalar "
+                       f"'{unit_or_range}' — a category can't be a single percentage")
+    return (True, "")
+
+
 def audit_profile(profile, conn, schema: str) -> dict[str, str]:
     """Audit every metric's value_sql AND chart_sql IN PLACE: blank either if it
     fails and return {metric_name: reason} for the value_sql failures (so the caller
@@ -381,6 +398,13 @@ def audit_profile(profile, conn, schema: str) -> dict[str, str]:
     for m in getattr(profile, "north_star_metrics", []) or []:
         vs = (getattr(m, "value_sql", "") or "").strip()
         if vs:
+            # RC3 — name↔SQL coherence FIRST (static, no query cost). A category-named
+            # metric must not surface as a scalar percentage KPI.
+            ok, reason = _name_sql_coherent(getattr(m, "name", ""), getattr(m, "unit_or_range", ""))
+            if not ok:
+                failures[m.name] = reason
+                m.value_sql = ""
+                continue
             ok, reason = audit_value_sql(vs, table_cols, conn, getattr(m, "unit_or_range", ""))
             if not ok:
                 failures[m.name] = reason

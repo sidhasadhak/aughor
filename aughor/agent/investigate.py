@@ -2389,7 +2389,14 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection") -> dict:
         plan_user=CROSS_SECTION_PLAN_PROMPT.format(
             question=question, metric_label=metric_label, metric_sql=metric_sql,
             metric_table=metric_table, schema=schema, dimensions_list=dimensions_list),
-        interpret_system="Interpret a cross-sectional weakness scan. Name the weakest values and any concentration; be honest about healthy areas.",
+        interpret_system=(
+            "Interpret a cross-sectional ranking scan. Name the LOWEST-RANKED values and any "
+            "concentration. SEVERITY GROUNDING: only call a value 'weak', 'critically low', "
+            "'underperforming', or 'the weakest' if it is below a stated benchmark/target or far "
+            "below the in-result average — being the minimum of a ranking is NOT, by itself, "
+            "evidence it is unhealthy. Otherwise use relative language ('the lowest at X vs the ~Y "
+            "average'). Be explicit when the spread is tight and all values are healthy."
+        ),
         interpret_user_fn=lambda results_text: CROSS_SECTION_INTERPRET_PROMPT.format(
             question=question, metric_label=metric_label, results_text=results_text),
         plan_error_msg="Cross-sectional planning failed.",
@@ -2482,7 +2489,11 @@ def ada_synthesize(state: AgentState) -> dict:
             "or most concentrated across the dimensions scanned; total_change_label should be the "
             "metric total or 'N/A'; the attribution_waterfall should attribute the weakness across "
             "those dimensions (signed negative as loss contributors); recommendations target the "
-            "weakest areas. Be honest about which areas are healthy and NOT a problem."
+            "weakest areas. Be honest about which areas are healthy and NOT a problem. "
+            "SEVERITY GROUNDING: do NOT label the lowest-ranked value 'weak', 'critically low', or "
+            "'underperforming' unless it is below a benchmark/target or far below the average — if "
+            "the spread is tight and all values are healthy, say the dimension is healthy and DROP "
+            "the weakness framing (an empty waterfall is correct when nothing is actually weak)."
         )
 
     # Build metric targets block for synthesis guidance

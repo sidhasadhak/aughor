@@ -3399,6 +3399,11 @@ class SchemaExplorer:
                         "from a subquery with per-grain counts).\n"
                         "- Only use ratio language ('per order', 'per customer') when the SQL computed "
                         "a genuine per-grain aggregation.\n"
+                        "- SEVERITY GROUNDING: do NOT call a value 'weak', 'critically low', 'poor', "
+                        "'underperforming', or 'the weakest' unless it is below a stated benchmark/target. "
+                        "Being the LOWEST in a ranking is NOT evidence it is bad. Use relative language "
+                        "instead ('the lowest of the group at X, vs ~Y typical'); a 47% margin that is "
+                        "merely the smallest of several healthy margins is NOT 'critically low'.\n"
                         "- Novelty score: 1=already known/trivial, 5=genuinely new and surprising."
                     )
                     _usr3 = (

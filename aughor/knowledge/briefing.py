@@ -84,12 +84,29 @@ Rules:
 - Highlight urgency or opportunity where the data supports it.
 """
 
+# Used for the "All schemas" aggregate brief, where findings come from SEPARATE businesses.
+# Drawing cross-domain connections (the single-business rule above) would invent links
+# between unrelated companies — so this variant forbids it and summarizes per business.
+_SYSTEM_MULTI = """\
+You are an intelligence analyst writing a Monday morning executive briefing that spans SEVERAL
+SEPARATE, UNRELATED businesses (each finding is tagged with its Business).
+
+Rules:
+- Write exactly 2-3 sentences. Be concise and direct.
+- These findings come from DIFFERENT businesses — do NOT draw connections, comparisons, or
+  shared causes across them. Treat each business independently.
+- Lead with the single most important signal and NAME its business; cover at least two businesses.
+- Use business language a CFO would understand: no SQL, no technical jargon.
+- Embed citation markers like [1], [2], [3] inline; every marker MUST appear in the citations list.
+"""
+
 
 def _build_user_prompt(
     top_insights: list[dict],
     top_patterns: list[dict],
     macro_context: Optional[dict] = None,
     coverage_digest: str = "",
+    multi_schema: bool = False,
 ) -> str:
     lines = []
     # Tier 2: lead with the long-arc context so the narrator can juxtapose the recent
@@ -100,13 +117,21 @@ def _build_user_prompt(
         if block:
             lines.append(block)
             lines.append("")
-    lines.append("FINDINGS (ordered by novelty):")
+    if multi_schema:
+        lines.append(
+            "FINDINGS (ordered by novelty) — these come from SEPARATE, UNRELATED businesses "
+            "(see Business tag). Do NOT connect findings across businesses:"
+        )
+    else:
+        lines.append("FINDINGS (ordered by novelty):")
     for i, ins in enumerate(top_insights, 1):
         domain = ins.get("domain", "Unknown")
         novelty = ins.get("novelty", 0)
         angle = ins.get("angle", "")
         finding = ins.get("finding", "")
-        lines.append(f"[{i}] Domain: {domain} | Novelty: {novelty:.1f} | Angle: {angle}\n    \"{finding}\"")
+        biz = ins.get("source_schema", "")
+        prefix = f"Business: {biz} | " if (multi_schema and biz) else ""
+        lines.append(f"[{i}] {prefix}Domain: {domain} | Novelty: {novelty:.1f} | Angle: {angle}\n    \"{finding}\"")
 
     # Full-coverage digest: a per-domain fold of ALL findings (not just the cited top-N) so the
     # narrator's synthesis reflects everything. Context only — it carries no citation numbers.
@@ -133,9 +158,16 @@ def _build_user_prompt(
             "growth that is flattening a longer climb). Do not cite the macro context as a "
             "numbered finding."
         )
-    lines.append(
-        "\nGenerate a 2-3 sentence executive briefing narrative with inline citation markers."
-    )
+    if multi_schema:
+        lines.append(
+            "\nGenerate a 2-3 sentence executive briefing. Summarize the single most important "
+            "signal from EACH of the distinct businesses separately (name the business) — do NOT "
+            "imply any connection or shared cause across businesses. Use inline citation markers."
+        )
+    else:
+        lines.append(
+            "\nGenerate a 2-3 sentence executive briefing narrative with inline citation markers."
+        )
     return "\n".join(lines)
 
 
@@ -254,13 +286,19 @@ def generate_narrative(
     # tree-reduced) so the narrative reflects the whole picture, not just the cited few.
     coverage = _coverage_digest(domain_data, {ins.get("id", "") for ins in top[:8]})
 
+    # RC6 — when the cited findings span multiple businesses (the "All schemas" aggregate),
+    # forbid cross-business synthesis: a beauty-ecommerce finding and a bakery finding must
+    # not be woven into one causal story.
+    multi_schema = len({ins.get("source_schema") for ins in top[:8] if ins.get("source_schema")}) > 1
+
     # Build prompt and call LLM
     from aughor.llm.provider import get_provider
     provider = get_provider("narrator")
-    user_prompt = _build_user_prompt(top[:8], patterns[:3], macro_context, coverage_digest=coverage)
+    user_prompt = _build_user_prompt(top[:8], patterns[:3], macro_context, coverage_digest=coverage,
+                                     multi_schema=multi_schema)
 
     result: BriefingNarrative = provider.complete(
-        system=_SYSTEM,
+        system=_SYSTEM_MULTI if multi_schema else _SYSTEM,
         user=user_prompt,
         response_model=BriefingNarrative,
         temperature=0.3,

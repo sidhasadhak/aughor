@@ -361,10 +361,15 @@ For EACH dimension, write a finding:
     lenses diverge (e.g. "11 franchises bill under $1,000; the worst, X, also averages just
     **$4.20/order** vs the ~$9 typical"). Bold the decisive number with **double asterisks**.
     Cite real values only.
+    SEVERITY GROUNDING: "lowest in the ranking" is NOT the same as "weak". Only call a value
+    'weak', 'critically low', 'underperforming', or 'a problem' if it is below a stated
+    benchmark/target OR far below the in-result average. If the values are tightly clustered
+    and all healthy (e.g. margins all 47–55%), say so and use relative language ("the lowest
+    at 47% vs the ~51% average") — never an absolute superlative.
   - key_numbers: the 1–3 most telling values — include a TOTAL and an AVERAGE where the
     average reveals something the total hides.
   - chart_type: "bar_horizontal".
-  - is_significant: true when this dimension reveals a clear, actionable weak spot.
+  - is_significant: true ONLY when this dimension is below a benchmark or far below the average — not merely the minimum of a healthy spread.
 
 Be honest: if a dimension is healthy or evenly spread, say it is NOT a problem area.
 
