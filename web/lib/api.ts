@@ -60,7 +60,15 @@ export interface BusinessProfileResponse {
     north_star_metrics: NorthStarMetric[];
     key_questions: string[];
     confidence: number;
+    currency_code?: string;   // ISO 4217 the business reports in (drives €/£/$ figures)
   };
+}
+
+/** Display symbol for an ISO currency code (mirrors backend triage.currency_symbol). */
+export function currencySymbol(code?: string | null): string {
+  if (!code) return "$";
+  const map: Record<string, string> = { USD: "$", EUR: "€", GBP: "£", JPY: "¥", CNY: "¥", INR: "₹" };
+  return map[code.toUpperCase()] ?? `${code.toUpperCase()} `;
 }
 export async function getBusinessProfile(connectionId: string, schema?: string): Promise<BusinessProfileResponse> {
   const q = schema ? `&schema_name=${encodeURIComponent(schema)}` : "";
@@ -2242,10 +2250,21 @@ export interface BriefingCitation {
   finding: string;
 }
 
+/** A candidate finding the trust gate kept out of the brief — surfaced as an audit trail.
+ *  severity 'implausible' = suppressed (impossible number); 'confound' = demoted (anti-causal). */
+export interface HeldBackSignal {
+  finding: string;
+  domain: string;
+  severity: "implausible" | "confound";
+  reason: string;
+}
+
 export interface BriefingNarrativeResponse {
   narrative: string;
   headline_theme: string;
   citations: BriefingCitation[];
+  held_back?: HeldBackSignal[];
+  currency_code?: string;
   generated_at: string | null;
   available: boolean;
 }

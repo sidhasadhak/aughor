@@ -378,6 +378,61 @@ def get_canvas_patterns(canvas_id: str, refresh: bool = False):
     return {"patterns": patterns, "count": len(patterns)}
 
 
+def _load_business_profile(conn_id: str, schema: str | None):
+    """The persisted BusinessProfile for (conn, schema), or None. Read-only (no infer) —
+    the brief must not block on profile inference; without one it still gates + ranks, just
+    without north-star weighting or currency correction. Fail-open."""
+    try:
+        from aughor.profile import store as _pstore
+        return _pstore.load(conn_id, schema)
+    except Exception:
+        return None
+
+
+def _metric_moves_provider(conn_id: str, profile):
+    """A zero-arg callable that runs each north-star metric's chart_sql and returns the
+    material time-trend MOVES as synthetic findings (the biggest KPI swings — margin
+    47→34, AOV, repeat-rate — that no explorer finding carries). Returns None when there
+    is no profile to draw metrics from. The callable opens ONE connection, is matcache-
+    first, and fails open per metric — and get_briefing only invokes it on a cache miss."""
+    if profile is None:
+        return None
+    metrics = getattr(profile, "north_star_metrics", None) or []
+    if not metrics:
+        return None
+    currency = getattr(profile, "currency_code", None)
+
+    def _provider():
+        from aughor.knowledge.metric_moves import compute_metric_moves
+        from aughor.db.connection import open_connection_for
+        from aughor.db.matcache import get_cached, put_cache
+        try:
+            db = open_connection_for(conn_id)
+        except Exception:
+            return []
+        try:
+            def run_sql(sql: str):
+                cached = get_cached(conn_id, sql)
+                if cached is not None:
+                    return cached.columns, cached.rows, None
+                res = db.execute("__brief_metric_move__", sql)
+                err = getattr(res, "error", None)
+                if not err:
+                    try:
+                        put_cache(conn_id, sql, res)
+                    except Exception:
+                        pass
+                return res.columns, res.rows, err
+            return compute_metric_moves(metrics, run_sql, currency)
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
+
+    return _provider
+
+
 @router.post("/exploration/{conn_id}/briefing")
 def generate_briefing(conn_id: str, refresh: bool = False, schema: str | None = None):
     """Generate (or return cached) an LLM synthesis narrative for the connection."""
@@ -399,6 +454,9 @@ def generate_briefing(conn_id: str, refresh: bool = False, schema: str | None = 
 
     patterns = get_patterns(conn_id, by_domain, force_refresh=False)
     macro = _load_state(conn_id, schema).get("macro_context")
+    # The BusinessProfile drives the brief's impact ranking (its north-star metrics) and
+    # currency-correct figures (its currency_code) — load it for THIS schema.
+    profile = _load_business_profile(conn_id, schema)
     # Scope the cache key per schema so a schema-filtered briefing never returns the
     # connection-wide (or another schema's) cached narrative — the AI Synthesis card
     # was staying stale on schema change because every schema shared one cache key.
@@ -409,6 +467,8 @@ def generate_briefing(conn_id: str, refresh: bool = False, schema: str | None = 
         force_refresh=refresh,
         scope_key=f"{conn_id}:{schema}" if schema else conn_id,
         macro_context=macro,
+        profile=profile,
+        metric_moves=_metric_moves_provider(conn_id, profile),
     )
     return {**result, "macro_context": macro, "available": bool(result.get("narrative"))}
 
@@ -440,6 +500,7 @@ def generate_canvas_briefing(canvas_id: str, refresh: bool = False):
     conn_id = canvas.primary_connection_id or ""
     patterns = get_patterns(conn_id, by_domain, force_refresh=False)
     macro = _expl_store.load_canvas(canvas_id).get("macro_context")
+    profile = _load_business_profile(conn_id, getattr(canvas, "schema_name", None))
     result = get_briefing(
         connection_id=conn_id,
         domain_data=by_domain,
@@ -447,6 +508,8 @@ def generate_canvas_briefing(canvas_id: str, refresh: bool = False):
         force_refresh=refresh,
         scope_key=f"canvas:{canvas_id}",
         macro_context=macro,
+        profile=profile,
+        metric_moves=_metric_moves_provider(conn_id, profile),
     )
     return {**result, "macro_context": macro, "available": bool(result.get("narrative"))}
 
