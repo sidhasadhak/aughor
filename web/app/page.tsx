@@ -1419,6 +1419,8 @@ export default function Home() {
   const [chatKey, setChatKey] = useState(0);
   const [chatInitialQuestion, setChatInitialQuestion] = useState<string | undefined>(undefined);
   const [chatInitialMode, setChatInitialMode] = useState<"ask" | "investigate">("investigate");
+  // Drill into a known finding: routes the first chat turn to the Tier-0 Finding Dossier.
+  const [chatInitialInsightId, setChatInitialInsightId] = useState<string | undefined>(undefined);
   const [explorationSection, setExplorationSection] = useState<"nulls" | "lifecycles" | "distributions" | "insights" | "intelligence" | undefined>(undefined);
   const [intelLayer, setIntelLayer] = useState<IntelLayer>("briefing");
   const [secLens, setSecLens] = useState<"security" | "activity">("security");
@@ -1520,10 +1522,11 @@ export default function Home() {
     handleNavigate("catalog");
   };
 
-  const goToChat = (q?: string, mode?: "ask" | "investigate") => {
+  const goToChat = (q?: string, mode?: "ask" | "investigate", insightId?: string) => {
     setSelectedChatSessionId(null);
     setSelectedHistoryInvId(null);
     setChatInitialQuestion(q);
+    setChatInitialInsightId(insightId);
     if (mode) setChatInitialMode(mode);
     setChatKey(k => k + 1);
     setTab("chat");
@@ -1802,7 +1805,7 @@ export default function Home() {
                         <NavIcon name="canvas" size={11} /> Canvas
                       </button>
                     )}
-                    <button onClick={() => { setSelectedChatSessionId(null); setSelectedHistoryInvId(null); setChatInitialQuestion(undefined); setChatInitialMode("investigate"); setChatKey(k => k + 1); }} className="aug-btn aug-btn-ghost aug-btn-sm">
+                    <button onClick={() => { setSelectedChatSessionId(null); setSelectedHistoryInvId(null); setChatInitialQuestion(undefined); setChatInitialInsightId(undefined); setChatInitialMode("investigate"); setChatKey(k => k + 1); }} className="aug-btn aug-btn-ghost aug-btn-sm">
                       <NavIcon name="plus" size={11} /> New
                     </button>
                     <button onClick={() => setShowHistory(v => !v)} className={`aug-btn aug-btn-sm ${showHistory ? "aug-btn-primary" : "aug-btn-ghost"}`}>
@@ -1818,6 +1821,7 @@ export default function Home() {
                         setSelectedHistoryInvId(null);
                         setSelectedChatSessionId(null);
                         setChatInitialQuestion(q);
+                        setChatInitialInsightId(undefined);
                         setChatInitialMode(m);
                         setChatKey(k => k + 1);
                       }}
@@ -1829,6 +1833,7 @@ export default function Home() {
                       restoreSessionId={selectedChatSessionId}
                       initialQuestion={chatInitialQuestion}
                       initialMode={chatInitialMode}
+                      initialInsightId={chatInitialInsightId}
                     />
                 }
             </div>

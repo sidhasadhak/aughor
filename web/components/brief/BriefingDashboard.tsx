@@ -125,6 +125,9 @@ interface ThreadSeed {
   question: string;
   seedSql: string | null;
   seedContext: string;
+  /** The originating finding's insight id (when the seed is a single finding) — seeds
+   *  the rich dossier. null for chart drills, which aggregate across insights. */
+  insightId?: string | null;
 }
 
 /** The first non-numeric column is the category/x dimension (date or label). */
@@ -448,6 +451,7 @@ export function BriefingDashboard({
                   question: `Why is this happening? ${f.insight.finding}`,
                   seedSql: f.insight.sql || null,
                   seedContext: `SEED FINDING (the briefing claim being investigated): ${f.insight.finding}`,
+                  insightId: f.insight.id,
                 })}
                 actions={renderActions?.(f.insight, f.domain)} />
             );
@@ -467,6 +471,7 @@ export function BriefingDashboard({
             canvasId: canvasId ?? null,
             seedSql: thread.seedSql,
             seedContext: thread.seedContext,
+            insightId: thread.insightId ?? null,
           }}
           onClose={() => setThread(null)}
           onOpenInAsk={onInvestigate}

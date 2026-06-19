@@ -42,6 +42,43 @@ def validate_insight(ins: dict) -> Optional[tuple[str, str]]:
     return None
 
 
+def revalidate_finding(dossier: dict, conn) -> dict:
+    """Re-run a finding's stored SQL against LIVE data (ONE query, no LLM) and check
+    whether its claim still holds. The finding's magnitudes are re-grounded against
+    the fresh result cells:
+
+      - ``confirmed``  — every magnitude in the finding text still appears in the data;
+      - ``drifted``    — at least one no longer does (the number moved);
+      - ``error``      — the query no longer runs (schema/data changed underneath it).
+
+    A dossier snapshots cells at emit time; this is how a *living* dossier knows the
+    snapshot is still true rather than silently serving a stale number. Cheap enough
+    to run on a drawer click; no synthesis, no agent."""
+    from aughor.explorer.grounding import verify_finding, numeric_cells_block
+    sql = (dossier.get("sql") or "").strip()
+    finding = dossier.get("finding") or ""
+    stored_cells = dossier.get("result_cells") or ""
+    if not sql:
+        return {"status": "error", "error": "no SQL recorded for this finding"}
+    res = conn.execute("__revalidate__", sql)
+    if res.error:
+        return {"status": "error", "error": res.error}
+    rows = res.rows or []
+    fresh_cells = numeric_cells_block(rows)
+    g = verify_finding(finding, rows)
+    status = "confirmed" if g.grounded else "drifted"
+    return {
+        "status": status,
+        "grounded": g.grounded,
+        "checked": g.checked,
+        "ungrounded": g.ungrounded,
+        "stored_cells": stored_cells,
+        "fresh_cells": fresh_cells,
+        "cells_changed": fresh_cells != stored_cells,
+        "row_count": res.row_count,
+    }
+
+
 def revalidate_state(state: dict, *, apply: bool = False) -> dict:
     """Scan a store state's insights. Returns a report. Mutates state only if apply."""
     quarantined: list[dict] = []

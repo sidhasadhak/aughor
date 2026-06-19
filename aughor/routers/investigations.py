@@ -404,6 +404,12 @@ class InvestigateRequest(BaseModel):
     # already reads scan_context, so seeding is additive — no graph change.
     seed_sql: Optional[str] = None
     seed_context: str = ""
+    # Drilling into a known briefing finding: its insight id. When set (and not
+    # `deep`), the explorer's pre-computed Finding Dossier is served as the trace —
+    # a deterministic ledger read, NOT a second ADA run. `deep` is the explicit
+    # "Investigate deeper" escalation: run ADA, seeded with that dossier.
+    insight_id: Optional[str] = None
+    deep: bool = False
 
 
 class FeedbackRequest(BaseModel):
@@ -1353,6 +1359,78 @@ async def _stream_chat(
 
 # ── Investigation streaming ───────────────────────────────────────────────────
 
+def _render_origin_prose(o: dict) -> str:
+    """Render an origin finding as a compact prior-analysis note — for the
+    direct/explore branches, which read ``prior_analyses``. (The ADA branch reads the
+    structured ``origin_finding`` directly; see ``ada_intake``.)"""
+    parts = [f"ALREADY ESTABLISHED by background exploration (do not re-derive): {o.get('finding', '')}"]
+    if o.get("result_cells"):
+        parts.append(f"Grounded result values: {o['result_cells']}")
+    if o.get("structural"):
+        parts.append("Verified joins: " + "; ".join(o["structural"]))
+    if o.get("sql"):
+        parts.append(f"Source SQL already run:\n{o['sql']}")
+    return "\n".join(parts)
+
+
+async def _build_origin_finding(
+    connection_id: str,
+    insight_id: Optional[str],
+    seed_context: str,
+    seed_sql: Optional[str],
+) -> Optional[dict]:
+    """The structured, already-established finding this investigation is DRILLING — or
+    None for a cold-start question.
+
+    The SINGLE source of truth for "what known result am I explaining": the ADA branch
+    reads it directly (``ada_intake`` anchors its metric/tables/window on it instead of
+    re-deriving), and the report carries its provenance (``insight_id``).
+
+    Prefers the dossier (the explorer's captured derivation) resolved from
+    ``insight_id``; falls back to the lightweight ``seed_context``/``seed_sql`` a caller
+    passed inline (a finding predating dossier capture, or a chart drill). Best-effort.
+    """
+    from aughor.explorer.agent import _tables_in_sql
+    if insight_id:
+        try:
+            from aughor.kernel.ledger import Ledger
+            rec = await asyncio.to_thread(
+                Ledger.default().receipt, f"insight:{connection_id}:{insight_id}")
+            dossier = ((rec or {}).get("artifact", {}).get("payload", {}) or {}).get("dossier")
+            if dossier:
+                sc = dossier.get("structural_ctx") or {}
+                joins = []
+                for j in (sc.get("joins") or [])[:6]:
+                    joins.append(f"{j.get('from_table')}→{j.get('to_table')} {j.get('cardinality')}"
+                                 + ("" if j.get("verified") else f" ({j.get('orphan_count')} orphans)"))
+                _sql = (dossier.get("sql") or "").strip()
+                return {
+                    "insight_id": insight_id,
+                    "finding": (dossier.get("finding") or "").strip(),
+                    "sql": _sql,
+                    "tables": sorted(_tables_in_sql(_sql)) if _sql else [],
+                    "result_cells": (dossier.get("result_cells") or "").strip(),
+                    "structural": joins,
+                    "narrative": (dossier.get("narrative") or "").strip(),
+                }
+        except Exception:
+            logger.debug("origin dossier lookup failed; falling back to inline seed", exc_info=True)
+
+    _sc = (seed_context or "").strip()
+    _sq = (seed_sql or "").strip()
+    if _sc or _sq:
+        return {
+            "insight_id": insight_id or "",
+            "finding": _sc,
+            "sql": _sq,
+            "tables": sorted(_tables_in_sql(_sq)) if _sq else [],
+            "result_cells": "",
+            "structural": [],
+            "narrative": "",
+        }
+    return None
+
+
 async def _stream_investigation(
     question: str,
     connection_id: str,
@@ -1363,6 +1441,8 @@ async def _stream_investigation(
     schema_scope: Optional[str] = None,
     seed_sql: Optional[str] = None,
     seed_context: str = "",
+    insight_id: Optional[str] = None,
+    deep: bool = False,
 ) -> AsyncGenerator[str, None]:
     _TIMEOUT = int(os.getenv("AUGHOR_TIMEOUT_SECONDS", "600"))
 
@@ -1398,6 +1478,28 @@ async def _stream_investigation(
     except Exception as e:
         yield _sse("error", {"message": f"Could not connect: {e}"})
         return
+
+    # ── Tier 0: the trace is a READ, not a re-run ──────────────────────────────
+    # Drilling into a known finding? The explorer already did the deep analysis and
+    # captured it in the Finding Dossier. Serve that as the trace — a deterministic
+    # ledger lookup by insight id (no semantic-match guess, no ADA, no SQL, no LLM).
+    # `deep` is the explicit escalation past the dossier into a fresh investigation.
+    if insight_id and not deep:
+        try:
+            from aughor.kernel.ledger import Ledger
+            rec = await asyncio.to_thread(
+                Ledger.default().receipt, f"insight:{connection_id}:{insight_id}")
+            dossier = ((rec or {}).get("artifact", {}).get("payload", {}) or {}).get("dossier")
+            if dossier:
+                yield _sse("start", {"question": question, "connection_id": connection_id,
+                                     "investigation_id": None, "insight_id": insight_id})
+                yield _sse("dossier_report", {"dossier": dossier, "insight_id": insight_id,
+                                              "connection_id": connection_id})
+                yield _sse("done", {})
+                return
+            logger.debug("no dossier for insight %s — falling through to live investigation", insight_id)
+        except Exception:
+            logger.debug("dossier short-circuit failed; falling through", exc_info=True)
 
     from aughor.tools.prior_analyses import find_similar_investigation
     cache_hit = None if (skip_cache or _looks_direct(question)) else await asyncio.to_thread(find_similar_investigation, question, connection_id)
@@ -1526,24 +1628,21 @@ async def _stream_investigation(
         from aughor.agent.graph import build_graph_generic
         agent = build_graph_generic(db, hitl=hitl)
 
-        # Seed context for a briefing "pull the thread": hand ADA the originating
-        # finding AND the exact query that produced it. ada_intake folds scan_context
-        # into its intake prompt, so this anchors the investigation on the real
-        # tables/window without polluting the natural-language `question` that drives
-        # phase routing.
-        _seed_blocks: list[str] = []
-        if seed_context and seed_context.strip():
-            _seed_blocks.append(seed_context.strip())
-        if seed_sql and seed_sql.strip():
-            _seed_blocks.append("REFERENCE QUERY (the data this question came from):\n" + seed_sql.strip())
-        _scan_seed = "\n\n".join(_seed_blocks)
+        # ONE structured origin finding — the single source of truth for "what known
+        # result is this investigation drilling" (insight_id dossier, or an inline
+        # seed_context/seed_sql). The ADA branch reads origin_finding directly
+        # (ada_intake anchors its spec on it); for the direct/explore branches we render
+        # it into prior_analyses (the channel those read). scan_context stays empty —
+        # exploratory_scan overwrites it, so seeding there is a no-op.
+        _origin = await _build_origin_finding(connection_id, insight_id, seed_context, seed_sql)
+        _seed_priors = [_render_origin_prose(_origin)] if _origin else []
 
         initial_state: AgentState = {
             "question": question, "connection_id": connection_id, "investigation_id": inv_id,
             "trace_id": trace_id,
-            "schema_context": schema_for_agent, "unresolved_tensions": [], "scan_context": _scan_seed, "events_context": "",
+            "schema_context": schema_for_agent, "unresolved_tensions": [], "scan_context": "", "events_context": "",
             "hypotheses": [], "current_hypothesis_idx": 0, "query_history": [], "evidence_scores": [],
-            "pitfalls": [], "prior_analyses": [], "iteration": 0,
+            "pitfalls": [], "prior_analyses": _seed_priors, "origin_finding": _origin, "iteration": 0,
             "max_iterations": int(os.getenv("AUGHOR_MAX_ITER", "6")),
             "report": None, "hitl_enabled": hitl, "human_feedback": None,
             "query_mode": None, "route_reasoning": None, "route_confidence": None, "replan_decision": None,
@@ -1633,7 +1732,9 @@ async def _stream_investigation(
                     pass
                 ada_save = dict(ada) if isinstance(ada, dict) else ada
                 ada_save["_report_type"] = "investigate"
-                await asyncio.to_thread(lambda: complete_investigation(inv_id, report=ada_save, hypotheses=merged.get("hypotheses", []), query_history=qh, question=question, connection_id=connection_id, skip_index=False))
+                if insight_id and isinstance(ada_save, dict):
+                    ada_save["origin_insight_id"] = insight_id  # provenance: drilled from this finding
+                await asyncio.to_thread(lambda: complete_investigation(inv_id, report=ada_save, hypotheses=merged.get("hypotheses", []), query_history=qh, question=question, connection_id=connection_id, skip_index=False, origin_insight_id=insight_id))
                 # K3-wide: the ADA report carries a Trust Receipt too (executed
                 # queries → input tables → metric enforcement), so an agentic
                 # answer self-justifies like a chat answer and an explorer finding.
@@ -1690,7 +1791,7 @@ async def _stream_investigation(
                     yield _sse("followups", {"questions": fqr.questions[:3]})
                 except Exception:
                     pass
-                await asyncio.to_thread(lambda: complete_investigation(inv_id, report=merged["report"], hypotheses=merged.get("hypotheses", []), query_history=qh, question=question, connection_id=connection_id, skip_index=merged.get("query_mode") == "direct"))
+                await asyncio.to_thread(lambda: complete_investigation(inv_id, report=merged["report"], hypotheses=merged.get("hypotheses", []), query_history=qh, question=question, connection_id=connection_id, skip_index=merged.get("query_mode") == "direct", origin_insight_id=insight_id))
                 await asyncio.to_thread(_record_memory, inv_id, connection_id, question, merged)
                 report_emitted = True
 
@@ -1859,6 +1960,8 @@ async def _investigation_job_streamed(
     schema_scope: Optional[str] = None,
     seed_sql: Optional[str] = None,
     seed_context: str = "",
+    insight_id: Optional[str] = None,
+    deep: bool = False,
 ) -> AsyncGenerator[str, None]:
     """Run the investigation as a first-class supervised kernel job (K1).
 
@@ -1880,6 +1983,7 @@ async def _investigation_job_streamed(
                 question, connection_id, request,
                 hitl=hitl, skip_cache=skip_cache, canvas_id=canvas_id,
                 schema_scope=schema_scope, seed_sql=seed_sql, seed_context=seed_context,
+                insight_id=insight_id, deep=deep,
             ):
                 await queue.put(sse)
         finally:
@@ -1912,6 +2016,7 @@ async def investigate(req: InvestigateRequest, request: Request):
             req.question, conn_id, request,
             hitl=req.hitl, skip_cache=req.skip_cache, canvas_id=req.canvas_id,
             schema_scope=req.schema, seed_sql=req.seed_sql, seed_context=req.seed_context,
+            insight_id=req.insight_id, deep=req.deep,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},

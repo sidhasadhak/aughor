@@ -1448,6 +1448,44 @@ def _safe_metric_fallback(sql: str) -> str:
     return "COUNT(*)"
 
 
+def _render_origin_finding_section(origin: Optional[dict]) -> str:
+    """Render the structured ``origin_finding`` into INTAKE_PROMPT's additive ORIGIN
+    FINDING section. Returns "" when there is no origin (a cold-start question), so a
+    normal investigation's prompt is byte-for-byte unchanged. When present, it binds
+    ADA's spec to the finding the explorer already established — so a drill EXTENDS that
+    work (explains why) instead of re-deriving the metric/tables/window from scratch."""
+    if not origin:
+        return ""
+    finding = (origin.get("finding") or "").strip()
+    sql = (origin.get("sql") or "").strip()
+    tables = ", ".join(origin.get("tables") or [])
+    cells = (origin.get("result_cells") or "").strip()
+    lines = [
+        "ORIGIN FINDING — this investigation is DRILLING a specific result that background",
+        "exploration ALREADY established. Do NOT re-derive or re-prove it; your job is to",
+        "explain/decompose WHY it holds. Anchor your spec on it:",
+    ]
+    if finding:
+        lines.append(f'  Established finding: "{finding}"')
+    if tables:
+        lines.append(f"  Tables it used: {tables}")
+    if cells:
+        lines.append(f"  Grounded result values it produced: {cells}")
+    if sql:
+        lines.append("  Source query (the exact SQL that produced it):")
+        lines.append("  " + sql.replace("\n", "\n  "))
+    lines.append(
+        "  BINDING: set metric_sql / metric_table / date_column to MATCH this query's "
+        "metric and tables, and PRESERVE its filters (e.g. a WHERE status='delivered') "
+        "— they are part of the finding's definition; carrying them is what makes your "
+        "numbers reconcile with the established result. Reuse them verbatim where the "
+        "question targets the same metric (this overrides the default 'include all rows' "
+        "rule above); only extend for the NEW angle the question asks, and keep the same "
+        "observation window unless the question explicitly changes it."
+    )
+    return "\n".join(lines) + "\n"
+
+
 @_telemetry.node_span("ada_intake")
 def ada_intake(state: AgentState) -> dict:
     """
@@ -1463,12 +1501,14 @@ def ada_intake(state: AgentState) -> dict:
     scan = _trim(state.get("scan_context") or "", _SCAN_CHAR_LIMIT)
     events = state.get("events_context") or ""
     events_section = f"BUSINESS CALENDAR:\n{events}\n" if events else ""
+    origin_finding_section = _render_origin_finding_section(state.get("origin_finding"))
 
     prompt = INTAKE_PROMPT.format(
         question=question,
         schema=schema,
         scan_context=scan,
         events_section=events_section,
+        origin_finding_section=origin_finding_section,
     )
 
     try:
@@ -1533,7 +1573,10 @@ def ada_intake(state: AgentState) -> dict:
     # baseline (also fewer phases → faster).
     if intake is not None:
         no_time = (intake.date_column or "").strip().upper() in ("", "NONE")
-        if _is_diagnostic_question(question) or no_time:
+        # A populated comparison_segment_sql means intake recognised a DRIVER question —
+        # force cross-sectional so it routes to the group comparison, never a blind trend.
+        has_segment = bool((getattr(intake, "comparison_segment_sql", "") or "").strip())
+        if _is_diagnostic_question(question) or no_time or has_segment:
             intake.cross_sectional = True
 
     # Post-process: ensure all table references are fully-qualified when the schema uses them
@@ -2398,12 +2441,32 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection") -> dict:
     prioritized = _prioritize_dimensions(dimensions)
     dimensions_list = "\n".join(f"  - {d}" for d in prioritized[:6]) if prioritized else "  (none identified)"
 
+    # DRIVER questions ("do late deliveries lower reviews") carry a derived comparison
+    # segment from intake — compare the metric ACROSS that condition (true vs false) as
+    # the PRIMARY query, not a per-dimension weakness scan.
+    _seg_sql = (intake_data.get("comparison_segment_sql") or "").strip()
+    _seg_label = (intake_data.get("comparison_segment_label") or "").strip()
+    comparison_segment_section = ""
+    if _seg_sql:
+        comparison_segment_section = (
+            "\nPRIMARY COMPARISON (this is a DRIVER question — answer THIS first and lead with it):\n"
+            f"  Condition ({_seg_label or 'segment'}): {_seg_sql}\n"
+            "Write ONE query computing the metric grouped by this derived condition:\n"
+            "  SELECT (<condition>) AS segment, <metric> AS metric_total, COUNT(*) AS n,\n"
+            "         ROUND(<metric> / NULLIF(COUNT(*),0), 2) AS avg_per_record\n"
+            "  GROUP BY 1 ORDER BY 1\n"
+            "JOIN whatever tables are needed to evaluate BOTH the metric and the condition (e.g. join\n"
+            "order_reviews to orders). The contrast between the two groups (true vs false) IS the answer\n"
+            "to the question — it matters MORE than the per-dimension scan below.\n"
+        )
+
     _run = run_analysis_phase(
         conn, phase_id="cross_section", title="Cross-Sectional Scan", emoji="🧭", cap=5, schema=schema,
         plan_system="Write one ranking query per dimension. Rank the metric ascending (weakest first). No time filters." + _ADA_SQL_GROUNDING,
         plan_user=CROSS_SECTION_PLAN_PROMPT.format(
             question=question, metric_label=metric_label, metric_sql=metric_sql,
-            metric_table=metric_table, schema=schema, dimensions_list=dimensions_list),
+            metric_table=metric_table, schema=schema, dimensions_list=dimensions_list,
+            comparison_segment_section=comparison_segment_section),
         interpret_system=(
             "Interpret a cross-sectional ranking scan. Name the LOWEST-RANKED values and any "
             "concentration. SEVERITY GROUNDING: only call a value 'weak', 'critically low', "

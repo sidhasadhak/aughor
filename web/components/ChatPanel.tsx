@@ -34,6 +34,9 @@ interface Props {
   restoreSessionId?: string | null;
   initialQuestion?: string;
   initialMode?: "ask" | "investigate";
+  /** When the seeded question is a drill into a known finding, its insight id —
+   *  routes the first turn to the Tier-0 Finding Dossier instead of a fresh ADA run. */
+  initialInsightId?: string;
   /** Optional landing block rendered atop the empty state (e.g. canvas Capabilities). */
   capabilities?: React.ReactNode;
 }
@@ -279,7 +282,7 @@ function DebugLogDrawer({ eventLogRef, onClose }: { eventLogRef: React.RefObject
   );
 }
 
-export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQuestion, initialMode, capabilities }: Props) {
+export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQuestion, initialMode, initialInsightId, capabilities }: Props) {
   const { state, ask, stop, clear, restore, eventLogRef } = useChat();
   const [input, setInput]           = useState("");
   const [mode, setMode]             = useState<"ask" | "investigate">("ask");
@@ -350,6 +353,8 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
           subQuestions: [],
           subqAnswers: [],
           exploreReport: null,
+          dossierReport: null,
+          dossierInsightId: null,
           queriesExecuted: [],
           latestScore: null,
           hypotheses: [],
@@ -403,7 +408,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
     // would make the second setup bail — auto-submit would never fire in dev.
     const t = setTimeout(() => {
       initialFiredRef.current = true;
-      ask(initialQuestion, connectionId, initialMode ?? "investigate", { canvasId: canvasId ?? undefined });
+      ask(initialQuestion, connectionId, initialMode ?? "investigate", { canvasId: canvasId ?? undefined, insightId: initialInsightId });
     }, 80);
     return () => clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -559,6 +564,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                       onFollowUp={(q) => handleSend(q)}
                       onRunFresh={(q) => handleSend(q, "investigate", { skipCache: true })}
                       onShowSource={setSourcePanel}
+                      onDeeper={(q, insightId) => ask(q, connectionId, "investigate", { canvasId: canvasId ?? undefined, insightId: insightId ?? undefined, deep: true })}
                     />
                     {/* B-9 — Trust Receipt on every answered turn that has one:
                         a chat answer (receiptId) or an agentic ADA report

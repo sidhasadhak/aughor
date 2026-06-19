@@ -53,7 +53,7 @@ const LAYERS: { id: IntelLayer; icon: string; label: string; blurb: string }[] =
 
 type Props = {
   connectionId: string;
-  onInvestigate: (q?: string, mode?: "ask" | "investigate") => void;
+  onInvestigate: (q?: string, mode?: "ask" | "investigate", insightId?: string) => void;
   /** Active layer — controlled by the shell so external nav can deep-link. */
   layer: IntelLayer;
   onLayerChange: (l: IntelLayer) => void;
@@ -203,7 +203,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
       <div style={{ flex: 1, position: "relative", overflow: "hidden", minHeight: 0 }}>
         {visited.has("briefing") && (
           <Layer show={layer === "briefing"}>
-            <BriefingPanel connectionId={connectionId} onInvestigate={q => onInvestigate(q, "investigate")} canvasId={canvasId} schema={schema} />
+            <BriefingPanel connectionId={connectionId} onInvestigate={(q, insightId) => onInvestigate(q, "investigate", insightId)} canvasId={canvasId} schema={schema} />
           </Layer>
         )}
         {visited.has("ontology") && (

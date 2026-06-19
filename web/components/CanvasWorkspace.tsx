@@ -558,6 +558,8 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
   // another reason must clear the seed or the stale question would re-submit.
   const [chatInitialQuestion, setChatInitialQuestion] = useState<string | undefined>(undefined);
   const [chatInitialMode, setChatInitialMode] = useState<"ask" | "investigate" | undefined>(undefined);
+  // Drill into a known finding: routes the first chat turn to the Tier-0 Finding Dossier.
+  const [chatInitialInsightId, setChatInitialInsightId] = useState<string | undefined>(undefined);
   const [showSettings, setShowSettings] = useState(false);
   const [showConfigure, setShowConfigure] = useState(false);
   const headerRef = useRef<HTMLDivElement>(null);
@@ -775,6 +777,7 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
             restoreSessionId={restoreSessionId}
             initialQuestion={chatInitialQuestion}
             initialMode={chatInitialMode}
+            initialInsightId={chatInitialInsightId}
             capabilities={<CapabilitiesBlock canvas={canvas} connection={connection} />}
           />
         </div>
@@ -847,10 +850,11 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
             canvasId={canvas.id}
             layer={intelLayer}
             onLayerChange={setIntelLayer}
-            onInvestigate={(q, mode) => {
+            onInvestigate={(q, mode, insightId) => {
               if (q) {
                 setChatInitialQuestion(q);
                 setChatInitialMode(mode);
+                setChatInitialInsightId(insightId);
                 setRestoreSessionId(null);
                 setOpenInvId(null);
                 setChatKey(k => k + 1); // fresh mount → ChatPanel auto-submits the seeded question

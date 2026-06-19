@@ -410,7 +410,9 @@ def decompose_question(state: AgentState) -> dict[str, Any]:
         "current_hypothesis_idx": 0,
         "iteration": 0,
         "pitfalls": [],
-        "prior_analyses": prior_analyses,
+        # Preserve any seeded prior analyses (e.g. a Finding Dossier handed in for a
+        # "deeper" drill) ahead of the RAG-retrieved ones; default seed is [].
+        "prior_analyses": list(state.get("prior_analyses") or []) + prior_analyses,
     }
 
 

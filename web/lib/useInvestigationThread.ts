@@ -19,6 +19,10 @@ export interface ThreadRunOpts {
   seedSql?: string | null;
   /** Free-text seed (e.g. the briefing claim being pulled on). */
   seedContext?: string;
+  /** The originating finding's insight id. When it resolves to a dossier, ADA is
+   *  seeded with the RICH dossier (grounded values + verified structure) instead of
+   *  just seedContext/seedSql — the same seed the chat "Investigate deeper" uses. */
+  insightId?: string | null;
   /** Bypass the similar-investigation cache so you observe live execution. */
   skipCache?: boolean;
 }
@@ -64,6 +68,11 @@ export function useInvestigationThread() {
           schema: opts.schema ?? null,
           seed_sql: opts.seedSql ?? null,
           seed_context: opts.seedContext ?? "",
+          insight_id: opts.insightId ?? null,
+          // This surface always runs the live investigation in place — never the
+          // Tier-0 dossier card — so bypass the short-circuit while still feeding the
+          // dossier (when present) as the seed.
+          deep: true,
           skip_cache: opts.skipCache ?? false,
         }),
         signal,

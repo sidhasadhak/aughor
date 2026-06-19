@@ -7,7 +7,7 @@
 // hooks can never drift.
 
 import type { ADAReport, ExplorationReport, Hypothesis, InvestigationPhase, SubQuestion, SubQuestionAnswer } from "@/lib/types";
-import type { PlaybookRef } from "@/lib/api";
+import type { PlaybookRef, FindingDossier } from "@/lib/api";
 
 // Re-export so existing imports keep working
 export type { InvestigationPhase as InvPhase };
@@ -49,6 +49,11 @@ export interface ChatTurn {
   subQuestions: SubQuestion[];
   subqAnswers: SubQuestionAnswer[];
   exploreReport: ExplorationReport | null;
+
+  // Dossier (Tier-0 trace) — the explorer's pre-computed derivation, served
+  // instead of a fresh ADA run when drilling into a known finding.
+  dossierReport: FindingDossier | null;
+  dossierInsightId: string | null;
 
   // Real-time investigation progress
   queriesExecuted: { sql: string; row_count: number; error: string | null }[];
@@ -109,6 +114,7 @@ export type ChatAction =
   | { type: "PHASE";        phase: InvestigationPhase }
   | { type: "ADA_REPORT";   report: ADAReport; queryMode: string; investigationId: string | null }
   | { type: "EXPLORE_REPORT"; report: ExplorationReport; subQuestions: SubQuestion[]; subqAnswers: SubQuestionAnswer[]; investigationId: string | null }
+  | { type: "DOSSIER_REPORT"; dossier: FindingDossier; insightId: string | null }
   | { type: "REPORT";       report: Record<string, unknown>; queryMode: string; investigationId: string | null }
   | { type: "QUERY_MODE";   queryMode: string }
   | { type: "TABLES_USED";  tables: string[] }
@@ -140,6 +146,7 @@ export const EMPTY_TURN: Omit<ChatTurn, "id" | "question" | "mode"> = {
   sql: null, columns: [], rows: [], headline: null, chartType: null,
   statusText: null, phases: [], adaReport: null, report: null, queryMode: null,
   subQuestions: [], subqAnswers: [], exploreReport: null,
+  dossierReport: null, dossierInsightId: null,
   queriesExecuted: [], latestScore: null,
   hypotheses: [], investigationId: null, receiptId: null,
   tablesUsed: [], followups: [], analysis: null, error: null,
@@ -207,6 +214,8 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
       return updateLast(state, t => ({ ...t, phases: [...t.phases, action.phase], statusText: `Analyzing ${action.phase.phase_id}…` }));
     case "ADA_REPORT":
       return { ...updateLast(state, t => finish({ ...t, status: "done", adaReport: action.report, queryMode: action.queryMode, statusText: null, investigationId: action.investigationId ?? t.investigationId })), streaming: false };
+    case "DOSSIER_REPORT":
+      return { ...updateLast(state, t => finish({ ...t, status: "done", dossierReport: action.dossier, dossierInsightId: action.insightId, queryMode: "dossier", statusText: null })), streaming: false };
     case "EXPLORE_REPORT":
       return { ...updateLast(state, t => finish({ ...t, status: "done", exploreReport: action.report, subQuestions: action.subQuestions, subqAnswers: action.subqAnswers, queryMode: "explore", statusText: null, investigationId: action.investigationId ?? t.investigationId })), streaming: false };
     case "REPORT":
@@ -289,6 +298,9 @@ export async function consumeStream(
             case "ada_report":
               if (p.from_cache) dispatch({ type: "CACHE_META", fromCache: true, cachedQuestion: (p.cached_question as string) ?? null });
               dispatch({ type: "ADA_REPORT", report: p.ada_report as ADAReport, queryMode: (p.query_mode as string) ?? "investigate", investigationId: (p.investigation_id as string) ?? null });
+              break;
+            case "dossier_report":
+              dispatch({ type: "DOSSIER_REPORT", dossier: p.dossier as FindingDossier, insightId: (p.insight_id as string) ?? null });
               break;
             case "report": {
               const qMode = (p.query_mode as string) ?? "investigate";

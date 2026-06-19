@@ -2479,10 +2479,61 @@ export async function getAuditStats(connectionId?: string): Promise<AuditStats> 
   return res.json();
 }
 
+/** The explorer's own derivation of a finding, captured at emit time and carried
+ *  inside the finding artifact's payload. Lets the Evidence drawer render the full
+ *  trace (question → grounded cells → reasoning → structural ground) with zero
+ *  recompute, instead of re-running a deep analysis to reconstruct it. */
+export interface FindingDossier {
+  dossier_version: number;
+  question: string;
+  sql: string;
+  finding: string;
+  rationale: string;
+  result_cells: string;                                    // bounded, de-duped numeric evidence
+  grounding: { grounded: boolean; checked: number; ungrounded: string[] };
+  structural_ctx: {
+    null_meanings: Record<string, { meaning?: string; business_rule?: string; evidence_sql?: string }>;
+    joins: { from_table: string; from_col: string; to_table: string; to_col: string; orphan_count: number; verified: boolean; cardinality: string }[];
+    lifecycles: Record<string, { status_column?: string; states?: string[]; terminal_states?: string[]; active_states?: string[] }>;
+    distributions: Record<string, { shape?: string; p50?: number; pct_zero?: number }>;
+  };
+  generated_at: string;
+  data_fingerprint: string | null;
+  // Added post-emit: the briefing's "why it matters" framing (P5), and the last
+  // live re-validation stamp/status (P4).
+  narrative?: string;
+  revalidated_at?: string;
+  revalidation?: "confirmed" | "drifted" | "error";
+}
+
 export interface InsightReceipt {
-  artifact: { id: string; kind: string; version: number; created_at: string; payload: Record<string, unknown> };
+  artifact: { id: string; kind: string; version: number; created_at: string; payload: Record<string, unknown> & { dossier?: FindingDossier } };
   lineage: { relation: string; ref: string; detail: string | null }[];
   job: { id: string; kind: string; state: string; started_at: string | null; finished_at: string | null } | null;
+}
+
+/** Live re-validation of a finding's dossier — re-runs the stored SQL and re-grounds
+ *  the claim. `confirmed` = numbers still hold; `drifted` = a number moved. */
+export interface RevalidateResult {
+  status: "confirmed" | "drifted" | "error";
+  grounded?: boolean;
+  checked?: number;
+  ungrounded?: string[];
+  stored_cells?: string;
+  fresh_cells?: string;
+  cells_changed?: boolean;
+  row_count?: number;
+  error?: string;
+  revalidated_at?: string;
+}
+
+export async function revalidateInsight(connId: string, insightId: string): Promise<RevalidateResult> {
+  const res = await fetch(
+    `${BASE}/exploration/${encodeURIComponent(connId)}/insights/${encodeURIComponent(insightId)}/revalidate`,
+    { method: "POST" },
+  );
+  if (!res.ok) return { status: "error", error: `HTTP ${res.status}` };
+  return res.json();
 }
 
 /** K3 Trust Receipt — provenance for a finding (404 if it predates tracking). */
