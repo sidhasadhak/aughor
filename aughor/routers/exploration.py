@@ -344,8 +344,9 @@ def _annotate_insights_triage(by_domain: dict, profile) -> None:
                     impact_score(finding, ins.get("novelty", 0), ins.get("confidence", 0), ns), 4)
                 v = plausibility(finding, ins.get("sql", ""))
                 ins["plausibility"] = None if v.ok else v.severity
-    except Exception:
-        pass
+    except Exception as _e:
+        from aughor.kernel.errors import tolerate
+        tolerate(_e, "domains: insight triage annotation", counter="domains.triage_annotation_failed")
 
 
 @router.get("/exploration/{conn_id}/domains")
@@ -442,15 +443,17 @@ def _metric_moves_provider(conn_id: str, profile):
                 if not err:
                     try:
                         put_cache(conn_id, sql, res)
-                    except Exception:
-                        pass
+                    except Exception as _e:
+                        from aughor.kernel.errors import tolerate
+                        tolerate(_e, "metric-move: matcache put", counter="brief.metric_move.cache_put_failed")
                 return res.columns, res.rows, err
             return compute_metric_moves(metrics, run_sql, currency)
         finally:
             try:
                 db.close()
-            except Exception:
-                pass
+            except Exception as _e:
+                from aughor.kernel.errors import tolerate
+                tolerate(_e, "metric-move: best-effort connection close", counter="brief.metric_move.close_failed")
 
     return _provider
 

@@ -189,7 +189,9 @@ def compute_metric_moves(
             continue
         try:
             columns, rows, error = run_sql(chart_sql)
-        except Exception:
+        except Exception as _e:
+            from aughor.kernel.errors import tolerate
+            tolerate(_e, "metric-move: chart_sql execution failed", counter="brief.metric_move.sql_failed")
             continue
         if error or not rows:
             continue

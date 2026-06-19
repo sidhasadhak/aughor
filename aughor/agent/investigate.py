@@ -925,8 +925,9 @@ def _assemble_phase_findings(results, narrator_findings, id_prefix, metric_label
                 _ok, _why = verify_insight(r.rows, f.get("interpretation", ""), r.sql)
                 if not _ok:
                     f["trust_caveat"] = _why
-            except Exception:
-                pass
+            except Exception as _e:
+                from aughor.kernel.errors import tolerate
+                tolerate(_e, "ada: advisory trust check", counter="ada.trust_advisory_failed")
         out.append(f)
     return out
 

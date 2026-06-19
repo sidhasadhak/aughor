@@ -672,8 +672,8 @@ def verify_insight(rows, finding_text: str = "", sql: str = "", metric_ranges=No
             _pv = _plausibility(finding_text, sql)
             if _pv.severity == "implausible":
                 return (False, _pv.reason)
-        except Exception:
-            pass
+        except Exception as _e:
+            tolerate(_e, "insight-gate: plausibility band check", counter="insight_gate.plausibility_failed")
         cg = _claim_numbers_grounded(finding_text, rows)
         if cg:
             return (False, cg)
