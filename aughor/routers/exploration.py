@@ -328,6 +328,26 @@ def get_exploration_findings(conn_id: str, schema: str | None = None):
     return result
 
 
+def _annotate_insights_triage(by_domain: dict, profile) -> None:
+    """Stamp each insight with `impact` (the briefing's ranking score) and `plausibility`
+    (None | 'implausible' | 'confound'), reusing knowledge.triage so the insight CARDS rank
+    and filter by the SAME authority as the brief — instead of re-implementing it in the
+    frontend. Mutates in place; fail-open (a triage bug must not blank the cards)."""
+    try:
+        from aughor.knowledge.triage import impact_score, plausibility, north_star_tokens
+        names = [getattr(m, "name", "") for m in (getattr(profile, "north_star_metrics", None) or [])]
+        ns = north_star_tokens(names)
+        for payload in by_domain.values():
+            for ins in payload.get("insights", []):
+                finding = ins.get("finding", "")
+                ins["impact"] = round(
+                    impact_score(finding, ins.get("novelty", 0), ins.get("confidence", 0), ns), 4)
+                v = plausibility(finding, ins.get("sql", ""))
+                ins["plausibility"] = None if v.ok else v.severity
+    except Exception:
+        pass
+
+
 @router.get("/exploration/{conn_id}/domains")
 def get_domain_insights(conn_id: str, schema: str | None = None):
     from aughor.explorer import store as _expl_store
@@ -345,6 +365,8 @@ def get_domain_insights(conn_id: str, schema: str | None = None):
             "budget_cap": budgets.get(f"{domain}__cap", 15),
             "angles_covered": coverage.get(domain, []),
         }
+    # Impact-rank + plausibility for the cards (same authority as the brief).
+    _annotate_insights_triage(result, _load_business_profile(conn_id, schema))
     return result
 
 

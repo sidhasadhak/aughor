@@ -975,6 +975,10 @@ export interface ExplorationInsight {
   canvas_id?: string | null;
   promoted_to_org?: boolean;
   promotion_confidence?: number;
+  /** Briefing-triage annotations (stamped by the /domains endpoint): `impact` is the
+   *  ranking score; `plausibility` flags a finding the trust gate distrusts. */
+  impact?: number;
+  plausibility?: "implausible" | "confound" | null;
 }
 
 export interface DomainInsights {
