@@ -1382,6 +1382,45 @@ def _dossier_seed_text(dossier: dict) -> str:
     return "\n".join(parts)
 
 
+async def _build_seed_priors(
+    connection_id: str,
+    insight_id: Optional[str],
+    seed_context: str,
+    seed_sql: Optional[str],
+) -> list[str]:
+    """Unify the two ways an investigation originates from a known finding into a
+    SINGLE prior-analysis seed.
+
+    We seed ``prior_analyses`` — the channel ``decompose_question`` actually merges —
+    NOT ``scan_context``: ``exploratory_scan`` runs before ``ada_intake`` and
+    overwrites ``scan_context``, so a seed placed there never reaches the model.
+
+    Preference order:
+      1. A dossier resolved from ``insight_id`` — the rich seed (finding + grounded
+         values + verified structure + SQL) the explorer already captured.
+      2. The lightweight ``seed_context``/``seed_sql`` passed inline — a finding that
+         predates dossier capture, or a chart drill.
+    Returns 0 or 1 seed strings. Best-effort: never raises into the request path.
+    """
+    if insight_id:
+        try:
+            from aughor.kernel.ledger import Ledger
+            rec = await asyncio.to_thread(
+                Ledger.default().receipt, f"insight:{connection_id}:{insight_id}")
+            dossier = ((rec or {}).get("artifact", {}).get("payload", {}) or {}).get("dossier")
+            if dossier:
+                return [_dossier_seed_text(dossier)]
+        except Exception:
+            logger.debug("dossier seed lookup failed; falling back to inline seed", exc_info=True)
+
+    blocks: list[str] = []
+    if seed_context and seed_context.strip():
+        blocks.append(seed_context.strip())
+    if seed_sql and seed_sql.strip():
+        blocks.append("REFERENCE QUERY (the data this question came from):\n" + seed_sql.strip())
+    return ["\n\n".join(blocks)] if blocks else []
+
+
 async def _stream_investigation(
     question: str,
     connection_id: str,
@@ -1579,39 +1618,18 @@ async def _stream_investigation(
         from aughor.agent.graph import build_graph_generic
         agent = build_graph_generic(db, hitl=hitl)
 
-        # Seed context for a briefing "pull the thread": hand ADA the originating
-        # finding AND the exact query that produced it. ada_intake folds scan_context
-        # into its intake prompt, so this anchors the investigation on the real
-        # tables/window without polluting the natural-language `question` that drives
-        # phase routing.
-        _seed_blocks: list[str] = []
-        if seed_context and seed_context.strip():
-            _seed_blocks.append(seed_context.strip())
-        if seed_sql and seed_sql.strip():
-            _seed_blocks.append("REFERENCE QUERY (the data this question came from):\n" + seed_sql.strip())
-        _scan_seed = "\n\n".join(_seed_blocks)
-
-        # Seed: drilling DEEPER on a known finding — hand ADA the dossier the
-        # explorer already produced as a prior analysis, so it extends that work
-        # instead of cold-starting the baseline (decompose_question merges seeds).
-        _seed_prior: list[str] = []
-        if insight_id and deep:
-            try:
-                from aughor.kernel.ledger import Ledger
-                _rec = await asyncio.to_thread(
-                    Ledger.default().receipt, f"insight:{connection_id}:{insight_id}")
-                _dos = ((_rec or {}).get("artifact", {}).get("payload", {}) or {}).get("dossier")
-                if _dos:
-                    _seed_prior.append(_dossier_seed_text(_dos))
-            except Exception:
-                logger.debug("dossier seed for deep investigation failed", exc_info=True)
+        # One seed, one channel. Whether this investigation came from a dossier drill
+        # (insight_id) or a "pull the thread" (seed_context/seed_sql), it lands as a
+        # single prior-analysis the decompose step merges. (scan_context is left empty
+        # for exploratory_scan to fill — seeding it is a no-op, it gets overwritten.)
+        _seed_priors = await _build_seed_priors(connection_id, insight_id, seed_context, seed_sql)
 
         initial_state: AgentState = {
             "question": question, "connection_id": connection_id, "investigation_id": inv_id,
             "trace_id": trace_id,
-            "schema_context": schema_for_agent, "unresolved_tensions": [], "scan_context": _scan_seed, "events_context": "",
+            "schema_context": schema_for_agent, "unresolved_tensions": [], "scan_context": "", "events_context": "",
             "hypotheses": [], "current_hypothesis_idx": 0, "query_history": [], "evidence_scores": [],
-            "pitfalls": [], "prior_analyses": _seed_prior, "iteration": 0,
+            "pitfalls": [], "prior_analyses": _seed_priors, "iteration": 0,
             "max_iterations": int(os.getenv("AUGHOR_MAX_ITER", "6")),
             "report": None, "hitl_enabled": hitl, "human_feedback": None,
             "query_mode": None, "route_reasoning": None, "route_confidence": None, "replan_decision": None,

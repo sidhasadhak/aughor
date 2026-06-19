@@ -358,6 +358,7 @@ function NarrativeCard({
             canvasId: ctx.canvasId ?? null,
             seedSql: thread.seedSql,
             seedContext: thread.seedContext,
+            insightId: thread.key,  // the citation's insight id — seeds the rich dossier when present
           }}
           onClose={() => setThread(null)}
           onOpenInAsk={ctx.onInvestigate}
