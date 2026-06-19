@@ -2463,6 +2463,52 @@ export async function getInsightReceipt(connId: string, insightId: string): Prom
   return res.json();
 }
 
+// ── "Show the receipt" — ground a specific briefing number against live result cells ──
+
+export interface GroundedNumeral {
+  text: string;
+  value: number;
+  enforce: boolean;
+  grounded: boolean;
+  matched_cell: number | null;
+}
+
+export interface GroundingReceipt {
+  insight_id: string;
+  finding: string;
+  sql: string;
+  numerals: GroundedNumeral[];
+  columns: string[];
+  sample_rows: string[][];
+  error?: string;
+}
+
+/** Re-run a cited finding's query and ground a specific number ("show the receipt").
+ *  `text` is the exact token clicked in the brief; omit to ground the whole finding.
+ *  `insightIds` (all citations) lets the backend find the number's TRUE source, not just
+ *  the nearest citation. */
+export async function groundBriefingNumber(
+  connId: string,
+  insightId: string,
+  opts: { text?: string; schema?: string; insightIds?: string[] } = {},
+): Promise<GroundingReceipt> {
+  const res = await fetch(`${BASE}/exploration/${encodeURIComponent(connId)}/briefing/ground`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      insight_id: insightId,
+      insight_ids: opts.insightIds ?? [],
+      text: opts.text ?? "",
+      schema: opts.schema ?? null,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { detail?: string }).detail ?? "Grounding failed");
+  }
+  return res.json();
+}
+
 /** K3-wide Trust Receipt for a chat or ADA answer (404 if it predates receipts). */
 export async function getAnswerReceipt(kind: "chat" | "ada", connId: string, id: string): Promise<InsightReceipt | null> {
   const res = await fetch(

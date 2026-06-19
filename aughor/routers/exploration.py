@@ -930,6 +930,87 @@ def get_insight_receipt(connection_id: str, insight_id: str):
     return rec
 
 
+class GroundRequest(BaseModel):
+    """Resolve + re-run a cited finding's query to back a specific number ("show the
+    receipt"). `text` is the exact token clicked in the brief (e.g. "2.49M"). A
+    synthesized narrative number may have come from any of the cited insights, not just
+    the nearest — so `insight_ids` lets the caller pass every citation and we ground the
+    number against whichever insight actually produced it. `insight_id` is the primary
+    (tried first); when empty the whole finding is grounded."""
+    insight_id: str = ""
+    insight_ids: list[str] = []
+    schema: str | None = None
+    text: str = ""
+
+
+@router.post("/exploration/{conn_id}/briefing/ground")
+def ground_briefing_number(conn_id: str, body: GroundRequest):
+    """Show the receipt for a briefing number. Resolves the cited insight(s) from the
+    SAME domain insights the brief is built from, RE-RUNS the recorded query live, and
+    grounds the claimed numeral against the actual result cells via the same
+    deterministic guard that gates findings (`ground_numerals`). When several citations
+    are passed it tries each (primary first) and returns the one whose cells actually
+    contain the number — so a synthesized figure is proven against its true source, not
+    falsely flagged just because the *nearest* citation wasn't its origin."""
+    by_domain = _domain_insights_for(conn_id, body.schema)
+    index: dict[str, dict] = {}
+    for items in by_domain.values():
+        for i in (items or []):
+            if i.get("id"):
+                index.setdefault(i["id"], i)
+
+    # Candidate insights, primary first, de-duped, dropping any without a query.
+    ordered: list[str] = []
+    for iid in ([body.insight_id] if body.insight_id else []) + list(body.insight_ids):
+        if iid and iid not in ordered and index.get(iid) and (index[iid].get("sql") or "").strip():
+            ordered.append(iid)
+    if not ordered:
+        raise HTTPException(status_code=404, detail="No cited insight with a query to ground against")
+
+    use_schema = body.schema if (body.schema and _store_key(conn_id, body.schema) != conn_id) else None
+    try:
+        if use_schema:
+            from aughor.db.connection import open_connection_for_with_schema
+            db = open_connection_for_with_schema(conn_id, schema_name=use_schema)
+        else:
+            db = open_connection_for(conn_id)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Connection not found: {e}")
+
+    from aughor.explorer.grounding import ground_numerals
+
+    def _receipt(iid: str, result, numerals) -> dict:
+        ins = index[iid]
+        return {
+            "insight_id": iid,
+            "finding": ins.get("finding", ""),
+            "sql": (ins.get("sql") or "").strip(),
+            "numerals": numerals,
+            "columns": result.columns or [],
+            "sample_rows": [[str(c) for c in r] for r in (result.rows or [])[:20]],
+        }
+
+    fallback: dict | None = None
+    for iid in ordered[:6]:   # bounded: usually grounds on the first (the nearest citation)
+        result = db.execute("__ground__", (index[iid].get("sql") or "").strip())
+        if result.error:
+            if fallback is None:
+                fallback = {"insight_id": iid, "finding": index[iid].get("finding", ""),
+                            "sql": (index[iid].get("sql") or "").strip(), "error": result.error,
+                            "numerals": [], "columns": [], "sample_rows": []}
+            continue
+        text_to_ground = body.text.strip() or index[iid].get("finding", "")
+        numerals = ground_numerals(text_to_ground, result.rows or [])
+        receipt = _receipt(iid, result, numerals)
+        if fallback is None or fallback.get("error"):
+            fallback = receipt
+        # Short-circuit: this insight's cells actually contain the clicked number.
+        if body.text.strip() and numerals and numerals[0].get("enforce") and numerals[0].get("grounded"):
+            return receipt
+    return fallback or {"insight_id": ordered[0], "finding": "", "sql": "",
+                        "numerals": [], "columns": [], "sample_rows": []}
+
+
 @router.post("/exploration/canvas/{canvas_id}/insights/{insight_id}/dismiss")
 def dismiss_canvas_insight(canvas_id: str, insight_id: str, req: DismissRequest):
     from aughor.canvas.store import get_canvas
