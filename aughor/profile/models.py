@@ -67,5 +67,14 @@ class BusinessProfile(BaseModel):
             "Populated by the profiler, not the inference LLM."
         ),
     )
+    currency_code: str = Field(
+        default="USD",
+        description=(
+            "ISO 4217 currency this business reports in (e.g. 'EUR', 'GBP', 'USD'), inferred "
+            "from the data — locale/country columns, currency columns, language, or price "
+            "magnitudes. Drives currency-correct figures in the brief (a €-business must never "
+            "render '$'). Default 'USD' only when there is genuinely no signal."
+        ),
+    )
     confidence: float = Field(description="0-1 confidence in the industry classification")
     evidence: str = Field(description="Which schema signals (tables/columns) led to this inference")

@@ -179,19 +179,24 @@ export function BriefingDashboard({
     return () => { alive = false; };
   }, [connectionId, schema]);
 
-  // ── Finding text cards: dedup, rank by impact (novelty + confidence) ────────────
+  // ── Finding text cards: dedup, drop the impossible, rank by impact ──────────────
+  // Same triage authority as the brief (stamped server-side by /domains): suppress only
+  // 'implausible' findings (an impossible value — e.g. inventory turnover 96,295×); keep
+  // everything else, including confounds, ranked by the impact score (which carries the
+  // change/north-star/risk weighting). Falls back to novelty+confidence when unannotated.
   const findingCards = useMemo(() => {
     const seen = new Set<string>();
     const out: DashboardFinding[] = [];
     for (const f of findings) {
       const id = f.insight?.id;
       if (!id || seen.has(id)) continue;
+      if (f.insight.plausibility === "implausible") continue;   // drop only the impossible
       seen.add(id);
       out.push(f);
     }
-    out.sort((a, b) =>
-      ((b.insight.novelty ?? 0) + (b.insight.confidence ?? 0)) -
-      ((a.insight.novelty ?? 0) + (a.insight.confidence ?? 0)));
+    const rank = (i: ExplorationInsight) =>
+      i.impact ?? ((i.novelty ?? 0) / 5 + (i.confidence ?? 0));
+    out.sort((a, b) => rank(b.insight) - rank(a.insight));
     return out.slice(0, MAX_FINDINGS);
   }, [findings]);
 

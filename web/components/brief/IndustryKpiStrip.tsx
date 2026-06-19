@@ -10,12 +10,13 @@
  * stated range (a broken-grain rate > 1) is silently dropped — never a wrong number.
  */
 import { useEffect, useState } from "react";
-import { getBusinessProfile, runDirectQuery } from "@/lib/api";
+import { getBusinessProfile, runDirectQuery, currencySymbol } from "@/lib/api";
 
 interface Kpi { name: string; display: string; }
 
-/** Format a raw scalar by its declared unit/range, and gate out broken values. */
-function formatMetric(v: number, unit: string): { display: string; ok: boolean } {
+/** Format a raw scalar by its declared unit/range, and gate out broken values. The
+ *  business's currency symbol is used for money metrics — a €-company never shows '$'. */
+function formatMetric(v: number, unit: string, sym: string): { display: string; ok: boolean } {
   const u = (unit || "").toLowerCase();
   let display: string;
   if (/ratio|0-1|0\.\.1/.test(u) && !/0-100|0\.\.100/.test(u)) {
@@ -34,7 +35,7 @@ function formatMetric(v: number, unit: string): { display: string; ok: boolean }
             : a >= 1e6 ? `${(v / 1e6).toFixed(1)}M`
             : a >= 1e3 ? `${(v / 1e3).toFixed(1)}K`
             : Number.isInteger(v) ? String(v) : v.toFixed(2);
-    const pre = /usd|\$|revenue|spend|cost|gmv|sales/.test(u) ? "$" : "";
+    const pre = /usd|eur|gbp|jpy|cny|inr|[$€£¥₹]|revenue|spend|cost|gmv|sales|value|price/.test(u) ? sym : "";
     display = pre + s;
   }
   // No zero values on cards: a "$0 / 0.0% / 0d" KPI is noise — almost always a
@@ -58,6 +59,7 @@ export function IndustryKpiStrip({ connectionId, schema }: { connectionId: strin
       if (alive && (!p.available || !p.profile)) { setIndustry(""); setKpis([]); }
       if (!alive || !p.available || !p.profile) return;
       setIndustry(p.profile.industry || "");
+      const sym = currencySymbol(p.profile.currency_code);
       const metrics = (p.profile.north_star_metrics || []).filter(m => m.value_sql?.trim());
       const out: Kpi[] = [];
       await Promise.all(metrics.map(async (m) => {
@@ -66,7 +68,7 @@ export function IndustryKpiStrip({ connectionId, schema }: { connectionId: strin
           if (r.error || !r.rows || r.rows.length !== 1) return;   // need exactly one scalar row
           const cell = r.rows[0].find(c => c != null && c !== "" && !isNaN(Number(c)));
           if (cell == null) return;
-          const f = formatMetric(Number(cell), m.unit_or_range);
+          const f = formatMetric(Number(cell), m.unit_or_range, sym);
           if (f.ok) out.push({ name: m.name, display: f.display });
         } catch { /* fail-safe: skip this metric */ }
       }));

@@ -90,6 +90,7 @@ def _build_user_prompt(
     top_patterns: list[dict],
     macro_context: Optional[dict] = None,
     coverage_digest: str = "",
+    currency_sym: str = "$",
 ) -> str:
     lines = []
     # Tier 2: lead with the long-arc context so the narrator can juxtapose the recent
@@ -100,13 +101,14 @@ def _build_user_prompt(
         if block:
             lines.append(block)
             lines.append("")
-    lines.append("FINDINGS (ordered by novelty):")
+    # Findings arrive impact-ranked (magnitude-of-change × north-star × confidence), NOT by
+    # novelty — so [1] is the single biggest business move and the narrator must lead with it.
+    lines.append("FINDINGS (ordered by business impact — [1] is the single most important signal):")
     for i, ins in enumerate(top_insights, 1):
         domain = ins.get("domain", "Unknown")
-        novelty = ins.get("novelty", 0)
         angle = ins.get("angle", "")
         finding = ins.get("finding", "")
-        lines.append(f"[{i}] Domain: {domain} | Novelty: {novelty:.1f} | Angle: {angle}\n    \"{finding}\"")
+        lines.append(f"[{i}] Domain: {domain} | Angle: {angle}\n    \"{finding}\"")
 
     # Full-coverage digest: a per-domain fold of ALL findings (not just the cited top-N) so the
     # narrator's synthesis reflects everything. Context only — it carries no citation numbers.
@@ -133,6 +135,11 @@ def _build_user_prompt(
             "growth that is flattening a longer climb). Do not cite the macro context as a "
             "numbered finding."
         )
+    lines.append(
+        f"\nLEAD the narrative with finding [1] — it is the highest-impact signal; open on it, "
+        f"then connect the rest. Report any monetary figure in {currency_sym} (this business "
+        f"reports in that currency), never another currency symbol."
+    )
     lines.append(
         "\nGenerate a 2-3 sentence executive briefing narrative with inline citation markers."
     )
@@ -194,24 +201,70 @@ def _coverage_digest(domain_data: dict[str, list[dict]], cited_ids: set[str]) ->
         return ""
 
 
+def _profile_signals(profile: Any) -> tuple[list, str]:
+    """(north-star token-sets, currency symbol) from a BusinessProfile (model or dict).
+    Empty/`$` defaults when no profile — the brief still gates and ranks, just without
+    north-star weighting or currency correction."""
+    from aughor.knowledge.triage import north_star_tokens, currency_symbol
+    names: list[str] = []
+    code: Optional[str] = None
+    if isinstance(profile, dict):
+        names = [m.get("name", "") for m in (profile.get("north_star_metrics") or [])]
+        code = profile.get("currency_code")
+    elif profile is not None:
+        names = [getattr(m, "name", "") for m in (getattr(profile, "north_star_metrics", None) or [])]
+        code = getattr(profile, "currency_code", None)
+    return north_star_tokens(names), currency_symbol(code)
+
+
 def generate_narrative(
     domain_data: dict[str, list[dict]],
     patterns: list[dict],
     connection_id: str,
     macro_context: Optional[dict] = None,
+    profile: Any = None,
 ) -> dict[str, Any]:
     """
     Call the LLM narrator and return a serialisable briefing dict.
+
+    A daily executive brief leads with the biggest business move and never prints an
+    impossible number or an anti-causal correlation as fact. So before synthesis we run
+    the deterministic triage (``knowledge.triage``) over every candidate finding:
+      • SUPPRESS impossible magnitudes (an inventory turnover of 3,600×) entirely,
+      • DEMOTE anti-causal correlations (stockouts falling as lead time rises) to a
+        flagged hypothesis that never reaches the narrative,
+      • RANK the survivors by business impact (magnitude-of-change × north-star ×
+        confidence) so the lead [1] is what moves the business, not the newest finding.
+    Held-back signals are returned (with reasons) so the UI can show the audit trail.
 
     Returns:
         {
             "narrative":      str,
             "headline_theme": str,
             "citations":      [{"ref", "insight_id", "domain", "angle", "finding"}, ...],
+            "held_back":      [{"finding", "domain", "severity", "reason"}, ...],
+            "currency_code":  str,
             "generated_at":   str,
         }
     """
-    # Flatten + sort insights by novelty desc
+    from aughor.knowledge.triage import plausibility, impact_score
+    ns_tokens, currency_sym = _profile_signals(profile)
+    currency_code = (
+        (profile.get("currency_code") if isinstance(profile, dict) else getattr(profile, "currency_code", None))
+        or "USD"
+    )
+
+    # Currency-normalise any text shown in the brief: a non-USD business should never display
+    # a '$' figure (findings were authored before currency-awareness). Rewrites '$<number>' to
+    # the business symbol across the narrative, citations AND held-back text so the whole
+    # surface is consistent. A no-op when the business reports in USD.
+    import re as _re
+    def _cur(text: str) -> str:
+        if not text or currency_sym == "$":
+            return text
+        return _re.sub(r"\$(?=\s?[\d.])", currency_sym, text)
+
+    # Flatten, then TRIAGE: split into trusted (synthesised) vs held-back (suppressed/demoted).
     all_insights: list[dict] = []
     for domain, insights in domain_data.items():
         for ins in insights:
@@ -219,14 +272,33 @@ def generate_narrative(
             flat.setdefault("domain", domain)
             all_insights.append(flat)
 
-    all_insights.sort(key=lambda i: i.get("novelty", 0), reverse=True)
+    held_back: list[dict] = []
+    trusted:   list[dict] = []
+    for ins in all_insights:
+        finding = ins.get("finding", "")
+        verdict = plausibility(finding, ins.get("sql", ""))
+        if not verdict.ok:
+            held_back.append({
+                "finding":  _cur(finding),
+                "domain":   ins.get("domain", ""),
+                "severity": verdict.severity,   # 'implausible' (suppressed) | 'confound' (demoted)
+                "reason":   verdict.reason,
+            })
+            continue
+        ins["_impact"] = impact_score(
+            finding, ins.get("novelty", 0), ins.get("confidence", 0), ns_tokens
+        )
+        trusted.append(ins)
 
-    # Keep breadth: one-per-domain first, then fill to 8 by novelty
+    # Impact-ranked (was novelty): the lead [1] is the single biggest business move.
+    trusted.sort(key=lambda i: i.get("_impact", 0.0), reverse=True)
+
+    # Keep breadth: one-per-domain first (in impact order), then fill to 8 by impact.
     seen_domains: set[str] = set()
     seen_ids:     set[str] = set()
     top: list[dict] = []
 
-    for ins in all_insights:
+    for ins in trusted:
         if len(top) >= 8:
             break
         d = ins.get("domain", "")
@@ -235,7 +307,7 @@ def generate_narrative(
             seen_ids.add(ins.get("id", ""))
             top.append(ins)
 
-    for ins in all_insights:
+    for ins in trusted:
         if len(top) >= 8:
             break
         if ins.get("id", "") not in seen_ids:
@@ -247,17 +319,25 @@ def generate_narrative(
             "narrative":      "",
             "headline_theme": "",
             "citations":      [],
+            "held_back":      held_back,
+            "currency_code":  currency_code,
             "generated_at":   _now_iso(),
         }
 
-    # Full-coverage digest: when findings were dropped from the top-8, fold ALL of them (per domain,
-    # tree-reduced) so the narrative reflects the whole picture, not just the cited few.
-    coverage = _coverage_digest(domain_data, {ins.get("id", "") for ins in top[:8]})
+    # Full-coverage digest: when trusted findings were dropped from the top-8, fold them (per
+    # domain, tree-reduced) so the narrative reflects the whole TRUSTED picture. Built from the
+    # trusted set only — a suppressed/demoted finding must not leak back in as digest context.
+    trusted_by_domain: dict[str, list[dict]] = {}
+    for ins in trusted:
+        trusted_by_domain.setdefault(ins.get("domain", ""), []).append(ins)
+    coverage = _coverage_digest(trusted_by_domain, {ins.get("id", "") for ins in top[:8]})
 
     # Build prompt and call LLM
     from aughor.llm.provider import get_provider
     provider = get_provider("narrator")
-    user_prompt = _build_user_prompt(top[:8], patterns[:3], macro_context, coverage_digest=coverage)
+    user_prompt = _build_user_prompt(
+        top[:8], patterns[:3], macro_context, coverage_digest=coverage, currency_sym=currency_sym
+    )
 
     result: BriefingNarrative = provider.complete(
         system=_SYSTEM,
@@ -265,6 +345,12 @@ def generate_narrative(
         response_model=BriefingNarrative,
         temperature=0.3,
     )
+
+    # Currency-normalise the synthesis (and the cited source findings below): the narrator
+    # echoes a '$' straight from a finding's prose, and for a non-USD business every '$' figure
+    # in the brief is wrong. Bounded fix at the synthesis authority (explorer-side prevention
+    # is tracked separately).
+    narrative_text = _cur(result.narrative)
 
     # Map citation refs back to actual insight IDs
     ref_to_insight: dict[str, dict] = {str(i + 1): ins for i, ins in enumerate(top[:8])}
@@ -276,13 +362,15 @@ def generate_narrative(
             "insight_id": source.get("id", cit.insight_id),
             "domain":     source.get("domain", cit.domain),
             "angle":      source.get("angle", cit.angle),
-            "finding":    source.get("finding", cit.finding),
+            "finding":    _cur(source.get("finding", cit.finding)),
         })
 
     return {
-        "narrative":      result.narrative,
+        "narrative":      narrative_text,
         "headline_theme": result.headline_theme,
         "citations":      citations_out,
+        "held_back":      held_back,
+        "currency_code":  currency_code,
         "generated_at":   _now_iso(),
     }
 
@@ -296,12 +384,21 @@ def get_briefing(
     force_refresh: bool = False,
     scope_key: str | None = None,
     macro_context: Optional[dict] = None,
+    profile: Any = None,
+    metric_moves: "Optional[Any]" = None,
 ) -> dict[str, Any]:
     """Return cached briefing narrative if fresh, otherwise generate and cache.
 
     `scope_key` is the cache key (defaults to `connection_id` for backward compatibility).
     A Canvas passes e.g. ``f"canvas:{canvas_id}"`` so a canvas-scoped briefing — built from
     the canvas's curated tables — never collides with the connection-wide one.
+
+    `profile` is the BusinessProfile (model or dict) — its north-star metrics drive impact
+    ranking and its `currency_code` drives currency-correct figures.
+
+    `metric_moves` is an OPTIONAL zero-arg callable returning synthetic metric-move findings
+    (north-star trends). It is called ONLY on a cache miss — so the chart_sql it runs never
+    burdens the cache-hit path — and its moves join the candidates as a 'Key Metrics' domain.
     """
     key = scope_key or connection_id
     if not force_refresh:
@@ -314,7 +411,16 @@ def get_briefing(
         except Exception:
             pass
 
-    briefing = generate_narrative(domain_data, patterns, connection_id, macro_context)
+    # Cache miss → fold in north-star metric moves (the biggest KPI swings) as candidates.
+    if metric_moves is not None:
+        try:
+            moves = metric_moves() or []
+        except Exception:
+            moves = []
+        if moves:
+            domain_data = {**domain_data, "Key Metrics": list(moves) + list(domain_data.get("Key Metrics", []))}
+
+    briefing = generate_narrative(domain_data, patterns, connection_id, macro_context, profile=profile)
 
     try:
         _CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)

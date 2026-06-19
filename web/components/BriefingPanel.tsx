@@ -46,6 +46,7 @@ import {
   type OrgInsight,
   type BriefingCitation,
   type BriefingNarrativeResponse,
+  type HeldBackSignal,
   type ExplorerStatus,
   type ActionTrigger,
   getInsightReceipt,
@@ -188,6 +189,35 @@ interface CitationActionContext {
   onInvestigate:  (q: string) => void;
 }
 
+/** The trust-gate audit trail: signals the brief deliberately withheld. An impossible
+ *  number (turnover 3,600×) is SUPPRESSED; an anti-causal correlation (stockouts fall as
+ *  lead time rises) is DEMOTED. Showing why we held them back is what earns trust. */
+function HeldBackStrip({ items }: { items: HeldBackSignal[] }) {
+  if (!items?.length) return null;
+  return (
+    <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--b1)" }}>
+      <div style={{
+        fontSize: 9, fontWeight: 700, textTransform: "uppercase" as const, letterSpacing: ".08em",
+        color: "var(--t4)", marginBottom: 6,
+      }}>
+        {items.length} signal{items.length > 1 ? "s" : ""} held back by the trust gate
+      </div>
+      {items.map((h, i) => {
+        const danger = h.severity === "implausible";
+        return (
+          <div key={i} style={{ fontSize: 11.5, color: "var(--t3)", lineHeight: 1.6, marginBottom: 3 }}>
+            <span style={{ color: danger ? "var(--red4)" : "var(--amb4)", fontWeight: 600 }}>
+              {danger ? "Implausible" : "Confound"}
+            </span>
+            <span style={{ color: "var(--t4)" }}> — </span>
+            {h.reason}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function NarrativeCard({
   narrative,
   ctx,
@@ -247,6 +277,9 @@ function NarrativeCard({
 
       {/* Citation legend removed — the inline [n] chips in the prose are the pointers;
           the repeated list below was redundant. */}
+
+      {/* Trust-gate audit trail — the signals we suppressed/demoted, and why. */}
+      <HeldBackStrip items={narrative.held_back ?? []} />
 
       {active && (
         <CitationActionsPopover
@@ -440,14 +473,19 @@ function synthesize(
   for (const [domain, data] of Object.entries(domainData)) {
     for (const ins of data.insights) {
       insightById.set(ins.id, { insight: ins, domain });
-      if (isDegenerateFinding(ins)) continue;
+      // Drop the impossible (e.g. inventory turnover 96,295×) from EVERY signal surface —
+      // the headline, supporting signals AND the key-questions grid — using the same trust
+      // gate as the AI synthesis. Confounds and everything else stay (ranked by impact below).
+      if (isDegenerateFinding(ins) || ins.plausibility === "implausible") continue;
       allSignals.push({ insight: ins, domain });
       totalInsights++;
     }
   }
 
-  // Sort by novelty desc
-  allSignals.sort((a, b) => b.insight.novelty - a.insight.novelty);
+  // Rank by impact (the briefing-triage score stamped by /domains) — the same authority as
+  // the AI synthesis and the dashboard cards — falling back to novelty when unannotated.
+  const rankImpact = (i: ExplorationInsight) => i.impact ?? (i.novelty ?? 0);
+  allSignals.sort((a, b) => rankImpact(b.insight) - rankImpact(a.insight));
 
   const headline = allSignals[0] ?? null;
 
@@ -477,7 +515,7 @@ function synthesize(
   // Per-domain stats for the coverage chart (where the intelligence concentrates).
   const domains: DomainStat[] = Object.entries(domainData)
     .map(([name, data]) => {
-      const ns = data.insights.filter(i => !isDegenerateFinding(i)).map(i => i.novelty);
+      const ns = data.insights.filter(i => !isDegenerateFinding(i) && i.plausibility !== "implausible").map(i => i.novelty);
       return {
         name,
         count: ns.length,
