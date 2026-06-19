@@ -20,7 +20,7 @@ PROFILE CONTEXT (date ranges, row counts, key columns):
 {scan_context}
 
 {events_section}
-
+{origin_finding_section}
 TASK: Parse this question into a precise investigation specification.
 
 1. CORE METRIC — What single metric is the user asking about?

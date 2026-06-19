@@ -92,6 +92,7 @@ def _ensure_schema(c: sqlite3.Connection) -> None:
         "kind TEXT DEFAULT 'investigation'",
         "session_id TEXT",
         "canvas_id TEXT",          # Sprint 21 — nullable; set when launched via Canvas
+        "origin_insight_id TEXT",  # the briefing finding this investigation drilled (provenance)
     ]:
         try:
             c.execute(f"ALTER TABLE investigations ADD COLUMN {col}")
@@ -139,8 +140,12 @@ def complete_investigation(
     question: str = "",
     connection_id: str = "",
     skip_index: bool = False,
+    origin_insight_id: Optional[str] = None,
 ) -> None:
-    """Persist the final state and optionally index in Qdrant. Only called on clean completion."""
+    """Persist the final state and optionally index in Qdrant. Only called on clean completion.
+
+    ``origin_insight_id`` records the briefing finding this investigation drilled, so the
+    chain finding → investigation → report is queryable lineage (None for a cold start)."""
     report_dict = report.model_dump() if hasattr(report, "model_dump") else report
     hypotheses_list = [h.model_dump() if hasattr(h, "model_dump") else h for h in hypotheses]
     queries_list = [q.model_dump() if hasattr(q, "model_dump") else q for q in query_history]
@@ -157,7 +162,8 @@ def complete_investigation(
             query_count = ?,
             report_json = ?,
             hypotheses_json = ?,
-            query_history_json = ?
+            query_history_json = ?,
+            origin_insight_id = COALESCE(?, origin_insight_id)
         WHERE id = ?""",
         (
             _now(), headline,
@@ -165,6 +171,7 @@ def complete_investigation(
             json.dumps(report_dict),
             json.dumps(hypotheses_list),
             json.dumps(queries_list),
+            origin_insight_id,
             inv_id,
         ),
     )

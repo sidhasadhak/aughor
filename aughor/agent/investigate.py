@@ -1448,6 +1448,44 @@ def _safe_metric_fallback(sql: str) -> str:
     return "COUNT(*)"
 
 
+def _render_origin_finding_section(origin: Optional[dict]) -> str:
+    """Render the structured ``origin_finding`` into INTAKE_PROMPT's additive ORIGIN
+    FINDING section. Returns "" when there is no origin (a cold-start question), so a
+    normal investigation's prompt is byte-for-byte unchanged. When present, it binds
+    ADA's spec to the finding the explorer already established — so a drill EXTENDS that
+    work (explains why) instead of re-deriving the metric/tables/window from scratch."""
+    if not origin:
+        return ""
+    finding = (origin.get("finding") or "").strip()
+    sql = (origin.get("sql") or "").strip()
+    tables = ", ".join(origin.get("tables") or [])
+    cells = (origin.get("result_cells") or "").strip()
+    lines = [
+        "ORIGIN FINDING — this investigation is DRILLING a specific result that background",
+        "exploration ALREADY established. Do NOT re-derive or re-prove it; your job is to",
+        "explain/decompose WHY it holds. Anchor your spec on it:",
+    ]
+    if finding:
+        lines.append(f'  Established finding: "{finding}"')
+    if tables:
+        lines.append(f"  Tables it used: {tables}")
+    if cells:
+        lines.append(f"  Grounded result values it produced: {cells}")
+    if sql:
+        lines.append("  Source query (the exact SQL that produced it):")
+        lines.append("  " + sql.replace("\n", "\n  "))
+    lines.append(
+        "  BINDING: set metric_sql / metric_table / date_column to MATCH this query's "
+        "metric and tables, and PRESERVE its filters (e.g. a WHERE status='delivered') "
+        "— they are part of the finding's definition; carrying them is what makes your "
+        "numbers reconcile with the established result. Reuse them verbatim where the "
+        "question targets the same metric (this overrides the default 'include all rows' "
+        "rule above); only extend for the NEW angle the question asks, and keep the same "
+        "observation window unless the question explicitly changes it."
+    )
+    return "\n".join(lines) + "\n"
+
+
 @_telemetry.node_span("ada_intake")
 def ada_intake(state: AgentState) -> dict:
     """
@@ -1463,12 +1501,14 @@ def ada_intake(state: AgentState) -> dict:
     scan = _trim(state.get("scan_context") or "", _SCAN_CHAR_LIMIT)
     events = state.get("events_context") or ""
     events_section = f"BUSINESS CALENDAR:\n{events}\n" if events else ""
+    origin_finding_section = _render_origin_finding_section(state.get("origin_finding"))
 
     prompt = INTAKE_PROMPT.format(
         question=question,
         schema=schema,
         scan_context=scan,
         events_section=events_section,
+        origin_finding_section=origin_finding_section,
     )
 
     try:

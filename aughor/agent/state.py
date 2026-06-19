@@ -376,8 +376,18 @@ class AgentState(TypedDict):
     # Accumulated pitfalls — injected into all subsequent query-planning prompts
     pitfalls: Annotated[list[Pitfall], operator.add]
 
-    # Relevant past investigation summaries (fetched once at decompose time)
+    # Relevant past investigation summaries (fetched once at decompose time, via RAG).
+    # This is "similar PAST investigations" — NOT the finding being drilled (see
+    # origin_finding for that). Kept separate so the two never overload one channel.
     prior_analyses: list[str]
+
+    # The specific, already-established briefing finding this investigation is DRILLING
+    # (None for a cold-start question). A structured seed — set ONCE at entry and never
+    # returned by any node, so it survives the whole run (a plain channel, no reducer).
+    # ada_intake anchors its spec on it (metric/tables/window) instead of re-deriving,
+    # and it carries provenance (insight_id) into the report. Shape:
+    #   {insight_id, finding, sql, tables[], result_cells, structural[], narrative}
+    origin_finding: Optional[dict]
 
     # Loop control
     iteration: int

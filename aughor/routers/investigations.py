@@ -1359,49 +1359,38 @@ async def _stream_chat(
 
 # ── Investigation streaming ───────────────────────────────────────────────────
 
-def _dossier_seed_text(dossier: dict) -> str:
-    """Render a Finding Dossier as a compact prior-analysis note for ADA — the
-    finding it already established, the grounded values, the verified structure,
-    and the exact SQL — so a deeper investigation EXTENDS it rather than re-deriving
-    the baseline from a cold start."""
-    finding = (dossier.get("finding") or "").strip()
-    sql = (dossier.get("sql") or "").strip()
-    cells = (dossier.get("result_cells") or "").strip()
-    sc = dossier.get("structural_ctx") or {}
-    facts = []
-    for j in (sc.get("joins") or [])[:6]:
-        facts.append(f"{j.get('from_table')}→{j.get('to_table')} {j.get('cardinality')}"
-                     + ("" if j.get("verified") else f" ({j.get('orphan_count')} orphans)"))
-    parts = [f"ALREADY ESTABLISHED by background exploration (do not re-derive): {finding}"]
-    if cells:
-        parts.append(f"Grounded result values: {cells}")
-    if facts:
-        parts.append("Verified joins: " + "; ".join(facts))
-    if sql:
-        parts.append(f"Source SQL already run:\n{sql}")
+def _render_origin_prose(o: dict) -> str:
+    """Render an origin finding as a compact prior-analysis note — for the
+    direct/explore branches, which read ``prior_analyses``. (The ADA branch reads the
+    structured ``origin_finding`` directly; see ``ada_intake``.)"""
+    parts = [f"ALREADY ESTABLISHED by background exploration (do not re-derive): {o.get('finding', '')}"]
+    if o.get("result_cells"):
+        parts.append(f"Grounded result values: {o['result_cells']}")
+    if o.get("structural"):
+        parts.append("Verified joins: " + "; ".join(o["structural"]))
+    if o.get("sql"):
+        parts.append(f"Source SQL already run:\n{o['sql']}")
     return "\n".join(parts)
 
 
-async def _build_seed_priors(
+async def _build_origin_finding(
     connection_id: str,
     insight_id: Optional[str],
     seed_context: str,
     seed_sql: Optional[str],
-) -> list[str]:
-    """Unify the two ways an investigation originates from a known finding into a
-    SINGLE prior-analysis seed.
+) -> Optional[dict]:
+    """The structured, already-established finding this investigation is DRILLING — or
+    None for a cold-start question.
 
-    We seed ``prior_analyses`` — the channel ``decompose_question`` actually merges —
-    NOT ``scan_context``: ``exploratory_scan`` runs before ``ada_intake`` and
-    overwrites ``scan_context``, so a seed placed there never reaches the model.
+    The SINGLE source of truth for "what known result am I explaining": the ADA branch
+    reads it directly (``ada_intake`` anchors its metric/tables/window on it instead of
+    re-deriving), and the report carries its provenance (``insight_id``).
 
-    Preference order:
-      1. A dossier resolved from ``insight_id`` — the rich seed (finding + grounded
-         values + verified structure + SQL) the explorer already captured.
-      2. The lightweight ``seed_context``/``seed_sql`` passed inline — a finding that
-         predates dossier capture, or a chart drill.
-    Returns 0 or 1 seed strings. Best-effort: never raises into the request path.
+    Prefers the dossier (the explorer's captured derivation) resolved from
+    ``insight_id``; falls back to the lightweight ``seed_context``/``seed_sql`` a caller
+    passed inline (a finding predating dossier capture, or a chart drill). Best-effort.
     """
+    from aughor.explorer.agent import _tables_in_sql
     if insight_id:
         try:
             from aughor.kernel.ledger import Ledger
@@ -1409,16 +1398,37 @@ async def _build_seed_priors(
                 Ledger.default().receipt, f"insight:{connection_id}:{insight_id}")
             dossier = ((rec or {}).get("artifact", {}).get("payload", {}) or {}).get("dossier")
             if dossier:
-                return [_dossier_seed_text(dossier)]
+                sc = dossier.get("structural_ctx") or {}
+                joins = []
+                for j in (sc.get("joins") or [])[:6]:
+                    joins.append(f"{j.get('from_table')}→{j.get('to_table')} {j.get('cardinality')}"
+                                 + ("" if j.get("verified") else f" ({j.get('orphan_count')} orphans)"))
+                _sql = (dossier.get("sql") or "").strip()
+                return {
+                    "insight_id": insight_id,
+                    "finding": (dossier.get("finding") or "").strip(),
+                    "sql": _sql,
+                    "tables": sorted(_tables_in_sql(_sql)) if _sql else [],
+                    "result_cells": (dossier.get("result_cells") or "").strip(),
+                    "structural": joins,
+                    "narrative": (dossier.get("narrative") or "").strip(),
+                }
         except Exception:
-            logger.debug("dossier seed lookup failed; falling back to inline seed", exc_info=True)
+            logger.debug("origin dossier lookup failed; falling back to inline seed", exc_info=True)
 
-    blocks: list[str] = []
-    if seed_context and seed_context.strip():
-        blocks.append(seed_context.strip())
-    if seed_sql and seed_sql.strip():
-        blocks.append("REFERENCE QUERY (the data this question came from):\n" + seed_sql.strip())
-    return ["\n\n".join(blocks)] if blocks else []
+    _sc = (seed_context or "").strip()
+    _sq = (seed_sql or "").strip()
+    if _sc or _sq:
+        return {
+            "insight_id": insight_id or "",
+            "finding": _sc,
+            "sql": _sq,
+            "tables": sorted(_tables_in_sql(_sq)) if _sq else [],
+            "result_cells": "",
+            "structural": [],
+            "narrative": "",
+        }
+    return None
 
 
 async def _stream_investigation(
@@ -1618,18 +1628,21 @@ async def _stream_investigation(
         from aughor.agent.graph import build_graph_generic
         agent = build_graph_generic(db, hitl=hitl)
 
-        # One seed, one channel. Whether this investigation came from a dossier drill
-        # (insight_id) or a "pull the thread" (seed_context/seed_sql), it lands as a
-        # single prior-analysis the decompose step merges. (scan_context is left empty
-        # for exploratory_scan to fill — seeding it is a no-op, it gets overwritten.)
-        _seed_priors = await _build_seed_priors(connection_id, insight_id, seed_context, seed_sql)
+        # ONE structured origin finding — the single source of truth for "what known
+        # result is this investigation drilling" (insight_id dossier, or an inline
+        # seed_context/seed_sql). The ADA branch reads origin_finding directly
+        # (ada_intake anchors its spec on it); for the direct/explore branches we render
+        # it into prior_analyses (the channel those read). scan_context stays empty —
+        # exploratory_scan overwrites it, so seeding there is a no-op.
+        _origin = await _build_origin_finding(connection_id, insight_id, seed_context, seed_sql)
+        _seed_priors = [_render_origin_prose(_origin)] if _origin else []
 
         initial_state: AgentState = {
             "question": question, "connection_id": connection_id, "investigation_id": inv_id,
             "trace_id": trace_id,
             "schema_context": schema_for_agent, "unresolved_tensions": [], "scan_context": "", "events_context": "",
             "hypotheses": [], "current_hypothesis_idx": 0, "query_history": [], "evidence_scores": [],
-            "pitfalls": [], "prior_analyses": _seed_priors, "iteration": 0,
+            "pitfalls": [], "prior_analyses": _seed_priors, "origin_finding": _origin, "iteration": 0,
             "max_iterations": int(os.getenv("AUGHOR_MAX_ITER", "6")),
             "report": None, "hitl_enabled": hitl, "human_feedback": None,
             "query_mode": None, "route_reasoning": None, "route_confidence": None, "replan_decision": None,
@@ -1719,7 +1732,9 @@ async def _stream_investigation(
                     pass
                 ada_save = dict(ada) if isinstance(ada, dict) else ada
                 ada_save["_report_type"] = "investigate"
-                await asyncio.to_thread(lambda: complete_investigation(inv_id, report=ada_save, hypotheses=merged.get("hypotheses", []), query_history=qh, question=question, connection_id=connection_id, skip_index=False))
+                if insight_id and isinstance(ada_save, dict):
+                    ada_save["origin_insight_id"] = insight_id  # provenance: drilled from this finding
+                await asyncio.to_thread(lambda: complete_investigation(inv_id, report=ada_save, hypotheses=merged.get("hypotheses", []), query_history=qh, question=question, connection_id=connection_id, skip_index=False, origin_insight_id=insight_id))
                 # K3-wide: the ADA report carries a Trust Receipt too (executed
                 # queries → input tables → metric enforcement), so an agentic
                 # answer self-justifies like a chat answer and an explorer finding.
@@ -1776,7 +1791,7 @@ async def _stream_investigation(
                     yield _sse("followups", {"questions": fqr.questions[:3]})
                 except Exception:
                     pass
-                await asyncio.to_thread(lambda: complete_investigation(inv_id, report=merged["report"], hypotheses=merged.get("hypotheses", []), query_history=qh, question=question, connection_id=connection_id, skip_index=merged.get("query_mode") == "direct"))
+                await asyncio.to_thread(lambda: complete_investigation(inv_id, report=merged["report"], hypotheses=merged.get("hypotheses", []), query_history=qh, question=question, connection_id=connection_id, skip_index=merged.get("query_mode") == "direct", origin_insight_id=insight_id))
                 await asyncio.to_thread(_record_memory, inv_id, connection_id, question, merged)
                 report_emitted = True
 
