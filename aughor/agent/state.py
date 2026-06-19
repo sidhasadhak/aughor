@@ -308,6 +308,7 @@ class InvestigationFinding(TypedDict):
     chart_type: str       # "bar"|"line"|"stacked_bar"|"auto"|"none"
     stat_note: Optional[str]  # "z-score = -2.4, significant at α=0.05"
     is_significant: bool
+    trust_caveat: Optional[str]  # advisory from the trust battery (e.g. "fan-out", "impossible magnitude") — never blocks the answer
 
 
 class InvestigationPhaseResult(TypedDict):

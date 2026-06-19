@@ -912,7 +912,21 @@ def _assemble_phase_findings(results, narrator_findings, id_prefix, metric_label
                 columns=r.columns, rows=r.rows[:50], row_count=r.row_count,
                 error=r.error, interpretation=(r.error or "Query executed."),
                 key_numbers=[], chart_type=q.chart_type, stat_note=None, is_significant=False,
+                trust_caveat=None,
             )
+        # ADVISORY trust check — reuse the explorer's verify_insight battery (impossible
+        # magnitude, fan-out artifact, vacuous CASE, ungrounded claim). It NEVER blocks: the
+        # answer is always shown; an untrusted result just carries a caveat the UI surfaces.
+        # conn=None → static checks only (no live cardinality probe), to keep ADA snappy.
+        f["trust_caveat"] = None
+        if not r.error and r.rows:
+            try:
+                from aughor.explorer.agent import verify_insight
+                _ok, _why = verify_insight(r.rows, f.get("interpretation", ""), r.sql)
+                if not _ok:
+                    f["trust_caveat"] = _why
+            except Exception:
+                pass
         out.append(f)
     return out
 
