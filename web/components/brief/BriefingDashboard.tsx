@@ -18,7 +18,7 @@
  */
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { getBusinessProfile, runDirectQuery, type ExplorationInsight, type NorthStarMetric } from "@/lib/api";
+import { getBusinessProfile, runDirectQuery, insightKey, type ExplorationInsight, type NorthStarMetric } from "@/lib/api";
 import { InvestigationChart } from "@/components/InvestigationChart";
 import { inferChartType } from "@/components/charts/chartTypeInference";
 import { InlineInvestigationThread } from "@/components/brief/InlineInvestigationThread";
@@ -360,8 +360,11 @@ export function BriefingDashboard({
     const out: DashboardFinding[] = [];
     for (const f of findings) {
       const id = f.insight?.id;
-      if (!id || seen.has(id)) continue;
-      seen.add(id);
+      // Dedup by composite identity (source_schema::id) — bare ids collide across schemas in
+      // the "All schemas" aggregate, so a plain id-set would silently drop a real finding.
+      const key = f.insight ? insightKey(f.insight) : "";
+      if (!id || seen.has(key)) continue;
+      seen.add(key);
       out.push(f);
     }
     out.sort((a, b) =>
@@ -431,9 +434,9 @@ export function BriefingDashboard({
       {hasFindings && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 11, alignItems: "start" }}>
           {findingCards.map(f => {
-            const key = `finding:${f.insight.id}`;
+            const key = `finding:${insightKey(f.insight)}`;
             return (
-              <FindingCard key={f.insight.id} finding={f.insight.finding} domain={f.domain}
+              <FindingCard key={insightKey(f.insight)} finding={f.insight.finding} domain={f.domain}
                 active={thread?.key === key}
                 onPull={() => setThread(prev => prev?.key === key ? null : {
                   key,

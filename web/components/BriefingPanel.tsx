@@ -51,6 +51,7 @@ import {
   getInsightReceipt,
   type InsightReceipt,
   groundBriefingNumber,
+  insightKey,
 } from "@/lib/api";
 import { subscribeKernelEvents } from "@/lib/events";
 import { Spinner } from "@/components/ui/motion";
@@ -542,17 +543,18 @@ function synthesize(
 
   const headline = allSignals[0] ?? null;
 
-  // Build supporting signals: breadth first (one per domain), then fill to 6
-  const seenIds    = new Set<string>(headline ? [headline.insight.id] : []);
+  // Build supporting signals: breadth first (one per domain), then fill to 6.
+  // Dedup by composite identity — bare ids collide across schemas in the aggregate.
+  const seenIds    = new Set<string>(headline ? [insightKey(headline.insight)] : []);
   const seenDomains = new Set<string>();
   const signals: SynthesisSignal[] = [];
 
   // Pass 1 — breadth
   for (const s of allSignals) {
     if (signals.length >= 6) break;
-    if (seenIds.has(s.insight.id)) continue;
+    if (seenIds.has(insightKey(s.insight))) continue;
     if (seenDomains.has(s.domain)) continue;
-    seenIds.add(s.insight.id);
+    seenIds.add(insightKey(s.insight));
     seenDomains.add(s.domain);
     signals.push(s);
   }
@@ -560,8 +562,8 @@ function synthesize(
   // Pass 2 — fill with highest-novelty remainder
   for (const s of allSignals) {
     if (signals.length >= 6) break;
-    if (seenIds.has(s.insight.id)) continue;
-    seenIds.add(s.insight.id);
+    if (seenIds.has(insightKey(s.insight))) continue;
+    seenIds.add(insightKey(s.insight));
     signals.push(s);
   }
 
@@ -1173,7 +1175,7 @@ function SupportingSignals({ signals, onInvestigate }: {
           const confColor = conf >= 80 ? "var(--grn4)" : conf >= 50 ? "var(--amb4)" : "var(--red4)";
           const nColor    = noveltyColor(insight.novelty);
           return (
-            <div key={insight.id} style={{
+            <div key={insightKey(insight)} style={{
               background: "var(--bg-2)", border: "1px solid var(--b1)",
               borderLeft: `3px solid ${nColor}`, borderRadius: "var(--r3)",
               padding: "16px 18px", display: "flex", flexDirection: "column" as const, gap: 10,

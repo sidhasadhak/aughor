@@ -9,6 +9,7 @@ import {
   extendCanvasDomainBudget,
   getCanvasExplorationEpisodes,
   promoteCanvasInsight,
+  insightKey,
   type DomainInsights,
   type ExplorationInsight,
   type ExplorationEpisode,
@@ -556,7 +557,7 @@ function DomainDetailView({ domain, data, episodes, connectionId, canvasId, onBa
           ? <p style={{ fontSize: 11, color: "var(--t4)", fontStyle: "italic" }}>
               {hasFilters ? "No findings match these filters." : "No findings yet — exploration is running or budget not started."}
             </p>
-          : filtered.map(ins => <FindingCard key={ins.id} insight={ins} canvasId={canvasId} connectionId={connectionId} />)
+          : filtered.map(ins => <FindingCard key={insightKey(ins)} insight={ins} canvasId={canvasId} connectionId={connectionId} />)
       )}
     </div>
   );

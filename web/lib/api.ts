@@ -967,6 +967,14 @@ export interface ExplorationInsight {
   canvas_id?: string | null;
   promoted_to_org?: boolean;
   promotion_confidence?: number;
+  /** Origin schema, set only on the "All schemas" aggregate — disambiguates findings whose
+   *  per-schema ids collide (e.g. each schema's pinned questions start at pinned__0). */
+  source_schema?: string;
+}
+
+/** Stable identity for a finding across the aggregate union, where bare `id`s collide. */
+export function insightKey(ins: { id: string; source_schema?: string }): string {
+  return ins.source_schema ? `${ins.source_schema}::${ins.id}` : ins.id;
 }
 
 export interface DomainInsights {
