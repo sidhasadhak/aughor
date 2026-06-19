@@ -254,6 +254,16 @@ def generate_narrative(
         or "USD"
     )
 
+    # Currency-normalise any text shown in the brief: a non-USD business should never display
+    # a '$' figure (findings were authored before currency-awareness). Rewrites '$<number>' to
+    # the business symbol across the narrative, citations AND held-back text so the whole
+    # surface is consistent. A no-op when the business reports in USD.
+    import re as _re
+    def _cur(text: str) -> str:
+        if not text or currency_sym == "$":
+            return text
+        return _re.sub(r"\$(?=\s?[\d.])", currency_sym, text)
+
     # Flatten, then TRIAGE: split into trusted (synthesised) vs held-back (suppressed/demoted).
     all_insights: list[dict] = []
     for domain, insights in domain_data.items():
@@ -269,7 +279,7 @@ def generate_narrative(
         verdict = plausibility(finding, ins.get("sql", ""))
         if not verdict.ok:
             held_back.append({
-                "finding":  finding,
+                "finding":  _cur(finding),
                 "domain":   ins.get("domain", ""),
                 "severity": verdict.severity,   # 'implausible' (suppressed) | 'confound' (demoted)
                 "reason":   verdict.reason,
@@ -336,14 +346,11 @@ def generate_narrative(
         temperature=0.3,
     )
 
-    # Currency-normalise the synthesis: the narrator sometimes echoes a '$' straight from a
-    # finding's prose (those were written before currency-awareness). For a non-USD business
-    # every '$' figure in the brief is wrong, so rewrite '$<number>' to the business symbol —
-    # a bounded fix at the synthesis authority (explorer-side prevention is tracked separately).
-    narrative_text = result.narrative
-    if currency_sym != "$":
-        import re as _re
-        narrative_text = _re.sub(r"\$(?=\s?[\d.])", currency_sym, narrative_text)
+    # Currency-normalise the synthesis (and the cited source findings below): the narrator
+    # echoes a '$' straight from a finding's prose, and for a non-USD business every '$' figure
+    # in the brief is wrong. Bounded fix at the synthesis authority (explorer-side prevention
+    # is tracked separately).
+    narrative_text = _cur(result.narrative)
 
     # Map citation refs back to actual insight IDs
     ref_to_insight: dict[str, dict] = {str(i + 1): ins for i, ins in enumerate(top[:8])}
@@ -355,7 +362,7 @@ def generate_narrative(
             "insight_id": source.get("id", cit.insight_id),
             "domain":     source.get("domain", cit.domain),
             "angle":      source.get("angle", cit.angle),
-            "finding":    source.get("finding", cit.finding),
+            "finding":    _cur(source.get("finding", cit.finding)),
         })
 
     return {
