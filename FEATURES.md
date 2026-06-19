@@ -3501,4 +3501,56 @@ A single connection routinely hosts several unrelated businesses. Before this, e
 
 ---
 
-*Last updated: 2026-06-19 · 141 active features (#141 per-schema intelligence — connection×schema unit: isolated profile/ontology/exploration/briefing per schema + "All schemas" aggregate + schema-qualified `_leaks_schema` guard, live-verified 4 distinct profiles; #140 briefing-trust round 2 — BeautyCommerce cold-trace F1–F10: per-question SQL retry, cardinality-aware chasm guard, structural-vs-noise NULL, evidence-cited business model, mid-run phase observability + concurrency cap; #139 pre-emission insight verification gate — self-ratio tautology, fan-out cardinality oracle, boundary-saturation, part>whole, claim-grounding screens before emission; #138 human-editable version-controlled ontology overrides — YAML tree, override-wins merge; #137 design language v2 — token override + `.aug-*` re-skin + central Vega theming/reactivity, conclusion-first Briefing Verdict Hero + supporting signals, Briefing-as-home nav IA, real-count MiniStat rows + QB validity badge; #136 briefing trust hardening — SUM-over-chasm + grain-mismatch-CTE fan-out drops, profile-declared-range degenerate gate, 3-tier dedup incl. embedding paraphrase, metric-explainer charts; #135 industry-aware intelligence — BusinessProfile keystone + per-industry metric KB + build-time audited value_sql/chart_sql/key_question_sql + pinned key-questions; #134 first-class SQLite connector — PR #66; #133 value-domain join guard — PR #65; #132 embedding entity dedup — Borrow 5; #131 hierarchical tree-reduce — Borrow 4; #130 Query Builder semantic-step UI; #127–#129 semantic operators; #126 model-cascade tombstone). **Adaptive-inference list worked through** (B5b logprob-confidence blocked); next up = external NL2SQL benchmarking (Spider 2.0 — SQLite reader in place) + promoting the join guard to prevention (`joinable_with` edges). See `ROADMAP.md`.*
+## 142. Interactive Briefings — Interrogate the Brief in Place ✅ Shipped
+
+### What
+The Briefing is no longer a document you read — it's a surface you interrogate. Every element is a live handle into the engine, with one model: **Explain / Drill / Ask**.
+- **A · Pull the thread** — click any finding or citation → an ADA investigation streams **in place** below it, seeded with that finding's exact SQL.
+- **B · Drill-down charts** — click a bar/point → "Why is it the outlier?" (ADA decompose on that slice) or "Filter chart" to that value.
+- **C · Show the receipt** — click any magnitude number → re-runs the cited query live and shows the exact grounding cell + SQL (KPI tiles and narrative numerals alike).
+- **D · Steer the lens** — a trailing time-window (30d/90d/1y/All) re-scopes the trend charts client-side.
+- **E · Living brief** — a persistent "Ask this briefing" box spawns investigation cards seeded with the brief's own context.
+
+### Why
+The hardest parts already existed (ADA over SSE, `/query/run`, numeral grounding); the brief just couldn't reach them. Making each number/finding/bar a handle turns a static digest into a workspace — and, as a side effect, makes any upstream contradiction immediately visible (which is what surfaced the trust gaps closed in #143).
+
+### How
+- Shared SSE machinery extracted to `investigationStream.ts`; `useInvestigationThread` owns **one AbortController per instance** so many inline threads stream concurrently; `InlineInvestigationThread` reuses the chat `ChatMessage` renderer.
+- `InvestigateRequest` gains `schema` / `seed_sql` / `seed_context`; the seed lands in `scan_context`, which `ada_intake` already reads — **zero graph change**.
+- `grounding.ground_numerals` + `POST /exploration/{conn}/briefing/ground` re-run a cited finding's query and back a specific number; it tries **all** citations so a synthesized number is proven against its true source, never falsely flagged.
+- Vega `View` click → `onSelect` threaded `VegaChart → Chart → InvestigationChart → ChartCard` (no spec change).
+
+### Key files
+- `web/lib/investigationStream.ts`, `web/lib/useInvestigationThread.ts`, `web/components/brief/{InlineInvestigationThread,GroundedNumber,BriefAskBox}.tsx`, `web/components/brief/BriefingDashboard.tsx`, `web/components/VegaChart.tsx`
+- `aughor/explorer/grounding.py`, `aughor/routers/investigations.py`, `aughor/routers/exploration.py` *(commit `994bc71`)*
+
+---
+
+## 143. Briefing Intelligence Trust — Gate on Governed Metrics + Live Re-Validation ✅ Shipped
+
+### What
+Closes six root causes of fabricated / self-contradictory briefings (a 96,295× inventory turnover headlining, a "gross margin 50%→34%" decline in no data, ADA rewriting a governed formula into a broken one, confident attribution built from failed queries, "Top Return Reason 0.4%", cross-business blending, "47% critically low"). Root insight: the guards mostly existed — they just weren't **wired** into the paths that generate/surface findings, and the explorer/ADA free-formed metric formulas instead of binding to the governed layer.
+
+### How
+- **RC1 — feasibility gate:** `unsupported_metric_gap` wired into Phase-8 question generation (scoped to the question's own tables) and `ada_intake`, so a margin question against a cost-less schema is dropped/caveated instead of fabricating `COGS = price·qty·0.5` → a constant 50%.
+- **RC2 — bind to the governed formula:** `resolve_canonical_metrics` now injects the connection's `BusinessProfile.north_star_metrics` (source `profile_governed`, above the ontology) + a hard intake BINDING RULE → ADA runs `SUM(unit_price-unit_cost)/SUM(unit_price)` with no invented `quantity`.
+- **RC4 — implausible-ratio guard** in `verify_insight`: a turnover/ratio/×-multiplier in the thousands is a grain bug; tightly bound to the ratio's own number so a nearby revenue figure isn't false-flagged.
+- **RC5a** — ADA suppresses the fabricated waterfall + recommendations and writes an honest "data unavailable" verdict when no usable data was gathered; **RC5b** — `revalidate_live` re-runs the top-N findings before a brief refresh, re-applies `verify_insight` + grounding, and flags failures `invalid` (reversible) so they drop from both `/domains` and `/briefing`.
+- **RC3 — name↔SQL coherence:** a category/label-named metric ("Top Return Reason", "distribution") declared as a scalar percent is dropped at build-time + serve-time.
+- **RC6 — cross-schema separation:** the aggregate brief tags each finding `source_schema` and switches to a synthesis prompt that forbids cross-business connection-drawing.
+- **Severity grounding** — explorer + ADA prompts: "lowest in a ranking ≠ weak"; no absolute superlatives without a benchmark.
+- **Stale removal:** `restart`/`reset` now purge **per-schema** state (not just connection-level) and fan the re-run out per schema; aggregate React keys are composite (`source_schema::id`).
+
+### Why
+The interactive surface (#142) made every contradiction clickable, exposing that the underlying intelligence was untrustworthy. A brief that headlines fabricated numbers is worse than no brief.
+
+### Verified
+A full from-scratch re-run of the `workspace` connection regenerated all four schemas with **zero garbage** (bakehouse has no gross-margin finding; missimi reproduces its real ROAS/margin); the fresh "All schemas" brief reads per-business ("Revenue Quality and Efficiency Risks Across Sectors"). 342 unit tests pass (+16 new guard/coherence tests).
+
+### Key files
+- `aughor/explorer/agent.py`, `aughor/agent/investigate.py`, `aughor/agent/prompts_investigate.py`, `aughor/semantic/canonical.py`, `aughor/profile/validate.py`, `aughor/routers/profile.py`, `aughor/routers/exploration.py`, `aughor/explorer/revalidate_live.py`, `aughor/knowledge/briefing.py`, `aughor/explorer/store.py`
+- `tests/unit/test_intel_guards.py`, `tests/unit/test_grounding.py` *(commits `7860ea1`, `4bce086`, `20dedb8`, `e649f06`)*
+
+---
+
+*Last updated: 2026-06-19 · 143 active features (#143 briefing intelligence trust — gate explorer/ADA on governed metrics, implausible-ratio guard, live re-validation, name↔SQL coherence, cross-schema separation, benchmark-grounded severity, per-schema stale-removal; #142 interactive briefings — pull-thread/drill-charts/show-the-receipt/time-lens/living-brief over one inline-investigation surface; (#141 per-schema intelligence — connection×schema unit: isolated profile/ontology/exploration/briefing per schema + "All schemas" aggregate + schema-qualified `_leaks_schema` guard, live-verified 4 distinct profiles; #140 briefing-trust round 2 — BeautyCommerce cold-trace F1–F10: per-question SQL retry, cardinality-aware chasm guard, structural-vs-noise NULL, evidence-cited business model, mid-run phase observability + concurrency cap; #139 pre-emission insight verification gate — self-ratio tautology, fan-out cardinality oracle, boundary-saturation, part>whole, claim-grounding screens before emission; #138 human-editable version-controlled ontology overrides — YAML tree, override-wins merge; #137 design language v2 — token override + `.aug-*` re-skin + central Vega theming/reactivity, conclusion-first Briefing Verdict Hero + supporting signals, Briefing-as-home nav IA, real-count MiniStat rows + QB validity badge; #136 briefing trust hardening — SUM-over-chasm + grain-mismatch-CTE fan-out drops, profile-declared-range degenerate gate, 3-tier dedup incl. embedding paraphrase, metric-explainer charts; #135 industry-aware intelligence — BusinessProfile keystone + per-industry metric KB + build-time audited value_sql/chart_sql/key_question_sql + pinned key-questions; #134 first-class SQLite connector — PR #66; #133 value-domain join guard — PR #65; #132 embedding entity dedup — Borrow 5; #131 hierarchical tree-reduce — Borrow 4; #130 Query Builder semantic-step UI; #127–#129 semantic operators; #126 model-cascade tombstone). **Adaptive-inference list worked through** (B5b logprob-confidence blocked); next up = external NL2SQL benchmarking (Spider 2.0 — SQLite reader in place) + promoting the join guard to prevention (`joinable_with` edges). See `ROADMAP.md`.*
