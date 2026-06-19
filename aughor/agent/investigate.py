@@ -1573,7 +1573,10 @@ def ada_intake(state: AgentState) -> dict:
     # baseline (also fewer phases → faster).
     if intake is not None:
         no_time = (intake.date_column or "").strip().upper() in ("", "NONE")
-        if _is_diagnostic_question(question) or no_time:
+        # A populated comparison_segment_sql means intake recognised a DRIVER question —
+        # force cross-sectional so it routes to the group comparison, never a blind trend.
+        has_segment = bool((getattr(intake, "comparison_segment_sql", "") or "").strip())
+        if _is_diagnostic_question(question) or no_time or has_segment:
             intake.cross_sectional = True
 
     # Post-process: ensure all table references are fully-qualified when the schema uses them
@@ -2438,12 +2441,32 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection") -> dict:
     prioritized = _prioritize_dimensions(dimensions)
     dimensions_list = "\n".join(f"  - {d}" for d in prioritized[:6]) if prioritized else "  (none identified)"
 
+    # DRIVER questions ("do late deliveries lower reviews") carry a derived comparison
+    # segment from intake — compare the metric ACROSS that condition (true vs false) as
+    # the PRIMARY query, not a per-dimension weakness scan.
+    _seg_sql = (intake_data.get("comparison_segment_sql") or "").strip()
+    _seg_label = (intake_data.get("comparison_segment_label") or "").strip()
+    comparison_segment_section = ""
+    if _seg_sql:
+        comparison_segment_section = (
+            "\nPRIMARY COMPARISON (this is a DRIVER question — answer THIS first and lead with it):\n"
+            f"  Condition ({_seg_label or 'segment'}): {_seg_sql}\n"
+            "Write ONE query computing the metric grouped by this derived condition:\n"
+            "  SELECT (<condition>) AS segment, <metric> AS metric_total, COUNT(*) AS n,\n"
+            "         ROUND(<metric> / NULLIF(COUNT(*),0), 2) AS avg_per_record\n"
+            "  GROUP BY 1 ORDER BY 1\n"
+            "JOIN whatever tables are needed to evaluate BOTH the metric and the condition (e.g. join\n"
+            "order_reviews to orders). The contrast between the two groups (true vs false) IS the answer\n"
+            "to the question — it matters MORE than the per-dimension scan below.\n"
+        )
+
     _run = run_analysis_phase(
         conn, phase_id="cross_section", title="Cross-Sectional Scan", emoji="🧭", cap=5, schema=schema,
         plan_system="Write one ranking query per dimension. Rank the metric ascending (weakest first). No time filters." + _ADA_SQL_GROUNDING,
         plan_user=CROSS_SECTION_PLAN_PROMPT.format(
             question=question, metric_label=metric_label, metric_sql=metric_sql,
-            metric_table=metric_table, schema=schema, dimensions_list=dimensions_list),
+            metric_table=metric_table, schema=schema, dimensions_list=dimensions_list,
+            comparison_segment_section=comparison_segment_section),
         interpret_system=(
             "Interpret a cross-sectional ranking scan. Name the LOWEST-RANKED values and any "
             "concentration. SEVERITY GROUNDING: only call a value 'weak', 'critically low', "

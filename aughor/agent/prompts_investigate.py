@@ -47,6 +47,15 @@ TASK: Parse this question into a precise investigation specification.
    the metric table has no date column OR the question asks where/which/what is weakest / losing money
    / underperforming, there is no usable time axis — set cross_sectional=true, use the full data range
    as the observation, and plan to compare across DIMENSIONS (segments / regions / products), not periods.
+   DRIVER / RELATIONSHIP (critical): if the question asks whether one thing AFFECTS / RELATES TO /
+   DRIVES / LOWERS / RAISES / HURTS / IMPROVES / CORRELATES WITH another — e.g. "do late deliveries
+   lower review scores", "do new customers spend more", "does installment count affect cancellations"
+   — it is a GROUP COMPARISON, NOT a time trend. Set cross_sectional=true and populate
+   comparison_segment_sql with the boolean/CASE SQL for the condition X (e.g.
+   (order_delivered_ts > order_estimated_delivery) for "late deliveries", or (is_new_customer) for
+   "new customers") plus comparison_segment_label (e.g. "late vs on-time delivery"). The metric Y is
+   then compared ACROSS that segment. Do NOT analyse Y as a weekly/monthly trend: the condition X may
+   hold in EVERY period, so a time series is structurally blind to the relationship.
 
 3. COMPARISON BASIS — What is the baseline for comparison?
    Default: both PoP (prior period of same length) AND YoY (same period prior year).
@@ -314,7 +323,7 @@ DIAGNOSTIC QUESTION: "{question}"
 This is a CROSS-SECTIONAL question — "where / which is weakest", "where are we losing money".
 There is NO useful time axis; do NOT compare periods. Instead rank the metric across each
 dimension to find WHERE value is lowest or most concentrated.
-
+{comparison_segment_section}
 METRIC: {metric_label} → {metric_sql}
 PRIMARY TABLE: {metric_table}
 
@@ -486,6 +495,16 @@ WRITING STYLE (clean published brief):
   • recommendations[].action: start with an imperative verb; bold the key lever or number.
   Bold marks numbers already traceable to the evidence — it never licenses inventing precision.
 
+GROUNDING (critical — every number must trace to a query result above):
+  • State a number ONLY if it appears in FULL EVIDENCE above. Do NOT estimate, round-trip, or
+    compute a new figure in your head.
+  • This applies especially to SHARES and PROPORTIONS ("X% of total", "accounts for X%",
+    "contributes X%"): state a share ONLY if a query actually returned it. NEVER divide two numbers
+    yourself to manufacture a percentage — that is the #1 source of fabricated figures. If no query
+    computed the share, describe it qualitatively ("a small share", "the largest contributor")
+    instead of inventing a percentage.
+  • If a number you want to cite is not in the evidence, drop it rather than approximate it.
+
 IMPORTANT — ANSWER THE QUESTION ASKED:
   If the user asked "which channel/region/product/segment had most influence", answer that question
   directly in the headline and executive summary — even if the overall metric change is within
@@ -561,7 +580,9 @@ class IntakeOutput(BaseModel):
     date_column: str = Field(description="Fully qualified: table.column")
     metric_table: str
     dimensions: list[str] = Field(description="List of 'table.column' pairs available for drill-down")
-    cross_sectional: bool = Field(default=False, description="True when the question asks where/which/what is weakest / losing money / underperforming, OR the data has too few periods for a trend — analyse across DIMENSIONS, not time.")
+    cross_sectional: bool = Field(default=False, description="True when the question asks where/which/what is weakest / losing money / underperforming, OR the data has too few periods for a trend, OR it is a DRIVER question (does X affect/relate to/drive Y) — analyse across DIMENSIONS/SEGMENTS, not time.")
+    comparison_segment_sql: str = Field(default="", description="For a DRIVER question (does X lower/raise/affect/relate-to Y), the boolean/CASE SQL expression defining the contrasted condition X — e.g. (order_delivered_ts > order_estimated_delivery) for 'late deliveries', or (is_new_customer) for 'new vs returning'. Empty for non-driver questions.")
+    comparison_segment_label: str = Field(default="", description="Human label for comparison_segment_sql, e.g. 'late vs on-time delivery'. Empty when comparison_segment_sql is empty.")
     intake_notes: str = Field(description="Any caveats about the schema or question interpretation")
 
 
