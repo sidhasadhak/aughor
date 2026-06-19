@@ -658,6 +658,9 @@ def verify_insight(rows, finding_text: str = "", sql: str = "", metric_ranges=No
         pw = _part_exceeds_whole(rows)
         if pw:
             return (False, pw)
+        vc = _vacuous_case_dimension(sql, rows)
+        if vc:
+            return (False, vc)
         cg = _claim_numbers_grounded(finding_text, rows)
         if cg:
             return (False, cg)
@@ -692,6 +695,46 @@ def _has_fabricated_dimension(sql: str) -> bool:
     if key.startswith("'") or key.startswith('"'):
         return True  # GROUP BY 'literal'
     return any(m.group(1).lower() == key for m in _LITERAL_DIM_RE.finditer(sql))
+
+
+# A CASE that buckets rows into string labels: capture each branch's THEN label and the
+# ELSE default. ``.+?`` (non-greedy, DOTALL) tolerates quoted IN-lists inside the WHEN
+# condition (``WHEN x IN ('A','B') THEN 'mass'``) — it stops at the branch's own THEN.
+_CASE_THEN_RE = re.compile(r"\bWHEN\b.+?\bTHEN\s+'([^']+)'", re.IGNORECASE | re.DOTALL)
+_CASE_ELSE_RE = re.compile(r"\bELSE\s+'([^']+)'\s+END\b", re.IGNORECASE)
+
+
+def _vacuous_case_dimension(sql: str, rows) -> str | None:
+    """Reason when a CASE that segments rows into labels collapses ENTIRELY into its ELSE
+    default — i.e. the WHEN literals matched NO rows, so the derived dimension is a single
+    meaningless bucket presented as a real segmentation.
+
+    The canonical bug: ``CASE WHEN brand_name IN ('CeraVe','La Mer',…) THEN 'mass'/'luxury'
+    … ELSE 'unknown'`` on data whose brands are actually ``Brand_000`` — every row falls to
+    'unknown', the cross-tier comparison is vacuous, and a real ``brand_tier`` column was
+    ignored. High-precision: needs ≥2 intended categories AND a result where ONLY the ELSE
+    label appears and NONE of the THEN labels do (an empty ⋂ proves the scheme matched
+    nothing). A query whose CASE produced even one real category never trips it."""
+    if not sql or not rows:
+        return None
+    then_labels = {m.strip().lower() for m in _CASE_THEN_RE.findall(sql) if m.strip()}
+    else_labels = {m.strip().lower() for m in _CASE_ELSE_RE.findall(sql) if m.strip()}
+    if len(then_labels) < 2 or not else_labels:
+        return None   # not a multi-branch labelled categorization with a default
+    present: set[str] = set()
+    for r in rows[:500]:
+        cells = r.values() if isinstance(r, dict) else r
+        for c in cells:
+            if isinstance(c, str) and c.strip():
+                present.add(c.strip().lower())
+    if not present:
+        return None
+    if (else_labels & present) and not (then_labels & present):
+        return (f"vacuous categorization: a CASE bucketed every row into its default "
+                f"'{sorted(else_labels)[0]}' — the intended categories {sorted(then_labels)[:4]} "
+                f"matched no rows (hardcoded literals absent from the data; a real category "
+                f"column was likely ignored)")
+    return None
 
 
 def _clamp_novelty(v) -> int:
