@@ -394,8 +394,10 @@ def generate_briefing(conn_id: str, refresh: bool = False, schema: str | None = 
         try:
             from aughor.explorer.revalidate_live import revalidate_for_briefing
             revalidate_for_briefing(conn_id, schema)
-        except Exception:
-            pass
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "pre-brief re-validation is best-effort; the brief still builds from "
+                     "stored findings", counter="briefing.revalidate")
 
     by_domain = _domain_insights_for(conn_id, schema)
     if _needs_filter(conn_id, schema):
@@ -523,14 +525,15 @@ def _purge_exploration_state(conn_id: str) -> list[str]:
     `restart`/`reset` previously cleared only the connection-level files, so a multi-schema
     connection's stale per-schema findings (where the garbage lived) survived a 'restart'.
     Returns the deleted filenames. Also busts the profile cache so columns re-classify."""
+    from aughor.kernel.errors import tolerate
     keys = [k for k in list(_explorers.keys()) if k == conn_id or k.startswith(f"{conn_id}__")]
     for key in keys:
         e = _explorers.get(key)
         if e is not None:
             try:
                 e.stop()
-            except Exception:
-                pass
+            except Exception as exc:
+                tolerate(exc, "explorer stop is best-effort during purge", counter="explorer.purge_stop")
         t = _explorer_tasks.get(key)
         if t is not None and not t.done():
             t.cancel()
@@ -545,15 +548,15 @@ def _purge_exploration_state(conn_id: str) -> list[str]:
             try:
                 p.unlink()
                 deleted.append(fname)
-            except Exception:
-                pass
+            except Exception as exc:
+                tolerate(exc, f"could not delete {fname} during purge", counter="explorer.purge_unlink")
     for pat in (f"exploration_{conn_id}__*.json", f"episodes_{conn_id}__*.jsonl"):
         for p in data.glob(pat):
             try:
                 p.unlink()
                 deleted.append(p.name)
-            except Exception:
-                pass
+            except Exception as exc:
+                tolerate(exc, f"could not delete {p.name} during purge", counter="explorer.purge_unlink")
     try:
         from aughor.tools.profile_cache import invalidate as invalidate_profiles
         invalidate_profiles(conn_id)

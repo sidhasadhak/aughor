@@ -86,8 +86,10 @@ def _revalidate_one_run(conn_id: str, store_key: str, schema: Optional[str], lim
         if db is not None:
             try:
                 db.close()
-            except Exception:
-                pass
+            except Exception as exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(exc, "revalidate connection close is best-effort (pooled release)",
+                         counter="revalidate.db_close")
 
     if not failed:
         return []

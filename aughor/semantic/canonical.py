@@ -166,8 +166,10 @@ def resolve_canonical_metrics(
                     verified=True,
                     caveats=(getattr(nsm, "definition", "") or "")[:160],
                 ))
-        except Exception:
-            pass
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "profile north-star injection is best-effort; catalog + ontology "
+                     "metrics still resolve without it", counter="canonical.north_star")
 
     return sorted(by_name.values(), key=lambda m: m.name)
 

@@ -375,7 +375,7 @@ _LABEL_NAME_RE = re.compile(r"\b(reason|categor(?:y|ies)|distribution|breakdown|
 _PCT_RATIO_UNIT_RE = re.compile(r"percent|ratio|\b0\s*-\s*1\b|0\s*-\s*100|%", re.I)
 
 
-def _name_sql_coherent(name: str, unit_or_range: str) -> tuple[bool, str]:
+def name_sql_coherent(name: str, unit_or_range: str) -> tuple[bool, str]:
     """False when a category/label-named metric is declared as a scalar percent/ratio —
     the name↔value mismatch that renders 'Top Return Reason 0.4%'."""
     if _LABEL_NAME_RE.search(name or "") and _PCT_RATIO_UNIT_RE.search(unit_or_range or ""):
@@ -400,7 +400,7 @@ def audit_profile(profile, conn, schema: str) -> dict[str, str]:
         if vs:
             # RC3 — name↔SQL coherence FIRST (static, no query cost). A category-named
             # metric must not surface as a scalar percentage KPI.
-            ok, reason = _name_sql_coherent(getattr(m, "name", ""), getattr(m, "unit_or_range", ""))
+            ok, reason = name_sql_coherent(getattr(m, "name", ""), getattr(m, "unit_or_range", ""))
             if not ok:
                 failures[m.name] = reason
                 m.value_sql = ""
