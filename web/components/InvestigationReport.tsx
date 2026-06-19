@@ -55,6 +55,7 @@ interface InvestigationFinding {
   chart_type: string;
   stat_note?: string;
   is_significant: boolean;
+  trust_caveat?: string | null;   // advisory from the trust battery — surfaced, never blocking
 }
 
 interface InvestigationPhase {
@@ -177,6 +178,15 @@ function EvidenceBlock({ finding }: { finding: InvestigationFinding }) {
       {/* Significance verdict — "Significant" / "Within noise" + raw stat note */}
       {(finding.stat_note || finding.is_significant) && (
         <SignificanceBadge significant={finding.is_significant} note={finding.stat_note} />
+      )}
+
+      {/* Trust advisory — the result computed, but the trust battery distrusts it (impossible
+          magnitude, fan-out artifact, vacuous CASE…). Surfaced, never suppressed. */}
+      {finding.trust_caveat && (
+        <div className="rounded-md border border-amber-700/40 bg-amber-900/15 px-2.5 py-1.5">
+          <span className="aug-text-xs font-semibold uppercase tracking-wide text-amber-400">Trust advisory</span>
+          <p className="aug-text-xs text-amber-200/90 mt-0.5">{finding.trust_caveat}</p>
+        </div>
       )}
 
       {/* Error */}

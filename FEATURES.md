@@ -3501,7 +3501,32 @@ A single connection routinely hosts several unrelated businesses. Before this, e
 
 ---
 
-## 142. Interactive Briefings — Interrogate the Brief in Place ✅ Shipped
+## 142. CEO-Grade Briefing Triage — Impact-Ranked Lead, Trust Gate & Currency ✅ Shipped
+
+### What
+The daily Briefing was reframed from "what's true in the data" to "what changed, what's it worth, what to decide." The synthesis now **leads with the biggest business move** (impact-ranked, not novelty/recency), **never presents an impossible number or an anti-causal correlation as fact** (a trust gate suppresses/demotes them with an auditable reason), surfaces **north-star metric *trends*** (gross margin 50%→34%, AOV €75→€56) as first-class candidates, and reports every figure in the **business's own currency** (€, not $). The same triage authority governs every finding surface — the AI synthesis, the supporting-signals + key-questions cards, and the dashboard cards — and ADA/deep-analysis carries advisory trust caveats.
+
+### Why
+Stress-testing the missimi brief (a €30M DTC beauty co) exposed a brief no CEO would trust: it led with a noise-level ROAS split (4.42 vs 4.46) while gross margin and AOV both slid unmentioned, printed an **impossible inventory turnover of 96,295×** (a grain-broken `SUM(units_sold)/AVG(units_on_hand)`) as a confident finding, presented an **anti-causal correlation** ("stockouts fall as lead time rises") as insight, and showed **`$`** for a euro business. A daily executive brief has to triage by materiality and plausibility, in money, or it gets ignored by Thursday.
+
+### How
+- **Impact ranking** (`aughor/knowledge/triage.py`) — `impact_score` = magnitude-of-change × north-star membership × confidence, with a **risk tilt** so a *decline* in a down-is-bad metric (margin/revenue/AOV/retention) leads over an equal-magnitude gain ("lead with the fire") — a much larger gain still wins. Replaces top-by-novelty, which buried the lede.
+- **Plausibility trust gate** — `plausibility()` SUPPRESSES impossible magnitudes via an **operating-band KB** for open-ended metrics the bounded-rate guard can't catch (inventory turnover > ~100×) and DEMOTES anti-causal inverse-monotonic correlations to a flagged hypothesis. Both checks are **lifted to the emission gate** (`verify_insight`, one shared band KB) so they protect every consumer, not just the brief. A **vacuous-CASE guard** rejects a `CASE` that collapses entirely into its `ELSE` default (the missimi bug: hardcoded brand names matched no rows → all 3,500 products fell to `'unknown'`, ignoring a real `brand_tier` column).
+- **Metric-moves** (`aughor/knowledge/metric_moves.py`) — each north-star metric's `chart_sql` trend is run (cache-miss only, matcache-first), its first→last move synthesised into a finding that competes through the same impact ranking; near-zero-base moves dropped (the "0%→1% (+40%)" artifact).
+- **Currency** — `BusinessProfile.currency_code` (LLM-inferred); the narrator prompt + a synthesis-authority normalisation (`$<num>`→symbol) + currency-aware KPI cards make a €-business render € everywhere.
+- **Every surface** — a `held_back` audit strip under the synthesis; `/domains` stamps each insight with `impact`+`plausibility` so the dashboard cards **and** the panel's deterministic synthesis builder (headline + supporting signals + key-questions) drop only the impossible and rank by impact; ADA's `_assemble_phase_findings` attaches a non-blocking `trust_caveat`.
+- **Live-verified on missimi:** headline "Growth Levers and Operational Efficiency" → **"Margin Erosion Demands Channel Optimization"**; lead = margin 50%→34% then AOV €75→€56; turnover suppressed into the held-back strip; € throughout; cards/signals drop the implausible finding. 1045 backend tests green; FE typecheck clean.
+
+### Key files
+- `aughor/knowledge/triage.py`, `aughor/knowledge/metric_moves.py`, `aughor/knowledge/briefing.py`
+- `aughor/explorer/agent.py` (vacuous-CASE + emission-lifted plausibility), `aughor/profile/models.py` (`currency_code`)
+- `aughor/routers/exploration.py`, `aughor/agent/investigate.py`, `aughor/agent/state.py` (ADA advisory)
+- `web/components/BriefingPanel.tsx`, `web/components/brief/BriefingDashboard.tsx`, `web/components/brief/IndustryKpiStrip.tsx`, `web/components/InvestigationReport.tsx`, `web/lib/api.ts`
+- `tests/unit/test_triage.py`, `test_metric_moves.py`, `test_briefing_triage.py`, `test_vacuous_case.py`
+
+---
+
+## 143. Interactive Briefings — Interrogate the Brief in Place ✅ Shipped
 
 ### What
 The Briefing is no longer a document you read — it's a surface you interrogate. Every element is a live handle into the engine, with one model: **Explain / Drill / Ask**.
@@ -3512,7 +3537,7 @@ The Briefing is no longer a document you read — it's a surface you interrogate
 - **E · Living brief** — a persistent "Ask this briefing" box spawns investigation cards seeded with the brief's own context.
 
 ### Why
-The hardest parts already existed (ADA over SSE, `/query/run`, numeral grounding); the brief just couldn't reach them. Making each number/finding/bar a handle turns a static digest into a workspace — and, as a side effect, makes any upstream contradiction immediately visible (which is what surfaced the trust gaps closed in #143).
+The hardest parts already existed (ADA over SSE, `/query/run`, numeral grounding); the brief just couldn't reach them. Making each number/finding/bar a handle turns a static digest into a workspace — and, as a side effect, makes any upstream contradiction immediately visible (which is what surfaced the trust gaps closed in #144).
 
 ### How
 - Shared SSE machinery extracted to `investigationStream.ts`; `useInvestigationThread` owns **one AbortController per instance** so many inline threads stream concurrently; `InlineInvestigationThread` reuses the chat `ChatMessage` renderer.
@@ -3526,15 +3551,15 @@ The hardest parts already existed (ADA over SSE, `/query/run`, numeral grounding
 
 ---
 
-## 143. Briefing Intelligence Trust — Gate on Governed Metrics + Live Re-Validation ✅ Shipped
+## 144. Briefing Intelligence Trust — Gate on Governed Metrics + Live Re-Validation ✅ Shipped
 
 ### What
-Closes six root causes of fabricated / self-contradictory briefings (a 96,295× inventory turnover headlining, a "gross margin 50%→34%" decline in no data, ADA rewriting a governed formula into a broken one, confident attribution built from failed queries, "Top Return Reason 0.4%", cross-business blending, "47% critically low"). Root insight: the guards mostly existed — they just weren't **wired** into the paths that generate/surface findings, and the explorer/ADA free-formed metric formulas instead of binding to the governed layer.
+A parallel hardening pass (alongside #142) that closes six root causes of fabricated / self-contradictory briefings (a 96,295× inventory turnover headlining, a "gross margin 50%→34%" decline in no data, ADA rewriting a governed formula into a broken one, confident attribution built from failed queries, "Top Return Reason 0.4%", cross-business blending, "47% critically low"). Root insight: the guards mostly existed — they just weren't **wired** into the paths that generate/surface findings, and the explorer/ADA free-formed metric formulas instead of binding to the governed layer.
 
 ### How
 - **RC1 — feasibility gate:** `unsupported_metric_gap` wired into Phase-8 question generation (scoped to the question's own tables) and `ada_intake`, so a margin question against a cost-less schema is dropped/caveated instead of fabricating `COGS = price·qty·0.5` → a constant 50%.
 - **RC2 — bind to the governed formula:** `resolve_canonical_metrics` now injects the connection's `BusinessProfile.north_star_metrics` (source `profile_governed`, above the ontology) + a hard intake BINDING RULE → ADA runs `SUM(unit_price-unit_cost)/SUM(unit_price)` with no invented `quantity`.
-- **RC4 — implausible-ratio guard** in `verify_insight`: a turnover/ratio/×-multiplier in the thousands is a grain bug; tightly bound to the ratio's own number so a nearby revenue figure isn't false-flagged.
+- **RC4 — implausible-ratio guard** in `verify_insight`: a turnover/ratio/×-multiplier in the thousands is a grain bug; tightly bound to the ratio's own number so a nearby revenue figure isn't false-flagged (complements #142's operating-band + vacuous-CASE guards).
 - **RC5a** — ADA suppresses the fabricated waterfall + recommendations and writes an honest "data unavailable" verdict when no usable data was gathered; **RC5b** — `revalidate_live` re-runs the top-N findings before a brief refresh, re-applies `verify_insight` + grounding, and flags failures `invalid` (reversible) so they drop from both `/domains` and `/briefing`.
 - **RC3 — name↔SQL coherence:** a category/label-named metric ("Top Return Reason", "distribution") declared as a scalar percent is dropped at build-time + serve-time.
 - **RC6 — cross-schema separation:** the aggregate brief tags each finding `source_schema` and switches to a synthesis prompt that forbids cross-business connection-drawing.
@@ -3542,10 +3567,10 @@ Closes six root causes of fabricated / self-contradictory briefings (a 96,295× 
 - **Stale removal:** `restart`/`reset` now purge **per-schema** state (not just connection-level) and fan the re-run out per schema; aggregate React keys are composite (`source_schema::id`).
 
 ### Why
-The interactive surface (#142) made every contradiction clickable, exposing that the underlying intelligence was untrustworthy. A brief that headlines fabricated numbers is worse than no brief.
+The interactive surface (#143) made every contradiction clickable, exposing that the underlying intelligence was untrustworthy. A brief that headlines fabricated numbers is worse than no brief.
 
 ### Verified
-A full from-scratch re-run of the `workspace` connection regenerated all four schemas with **zero garbage** (bakehouse has no gross-margin finding; missimi reproduces its real ROAS/margin); the fresh "All schemas" brief reads per-business ("Revenue Quality and Efficiency Risks Across Sectors"). 342 unit tests pass (+16 new guard/coherence tests).
+A full from-scratch re-run of the `workspace` connection regenerated all four schemas with **zero garbage** (bakehouse has no gross-margin finding; missimi reproduces its real ROAS/margin); the fresh "All schemas" brief reads per-business ("Revenue Quality and Efficiency Risks Across Sectors"). 1020 unit tests pass (+16 new guard/coherence tests).
 
 ### Key files
 - `aughor/explorer/agent.py`, `aughor/agent/investigate.py`, `aughor/agent/prompts_investigate.py`, `aughor/semantic/canonical.py`, `aughor/profile/validate.py`, `aughor/routers/profile.py`, `aughor/routers/exploration.py`, `aughor/explorer/revalidate_live.py`, `aughor/knowledge/briefing.py`, `aughor/explorer/store.py`
@@ -3553,4 +3578,4 @@ A full from-scratch re-run of the `workspace` connection regenerated all four sc
 
 ---
 
-*Last updated: 2026-06-19 · 143 active features (#143 briefing intelligence trust — gate explorer/ADA on governed metrics, implausible-ratio guard, live re-validation, name↔SQL coherence, cross-schema separation, benchmark-grounded severity, per-schema stale-removal; #142 interactive briefings — pull-thread/drill-charts/show-the-receipt/time-lens/living-brief over one inline-investigation surface; (#141 per-schema intelligence — connection×schema unit: isolated profile/ontology/exploration/briefing per schema + "All schemas" aggregate + schema-qualified `_leaks_schema` guard, live-verified 4 distinct profiles; #140 briefing-trust round 2 — BeautyCommerce cold-trace F1–F10: per-question SQL retry, cardinality-aware chasm guard, structural-vs-noise NULL, evidence-cited business model, mid-run phase observability + concurrency cap; #139 pre-emission insight verification gate — self-ratio tautology, fan-out cardinality oracle, boundary-saturation, part>whole, claim-grounding screens before emission; #138 human-editable version-controlled ontology overrides — YAML tree, override-wins merge; #137 design language v2 — token override + `.aug-*` re-skin + central Vega theming/reactivity, conclusion-first Briefing Verdict Hero + supporting signals, Briefing-as-home nav IA, real-count MiniStat rows + QB validity badge; #136 briefing trust hardening — SUM-over-chasm + grain-mismatch-CTE fan-out drops, profile-declared-range degenerate gate, 3-tier dedup incl. embedding paraphrase, metric-explainer charts; #135 industry-aware intelligence — BusinessProfile keystone + per-industry metric KB + build-time audited value_sql/chart_sql/key_question_sql + pinned key-questions; #134 first-class SQLite connector — PR #66; #133 value-domain join guard — PR #65; #132 embedding entity dedup — Borrow 5; #131 hierarchical tree-reduce — Borrow 4; #130 Query Builder semantic-step UI; #127–#129 semantic operators; #126 model-cascade tombstone). **Adaptive-inference list worked through** (B5b logprob-confidence blocked); next up = external NL2SQL benchmarking (Spider 2.0 — SQLite reader in place) + promoting the join guard to prevention (`joinable_with` edges). See `ROADMAP.md`.*
+*Last updated: 2026-06-19 · 144 active features (#144 briefing intelligence trust — gate explorer/ADA on governed metrics, implausible-ratio guard, live re-validation, name↔SQL coherence, cross-schema separation, benchmark-grounded severity, per-schema stale-removal; #143 interactive briefings — pull-thread/drill-charts/show-the-receipt/time-lens/living-brief over one inline-investigation surface; #142 CEO-grade briefing triage — impact-ranked headline (magnitude-of-change × north-star × confidence) + risk-tilt "lead with the fire"; plausibility trust gate lifted to the emission gate (suppress impossible-magnitude via operating bands, demote anti-causal confounds) + a vacuous-CASE guard; north-star metric-moves as first-class candidates; currency-correct € figures end-to-end; live-verified on missimi; #141 per-schema intelligence — connection×schema unit: isolated profile/ontology/exploration/briefing per schema + "All schemas" aggregate + schema-qualified `_leaks_schema` guard, live-verified 4 distinct profiles; #140 briefing-trust round 2 — BeautyCommerce cold-trace F1–F10: per-question SQL retry, cardinality-aware chasm guard, structural-vs-noise NULL, evidence-cited business model, mid-run phase observability + concurrency cap; #139 pre-emission insight verification gate — self-ratio tautology, fan-out cardinality oracle, boundary-saturation, part>whole, claim-grounding screens before emission; #138 human-editable version-controlled ontology overrides — YAML tree, override-wins merge; #137 design language v2 — token override + `.aug-*` re-skin + central Vega theming/reactivity, conclusion-first Briefing Verdict Hero + supporting signals, Briefing-as-home nav IA, real-count MiniStat rows + QB validity badge; #136 briefing trust hardening — SUM-over-chasm + grain-mismatch-CTE fan-out drops, profile-declared-range degenerate gate, 3-tier dedup incl. embedding paraphrase, metric-explainer charts; #135 industry-aware intelligence — BusinessProfile keystone + per-industry metric KB + build-time audited value_sql/chart_sql/key_question_sql + pinned key-questions; #134 first-class SQLite connector — PR #66; #133 value-domain join guard — PR #65; #132 embedding entity dedup — Borrow 5; #131 hierarchical tree-reduce — Borrow 4; #130 Query Builder semantic-step UI; #127–#129 semantic operators; #126 model-cascade tombstone). **Adaptive-inference list worked through** (B5b logprob-confidence blocked); next up = external NL2SQL benchmarking (Spider 2.0 — SQLite reader in place) + promoting the join guard to prevention (`joinable_with` edges). See `ROADMAP.md`.*

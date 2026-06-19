@@ -49,10 +49,18 @@ def test_large_revenue_without_ratio_word_passes():
 
 def test_verify_insight_drops_implausible_ratio():
     # A result whose turnover cell is absurd → the finding is rejected by the trust gate.
+    # (Either the operating-band KB or the _implausible_ratio_claim backstop may catch it;
+    # the invariant is that it is rejected and the reason names the turnover.)
     rows = [["unknown", 0.47, 96295.6]]
     ok, why = verify_insight(rows, "unknown tier inventory turnover of 96,295.6", "SELECT 1", None)
     assert ok is False
-    assert "turnover/ratio" in why
+    assert "turnover" in why.lower()
+
+
+def test_implausible_ratio_backstop_fires_when_bands_miss():
+    # A generic ×-multiplier with no operating-band entry → the _implausible_ratio_claim
+    # backstop is what rejects it.
+    assert _implausible_ratio_claim("the review-to-order ratio hit 8,500") != ""
 
 
 def test_verify_insight_keeps_healthy_ratio():
