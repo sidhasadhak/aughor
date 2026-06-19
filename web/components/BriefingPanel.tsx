@@ -50,9 +50,12 @@ import {
   type ExplorerStatus,
   type ActionTrigger,
   getInsightReceipt,
+  revalidateInsight,
   type InsightReceipt,
   groundBriefingNumber,
   insightKey,
+  type FindingDossier,
+  type RevalidateResult,
 } from "@/lib/api";
 import { subscribeKernelEvents } from "@/lib/events";
 import { Spinner } from "@/components/ui/motion";
@@ -234,7 +237,7 @@ interface CitationActionContext {
   onEvidence:     (insight: ExplorationInsight, domain: string) => void;
   onTriggersHint: () => void;
   onDismissed:    () => void;
-  onInvestigate:  (q: string) => void;
+  onInvestigate:  (q: string, insightId?: string) => void;
 }
 
 /** The trust-gate audit trail: signals the brief deliberately withheld. An impossible
@@ -439,7 +442,7 @@ function CitationActionsPopover({
             Pull the thread →
           </button>
           <button
-            onClick={() => { ctx.onInvestigate(`Investigate: ${citation.finding}`); onClose(); }}
+            onClick={() => { ctx.onInvestigate(`Investigate: ${citation.finding}`, citation.insight_id); onClose(); }}
             className="aug-btn"
             style={{
               alignSelf: "flex-start", fontSize: 11, color: "var(--blue5)",
@@ -896,6 +899,146 @@ export function FindingActions({ insight, domain, connectionId, canvasId, trigge
 }
 
 // ── Evidence drawer ──────────────────────────────────────────────────────────
+// The Finding Dossier — the explorer's OWN derivation, captured at emit time and
+// carried in the finding artifact's payload. Rendering it here means "how was this
+// derived?" is answered by a read of work already done, not a second deep analysis.
+// Exported so the Investigate (Tier-0) chat path renders the identical trace.
+export function DossierTrace({ dossier }: { dossier: FindingDossier }) {
+  const sc = dossier.structural_ctx || ({} as FindingDossier["structural_ctx"]);
+  const joins = sc.joins || [];
+  const dists = Object.entries(sc.distributions || {});
+  const lifecycles = Object.entries(sc.lifecycles || {});
+  const nulls = Object.entries(sc.null_meanings || {});
+  const hasStructural = joins.length > 0 || dists.length > 0 || lifecycles.length > 0 || nulls.length > 0;
+  const g = dossier.grounding;
+
+  const Label = ({ children }: { children: React.ReactNode }) => (
+    <div style={{ fontSize: 9, color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".06em", marginBottom: 6 }}>{children}</div>
+  );
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column" as const, gap: 16 }}>
+      {dossier.question && (
+        <div>
+          <Label>Question the explorer asked</Label>
+          <div style={{ fontSize: 13, color: "var(--t2)", lineHeight: 1.55, fontStyle: "italic" as const }}>“{dossier.question}”</div>
+        </div>
+      )}
+
+      {dossier.rationale && (
+        <div>
+          <Label>Why this holds — the mechanism</Label>
+          <div style={{ fontSize: 13, color: "var(--t2)", lineHeight: 1.55 }}>{dossier.rationale}</div>
+        </div>
+      )}
+
+      {dossier.narrative && (
+        <div>
+          <Label>Why it matters — in the broader picture</Label>
+          <div style={{ fontSize: 13, color: "var(--t2)", lineHeight: 1.55 }}>{dossier.narrative}</div>
+        </div>
+      )}
+
+      {dossier.result_cells && (
+        <div>
+          <Label>
+            {g
+              ? (g.checked === 0
+                  ? "Result values — no magnitude claims to verify"
+                  : g.grounded
+                    ? `Grounded figures — ${g.checked} verified against the data`
+                    : `Grounded figures — ${g.ungrounded.length} unverified`)
+              : "Grounded figures"}
+          </Label>
+          <div style={{
+            display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", borderRadius: "var(--r2)",
+            background: "var(--bg-2)", border: "1px solid var(--b1)",
+          }}>
+            {g && (
+              <span style={{ flexShrink: 0, fontSize: 12, color: g.grounded ? "var(--grn4)" : "var(--amb4)" }}>
+                {g.grounded ? "✓" : "⚠"}
+              </span>
+            )}
+            <span style={{ fontSize: 11.5, fontFamily: "var(--font-mono)", color: "var(--t3)", wordBreak: "break-word" as const, lineHeight: 1.5 }}>
+              {dossier.result_cells}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {hasStructural && (
+        <div>
+          <Label>Structural ground — facts this claim stands on</Label>
+          <div style={{ display: "flex", flexDirection: "column" as const, gap: 5, padding: "10px 12px", borderRadius: "var(--r2)", background: "var(--bg-2)", border: "1px solid var(--b1)" }}>
+            {joins.map((j, i) => (
+              <div key={`j${i}`} style={{ fontSize: 11, color: j.verified ? "var(--grn4)" : "var(--amb4)" }}>
+                {j.verified ? "✓" : "⚠"} {j.from_table} → {j.to_table} ({j.cardinality}
+                {j.verified ? ", 0 orphans" : `, ${j.orphan_count} orphans`})
+              </div>
+            ))}
+            {dists.map(([k, d]) => (
+              <div key={`d${k}`} style={{ fontSize: 11, color: "var(--t3)" }}>
+                <span style={{ fontFamily: "var(--font-mono)" }}>{k.replace(":", ".")}</span> — {d.shape || "—"}
+                {typeof d.p50 === "number" ? ` (median ${d.p50}` : ""}{typeof d.pct_zero === "number" ? `, ${Math.round(d.pct_zero * 100)}% zero)` : (typeof d.p50 === "number" ? ")" : "")}
+              </div>
+            ))}
+            {lifecycles.map(([t, lm]) => (
+              <div key={`l${t}`} style={{ fontSize: 11, color: "var(--t3)" }}>
+                <span style={{ fontFamily: "var(--font-mono)" }}>{t}.{lm.status_column || "status"}</span>: {(lm.states || []).join(" → ")}
+                {(lm.terminal_states || []).length > 0 ? ` · terminal: ${(lm.terminal_states || []).join(", ")}` : ""}
+              </div>
+            ))}
+            {nulls.map(([k, nm]) => (
+              <div key={`n${k}`} style={{ fontSize: 11, color: "var(--t3)" }}>
+                <span style={{ fontFamily: "var(--font-mono)" }}>{k.replace(":", ".")}</span> — {nm.meaning || "—"}
+                {nm.business_rule ? ` (${nm.business_rule})` : ""}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Living dossier: re-run the finding's SQL against current data and re-ground the
+// claim. "as of" reflects the last check; the badge says whether it still holds.
+function RevalidateRow({ dossier, connectionId, insightId }: {
+  dossier: FindingDossier; connectionId?: string; insightId: string;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<RevalidateResult | null>(null);
+  const asOf = (result?.revalidated_at ?? (dossier as { revalidated_at?: string }).revalidated_at ?? dossier.generated_at);
+  const asOfText = asOf ? new Date(asOf).toLocaleString() : "—";
+  const badge =
+    result?.status === "confirmed" ? { c: "var(--grn4)", t: "Confirmed — still holds against current data" } :
+    result?.status === "drifted"   ? { c: "var(--amb4)", t: `Drifted — ${(result.ungrounded ?? []).join(", ") || "a value moved"}` } :
+    result?.status === "error"     ? { c: "var(--red4, #d66)", t: `Could not re-run — ${result.error ?? "query failed"}` } : null;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column" as const, gap: 8, paddingTop: 4 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <button
+          disabled={busy || !connectionId}
+          onClick={async () => {
+            if (!connectionId) return;
+            setBusy(true);
+            try { setResult(await revalidateInsight(connectionId, insightId)); }
+            finally { setBusy(false); }
+          }}
+          style={{ padding: "5px 11px", borderRadius: "var(--r1)", background: "var(--bg-3)", border: "1px solid var(--b2)", color: "var(--t1)", fontSize: 11.5, fontWeight: 500, cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1 }}
+        >{busy ? "Re-validating…" : "Re-validate"}</button>
+        <span style={{ fontSize: 10.5, color: "var(--t4)" }}>as of {asOfText}</span>
+      </div>
+      {badge && (
+        <div style={{ fontSize: 11, color: badge.c, lineHeight: 1.5 }}>
+          {result?.status === "confirmed" ? "✓ " : result?.status === "drifted" ? "⚠ " : "✕ "}{badge.t}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Drill-through: the exact SQL + confidence/novelty/freshness behind a finding.
 
 export function EvidenceDrawer({ insight, domain, onClose, connectionId }: {
@@ -913,6 +1056,8 @@ export function EvidenceDrawer({ insight, domain, onClose, connectionId }: {
   }, [insight, connectionId]);
   if (!insight) return null;
   const fresh = insight.generated_at ? new Date(insight.generated_at).toLocaleString() : "—";
+  // The explorer's captured derivation, if this finding postdates dossier tracking.
+  const dossier = receipt?.artifact?.payload?.dossier;
   const Stat = ({ label, value }: { label: string; value: string }) => (
     <div style={{ display: "flex", flexDirection: "column" as const, gap: 2 }}>
       <span style={{ fontSize: 9, color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".06em" }}>{label}</span>
@@ -970,6 +1115,9 @@ export function EvidenceDrawer({ insight, domain, onClose, connectionId }: {
             </div>
           )}
 
+          {dossier && <DossierTrace dossier={dossier} />}
+          {dossier && <RevalidateRow dossier={dossier} connectionId={connectionId} insightId={insight.id} />}
+
           <div>
             <div style={{ fontSize: 9, color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".06em", marginBottom: 6 }}>Source query — the data behind this claim</div>
             <pre style={{
@@ -1020,7 +1168,7 @@ export function EvidenceDrawer({ insight, domain, onClose, connectionId }: {
 
 function HeadlineCard({ signal, onInvestigate, actions }: {
   signal:       SynthesisSignal;
-  onInvestigate: (q: string) => void;
+  onInvestigate: (q: string, insightId?: string) => void;
   actions?:      ReactNode;
 }) {
   const { insight, domain } = signal;
@@ -1069,7 +1217,7 @@ function HeadlineCard({ signal, onInvestigate, actions }: {
           </div>
         )}
         <button
-          onClick={() => onInvestigate(`Investigate: ${insight.finding}`)}
+          onClick={() => onInvestigate(`Investigate: ${insight.finding}`, insight.id)}
           style={{
             marginLeft: "auto", display: "inline-flex", alignItems: "center", gap: 6,
             padding: "6px 14px", borderRadius: "var(--r2)", fontSize: 12, fontWeight: 500,
@@ -1104,7 +1252,7 @@ function VerdictHero({
   domainCount:   number;
   totalInsights: number;
   synthesizedAt: string;
-  onInvestigate: (q: string) => void;
+  onInvestigate: (q: string, insightId?: string) => void;
   controls?:     ReactNode;   // Generate / Reload buttons (top-right)
   actions?:      ReactNode;   // FindingActions menu for the headline finding
 }) {
@@ -1165,7 +1313,7 @@ function VerdictHero({
               <div style={{ display: "flex", gap: 9, marginTop: 18, flexWrap: "wrap" as const, alignItems: "center" }}>
                 {headline && (
                   <button
-                    onClick={() => onInvestigate(`Investigate: ${headline.insight.finding}`)}
+                    onClick={() => onInvestigate(`Investigate: ${headline.insight.finding}`, headline.insight.id)}
                     className="aug-btn aug-btn-primary"
                     style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", fontSize: 12.5, fontWeight: 600, borderRadius: "var(--r2)", cursor: "pointer" }}
                   >Investigate →</button>
@@ -1200,7 +1348,7 @@ function VerdictHero({
  *  signals — every card is a live finding with its own confidence + novelty. */
 function SupportingSignals({ signals, onInvestigate }: {
   signals:       SynthesisSignal[];
-  onInvestigate: (q: string) => void;
+  onInvestigate: (q: string, insightId?: string) => void;
 }) {
   const top = signals.slice(0, 3);
   if (top.length === 0) return null;
@@ -1240,7 +1388,7 @@ function SupportingSignals({ signals, onInvestigate }: {
                 </div>
               </div>
               <button
-                onClick={() => onInvestigate(`Investigate: ${insight.finding}`)}
+                onClick={() => onInvestigate(`Investigate: ${insight.finding}`, insight.id)}
                 style={{ alignSelf: "flex-start", fontSize: 11, color: "var(--blue4)", background: "none", border: "none", padding: 0, cursor: "pointer" }}
               >Investigate →</button>
             </div>
@@ -1255,7 +1403,7 @@ function SupportingSignals({ signals, onInvestigate }: {
 
 function SignalCard({ signal, onInvestigate, actions }: {
   signal:       SynthesisSignal;
-  onInvestigate: (q: string) => void;
+  onInvestigate: (q: string, insightId?: string) => void;
   actions?:      ReactNode;
 }) {
   const { insight, domain } = signal;
@@ -1280,7 +1428,7 @@ function SignalCard({ signal, onInvestigate, actions }: {
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" as const }}>
         <button
-          onClick={() => onInvestigate(`Investigate: ${insight.finding}`)}
+          onClick={() => onInvestigate(`Investigate: ${insight.finding}`, insight.id)}
           style={{
             padding: "4px 10px", borderRadius: "var(--r2)", fontSize: 11, fontWeight: 500,
             background: "transparent", border: "1px solid var(--b2)",
@@ -1301,7 +1449,7 @@ function SignalCard({ signal, onInvestigate, actions }: {
 
 function PatternRow({ pattern, onInvestigate }: {
   pattern:      Pattern;
-  onInvestigate: (q: string) => void;
+  onInvestigate: (q: string, insightId?: string) => void;
 }) {
   const color = PATTERN_TYPE_COLORS[pattern.type] ?? "var(--t3)";
   const icon  = PATTERN_TYPE_ICONS[pattern.type]  ?? "·";
@@ -1551,7 +1699,7 @@ export function BriefingPanel({
   schema,
 }: {
   connectionId: string;
-  onInvestigate: (q: string) => void;
+  onInvestigate: (q: string, insightId?: string) => void;
   /** When set, the briefing is scoped to this Canvas's curated tables (not the whole
    *  connection) — keeps Briefing consistent with the already-canvas-scoped Domains. */
   canvasId?: string;

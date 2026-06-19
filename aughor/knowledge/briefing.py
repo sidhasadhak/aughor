@@ -405,6 +405,36 @@ def generate_narrative(
             "finding":    _cur(source.get("finding", cit.finding)),
         })
 
+    # P5 — attribute each cited sentence back to its finding and persist it as that
+    # finding's contextual narrative (the briefing's "why it matters" framing). A
+    # drill-in then shows it from the dossier instead of re-synthesizing. The
+    # aggregate narrator pass already ran; this is pure attribution, no new LLM call.
+    # Best-effort: provenance must never break briefing generation.
+    try:
+        import re as _re
+        from aughor.explorer.dossier import update_dossier
+        _sentences = _re.split(r"(?<=[.!?])\s+", result.narrative or "")
+        _by_ref: dict[str, list[str]] = {}
+        for _sent in _sentences:
+            refs = _re.findall(r"\[(\d+)\]", _sent)
+            if not refs:
+                continue
+            _clean = _re.sub(r"\s*\[\d+\]", "", _sent).strip()
+            for _r in refs:
+                if _clean:
+                    _by_ref.setdefault(_r, []).append(_clean)
+        for _ref, _ins in ref_to_insight.items():
+            _texts = _by_ref.get(_ref)
+            if _texts and _ins.get("id"):
+                update_dossier(
+                    connection_id, _ins["id"],
+                    merge={"narrative": " ".join(dict.fromkeys(_texts))},
+                    lineage_edge=("narrated_by", "briefing:synthesis", None),
+                )
+    except Exception:
+        import logging
+        logging.getLogger(__name__).debug("per-finding narrative attribution failed", exc_info=True)
+
     return {
         "narrative":      narrative_text,
         "headline_theme": result.headline_theme,

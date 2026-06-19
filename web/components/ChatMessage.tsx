@@ -29,6 +29,8 @@ import {
 import { ChatTurn } from "@/lib/useChat";
 import { InvestigationReportView } from "@/components/InvestigationReport";
 import { ExplorationReportView } from "@/components/ExplorationReport";
+import { DossierTrace } from "@/components/BriefingPanel";
+import type { FindingDossier } from "@/lib/api";
 import { ThinkingTrace, turnToTraceState } from "@/components/ThinkingTrace";
 import { deletePlaybookEntry, editPlaybookRecommendation, type PlaybookRef } from "@/lib/api";
 import {
@@ -518,14 +520,53 @@ function Section({
   );
 }
 
+// ── Dossier (Tier-0 trace) — the explorer's pre-computed derivation, served
+// instead of a fresh ADA run. "Investigate deeper" escalates to a seeded ADA. ──
+function DossierReportView({ dossier, onDeeper }: { dossier: FindingDossier; onDeeper?: () => void }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column" as const, gap: 14 }}>
+      <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 11, color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".06em" }}>
+        <span>Trace · derived during exploration — instant, no re-run</span>
+      </div>
+      {dossier.finding && (
+        <div style={{ fontSize: 14, color: "var(--t1)", lineHeight: 1.6, fontWeight: 500 }}>{dossier.finding}</div>
+      )}
+      <DossierTrace dossier={dossier} />
+      {dossier.sql && (
+        <div>
+          <div style={{ fontSize: 9, color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".06em", marginBottom: 6 }}>Source query</div>
+          <pre style={{ margin: 0, padding: "12px 14px", borderRadius: "var(--r2)", background: "var(--bg-2)", border: "1px solid var(--b1)", fontSize: 11.5, fontFamily: "var(--font-code)", color: "var(--t2)", whiteSpace: "pre-wrap" as const, wordBreak: "break-word" as const, lineHeight: 1.55 }}>{dossier.sql}</pre>
+        </div>
+      )}
+      {onDeeper && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, paddingTop: 2 }}>
+          <button onClick={onDeeper} style={{ padding: "6px 12px", borderRadius: "var(--r1)", background: "var(--bg-3)", border: "1px solid var(--b2)", color: "var(--t1)", fontSize: 12, fontWeight: 500, cursor: "pointer" }}>Investigate deeper →</button>
+          <span style={{ fontSize: 11, color: "var(--t4)" }}>Runs a fresh analysis, seeded with this trace.</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Investigate body — delegates to the appropriate rich report view ──────────
 function InvestigateBody({
-  turn, onShowSource,
+  turn, onShowSource, onDeeper,
 }: {
   turn: ChatTurn;
   onShowSource?: (data: SourcePanelData) => void;
+  onDeeper?: (question: string, insightId: string | null) => void;
 }) {
   const qm = turn.queryMode;
+
+  // Tier 0: the explorer's pre-computed dossier — no ADA was run.
+  if (turn.dossierReport) {
+    return (
+      <DossierReportView
+        dossier={turn.dossierReport}
+        onDeeper={onDeeper ? () => onDeeper(turn.question, turn.dossierInsightId) : undefined}
+      />
+    );
+  }
 
   if (qm === "investigate" || turn.adaReport) {
     return (
@@ -870,16 +911,18 @@ export function ChatMessage({
   onFollowUp,
   onRunFresh,
   onShowSource,
+  onDeeper,
 }: {
   turn: ChatTurn;
   onFollowUp?: (q: string) => void;
   onRunFresh?: (q: string) => void;
   onShowSource?: (data: SourcePanelData) => void;
+  onDeeper?: (question: string, insightId: string | null) => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const isInvestigate = turn.mode === "investigate";
   const hasResult = isInvestigate
-    ? !!(turn.adaReport ?? turn.report ?? turn.exploreReport)
+    ? !!(turn.adaReport ?? turn.report ?? turn.exploreReport ?? turn.dossierReport)
     : turn.status === "done";
   const isDone = turn.status === "done" || hasResult;
   // Show streaming ADA phases even while still loading (not for direct/explore routes)
@@ -1009,7 +1052,7 @@ export function ChatMessage({
             </div>
           )}
           <div className="mb-1">
-            <InvestigateBody turn={turn} onShowSource={onShowSource} />
+            <InvestigateBody turn={turn} onShowSource={onShowSource} onDeeper={onDeeper} />
           </div>
           {turn.playbookRefs.length > 0 && <PlaybookRefs refs={turn.playbookRefs} />}
           {turn.followups.length > 0 && (

@@ -1129,6 +1129,40 @@ def ground_briefing_number(conn_id: str, body: GroundRequest):
                         "numerals": [], "columns": [], "sample_rows": []}
 
 
+@router.post("/exploration/{connection_id}/insights/{insight_id}/revalidate")
+async def revalidate_insight(connection_id: str, insight_id: str):
+    """Re-check a finding's dossier against LIVE data — re-run its stored SQL once
+    (no LLM) and re-ground the claim. A living dossier: the snapshot is re-stamped
+    `confirmed` (numbers still hold) or flagged `drifted` (a number moved), so we
+    never silently serve a stale figure. Requires a dossier (404 otherwise)."""
+    from datetime import datetime, timezone
+    from aughor.kernel.ledger import Ledger
+    from aughor.explorer.revalidate import revalidate_finding
+    from aughor.explorer.dossier import update_dossier
+
+    rec = Ledger.default().receipt(f"insight:{connection_id}:{insight_id}")
+    dossier = ((rec or {}).get("artifact", {}).get("payload", {}) or {}).get("dossier") if rec else None
+    if not dossier:
+        raise HTTPException(status_code=404, detail="No dossier to re-validate — re-explore to generate one")
+    try:
+        db = open_connection_for(connection_id)
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"Connection not found: {e}")
+
+    result = await asyncio.to_thread(revalidate_finding, dossier, db)
+    now = datetime.now(timezone.utc).isoformat()
+    # Re-stamp the dossier so "as of" reflects the live check (supersede-not-delete).
+    try:
+        update_dossier(
+            connection_id, insight_id,
+            merge={"revalidated_at": now, "revalidation": result.get("status")},
+            lineage_edge=("revalidated_by", "guard:live_recheck", result.get("status")),
+        )
+    except Exception:
+        logger.debug("dossier re-stamp failed (non-fatal)", exc_info=True)
+    return {**result, "revalidated_at": now}
+
+
 @router.post("/exploration/canvas/{canvas_id}/insights/{insight_id}/dismiss")
 def dismiss_canvas_insight(canvas_id: str, insight_id: str, req: DismissRequest):
     from aughor.canvas.store import get_canvas

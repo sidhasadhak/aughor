@@ -1137,7 +1137,8 @@ class SchemaExplorer:
         })
         logger.info("[explorer:%s] ⏱ time-to-first-insight: %ss", self.connection_id, elapsed)
 
-    def _emit_insight(self, insight: dict, sql: str, *, journal_extra: dict | None = None) -> None:
+    def _emit_insight(self, insight: dict, sql: str, *, dossier: dict | None = None,
+                      journal_extra: dict | None = None) -> None:
         """Common emission tail for a discovered insight, shared by Phase 7
         (cross-table) and Phase 8 (domain intel). Bumps counters, writes the K3
         ledger artifact (Trust-Receipt provenance), fires the live
@@ -1165,10 +1166,18 @@ class SchemaExplorer:
                 _lineage.append(("input", f"table:{_tbl}", None))
             _lineage.append(("validated_by", "guard:numeric_grounding",
                              "all magnitudes matched result cells"))
+            # The Finding Dossier rides INSIDE the finding artifact's payload (not
+            # state["insights"], which the panel reads and must stay lean). The
+            # read-only receipt endpoint returns the whole payload, so the Evidence
+            # drawer gets the full derivation for free — no new endpoint, no recompute.
+            # Re-explore writes version+1, naturally re-snapshotting the dossier.
+            if dossier is not None:
+                _lineage.append(("derivation", "dossier", "captured at emit time"))
+            _payload = insight if dossier is None else {**insight, "dossier": dossier}
             Ledger.default().artifact_write(
                 "finding",
                 f"insight:{self.connection_id}:{insight_id}",
-                insight,
+                _payload,
                 conn_id=self.connection_id,
                 canvas_id=self.canvas_id,
                 created_by_job=current_job_id(),
@@ -2353,6 +2362,9 @@ class SchemaExplorer:
             finding: str       # 1-2 sentence business insight, specific with numbers
             novelty: int       # 1-5: how new is this vs existing findings for this domain
             angle_covered: str # which coverage angle this satisfies
+            rationale: str = "" # 1 sentence: the business mechanism/reasoning behind the finding
+                                # (why it holds / what drives it) — captured into the Finding
+                                # Dossier so "explain this" is a read, not a re-derivation.
 
         # ── Coverage angles per domain ─────────────────────────────────────────
 
@@ -3463,7 +3475,10 @@ class SchemaExplorer:
                         "Being the LOWEST in a ranking is NOT evidence it is bad. Use relative language "
                         "instead ('the lowest of the group at X, vs ~Y typical'); a 47% margin that is "
                         "merely the smallest of several healthy margins is NOT 'critically low'.\n"
-                        "- Novelty score: 1=already known/trivial, 5=genuinely new and surprising."
+                        "- Novelty score: 1=already known/trivial, 5=genuinely new and surprising.\n"
+                        "- rationale: in ONE sentence, state the business mechanism or reasoning that "
+                        "makes this finding meaningful — why it holds or what drives it. This is the "
+                        "'why', distinct from the 'what' in `finding`. Do not restate the numbers."
                     )
                     _usr3 = (
                         f"DOMAIN: {domain}\n"
@@ -3728,7 +3743,33 @@ class SchemaExplorer:
                 if hasattr(self, "_insight_vecs"):
                     self._insight_vecs.append(_fvec)   # keep paraphrase-dedup vectors aligned
                 domain_insights.append(insight)
-                self._emit_insight(insight, sql, journal_extra={"domain": domain})
+
+                # Capture the derivation while every input is still in hand — the
+                # question asked, the grounded result cells, the interpreter's
+                # reasoning, and the structural facts this finding stands on. This
+                # is the dossier the Evidence drawer renders, so a later "explain
+                # this" drill is a read, not a second deep analysis. Fail-soft:
+                # provenance must never block emitting a real finding.
+                _dossier = None
+                try:
+                    from aughor.explorer.dossier import build_dossier
+                    _dossier = build_dossier(
+                        question=nq.question,
+                        sql=sql,
+                        finding=interp.finding,
+                        rationale=getattr(interp, "rationale", "") or "",
+                        rows=rows,
+                        grounding=_g,
+                        tables=_tables_in_sql(sql),
+                        state=self._state,
+                        generated_at=insight["generated_at"],
+                        data_fingerprint=self._state.get("schema_fingerprint"),
+                    )
+                except Exception:
+                    logger.debug("dossier build failed (non-fatal)", exc_info=True)
+
+                self._emit_insight(insight, sql, dossier=_dossier,
+                                   journal_extra={"domain": domain})
 
                 # Mark angle as covered
                 angle_key = interp.angle_covered or nq.angle

@@ -38,7 +38,7 @@ export function useChat() {
     eventLogRef.current = [...eventLogRef.current.slice(-(MAX_LOG - 1)), e];
   }, []);
 
-  async function ask(question: string, connectionId: string, mode: "ask" | "investigate" = "ask", opts: { skipCache?: boolean; canvasId?: string } = {}) {
+  async function ask(question: string, connectionId: string, mode: "ask" | "investigate" = "ask", opts: { skipCache?: boolean; canvasId?: string; insightId?: string; deep?: boolean } = {}) {
     const id = Math.random().toString(36).slice(2);
     dispatch({ type: "ASK", id, question, mode });
 
@@ -54,7 +54,7 @@ export function useChat() {
         res = await fetch(`${BASE}/investigate`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ question, connection_id: connectionId, canvas_id: opts.canvasId ?? null, skip_cache: opts.skipCache ?? false }),
+          body: JSON.stringify({ question, connection_id: connectionId, canvas_id: opts.canvasId ?? null, skip_cache: opts.skipCache ?? false, insight_id: opts.insightId ?? null, deep: opts.deep ?? false }),
           signal,
         });
       } else {
