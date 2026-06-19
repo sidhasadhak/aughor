@@ -385,6 +385,18 @@ def generate_briefing(conn_id: str, refresh: bool = False, schema: str | None = 
     from aughor.knowledge.patterns import get_patterns
     from aughor.knowledge.briefing import get_briefing
 
+    # RC5b — re-validate the findings that can headline this brief against LIVE data before
+    # synthesizing. Re-runs the top-N by novelty and re-applies the same gate (verify_insight
+    # + grounding); anything that no longer reproduces / is degenerate / implausible is
+    # flagged invalid (reversible) so it's dropped from BOTH the headline and the synthesis.
+    # Bounded + cached + fail-open. Skipped for a cached narrative (only matters when building).
+    if refresh:
+        try:
+            from aughor.explorer.revalidate_live import revalidate_for_briefing
+            revalidate_for_briefing(conn_id, schema)
+        except Exception:
+            pass
+
     by_domain = _domain_insights_for(conn_id, schema)
     if _needs_filter(conn_id, schema):
         by_domain = _filter_by_schema(by_domain, conn_id, schema)

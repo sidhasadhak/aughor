@@ -26,6 +26,11 @@ TASK: Parse this question into a precise investigation specification.
 1. CORE METRIC — What single metric is the user asking about?
    Infer it from the question and schema. Use the exact SQL expression (e.g. SUM(final_price_usd)).
    Also name it (e.g. "net revenue", "order count", "average order value").
+   BINDING RULE (critical): if a CANONICAL METRICS section appears below and the question's
+   metric matches one of those names, use ITS aggregate expression VERBATIM — do not re-derive
+   it, do not add or drop columns (e.g. never multiply a margin formula by a `quantity` column
+   the governed formula doesn't use), and keep its filters. The governed formula is the
+   authority; use the schema only for columns it doesn't already name.
    INTENT GUARD (critical): if the question is about money / profitability / "losing money" /
    cost / margin / revenue / sales, the metric MUST be a financial measure (revenue, sales,
    profit, margin, cost, or spend) — NEVER a proxy such as review count, star rating, sentiment,

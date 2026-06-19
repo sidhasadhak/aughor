@@ -1515,7 +1515,9 @@ async def _stream_investigation(
             # Pass the schema we already fetched (full_schema, cached above) so the metric
             # schema-filter doesn't RE-INTROSPECT it — that redundant fetch was ~16s per
             # investigation on big warehouses (profiled), duplicating this same schema.
-            _canon = canonical_metrics_block(connection_id, canvas_scope_schema, schema_text=full_schema)
+            # Use the EFFECTIVE scope schema (canvas OR an explicit schema-scoped run) so the
+            # connection's GOVERNED north-star metrics for THIS schema are injected (RC2).
+            _canon = canonical_metrics_block(connection_id, scope_schema, schema_text=full_schema)
             if _canon:
                 schema_for_agent = f"{schema_for_agent}\n\n{_canon}"
         except Exception:
