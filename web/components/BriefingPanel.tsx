@@ -473,14 +473,19 @@ function synthesize(
   for (const [domain, data] of Object.entries(domainData)) {
     for (const ins of data.insights) {
       insightById.set(ins.id, { insight: ins, domain });
-      if (isDegenerateFinding(ins)) continue;
+      // Drop the impossible (e.g. inventory turnover 96,295×) from EVERY signal surface —
+      // the headline, supporting signals AND the key-questions grid — using the same trust
+      // gate as the AI synthesis. Confounds and everything else stay (ranked by impact below).
+      if (isDegenerateFinding(ins) || ins.plausibility === "implausible") continue;
       allSignals.push({ insight: ins, domain });
       totalInsights++;
     }
   }
 
-  // Sort by novelty desc
-  allSignals.sort((a, b) => b.insight.novelty - a.insight.novelty);
+  // Rank by impact (the briefing-triage score stamped by /domains) — the same authority as
+  // the AI synthesis and the dashboard cards — falling back to novelty when unannotated.
+  const rankImpact = (i: ExplorationInsight) => i.impact ?? (i.novelty ?? 0);
+  allSignals.sort((a, b) => rankImpact(b.insight) - rankImpact(a.insight));
 
   const headline = allSignals[0] ?? null;
 
@@ -510,7 +515,7 @@ function synthesize(
   // Per-domain stats for the coverage chart (where the intelligence concentrates).
   const domains: DomainStat[] = Object.entries(domainData)
     .map(([name, data]) => {
-      const ns = data.insights.filter(i => !isDegenerateFinding(i)).map(i => i.novelty);
+      const ns = data.insights.filter(i => !isDegenerateFinding(i) && i.plausibility !== "implausible").map(i => i.novelty);
       return {
         name,
         count: ns.length,
