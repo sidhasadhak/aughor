@@ -661,6 +661,19 @@ def verify_insight(rows, finding_text: str = "", sql: str = "", metric_ranges=No
         vc = _vacuous_case_dimension(sql, rows)
         if vc:
             return (False, vc)
+        # Impossible-magnitude check (operating bands), shared with the briefing's triage so
+        # there is ONE band KB. Lifted to the EMISSION gate so an impossible value (inventory
+        # turnover 3,600×) never gets stored — protecting the insight cards and any other
+        # consumer, not just the brief. Only the 'implausible' severity hard-rejects here; the
+        # 'confound' severity is deliberately NOT rejected (an inverse relationship can be a
+        # real finding — "churn falls as engagement rises") and stays a soft demotion at synthesis.
+        try:
+            from aughor.knowledge.triage import plausibility as _plausibility
+            _pv = _plausibility(finding_text, sql)
+            if _pv.severity == "implausible":
+                return (False, _pv.reason)
+        except Exception:
+            pass
         cg = _claim_numbers_grounded(finding_text, rows)
         if cg:
             return (False, cg)

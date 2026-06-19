@@ -62,3 +62,28 @@ def test_verify_insight_rejects_vacuous_case():
     )
     assert ok is False
     assert "vacuous categorization" in reason
+
+
+# ── implausible-magnitude check lifted to the emission gate (universal, not brief-only) ──
+
+def test_verify_insight_rejects_impossible_magnitude_at_emission():
+    # An impossible inventory turnover must be dropped at EMISSION (so it never reaches the
+    # insight cards), reusing the briefing triage's operating-band KB as the single source.
+    ok, reason = verify_insight(
+        rows=[["mass", 3600.37], ["premium", 409.86]],
+        finding_text="Inventory turnover is far higher in mass-tier (3600.37) than premium (409.86)",
+        sql="SELECT tier, inventory_turnover FROM t",
+    )
+    assert ok is False
+    assert "turnover" in reason.lower()
+
+
+def test_verify_insight_keeps_legitimate_inverse_finding():
+    # The confound check must NOT hard-reject at emission — an inverse relationship can be a
+    # real, useful finding. It stays a soft demotion at synthesis, not an emission drop.
+    ok, _ = verify_insight(
+        rows=[["q1", 0.18, 100], ["q2", 0.12, 220]],
+        finding_text="Churn rate decreases as engagement score increases across cohorts",
+        sql="SELECT cohort, churn_rate, engagement FROM t",
+    )
+    assert ok is True
