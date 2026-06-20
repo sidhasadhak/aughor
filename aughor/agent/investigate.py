@@ -922,7 +922,7 @@ def _assemble_phase_findings(results, narrator_findings, id_prefix, metric_label
         if not r.error and r.rows:
             try:
                 from aughor.explorer.agent import verify_insight
-                _ok, _why = verify_insight(r.rows, f.get("interpretation", ""), r.sql)
+                _ok, _why = verify_insight(r.rows, f.get("interpretation", ""), r.sql, columns=r.columns)
                 if not _ok:
                     f["trust_caveat"] = _why
             except Exception as _e:
@@ -946,6 +946,74 @@ def _chart_primary_is_metric(finding) -> None:
         return
     keep = [i for i, c in enumerate(cols) if not _SHARE_COL_RE.search(c)]
     if len(keep) == len(cols) or len(keep) < 2:
+        return
+    finding["columns"] = [cols[i] for i in keep]
+    finding["rows"] = [[row[i] for i in keep] for row in (finding.get("rows") or [])]
+
+
+_RATIO_AGG_RE = re.compile(r"\b(sum|count|avg|min|max|median|stddev|variance|var_pop|var_samp)\s*\(", re.I)
+_RATIO_LABEL_RE = re.compile(r"%|percent|\brate\b|ratio|share of|average|\bavg\b|\bmean\b|per[ -](order|unit|customer|capita|record)", re.I)
+
+
+def _metric_is_ratio(metric_sql: str, metric_label: str = "") -> bool:
+    """Deterministic gate: is the metric a RATIO / percentage / per-unit average rather than a
+    plain additive total? A ratio (SUM(num)/SUM(den), anything *100, an AVG/mean) must be
+    re-aggregated per group as numerator/denominator — it can NEVER be SUM'd across groups or
+    divided by COUNT(*). The cross-sectional weakness scan used an additive-SUM template that
+    silently dropped the denominator and reported SUM(numerator) as the metric; this detector
+    routes such metrics to the ratio-aware plan/interpret path instead.
+
+    Detection (any one): a top-level *100 scaling; a division between two aggregate expressions;
+    or a label that names a percentage / rate / ratio / average / per-unit measure."""
+    s = metric_sql or ""
+    compact = s.replace(" ", "")
+    if "*100" in compact:
+        return True
+    if "/" in s and len(_RATIO_AGG_RE.findall(s)) >= 2:
+        return True
+    # a bare AVG/MEAN/MEDIAN aggregate is a per-record mean — non-additive
+    if re.search(r"\b(avg|mean|median)\s*\(", s, re.I):
+        return True
+    if _RATIO_LABEL_RE.search(metric_label or ""):
+        return True
+    return False
+
+
+# The cross-sectional scan defaults to a WEAKNESS frame (rank ascending, surface the lowest).
+# Some diagnostics instead seek the MAXIMUM ("which category carries the HIGHEST out-of-stock
+# burden") — for those the answer is the largest value, not the smallest, so orient the ranking
+# and interpretation toward the top. Conservative: an explicit max superlative with no min word.
+_XSEC_MAX_RE = re.compile(r"\b(highest|largest|biggest|greatest|maximum|most)\b", re.I)
+_XSEC_MIN_RE = re.compile(r"\b(lowest|weakest|least|smallest|minimum|bottom|underperform\w*)\b", re.I)
+
+
+def _xsec_max_seeking(question: str) -> bool:
+    q = question or ""
+    return bool(_XSEC_MAX_RE.search(q)) and not _XSEC_MIN_RE.search(q)
+
+
+_RATIO_METRIC_COL_RE = re.compile(r"metric_total|metric_value|\bratio\b|pct|percent|\brate\b", re.I)
+
+
+def _chart_ratio_primary(finding) -> None:
+    """For a RATIO metric, plot metric_total (the ratio itself), not the large numerator/
+    denominator dollar aggregates it was built from. Keep the dimension column + the ratio
+    column in the rendered table/chart; drop n / numerator_total / denominator_total from the
+    VIEW (the narrator still saw them in results_text). Mirror image of _chart_primary_is_metric,
+    which drops share columns to plot a magnitude — here we drop magnitudes to plot the ratio."""
+    cols = finding.get("columns") or []
+    if len(cols) <= 2:
+        return
+    keep = [0]  # the dimension column always leads
+    for i, c in enumerate(cols):
+        if i == 0:
+            continue
+        if _RATIO_METRIC_COL_RE.search(c):
+            keep.append(i)
+            break
+    if len(keep) < 2:
+        keep = [0, 1]  # fallback: dimension + first metric column
+    if len(keep) == len(cols):
         return
     finding["columns"] = [cols[i] for i in keep]
     finding["rows"] = [[row[i] for i in keep] for row in (finding.get("rows") or [])]
@@ -1779,12 +1847,16 @@ def _detect_question_direction(question: str) -> Optional[str]:
 class _PhaseRun:
     """Outcome of the shared plan→execute→interpret skeleton. On failure `error_phase` is a
     ready phase the caller returns; on success the caller proceeds with its bespoke tail."""
-    def __init__(self, ok, results=None, results_text="", interpretation=None, error_phase=None):
+    def __init__(self, ok, results=None, results_text="", interpretation=None, error_phase=None,
+                 fanout_caveat=None):
         self.ok = ok
         self.results = results or []
         self.results_text = results_text
         self.interpretation = interpretation
         self.error_phase = error_phase
+        # Set when a metric still aggregates across a fan-out join AFTER the corrective
+        # re-plan — the magnitude is unreliable and must not be presented as trustworthy.
+        self.fanout_caveat = fanout_caveat
 
 
 def run_analysis_phase(
@@ -1838,6 +1910,107 @@ def run_analysis_phase(
             tolerate(_exc, "temporal-guard re-plan is best-effort; the prompt rule still applies "
                      "and the original plan still runs", counter="temporal_guard.replan_failed")
 
+    # Fan-out guard (CHASM) — a metric aggregated across a join that MULTIPLIES its home
+    # table's rows inflates the total. Real failure: a "stockout days by category" scan summed
+    # inventory_snapshots (product×month grain) AFTER joining order_items (2.37M line-items),
+    # inflating the total ~1000× at HIGH confidence. The /chat path guards this; the ADA phases
+    # did not. Detect SUM/AVG/COUNT-over-chasm on the planned SQL and force ONE corrective re-plan
+    # that reaches the dimension via a UNIQUE lookup key instead of fanning out through a fact table.
+    _fanout_caveat = None
+    try:
+        from aughor.sql.fanout import sum_over_chasm_fanout, avg_over_chasm_fanout, count_star_chasm_fanout
+        from aughor.tools.schema import parse_schema_tables
+        _tc = parse_schema_tables(schema) if schema else {}
+        _dialect = getattr(conn, "dialect", "duckdb")
+
+        def _augment_tc(queries):
+            # The intake's FILTERED phase schema can omit a table the coder reaches for (e.g.
+            # order_items joined only to grab a category dimension). Without that table's columns
+            # the chasm detector is BLIND to the fan-out (the 11-trillion stockout total that
+            # slipped past). Introspect any referenced-but-missing table so the detector sees the
+            # whole join — for the ORIGINAL plan and again after a re-plan.
+            try:
+                import sqlglot as _sg
+                from sqlglot import exp as _sgx
+                _have = {k.lower() for k in _tc}
+                _refs = set()
+                for _q in (queries or []):
+                    try:
+                        for _t in _sg.parse_one(_q.sql, read=_dialect).find_all(_sgx.Table):
+                            _refs.add(f"{_t.db}.{_t.name}" if _t.db else _t.name)
+                    except Exception as _e2:
+                        from aughor.kernel.errors import tolerate
+                        tolerate(_e2, "fanout schema-augment: query parse", counter="ada.fanout_augment_parse")
+                for _ref in _refs:
+                    if not _ref or _ref.lower() in _have:
+                        continue
+                    _p = _ref.split(".")
+                    _probe = (
+                        f"SELECT column_name FROM information_schema.columns "
+                        f"WHERE table_name = '{_p[-1]}'"
+                        + (f" AND table_schema = '{_p[0]}'" if len(_p) == 2 else "")
+                    )
+                    try:
+                        _res = conn.execute("__fanout_schema_probe__", _probe)
+                        _rows = getattr(_res, "rows", None) or []
+                        if _rows:
+                            _tc[_ref] = [r[0] for r in _rows]
+                            _have.add(_ref.lower())
+                    except Exception as _e2:
+                        from aughor.kernel.errors import tolerate
+                        tolerate(_e2, "fanout schema-augment: column probe", counter="ada.fanout_augment_probe")
+            except Exception as _e1:
+                from aughor.kernel.errors import tolerate
+                tolerate(_e1, "fanout schema-augment is best-effort", counter="ada.fanout_augment_failed")
+
+        def _scan_fanout(queries):
+            _augment_tc(queries)
+            hits = []
+            for _q in (queries or []):
+                for _det in (sum_over_chasm_fanout, avg_over_chasm_fanout, count_star_chasm_fanout):
+                    _h = _det(_q.sql, _tc, _dialect)
+                    if _h:
+                        hits.append(_h)
+                        break
+            return hits
+
+        _fanout_hints = _scan_fanout(plan.queries)
+        if _fanout_hints:
+            from aughor.stats import stats as _s; _s.inc("ada.fanout_guard_retries")
+            try:
+                _fixed = _provider("coder").complete(
+                    system=plan_system,
+                    user=plan_user + (
+                        "\n\nCORRECTION REQUIRED — FAN-OUT DETECTED: a previous attempt aggregated a "
+                        "metric across a join that MULTIPLIES its home table's rows, inflating the "
+                        "total. Problems found:\n  - " + "\n  - ".join(dict.fromkeys(_fanout_hints)) +
+                        "\nRe-write so the metric's OWN table is aggregated at ITS own grain: reach the "
+                        "GROUP BY dimension through a key UNIQUE in the dimension's lookup table (e.g. a "
+                        "product's category from the products table, NOT from order_items), and do NOT "
+                        "join to a second transaction/fact table that fans the metric out. Do NOT change "
+                        "what the metric measures. If a many-side join is unavoidable, pre-aggregate EACH "
+                        "satellite in its own CTE keyed by the shared id BEFORE joining."),
+                    response_model=PhasePlan)
+                if _fixed and _fixed.queries:
+                    plan = _fixed
+            except Exception as _exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_exc, "fan-out guard re-plan is best-effort; the prompt rule still applies",
+                         counter="ada.fanout_guard.replan_failed")
+            # Fail-safe: the LLM re-plan is unreliable on a known fan-out (it often returns a
+            # plausible query that still double-counts). If the metric STILL aggregates across a
+            # chasm, we must not present the magnitude as trustworthy — carry a caveat downstream.
+            if _scan_fanout(plan.queries):
+                _s.inc("ada.fanout_guard_unresolved")
+                _fanout_caveat = (
+                    "The metric is aggregated across a fan-out join (a one-to-many join multiplies "
+                    "the rows being summed), so the magnitudes below are likely inflated and the "
+                    "ranking may be volume-weighted rather than reflecting the true per-group total — "
+                    "treat these numbers as directional only."
+                )
+    except Exception:
+        _fanout_caveat = None
+
     # Step 2 — execute (parallel — each query gets its own reader connection)
     results = _parallel_execute_safe(conn, phase_id, plan.queries, cap=cap, schema=schema)
     if not results:
@@ -1860,7 +2033,8 @@ def run_analysis_phase(
             response_model=PhaseInterpretation)
     except Exception:
         interpretation = None
-    return _PhaseRun(ok=True, results=results, results_text=results_text, interpretation=interpretation)
+    return _PhaseRun(ok=True, results=results, results_text=results_text, interpretation=interpretation,
+                     fanout_caveat=_fanout_caveat)
 
 
 @_telemetry.node_span("ada_baseline")
@@ -2427,6 +2601,8 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection") -> dict:
     most-concentrated values, instead of a temporal baseline."""
     from aughor.agent.prompts_investigate import (
         CROSS_SECTION_PLAN_PROMPT, CROSS_SECTION_INTERPRET_PROMPT,
+        CROSS_SECTION_ADDITIVE_BLOCK, CROSS_SECTION_RATIO_BLOCK,
+        CROSS_SECTION_RATIO_INTERPRET_PROMPT,
         PhasePlan, PhaseInterpretation,
     )
     question = state["question"]
@@ -2440,6 +2616,30 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection") -> dict:
 
     prioritized = _prioritize_dimensions(dimensions)
     dimensions_list = "\n".join(f"  - {d}" for d in prioritized[:6]) if prioritized else "  (none identified)"
+
+    # RATIO vs ADDITIVE metric. A ratio/percentage/per-unit metric (SUM(num)/SUM(den), *100, AVG)
+    # cannot be SUM'd across groups or divided by COUNT(*) — the additive template silently dropped
+    # the denominator and reported SUM(numerator) as the metric (mislabelling $/order as a %).
+    # Intake's metric_is_ratio is an OR signal; the deterministic detector is the actual gate.
+    is_ratio = bool(intake_data.get("metric_is_ratio")) or _metric_is_ratio(metric_sql, metric_label)
+    metric_computation_block = (
+        CROSS_SECTION_RATIO_BLOCK if is_ratio else CROSS_SECTION_ADDITIVE_BLOCK
+    ).format(metric_sql=metric_sql)
+
+    # Direction: default is a weakness frame (lowest first). For a max-seeking question ("HIGHEST
+    # burden / MOST X") the answer is the LARGEST value — orient the ranking and interpretation to
+    # the top so synthesis doesn't lead with a mid-rank value (the D8 "makeup_lips not skincare_face"
+    # miss). The metric_computation_block sorts ASC; this override flips it and re-frames the read.
+    _max_seeking = _xsec_max_seeking(question)
+    _direction_plan = (
+        "\n\nDIRECTION OVERRIDE — this question asks for the HIGHEST / MOST: ORDER BY metric_total "
+        "DESC so the LARGEST values come first, and treat the MAXIMUM as the answer (NOT the "
+        "minimum). Keep every other rule above."
+    ) if _max_seeking else ""
+    _direction_interp = (
+        " DIRECTION: this question asks for the HIGHEST / MOST — name and LEAD WITH the LARGEST "
+        "value(s); the maximum is the answer, never the minimum."
+    ) if _max_seeking else ""
 
     # DRIVER questions ("do late deliveries lower reviews") carry a derived comparison
     # segment from intake — compare the metric ACROSS that condition (true vs false) as
@@ -2466,17 +2666,28 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection") -> dict:
         plan_user=CROSS_SECTION_PLAN_PROMPT.format(
             question=question, metric_label=metric_label, metric_sql=metric_sql,
             metric_table=metric_table, schema=schema, dimensions_list=dimensions_list,
-            comparison_segment_section=comparison_segment_section),
+            metric_computation_block=metric_computation_block,
+            comparison_segment_section=comparison_segment_section) + _direction_plan,
         interpret_system=(
+            "Interpret a cross-sectional ranking scan of a RATIO / percentage metric. Read "
+            "metric_total AS that ratio in its own units — NEVER as a dollar total or per-record "
+            "average. DIRECTION matters: a LOW ratio is often GOOD (low cost-%, low defect-rate); "
+            "judge by what the ratio measures, do not assume the minimum is the problem. Only call a "
+            "value 'weak'/'underperforming' if clearly adverse vs a benchmark or a real outlier; "
+            "otherwise use relative language and say the spread is tight/healthy."
+            if is_ratio else
             "Interpret a cross-sectional ranking scan. Name the LOWEST-RANKED values and any "
             "concentration. SEVERITY GROUNDING: only call a value 'weak', 'critically low', "
             "'underperforming', or 'the weakest' if it is below a stated benchmark/target or far "
             "below the in-result average — being the minimum of a ranking is NOT, by itself, "
             "evidence it is unhealthy. Otherwise use relative language ('the lowest at X vs the ~Y "
             "average'). Be explicit when the spread is tight and all values are healthy."
-        ),
-        interpret_user_fn=lambda results_text: CROSS_SECTION_INTERPRET_PROMPT.format(
-            question=question, metric_label=metric_label, results_text=results_text),
+        ) + _direction_interp,
+        interpret_user_fn=(lambda results_text: CROSS_SECTION_RATIO_INTERPRET_PROMPT.format(
+            question=question, metric_label=metric_label, results_text=results_text))
+        if is_ratio else
+        (lambda results_text: CROSS_SECTION_INTERPRET_PROMPT.format(
+            question=question, metric_label=metric_label, results_text=results_text)),
         plan_error_msg="Cross-sectional planning failed.",
         exec_error_msg="Cross-sectional queries failed.",
     )
@@ -2499,9 +2710,74 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection") -> dict:
         ]
         summary = "Cross-sectional scan complete."
 
-    # Make the bar plot the metric magnitude, not its share-of-total (see helper).
+    # Make the bar plot the metric itself: for a ratio, plot metric_total (the %/rate) and drop the
+    # large numerator/denominator aggregates; for an additive metric, plot the magnitude not its share.
     for f in findings:
-        _chart_primary_is_metric(f)
+        if is_ratio:
+            _chart_ratio_primary(f)
+        else:
+            _chart_primary_is_metric(f)
+
+    # Numeric fan-out backstop — the AST chasm detectors miss some join shapes and the coder can
+    # reinterpret the metric, so verify the NUMBERS on the RAW results (all columns present). Two
+    # metric-agnostic, deterministic checks against the metric table computed WITHOUT joins:
+    #   • row-count: a clean per-group aggregate scans at most the metric table's rows (filters only
+    #     reduce). If the COUNT(*) `n` summed across groups far exceeds that, a join multiplied the
+    #     rows — the $4.4B / $11.1T stockout totals had n≈29M vs inventory's 168k.
+    #   • grand-total (additive, single-table metric): the parts must sum to the metric's true total.
+    # Either overshoot ⇒ fan-out, whatever the SQL shape. Fail-open.
+    _numeric_fanout = None
+    if metric_table and results:
+        try:
+            _dialect = getattr(conn, "dialect", "duckdb")
+            def _num(v):
+                try: return float(str(v).replace(",", ""))
+                except Exception: return None
+            _cnt = conn.execute("__xsec_base_rows__", f"SELECT COUNT(*) FROM {metric_table}")
+            _base_rows = _num(_cnt.rows[0][0]) if (_cnt and _cnt.rows and _cnt.rows[0]) else None
+
+            def _scanned_rows(sql):
+                # Rewrite the finding's query to COUNT(*) over its FROM/JOIN/WHERE (drop the
+                # projection, GROUP BY, HAVING, ORDER, LIMIT) to measure the actual post-join
+                # cardinality the aggregate ran over — robust to any metric expression or column set.
+                try:
+                    import sqlglot as _sg
+                    from sqlglot import exp as _sgx
+                    _tree = _sg.parse_one(sql, read=_dialect)
+                    for _k in ("group", "having", "order", "limit", "qualify", "distinct"):
+                        _tree.set(_k, None)
+                    _tree.set("expressions", [_sgx.Count(this=_sgx.Star())])
+                    _r = conn.execute("__xsec_scanned__", _tree.sql(dialect=_dialect))
+                    return _num(_r.rows[0][0]) if (_r and _r.rows and _r.rows[0]) else None
+                except Exception:
+                    return None
+
+            if _base_rows and _base_rows > 0:
+                for _q, r in results:
+                    _sql = getattr(r, "sql", None) or getattr(_q, "sql", None)
+                    if not _sql:
+                        continue
+                    _scanned = _scanned_rows(_sql)
+                    if _scanned and _scanned > _base_rows * 1.5:
+                        _numeric_fanout = (
+                            f"The scan touched ~{_scanned:,.0f} rows but the metric's table "
+                            f"({metric_table}) has only ~{_base_rows:,.0f} — a join multiplied the rows, "
+                            "so the metric is inflated by a fan-out and its magnitudes / ranking are "
+                            "unreliable (needs a grain-correct recompute).")
+                        break
+        except Exception:
+            _numeric_fanout = None
+
+    # Fail-safe: the metric still fans out after the corrective re-plan (AST-detected) OR the numeric
+    # backstop caught an inflated total. Caveat EVERY finding and strip the significance flag so an
+    # inflated magnitude is never presented as a trustworthy weakness; surface it in the phase summary
+    # so synthesis cannot confidently rank on it.
+    _eff_caveat = _run.fanout_caveat or _numeric_fanout
+    if _eff_caveat:
+        for f in findings:
+            f["trust_caveat"] = f.get("trust_caveat") or _eff_caveat
+            f["is_significant"] = False
+        summary = f"⚠ {_eff_caveat} " + (summary or "")
 
     phase = _phase_result(
         "cross_section", "Cross-Sectional Scan", "🧭",
@@ -2573,6 +2849,34 @@ def ada_synthesize(state: AgentState) -> dict:
             "the spread is tight and all values are healthy, say the dimension is healthy and DROP "
             "the weakness framing (an empty waterfall is correct when nothing is actually weak)."
         )
+        if intake_data.get("metric_is_ratio") or _metric_is_ratio(
+            intake_data.get("metric_sql", ""), intake_data.get("metric_label", "")
+        ):
+            cross_section_note += (
+                "\n\nRATIO METRIC: the metric is a RATIO / percentage / per-unit rate (e.g. "
+                f"'{intake_data.get('metric_label', 'the metric')}'), NOT a dollar total. Report every "
+                "value in the metric's OWN units (%, rate) — NEVER restate it as a dollar amount or a "
+                "per-order average, and NEVER manufacture a percentage from a dollar column. DIRECTION: "
+                "for a cost/defect/freight-style ratio a LOW value is FAVOURABLE; do not call the lowest "
+                "ratio a weakness unless the ratio's meaning makes low genuinely bad. total_change_label "
+                "should be the overall ratio or 'N/A', not a summed percentage."
+            )
+        if any("fan-out" in (f.get("trust_caveat") or "").lower()
+               for p in phases for f in (p.get("findings") or [])):
+            cross_section_note += (
+                "\n\nFAN-OUT CAVEAT: a metric below was aggregated across a one-to-many join that "
+                "INFLATES the magnitude (the rows being summed were multiplied), so the figures are "
+                "unreliable and the ranking may be volume-weighted. Do NOT present these numbers as "
+                "exact, do NOT rank confidently on them, and set confidence to at most MEDIUM (LOW if "
+                "the inflated metric is the only evidence). Say plainly the figure needs a grain-correct "
+                "recompute before it can be trusted."
+            )
+        if _xsec_max_seeking(question):
+            cross_section_note += (
+                "\n\nDIRECTION: this question asks for the HIGHEST / MOST. The cross-sectional ranking's "
+                "answer is the value with the LARGEST metric — lead with the MAXIMUM, not the minimum or "
+                "a mid-rank value. Order the attribution_waterfall from the largest contributor down."
+            )
 
     # Build metric targets block for synthesis guidance
     metric_targets_section = ""

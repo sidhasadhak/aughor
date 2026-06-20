@@ -159,6 +159,50 @@ _TABLE_RE = re.compile(r'\b(?:FROM|JOIN)\s+(?:\w+\.)?(\w+)', re.IGNORECASE)
 _CTE_DEF_RE = re.compile(r'\b(\w+)\s+AS\s*\(', re.IGNORECASE)
 
 
+_DIM_NOUN_RE = re.compile(
+    r"\b(categor(?:y|ies)|segments?|tiers?|brands?|channels?|regions?|countr(?:y|ies)|"
+    r"types?|classes|groups?|statuses|brackets?|cohorts?)\b", re.I)
+_GROUP_ID_COL_RE = re.compile(r"(^|_)(id|key|code|sk|pk)$|_id$|_key$|_code$", re.I)
+
+
+def _breakdown_grain_hint(question: str, sql: str, dialect: str = "duckdb") -> str:
+    """Catch a breakdown grouped at TOO FINE a grain: the question names a categorical
+    dimension ('top product CATEGORIES', 'by brand') but the SQL GROUPs BY an id/key column
+    (product_id) instead, so it ranks individual rows, not the category. High-precision: fires
+    only when EVERY group-by column is id-like AND the question names a real dimension noun."""
+    try:
+        import sqlglot
+        from sqlglot import exp
+        tree = sqlglot.parse_one(sql, read=dialect)
+        grp = tree.find(exp.Group)
+        if not grp:
+            return ""
+        select_exprs = tree.expressions if isinstance(tree, exp.Select) else []
+        gcols: list[str] = []
+        for e in grp.expressions:
+            if isinstance(e, exp.Column):
+                gcols.append(e.name)
+            elif isinstance(e, exp.Literal) and getattr(e, "is_int", False):
+                idx = int(e.this) - 1
+                if 0 <= idx < len(select_exprs):
+                    gcols.append(select_exprs[idx].alias_or_name or "")
+        gcols = [c for c in gcols if c]
+        if not gcols or not all(_GROUP_ID_COL_RE.search(c) for c in gcols):
+            return ""
+        m = _DIM_NOUN_RE.search(question or "")
+        if not m:
+            return ""
+        noun = m.group(0)
+        return (
+            f"BREAKDOWN GRAIN MISMATCH: the question asks for a breakdown by '{noun}', but the query "
+            f"GROUPs BY an id/key column ({', '.join(gcols)}) — that ranks individual rows, not {noun}. "
+            f"GROUP BY the '{noun}' categorical column instead (JOIN to its lookup table and group by the "
+            f"name/label if the dimension lives there), and aggregate the metric within each {noun}."
+        )
+    except Exception:
+        return ""
+
+
 def _extract_tables(sql: str) -> list[str]:
     """Base tables referenced by `sql`, CTEs excluded. Uses the shared analyze()
     AST facade (correct on aliases/subqueries/schema-qualified names); falls back
@@ -717,10 +761,21 @@ async def _stream_chat(
                 canvas_scope_full = _scope.is_full_schema
         except Exception:
             pass
+    # A table-list-scoped canvas on a multi-schema connection carries schema-qualified
+    # table names (e.g. "missimi.orders") with schema_name=None. Derive the single owning
+    # schema so the connection PINS search_path to it — otherwise an unqualified `FROM orders`
+    # in generated/compiled SQL leaks to a sibling schema's same-named table (the missimi
+    # canvas silently answering from netflix.orders/main.orders). canvas_scope_schema is left
+    # untouched so the "ALLOWED TABLES" prompt block (the explicit allow-list) still drives.
+    canvas_scope_eff_schema = canvas_scope_schema
+    if not canvas_scope_eff_schema and canvas_scope_tables:
+        _scope_schemas = {t.split(".")[0] for t in canvas_scope_tables if "." in t}
+        if len(_scope_schemas) == 1:
+            canvas_scope_eff_schema = next(iter(_scope_schemas))
     try:
-        if canvas_id and canvas_scope_schema:
+        if canvas_id and canvas_scope_eff_schema:
             from aughor.db.connection import open_connection_for_with_schema
-            db = open_connection_for_with_schema(connection_id, schema_name=canvas_scope_schema)
+            db = open_connection_for_with_schema(connection_id, schema_name=canvas_scope_eff_schema)
         else:
             db = open_connection_for(connection_id)
     except KeyError as e:
@@ -1027,11 +1082,22 @@ async def _stream_chat(
                 from aughor.semantic.compiler import compile_question
                 # Pass the schema we already fetched (_full_schema) so metric resolution
                 # inside the compiler doesn't re-introspect it — ~16s per compile (profiled).
-                _cc = compile_question(question, connection_id, dialect=db.dialect, schema_text=_full_schema)
+                # CRITICAL: scope the compiler to the canvas's schema. Without it, a missimi
+                # canvas loaded the connection-wide (generic demo) ontology whose entities lack
+                # missimi's real measures/dimensions — so the compiler resolved the WRONG column
+                # (installments→total_amount, days_out_of_stock→COUNT, brand→category) and, because
+                # the compiled SQL OVERRIDES the LLM's, served a confidently wrong answer.
+                _cc = compile_question(question, connection_id, schema_name=canvas_scope_eff_schema,
+                                       dialect=db.dialect, schema_text=_full_schema)
                 if _cc:
                     _compiled_sql, _compiled_intent = _cc
-                    prompt = ("VERIFIED SQL (assembled from the verified semantic layer — this is "
-                              "the exact query to run; build your headline/chart around it):\n"
+                    prompt = ("GROUNDED REFERENCE QUERY (assembled from the verified semantic layer — "
+                              "its table, columns and aggregate are correct and fan-out-safe). Use it as "
+                              "your TRUSTED BASIS, but ADAPT it to fully answer the question: add any "
+                              "filter (date range, status), computed condition (e.g. delivered_ts > "
+                              "estimated_delivery), ratio / derived metric (e.g. revenue / spend), GROUP BY "
+                              "dimension, or JOIN the question needs that it does not already include. If it "
+                              "answers the question exactly as written, run it verbatim:\n"
                               f"{_compiled_sql}\n\n" + prompt)
             except Exception:
                 _compiled_sql = None
@@ -1048,16 +1114,22 @@ async def _stream_chat(
         # Trust-receipt provenance signals — recorded ONLY when a guard
         # demonstrably fires this turn (honest lineage, not aspirational).
         _rcpt = {"compiled": False, "defan": False, "grounded": False, "lint": False}
-        # Guarantee the deterministic, grounded SQL is what executes.
+        # The semantic compiler offers a grounded reference query as a HINT in the prompt above;
+        # it no longer OVERRIDES the LLM. Overriding served confidently-wrong answers whenever the
+        # compiler could not faithfully express the question — a computed late-delivery condition, a
+        # ratio like ROAS, a year filter, or a cross-entity join (brands⋈products): it compiled a
+        # plausible-but-wrong shape and ran THAT instead of the LLM's correct SQL. We record the
+        # receipt + emit the badge only when the LLM adopted the grounded query verbatim.
         if _compiled_sql:
-            final_sql = _compiled_sql
-            _rcpt["compiled"] = True
-            yield _sse("compiled", {
-                "intent_type": _compiled_intent.intent_type,
-                "entity": _compiled_intent.entity or _compiled_intent.table,
-                "measure": _compiled_intent.measure or _compiled_intent.metric,
-                "dimension": _compiled_intent.dimension,
-            })
+            _norm = lambda s: " ".join((s or "").lower().split())
+            if _norm(final_sql) == _norm(_compiled_sql):
+                _rcpt["compiled"] = True
+                yield _sse("compiled", {
+                    "intent_type": _compiled_intent.intent_type,
+                    "entity": _compiled_intent.entity or _compiled_intent.table,
+                    "measure": _compiled_intent.measure or _compiled_intent.metric,
+                    "dimension": _compiled_intent.dimension,
+                })
 
         # ── Semantic column alignment — deterministic pre-execution check ─────
         # Catches wrong entity column (e.g. product_id used for seller analysis)
@@ -1124,6 +1196,56 @@ async def _stream_chat(
             except Exception:
                 pass   # non-fatal — proceed with original SQL
 
+        # ── Scope guard — block cross-schema leakage on a scoped canvas ──────────
+        # search_path pins BARE names to the canvas schema, but an EXPLICITLY
+        # qualified reference to a sibling schema (e.g. `netflix.orders` for a missimi
+        # canvas) bypasses search_path and would silently answer from the wrong
+        # dataset. Detect any out-of-scope schema reference and force a repair.
+        _scope_fix_hint = ""
+        if canvas_scope_eff_schema and final_sql:
+            try:
+                import sqlglot
+                from sqlglot import exp as _sgexp
+                _allowed = canvas_scope_eff_schema.strip().lower()
+                _oos = sorted({
+                    f"{_t.db}.{_t.name}"
+                    for _t in sqlglot.parse_one(final_sql, read=db.dialect).find_all(_sgexp.Table)
+                    if _t.db and _t.db.strip().lower()
+                    not in (_allowed, "information_schema", "pg_catalog", "system")
+                })
+                if _oos:
+                    _scope_fix_hint = (
+                        f"OUT-OF-SCOPE TABLES {_oos}: this question is scoped to the "
+                        f"'{canvas_scope_eff_schema}' schema ONLY. Rewrite using exclusively "
+                        f"{canvas_scope_eff_schema}.* tables — never reference another schema."
+                    )
+            except Exception as _e:
+                logger.debug("chat scope guard is best-effort; skipped: %s", _e)
+
+        # ── Filter value-domain guard — catch a guessed enum value ──────────────
+        # `order_status = 'cancelled'` when the data holds 'canceled' runs clean but
+        # silently matches ZERO rows, so every rate reads 0%. Probe the column's real
+        # domain and force a repair when an enumerable value is a near-miss typo.
+        _filter_fix_hint = ""
+        if final_sql:
+            try:
+                from aughor.sql.join_guard import check_filter_value_domains
+                _fw = await asyncio.to_thread(check_filter_value_domains, db, final_sql)
+                if _fw:
+                    _filter_fix_hint = " | ".join(w.to_prompt_text() for w in _fw)
+            except Exception as _e:
+                logger.debug("chat filter value-domain guard is best-effort; skipped: %s", _e)
+
+        # ── Breakdown-grain guard — "top product CATEGORIES" grouped by product_id ──
+        # The model sometimes groups a categorical breakdown at too fine a grain (an id),
+        # ranking individual rows instead of the named dimension. Repair toward the dimension.
+        _grain_fix_hint = ""
+        if final_sql:
+            try:
+                _grain_fix_hint = _breakdown_grain_hint(question, final_sql, db.dialect)
+            except Exception as _e:
+                logger.debug("chat breakdown-grain guard is best-effort; skipped: %s", _e)
+
         yield _sse("sql", {"sql": final_sql})
         result = await asyncio.to_thread(db.execute, "chat", final_sql)
 
@@ -1134,22 +1256,25 @@ async def _stream_chat(
 
         # Also trigger a rewrite when semantic column warnings exist, even if
         # the SQL executed successfully (wrong columns produce wrong results silently).
-        if result.error or _chat_zero_diag or _semantic_fix_hint or _fanout_fix_hint:
+        if result.error or _chat_zero_diag or _semantic_fix_hint or _fanout_fix_hint or _scope_fix_hint or _filter_fix_hint or _grain_fix_hint:
             _writer2 = SqlWriter(db, schema_str=schema)
             _fix_error = (
                 result.error or
+                (_scope_fix_hint if _scope_fix_hint else None) or
+                (_filter_fix_hint if _filter_fix_hint else None) or
+                (_grain_fix_hint if _grain_fix_hint else None) or
                 (_semantic_fix_hint if _semantic_fix_hint else None) or
                 (_fanout_fix_hint if _fanout_fix_hint else None) or
                 "Query returned 0 rows — the SQL logic is likely wrong."
             )
-            _combined_hint = " | ".join(filter(None, [_chat_zero_diag or "", _semantic_fix_hint, _fanout_fix_hint]))
+            _combined_hint = " | ".join(filter(None, [_chat_zero_diag or "", _scope_fix_hint, _filter_fix_hint, _grain_fix_hint, _semantic_fix_hint, _fanout_fix_hint]))
             try:
                 fix = await asyncio.to_thread(
                     lambda: _writer2.fix(final_sql, _fix_error, hint=_combined_hint, max_retries=1)
                 )
                 if fix.ok:
                     retry = await asyncio.to_thread(db.execute, "chat", fix.sql)
-                    if not retry.error and (retry.row_count > 0 or not _chat_zero_diag or _semantic_fix_hint or _fanout_fix_hint):
+                    if not retry.error and (retry.row_count > 0 or not _chat_zero_diag or _semantic_fix_hint or _fanout_fix_hint or _scope_fix_hint or _filter_fix_hint or _grain_fix_hint):
                         final_sql = fix.sql
                         result = retry
                         yield _sse("sql", {"sql": final_sql})
@@ -1715,7 +1840,7 @@ async def _stream_investigation(
                 scores = merged.get("evidence_scores", [])
                 if scores:
                     yield _sse("score", {"iteration": merged.get("iteration", 0), "score": scores[-1].model_dump(), "hypotheses": [h.model_dump() for h in merged.get("hypotheses", [])]})
-            elif node_name in ("ada_intake", "ada_baseline", "ada_decompose", "ada_dimensional", "ada_behavioral"):
+            elif node_name in ("ada_intake", "ada_baseline", "ada_cross_section", "ada_decompose", "ada_dimensional", "ada_behavioral"):
                 phases = merged.get("investigation_phases", [])
                 if phases:
                     yield _sse("phase_complete", {"phase": phases[-1], "all_phases": phases})

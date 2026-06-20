@@ -37,6 +37,11 @@ TASK: Parse this question into a precise investigation specification.
    or NPS. If the question names no explicit metric and asks where/what is weakest, underperforming,
    or losing money, default to the primary revenue / value measure in the schema. A money question
    must never resolve to a sentiment or review metric.
+   METRIC KIND: set metric_is_ratio=true when the metric is a RATIO / percentage / rate / per-unit
+   average (it divides one aggregate by another, scales by *100, or is an AVG / mean — e.g. "freight
+   as % of order value", "cancellation rate", "average order value", "margin %"). Set it false for a
+   plain additive total (SUM/COUNT of revenue, orders, units). This governs how downstream phases
+   aggregate the metric across segments — a ratio is never summed or divided by row count.
 
 2. OBSERVATION PERIOD — What time period is in question?
    Extract explicit dates or infer from question language ("February 2026" → 2026-02-01 to 2026-02-28).
@@ -179,7 +184,12 @@ For EACH query result, write:
     (one categorical + one measure where a few categories drive most of the total — 80/20),
     "none" for single-value outputs
   - stat_note: if z-score is available, format as "z = X.X — [significant/within normal range]"
-  - is_significant: true if |z| > {z_threshold} OR absolute change > {pct_threshold}% of prior period value
+  - is_significant: true ONLY when the change is BOTH statistically significant (|z| > {z_threshold})
+    AND practically material (absolute change ≥ {pct_threshold}% of the prior-period value). A large
+    z-score is NOT enough on its own: at high row counts (tens or hundreds of thousands of rows) even a
+    trivial 0.1–0.3pp difference produces a huge z (e.g. z = 150). That is statistical noise dressed as
+    a signal — set is_significant=false and say the difference is negligible / not material. Never call a
+    sub-1% relative change a "trend", "driver", or "significant" because its z-score is large.
 
 phase_summary: one sentence that leads with the key number (bold it with **double asterisks**) — the most important finding from this phase.
 Do NOT fabricate numbers. If a query errored or returned no rows, say so honestly.
@@ -334,15 +344,7 @@ DIMENSIONS (categorical columns to slice by, priority order):
 {dimensions_list}
 
 Write 1 SQL query per dimension (up to 5). Each query MUST:
-  1. GROUP BY the dimension value.
-  2. Compute the metric ({metric_sql}) per value AS metric_total, plus COUNT(*) AS n.
-  3. Compute the AVERAGE per record: ROUND(<metric> / NULLIF(COUNT(*), 0), 2) AS avg_per_record.
-     This separates per-unit weakness from sheer volume — a value can be small in total yet
-     efficient per record (high average), or large in total yet inefficient (low average).
-  4. Compute each value's share of the metric total:
-     ROUND(100.0 * <metric> / NULLIF(SUM(<metric>) OVER (), 0), 1) AS pct_of_total
-  5. ORDER BY metric_total ASC (weakest first) so the worst performers surface.
-  6. LIMIT 15.
+{metric_computation_block}
 
 SQL RULES: DuckDB. NULLIF before every division. Use table names EXACTLY as in SCHEMA. If the
 dimension lives in another table, JOIN to reach it (use DISTINCT or a pre-aggregated subquery so a
@@ -351,6 +353,40 @@ filters — every row counts. SELECT the dimension column FIRST, aliased with th
 (e.g. channel, region, product, currency) — never a generic alias like "dimension_value"; that label
 becomes the chart axis. metric_total comes SECOND. chart_type: "bar_horizontal".
 """
+
+# The metric-computation steps are branched by metric KIND. An ADDITIVE metric (a plain
+# SUM/COUNT) can be totalled, averaged-per-record and shared-of-total. A RATIO/percentage
+# metric (SUM(num)/SUM(den), AVG, anything *100) CANNOT — summing a ratio or dividing it by
+# COUNT(*) is nonsense, which is exactly what the additive template used to make the coder do
+# (it silently dropped the denominator and reported SUM(numerator) as the metric). ada_cross_section
+# selects the block; the additive block is byte-for-byte the historical instructions.
+CROSS_SECTION_ADDITIVE_BLOCK = """\
+  1. GROUP BY the dimension value.
+  2. Compute the metric ({metric_sql}) per value AS metric_total, plus COUNT(*) AS n.
+  3. Compute the AVERAGE per record: ROUND(<metric> / NULLIF(COUNT(*), 0), 2) AS avg_per_record.
+     This separates per-unit weakness from sheer volume — a value can be small in total yet
+     efficient per record (high average), or large in total yet inefficient (low average).
+  4. Compute each value's share of the metric total:
+     ROUND(100.0 * <metric> / NULLIF(SUM(<metric>) OVER (), 0), 1) AS pct_of_total
+  5. ORDER BY metric_total ASC (weakest first) so the worst performers surface.
+  6. LIMIT 15."""
+
+CROSS_SECTION_RATIO_BLOCK = """\
+  1. GROUP BY the dimension value.
+  2. Compute the metric per value DIRECTLY as the ratio, SELECTED VERBATIM:
+       {metric_sql} AS metric_total
+     This metric is a RATIO / percentage / per-unit rate, NOT an additive total. It is built from
+     numerator/denominator aggregates (e.g. SUM(num)/NULLIF(SUM(den),0)); adding GROUP BY re-computes
+     the correct ratio WITHIN each group automatically. Keep the numerator AND denominator aggregates
+     EXACTLY as written — do NOT replace the metric with SUM(numerator) alone, do NOT drop the
+     denominator, and do NOT divide the ratio by COUNT(*). The WHOLE expression above is metric_total.
+  3. Also SELECT COUNT(*) AS n and the raw building blocks so the ratio is auditable: the numerator
+     aggregate AS numerator_total and the denominator aggregate AS denominator_total (the same
+     numerator/denominator that appear INSIDE the metric expression).
+  4. Do NOT compute avg_per_record (a ratio has no per-record average) and do NOT compute a
+     share-of-total (you cannot meaningfully SUM a ratio across groups).
+  5. ORDER BY metric_total ASC (lowest ratio first) so the extremes surface.
+  6. LIMIT 15."""
 
 CROSS_SECTION_INTERPRET_PROMPT = """\
 DIAGNOSTIC QUESTION: "{question}"
@@ -384,6 +420,47 @@ Be honest: if a dimension is healthy or evenly spread, say it is NOT a problem a
 
 phase_summary: one sentence naming where value is most concentrated or weakest — lead with the
 decisive number (bold it), e.g. "Losses concentrate in **11** underperforming franchises (< $1,000 each)."
+"""
+
+# Ratio-metric variant: the metric is a percentage / rate / per-unit ratio, so metric_total must be
+# read AS THAT RATIO (never as a dollar total or per-record average), and a LOW ratio is not
+# automatically bad — direction depends on what the ratio measures (a low cost-% is GOOD).
+CROSS_SECTION_RATIO_INTERPRET_PROMPT = """\
+DIAGNOSTIC QUESTION: "{question}"
+METRIC: {metric_label}  (this is a RATIO / percentage / rate — NOT a dollar total)
+PHASE: Cross-Sectional Weakness Scan
+
+QUERY RESULTS — each dimension value with its metric_total (the RATIO/percentage itself), n, and
+the numerator_total / denominator_total it was built from, lowest ratio first:
+{results_text}
+
+For EACH dimension, write a finding:
+  - title: the dimension (e.g. "By country", "By category"). Use the SAME dimension wording as the
+    query so the card matches its chart.
+  - interpretation: 2–3 tight sentences. The metric is a RATIO ({metric_label}); read metric_total
+    AS THAT RATIO in its OWN units (%, rate, per-unit) — NEVER describe it as a dollar total or a
+    per-order average. Name the values with the lowest and highest ratio. The numerator_total /
+    denominator_total explain WHY a ratio is high or low (a low cost-ratio can come from a low
+    numerator OR a large denominator). Bold the decisive number with **double asterisks**. Cite real
+    values only.
+    DIRECTION + SEVERITY GROUNDING: "lowest in the ranking" is NOT "weak". For many ratios LOW is
+    GOOD (a low cost-%, a low defect-rate, a low freight-%); for others HIGH is good. Judge direction
+    by what the ratio MEASURES — do NOT assume the minimum is the problem. Only call a value
+    'weak'/'a problem'/'underperforming' if it is clearly adverse versus a benchmark or a genuine
+    outlier far from the rest. If the ratios are tightly clustered, say so and use relative language
+    ("the lowest at **2.2%** vs the ~4.3% of the rest").
+  - key_numbers: the 1–3 most telling values — include the ratio, and the numerator or denominator
+    where it explains the result.
+  - chart_type: "bar_horizontal".
+  - is_significant: true ONLY when this dimension is clearly adverse vs a benchmark or a genuine
+    outlier — not merely the minimum of a tight, healthy spread.
+
+Be honest: if the ratios are evenly spread, say it is NOT a problem area. If the lowest ratio is the
+FAVOURABLE direction, say so explicitly rather than framing it as a weakness.
+
+phase_summary: one sentence naming where the ratio is highest/lowest and whether it actually matters
+— lead with the decisive number (bold it) and the correct direction, e.g. "Freight runs **2.2%** of
+order value in Germany vs ~4.3% elsewhere — the LOWEST cost ratio, a strength rather than a weakness."
 """
 
 # ── Phase 5: Behavioral & operational ────────────────────────────────────────
@@ -505,6 +582,20 @@ GROUNDING (critical — every number must trace to a query result above):
     instead of inventing a percentage.
   • If a number you want to cite is not in the evidence, drop it rather than approximate it.
 
+MATERIALITY & CAUSAL HONESTY (do not manufacture a signal where there is none):
+  • Before asserting a difference, "driver", or cause, confirm it is MATERIAL. If the top-line gap the
+    question asks about is negligible (e.g. new vs returning AOV differ by <1%, or the segment values
+    all cluster within a couple of percent), SAY SO plainly — "the difference is negligible / not
+    meaningful" — and do NOT slice into ever-finer sub-segments to surface a cherry-picked cell-level
+    reversal and present it as the answer. A large gap inside one tiny segment is noise, not a driver.
+  • Statistical ≠ practical significance: at high row counts a sub-1% change yields a huge z-score yet
+    is not a real signal. Do not call it a trend/driver/significant; set confidence to MEDIUM or LOW.
+  • If the evidence scanned does NOT explain WHY, say "the data analysed does not reveal the cause" and
+    name what to check next — do NOT invent a plausible mechanism (a "large denominator", a "scale
+    discount", etc.) that no query supports. An honest "cause not determined" beats a confident wrong
+    story, and contradicting yourself (e.g. "not driven by order value" then "driven by a large
+    order-value denominator") is worse than either.
+
 IMPORTANT — ANSWER THE QUESTION ASKED:
   If the user asked "which channel/region/product/segment had most influence", answer that question
   directly in the headline and executive summary — even if the overall metric change is within
@@ -581,6 +672,7 @@ class IntakeOutput(BaseModel):
     metric_table: str
     dimensions: list[str] = Field(description="List of 'table.column' pairs available for drill-down")
     cross_sectional: bool = Field(default=False, description="True when the question asks where/which/what is weakest / losing money / underperforming, OR the data has too few periods for a trend, OR it is a DRIVER question (does X affect/relate to/drive Y) — analyse across DIMENSIONS/SEGMENTS, not time.")
+    metric_is_ratio: bool = Field(default=False, description="True when metric_sql is a RATIO / percentage / rate / per-unit average rather than a plain additive total — i.e. it divides one aggregate by another (SUM(a)/SUM(b)), scales by *100, or is an AVG / per-record mean. Such a metric must NOT be summed across groups or divided by COUNT(*); it is re-aggregated per group as numerator/denominator. False for plain SUM/COUNT totals.")
     comparison_segment_sql: str = Field(default="", description="For a DRIVER question (does X lower/raise/affect/relate-to Y), the boolean/CASE SQL expression defining the contrasted condition X — e.g. (order_delivered_ts > order_estimated_delivery) for 'late deliveries', or (is_new_customer) for 'new vs returning'. Empty for non-driver questions.")
     comparison_segment_label: str = Field(default="", description="Human label for comparison_segment_sql, e.g. 'late vs on-time delivery'. Empty when comparison_segment_sql is empty.")
     intake_notes: str = Field(description="Any caveats about the schema or question interpretation")

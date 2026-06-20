@@ -132,7 +132,7 @@ def test_explorer_phase8_drops_inversion_on_real_loop(monkeypatch) -> None:
                           source_tables=["customers"], description="customer records",
                           domain="Commerce")
     fake_ont = SimpleNamespace(entities={"customers": ent}, relationships={})
-    monkeypatch.setattr(ostore, "load_latest_ontology", lambda cid: fake_ont)
+    monkeypatch.setattr(ostore, "load_latest_ontology", lambda cid, schema_name=None: fake_ont)
 
     records: list[str] = []
 

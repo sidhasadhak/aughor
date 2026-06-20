@@ -112,6 +112,11 @@ Rules:
 - If this is a drill_down sub-question, use 5–10× finer granularity than the relationship step
 - Prefer queries that return < 30 rows — aggregate, don't dump raw data
 - Do NOT repeat queries run in prior sub-questions unless you need the same data with different aggregation
+- RATIO AGGREGATION: to aggregate a ratio / rate / per-unit metric across a group (e.g. stock-to-sales,
+  cost %, conversion rate), use the RATIO OF SUMS — SUM(numerator) / NULLIF(SUM(denominator), 0) — NOT
+  the AVERAGE of per-row ratios. AVG(per_sku_ratio) over-weights tiny-denominator rows and inflates the
+  result (a SKU with 2 sold and 20 on hand reads 10×, dominating the mean); SUM(on_hand)/SUM(sold) is the
+  true group ratio. Only average pre-computed ratios when each row already represents an equal-weight unit.
 
 Return: expected_if_true (what you expect to see), expected_if_false (what the opposite looks like), queries, reasoning.
 """
@@ -211,4 +216,12 @@ not actually measure something the question asks about (e.g. the question asks a
 but no conversion-rate query ran), say so plainly rather than substituting a different metric and
 presenting it as the answer. Never write "given all of the above" if the chain is short or incomplete —
 describe only what was genuinely investigated.
+
+MATERIALITY: if the top-line difference the question asks about is negligible (e.g. new vs returning
+order value differ by <1%, or the groups are effectively equal), the honest answer is "there is no
+meaningful difference" — lead with that. Do NOT rescue a non-result by slicing into ever-finer
+sub-segments (country × category × tenure) and reporting the single largest cell-level reversal as if
+it were "the driver": those extremes are noise from many comparisons, not a signal. Only call something
+a driver when it moves the OVERALL metric materially, and prefer the direction that holds across most
+segments over a cherry-picked outlier.
 """
