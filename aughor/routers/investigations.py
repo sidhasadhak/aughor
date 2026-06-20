@@ -1038,11 +1038,22 @@ async def _stream_chat(
                 from aughor.semantic.compiler import compile_question
                 # Pass the schema we already fetched (_full_schema) so metric resolution
                 # inside the compiler doesn't re-introspect it — ~16s per compile (profiled).
-                _cc = compile_question(question, connection_id, dialect=db.dialect, schema_text=_full_schema)
+                # CRITICAL: scope the compiler to the canvas's schema. Without it, a missimi
+                # canvas loaded the connection-wide (generic demo) ontology whose entities lack
+                # missimi's real measures/dimensions — so the compiler resolved the WRONG column
+                # (installments→total_amount, days_out_of_stock→COUNT, brand→category) and, because
+                # the compiled SQL OVERRIDES the LLM's, served a confidently wrong answer.
+                _cc = compile_question(question, connection_id, schema_name=canvas_scope_eff_schema,
+                                       dialect=db.dialect, schema_text=_full_schema)
                 if _cc:
                     _compiled_sql, _compiled_intent = _cc
-                    prompt = ("VERIFIED SQL (assembled from the verified semantic layer — this is "
-                              "the exact query to run; build your headline/chart around it):\n"
+                    prompt = ("GROUNDED REFERENCE QUERY (assembled from the verified semantic layer — "
+                              "its table, columns and aggregate are correct and fan-out-safe). Use it as "
+                              "your TRUSTED BASIS, but ADAPT it to fully answer the question: add any "
+                              "filter (date range, status), computed condition (e.g. delivered_ts > "
+                              "estimated_delivery), ratio / derived metric (e.g. revenue / spend), GROUP BY "
+                              "dimension, or JOIN the question needs that it does not already include. If it "
+                              "answers the question exactly as written, run it verbatim:\n"
                               f"{_compiled_sql}\n\n" + prompt)
             except Exception:
                 _compiled_sql = None
@@ -1059,16 +1070,22 @@ async def _stream_chat(
         # Trust-receipt provenance signals — recorded ONLY when a guard
         # demonstrably fires this turn (honest lineage, not aspirational).
         _rcpt = {"compiled": False, "defan": False, "grounded": False, "lint": False}
-        # Guarantee the deterministic, grounded SQL is what executes.
+        # The semantic compiler offers a grounded reference query as a HINT in the prompt above;
+        # it no longer OVERRIDES the LLM. Overriding served confidently-wrong answers whenever the
+        # compiler could not faithfully express the question — a computed late-delivery condition, a
+        # ratio like ROAS, a year filter, or a cross-entity join (brands⋈products): it compiled a
+        # plausible-but-wrong shape and ran THAT instead of the LLM's correct SQL. We record the
+        # receipt + emit the badge only when the LLM adopted the grounded query verbatim.
         if _compiled_sql:
-            final_sql = _compiled_sql
-            _rcpt["compiled"] = True
-            yield _sse("compiled", {
-                "intent_type": _compiled_intent.intent_type,
-                "entity": _compiled_intent.entity or _compiled_intent.table,
-                "measure": _compiled_intent.measure or _compiled_intent.metric,
-                "dimension": _compiled_intent.dimension,
-            })
+            _norm = lambda s: " ".join((s or "").lower().split())
+            if _norm(final_sql) == _norm(_compiled_sql):
+                _rcpt["compiled"] = True
+                yield _sse("compiled", {
+                    "intent_type": _compiled_intent.intent_type,
+                    "entity": _compiled_intent.entity or _compiled_intent.table,
+                    "measure": _compiled_intent.measure or _compiled_intent.metric,
+                    "dimension": _compiled_intent.dimension,
+                })
 
         # ── Semantic column alignment — deterministic pre-execution check ─────
         # Catches wrong entity column (e.g. product_id used for seller analysis)
