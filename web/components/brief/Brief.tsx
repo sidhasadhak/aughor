@@ -44,7 +44,14 @@ export function BriefHeadline({
   children: React.ReactNode;
   className?: string;
 }) {
-  return <h2 className={`aug-text-h2 leading-snug ${className}`}>{children}</h2>;
+  // Emphasize figures in the headline too (the conclusion line) — the reference's
+  // "ranged from **11.33%** to **14.05%**" treatment. Prose already does this via
+  // renderEmphasis; the headline was plain text until now.
+  return (
+    <h2 className={`aug-text-h2 leading-snug ${className}`}>
+      {typeof children === "string" ? renderEmphasis(children) : children}
+    </h2>
+  );
 }
 
 // ── Section — an optional uppercase label + children. No box, no border. ────────
