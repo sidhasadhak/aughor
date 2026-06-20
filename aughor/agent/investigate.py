@@ -979,6 +979,19 @@ def _metric_is_ratio(metric_sql: str, metric_label: str = "") -> bool:
     return False
 
 
+# The cross-sectional scan defaults to a WEAKNESS frame (rank ascending, surface the lowest).
+# Some diagnostics instead seek the MAXIMUM ("which category carries the HIGHEST out-of-stock
+# burden") — for those the answer is the largest value, not the smallest, so orient the ranking
+# and interpretation toward the top. Conservative: an explicit max superlative with no min word.
+_XSEC_MAX_RE = re.compile(r"\b(highest|largest|biggest|greatest|maximum|most)\b", re.I)
+_XSEC_MIN_RE = re.compile(r"\b(lowest|weakest|least|smallest|minimum|bottom|underperform\w*)\b", re.I)
+
+
+def _xsec_max_seeking(question: str) -> bool:
+    q = question or ""
+    return bool(_XSEC_MAX_RE.search(q)) and not _XSEC_MIN_RE.search(q)
+
+
 _RATIO_METRIC_COL_RE = re.compile(r"metric_total|metric_value|\bratio\b|pct|percent|\brate\b", re.I)
 
 
@@ -1910,7 +1923,45 @@ def run_analysis_phase(
         _tc = _parse_schema_tables(schema) if schema else {}
         _dialect = getattr(conn, "dialect", "duckdb")
 
+        def _augment_tc(queries):
+            # The intake's FILTERED phase schema can omit a table the coder reaches for (e.g.
+            # order_items joined only to grab a category dimension). Without that table's columns
+            # the chasm detector is BLIND to the fan-out (the 11-trillion stockout total that
+            # slipped past). Introspect any referenced-but-missing table so the detector sees the
+            # whole join — for the ORIGINAL plan and again after a re-plan.
+            try:
+                import sqlglot as _sg
+                from sqlglot import exp as _sgx
+                _have = {k.lower() for k in _tc}
+                _refs = set()
+                for _q in (queries or []):
+                    try:
+                        for _t in _sg.parse_one(_q.sql, read=_dialect).find_all(_sgx.Table):
+                            _refs.add(f"{_t.db}.{_t.name}" if _t.db else _t.name)
+                    except Exception:
+                        pass
+                for _ref in _refs:
+                    if not _ref or _ref.lower() in _have:
+                        continue
+                    _p = _ref.split(".")
+                    _probe = (
+                        f"SELECT column_name FROM information_schema.columns "
+                        f"WHERE table_name = '{_p[-1]}'"
+                        + (f" AND table_schema = '{_p[0]}'" if len(_p) == 2 else "")
+                    )
+                    try:
+                        _res = conn.execute("__fanout_schema_probe__", _probe)
+                        _rows = getattr(_res, "rows", None) or []
+                        if _rows:
+                            _tc[_ref] = [r[0] for r in _rows]
+                            _have.add(_ref.lower())
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
         def _scan_fanout(queries):
+            _augment_tc(queries)
             hits = []
             for _q in (queries or []):
                 for _det in (sum_over_chasm_fanout, avg_over_chasm_fanout, count_star_chasm_fanout):
@@ -2572,6 +2623,21 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection") -> dict:
         CROSS_SECTION_RATIO_BLOCK if is_ratio else CROSS_SECTION_ADDITIVE_BLOCK
     ).format(metric_sql=metric_sql)
 
+    # Direction: default is a weakness frame (lowest first). For a max-seeking question ("HIGHEST
+    # burden / MOST X") the answer is the LARGEST value — orient the ranking and interpretation to
+    # the top so synthesis doesn't lead with a mid-rank value (the D8 "makeup_lips not skincare_face"
+    # miss). The metric_computation_block sorts ASC; this override flips it and re-frames the read.
+    _max_seeking = _xsec_max_seeking(question)
+    _direction_plan = (
+        "\n\nDIRECTION OVERRIDE — this question asks for the HIGHEST / MOST: ORDER BY metric_total "
+        "DESC so the LARGEST values come first, and treat the MAXIMUM as the answer (NOT the "
+        "minimum). Keep every other rule above."
+    ) if _max_seeking else ""
+    _direction_interp = (
+        " DIRECTION: this question asks for the HIGHEST / MOST — name and LEAD WITH the LARGEST "
+        "value(s); the maximum is the answer, never the minimum."
+    ) if _max_seeking else ""
+
     # DRIVER questions ("do late deliveries lower reviews") carry a derived comparison
     # segment from intake — compare the metric ACROSS that condition (true vs false) as
     # the PRIMARY query, not a per-dimension weakness scan.
@@ -2598,7 +2664,7 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection") -> dict:
             question=question, metric_label=metric_label, metric_sql=metric_sql,
             metric_table=metric_table, schema=schema, dimensions_list=dimensions_list,
             metric_computation_block=metric_computation_block,
-            comparison_segment_section=comparison_segment_section),
+            comparison_segment_section=comparison_segment_section) + _direction_plan,
         interpret_system=(
             "Interpret a cross-sectional ranking scan of a RATIO / percentage metric. Read "
             "metric_total AS that ratio in its own units — NEVER as a dollar total or per-record "
@@ -2613,7 +2679,7 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection") -> dict:
             "below the in-result average — being the minimum of a ranking is NOT, by itself, "
             "evidence it is unhealthy. Otherwise use relative language ('the lowest at X vs the ~Y "
             "average'). Be explicit when the spread is tight and all values are healthy."
-        ),
+        ) + _direction_interp,
         interpret_user_fn=(lambda results_text: CROSS_SECTION_RATIO_INTERPRET_PROMPT.format(
             question=question, metric_label=metric_label, results_text=results_text))
         if is_ratio else
@@ -2649,15 +2715,66 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection") -> dict:
         else:
             _chart_primary_is_metric(f)
 
-    # Fail-safe: the metric still fans out after the corrective re-plan (e.g. stockout-days summed
-    # across an order_items join, inflated ~1000×). Caveat EVERY finding and strip the significance
-    # flag so an inflated magnitude is never presented as a trustworthy weakness; surface it in the
-    # phase summary so synthesis cannot confidently rank on it.
-    if _run.fanout_caveat:
+    # Numeric fan-out backstop — the AST chasm detectors miss some join shapes and the coder can
+    # reinterpret the metric, so verify the NUMBERS on the RAW results (all columns present). Two
+    # metric-agnostic, deterministic checks against the metric table computed WITHOUT joins:
+    #   • row-count: a clean per-group aggregate scans at most the metric table's rows (filters only
+    #     reduce). If the COUNT(*) `n` summed across groups far exceeds that, a join multiplied the
+    #     rows — the $4.4B / $11.1T stockout totals had n≈29M vs inventory's 168k.
+    #   • grand-total (additive, single-table metric): the parts must sum to the metric's true total.
+    # Either overshoot ⇒ fan-out, whatever the SQL shape. Fail-open.
+    _numeric_fanout = None
+    if metric_table and results:
+        try:
+            _dialect = getattr(conn, "dialect", "duckdb")
+            def _num(v):
+                try: return float(str(v).replace(",", ""))
+                except Exception: return None
+            _cnt = conn.execute("__xsec_base_rows__", f"SELECT COUNT(*) FROM {metric_table}")
+            _base_rows = _num(_cnt.rows[0][0]) if (_cnt and _cnt.rows and _cnt.rows[0]) else None
+
+            def _scanned_rows(sql):
+                # Rewrite the finding's query to COUNT(*) over its FROM/JOIN/WHERE (drop the
+                # projection, GROUP BY, HAVING, ORDER, LIMIT) to measure the actual post-join
+                # cardinality the aggregate ran over — robust to any metric expression or column set.
+                try:
+                    import sqlglot as _sg
+                    from sqlglot import exp as _sgx
+                    _tree = _sg.parse_one(sql, read=_dialect)
+                    for _k in ("group", "having", "order", "limit", "qualify", "distinct"):
+                        _tree.set(_k, None)
+                    _tree.set("expressions", [_sgx.Count(this=_sgx.Star())])
+                    _r = conn.execute("__xsec_scanned__", _tree.sql(dialect=_dialect))
+                    return _num(_r.rows[0][0]) if (_r and _r.rows and _r.rows[0]) else None
+                except Exception:
+                    return None
+
+            if _base_rows and _base_rows > 0:
+                for _q, r in results:
+                    _sql = getattr(r, "sql", None) or getattr(_q, "sql", None)
+                    if not _sql:
+                        continue
+                    _scanned = _scanned_rows(_sql)
+                    if _scanned and _scanned > _base_rows * 1.5:
+                        _numeric_fanout = (
+                            f"The scan touched ~{_scanned:,.0f} rows but the metric's table "
+                            f"({metric_table}) has only ~{_base_rows:,.0f} — a join multiplied the rows, "
+                            "so the metric is inflated by a fan-out and its magnitudes / ranking are "
+                            "unreliable (needs a grain-correct recompute).")
+                        break
+        except Exception:
+            _numeric_fanout = None
+
+    # Fail-safe: the metric still fans out after the corrective re-plan (AST-detected) OR the numeric
+    # backstop caught an inflated total. Caveat EVERY finding and strip the significance flag so an
+    # inflated magnitude is never presented as a trustworthy weakness; surface it in the phase summary
+    # so synthesis cannot confidently rank on it.
+    _eff_caveat = _run.fanout_caveat or _numeric_fanout
+    if _eff_caveat:
         for f in findings:
-            f["trust_caveat"] = f.get("trust_caveat") or _run.fanout_caveat
+            f["trust_caveat"] = f.get("trust_caveat") or _eff_caveat
             f["is_significant"] = False
-        summary = f"⚠ {_run.fanout_caveat} " + (summary or "")
+        summary = f"⚠ {_eff_caveat} " + (summary or "")
 
     phase = _phase_result(
         "cross_section", "Cross-Sectional Scan", "🧭",
@@ -2750,6 +2867,12 @@ def ada_synthesize(state: AgentState) -> dict:
                 "exact, do NOT rank confidently on them, and set confidence to at most MEDIUM (LOW if "
                 "the inflated metric is the only evidence). Say plainly the figure needs a grain-correct "
                 "recompute before it can be trusted."
+            )
+        if _xsec_max_seeking(question):
+            cross_section_note += (
+                "\n\nDIRECTION: this question asks for the HIGHEST / MOST. The cross-sectional ranking's "
+                "answer is the value with the LARGEST metric — lead with the MAXIMUM, not the minimum or "
+                "a mid-rank value. Order the attribution_waterfall from the largest contributor down."
             )
 
     # Build metric targets block for synthesis guidance
