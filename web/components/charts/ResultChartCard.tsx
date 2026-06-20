@@ -14,15 +14,19 @@
  *                   defaults to AVG for rate/share metrics so we never offer the
  *                   nonsensical SUM-of-an-average that naive tools expose.
  *   • ⊞ table  — one-click toggle to the raw result table.
+ *   • ⊞ pivot  — cross-tab (rows × columns → aggregated values) via PivotTable,
+ *                fed the FULL result (not the projected [dim, metric]); its own
+ *                Rows/Columns/Values/Agg pickers own the re-shape there.
  *
  * Untouched defaults reproduce today's chart exactly (original rows → <Chart>'s
  * own inference), so this is additive — no regression for existing results.
  */
 
 import { useMemo, useState } from "react";
-import { BarChart3, Table2 } from "lucide-react";
+import { BarChart3, Table2, Grid3x3 } from "lucide-react";
 import { Chart, type ChartCustom } from "@/components/Chart";
 import { SqlResultTable } from "@/components/AugTable";
+import { PivotTable } from "@/components/PivotTable";
 import { classifyColumns, availableChartTypes, type ChartType } from "@/components/charts/chartTypeInference";
 import { cleanLabel } from "@/lib/format";
 
@@ -110,7 +114,7 @@ export function ResultChartCard({ columns, rows, title, chartType, chartConfig, 
     [dateIdxs, catIdxs, columns],
   );
 
-  const [view, setView] = useState<"chart" | "table">(chartTypes.length ? "chart" : "table");
+  const [view, setView] = useState<"chart" | "table" | "pivot">(chartTypes.length ? "chart" : "table");
   const [typeSel, setTypeSel] = useState<ChartType | "auto">("auto");
   const [metricSel, setMetricSel] = useState<string | null>(null);
   const [dimSel, setDimSel] = useState<string | null>(null);
@@ -137,6 +141,10 @@ export function ResultChartCard({ columns, rows, title, chartType, chartConfig, 
   const agg: Agg = aggSel ?? defaultAgg(metric);
   const rateSummed = dimHasDups && agg === "sum" && RATE_RE.test(metric);
 
+  // Pivot (cross-tab) earns its place when there's a dimension to group on and a
+  // measure to aggregate; PivotTable picks sensible Rows/Columns/Values defaults.
+  const canPivot = metricCols.length >= 1 && dimCols.length >= 1;
+
   // Derived data: untouched → original (today's behaviour); a control change → re-pivot.
   const data = useMemo(() => {
     if (!touched || !metric || !dim) return { columns, rows };
@@ -159,18 +167,23 @@ export function ResultChartCard({ columns, rows, title, chartType, chartConfig, 
       {/* Control strip */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-2 flex-wrap">
-          {metricCols.length >= 2 &&
-            Dropdown("Metric", metric, metricCols.map((c) => ({ v: c, t: cleanLabel(c) })), setMetricSel)}
-          {dimCols.length >= 2 &&
-            Dropdown("Dimension", dim, dimCols.map((c) => ({ v: c, t: cleanLabel(c) })), setDimSel)}
-          {dimHasDups &&
-            Dropdown("Aggregation", agg,
-              (["sum", "avg", "count", "min", "max"] as Agg[]).map((a) => ({ v: a, t: a.toUpperCase() })),
-              (v) => setAggSel(v as Agg))}
-          {rateSummed && (
-            <span className="text-[10px]" style={{ color: "var(--amber4, #B25D00)" }} title="Summing a rate/ratio is usually not meaningful — AVG is the grain-correct aggregate.">
-              ⚠ summing a rate
-            </span>
+          {/* The grain-aware strip drives chart/table; pivot owns its own field pickers. */}
+          {view !== "pivot" && (
+            <>
+              {metricCols.length >= 2 &&
+                Dropdown("Metric", metric, metricCols.map((c) => ({ v: c, t: cleanLabel(c) })), setMetricSel)}
+              {dimCols.length >= 2 &&
+                Dropdown("Dimension", dim, dimCols.map((c) => ({ v: c, t: cleanLabel(c) })), setDimSel)}
+              {dimHasDups &&
+                Dropdown("Aggregation", agg,
+                  (["sum", "avg", "count", "min", "max"] as Agg[]).map((a) => ({ v: a, t: a.toUpperCase() })),
+                  (v) => setAggSel(v as Agg))}
+              {rateSummed && (
+                <span className="text-[10px]" style={{ color: "var(--amber4, #B25D00)" }} title="Summing a rate/ratio is usually not meaningful — AVG is the grain-correct aggregate.">
+                  ⚠ summing a rate
+                </span>
+              )}
+            </>
           )}
         </div>
         <div className="flex items-center gap-2">
@@ -197,12 +210,23 @@ export function ResultChartCard({ columns, rows, title, chartType, chartConfig, 
             >
               <Table2 size={14} />
             </button>
+            <button
+              onClick={() => setView("pivot")}
+              title="Pivot (cross-tab)"
+              disabled={!canPivot}
+              className="w-6 h-6 flex items-center justify-center rounded transition-colors disabled:opacity-30"
+              style={view === "pivot" ? { background: "var(--bg-sel)", color: "var(--accent)" } : { color: "var(--t3)" }}
+            >
+              <Grid3x3 size={14} />
+            </button>
           </div>
         </div>
       </div>
 
       {/* Body */}
-      {view === "table" ? (
+      {view === "pivot" ? (
+        <PivotTable columns={columns} rows={rows} />
+      ) : view === "table" ? (
         <SqlResultTable columns={data.columns} rows={data.rows} maxHeight={340} />
       ) : (
         <Chart
