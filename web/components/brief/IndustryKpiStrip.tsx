@@ -26,6 +26,7 @@ import { GroundedNumber } from "@/components/brief/GroundedNumber";
 import { Sparkline, seriesTrend } from "@/components/brief/Sparkline";
 import { ResultChartCard } from "@/components/charts/ResultChartCard";
 import { effectiveCurrencySymbol } from "@/lib/orgSettings";
+import { betterIsHigher } from "@/lib/favorability";
 
 interface Trend {
   values: number[];
@@ -44,10 +45,6 @@ export interface Kpi {
 // Categorical accent palette for the left border + sparkline (visual variety, like the
 // reference). The DELTA badge carries the semantic good/bad colour separately.
 export const KPI_ACCENTS = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-6)", "var(--chart-5)"];
-
-// Lower-is-better metrics: a RISE is unfavorable (cost, CAC, churn, returns, latency …).
-const LOWER_BETTER = /\b(cac|cpa|cpc|cpm|acquisition cost|cost|spend|churn|attrition|defect|error|bounce|abandon|cancel|complaint|refund|return rate|returns|latency|wait|delay|days? to|time to|aging|overdue|backlog|downtime|fraud|risk|debt)\b/i;
-const betterIsHigher = (name: string) => !LOWER_BETTER.test(name);
 
 const isMultiplier = (name: string, unit: string) =>
   /\b(x|×|multiple|multiplier|roas|times)\b/i.test(unit) || /\broas\b|return on ad/i.test(name);
