@@ -2124,7 +2124,7 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
     for _, r in results:
         if r.error or not r.rows or not r.columns:
             continue
-        stat_results = analyze_query_result(r.columns, r.rows)
+        stat_results = analyze_query_result(r.columns, r.rows, r.sql)
         for sr in stat_results:
             if sr.sigma is not None:
                 if code_sigma is None or sr.sigma > code_sigma:

@@ -87,3 +87,38 @@ def test_analyze_stays_quiet_on_flat_even_distribution():
     rows = [["A", 20], ["B", 20], ["C", 20], ["D", 20], ["E", 20]]
     out = analyze_query_result(cols, rows)
     assert not any(s.type == "contribution" for s in out)
+
+
+# ── additivity gate: never claim a share-of-total for an average/rate/ratio ─────
+
+def test_is_additive_measure():
+    from aughor.tools.postproc import is_additive_measure
+    # additive magnitudes
+    assert is_additive_measure("revenue")
+    assert is_additive_measure("order_count")
+    assert is_additive_measure("total_spend")
+    # non-additive by name (averages / rates / ratios / indices)
+    assert not is_additive_measure("aov")
+    assert not is_additive_measure("avg_order_value")
+    assert not is_additive_measure("margin_pct")
+    assert not is_additive_measure("repeat_rate")
+    assert not is_additive_measure("roas")
+    # SQL is authoritative: an alias hiding an AVG is still non-additive
+    assert not is_additive_measure("amount", "SELECT cat, ROUND(AVG(order_value),2) AS amount FROM t GROUP BY 1")
+    # a SUM keeps an additive name additive
+    assert is_additive_measure("revenue", "SELECT cat, SUM(rev) AS revenue FROM t GROUP BY 1")
+    # unknown name, no SQL → don't claim a share-of-total
+    assert not is_additive_measure("widget_thing")
+
+
+def test_analyze_does_not_concentrate_an_average_metric():
+    # The AOV-by-payment-type bug: a dominant AVERAGE must NOT read as "concentration"
+    # (summing per-group averages is not a real total).
+    cols = ["payment_type", "aov"]
+    rows = [["credit_card", 200], ["paypal", 30], ["klarna", 30], ["sepa", 30], ["sofort", 30]]
+    # gated by column name alone …
+    assert not any(s.type == "contribution" for s in analyze_query_result(cols, rows))
+    # … and by the SQL even when the alias looks additive
+    sql = "SELECT payment_type, ROUND(AVG(order_value),2) AS amount FROM orders GROUP BY 1"
+    cols2 = ["payment_type", "amount"]
+    assert not any(s.type == "contribution" for s in analyze_query_result(cols2, rows, sql))

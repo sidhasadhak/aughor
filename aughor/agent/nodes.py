@@ -1378,7 +1378,7 @@ def _attach_stats(result: QueryResult) -> QueryResult:
     if result.error or not result.rows:
         return result
     try:
-        stat_results = analyze_query_result(result.columns, result.rows)
+        stat_results = analyze_query_result(result.columns, result.rows, result.sql)
         if stat_results:
             from aughor.agent.state import StatResult
             result = QueryResult(
