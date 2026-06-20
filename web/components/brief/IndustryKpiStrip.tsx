@@ -7,19 +7,24 @@
  * the business (a rising CAC is red even though it's "up"), a matching sparkline, and
  * a one-line trend caption.
  *
- * Split into a pure presentational `KpiStripView` + `buildKpi` (the value/delta/
- * favorability logic) and the data-fetching `IndustryKpiStrip` container — so the
- * card layout can be exercised in /chart-lab without a backend.
+ * Click a card → it EXPANDS into a rich chart of that metric's trend (master-detail),
+ * so the KPIs themselves are the entry point to the deeper view — replacing the old
+ * standalone metric-chart grid.
  *
- * Fail-safe: a metric whose value_sql errors / returns no scalar / is out of its
- * stated range is silently dropped — never a wrong number. The delta + sparkline +
- * caption appear only when chart_sql yields a real time trend; otherwise the card
- * degrades to label + value.
+ * Split into a pure presentational `KpiStripView` + `buildKpi` (value/delta/favorability
+ * logic) and the data-fetching `IndustryKpiStrip` container — so the card layout +
+ * expand interaction can be exercised in /chart-lab without a backend.
+ *
+ * Fail-safe: a metric whose value_sql errors / returns no scalar / is out of its stated
+ * range is silently dropped — never a wrong number. The delta + sparkline + caption +
+ * expand appear only when chart_sql yields a real series; otherwise the card degrades to
+ * label + value.
  */
 import { useEffect, useState } from "react";
 import { getBusinessProfile, runDirectQuery, currencySymbol } from "@/lib/api";
 import { GroundedNumber } from "@/components/brief/GroundedNumber";
 import { Sparkline, seriesTrend } from "@/components/brief/Sparkline";
+import { ResultChartCard } from "@/components/charts/ResultChartCard";
 
 interface Trend {
   values: number[];
@@ -28,7 +33,12 @@ interface Trend {
   favorable: boolean | null;  // good move? (direction-aware); null when flat
   caption: string;            // "climbing" / "easing" / "holding steady" …
 }
-export interface Kpi { name: string; display: string; sql: string; raw: number; color: string; trend: Trend | null; }
+export interface Kpi {
+  name: string; display: string; sql: string; raw: number; color: string;
+  trend: Trend | null;
+  /** Full chart_sql result, kept so a click can expand the card into a rich chart. */
+  chart?: { columns: string[]; rows: unknown[][] } | null;
+}
 
 // Categorical accent palette for the left border + sparkline (visual variety, like the
 // reference). The DELTA badge carries the semantic good/bad colour separately.
@@ -68,7 +78,6 @@ function formatMetric(v: number, unit: string, sym: string, name: string): { dis
     const pre = /usd|eur|gbp|jpy|cny|inr|[$€£¥₹]|revenue|spend|cost|gmv|sales|value|price/.test(u) ? sym : "";
     display = pre + s;
   }
-  // No zero values on cards: a "$0 / 0.0%" KPI is almost always a rounding/join bug, not a result.
   if (Math.abs(parseFloat(display.replace(/[^0-9.eE-]/g, "")) || 0) === 0) return { display: "", ok: false };
   return { display, ok: true };
 }
@@ -102,13 +111,15 @@ const trendCaption = (sign: number, favorable: boolean | null) =>
 const periodWord = (label: string) =>
   ({ DoD: "yesterday", WoW: "last week", MoM: "last month", QoQ: "last quarter", YoY: "last year", HoH: "prior hour" } as Record<string, string>)[label] ?? "prior period";
 
-/** Build a card model from a raw value (+ optional time series). Returns null when the
- *  value is broken/degenerate. Shared by the live container and the /chart-lab harness. */
+/** Build a card model from a raw value (+ optional time series + full chart result).
+ *  Returns null when the value is broken/degenerate. Shared by the live container and
+ *  the /chart-lab harness. */
 export function buildKpi(args: {
   name: string; raw: number; unit: string; accent: string;
   sym?: string; sql?: string; series?: number[];
+  chart?: { columns: string[]; rows: unknown[][] } | null;
 }): Kpi | null {
-  const { name, raw, unit, accent, sym = "$", sql = "", series } = args;
+  const { name, raw, unit, accent, sym = "$", sql = "", series, chart = null } = args;
   const f = formatMetric(raw, unit, sym, name);
   if (!f.ok) return null;
   let trend: Trend | null = null;
@@ -119,12 +130,15 @@ export function buildKpi(args: {
       trend = { values: series, deltaText: d.text, sign: d.sign, favorable: fav, caption: trendCaption(d.sign, fav) };
     }
   }
-  return { name, display: f.display, sql, raw, color: accent, trend };
+  return { name, display: f.display, sql, raw, color: accent, trend, chart };
 }
 
-// ── Presentational view (no data fetching) ──────────────────────────────────────
+// ── Presentational view (no data fetching) — owns the expand/collapse UI state ──
 export function KpiStripView({ industry, period, kpis }: { industry?: string; period?: string; kpis: Kpi[] }) {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   if (!kpis.length) return null;
+  const expanded = kpis.find(k => k.name === expandedId && k.chart && k.chart.rows.length >= 2) ?? null;
+
   return (
     <div>
       <div className="aug-label" style={{ marginBottom: 8 }}>
@@ -137,19 +151,33 @@ export function KpiStripView({ industry, period, kpis }: { industry?: string; pe
           const fav = k.trend?.favorable;
           const deltaColor = fav == null ? "var(--t3)" : fav ? "var(--grn4)" : "var(--red4)";
           const deltaBg = fav == null ? "var(--bg-3)" : fav ? "var(--grn1)" : "var(--red1)";
+          const canExpand = !!(k.chart && k.chart.rows.length >= 2);
+          const isOpen = expanded?.name === k.name;
           return (
-            <div key={k.name} style={{
-              flex: "1 1 160px", minWidth: 150, padding: "11px 13px",
-              borderRadius: "var(--r2)", background: "var(--bg-2)",
-              border: "1px solid var(--b1)", borderLeft: `3px solid ${k.color}`,
-              display: "flex", flexDirection: "column", gap: 7,
-            }}>
+            <div
+              key={k.name}
+              onClick={canExpand ? () => setExpandedId(isOpen ? null : k.name) : undefined}
+              title={canExpand ? (isOpen ? "Collapse" : "Click to expand the trend") : undefined}
+              style={{
+                position: "relative", flex: "1 1 160px", minWidth: 150, padding: "11px 13px",
+                borderRadius: "var(--r2)", background: isOpen ? "var(--bg-3)" : "var(--bg-2)",
+                border: `1px solid ${isOpen ? k.color : "var(--b1)"}`, borderLeft: `3px solid ${k.color}`,
+                display: "flex", flexDirection: "column", gap: 7,
+                cursor: canExpand ? "pointer" : "default",
+                transition: "background var(--dur-fast), border-color var(--dur-fast)",
+              }}
+            >
               <div
-                style={{ fontSize: 9.5, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".05em", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+                style={{ fontSize: 9.5, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".05em", fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", paddingRight: 14 }}
                 title={k.name}
               >
                 {k.name}
               </div>
+              {canExpand && (
+                <span aria-hidden style={{ position: "absolute", top: 9, right: 10, fontSize: 11, lineHeight: 1, color: isOpen ? k.color : "var(--t4)" }}>
+                  {isOpen ? "×" : "⤢"}
+                </span>
+              )}
               <div style={{ fontSize: 25, color: "var(--t1)", fontWeight: 700, fontFamily: "var(--font-mono)", lineHeight: 1 }}>
                 <GroundedNumber
                   token={k.display}
@@ -171,6 +199,29 @@ export function KpiStripView({ industry, period, kpis }: { industry?: string; pe
           );
         })}
       </div>
+
+      {/* Master-detail: the clicked KPI expands into a rich chart of its trend. */}
+      {expanded?.chart && (
+        <div
+          className="aug-anim-up"
+          style={{
+            marginTop: 10, padding: "12px 14px", borderRadius: "var(--r3)",
+            background: "var(--bg-2)", border: "1px solid var(--b1)", borderLeft: `3px solid ${expanded.color}`,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: "var(--t1)" }}>{expanded.name}</span>
+            <button
+              onClick={() => setExpandedId(null)}
+              title="Close"
+              style={{ background: "transparent", border: "none", color: "var(--t3)", fontSize: 15, lineHeight: 1, cursor: "pointer", padding: 2 }}
+            >
+              ×
+            </button>
+          </div>
+          <ResultChartCard columns={expanded.chart.columns} rows={expanded.chart.rows} title={expanded.name} />
+        </div>
+      )}
     </div>
   );
 }
@@ -201,16 +252,18 @@ export function IndustryKpiStrip({ connectionId, schema }: { connectionId: strin
           if (cell == null) return null;
 
           let series: number[] | undefined;
+          let chart: { columns: string[]; rows: unknown[][] } | null = null;
           if (m.chart_sql?.trim()) {
             try {
               const cr = await runDirectQuery(connectionId, m.chart_sql, 500, { useCache: true });
-              if (!cr.error && cr.columns && cr.rows) {
+              if (!cr.error && cr.columns && cr.rows && cr.rows.length >= 2) {
+                chart = { columns: cr.columns, rows: cr.rows as unknown[][] };
                 const st = seriesTrend(cr.columns, cr.rows as (string | number | null)[][]);
                 if (st && st.values.length >= 2) { series = st.values; if (!seenPeriod) seenPeriod = st.periodLabel; }
               }
             } catch { /* no trend → card degrades to label + value */ }
           }
-          return buildKpi({ name: m.name, raw: Number(cell), unit: m.unit_or_range, accent: KPI_ACCENTS[i % KPI_ACCENTS.length], sym, sql: m.value_sql, series });
+          return buildKpi({ name: m.name, raw: Number(cell), unit: m.unit_or_range, accent: KPI_ACCENTS[i % KPI_ACCENTS.length], sym, sql: m.value_sql, series, chart });
         } catch { return null; }
       }));
 

@@ -76,13 +76,22 @@ export default function ChartLab() {
   useEffect(() => { getEffectiveSettings().then(setOrgSettingsCache).catch(() => {}); }, []);
   const auto = useMemo(() => buildAutoOption(autoCols, autoRows, { title: "Auto-inferred (line)" }), []);
   // KPI scorecard demo — built via the real buildKpi() so the delta units (pts/%/×),
-  // direction-aware favorability colour, and sparklines are exercised, not mocked.
+  // direction-aware favorability colour, sparklines, AND click-to-expand are exercised.
+  const KMONTHS = ["2022-01-01", "2022-02-01", "2022-03-01", "2022-04-01", "2022-05-01", "2022-06-01"];
+  const mkChart = (vals: number[]) => ({ columns: ["month", "value"], rows: vals.map((v, i) => [KMONTHS[i], v] as unknown[]) });
+  const KSERIES = {
+    margin: [0.51, 0.50, 0.498, 0.495, 0.494, 0.470],
+    aov: [69.5, 70.2, 69.9, 70.0, 69.77, 69.35],
+    repeat: [0.24, 0.25, 0.258, 0.262, 0.254, 0.285],
+    cac: [17.5, 18.2, 18.9, 19.2, 19.54, 21.14],
+    roas: [3.5, 3.6, 3.7, 3.75, 3.78, 4.18],
+  };
   const kpiDemo = [
-    buildKpi({ name: "Gross Margin Rate", raw: 0.470, unit: "ratio 0-1", accent: KPI_ACCENTS[0], series: [0.51, 0.50, 0.498, 0.495, 0.494, 0.470] }),
-    buildKpi({ name: "Avg Order Value", raw: 69.35, unit: "USD", sym: "$", accent: KPI_ACCENTS[1], series: [69.5, 70.2, 69.9, 70.0, 69.77, 69.35] }),
-    buildKpi({ name: "Repeat Purchase Rate", raw: 0.285, unit: "ratio 0-1", accent: KPI_ACCENTS[2], series: [0.24, 0.25, 0.258, 0.262, 0.254, 0.285] }),
-    buildKpi({ name: "Acquisition Cost (CAC)", raw: 21.14, unit: "USD", sym: "$", accent: KPI_ACCENTS[3], series: [17.5, 18.2, 18.9, 19.2, 19.54, 21.14] }),
-    buildKpi({ name: "Blended ROAS", raw: 4.18, unit: "ratio", accent: KPI_ACCENTS[4], series: [3.5, 3.6, 3.7, 3.75, 3.78, 4.18] }),
+    buildKpi({ name: "Gross Margin Rate", raw: 0.470, unit: "ratio 0-1", accent: KPI_ACCENTS[0], series: KSERIES.margin, chart: mkChart(KSERIES.margin) }),
+    buildKpi({ name: "Avg Order Value", raw: 69.35, unit: "USD", sym: "$", accent: KPI_ACCENTS[1], series: KSERIES.aov, chart: mkChart(KSERIES.aov) }),
+    buildKpi({ name: "Repeat Purchase Rate", raw: 0.285, unit: "ratio 0-1", accent: KPI_ACCENTS[2], series: KSERIES.repeat, chart: mkChart(KSERIES.repeat) }),
+    buildKpi({ name: "Acquisition Cost (CAC)", raw: 21.14, unit: "USD", sym: "$", accent: KPI_ACCENTS[3], series: KSERIES.cac, chart: mkChart(KSERIES.cac) }),
+    buildKpi({ name: "Blended ROAS", raw: 4.18, unit: "ratio", accent: KPI_ACCENTS[4], series: KSERIES.roas, chart: mkChart(KSERIES.roas) }),
   ].filter(Boolean) as Kpi[];
   return (
     <div style={{ padding: 24, background: "var(--bg-0)", minHeight: "100vh" }}>
