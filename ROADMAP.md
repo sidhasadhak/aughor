@@ -114,11 +114,29 @@ Grouped by area; each ✅ is verified shipped (git + code). Representative commi
 - ✅ **#14 UX polish** — ontology legend at top, canvas History-tab empty-state, Configure panel, Recents surface, completed-status tags, light/dark legible themes (`6f17393`, `364e117`, `3f31d33`).
 - ✅ **WCH hardening** — Investigate→blank-canvas fix, sample-data honesty chain, data-shape-aware temporal planning (`419112c`, `ea4110f`, `1a10918`).
 
+### Superset study & integration (2026-06-20)
+*Deep-studied Apache Superset (Apache-2.0); imported the high-leverage wins, skipped the redundant ones. Full record: [`docs/SUPERSET_INTEGRATION.md`](docs/SUPERSET_INTEGRATION.md). Branch `2026-06-20-superset-integration`, 11 commits, tested.*
+- ✅ **Charts → Apache ECharts** — replaced Vega-Lite end-to-end: token theme + pure `transformProps` builders + `buildAutoOption` (reuses `inferChartType`); flipped `Chart.tsx` (same props — 9 consumers untouched) and removed `vega`/`vega-lite`/`vega-embed` (`b275e2d`,`086bf3f`,`3175000`,`aa69c8b`).
+- ✅ **Answer-card UX** — `ResultChartCard`: inline **grain-aware** control strip (Metric/Dimension/Aggregation/Display — re-pivot in place) + chart⇄table toggle, in Insight + Deep Analysis; SUM-of-a-rate warned, not silently allowed (`421a902`). Headline figures emphasized + repeated per-finding confidence decluttered (`749ae16`).
+- ✅ **AST SQL read-only gate** — `is_mutating`/`is_destructive`/disallowed-fns + CTE-safe `extract_tables`, wired into `SafetyChecker`; catches `lo_export()`/`EXPLAIN ANALYZE <dml>`/CTE-masked writes/`SELECT…INTO`/`pg_read_file()` the regex passed (`114ec60`). All three table-guards consolidated onto it (`2d4dd2a`).
+- ✅ **Per-dialect NL2SQL rules** — `writer_rules(db)` + `writes_native_sql` flag: DuckDB rules on the transpile path, native rule blocks for verbatim-execution warehouses (`32c74da`). *(A time-grain table proved redundant — sqlglot already transpiles `date_trunc` correctly.)*
+- ✅ **Post-processing operators** — pure `(columns,rows)` PoP/contribution/rolling/cumulative, surfacing gated period-over-period + Pareto signals to the LLM (`36582f6`).
+- ✅ **Monitor anti-flap** — `grace_period_hours` debounce centralized in `run_monitor`; sustained breach alerts once/grace-window, escalations immediate, manual test bypasses (`339db19`).
+
 ---
 
 ## 3 · What's left
 
 Verified pending against code/git. `⬜` not started · `◑` partial.
+
+### Superset-derived backlog (see [`docs/SUPERSET_INTEGRATION.md`](docs/SUPERSET_INTEGRATION.md))
+- ⬜ **Error-registry enrichment** — Superset per-dialect SQL-error regex → `tools/error_classifier.py` (better FIX_SQL repair + user messages). *Needs live BigQuery/Snowflake to verify warehouse patterns.*
+- ⬜ **Declarative metric additivity** — `additivity` field on `MetricDefinition`, validated by the existing `measure_grain` probe (overlaps it; modest gain).
+- ⬜ **MCP server** *(deferred by decision)* — expose NL2SQL/Deep-Analysis/schema/metrics as MCP tools (Superset `mcp_service` blueprint: FastMCP + per-tool Pydantic + layered auth + streaming progress).
+- ⬜ **DialectCaps flags / durable `SQLAlchemyJobStore`** — low priority (jobstore: `scheduler.start()` already reloads monitors from the store on boot; only misfire-recovery is gained).
+- ⬜ **Reference-UX follow-ups** — opt-in "Validate" action on chat answers (re-validate vs live data); a lean feedback/remember action row.
+- ⚠️ **Transpile-vs-native split** *(deeper)* — explorer/investigate emit DuckDB SQL but native warehouses run it verbatim; route all connectors through `translate()` or give the explorer native dialect rules. Needs live-warehouse testing.
+- ⬜ **Licensing** *(deferred)* — adapted files carry inline Apache-2.0 attribution; add a top-level `NOTICE`/`THIRD_PARTY` entry + an MIT `LICENSE` file before distribution.
 
 ### Commercialization / deploy
 - ◑ **#12 Enterprise auth / tenancy** *(L — needs a product call)* — **Workspace data-path isolation is now comprehensive** across every connection-tied surface: connection pickers (#38), `/canvases` + `/investigations` (#39), Recommendation Inbox (#41), Catalog tree (#42), Monitors/Alerts + the Home-dashboard flash (#45) — all via the fail-closed `workspace_connection_ids` gate; an empty workspace shows none of another's data. Genuinely-remaining tenancy: connection-registry **ownership** (`/connections` is still a *shared* registry — the frontend filters it; per-tenant ownership belongs with auth), and platform **OAuth2/OIDC login + user RBAC** (still unbuilt — only connector-level OAuth exists). Shared resources (metrics catalog, action triggers, org-intelligence) are global *by design*, not leaks. The remainder needs the auth/ownership model decided first.
