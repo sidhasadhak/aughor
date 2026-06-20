@@ -159,6 +159,50 @@ _TABLE_RE = re.compile(r'\b(?:FROM|JOIN)\s+(?:\w+\.)?(\w+)', re.IGNORECASE)
 _CTE_DEF_RE = re.compile(r'\b(\w+)\s+AS\s*\(', re.IGNORECASE)
 
 
+_DIM_NOUN_RE = re.compile(
+    r"\b(categor(?:y|ies)|segments?|tiers?|brands?|channels?|regions?|countr(?:y|ies)|"
+    r"types?|classes|groups?|statuses|brackets?|cohorts?)\b", re.I)
+_GROUP_ID_COL_RE = re.compile(r"(^|_)(id|key|code|sk|pk)$|_id$|_key$|_code$", re.I)
+
+
+def _breakdown_grain_hint(question: str, sql: str, dialect: str = "duckdb") -> str:
+    """Catch a breakdown grouped at TOO FINE a grain: the question names a categorical
+    dimension ('top product CATEGORIES', 'by brand') but the SQL GROUPs BY an id/key column
+    (product_id) instead, so it ranks individual rows, not the category. High-precision: fires
+    only when EVERY group-by column is id-like AND the question names a real dimension noun."""
+    try:
+        import sqlglot
+        from sqlglot import exp
+        tree = sqlglot.parse_one(sql, read=dialect)
+        grp = tree.find(exp.Group)
+        if not grp:
+            return ""
+        select_exprs = tree.expressions if isinstance(tree, exp.Select) else []
+        gcols: list[str] = []
+        for e in grp.expressions:
+            if isinstance(e, exp.Column):
+                gcols.append(e.name)
+            elif isinstance(e, exp.Literal) and getattr(e, "is_int", False):
+                idx = int(e.this) - 1
+                if 0 <= idx < len(select_exprs):
+                    gcols.append(select_exprs[idx].alias_or_name or "")
+        gcols = [c for c in gcols if c]
+        if not gcols or not all(_GROUP_ID_COL_RE.search(c) for c in gcols):
+            return ""
+        m = _DIM_NOUN_RE.search(question or "")
+        if not m:
+            return ""
+        noun = m.group(0)
+        return (
+            f"BREAKDOWN GRAIN MISMATCH: the question asks for a breakdown by '{noun}', but the query "
+            f"GROUPs BY an id/key column ({', '.join(gcols)}) — that ranks individual rows, not {noun}. "
+            f"GROUP BY the '{noun}' categorical column instead (JOIN to its lookup table and group by the "
+            f"name/label if the dimension lives there), and aggregate the metric within each {noun}."
+        )
+    except Exception:
+        return ""
+
+
 def _extract_tables(sql: str) -> list[str]:
     """Base tables referenced by `sql`, CTEs excluded. Uses the shared analyze()
     AST facade (correct on aliases/subqueries/schema-qualified names); falls back
@@ -1192,6 +1236,16 @@ async def _stream_chat(
             except Exception:
                 pass
 
+        # ── Breakdown-grain guard — "top product CATEGORIES" grouped by product_id ──
+        # The model sometimes groups a categorical breakdown at too fine a grain (an id),
+        # ranking individual rows instead of the named dimension. Repair toward the dimension.
+        _grain_fix_hint = ""
+        if final_sql:
+            try:
+                _grain_fix_hint = _breakdown_grain_hint(question, final_sql, db.dialect)
+            except Exception:
+                pass
+
         yield _sse("sql", {"sql": final_sql})
         result = await asyncio.to_thread(db.execute, "chat", final_sql)
 
@@ -1202,24 +1256,25 @@ async def _stream_chat(
 
         # Also trigger a rewrite when semantic column warnings exist, even if
         # the SQL executed successfully (wrong columns produce wrong results silently).
-        if result.error or _chat_zero_diag or _semantic_fix_hint or _fanout_fix_hint or _scope_fix_hint or _filter_fix_hint:
+        if result.error or _chat_zero_diag or _semantic_fix_hint or _fanout_fix_hint or _scope_fix_hint or _filter_fix_hint or _grain_fix_hint:
             _writer2 = SqlWriter(db, schema_str=schema)
             _fix_error = (
                 result.error or
                 (_scope_fix_hint if _scope_fix_hint else None) or
                 (_filter_fix_hint if _filter_fix_hint else None) or
+                (_grain_fix_hint if _grain_fix_hint else None) or
                 (_semantic_fix_hint if _semantic_fix_hint else None) or
                 (_fanout_fix_hint if _fanout_fix_hint else None) or
                 "Query returned 0 rows — the SQL logic is likely wrong."
             )
-            _combined_hint = " | ".join(filter(None, [_chat_zero_diag or "", _scope_fix_hint, _filter_fix_hint, _semantic_fix_hint, _fanout_fix_hint]))
+            _combined_hint = " | ".join(filter(None, [_chat_zero_diag or "", _scope_fix_hint, _filter_fix_hint, _grain_fix_hint, _semantic_fix_hint, _fanout_fix_hint]))
             try:
                 fix = await asyncio.to_thread(
                     lambda: _writer2.fix(final_sql, _fix_error, hint=_combined_hint, max_retries=1)
                 )
                 if fix.ok:
                     retry = await asyncio.to_thread(db.execute, "chat", fix.sql)
-                    if not retry.error and (retry.row_count > 0 or not _chat_zero_diag or _semantic_fix_hint or _fanout_fix_hint or _scope_fix_hint or _filter_fix_hint):
+                    if not retry.error and (retry.row_count > 0 or not _chat_zero_diag or _semantic_fix_hint or _fanout_fix_hint or _scope_fix_hint or _filter_fix_hint or _grain_fix_hint):
                         final_sql = fix.sql
                         result = retry
                         yield _sse("sql", {"sql": final_sql})

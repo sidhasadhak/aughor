@@ -81,15 +81,27 @@ _PARTITION_BY_RE = re.compile(
 _BREAKDOWN_MARKER = r'\b(?:by|per|each|every|which|for\s+each|top|bottom|rank(?:ed|ing)?)\b'
 
 
+# When the entity noun immediately modifies a categorical head-noun it is an ADJECTIVE, not
+# the breakdown target: "product categories" / "customer segment" / "order type" group BY the
+# head-noun (category/segment/type), not product_id/customer_id/order_id. Without this guard the
+# 'product' entry demanded a product_id on a correct "top product CATEGORIES" query and the repair
+# wrongly regrouped it by product.
+_DIM_HEAD_NOUN = (
+    r'(?:categor(?:y|ies)|types?|lines?|segments?|tiers?|groups?|classes|class|brands?|'
+    r'channels?|famil(?:y|ies)|cohorts?|bands?|buckets?|brackets?)'
+)
+
+
 def _wants_entity_breakdown(question_lower: str, entity_kws: list[str]) -> bool:
     """True only if the question asks for a per-entity breakdown of THIS entity,
     e.g. 'by product', 'per seller', 'which 5 customers', 'top 10 orders',
-    'seller-wise', 'customer level'. A bare noun mention returns False."""
+    'seller-wise', 'customer level'. A bare noun mention returns False, and a noun used
+    as an adjective for another dimension ('product categories') returns False."""
     nouns = [kw for kw in entity_kws if " " not in kw and "-" not in kw]
     for noun in nouns:
         n = re.escape(noun)
-        # "<marker> [0-3 words] <noun>"  → by product · which 5 customers · top 10 sellers
-        if re.search(_BREAKDOWN_MARKER + r'(?:\s+\w+){0,3}\s+' + n + r'\b', question_lower):
+        # "<marker> [0-3 words] <noun>" but NOT "<noun> <dimension head-noun>" (adjective use)
+        if re.search(_BREAKDOWN_MARKER + r'(?:\s+\w+){0,3}\s+' + n + r'\b(?!\s+' + _DIM_HEAD_NOUN + r')', question_lower):
             return True
         # "<noun>-wise" / "<noun> level"
         if re.search(n + r'[\s-]+(?:wise|level)\b', question_lower):
