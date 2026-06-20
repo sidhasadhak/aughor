@@ -123,6 +123,15 @@ Grouped by area; each ✅ is verified shipped (git + code). Representative commi
 - ✅ **Post-processing operators** — pure `(columns,rows)` PoP/contribution/rolling/cumulative, surfacing gated period-over-period + Pareto signals to the LLM (`36582f6`).
 - ✅ **Monitor anti-flap** — `grace_period_hours` debounce centralized in `run_monitor`; sustained breach alerts once/grace-window, escalations immediate, manual test bypasses (`339db19`).
 
+### Workspace settings, pivot & briefing UX (2026-06-20)
+*Branch `2026-06-20-workspace-settings-pivot` (stacked on the Superset branch), 13 commits; backend pytest green, frontend tsc + `/chart-lab` verified.*
+- ✅ **Org/Workspace settings** — `aughor/orgsettings/` app-wide `OrgSettings` singleton (identity: company/website/HQ/industry · localization: currency/timezone/date-format/fiscal-year · appearance: chart-palette) + a per-workspace override. **Hybrid** scope (workspace ▸ app ▸ default) with **override-wins** over the inferred `BusinessProfile` (`""` = use the inferred value). Wired: currency → briefing + metric-moves; industry → ontology/metric-KB/explorer steering; identity → an `org_context()` prompt block. Routes `/org-settings(/effective)`; Settings ▸ "Organization & Localization" UI. 28 tests + briefing override-wins tests.
+- ✅ **Pivot in answer cards** — the Query-Builder `PivotTable` cross-tab surfaced as a third view in `ResultChartCard` (Insight + Deep Analysis), grain-aware defaults.
+- ✅ **ThoughtSpot-style KPI scorecard + click-to-expand** — `IndustryKpiStrip`: colored left border + big value + **direction-aware** delta badge (rising CAC / falling margin red, rising repeat-rate / ROAS green) + sparkline + caption; **clicking a card expands it into a rich trend chart** (master-detail). Retired the redundant standalone metric-chart grid in `BriefingDashboard` (−337 lines).
+- ✅ **Currency/date formatting from settings (override-wins)** — money columns carry the effective currency symbol in tables, pivot AND charts (tooltip values + relabeled series, `cac_usd`→"CAC €…"); `date_format` in `fmtDate`/table cells; a `lib/orgSettings` cache the pure formatters read + a `useOrgSettings` (`useSyncExternalStore`) subscription so charts rebuild reactively when the cache lands.
+- ✅ **Shared favorability** (`lib/favorability.ts`) used by the scorecard + `Brief.tsx` inline deltas (fixes the old hardcoded minus=red). **Chart palette** (`lib/chartPalettes.ts`) named palettes applied to charts (per-chart Customize wins; default = theme).
+- ✅ **LLM default fix** — Ollama default now `qwen3-coder-next:cloud` for coder+fast, `kimi-k2.6:cloud` for narrator (retires the uninstalled-`qwen2.5-coder:32b` silent-404 footgun); `fast` resolves to its own role default.
+
 ---
 
 ## 3 · What's left
@@ -137,6 +146,14 @@ Verified pending against code/git. `⬜` not started · `◑` partial.
 - ⬜ **Reference-UX follow-ups** — opt-in "Validate" action on chat answers (re-validate vs live data); a lean feedback/remember action row.
 - ⚠️ **Transpile-vs-native split** *(deeper)* — explorer/investigate emit DuckDB SQL but native warehouses run it verbatim; route all connectors through `translate()` or give the explorer native dialect rules. Needs live-warehouse testing.
 - ⬜ **Licensing** *(deferred)* — adapted files carry inline Apache-2.0 attribution; add a top-level `NOTICE`/`THIRD_PARTY` entry + an MIT `LICENSE` file before distribution.
+
+### Workspace-settings / briefing-UX follow-ups (memory: `workspace-settings-pivot`)
+- ◑ **Localization wiring gaps** — `timezone` + `fiscal_year_start_month` are stored + in the UI but not yet applied (no TZ-shifted display / fiscal-period bucketing); `currency` + `date_format` ARE wired.
+- ◑ **Per-workspace override into the backend briefing** — the briefing resolves *app-level* currency/industry; the workspace-scoped override only applies frontend-side (no `workspace_id` threaded through the briefing pipeline).
+- ◑ **Currency on continuous chart axes** — tooltip values, series labels, tables + pivot are currency-aware; line/area y-axis *ticks* aren't prefixed yet.
+- ⬜ **Identity-context breadth** — company/website/HQ feed the explorer steering only; could extend to the briefing narrator + profile-inference prompts.
+- ⬜ **org-settings reactivity for tables/KPI cards** — charts subscribe (`useOrgSettings`); tables + cards read-at-render (correct in practice, not subscribed).
+- ⬜ **Live briefing verification on real warehouse data** — the KPI strip is confirmed rendering live; the full briefing (real `north_star_metrics` + `chart_sql`) wasn't exhaustively eyeballed.
 
 ### Commercialization / deploy
 - ◑ **#12 Enterprise auth / tenancy** *(L — needs a product call)* — **Workspace data-path isolation is now comprehensive** across every connection-tied surface: connection pickers (#38), `/canvases` + `/investigations` (#39), Recommendation Inbox (#41), Catalog tree (#42), Monitors/Alerts + the Home-dashboard flash (#45) — all via the fail-closed `workspace_connection_ids` gate; an empty workspace shows none of another's data. Genuinely-remaining tenancy: connection-registry **ownership** (`/connections` is still a *shared* registry — the frontend filters it; per-tenant ownership belongs with auth), and platform **OAuth2/OIDC login + user RBAC** (still unbuilt — only connector-level OAuth exists). Shared resources (metrics catalog, action triggers, org-intelligence) are global *by design*, not leaks. The remainder needs the auth/ownership model decided first.
