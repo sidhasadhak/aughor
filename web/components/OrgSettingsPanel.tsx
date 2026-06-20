@@ -11,12 +11,14 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import {
+  getEffectiveSettings,
   getOrgSettings,
   getWorkspace,
   updateOrgSettings,
   updateWorkspace,
   type OrgSettings,
 } from "@/lib/api";
+import { setOrgSettingsCache } from "@/lib/orgSettings";
 
 const EMPTY: OrgSettings = {
   company_name: "", website: "", hq_location: "", industry: "",
@@ -86,6 +88,8 @@ export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?:
       }
       setSaved(true);
       await load();  // reflect server-side normalization (e.g. currency upper-cased)
+      // Refresh the app-wide formatter cache so tables/dates pick up the new settings.
+      getEffectiveSettings(workspaceId || undefined).then(setOrgSettingsCache).catch(() => {});
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save settings");
     } finally {

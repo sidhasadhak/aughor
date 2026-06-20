@@ -9,7 +9,7 @@
  * for. Safe to delete once the migration lands; not linked from the app.
  */
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import {
   EChart,
   lineOption, multiLineOption, barOption, groupedBarOption,
@@ -19,6 +19,8 @@ import {
 } from "@/components/charts/echarts";
 import { Chart } from "@/components/Chart";
 import { ResultChartCard } from "@/components/charts/ResultChartCard";
+import { getEffectiveSettings } from "@/lib/api";
+import { setOrgSettingsCache } from "@/lib/orgSettings";
 
 /** Object rows → SQL-shaped [columns, rows[][]] for the <Chart> component. */
 function toTable(objs: Row[], cols: string[]): { columns: string[]; rows: unknown[][] } {
@@ -68,6 +70,9 @@ function Card({ title, height = 300, children }: { title: string; height?: numbe
 }
 
 export default function ChartLab() {
+  // The harness reflects the configured org settings (currency symbol, date format)
+  // so the formatters can be eyeballed — fetched once, like the real app does on load.
+  useEffect(() => { getEffectiveSettings().then(setOrgSettingsCache).catch(() => {}); }, []);
   const auto = useMemo(() => buildAutoOption(autoCols, autoRows, { title: "Auto-inferred (line)" }), []);
   return (
     <div style={{ padding: 24, background: "var(--bg-0)", minHeight: "100vh" }}>

@@ -7,6 +7,7 @@ import dynamic from "next/dynamic";
 import { ChatPanel } from "@/components/ChatPanel";
 import { InferencePanel } from "@/components/InferencePanel";
 import { OrgSettingsPanel } from "@/components/OrgSettingsPanel";
+import { setOrgSettingsCache } from "@/lib/orgSettings";
 import { ExplorationBadge } from "@/components/ExplorationBadge";
 import { SchemaProvider } from "@/lib/schema-context";
 import { OpenInBuilderProvider } from "@/lib/openInBuilder";
@@ -60,6 +61,7 @@ import {
   getOntology,
   getConnectionFreshness,
   getDomainInsights,
+  getEffectiveSettings,
   type Connection,
   type ExplorationStatus,
   type OntologyGraph,
@@ -1503,6 +1505,12 @@ export default function Home() {
     if (selectedWorkspace && typeof window !== "undefined") {
       localStorage.setItem(LAST_WS_KEY, selectedWorkspace);
     }
+  }, [selectedWorkspace]);
+
+  // Populate the org-settings cache that the display formatters read (currency symbol,
+  // date format) with the active workspace's effective settings; refresh on switch.
+  useEffect(() => {
+    getEffectiveSettings(selectedWorkspace || undefined).then(setOrgSettingsCache).catch(() => {});
   }, [selectedWorkspace]);
 
   const reloadWorkspaces = () => getWorkspaces().then(setWorkspaces).catch(() => {});
