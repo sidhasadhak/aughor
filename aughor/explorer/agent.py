@@ -575,31 +575,55 @@ def _insight_sql_unsound(sql: str, conn=None) -> str | None:
     return None
 
 
-def _part_exceeds_whole(rows) -> str | None:
+# A column whose NAME is a count/row-tally is never a grand total nor a money "part" — it is a
+# different measure. Used to stop a constant COUNT column (e.g. `n` = 210 weeks/channel) from being
+# mistaken for the total that a money column "exceeds" (the spurious fan-out flag on a ratio scan).
+_COUNT_COL_RE = re.compile(r'(^|[_\s])(n|cnt|count|num|rows?|records?|freq|samples?|observations?)([_\s]|$)', re.I)
+# Beyond this overshoot the candidate "total" and the "part" are different MEASURES (a count next to
+# money), not a fan-out over-count of the same measure — a real fan-out exceeds the total only modestly.
+_PART_WHOLE_OVERSHOOT_CAP = 1000.0
+
+
+def _part_exceeds_whole(rows, columns=None) -> str | None:
     """Internal-consistency check: a column that is CONSTANT across the result is a candidate
     grand total; if another numeric column has a value that EXCEEDS it, the 'parts' are bigger
     than the 'whole' — the signature of a fan-out total (the 'category GMV $457k > total GMV
     $251k' bug). Conservative: needs ≥2 rows, both columns at money/count magnitude (≥100), and
-    a clear >5% overshoot — so a constant rate next to a count never trips it."""
+    a clear >5% overshoot — so a constant rate next to a count never trips it.
+
+    Guards against the ratio-scan false positive: a constant COUNT column (`n`) sitting next to a
+    money column is NOT a part/whole pair. Count columns are excluded by name (when `columns` are
+    known) and, as a measure-agnostic backstop, an overshoot of orders of magnitude is ignored
+    (a fan-out exceeds the total modestly; a count-vs-money mismatch exceeds it ~1000×+)."""
     if not rows or len(rows) < 2:
         return None
     norm = [list(r.values()) if isinstance(r, dict) else list(r) for r in rows]
     ncols = min((len(r) for r in norm), default=0)
+    # Resolve column names from the explicit arg or, failing that, dict-row keys.
+    names = None
+    if columns and len(columns) >= ncols:
+        names = [str(c) for c in columns[:ncols]]
+    elif rows and isinstance(rows[0], dict):
+        names = [str(k) for k in list(rows[0].keys())[:ncols]]
+    count_idx = {i for i, nm in enumerate(names) if _COUNT_COL_RE.search(nm)} if names else set()
     cols = []
     for i in range(ncols):
         parsed = [_safe_float(r[i]) for r in norm]
         cols.append(parsed if all(v is not None for v in parsed) else None)
     for i, ci in enumerate(cols):
+        if i in count_idx:
+            continue                      # a count is never a grand total
         if not ci or len(set(ci)) != 1:
             continue                      # column i must be CONSTANT (a candidate total)
         total = ci[0]
         if abs(total) < 100:
             continue                      # too small to be a money/count total — skip (rates)
         for j, cj in enumerate(cols):
-            if j == i or not cj:
-                continue
-            if max(cj) > abs(total) * 1.05 and max(cj) >= 100:
-                return (f"component exceeds total: a value {max(cj):.0f} exceeds the constant "
+            if j == i or not cj or j in count_idx:
+                continue                  # a count is never a money 'part' of the total
+            mx = max(cj)
+            if abs(total) * 1.05 < mx <= abs(total) * _PART_WHOLE_OVERSHOOT_CAP and mx >= 100:
+                return (f"component exceeds total: a value {mx:.0f} exceeds the constant "
                         f"total {total:.0f} in the same result — fan-out over-count")
     return None
 
@@ -692,7 +716,7 @@ def _implausible_ratio_claim(finding_text: str, cap: float = _IMPLAUSIBLE_RATIO_
     return ""
 
 
-def verify_insight(rows, finding_text: str = "", sql: str = "", metric_ranges=None, conn=None) -> tuple[bool, str]:
+def verify_insight(rows, finding_text: str = "", sql: str = "", metric_ranges=None, conn=None, *, columns=None) -> tuple[bool, str]:
     """THE pre-emission trust gate: a candidate finding is surfaced ONLY if it passes every
     deterministic check. Returns (ok, reason). A SOTA platform treats generated claims as
     untrusted until verified — so the explorer self-weeds (tautologies, fan-out artifacts,
@@ -705,7 +729,7 @@ def verify_insight(rows, finding_text: str = "", sql: str = "", metric_ranges=No
             return (False, why)
         if _is_degenerate_result(rows, finding_text, sql, metric_ranges):
             return (False, "degenerate result (flat NULL / zero / boundary-pinned rate)")
-        pw = _part_exceeds_whole(rows)
+        pw = _part_exceeds_whole(rows, columns=columns)
         if pw:
             return (False, pw)
         vc = _vacuous_case_dimension(sql, rows)

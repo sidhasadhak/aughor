@@ -922,7 +922,7 @@ def _assemble_phase_findings(results, narrator_findings, id_prefix, metric_label
         if not r.error and r.rows:
             try:
                 from aughor.explorer.agent import verify_insight
-                _ok, _why = verify_insight(r.rows, f.get("interpretation", ""), r.sql)
+                _ok, _why = verify_insight(r.rows, f.get("interpretation", ""), r.sql, columns=r.columns)
                 if not _ok:
                     f["trust_caveat"] = _why
             except Exception as _e:
