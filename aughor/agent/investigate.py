@@ -1919,8 +1919,8 @@ def run_analysis_phase(
     _fanout_caveat = None
     try:
         from aughor.sql.fanout import sum_over_chasm_fanout, avg_over_chasm_fanout, count_star_chasm_fanout
-        from aughor.tools.schema import _parse_schema_tables
-        _tc = _parse_schema_tables(schema) if schema else {}
+        from aughor.tools.schema import parse_schema_tables
+        _tc = parse_schema_tables(schema) if schema else {}
         _dialect = getattr(conn, "dialect", "duckdb")
 
         def _augment_tc(queries):
