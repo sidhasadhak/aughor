@@ -18,6 +18,8 @@ Design goals
 from __future__ import annotations
 
 import re
+
+from aughor.db.dialects import writer_rules
 from dataclasses import dataclass
 
 from pydantic import BaseModel
@@ -298,19 +300,6 @@ class SqlWriter:
 
     # ── SQL generation ─────────────────────────────────────────────────────────
 
-    # DuckDB-specific rules injected into every write prompt
-    _DUCKDB_RULES = """
-DUCKDB DIALECT RULES (violations cause runtime errors):
-- Date differences: use date_diff('day', date1, date2) for days or date_diff('second', a, b) for seconds. NEVER use TIMESTAMPDIFF, JULIANDAY. (date - date) already returns an INTEGER day count, so NEVER wrap a date subtraction in date_part/EXTRACT — date_part('day', a - b) and EXTRACT(EPOCH FROM (a - b)) both error. EXTRACT(EPOCH FROM ...) is valid ONLY on an INTERVAL (timestamp - timestamp).
-- Interval arithmetic: use INTERVAL '1' DAY syntax. NEVER cast an interval to numeric directly.
-- GROUP BY (aggregates): NEVER put aggregate functions (COUNT, SUM, AVG, MAX, MIN) inside GROUP BY. Aggregates belong only in SELECT or HAVING.
-- GROUP BY (completeness): every column in SELECT or ORDER BY that is NOT inside an aggregate MUST also appear in GROUP BY. To show a non-grouped attribute, wrap it in MIN/MAX/ANY_VALUE(col); to sort by a metric, ORDER BY the aggregate (e.g. ORDER BY SUM(x) DESC), not a raw ungrouped column.
-- HAVING: reference only aggregate expressions or columns that appear in GROUP BY. You CANNOT reference SELECT aliases in HAVING.
-- String aggregation: use string_agg(col, sep) not GROUP_CONCAT.
-- Type casting: use col::TYPE syntax (e.g. val::DATE, val::NUMERIC) or CAST(val AS TYPE).
-- Window functions: fully supported — OVER (PARTITION BY ... ORDER BY ...).
-""".strip()
-
     def write(self, question: str, extra_context: str = "") -> str:
         """
         Natural-language question → executable SQL.
@@ -321,7 +310,10 @@ DUCKDB DIALECT RULES (violations cause runtime errors):
         class _SQL(BaseModel):
             sql: str
 
-        dialect_rules = self._DUCKDB_RULES if self._db.dialect == "duckdb" else f"Target dialect: {self._db.dialect}."
+        # Dialect rules selected by execution mode: transpile-from-DuckDB
+        # connections (DuckDB, Postgres) get DuckDB rules; native-execution
+        # warehouses (BigQuery/Snowflake/MySQL/Exasol) get their own dialect rules.
+        dialect_rules = writer_rules(self._db)
 
         result = self._llm.complete(
             temperature=self._temperature,

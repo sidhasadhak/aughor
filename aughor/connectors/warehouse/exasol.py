@@ -19,6 +19,7 @@ MAX_ROWS = 2000
 class ExasolConnection(Connector):
     connector_category = "warehouse"
     dialect = "postgres"  # Exasol speaks standard SQL; postgres transpile is the closest fit
+    writes_native_sql = True  # execute() runs the LLM's SQL natively (no duckdb transpile)
 
     def __init__(
         self,

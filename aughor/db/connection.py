@@ -471,6 +471,10 @@ def _pg_type_name(oid: int) -> str:
 class DatabaseConnection(ABC):
     dialect: str = "duckdb"
     poolable: bool = True  # may this connection be reused via the pool? (see db/pool.py)
+    # True ⇒ execute() runs the LLM's SQL verbatim (native dialect); False ⇒ it
+    # transpiles read=duckdb→dialect via translate(), so the LLM writes DuckDB.
+    # Drives the SQL-writer's dialect rules (aughor/db/dialects.py:writer_rules).
+    writes_native_sql: bool = False
     _ontology = None  # Optional[OntologyGraph] — set by get_schema()
 
     @abstractmethod
