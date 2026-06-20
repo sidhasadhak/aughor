@@ -1834,12 +1834,16 @@ def _detect_question_direction(question: str) -> Optional[str]:
 class _PhaseRun:
     """Outcome of the shared plan→execute→interpret skeleton. On failure `error_phase` is a
     ready phase the caller returns; on success the caller proceeds with its bespoke tail."""
-    def __init__(self, ok, results=None, results_text="", interpretation=None, error_phase=None):
+    def __init__(self, ok, results=None, results_text="", interpretation=None, error_phase=None,
+                 fanout_caveat=None):
         self.ok = ok
         self.results = results or []
         self.results_text = results_text
         self.interpretation = interpretation
         self.error_phase = error_phase
+        # Set when a metric still aggregates across a fan-out join AFTER the corrective
+        # re-plan — the magnitude is unreliable and must not be presented as trustworthy.
+        self.fanout_caveat = fanout_caveat
 
 
 def run_analysis_phase(
@@ -1893,6 +1897,66 @@ def run_analysis_phase(
             tolerate(_exc, "temporal-guard re-plan is best-effort; the prompt rule still applies "
                      "and the original plan still runs", counter="temporal_guard.replan_failed")
 
+    # Fan-out guard (CHASM) — a metric aggregated across a join that MULTIPLIES its home
+    # table's rows inflates the total. Real failure: a "stockout days by category" scan summed
+    # inventory_snapshots (product×month grain) AFTER joining order_items (2.37M line-items),
+    # inflating the total ~1000× at HIGH confidence. The /chat path guards this; the ADA phases
+    # did not. Detect SUM/AVG/COUNT-over-chasm on the planned SQL and force ONE corrective re-plan
+    # that reaches the dimension via a UNIQUE lookup key instead of fanning out through a fact table.
+    _fanout_caveat = None
+    try:
+        from aughor.sql.fanout import sum_over_chasm_fanout, avg_over_chasm_fanout, count_star_chasm_fanout
+        from aughor.tools.schema import _parse_schema_tables
+        _tc = _parse_schema_tables(schema) if schema else {}
+        _dialect = getattr(conn, "dialect", "duckdb")
+
+        def _scan_fanout(queries):
+            hits = []
+            for _q in (queries or []):
+                for _det in (sum_over_chasm_fanout, avg_over_chasm_fanout, count_star_chasm_fanout):
+                    _h = _det(_q.sql, _tc, _dialect)
+                    if _h:
+                        hits.append(_h)
+                        break
+            return hits
+
+        _fanout_hints = _scan_fanout(plan.queries)
+        if _fanout_hints:
+            from aughor.stats import stats as _s; _s.inc("ada.fanout_guard_retries")
+            try:
+                _fixed = _provider("coder").complete(
+                    system=plan_system,
+                    user=plan_user + (
+                        "\n\nCORRECTION REQUIRED — FAN-OUT DETECTED: a previous attempt aggregated a "
+                        "metric across a join that MULTIPLIES its home table's rows, inflating the "
+                        "total. Problems found:\n  - " + "\n  - ".join(dict.fromkeys(_fanout_hints)) +
+                        "\nRe-write so the metric's OWN table is aggregated at ITS own grain: reach the "
+                        "GROUP BY dimension through a key UNIQUE in the dimension's lookup table (e.g. a "
+                        "product's category from the products table, NOT from order_items), and do NOT "
+                        "join to a second transaction/fact table that fans the metric out. Do NOT change "
+                        "what the metric measures. If a many-side join is unavoidable, pre-aggregate EACH "
+                        "satellite in its own CTE keyed by the shared id BEFORE joining."),
+                    response_model=PhasePlan)
+                if _fixed and _fixed.queries:
+                    plan = _fixed
+            except Exception as _exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_exc, "fan-out guard re-plan is best-effort; the prompt rule still applies",
+                         counter="ada.fanout_guard.replan_failed")
+            # Fail-safe: the LLM re-plan is unreliable on a known fan-out (it often returns a
+            # plausible query that still double-counts). If the metric STILL aggregates across a
+            # chasm, we must not present the magnitude as trustworthy — carry a caveat downstream.
+            if _scan_fanout(plan.queries):
+                _s.inc("ada.fanout_guard_unresolved")
+                _fanout_caveat = (
+                    "The metric is aggregated across a fan-out join (a one-to-many join multiplies "
+                    "the rows being summed), so the magnitudes below are likely inflated and the "
+                    "ranking may be volume-weighted rather than reflecting the true per-group total — "
+                    "treat these numbers as directional only."
+                )
+    except Exception:
+        _fanout_caveat = None
+
     # Step 2 — execute (parallel — each query gets its own reader connection)
     results = _parallel_execute_safe(conn, phase_id, plan.queries, cap=cap, schema=schema)
     if not results:
@@ -1915,7 +1979,8 @@ def run_analysis_phase(
             response_model=PhaseInterpretation)
     except Exception:
         interpretation = None
-    return _PhaseRun(ok=True, results=results, results_text=results_text, interpretation=interpretation)
+    return _PhaseRun(ok=True, results=results, results_text=results_text, interpretation=interpretation,
+                     fanout_caveat=_fanout_caveat)
 
 
 @_telemetry.node_span("ada_baseline")
@@ -2584,6 +2649,16 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection") -> dict:
         else:
             _chart_primary_is_metric(f)
 
+    # Fail-safe: the metric still fans out after the corrective re-plan (e.g. stockout-days summed
+    # across an order_items join, inflated ~1000×). Caveat EVERY finding and strip the significance
+    # flag so an inflated magnitude is never presented as a trustworthy weakness; surface it in the
+    # phase summary so synthesis cannot confidently rank on it.
+    if _run.fanout_caveat:
+        for f in findings:
+            f["trust_caveat"] = f.get("trust_caveat") or _run.fanout_caveat
+            f["is_significant"] = False
+        summary = f"⚠ {_run.fanout_caveat} " + (summary or "")
+
     phase = _phase_result(
         "cross_section", "Cross-Sectional Scan", "🧭",
         "complete" if any(not f["error"] for f in findings) else "partial",
@@ -2665,6 +2740,16 @@ def ada_synthesize(state: AgentState) -> dict:
                 "for a cost/defect/freight-style ratio a LOW value is FAVOURABLE; do not call the lowest "
                 "ratio a weakness unless the ratio's meaning makes low genuinely bad. total_change_label "
                 "should be the overall ratio or 'N/A', not a summed percentage."
+            )
+        if any("fan-out" in (f.get("trust_caveat") or "").lower()
+               for p in phases for f in (p.get("findings") or [])):
+            cross_section_note += (
+                "\n\nFAN-OUT CAVEAT: a metric below was aggregated across a one-to-many join that "
+                "INFLATES the magnitude (the rows being summed were multiplied), so the figures are "
+                "unreliable and the ranking may be volume-weighted. Do NOT present these numbers as "
+                "exact, do NOT rank confidently on them, and set confidence to at most MEDIUM (LOW if "
+                "the inflated metric is the only evidence). Say plainly the figure needs a grain-correct "
+                "recompute before it can be trusted."
             )
 
     # Build metric targets block for synthesis guidance
