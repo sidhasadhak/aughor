@@ -717,10 +717,21 @@ async def _stream_chat(
                 canvas_scope_full = _scope.is_full_schema
         except Exception:
             pass
+    # A table-list-scoped canvas on a multi-schema connection carries schema-qualified
+    # table names (e.g. "missimi.orders") with schema_name=None. Derive the single owning
+    # schema so the connection PINS search_path to it — otherwise an unqualified `FROM orders`
+    # in generated/compiled SQL leaks to a sibling schema's same-named table (the missimi
+    # canvas silently answering from netflix.orders/main.orders). canvas_scope_schema is left
+    # untouched so the "ALLOWED TABLES" prompt block (the explicit allow-list) still drives.
+    canvas_scope_eff_schema = canvas_scope_schema
+    if not canvas_scope_eff_schema and canvas_scope_tables:
+        _scope_schemas = {t.split(".")[0] for t in canvas_scope_tables if "." in t}
+        if len(_scope_schemas) == 1:
+            canvas_scope_eff_schema = next(iter(_scope_schemas))
     try:
-        if canvas_id and canvas_scope_schema:
+        if canvas_id and canvas_scope_eff_schema:
             from aughor.db.connection import open_connection_for_with_schema
-            db = open_connection_for_with_schema(connection_id, schema_name=canvas_scope_schema)
+            db = open_connection_for_with_schema(connection_id, schema_name=canvas_scope_eff_schema)
         else:
             db = open_connection_for(connection_id)
     except KeyError as e:
@@ -1124,6 +1135,32 @@ async def _stream_chat(
             except Exception:
                 pass   # non-fatal — proceed with original SQL
 
+        # ── Scope guard — block cross-schema leakage on a scoped canvas ──────────
+        # search_path pins BARE names to the canvas schema, but an EXPLICITLY
+        # qualified reference to a sibling schema (e.g. `netflix.orders` for a missimi
+        # canvas) bypasses search_path and would silently answer from the wrong
+        # dataset. Detect any out-of-scope schema reference and force a repair.
+        _scope_fix_hint = ""
+        if canvas_scope_eff_schema and final_sql:
+            try:
+                import sqlglot
+                from sqlglot import exp as _sgexp
+                _allowed = canvas_scope_eff_schema.strip().lower()
+                _oos = sorted({
+                    f"{_t.db}.{_t.name}"
+                    for _t in sqlglot.parse_one(final_sql, read=db.dialect).find_all(_sgexp.Table)
+                    if _t.db and _t.db.strip().lower()
+                    not in (_allowed, "information_schema", "pg_catalog", "system")
+                })
+                if _oos:
+                    _scope_fix_hint = (
+                        f"OUT-OF-SCOPE TABLES {_oos}: this question is scoped to the "
+                        f"'{canvas_scope_eff_schema}' schema ONLY. Rewrite using exclusively "
+                        f"{canvas_scope_eff_schema}.* tables — never reference another schema."
+                    )
+            except Exception:
+                pass
+
         yield _sse("sql", {"sql": final_sql})
         result = await asyncio.to_thread(db.execute, "chat", final_sql)
 
@@ -1134,22 +1171,23 @@ async def _stream_chat(
 
         # Also trigger a rewrite when semantic column warnings exist, even if
         # the SQL executed successfully (wrong columns produce wrong results silently).
-        if result.error or _chat_zero_diag or _semantic_fix_hint or _fanout_fix_hint:
+        if result.error or _chat_zero_diag or _semantic_fix_hint or _fanout_fix_hint or _scope_fix_hint:
             _writer2 = SqlWriter(db, schema_str=schema)
             _fix_error = (
                 result.error or
+                (_scope_fix_hint if _scope_fix_hint else None) or
                 (_semantic_fix_hint if _semantic_fix_hint else None) or
                 (_fanout_fix_hint if _fanout_fix_hint else None) or
                 "Query returned 0 rows — the SQL logic is likely wrong."
             )
-            _combined_hint = " | ".join(filter(None, [_chat_zero_diag or "", _semantic_fix_hint, _fanout_fix_hint]))
+            _combined_hint = " | ".join(filter(None, [_chat_zero_diag or "", _scope_fix_hint, _semantic_fix_hint, _fanout_fix_hint]))
             try:
                 fix = await asyncio.to_thread(
                     lambda: _writer2.fix(final_sql, _fix_error, hint=_combined_hint, max_retries=1)
                 )
                 if fix.ok:
                     retry = await asyncio.to_thread(db.execute, "chat", fix.sql)
-                    if not retry.error and (retry.row_count > 0 or not _chat_zero_diag or _semantic_fix_hint or _fanout_fix_hint):
+                    if not retry.error and (retry.row_count > 0 or not _chat_zero_diag or _semantic_fix_hint or _fanout_fix_hint or _scope_fix_hint):
                         final_sql = fix.sql
                         result = retry
                         yield _sse("sql", {"sql": final_sql})

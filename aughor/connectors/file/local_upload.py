@@ -127,16 +127,26 @@ class LocalUploadConnection(Connector):
         self._set_search_path()         # resolve bare names across user schemas
 
     def _set_search_path(self) -> None:
-        """Point search_path at every user schema so bare table names resolve.
+        """Point search_path so bare table names resolve to the RIGHT schema.
 
-        The Workspace is an in-memory DuckDB that can hold several schemas at once
-        (e.g. the seeded ``bakehouse`` + ``ecommerce`` sample schemas). With no
-        single ``schema_name`` set, DuckDB leaves search_path at the default and
-        every unqualified query the explorer/chat generates fails with
-        "table does not exist" — the source of the Workspace's runaway error count.
-        Including all user schemas lets ``SELECT … FROM order_items`` resolve to
-        ``ecommerce.order_items`` without fully-qualified names."""
+        Two regimes:
+        • SCOPED (``schema_name`` set — a per-schema explorer pass or a schema-/
+          canvas-scoped chat/ADA run): pin search_path to ONLY that schema so an
+          unqualified ``FROM orders`` resolves to ``<schema>.orders`` and can NEVER
+          silently leak to a sibling schema's same-named table (e.g. a missimi-scoped
+          query reading ``netflix.orders``/``main.orders`` — the source of confidently
+          wrong answers). Cross-schema reads must then be explicitly qualified.
+        • UNSCOPED (no ``schema_name`` — the whole-Workspace surface): include every
+          user schema so ``FROM order_items`` resolves to ``ecommerce.order_items``
+          without fully-qualified names (the original runaway-error fix).
+
+        Qualified names (``schema.table``) and system catalogs resolve regardless of
+        search_path in both regimes."""
         try:
+            if self._schema_name:
+                # Scoped: bare names must stay inside the scope.
+                self._duckdb.execute(f"SET search_path = '{self._schema_name}'")
+                return
             schemas = [
                 r[0] for r in self._duckdb.execute(
                     "SELECT DISTINCT schema_name FROM duckdb_tables() WHERE internal = false"
