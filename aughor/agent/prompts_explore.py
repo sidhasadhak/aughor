@@ -112,6 +112,11 @@ Rules:
 - If this is a drill_down sub-question, use 5–10× finer granularity than the relationship step
 - Prefer queries that return < 30 rows — aggregate, don't dump raw data
 - Do NOT repeat queries run in prior sub-questions unless you need the same data with different aggregation
+- RATIO AGGREGATION: to aggregate a ratio / rate / per-unit metric across a group (e.g. stock-to-sales,
+  cost %, conversion rate), use the RATIO OF SUMS — SUM(numerator) / NULLIF(SUM(denominator), 0) — NOT
+  the AVERAGE of per-row ratios. AVG(per_sku_ratio) over-weights tiny-denominator rows and inflates the
+  result (a SKU with 2 sold and 20 on hand reads 10×, dominating the mean); SUM(on_hand)/SUM(sold) is the
+  true group ratio. Only average pre-computed ratios when each row already represents an equal-weight unit.
 
 Return: expected_if_true (what you expect to see), expected_if_false (what the opposite looks like), queries, reasoning.
 """
