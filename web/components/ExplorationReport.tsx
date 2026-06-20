@@ -2,8 +2,7 @@
 
 import { useState } from "react";
 import type { ExplorationReport as ExplorationReportType, SubQuestion, SubQuestionAnswer } from "@/lib/types";
-import { InvestigationChart } from "@/components/InvestigationChart";
-import { SqlResultTable } from "@/components/AugTable";
+import { ResultChartCard } from "@/components/charts/ResultChartCard";
 
 interface Props {
   report: ExplorationReportType;
@@ -71,12 +70,9 @@ function SubQuestionCard({
             <p className="text-[13px] text-zinc-100 leading-relaxed">{answer.answer}</p>
           )}
 
-          {/* Evidence — chart + compact table, expanded by default */}
+          {/* Evidence — chart with grain-aware controls + chart⇄table toggle */}
           {hasData && (
-            <div className="space-y-2">
-              <InvestigationChart columns={answer.columns} rows={answer.rows} />
-              <SqlResultTable columns={answer.columns} rows={answer.rows} maxHeight={220} />
-            </div>
+            <ResultChartCard columns={answer.columns} rows={answer.rows} />
           )}
 
           {answer.error && (

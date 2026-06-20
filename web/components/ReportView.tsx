@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/table";
 import type { DataQualityNote, Finding, Hypothesis, QueryCitation, Report, StatResult, Verdict } from "@/lib/types";
 import { logOutcome, getInvestigationOutcomes, type RecOutcome, type RecStatus } from "@/lib/api";
-import { InvestigationChart } from "@/components/InvestigationChart";
+import { ResultChartCard } from "@/components/charts/ResultChartCard";
 import { SHARE_COL_PATTERN, buildColumnFormatter, compactNumber, pct } from "@/lib/format";
 import { H_PALETTES } from "@/lib/palette";
 
@@ -125,9 +125,9 @@ function QueryEvidence({
         }
       </div>
 
-      {/* Chart — InvestigationChart returns null when data isn't chartable */}
+      {/* Chart — grain-aware control strip + chart⇄table toggle (ResultChartCard) */}
       {hasData && (
-        <InvestigationChart columns={query.columns!} rows={query.rows!} />
+        <ResultChartCard columns={query.columns!} rows={query.rows!} />
       )}
 
       {/* Table — always show when data fits; complements the chart */}
@@ -568,9 +568,9 @@ export function ReportView({ report, queryCount, queryHistory = [], queryMode, h
         />
       )}
 
-      {/* 4. Chart — direct mode */}
+      {/* 4. Chart — direct mode (grain-aware controls + chart⇄table toggle) */}
       {isDirect && !isQueryFailure && directTable?.columns && directTable?.rows && (
-        <InvestigationChart columns={directTable.columns} rows={directTable.rows} />
+        <ResultChartCard columns={directTable.columns} rows={directTable.rows} />
       )}
 
       {/* 5. KPI highlight — single-row scalar */}

@@ -18,6 +18,7 @@ import {
   type Row,
 } from "@/components/charts/echarts";
 import { Chart } from "@/components/Chart";
+import { ResultChartCard } from "@/components/charts/ResultChartCard";
 
 /** Object rows → SQL-shaped [columns, rows[][]] for the <Chart> component. */
 function toTable(objs: Row[], cols: string[]): { columns: string[]; rows: unknown[][] } {
@@ -143,6 +144,28 @@ export default function ChartLab() {
             <Chart title={d.t} {...d.p} />
           </div>
         ))}
+      </div>
+
+      <h2 style={{ fontSize: 14, fontWeight: 700, color: "var(--t1)", margin: "28px 0 4px", fontFamily: "var(--font-ui)" }}>
+        &lt;ResultChartCard&gt; — inline controls + chart⇄table toggle
+      </h2>
+      <p style={{ fontSize: 12, color: "var(--t3)", marginBottom: 16, fontFamily: "var(--font-ui)" }}>
+        Re-pivot in place: pick Metric / Dimension / Aggregation (grain-aware — try SUM on the rate) and flip to the table.
+      </p>
+      <div style={{ background: "var(--bg-1)", border: "1px solid var(--chart-axis)", borderRadius: 10, padding: 14, maxWidth: 720 }}>
+        <ResultChartCard
+          title="Revenue & margin by region × channel"
+          {...toTable(
+            ["North", "South", "East"].flatMap((region) =>
+              ["Web", "Store"].map((channel, ci) => ({
+                region, channel,
+                revenue: 200_000 + region.length * 30_000 + ci * 90_000,
+                margin_rate: 0.2 + ci * 0.08,
+              })),
+            ),
+            ["region", "channel", "revenue", "margin_rate"],
+          )}
+        />
       </div>
     </div>
   );
