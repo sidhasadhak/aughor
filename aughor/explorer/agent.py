@@ -347,22 +347,14 @@ def _dataset_of(tbl: str) -> str:
 
 
 def _tables_in_sql(sql: str) -> set:
-    """Real (non-CTE) qualified table names referenced by a SQL string. Best-effort."""
-    try:
-        import sqlglot
-        from sqlglot import exp
-        tree = sqlglot.parse_one(sql)
-    except Exception:
-        return set()
-    cte_names = {(c.alias_or_name or "").lower() for c in tree.find_all(exp.CTE)}
-    out = set()
-    for t in tree.find_all(exp.Table):
-        if (t.name or "").lower() in cte_names:
-            continue
-        parts = [p for p in (t.catalog, t.db, t.name) if p]
-        if parts:
-            out.add(".".join(parts))
-    return out
+    """Real (non-CTE) qualified table names referenced by a SQL string. Best-effort.
+
+    Delegates to the shared, CTE-safe extractor (aughor/sql/tables.py) so the
+    explorer's dataset-isolation guard, the chat scope guard, and the read-only
+    gate all share one tested table-extraction primitive (scope traversal +
+    flat fallback) instead of three ad-hoc walks."""
+    from aughor.sql.tables import extract_tables
+    return {r.qualified() for r in extract_tables(sql)}
 
 
 def _crosses_datasets(sql: str) -> bool:

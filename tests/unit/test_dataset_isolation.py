@@ -47,3 +47,21 @@ def test_unqualified_tables_not_flagged():
     # No schema qualifiers → can't be cross-dataset → never blocked.
     sql = "SELECT * FROM orders o JOIN customers c ON o.cid = c.id"
     assert _crosses_datasets(sql) is False
+
+
+def test_cte_masked_cross_dataset_is_flagged():
+    # Both schema refs hidden inside CTE bodies; the outer refs are CTE aliases.
+    # The shared CTE-safe extractor must still surface the real cross-schema join.
+    sql = ("WITH a AS (SELECT * FROM ecommerce.orders), "
+           "b AS (SELECT * FROM bakehouse.sales_customers) "
+           "SELECT * FROM a JOIN b ON a.id = b.id")
+    assert _crosses_datasets(sql) is True
+
+
+def test_cte_alias_not_mistaken_for_schema():
+    # `co` is a CTE alias, not a real table — must be excluded from extraction.
+    sql = ("WITH co AS (SELECT * FROM ecommerce.orders) "
+           "SELECT * FROM co JOIN bakehouse.sales_customers c ON co.id = c.id")
+    tables = _tables_in_sql(sql)
+    assert "ecommerce.orders" in tables and "bakehouse.sales_customers" in tables
+    assert "co" not in tables

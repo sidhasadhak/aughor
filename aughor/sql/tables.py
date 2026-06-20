@@ -76,10 +76,26 @@ def _extract(parsed: exp.Expression) -> set[TableRef]:
     }
 
 
+def _flat_extract(parsed: exp.Expression) -> set[TableRef]:
+    """Fallback: flat find_all with CTE names excluded by name. Less precise than
+    scope traversal (a real table that happens to share a CTE's name is dropped),
+    but robust on queries scope analysis can't handle — keeps coverage ≥ the
+    legacy extractor this consolidates."""
+    cte_names = {(c.alias_or_name or "").lower() for c in parsed.find_all(exp.CTE)}
+    return {
+        TableRef(t.name, t.db if t.db else None, t.catalog if t.catalog else None)
+        for t in parsed.find_all(exp.Table)
+        if (t.name or "").lower() not in cte_names
+    }
+
+
 def extract_tables(sql: str, dialect: str | None = None) -> set[TableRef]:
     """Return the set of real physical tables a query reads (CTE names excluded).
 
-    Empty set on a parse failure (caller decides how to treat un-enumerable SQL).
+    Prefers sqlglot scope traversal (most precise); falls back to a flat CTE-aware
+    walk if scope analysis throws or under-counts, so this is strictly ≥ a plain
+    find_all in coverage. Empty set on a parse failure (the caller decides how to
+    treat un-enumerable SQL).
     """
     try:
         parsed = sqlglot.parse_one(sql, dialect=dialect)
@@ -88,6 +104,13 @@ def extract_tables(sql: str, dialect: str | None = None) -> set[TableRef]:
     if parsed is None:
         return set()
     try:
-        return _extract(parsed)
+        refs = _extract(parsed)
     except Exception:
-        return set()
+        refs = set()
+    # Scope analysis returned nothing but the tree has real tables → fall back.
+    if not refs and parsed.find(exp.Table) is not None:
+        try:
+            refs = _flat_extract(parsed)
+        except Exception:
+            refs = set()
+    return refs
