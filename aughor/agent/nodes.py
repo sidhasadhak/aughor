@@ -57,6 +57,24 @@ from aughor import telemetry as _telemetry
 MAX_ITER = int(__import__("os").getenv("AUGHOR_MAX_ITER", "6"))
 
 
+# A DRIVER / RELATIONSHIP question ("do late deliveries lower reviews", "is there a correlation
+# between order value and review score") is answered fastest and most consistently by the
+# investigate path's cross-sectional comparison — segment the metric across the condition (the Q4
+# comparison_segment route, ~30s) — NOT a multi-step explore decomposition that can take 5× longer
+# for the same answer. We force investigate when the LLM routed such a question to explore. Precise:
+# matches "correlation/relationship between", "correlate with", "do/does X <impact-verb> Y" — and
+# NOT compound conditionals ("countries where acquisition grows but revenue/customer falls").
+_DRIVER_RELATIONSHIP_RE = re.compile(
+    r"\b(?:relationship|correlat\w+|association)\b.{0,30}\bbetween\b"
+    r"|\bcorrelate[ds]?\b.{0,20}\bwith\b"
+    r"|\b(?:do|does|did)\b.{0,60}\b(?:affect|affects|lower|lowers|raise|raises|drive|drives|driven|"
+    r"hurt|hurts|improve|improves|increase|increases|reduce|reduces|impact|impacts|influence|"
+    r"influences|lead\s+to|leads\s+to|result\s+in)\b"
+    r"|\b(?:do|does|did)\b.{0,70}\b(?:chance|likelihood|probability|odds)\b",
+    re.IGNORECASE,
+)
+
+
 # ── Node: route_question ─────────────────────────────────────────────────────
 
 def classify_question(question: str) -> tuple[str, RouteDecision]:
@@ -77,6 +95,12 @@ def classify_question(question: str) -> tuple[str, RouteDecision]:
         response_model=RouteDecision,
     )
     effective_mode = decision.mode if decision.confidence >= 0.65 else "investigate"
+
+    # Driver/relationship questions go to investigate (fast cross-sectional comparison), not the
+    # slower explore decomposition — consistent routing for the same question shape.
+    if effective_mode == "explore" and _DRIVER_RELATIONSHIP_RE.search(question or ""):
+        decision.mode = "investigate"
+        effective_mode = "investigate"
 
     # Final-text path: definitional questions that the KB can answer without SQL
     if effective_mode == "direct":
