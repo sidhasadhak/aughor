@@ -61,7 +61,7 @@ def _run_phase8_with_forced_sql(monkeypatch, forced_sql: str) -> list[str]:
     ent = SimpleNamespace(id="campaigns", display_name="Campaigns", source_tables=["campaigns"],
                           description="ad campaigns", domain="Marketing")
     monkeypatch.setattr(ostore, "load_latest_ontology",
-                        lambda cid: SimpleNamespace(entities={"campaigns": ent}, relationships={}))
+                        lambda cid, schema_name=None: SimpleNamespace(entities={"campaigns": ent}, relationships={}))
 
     records: list[str] = []
 
