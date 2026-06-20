@@ -184,7 +184,12 @@ For EACH query result, write:
     (one categorical + one measure where a few categories drive most of the total — 80/20),
     "none" for single-value outputs
   - stat_note: if z-score is available, format as "z = X.X — [significant/within normal range]"
-  - is_significant: true if |z| > {z_threshold} OR absolute change > {pct_threshold}% of prior period value
+  - is_significant: true ONLY when the change is BOTH statistically significant (|z| > {z_threshold})
+    AND practically material (absolute change ≥ {pct_threshold}% of the prior-period value). A large
+    z-score is NOT enough on its own: at high row counts (tens or hundreds of thousands of rows) even a
+    trivial 0.1–0.3pp difference produces a huge z (e.g. z = 150). That is statistical noise dressed as
+    a signal — set is_significant=false and say the difference is negligible / not material. Never call a
+    sub-1% relative change a "trend", "driver", or "significant" because its z-score is large.
 
 phase_summary: one sentence that leads with the key number (bold it with **double asterisks**) — the most important finding from this phase.
 Do NOT fabricate numbers. If a query errored or returned no rows, say so honestly.
@@ -576,6 +581,20 @@ GROUNDING (critical — every number must trace to a query result above):
     computed the share, describe it qualitatively ("a small share", "the largest contributor")
     instead of inventing a percentage.
   • If a number you want to cite is not in the evidence, drop it rather than approximate it.
+
+MATERIALITY & CAUSAL HONESTY (do not manufacture a signal where there is none):
+  • Before asserting a difference, "driver", or cause, confirm it is MATERIAL. If the top-line gap the
+    question asks about is negligible (e.g. new vs returning AOV differ by <1%, or the segment values
+    all cluster within a couple of percent), SAY SO plainly — "the difference is negligible / not
+    meaningful" — and do NOT slice into ever-finer sub-segments to surface a cherry-picked cell-level
+    reversal and present it as the answer. A large gap inside one tiny segment is noise, not a driver.
+  • Statistical ≠ practical significance: at high row counts a sub-1% change yields a huge z-score yet
+    is not a real signal. Do not call it a trend/driver/significant; set confidence to MEDIUM or LOW.
+  • If the evidence scanned does NOT explain WHY, say "the data analysed does not reveal the cause" and
+    name what to check next — do NOT invent a plausible mechanism (a "large denominator", a "scale
+    discount", etc.) that no query supports. An honest "cause not determined" beats a confident wrong
+    story, and contradicting yourself (e.g. "not driven by order value" then "driven by a large
+    order-value denominator") is worse than either.
 
 IMPORTANT — ANSWER THE QUESTION ASKED:
   If the user asked "which channel/region/product/segment had most influence", answer that question

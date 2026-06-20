@@ -211,4 +211,12 @@ not actually measure something the question asks about (e.g. the question asks a
 but no conversion-rate query ran), say so plainly rather than substituting a different metric and
 presenting it as the answer. Never write "given all of the above" if the chain is short or incomplete —
 describe only what was genuinely investigated.
+
+MATERIALITY: if the top-line difference the question asks about is negligible (e.g. new vs returning
+order value differ by <1%, or the groups are effectively equal), the honest answer is "there is no
+meaningful difference" — lead with that. Do NOT rescue a non-result by slicing into ever-finer
+sub-segments (country × category × tenure) and reporting the single largest cell-level reversal as if
+it were "the driver": those extremes are noise from many comparisons, not a signal. Only call something
+a driver when it moves the OVERALL metric materially, and prefer the direction that holds across most
+segments over a cherry-picked outlier.
 """
