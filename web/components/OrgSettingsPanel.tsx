@@ -19,6 +19,7 @@ import {
   type OrgSettings,
 } from "@/lib/api";
 import { setOrgSettingsCache } from "@/lib/orgSettings";
+import { CHART_PALETTE_NAMES, chartPaletteLabel } from "@/lib/chartPalettes";
 
 const EMPTY: OrgSettings = {
   company_name: "", website: "", hq_location: "", industry: "",
@@ -182,6 +183,15 @@ export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?:
         <div style={hintStyle}>
           A set currency renders all figures in that currency (briefings, metrics, tables). Empty = inferred from the data.
         </div>
+      </div>
+
+      {/* Appearance */}
+      <div>
+        <div className="aug-label" style={{ marginBottom: 10 }}>Appearance</div>
+        <div style={gridStyle}>
+          {SelectField("chart_palette", "Chart palette", ["", ...CHART_PALETTE_NAMES], (p) => chartPaletteLabel(String(p)))}
+        </div>
+        <div style={hintStyle}>Colour scheme for charts. “Default” uses the app theme palette (adapts to light/dark).</div>
       </div>
 
       {error && <div style={{ fontSize: 11, color: "var(--red4)" }}>{error}</div>}

@@ -24,8 +24,24 @@ export function currencySymbol(code: string | null | undefined): string {
 
 let _cache: OrgSettings | null = null;
 
-export function setOrgSettingsCache(s: OrgSettings | null): void { _cache = s; }
+let _version = 0;
+const _listeners = new Set<() => void>();
+
+export function setOrgSettingsCache(s: OrgSettings | null): void {
+  _cache = s;
+  _version++;
+  _listeners.forEach((l) => l());
+}
 export function orgSettingsSnapshot(): OrgSettings | null { return _cache; }
+
+// Reactivity primitives (no React here — see lib/useOrgSettings for the hook) so memoized
+// consumers (charts) can rebuild when the cache is populated/changed rather than capturing
+// a stale empty cache on first render.
+export function subscribeOrgSettings(cb: () => void): () => void {
+  _listeners.add(cb);
+  return () => { _listeners.delete(cb); };
+}
+export function orgSettingsVersion(): number { return _version; }
 
 /** Currency symbol for the effective reporting currency, or "" when none is set. */
 export function effectiveCurrencySymbol(): string {
@@ -35,6 +51,11 @@ export function effectiveCurrencySymbol(): string {
 /** The user's date_format token (e.g. "DD/MM/YYYY"), or "" for the default smart labels. */
 export function effectiveDateFormat(): string {
   return _cache?.date_format ?? "";
+}
+
+/** The selected named chart palette (e.g. "tableau10"), or "" for the theme default. */
+export function effectiveChartPalette(): string {
+  return _cache?.chart_palette ?? "";
 }
 
 // ── Monetary-column detection (name-only; the frontend has no per-column units) ──

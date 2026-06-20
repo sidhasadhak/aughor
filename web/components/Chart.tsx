@@ -20,6 +20,9 @@ import React, { useMemo, useRef, useState } from "react";
 import DownloadIcon from "@atlaskit/icon/core/download";
 import type { EChartsOption } from "echarts";
 import { format as d3format } from "d3-format";
+import { SCHEME_PALETTES } from "@/lib/chartPalettes";
+import { effectiveChartPalette } from "@/lib/orgSettings";
+import { useOrgSettings } from "@/lib/useOrgSettings";
 import { EChart } from "@/components/charts/echarts/EChart";
 import {
   lineOption, multiLineOption, barOption, groupedBarOption, stackedBarOption,
@@ -44,15 +47,7 @@ export interface ChartCustom {
 
 // ── Customize post-pass (ECharts) ────────────────────────────────────────────
 
-// A handful of named categorical palettes for the Customize colour-scheme dropdown.
-const SCHEME_PALETTES: Record<string, string[]> = {
-  tableau10: ["#4E79A7", "#F28E2B", "#E15759", "#76B7B2", "#59A14F", "#EDC948", "#B07AA1", "#FF9DA7", "#9C755F", "#BAB0AC"],
-  category10: ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", "#bcbd22", "#17becf"],
-  set2: ["#66c2a5", "#fc8d62", "#8da0cb", "#e78ac3", "#a6d854", "#ffd92f", "#e5c494", "#b3b3b3"],
-  dark2: ["#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#66a61e", "#e6ab02", "#a6761d", "#666666"],
-  paired: ["#a6cee3", "#1f78b4", "#b2df8a", "#33a02c", "#fb9a99", "#e31a1c", "#fdbf6f", "#ff7f00"],
-  accent: ["#7fc97f", "#beaed4", "#fdc086", "#ffff99", "#386cb0", "#f0027f", "#bf5b17", "#666666"],
-};
+// SCHEME_PALETTES (named categorical palettes) now live in @/lib/chartPalettes.
 
 type AxisLike = Record<string, unknown>;
 function mapAxes(ax: unknown, fn: (a: AxisLike) => AxisLike): unknown {
@@ -163,9 +158,13 @@ export function Chart({
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
   }
 
+  // Re-render + rebuild the option when org settings change, so the currency symbol /
+  // chart palette / relabelled fields apply even if the cache populates after first render.
+  const orgV = useOrgSettings();
+
   // Build the option + default height. Memoized so its identity is stable across
   // renders (EChart re-inits when the option object changes) — only rebuilds when
-  // data / type / labels / custom change. userH & heightScale affect height only.
+  // data / type / labels / custom / org settings change. userH & heightScale affect height only.
   const built = useMemo<{ option: EChartsOption; defaultH: number } | null>(() => {
     if (!rows.length || !columns.length) return null;
 
@@ -297,8 +296,15 @@ export function Chart({
     if (!option && dateCol && numCol) { option = lineOption({ rows: data, x: dateCol, ys: [numCol], xKind: "time", labels: lbls }); defaultH = 350; }
 
     if (!option) return null;
-    return { option: applyCustom(option, custom), defaultH };
-  }, [columns, rows, chartType, chartConfig, showLabels, custom]);
+    // Org-level chart palette (Settings ▸ Appearance) applies when the chart hasn't set
+    // its own colorScheme; a per-chart Customize colour still wins.
+    const built = applyCustom(option, custom);
+    if (!custom?.colorScheme) {
+      const pal = effectiveChartPalette();
+      if (pal && SCHEME_PALETTES[pal]) built.color = SCHEME_PALETTES[pal];
+    }
+    return { option: built, defaultH };
+  }, [columns, rows, chartType, chartConfig, showLabels, custom, orgV]);
 
   if (!built) return null;
   const chartH = Math.round((userH ?? built.defaultH) * heightScale);
