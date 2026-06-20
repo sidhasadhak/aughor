@@ -21,6 +21,7 @@ import { Chart } from "@/components/Chart";
 import { ResultChartCard } from "@/components/charts/ResultChartCard";
 import { getEffectiveSettings } from "@/lib/api";
 import { setOrgSettingsCache } from "@/lib/orgSettings";
+import { KpiStripView, buildKpi, KPI_ACCENTS, type Kpi } from "@/components/brief/IndustryKpiStrip";
 
 /** Object rows → SQL-shaped [columns, rows[][]] for the <Chart> component. */
 function toTable(objs: Row[], cols: string[]): { columns: string[]; rows: unknown[][] } {
@@ -74,6 +75,15 @@ export default function ChartLab() {
   // so the formatters can be eyeballed — fetched once, like the real app does on load.
   useEffect(() => { getEffectiveSettings().then(setOrgSettingsCache).catch(() => {}); }, []);
   const auto = useMemo(() => buildAutoOption(autoCols, autoRows, { title: "Auto-inferred (line)" }), []);
+  // KPI scorecard demo — built via the real buildKpi() so the delta units (pts/%/×),
+  // direction-aware favorability colour, and sparklines are exercised, not mocked.
+  const kpiDemo = [
+    buildKpi({ name: "Gross Margin Rate", raw: 0.470, unit: "ratio 0-1", accent: KPI_ACCENTS[0], series: [0.51, 0.50, 0.498, 0.495, 0.494, 0.470] }),
+    buildKpi({ name: "Avg Order Value", raw: 69.35, unit: "USD", sym: "$", accent: KPI_ACCENTS[1], series: [69.5, 70.2, 69.9, 70.0, 69.77, 69.35] }),
+    buildKpi({ name: "Repeat Purchase Rate", raw: 0.285, unit: "ratio 0-1", accent: KPI_ACCENTS[2], series: [0.24, 0.25, 0.258, 0.262, 0.254, 0.285] }),
+    buildKpi({ name: "Acquisition Cost (CAC)", raw: 21.14, unit: "USD", sym: "$", accent: KPI_ACCENTS[3], series: [17.5, 18.2, 18.9, 19.2, 19.54, 21.14] }),
+    buildKpi({ name: "Blended ROAS", raw: 4.18, unit: "ratio", accent: KPI_ACCENTS[4], series: [3.5, 3.6, 3.7, 3.75, 3.78, 4.18] }),
+  ].filter(Boolean) as Kpi[];
   return (
     <div style={{ padding: 24, background: "var(--bg-0)", minHeight: "100vh" }}>
       <h1 style={{ fontSize: 18, fontWeight: 700, color: "var(--t1)", marginBottom: 4, fontFamily: "var(--font-ui)" }}>
@@ -171,6 +181,16 @@ export default function ChartLab() {
             ["region", "channel", "revenue", "margin_rate"],
           )}
         />
+      </div>
+
+      <h2 style={{ fontSize: 14, fontWeight: 700, color: "var(--t1)", margin: "28px 0 4px", fontFamily: "var(--font-ui)" }}>
+        &lt;KpiStripView&gt; — key-metrics scorecard (semantic deltas + sparklines)
+      </h2>
+      <p style={{ fontSize: 12, color: "var(--t3)", marginBottom: 16, fontFamily: "var(--font-ui)" }}>
+        Delta colour is direction-aware: a rising CAC is red (cost up = bad), a falling margin is red, a rising repeat-rate is green.
+      </p>
+      <div style={{ background: "var(--bg-1)", border: "1px solid var(--chart-axis)", borderRadius: 10, padding: 14 }}>
+        <KpiStripView industry="DTC Beauty E-commerce" period="MoM" kpis={kpiDemo} />
       </div>
     </div>
   );
