@@ -5,8 +5,19 @@ LLM narrator is stubbed — and asserts the triage flips the lead off the noise-
 ROAS split, suppresses the impossible turnover, demotes the anti-causal correlation,
 and tells the narrator to write in the business's currency.
 """
+import pytest
+
 import aughor.llm.provider as provider_mod
 from aughor.knowledge.briefing import BriefingNarrative, generate_narrative
+from aughor.orgsettings import store as _orgstore
+from aughor.orgsettings.models import OrgSettings
+
+
+@pytest.fixture(autouse=True)
+def _isolate_org_settings(tmp_path, monkeypatch):
+    # Briefing currency resolves through org settings (override-wins), so isolate the
+    # singleton per test — these assertions must not depend on a real data/org_settings.json.
+    monkeypatch.setattr(_orgstore, "_PATH", tmp_path / "org_settings.json")
 
 
 # The five findings exactly as the old brief surfaced them (see the briefing screenshot).
@@ -100,3 +111,33 @@ def test_currency_is_eur_in_prompt(monkeypatch):
     out = _run(monkeypatch)
     assert out["currency_code"] == "EUR"
     assert "€" in _StubProvider.last_user
+
+
+def test_org_currency_overrides_profile_in_brief(monkeypatch):
+    # A set org currency (GBP) is AUTHORITATIVE over the profile's inferred EUR — the
+    # brief reports GBP and the narrator is instructed in £, not the inferred €.
+    _orgstore.save_org_settings(OrgSettings(currency_code="GBP"))
+    out = _run(monkeypatch)
+    assert out["currency_code"] == "GBP"
+    assert "£" in _StubProvider.last_user
+    assert "€" not in _StubProvider.last_user
+
+
+def test_org_currency_rewrites_dollar_figures_in_narrative(monkeypatch):
+    # The post-synthesis $→symbol rewrite uses the resolved org currency, so a narrator
+    # that emits "$1.2M" is normalised to "£1.2M" in the served brief.
+    _orgstore.save_org_settings(OrgSettings(currency_code="GBP"))
+
+    class _DollarNarrator:
+        def complete(self, system, user, response_model=None, temperature=0.0):
+            return BriefingNarrative(
+                narrative="Revenue rose to $1.2M this quarter [1].",
+                citations=[{"ref": "1", "insight_id": "", "domain": "DTC Beauty",
+                            "angle": "Retention", "finding": ""}],
+                headline_theme="Growth",
+            )
+
+    monkeypatch.setattr(provider_mod, "get_provider", lambda *_a, **_k: _DollarNarrator())
+    out = generate_narrative(MISSIMI, patterns=[], connection_id="missimi", profile=PROFILE)
+    assert "£1.2M" in out["narrative"]
+    assert "$" not in out["narrative"]
