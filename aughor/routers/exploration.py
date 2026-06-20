@@ -423,7 +423,10 @@ def _metric_moves_provider(conn_id: str, profile):
     metrics = getattr(profile, "north_star_metrics", None) or []
     if not metrics:
         return None
-    currency = getattr(profile, "currency_code", None)
+    from aughor.orgsettings import resolve_currency
+    # Override-wins: an explicitly-set org currency is authoritative over the
+    # per-connection inferred currency_code (else the inferred value, else USD).
+    currency = resolve_currency(getattr(profile, "currency_code", None) or "")
 
     def _provider():
         from aughor.knowledge.metric_moves import compute_metric_moves

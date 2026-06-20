@@ -13,7 +13,7 @@ import sqlite3
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from aughor.workspace.models import Workspace
 
@@ -43,16 +43,33 @@ def _ensure_schema(c: sqlite3.Connection) -> None:
             updated_at          TEXT NOT NULL
         )
     """)
+    # Migration (2026-06-20): per-workspace org-settings overrides. Idempotent —
+    # add the column only if an older DB predates it.
+    cols = {r[1] for r in c.execute("PRAGMA table_info(workspaces)").fetchall()}
+    if "settings_override_json" not in cols:
+        c.execute("ALTER TABLE workspaces ADD COLUMN settings_override_json TEXT DEFAULT '{}'")
     c.commit()
 
 
 def _row_to_workspace(row: sqlite3.Row) -> Workspace:
+    try:
+        override = (
+            json.loads(row["settings_override_json"])
+            if "settings_override_json" in row.keys() and row["settings_override_json"]
+            else {}
+        )
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "workspace settings_override_json invalid — treating as empty",
+                 counter="workspace.override_parse_failed")
+        override = {}
     return Workspace(
         id=row["id"],
         name=row["name"],
         description=row["description"] or "",
         connection_ids=json.loads(row["connection_ids_json"] or "[]"),
         is_default=bool(row["is_default"]),
+        settings_override=override,
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
@@ -66,21 +83,24 @@ def create_workspace(
     description: str = "",
     is_default: bool = False,
     workspace_id: Optional[str] = None,
+    settings_override: Optional[Dict[str, Any]] = None,
 ) -> Workspace:
     wid = workspace_id or uuid.uuid4().hex[:8]
     now = _now()
     ids_json = json.dumps(connection_ids or [])
+    override_json = json.dumps(settings_override or {})
     c = _conn()
     _ensure_schema(c)
     c.execute(
-        "INSERT INTO workspaces (id, name, description, connection_ids_json, is_default, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (wid, name, description, ids_json, int(is_default), now, now),
+        "INSERT INTO workspaces (id, name, description, connection_ids_json, is_default, settings_override_json, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (wid, name, description, ids_json, int(is_default), override_json, now, now),
     )
     c.commit()
     return Workspace(
         id=wid, name=name, description=description,
         connection_ids=connection_ids or [], is_default=is_default,
+        settings_override=settings_override or {},
         created_at=now, updated_at=now,
     )
 
@@ -107,6 +127,7 @@ def update_workspace(
     name: Optional[str] = None,
     description: Optional[str] = None,
     connection_ids: Optional[List[str]] = None,
+    settings_override: Optional[Dict[str, Any]] = None,
 ) -> Optional[Workspace]:
     existing = get_workspace(workspace_id)
     if not existing:
@@ -115,10 +136,12 @@ def update_workspace(
     new_name = name if name is not None else existing.name
     new_desc = description if description is not None else existing.description
     new_ids = connection_ids if connection_ids is not None else existing.connection_ids
+    new_override = settings_override if settings_override is not None else existing.settings_override
     c = _conn()
+    _ensure_schema(c)
     c.execute(
-        "UPDATE workspaces SET name=?, description=?, connection_ids_json=?, updated_at=? WHERE id=?",
-        (new_name, new_desc, json.dumps(new_ids), now, workspace_id),
+        "UPDATE workspaces SET name=?, description=?, connection_ids_json=?, settings_override_json=?, updated_at=? WHERE id=?",
+        (new_name, new_desc, json.dumps(new_ids), json.dumps(new_override or {}), now, workspace_id),
     )
     c.commit()
     return get_workspace(workspace_id)

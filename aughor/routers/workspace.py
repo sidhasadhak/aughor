@@ -1,7 +1,7 @@
 """Workspace CRUD — the top-level scope that groups DB connections."""
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -13,12 +13,14 @@ class CreateWorkspaceRequest(BaseModel):
     name: str
     description: str = ""
     connection_ids: List[str] = []
+    settings_override: Dict[str, Any] = {}
 
 
 class UpdateWorkspaceRequest(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     connection_ids: Optional[List[str]] = None
+    settings_override: Optional[Dict[str, Any]] = None
 
 
 @router.get("/workspaces")
@@ -35,6 +37,7 @@ def create_workspace_endpoint(req: CreateWorkspaceRequest):
         name=req.name,
         connection_ids=req.connection_ids,
         description=req.description,
+        settings_override=req.settings_override,
     )
     return ws.model_dump()
 
@@ -56,6 +59,7 @@ def update_workspace_endpoint(workspace_id: str, req: UpdateWorkspaceRequest):
         name=req.name,
         description=req.description,
         connection_ids=req.connection_ids,
+        settings_override=req.settings_override,
     )
     if not ws:
         raise HTTPException(status_code=404, detail="Workspace not found")

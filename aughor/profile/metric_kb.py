@@ -147,8 +147,9 @@ def _llm_fallback_recipes(profile, uncovered: list, schema: str) -> list[dict]:
         "everything in the real schema columns. A ratio metric must be bounded "
         "0..1 unless expansion-type (call that out)."
     )
+    from aughor.orgsettings import resolve_industry
     usr = (
-        f"INDUSTRY: {profile.industry} ({profile.business_model})\n\n"
+        f"INDUSTRY: {resolve_industry(profile.industry)} ({profile.business_model})\n\n"
         f"SCHEMA:\n{schema}\n\n"
         f"Write a recipe for EACH of these metrics:\n{names}"
     )

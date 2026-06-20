@@ -2537,8 +2537,11 @@ class SchemaExplorer:
                         "you keep the SQL correct — a conversion rate must come out 0..1, not 1.4):\n"
                         + "\n".join(_parts) + "\n"
                     )
+                from aughor.orgsettings import org_context, resolve_industry
+                _eff_industry = resolve_industry(_bp.industry)
                 profile_block = (
-                    f"INDUSTRY CONTEXT — this is a {_bp.industry} business ({_bp.business_model}). "
+                    org_context()
+                    + f"INDUSTRY CONTEXT — this is a {_eff_industry} business ({_bp.business_model}). "
                     f"{_bp.summary}\n"
                     f"PRIORITY METRICS for this industry (prefer these; honour each metric's sane "
                     f"value — NEVER report an impossible figure like a ratio > 1 or a near-zero "
@@ -2548,7 +2551,7 @@ class SchemaExplorer:
                 )
                 logger.info(
                     "[explorer:%s] Phase 8: industry-aware steering — %r (%d priority metrics, %d recipes)",
-                    self.connection_id, _bp.industry, len(profile_angles), len(_recipes),
+                    self.connection_id, _eff_industry, len(profile_angles), len(_recipes),
                 )
         except Exception as _exc:
             from aughor.kernel.errors import tolerate

@@ -695,8 +695,9 @@ def rebuild_ontology(
     profile_industry = None
     try:
         from aughor.profile.infer import infer_business_profile
+        from aughor.orgsettings import resolve_industry
         bp = infer_business_profile(connection_id, effective)
-        profile_industry = bp.industry
+        profile_industry = resolve_industry(bp.industry)
     except Exception as exc:
         import logging
         logging.getLogger(__name__).warning(
