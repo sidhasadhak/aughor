@@ -484,6 +484,29 @@ class LocalUploadConnection(Connector):
                 })
         return result
 
+    def delete_table(self, table: str, schema: str = DEFAULT_SCHEMA) -> None:
+        """Remove a single table: drop it from DuckDB and delete its backing file(s).
+        Matches by the table's resolved name (sidecar table_name, else the file stem)."""
+        schema = _safe_ident(schema, DEFAULT_SCHEMA)
+        tbl = _safe_ident(table, "table")
+        sdir = self._schema_dir(schema)
+        if sdir.exists():
+            for f in list(sdir.iterdir()):
+                if not _is_data_file(f):
+                    continue
+                cfg = self._read_sidecar(f)
+                tname = cfg.get("table_name") or _safe_ident(f.stem)
+                if tname == tbl:
+                    if f.exists():
+                        f.unlink()
+                    sc = f.with_name(f"{f.name}{_SIDECAR_SUFFIX}")
+                    if sc.exists():
+                        sc.unlink()
+        try:
+            self._duckdb.execute(f'DROP TABLE IF EXISTS "{schema}"."{tbl}"')
+        except Exception:
+            pass
+
     def delete_file(self, filename: str, schema: str = DEFAULT_SCHEMA) -> None:
         schema = _safe_ident(schema, DEFAULT_SCHEMA)
         sdir = self._schema_dir(schema)

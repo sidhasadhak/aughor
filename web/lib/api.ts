@@ -359,6 +359,31 @@ export async function createConnectionSchema(connId: string, name: string): Prom
   return data.schema;
 }
 
+/** Remove an entire schema (dataset) from a workspace connection — drops its tables,
+ *  backing files, and derived profile/exploration. */
+export async function deleteConnectionSchema(connId: string, schema: string): Promise<void> {
+  const res = await fetch(
+    `${BASE}/connections/${encodeURIComponent(connId)}/schemas/${encodeURIComponent(schema)}`,
+    { method: "DELETE" },
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "Schema remove failed");
+  }
+}
+
+/** Remove a single table from a workspace connection — drops it + its backing file(s). */
+export async function deleteConnectionTable(connId: string, table: string, schema = "main"): Promise<void> {
+  const res = await fetch(
+    `${BASE}/connections/${encodeURIComponent(connId)}/tables/${encodeURIComponent(table)}?schema=${encodeURIComponent(schema)}`,
+    { method: "DELETE" },
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "Table remove failed");
+  }
+}
+
 export async function testConnection(id: string): Promise<TestResult> {
   const res = await fetch(`${BASE}/connections/${id}/test`, { method: "POST" });
   if (!res.ok) throw new Error("Test request failed");
