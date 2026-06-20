@@ -243,3 +243,125 @@ export function scatterOption(i: BuildInput): EChartsOption {
     series: [{ type: "scatter", symbolSize: 9, data: i.rows.map((r) => [num(r[xf]), num(r[yf])]), emphasis: { focus: "series" } }],
   };
 }
+
+/** Dual-axis combo — bar (primary magnitude) + line (secondary, own right axis).
+ *  ys = [barField, lineField]. Per-field formatting keeps a rate's % off the
+ *  count axis (the percent-leak fix from the legacy Chart.tsx). */
+export function comboOption(i: BuildInput): EChartsOption {
+  const [barF, lineF] = [i.ys[0], i.ys[1]];
+  const sorted = i.rows.slice().sort((a, b) => num(b[barF]) - num(a[barF]));
+  const fb = valueFormatter(i.rows, barF);
+  const fl = valueFormatter(i.rows, lineF);
+  return {
+    ...withTitle(i.title),
+    tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
+    legend: { data: [cleanLabel(barF), cleanLabel(lineF)] },
+    xAxis: { type: "category", data: sorted.map((r) => String(r[i.x])), axisLabel: { hideOverlap: true, interval: 0 } },
+    yAxis: [
+      { type: "value", name: cleanLabel(barF), axisLabel: { formatter: (v: number) => fb(v) } },
+      { type: "value", name: cleanLabel(lineF), splitLine: { show: false }, axisLabel: { formatter: (v: number) => fl(v) } },
+    ],
+    series: [
+      { name: cleanLabel(barF), type: "bar", yAxisIndex: 0, data: sorted.map((r) => num(r[barF])), tooltip: { valueFormatter: (v) => fb(v) } },
+      { name: cleanLabel(lineF), type: "line", yAxisIndex: 1, data: sorted.map((r) => num(r[lineF])), tooltip: { valueFormatter: (v) => fl(v) } },
+    ],
+  };
+}
+
+/** Two-dimensional distribution — x (group) × color (stack) grid, coloured by
+ *  ys[0]. Fills the FULL grid so missing cells render neutral, not as gaps
+ *  (the bug the legacy heatmap fixed). */
+export function heatmapOption(i: BuildInput): EChartsOption {
+  const valF = i.ys[0];
+  const gran: Gran | null = i.xKind === "time" ? detectGranularity(i.x, i.rows.map((r) => r[i.x])) : null;
+  const groupLabel = (r: Row) => (gran ? fmtDate(String(r[i.x]), gran) : String(r[i.x]));
+  const groups: string[] = [];
+  const stacks: string[] = [];
+  const cell = new Map<string, number>();
+  for (const r of i.rows) {
+    const g = groupLabel(r); const s = String(r[i.color!]);
+    if (!groups.includes(g)) groups.push(g);
+    if (!stacks.includes(s)) stacks.push(s);
+    cell.set(`${g}__${s}`, num(r[valF]));
+  }
+  const data: [number, number, number | null][] = [];
+  let max = -Infinity, min = Infinity;
+  groups.forEach((g, gi) => stacks.forEach((s, si) => {
+    const v = cell.get(`${g}__${s}`);
+    data.push([gi, si, v == null ? null : v]);
+    if (v != null && isFinite(v)) { max = Math.max(max, v); min = Math.min(min, v); }
+  }));
+  const diverging = min < 0;
+  const fmt = valueFormatter(i.rows, valF);
+  return {
+    ...withTitle(i.title),
+    tooltip: { position: "top", formatter: (p: unknown) => {
+      const o = p as { value: [number, number, number] };
+      return `${groups[o.value[0]]} · ${stacks[o.value[1]]}: ${fmt(o.value[2])}`;
+    } },
+    grid: { left: 8, right: 12, top: 28, bottom: 28, containLabel: true },
+    xAxis: { type: "category", data: groups, splitArea: { show: true }, axisLabel: { hideOverlap: true } },
+    yAxis: { type: "category", data: stacks, splitArea: { show: true } },
+    visualMap: {
+      type: "continuous" as const,
+      min: diverging ? -Math.max(Math.abs(min), Math.abs(max)) : (isFinite(min) ? Math.min(0, min) : 0),
+      max: isFinite(max) ? max : 1,
+      calculable: true, orient: "horizontal", left: "center", bottom: 0,
+      inRange: { color: diverging ? ["#E64848", "#2A2C2F", "#2EC87B"] : ["#0e2440", "#244E86", "#4C8EEE"] },
+      formatter: (v: number) => fmt(v),
+    } as unknown as EChartsOption["visualMap"],
+    series: [{ type: "heatmap", data, emphasis: { itemStyle: { borderColor: "#fff", borderWidth: 1 } } }],
+  };
+}
+
+/** Composition across many parts — proportional-area tiles (top 40). */
+export function treemapOption(i: BuildInput): EChartsOption {
+  const valF = i.ys[0];
+  const agg = new Map<string, number>();
+  for (const r of i.rows) { const k = String(r[i.x]); agg.set(k, (agg.get(k) ?? 0) + num(r[valF])); }
+  const data = [...agg.entries()].sort((a, b) => b[1] - a[1]).slice(0, 40).map(([name, value]) => ({ name, value }));
+  const fmt = valueFormatter(i.rows, valF);
+  return {
+    ...withTitle(i.title),
+    tooltip: { formatter: (p: unknown) => { const o = p as { name: string; value: number }; return `${o.name}: ${fmt(o.value)}`; } },
+    series: [{
+      type: "treemap", data, roam: false, nodeClick: false, breadcrumb: { show: false },
+      width: "100%", height: "100%", top: 24,
+      label: { show: true, formatter: "{b}", fontSize: 11 },
+      itemStyle: { borderColor: "#161A20", borderWidth: 2, gapWidth: 2 },
+    }],
+  };
+}
+
+/** Pareto (80/20) — sorted bars (left axis) + cumulative-% line (right axis,
+ *  0–1) + an 80% reference line. Surfaces concentration. */
+export function paretoOption(i: BuildInput): EChartsOption {
+  const valF = i.ys[0];
+  const agg = new Map<string, number>();
+  for (const r of i.rows) { const k = String(r[i.x]); agg.set(k, (agg.get(k) ?? 0) + num(r[valF])); }
+  const sorted = [...agg.entries()].sort((a, b) => b[1] - a[1]);
+  const total = sorted.reduce((s, [, v]) => s + v, 0) || 1;
+  let running = 0;
+  const cats = sorted.map(([k]) => k);
+  const bars = sorted.map(([, v]) => v);
+  const cum = sorted.map(([, v]) => { running += v; return running / total; });
+  const fmt = valueFormatter(i.rows, valF);
+  return {
+    ...withTitle(i.title),
+    tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
+    legend: { data: [cleanLabel(valF), "Cumulative"] },
+    xAxis: { type: "category", data: cats, axisLabel: { hideOverlap: true, interval: 0 } },
+    yAxis: [
+      { type: "value", name: cleanLabel(valF), axisLabel: { formatter: (v: number) => fmt(v) } },
+      { type: "value", name: "Cumulative", min: 0, max: 1, splitLine: { show: false }, axisLabel: { formatter: (v: number) => `${Math.round(v * 100)}%` } },
+    ],
+    series: [
+      { name: cleanLabel(valF), type: "bar", yAxisIndex: 0, data: bars, tooltip: { valueFormatter: (v) => fmt(v) } },
+      {
+        name: "Cumulative", type: "line", yAxisIndex: 1, data: cum, smooth: false,
+        tooltip: { valueFormatter: (v) => `${Math.round(Number(v) * 100)}%` },
+        markLine: { silent: true, symbol: "none", data: [{ yAxis: 0.8 }], lineStyle: { type: "dashed" }, label: { formatter: "80%" } },
+      },
+    ],
+  };
+}

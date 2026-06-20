@@ -18,7 +18,7 @@ import {
 } from "@/components/charts/chartTypeInference";
 import {
   lineOption, multiLineOption, barOption, groupedBarOption,
-  stackedBarOption, pieOption, scatterOption,
+  stackedBarOption, pieOption, scatterOption, comboOption, heatmapOption, treemapOption,
   type Row, type BuildInput,
 } from "./builders";
 
@@ -29,6 +29,7 @@ export { AUGHOR_THEME_NAME, registerAughorTheme } from "./theme";
 /** Chart types the ECharts engine can render today (the rest fall back to Vega). */
 export const ECHARTS_SUPPORTED: ReadonlySet<ChartType> = new Set<ChartType>([
   "line", "area", "multi-line", "bar", "grouped-bar", "stacked-bar", "pie", "scatter",
+  "combo", "heatmap", "treemap",
 ]);
 
 export function rowsToObjects(columns: string[], rows: unknown[][]): Row[] {
@@ -67,6 +68,9 @@ export function optionFor(
     case "stacked-bar": return stackedBarOption(base);
     case "pie":         return pieOption(base);
     case "scatter":     return scatterOption(base);
+    case "combo":       return ys.length >= 2 ? comboOption(base) : barOption(base);
+    case "heatmap":     return color ? heatmapOption(base) : null;
+    case "treemap":     return treemapOption(base);
     default:            return null;
   }
 }

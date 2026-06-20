@@ -14,6 +14,7 @@ import {
   EChart,
   lineOption, multiLineOption, barOption, groupedBarOption,
   stackedBarOption, pieOption, scatterOption, buildAutoOption,
+  comboOption, heatmapOption, treemapOption, paretoOption,
   type Row,
 } from "@/components/charts/echarts";
 
@@ -37,6 +38,9 @@ const paymentMix: Row[] = [
 ].map(([method, amount]) => ({ method, amount }));
 
 const revProfit: Row[] = REGIONS.map((region, i) => ({ region, revenue: 900_000 + i * 220_000, profit: 180_000 + i * 40_000 }));
+
+// Combo: a magnitude (revenue) + a 0–1 rate (margin_rate) → dual axis earns its keep.
+const revMargin: Row[] = REGIONS.map((region, i) => ({ region, revenue: 900_000 + i * 220_000, margin_rate: 0.18 + i * 0.06 }));
 
 const priceRating: Row[] = Array.from({ length: 18 }, (_, i) => ({
   price: 12 + i * 4.5,
@@ -90,6 +94,18 @@ export default function ChartLab() {
         </Card>
         <Card title="Scatter — price vs rating">
           <EChart option={scatterOption({ rows: priceRating, x: "price", ys: ["rating"] })} height={270} />
+        </Card>
+        <Card title="Combo — revenue (bar) + margin rate (line)">
+          <EChart option={comboOption({ rows: revMargin, x: "region", ys: ["revenue", "margin_rate"] })} height={270} />
+        </Card>
+        <Card title="Heatmap — revenue by region × month">
+          <EChart option={heatmapOption({ rows: revByRegionMonth, x: "month", ys: ["revenue"], color: "region", xKind: "time" })} height={270} />
+        </Card>
+        <Card title="Treemap — GMV by category">
+          <EChart option={treemapOption({ rows: gmvByCategory, x: "category", ys: ["gmv"] })} height={270} />
+        </Card>
+        <Card title="Pareto — GMV concentration (80/20)">
+          <EChart option={paretoOption({ rows: gmvByCategory, x: "category", ys: ["gmv"] })} height={270} />
         </Card>
         {auto && (
           <Card title={`Auto-inference → ${auto.type}`}>
