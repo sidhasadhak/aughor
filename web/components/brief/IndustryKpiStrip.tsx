@@ -161,7 +161,12 @@ export function KpiStripView({ industry, period, kpis }: { industry?: string; pe
               style={{
                 position: "relative", flex: "1 1 160px", minWidth: 150, padding: "11px 13px",
                 borderRadius: "var(--r2)", background: isOpen ? "var(--bg-3)" : "var(--bg-2)",
-                border: `1px solid ${isOpen ? k.color : "var(--b1)"}`, borderLeft: `3px solid ${k.color}`,
+                // Explicit per-side borders (not the `border` shorthand) so they don't conflict
+                // with borderLeft on rerender — React warns about mixing shorthand + longhand.
+                borderTop: `1px solid ${isOpen ? k.color : "var(--b1)"}`,
+                borderRight: `1px solid ${isOpen ? k.color : "var(--b1)"}`,
+                borderBottom: `1px solid ${isOpen ? k.color : "var(--b1)"}`,
+                borderLeft: `3px solid ${k.color}`,
                 display: "flex", flexDirection: "column", gap: 7,
                 cursor: canExpand ? "pointer" : "default",
                 transition: "background var(--dur-fast), border-color var(--dur-fast)",
@@ -205,8 +210,9 @@ export function KpiStripView({ industry, period, kpis }: { industry?: string; pe
         <div
           className="aug-anim-up"
           style={{
-            marginTop: 10, padding: "12px 14px", borderRadius: "var(--r3)",
-            background: "var(--bg-2)", border: "1px solid var(--b1)", borderLeft: `3px solid ${expanded.color}`,
+            marginTop: 10, padding: "12px 14px", borderRadius: "var(--r3)", background: "var(--bg-2)",
+            borderTop: "1px solid var(--b1)", borderRight: "1px solid var(--b1)", borderBottom: "1px solid var(--b1)",
+            borderLeft: `3px solid ${expanded.color}`,
           }}
         >
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
