@@ -25,6 +25,7 @@ import { getBusinessProfile, runDirectQuery, currencySymbol } from "@/lib/api";
 import { GroundedNumber } from "@/components/brief/GroundedNumber";
 import { Sparkline, seriesTrend } from "@/components/brief/Sparkline";
 import { ResultChartCard } from "@/components/charts/ResultChartCard";
+import { effectiveCurrencySymbol } from "@/lib/orgSettings";
 
 interface Trend {
   values: number[];
@@ -247,7 +248,9 @@ export function IndustryKpiStrip({ connectionId, schema }: { connectionId: strin
       if (!alive) return;
       if (!p.available || !p.profile) { setIndustry(""); setKpis([]); return; }
       setIndustry(p.profile.industry || "");
-      const sym = currencySymbol(p.profile.currency_code);
+      // Override-wins: a set org/workspace currency beats the inferred profile currency,
+      // and matches what the expanded charts render from the same orgSettings cache.
+      const sym = effectiveCurrencySymbol() || currencySymbol(p.profile.currency_code);
       const metrics = (p.profile.north_star_metrics || []).filter(m => m.value_sql?.trim());
 
       const results = await Promise.all(metrics.map(async (m, i): Promise<Kpi | null> => {

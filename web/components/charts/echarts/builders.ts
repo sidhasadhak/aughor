@@ -11,6 +11,7 @@
 import type { EChartsOption } from "echarts";
 import { compactNumber, pct, cleanLabel, detectGranularity, fmtDate, normDateStr, type Gran } from "@/lib/format";
 import { SHARE_COL } from "@/components/charts/columnRoles";
+import { effectiveCurrencySymbol, isMoneyColumn } from "@/lib/orgSettings";
 
 export type Row = Record<string, unknown>;
 
@@ -39,11 +40,27 @@ export function isShareField(rows: Row[], f: string): boolean {
 
 export function valueFormatter(rows: Row[], f: string): (v: unknown) => string {
   const share = isShareField(rows, f);
+  // Money fields carry the effective reporting currency symbol (override-wins), so a
+  // chart's values read in the org's currency — matching the KPI cards + tables.
+  const sym = !share && isMoneyColumn(f) ? effectiveCurrencySymbol() : "";
   return (v) => {
     const n = num(v);
     if (v == null || isNaN(n)) return "—";
-    return share ? pct(n, 1) : compactNumber(n);
+    return share ? pct(n, 1) : sym + compactNumber(n);
   };
+}
+
+// Display label for a field. For a money field, when an org currency is set, the embedded
+// SOURCE-currency code is dropped (the override is a display relabel, not an FX conversion)
+// — the value's symbol carries the unit, so "cac_usd" → "CAC" not "CAC USD".
+const _label = cleanLabel;
+const _CUR_TOKEN = /(^|[_\s])(usd|eur|gbp|jpy|cny|inr|aud|cad|chf|sgd|brl|zar)(?=$|[_\s])/i;
+function fieldLabel(f: string): string {
+  if (effectiveCurrencySymbol() && isMoneyColumn(f) && _CUR_TOKEN.test(f)) {
+    const stripped = f.replace(_CUR_TOKEN, "$1").replace(/^[_\s]+|[_\s]+$/g, "");
+    return _label(stripped || f);
+  }
+  return _label(f);
 }
 
 /** Distinct x values, sorted chronologically for time axes else preserving order. */
@@ -80,7 +97,7 @@ export function lineOption(i: BuildInput, area = false): EChartsOption {
   return {
     ...withTitle(i.title),
     tooltip: { trigger: "axis", valueFormatter: (v) => fmt(v) },
-    legend: i.ys.length > 1 ? { data: i.ys.map(cleanLabel) } : undefined,
+    legend: i.ys.length > 1 ? { data: i.ys.map(fieldLabel) } : undefined,
     xAxis: {
       type: "category",
       data: cats,
@@ -89,7 +106,7 @@ export function lineOption(i: BuildInput, area = false): EChartsOption {
     },
     yAxis: { type: "value", axisLabel: { formatter: (v: number) => fmt(v) } },
     series: i.ys.map((y) => ({
-      name: cleanLabel(y),
+      name: fieldLabel(y),
       type: "line",
       data: cats.map((c) => { const r = byX.get(c); return r == null ? null : num(r[y]); }),
       showSymbol: cats.length <= 60,
@@ -178,7 +195,7 @@ export function barOption(i: BuildInput, style: BarStyle = {}): EChartsOption {
     tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, valueFormatter: (v) => fmt(v) },
     xAxis: style.horizontal ? valAxis : catAxis,
     yAxis: style.horizontal ? catAxis : valAxis,
-    series: [{ name: cleanLabel(y), type: "bar", data: values, label, itemStyle: itemStyle as unknown as undefined }],
+    series: [{ name: fieldLabel(y), type: "bar", data: values, label, itemStyle: itemStyle as unknown as undefined }],
   };
 }
 
@@ -189,10 +206,10 @@ export function groupedBarOption(i: BuildInput): EChartsOption {
   return {
     ...withTitle(i.title),
     tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, valueFormatter: (v) => fmt(v) },
-    legend: { data: i.ys.map(cleanLabel) },
+    legend: { data: i.ys.map(fieldLabel) },
     xAxis: { type: "category", data: cats, axisLabel: { hideOverlap: true, interval: 0 } },
     yAxis: { type: "value", axisLabel: { formatter: (v: number) => fmt(v) } },
-    series: i.ys.map((y) => ({ name: cleanLabel(y), type: "bar", data: i.rows.map((r) => num(r[y])) })),
+    series: i.ys.map((y) => ({ name: fieldLabel(y), type: "bar", data: i.rows.map((r) => num(r[y])) })),
   };
 }
 
@@ -263,11 +280,11 @@ export function scatterOption(i: BuildInput): EChartsOption {
       trigger: "item",
       formatter: (p: unknown) => {
         const v = (p as { value: [number, number] }).value;
-        return `${cleanLabel(xf)}: ${fx(v[0])}<br/>${cleanLabel(yf)}: ${fy(v[1])}`;
+        return `${fieldLabel(xf)}: ${fx(v[0])}<br/>${fieldLabel(yf)}: ${fy(v[1])}`;
       },
     },
-    xAxis: { type: "value", name: cleanLabel(xf), nameLocation: "middle", nameGap: 28, axisLabel: { formatter: (v: number) => fx(v) } },
-    yAxis: { type: "value", name: cleanLabel(yf), axisLabel: { formatter: (v: number) => fy(v) } },
+    xAxis: { type: "value", name: fieldLabel(xf), nameLocation: "middle", nameGap: 28, axisLabel: { formatter: (v: number) => fx(v) } },
+    yAxis: { type: "value", name: fieldLabel(yf), axisLabel: { formatter: (v: number) => fy(v) } },
     series: [{ type: "scatter", symbolSize: 9, data: i.rows.map((r) => [num(r[xf]), num(r[yf])]), emphasis: { focus: "series" } }],
   };
 }
@@ -283,15 +300,15 @@ export function comboOption(i: BuildInput): EChartsOption {
   return {
     ...withTitle(i.title),
     tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
-    legend: { data: [cleanLabel(barF), cleanLabel(lineF)] },
+    legend: { data: [fieldLabel(barF), fieldLabel(lineF)] },
     xAxis: { type: "category", data: sorted.map((r) => String(r[i.x])), axisLabel: { hideOverlap: true, interval: 0 } },
     yAxis: [
-      { type: "value", name: cleanLabel(barF), axisLabel: { formatter: (v: number) => fb(v) } },
-      { type: "value", name: cleanLabel(lineF), splitLine: { show: false }, axisLabel: { formatter: (v: number) => fl(v) } },
+      { type: "value", name: fieldLabel(barF), axisLabel: { formatter: (v: number) => fb(v) } },
+      { type: "value", name: fieldLabel(lineF), splitLine: { show: false }, axisLabel: { formatter: (v: number) => fl(v) } },
     ],
     series: [
-      { name: cleanLabel(barF), type: "bar", yAxisIndex: 0, data: sorted.map((r) => num(r[barF])), tooltip: { valueFormatter: (v) => fb(v) } },
-      { name: cleanLabel(lineF), type: "line", yAxisIndex: 1, data: sorted.map((r) => num(r[lineF])), tooltip: { valueFormatter: (v) => fl(v) } },
+      { name: fieldLabel(barF), type: "bar", yAxisIndex: 0, data: sorted.map((r) => num(r[barF])), tooltip: { valueFormatter: (v) => fb(v) } },
+      { name: fieldLabel(lineF), type: "line", yAxisIndex: 1, data: sorted.map((r) => num(r[lineF])), tooltip: { valueFormatter: (v) => fl(v) } },
     ],
   };
 }
@@ -377,14 +394,14 @@ export function paretoOption(i: BuildInput): EChartsOption {
   return {
     ...withTitle(i.title),
     tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
-    legend: { data: [cleanLabel(valF), "Cumulative"] },
+    legend: { data: [fieldLabel(valF), "Cumulative"] },
     xAxis: { type: "category", data: cats, axisLabel: { hideOverlap: true, interval: 0 } },
     yAxis: [
-      { type: "value", name: cleanLabel(valF), axisLabel: { formatter: (v: number) => fmt(v) } },
+      { type: "value", name: fieldLabel(valF), axisLabel: { formatter: (v: number) => fmt(v) } },
       { type: "value", name: "Cumulative", min: 0, max: 1, splitLine: { show: false }, axisLabel: { formatter: (v: number) => `${Math.round(v * 100)}%` } },
     ],
     series: [
-      { name: cleanLabel(valF), type: "bar", yAxisIndex: 0, data: bars, tooltip: { valueFormatter: (v) => fmt(v) } },
+      { name: fieldLabel(valF), type: "bar", yAxisIndex: 0, data: bars, tooltip: { valueFormatter: (v) => fmt(v) } },
       {
         name: "Cumulative", type: "line", yAxisIndex: 1, data: cum, smooth: false,
         tooltip: { valueFormatter: (v) => `${Math.round(Number(v) * 100)}%` },
