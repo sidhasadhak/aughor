@@ -143,3 +143,18 @@ def invalidate(connection_id: str, schema_name: Optional[str] = None) -> None:
             p.unlink()
         except Exception:
             pass
+
+
+def invalidate_all() -> int:
+    """Delete EVERY stored business profile so they lazily re-infer on next access. Used
+    when an app-wide setting that changes inference (e.g. the declared industry) is updated,
+    so the chosen industry's curated metrics/recipes are re-captured for each dataset.
+    Returns the count removed. Best-effort per file."""
+    n = 0
+    for p in _DATA_DIR.glob("business_profile_*.json"):
+        try:
+            p.unlink()
+            n += 1
+        except Exception:
+            pass
+    return n

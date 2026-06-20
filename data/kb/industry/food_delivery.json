@@ -1,6 +1,6 @@
 {
   "industry": "Food Delivery / On-Demand Marketplace",
-  "aliases": ["food delivery", "on-demand", "on demand", "marketplace", "courier", "restaurant delivery", "quick commerce", "q-commerce", "qcommerce", "delivery", "last mile", "last-mile", "rideshare", "gig economy", "three-sided marketplace", "logistics"],
+  "aliases": ["food delivery", "on-demand", "on demand", "marketplace", "courier", "restaurant delivery", "quick commerce", "q-commerce", "qcommerce", "delivery", "last mile", "last-mile", "rideshare", "gig economy", "three-sided marketplace"],
   "description": "A three-sided on-demand marketplace matching diners (demand), restaurants/merchants (supply), and couriers (fulfillment). Levers are liquidity (matching demand to available couriers), unit economics (basket size, take rate, delivery cost), reliability (delivery time, cancellation), and retention (repeat ordering).",
   "metrics": [
     {
