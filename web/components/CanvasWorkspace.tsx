@@ -6,7 +6,6 @@ import { getCanvasHistory, updateCanvas, deleteInvestigation, getCanvasArtifacts
 import { ConfigurePanel } from "@/components/ConfigurePanel";
 import { ChatPanel } from "@/components/ChatPanel";
 import { HistoryDetailPanel } from "@/components/HistoryDetailPanel";
-import { IntelligenceWorkspace, type IntelLayer } from "@/components/IntelligenceWorkspace";
 
 // ── Icon helper ───────────────────────────────────────────────────────────────
 
@@ -36,7 +35,7 @@ function Icon({ name, size = 14, color = "currentColor" }: { name: string; size?
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type WsTab = "chat" | "history" | "intel" | "artifacts";
+type WsTab = "chat" | "history" | "artifacts";
 
 // ── History tab ───────────────────────────────────────────────────────────────
 
@@ -549,7 +548,6 @@ interface Props {
 
 export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, initialOpenInvId, initialRestoreSessionId }: Props) {
   const [wsTab, setWsTab] = useState<WsTab>("chat");
-  const [intelLayer, setIntelLayer] = useState<IntelLayer>("briefing");
   const [chatKey, setChatKey] = useState(0);
   const [openInvId, setOpenInvId] = useState<string | null>(null);
   const [restoreSessionId, setRestoreSessionId] = useState<string | null>(null);
@@ -558,8 +556,6 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
   // another reason must clear the seed or the stale question would re-submit.
   const [chatInitialQuestion, setChatInitialQuestion] = useState<string | undefined>(undefined);
   const [chatInitialMode, setChatInitialMode] = useState<"ask" | "investigate" | undefined>(undefined);
-  // Drill into a known finding: routes the first chat turn to the Tier-0 Finding Dossier.
-  const [chatInitialInsightId, setChatInitialInsightId] = useState<string | undefined>(undefined);
   const [showSettings, setShowSettings] = useState(false);
   const [showConfigure, setShowConfigure] = useState(false);
   const headerRef = useRef<HTMLDivElement>(null);
@@ -752,7 +748,6 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
       }}>
         <TabPill icon="chat"    label="Chat"          active={wsTab === "chat"}    onClick={() => { setWsTab("chat"); setOpenInvId(null); }} />
         <TabPill icon="clock"   label="History"       active={wsTab === "history"} onClick={() => { setWsTab("history"); setOpenInvId(null); }} />
-        <TabPill icon="process" label="Intelligence"  active={wsTab === "intel"}   onClick={() => setWsTab("intel")} />
         <TabPill icon="table"  label="Artifacts"     active={wsTab === "artifacts"} onClick={() => setWsTab("artifacts")} />
       </div>
 
@@ -777,7 +772,6 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
             restoreSessionId={restoreSessionId}
             initialQuestion={chatInitialQuestion}
             initialMode={chatInitialMode}
-            initialInsightId={chatInitialInsightId}
             capabilities={<CapabilitiesBlock canvas={canvas} connection={connection} />}
           />
         </div>
@@ -835,33 +829,6 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
               </div>
             )
           }
-        </div>
-
-        {/* Intelligence — the SAME unified workspace as the connection-level Intelligence
-            nav, but scoped to this canvas's curated tables. One surface, all layers
-            (Briefing · Hub · Ontology · Domains · Org), consistent scope. */}
-        <div style={{
-          display: wsTab === "intel" ? "flex" : "none",
-          flexDirection: "column",
-          flex: 1, overflow: "hidden",
-        }}>
-          <IntelligenceWorkspace
-            connectionId={connectionId}
-            canvasId={canvas.id}
-            layer={intelLayer}
-            onLayerChange={setIntelLayer}
-            onInvestigate={(q, mode, insightId) => {
-              if (q) {
-                setChatInitialQuestion(q);
-                setChatInitialMode(mode);
-                setChatInitialInsightId(insightId);
-                setRestoreSessionId(null);
-                setOpenInvId(null);
-                setChatKey(k => k + 1); // fresh mount → ChatPanel auto-submits the seeded question
-              }
-              setWsTab("chat");
-            }}
-          />
         </div>
 
         {/* Artifacts — always mounted, hidden when not active */}
