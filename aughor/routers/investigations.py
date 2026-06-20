@@ -1219,8 +1219,9 @@ async def _stream_chat(
                         f"'{canvas_scope_eff_schema}' schema ONLY. Rewrite using exclusively "
                         f"{canvas_scope_eff_schema}.* tables — never reference another schema."
                     )
-            except Exception:
-                pass
+            except Exception as _e:
+                from aughor.kernel.errors import tolerate
+                tolerate(_e, "chat scope guard is best-effort", counter="chat.scope_guard_failed")
 
         # ── Filter value-domain guard — catch a guessed enum value ──────────────
         # `order_status = 'cancelled'` when the data holds 'canceled' runs clean but
@@ -1233,8 +1234,9 @@ async def _stream_chat(
                 _fw = await asyncio.to_thread(check_filter_value_domains, db, final_sql)
                 if _fw:
                     _filter_fix_hint = " | ".join(w.to_prompt_text() for w in _fw)
-            except Exception:
-                pass
+            except Exception as _e:
+                from aughor.kernel.errors import tolerate
+                tolerate(_e, "chat filter value-domain guard is best-effort", counter="chat.filter_guard_failed")
 
         # ── Breakdown-grain guard — "top product CATEGORIES" grouped by product_id ──
         # The model sometimes groups a categorical breakdown at too fine a grain (an id),
@@ -1243,8 +1245,9 @@ async def _stream_chat(
         if final_sql:
             try:
                 _grain_fix_hint = _breakdown_grain_hint(question, final_sql, db.dialect)
-            except Exception:
-                pass
+            except Exception as _e:
+                from aughor.kernel.errors import tolerate
+                tolerate(_e, "chat breakdown-grain guard is best-effort", counter="chat.grain_guard_failed")
 
         yield _sse("sql", {"sql": final_sql})
         result = await asyncio.to_thread(db.execute, "chat", final_sql)

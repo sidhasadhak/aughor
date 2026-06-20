@@ -1938,8 +1938,9 @@ def run_analysis_phase(
                     try:
                         for _t in _sg.parse_one(_q.sql, read=_dialect).find_all(_sgx.Table):
                             _refs.add(f"{_t.db}.{_t.name}" if _t.db else _t.name)
-                    except Exception:
-                        pass
+                    except Exception as _e2:
+                        from aughor.kernel.errors import tolerate
+                        tolerate(_e2, "fanout schema-augment: query parse", counter="ada.fanout_augment_parse")
                 for _ref in _refs:
                     if not _ref or _ref.lower() in _have:
                         continue
@@ -1955,10 +1956,12 @@ def run_analysis_phase(
                         if _rows:
                             _tc[_ref] = [r[0] for r in _rows]
                             _have.add(_ref.lower())
-                    except Exception:
-                        pass
-            except Exception:
-                pass
+                    except Exception as _e2:
+                        from aughor.kernel.errors import tolerate
+                        tolerate(_e2, "fanout schema-augment: column probe", counter="ada.fanout_augment_probe")
+            except Exception as _e1:
+                from aughor.kernel.errors import tolerate
+                tolerate(_e1, "fanout schema-augment is best-effort", counter="ada.fanout_augment_failed")
 
         def _scan_fanout(queries):
             _augment_tc(queries)
