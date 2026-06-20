@@ -135,22 +135,50 @@ export function multiLineOption(i: BuildInput): EChartsOption {
   };
 }
 
-/** Categorical comparison — one measure, sorted descending, vertical bars. */
-export function barOption(i: BuildInput): EChartsOption {
+export interface BarStyle {
+  /** Horizontal bars (category on Y) — the legacy default for ranked categoricals. */
+  horizontal?: boolean;
+  /** "value" = sort desc by measure (default); "time" = chronological; "keep" = SQL order. */
+  order?: "value" | "time" | "keep";
+  /** Color by sign (green ≥0 / red <0), abs-magnitude sort — for change/delta metrics. */
+  diverging?: boolean;
+}
+
+/** Categorical (or temporal) bar comparison. Covers every legacy bar variant via
+ *  `style`: vertical/horizontal, value/time/keep ordering, diverging change bars. */
+export function barOption(i: BuildInput, style: BarStyle = {}): EChartsOption {
   const y = i.ys[0];
-  const sorted = i.rows.slice().sort((a, b) => num(b[y]) - num(a[y]));
+  const order = style.order ?? "value";
+  const rows = i.rows.slice();
+  if (order === "time") {
+    rows.sort((a, b) => new Date(normDateStr(String(a[i.x]))).getTime() - new Date(normDateStr(String(b[i.x]))).getTime());
+  } else if (order === "value") {
+    rows.sort((a, b) => style.diverging ? Math.abs(num(b[y])) - Math.abs(num(a[y])) : num(b[y]) - num(a[y]));
+  } // "keep" → preserve incoming order (already-aggregated time labels)
+  const gran: Gran | null = i.xKind === "time" ? detectGranularity(i.x, i.rows.map((r) => r[i.x])) : null;
+  const labels = rows.map((r) => (gran ? fmtDate(String(r[i.x]), gran) : String(r[i.x])));
+  const values = rows.map((r) => num(r[y]));
   const fmt = valueFormatter(i.rows, y);
+
+  const catAxis = {
+    type: "category" as const, data: labels,
+    axisLabel: { hideOverlap: true, ...(style.horizontal ? {} : { interval: 0 }) },
+    ...(style.horizontal ? { inverse: true } : {}),   // largest at top for ranked horizontal
+  };
+  const valAxis = { type: "value" as const, axisLabel: { formatter: (v: number) => fmt(v) } };
+  const label = i.labels
+    ? { show: true, fontSize: 10, position: (style.horizontal ? "right" : "top") as "right" | "top", formatter: (p: { value: unknown }) => fmt(p.value) }
+    : undefined;
+  const itemStyle = style.diverging
+    ? { color: (p: { value: number }) => (p.value >= 0 ? "#2EC87B" : "#E64848") }
+    : undefined;
+
   return {
     ...withTitle(i.title),
     tooltip: { trigger: "axis", axisPointer: { type: "shadow" }, valueFormatter: (v) => fmt(v) },
-    xAxis: { type: "category", data: sorted.map((r) => String(r[i.x])), axisLabel: { hideOverlap: true, interval: 0 } },
-    yAxis: { type: "value", axisLabel: { formatter: (v: number) => fmt(v) } },
-    series: [{
-      name: cleanLabel(y),
-      type: "bar",
-      data: sorted.map((r) => num(r[y])),
-      label: i.labels ? { show: true, position: "top", fontSize: 10, formatter: (p: { value: unknown }) => fmt(p.value) } : undefined,
-    }],
+    xAxis: style.horizontal ? valAxis : catAxis,
+    yAxis: style.horizontal ? catAxis : valAxis,
+    series: [{ name: cleanLabel(y), type: "bar", data: values, label, itemStyle: itemStyle as unknown as undefined }],
   };
 }
 

@@ -17,6 +17,12 @@ import {
   comboOption, heatmapOption, treemapOption, paretoOption,
   type Row,
 } from "@/components/charts/echarts";
+import { Chart } from "@/components/Chart";
+
+/** Object rows → SQL-shaped [columns, rows[][]] for the <Chart> component. */
+function toTable(objs: Row[], cols: string[]): { columns: string[]; rows: unknown[][] } {
+  return { columns: cols, rows: objs.map((o) => cols.map((c) => o[c])) };
+}
 
 const MONTHS = ["2024-01", "2024-02", "2024-03", "2024-04", "2024-05", "2024-06", "2024-07", "2024-08"];
 const REGIONS = ["North", "South", "East", "West"];
@@ -112,6 +118,31 @@ export default function ChartLab() {
             <EChart option={auto.option} height={270} />
           </Card>
         )}
+      </div>
+
+      <h2 style={{ fontSize: 14, fontWeight: 700, color: "var(--t1)", margin: "28px 0 4px", fontFamily: "var(--font-ui)" }}>
+        &lt;Chart&gt; component — end-to-end (column resolution → dispatch → chrome)
+      </h2>
+      <p style={{ fontSize: 12, color: "var(--t3)", marginBottom: 16, fontFamily: "var(--font-ui)" }}>
+        Raw {`{columns, rows}`} through the real component the app uses. Hover for the labels/download toolbar.
+      </p>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(420px, 1fr))", gap: 16 }}>
+        {[
+          { t: "auto timeseries → line", p: { ...toTable(revByMonth, ["month", "revenue"]) } },
+          { t: "auto categorical → horizontal bar", p: { ...toTable(gmvByCategory, ["category", "gmv"]) } },
+          { t: "auto date+series → multi-line", p: { ...toTable(revByRegionMonth, ["month", "region", "revenue"]) } },
+          { t: "change metric → diverging bar", p: { ...toTable([
+              { region: "North", mom_change: 0.12 }, { region: "South", mom_change: -0.08 },
+              { region: "East", mom_change: 0.21 }, { region: "West", mom_change: -0.15 },
+            ], ["region", "mom_change"]) } },
+          { t: "backend chartConfig (bar)", p: { ...toTable(revByMonth, ["month", "revenue"]), chartConfig: { type: "bar", x_field: "month", y_field: "revenue" } } },
+          { t: "custom: $ format + no legend", p: { ...toTable(revProfit, ["region", "revenue", "profit"]), custom: { format: "$,.0f", legend: "none" as const } } },
+        ].map((d, i) => (
+          <div key={i} style={{ background: "var(--bg-1)", border: "1px solid var(--chart-axis)", borderRadius: 10, padding: 14 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: "var(--t3)", marginBottom: 4, fontFamily: "var(--font-ui)" }}>{d.t}</div>
+            <Chart title={d.t} {...d.p} />
+          </div>
+        ))}
       </div>
     </div>
   );
