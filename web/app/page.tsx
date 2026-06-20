@@ -6,6 +6,7 @@ import dynamic from "next/dynamic";
 // Always-eager: on the critical path at first render
 import { ChatPanel } from "@/components/ChatPanel";
 import { InferencePanel } from "@/components/InferencePanel";
+import { OrgSettingsPanel } from "@/components/OrgSettingsPanel";
 import { ExplorationBadge } from "@/components/ExplorationBadge";
 import { SchemaProvider } from "@/lib/schema-context";
 import { OpenInBuilderProvider } from "@/lib/openInBuilder";
@@ -1031,7 +1032,7 @@ function _ConnectionsScreen_DEPRECATED({
 
 // ── Settings screen ────────────────────────────────────────────────────────────
 
-function SettingsScreen({ theme, setTheme }: { theme: Theme; setTheme: (t: Theme) => void }) {
+function SettingsScreen({ theme, setTheme, workspaceId, workspaceName }: { theme: Theme; setTheme: (t: Theme) => void; workspaceId?: string; workspaceName?: string }) {
   const modes: Array<{ id: Theme; icon: string; label: string; desc: string }> = [
     { id: "dark",  icon: "moon", label: "Dark",  desc: "Navy backgrounds, light text" },
     { id: "light", icon: "sun",  label: "Light", desc: "White backgrounds, dark text" },
@@ -1077,6 +1078,12 @@ function SettingsScreen({ theme, setTheme }: { theme: Theme; setTheme: (t: Theme
               </button>
             ))}
           </div>
+        </div>
+
+        {/* Organization — identity, localization, per-workspace overrides */}
+        <div>
+          <div className="aug-label" style={{ marginBottom: 12 }}>Organization &amp; Localization</div>
+          <OrgSettingsPanel workspaceId={workspaceId} workspaceName={workspaceName} />
         </div>
 
         {/* Inference — LLM provider / models / keys */}
@@ -1974,7 +1981,7 @@ export default function Home() {
             {/* ── SETTINGS ── */}
             {tab === "settings" && (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
-                <SettingsScreen theme={theme} setTheme={setTheme} />
+                <SettingsScreen theme={theme} setTheme={setTheme} workspaceId={selectedWorkspace} workspaceName={activeWs?.name} />
               </div>
             )}
 

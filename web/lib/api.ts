@@ -87,6 +87,7 @@ export interface Workspace {
   description: string;
   connection_ids: string[];
   is_default: boolean;
+  settings_override?: Record<string, unknown>;
   created_at: string;
   updated_at: string;
 }
@@ -94,6 +95,51 @@ export interface Workspace {
 export async function getWorkspaces(): Promise<Workspace[]> {
   const res = await fetch(`${BASE}/workspaces`);
   if (!res.ok) throw new Error("Failed to fetch workspaces");
+  return res.json();
+}
+
+export async function getWorkspace(id: string): Promise<Workspace> {
+  const res = await fetch(`${BASE}/workspaces/${encodeURIComponent(id)}`);
+  if (!res.ok) throw new Error("Failed to fetch workspace");
+  return res.json();
+}
+
+// ── Org / workspace settings (identity, localization, appearance) ──────────────
+export interface OrgSettings {
+  company_name: string;
+  website: string;
+  hq_location: string;
+  industry: string;
+  currency_code: string;
+  timezone: string;
+  date_format: string;
+  fiscal_year_start_month: number;
+  chart_palette: string;
+}
+
+export async function getOrgSettings(): Promise<OrgSettings> {
+  const res = await fetch(`${BASE}/org-settings`);
+  if (!res.ok) throw new Error("Failed to fetch org settings");
+  return res.json();
+}
+
+export async function updateOrgSettings(settings: OrgSettings): Promise<OrgSettings> {
+  const res = await fetch(`${BASE}/org-settings`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(settings),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "Failed to update org settings");
+  }
+  return res.json();
+}
+
+export async function getEffectiveSettings(workspaceId?: string): Promise<OrgSettings> {
+  const q = workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : "";
+  const res = await fetch(`${BASE}/org-settings/effective${q}`);
+  if (!res.ok) throw new Error("Failed to fetch effective settings");
   return res.json();
 }
 
@@ -116,7 +162,7 @@ export async function createWorkspace(
 
 export async function updateWorkspace(
   id: string,
-  patch: { name?: string; description?: string; connection_ids?: string[] },
+  patch: { name?: string; description?: string; connection_ids?: string[]; settings_override?: Record<string, unknown> },
 ): Promise<Workspace> {
   const res = await fetch(`${BASE}/workspaces/${encodeURIComponent(id)}`, {
     method: "PUT",
