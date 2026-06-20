@@ -1,7 +1,7 @@
 """Workspace data models."""
 from __future__ import annotations
 
-from typing import List
+from typing import Any, Dict, List
 from pydantic import BaseModel, Field
 
 
@@ -21,5 +21,9 @@ class Workspace(BaseModel):
     description: str = ""
     connection_ids: List[str] = Field(default_factory=list)
     is_default: bool = False   # the auto-created catch-all workspace
+    # Per-workspace overrides of the app-wide OrgSettings (a partial subset of its
+    # fields). Merged by orgsettings.effective_settings() with precedence
+    # workspace override > app default. Empty = inherit the app-level settings.
+    settings_override: Dict[str, Any] = Field(default_factory=dict)
     created_at: str = ""
     updated_at: str = ""

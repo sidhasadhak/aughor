@@ -21,6 +21,7 @@ MAX_ROWS = 2000
 class MySQLConnection(Connector):
     connector_category = "warehouse"
     dialect = "mysql"
+    writes_native_sql = True  # execute() runs the LLM's SQL natively (no duckdb transpile)
 
     def __init__(
         self,

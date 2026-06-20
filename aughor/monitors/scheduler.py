@@ -108,7 +108,9 @@ def trigger_now(monitor_id: str) -> Optional[MonitorAlert]:
             return None
         db = open_connection_for(monitor.conn_id)
         try:
-            alert = run_monitor(monitor, db)
+            # Manual test endpoint — bypass the anti-flap debounce so the user
+            # always sees the raw verdict, even within a grace window.
+            alert = run_monitor(monitor, db, suppress=False)
         finally:
             try:
                 db.close()

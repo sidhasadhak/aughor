@@ -23,6 +23,7 @@ MAX_ROWS = 2000
 class BigQueryConnection(Connector):
     connector_category = "warehouse"
     dialect = "bigquery"
+    writes_native_sql = True  # execute() runs the LLM's SQL natively (no duckdb transpile)
 
     def __init__(
         self,

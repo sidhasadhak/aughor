@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/table";
 import type { DataQualityNote, Finding, Hypothesis, QueryCitation, Report, StatResult, Verdict } from "@/lib/types";
 import { logOutcome, getInvestigationOutcomes, type RecOutcome, type RecStatus } from "@/lib/api";
-import { InvestigationChart } from "@/components/InvestigationChart";
+import { ResultChartCard } from "@/components/charts/ResultChartCard";
 import { SHARE_COL_PATTERN, buildColumnFormatter, compactNumber, pct } from "@/lib/format";
 import { H_PALETTES } from "@/lib/palette";
 
@@ -125,9 +125,9 @@ function QueryEvidence({
         }
       </div>
 
-      {/* Chart — InvestigationChart returns null when data isn't chartable */}
+      {/* Chart — grain-aware control strip + chart⇄table toggle (ResultChartCard) */}
       {hasData && (
-        <InvestigationChart columns={query.columns!} rows={query.rows!} />
+        <ResultChartCard columns={query.columns!} rows={query.rows!} />
       )}
 
       {/* Table — always show when data fits; complements the chart */}
@@ -368,24 +368,13 @@ function KeyFindingCard({
 
           {/* Meta row: confidence + hypothesis link */}
           <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex items-center gap-1.5">
+            {/* Confidence — one subtle qualitative signal (dot + label), no repeated
+                bar/% on every finding. The reference shows none; we keep the level
+                at this altitude but drop the clutter. The exact % stays available in
+                the expandable evidence below. */}
+            <div className="flex items-center gap-1.5" title={`${Math.round(finding.confidence * 100)}% confidence`}>
               <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${confidenceLabel.dot}`} />
               <span className={`text-xs ${confidenceLabel.color}`}>{confidenceLabel.text}</span>
-            </div>
-            {/* Confidence bar */}
-            <div className="flex items-center gap-1.5">
-              <div className="w-20 h-1 rounded-full bg-zinc-800 overflow-hidden">
-                <div
-                  className={`h-full rounded-full ${
-                    finding.confidence >= 0.8 ? "bg-emerald-500" :
-                    finding.confidence >= 0.5 ? "bg-amber-500" : "bg-red-500"
-                  }`}
-                  style={{ width: `${finding.confidence * 100}%` }}
-                />
-              </div>
-              <span className="text-[11px] font-mono text-zinc-500">
-                {Math.round(finding.confidence * 100)}%
-              </span>
             </div>
             {/* Hypothesis chip */}
             {palette && hypothesisIndex >= 0 && (
@@ -568,9 +557,9 @@ export function ReportView({ report, queryCount, queryHistory = [], queryMode, h
         />
       )}
 
-      {/* 4. Chart — direct mode */}
+      {/* 4. Chart — direct mode (grain-aware controls + chart⇄table toggle) */}
       {isDirect && !isQueryFailure && directTable?.columns && directTable?.rows && (
-        <InvestigationChart columns={directTable.columns} rows={directTable.rows} />
+        <ResultChartCard columns={directTable.columns} rows={directTable.rows} />
       )}
 
       {/* 5. KPI highlight — single-row scalar */}

@@ -25,6 +25,8 @@ export {
   buildColumnFormatter,
 } from "./formatCell";
 
+import { effectiveDateFormat } from "./orgSettings";
+
 // ── Column types ─────────────────────────────────────────────────────────────
 
 /** SQL numeric column types — mirrors the backend `_NUMERIC_TYPES` (profiler.py),
@@ -152,7 +154,11 @@ export function displayCellValue(v: unknown): string {
   if (v == null) return "";
   const s = String(v);
   const m = s.match(/^(\d{4}-\d{2}-\d{2})[ T]00:00:00(?:\.0+)?$/);
-  return m ? m[1] : s;
+  const dateStr = m ? m[1] : s;
+  // A user date_format applies to bare ISO dates in table cells; non-dates pass through.
+  const pref = effectiveDateFormat();
+  if (pref && /^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return applyUserDateFormat(dateStr, pref);
+  return dateStr;
 }
 
 /**
@@ -216,9 +222,30 @@ export function detectGranularity(col: string, values: unknown[]): Gran {
   return "day";
 }
 
+const _MONTHS_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** Render a date per a user date_format token. Pulls Y-M-D straight from the string
+ *  (no Date parse) so a "…T00:00:00" timestamp never drifts a day across the local
+ *  timezone. Returns the input unchanged for an unknown token or a non-date. */
+function applyUserDateFormat(dateStr: string, pref: string): string {
+  const m = dateStr.match(/^(\d{4})-(\d{2})(?:-(\d{2}))?/);
+  if (!m) return dateStr;
+  const [, yyyy, mm, dd = "01"] = m;
+  const mmm = _MONTHS_SHORT[parseInt(mm, 10) - 1] ?? mm;
+  switch (pref) {
+    case "YYYY-MM-DD": return `${yyyy}-${mm}-${dd}`;
+    case "DD/MM/YYYY": return `${dd}/${mm}/${yyyy}`;
+    case "MM/DD/YYYY": return `${mm}/${dd}/${yyyy}`;
+    case "DD MMM YYYY": return `${dd} ${mmm} ${yyyy}`;
+    default: return dateStr;
+  }
+}
+
 /**
  * Human label for a single date value at the detected grain. Always carries the
  * year for day/week so a table is unambiguous across years ("19 Sep 2017").
+ * A user date_format (Settings ▸ Localization) overrides the day/week label; the
+ * aggregated month/quarter/year labels stay smart ("Sep 2024", "Q1 2024").
  */
 export function fmtDate(v: string, gran: Gran): string {
   if (!/^\d{4}-\d{2}(-\d{2})?/.test(v)) return v;
@@ -230,8 +257,11 @@ export function fmtDate(v: string, gran: Gran): string {
     case "hour":
       return d.toLocaleString("default", { day: "numeric", month: "short", hour: "numeric" });
     case "day":
-    case "week":
+    case "week": {
+      const pref = effectiveDateFormat();
+      if (pref) return applyUserDateFormat(v, pref);
       return d.toLocaleString("default", { day: "numeric", month: "short", year: "numeric" });
+    }
     case "quarter":
       return `Q${Math.floor(d.getUTCMonth() / 3) + 1} ${d.getUTCFullYear()}`;
     case "year":

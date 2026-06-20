@@ -16,6 +16,7 @@
 
 import React, { useState } from "react";
 import { renderEmphasis } from "@/components/brief/BriefProse";
+import { deltaFavorable } from "@/lib/favorability";
 
 export { BriefProse, renderEmphasis } from "@/components/brief/BriefProse";
 
@@ -44,7 +45,14 @@ export function BriefHeadline({
   children: React.ReactNode;
   className?: string;
 }) {
-  return <h2 className={`aug-text-h2 leading-snug ${className}`}>{children}</h2>;
+  // Emphasize figures in the headline too (the conclusion line) — the reference's
+  // "ranged from **11.33%** to **14.05%**" treatment. Prose already does this via
+  // renderEmphasis; the headline was plain text until now.
+  return (
+    <h2 className={`aug-text-h2 leading-snug ${className}`}>
+      {typeof children === "string" ? renderEmphasis(children) : children}
+    </h2>
+  );
 }
 
 // ── Section — an optional uppercase label + children. No box, no border. ────────
@@ -127,22 +135,22 @@ export function BriefMetrics({
   if (!metrics?.length) return null;
   return (
     <div className={`flex flex-wrap gap-x-8 gap-y-3 ${className}`}>
-      {metrics.map((m, i) => (
-        <div key={i} className="flex flex-col gap-0.5 min-w-0">
-          {m.label && <span className="aug-text-xs text-zinc-500">{m.label}</span>}
-          <span className="font-mono tabular-nums text-zinc-100 text-[15px] leading-none">
-            {m.value}
-            {m.delta && (
-              <span
-                className={`text-[12px] ml-1.5 ${m.delta.trim().startsWith("-") ? "text-red-400" : "text-emerald-400"}`}
-              >
-                {m.delta}
-              </span>
-            )}
-          </span>
-          {m.context && <span className="aug-text-xs text-zinc-500">{m.context}</span>}
-        </div>
-      ))}
+      {metrics.map((m, i) => {
+        // Colour by FAVORABILITY, not sign: a rising CAC / falling margin is red, a rising
+        // repeat-rate is green (deltaFavorable judges good/bad from the metric label).
+        const fav = m.delta ? deltaFavorable(m.label, m.delta.trim().startsWith("-") ? -1 : 1) : null;
+        const deltaCls = fav === false ? "text-red-400" : fav === true ? "text-emerald-400" : "text-zinc-400";
+        return (
+          <div key={i} className="flex flex-col gap-0.5 min-w-0">
+            {m.label && <span className="aug-text-xs text-zinc-500">{m.label}</span>}
+            <span className="font-mono tabular-nums text-zinc-100 text-[15px] leading-none">
+              {m.value}
+              {m.delta && <span className={`text-[12px] ml-1.5 ${deltaCls}`}>{m.delta}</span>}
+            </span>
+            {m.context && <span className="aug-text-xs text-zinc-500">{m.context}</span>}
+          </div>
+        );
+      })}
     </div>
   );
 }

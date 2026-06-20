@@ -37,6 +37,14 @@ class Monitor(BaseModel):
         default="0 * * * *",
         description="Cron expression (UTC) for how often to check. Default = hourly.",
     )
+    grace_period_hours: float = Field(
+        default=4.0,
+        description="Anti-flap debounce: after an alert fires, suppress further alerts of the "
+                    "same-or-lower severity until this many hours pass — so a sustained breach "
+                    "reminds at most once per window instead of every cron tick, and a metric "
+                    "oscillating around a threshold doesn't spam. Escalations (warning→critical) "
+                    "always fire immediately; set to 0 to disable suppression.",
+    )
     # Alert condition
     alert_on: Literal[
         "threshold_cross",   # value crosses warning_threshold or critical_threshold

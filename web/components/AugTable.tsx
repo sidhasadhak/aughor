@@ -14,6 +14,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Table, ConfigProvider, theme } from "antd";
 import type { TableProps, TableColumnsType } from "antd";
 import { cleanLabel, formatMetricValue, formatPercent, displayCellValue } from "@/lib/format";
+import { isMoneyColumn, effectiveCurrencySymbol } from "@/lib/orgSettings";
 
 // ── Theme-mode hook ──────────────────────────────────────────────────────────
 // Ant Design's theme tokens must be real colors (it derives shades), so we can't
@@ -158,6 +159,14 @@ function fmt(col: string, v: unknown): React.ReactNode {
     const n = Number(v);
     if (!isNaN(n)) {
       return <span style={{ fontVariantNumeric: "tabular-nums" }}>{formatPercent(n, 1)}</span>;
+    }
+  }
+  // Monetary columns — prefix the configured reporting currency symbol (when one is set).
+  if (isMoneyColumn(col)) {
+    const money = Number(v);
+    const sym = effectiveCurrencySymbol();
+    if (sym && !isNaN(money) && s.trim() !== "") {
+      return <span style={{ fontVariantNumeric: "tabular-nums" }}>{sym}{formatMetricValue(money)}</span>;
     }
   }
   // Large / numeric cells — canonical data-table value formatting.

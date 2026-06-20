@@ -2090,10 +2090,11 @@ export function BriefingPanel({
         </div>
       )}
 
-      {/* ── Industry key metrics ── the vertical's north-star KPIs, computed live */}
+      {/* ── Industry key metrics ── the vertical's north-star KPIs, computed live;
+            click a card to expand it into its trend chart (replaces the old chart grid). */}
       <IndustryKpiStrip connectionId={connectionId} schema={schema} />
 
-      {/* ── Live dashboard ── top-3 key-metric explainer charts + finding text cards (#3) */}
+      {/* ── Live dashboard ── finding text cards (#3); metric trends now expand from the KPI strip above */}
       <BriefingDashboard
         findings={[briefing.headline, ...briefing.signals].filter(Boolean) as { insight: ExplorationInsight; domain: string }[]}
         connectionId={connectionId}

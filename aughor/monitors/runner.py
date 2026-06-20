@@ -60,16 +60,56 @@ def _scalar(db, sql: str) -> Optional[float]:
     return db.scalar(sql, label="__monitor__", cast=float)
 
 
-def _last_alert_value(monitor_id: str) -> Optional[float]:
-    """Return the current_value from the most recent alert for this monitor."""
+def _last_alert(monitor_id: str) -> Optional[MonitorAlert]:
+    """The most recent persisted alert for this monitor (None if none / store error)."""
     try:
         from aughor.monitors.store import get_alerts
         alerts = get_alerts(monitor_id=monitor_id, limit=1)
-        if alerts:
-            return alerts[0].current_value
+        return alerts[0] if alerts else None
     except Exception:
-        pass
-    return None
+        return None
+
+
+def _last_alert_value(monitor_id: str) -> Optional[float]:
+    """Return the current_value from the most recent alert for this monitor."""
+    last = _last_alert(monitor_id)
+    return last.current_value if last else None
+
+
+# ── Anti-flap (debounce) ──────────────────────────────────────────────────────
+# Without this, a sustained breach re-fires on EVERY cron tick (72 alerts over a
+# 3-day hourly outage), and a metric oscillating around a threshold flaps. The
+# debounce suppresses a repeat alert of the same-or-lower severity within the
+# monitor's grace window; first-ever alerts and severity escalations always fire.
+# State is derived from the existing alert store — no new persistence.
+
+_SEVERITY_RANK = {"info": 1, "warning": 2, "critical": 3}
+
+
+def _age_hours(iso_str: str) -> Optional[float]:
+    """Hours since an ISO-8601 timestamp (tz-aware or naive-UTC). None if unparseable."""
+    try:
+        dt = datetime.fromisoformat((iso_str or "").replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return (datetime.now(timezone.utc) - dt).total_seconds() / 3600.0
+    except Exception:
+        return None
+
+
+def _suppressed_by_grace(monitor: Monitor, alert: MonitorAlert) -> bool:
+    """True ⇒ debounce this alert: a same-or-lower-severity alert already fired within
+    the grace window. First-ever alerts and escalations are never suppressed."""
+    grace = getattr(monitor, "grace_period_hours", 0.0) or 0.0
+    if grace <= 0:
+        return False
+    last = _last_alert(monitor.id)
+    if last is None:
+        return False  # first alert always fires
+    if _SEVERITY_RANK.get(alert.severity, 0) > _SEVERITY_RANK.get(last.severity, 0):
+        return False  # escalation fires immediately
+    age = _age_hours(last.triggered_at)
+    return age is not None and age < grace
 
 
 def _make_alert(
@@ -436,11 +476,13 @@ def run_freshness_monitor(monitor: Monitor, db) -> Optional[MonitorAlert]:
 
 # ── Dispatcher ────────────────────────────────────────────────────────────────
 
-def run_monitor(monitor: Monitor, db) -> Optional[MonitorAlert]:
+def run_monitor(monitor: Monitor, db, suppress: bool = True) -> Optional[MonitorAlert]:
     """Dispatch to the correct runner based on monitor.alert_on.
 
     Always safe — exceptions are caught and surfaced as info alerts so the
-    scheduler never crashes.
+    scheduler never crashes. `suppress` applies the anti-flap debounce (default
+    True for the cron path); the manual "test now" endpoint passes False so it
+    always shows the raw verdict.
     """
     try:
         dispatch = {
@@ -455,10 +497,13 @@ def run_monitor(monitor: Monitor, db) -> Optional[MonitorAlert]:
         if fn is None:
             logger.warning("Unknown alert_on '%s' for monitor %s", monitor.alert_on, monitor.id)
             return None
-        return fn(monitor, db)
+        alert = fn(monitor, db)
     except Exception as exc:
         logger.error("Monitor %s (%s) runner crashed: %s", monitor.id, monitor.name, exc)
-        return _make_alert(
-            monitor, "info",
-            f"{monitor.name}: runner error — {exc}",
-        )
+        alert = _make_alert(monitor, "info", f"{monitor.name}: runner error — {exc}")
+
+    # Anti-flap: debounce a repeat alert of the same-or-lower severity within the grace window.
+    if suppress and alert is not None and _suppressed_by_grace(monitor, alert):
+        logger.debug("Monitor %s (%s): %s alert suppressed (grace window)", monitor.id, monitor.name, alert.severity)
+        return None
+    return alert

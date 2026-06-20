@@ -1204,13 +1204,15 @@ async def _stream_chat(
         _scope_fix_hint = ""
         if canvas_scope_eff_schema and final_sql:
             try:
-                import sqlglot
-                from sqlglot import exp as _sgexp
+                from aughor.sql.tables import extract_tables
                 _allowed = canvas_scope_eff_schema.strip().lower()
+                # CTE-safe extraction: a sibling-schema ref hidden inside a CTE body
+                # (WITH x AS (SELECT * FROM netflix.orders) ...) is still surfaced,
+                # while CTE aliases (no schema) never false-trigger.
                 _oos = sorted({
-                    f"{_t.db}.{_t.name}"
-                    for _t in sqlglot.parse_one(final_sql, read=db.dialect).find_all(_sgexp.Table)
-                    if _t.db and _t.db.strip().lower()
+                    f"{_r.schema}.{_r.table}"
+                    for _r in extract_tables(final_sql, db.dialect)
+                    if _r.schema and _r.schema.strip().lower()
                     not in (_allowed, "information_schema", "pg_catalog", "system")
                 })
                 if _oos:

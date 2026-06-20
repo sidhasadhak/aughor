@@ -19,11 +19,15 @@ export function Sparkline({
   width = 72,
   height = 18,
   color = "#818cf8",
+  showDot = true,
 }: {
   values: number[];
   width?: number;
   height?: number;
+  /** Line/area colour — accepts a hex OR a CSS var (applied via `style` so var() resolves). */
   color?: string;
+  /** Endpoint dot (green/red by series direction). Off for categorical KPI sparklines. */
+  showDot?: boolean;
 }) {
   const clean = values.filter(v => typeof v === "number" && !isNaN(v));
   if (clean.length < 2) return null;
@@ -44,9 +48,9 @@ export function Sparkline({
 
   return (
     <svg width={width} height={height} className="shrink-0 align-middle" aria-hidden>
-      <path d={area} fill={color} fillOpacity={0.12} />
-      <path d={line} fill="none" stroke={color} strokeWidth={1.25} strokeLinejoin="round" strokeLinecap="round" />
-      <circle cx={x(clean.length - 1)} cy={y(clean[clean.length - 1])} r={1.8} fill={endColor} />
+      <path d={area} style={{ fill: color, fillOpacity: 0.12 }} />
+      <path d={line} style={{ fill: "none", stroke: color }} strokeWidth={1.25} strokeLinejoin="round" strokeLinecap="round" />
+      {showDot && <circle cx={x(clean.length - 1)} cy={y(clean[clean.length - 1])} r={1.8} style={{ fill: endColor }} />}
     </svg>
   );
 }

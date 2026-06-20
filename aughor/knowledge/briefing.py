@@ -248,7 +248,8 @@ def _profile_signals(profile: Any) -> tuple[list, str]:
     elif profile is not None:
         names = [getattr(m, "name", "") for m in (getattr(profile, "north_star_metrics", None) or [])]
         code = getattr(profile, "currency_code", None)
-    return north_star_tokens(names), currency_symbol(code)
+    from aughor.orgsettings import resolve_currency
+    return north_star_tokens(names), currency_symbol(resolve_currency(code or ""))
 
 
 def generate_narrative(
@@ -283,9 +284,11 @@ def generate_narrative(
     """
     from aughor.knowledge.triage import plausibility, impact_score
     ns_tokens, currency_sym = _profile_signals(profile)
-    currency_code = (
-        (profile.get("currency_code") if isinstance(profile, dict) else getattr(profile, "currency_code", None))
-        or "USD"
+    from aughor.orgsettings import resolve_currency
+    # Override-wins: a set org currency beats the inferred currency_code (resolve_currency
+    # already falls back to the inferred value, then "USD").
+    currency_code = resolve_currency(
+        (profile.get("currency_code") if isinstance(profile, dict) else getattr(profile, "currency_code", None)) or ""
     )
 
     # Currency-normalise any text shown in the brief: a non-USD business should never display

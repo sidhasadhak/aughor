@@ -42,6 +42,7 @@ import {
   GRAN_WORD,
 } from "@/lib/format";
 import { Chart } from "@/components/Chart";
+import { ResultChartCard } from "@/components/charts/ResultChartCard";
 import {
   DATE_COL,
   SHARE_COL,
@@ -306,7 +307,7 @@ function ResultFigure({
     return (
       <div className="flex flex-col gap-1.5">
         <BriefFigure caption={sourceTitle}>
-          <Chart columns={columns} rows={rows} chartType={chartType} chartConfig={turn.chartConfig} title={sourceTitle} />
+          <ResultChartCard columns={columns} rows={rows} chartType={chartType} chartConfig={turn.chartConfig} title={sourceTitle} />
         </BriefFigure>
         {onShowSource && (
           <button

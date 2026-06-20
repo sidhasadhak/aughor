@@ -97,6 +97,30 @@ class SafetyChecker:
                 score=1.0,
             )
 
+        # AST mutation gate — catches what the regex/first-token check misses:
+        # lo_export()/setval()/nextval() hidden in a SELECT, EXPLAIN ANALYZE <dml>,
+        # CTE-masked writes, SELECT ... INTO CTAS, exp.Command DDL. Positive-detection
+        # only (is_mutating/disallowed_functions return cleanly on a parse failure, so
+        # the regex scoring below stays the fallback) — this strictly ADDS coverage.
+        # The verdict is decisive and must NOT be swallowed.
+        try:
+            from aughor.sql.readonly import disallowed_functions, is_mutating
+            if is_mutating(sql):
+                return SafetyResult(
+                    verdict=SafetyVerdict.BLOCKED,
+                    reason="statement mutates data/state (AST-detected; read-only mode)",
+                    score=1.0,
+                )
+            bad = disallowed_functions(sql)
+            if bad:
+                return SafetyResult(
+                    verdict=SafetyVerdict.BLOCKED,
+                    reason=f"disallowed function(s): {', '.join(sorted(bad))}",
+                    score=1.0,
+                )
+        except Exception:
+            pass  # additive layer; an unexpected import/AST error leaves the regex result intact
+
         # Score: body risky tokens
         score = 0.0
         reasons: list[str] = []
