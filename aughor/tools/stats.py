@@ -10,6 +10,8 @@ from typing import Optional
 import numpy as np
 from scipy import stats as scipy_stats
 
+from aughor.tools.postproc import pct_changes, shares
+
 
 # ── Result types ──────────────────────────────────────────────────────────────
 
@@ -130,12 +132,33 @@ def analyze_query_result(columns: list[str], rows: list[list]) -> list[StatResul
             stat = _analyze_time_series(col_name, values)
             if stat:
                 results.append(stat)
+            # Period-over-period: surface the latest material change (additive, gated).
+            changes = [c for c in pct_changes(values) if c is not None]
+            if changes and abs(changes[-1]) >= 0.05:
+                latest = changes[-1]
+                results.append(StatResult(
+                    type="comparison",
+                    interpretation=(f"[{col_name}] Latest period {'+' if latest >= 0 else ''}"
+                                    f"{latest * 100:.1f}% vs the prior period (period-over-period)."),
+                    is_significant=abs(latest) >= 0.15,
+                ))
 
         # Distribution path: group labels + values (no date col, or date already handled)
         elif date_idx is None and len(values) >= 5:
             stat = _analyze_distribution(col_name, values)
             if stat:
                 results.append(stat)
+            # Concentration: surface Pareto-style skew across groups (additive, gated).
+            sh = sorted((s for s in shares(values) if s is not None), reverse=True)
+            if sh:
+                top1, top3 = sh[0], sum(sh[:3])
+                if top1 >= 0.40 or top3 >= 0.70:
+                    results.append(StatResult(
+                        type="contribution",
+                        interpretation=(f"[{col_name}] Concentrated: the largest of {len(sh)} groups is "
+                                        f"{top1 * 100:.0f}% of the total; top 3 = {top3 * 100:.0f}% (Pareto-style)."),
+                        is_significant=top1 >= 0.5 or top3 >= 0.8,
+                    ))
 
         # Trend path: ordered numeric series
         if len(values) >= 6:
