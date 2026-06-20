@@ -55,7 +55,7 @@ _DEFAULT_BASE_URLS = {
 }
 
 _DEFAULT_MODELS: dict[str, dict[Role, str]] = {
-    "ollama":    {"coder": "qwen2.5-coder:32b",                "narrator": "kimi-k2.6:cloud"},
+    "ollama":    {"coder": "qwen3-coder-next:cloud", "narrator": "kimi-k2.6:cloud", "fast": "qwen3-coder-next:cloud"},
     "lmstudio":  {"coder": "local-model",                      "narrator": "local-model"},
     "groq":      {"coder": "llama-3.3-70b-versatile",          "narrator": "llama-3.3-70b-versatile"},
     "together":  {"coder": "Qwen/Qwen2.5-Coder-32B-Instruct",  "narrator": "meta-llama/Llama-3.3-70B-Instruct-Turbo"},
@@ -138,7 +138,7 @@ def _env_model_for_role(backend: str, role: Role) -> str:
     """Layer-2/3 model resolution (env → built-in default), unchanged from before."""
     defaults = _DEFAULT_MODELS.get(backend, _DEFAULT_MODELS["ollama"])
     base_role = "narrator" if role in ("narrator", "fast") else role
-    fallback = os.getenv("AUGHOR_MODEL", defaults[base_role])
+    fallback = os.getenv("AUGHOR_MODEL", defaults.get(role, defaults[base_role]))
     if role == "coder":
         return os.getenv("AUGHOR_CODER_MODEL", fallback)
     narrator_model = os.getenv("AUGHOR_NARRATOR_MODEL", fallback)
@@ -156,8 +156,8 @@ def _active_model(backend: str, role: Role) -> str:
     # overrides (AUGHOR_*_MODEL — tuned for the env backend) no longer apply; use
     # this backend's built-in default. Pure-env runs keep the original precedence.
     if cfg.get("backend"):
-        base = "narrator" if role in ("narrator", "fast") else role
-        return _DEFAULT_MODELS.get(backend, _DEFAULT_MODELS["ollama"])[base]
+        d = _DEFAULT_MODELS.get(backend, _DEFAULT_MODELS["ollama"])
+        return d.get(role) or d["narrator"]   # explicit per-role default; narrator is the fallback
     return _env_model_for_role(backend, role)
 
 

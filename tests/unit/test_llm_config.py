@@ -27,7 +27,9 @@ def clean_cfg(tmp_path, monkeypatch):
 def test_defaults_when_empty(clean_cfg):
     c = P.current_config()
     assert c["backend"] == "ollama"
-    assert c["models"]["coder"] == "qwen2.5-coder:32b"   # ollama built-in default
+    assert c["models"]["coder"] == "qwen3-coder-next:cloud"   # ollama built-in default
+    assert c["models"]["fast"] == "qwen3-coder-next:cloud"    # fast shares the coder default
+    assert c["models"]["narrator"] == "kimi-k2.6:cloud"       # narrator is the one exception
     assert set(c["backends"]) >= {"ollama", "groq", "anthropic"}
     assert c["keys_set"] == {"groq": False, "together": False, "anthropic": False}
 
