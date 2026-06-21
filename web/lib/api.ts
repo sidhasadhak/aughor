@@ -1925,6 +1925,31 @@ export async function buildQuerySql(params: {
   return res.json();
 }
 
+// Query Builder Layer-3 — reverse-compile raw SQL into the builder's chips.
+export interface DecompiledQuery {
+  ok: boolean;
+  reason?: string;
+  primary_table?: string;
+  joins?: { table: string; alias: string | null; side: string; on: string }[];
+  dimensions?: { col: string; table: string; transform: string | null; alias: string | null }[];
+  measures?: { agg: string; col: string; table: string; alias: string | null; customExpr: string }[];
+  filters?: { col: string; table: string; op: string; val: string }[];
+  unmapped_filters?: string[];
+  order_by?: string;
+  limit?: number;
+  having?: string;
+}
+
+export async function decompileSql(sql: string, dialect = "duckdb"): Promise<DecompiledQuery> {
+  const res = await fetch(`${BASE}/query/decompile`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sql, dialect }),
+  });
+  if (!res.ok) return { ok: false, reason: "Decompile request failed" };
+  return res.json();
+}
+
 // ── Evidence Ledger ────────────────────────────────────────────────────────────
 
 export interface EvidenceClaim {

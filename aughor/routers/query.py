@@ -304,6 +304,21 @@ def query_build_sql(body: _QueryBuildRequest):
     return {"sql": "\n".join(lines)}
 
 
+class _DecompileRequest(BaseModel):
+    sql: str
+    dialect: str = "duckdb"
+
+
+@router.post("/query/decompile")
+def query_decompile(body: _DecompileRequest):
+    """Query Builder Layer-3 — reverse-compile raw SQL back into the visual builder's chips
+    (primary table, joins, dimensions, measures, filters, order/limit). Returns
+    ``{ok: false, reason}`` for a shape the builder can't represent (CTE, set-op, subquery
+    source), so the UI can keep the raw SQL instead of importing it lossily."""
+    from aughor.sql.decompile import decompile_sql
+    return decompile_sql(body.sql or "", dialect=body.dialect or "duckdb")
+
+
 # ── Saved queries ─────────────────────────────────────────────────────────────
 # Persist a Query Builder query (SQL + visual spec) so it survives reloads. Connection-scoped,
 # mirrors the Canvas store pattern. ``spec`` is opaque JSON owned by the frontend.
