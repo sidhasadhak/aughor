@@ -95,6 +95,15 @@ The **substrate** is the part most platforms must build from scratch — and it 
   (`parser | binder | semantic | runtime`, à la MotherDuck's `try_bind`) that **routes repair by type**
   instead of by regex string — promote the existing `_make_diagnosis`/`tools/error_classifier.py`. See
   [`MOTHERDUCK_LEARNINGS.md`](MOTHERDUCK_LEARNINGS.md) R3.*
+  - **◑ Started (2026-06-21) — the safe, careful first move:** each ADA phase already runs a
+    SQL-Engineer → Verifier → Narrator micro-cycle inside `run_analysis_phase` (plan+execute → trust-guards →
+    interpret); those hand-offs were implicit local variables. We made them **explicit, typed contracts**
+    (`agent/handoff.py`: `SqlEngineerHandoff`/`VerifierHandoff`/`NarratorHandoff`) and journal each as an
+    **`agent.handoff` event** so the collaboration is legible in the Fleet view / receipt — **additive and
+    fail-open, no pipeline logic changed** (one insertion at the phase's clean seam). The specialists are
+    registered (`kernel/agents.SPECIALISTS`) for hand-off identity. *Deliberate follow-ups (the riskier
+    structural work): a standalone Verifier node owning the guards + the R3 error taxonomy; immutable premise
+    correction (today it mutates `_ada_intake` mid-run); the Orchestrator decomposing across phases.*
 - **Phase 3 — Proactivity:** upgrade Monitors → a reasoning `Watcher` that auto-spawns investigations and drafts
   actions (human approves).
 - **Phase 4 — Collaboration + memory:** agents subscribe to each other's findings; a `Critic` re-validates

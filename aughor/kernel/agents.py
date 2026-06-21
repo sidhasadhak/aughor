@@ -118,6 +118,22 @@ def agent_for(kind: str | None) -> dict:
     return {"id": c.id, "agent": c.name, "blurb": c.role, "icon": c.icon}
 
 
+# Specialist sub-agents that collaborate *inside* an Analyst investigation (Phase 2):
+# SQL-Engineer → Verifier → Narrator. They run within Analyst's budget/governance, so
+# they're not in the governable roster — this is just identity for the agent.handoff
+# provenance, so the collaboration is legible in the Fleet view + Trust Receipt.
+SPECIALISTS: dict[str, dict] = {
+    "sql_engineer": {"name": "SQL Engineer", "role": "Grounded SQL + repair", "icon": "builder"},
+    "verifier":     {"name": "Verifier", "role": "Trust guards + plausibility", "icon": "shield"},
+    "narrator":     {"name": "Narrator", "role": "Grounded prose", "icon": "brief"},
+}
+
+
+def specialist(agent_id: str) -> dict:
+    """Identity for an ADA specialist sub-agent (never raises; unknown → echoed)."""
+    return SPECIALISTS.get(agent_id, {"name": agent_id, "role": "", "icon": "gear"})
+
+
 # ── Governance (override-wins: workspace > app > charter default) ─────────────
 
 @dataclass

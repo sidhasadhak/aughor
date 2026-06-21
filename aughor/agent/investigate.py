@@ -2063,6 +2063,13 @@ def run_analysis_phase(
             response_model=PhaseInterpretation)
     except Exception:
         interpretation = None
+    # Phase 2 — journal this phase's SQL-Engineer → Verifier → Narrator hand-offs as
+    # typed events, so the collaboration is legible in the Fleet view / receipt.
+    # Additive and fail-open: never touches the investigation's result.
+    from aughor.agent.handoff import journal_phase_handoffs
+    journal_phase_handoffs(phase_id, plan=plan, results=results, fanout_caveat=_fanout_caveat,
+                           interpretation=interpretation,
+                           conn_id=getattr(conn, "_connection_id", None))
     return _PhaseRun(ok=True, results=results, results_text=results_text, interpretation=interpretation,
                      fanout_caveat=_fanout_caveat)
 
