@@ -963,8 +963,12 @@ async def _stream_chat(
         # gather to avoid a concurrent get_schema on the same db connection.
         metrics_section = ""
         try:
-            from aughor.semantic.metrics import build_metrics_block
-            _mb = build_metrics_block(schema_text=schema, connection_id=connection_id)
+            # UNIFIED metric grounding — the SAME resolver the Deep path uses, so a metric
+            # resolves to the SAME SQL in both. /chat previously injected only the global
+            # catalog (build_metrics_block) and never saw the connection's GOVERNED north-star
+            # value_sql, so it re-derived gross margin / ROAS / AOV and could disagree with Deep.
+            from aughor.semantic.canonical import unified_metric_grounding
+            _mb = unified_metric_grounding(connection_id, canvas_scope_eff_schema, schema_text=schema)
             metrics_section = (_mb + "\n\n") if _mb else ""
         except Exception:
             metrics_section = ""
@@ -1883,18 +1887,19 @@ async def _stream_investigation(
         # Prefer structured Data Catalog as the primary schema context (MindsDB-style)
         schema_for_agent = data_catalog if data_catalog else schema
 
-        # Inject the CANONICAL METRIC formulas so ADA resolves a metric (e.g. "revenue")
+        # Inject the UNIFIED metric grounding so ADA resolves a metric (e.g. "revenue")
         # to the SAME approved SQL the /chat path uses — closing the "revenue means two
-        # different things" gap. Reconciles the curated catalog (data/metrics.json) with
-        # the ontology's verified OntologyMetric.formula_sql. No-op when none exist.
+        # different things" / "Insight vs Deep disagree" gap. ONE resolver, both paths:
+        # the governed catalog (with NEVER rules) + the connection's north-star + verified
+        # ontology formulas. No-op when none exist.
         try:
-            from aughor.semantic.canonical import canonical_metrics_block
+            from aughor.semantic.canonical import unified_metric_grounding
             # Pass the schema we already fetched (full_schema, cached above) so the metric
             # schema-filter doesn't RE-INTROSPECT it — that redundant fetch was ~16s per
             # investigation on big warehouses (profiled), duplicating this same schema.
             # Use the EFFECTIVE scope schema (canvas OR an explicit schema-scoped run) so the
             # connection's GOVERNED north-star metrics for THIS schema are injected (RC2).
-            _canon = canonical_metrics_block(connection_id, scope_schema, schema_text=full_schema)
+            _canon = unified_metric_grounding(connection_id, scope_schema, schema_text=full_schema)
             if _canon:
                 schema_for_agent = f"{schema_for_agent}\n\n{_canon}"
         except Exception:
