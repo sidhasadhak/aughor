@@ -713,9 +713,12 @@ def execute_planned_queries(state: AgentState, conn: "DatabaseConnection") -> di
             original_error = result.error
             _stats.inc("sql_correction_retries")
             from aughor.semantic.kb_retriever import retrieve_for_fix_sql
-            from aughor.tools.error_classifier import classify_sql_error
+            from aughor.tools.error_classifier import classify_sql_error, classify_error_type, error_class_guidance
             kb_fix_patterns = retrieve_for_fix_sql(original_error, sql)
             diagnosis = classify_sql_error(original_error, sql, conn.dialect)
+            _g = error_class_guidance(classify_error_type(original_error, sql, conn.dialect))  # R3: route by type
+            if _g:
+                diagnosis = f"ERROR CLASS — {_g}\n{diagnosis}".strip()
             pre_flight = ambiguity_warnings + join_warnings + domain_warnings + semantic_warnings
             if pre_flight:
                 warn_text = "\n".join(w.to_prompt_text() for w in pre_flight)

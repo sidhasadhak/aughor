@@ -37,6 +37,7 @@ class FixResult:
     explanation: str = ""
     attempts: int = 1
     final_error: str = ""
+    error_class: str = ""    # the typed class of the error being fixed (Verifier signal, R3)
 
 
 # ── Alias resolver ────────────────────────────────────────────────────────────
@@ -358,11 +359,22 @@ class SqlWriter:
             corrected_sql: str
             explanation: str = ""
 
+        from aughor.tools.error_classifier import classify_error_type, error_class_guidance
+
         current_sql = sql
         current_error = error
+        last_class = ""
 
         for attempt in range(1, max_retries + 1):
+            # R3 — route the fix by the error's TYPE, not a blind retry: a binder
+            # error needs the real columns, a parser error the syntax, a runtime
+            # error a guard. The typed class is the Verifier's signal (on FixResult).
+            _ecls = classify_error_type(current_error, current_sql, self._db.dialect)
+            last_class = _ecls.value
             diagnosis = _make_diagnosis(current_error, current_sql, self._table_cols)
+            _guide = error_class_guidance(_ecls)
+            if _guide:
+                diagnosis = f"ERROR CLASS [{_ecls.value}] — {_guide}" + (f"\n{diagnosis}" if diagnosis else "")
             if hint.strip():
                 diagnosis += f"\nUSER GUIDANCE: {hint.strip()}"
 
@@ -394,9 +406,11 @@ class SqlWriter:
                     sql=fixed.corrected_sql,
                     explanation=fixed.explanation,
                     attempts=attempt,
+                    error_class=last_class,
                 )
             # Dry-run failed: feed the real error back into the next attempt
             current_sql = fixed.corrected_sql
             current_error = dry_err
 
-        return FixResult(ok=False, sql=current_sql, final_error=current_error, attempts=max_retries)
+        return FixResult(ok=False, sql=current_sql, final_error=current_error,
+                         attempts=max_retries, error_class=last_class)
