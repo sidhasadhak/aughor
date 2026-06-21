@@ -166,6 +166,16 @@ Grouped by area; each ✅ is verified shipped (git + code). Representative commi
 ### Backlog hardening batch (2026-06-21) — FEATURES #155
 - ✅ **Correctness + localization + dev-velocity batch** (build→wire→test→leverage; zero net debt; 1,215 unit tests): per-workspace briefing currency override; profiler composite-PK detection (`grain_columns`); metric wrong-column leak fix (re-filter after the ontology overlay); generated typed API client (`gen:api`); org-settings reactivity for tables + KPI cards; FAN-b **AVG-decomposition de-fan** (numerically verified); declarative metric additivity; localization (fiscal-year buckets + timezone labels, no-op at defaults). Also corrected two stale ROADMAP claims (chart-axis currency already done; `score_evidence` parallelization a misdiagnosis). Per-item ✅ status is in §3.
 
+### Agentic fleet — registry · metering · governance · hand-offs (2026-06-21)
+*From the MotherDuck synthesis ([`docs/MOTHERDUCK_LEARNINGS.md`](docs/MOTHERDUCK_LEARNINGS.md), [`docs/AGENTIC_ARCHITECTURE.md`](docs/AGENTIC_ARCHITECTURE.md)). Branch `2026-06-21-agentic-fleet-metering` (off `5ff1800`), **7 commits, committed — NOT pushed**; 1,267 tests, zero net ratchet debt; every step live-verified on the real path. Detailed per-item record + the deferred follow-ups live in §3 "MotherDuck-derived backlog".*
+- ✅ **R1 · cost metering** — every run records real compute (tokens · queries · rows · time; no fabricated $) into the Trust Receipt + job row, via a context-propagating default executor that carries the accumulator across the `run_in_executor` boundary (`aughor/kernel/metering.py`, `concurrency.py`). *(`bb90894`)*
+- ✅ **R2 · Fleet view** — `/jobs` API (list/get/logs/cancel, mirrors MotherDuck's Flights) + a **Fleet** UI showing named agents (Scout/Analyst) with live status + cost. *(`bb90894`)*
+- ✅ **Phase 0 · agent registry + governance** — charters (role · goal · lane · tools · budget) + per-Org enable/pause + budget (override-wins, ledger-kv) + a Fleet **Agents** management tab. *(`57113ee`)*
+- ✅ **Budget enforcement (jobs + chat) + per-workspace** — the kernel heartbeat cancels an over-budget job (cancel = the reliable kill); the synchronous chat path enforces in-context via `BudgetExceeded(BaseException)` at the LLM funnel; a connection resolves to its workspace for per-workspace governance. *(`6a7c8aa`, `04ed47f`)*
+- ✅ **Phase 2 · ADA specialist hand-offs (foundation)** — the SQL-Engineer → Verifier → Narrator micro-cycle inside `run_analysis_phase` made explicit, typed, and journaled (`agent.handoff`) — additive, no pipeline rewrite (`aughor/agent/handoff.py`). *(`08fb29e`)*
+- ✅ **R3 · typed SQL-error taxonomy** — `parser | binder | semantic | runtime`, routing repair by type across all three repair paths (`tools/error_classifier.py`, `FixResult.error_class`). *(`e4035f6`)*
+*Next (un-started): **R5 MCP server** (expose the governed fleet to Claude Desktop/Code/Cursor) · the **standalone Verifier node** (extract the spread guards — the bigger refactor) · onboarding-for-new-Orgs · per-agent LLM model (backlog). Before any PR: rebase onto GitHub `main` (which already has `5ff1800` via PR #75).*
+
 ---
 
 ## 3 · What's left
