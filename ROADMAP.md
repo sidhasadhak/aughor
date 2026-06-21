@@ -182,7 +182,7 @@ Verified pending against code/git. `⬜` not started · `◑` partial.
 
 ### Superset-derived backlog (see [`docs/SUPERSET_INTEGRATION.md`](docs/SUPERSET_INTEGRATION.md))
 - ⬜ **Error-registry enrichment** — Superset per-dialect SQL-error regex → `tools/error_classifier.py` (better FIX_SQL repair + user messages). *Needs live BigQuery/Snowflake to verify warehouse patterns.*
-- ⬜ **Declarative metric additivity** — `additivity` field on `MetricDefinition`, validated by the existing `measure_grain` probe (overlaps it; modest gain).
+- ✅ **Declarative metric additivity** — `additivity` field on `MetricDefinition` + `metric_additivity()` resolver (a DECLARED value overrides the SQL inference both ways; else infers via the same `is_additive_measure` gate the answer-summary uses). Leveraged: `build_metrics_block` now tags a non-additive metric ("never sum / share-of-total") so the generator can't Pareto a ratio. A curated metric can override a wrong inference.
 - ⬜ **MCP server** *(deferred by decision)* — expose NL2SQL/Deep-Analysis/schema/metrics as MCP tools (Superset `mcp_service` blueprint: FastMCP + per-tool Pydantic + layered auth + streaming progress).
 - ⬜ **DialectCaps flags / durable `SQLAlchemyJobStore`** — low priority (jobstore: `scheduler.start()` already reloads monitors from the store on boot; only misfire-recovery is gained).
 - ⬜ **Reference-UX follow-ups** — opt-in "Validate" action on chat answers (re-validate vs live data); a lean feedback/remember action row.
