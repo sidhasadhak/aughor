@@ -57,6 +57,30 @@ def match_industry(industry: str) -> Optional[dict]:
     return best if best_score > 0 else None
 
 
+@lru_cache(maxsize=16)
+def metric_vocabulary(industry: str = "") -> tuple:
+    """The recognized metric vocabulary for an industry — ``((token, canonical_label, formula), …)``
+    built from the curated KB matched to ``industry`` (or the union of ALL KBs when nothing matches).
+    Each metric contributes its name + every alias as a normalized token. This is the deterministic,
+    data-driven vocabulary a coherence check uses to recognize WHICH metric a query or claim names —
+    so airline (load factor, RASM) and manufacturing (OEE, yield) are covered by their JSON, with no
+    hardcoded per-metric list. Returns a tuple so it stays hashable/cacheable."""
+    kb = match_industry(industry) if industry else None
+    kbs = [kb] if kb else list(load_industry_kbs())
+    seen: dict = {}
+    for one in kbs:
+        if not one:
+            continue
+        for m in one.get("metrics", []):
+            label = m.get("name") or ""
+            formula = m.get("formula") or ""
+            for tok in [label] + list(m.get("aliases", [])):
+                t = _norm(tok)
+                if t and t not in seen:
+                    seen[t] = (t, label, formula)
+    return tuple(seen.values())
+
+
 def match_metric(kb: dict, metric_name: str) -> Optional[dict]:
     """Find the curated recipe in `kb` for a profile metric, by name/alias
     containment then token overlap."""

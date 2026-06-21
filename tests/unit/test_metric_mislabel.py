@@ -1,51 +1,71 @@
-"""Named-metric ↔ SQL coherence guard: the explorer trust gate must reject a finding that
-ASSERTS a spend-based metric (ROAS/CAC) over a query with no spend/cost term — the AOV-labelled-
-as-ROAS bug ('Email CRM ROAS 6.23' over SUM(order_value)/COUNT(orders)) that poisoned the briefing
-and the drill-down. High-precision: real ROAS, passing mentions, and correctly-labelled AOV pass."""
+"""Named-metric ↔ SQL coherence — industry-KB-driven (no hardcoded list). The explorer trust gate
+rejects a finding whose query is ALIASED as one metric while the prose asserts a DIFFERENT one
+(the AOV-aliased-`aov`-narrated-"ROAS" bug). The metric vocabulary comes from data/kb/industry/*.json
+matched to the connection's industry — so airline/manufacturing/SaaS are covered by their JSON."""
 from __future__ import annotations
 
 from aughor.explorer.agent import _mislabeled_named_metric, verify_insight
+from aughor.profile.metric_kb import metric_vocabulary
 
+_RETAIL = "Retail / E-commerce"
 _AOV_SQL = ("SELECT o.marketing_channel, SUM(o.order_value) / NULLIF(COUNT(DISTINCT o.order_id), 0) "
             "AS aov FROM missimi.orders o GROUP BY o.marketing_channel ORDER BY aov DESC")
 _REAL_ROAS_SQL = "SELECT channel, SUM(revenue) / NULLIF(SUM(ad_spend), 0) AS roas FROM perf GROUP BY channel"
 
 
-def test_aov_labelled_as_roas_is_flagged():
-    why = _mislabeled_named_metric("Email CRM has the highest ROAS at 6.23, outperforming display (4.75)", _AOV_SQL)
-    assert why and "no ad-spend/cost term" in why
+def _vocab(industry: str) -> dict:
+    return {t: (label, formula) for (t, label, formula) in metric_vocabulary(industry)}
 
 
-def test_real_roas_with_a_spend_term_passes():
-    assert _mislabeled_named_metric("Email CRM ROAS at 6.2 leads", _REAL_ROAS_SQL) is None
+# ── the vocabulary is data-driven + industry-scoped ──────────────────────────────
+
+def test_retail_vocab_recognizes_its_metrics():
+    v = _vocab(_RETAIL)
+    assert "aov" in v and "roas" in v and "cac" in v
+    assert "average order value" in v["aov"][0].lower()
+
+
+def test_vocab_is_industry_scoped():
+    air = {t for (t, _l, _f) in metric_vocabulary("Airline / Commercial Aviation")}
+    assert "loadfactor" in air and "aov" not in air   # airline KB, not retail
+
+
+# ── the guard: alias ≠ asserted metric ───────────────────────────────────────────
+
+def test_the_aov_as_roas_bug_is_flagged():
+    why = _mislabeled_named_metric("Email CRM has the highest ROAS at 6.23", _AOV_SQL, _vocab(_RETAIL))
+    assert why and "mislabel" in why and "Average Order Value" in why
 
 
 def test_correctly_labelled_aov_passes():
-    assert _mislabeled_named_metric("Email CRM has the highest AOV at 6.23", _AOV_SQL) is None
+    assert _mislabeled_named_metric("Email CRM has the highest AOV at 6.23", _AOV_SQL, _vocab(_RETAIL)) is None
 
 
-def test_passing_mention_without_an_asserted_value_passes():
-    assert _mislabeled_named_metric("High AOV channels also convert; ROAS would be worth checking", _AOV_SQL) is None
-    assert _mislabeled_named_metric("Email CRM leads on ROAS across channels", _AOV_SQL) is None
+def test_real_roas_aliased_roas_passes():
+    assert _mislabeled_named_metric("Email CRM ROAS at 6.2 leads", _REAL_ROAS_SQL, _vocab(_RETAIL)) is None
 
 
-def test_cac_over_a_no_spend_query_is_flagged():
-    why = _mislabeled_named_metric(
-        "CAC is lowest for email at 12.50",
-        "SELECT channel, SUM(revenue) / COUNT(DISTINCT customer_id) AS x FROM orders GROUP BY channel")
-    assert why and "CAC" in why
+def test_passing_mention_without_a_value_passes():
+    assert _mislabeled_named_metric("AOV leads; ROAS would be worth checking", _AOV_SQL, _vocab(_RETAIL)) is None
 
 
-def test_non_ratio_query_is_ignored():
-    assert _mislabeled_named_metric("ROAS was 6.23", "SELECT channel, SUM(revenue) FROM perf GROUP BY channel") is None
+def test_claim_naming_the_computed_metric_among_others_passes():
+    # the SQL metric (AOV) IS among the asserted metrics → not a mislabel
+    assert _mislabeled_named_metric("AOV is 6.23 here and ROAS tracks it", _AOV_SQL, _vocab(_RETAIL)) is None
 
 
-def test_gate_rejects_the_mislabelled_finding():
-    # the AOV-as-ROAS finding must not pass the pre-emission trust gate (numbers are grounded in
-    # rows, so the ONLY reason to reject is the metric-name mislabel).
+def test_unaliased_or_unknown_metric_query_is_ignored():
+    assert _mislabeled_named_metric("ROAS was 6.23", "SELECT channel, SUM(rev) AS total FROM t GROUP BY channel", _vocab(_RETAIL)) is None
+    assert _mislabeled_named_metric("ROAS was 6.23", _AOV_SQL, {}) is None   # empty vocab → no-op
+
+
+# ── wired into the pre-emission trust gate ───────────────────────────────────────
+
+def test_gate_rejects_the_mislabel_and_accepts_the_correct_label():
     rows = [["email_crm", 6.23], ["display", 4.75]]
-    ok, reason = verify_insight(rows, "Email CRM has the highest ROAS at 6.23, then display at 4.75", _AOV_SQL)
-    assert ok is False and "ad-spend/cost" in reason
-    # the same finding, correctly labelled AOV, passes the gate
-    ok2, _ = verify_insight(rows, "Email CRM has the highest AOV at 6.23, then display at 4.75", _AOV_SQL)
+    ok, reason = verify_insight(rows, "Email CRM has the highest ROAS at 6.23, then display at 4.75",
+                                _AOV_SQL, industry=_RETAIL)
+    assert ok is False and "mislabel" in reason
+    ok2, _ = verify_insight(rows, "Email CRM has the highest AOV at 6.23, then display at 4.75",
+                            _AOV_SQL, industry=_RETAIL)
     assert ok2 is True

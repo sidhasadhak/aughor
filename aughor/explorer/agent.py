@@ -21,6 +21,7 @@ import logging
 import os
 import re
 import time
+from functools import lru_cache
 
 from aughor.kernel.errors import tolerate
 from datetime import datetime, timezone
@@ -717,47 +718,117 @@ def _implausible_ratio_claim(finding_text: str, cap: float = _IMPLAUSIBLE_RATIO_
     return ""
 
 
-# Named-metric ↔ SQL coherence: a finding that NAMES a spend-based metric (ROAS, CAC, ROI) must
-# have an ad-spend / cost term in its SQL. The real bug: the narrator labelled
-# SUM(order_value)/COUNT(DISTINCT order_id) — which is AOV — as "ROAS at 6.23"; that one wrong
-# word made the Briefing claim ROAS and the drill-down chase a revenue÷spend ratio that has no
-# clean grain (it fans out / binder-errors). ROAS/CAC are revenue-vs-SPEND metrics; if the query
-# never references spend or cost, it cannot be computing them.
-_SPEND_TERM_RE = re.compile(
-    r"\b(ad_?spend|marketing_?spend|\bspend\b|ad_?cost|marketing_?cost|\bcost\b|budget|cogs|cpc|cpm|cpa)\b", re.I)
-_NAMED_SPEND_METRIC = {
-    "roas": "ROAS (revenue ÷ ad spend)",
-    "return on ad spend": "ROAS (revenue ÷ ad spend)",
-    "return on advertising spend": "ROAS (revenue ÷ ad spend)",
-    "cac": "CAC (ad spend ÷ new customers)",
-    "customer acquisition cost": "CAC (ad spend ÷ new customers)",
-}
+# Named-metric ↔ SQL coherence — industry-aware, data-driven (NO hardcoded metric list). The real
+# bug: the coder aliased SUM(order_value)/COUNT(DISTINCT order_id) AS `aov` (correctly — that IS
+# AOV), but the narrator wrote it up as "ROAS at 6.23"; that one wrong word made the Briefing claim
+# ROAS and the drill-down chase a revenue÷spend ratio that has no clean grain. The signal is the
+# query's OWN label disagreeing with the claim: the result is aliased as one metric, the prose
+# asserts a DIFFERENT one. The metric vocabulary comes from the per-industry KB (data/kb/industry/
+# *.json) matched to the connection's profile, plus org-registered metrics — so airline/manufacturing
+# /SaaS are covered by their JSON, and a new metric is a KB/registry entry, not a code change.
+_ALIAS_RE = re.compile(r"\bAS\s+\"?([A-Za-z_][A-Za-z0-9_]*)\"?", re.IGNORECASE)
 
 
-def _mislabeled_named_metric(finding_text: str, sql: str) -> str | None:
-    """Reason when the claim ASSERTS a spend-based metric (ROAS/CAC) but the SQL has no spend/cost
-    term — so it cannot be computing that metric (it's an AOV / per-order average wearing the wrong
-    name). High-precision: fires only when the metric name is asserted WITH a value (not a passing
-    mention), the SQL is a ratio, and NO spend/cost term appears anywhere in it."""
-    if not finding_text or not sql:
-        return None
-    low_sql = sql.lower()
-    if "/" not in low_sql or _SPEND_TERM_RE.search(low_sql):
-        return None   # not a ratio, or it does reference spend/cost → the named metric is plausible
-    # The metric must be ASSERTED, not mentioned in passing — true when the name and a number land
-    # in the SAME clause/sentence ("ROAS at 6.23"). Clause-level keeps "ROAS is worth checking"
-    # (no number in that clause) from tripping it.
-    clauses = re.split(r"[.\n;]", finding_text.lower())
-    for name, canon in _NAMED_SPEND_METRIC.items():
-        nm_re = re.compile(r"\b" + re.escape(name) + r"\b")
-        if any(nm_re.search(c) and re.search(r"\d", c) for c in clauses):
-            return (f"claim asserts {canon} but the query has no ad-spend/cost term — it cannot "
-                    f"compute {canon.split()[0]} (e.g. SUM(order_value)/COUNT(orders) is AOV, not "
-                    "ROAS). Relabel to what the SQL actually measures.")
+def _kbnorm(s: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", (s or "").lower())
+
+
+def _metric_of_sql_alias(sql: str, vocab: dict):
+    """The canonical metric a query LABELS its result as — the label its top-level column alias
+    resolves to in ``vocab`` ({token: (label, formula)}) — or None. Falls back to a regex scan of
+    ``AS <ident>`` if the SQL won't parse."""
+    cands: list = []
+    try:
+        import sqlglot as _sg
+        from sqlglot import exp as _sgx
+        tree = _sg.parse_one(sql, read="duckdb")
+        for e in (getattr(tree, "expressions", None) or []):
+            a = e.alias if isinstance(e, _sgx.Alias) else getattr(e, "alias", "")
+            if a:
+                cands.append(a)
+    except Exception:
+        cands = [m.group(1) for m in _ALIAS_RE.finditer(sql)]
+    for a in cands:
+        hit = vocab.get(_kbnorm(a))
+        if hit:
+            return hit[0]   # the canonical label
     return None
 
 
-def verify_insight(rows, finding_text: str = "", sql: str = "", metric_ranges=None, conn=None, *, columns=None) -> tuple[bool, str]:
+def _asserted_metrics_in_text(text: str, vocab: dict) -> set:
+    """Canonical labels of vocab metrics ASSERTED in the prose — a name/alias appearing in a clause
+    that ALSO carries a number ("ROAS at 6.23"), so a passing mention ('ROAS is worth checking')
+    doesn't count. Single-word tokens match a clause word; longer tokens match the clause's
+    normalized form (so 'return on ad spend' is caught)."""
+    out: set = set()
+    for clause in re.split(r"[.;\n]", (text or "").lower()):
+        if not re.search(r"\d", clause):
+            continue
+        words = set(re.split(r"[^a-z0-9]+", clause))
+        cnorm = _kbnorm(clause)
+        for token, (label, _formula) in vocab.items():
+            if token in words or (len(token) >= 6 and token in cnorm):
+                out.add(label)
+    return out
+
+
+def _mislabeled_named_metric(finding_text: str, sql: str, vocab: dict) -> str | None:
+    """Reason when the query's result is aliased as one metric but the finding asserts a DIFFERENT
+    one — a metric mislabel (AOV computed, "ROAS" claimed). High-precision: both must be recognized
+    metrics from the industry KB / registry, and the claim must be asserted with a value."""
+    if not finding_text or not sql or not vocab:
+        return None
+    sql_metric = _metric_of_sql_alias(sql, vocab)
+    if not sql_metric:
+        return None
+    claimed = _asserted_metrics_in_text(finding_text, vocab)
+    if claimed and sql_metric not in claimed:
+        other = sorted(claimed)[0]
+        return (f"metric mislabel: the query computes {sql_metric} (its result is aliased as such) "
+                f"but the finding asserts {other}. Relabel the finding to {sql_metric}, or fix the "
+                "query to actually compute the claimed metric.")
+    return None
+
+
+@lru_cache(maxsize=64)
+def _industry_for_conn(conn_id: str) -> str:
+    """The connection's declared/inferred industry, for industry-scoped metric vocabulary."""
+    if not conn_id:
+        return ""
+    try:
+        from aughor.profile import store as _pstore
+        bp = _pstore.load(conn_id)
+        return (getattr(bp, "industry", "") or "") if bp else ""
+    except Exception:
+        return ""
+
+
+def _metric_vocab_for(conn, industry: str = "") -> dict:
+    """{normalized_token: (label, formula)} for the coherence check — the per-industry curated KB
+    matched to this connection's profile, plus org-registered metric names. Fail-open to {}."""
+    try:
+        ind = (industry or "").strip()
+        if not ind and conn is not None:
+            ind = _industry_for_conn(getattr(conn, "_connection_id", "") or "")
+        from aughor.profile.metric_kb import metric_vocabulary
+        vocab = {t: (label, formula) for (t, label, formula) in metric_vocabulary(ind)}
+        try:    # org-registered metrics (governed) extend the vocabulary by name + label
+            from aughor.semantic.metrics import list_metrics
+            for m in list_metrics():
+                label = getattr(m, "label", "") or getattr(m, "name", "")
+                for tok in (getattr(m, "name", ""), label):
+                    t = _kbnorm(tok)
+                    if t and t not in vocab:
+                        vocab[t] = (label, getattr(m, "sql", "") or "")
+        except Exception as _e:
+            logger.debug("metric vocab: registry metrics unavailable: %s", _e)
+        return vocab
+    except Exception as _e:
+        logger.debug("metric vocab build failed: %s", _e)
+        return {}
+
+
+def verify_insight(rows, finding_text: str = "", sql: str = "", metric_ranges=None, conn=None, *, columns=None, industry: str = "") -> tuple[bool, str]:
     """THE pre-emission trust gate: a candidate finding is surfaced ONLY if it passes every
     deterministic check. Returns (ok, reason). A SOTA platform treats generated claims as
     untrusted until verified — so the explorer self-weeds (tautologies, fan-out artifacts,
@@ -798,7 +869,7 @@ def verify_insight(rows, finding_text: str = "", sql: str = "", metric_ranges=No
         cg = _claim_numbers_grounded(finding_text, rows)
         if cg:
             return (False, cg)
-        nm = _mislabeled_named_metric(finding_text, sql)
+        nm = _mislabeled_named_metric(finding_text, sql, _metric_vocab_for(conn, industry))
         if nm:
             return (False, nm)
         return (True, "")
