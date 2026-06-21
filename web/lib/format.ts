@@ -25,7 +25,7 @@ export {
   buildColumnFormatter,
 } from "./formatCell";
 
-import { effectiveDateFormat } from "./orgSettings";
+import { effectiveDateFormat, effectiveTimezone } from "./orgSettings";
 
 // ── Column types ─────────────────────────────────────────────────────────────
 
@@ -251,11 +251,15 @@ export function fmtDate(v: string, gran: Gran): string {
   if (!/^\d{4}-\d{2}(-\d{2})?/.test(v)) return v;
   const d = new Date(normDateStr(v));
   if (isNaN(d.getTime())) return v;
+  // Org timezone applies ONLY to time-bearing grains (minute/hour) — shifting a date-only
+  // bucket (day/month/…) across midnight would be wrong. Empty = the viewer's local zone.
+  const _tz = effectiveTimezone();
+  const _tzOpt = _tz ? { timeZone: _tz } : {};
   switch (gran) {
     case "minute":
-      return d.toLocaleString("default", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
+      return d.toLocaleString("default", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", ..._tzOpt });
     case "hour":
-      return d.toLocaleString("default", { day: "numeric", month: "short", hour: "numeric" });
+      return d.toLocaleString("default", { day: "numeric", month: "short", hour: "numeric", ..._tzOpt });
     case "day":
     case "week": {
       const pref = effectiveDateFormat();
