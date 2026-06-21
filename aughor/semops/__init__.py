@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from aughor.semops.ai_sql import (
     AIColumnReceipt,
+    ai_embed,
     ai_prompt,
     emit_ai_receipt,
+    register_embedding_udf,
     register_prompt_udf,
 )
 from aughor.semops.operators import (
@@ -28,7 +30,9 @@ __all__ = [
     "semantic_top_k",
     # R8 — AI as a governed SQL operator
     "AIColumnReceipt",
+    "ai_embed",
     "ai_prompt",
     "emit_ai_receipt",
+    "register_embedding_udf",
     "register_prompt_udf",
 ]

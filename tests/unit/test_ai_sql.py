@@ -93,3 +93,51 @@ def test_emit_ai_receipt_fail_open():
     rec = ai_sql.AIColumnReceipt(operator="prompt", template="t", role="fast", model="m", n_input=1)
     ai_sql.emit_ai_receipt(rec, conn_id="c1")   # must not raise (hermetic ledger)
     assert rec.to_dict()["operator"] == "prompt"
+
+
+# ── R8 +1 — the embedding() half of the prompt()/embedding() pair ────────────────
+
+def _fake_embed(monkeypatch, fn=None):
+    """Patch the pinned embedder; default returns a deterministic 2-dim vector per text."""
+    fn = fn or (lambda texts: [[float(len(t)), 1.0] for t in texts])
+    monkeypatch.setattr("aughor.semantic.embedder.embed", fn)
+
+
+def test_ai_embed_aligns_vectors_and_records_provenance(monkeypatch):
+    _fake_embed(monkeypatch)
+    out, rec = ai_sql.ai_embed(["a", "bb", "ccc"])
+    assert out == [[1.0, 1.0], [2.0, 1.0], [3.0, 1.0]]       # aligned to inputs
+    assert rec.operator == "embedding" and rec.n_input == 3 and rec.n_applied == 3
+    assert not rec.truncated and rec.role == "embed"
+
+
+def test_ai_embed_refuses_over_the_cap(monkeypatch):
+    _fake_embed(monkeypatch)
+    out, rec = ai_sql.ai_embed(["x"] * 10, max_rows=5)
+    assert rec.truncated and out == [None] * 10             # refused, not silently truncated
+    assert any("exceed" in n for n in rec.notes)
+
+
+def test_ai_embed_is_fail_open_per_batch(monkeypatch):
+    def _boom(_texts):
+        raise RuntimeError("embedder down")
+    _fake_embed(monkeypatch, _boom)
+    out, rec = ai_sql.ai_embed(["a", "b"])
+    assert out == [None, None] and rec.n_applied == 0       # never raises into the query path
+    assert any("failed" in n for n in rec.notes)
+
+
+def test_ai_embed_empty_input():
+    out, rec = ai_sql.ai_embed([])
+    assert out == [] and rec.n_input == 0
+
+
+def test_embedding_udf_is_cost_gated(monkeypatch):
+    _fake_embed(monkeypatch)
+    duck = _FakeDuck()
+    ai_sql.register_embedding_udf(duck, max_calls=2, name="embedding")
+    assert duck.name == "embedding" and duck.fn is not None
+    assert duck.fn("hello") == [5.0, 1.0]       # call 1
+    duck.fn("hi")                               # call 2
+    with pytest.raises(RuntimeError, match="governance cap"):
+        duck.fn("again")                        # call 3 → over the cap, raises loudly

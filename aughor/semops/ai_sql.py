@@ -157,6 +157,78 @@ def register_prompt_udf(
     return duck_conn
 
 
+def ai_embed(
+    values: list,
+    *,
+    max_rows: int = DEFAULT_MAX_ROWS,
+    batch: int = 64,
+    override_cap: bool = False,
+) -> tuple:
+    """Embed each value via the pinned embedding model → an embedding column + a receipt.
+
+    The ``embedding()`` half of MotherDuck's ``prompt()/embedding()`` pair, under the same
+    governance: a pinned model (reproducible), an explicit row cap (refused + surfaced, never a
+    silent truncation — the cost gate), batched, fail-open per batch (a failed batch leaves those
+    rows ``None``, never raises into the query path). Returns ``(embeddings, AIColumnReceipt)``
+    where ``embeddings[i]`` aligns to ``values[i]`` (``None`` where unfilled). Pair the column with
+    DuckDB's built-in ``list_cosine_similarity`` to rank by semantic similarity in SQL."""
+    from aughor.semantic.embedder import EMBED_MODEL
+    n = len(values)
+    receipt = AIColumnReceipt(operator="embedding", template="", role="embed",
+                              model=str(EMBED_MODEL), n_input=n)
+    if n == 0:
+        return [], receipt
+    if not override_cap and n > max_rows:
+        receipt.truncated = True
+        receipt.notes.append(
+            f"Refused: {n} values exceed the AI-column cap of {max_rows}. Add a WHERE/LIMIT to "
+            f"reduce the set first, or set override_cap to accept the cost.")
+        return [None] * n, receipt
+
+    out: list = [None] * n
+    for start in range(0, n, max(1, batch)):
+        chunk = [str(v)[:_MAX_CELL] for v in values[start:start + batch]]
+        try:
+            from aughor.semantic.embedder import embed
+            vecs = embed(chunk)
+            for i in range(min(len(vecs), len(chunk))):
+                out[start + i] = vecs[i]
+        except Exception as e:  # noqa: BLE001 — an AI column must never raise into the query path
+            logger.warning("ai_embed: batch [%d:%d] failed: %s", start, start + len(chunk), e)
+            receipt.notes.append(f"batch [{start}:{start + len(chunk)}] failed ({str(e)[:80]}) — left empty")
+    receipt.n_applied = sum(1 for v in out if v is not None)
+    return out, receipt
+
+
+def register_embedding_udf(
+    duck_conn: Any,
+    *,
+    max_calls: int = DEFAULT_MAX_ROWS,
+    name: str = "embedding",
+) -> Any:
+    """Register a governed ``embedding(text) -> DOUBLE[]`` scalar UDF on a DuckDB connection so the
+    agent can compute an embedding column inside generated SQL (MotherDuck parity), then rank with
+    the built-in ``list_cosine_similarity(embedding(col), embedding('query'))``. Governed by a hard
+    per-registration call cap — beyond it the UDF RAISES, so a runaway scan fails loudly instead of
+    silently costing a fortune. Pair with a ``LIMIT``. Returns the connection."""
+    counter = {"n": 0}
+
+    def _embed(text: str):
+        counter["n"] += 1
+        if counter["n"] > max_calls:
+            raise RuntimeError(
+                f"embedding() UDF exceeded the {max_calls}-call governance cap — add a LIMIT to the "
+                f"query (AI columns are cost-gated).")
+        out, _ = ai_embed([text or ""], max_rows=max_calls, override_cap=True)
+        return out[0] if (out and out[0] is not None) else None
+
+    try:
+        duck_conn.create_function(name, _embed, ["VARCHAR"], "DOUBLE[]")
+    except Exception as e:
+        logger.warning("register_embedding_udf: could not register %s(): %s", name, e)
+    return duck_conn
+
+
 def emit_ai_receipt(receipt: AIColumnReceipt, *, conn_id: Optional[str] = None) -> None:
     """Journal an AI-column's provenance as an ``ai.column`` event so it rides the Trust Receipt.
     Fail-open — never raises into the query path."""
