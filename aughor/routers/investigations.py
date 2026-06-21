@@ -778,6 +778,31 @@ def _apply_currency(text: str, sym: str) -> str:
     return re.sub(r"\$(?=\s?[\d.])", sym, text)
 
 
+_TIME_COL_RE = re.compile(r"(month|date|day|week|quarter|year|period|timestamp|_ts$)", re.I)
+_DATE_VAL_RE = re.compile(r"^\s*(?:19|20)\d{2}(?:[-/Q]\d{1,2}(?:[-/]\d{1,2})?)?\s*$")
+
+
+def _is_time_series(columns, rows) -> bool:
+    """True when the result's FIRST column is a time bucket (by name or value shape) and
+    there are ≥3 rows — i.e. a trend the narrator should read recent-first."""
+    if not columns or not rows or len(rows) < 3:
+        return False
+    if _TIME_COL_RE.search(str(columns[0])):
+        return True
+    vals = [str(r[0]) for r in rows[:5] if r]
+    return bool(vals) and all(_DATE_VAL_RE.match(v) for v in vals)
+
+
+def _narrator_sample(columns, rows, n: int = 20):
+    """Rows to feed the post-answer narrator. For a long ASCENDING time series, weight the
+    sample toward the MOST RECENT periods (the series start row kept for net-change framing)
+    so the narrative leads with the current state — not year-one of a multi-year dataset
+    (the Q15 'anchored on 2022' bug). Returns (sample_rows, is_time_series)."""
+    if _is_time_series(columns, rows) and len(rows) > n:
+        return [rows[0]] + rows[-(n - 1):], True
+    return rows[:n], False
+
+
 async def _stream_chat(
     question: str,
     connection_id: str,
@@ -1491,13 +1516,20 @@ async def _stream_chat(
         _insight_dict = None
         _insight_worth_it = len(result.rows) >= 2 or (len(result.rows) == 1 and len(result.columns) >= 3)
         try:
-            # Bounded sample: up to 20 rows × 8 columns
-            _sample_rows = result.rows[:20]
+            # Bounded sample: up to 20 rows × 8 columns. For a time series, weight toward the
+            # most recent periods so the narrative leads with current state, not year-one.
+            _sample_rows, _is_ts = _narrator_sample(result.columns, result.rows)
             _sample_cols = result.columns[:8]
             _rows_text = "\n".join(
                 ", ".join(str(r[i]) for i in range(len(_sample_cols))) for r in _sample_rows
             )
             if _insight_worth_it:
+                _ts_clause = (
+                    " This result is a TIME SERIES shown as the series start then the most recent periods: "
+                    "LEAD WITH THE MOST RECENT period and its current trend, and state the net change since "
+                    "the start — do NOT anchor the narrative on the earliest period."
+                    if _is_ts else ""
+                )
                 _system = (
                     "You are an analytical data interpreter writing for a clean published brief. "
                     "Given a user question, the SQL that answered it, and a sample of the results: "
@@ -1506,7 +1538,7 @@ async def _stream_chat(
                     "names any genuine anomaly (unexpected value, spike, drop, outlier) in plain words, and "
                     "states the overall trend and your confidence. Start with the finding — no preamble, no "
                     "hedging, no 'the data shows' scaffolding. Use ONLY numbers present in the results; never "
-                    "invent values, and bold never licenses invented precision. "
+                    "invent values, and bold never licenses invented precision." + _ts_clause + " "
                     "Then (2) suggest exactly 3 concise follow-up data questions (max 12 words each)."
                 )
             else:
@@ -1514,11 +1546,16 @@ async def _stream_chat(
                     "Given a user question and its answer, suggest exactly 3 concise follow-up data questions "
                     "(max 12 words each). Leave the narrative empty."
                 )
+            _rows_label = (
+                f"Results (TIME SERIES — series start then the {len(_sample_rows) - 1} most "
+                f"recent of {len(result.rows)} periods, oldest→newest):"
+                if _is_ts else f"Results (sample of {len(_sample_rows)} rows):"
+            )
             _user = (
                 f"Question: {question}\n"
                 f"SQL: {final_sql}\n"
                 f"Answer: {answer.headline}\n"
-                f"Results (sample of {len(_sample_rows)} rows):\n"
+                f"{_rows_label}\n"
                 f"Columns: {', '.join(_sample_cols)}\n"
                 f"{_rows_text}"
             )
