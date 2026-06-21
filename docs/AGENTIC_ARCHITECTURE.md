@@ -76,7 +76,11 @@ The **substrate** is the part most platforms must build from scratch — and it 
 
 ## 6. Phased roadmap (each step leans on existing infra)
 
-- **Phase 0 — Formalize:** an agent **registry** (charter per role) + tag every job/event with its agent.
+- **Phase 0 — Formalize:** ✅ **SHIPPED (2026-06-21).** Charter **registry** (`kernel/agents.py`: role · goal ·
+  lane · job_kinds · tools · budget; Scout + Analyst live, Watcher/Briefer/Curator reserved) + per-Org
+  **governance** (enable/pause + budget, override-wins, ledger-kv) + `/agents` roster with spend + the **Scout
+  enable-gate** on background exploration + a Fleet "Agents" management tab; every job is agent-tagged via
+  `charter_for_kind`. — an agent **registry** (charter per role) + tag every job/event with its agent.
   Instant fleet semantics, near-zero new machinery. *Add **cost/compute metering** here (LLM tokens +
   warehouse rows/bytes + wall-time → `kernel/ledger.py` receipt + job row) — a charter's **budget** is
   unenforceable until you measure spend (MotherDuck makes this structural via per-Duckling CU-seconds; we

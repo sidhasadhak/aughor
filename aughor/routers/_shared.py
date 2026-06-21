@@ -161,16 +161,27 @@ def schemas_of_connection(conn_id: str) -> list[str]:
         return []
 
 
-def kickoff_exploration(conn_id: str, schema_name: str | None = None) -> bool:
+def kickoff_exploration(conn_id: str, schema_name: str | None = None, *, auto: bool = False) -> bool:
     """Schedule background schema-exploration, unless already active. Returns True if any run
     was scheduled. An explicit schema_name explores just that schema; otherwise a MULTI-schema
     connection fans out into one run PER schema (the 'every schema gets understood' guarantee),
     and a single-schema connection runs connection-level (unchanged).
 
+    ``auto=True`` marks a background kick (on-connect / startup): it runs only when the Org
+    has the **Scout** agent enabled. An explicit user 'Start' (``auto=False``) always runs.
+
     Thin sync wrapper over ``spawn_explorer``. Must be called from within a running event loop.
     """
     import asyncio
     from aughor.explorer.models import ExplorationPhase
+
+    if auto:
+        from aughor.kernel.agents import is_enabled
+        if not is_enabled("scout"):
+            import logging
+            logging.getLogger(__name__).info(
+                "kickoff_exploration: Scout disabled by governance — skipping auto run for %s", conn_id)
+            return False
 
     if schema_name:
         targets: list[str | None] = [schema_name]

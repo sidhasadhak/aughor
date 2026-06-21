@@ -57,7 +57,7 @@ def _view(job: dict) -> dict:
         "started_at": job.get("started_at"),
         "finished_at": job.get("finished_at"),
         "error": job.get("error"),
-        "agent": agent_for(job.get("kind")).to_dict(),
+        "agent": agent_for(job.get("kind")),
         "title": _title(job),
         "cost": job.get("metrics"),        # parsed dict (tokens/queries/rows/time) or None
         "duration_ms": _duration_ms(job),

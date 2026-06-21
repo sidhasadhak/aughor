@@ -2646,6 +2646,37 @@ export async function cancelJob(jobId: string): Promise<{ job_id: string; cancel
   return res.json();
 }
 
+// ── Agent registry + governance: manage the fleet (Phase 0) ──────────────────
+
+export interface AgentGovernance { enabled: boolean; token_budget: number | null; time_budget_s: number | null }
+export interface AgentSpend { runs: number; total_tokens: number; query_count: number }
+export interface AgentRosterEntry {
+  id: string; name: string; role: string; goal: string;
+  lane: "background" | "interactive";
+  job_kinds: string[]; tools: string[]; icon: string; reserved: boolean;
+  default_budget: { token_budget: number | null; time_budget_s: number | null };
+  governance: AgentGovernance;
+  spend: AgentSpend;
+}
+
+export async function getAgents(workspaceId?: string): Promise<AgentRosterEntry[]> {
+  const q = workspaceId ? `?workspace_id=${encodeURIComponent(workspaceId)}` : "";
+  const res = await fetch(`${BASE}/agents${q}`);
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function patchAgent(
+  agentId: string,
+  body: { enabled?: boolean; token_budget?: number; time_budget_s?: number; workspace_id?: string },
+): Promise<{ agent_id: string; governance: AgentGovernance } | null> {
+  const res = await fetch(`${BASE}/agents/${encodeURIComponent(agentId)}`, {
+    method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!res.ok) return null;
+  return res.json();
+}
+
 /** Live re-validation of a finding's dossier — re-runs the stored SQL and re-grounds
  *  the claim. `confirmed` = numbers still hold; `drifted` = a number moved. */
 export interface RevalidateResult {

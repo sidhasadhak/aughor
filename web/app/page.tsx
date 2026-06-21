@@ -64,13 +64,16 @@ import {
   getEffectiveSettings,
   getJobs,
   cancelJob,
+  getAgents,
+  patchAgent,
   type Connection,
   type ExplorationStatus,
   type OntologyGraph,
   type Canvas,
   type FleetJob,
+  type AgentRosterEntry,
 } from "@/lib/api";
-import { costSummary, fmtMs } from "@/lib/cost";
+import { costSummary, fmtCompact, fmtMs } from "@/lib/cost";
 import { subscribeKernelEvents } from "@/lib/events";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -928,7 +931,85 @@ function StateTag({ state }: { state: string }) {
   return <span className={`aug-tag ${cls}`}>{label}</span>;
 }
 
+const AGENT_ICON: Record<string, string> = {
+  scout: "search", analyst: "node", watcher: "activity", briefer: "brief", curator: "layers",
+};
+
+function fmtBudget(n: number | null): string {
+  return n == null ? "∞" : fmtCompact(n);
+}
+
+// The Agents tab — the fleet roster + governance (enable/pause + budget + spend).
+function AgentsPanel() {
+  const [agents, setAgents] = useState<AgentRosterEntry[]>([]);
+  const [tried, setTried] = useState(false);
+
+  const load = () => getAgents().then(a => { setAgents(a); setTried(true); }).catch(() => setTried(true));
+  useEffect(() => { load(); }, []);
+  const toggle = (id: string, enabled: boolean) => { patchAgent(id, { enabled }).then(() => load()); };
+
+  if (!tried) {
+    return <div style={{ padding: "40px 0", textAlign: "center" }}><p style={{ fontSize: 12, color: "var(--t3)" }}>Loading agents…</p></div>;
+  }
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <p style={{ fontSize: 11, color: "var(--t3)", margin: 0 }}>
+        Your fleet — pause an agent or cap its per-run budget. Changes apply org-wide; budgets are honest
+        because every run is metered.
+      </p>
+      {agents.map(a => {
+        const isBackground = a.lane === "background";
+        const enabled = a.governance.enabled;
+        return (
+          <div key={a.id} style={{
+            background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)",
+            padding: "14px 16px", opacity: a.reserved ? 0.6 : 1,
+            display: "flex", flexDirection: "column", gap: 8,
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ width: 30, height: 30, borderRadius: 8, background: "var(--bg-3)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <NavIcon name={AGENT_ICON[a.id] || "spark"} size={15} color="var(--t2)" />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)" }}>{a.name}</span>
+                  <span className={`aug-tag ${isBackground ? "aug-tag-blue" : "aug-tag-violet"}`}>{isBackground ? "Background" : "Interactive"}</span>
+                  {a.reserved && <span className="aug-tag">Reserved</span>}
+                </div>
+                <div style={{ fontSize: 11, color: "var(--t3)" }}>{a.role}</div>
+              </div>
+              {a.reserved ? (
+                <span style={{ fontSize: 10, color: "var(--t4)" }}>wiring soon</span>
+              ) : isBackground ? (
+                <button onClick={() => toggle(a.id, !enabled)} style={{
+                  padding: "4px 12px", borderRadius: "var(--r2)", fontSize: 11, fontWeight: 500, cursor: "pointer",
+                  background: enabled ? "var(--grn1)" : "transparent",
+                  border: `1px solid ${enabled ? "var(--grn2)" : "var(--b1)"}`,
+                  color: enabled ? "var(--grn4)" : "var(--t3)",
+                }}>{enabled ? "Enabled" : "Paused"}</button>
+              ) : (
+                <span style={{ fontSize: 10, color: "var(--t3)" }}>Always on</span>
+              )}
+            </div>
+            <div style={{ fontSize: 11, color: "var(--t2)" }}>{a.goal}</div>
+            <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+              {a.tools.map((t, i) => <span key={i} className="aug-tag">{t}</span>)}
+            </div>
+            {!a.reserved && (
+              <div style={{ display: "flex", gap: 18, fontSize: 11, color: "var(--t3)", borderTop: "1px solid var(--b1)", paddingTop: 8, flexWrap: "wrap" }}>
+                <span>Budget <span style={{ color: "var(--t2)" }}>{fmtBudget(a.governance.token_budget)} tokens/run</span></span>
+                <span>Recent <span style={{ color: "var(--t2)" }}>{a.spend.runs} runs · {fmtCompact(a.spend.total_tokens)} tokens · {a.spend.query_count} queries</span></span>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function FleetScreen({ onNavigate }: { onNavigate: (t: NavTab) => void }) {
+  const [view, setView] = useState<"activity" | "agents">("activity");
   const [jobs, setJobs] = useState<FleetJob[]>([]);
   const [tried, setTried] = useState(false);
 
@@ -958,8 +1039,19 @@ function FleetScreen({ onNavigate }: { onNavigate: (t: NavTab) => void }) {
         <span style={{ fontSize: 11, color: "var(--t3)", marginLeft: 10 }}>
           the agents working your data — what they’re doing and what it cost
         </span>
+        <div style={{ display: "flex", gap: 4, marginLeft: "auto" }}>
+          {(["activity", "agents"] as const).map(v => (
+            <button key={v} onClick={() => setView(v)} style={{
+              padding: "3px 12px", borderRadius: "var(--r2)", fontSize: 11, fontWeight: 500, cursor: "pointer",
+              background: view === v ? "var(--bg-sel)" : "transparent",
+              border: `1px solid ${view === v ? "var(--blue2)" : "var(--b1)"}`,
+              color: view === v ? "var(--blue5)" : "var(--t3)",
+            }}>{v === "activity" ? "Activity" : "Agents"}</button>
+          ))}
+        </div>
       </div>
       <div style={{ flex: 1, overflowY: "auto", padding: "18px 20px" }}>
+        {view === "agents" ? <AgentsPanel /> : (<>
         <MiniStatRow>
           <MiniStat value={active} label="Running" tone="var(--blue4)" />
           <MiniStat value={ok} label="Succeeded" tone="var(--grn4)" />
@@ -1026,6 +1118,7 @@ function FleetScreen({ onNavigate }: { onNavigate: (t: NavTab) => void }) {
           Scheduled Monitors &amp; Briefings run on a separate scheduler and aren’t listed here yet —{" "}
           <button onClick={() => onNavigate("monitors")} style={{ background: "none", border: "none", padding: 0, color: "var(--blue4)", cursor: "pointer", fontSize: 10 }}>open Monitors</button>.
         </p>
+        </>)}
       </div>
     </div>
   );

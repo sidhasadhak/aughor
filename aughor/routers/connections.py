@@ -102,7 +102,7 @@ async def create_connection(req: AddConnectionRequest):
     # and cancellable via POST /exploration/{id}/stop.
     explorer_started = False
     try:
-        explorer_started = _kickoff_exploration(conn_id)
+        explorer_started = _kickoff_exploration(conn_id, auto=True)
     except Exception:
         logger.warning("create_connection: explorer kickoff failed for %s", conn_id, exc_info=True)
 
