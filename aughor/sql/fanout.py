@@ -505,6 +505,83 @@ def sum_over_chasm_fanout(sql: str, table_cols: dict | None = None, dialect: str
     return None
 
 
+# ── Measure × key arithmetic — a fabrication the fan-out guards CAN'T see: the row
+# count is right, but the VALUE is invented by multiplying a measure by a nominal id.
+# Tight key suffixes by design (NOT _code/_num/_number — those can be real measures):
+# a column ending here is an identifier, never a quantity. ──
+_ARITH_KEY_COL = re.compile(r"(?:^|_)(?:id|key|pk|sk|fk|uuid|guid)$", re.I)
+
+
+def _unwrap_arith(node):
+    """Peel CAST/TRY_CAST/parens off a node to reach the underlying column."""
+    from sqlglot import exp
+    while isinstance(node, (exp.Cast, exp.TryCast, exp.Paren)):
+        node = node.this
+    return node
+
+
+def _is_arith_key(node) -> bool:
+    """True if `node` (after unwrapping casts/parens) is a key/id column reference."""
+    from sqlglot import exp
+    node = _unwrap_arith(node)
+    return isinstance(node, exp.Column) and bool(_ARITH_KEY_COL.search((node.name or "").lower()))
+
+
+def measure_times_key_arithmetic(sql: str, table_cols: dict | None = None,
+                                 dialect: str = "duckdb") -> str | None:
+    """A SUM/AVG that MULTIPLIES by — or directly aggregates — an id/key column
+    fabricates a magnitude. An id is a nominal identifier, not a quantity, so
+    ``SUM(unit_price * order_item_id)`` (price × the row's PRIMARY KEY — the real-path
+    €150M "revenue" scar, with per-product garbage like P000545 "€36M", when
+    order_items carried no quantity column) and ``SUM(order_id)`` have no arithmetic
+    meaning. The fan-out detectors above watch for row-multiplication across joins;
+    they never see a measure multiplied by a key WITHIN one table, so this closes that
+    gap.
+
+    High-precision: a true key column is never a legitimate multiplicand or a SUM/AVG
+    argument, so this fires only on the unambiguous bug and stays silent on
+    ``SUM(quantity * unit_price)`` (no key) and ``COUNT(order_id)`` (counting keys is
+    valid — only SUM/AVG are checked). ``table_cols`` is accepted for call-site
+    symmetry with the sibling guards but unused (name-based detection needs no schema).
+    Static analysis; returns a reason string or None; never raises."""
+    try:
+        import sqlglot
+        from sqlglot import exp
+    except Exception:
+        return None
+    try:
+        tree = sqlglot.parse_one(sql, read=dialect)
+    except Exception:
+        return None
+    if tree is None:
+        return None
+
+    for agg in tree.find_all((exp.Sum, exp.Avg)):
+        inner = agg.this
+        if isinstance(inner, exp.Distinct) or isinstance(agg.parent, exp.Window):
+            continue
+        # (a) SUM/AVG directly over a key column — summing/averaging a nominal id.
+        if _is_arith_key(inner):
+            col = _unwrap_arith(inner)
+            return (
+                f"{agg.key.upper()}({col.name}) aggregates a key/id column — an id is a nominal "
+                f"identifier, not a measure, so its SUM/AVG is a fabricated magnitude; aggregate "
+                f"a real measure column instead"
+            )
+        # (b) a key column inside a multiplication within the aggregate — measure × id.
+        for mul in agg.find_all(exp.Mul):
+            for operand in (mul.this, mul.expression):
+                if _is_arith_key(operand):
+                    key = _unwrap_arith(operand)
+                    return (
+                        f"{agg.key.upper()}({mul.sql(dialect=dialect)}) multiplies by the key/id "
+                        f"column '{key.name}' — an id is not a quantity, so this fabricates a "
+                        f"magnitude (e.g. price × a row's primary key). Aggregate the measure alone, "
+                        f"or multiply by the real quantity column"
+                    )
+    return None
+
+
 def self_ratio_tautology(sql: str, dialect: str = "duckdb") -> str | None:
     """A rate whose NUMERATOR and DENOMINATOR are the SAME aggregate expression —
     ``SUM(x) / NULLIF(SUM(x), 0)``, ``COUNT(y) / COUNT(y)`` — is identically 1.0 for

@@ -366,6 +366,10 @@ class AgentState(TypedDict):
     #   connection_id. Empty string when no Canvas is active.
     canvas_id: Optional[str]
     canvas_schema_context: str
+    # scope_schema: the single owning schema the investigation is pinned to (canvas
+    # table-list scope OR an explicit schema-scoped run). Nodes use it to reject/repair
+    # any generated SQL that references a sibling schema. "" when the run is unscoped.
+    scope_schema: str
 
     # Investigation state
     hypotheses: list[Hypothesis]

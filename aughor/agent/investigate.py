@@ -1918,7 +1918,10 @@ def run_analysis_phase(
     # that reaches the dimension via a UNIQUE lookup key instead of fanning out through a fact table.
     _fanout_caveat = None
     try:
-        from aughor.sql.fanout import sum_over_chasm_fanout, avg_over_chasm_fanout, count_star_chasm_fanout
+        from aughor.sql.fanout import (
+            sum_over_chasm_fanout, avg_over_chasm_fanout, count_star_chasm_fanout,
+            measure_times_key_arithmetic,
+        )
         from aughor.tools.schema import parse_schema_tables
         _tc = parse_schema_tables(schema) if schema else {}
         _dialect = getattr(conn, "dialect", "duckdb")
@@ -1967,7 +1970,8 @@ def run_analysis_phase(
             _augment_tc(queries)
             hits = []
             for _q in (queries or []):
-                for _det in (sum_over_chasm_fanout, avg_over_chasm_fanout, count_star_chasm_fanout):
+                for _det in (sum_over_chasm_fanout, avg_over_chasm_fanout, count_star_chasm_fanout,
+                             measure_times_key_arithmetic):
                     _h = _det(_q.sql, _tc, _dialect)
                     if _h:
                         hits.append(_h)

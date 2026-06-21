@@ -184,6 +184,7 @@ def audit_value_sql(value_sql: str, table_cols: dict, conn, unit_or_range: str) 
         from aughor.sql.fanout import (
             integer_division_risk, count_star_entity_fanout, count_star_chasm_fanout,
             avg_over_chasm_fanout, sum_over_chasm_fanout, cte_grain_mismatch_fanout,
+            measure_times_key_arithmetic,
         )
         uniq = make_uniqueness_oracle(conn, table_cols)
         grain = (integer_division_risk(sql)
@@ -191,7 +192,8 @@ def audit_value_sql(value_sql: str, table_cols: dict, conn, unit_or_range: str) 
                  or count_star_chasm_fanout(sql, table_cols, dialect=dialect, is_unique_on=uniq)
                  or avg_over_chasm_fanout(sql, table_cols, dialect=dialect, is_unique_on=uniq)
                  or sum_over_chasm_fanout(sql, table_cols, dialect=dialect, is_unique_on=uniq)
-                 or cte_grain_mismatch_fanout(sql, table_cols, dialect=dialect))
+                 or cte_grain_mismatch_fanout(sql, table_cols, dialect=dialect)
+                 or measure_times_key_arithmetic(sql, table_cols, dialect=dialect))
         if grain:
             return (False, f"grain bug: {grain}")
 
@@ -259,6 +261,7 @@ def audit_chart_sql(chart_sql: str, table_cols: dict, conn) -> tuple[bool, str]:
         from aughor.sql.fanout import (
             integer_division_risk, count_star_entity_fanout, count_star_chasm_fanout,
             avg_over_chasm_fanout, sum_over_chasm_fanout, cte_grain_mismatch_fanout,
+            measure_times_key_arithmetic,
         )
         uniq = make_uniqueness_oracle(conn, table_cols)
         grain = (integer_division_risk(sql)
@@ -266,7 +269,8 @@ def audit_chart_sql(chart_sql: str, table_cols: dict, conn) -> tuple[bool, str]:
                  or count_star_chasm_fanout(sql, table_cols, dialect=dialect, is_unique_on=uniq)
                  or avg_over_chasm_fanout(sql, table_cols, dialect=dialect, is_unique_on=uniq)
                  or sum_over_chasm_fanout(sql, table_cols, dialect=dialect, is_unique_on=uniq)
-                 or cte_grain_mismatch_fanout(sql, table_cols, dialect=dialect))
+                 or cte_grain_mismatch_fanout(sql, table_cols, dialect=dialect)
+                 or measure_times_key_arithmetic(sql, table_cols, dialect=dialect))
         if grain:
             return (False, f"grain bug: {grain}")
         try:
@@ -333,6 +337,7 @@ def audit_finding_sql(sql: str, table_cols: dict, conn) -> tuple[bool, str]:
         from aughor.sql.fanout import (
             integer_division_risk, count_star_entity_fanout, count_star_chasm_fanout,
             avg_over_chasm_fanout, sum_over_chasm_fanout, cte_grain_mismatch_fanout,
+            measure_times_key_arithmetic,
         )
         uniq = make_uniqueness_oracle(conn, table_cols)
         grain = (integer_division_risk(s)
@@ -340,7 +345,8 @@ def audit_finding_sql(sql: str, table_cols: dict, conn) -> tuple[bool, str]:
                  or count_star_chasm_fanout(s, table_cols, dialect=dialect, is_unique_on=uniq)
                  or avg_over_chasm_fanout(s, table_cols, dialect=dialect, is_unique_on=uniq)
                  or sum_over_chasm_fanout(s, table_cols, dialect=dialect, is_unique_on=uniq)
-                 or cte_grain_mismatch_fanout(s, table_cols, dialect=dialect))
+                 or cte_grain_mismatch_fanout(s, table_cols, dialect=dialect)
+                 or measure_times_key_arithmetic(s, table_cols, dialect=dialect))
         if grain:
             return (False, f"grain bug: {grain}")
         try:

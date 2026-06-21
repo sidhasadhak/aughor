@@ -150,6 +150,13 @@ Grouped by area; each ✅ is verified shipped (git + code). Representative commi
 - ✅ **Agentic architecture plan** (no code) — [`docs/AGENTIC_ARCHITECTURE.md`](docs/AGENTIC_ARCHITECTURE.md): maps the implicit agents already running (explorer/ADA/monitors/briefer) on the `JobKernel` + event spine, the gap, a supervisor+blackboard model with background/active lanes, and a phased roadmap (registry + fleet view first).
 - ✅ **Missimi quality eval (Option B, 30 runs)** — [`docs/MISSIMI_EVAL_2026-06-21.md`](docs/MISSIMI_EVAL_2026-06-21.md): the session's fixes held; surfaced 3 critical + 1 false-conclusion defect with root causes. Findings feed §3 below. **Did NOT scale to 50+50** — fix the criticals first, then re-run as a regression.
 
+### Eval-derived critical fixes (2026-06-21)
+- ✅ **All 3 critical eval defects fixed + live-verified on missimi** (build→wire→test→leverage; zero net ratchet debt; +18 unit tests):
+  - **id-arithmetic guard** `measure_times_key_arithmetic` (`aughor/sql/fanout.py`) — kills `SUM(measure × id/key)` fabrication across every SQL guard path (explorer, ADA, profile-audit, chat). Live: Q5 → `SUM(unit_price)`.
+  - **chat-headline grounding** — `_ground_headline` grounds every number for a scalar result, scale-tolerant. Live: Q6 → `28.49%` (was 42.3%).
+  - **explore/deep schema scoping** — derive effective schema + scope the catalog expansion + `_rescope_sql_to_schema` drop/repair in `explore.py`. Live: Q25/Q21 stayed missimi-scoped (0 leaks).
+  - **Next:** the 🟠/🟡 items below, then re-run the full 50+50 as a regression.
+
 ---
 
 ## 3 · What's left
@@ -157,9 +164,9 @@ Grouped by area; each ✅ is verified shipped (git + code). Representative commi
 Verified pending against code/git. `⬜` not started · `◑` partial.
 
 ### Eval-derived quality fixes (2026-06-21 — from [`docs/MISSIMI_EVAL_2026-06-21.md`](docs/MISSIMI_EVAL_2026-06-21.md), do these BEFORE the full 50+50 re-run)
-- ⬜ **🔴 Block arithmetic on id/key columns** in the SQL grounding gate (AST: `<measure> * <*_id|PK>`, aggregates over id cols). A fabricated `SUM(unit_price * order_item_id)` revenue shipped at confidence (Q5).
-- ⬜ **🔴 Chat-headline number grounding** — extend the deep/ADA "never state a number not in the result" gate to the `/chat` headline (Q6: result 28.62% but headline said 42.3%).
-- ⬜ **🔴 Pin `explore`/deep search_path to the canvas schema** — `explore`-routed deep runs leak into other schemas (Q19/Q21/Q25 returned Apparel/Electronics for a beauty dataset); Insight is already scoped.
+- ✅ **🔴 Block arithmetic on id/key columns** — `measure_times_key_arithmetic` (AST guard in `aughor/sql/fanout.py`) detects `SUM/AVG(<measure> * <id/key>)` and `SUM/AVG(<id>)`; wired into all sibling guard bundles (explorer ×3 loops, ADA scan, profile-audit ×3, chat repair-hint + backstop caveat). Live: Q5 now emits `SUM(unit_price)` (was `SUM(unit_price * order_item_id)`).
+- ✅ **🔴 Chat-headline number grounding** — `_ground_headline` now grounds EVERY number for a single-row (scalar) result (not just ≥100), scale-tolerant for fraction↔percent, year-safe. Live: Q6 headline `Repeat Purchase Rate: 28.49%` matches the cell (was a fabricated 42.3%).
+- ✅ **🔴 Pin `explore`/deep search_path to the canvas schema** — deep path now derives the effective schema from table prefixes (was `scope_schema=None` for a table-list canvas), scopes the catalog FK/temporal expansion, and `explore.py` rescopes/drops any cross-schema sub-query (`_rescope_sql_to_schema`). Live: both explore-mode deep runs (Q25, Q21) stayed fully missimi-scoped (0 leak terms; Q21 returned real P000545 not "Mechanical Keyboard").
 - ⬜ **🟠 `cancelled→canceled` value-domain repair on `!=`/`NOT IN`** (not just `=`/`IN`) — Q29 concluded "cancellation rate is zero" despite 15,737 canceled orders.
 - ⬜ **🟠 Currency symbol in chat prose** — thread the effective currency into the chat narrator + a `$`→symbol post-pass (reuse the briefing `_cur()`); EUR org still renders `$` in ledes.
 - ⬜ **🟠 Deep reuses the ratio-of-sums recipe** (`_metric_is_ratio`) instead of re-deriving — Insight vs Deep disagreed on freight-% (2.17% vs 1.48%).

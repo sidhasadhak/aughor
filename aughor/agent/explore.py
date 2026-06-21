@@ -230,6 +230,45 @@ def _floor_chain(state: AgentState) -> list[SubQuestion]:
 
 # ── Node: plan_and_execute_subq ───────────────────────────────────────────────
 
+def _rescope_sql_to_schema(sql: str, allowed: str, conn: "DatabaseConnection") -> str | None:
+    """Re-point any table referencing a schema OTHER than `allowed` to `allowed` (same
+    table name), so a sub-question planner that copied a sibling-schema table from the
+    linked catalog (e.g. netflix.products in a missimi investigation) can't answer from
+    the wrong dataset — an explicit qualifier bypasses search_path. Returns rewritten SQL
+    only when it actually changed AND still binds (dry_run); else None. Never raises."""
+    try:
+        import sqlglot
+        from sqlglot import exp
+    except Exception:
+        return None
+    dialect = getattr(conn, "dialect", "duckdb")
+    try:
+        tree = sqlglot.parse_one(sql, read=dialect)
+    except Exception:
+        return None
+    if tree is None:
+        return None
+    allow = (allowed or "").strip().lower()
+    if not allow:
+        return None
+    _SYS = {"information_schema", "pg_catalog", "system", ""}
+    cte_names = {c.alias_or_name.lower() for c in tree.find_all(exp.CTE)}
+    changed = False
+    for t in tree.find_all(exp.Table):
+        sch = (t.db or "").strip().lower()
+        if sch and sch != allow and sch not in _SYS and t.name.lower() not in cte_names:
+            t.set("db", exp.to_identifier(allowed))
+            changed = True
+    if not changed:
+        return None
+    try:
+        out = tree.sql(dialect=dialect)
+        ok, _ = conn.dry_run(out)
+    except Exception:
+        return None
+    return out if ok else None
+
+
 def plan_and_execute_subq(state: AgentState, conn: "DatabaseConnection") -> dict[str, Any]:
     """Plan SQL for the current sub-question, execute it, accumulate results."""
     sub_questions = state.get("sub_questions", [])
@@ -298,8 +337,37 @@ def plan_and_execute_subq(state: AgentState, conn: "DatabaseConnection") -> dict
 
     results: list[QueryResult] = []
     new_pitfalls: list[Pitfall] = []
+    allowed_schema = (state.get("scope_schema") or "").strip()
 
     for sql in queries[:2]:  # explore mode: cap at 2 queries per sub-question
+        # Schema-escape guard: a scoped investigation must never answer from a sibling
+        # schema. The deep linker's full-schema FK expansion can surface e.g.
+        # netflix.products into a missimi sub-question, and an explicit qualifier bypasses
+        # the pinned search_path. Re-point any out-of-scope table to the canvas schema; if
+        # that can't bind (the table truly isn't in scope), DROP this query rather than leak.
+        if allowed_schema:
+            try:
+                from aughor.sql.tables import extract_tables
+                _allow = allowed_schema.lower()
+                _oos = sorted({
+                    r.schema.strip().lower()
+                    for r in extract_tables(sql, getattr(conn, "dialect", "duckdb"))
+                    if r.schema and r.schema.strip().lower()
+                    not in (_allow, "information_schema", "pg_catalog", "system")
+                })
+                if _oos:
+                    _fixed = _rescope_sql_to_schema(sql, allowed_schema, conn)
+                    if _fixed:
+                        logger.info("[explore] rescoped cross-schema refs %s -> %s", _oos, allowed_schema)
+                        sql = _fixed
+                    else:
+                        logger.info("[explore] dropping sub-query %s — escapes schema %s (refs %s)",
+                                    subq.id, allowed_schema, _oos)
+                        continue
+            except Exception as _exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_exc, "explore schema-escape guard best-effort; query proceeds",
+                         counter="explore.scope_guard")
         result = conn.execute(subq.id, sql)
 
         # Attach predictions

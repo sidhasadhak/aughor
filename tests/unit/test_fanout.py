@@ -73,3 +73,57 @@ def test_unrelated_tables_not_flagged():
            "JOIN products p ON p.product_id = o.order_id")  # no shared root
     # orders↔products share no FK root → no fan-out claim
     assert detect_fanout(sql, COLS) is None
+
+
+# ── Measure × key arithmetic — measure multiplied by / aggregated over a nominal id ──
+# The real-path scar: SUM(unit_price * order_item_id) for "revenue" multiplies price by
+# the row's PRIMARY KEY (a fake €150M when order_items has no quantity column). The
+# fan-out detectors watch row-multiplication across joins; this catches measure×key
+# WITHIN one table. High-precision: an id is never a legitimate multiplicand/SUM arg.
+
+from aughor.sql.fanout import measure_times_key_arithmetic as _idmath
+
+
+def test_idmath_price_times_primary_key_is_flagged():
+    # The exact eval bug (Q5, top products by revenue).
+    sql = ("SELECT product_id, SUM(unit_price * order_item_id) AS revenue "
+           "FROM order_items GROUP BY product_id")
+    r = _idmath(sql)
+    assert r is not None, "price × primary-key must be flagged"
+    assert "order_item_id" in r
+
+
+def test_idmath_sum_over_a_key_is_flagged():
+    assert _idmath("SELECT SUM(order_id) FROM orders") is not None
+    assert _idmath("SELECT AVG(customer_id) FROM customers") is not None
+
+
+def test_idmath_chained_and_cast_key_is_flagged():
+    assert _idmath("SELECT SUM(unit_price * quantity * order_item_id) FROM order_items") is not None
+    assert _idmath("SELECT SUM(unit_price * CAST(order_item_id AS DOUBLE)) FROM order_items") is not None
+
+
+def test_idmath_correct_revenue_is_not_flagged():
+    # quantity × price is the CORRECT additive revenue — must stay silent.
+    assert _idmath("SELECT SUM(quantity * unit_price) AS revenue FROM order_items") is None
+    assert _idmath("SELECT SUM(unit_price) FROM order_items") is None
+
+
+def test_idmath_count_of_keys_is_not_flagged():
+    # Counting keys is valid (only SUM/AVG are magnitude-fabricators).
+    assert _idmath("SELECT COUNT(order_id) FROM orders") is None
+    assert _idmath("SELECT COUNT(DISTINCT customer_id) FROM orders") is None
+
+
+def test_idmath_does_not_fire_on_non_key_measures():
+    # TPC-H idiom and ordinary measures: no key column → no flag.
+    assert _idmath("SELECT SUM(l_extendedprice * (1 - l_discount)) FROM lineitem") is None
+    assert _idmath("SELECT SUM(amount * exchange_rate) FROM payments") is None
+    assert _idmath("SELECT SUM(bid * 2) FROM auctions") is None          # 'bid' is not a key
+    assert _idmath("SELECT SUM(paid) FROM invoices") is None             # 'paid' ends in 'id' but not a key
+    assert _idmath("SELECT MIN(order_id) FROM orders") is None           # MIN/MAX not checked
+
+
+def test_idmath_windowed_and_distinct_excluded():
+    assert _idmath("SELECT SUM(order_id) OVER (PARTITION BY x) FROM orders") is None
+    assert _idmath("SELECT SUM(DISTINCT order_id) FROM orders") is None

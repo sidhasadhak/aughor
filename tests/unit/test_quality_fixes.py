@@ -54,6 +54,42 @@ def test_headline_accepts_legitimate_total():
     assert _ground_headline(hl, ["region", "total_revenue"], rows) == hl
 
 
+# ── A2. Scalar percent/rate grounding (eval 2026-06-21, Q6) ───────────────────
+# The repeat-rate result was a single cell 28.62 but the headline asserted 42.3% —
+# both < 100, so the old >=100 floor let it through. A single-row result is one
+# metric value, so EVERY number in the headline must match it.
+def test_headline_grounds_wrong_scalar_percent():
+    out = _ground_headline("Overall repeat purchase rate is 42.3%",
+                           ["repeat_purchase_rate"], [["28.62"]])
+    assert out != "Overall repeat purchase rate is 42.3%"
+    assert "28.62%" in out and "42.3" not in out
+
+
+def test_headline_keeps_correct_scalar_percent():
+    hl = "Repeat purchase rate is 28.62%"
+    assert _ground_headline(hl, ["repeat_purchase_rate"], [["28.62"]]) == hl
+
+
+def test_headline_percent_matches_fraction_stored_rate():
+    # a rate stored as a fraction (0.2862) still grounds a "28.6%" claim
+    hl = "Repeat rate is 28.6%"
+    assert _ground_headline(hl, ["repeat_rate"], [["0.2862"]]) == hl
+
+
+def test_headline_breakdown_small_count_not_flagged():
+    # "across 5 payment types" is a row count, not a data value — multi-row keeps the
+    # >=100 floor so 5 is never grounded-out; the AOV cells are present and match.
+    rows = [["credit_card", "70.82"], ["debit", "70.1"], ["voucher", "69.9"],
+            ["paypal", "69.6"], ["boleto", "69.35"]]
+    hl = "AOV is roughly flat across 5 payment types (69.35-70.82)"
+    assert _ground_headline(hl, ["payment_type", "aov"], rows) == hl
+
+
+def test_headline_scalar_year_not_flagged():
+    hl = "In 2025 revenue was $104.8M"
+    assert _ground_headline(hl, ["revenue"], [["104800000"]]) == hl
+
+
 # ── B. Missing-column repair diagnosis ────────────────────────────────────────
 def test_missing_column_hint_extracts_and_instructs_join():
     h = _missing_column_hint('Binder Error: Table "invoices" does not have a column named "order_ts"')

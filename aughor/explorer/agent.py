@@ -515,7 +515,7 @@ def _insight_sql_unsound(sql: str, conn=None) -> str | None:
     try:
         from aughor.sql.fanout import (
             self_ratio_tautology, detect_fanout, sum_over_chasm_fanout,
-            count_star_chasm_fanout, avg_over_chasm_fanout,
+            count_star_chasm_fanout, avg_over_chasm_fanout, measure_times_key_arithmetic,
         )
     except Exception:
         return None
@@ -523,6 +523,10 @@ def _insight_sql_unsound(sql: str, conn=None) -> str | None:
     taut = self_ratio_tautology(s)
     if taut:
         return taut
+
+    idmath = measure_times_key_arithmetic(s)
+    if idmath:
+        return f"id-arithmetic: {idmath[:160]}"
 
     # Build the oracle FIRST — it parses + caches conn._insight_table_cols, so the fan-out
     # guards reuse that schema parse (no second private import of _parse_schema_tables).
@@ -2130,6 +2134,7 @@ class SchemaExplorer:
         from aughor.sql.fanout import (
             integer_division_risk, count_star_entity_fanout, count_star_chasm_fanout,
             avg_over_chasm_fanout, sum_over_chasm_fanout, cte_grain_mismatch_fanout,
+            measure_times_key_arithmetic,
         )
         from aughor.sql.shape import is_redundant_insight, is_semantically_redundant
         from aughor.sql.join_guard import check_join_value_domains
@@ -2209,7 +2214,8 @@ class SchemaExplorer:
                          or count_star_chasm_fanout(sql, _tc, dialect=_dialect)
                          or avg_over_chasm_fanout(sql, _tc, dialect=_dialect)
                          or sum_over_chasm_fanout(sql, _tc, dialect=_dialect)
-                         or cte_grain_mismatch_fanout(sql, _tc, dialect=_dialect))
+                         or cte_grain_mismatch_fanout(sql, _tc, dialect=_dialect)
+                         or measure_times_key_arithmetic(sql, _tc, dialect=_dialect))
                 if grain:
                     logger.info("[explorer:%s] Phase 8 (pinned): skipping Q%d — grain bug: %s",
                                 self.connection_id, qi, grain)
@@ -3466,7 +3472,7 @@ class SchemaExplorer:
                     try:
                         from aughor.sql.fanout import (
                             integer_division_risk, count_star_entity_fanout, count_star_chasm_fanout,
-                            avg_over_chasm_fanout, sum_over_chasm_fanout,
+                            avg_over_chasm_fanout, sum_over_chasm_fanout, measure_times_key_arithmetic,
                         )
                         _tc = getattr(sql_writer, "table_cols", {})
                         # Measure-additivity: per-unit measure summed without ×quantity
@@ -3482,6 +3488,7 @@ class SchemaExplorer:
                                   or avg_over_chasm_fanout(sql, _tc, dialect=getattr(self._conn, "dialect", "duckdb"))
                                   or sum_over_chasm_fanout(sql, _tc, dialect=getattr(self._conn, "dialect", "duckdb"))
                                   or cte_grain_mismatch_fanout(sql, _tc, dialect=getattr(self._conn, "dialect", "duckdb"))
+                                  or measure_times_key_arithmetic(sql, _tc, dialect=getattr(self._conn, "dialect", "duckdb"))
                                   or (measure_grain_misuse(sql, _mg, _qc, dialect=getattr(self._conn, "dialect", "duckdb")) if _mg else None))
                         if _grain:
                             from aughor.stats import stats as _s; _s.inc("explorer.grain_skips")

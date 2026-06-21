@@ -713,7 +713,23 @@ def _ground_headline(headline, columns, rows):
         if vals:
             pool.append(sum(vals))
             pool.append(sum(vals) / len(vals))
-    unmatched = [n for n in _headline_numbers(headline) if abs(n) >= 100 and not _approx_in(n, pool)]
+    # A SINGLE-ROW result is one metric VALUE — the headline restates exactly that number,
+    # so ground EVERY number, not just big ones. This catches a fabricated rate ("repeat
+    # rate is 42.3%" when the only cell is 28.62) that the >=100 floor lets through. For a
+    # multi-row breakdown keep the floor (small numbers there are structural: "top 10",
+    # "across 5 types"). Match scale-tolerantly so a rate stored as a fraction (0.2862)
+    # still grounds a "28.62%" claim; skip bare years (a 2025 isn't a data claim).
+    scalar_like = len(rows) == 1
+    floor = 0.0 if scalar_like else 100.0
+
+    def _grounded(n):
+        if _approx_in(n, pool):
+            return True
+        return scalar_like and (_approx_in(n, [p * 100 for p in pool])
+                                or _approx_in(n, [p / 100 for p in pool if p]))
+
+    unmatched = [n for n in _headline_numbers(headline)
+                 if abs(n) >= floor and not (2000 <= n <= 2099 and n == int(n)) and not _grounded(n)]
     cat_idx = next((i for i in range(len(columns)) if not _col_is_numeric(rows, i)), None)
     leader_bad = False
     if cat_idx is not None and _LEADER_RE.search(headline) and cat_idx < len(rows[0]):
@@ -727,7 +743,12 @@ def _ground_headline(headline, columns, rows):
     num_idx = _primary_num_idx(columns, rows)
     if num_idx is None or num_idx >= len(rows[0]):
         return headline
-    fval = _fmt_value(columns[num_idx], rows[0][num_idx])
+    # Render a rate/percent metric with a trailing % (a fraction 0.x is shown as x%).
+    _raw = _hl_to_float(rows[0][num_idx])
+    if _raw is not None and re.search(r"rate|percent|pct|share|ratio|_of_total", str(columns[num_idx]).lower()):
+        fval = f"{_raw * 100:.2f}%" if abs(_raw) <= 1 else f"{_raw:.2f}%"
+    else:
+        fval = _fmt_value(columns[num_idx], rows[0][num_idx])
     metric = _humanize_col(columns[num_idx])
     if cat_idx is not None and len(rows) > 1 and cat_idx < len(rows[0]):
         return f"{rows[0][cat_idx]} leads {metric.lower()} at {fval}"
@@ -1248,6 +1269,18 @@ async def _stream_chat(
             except Exception as _e:
                 logger.debug("chat breakdown-grain guard is best-effort; skipped: %s", _e)
 
+        # ── id-arithmetic guard — a measure multiplied by a key fabricates a magnitude ──
+        # `SUM(unit_price * order_item_id)` for "revenue" multiplies price by the row's
+        # PRIMARY KEY (the €150M scar when order_items has no quantity column); it runs clean
+        # and over-counts silently. Force a repair toward aggregating the measure alone.
+        _idmath_fix_hint = ""
+        if final_sql:
+            try:
+                from aughor.sql.fanout import measure_times_key_arithmetic
+                _idmath_fix_hint = measure_times_key_arithmetic(final_sql, dialect=db.dialect) or ""
+            except Exception as _e:
+                logger.debug("chat id-arithmetic guard is best-effort; skipped: %s", _e)
+
         yield _sse("sql", {"sql": final_sql})
         result = await asyncio.to_thread(db.execute, "chat", final_sql)
 
@@ -1258,25 +1291,26 @@ async def _stream_chat(
 
         # Also trigger a rewrite when semantic column warnings exist, even if
         # the SQL executed successfully (wrong columns produce wrong results silently).
-        if result.error or _chat_zero_diag or _semantic_fix_hint or _fanout_fix_hint or _scope_fix_hint or _filter_fix_hint or _grain_fix_hint:
+        if result.error or _chat_zero_diag or _semantic_fix_hint or _fanout_fix_hint or _scope_fix_hint or _filter_fix_hint or _grain_fix_hint or _idmath_fix_hint:
             _writer2 = SqlWriter(db, schema_str=schema)
             _fix_error = (
                 result.error or
                 (_scope_fix_hint if _scope_fix_hint else None) or
                 (_filter_fix_hint if _filter_fix_hint else None) or
                 (_grain_fix_hint if _grain_fix_hint else None) or
+                (_idmath_fix_hint if _idmath_fix_hint else None) or
                 (_semantic_fix_hint if _semantic_fix_hint else None) or
                 (_fanout_fix_hint if _fanout_fix_hint else None) or
                 "Query returned 0 rows — the SQL logic is likely wrong."
             )
-            _combined_hint = " | ".join(filter(None, [_chat_zero_diag or "", _scope_fix_hint, _filter_fix_hint, _grain_fix_hint, _semantic_fix_hint, _fanout_fix_hint]))
+            _combined_hint = " | ".join(filter(None, [_chat_zero_diag or "", _scope_fix_hint, _filter_fix_hint, _grain_fix_hint, _idmath_fix_hint, _semantic_fix_hint, _fanout_fix_hint]))
             try:
                 fix = await asyncio.to_thread(
                     lambda: _writer2.fix(final_sql, _fix_error, hint=_combined_hint, max_retries=1)
                 )
                 if fix.ok:
                     retry = await asyncio.to_thread(db.execute, "chat", fix.sql)
-                    if not retry.error and (retry.row_count > 0 or not _chat_zero_diag or _semantic_fix_hint or _fanout_fix_hint or _scope_fix_hint or _filter_fix_hint or _grain_fix_hint):
+                    if not retry.error and (retry.row_count > 0 or not _chat_zero_diag or _semantic_fix_hint or _fanout_fix_hint or _scope_fix_hint or _filter_fix_hint or _grain_fix_hint or _idmath_fix_hint):
                         final_sql = fix.sql
                         result = retry
                         yield _sse("sql", {"sql": final_sql})
@@ -1316,6 +1350,19 @@ async def _stream_chat(
             )
             _rcpt["measure_grain"] = True
             logger.info("[chat] measure-grain caveat applied to headline")
+        # id-arithmetic backstop: if the repair couldn't eliminate a measure×key product
+        # (or a SUM/AVG over an id), the number is fabricated — caveat it instead of asserting.
+        try:
+            from aughor.sql.fanout import measure_times_key_arithmetic as _idmath
+            if final_sql and _idmath(final_sql, dialect=db.dialect):
+                _grounded_headline = (
+                    f"{(_grounded_headline or '').rstrip('. ')} — caution: this total multiplies a "
+                    "measure by an id/key column, so the magnitude is not trustworthy."
+                )
+                _rcpt["id_arithmetic"] = True
+                logger.info("[chat] id-arithmetic caveat applied to headline")
+        except Exception as _e:
+            logger.debug("chat id-arithmetic backstop is best-effort; skipped: %s", _e)
         # Deterministic concentration→pareto (the renderer never sees the question).
         answer.chart_type = _maybe_pareto(question, result.columns, result.rows, answer.chart_type)
         yield _sse("columns", {"columns": result.columns})
@@ -1369,6 +1416,8 @@ async def _stream_chat(
                 _guards.append(("flagged", "guard:narration_inversion", "a per-group value was stated as universal; caveated inline"))
             if _rcpt.get("measure_grain"):
                 _guards.append(("flagged", "guard:measure_grain", "a measure may be summed at the wrong grain (per-unit vs per-line); caveated inline"))
+            if _rcpt.get("id_arithmetic"):
+                _guards.append(("flagged", "guard:id_arithmetic", "a measure was multiplied by an id/key column; magnitude caveated inline"))
             for _tq in (_trusted_used or []):
                 _guards.append(("trusted", f"query:{(_tq.get('question') or '')[:60]}", _tq.get('note')))
             _write_answer_receipt(
@@ -1575,6 +1624,7 @@ async def _stream_investigation(
 
     canvas_schema_context: str = ""
     canvas_scope_schema: str | None = None
+    canvas_scope_tables: list[str] = []
     if canvas_id:
         try:
             from aughor.canvas.store import get_canvas, resolve_connection_id
@@ -1583,15 +1633,28 @@ async def _stream_investigation(
             if canvas and canvas.primary_connection_id:
                 connection_id = canvas.primary_connection_id
                 canvas_scope_schema = canvas.scopes[0].schema_name if canvas.scopes else None
+                canvas_scope_tables = list(canvas.scopes[0].tables or []) if canvas.scopes else []
                 canvas_schema_context = build_canvas_schema_context(canvas)
         except Exception:
             pass
+
+    # A table-list-scoped canvas on a multi-schema connection carries schema-qualified
+    # table names (e.g. "missimi.orders") with schema_name=None. Derive the single owning
+    # schema so the deep connection PINS search_path AND the DEFAULT SCHEMA note is injected
+    # — exactly as the chat path does. WITHOUT this the deep path left scope_schema=None, so
+    # bare names + the explore linker's full-schema FK expansion leaked to a sibling schema
+    # (missimi deep answering from another demo dataset). Mirrors _stream_chat.
+    canvas_scope_eff_schema = canvas_scope_schema
+    if not canvas_scope_eff_schema and canvas_scope_tables:
+        _scope_schemas = {t.split(".")[0] for t in canvas_scope_tables if "." in t}
+        if len(_scope_schemas) == 1:
+            canvas_scope_eff_schema = next(iter(_scope_schemas))
 
     # A non-canvas investigation (e.g. a briefing "pull the thread") can scope to a
     # specific schema the same way a canvas does: open the connection bound to that
     # schema and inject the DEFAULT SCHEMA prefix below. Canvas scope wins when both
     # are present.
-    scope_schema = canvas_scope_schema or (schema_scope if not canvas_id else None)
+    scope_schema = canvas_scope_eff_schema or (schema_scope if not canvas_id else None)
 
     try:
         if scope_schema:
@@ -1717,6 +1780,14 @@ async def _stream_investigation(
                     if _dt not in linked_tables:
                         linked_tables.append(_dt)
                 linked_tables = fk_neighbor_expand(full_schema, linked_tables, cap=10)
+                # Scope the expansion to the canvas schema: temporal/FK expansion walks the
+                # FULL schema and can pull a sibling schema's same-named table (netflix.products
+                # into a missimi investigation), which then becomes a cross-schema reference the
+                # explore planner copies verbatim (bypassing search_path). Drop out-of-scope tables.
+                if scope_schema:
+                    _allow = scope_schema.strip().lower()
+                    linked_tables = [t for t in linked_tables
+                                     if "." not in t or t.split(".")[0].strip().lower() == _allow]
                 data_catalog = await asyncio.to_thread(
                     lambda: build_data_catalog(db, linked_tables)
                 )
@@ -1776,6 +1847,7 @@ async def _stream_investigation(
             "sub_questions": [], "current_subq_idx": 0, "subq_answers": [], "explore_report": None,
             "investigation_phases": [], "ada_report": None, "_ada_intake": None,
             "canvas_id": canvas_id, "canvas_schema_context": canvas_schema_context,
+            "scope_schema": scope_schema or "",
             "data_catalog": data_catalog or "",
             "subq_data_portrait": {},
             "final_text_answer": "",
