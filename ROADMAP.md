@@ -192,9 +192,9 @@ Verified pending against code/git. `⬜` not started · `◑` partial.
 ### Workspace-settings / briefing-UX follow-ups (memory: `workspace-settings-pivot`)
 - ◑ **Localization wiring gaps** — `timezone` + `fiscal_year_start_month` are stored + in the UI but not yet applied (no TZ-shifted display / fiscal-period bucketing); `currency` + `date_format` ARE wired.
 - ✅ **Per-workspace override into the backend briefing** — `workspace_id` now threads endpoint → `get_briefing` → `generate_narrative` → `_profile_signals`/`resolve_currency` (FE: `selectedWorkspace` → IntelligenceWorkspace → BriefingPanel → both briefing API calls), so a workspace-scoped currency override wins over the app default in the brief's prose. Deterministically tested. *(Industry override already reaches the explorer; the briefing narrative uses currency + north-star, not industry.)*
-- ◑ **Currency on continuous chart axes** — tooltip values, series labels, tables + pivot are currency-aware; line/area y-axis *ticks* aren't prefixed yet.
+- ✅ **Currency on continuous chart axes** — verified the ECharts y-axis `axisLabel` formatters already route through the currency-aware `valueFormatter` (`builders.ts`), and `Chart.tsx` subscribes via `useOrgSettings` so axes rebuild on currency change. (The ROADMAP claim was stale.)
 - ⬜ **Identity-context breadth** — company/website/HQ feed the explorer steering only; could extend to the briefing narrator + profile-inference prompts.
-- ⬜ **org-settings reactivity for tables/KPI cards** — charts subscribe (`useOrgSettings`); tables + cards read-at-render (correct in practice, not subscribed).
+- ✅ **org-settings reactivity for tables/KPI cards** — `SqlResultTable` + `PivotTable` now call `useOrgSettings()` (re-render → re-read currency); `IndustryKpiStrip` threads the cache version into its data-fetch effect deps (the symbol is baked in there). Live: app renders, KPI strip shows €.
 - ◑ **Live briefing verification on real warehouse data** — the KPI strip + each metric's `chart_sql` trend are now live-verified on `missimi` (surfaced & fixed the trend-window bug, 2026-06-21); the full narrative briefing on a *non-DuckDB* warehouse still isn't exhaustively eyeballed.
 
 ### Commercialization / deploy

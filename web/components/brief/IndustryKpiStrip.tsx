@@ -26,6 +26,7 @@ import { GroundedNumber } from "@/components/brief/GroundedNumber";
 import { Sparkline, seriesTrend } from "@/components/brief/Sparkline";
 import { ResultChartCard } from "@/components/charts/ResultChartCard";
 import { effectiveCurrencySymbol } from "@/lib/orgSettings";
+import { useOrgSettings } from "@/lib/useOrgSettings";
 import { betterIsHigher } from "@/lib/favorability";
 
 interface Trend {
@@ -235,6 +236,9 @@ export function IndustryKpiStrip({ connectionId, schema }: { connectionId: strin
   const [industry, setIndustry] = useState("");
   const [period, setPeriod] = useState("");
   const [kpis, setKpis] = useState<Kpi[]>([]);
+  // The currency symbol is baked into each KPI inside the effect below, so re-run the
+  // effect when org settings change (else the strip keeps the old currency until reload).
+  const orgV = useOrgSettings();
 
   useEffect(() => {
     if (!connectionId) return;
@@ -278,7 +282,7 @@ export function IndustryKpiStrip({ connectionId, schema }: { connectionId: strin
       setPeriod(seenPeriod);
     })();
     return () => { alive = false; };
-  }, [connectionId, schema]);
+  }, [connectionId, schema, orgV]);
 
   return <KpiStripView industry={industry} period={period} kpis={kpis} />;
 }

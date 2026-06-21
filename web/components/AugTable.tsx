@@ -15,6 +15,7 @@ import { Table, ConfigProvider, theme } from "antd";
 import type { TableProps, TableColumnsType } from "antd";
 import { cleanLabel, formatMetricValue, formatPercent, displayCellValue } from "@/lib/format";
 import { isMoneyColumn, effectiveCurrencySymbol } from "@/lib/orgSettings";
+import { useOrgSettings } from "@/lib/useOrgSettings";
 
 // ── Theme-mode hook ──────────────────────────────────────────────────────────
 // Ant Design's theme tokens must be real colors (it derives shades), so we can't
@@ -217,6 +218,9 @@ export function SqlResultTable({
   totals = true,
   maxColWidth = 320,
 }: SqlResultTableProps) {
+  // Re-render when org settings change (currency/date) so the inline cell formatting
+  // below re-reads them — tables previously read at render but never subscribed.
+  useOrgSettings();
   const [showTotals, setShowTotals] = useState(false);
 
   // Per-column summable detection + column sums.
