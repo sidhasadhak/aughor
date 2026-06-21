@@ -1425,8 +1425,14 @@ class SchemaExplorer:
         if sem.locked():
             logger.info("[explorer:%s] queued — waiting for an exploration slot (max %d concurrent)",
                         self.connection_id, _MAX_CONCURRENT_EXPLORERS)
+        # R6: the global cap is the outer host ceiling (unchanged); the per-workspace lane is a
+        # stricter inner bound so one workspace can't monopolise compute once the global cap is
+        # raised for throughput. At defaults the global cap dominates → behaviour is identical.
+        from aughor.db.lanes import lane_for_connection
+        lane = lane_for_connection(self.connection_id)
         async with sem:
-            await self._explore_run(domain_intel_only=domain_intel_only)
+            async with lane.gate():
+                await self._explore_run(domain_intel_only=domain_intel_only)
 
     async def _explore_run(self, domain_intel_only: bool = False) -> None:
         """Full exploration run.
