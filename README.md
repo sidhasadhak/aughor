@@ -83,6 +83,9 @@ DuckDB · PostgreSQL · BigQuery · Snowflake · MySQL · local upload (CSV/Parq
 ### 📊 Eval suite — measured on real, unseen schemas
 NL2SQL quality validated against ground truth, not vibes: TPC-H (5/7), TPC-DS (4/5), ClickBench (10/10), a 53-question golden set, and a **reference-free** real-DB harness (executes-clean + self-consistency + cross-model LLM-as-judge). Generated SQL runs through the *full* pipeline, so the number reflects the product. Model-agnostic via `AUGHOR_CODER_MODEL`.
 
+### 🔗 MCP server — Aughor in your AI client
+Aughor's governed intelligence is exposed as **[Model Context Protocol](https://modelcontextprotocol.io) tools**, so any MCP client — **Claude Desktop, Claude Code, Cursor** — can ask Aughor and get a **verified answer with a Trust Receipt**, not raw SQL: `ask` (NL → grounded answer + receipt), `deep_analysis`, `get_metric` (governed value), `list_findings`, `get_briefing`, `explore`, and the agent-fleet `jobs` tools — deliberately **no raw `query`**. MotherDuck makes the client smart; Aughor makes the *tool* smart. `python -m aughor.mcp` (stdio) — see [`docs/MCP_SERVER.md`](docs/MCP_SERVER.md).
+
 ## Stack
 
 | Layer | Technology |

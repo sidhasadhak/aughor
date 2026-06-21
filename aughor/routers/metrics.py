@@ -195,6 +195,75 @@ async def get_metric_freshness(name: str, conn_id: str):
     return result.model_dump()
 
 
+@router.get("/metrics/{name}/value")
+async def get_metric_value(name: str, conn_id: str):
+    """Compute a governed metric's CURRENT value by running its registered SQL
+    against a connection — the exact governed number, not an LLM re-derivation.
+    This is what the MCP `get_metric` tool returns so an external agent binds to
+    the same definition the rest of Aughor enforces (vs improvising a formula)."""
+    from aughor.db.connection import open_connection_for
+
+    metric = get_metric(name)
+    if not metric:
+        raise HTTPException(status_code=404, detail=f"Metric '{name}' not found.")
+    try:
+        db = open_connection_for(conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+
+    # Build the GOVERNED value query from the metric's parts: the aggregate expression
+    # over its table, with its declared filters applied (e.g. revenue = SUM(total_amount)
+    # WHERE status <> 'cancelled' — net-of-cancelled, the governed definition). A metric
+    # whose sql is already a full SELECT is run verbatim.
+    expr = (metric.sql or "").strip()
+    if expr.lower().startswith("select"):
+        query = expr
+    else:
+        query = f"SELECT ({expr}) AS _v"
+        if metric.tables:
+            query += f" FROM {metric.tables[0]}"
+            if metric.filters:
+                query += " WHERE " + " AND ".join(metric.filters)
+
+    def _work():
+        try:
+            qr = db.execute(query)
+            rows = qr.rows if qr else []
+            if rows and rows[0] is not None:
+                raw = rows[0][0] if isinstance(rows[0], (list, tuple)) else list(rows[0].values())[0]
+                try:
+                    return float(raw), None
+                except (TypeError, ValueError):
+                    return None, None
+            return None, None
+        except Exception as exc:
+            # A bare-aggregate metric on an ambiguous (e.g. multi-schema) connection can't
+            # be auto-computed — report that honestly rather than 500-ing.
+            return None, str(exc)
+        finally:
+            try:
+                db.close()
+            except Exception as exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(exc, "metric-value connection close is best-effort",
+                         counter="metrics.value.close")
+
+    loop = asyncio.get_event_loop()
+    value, err = await loop.run_in_executor(None, _work)
+    out = {
+        "name": metric.name,
+        "label": metric.label,
+        "value": value,
+        "unit": metric.unit,
+        "sql": query,
+        "filters": metric.filters,
+        "caveats": metric.caveats,
+    }
+    if err:
+        out["note"] = f"Could not compute against '{conn_id}': {err}"
+    return out
+
+
 @router.get("/connections/{conn_id}/health-scorecard")
 async def get_health_scorecard(conn_id: str):
     """Execute each targeted metric's SQL and return health status."""
