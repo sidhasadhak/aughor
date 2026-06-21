@@ -235,10 +235,11 @@ def _coverage_digest(domain_data: dict[str, list[dict]], cited_ids: set[str]) ->
         return ""
 
 
-def _profile_signals(profile: Any) -> tuple[list, str]:
+def _profile_signals(profile: Any, workspace_id: Optional[str] = None) -> tuple[list, str]:
     """(north-star token-sets, currency symbol) from a BusinessProfile (model or dict).
     Empty/`$` defaults when no profile — the brief still gates and ranks, just without
-    north-star weighting or currency correction."""
+    north-star weighting or currency correction. `workspace_id` lets a workspace-scoped
+    currency override win over the app default (else app default, else the inferred code)."""
     from aughor.knowledge.triage import north_star_tokens, currency_symbol
     names: list[str] = []
     code: Optional[str] = None
@@ -249,7 +250,7 @@ def _profile_signals(profile: Any) -> tuple[list, str]:
         names = [getattr(m, "name", "") for m in (getattr(profile, "north_star_metrics", None) or [])]
         code = getattr(profile, "currency_code", None)
     from aughor.orgsettings import resolve_currency
-    return north_star_tokens(names), currency_symbol(resolve_currency(code or ""))
+    return north_star_tokens(names), currency_symbol(resolve_currency(code or "", workspace_id))
 
 
 def generate_narrative(
@@ -258,6 +259,7 @@ def generate_narrative(
     connection_id: str,
     macro_context: Optional[dict] = None,
     profile: Any = None,
+    workspace_id: Optional[str] = None,
 ) -> dict[str, Any]:
     """
     Call the LLM narrator and return a serialisable briefing dict.
@@ -283,12 +285,13 @@ def generate_narrative(
         }
     """
     from aughor.knowledge.triage import plausibility, impact_score
-    ns_tokens, currency_sym = _profile_signals(profile)
+    ns_tokens, currency_sym = _profile_signals(profile, workspace_id)
     from aughor.orgsettings import resolve_currency
-    # Override-wins: a set org currency beats the inferred currency_code (resolve_currency
-    # already falls back to the inferred value, then "USD").
+    # Override-wins: a workspace-scoped (then app) org currency beats the inferred
+    # currency_code (resolve_currency already falls back to the inferred value, then "USD").
     currency_code = resolve_currency(
-        (profile.get("currency_code") if isinstance(profile, dict) else getattr(profile, "currency_code", None)) or ""
+        (profile.get("currency_code") if isinstance(profile, dict) else getattr(profile, "currency_code", None)) or "",
+        workspace_id,
     )
 
     # Currency-normalise any text shown in the brief: a non-USD business should never display
@@ -459,6 +462,7 @@ def get_briefing(
     macro_context: Optional[dict] = None,
     profile: Any = None,
     metric_moves: "Optional[Any]" = None,
+    workspace_id: Optional[str] = None,
 ) -> dict[str, Any]:
     """Return cached briefing narrative if fresh, otherwise generate and cache.
 
@@ -493,7 +497,8 @@ def get_briefing(
         if moves:
             domain_data = {**domain_data, "Key Metrics": list(moves) + list(domain_data.get("Key Metrics", []))}
 
-    briefing = generate_narrative(domain_data, patterns, connection_id, macro_context, profile=profile)
+    briefing = generate_narrative(domain_data, patterns, connection_id, macro_context,
+                                  profile=profile, workspace_id=workspace_id)
 
     try:
         _CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)

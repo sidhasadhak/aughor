@@ -1709,6 +1709,7 @@ export function BriefingPanel({
   onInvestigate,
   canvasId,
   schema,
+  workspaceId,
 }: {
   connectionId: string;
   onInvestigate: (q: string, insightId?: string) => void;
@@ -1718,6 +1719,9 @@ export function BriefingPanel({
   /** Shared schema scope from the workspace header (filters findings + narrative).
    *  Undefined = all schemas. N/A for a canvas (already table-scoped). */
   schema?: string;
+  /** Active workspace — lets a workspace-scoped currency/industry override win in the
+   *  backend briefing (override-wins over the app default). Undefined = app default. */
+  workspaceId?: string;
 }) {
   const [briefing, setBriefing]             = useState<BriefingData | null>(null);
   const [loading, setLoading]               = useState(false);
@@ -1781,8 +1785,8 @@ export function BriefingPanel({
     setNarrativeError(null);
     try {
       const result = canvasId
-        ? await generateCanvasBriefingNarrative(canvasId, forceRefresh)
-        : await generateBriefingNarrative(connectionId, forceRefresh, schema);
+        ? await generateCanvasBriefingNarrative(canvasId, forceRefresh, workspaceId)
+        : await generateBriefingNarrative(connectionId, forceRefresh, schema, workspaceId);
       if (result.available) setNarrative(result);
       else setNarrativeError("No domain intelligence available — run an exploration first.");
     } catch (e) {
@@ -1790,7 +1794,7 @@ export function BriefingPanel({
     } finally {
       setNarrativeLoading(false);
     }
-  }, [connectionId, canvasId, schema]);
+  }, [connectionId, canvasId, schema, workspaceId]);
 
   // Shared explorer actions — used by both the control bar and the empty-state CTA.
   // In canvas mode (canvasId set) every action drives the *canvas* explorer, scoped to

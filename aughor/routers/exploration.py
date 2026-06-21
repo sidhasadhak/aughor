@@ -462,7 +462,8 @@ def _metric_moves_provider(conn_id: str, profile):
 
 
 @router.post("/exploration/{conn_id}/briefing")
-def generate_briefing(conn_id: str, refresh: bool = False, schema: str | None = None):
+def generate_briefing(conn_id: str, refresh: bool = False, schema: str | None = None,
+                      workspace_id: str | None = None):
     """Generate (or return cached) an LLM synthesis narrative for the connection."""
     from aughor.explorer import store as _expl_store
     from aughor.knowledge.patterns import get_patterns
@@ -511,12 +512,13 @@ def generate_briefing(conn_id: str, refresh: bool = False, schema: str | None = 
         macro_context=macro,
         profile=profile,
         metric_moves=_metric_moves_provider(conn_id, profile),
+        workspace_id=workspace_id,
     )
     return {**result, "macro_context": macro, "available": bool(result.get("narrative"))}
 
 
 @router.post("/exploration/canvas/{canvas_id}/briefing")
-def generate_canvas_briefing(canvas_id: str, refresh: bool = False):
+def generate_canvas_briefing(canvas_id: str, refresh: bool = False, workspace_id: str | None = None):
     """Generate (or return cached) a briefing scoped to a Canvas's curated tables — so the
     brief reflects only the canvas's tables, not the whole connection (scope consistency:
     Domains is already canvas-scoped; this brings Briefing in line)."""
@@ -552,6 +554,7 @@ def generate_canvas_briefing(canvas_id: str, refresh: bool = False):
         macro_context=macro,
         profile=profile,
         metric_moves=_metric_moves_provider(conn_id, profile),
+        workspace_id=workspace_id,
     )
     return {**result, "macro_context": macro, "available": bool(result.get("narrative"))}
 

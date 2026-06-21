@@ -66,6 +66,9 @@ type Props = {
   /** When set, scope-aware layers (Briefing) reflect this Canvas's curated tables rather
    *  than the whole connection — keeps Briefing consistent with the canvas-scoped Domains. */
   canvasId?: string;
+  /** Active workspace — threaded to the Briefing so a workspace-scoped currency/industry
+   *  override wins in the backend (override-wins over the app default). */
+  workspaceId?: string;
 };
 
 /**
@@ -79,7 +82,7 @@ type Props = {
  * mounted (display toggled), so graph zoom/scroll/fetch state survives layer
  * switches. Layers that have never been visited aren't mounted at all.
  */
-export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLayerChange, connections, onConnectionChange, domainSection, canvasId }: Props) {
+export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLayerChange, connections, onConnectionChange, domainSection, canvasId, workspaceId }: Props) {
   // Mount a layer the first time it becomes active, then keep it mounted.
   const [visited, setVisited] = useState<Set<IntelLayer>>(() => new Set([layer]));
   useEffect(() => {
@@ -203,7 +206,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
       <div style={{ flex: 1, position: "relative", overflow: "hidden", minHeight: 0 }}>
         {visited.has("briefing") && (
           <Layer show={layer === "briefing"}>
-            <BriefingPanel connectionId={connectionId} onInvestigate={(q, insightId) => onInvestigate(q, "investigate", insightId)} canvasId={canvasId} schema={schema} />
+            <BriefingPanel connectionId={connectionId} onInvestigate={(q, insightId) => onInvestigate(q, "investigate", insightId)} canvasId={canvasId} schema={schema} workspaceId={workspaceId} />
           </Layer>
         )}
         {visited.has("ontology") && (

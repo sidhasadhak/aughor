@@ -2356,10 +2356,12 @@ export async function generateBriefingNarrative(
   connectionId: string,
   refresh = false,
   schema?: string,
+  workspaceId?: string,
 ): Promise<BriefingNarrativeResponse> {
   const q = new URLSearchParams();
   if (refresh) q.set("refresh", "true");
   if (schema) q.set("schema", schema);
+  if (workspaceId) q.set("workspace_id", workspaceId);
   const qs = q.toString() ? `?${q.toString()}` : "";
   const url = `${BASE}/exploration/${encodeURIComponent(connectionId)}/briefing${qs}`;
   const res = await fetch(url, { method: "POST" });
@@ -2372,8 +2374,12 @@ export async function generateBriefingNarrative(
 export async function generateCanvasBriefingNarrative(
   canvasId: string,
   refresh = false,
+  workspaceId?: string,
 ): Promise<BriefingNarrativeResponse> {
-  const qs = refresh ? "?refresh=true" : "";
+  const q = new URLSearchParams();
+  if (refresh) q.set("refresh", "true");
+  if (workspaceId) q.set("workspace_id", workspaceId);
+  const qs = q.toString() ? `?${q.toString()}` : "";
   const url = `${BASE}/exploration/canvas/${encodeURIComponent(canvasId)}/briefing${qs}`;
   const res = await fetch(url, { method: "POST" });
   if (!res.ok) throw new Error("Failed to generate canvas briefing narrative");

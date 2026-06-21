@@ -1874,6 +1874,7 @@ export default function Home() {
                 connections={wsConnections.filter(c => c.briefings_enabled !== false).map(c => ({ id: c.id, name: c.name }))}
                 onConnectionChange={setSelectedConn}
                 domainSection={explorationSection}
+                workspaceId={selectedWorkspace}
               />
             )}
 
