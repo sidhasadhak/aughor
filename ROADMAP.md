@@ -226,7 +226,7 @@ Verified pending against code/git. `⬜` not started · `◑` partial.
 
 ### Infra / code health
 - ⬜ **K4 follow-ups** — generated typed TS client (`web/lib/api.gen.ts` absent), domain-interface module splits, the `_phase8_domain_intelligence` god-file split, WCH-8 `.duckdb` write-coordination.
-- ◑ **Profiler composite-PK detection** — single-column grain only today; composite/non-obvious keys (e.g. `invoices.order_id`) aren't detected as a grain (`aughor/tools/profiler.py`).
+- ✅ **Profiler composite-PK detection** — `build_table_profile` now probes key-like candidate PAIRS (bounded: only when no single PK, ≤4 pairs, ≤5M rows, one-time/cached) and records a PROVEN composite grain in a new `TableProfile.grain_columns`, surfaced in the data portrait (`| grain: (order_id, order_item_id) ✓`). Separate signal from `grain_column`/`grain_verified` (unchanged for their single-col consumers). Live: missimi `order_items` (2.37M rows, no single PK) → `(order_id, order_item_id)` in 0.03s.
 - ⬜ **B-10 — bigger benchmark run** *(S, compute-bound)* — the UNIFY lift run is done; the larger real-warehouse deterministic-decode run isn't recorded yet.
 
 ### Parked ideas (2026-06-15 — discussed, not yet scheduled)
