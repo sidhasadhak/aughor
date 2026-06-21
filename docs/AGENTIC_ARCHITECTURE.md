@@ -77,10 +77,20 @@ The **substrate** is the part most platforms must build from scratch — and it 
 ## 6. Phased roadmap (each step leans on existing infra)
 
 - **Phase 0 — Formalize:** an agent **registry** (charter per role) + tag every job/event with its agent.
-  Instant fleet semantics, near-zero new machinery.
+  Instant fleet semantics, near-zero new machinery. *Add **cost/compute metering** here (LLM tokens +
+  warehouse rows/bytes + wall-time → `kernel/ledger.py` receipt + job row) — a charter's **budget** is
+  unenforceable until you measure spend (MotherDuck makes this structural via per-Duckling CU-seconds; we
+  make it provenance). See [`MOTHERDUCK_LEARNINGS.md`](MOTHERDUCK_LEARNINGS.md) R1.*
 - **Phase 1 — Fleet view:** a dashboard over the event journal + receipts. Highest perceived-agentic ROI for the least code.
+  *Build the backend as a thin **`/jobs` REST + tool surface over the existing ledger API**
+  (`jobs_where`/`job_get`/`cancel`/`events`/`receipt` already exist; only the HTTP/tool layer is missing —
+  today just `/events/stream` SSE). Name it `list`/`get`/`logs`/`cancel` after MotherDuck's **Flights**
+  tools — that same layer becomes the MCP job tools. See [`MOTHERDUCK_LEARNINGS.md`](MOTHERDUCK_LEARNINGS.md) R2.*
 - **Phase 2 — Supervisor + blackboard:** Orchestrator routes a goal across specialists; split ADA into
-  `SQL Engineer` / `Verifier` / `Narrator`.
+  `SQL Engineer` / `Verifier` / `Narrator`. *The `Verifier` is the home for a **typed SQL-error taxonomy**
+  (`parser | binder | semantic | runtime`, à la MotherDuck's `try_bind`) that **routes repair by type**
+  instead of by regex string — promote the existing `_make_diagnosis`/`tools/error_classifier.py`. See
+  [`MOTHERDUCK_LEARNINGS.md`](MOTHERDUCK_LEARNINGS.md) R3.*
 - **Phase 3 — Proactivity:** upgrade Monitors → a reasoning `Watcher` that auto-spawns investigations and drafts
   actions (human approves).
 - **Phase 4 — Collaboration + memory:** agents subscribe to each other's findings; a `Critic` re-validates
@@ -88,3 +98,32 @@ The **substrate** is the part most platforms must build from scratch — and it 
 
 **Single highest-leverage first move:** Phase 0 + 1 (registry + fleet view) — it makes the autonomy we
 *already run* legible as a fleet, with minimal new code.
+
+## 7. MotherDuck cross-check (2026-06-21)
+
+A deep study of MotherDuck — the closest "AI + SQL + analytics" platform — both **validates this plan** and
+hands us two ready-made surfaces. Full record: [`MOTHERDUCK_LEARNINGS.md`](MOTHERDUCK_LEARNINGS.md); backlog
+in [`../ROADMAP.md`](../ROADMAP.md) §3.
+
+- **It validates the moat.** MotherDuck's own benchmark (DABstep) reaches 100% only when domain knowledge
+  moves into a **governed semantic layer** over raw tables, and their stated trust differentiator ("every AI
+  answer shows its SQL") *is* Aughor's Trust Receipts. An engine vendor published the evidence that you need
+  the governed-layer-plus-trust stack this fleet is built around — and Aughor already has the layer + guards
+  + provenance their thin agents lack. **The `Verifier` and the governed-metric grounding are the point, not
+  an add-on.** (Prove it with a semantic-layer *ablation* eval — `MOTHERDUCK_LEARNINGS.md` R4.)
+
+- **Two surfaces to borrow, both thin layers over infra we already have:**
+  1. **The Flights job-API contract** (`run`/`list_runs`/`get_run_logs`/`cancel`) → the shape for Phase 1's
+     fleet-view backend over our ledger (R2).
+  2. **The MCP tool contract** → how the fleet becomes **externally addressable**. The differentiator: expose
+     *governed intelligence* tools (`ask`+receipt, `deep_analysis`, `get_metric`, `list_findings`,
+     `get_briefing`, `explore`, `jobs`), **not** raw `query`. MotherDuck makes the client smart; we make the
+     tool smart (R5; enriches the deferred MCP item in ROADMAP §3).
+
+- **What it confirms we should NOT do:** become a warehouse, or move the intelligence into a columnar
+  `prompt()`. Aughor's edge is warehouse-agnostic intelligence + trust; MotherDuck-as-backend is an optional
+  serving tier (R6), and AI-as-a-SQL-operator a governed +1 (R8), never the foundation.
+
+**Revised first move (unchanged in spirit, sharpened):** Phase 0 + 1 — registry + fleet view — but fold in
+**cost metering** (R1, so charters carry real budgets) and build the fleet view as the **`/jobs` ledger
+surface** (R2) that doubles as the MCP job tools.
