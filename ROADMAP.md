@@ -155,7 +155,11 @@ Grouped by area; each ✅ is verified shipped (git + code). Representative commi
   - **id-arithmetic guard** `measure_times_key_arithmetic` (`aughor/sql/fanout.py`) — kills `SUM(measure × id/key)` fabrication across every SQL guard path (explorer, ADA, profile-audit, chat). Live: Q5 → `SUM(unit_price)`.
   - **chat-headline grounding** — `_ground_headline` grounds every number for a scalar result, scale-tolerant. Live: Q6 → `28.49%` (was 42.3%).
   - **explore/deep schema scoping** — derive effective schema + scope the catalog expansion + `_rescope_sql_to_schema` drop/repair in `explore.py`. Live: Q25/Q21 stayed missimi-scoped (0 leaks).
-  - **Next:** the 🟠/🟡 items below, then re-run the full 50+50 as a regression.
+- ✅ **Eval-derived 🟠 high-priority fixes** (build→wire→test→leverage; +14 unit tests; zero net debt):
+  - **`cancelled→canceled` on `!=`/`NOT IN`** — extended the filter value-domain guard (op-aware) AND wired it into the DEEP paths (ADA + explore), where it was previously chat-only. Live: deep Q29 no longer reports "zero cancellations".
+  - **currency in chat prose** — `$`→org-symbol post-pass on the chat headline + narrative. Live: "€107.42M".
+  - **ratio-of-sums enforcement** (`avg_of_row_ratios` guard) — catches `AVG(a/b)`; the freight Insight-vs-Deep gap was reclassified as a metric-DEFINITION difference (→ UNIFY).
+  - **Next:** the 🟡 latency/time-series item + the metric-definition consistency (UNIFY), then re-run the full 50+50 as a regression.
 
 ---
 
@@ -167,11 +171,11 @@ Verified pending against code/git. `⬜` not started · `◑` partial.
 - ✅ **🔴 Block arithmetic on id/key columns** — `measure_times_key_arithmetic` (AST guard in `aughor/sql/fanout.py`) detects `SUM/AVG(<measure> * <id/key>)` and `SUM/AVG(<id>)`; wired into all sibling guard bundles (explorer ×3 loops, ADA scan, profile-audit ×3, chat repair-hint + backstop caveat). Live: Q5 now emits `SUM(unit_price)` (was `SUM(unit_price * order_item_id)`).
 - ✅ **🔴 Chat-headline number grounding** — `_ground_headline` now grounds EVERY number for a single-row (scalar) result (not just ≥100), scale-tolerant for fraction↔percent, year-safe. Live: Q6 headline `Repeat Purchase Rate: 28.49%` matches the cell (was a fabricated 42.3%).
 - ✅ **🔴 Pin `explore`/deep search_path to the canvas schema** — deep path now derives the effective schema from table prefixes (was `scope_schema=None` for a table-list canvas), scopes the catalog FK/temporal expansion, and `explore.py` rescopes/drops any cross-schema sub-query (`_rescope_sql_to_schema`). Live: both explore-mode deep runs (Q25, Q21) stayed fully missimi-scoped (0 leak terms; Q21 returned real P000545 not "Mechanical Keyboard").
-- ⬜ **🟠 `cancelled→canceled` value-domain repair on `!=`/`NOT IN`** (not just `=`/`IN`) — Q29 concluded "cancellation rate is zero" despite 15,737 canceled orders.
-- ⬜ **🟠 Currency symbol in chat prose** — thread the effective currency into the chat narrator + a `$`→symbol post-pass (reuse the briefing `_cur()`); EUR org still renders `$` in ledes.
-- ⬜ **🟠 Deep reuses the ratio-of-sums recipe** (`_metric_is_ratio`) instead of re-deriving — Insight vs Deep disagreed on freight-% (2.17% vs 1.48%).
+- ✅ **🟠 `cancelled→canceled` value-domain repair on `!=`/`NOT IN`** — `_extract_filter_literals` now captures `!=`/`<>`/`NOT IN` (op-tagged), `FilterDomainWarning` is operator-aware ("excludes NO rows" for negations), and the guard is now wired into the DEEP paths too (ADA `_execute_safe` + explore `plan_and_execute_subq` — it was chat-only). Live: deep Q29 flipped from "cancellation rate is zero / no driver" to "rates uniform across all eight dimensions" (analyses real cancellations).
+- ✅ **🟠 Currency symbol in chat prose** — `_resolve_currency_symbol` (override-wins) + `_apply_currency` `$`→symbol post-pass on the chat headline + narrative. Live: "Total Delivered Revenue: **€**107.42M" (was `$`). Deep ledes already rendered `€`.
+- ◑ **🟠 Ratio-of-sums enforcement** — shipped `avg_of_row_ratios` (AST guard: `AVG(a/b)` → use `SUM(a)/NULLIF(SUM(b),0)`), wired into all sibling guard bundles. BUT the specific freight Insight-vs-Deep "disagreement" turned out to be a **metric-DEFINITION difference, not a recipe error**: Insight computes *freight % of order value* (2.17%) while Deep computes *freight cost per order* (1.48) — two valid metrics for two differently-phrased questions, so the guard correctly didn't fire. The cross-path metric-consistency gap belongs to **canonical-metric registration (UNIFY)** below, not here.
 - ⬜ **🟡 Insight time-series recent-window + deep-mode latency** — apply the recent-window default to ad-hoc time-series narratives (Q15 anchored on 2022); parallelize `score_evidence` (deep runs 200–450s, one timed out).
-- ⬜ **Then:** run the full 50+50 missimi eval as a regression to confirm closure + catch the long tail.
+- ⬜ **Then:** run the full 50+50 missimi eval as a regression to confirm closure + catch the long tail (criticals + 🟠 done; only the 🟡 + the metric-definition consistency remain).
 
 ### Superset-derived backlog (see [`docs/SUPERSET_INTEGRATION.md`](docs/SUPERSET_INTEGRATION.md))
 - ⬜ **Error-registry enrichment** — Superset per-dialect SQL-error regex → `tools/error_classifier.py` (better FIX_SQL repair + user messages). *Needs live BigQuery/Snowflake to verify warehouse patterns.*

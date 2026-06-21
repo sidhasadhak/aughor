@@ -127,3 +127,33 @@ def test_idmath_does_not_fire_on_non_key_measures():
 def test_idmath_windowed_and_distinct_excluded():
     assert _idmath("SELECT SUM(order_id) OVER (PARTITION BY x) FROM orders") is None
     assert _idmath("SELECT SUM(DISTINCT order_id) FROM orders") is None
+
+
+# ── Avg-of-row-ratios — wrong recipe for a group-level rate (eval 2026-06-21, Q23) ──
+# AVG(freight/price) averages per-row ratios (over-weights small denominators); the
+# correct group rate is the RATIO OF SUMS SUM(freight)/SUM(price). The eval scar: Deep
+# derived freight-% as 1.48% via avg-of-ratios while Insight's ratio-of-sums gave 2.17%.
+
+from aughor.sql.fanout import avg_of_row_ratios as _avgratio
+
+
+def test_avgratio_flags_avg_of_division_by_column():
+    assert _avgratio("SELECT customer_country, AVG(freight_value / price) AS r FROM orders GROUP BY 1") is not None
+    assert _avgratio("SELECT AVG(freight_value / NULLIF(price, 0)) FROM orders") is not None
+    assert _avgratio("SELECT AVG(CAST(a AS DOUBLE) / b) FROM t") is not None
+
+
+def test_avgratio_silent_on_ratio_of_sums():
+    # the CORRECT recipe — the Div is over SUMs, not inside an AVG
+    assert _avgratio("SELECT SUM(freight_value) / NULLIF(SUM(order_value), 0) FROM orders") is None
+    assert _avgratio("SELECT AVG(a) / AVG(b) FROM t") is None
+
+
+def test_avgratio_silent_on_constant_scale_and_plain_avg():
+    assert _avgratio("SELECT AVG(score / 100.0) FROM t") is None   # dividing by a constant is scaling
+    assert _avgratio("SELECT AVG(price) FROM t") is None
+
+
+def test_avgratio_excludes_distinct_and_windowed():
+    assert _avgratio("SELECT AVG(DISTINCT a / b) FROM t") is None
+    assert _avgratio("SELECT AVG(a / b) OVER (PARTITION BY z) FROM t") is None

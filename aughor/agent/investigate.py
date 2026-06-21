@@ -601,7 +601,20 @@ def _execute_safe(conn: "DatabaseConnection", phase_id: str, sql: str, schema: O
         tolerate(_exc, "ada join-guard probe best-effort; query proceeds",
                  counter="join_guard.ada_probe")
 
-    if result.error or _zero_diag or _domain_warnings:
+    # Filter value-domain guard: a misspelled WHERE/HAVING literal — `status = 'cancelled'`
+    # when the data holds 'canceled' — matches (or, with `!=`/`NOT IN`, EXCLUDES) zero rows
+    # and silently reports "no cancellations" (the Q29 scar: zero despite 15,737). Probe the
+    # column's real domain and feed the same regenerate loop. Chat already does this; ADA didn't.
+    _filter_warnings = []
+    try:
+        from aughor.sql.join_guard import check_filter_value_domains
+        _filter_warnings = check_filter_value_domains(conn, sql)
+    except Exception as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "ada filter-guard probe best-effort; query proceeds",
+                 counter="filter_guard.ada_probe")
+
+    if result.error or _zero_diag or _domain_warnings or _filter_warnings:
         class _Fix(BaseModel):
             fixed_sql: str
             explanation: str
@@ -627,6 +640,9 @@ def _execute_safe(conn: "DatabaseConnection", phase_id: str, sql: str, schema: O
             if _domain_warnings:
                 _dw_text = "\n".join(w.to_prompt_text() for w in _domain_warnings)
                 _diag = (f"{_diag}\n{_dw_text}" if _diag else f"DIAGNOSIS: {_dw_text}").strip() + "\n"
+            if _filter_warnings:
+                _fw_text = "\n".join(w.to_prompt_text() for w in _filter_warnings)
+                _diag = (f"{_diag}\n{_fw_text}" if _diag else f"DIAGNOSIS: {_fw_text}").strip() + "\n"
 
             # Synthesise a fake "error" message so FIX_SQL_PROMPT has something
             # useful in the ERROR MESSAGE field when there was no hard error.
@@ -634,6 +650,8 @@ def _execute_safe(conn: "DatabaseConnection", phase_id: str, sql: str, schema: O
                 fix_error = _err
             elif _domain_warnings:
                 fix_error = "A join is on value-disjoint columns (see DIAGNOSIS) — the result is unreliable."
+            elif _filter_warnings:
+                fix_error = "A filter literal is absent from the column's value domain (see DIAGNOSIS) — the result silently includes/excludes the wrong rows."
             else:
                 fix_error = "Query returned 0 rows — the SQL logic is likely wrong (see DIAGNOSIS)."
 
@@ -661,6 +679,13 @@ def _execute_safe(conn: "DatabaseConnection", phase_id: str, sql: str, schema: O
                 try:
                     from aughor.sql.join_guard import check_join_value_domains as _cjvd
                     _accept = not _cjvd(conn, fix.fixed_sql)
+                except Exception:
+                    _accept = False
+            # Never replace a query with one that STILL filters on a non-existent literal.
+            if _accept and _filter_warnings:
+                try:
+                    from aughor.sql.join_guard import check_filter_value_domains as _cfvd
+                    _accept = not _cfvd(conn, fix.fixed_sql)
                 except Exception:
                     _accept = False
             if _accept:
@@ -1920,7 +1945,7 @@ def run_analysis_phase(
     try:
         from aughor.sql.fanout import (
             sum_over_chasm_fanout, avg_over_chasm_fanout, count_star_chasm_fanout,
-            measure_times_key_arithmetic,
+            measure_times_key_arithmetic, avg_of_row_ratios,
         )
         from aughor.tools.schema import parse_schema_tables
         _tc = parse_schema_tables(schema) if schema else {}
@@ -1971,7 +1996,7 @@ def run_analysis_phase(
             hits = []
             for _q in (queries or []):
                 for _det in (sum_over_chasm_fanout, avg_over_chasm_fanout, count_star_chasm_fanout,
-                             measure_times_key_arithmetic):
+                             measure_times_key_arithmetic, avg_of_row_ratios):
                     _h = _det(_q.sql, _tc, _dialect)
                     if _h:
                         hits.append(_h)

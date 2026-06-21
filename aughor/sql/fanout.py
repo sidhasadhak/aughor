@@ -582,6 +582,54 @@ def measure_times_key_arithmetic(sql: str, table_cols: dict | None = None,
     return None
 
 
+def avg_of_row_ratios(sql: str, table_cols: dict | None = None,
+                      dialect: str = "duckdb") -> str | None:
+    """``AVG(<a> / <b>)`` — the mean of PER-ROW ratios — is the wrong recipe for a
+    group-level rate: it weights every row equally regardless of denominator magnitude,
+    so tiny-denominator rows dominate and the rate is skewed. The real-path scar: the Deep
+    path derived freight-% as ``AVG(freight / price)`` → 1.48% for Germany while the
+    correct ratio-of-sums (the Insight path) gave 2.17%. The right form is the RATIO OF
+    SUMS: ``SUM(a) / NULLIF(SUM(b), 0)`` — every prompt already mandates it; this enforces it.
+
+    High-precision: fires only on a non-DISTINCT, non-windowed AVG whose argument is a
+    DIVISION BY A COLUMN. So ``AVG(col)``, ``AVG(score / 100.0)`` (a constant scale), and
+    ``SUM(a)/SUM(b)`` / ``AVG(a)/AVG(b)`` (the Div is outside the AVG) are all left alone.
+    ``table_cols`` is accepted for call-site symmetry but unused. Returns a reason or None;
+    never raises."""
+    try:
+        import sqlglot
+        from sqlglot import exp
+    except Exception:
+        return None
+    try:
+        tree = sqlglot.parse_one(sql, read=dialect)
+    except Exception:
+        return None
+    if tree is None:
+        return None
+
+    for avg in tree.find_all(exp.Avg):
+        if isinstance(avg.this, exp.Distinct) or isinstance(avg.parent, exp.Window):
+            continue
+        arg = avg.this
+        while isinstance(arg, (exp.Paren, exp.Cast, exp.TryCast)):
+            arg = arg.this
+        if not isinstance(arg, exp.Div):
+            continue
+        den = arg.expression
+        if isinstance(den, exp.Nullif):
+            den = den.this if den.this is not None else (den.expressions[0] if den.expressions else den)
+        while isinstance(den, exp.Paren):
+            den = den.this
+        # Only a divisor that references a COLUMN is a per-row varying denominator (a true
+        # ratio); a pure numeric constant (AVG(x/100)) is just scaling and is fine.
+        if den.find(exp.Column) is not None:
+            return ("AVG(a/b) averages per-row ratios — for a group-level rate use the RATIO OF "
+                    "SUMS: SUM(a)/NULLIF(SUM(b),0). Averaging per-row ratios over-weights "
+                    "small-denominator rows and skews the rate (the freight-% 1.48%-vs-2.17% scar)")
+    return None
+
+
 def self_ratio_tautology(sql: str, dialect: str = "duckdb") -> str | None:
     """A rate whose NUMERATOR and DENOMINATOR are the SAME aggregate expression —
     ``SUM(x) / NULLIF(SUM(x), 0)``, ``COUNT(y) / COUNT(y)`` — is identically 1.0 for

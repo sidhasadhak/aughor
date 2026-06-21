@@ -1,11 +1,32 @@
 """Regression tests for the post-assessment quality fixes (2026-06-08):
 A) headline grounding, B) missing-column repair diagnosis, C) unsafe-metric guard.
 Each locks a concrete bug found by reading real outputs."""
-from aughor.routers.investigations import _ground_headline
+from aughor.routers.investigations import _ground_headline, _apply_currency
 from aughor.agent.investigate import (
     _missing_column_hint, _unsafe_metric_sql, _safe_metric_fallback,
     _build_grounded_schema, _filter_schema,
 )
+
+
+# ── A3. Currency in chat prose (eval 2026-06-21) ──────────────────────────────
+# An EUR org rendered '$' in Insight/Deep ledes; tables/charts already honoured the
+# org currency. _apply_currency rewrites '$<number>' → the business symbol in prose.
+def test_currency_rewrites_dollar_before_number():
+    assert _apply_currency("Revenue is $104.8M across $5.00 orders", "€") == \
+        "Revenue is €104.8M across €5.00 orders"
+
+
+def test_currency_usd_is_a_noop():
+    assert _apply_currency("Revenue is $104.8M", "$") == "Revenue is $104.8M"
+
+
+def test_currency_leaves_bare_dollar_alone():
+    # '$' not followed by a number must not be rewritten.
+    assert _apply_currency("Costs are in $ terms", "€") == "Costs are in $ terms"
+
+
+def test_currency_empty_text_safe():
+    assert _apply_currency("", "€") == ""
 
 _SCHEMA = """TABLE: analytics.invoices  (1000 rows)
   invoice_id  BIGINT

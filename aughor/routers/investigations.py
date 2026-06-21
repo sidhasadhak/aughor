@@ -755,6 +755,29 @@ def _ground_headline(headline, columns, rows):
     return f"{metric}: {fval}"
 
 
+def _resolve_currency_symbol(connection_id: str, schema_name: Optional[str]) -> str:
+    """Effective currency symbol for a connection+schema — override-wins over the inferred
+    profile, falling back to USD '$'. The app/workspace override applies even when no profile
+    is loaded, so an EUR org gets '€' regardless. Best-effort; returns '$' on any failure."""
+    try:
+        from aughor.profile import store as _pstore
+        from aughor.orgsettings import resolve_currency
+        from aughor.knowledge.triage import currency_symbol
+        prof = _pstore.load(connection_id, schema_name)
+        code = resolve_currency(getattr(prof, "currency_code", None) or "")
+        return currency_symbol(code)
+    except Exception:
+        return "$"
+
+
+def _apply_currency(text: str, sym: str) -> str:
+    """Rewrite '$<number>' → the business currency symbol in prose (headline/narrative).
+    No-op for USD. Mirrors the briefing's `_cur()` so chat ledes match the rest of the UI."""
+    if not text or sym == "$":
+        return text
+    return re.sub(r"\$(?=\s?[\d.])", sym, text)
+
+
 async def _stream_chat(
     question: str,
     connection_id: str,
@@ -805,6 +828,10 @@ async def _stream_chat(
     except Exception as e:
         yield _sse("error", {"message": f"Could not connect: {e}"})
         return
+
+    # Effective currency symbol for prose: tables/charts already honour the org currency,
+    # but the LLM authored ledes in '$'. Resolve once; applied to headline + narrative below.
+    _cur_sym = _resolve_currency_symbol(connection_id, canvas_scope_eff_schema)
 
     try:
         from aughor.agent.prompts import CHAT_PROMPT, CHAT_SQL_SYSTEM
@@ -1281,6 +1308,17 @@ async def _stream_chat(
             except Exception as _e:
                 logger.debug("chat id-arithmetic guard is best-effort; skipped: %s", _e)
 
+        # ── ratio-of-sums guard — AVG(a/b) is the wrong recipe for a group-level rate ──
+        # Averaging per-row ratios over-weights small-denominator rows (the freight-%
+        # 1.48%-vs-2.17% scar). Force a repair toward SUM(a)/NULLIF(SUM(b),0).
+        _ratio_fix_hint = ""
+        if final_sql:
+            try:
+                from aughor.sql.fanout import avg_of_row_ratios
+                _ratio_fix_hint = avg_of_row_ratios(final_sql, dialect=db.dialect) or ""
+            except Exception as _e:
+                logger.debug("chat ratio-of-sums guard is best-effort; skipped: %s", _e)
+
         yield _sse("sql", {"sql": final_sql})
         result = await asyncio.to_thread(db.execute, "chat", final_sql)
 
@@ -1291,7 +1329,7 @@ async def _stream_chat(
 
         # Also trigger a rewrite when semantic column warnings exist, even if
         # the SQL executed successfully (wrong columns produce wrong results silently).
-        if result.error or _chat_zero_diag or _semantic_fix_hint or _fanout_fix_hint or _scope_fix_hint or _filter_fix_hint or _grain_fix_hint or _idmath_fix_hint:
+        if result.error or _chat_zero_diag or _semantic_fix_hint or _fanout_fix_hint or _scope_fix_hint or _filter_fix_hint or _grain_fix_hint or _idmath_fix_hint or _ratio_fix_hint:
             _writer2 = SqlWriter(db, schema_str=schema)
             _fix_error = (
                 result.error or
@@ -1299,18 +1337,19 @@ async def _stream_chat(
                 (_filter_fix_hint if _filter_fix_hint else None) or
                 (_grain_fix_hint if _grain_fix_hint else None) or
                 (_idmath_fix_hint if _idmath_fix_hint else None) or
+                (_ratio_fix_hint if _ratio_fix_hint else None) or
                 (_semantic_fix_hint if _semantic_fix_hint else None) or
                 (_fanout_fix_hint if _fanout_fix_hint else None) or
                 "Query returned 0 rows — the SQL logic is likely wrong."
             )
-            _combined_hint = " | ".join(filter(None, [_chat_zero_diag or "", _scope_fix_hint, _filter_fix_hint, _grain_fix_hint, _idmath_fix_hint, _semantic_fix_hint, _fanout_fix_hint]))
+            _combined_hint = " | ".join(filter(None, [_chat_zero_diag or "", _scope_fix_hint, _filter_fix_hint, _grain_fix_hint, _idmath_fix_hint, _ratio_fix_hint, _semantic_fix_hint, _fanout_fix_hint]))
             try:
                 fix = await asyncio.to_thread(
                     lambda: _writer2.fix(final_sql, _fix_error, hint=_combined_hint, max_retries=1)
                 )
                 if fix.ok:
                     retry = await asyncio.to_thread(db.execute, "chat", fix.sql)
-                    if not retry.error and (retry.row_count > 0 or not _chat_zero_diag or _semantic_fix_hint or _fanout_fix_hint or _scope_fix_hint or _filter_fix_hint or _grain_fix_hint or _idmath_fix_hint):
+                    if not retry.error and (retry.row_count > 0 or not _chat_zero_diag or _semantic_fix_hint or _fanout_fix_hint or _scope_fix_hint or _filter_fix_hint or _grain_fix_hint or _idmath_fix_hint or _ratio_fix_hint):
                         final_sql = fix.sql
                         result = retry
                         yield _sse("sql", {"sql": final_sql})
@@ -1367,6 +1406,7 @@ async def _stream_chat(
         answer.chart_type = _maybe_pareto(question, result.columns, result.rows, answer.chart_type)
         yield _sse("columns", {"columns": result.columns})
         yield _sse("rows", {"rows": result.rows[:10000]})
+        _grounded_headline = _apply_currency(_grounded_headline, _cur_sym)
         yield _sse("headline", {"headline": _grounded_headline})
         yield _sse("chart_type", {"chart_type": answer.chart_type})
         if answer.chart_config:
@@ -1492,7 +1532,7 @@ async def _stream_chat(
             )
             if _insight_worth_it and _pa.narrative:
                 _insight_dict = {
-                    "narrative": _pa.narrative,
+                    "narrative": _apply_currency(_pa.narrative, _cur_sym),
                     "anomalies": _pa.anomalies[:3],
                     "trend": _pa.trend,
                     "confidence": _pa.confidence,

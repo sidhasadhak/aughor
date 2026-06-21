@@ -376,9 +376,12 @@ def plan_and_execute_subq(state: AgentState, conn: "DatabaseConnection") -> dict
         _d["expected_if_false"] = (plan.expected_if_false if plan else None) or None
         result = QueryResult(**_d)
 
-        # Value-domain join guard: a join on value-disjoint keys produces an
-        # unreliable result (0 rows / NULL right side) without ever erroring.
-        # Detect it (fail-open) to drive the regenerate branches below.
+        # Value-domain guards: a join on value-disjoint keys OR a WHERE/HAVING literal
+        # absent from its column's domain (`status = 'cancelled'` when the data holds
+        # 'canceled', or `!= 'cancelled'` which then EXCLUDES nothing) produces an
+        # unreliable result without ever erroring. Detect both (fail-open) to drive the
+        # regenerate branch below. Filter warnings are folded into domain_warnings so the
+        # identical regenerate-and-reverify path handles them too.
         domain_warnings = []
         try:
             from aughor.sql.join_guard import check_join_value_domains
@@ -387,6 +390,13 @@ def plan_and_execute_subq(state: AgentState, conn: "DatabaseConnection") -> dict
             from aughor.kernel.errors import tolerate
             tolerate(_exc, "explore join-guard probe best-effort; query proceeds",
                      counter="join_guard.explore_probe")
+        try:
+            from aughor.sql.join_guard import check_filter_value_domains
+            domain_warnings = domain_warnings + check_filter_value_domains(conn, sql)
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "explore filter-guard probe best-effort; query proceeds",
+                     counter="filter_guard.explore_probe")
 
         if result.error:
             from aughor.agent.state import SQLFix
@@ -432,7 +442,7 @@ def plan_and_execute_subq(state: AgentState, conn: "DatabaseConnection") -> dict
             # replace a query with one that still has a disjoint join).
             from aughor.agent.state import SQLFix
             from aughor.agent.prompts import FIX_SQL_PROMPT
-            from aughor.sql.join_guard import check_join_value_domains
+            from aughor.sql.join_guard import check_join_value_domains, check_filter_value_domains
             warn_text = "\n".join(w.to_prompt_text() for w in domain_warnings)
             try:
                 fix2: SQLFix = get_provider("coder").complete(
@@ -440,7 +450,7 @@ def plan_and_execute_subq(state: AgentState, conn: "DatabaseConnection") -> dict
                     user=FIX_SQL_PROMPT.format(
                         dialect=conn.dialect,
                         sql=sql,
-                        error="A join is on value-disjoint columns — the result is unreliable.",
+                        error="A predicate references a value not in its column/key domain — the result is unreliable.",
                         error_diagnosis=f"DIAGNOSIS:\n{warn_text}\n",
                         schema=state["schema_context"],
                         kb_patterns_section="",
@@ -449,7 +459,7 @@ def plan_and_execute_subq(state: AgentState, conn: "DatabaseConnection") -> dict
                     response_model=SQLFix,
                 )
                 retry = conn.execute(subq.id, fix2.fixed_sql)
-                retry_domain = check_join_value_domains(conn, fix2.fixed_sql)
+                retry_domain = check_join_value_domains(conn, fix2.fixed_sql) or check_filter_value_domains(conn, fix2.fixed_sql)
                 if not retry.error and not retry_domain:
                     new_pitfalls.append(Pitfall(
                         original_sql=sql, error=warn_text, fixed_sql=fix2.fixed_sql,
