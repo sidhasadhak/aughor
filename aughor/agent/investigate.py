@@ -1944,10 +1944,7 @@ def run_analysis_phase(
     # that reaches the dimension via a UNIQUE lookup key instead of fanning out through a fact table.
     _fanout_caveat = None
     try:
-        from aughor.sql.fanout import (
-            sum_over_chasm_fanout, avg_over_chasm_fanout, count_star_chasm_fanout,
-            measure_times_key_arithmetic, avg_of_row_ratios,
-        )
+        from aughor.agent.verifier import Verifier as _Verifier, FANOUT_CAVEAT as _FANOUT_CAVEAT
         from aughor.tools.schema import parse_schema_tables
         _tc = parse_schema_tables(schema) if schema else {}
         _dialect = getattr(conn, "dialect", "duckdb")
@@ -1993,16 +1990,10 @@ def run_analysis_phase(
                 tolerate(_e1, "fanout schema-augment is best-effort", counter="ada.fanout_augment_failed")
 
         def _scan_fanout(queries):
+            # The owned Verifier runs the deterministic detector battery (fan-out / id-
+            # arithmetic / ratio-of-sums) over this phase's queries — schema-augmented above.
             _augment_tc(queries)
-            hits = []
-            for _q in (queries or []):
-                for _det in (sum_over_chasm_fanout, avg_over_chasm_fanout, count_star_chasm_fanout,
-                             measure_times_key_arithmetic, avg_of_row_ratios):
-                    _h = _det(_q.sql, _tc, _dialect)
-                    if _h:
-                        hits.append(_h)
-                        break
-            return hits
+            return _Verifier.scan(queries, _tc, _dialect)
 
         _fanout_hints = _scan_fanout(plan.queries)
         if _fanout_hints:
@@ -2032,12 +2023,7 @@ def run_analysis_phase(
             # chasm, we must not present the magnitude as trustworthy — carry a caveat downstream.
             if _scan_fanout(plan.queries):
                 _s.inc("ada.fanout_guard_unresolved")
-                _fanout_caveat = (
-                    "The metric is aggregated across a fan-out join (a one-to-many join multiplies "
-                    "the rows being summed), so the magnitudes below are likely inflated and the "
-                    "ranking may be volume-weighted rather than reflecting the true per-group total — "
-                    "treat these numbers as directional only."
-                )
+                _fanout_caveat = _FANOUT_CAVEAT
     except Exception:
         _fanout_caveat = None
 
@@ -2069,7 +2055,8 @@ def run_analysis_phase(
     from aughor.agent.handoff import journal_phase_handoffs
     journal_phase_handoffs(phase_id, plan=plan, results=results, fanout_caveat=_fanout_caveat,
                            interpretation=interpretation,
-                           conn_id=getattr(conn, "_connection_id", None))
+                           conn_id=getattr(conn, "_connection_id", None),
+                           dialect=getattr(conn, "dialect", "duckdb"))
     return _PhaseRun(ok=True, results=results, results_text=results_text, interpretation=interpretation,
                      fanout_caveat=_fanout_caveat)
 

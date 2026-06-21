@@ -27,6 +27,7 @@ class EngineeredQuery:
     sql: str
     row_count: int
     error: Optional[str] = None
+    error_class: Optional[str] = None   # R3 typed class (parser|binder|semantic|runtime) if it errored
 
 
 @dataclass
@@ -51,9 +52,11 @@ class VerifierHandoff:
     query_count: int
     caveats: list = field(default_factory=list)   # list[str]
     passed: bool = True
+    error_classes: list = field(default_factory=list)   # R3 typed classes of any failed queries
 
     def summary(self) -> dict:
-        return {"queries": self.query_count, "caveats": self.caveats, "passed": self.passed}
+        return {"queries": self.query_count, "caveats": self.caveats, "passed": self.passed,
+                "error_classes": self.error_classes}
 
 
 @dataclass
@@ -84,22 +87,29 @@ def emit_handoff(from_agent: str, to_agent: str, phase_id: str, payload: dict,
 
 def journal_phase_handoffs(phase_id: str, *, plan: Any, results: Any,
                            fanout_caveat: Optional[str], interpretation: Any,
-                           conn_id: Optional[str] = None) -> None:
+                           conn_id: Optional[str] = None, dialect: str = "duckdb") -> None:
     """Build + journal the SQL-Engineer → Verifier → Narrator hand-offs for one ADA
-    phase, from the data ``run_analysis_phase`` already has. Additive; fail-open."""
+    phase, from the data ``run_analysis_phase`` already has. The Verifier gives each
+    failed query its R3 typed class (``parser|binder|semantic|runtime``) so the repair
+    signal is legible in the Fleet view / Trust Receipt. Additive; fail-open."""
     try:
+        from aughor.agent.verifier import Verifier
+        # title → typed error class for the queries that failed (R3).
+        cls_by_title = dict(Verifier.classify_failures(results, dialect))
         eq = [
             EngineeredQuery(
                 title=getattr(q, "title", "") or "",
                 sql=getattr(r, "sql", "") or "",
                 row_count=int(getattr(r, "row_count", 0) or 0),
                 error=getattr(r, "error", None),
+                error_class=cls_by_title.get(getattr(q, "title", "") or "") if getattr(r, "error", None) else None,
             )
             for (q, r) in (results or [])
         ]
         se = SqlEngineerHandoff(phase_id, eq)
         caveats = [c for c in [fanout_caveat] if c]
-        ve = VerifierHandoff(phase_id, len(eq), caveats, passed=se.ok_count > 0)
+        error_classes = list(dict.fromkeys(q.error_class for q in eq if q.error_class))
+        ve = VerifierHandoff(phase_id, len(eq), caveats, passed=se.ok_count > 0, error_classes=error_classes)
         findings = len(getattr(interpretation, "findings", []) or []) if interpretation else 0
         na = NarratorHandoff(phase_id, findings)
         emit_handoff("sql_engineer", "verifier", phase_id, se.summary(), conn_id=conn_id)

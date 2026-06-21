@@ -75,6 +75,21 @@ def test_journal_phase_handoffs_emits_the_chain():
     assert na["findings"] == 3
 
 
+def test_verifier_handoff_carries_typed_error_class():
+    # R3 — a failed query's typed class rides the Verifier→Narrator hand-off, so the repair
+    # signal is legible in the Fleet view / Trust Receipt.
+    results = [(_Q("ok one"), _R("SELECT 1", 5)),
+               (_Q("missing col"), _R("SELECT nope FROM t", 0,
+                                      error='Binder Error: Referenced column "nope" not found'))]
+    journal_phase_handoffs("ph-errcls", plan=object(), results=results,
+                           fanout_caveat=None, interpretation=_Interp([]), dialect="duckdb")
+    evs = _handoffs_for("ph-errcls")
+    ve = _payload(next(e for e in evs if _payload(e)["from"] == "verifier"))
+    assert ve["error_classes"] == ["binder"]
+    se = _payload(next(e for e in evs if _payload(e)["from"] == "sql_engineer"))
+    assert se["queries"] == 2 and se["ok"] == 1
+
+
 def test_journal_is_fail_open_on_bad_input():
     # malformed results must never raise into the investigation
     journal_phase_handoffs("ph-x", plan=None, results="not-pairs",
