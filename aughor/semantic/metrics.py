@@ -453,12 +453,17 @@ def build_metrics_block(
     formulas the validator proved wrong are dropped.
     """
     metrics = list_metrics(path)
-    if schema_text:
-        _tables, _cols = _schema_tables_and_columns(schema_text)
-        if _tables:  # only filter when a schema actually parsed (else keep all)
-            metrics = [m for m in metrics if _metric_matches_schema(m, _tables, _cols)]
+    _tables, _cols = _schema_tables_and_columns(schema_text) if schema_text else (set(), set())
+    if _tables:  # only filter when a schema actually parsed (else keep all)
+        metrics = [m for m in metrics if _metric_matches_schema(m, _tables, _cols)]
     if connection_id:
         metrics = _apply_ontology_overlay(metrics, connection_id)
+        # Re-filter AFTER the overlay: it can INJECT a verified ontology metric that has no
+        # catalog counterpart, and that injection is NOT schema-checked — so a stale ontology
+        # formula (e.g. revenue = SUM(total_amount) on a connection whose orders has
+        # order_value, not total_amount) would leak a missing-column formula into the prompt.
+        if _tables:
+            metrics = [m for m in metrics if _metric_matches_schema(m, _tables, _cols)]
     metrics = _dedupe_by_name(metrics)  # never inject the same KPI twice with conflicting formulas
     if not metrics:
         return ""
