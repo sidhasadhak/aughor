@@ -62,11 +62,16 @@ import {
   getConnectionFreshness,
   getDomainInsights,
   getEffectiveSettings,
+  getJobs,
+  cancelJob,
   type Connection,
   type ExplorationStatus,
   type OntologyGraph,
   type Canvas,
+  type FleetJob,
 } from "@/lib/api";
+import { costSummary, fmtMs } from "@/lib/cost";
+import { subscribeKernelEvents } from "@/lib/events";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -76,6 +81,7 @@ type NavTab =
   | "canvases"
   | "canvas-workspace"
   | "recents"
+  | "fleet"              // the agent fleet — runs, status, cost
   | "inbox"
   | "briefing"
   | "intelligence"      // unified multi-layered Intelligence workspace
@@ -439,6 +445,7 @@ const NAV_SECTIONS = [
     items: [
       { id: "intelligence", icon: "brief",    label: "Briefing" },
       { id: "recents",      icon: "search",   label: "Investigations" },
+      { id: "fleet",        icon: "node",     label: "Fleet" },
       { id: "health",       icon: "activity", label: "Health" },
       { id: "playbook",     icon: "playbook", label: "Playbook" },
     ],
@@ -901,6 +908,124 @@ function RecentsScreen({ onGoToChat, onOpenInvestigation, workspaceId }: { onGoT
             </table>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ── Fleet screen — the agents working your data (R2) ────────────────────────────
+
+function StateTag({ state }: { state: string }) {
+  const map: Record<string, [string, string]> = {
+    RUNNING:   ["aug-tag-blue",  "Running"],
+    PENDING:   ["aug-tag-blue",  "Pending"],
+    SUCCEEDED: ["aug-tag-green", "Succeeded"],
+    FAILED:    ["aug-tag-red",   "Failed"],
+    CANCELLED: ["aug-tag-amber", "Cancelled"],
+    PAUSED:    ["aug-tag-amber", "Paused"],
+  };
+  const [cls, label] = map[state] || ["aug-tag", state];
+  return <span className={`aug-tag ${cls}`}>{label}</span>;
+}
+
+function FleetScreen({ onNavigate }: { onNavigate: (t: NavTab) => void }) {
+  const [jobs, setJobs] = useState<FleetJob[]>([]);
+  const [tried, setTried] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    const load = () => getJobs({ limit: 100 })
+      .then(j => { if (alive) { setJobs(j); setTried(true); } })
+      .catch(() => { if (alive) setTried(true); });
+    load();
+    // Live: refetch whenever a job changes state (reuses the shared kernel stream).
+    const unsub = subscribeKernelEvents(() => load(), { kinds: ["job.state"] });
+    const iv = setInterval(load, 15_000); // slow fallback if the stream is down
+    return () => { alive = false; unsub(); clearInterval(iv); };
+  }, []);
+
+  const active = jobs.filter(j => j.state === "RUNNING" || j.state === "PENDING").length;
+  const ok = jobs.filter(j => j.state === "SUCCEEDED").length;
+  const bad = jobs.filter(j => j.state === "FAILED" || j.state === "CANCELLED").length;
+
+  const cancel = (id: string) => { cancelJob(id).then(() => getJobs({ limit: 100 }).then(setJobs)); };
+
+  return (
+    <div className="aug-screen">
+      <div className="aug-content-header">
+        <NavIcon name="node" size={14} color="var(--t3)" />
+        <span style={{ fontSize: 13, fontWeight: 500 }}>Fleet</span>
+        <span style={{ fontSize: 11, color: "var(--t3)", marginLeft: 10 }}>
+          the agents working your data — what they’re doing and what it cost
+        </span>
+      </div>
+      <div style={{ flex: 1, overflowY: "auto", padding: "18px 20px" }}>
+        <MiniStatRow>
+          <MiniStat value={active} label="Running" tone="var(--blue4)" />
+          <MiniStat value={ok} label="Succeeded" tone="var(--grn4)" />
+          <MiniStat value={bad} label="Failed / Cancelled" tone={bad ? "var(--red4)" : undefined} />
+        </MiniStatRow>
+        {!tried ? (
+          <div style={{ padding: "40px 0", textAlign: "center" }}>
+            <p style={{ fontSize: 12, color: "var(--t3)" }}>Loading the fleet…</p>
+          </div>
+        ) : jobs.length === 0 ? (
+          <div style={{ padding: "40px 0", textAlign: "center" }}>
+            <p style={{ fontSize: 12, color: "var(--t3)" }}>No agent runs yet — start an exploration or ask a deep-analysis question, and the fleet shows up here.</p>
+          </div>
+        ) : (
+          <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", overflow: "hidden" }}>
+            <table className="aug-dt">
+              <thead>
+                <tr>
+                  <th>Agent</th>
+                  <th>Task</th>
+                  <th>Status</th>
+                  <th>Cost</th>
+                  <th>When</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {jobs.map(j => {
+                  const cost = costSummary(j.cost);
+                  const isActive = j.state === "RUNNING" || j.state === "PENDING";
+                  const when = j.started_at || j.created_at;
+                  return (
+                    <tr key={j.id}>
+                      <td>
+                        <div style={{ fontSize: 12, color: "var(--t1)", fontWeight: 500 }}>{j.agent.agent}</div>
+                        <div style={{ fontSize: 10, color: "var(--t3)" }}>{j.agent.blurb}</div>
+                      </td>
+                      <td style={{ maxWidth: 360 }}>
+                        <div style={{ fontSize: 12, color: "var(--t2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{j.title}</div>
+                        {j.error && <div style={{ fontSize: 10, color: "var(--red4)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{j.error}</div>}
+                      </td>
+                      <td><StateTag state={j.state} /></td>
+                      <td style={{ fontSize: 11, color: cost ? "var(--t2)" : "var(--t4)" }}>{cost || "—"}</td>
+                      <td style={{ fontSize: 11, color: "var(--t3)", whiteSpace: "nowrap" }}>
+                        {when ? timeAgo(when) : ""}{j.duration_ms != null ? ` · ${fmtMs(j.duration_ms)}` : ""}
+                      </td>
+                      <td>
+                        {isActive && (
+                          <button onClick={() => cancel(j.id)} style={{
+                            padding: "2px 9px", borderRadius: "var(--r2)", fontSize: 11, cursor: "pointer",
+                            background: "transparent", border: "1px solid var(--b1)", color: "var(--t3)",
+                          }}>Cancel</button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p style={{ fontSize: 10, color: "var(--t4)", marginTop: 14, lineHeight: 1.5 }}>
+          Shows Scout (exploration) and Analyst (deep analysis) runs on the job kernel.
+          Scheduled Monitors &amp; Briefings run on a separate scheduler and aren’t listed here yet —{" "}
+          <button onClick={() => onNavigate("monitors")} style={{ background: "none", border: "none", padding: 0, color: "var(--blue4)", cursor: "pointer", fontSize: 10 }}>open Monitors</button>.
+        </p>
       </div>
     </div>
   );
@@ -1861,6 +1986,12 @@ export default function Home() {
             {tab === "recents" && (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
                 <RecentsScreen onGoToChat={goToChat} onOpenInvestigation={openInvestigation} workspaceId={selectedWorkspace} />
+              </div>
+            )}
+
+            {tab === "fleet" && (
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
+                <FleetScreen onNavigate={handleNavigate} />
               </div>
             )}
 

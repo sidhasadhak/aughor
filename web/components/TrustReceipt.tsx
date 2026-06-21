@@ -11,6 +11,7 @@
  */
 import { useEffect, useState } from "react";
 import { getAnswerReceipt, type InsightReceipt } from "@/lib/api";
+import { costSummary } from "@/lib/cost";
 
 const REL_LABEL: Record<string, string> = {
   metric_available: "metric",
@@ -84,6 +85,12 @@ export function TrustReceipt({ connectionId, receiptId, kind = "chat" }: { conne
           {rec.job && (
             <div style={{ fontSize: 11, color: "var(--t3)" }}>
               Recorded {new Date(rec.artifact.created_at).toLocaleString()} · version {rec.artifact.version}
+            </div>
+          )}
+          {costSummary(rec.cost) && (
+            <div style={{ fontSize: 11, color: "var(--t3)", display: "flex", gap: 6, alignItems: "center" }}>
+              <span style={{ color: "var(--t4)" }} title="What this answer cost to produce">⚡ cost</span>
+              <span>{costSummary(rec.cost)}</span>
             </div>
           )}
           {metrics.length > 0 && (

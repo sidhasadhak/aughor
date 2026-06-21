@@ -712,7 +712,8 @@ def _parallel_execute_safe(
     Returns a list of (PlanQuery, QueryResult) tuples in the same order as
     plan_queries[:cap].
     """
-    from concurrent.futures import ThreadPoolExecutor, as_completed
+    from concurrent.futures import as_completed
+    from aughor.kernel.concurrency import ContextThreadPoolExecutor
 
     valid = [(q, q.sql.strip()) for q in plan_queries[:cap] if q.sql and q.sql.strip()]
     if not valid:
@@ -731,7 +732,7 @@ def _parallel_execute_safe(
         return (q, r)
 
     try:
-        with ThreadPoolExecutor(max_workers=len(valid)) as pool:
+        with ContextThreadPoolExecutor(max_workers=len(valid)) as pool:
             futures = {pool.submit(_run, item): i for i, item in enumerate(valid)}
             ordered: list[tuple | None] = [None] * len(valid)
             for fut in as_completed(futures):

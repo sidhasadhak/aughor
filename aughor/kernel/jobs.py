@@ -30,11 +30,13 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import json
 import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Optional
 
+from aughor.kernel import metering
 from aughor.kernel.ledger import Ledger
 
 logger = logging.getLogger(__name__)
@@ -162,6 +164,7 @@ class JobKernel:
         hb = asyncio.create_task(self._heartbeat_loop(job_id), name=f"hb-{job_id}")
         final = JobState.FAILED
         _token = _current_job.set(job_id)
+        _m_token = metering.start()
         try:
             await coro_factory()
             final = JobState.SUCCEEDED
@@ -176,6 +179,17 @@ class JobKernel:
             self._transition(job_id, JobState.FAILED, error=str(exc))
             logger.error("job %s failed: %s", job_id, exc, exc_info=True)
         finally:
+            # Flush the run's compute (tokens/queries/rows/time) onto the job row —
+            # for the Fleet view + Trust Receipt. Runs for every terminal state so a
+            # cancelled/failed run still records what it spent. Best-effort.
+            try:
+                _snap = metering.snapshot()
+                if _snap is not None:
+                    self.ledger.job_update(job_id, metrics=json.dumps(_snap, default=str))
+            except Exception as _m_exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_m_exc, "job metrics flush", counter="metering")
+            metering.reset(_m_token)
             _current_job.reset(_token)
             hb.cancel()
             self._tasks.pop(job_id, None)

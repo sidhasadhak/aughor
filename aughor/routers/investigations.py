@@ -141,10 +141,17 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
             pass
         for e in (guard_edges or []):
             lineage.append(e)
+        # Stamp per-run compute onto the artifact so the Trust Receipt shows what the
+        # answer cost. For job-backed answers (ADA) the job row carries the full total
+        # too; for the synchronous chat/insight path this is the only sink.
+        from aughor.kernel import metering
+        _cost = metering.snapshot()
         Ledger.default().artifact_write(
             kind, natural_key,
             {"question": question, "headline": headline or question,
-             "sql": sqls[0] if sqls else "", "tables": sorted(seen), **(payload_extra or {})},
+             "sql": sqls[0] if sqls else "", "tables": sorted(seen),
+             **({"cost": _cost} if _cost is not None else {}),
+             **(payload_extra or {})},
             conn_id=connection_id, canvas_id=canvas_id or None, lineage=lineage,
         )
         if enf is not None:
@@ -2212,6 +2219,21 @@ async def _stream_resume(inv_id: str, feedback: str, request: Request) -> AsyncG
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
+async def _metered_stream(gen: AsyncGenerator[str, None]) -> AsyncGenerator[str, None]:
+    """Meter a synchronous streaming answer. The chat/insight path is not a kernel
+    job, so it has no JobKernel._run to flush its compute — set the per-run
+    accumulator for the whole iteration instead; the answer's receipt reads it via
+    metering.snapshot() while still inside this context. Output is passed through
+    unchanged."""
+    from aughor.kernel import metering
+    token = metering.start()
+    try:
+        async for chunk in gen:
+            yield chunk
+    finally:
+        metering.reset(token)
+
+
 @router.post("/chat")
 async def chat_endpoint(req: ChatRequest, request: Request):
     conn_id = req.connection_id
@@ -2221,7 +2243,10 @@ async def chat_endpoint(req: ChatRequest, request: Request):
         if resolved:
             conn_id = resolved
     return StreamingResponse(
-        _stream_chat(req.question, conn_id, req.history, request, session_id=req.session_id, canvas_id=req.canvas_id),
+        _metered_stream(
+            _stream_chat(req.question, conn_id, req.history, request,
+                         session_id=req.session_id, canvas_id=req.canvas_id)
+        ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

@@ -201,6 +201,25 @@ def _build_anthropic_client(api_key: str) -> instructor.Instructor:
     return instructor.from_anthropic(raw)
 
 
+def _extract_usage(raw) -> tuple[int, int]:
+    """(prompt_tokens, completion_tokens) from a raw OpenAI/Anthropic completion,
+    best-effort. Returns (0, 0) when unavailable (e.g. some local backends omit
+    usage) — metering is honest about what it could measure, never guesses."""
+    usage = getattr(raw, "usage", None)
+    if usage is None:
+        return 0, 0
+    pt = getattr(usage, "prompt_tokens", None)          # OpenAI-compatible
+    if pt is None:
+        pt = getattr(usage, "input_tokens", 0)           # Anthropic
+    ct = getattr(usage, "completion_tokens", None)       # OpenAI-compatible
+    if ct is None:
+        ct = getattr(usage, "output_tokens", 0)          # Anthropic
+    try:
+        return int(pt or 0), int(ct or 0)
+    except Exception:
+        return 0, 0
+
+
 class LLMProvider:
     """Call .complete() with a Pydantic response_model, get a typed object back."""
 
@@ -252,19 +271,29 @@ class LLMProvider:
 
     @staticmethod
     def _complete_on(client, backend, model, system, user, response_model, temperature):
+        import time as _time
+        from aughor.kernel import metering
         if backend == "anthropic":
-            return client.messages.create(
-                model=model, max_tokens=4096, system=system,
-                messages=[{"role": "user", "content": user}],
-                response_model=response_model,
-            )
-        return client.chat.completions.create(
-            model=model, temperature=temperature, response_model=response_model,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
-        )
+            endpoint = client.messages
+            kwargs = dict(model=model, max_tokens=4096, system=system,
+                          messages=[{"role": "user", "content": user}],
+                          response_model=response_model)
+        else:
+            endpoint = client.chat.completions
+            kwargs = dict(model=model, temperature=temperature, response_model=response_model,
+                          messages=[{"role": "system", "content": system},
+                                    {"role": "user", "content": user}])
+        # Prefer create_with_completion (instructor ≥1.0) so we can read token usage
+        # off the raw response. Falls back to create() with no usage on older clients.
+        _t0 = _time.monotonic()
+        cwc = getattr(endpoint, "create_with_completion", None)
+        if cwc is not None:
+            out, raw = cwc(**kwargs)
+        else:
+            out, raw = endpoint.create(**kwargs), None
+        pt, ct = _extract_usage(raw)
+        metering.record_llm(pt, ct, (_time.monotonic() - _t0) * 1000.0)
+        return out
 
     def _fallback_client(self):
         """Lazily build (and cache) an Anthropic client for fallback, or None when

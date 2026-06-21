@@ -120,6 +120,12 @@ class Ledger:
         self._conn.execute("PRAGMA synchronous=NORMAL")
         with self._lock, self._conn:
             self._conn.executescript(_SCHEMA)
+            # Additive migration: per-run compute metering (tokens/queries/rows/time)
+            # as a JSON blob on the job row. PRAGMA-guarded so it's exception-free
+            # and idempotent across restarts.
+            _job_cols = {r[1] for r in self._conn.execute("PRAGMA table_info(jobs)").fetchall()}
+            if "metrics" not in _job_cols:
+                self._conn.execute("ALTER TABLE jobs ADD COLUMN metrics TEXT")
 
     @classmethod
     def default(cls) -> "Ledger":
@@ -293,10 +299,23 @@ class Ledger:
                 "SELECT relation, ref, detail FROM lineage WHERE artifact_id=?", (art["id"],)
             ).fetchall()
         job = self.job_get(art["created_by_job"]) if art.get("created_by_job") else None
+        job_view = (
+            {k: job.get(k) for k in ("id", "kind", "state", "started_at", "finished_at", "metrics")}
+            if job else None
+        )
+        # One normalized cost field for consumers: the job-row metrics (full per-run
+        # total) when this artifact was produced by a kernel job, else the cost
+        # stamped on the artifact itself (the synchronous chat/insight path has no job).
+        cost = None
+        if job_view and job_view.get("metrics"):
+            cost = job_view["metrics"]
+        elif isinstance(art.get("payload"), dict):
+            cost = art["payload"].get("cost")
         return {
             "artifact": art,
             "lineage": [{"relation": r, "ref": ref, "detail": d} for r, ref, d in edges],
-            "job": {k: job.get(k) for k in ("id", "kind", "state", "started_at", "finished_at")} if job else None,
+            "job": job_view,
+            "cost": cost,
         }
 
     # ── jobs: rows for the K1 job kernel (state machine lives in jobs.py) ────
@@ -332,11 +351,12 @@ class Ledger:
                 return None
             cols = [d[0] for d in cur.description]
         out = dict(zip(cols, row))
-        if out.get("payload"):
-            try:
-                out["payload"] = json.loads(out["payload"])
-            except Exception:
-                pass
+        for _jf in ("payload", "metrics"):
+            if out.get(_jf):
+                try:
+                    out[_jf] = json.loads(out[_jf])
+                except Exception:
+                    pass
         return out
 
     def jobs_where(self, *, states: Optional[list[str]] = None,
@@ -359,11 +379,12 @@ class Ledger:
         out = []
         for r in rows:
             d = dict(zip(cols, r))
-            if d.get("payload"):
-                try:
-                    d["payload"] = json.loads(d["payload"])
-                except Exception:
-                    pass
+            for _jf in ("payload", "metrics"):
+                if d.get(_jf):
+                    try:
+                        d[_jf] = json.loads(d[_jf])
+                    except Exception:
+                        pass
             out.append(d)
         return out
 
@@ -395,6 +416,7 @@ class Ledger:
         *,
         kind: Optional[str] = None,
         conn_id: Optional[str] = None,
+        job_id: Optional[str] = None,
         since_seq: Optional[int] = None,
         limit: int = 200,
     ) -> list[dict]:
@@ -404,6 +426,8 @@ class Ledger:
             q += " AND kind=?"; args.append(kind)
         if conn_id:
             q += " AND conn_id=?"; args.append(conn_id)
+        if job_id:
+            q += " AND job_id=?"; args.append(job_id)
         if since_seq is not None:
             q += " AND seq>?"; args.append(since_seq)
         q += " ORDER BY seq DESC LIMIT ?"; args.append(int(limit))

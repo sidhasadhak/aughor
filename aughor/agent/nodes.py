@@ -531,8 +531,9 @@ def execute_planned_queries(state: AgentState, conn: "DatabaseConnection") -> di
     expected_if_true = plan_dict.get("expected_if_true") or None
     expected_if_false = plan_dict.get("expected_if_false") or None
 
-    # Generate SQL for each query intent — parallelized (LLM calls are independent HTTP requests)
-    from concurrent.futures import ThreadPoolExecutor as _ThreadPool
+    # Generate SQL for each query intent — parallelized (LLM calls are independent HTTP requests).
+    # Context-propagating pool so per-run metering reaches these LLM calls.
+    from aughor.kernel.concurrency import ContextThreadPoolExecutor as _ThreadPool
 
     llm = get_provider("coder")
     _schema_ctx = state["schema_context"]
