@@ -162,6 +162,9 @@ Grouped by area; each ✅ is verified shipped (git + code). Representative commi
 - ✅ **Eval-derived 🟡 time-series fix** — chat narrator now recent-weights a long time series (`_narrator_sample`) so the narrative leads with current state, not year-one (Q15 led with 2022 → now "1.12 in December 2025"). The paired `parallelize score_evidence` item was investigated and found to be a misdiagnosis (single call; hot-path LLM work already parallel) — see §3.
 - ✅ **UNIFY metric-definition consistency** — `/chat` and Deep now route through ONE `unified_metric_grounding` resolver, so a governed metric resolves to the SAME SQL in both (chat previously saw only the global catalog and re-derived north-star metrics). Live-verified on missimi (gross margin, ROAS). The whole eval backlog is now closed bar the user-deferred 50+50.
 
+### Backlog hardening batch (2026-06-21) — FEATURES #155
+- ✅ **Correctness + localization + dev-velocity batch** (build→wire→test→leverage; zero net debt; 1,215 unit tests): per-workspace briefing currency override; profiler composite-PK detection (`grain_columns`); metric wrong-column leak fix (re-filter after the ontology overlay); generated typed API client (`gen:api`); org-settings reactivity for tables + KPI cards; FAN-b **AVG-decomposition de-fan** (numerically verified); declarative metric additivity; localization (fiscal-year buckets + timezone labels, no-op at defaults). Also corrected two stale ROADMAP claims (chart-axis currency already done; `score_evidence` parallelization a misdiagnosis). Per-item ✅ status is in §3.
+
 ---
 
 ## 3 · What's left
@@ -225,7 +228,7 @@ Verified pending against code/git. `⬜` not started · `◑` partial.
 - ◑ **FAN-b — chasm-rewrite breadth** *(M)* — parent + chasm de-fan ship and are wired (`aughor/sql/fanout.py`); **AVG-decomposition now auto-rewrites** (AVG over a chasm → per-satellite SUM(x)+COUNT(x), divided as a ratio-of-sums; numerically verified on DuckDB — recovers the true un-fanned mean a fanned AVG silently biased). The remaining **satellite-WHERE-splitting** edge still safely bails (riskier — correlated predicates + INNER↔LEFT semantics).
 
 ### Infra / code health
-- ⬜ **K4 follow-ups** — generated typed TS client (`web/lib/api.gen.ts` absent), domain-interface module splits, the `_phase8_domain_intelligence` god-file split, WCH-8 `.duckdb` write-coordination.
+- ◑ **K4 follow-ups** — ✅ generated typed TS client (`web/lib/api.gen.ts` now generated from `/openapi.json` via the `gen:api` script + `api.schema.ts` re-export); still open: domain-interface module splits, the `_phase8_domain_intelligence` god-file split, WCH-8 `.duckdb` write-coordination.
 - ✅ **Profiler composite-PK detection** — `build_table_profile` now probes key-like candidate PAIRS (bounded: only when no single PK, ≤4 pairs, ≤5M rows, one-time/cached) and records a PROVEN composite grain in a new `TableProfile.grain_columns`, surfaced in the data portrait (`| grain: (order_id, order_item_id) ✓`). Separate signal from `grain_column`/`grain_verified` (unchanged for their single-col consumers). Live: missimi `order_items` (2.37M rows, no single PK) → `(order_id, order_item_id)` in 0.03s.
 - ⬜ **B-10 — bigger benchmark run** *(S, compute-bound)* — the UNIFY lift run is done; the larger real-warehouse deterministic-decode run isn't recorded yet.
 
