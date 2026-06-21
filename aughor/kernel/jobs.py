@@ -165,6 +165,20 @@ class JobKernel:
             ws = None
         return effective_governance(charter.id, ws), charter.id
 
+    def _set_run_model(self, job_id: str):
+        """Pin this run's LLM model to the agent's per-agent override (governance,
+        override-wins: workspace > app > role default). Returns a reset token, or None when
+        no override applies. Best-effort — a resolve error never blocks the run."""
+        try:
+            gov, _agent = self._resolve_governance(job_id)
+            if getattr(gov, "model", None):
+                from aughor.llm.provider import set_run_model
+                return set_run_model(gov.model)
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "per-agent model resolve", counter="agent_model")
+        return None
+
     def _over_budget(self, job_id: str, gov, elapsed_s: float) -> Optional[str]:
         """The budget this run has blown, or None. Tokens come from the live
         metrics registry; time from the heartbeat's own clock."""
@@ -206,6 +220,7 @@ class JobKernel:
         _token = _current_job.set(job_id)
         _m_token = metering.start()
         metering.register_job(job_id)   # so the heartbeat can enforce this run's budget
+        _model_token = self._set_run_model(job_id)   # per-agent LLM model override (best-effort)
         try:
             await coro_factory()
             final = JobState.SUCCEEDED
@@ -232,6 +247,9 @@ class JobKernel:
                 tolerate(_m_exc, "job metrics flush", counter="metering")
             metering.unregister_job(job_id)
             metering.reset(_m_token)
+            if _model_token is not None:
+                from aughor.llm.provider import reset_run_model
+                reset_run_model(_model_token)
             _current_job.reset(_token)
             hb.cancel()
             self._tasks.pop(job_id, None)

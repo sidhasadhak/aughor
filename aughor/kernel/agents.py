@@ -141,6 +141,7 @@ class Governance:
     enabled: bool
     token_budget: Optional[int]
     time_budget_s: Optional[int]
+    model: Optional[str] = None   # per-agent LLM model override; None = use the role default
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -165,6 +166,7 @@ def effective_governance(agent_id: str, workspace_id: Optional[str] = None) -> G
     enabled = c.default_enabled if c else True
     tok = c.default_budget.token_budget if c else None
     tim = c.default_budget.time_budget_s if c else None
+    model: Optional[str] = None   # charter default = no override (use the role default)
     scopes = [_APP_SCOPE] + ([workspace_id] if workspace_id else [])
     for scope in scopes:
         ov = _override(scope, agent_id)
@@ -174,15 +176,19 @@ def effective_governance(agent_id: str, workspace_id: Optional[str] = None) -> G
             tok = ov["token_budget"]
         if ov.get("time_budget_s") is not None:
             tim = ov["time_budget_s"]
-    return Governance(enabled=enabled, token_budget=tok, time_budget_s=tim)
+        if ov.get("model") is not None:
+            model = (str(ov["model"]).strip() or None)
+    return Governance(enabled=enabled, token_budget=tok, time_budget_s=tim, model=model)
 
 
 def set_governance(agent_id: str, *, scope: Optional[str] = None,
                    enabled: Optional[bool] = None,
                    token_budget: Optional[int] = None,
-                   time_budget_s: Optional[int] = None) -> Governance:
+                   time_budget_s: Optional[int] = None,
+                   model: Optional[str] = None) -> Governance:
     """Persist an override for `agent_id` at `scope` (app by default). Only the
-    provided fields are written; the rest keep inheriting. Returns the new effective."""
+    provided fields are written; the rest keep inheriting. Returns the new effective.
+    Pass ``model=""`` to clear a previously-set per-agent model back to the role default."""
     sc = scope or _APP_SCOPE
     cur = _override(sc, agent_id)
     if enabled is not None:
@@ -191,6 +197,8 @@ def set_governance(agent_id: str, *, scope: Optional[str] = None,
         cur["token_budget"] = int(token_budget)
     if time_budget_s is not None:
         cur["time_budget_s"] = int(time_budget_s)
+    if model is not None:
+        cur["model"] = str(model).strip()   # "" clears it (treated as 'inherit' on read)
     _ledger().kv_put(_GOV_STORE, f"{sc}:{agent_id}", cur)
     return effective_governance(agent_id, None if sc == _APP_SCOPE else sc)
 

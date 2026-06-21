@@ -22,6 +22,7 @@ Env vars (still honoured as the layer-2 fallback):
 """
 from __future__ import annotations
 
+import contextvars
 import json
 import logging
 import os
@@ -83,6 +84,31 @@ _runtime: Optional[dict] = None
 _config_version = 0          # bumped on every config (re)load
 _cache_version = -1          # the version the _providers cache was built against
 _providers: dict[Role, "LLMProvider"] = {}
+# Providers pinned to an explicit model (per-agent override), keyed by (role, model).
+_pinned_providers: dict[tuple, "LLMProvider"] = {}
+
+# Per-agent LLM model: a run can pin the model its LLM calls use (set by the kernel from
+# the agent's governance, override-wins). A contextvar so it scopes to the run without
+# threading a model arg through every get_provider() call site — mirrors the metering hook.
+_run_model: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "aughor_run_model", default=None
+)
+
+
+def set_run_model(model: Optional[str]):
+    """Pin the LLM model for the current run/context (returns a reset token)."""
+    return _run_model.set((model or "").strip() or None)
+
+
+def reset_run_model(token) -> None:
+    try:
+        _run_model.reset(token)
+    except (ValueError, LookupError) as exc:
+        logger.debug("reset_run_model: stale token ignored (%s)", exc)  # token from another context
+
+
+def current_run_model() -> Optional[str]:
+    return _run_model.get()
 
 
 def _read_config() -> dict:
@@ -313,12 +339,24 @@ class LLMProvider:
         return self._fb_client
 
 
-def get_provider(role: Role = "coder") -> LLMProvider:
-    """Process-global provider for `role`. Rebuilds when the config changes."""
+def get_provider(role: Role = "coder", *, model: Optional[str] = None) -> LLMProvider:
+    """Process-global provider for `role`. Rebuilds when the config changes.
+
+    When a model is pinned — explicitly via ``model=`` or implicitly by the current run's
+    ``set_run_model`` (the per-agent override) — returns a provider bound to that model,
+    cached per ``(role, model)``. With no pin, the normal role-default provider is used, so
+    unpinned code is unaffected."""
     global _cache_version
     if _cache_version != _config_version:
         _providers.clear()
+        _pinned_providers.clear()
         _cache_version = _config_version
+    pinned = (model or current_run_model() or "").strip()
+    if pinned:
+        key = (role, pinned)
+        if key not in _pinned_providers:
+            _pinned_providers[key] = LLMProvider(_active_backend(), role, model=pinned)
+        return _pinned_providers[key]
     if role not in _providers:
         _providers[role] = LLMProvider(_active_backend(), role)
     return _providers[role]

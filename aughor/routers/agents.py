@@ -58,12 +58,13 @@ class AgentGovernancePatch(BaseModel):
     enabled: Optional[bool] = None
     token_budget: Optional[int] = None
     time_budget_s: Optional[int] = None
+    model: Optional[str] = None          # per-agent LLM model; "" clears back to the role default
     workspace_id: Optional[str] = None   # None → app scope (the Org default)
 
 
 @router.patch("/agents/{agent_id}")
 def patch_agent(agent_id: str, body: AgentGovernancePatch):
-    """Enable/disable or re-budget an agent. Only the provided fields change."""
+    """Enable/disable, re-budget, or pin the model for an agent. Only the provided fields change."""
     if get_charter(agent_id) is None:
         raise HTTPException(status_code=404, detail="No such agent")
     gov = set_governance(
@@ -72,5 +73,6 @@ def patch_agent(agent_id: str, body: AgentGovernancePatch):
         enabled=body.enabled,
         token_budget=body.token_budget,
         time_budget_s=body.time_budget_s,
+        model=body.model,
     )
     return {"agent_id": agent_id, "governance": gov.to_dict()}
