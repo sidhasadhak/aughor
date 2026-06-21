@@ -927,9 +927,13 @@ def build_chasm_fanout_rewrite(sql: str, finding: "FanoutFinding", dialect: str 
     key in its own CTE, then join the CTEs to the hub so each satellite's SUM/COUNT is
     counted once (TPC-H verified: 153M vs the 4x-inflated 612M).
 
-    Returns rewritten SQL or None on any shape it can't prove correct: AVG/MIN/MAX or
-    COUNT(DISTINCT)/COUNT(*) aggs, a hub-column aggregate mixed in, a WHERE on a
-    satellite (predicates can't be safely split), a child-level GROUP BY, or a
+    AVG is also handled — decomposed into per-satellite SUM(x) + COUNT(x), divided as a
+    ratio-of-sums in the outer query (the only correct un-fanned mean; a fanned AVG is
+    weighted by the other satellite's multiplicity).
+
+    Returns rewritten SQL or None on any shape it can't prove correct: MIN/MAX or
+    COUNT(DISTINCT)/COUNT(*)/AVG(DISTINCT) aggs, a hub-column aggregate mixed in, a WHERE
+    on a satellite (predicates can't be safely split), a child-level GROUP BY, or a
     non-star join. Caller MUST dry-run/compare before adopting."""
     if finding is None or finding.kind != "chasm" or len(finding.satellites) < 2:
         return None
@@ -1003,16 +1007,16 @@ def build_chasm_fanout_rewrite(sql: str, finding: "FanoutFinding", dialect: str 
             if (body.table or "").lower() != hub_alias:
                 return None
             proj_plan.append(("dim", body, out_alias))
-        elif isinstance(body, (exp.Sum, exp.Count)):
+        elif isinstance(body, (exp.Sum, exp.Count, exp.Avg)):
             inner = body.this
             if isinstance(inner, exp.Distinct) or not isinstance(inner, exp.Column):
-                return None  # COUNT(*)/COUNT(DISTINCT) unattributable
+                return None  # COUNT(*)/COUNT(DISTINCT)/AVG(DISTINCT) unattributable
             ta = (inner.table or "").lower()
             if ta not in sat_aliases:
                 return None
             proj_plan.append(("agg", ta, body, out_alias))
         else:
-            return None  # AVG/MIN/MAX/expr → bail
+            return None  # MIN/MAX/expr → bail (still can't prove correct)
     aggregated = {p[1] for p in proj_plan if p[0] == "agg"}
     if len(aggregated) < 2:
         return None
@@ -1028,9 +1032,18 @@ def build_chasm_fanout_rewrite(sql: str, finding: "FanoutFinding", dialect: str 
         for p in proj_plan:
             if p[0] == "agg" and p[1] == sa:
                 body = p[2]
-                an = f"_a{ai}"; ai += 1
-                cproj.append(exp.alias_(type(body)(this=exp.column(body.this.name)), an))
-                agg_loc[id(body)] = (cte_name, an)
+                if isinstance(body, exp.Avg):
+                    # AVG over a chasm can't be summed; decompose into per-satellite
+                    # SUM(x) + COUNT(x), then divide the SUMS in the outer query.
+                    an_s, an_c = f"_a{ai}s", f"_a{ai}c"; ai += 1
+                    col = exp.column(body.this.name)
+                    cproj.append(exp.alias_(exp.Sum(this=col.copy()), an_s))
+                    cproj.append(exp.alias_(exp.Count(this=col.copy()), an_c))
+                    agg_loc[id(body)] = (cte_name, ("avg", an_s, an_c))
+                else:
+                    an = f"_a{ai}"; ai += 1
+                    cproj.append(exp.alias_(type(body)(this=exp.column(body.this.name)), an))
+                    agg_loc[id(body)] = (cte_name, ("sum", an))
         cte_sel = exp.Select(expressions=cproj).from_(exp.to_table(sat_aliases[sa])).group_by(exp.column(sat_key.name))
         ctes[sa] = (cte_name, cte_sel)
 
@@ -1061,8 +1074,17 @@ def build_chasm_fanout_rewrite(sql: str, finding: "FanoutFinding", dialect: str 
             final_proj.append(exp.alias_(col, p[2]) if p[2] else col)
         else:
             body, out_alias = p[2], p[3]
-            cte_name, an = agg_loc[id(body)]
-            agg = exp.Sum(this=exp.column(an, table=cte_name))
+            cte_name, loc = agg_loc[id(body)]
+            if loc[0] == "avg":
+                _, an_s, an_c = loc
+                # ratio of summed parts = the true un-fanned mean (NULL-safe, float division).
+                num = exp.Mul(this=exp.Sum(this=exp.column(an_s, table=cte_name)),
+                              expression=exp.Literal.number("1.0"))
+                den = exp.func("NULLIF", exp.Sum(this=exp.column(an_c, table=cte_name)),
+                               exp.Literal.number("0"))
+                agg = exp.Div(this=num, expression=den)
+            else:
+                agg = exp.Sum(this=exp.column(loc[1], table=cte_name))
             out_name = out_alias or f"{body.key.lower()}_{body.this.name}"
             final_proj.append(exp.alias_(agg, out_name))
     outer.set("expressions", final_proj)

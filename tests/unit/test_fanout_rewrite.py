@@ -90,8 +90,40 @@ def test_chasm_bails_on_satellite_where():
     assert _chasm(_CHASM_SQL + " WHERE l.l_quantity > 10") is None
 
 
-def test_chasm_bails_on_avg():
-    assert _chasm("SELECT AVG(l.l_quantity), SUM(ps.ps_availqty) FROM part p JOIN lineitem l ON p.p_partkey = l.l_partkey JOIN partsupp ps ON p.p_partkey = ps.ps_partkey") is None
+def test_chasm_rewrites_avg_as_ratio_of_sums():
+    # AVG over a chasm is now decomposed into per-satellite SUM(x)+COUNT(x), divided in
+    # the outer query (was a bail). High-precision: it must produce a NULLIF-guarded ratio.
+    rw = _chasm("SELECT AVG(l.l_quantity), SUM(ps.ps_availqty) FROM part p JOIN lineitem l ON p.p_partkey = l.l_partkey JOIN partsupp ps ON p.p_partkey = ps.ps_partkey")
+    assert rw is not None
+    low = rw.lower()
+    assert "nullif" in low and low.count("group by") == 2
+    assert "count(l_quantity)" in low and "sum(l_quantity)" in low   # the decomposition
+
+
+def test_chasm_avg_decomposition_is_numerically_correct():
+    # The real proof: a fanned AVG is biased when a GROUP's hubs have different fan-out
+    # multiplicities; the rewrite must equal the TRUE un-fanned mean. Runs on DuckDB.
+    import duckdb
+    con = duckdb.connect(":memory:")
+    con.execute("CREATE TABLE campaigns(campaign_id INT, name VARCHAR)")
+    con.execute("INSERT INTO campaigns VALUES (1,'A'),(2,'A'),(3,'B')")
+    con.execute("CREATE TABLE clicks(click_id INT, campaign_id INT, x DOUBLE)")
+    con.execute("INSERT INTO clicks VALUES (1,1,10),(2,1,20),(3,2,30),(4,3,40)")
+    con.execute("CREATE TABLE impressions(impression_id INT, campaign_id INT, y DOUBLE)")
+    con.execute("INSERT INTO impressions VALUES (1,1,100),(2,1,200),(3,1,300),(4,2,400),(5,3,500)")
+    tc = {"campaigns": ["campaign_id", "name"],
+          "clicks": ["click_id", "campaign_id", "x"],
+          "impressions": ["impression_id", "campaign_id", "y"]}
+    sql = ("SELECT ca.name, AVG(c.x) AS avg_x, SUM(i.y) AS sum_y FROM campaigns ca "
+           "JOIN clicks c ON c.campaign_id=ca.campaign_id "
+           "JOIN impressions i ON i.campaign_id=ca.campaign_id GROUP BY ca.name ORDER BY ca.name")
+    rw = build_chasm_fanout_rewrite(sql, detect_fanout(sql, tc))
+    assert rw is not None
+    fanned = con.execute(sql).fetchall()
+    rewritten = con.execute(rw).fetchall()
+    true = [("A", 20.0, 1000.0), ("B", 40.0, 500.0)]   # AVG(x) per name from clicks alone; SUM(y) from impressions alone
+    assert rewritten == true          # the rewrite recovers the un-fanned values
+    assert fanned != true             # and the original fanned query was genuinely wrong
 
 
 def test_chasm_bails_on_count_star():

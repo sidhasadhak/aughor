@@ -222,7 +222,7 @@ Verified pending against code/git. `⬜` not started · `◑` partial.
 ### Feature depth
 - ⬜ **Query Builder Layer-3** *(M)* — reverse-compile raw SQL → semantic chips (only forward `buildSql()` exists).
 - ⬜ **Hypothesis-eval parallelization** *(S–M)* — the agent graph scores hypotheses **serially** (`aughor/agent/nodes.py`, `current_hypothesis_idx += 1`); SQL-gen is already parallel.
-- ◑ **FAN-b — chasm-rewrite breadth** *(M)* — parent + chasm de-fan ship and are wired (`aughor/sql/fanout.py`); the **AVG-decomposition / satellite-WHERE-splitting** edge shapes still safely bail rather than auto-rewrite.
+- ◑ **FAN-b — chasm-rewrite breadth** *(M)* — parent + chasm de-fan ship and are wired (`aughor/sql/fanout.py`); **AVG-decomposition now auto-rewrites** (AVG over a chasm → per-satellite SUM(x)+COUNT(x), divided as a ratio-of-sums; numerically verified on DuckDB — recovers the true un-fanned mean a fanned AVG silently biased). The remaining **satellite-WHERE-splitting** edge still safely bails (riskier — correlated predicates + INNER↔LEFT semantics).
 
 ### Infra / code health
 - ⬜ **K4 follow-ups** — generated typed TS client (`web/lib/api.gen.ts` absent), domain-interface module splits, the `_phase8_domain_intelligence` god-file split, WCH-8 `.duckdb` write-coordination.
