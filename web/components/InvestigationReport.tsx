@@ -96,6 +96,16 @@ export interface ADAReport {
   confidence_justification: string;
   recommendations: ADARecommendation[];
   data_gaps: string[];
+  // Phase-2 structural trust artifacts (Orchestrator) — optional; older reports omit them.
+  contradiction_report?: {
+    severity: string; count: number;
+    items: { kind: string; detail: string; phases: string[]; severity: string }[];
+  } | null;
+  orchestration_plan?: {
+    question_kind: string; planned_ids: string[];
+    steps: { phase_id: string; phase_name: string; icon: string; disposition: string; reason: string }[];
+  } | null;
+  plan_reconciliation?: { planned: string[]; actual: string[]; skipped: string[]; unplanned: string[] } | null;
 }
 
 const CONF_TXT: Record<ADAReport["confidence"], string> = {
@@ -361,6 +371,42 @@ function ConfidenceDetail({ report }: { report: ADAReport }) {
   );
 }
 
+// ── Cross-phase checks — the Orchestrator's declared plan + consistency verdict ──
+
+function CrossPhaseSection({ report }: { report: ADAReport }) {
+  const plan = report.orchestration_plan;
+  const contradictions = report.contradiction_report?.items ?? [];
+  const rec = report.plan_reconciliation;
+  return (
+    <div className="flex flex-col gap-2.5">
+      {contradictions.length > 0 && (
+        <div className="rounded-md border border-amber-500/30 bg-amber-500/[0.06] px-3 py-2">
+          <p className="aug-text-xs font-medium text-amber-300/90 mb-1">
+            {contradictions.length} cross-phase tension{contradictions.length > 1 ? "s" : ""} flagged
+          </p>
+          <ul className="flex flex-col gap-1">
+            {contradictions.map((c, i) => (
+              <li key={i} className="aug-text-xs text-amber-200/80 flex items-start gap-2 leading-relaxed">
+                <span className="shrink-0 text-amber-400/70">⚠</span>
+                {c.detail}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {plan && (
+        <div className="aug-text-sm text-zinc-400 leading-relaxed">
+          <span className="text-zinc-500">Planned path: </span>
+          {plan.steps.filter(s => s.disposition !== "gated_off").map(s => s.phase_id).join(" → ")}
+          {rec && rec.skipped.length > 0 && (
+            <span className="text-zinc-500"> · skipped {rec.skipped.join(", ")} (a gate stopped early)</span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Investigation machinery — one quiet disclosure ─────────────────────────────
 
 function InvestigationDetails({ report, intakePhase }: { report: ADAReport; intakePhase?: InvestigationPhase }) {
@@ -391,6 +437,12 @@ function InvestigationDetails({ report, intakePhase }: { report: ADAReport; inta
               </li>
             ))}
           </ul>
+        </BriefDetailBlock>
+      )}
+
+      {(report.orchestration_plan || (report.contradiction_report?.count ?? 0) > 0) && (
+        <BriefDetailBlock label="Cross-phase checks">
+          <CrossPhaseSection report={report} />
         </BriefDetailBlock>
       )}
 

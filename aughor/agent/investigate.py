@@ -1063,94 +1063,13 @@ def _skipped_finding(phase_id: str, reason: str) -> InvestigationFinding:
 
 
 def _detect_phase_contradictions(phases: list[InvestigationPhaseResult]) -> str:
-    """
-    Deterministically scan phase summaries for direct factual contradictions.
-
-    Detects these contradiction classes:
-      A. Significance flip — one phase says the change is "significant" / "anomalous"
-         while another says "within normal variance" / "not significant" / "no anomaly".
-      B. Direction flip — one phase says metric is "up" / "increased" and another
-         says "down" / "decreased" for the same metric mention.
-      C. Causal attribution flip — one phase names a cause X, another says X is "not
-         the cause" or that the relationship is "not significant".
-
-    Returns a prompt section string to inject before synthesis, or "" if clean.
-    Never raises.
-    """
-    try:
-        if not phases or len(phases) < 2:
-            return ""
-
-        summaries: list[tuple[str, str]] = [
-            (p.get("phase_name", ""), (p.get("summary") or "").lower())
-            for p in phases
-        ]
-
-        contradictions: list[str] = []
-
-        # ── Class A: significance flip ────────────────────────────────────────
-        sig_positive = re.compile(
-            r'\b(significant|anomal|unusual|notable|material|above.normal|outside.normal)\b'
-        )
-        sig_negative = re.compile(
-            r'\b(within.normal|no.anomal|not.significant|insignificant|expected.variance|'
-            r'consistent.with.historical|normal.variance|no.significant)\b'
-        )
-        phases_with_sig = [(name, s) for name, s in summaries if sig_positive.search(s)]
-        phases_with_neg = [(name, s) for name, s in summaries if sig_negative.search(s)]
-        if phases_with_sig and phases_with_neg:
-            contradictions.append(
-                f"Significance contradiction: phase(s) {', '.join(n for n, _ in phases_with_sig)} "
-                f"describe the change as significant/anomalous, but phase(s) "
-                f"{', '.join(n for n, _ in phases_with_neg)} describe it as within normal variance. "
-                f"You MUST resolve this tension explicitly in your report — do NOT paper over it."
-            )
-
-        # ── Class B: direction flip on same metric keyword ─────────────────────
-        # Find metric-like tokens (revenue, orders, conversion, churn, etc.)
-        metric_re = re.compile(
-            r'\b(revenue|orders|conversion|churn|retention|aov|gmv|mrr|sessions|'
-            r'traffic|cac|ltv|profit|margin|spend|cost)\b'
-        )
-        direction_up = re.compile(r'\b(increas|grew|up|higher|gain|improv|recover|surged)\b')
-        direction_down = re.compile(r'\b(declin|decreas|fell|drop|down|lower|reduc|shrunk|worsened)\b')
-
-        metric_directions: dict[str, dict[str, list[str]]] = {}
-        for name, s in summaries:
-            for m in metric_re.finditer(s):
-                metric = m.group(1)
-                # Check surrounding context (±80 chars)
-                start = max(0, m.start() - 80)
-                end = min(len(s), m.end() + 80)
-                ctx = s[start:end]
-                if direction_up.search(ctx):
-                    metric_directions.setdefault(metric, {}).setdefault("up", []).append(name)
-                elif direction_down.search(ctx):
-                    metric_directions.setdefault(metric, {}).setdefault("down", []).append(name)
-
-        for metric, dirs in metric_directions.items():
-            if "up" in dirs and "down" in dirs:
-                contradictions.append(
-                    f"Direction contradiction on '{metric}': "
-                    f"phase(s) {', '.join(dirs['up'])} describe it as increasing, "
-                    f"phase(s) {', '.join(dirs['down'])} describe it as decreasing. "
-                    f"Clarify which direction is correct and over what time period."
-                )
-
-        if not contradictions:
-            return ""
-
-        lines = [
-            "\n⚠ CROSS-PHASE CONTRADICTIONS DETECTED — address each explicitly in your report "
-            "(surface them in the risks or data quality notes; do NOT silently average them out):"
-        ]
-        for i, c in enumerate(contradictions, 1):
-            lines.append(f"  {i}. {c}")
-        lines.append("")
-        return "\n".join(lines)
-
-    except Exception:
-        return ""
+    """Back-compat thin wrapper: the detection now lives in the Orchestrator as a typed
+    ``ContradictionReport`` (so the tension is a first-class artifact), and this returns
+    its ``to_prompt_section()`` — byte-identical to the string this used to build, so the
+    synthesizer sees exactly what it always did. Callers wanting the typed report should
+    use ``orchestrator.detect_contradictions`` directly."""
+    from aughor.agent.orchestrator import detect_contradictions
+    return detect_contradictions(phases).to_prompt_section()
 
 
 def _phases_summary(phases: list[InvestigationPhaseResult]) -> str:
@@ -1840,11 +1759,35 @@ def ada_intake(state: AgentState) -> dict:
     except Exception:
         analysis_ledger = ""
 
-    return {
+    # Orchestrator: declare the phase path the deterministic routers will execute, so the
+    # Analyst's autonomy is legible (a plan of record, not emergent gate-by-gate routing).
+    # Derived from the SAME signals the routers key on — it can't disagree with what runs.
+    plan_dict = None
+    try:
+        from aughor.agent.orchestrator import plan_phases
+        plan = plan_phases(
+            question=question,
+            cross_sectional=bool(intake.cross_sectional),
+            dimension_ask=_question_asks_for_dimension(question),
+            behavioral=_question_needs_behavioral(question),
+        )
+        plan_dict = plan.to_dict()
+        from aughor.agent.handoff import emit_handoff
+        emit_handoff("orchestrator", "analyst", "intake",
+                     {"plan": plan.summary(), "planned_ids": plan.planned_ids},
+                     conn_id=state.get("connection_id") or None)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "orchestration plan", counter="orchestrator")
+
+    out = {
         "investigation_phases": [phase],
         "_ada_intake": intake_dict,
         "analysis_ledger": analysis_ledger,
     }
+    if plan_dict is not None:
+        out["_orchestration_plan"] = plan_dict
+    return out
 
 
 # ── Premise direction helpers ─────────────────────────────────────────────────
@@ -2850,12 +2793,29 @@ def ada_synthesize(state: AgentState) -> dict:
     # overflow is folded into a number-preserving digest (tree-reduce) instead of being truncated away.
     evidence_log = _phases_evidence_budgeted(phases)
 
-    # ── Cross-phase contradiction detection ───────────────────────────────────
+    # ── Cross-phase contradiction detection (typed) ───────────────────────────
     # Before synthesis, deterministically check phase summaries for contradictions.
     # Example: baseline says "significant drop (z=-2.4)" while dimensional says
     # "no segment deviates from baseline" — the synthesizer must not silently paper
-    # over this.  We inject any contradictions as a hard instruction in the prompt.
-    contradiction_section = _detect_phase_contradictions(phases)
+    # over this. The Orchestrator returns a typed ContradictionReport: .to_prompt_section()
+    # is the byte-identical hard instruction the synthesizer always received, and .to_dict()
+    # rides along on the report as a first-class trust artifact (surfaced to the UI).
+    from aughor.agent.orchestrator import detect_contradictions, reconcile
+    contradiction_report = detect_contradictions(phases)
+    contradiction_section = contradiction_report.to_prompt_section()
+    # Reconcile the Analyst's declared plan against the phases that actually ran, and
+    # journal the seam so planned-vs-actual autonomy is legible in the Fleet view.
+    orchestration_plan = state.get("_orchestration_plan")
+    plan_reconciliation = reconcile((orchestration_plan or {}).get("planned_ids", []), phase_ids)
+    try:
+        from aughor.agent.handoff import emit_handoff
+        emit_handoff("analyst", "orchestrator", "synthesis",
+                     {"reconciliation": plan_reconciliation,
+                      "contradictions": contradiction_report.severity},
+                     conn_id=state.get("connection_id") or None)
+    except Exception as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "plan reconciliation journal", counter="orchestrator")
 
     # Cross-sectional runs have no temporal "change" — tell synthesis to frame the
     # report as a where-is-value-weakest diagnostic, not a period-over-period decline.
@@ -3072,6 +3032,9 @@ def ada_synthesize(state: AgentState) -> dict:
             confidence_justification=synth.confidence_justification,
             recommendations=recommendations,
             data_gaps=synth.data_gaps,
+            contradiction_report=contradiction_report.to_dict(),
+            orchestration_plan=orchestration_plan,
+            plan_reconciliation=plan_reconciliation,
         )
     else:
         ada_report = ADAReport(
@@ -3087,6 +3050,9 @@ def ada_synthesize(state: AgentState) -> dict:
             confidence_justification="Synthesis LLM call failed.",
             recommendations=[],
             data_gaps=[],
+            contradiction_report=contradiction_report.to_dict(),
+            orchestration_plan=orchestration_plan,
+            plan_reconciliation=plan_reconciliation,
         )
 
     # Also produce a legacy AnalysisReport for backward compat (history, cache)

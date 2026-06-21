@@ -165,6 +165,16 @@ export interface ADAReport {
   confidence_justification: string;
   recommendations: ADARecommendation[];
   data_gaps: string[];
+  // Phase-2 structural trust artifacts (Orchestrator) — optional; older reports omit them.
+  contradiction_report?: {
+    severity: string; count: number;
+    items: { kind: string; detail: string; phases: string[]; severity: string }[];
+  } | null;
+  orchestration_plan?: {
+    question_kind: string; planned_ids: string[];
+    steps: { phase_id: string; phase_name: string; icon: string; disposition: string; reason: string }[];
+  } | null;
+  plan_reconciliation?: { planned: string[]; actual: string[]; skipped: string[]; unplanned: string[] } | null;
 }
 
 // SSE event shapes
