@@ -1021,6 +1021,27 @@ def _xsec_max_seeking(question: str) -> bool:
 _RATIO_METRIC_COL_RE = re.compile(r"metric_total|metric_value|\bratio\b|pct|percent|\brate\b", re.I)
 
 
+def _suppress_fanned_ratio(findings: list, metric_label: str, eff_caveat: str) -> str:
+    """Fix B — when a RATIO metric fans out (a join multiplies its rows), the value is CORRUPTED,
+    not merely inflated: the numerator and denominator are multiplied by DIFFERENT per-group
+    factors, so the ratio and its ranking are meaningless (the ROAS 0.0–0.01 case). Suppress them
+    instead of presenting + rationalising an artifact — drop the chart, replace the interpretation,
+    and clear the bogus key numbers. Returns the reframed phase summary; mutates ``findings``.
+    Cold-start safety net: Fix C avoids this whenever a grain-correct finding SQL exists to reuse."""
+    honest = (
+        f"{metric_label} could not be computed reliably across the scanned dimensions: {eff_caveat} "
+        f"The values are fan-out artifacts, not real {metric_label} — a grain-correct recompute "
+        "(pre-aggregate each side to the dimension grain, then divide) is needed before this can be "
+        "ranked or trusted.")
+    for f in (findings or []):
+        f["interpretation"] = honest
+        f["chart_type"] = "none"
+        f["key_numbers"] = []
+    return (f"⚠ {metric_label} could not be computed reliably across the scanned dimensions — a "
+            "fan-out across the join corrupts the ratio, so the values are suppressed (a "
+            "grain-correct recompute is needed).")
+
+
 def _chart_ratio_primary(finding) -> None:
     """For a RATIO metric, plot metric_total (the ratio itself), not the large numerator/
     denominator dollar aggregates it was built from. Keep the dimension column + the ratio
@@ -1838,27 +1859,37 @@ def run_analysis_phase(
     exec_error_msg: str = "Queries failed to execute.",
     exec_status: str = "error",
     exec_skipped_reason: str = "No results.",
+    preplanned=None,
 ) -> "_PhaseRun":
     """The plan(coder) → execute(parallel, safe) → interpret(fast) skeleton every ADA phase
     shares. Returns a _PhaseRun; a planning or execution failure carries a ready error/skipped
     phase for the caller to return. The interpret prompt is built by ``interpret_user_fn(
-    results_text)`` since it depends on the executed results."""
+    results_text)`` since it depends on the executed results.
+
+    ``preplanned`` (a PhasePlan): when a drilled finding hands us its already-grounded,
+    grain-correct query, REUSE it verbatim instead of re-deriving — so the phase reproduces the
+    finding's numbers rather than risking a fresh fan-out. The LLM re-plan guards (temporal,
+    fan-out) are then skipped, since re-planning would defeat the reuse."""
     from aughor.agent.prompts_investigate import PhasePlan, PhaseInterpretation
 
-    # Step 1 — plan
-    try:
-        plan: PhasePlan = _provider("coder").complete(
-            system=plan_system, user=plan_user, response_model=PhasePlan)
-    except Exception as e:
-        return _PhaseRun(ok=False, error_phase=_phase_result(
-            phase_id, title, emoji, "error", plan_error_msg, [_skipped_finding(phase_id, str(e))]))
+    # Step 1 — plan (or reuse a preplanned, grain-correct query).
+    _preplanned = bool(preplanned is not None and getattr(preplanned, "queries", None))
+    if _preplanned:
+        plan = preplanned
+    else:
+        try:
+            plan: PhasePlan = _provider("coder").complete(
+                system=plan_system, user=plan_user, response_model=PhasePlan)
+        except Exception as e:
+            return _PhaseRun(ok=False, error_phase=_phase_result(
+                phase_id, title, emoji, "error", plan_error_msg, [_skipped_finding(phase_id, str(e))]))
 
     # Temporal guard (WCH-DS) — the intake clamp put LITERAL observation/comparison windows into
     # plan_user, but a coder that reaches for CURRENT_DATE / NOW() / DATE_SUB produces ZERO rows on
     # historical data. The prompt rule is advisory; this ENFORCES it with one corrective re-plan
     # that must use the literal dates. (Shared by every phase, so baseline/decompose/dimensional/
     # behavioral are all covered.)
-    if plan and plan.queries and any(_uses_relative_date(q.sql) for q in plan.queries):
+    if not _preplanned and plan and plan.queries and any(_uses_relative_date(q.sql) for q in plan.queries):
         from aughor.stats import stats as _s; _s.inc("temporal_guard_retries")
         try:
             _fixed = _provider("coder").complete(
@@ -1938,7 +1969,7 @@ def run_analysis_phase(
             _augment_tc(queries)
             return _Verifier.scan(queries, _tc, _dialect)
 
-        _fanout_hints = _scan_fanout(plan.queries)
+        _fanout_hints = [] if _preplanned else _scan_fanout(plan.queries)
         if _fanout_hints:
             from aughor.stats import stats as _s; _s.inc("ada.fanout_guard_retries")
             try:
@@ -2627,8 +2658,28 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection") -> dict:
             "to the question — it matters MORE than the per-dimension scan below.\n"
         )
 
+    # Fix C — reuse the drilled finding's grain-correct query. When this scan is DEEPENING an
+    # explorer finding (origin_finding), execute the finding's OWN grounded ranking SQL rather
+    # than re-deriving it: the explorer already computed it correctly (e.g. ROAS 6.23), so
+    # re-deriving only risks re-introducing the fan-out the finding avoided (the 0.0–0.01 mess).
+    # Only reuse a GROUP BY ranking query — a scalar finding has no cross-sectional shape to reuse.
+    _anchor = None
+    _origin_sql = ((state.get("origin_finding") or {}).get("sql") or "").strip()
+    if (_origin_sql and re.match(r"(?is)^\s*(select|with)\b", _origin_sql)
+            and re.search(r"(?i)\bgroup\s+by\b", _origin_sql)):
+        try:
+            from aughor.agent.prompts_investigate import PhasePlan as _PP, PhaseQueryPlan as _PQ
+            _anchor = _PP(queries=[_PQ(
+                title=f"{metric_label} by dimension (established finding)",
+                sql=_origin_sql, chart_type="bar_horizontal",
+                rationale="Reuse the drilled finding's grain-correct query so the drill-down reproduces it exactly.")])
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "cross-section origin-finding anchor best-effort", counter="ada.xsec_anchor")
+
     _run = run_analysis_phase(
         conn, phase_id="cross_section", title="Cross-Sectional Scan", emoji="🧭", cap=5, schema=schema,
+        preplanned=_anchor,
         plan_system="Write one ranking query per dimension. Rank the metric ascending (weakest first). No time filters." + _ADA_SQL_GROUNDING,
         plan_user=CROSS_SECTION_PLAN_PROMPT.format(
             question=question, metric_label=metric_label, metric_sql=metric_sql,
@@ -2744,7 +2795,12 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection") -> dict:
         for f in findings:
             f["trust_caveat"] = f.get("trust_caveat") or _eff_caveat
             f["is_significant"] = False
-        summary = f"⚠ {_eff_caveat} " + (summary or "")
+        if is_ratio:
+            # Fix B — a fanned RATIO is corrupted, not merely inflated; suppress its values + ranking
+            # rather than present and let the narrator rationalise an artifact (the ROAS 0.0–0.01 mess).
+            summary = _suppress_fanned_ratio(findings, metric_label, _eff_caveat)
+        else:
+            summary = f"⚠ {_eff_caveat} " + (summary or "")
 
     phase = _phase_result(
         "cross_section", "Cross-Sectional Scan", "🧭",
