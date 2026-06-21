@@ -1506,7 +1506,7 @@ class SchemaExplorer:
                 # Phase 4 — Join verification
                 self._status.phase = ExplorationPhase.JOIN_VERIFICATION
                 self._journal("exploration.phase", {"phase": "join_verification"})
-                await self._phase4_joins(jmap)
+                await self._phase4_joins(jmap, tp)
 
                 # Phase 5 — Lifecycle mapping
                 self._status.phase = ExplorationPhase.LIFECYCLE_MAPPING
@@ -1766,13 +1766,22 @@ class SchemaExplorer:
 
     # ── Phase 4: Join verification ────────────────────────────────────────────
 
-    async def _phase4_joins(self, jmap: dict) -> None:
+    async def _phase4_joins(self, jmap: dict, tp: dict | None = None) -> None:
         """
         Verify each inferred FK relationship with an orphan check.
         A verified join has orphan_count == 0.
+
+        On huge tables the exact orphan anti-join (a full ``NOT IN`` scan of the parent per
+        edge) is costly, so when either side is above _HLL_MIN_ROWS we estimate the same three
+        numbers with a HyperLogLog (``approx_count_distinct`` inclusion–exclusion) — a single
+        cheap aggregate per column. The record is flagged ``estimated`` and verification then
+        tolerates HLL noise (orphan RATE below a small epsilon counts as clean).
         """
+        from aughor.sql.join_guard import hll_min_rows
+        _hll_rows = hll_min_rows()
         joins = jmap.get("joins", [])
         done_keys = {v.get("key") for v in self._state.get("join_verifications", [])}
+        table_rows = {t: (_profile_field(p, "row_count") or 0) for t, p in (tp or {}).items()}
 
         for j in joins:
             t1, c1, t2, c2 = j["t1"], j["c1"], j["t2"], j["c2"]
@@ -1783,20 +1792,33 @@ class SchemaExplorer:
 
             await self._gate()
 
-            # CAST both keys to VARCHAR for the orphan comparison: the same logical key
-            # can carry different physical types across tables (e.g. franchiseID BIGINT
-            # here, VARCHAR there), and a raw `NOT IN` then errors "Cannot compare VARCHAR
-            # and BIGINT". Comparing the string forms is the right FK check (an id is an id)
-            # and never raises.
-            sql = (
-                f"SELECT "
-                f"(SELECT COUNT(DISTINCT {c1}) FROM {t1}) AS fk_distinct, "
-                f"(SELECT COUNT(DISTINCT {c2}) FROM {t2}) AS pk_distinct, "
-                f"(SELECT COUNT(*) FROM {t1} "
-                f" WHERE {c1} IS NOT NULL "
-                f" AND CAST({c1} AS VARCHAR) NOT IN (SELECT CAST({c2} AS VARCHAR) FROM {t2} WHERE {c2} IS NOT NULL)"
-                f") AS orphan_count"
-            )
+            big = (int(table_rows.get(t1, 0)) >= _hll_rows
+                   or int(table_rows.get(t2, 0)) >= _hll_rows)
+            # CAST both keys to VARCHAR for the comparison: the same logical key can carry
+            # different physical types across tables (franchiseID BIGINT here, VARCHAR there);
+            # comparing string forms is the right FK check (an id is an id) and never raises.
+            if big:
+                # HLL: orphans ≈ |fk ∪ pk| − |pk| (FK distinct values absent from PK).
+                sql = (
+                    f"SELECT "
+                    f"approx_count_distinct(CAST({c1} AS VARCHAR)) FILTER (WHERE {c1} IS NOT NULL) AS fk_distinct, "
+                    f"(SELECT approx_count_distinct(CAST({c2} AS VARCHAR)) FROM {t2} WHERE {c2} IS NOT NULL) AS pk_distinct, "
+                    f"GREATEST(0, (SELECT approx_count_distinct(v) FROM ("
+                    f"   SELECT CAST({c1} AS VARCHAR) AS v FROM {t1} WHERE {c1} IS NOT NULL "
+                    f"   UNION ALL SELECT CAST({c2} AS VARCHAR) FROM {t2} WHERE {c2} IS NOT NULL) AS _u) "
+                    f" - (SELECT approx_count_distinct(CAST({c2} AS VARCHAR)) FROM {t2} WHERE {c2} IS NOT NULL)) AS orphan_count "
+                    f"FROM {t1}"
+                )
+            else:
+                sql = (
+                    f"SELECT "
+                    f"(SELECT COUNT(DISTINCT {c1}) FROM {t1}) AS fk_distinct, "
+                    f"(SELECT COUNT(DISTINCT {c2}) FROM {t2}) AS pk_distinct, "
+                    f"(SELECT COUNT(*) FROM {t1} "
+                    f" WHERE {c1} IS NOT NULL "
+                    f" AND CAST({c1} AS VARCHAR) NOT IN (SELECT CAST({c2} AS VARCHAR) FROM {t2} WHERE {c2} IS NOT NULL)"
+                    f") AS orphan_count"
+                )
             think = (
                 f"Verify FK {t1}.{c1} → {t2}.{c2}: "
                 f"count distinct values and check for orphan rows."
@@ -1818,19 +1840,34 @@ class SchemaExplorer:
                 else:
                     card = "1:N"
 
+                # Exact orphans must be 0; HLL estimates carry noise, so tolerate an orphan
+                # RATE under 2% of the FK distinct count as "verified".
+                verified = (orphans == 0) if not big else (fk_d > 0 and (orphans / fk_d) < 0.02)
+
                 self._state.setdefault("join_verifications", []).append({
                     "key": key,
                     "from_table": t1, "from_col": c1,
                     "to_table": t2, "to_col": c2,
                     "orphan_count": orphans,
                     "fk_distinct": fk_d, "pk_distinct": pk_d,
-                    "verified": orphans == 0,
+                    "verified": verified,
+                    "estimated": big,
                     "cardinality": card,
                 })
                 self._status.joins_verified += 1
                 self._status.facts_discovered += 1
                 done_keys.add(key)
                 self._save_state()
+
+        # Precompute the build-time joinability cache from what we just verified, so the data
+        # catalog reuses phase-4's work instead of re-probing each table at first-query time
+        # (a value-disjoint edge is demoted to DO-NOT-JOIN before the model ever sees it).
+        try:
+            from aughor.sql.join_guard import seed_verified_cache
+            seed_verified_cache(self.connection_id, joins, self._state.get("join_verifications", []))
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "phase4 joinable cache seed best-effort", counter="join_guard.precompute")
 
     # ── Phase 5: Lifecycle mapping ────────────────────────────────────────────
 
