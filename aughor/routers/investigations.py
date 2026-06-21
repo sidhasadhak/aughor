@@ -2219,18 +2219,27 @@ async def _stream_resume(inv_id: str, feedback: str, request: Request) -> AsyncG
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
-async def _metered_stream(gen: AsyncGenerator[str, None]) -> AsyncGenerator[str, None]:
-    """Meter a synchronous streaming answer. The chat/insight path is not a kernel
-    job, so it has no JobKernel._run to flush its compute — set the per-run
-    accumulator for the whole iteration instead; the answer's receipt reads it via
-    metering.snapshot() while still inside this context. Output is passed through
-    unchanged."""
+async def _metered_stream(gen: AsyncGenerator[str, None],
+                          budget: tuple | None = None) -> AsyncGenerator[str, None]:
+    """Meter a synchronous streaming answer + enforce its budget in-context. The
+    chat/insight path is not a kernel job, so it has no JobKernel._run (to flush its
+    compute) and no heartbeat (to enforce a budget). We set the per-run accumulator
+    for the whole iteration — the receipt reads it via metering.snapshot() — and arm
+    the Insight agent's budget; the LLM funnel raises BudgetExceeded (a BaseException,
+    so it unwinds past the answer path's fail-open try/excepts), surfaced here as a
+    clean error event. Output is otherwise passed through unchanged."""
     from aughor.kernel import metering
     token = metering.start()
+    btoken = metering.set_budget(*budget) if budget else None
     try:
         async for chunk in gen:
             yield chunk
+    except metering.BudgetExceeded as be:
+        yield _sse("error", {"message": f"Answer stopped — {be.reason} exceeded. "
+                                        f"Raise the Insight agent's budget in Fleet → Agents."})
     finally:
+        if btoken is not None:
+            metering.clear_budget(btoken)
         metering.reset(token)
 
 
@@ -2242,10 +2251,20 @@ async def chat_endpoint(req: ChatRequest, request: Request):
         resolved = resolve_connection_id(req.canvas_id)
         if resolved:
             conn_id = resolved
+    # Resolve the Insight agent's budget (Org/workspace governance) for this run.
+    budget = None
+    try:
+        from aughor.kernel.agents import effective_governance
+        from aughor.workspace.store import workspace_for_connection
+        gov = effective_governance("insight", workspace_for_connection(conn_id))
+        budget = (gov.token_budget, gov.time_budget_s)
+    except Exception:
+        budget = None
     return StreamingResponse(
         _metered_stream(
             _stream_chat(req.question, conn_id, req.history, request,
-                         session_id=req.session_id, canvas_id=req.canvas_id)
+                         session_id=req.session_id, canvas_id=req.canvas_id),
+            budget=budget,
         ),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},

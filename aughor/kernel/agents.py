@@ -71,6 +71,13 @@ AGENTS: tuple[AgentCharter, ...] = (
         icon="microscope", default_budget=Budget(token_budget=500_000, time_budget_s=900),
     ),
     AgentCharter(
+        id="insight", name="Insight", role="Quick answerer",
+        goal="Answer a question fast in chat — grounded NL→SQL with a Trust Receipt.",
+        lane="interactive", job_kinds=(),
+        tools=("NL→SQL", "auto-repair", "Trust Receipt"),
+        icon="search", default_budget=Budget(token_budget=150_000, time_budget_s=300),
+    ),
+    AgentCharter(
         id="watcher", name="Watcher", role="KPI sentinel",
         goal="Watch metrics and spawn an investigation when something moves.",
         lane="background", job_kinds=("monitor",), tools=("thresholds", "anomaly checks"),

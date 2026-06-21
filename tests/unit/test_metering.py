@@ -153,6 +153,34 @@ class TestReceiptCost:
         assert rec["cost"] is None  # graceful: older/unmetered answers
 
 
+class TestInContextBudget:
+    def test_budget_exceeded_is_base_exception(self):
+        # The crux: it must unwind past the answer path's `except Exception`.
+        assert issubclass(metering.BudgetExceeded, BaseException)
+        assert not issubclass(metering.BudgetExceeded, Exception)
+
+    def test_check_budget_noop_without_armed_budget(self):
+        with metering.metered():
+            metering.record_llm(10_000, 0, 1.0)
+            metering.check_budget()   # no budget armed → never raises (job paths)
+
+    def test_check_budget_raises_over_token_budget(self):
+        with metering.metered():
+            tok = metering.set_budget(100, None)
+            try:
+                metering.record_llm(50, 0, 1.0)
+                metering.check_budget()                    # 50 ≤ 100 → ok
+                metering.record_llm(80, 0, 1.0)            # now 130 > 100
+                with pytest.raises(metering.BudgetExceeded) as ei:
+                    metering.check_budget()
+                assert "token budget" in str(ei.value)
+            finally:
+                metering.clear_budget(tok)
+
+    def test_check_budget_safe_outside_a_run(self):
+        metering.check_budget()   # no run, no budget → no crash
+
+
 def test_idempotent_metrics_migration(tmp_path):
     # constructing the ledger twice on the same path must not raise (the ALTER guard)
     p = tmp_path / "system.db"

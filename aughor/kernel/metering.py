@@ -134,6 +134,60 @@ def metrics_for_job(job_id: str) -> Optional[RunMetrics]:
     return _by_job.get(job_id)
 
 
+# ── In-context budget enforcement (the synchronous path) ─────────────────────
+# Kernel jobs enforce budgets from the heartbeat (kernel/jobs.py). The synchronous
+# chat/insight path has no heartbeat, so it arms a budget in-context and checks it
+# at the LLM funnel. BudgetExceeded is a BaseException so it unwinds past the
+# answer path's fail-open `except Exception` (the same reliability trick that makes
+# the kernel's cancel work) — the stream wrapper catches it and ends cleanly.
+
+class BudgetExceeded(BaseException):
+    def __init__(self, reason: str):
+        self.reason = reason
+        super().__init__(reason)
+
+
+@dataclass
+class _BudgetCtx:
+    token_budget: Optional[int]
+    time_budget_s: Optional[int]
+    t0: float
+
+
+_budget: contextvars.ContextVar[Optional[_BudgetCtx]] = contextvars.ContextVar(
+    "aughor_run_budget", default=None
+)
+
+
+def set_budget(token_budget: Optional[int], time_budget_s: Optional[int]) -> "contextvars.Token":
+    """Arm an in-context budget for the current run; returns a token for clear_budget."""
+    import time as _time
+    return _budget.set(_BudgetCtx(token_budget, time_budget_s, _time.monotonic()))
+
+
+def clear_budget(token: "contextvars.Token") -> None:
+    try:
+        _budget.reset(token)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "metering budget clear", counter="metering")
+
+
+def check_budget() -> None:
+    """Raise BudgetExceeded if the active run is over its in-context budget. No-op
+    when no budget is armed (job paths enforce via the kernel heartbeat instead)."""
+    b = _budget.get()
+    if b is None:
+        return
+    m = _current.get()
+    if b.token_budget and m is not None and m.total_tokens > b.token_budget:
+        raise BudgetExceeded(f"token budget ({b.token_budget:,} tokens)")
+    if b.time_budget_s:
+        import time as _time
+        if (_time.monotonic() - b.t0) > b.time_budget_s:
+            raise BudgetExceeded(f"time budget ({b.time_budget_s}s)")
+
+
 @contextmanager
 def metered() -> Iterator[Optional[RunMetrics]]:
     """Set a fresh accumulator for the duration of the block.

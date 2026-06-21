@@ -50,6 +50,11 @@ class TestRegistry:
         assert scout.lane == "background" and scout.reserved is False
         assert get_charter("watcher").reserved is True   # defined, not yet wired
 
+    def test_insight_charter_backs_the_chat_budget(self):
+        c = get_charter("insight")
+        assert c is not None and c.lane == "interactive" and c.job_kinds == ()
+        assert c.default_budget.token_budget == 150_000   # the chat-path cap
+
 
 class TestGovernance:
     def test_charter_defaults_when_unset(self):

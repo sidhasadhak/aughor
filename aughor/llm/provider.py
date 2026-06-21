@@ -293,6 +293,7 @@ class LLMProvider:
             out, raw = endpoint.create(**kwargs), None
         pt, ct = _extract_usage(raw)
         metering.record_llm(pt, ct, (_time.monotonic() - _t0) * 1000.0)
+        metering.check_budget()   # in-context budget (chat/insight path); no-op for jobs
         return out
 
     def _fallback_client(self):
