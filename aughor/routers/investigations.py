@@ -975,7 +975,8 @@ async def _stream_chat(
             # catalog (build_metrics_block) and never saw the connection's GOVERNED north-star
             # value_sql, so it re-derived gross margin / ROAS / AOV and could disagree with Deep.
             from aughor.semantic.canonical import unified_metric_grounding
-            _mb = unified_metric_grounding(connection_id, canvas_scope_eff_schema, schema_text=schema)
+            _mb = unified_metric_grounding(connection_id, canvas_scope_eff_schema, schema_text=schema,
+                                           question=question)
             metrics_section = (_mb + "\n\n") if _mb else ""
         except Exception:
             metrics_section = ""
@@ -1906,7 +1907,8 @@ async def _stream_investigation(
             # investigation on big warehouses (profiled), duplicating this same schema.
             # Use the EFFECTIVE scope schema (canvas OR an explicit schema-scoped run) so the
             # connection's GOVERNED north-star metrics for THIS schema are injected (RC2).
-            _canon = unified_metric_grounding(connection_id, scope_schema, schema_text=full_schema)
+            _canon = unified_metric_grounding(connection_id, scope_schema, schema_text=full_schema,
+                                              question=question)
             if _canon:
                 schema_for_agent = f"{schema_for_agent}\n\n{_canon}"
         except Exception:

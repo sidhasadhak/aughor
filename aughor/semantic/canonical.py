@@ -201,7 +201,7 @@ def canonical_metrics_block(connection_id: str = "", schema_name: Optional[str] 
 
 
 def unified_metric_grounding(connection_id: str = "", schema_name: Optional[str] = None,
-                             schema_text: Optional[str] = None) -> str:
+                             schema_text: Optional[str] = None, question: str = "") -> str:
     """The SINGLE metric-grounding block BOTH NL2SQL paths inject, so a metric resolves to the
     SAME SQL in /chat AND Deep Analysis (the "revenue means two different things" / "Insight vs
     Deep disagree on the same metric" class). It is the UNION of the two blocks each path used
@@ -220,7 +220,8 @@ def unified_metric_grounding(connection_id: str = "", schema_name: Optional[str]
     parts: list[str] = []
     try:
         from aughor.semantic.metrics import build_metrics_block
-        gov = build_metrics_block(schema_text=schema_text or "", connection_id=connection_id)
+        gov = build_metrics_block(schema_text=schema_text or "", connection_id=connection_id,
+                                  question=question)
         if gov:
             parts.append(gov)
     except Exception as exc:
