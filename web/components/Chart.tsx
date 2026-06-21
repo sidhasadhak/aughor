@@ -215,14 +215,30 @@ export function Chart({
       (hint === "pareto" || (PARETO_UPGRADE.has(hint) && !!paretoShareCol && rows.length >= 4))
       && !!paretoCat && !!paretoMeasure && paretoCat !== paretoMeasure;
 
-    // Backend-provided chart config (LLM-generated alongside SQL).
+    // Backend-provided chart config (LLM-generated alongside SQL). TRUST IT ONLY WHEN ITS
+    // FIELD ROLES ARE COHERENT WITH THE DATA — the LLM sometimes mis-maps the axes (e.g.
+    // puts the MEASURE on x_field), which renders a broken chart (values on the category
+    // axis, blank bars). When the config is incoherent we fall through to the data-shape
+    // inference below, which is robust. (The config is dropped on history restore, so a
+    // validated-or-inferred chart also makes a live answer match what History shows.)
     const cc = chartConfig;
     const ccType = cc?.type as string | undefined;
     const ccX = cc?.x_field as string | undefined;
     const ccY = cc?.y_field as string | undefined;
     const ccY2 = cc?.y_field_2 as string | undefined;
     const ccColor = cc?.color_field as string | undefined;
-    const hasBackendConfig = !!(cc && ccType && ccX && ccY);
+    const _colSet = new Set(columns);
+    const _xReal = !!ccX && _colSet.has(ccX);
+    const _xNum = !!ccX && numericCols.includes(ccX);
+    const _yNum = !!ccY && numericCols.includes(ccY);  // the measure MUST be numeric
+    const _ccType = (ccType ?? "").toLowerCase();
+    const _rolesOk =
+      !!ccType && _xReal && _yNum && ccX !== ccY
+      && (!ccColor || _colSet.has(ccColor))
+      && (!ccY2 || numericCols.includes(ccY2))
+      // scatter plots a measure on BOTH axes; every other type needs a dimension/date on x.
+      && (_ccType === "scatter" ? _xNum : !_xNum);
+    const hasBackendConfig = _rolesOk;
     const backendHint = hasBackendConfig ? ccType!.toLowerCase() : null;
 
     const lbls = showLabels;

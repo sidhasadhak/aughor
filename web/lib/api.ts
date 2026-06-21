@@ -359,6 +359,31 @@ export async function createConnectionSchema(connId: string, name: string): Prom
   return data.schema;
 }
 
+/** Remove an entire schema (dataset) from a workspace connection — drops its tables,
+ *  backing files, and derived profile/exploration. */
+export async function deleteConnectionSchema(connId: string, schema: string): Promise<void> {
+  const res = await fetch(
+    `${BASE}/connections/${encodeURIComponent(connId)}/schemas/${encodeURIComponent(schema)}`,
+    { method: "DELETE" },
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "Schema remove failed");
+  }
+}
+
+/** Remove a single table from a workspace connection — drops it + its backing file(s). */
+export async function deleteConnectionTable(connId: string, table: string, schema = "main"): Promise<void> {
+  const res = await fetch(
+    `${BASE}/connections/${encodeURIComponent(connId)}/tables/${encodeURIComponent(table)}?schema=${encodeURIComponent(schema)}`,
+    { method: "DELETE" },
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "Table remove failed");
+  }
+}
+
 export async function testConnection(id: string): Promise<TestResult> {
   const res = await fetch(`${BASE}/connections/${id}/test`, { method: "POST" });
   if (!res.ok) throw new Error("Test request failed");
@@ -2331,10 +2356,12 @@ export async function generateBriefingNarrative(
   connectionId: string,
   refresh = false,
   schema?: string,
+  workspaceId?: string,
 ): Promise<BriefingNarrativeResponse> {
   const q = new URLSearchParams();
   if (refresh) q.set("refresh", "true");
   if (schema) q.set("schema", schema);
+  if (workspaceId) q.set("workspace_id", workspaceId);
   const qs = q.toString() ? `?${q.toString()}` : "";
   const url = `${BASE}/exploration/${encodeURIComponent(connectionId)}/briefing${qs}`;
   const res = await fetch(url, { method: "POST" });
@@ -2347,8 +2374,12 @@ export async function generateBriefingNarrative(
 export async function generateCanvasBriefingNarrative(
   canvasId: string,
   refresh = false,
+  workspaceId?: string,
 ): Promise<BriefingNarrativeResponse> {
-  const qs = refresh ? "?refresh=true" : "";
+  const q = new URLSearchParams();
+  if (refresh) q.set("refresh", "true");
+  if (workspaceId) q.set("workspace_id", workspaceId);
+  const qs = q.toString() ? `?${q.toString()}` : "";
   const url = `${BASE}/exploration/canvas/${encodeURIComponent(canvasId)}/briefing${qs}`;
   const res = await fetch(url, { method: "POST" });
   if (!res.ok) throw new Error("Failed to generate canvas briefing narrative");

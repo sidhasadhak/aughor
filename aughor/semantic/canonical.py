@@ -198,3 +198,43 @@ def canonical_metrics_block(connection_id: str = "", schema_name: Optional[str] 
     re-introspection (see resolve_canonical_metrics)."""
     return render_canonical_metrics_block(
         resolve_canonical_metrics(connection_id, schema_name, schema_text=schema_text))
+
+
+def unified_metric_grounding(connection_id: str = "", schema_name: Optional[str] = None,
+                             schema_text: Optional[str] = None) -> str:
+    """The SINGLE metric-grounding block BOTH NL2SQL paths inject, so a metric resolves to the
+    SAME SQL in /chat AND Deep Analysis (the "revenue means two different things" / "Insight vs
+    Deep disagree on the same metric" class). It is the UNION of the two blocks each path used
+    to inject separately:
+
+      • the GOVERNED catalog block (``build_metrics_block`` — data/metrics.json formulas with
+        approval badges + NEVER-usage rules, schema-filtered, ontology-overlaid), and
+      • the connection's NORTH-STAR + verified-ontology formulas (``resolve_canonical_metrics``
+        minus the catalog rows already rendered above, so nothing is listed twice).
+
+    /chat historically injected only the FIRST — so it never saw the build-time-audited
+    north-star ``value_sql`` and re-derived gross margin / ROAS / AOV, free to disagree with
+    Deep, which injected only the SECOND (and so missed the catalog's NEVER rules). Routing both
+    paths through this one function gives each path BOTH halves. No-op safe; pass ``schema_text``
+    to avoid a re-introspection."""
+    parts: list[str] = []
+    try:
+        from aughor.semantic.metrics import build_metrics_block
+        gov = build_metrics_block(schema_text=schema_text or "", connection_id=connection_id)
+        if gov:
+            parts.append(gov)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "unified grounding: governed-catalog block best-effort; "
+                 "canonical metrics still inject", counter="canonical.unified_catalog")
+    try:
+        extra = [m for m in resolve_canonical_metrics(connection_id, schema_name, schema_text=schema_text)
+                 if m.source != "catalog"]   # catalog already rendered above with its governance
+        block = render_canonical_metrics_block(extra)
+        if block:
+            parts.append(block)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "unified grounding: canonical block best-effort; governed catalog "
+                 "still injects", counter="canonical.unified_canonical")
+    return "\n\n".join(parts)

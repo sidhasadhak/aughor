@@ -91,3 +91,33 @@ def test_empty_is_noop_safe():
 def test_metrics_without_sql_are_skipped():
     res = resolve_canonical_metrics(catalog=[_md("ghost", "")], ontology=None)
     assert res == []
+
+
+# ── unified_metric_grounding — ONE block both NL2SQL paths inject (UNIFY, 2026-06-21) ──
+# /chat used build_metrics_block (catalog only) while Deep used canonical_metrics_block
+# (catalog + north-star + ontology), so they could disagree on the same metric. The unified
+# block must surface the connection's GOVERNED north-star value_sql (what /chat was missing).
+def test_unified_grounding_surfaces_north_star(monkeypatch):
+    from aughor.semantic import canonical as C
+
+    class _NSM:
+        name = "Gross Margin Rate"
+        value_sql = "SELECT ROUND(100.0 * SUM(margin) / NULLIF(SUM(price), 0), 2) FROM t"
+        unit_or_range = "%"
+        definition = "gross margin"
+
+    class _Prof:
+        north_star_metrics = [_NSM()]
+
+    monkeypatch.setattr("aughor.profile.store.load", lambda c, s=None: _Prof())
+    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda *a, **k: [])  # empty catalog → no DB open
+    out = C.unified_metric_grounding("conn", "schema", schema_text="TABLE: t\n  margin\n  price")
+    assert "Gross Margin Rate" in out
+    assert "SUM(margin)" in out  # the governed value_sql is present (chat previously never saw it)
+
+
+def test_unified_grounding_noop_safe_without_connection(monkeypatch):
+    from aughor.semantic import canonical as C
+    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda *a, **k: [])
+    # no connection, no metrics → empty string, never raises
+    assert C.unified_metric_grounding("", None, schema_text="") == ""

@@ -15,10 +15,45 @@ and concentration signals to the LLM.
 """
 from __future__ import annotations
 
+import re
 from typing import Optional
 
 Row = list
 Table = tuple[list[str], list[Row]]
+
+
+# ── additivity ──────────────────────────────────────────────────────────────────
+# Share-of-total / concentration / Pareto language is ONLY valid for an ADDITIVE measure
+# (revenue, counts). Summing a NON-ADDITIVE one (an average/rate/ratio) yields a meaningless
+# "total" and each group's "share" of it is noise — the AOV-by-payment-type bug ("credit_card
+# accounts for 20% of 346.89" = five ~€69 averages summed). Mirrors web/lib/measureKind.ts.
+# Matched against a name normalised so snake_case/camel separators become spaces (so a
+# word boundary \b works on "total_spend" → "total spend"). Non-additive wins over additive.
+_NON_ADDITIVE_NAME = re.compile(
+    r"\b(avg|average|mean|median|rate|ratio|pct|percent|proportion|margin|share|per|"
+    r"aov|arpu|arppu|asp|roas|cac|cpa|cpc|cpm|ltv|index|score)\b", re.I)
+_ADDITIVE_NAME = re.compile(
+    r"\b(revenue|sales|amount|spend|cost|total|sum|gmv|qty|quantity|orders?|units?|"
+    r"profit|volume|count|customers|users|sessions|clicks|impressions|visits|transactions)\b", re.I)
+_NON_ADDITIVE_SQL = re.compile(
+    r"\b(avg|mean|median|stddev|std_dev|variance|var_samp|var_pop|corr|"
+    r"percentile_cont|percentile_disc)\s*\(", re.I)
+
+
+def is_additive_measure(col_name: str, sql: Optional[str] = None) -> bool:
+    """True when a measure can be summed across groups into a meaningful total (so a
+    share-of-total / concentration claim is valid). The SQL (when given) is authoritative
+    for the non-additive case — ``aov`` from ``ROUND(AVG(order_value),2)`` is non-additive
+    even though the alias hides it; else the column name decides, defaulting to non-additive
+    for unknown names (never claim a share-of-total we cannot justify)."""
+    if sql and _NON_ADDITIVE_SQL.search(sql):
+        return False
+    name = re.sub(r"[^a-z0-9]+", " ", (col_name or "").lower())
+    if _NON_ADDITIVE_NAME.search(name):
+        return False
+    if _ADDITIVE_NAME.search(name):
+        return True
+    return False
 
 
 # ── coercion ──────────────────────────────────────────────────────────────────

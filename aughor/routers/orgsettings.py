@@ -25,8 +25,28 @@ def get_org_settings():
 @router.put("/org-settings")
 def put_org_settings(settings: OrgSettings):
     """Replace the app-wide organization settings. The OrgSettings model validates the
-    payload (currency normalized to a 3-letter ISO 4217 code, fiscal month 1-12)."""
-    return save_org_settings(settings).model_dump()
+    payload (currency normalized to a 3-letter ISO 4217 code, fiscal month 1-12).
+
+    When the declared INDUSTRY changes to a new non-empty value, every stored business
+    profile is invalidated so each dataset re-infers against the selected industry's
+    curated KB on next access — "pick an industry → its intelligence is captured" without
+    a manual rebuild. (Clearing the industry back to "" keeps the inferred profiles.)"""
+    prev = load_org_settings()
+    saved = save_org_settings(settings)
+    new_ind = (saved.industry or "").strip().lower()
+    if new_ind and new_ind != (prev.industry or "").strip().lower():
+        from aughor.profile import store as _pstore
+        from aughor.kernel.errors import tolerate
+        try:
+            n = _pstore.invalidate_all()
+            import logging
+            logging.getLogger(__name__).info(
+                "[org-settings] industry → %r; invalidated %d profile(s) for re-capture",
+                saved.industry, n)
+        except Exception as e:
+            tolerate(e, "industry-change profile invalidation is best-effort",
+                     counter="orgsettings.industry_invalidate")
+    return saved.model_dump()
 
 
 @router.get("/org-settings/effective")

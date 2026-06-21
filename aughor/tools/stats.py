@@ -10,7 +10,7 @@ from typing import Optional
 import numpy as np
 from scipy import stats as scipy_stats
 
-from aughor.tools.postproc import pct_changes, shares
+from aughor.tools.postproc import pct_changes, shares, is_additive_measure
 
 
 # ── Result types ──────────────────────────────────────────────────────────────
@@ -103,10 +103,14 @@ def detect_trend(values: list[float]) -> TrendResult:
 
 # ── Auto-analysis: called on every successful QueryResult ────────────────────
 
-def analyze_query_result(columns: list[str], rows: list[list]) -> list[StatResult]:
+def analyze_query_result(columns: list[str], rows: list[list], sql: Optional[str] = None) -> list[StatResult]:
     """
     Inspect a query result and run whichever statistical tests are appropriate.
     Returns a (possibly empty) list of StatResult to attach to the QueryResult.
+
+    `sql` (when given) gates measure-additivity-sensitive signals: a concentration /
+    share-of-total claim is only emitted for an ADDITIVE measure (so an AVG/ratio result
+    never injects a false "Pareto concentration" into the LLM evidence).
     """
     if not rows or not columns:
         return []
@@ -148,17 +152,20 @@ def analyze_query_result(columns: list[str], rows: list[list]) -> list[StatResul
             stat = _analyze_distribution(col_name, values)
             if stat:
                 results.append(stat)
-            # Concentration: surface Pareto-style skew across groups (additive, gated).
-            sh = sorted((s for s in shares(values) if s is not None), reverse=True)
-            if sh:
-                top1, top3 = sh[0], sum(sh[:3])
-                if top1 >= 0.40 or top3 >= 0.70:
-                    results.append(StatResult(
-                        type="contribution",
-                        interpretation=(f"[{col_name}] Concentrated: the largest of {len(sh)} groups is "
-                                        f"{top1 * 100:.0f}% of the total; top 3 = {top3 * 100:.0f}% (Pareto-style)."),
-                        is_significant=top1 >= 0.5 or top3 >= 0.8,
-                    ))
+            # Concentration: surface Pareto-style skew across groups — ONLY for an ADDITIVE
+            # measure. Share-of-total is meaningless for an average/rate/ratio (summing
+            # per-group AVGs is not a real total), so gate it to avoid a fabricated signal.
+            if is_additive_measure(col_name, sql):
+                sh = sorted((s for s in shares(values) if s is not None), reverse=True)
+                if sh:
+                    top1, top3 = sh[0], sum(sh[:3])
+                    if top1 >= 0.40 or top3 >= 0.70:
+                        results.append(StatResult(
+                            type="contribution",
+                            interpretation=(f"[{col_name}] Concentrated: the largest of {len(sh)} groups is "
+                                            f"{top1 * 100:.0f}% of the total; top 3 = {top3 * 100:.0f}% (Pareto-style)."),
+                            is_significant=top1 >= 0.5 or top3 >= 0.8,
+                        ))
 
         # Trend path: ordered numeric series
         if len(values) >= 6:

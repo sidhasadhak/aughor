@@ -230,6 +230,45 @@ def _floor_chain(state: AgentState) -> list[SubQuestion]:
 
 # ── Node: plan_and_execute_subq ───────────────────────────────────────────────
 
+def _rescope_sql_to_schema(sql: str, allowed: str, conn: "DatabaseConnection") -> str | None:
+    """Re-point any table referencing a schema OTHER than `allowed` to `allowed` (same
+    table name), so a sub-question planner that copied a sibling-schema table from the
+    linked catalog (e.g. netflix.products in a missimi investigation) can't answer from
+    the wrong dataset — an explicit qualifier bypasses search_path. Returns rewritten SQL
+    only when it actually changed AND still binds (dry_run); else None. Never raises."""
+    try:
+        import sqlglot
+        from sqlglot import exp
+    except Exception:
+        return None
+    dialect = getattr(conn, "dialect", "duckdb")
+    try:
+        tree = sqlglot.parse_one(sql, read=dialect)
+    except Exception:
+        return None
+    if tree is None:
+        return None
+    allow = (allowed or "").strip().lower()
+    if not allow:
+        return None
+    _SYS = {"information_schema", "pg_catalog", "system", ""}
+    cte_names = {c.alias_or_name.lower() for c in tree.find_all(exp.CTE)}
+    changed = False
+    for t in tree.find_all(exp.Table):
+        sch = (t.db or "").strip().lower()
+        if sch and sch != allow and sch not in _SYS and t.name.lower() not in cte_names:
+            t.set("db", exp.to_identifier(allowed))
+            changed = True
+    if not changed:
+        return None
+    try:
+        out = tree.sql(dialect=dialect)
+        ok, _ = conn.dry_run(out)
+    except Exception:
+        return None
+    return out if ok else None
+
+
 def plan_and_execute_subq(state: AgentState, conn: "DatabaseConnection") -> dict[str, Any]:
     """Plan SQL for the current sub-question, execute it, accumulate results."""
     sub_questions = state.get("sub_questions", [])
@@ -298,8 +337,37 @@ def plan_and_execute_subq(state: AgentState, conn: "DatabaseConnection") -> dict
 
     results: list[QueryResult] = []
     new_pitfalls: list[Pitfall] = []
+    allowed_schema = (state.get("scope_schema") or "").strip()
 
     for sql in queries[:2]:  # explore mode: cap at 2 queries per sub-question
+        # Schema-escape guard: a scoped investigation must never answer from a sibling
+        # schema. The deep linker's full-schema FK expansion can surface e.g.
+        # netflix.products into a missimi sub-question, and an explicit qualifier bypasses
+        # the pinned search_path. Re-point any out-of-scope table to the canvas schema; if
+        # that can't bind (the table truly isn't in scope), DROP this query rather than leak.
+        if allowed_schema:
+            try:
+                from aughor.sql.tables import extract_tables
+                _allow = allowed_schema.lower()
+                _oos = sorted({
+                    r.schema.strip().lower()
+                    for r in extract_tables(sql, getattr(conn, "dialect", "duckdb"))
+                    if r.schema and r.schema.strip().lower()
+                    not in (_allow, "information_schema", "pg_catalog", "system")
+                })
+                if _oos:
+                    _fixed = _rescope_sql_to_schema(sql, allowed_schema, conn)
+                    if _fixed:
+                        logger.info("[explore] rescoped cross-schema refs %s -> %s", _oos, allowed_schema)
+                        sql = _fixed
+                    else:
+                        logger.info("[explore] dropping sub-query %s — escapes schema %s (refs %s)",
+                                    subq.id, allowed_schema, _oos)
+                        continue
+            except Exception as _exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_exc, "explore schema-escape guard best-effort; query proceeds",
+                         counter="explore.scope_guard")
         result = conn.execute(subq.id, sql)
 
         # Attach predictions
@@ -308,9 +376,12 @@ def plan_and_execute_subq(state: AgentState, conn: "DatabaseConnection") -> dict
         _d["expected_if_false"] = (plan.expected_if_false if plan else None) or None
         result = QueryResult(**_d)
 
-        # Value-domain join guard: a join on value-disjoint keys produces an
-        # unreliable result (0 rows / NULL right side) without ever erroring.
-        # Detect it (fail-open) to drive the regenerate branches below.
+        # Value-domain guards: a join on value-disjoint keys OR a WHERE/HAVING literal
+        # absent from its column's domain (`status = 'cancelled'` when the data holds
+        # 'canceled', or `!= 'cancelled'` which then EXCLUDES nothing) produces an
+        # unreliable result without ever erroring. Detect both (fail-open) to drive the
+        # regenerate branch below. Filter warnings are folded into domain_warnings so the
+        # identical regenerate-and-reverify path handles them too.
         domain_warnings = []
         try:
             from aughor.sql.join_guard import check_join_value_domains
@@ -319,6 +390,13 @@ def plan_and_execute_subq(state: AgentState, conn: "DatabaseConnection") -> dict
             from aughor.kernel.errors import tolerate
             tolerate(_exc, "explore join-guard probe best-effort; query proceeds",
                      counter="join_guard.explore_probe")
+        try:
+            from aughor.sql.join_guard import check_filter_value_domains
+            domain_warnings = domain_warnings + check_filter_value_domains(conn, sql)
+        except Exception as _exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_exc, "explore filter-guard probe best-effort; query proceeds",
+                     counter="filter_guard.explore_probe")
 
         if result.error:
             from aughor.agent.state import SQLFix
@@ -364,7 +442,7 @@ def plan_and_execute_subq(state: AgentState, conn: "DatabaseConnection") -> dict
             # replace a query with one that still has a disjoint join).
             from aughor.agent.state import SQLFix
             from aughor.agent.prompts import FIX_SQL_PROMPT
-            from aughor.sql.join_guard import check_join_value_domains
+            from aughor.sql.join_guard import check_join_value_domains, check_filter_value_domains
             warn_text = "\n".join(w.to_prompt_text() for w in domain_warnings)
             try:
                 fix2: SQLFix = get_provider("coder").complete(
@@ -372,7 +450,7 @@ def plan_and_execute_subq(state: AgentState, conn: "DatabaseConnection") -> dict
                     user=FIX_SQL_PROMPT.format(
                         dialect=conn.dialect,
                         sql=sql,
-                        error="A join is on value-disjoint columns — the result is unreliable.",
+                        error="A predicate references a value not in its column/key domain — the result is unreliable.",
                         error_diagnosis=f"DIAGNOSIS:\n{warn_text}\n",
                         schema=state["schema_context"],
                         kb_patterns_section="",
@@ -381,7 +459,7 @@ def plan_and_execute_subq(state: AgentState, conn: "DatabaseConnection") -> dict
                     response_model=SQLFix,
                 )
                 retry = conn.execute(subq.id, fix2.fixed_sql)
-                retry_domain = check_join_value_domains(conn, fix2.fixed_sql)
+                retry_domain = check_join_value_domains(conn, fix2.fixed_sql) or check_filter_value_domains(conn, fix2.fixed_sql)
                 if not retry.error and not retry_domain:
                     new_pitfalls.append(Pitfall(
                         original_sql=sql, error=warn_text, fixed_sql=fix2.fixed_sql,

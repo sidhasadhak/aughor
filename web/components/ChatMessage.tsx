@@ -51,6 +51,7 @@ import {
   isNumeric,
   firstNonNull,
 } from "@/components/charts/columnRoles";
+import { isAdditiveMeasure } from "@/lib/measureKind";
 
 // Format a wall-clock duration for the "Completed in …" line.
 function formatElapsed(ms: number): string {
@@ -183,7 +184,7 @@ function columnsToMetrics(columns: string[], rows: unknown[][]): BriefMetric[] {
 // ── Data summary ──────────────────────────────────────────────────────────────
 // Computes a 1-2 sentence actionable insight from the result rows.
 // Pure computation — no LLM call, zero latency.
-function computeSummary(columns: string[], rows: unknown[][]): string | null {
+function computeSummary(columns: string[], rows: unknown[][], sql?: string | null): string | null {
   if (!rows.length || !columns.length) return null;
   const n = rows.length;
 
@@ -218,39 +219,52 @@ function computeSummary(columns: string[], rows: unknown[][]): string | null {
     return isShare ? `avg ${fmtVal(total / nums.length)}` : `${fmtVal(total)} total across ${n} rows.`;
   }
 
-  // Aggregate by primary category
-  const aggMap = new Map<string, number>();
+  // Additivity gate: share-of-total / concentration is ONLY valid for an ADDITIVE measure
+  // (revenue, counts). For a NON-ADDITIVE one (an average/rate/ratio — e.g. AOV) summing the
+  // per-group values is meaningless ("credit_card accounts for 20% of 346.89" = five ~€69
+  // averages summed). The SQL is authoritative (AVG/ratio → non-additive); else the name.
+  const additive = isAdditiveMeasure(numCol, sql);
+
+  // Per-category value: SUM for additive measures, MEAN for non-additive ones.
+  const groups = new Map<string, number[]>();
   rows.forEach((r) => {
     const k = String((r as unknown[])[catIdx]);
     const v = Number((r as unknown[])[numIdx]);
-    if (!isNaN(v)) aggMap.set(k, (aggMap.get(k) ?? 0) + v);
+    if (!isNaN(v)) { if (!groups.has(k)) groups.set(k, []); groups.get(k)!.push(v); }
   });
-  const sorted = [...aggMap.entries()].sort((a, b) => b[1] - a[1]);
+  const sorted = [...groups.entries()]
+    .map(([k, vs]) => [k, additive ? vs.reduce((a, b) => a + b, 0) : vs.reduce((a, b) => a + b, 0) / vs.length] as [string, number])
+    .sort((a, b) => b[1] - a[1]);
   if (!sorted.length) return null;
 
-  const aggTotal = sorted.reduce((s, [, v]) => s + v, 0);
   const [topName, topVal] = sorted[0];
-  const topPct = aggTotal > 0 ? Math.round((topVal / aggTotal) * 100) : 0;
-
   const parts: string[] = [];
 
   if (isShare) {
     parts.push(`${topName} leads at ${fmtVal(topVal)}.`);
-  } else {
+  } else if (additive) {
+    const aggTotal = sorted.reduce((s, [, v]) => s + v, 0);
+    const topPct = aggTotal > 0 ? Math.round((topVal / aggTotal) * 100) : 0;
     const concLabel = topPct >= 30 ? "highly concentrated" : topPct >= 18 ? "concentrated" : "spread";
     parts.push(`${cleanLabel(numCol)} is ${concLabel} — ${topName} alone accounts for ${topPct}% of ${fmtVal(aggTotal)}.`);
+    // Top-3 tier sentence (additive only — a share of the real total).
+    if (sorted.length >= 4) {
+      const top3Sum = sorted.slice(0, 3).reduce((s, [, v]) => s + v, 0);
+      const top3Pct = aggTotal > 0 ? Math.round((top3Sum / aggTotal) * 100) : 0;
+      const top3Names = sorted.slice(0, 3).map(([k]) => k).join(", ");
+      parts.push(`${top3Names} together make up ${top3Pct}%.`);
+    }
+  } else {
+    // Non-additive (average/rate/ratio): describe the spread + leader, never a "share".
+    const [loName, loVal] = sorted[sorted.length - 1];
+    const flat = loVal > 0 && topVal / loVal <= 1.1;   // within 10% → effectively flat
+    parts.push(flat
+      ? `${cleanLabel(numCol)} is roughly flat across ${sorted.length} ${cleanLabel(columns[catIdx])}s (${fmtVal(loVal)}–${fmtVal(topVal)}).`
+      : `${cleanLabel(numCol)} ranges ${fmtVal(loVal)}–${fmtVal(topVal)} across ${sorted.length} ${cleanLabel(columns[catIdx])}s — highest for ${topName}, lowest for ${loName}.`);
   }
 
-  // Top-3 tier sentence
-  if (sorted.length >= 4) {
-    const top3Sum = sorted.slice(0, 3).reduce((s, [, v]) => s + v, 0);
-    const top3Pct = aggTotal > 0 ? Math.round((top3Sum / aggTotal) * 100) : 0;
-    const top3Names = sorted.slice(0, 3).map(([k]) => k).join(", ");
-    parts.push(`${top3Names} together make up ${top3Pct}%.`);
-  }
-
-  // Stack dimension: which segment dominates overall
-  if (cat2Idx >= 0 && parts.length < 2) {
+  // Stack dimension: which segment dominates overall (additive only — it sums by segment).
+  if (cat2Idx >= 0 && parts.length < 2 && additive) {
     const stackAgg = new Map<string, number>();
     rows.forEach((r) => {
       const sk = String((r as unknown[])[cat2Idx]);
@@ -784,7 +798,7 @@ function InsightBrief({
   onFollowUp?: (q: string) => void;
   onRunFresh?: (q: string) => void;
 }) {
-  const proseText = turn.insight?.narrative?.trim() || computeSummary(turn.columns, turn.rows) || "";
+  const proseText = turn.insight?.narrative?.trim() || computeSummary(turn.columns, turn.rows, turn.sql) || "";
   const anomalies = (turn.insight?.anomalies ?? []).filter(Boolean);
   const inspect = turn.inspectWarning;
 

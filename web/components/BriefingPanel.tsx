@@ -1238,12 +1238,35 @@ function HeadlineCard({ signal, onInvestigate, actions }: {
   );
 }
 
+// ── Confidence ring ──────────────────────────────────────────────────────────────
+/** A compact circular confidence gauge for the verdict lede — replaces the dense
+ *  stat tiles so the hero reads as "verdict + proof + how sure" at a glance. */
+function ConfidenceRing({ pct, color, size = 76 }: { pct: number; color: string; size?: number }) {
+  const stroke = 6;
+  const r = (size - stroke) / 2;
+  const circ = 2 * Math.PI * r;
+  const off = circ * (1 - Math.max(0, Math.min(100, pct)) / 100);
+  return (
+    <div style={{ position: "relative", width: size, height: size, flexShrink: 0 }} title={`Lead confidence ${pct}%`}>
+      <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--bg-4)" strokeWidth={stroke} />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth={stroke}
+          strokeDasharray={circ} strokeDashoffset={off} strokeLinecap="round"
+          style={{ transition: "stroke-dashoffset var(--dur-breath) var(--ease-out)" }} />
+      </svg>
+      <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+        <span style={{ fontSize: 19, fontWeight: 700, color, lineHeight: 1, fontVariantNumeric: "tabular-nums" as const }}>{pct}%</span>
+        <span style={{ fontSize: 8, color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".06em", marginTop: 3 }}>confidence</span>
+      </div>
+    </div>
+  );
+}
+
 // ── Verdict hero ────────────────────────────────────────────────────────────────
-/** Conclusion-first briefing lede (v2 redesign pattern): leads with the synthesized
- *  verdict, the single most important finding, proof-stat tiles, and the primary
- *  action — instead of opening with multi-paragraph prose. Falls back to the
- *  deterministic top finding when no AI narrative has been generated yet, so the
- *  layout is always populated from real data. */
+/** Conclusion-first briefing lede: ONE bold verdict, a one-line proof, a confidence
+ *  ring, and the primary action — up front. The scope/provenance ("synthesized from N
+ *  domains…") is demoted to a quiet footer so the lede isn't cluttered with background
+ *  process. Falls back to the deterministic top finding when no AI narrative exists. */
 function VerdictHero({
   narrative, headline, domainCount, totalInsights, synthesizedAt,
   onInvestigate, controls, actions,
@@ -1265,12 +1288,6 @@ function VerdictHero({
   const conf    = headline ? Math.round((headline.insight.confidence ?? 0) * 100) : 0;
   const confColor = conf >= 80 ? "var(--grn4)" : conf >= 50 ? "var(--amb4)" : "var(--red4)";
 
-  const stats: { k: string; l: string; c: string }[] = [
-    { k: String(domainCount),   l: domainCount === 1 ? "domain" : "domains",   c: "var(--t1)" },
-    { k: String(totalInsights), l: totalInsights === 1 ? "finding" : "findings", c: "var(--t1)" },
-    ...(conf > 0 ? [{ k: `${conf}%`, l: "lead confidence", c: confColor }] : []),
-  ];
-
   return (
     <div style={{
       position: "relative", overflow: "hidden",
@@ -1280,36 +1297,35 @@ function VerdictHero({
     }}>
       <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 4, background: "var(--blue4)" }} />
       <div style={{ padding: "22px 26px 22px 28px" }}>
-        {/* top row: tag + scope + controls */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16, flexWrap: "wrap" as const }}>
+        {/* top row: tag + controls (scope/provenance demoted to the footer below) */}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" as const }}>
           <span style={{
             fontSize: 9, fontWeight: 700, padding: "2px 7px", borderRadius: "var(--r1)",
             background: "color-mix(in srgb, var(--blue4) 16%, transparent)",
             border: "1px solid color-mix(in srgb, var(--blue4) 30%, transparent)",
             color: "var(--blue4)", textTransform: "uppercase" as const, letterSpacing: ".09em",
-          }}>{narrative ? "AI Synthesis" : "Top finding"}</span>
-          <span style={{ fontSize: 11, color: "var(--t3)" }}>
-            Synthesized from{" "}
-            <span style={{ color: "var(--t2)", fontWeight: 500 }}>{domainCount} domains</span>
-            {" "}·{" "}
-            <span style={{ color: "var(--t2)", fontWeight: 500 }}>{totalInsights} findings</span>
-            <span style={{ color: "var(--t4)", marginLeft: 6 }}>· {timeAgo(synthesizedAt)}</span>
-          </span>
+          }}>{narrative ? "Verdict" : "Top finding"}</span>
           {controls && (
             <span style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>{controls}</span>
           )}
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: stats.length ? "1fr auto" : "1fr", gap: 28, alignItems: "center" }}>
+        <div style={{ display: "grid", gridTemplateColumns: conf > 0 ? "1fr auto" : "1fr", gap: 28, alignItems: "center" }}>
           <div>
+            {/* the ONE bold verdict */}
             <div style={{
               fontSize: 21, fontWeight: 650, lineHeight: 1.35, color: "var(--t1)",
               letterSpacing: "-.01em", maxWidth: 660, textWrap: "pretty" as const,
-              marginBottom: lead ? 10 : 0,
+              marginBottom: lead ? 8 : 0,
             }}>{title}</div>
+            {/* one-line proof */}
             {lead && (
-              <p style={{ fontSize: 13, color: "var(--t2)", lineHeight: 1.6, maxWidth: 640, margin: 0 }}>{lead}</p>
+              <p style={{
+                fontSize: 13, color: "var(--t2)", lineHeight: 1.55, maxWidth: 640, margin: 0,
+                display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as const, overflow: "hidden",
+              }}>{lead}</p>
             )}
+            {/* primary action up front */}
             {(headline || actions) && (
               <div style={{ display: "flex", gap: 9, marginTop: 18, flexWrap: "wrap" as const, alignItems: "center" }}>
                 {headline && (
@@ -1324,19 +1340,14 @@ function VerdictHero({
             )}
           </div>
 
-          {stats.length > 0 && (
-            <div style={{ display: "flex", gap: 12 }}>
-              {stats.map((s, i) => (
-                <div key={i} style={{
-                  textAlign: "center" as const, padding: "14px 16px", minWidth: 88,
-                  background: "var(--bg-3)", border: "1px solid var(--b1)", borderRadius: "var(--r3)",
-                }}>
-                  <div style={{ fontSize: 24, fontWeight: 700, color: s.c, letterSpacing: "-.02em", lineHeight: 1, fontVariantNumeric: "tabular-nums" as const }}>{s.k}</div>
-                  <div style={{ fontSize: 10, color: "var(--t3)", marginTop: 6, lineHeight: 1.3 }}>{s.l}</div>
-                </div>
-              ))}
-            </div>
-          )}
+          {conf > 0 && <ConfidenceRing pct={conf} color={confColor} />}
+        </div>
+
+        {/* quiet provenance — present for trust, but not the headline (click Investigate for the rest) */}
+        <div style={{ marginTop: 16, fontSize: 10.5, color: "var(--t4)" }}>
+          {narrative ? "Synthesized" : "Ranked"} from {domainCount} {domainCount === 1 ? "domain" : "domains"}
+          {" · "}{totalInsights} {totalInsights === 1 ? "finding" : "findings"}
+          {" · "}{timeAgo(synthesizedAt)}
         </div>
       </div>
     </div>
@@ -1698,6 +1709,7 @@ export function BriefingPanel({
   onInvestigate,
   canvasId,
   schema,
+  workspaceId,
 }: {
   connectionId: string;
   onInvestigate: (q: string, insightId?: string) => void;
@@ -1707,6 +1719,9 @@ export function BriefingPanel({
   /** Shared schema scope from the workspace header (filters findings + narrative).
    *  Undefined = all schemas. N/A for a canvas (already table-scoped). */
   schema?: string;
+  /** Active workspace — lets a workspace-scoped currency/industry override win in the
+   *  backend briefing (override-wins over the app default). Undefined = app default. */
+  workspaceId?: string;
 }) {
   const [briefing, setBriefing]             = useState<BriefingData | null>(null);
   const [loading, setLoading]               = useState(false);
@@ -1770,8 +1785,8 @@ export function BriefingPanel({
     setNarrativeError(null);
     try {
       const result = canvasId
-        ? await generateCanvasBriefingNarrative(canvasId, forceRefresh)
-        : await generateBriefingNarrative(connectionId, forceRefresh, schema);
+        ? await generateCanvasBriefingNarrative(canvasId, forceRefresh, workspaceId)
+        : await generateBriefingNarrative(connectionId, forceRefresh, schema, workspaceId);
       if (result.available) setNarrative(result);
       else setNarrativeError("No domain intelligence available — run an exploration first.");
     } catch (e) {
@@ -1779,7 +1794,7 @@ export function BriefingPanel({
     } finally {
       setNarrativeLoading(false);
     }
-  }, [connectionId, canvasId, schema]);
+  }, [connectionId, canvasId, schema, workspaceId]);
 
   // Shared explorer actions — used by both the control bar and the empty-state CTA.
   // In canvas mode (canvasId set) every action drives the *canvas* explorer, scoped to

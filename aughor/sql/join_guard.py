@@ -220,23 +220,37 @@ class FilterDomainWarning:
     bad_value: str
     valid_values: list[str]
     suggestion: str | None
+    op: str = "="
 
     def to_prompt_text(self) -> str:
         vals = ", ".join(repr(v) for v in self.valid_values[:12])
         sugg = f" Did you mean '{self.suggestion}'?" if self.suggestion else ""
+        if self.op in ("!=", "NOT IN"):
+            # A negated predicate on a missing value is a SILENT NO-OP: `status != 'cancelled'`
+            # keeps every row when no row equals 'cancelled', so a filter meant to DROP those
+            # rows drops none (the Q29 "zero cancellations despite 15,737" scar).
+            effect = (f"{self.table}.{self.col} {self.op} '{self.bad_value}' excludes NO rows — that "
+                      f"exact value is not in the column, so this filter is a silent no-op and the "
+                      f"rows you meant to remove are all kept.")
+        else:
+            effect = (f"{self.table}.{self.col} {self.op} '{self.bad_value}' matches NO rows — that "
+                      f"exact value is not in the column.")
         return (
-            f"FILTER VALUE MISMATCH: {self.table}.{self.col} = '{self.bad_value}' matches NO rows — "
-            f"that exact value is not in the column.{sugg} The column's actual values are: {vals}. "
+            f"FILTER VALUE MISMATCH: {effect}{sugg} The column's actual values are: {vals}. "
             f"Rewrite the predicate using an EXACT value from that list."
         )
 
 
-def _extract_filter_literals(sql: str) -> list[tuple[str, str, str]]:
-    """(table, col, literal) for `col = 'lit'` / `col IN ('a', …)` predicates that are
-    NOT inside a JOIN … ON (those are the join guard's job). Unqualified columns resolve
-    only when the query has exactly one base table — otherwise the column is ambiguous
-    and skipped (fail-safe)."""
-    out: list[tuple[str, str, str]] = []
+def _extract_filter_literals(sql: str) -> list[tuple[str, str, str, str]]:
+    """(table, col, literal, op) for `col = 'lit'` / `col != 'lit'` / `col [NOT] IN (…)`
+    predicates that are NOT inside a JOIN … ON (those are the join guard's job). `op` is one
+    of '=', '!=', 'IN', 'NOT IN'. Unqualified columns resolve only when the query has exactly
+    one base table — otherwise the column is ambiguous and skipped (fail-safe).
+
+    Negated predicates (`!=` / `NOT IN`) matter as much as positive ones: a misspelled
+    EXCLUDED literal is a silent no-op (`status != 'cancelled'` keeps every row when the data
+    holds 'canceled'), the Q29 'zero cancellations despite 15,737' scar."""
+    out: list[tuple[str, str, str, str]] = []
     try:
         import sqlglot
         import sqlglot.expressions as exp
@@ -266,18 +280,25 @@ def _extract_filter_literals(sql: str) -> list[tuple[str, str, str]]:
             return alias_map.get(raw_t, raw_t)
         return next(iter(distinct_bases)) if len(distinct_bases) == 1 else None
 
-    for eq in tree.find_all(exp.EQ):
-        if id(eq) in on_node_ids:
-            continue
+    def _emit_binary(node, op: str) -> None:
+        # `col <op> 'lit'` (or the reversed `'lit' <op> col`) → record it.
         col = lit = None
-        if isinstance(eq.left, exp.Column) and isinstance(eq.right, exp.Literal) and eq.right.is_string:
-            col, lit = eq.left, eq.right
-        elif isinstance(eq.right, exp.Column) and isinstance(eq.left, exp.Literal) and eq.left.is_string:
-            col, lit = eq.right, eq.left
+        if isinstance(node.left, exp.Column) and isinstance(node.right, exp.Literal) and node.right.is_string:
+            col, lit = node.left, node.right
+        elif isinstance(node.right, exp.Column) and isinstance(node.left, exp.Literal) and node.left.is_string:
+            col, lit = node.right, node.left
         if col is not None:
             t = _resolve(col)
             if t and col.name:
-                out.append((t, col.name, lit.this))
+                out.append((t, col.name, lit.this, op))
+
+    for eq in tree.find_all(exp.EQ):
+        if id(eq) not in on_node_ids:
+            _emit_binary(eq, "=")
+    # `!=` and `<>` both parse to exp.NEQ — a negated equality.
+    for neq in tree.find_all(exp.NEQ):
+        if id(neq) not in on_node_ids:
+            _emit_binary(neq, "!=")
     for inn in tree.find_all(exp.In):
         if id(inn) in on_node_ids:
             continue
@@ -285,9 +306,11 @@ def _extract_filter_literals(sql: str) -> list[tuple[str, str, str]]:
         if isinstance(col, exp.Column):
             t = _resolve(col)
             if t and col.name:
+                # `col NOT IN (…)` parses as Not(In(…)) — the negated form.
+                op = "NOT IN" if isinstance(inn.parent, exp.Not) else "IN"
                 for e in inn.expressions:
                     if isinstance(e, exp.Literal) and e.is_string:
-                        out.append((t, col.name, e.this))
+                        out.append((t, col.name, e.this, op))
     return out
 
 
@@ -298,10 +321,10 @@ def check_filter_value_domains(conn: "DatabaseConnection", sql: str) -> list[Fil
     from collections import defaultdict
     warnings: list[FilterDomainWarning] = []
     try:
-        by_col: dict[tuple[str, str], set[str]] = defaultdict(set)
-        for t, c, lit in _extract_filter_literals(sql):
-            by_col[(t, c)].add(lit)
-        for (t, c), lits in list(by_col.items())[:_FILTER_MAX_PROBES]:
+        by_col: dict[tuple[str, str], set[tuple[str, str]]] = defaultdict(set)
+        for t, c, lit, op in _extract_filter_literals(sql):
+            by_col[(t, c)].add((lit, op))
+        for (t, c), litops in list(by_col.items())[:_FILTER_MAX_PROBES]:
             try:
                 qt, qc = _quote_table(t), f'"{c}"'
                 res = conn.execute(
@@ -315,12 +338,12 @@ def check_filter_value_domains(conn: "DatabaseConnection", sql: str) -> list[Fil
                 if not vals or len(vals) > _ENUMERABLE_MAX_DISTINCT:
                     continue  # high-cardinality column — do not second-guess the literal
                 present = {v.lower() for v in vals}
-                for lit in lits:
+                for lit, op in litops:
                     if lit.lower() in present:
                         continue
                     close = difflib.get_close_matches(lit, vals, n=1, cutoff=0.6)
                     if close:  # only flag an obvious typo/variant, never a novel value
-                        warnings.append(FilterDomainWarning(t, c, lit, vals, close[0]))
+                        warnings.append(FilterDomainWarning(t, c, lit, vals, close[0], op))
             except Exception as exc:
                 from aughor.kernel.errors import tolerate
                 tolerate(exc, "filter_guard: value-domain probe failed — query allowed to proceed",

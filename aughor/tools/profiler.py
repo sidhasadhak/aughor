@@ -305,7 +305,7 @@ class ColumnProfile:
 class TableProfile:
     __slots__ = (
         "table", "row_count",
-        "grain_column", "grain_verified",
+        "grain_column", "grain_verified", "grain_columns",
         "primary_timestamp", "date_range",
         "effective_date_range",
         "n_periods", "trailing_partial", "time_grain",
@@ -319,6 +319,7 @@ class TableProfile:
         row_count: int = 0,
         grain_column: Optional[str] = None,
         grain_verified: bool = False,
+        grain_columns: Optional[list] = None,
         primary_timestamp: Optional[str] = None,
         date_range: Optional[tuple] = None,
         effective_date_range: Optional[tuple] = None,
@@ -332,6 +333,12 @@ class TableProfile:
         self.row_count = row_count
         self.grain_column = grain_column
         self.grain_verified = grain_verified
+        # grain_columns = a PROVEN composite primary key (e.g. order_items at
+        # (order_id, order_item_id)) when NO single column is unique. A separate signal
+        # from grain_column/grain_verified (which stay single-column for their existing
+        # consumers); surfaced in the planner-facing portrait so a composite-keyed fact
+        # isn't mistaken for having a single PK (or its line-number key for a measure).
+        self.grain_columns = grain_columns
         self.primary_timestamp = primary_timestamp
         # n_periods = number of populated months; trailing_partial = the most
         # recent month is far below typical volume (an INCOMPLETE period that
@@ -493,6 +500,12 @@ def _value_interpretation(col: str, value_range: Optional[tuple]) -> tuple[Optio
 # ── Core profile builders ─────────────────────────────────────────────────────
 
 _LARGE_TABLE_THRESHOLD = 500_000   # rows above which we skip full-scan queries
+# Composite-PK detection needs a COUNT(DISTINCT a,b) scan (no catalog stat exists for a
+# column PAIR). It's a ONE-TIME, cached, bounded cost (≤ _COMPOSITE_GRAIN_MAX_PROBES pairs,
+# only when single-column detection already failed), so it runs on facts a bit larger than
+# the single-column scan cap — but still bounded so a huge warehouse fact is skipped.
+_COMPOSITE_GRAIN_MAX_ROWS = 5_000_000
+_COMPOSITE_GRAIN_MAX_PROBES = 4
 _SAMPLE_PCT            = 5          # % to sample for top-values on large tables
 
 def _q(name: str) -> str:
@@ -934,6 +947,31 @@ def build_table_profile(
                     except (TypeError, ValueError):
                         pass
 
+    # ── 2b. Composite grain — no single column was unique; many facts are keyed by a
+    # PAIR (parent FK × line/sequence col, e.g. order_items at (order_id, order_item_id)).
+    # Probe the key-like candidates pairwise (bounded + cached) so the planner sees the true
+    # grain rather than mistaking a line-number key for a single PK or a measure.
+    grain_columns: Optional[list[str]] = None
+    if not grain_verified and 0 < row_count <= _COMPOSITE_GRAIN_MAX_ROWS:
+        key_like = [c for c in grain_candidates if _KEY_PATTERN.search(c.lower())]
+        probes = 0
+        for i in range(len(key_like)):
+            if grain_columns or probes >= _COMPOSITE_GRAIN_MAX_PROBES:
+                break
+            for j in range(i + 1, len(key_like)):
+                if probes >= _COMPOSITE_GRAIN_MAX_PROBES:
+                    break
+                a, b = key_like[i], key_like[j]
+                probes += 1
+                rc = conn.execute(
+                    "__profiler__",
+                    f"SELECT COUNT(*) FROM (SELECT DISTINCT {_q(a)}, {_q(b)} FROM {qt})",
+                )
+                distinct = _safe_float(rc.rows[0][0]) if (not rc.error and rc.rows) else None
+                if distinct is not None and int(distinct) == row_count:
+                    grain_columns = [a, b]   # proven one row per (a, b)
+                    break
+
     # ── 3. Primary timestamp — use catalog min/max when available ─────────────
     ts_cols = _select_timestamp_cols(columns)
 
@@ -994,6 +1032,7 @@ def build_table_profile(
         row_count=row_count,
         grain_column=grain_column,
         grain_verified=grain_verified,
+        grain_columns=grain_columns,
         primary_timestamp=primary_timestamp,
         date_range=date_range,
         effective_date_range=effective_date_range,
@@ -1403,7 +1442,9 @@ def render_profile_annotations(
     for table, tp in sorted(table_profiles.items()):
         # Header line
         grain_str = ""
-        if tp.grain_column:
+        if getattr(tp, "grain_columns", None):
+            grain_str = f" | grain: ({', '.join(tp.grain_columns)}) ✓"   # proven composite PK
+        elif tp.grain_column:
             tick = " ✓" if tp.grain_verified else " ?"
             grain_str = f" | grain: {tp.grain_column}{tick}"
         date_str = ""

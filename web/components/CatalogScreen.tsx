@@ -24,6 +24,7 @@ import { bare, schemaOf } from "@/lib/tableName";
 import {
   getCatalogTree, getConnections, addConnection, deleteConnection,
   testConnection, sampleTable, getSchemaRich, getTableColumns, getExplorationFindings,
+  deleteConnectionSchema, deleteConnectionTable,
   alterColumn, getConnectionSettings, updateConnectionSettings,
   type CatalogTree, type CatalogEntry, type CatalogSchemaInfo, type CatalogTableInfo,
   type Connection, type SchemaTable, type SchemaColumn, type TableSample,
@@ -564,9 +565,10 @@ function SampleGrid({ connId, tableName, schemaName }: { connId: string; tableNa
 
 type TableTab = "overview" | "sample";
 
-function TableDetailPanel({ sel, onAsk }: {
+function TableDetailPanel({ sel, onAsk, onRemoved }: {
   sel:   Extract<Sel, { level: "table" }>;
   onAsk?: (table: string, connId: string) => void;
+  onRemoved?: () => void;
 }) {
   const [tab, setTab]           = useState<TableTab>("overview");
   const [colFilter, setColFilter] = useState("");
@@ -692,6 +694,16 @@ function TableDetailPanel({ sel, onAsk }: {
                   Ask about this table →
                 </button>
               )}
+              {onRemoved && (
+                <button onClick={async () => {
+                  if (!confirm(`Remove table "${sel.table.name}" from the workspace? This drops the table and deletes its uploaded file.`)) return;
+                  try { await deleteConnectionTable(sel.connId, sel.table.name, sel.schemaName); onRemoved(); }
+                  catch (e) { alert((e as Error).message); }
+                }}
+                  style={{ marginLeft: onAsk ? 0 : "auto", fontSize: 11, padding: "4px 11px", borderRadius: 4, cursor: "pointer", background: "var(--red1)", color: "var(--red4)", border: "0.5px solid var(--red2)", whiteSpace: "nowrap" }}>
+                  Remove
+                </button>
+              )}
             </div>
 
             {/* Column header */}
@@ -790,11 +802,12 @@ function TableDetailPanel({ sel, onAsk }: {
 
 type SchemaTab = "tables" | "erd" | "shape";
 
-function SchemaDetailPanel({ sel, onSelectTable, onAsk, connName }: {
+function SchemaDetailPanel({ sel, onSelectTable, onAsk, connName, onRemoved }: {
   sel:           Extract<Sel, { level: "schema" }>;
   onSelectTable: (table: CatalogTableInfo) => void;
   onAsk?:        (table: string, connId: string) => void;
   connName?:     string;
+  onRemoved?:    () => void;
 }) {
   const [filter, setFilter] = useState("");
   const [tab, setTab]       = useState<SchemaTab>("tables");
@@ -880,8 +893,18 @@ function SchemaDetailPanel({ sel, onSelectTable, onAsk, connName }: {
         {/* Main: table list */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
           {/* Filter row */}
-          <div style={{ padding: "10px 16px", borderBottom: "0.5px solid var(--b1)", flexShrink: 0, background: "var(--bg-0)" }}>
+          <div style={{ padding: "10px 16px", borderBottom: "0.5px solid var(--b1)", flexShrink: 0, background: "var(--bg-0)", display: "flex", alignItems: "center", gap: 10 }}>
             <FilterBox value={filter} onChange={setFilter} placeholder="Filter tables…" />
+            {onRemoved && entry.name.toLowerCase() !== "main" && (
+              <button onClick={async () => {
+                if (!confirm(`Remove the entire "${entry.name}" schema from the workspace? This drops all ${entry.tables.length} table(s), their files, and this dataset's saved intelligence (profile + exploration).`)) return;
+                try { await deleteConnectionSchema(sel.connId, entry.name); onRemoved(); }
+                catch (e) { alert((e as Error).message); }
+              }}
+                style={{ marginLeft: "auto", fontSize: 11, padding: "4px 11px", borderRadius: 4, cursor: "pointer", background: "var(--red1)", color: "var(--red4)", border: "0.5px solid var(--red2)", whiteSpace: "nowrap" }}>
+                Remove schema
+              </button>
+            )}
           </div>
 
           {/* Table header */}
@@ -1511,12 +1534,17 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
         }
       }} />
     );
-    if (sel.level === "table") return <TableDetailPanel sel={sel} onAsk={onChatWithTable} />;
+    if (sel.level === "table") return (
+      <TableDetailPanel sel={sel} onAsk={onChatWithTable}
+        onRemoved={() => { setSel(null); loadTree(); refreshSchema(); }}
+      />
+    );
     if (sel.level === "schema") return (
       <SchemaDetailPanel sel={sel}
         connName={connections.find(c => c.id === sel.connId)?.name}
         onSelectTable={t => setSel({ level: "table", connId: sel.connId, schemaName: sel.schemaName, table: t })}
         onAsk={onChatWithTable}
+        onRemoved={() => { setSel(null); loadTree(); refreshSchema(); }}
       />
     );
     if (sel.level === "catalog") return (

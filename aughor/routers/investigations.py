@@ -713,7 +713,23 @@ def _ground_headline(headline, columns, rows):
         if vals:
             pool.append(sum(vals))
             pool.append(sum(vals) / len(vals))
-    unmatched = [n for n in _headline_numbers(headline) if abs(n) >= 100 and not _approx_in(n, pool)]
+    # A SINGLE-ROW result is one metric VALUE — the headline restates exactly that number,
+    # so ground EVERY number, not just big ones. This catches a fabricated rate ("repeat
+    # rate is 42.3%" when the only cell is 28.62) that the >=100 floor lets through. For a
+    # multi-row breakdown keep the floor (small numbers there are structural: "top 10",
+    # "across 5 types"). Match scale-tolerantly so a rate stored as a fraction (0.2862)
+    # still grounds a "28.62%" claim; skip bare years (a 2025 isn't a data claim).
+    scalar_like = len(rows) == 1
+    floor = 0.0 if scalar_like else 100.0
+
+    def _grounded(n):
+        if _approx_in(n, pool):
+            return True
+        return scalar_like and (_approx_in(n, [p * 100 for p in pool])
+                                or _approx_in(n, [p / 100 for p in pool if p]))
+
+    unmatched = [n for n in _headline_numbers(headline)
+                 if abs(n) >= floor and not (2000 <= n <= 2099 and n == int(n)) and not _grounded(n)]
     cat_idx = next((i for i in range(len(columns)) if not _col_is_numeric(rows, i)), None)
     leader_bad = False
     if cat_idx is not None and _LEADER_RE.search(headline) and cat_idx < len(rows[0]):
@@ -727,11 +743,64 @@ def _ground_headline(headline, columns, rows):
     num_idx = _primary_num_idx(columns, rows)
     if num_idx is None or num_idx >= len(rows[0]):
         return headline
-    fval = _fmt_value(columns[num_idx], rows[0][num_idx])
+    # Render a rate/percent metric with a trailing % (a fraction 0.x is shown as x%).
+    _raw = _hl_to_float(rows[0][num_idx])
+    if _raw is not None and re.search(r"rate|percent|pct|share|ratio|_of_total", str(columns[num_idx]).lower()):
+        fval = f"{_raw * 100:.2f}%" if abs(_raw) <= 1 else f"{_raw:.2f}%"
+    else:
+        fval = _fmt_value(columns[num_idx], rows[0][num_idx])
     metric = _humanize_col(columns[num_idx])
     if cat_idx is not None and len(rows) > 1 and cat_idx < len(rows[0]):
         return f"{rows[0][cat_idx]} leads {metric.lower()} at {fval}"
     return f"{metric}: {fval}"
+
+
+def _resolve_currency_symbol(connection_id: str, schema_name: Optional[str]) -> str:
+    """Effective currency symbol for a connection+schema — override-wins over the inferred
+    profile, falling back to USD '$'. The app/workspace override applies even when no profile
+    is loaded, so an EUR org gets '€' regardless. Best-effort; returns '$' on any failure."""
+    try:
+        from aughor.profile import store as _pstore
+        from aughor.orgsettings import resolve_currency
+        from aughor.knowledge.triage import currency_symbol
+        prof = _pstore.load(connection_id, schema_name)
+        code = resolve_currency(getattr(prof, "currency_code", None) or "")
+        return currency_symbol(code)
+    except Exception:
+        return "$"
+
+
+def _apply_currency(text: str, sym: str) -> str:
+    """Rewrite '$<number>' → the business currency symbol in prose (headline/narrative).
+    No-op for USD. Mirrors the briefing's `_cur()` so chat ledes match the rest of the UI."""
+    if not text or sym == "$":
+        return text
+    return re.sub(r"\$(?=\s?[\d.])", sym, text)
+
+
+_TIME_COL_RE = re.compile(r"(month|date|day|week|quarter|year|period|timestamp|_ts$)", re.I)
+_DATE_VAL_RE = re.compile(r"^\s*(?:19|20)\d{2}(?:[-/Q]\d{1,2}(?:[-/]\d{1,2})?)?\s*$")
+
+
+def _is_time_series(columns, rows) -> bool:
+    """True when the result's FIRST column is a time bucket (by name or value shape) and
+    there are ≥3 rows — i.e. a trend the narrator should read recent-first."""
+    if not columns or not rows or len(rows) < 3:
+        return False
+    if _TIME_COL_RE.search(str(columns[0])):
+        return True
+    vals = [str(r[0]) for r in rows[:5] if r]
+    return bool(vals) and all(_DATE_VAL_RE.match(v) for v in vals)
+
+
+def _narrator_sample(columns, rows, n: int = 20):
+    """Rows to feed the post-answer narrator. For a long ASCENDING time series, weight the
+    sample toward the MOST RECENT periods (the series start row kept for net-change framing)
+    so the narrative leads with the current state — not year-one of a multi-year dataset
+    (the Q15 'anchored on 2022' bug). Returns (sample_rows, is_time_series)."""
+    if _is_time_series(columns, rows) and len(rows) > n:
+        return [rows[0]] + rows[-(n - 1):], True
+    return rows[:n], False
 
 
 async def _stream_chat(
@@ -784,6 +853,10 @@ async def _stream_chat(
     except Exception as e:
         yield _sse("error", {"message": f"Could not connect: {e}"})
         return
+
+    # Effective currency symbol for prose: tables/charts already honour the org currency,
+    # but the LLM authored ledes in '$'. Resolve once; applied to headline + narrative below.
+    _cur_sym = _resolve_currency_symbol(connection_id, canvas_scope_eff_schema)
 
     try:
         from aughor.agent.prompts import CHAT_PROMPT, CHAT_SQL_SYSTEM
@@ -890,8 +963,12 @@ async def _stream_chat(
         # gather to avoid a concurrent get_schema on the same db connection.
         metrics_section = ""
         try:
-            from aughor.semantic.metrics import build_metrics_block
-            _mb = build_metrics_block(schema_text=schema, connection_id=connection_id)
+            # UNIFIED metric grounding — the SAME resolver the Deep path uses, so a metric
+            # resolves to the SAME SQL in both. /chat previously injected only the global
+            # catalog (build_metrics_block) and never saw the connection's GOVERNED north-star
+            # value_sql, so it re-derived gross margin / ROAS / AOV and could disagree with Deep.
+            from aughor.semantic.canonical import unified_metric_grounding
+            _mb = unified_metric_grounding(connection_id, canvas_scope_eff_schema, schema_text=schema)
             metrics_section = (_mb + "\n\n") if _mb else ""
         except Exception:
             metrics_section = ""
@@ -1248,6 +1325,29 @@ async def _stream_chat(
             except Exception as _e:
                 logger.debug("chat breakdown-grain guard is best-effort; skipped: %s", _e)
 
+        # ── id-arithmetic guard — a measure multiplied by a key fabricates a magnitude ──
+        # `SUM(unit_price * order_item_id)` for "revenue" multiplies price by the row's
+        # PRIMARY KEY (the €150M scar when order_items has no quantity column); it runs clean
+        # and over-counts silently. Force a repair toward aggregating the measure alone.
+        _idmath_fix_hint = ""
+        if final_sql:
+            try:
+                from aughor.sql.fanout import measure_times_key_arithmetic
+                _idmath_fix_hint = measure_times_key_arithmetic(final_sql, dialect=db.dialect) or ""
+            except Exception as _e:
+                logger.debug("chat id-arithmetic guard is best-effort; skipped: %s", _e)
+
+        # ── ratio-of-sums guard — AVG(a/b) is the wrong recipe for a group-level rate ──
+        # Averaging per-row ratios over-weights small-denominator rows (the freight-%
+        # 1.48%-vs-2.17% scar). Force a repair toward SUM(a)/NULLIF(SUM(b),0).
+        _ratio_fix_hint = ""
+        if final_sql:
+            try:
+                from aughor.sql.fanout import avg_of_row_ratios
+                _ratio_fix_hint = avg_of_row_ratios(final_sql, dialect=db.dialect) or ""
+            except Exception as _e:
+                logger.debug("chat ratio-of-sums guard is best-effort; skipped: %s", _e)
+
         yield _sse("sql", {"sql": final_sql})
         result = await asyncio.to_thread(db.execute, "chat", final_sql)
 
@@ -1258,25 +1358,27 @@ async def _stream_chat(
 
         # Also trigger a rewrite when semantic column warnings exist, even if
         # the SQL executed successfully (wrong columns produce wrong results silently).
-        if result.error or _chat_zero_diag or _semantic_fix_hint or _fanout_fix_hint or _scope_fix_hint or _filter_fix_hint or _grain_fix_hint:
+        if result.error or _chat_zero_diag or _semantic_fix_hint or _fanout_fix_hint or _scope_fix_hint or _filter_fix_hint or _grain_fix_hint or _idmath_fix_hint or _ratio_fix_hint:
             _writer2 = SqlWriter(db, schema_str=schema)
             _fix_error = (
                 result.error or
                 (_scope_fix_hint if _scope_fix_hint else None) or
                 (_filter_fix_hint if _filter_fix_hint else None) or
                 (_grain_fix_hint if _grain_fix_hint else None) or
+                (_idmath_fix_hint if _idmath_fix_hint else None) or
+                (_ratio_fix_hint if _ratio_fix_hint else None) or
                 (_semantic_fix_hint if _semantic_fix_hint else None) or
                 (_fanout_fix_hint if _fanout_fix_hint else None) or
                 "Query returned 0 rows — the SQL logic is likely wrong."
             )
-            _combined_hint = " | ".join(filter(None, [_chat_zero_diag or "", _scope_fix_hint, _filter_fix_hint, _grain_fix_hint, _semantic_fix_hint, _fanout_fix_hint]))
+            _combined_hint = " | ".join(filter(None, [_chat_zero_diag or "", _scope_fix_hint, _filter_fix_hint, _grain_fix_hint, _idmath_fix_hint, _ratio_fix_hint, _semantic_fix_hint, _fanout_fix_hint]))
             try:
                 fix = await asyncio.to_thread(
                     lambda: _writer2.fix(final_sql, _fix_error, hint=_combined_hint, max_retries=1)
                 )
                 if fix.ok:
                     retry = await asyncio.to_thread(db.execute, "chat", fix.sql)
-                    if not retry.error and (retry.row_count > 0 or not _chat_zero_diag or _semantic_fix_hint or _fanout_fix_hint or _scope_fix_hint or _filter_fix_hint or _grain_fix_hint):
+                    if not retry.error and (retry.row_count > 0 or not _chat_zero_diag or _semantic_fix_hint or _fanout_fix_hint or _scope_fix_hint or _filter_fix_hint or _grain_fix_hint or _idmath_fix_hint or _ratio_fix_hint):
                         final_sql = fix.sql
                         result = retry
                         yield _sse("sql", {"sql": final_sql})
@@ -1316,10 +1418,24 @@ async def _stream_chat(
             )
             _rcpt["measure_grain"] = True
             logger.info("[chat] measure-grain caveat applied to headline")
+        # id-arithmetic backstop: if the repair couldn't eliminate a measure×key product
+        # (or a SUM/AVG over an id), the number is fabricated — caveat it instead of asserting.
+        try:
+            from aughor.sql.fanout import measure_times_key_arithmetic as _idmath
+            if final_sql and _idmath(final_sql, dialect=db.dialect):
+                _grounded_headline = (
+                    f"{(_grounded_headline or '').rstrip('. ')} — caution: this total multiplies a "
+                    "measure by an id/key column, so the magnitude is not trustworthy."
+                )
+                _rcpt["id_arithmetic"] = True
+                logger.info("[chat] id-arithmetic caveat applied to headline")
+        except Exception as _e:
+            logger.debug("chat id-arithmetic backstop is best-effort; skipped: %s", _e)
         # Deterministic concentration→pareto (the renderer never sees the question).
         answer.chart_type = _maybe_pareto(question, result.columns, result.rows, answer.chart_type)
         yield _sse("columns", {"columns": result.columns})
         yield _sse("rows", {"rows": result.rows[:10000]})
+        _grounded_headline = _apply_currency(_grounded_headline, _cur_sym)
         yield _sse("headline", {"headline": _grounded_headline})
         yield _sse("chart_type", {"chart_type": answer.chart_type})
         if answer.chart_config:
@@ -1369,6 +1485,8 @@ async def _stream_chat(
                 _guards.append(("flagged", "guard:narration_inversion", "a per-group value was stated as universal; caveated inline"))
             if _rcpt.get("measure_grain"):
                 _guards.append(("flagged", "guard:measure_grain", "a measure may be summed at the wrong grain (per-unit vs per-line); caveated inline"))
+            if _rcpt.get("id_arithmetic"):
+                _guards.append(("flagged", "guard:id_arithmetic", "a measure was multiplied by an id/key column; magnitude caveated inline"))
             for _tq in (_trusted_used or []):
                 _guards.append(("trusted", f"query:{(_tq.get('question') or '')[:60]}", _tq.get('note')))
             _write_answer_receipt(
@@ -1402,13 +1520,20 @@ async def _stream_chat(
         _insight_dict = None
         _insight_worth_it = len(result.rows) >= 2 or (len(result.rows) == 1 and len(result.columns) >= 3)
         try:
-            # Bounded sample: up to 20 rows × 8 columns
-            _sample_rows = result.rows[:20]
+            # Bounded sample: up to 20 rows × 8 columns. For a time series, weight toward the
+            # most recent periods so the narrative leads with current state, not year-one.
+            _sample_rows, _is_ts = _narrator_sample(result.columns, result.rows)
             _sample_cols = result.columns[:8]
             _rows_text = "\n".join(
                 ", ".join(str(r[i]) for i in range(len(_sample_cols))) for r in _sample_rows
             )
             if _insight_worth_it:
+                _ts_clause = (
+                    " This result is a TIME SERIES shown as the series start then the most recent periods: "
+                    "LEAD WITH THE MOST RECENT period and its current trend, and state the net change since "
+                    "the start — do NOT anchor the narrative on the earliest period."
+                    if _is_ts else ""
+                )
                 _system = (
                     "You are an analytical data interpreter writing for a clean published brief. "
                     "Given a user question, the SQL that answered it, and a sample of the results: "
@@ -1417,7 +1542,7 @@ async def _stream_chat(
                     "names any genuine anomaly (unexpected value, spike, drop, outlier) in plain words, and "
                     "states the overall trend and your confidence. Start with the finding — no preamble, no "
                     "hedging, no 'the data shows' scaffolding. Use ONLY numbers present in the results; never "
-                    "invent values, and bold never licenses invented precision. "
+                    "invent values, and bold never licenses invented precision." + _ts_clause + " "
                     "Then (2) suggest exactly 3 concise follow-up data questions (max 12 words each)."
                 )
             else:
@@ -1425,11 +1550,16 @@ async def _stream_chat(
                     "Given a user question and its answer, suggest exactly 3 concise follow-up data questions "
                     "(max 12 words each). Leave the narrative empty."
                 )
+            _rows_label = (
+                f"Results (TIME SERIES — series start then the {len(_sample_rows) - 1} most "
+                f"recent of {len(result.rows)} periods, oldest→newest):"
+                if _is_ts else f"Results (sample of {len(_sample_rows)} rows):"
+            )
             _user = (
                 f"Question: {question}\n"
                 f"SQL: {final_sql}\n"
                 f"Answer: {answer.headline}\n"
-                f"Results (sample of {len(_sample_rows)} rows):\n"
+                f"{_rows_label}\n"
                 f"Columns: {', '.join(_sample_cols)}\n"
                 f"{_rows_text}"
             )
@@ -1443,7 +1573,7 @@ async def _stream_chat(
             )
             if _insight_worth_it and _pa.narrative:
                 _insight_dict = {
-                    "narrative": _pa.narrative,
+                    "narrative": _apply_currency(_pa.narrative, _cur_sym),
                     "anomalies": _pa.anomalies[:3],
                     "trend": _pa.trend,
                     "confidence": _pa.confidence,
@@ -1575,6 +1705,7 @@ async def _stream_investigation(
 
     canvas_schema_context: str = ""
     canvas_scope_schema: str | None = None
+    canvas_scope_tables: list[str] = []
     if canvas_id:
         try:
             from aughor.canvas.store import get_canvas, resolve_connection_id
@@ -1583,15 +1714,28 @@ async def _stream_investigation(
             if canvas and canvas.primary_connection_id:
                 connection_id = canvas.primary_connection_id
                 canvas_scope_schema = canvas.scopes[0].schema_name if canvas.scopes else None
+                canvas_scope_tables = list(canvas.scopes[0].tables or []) if canvas.scopes else []
                 canvas_schema_context = build_canvas_schema_context(canvas)
         except Exception:
             pass
+
+    # A table-list-scoped canvas on a multi-schema connection carries schema-qualified
+    # table names (e.g. "missimi.orders") with schema_name=None. Derive the single owning
+    # schema so the deep connection PINS search_path AND the DEFAULT SCHEMA note is injected
+    # — exactly as the chat path does. WITHOUT this the deep path left scope_schema=None, so
+    # bare names + the explore linker's full-schema FK expansion leaked to a sibling schema
+    # (missimi deep answering from another demo dataset). Mirrors _stream_chat.
+    canvas_scope_eff_schema = canvas_scope_schema
+    if not canvas_scope_eff_schema and canvas_scope_tables:
+        _scope_schemas = {t.split(".")[0] for t in canvas_scope_tables if "." in t}
+        if len(_scope_schemas) == 1:
+            canvas_scope_eff_schema = next(iter(_scope_schemas))
 
     # A non-canvas investigation (e.g. a briefing "pull the thread") can scope to a
     # specific schema the same way a canvas does: open the connection bound to that
     # schema and inject the DEFAULT SCHEMA prefix below. Canvas scope wins when both
     # are present.
-    scope_schema = canvas_scope_schema or (schema_scope if not canvas_id else None)
+    scope_schema = canvas_scope_eff_schema or (schema_scope if not canvas_id else None)
 
     try:
         if scope_schema:
@@ -1717,6 +1861,14 @@ async def _stream_investigation(
                     if _dt not in linked_tables:
                         linked_tables.append(_dt)
                 linked_tables = fk_neighbor_expand(full_schema, linked_tables, cap=10)
+                # Scope the expansion to the canvas schema: temporal/FK expansion walks the
+                # FULL schema and can pull a sibling schema's same-named table (netflix.products
+                # into a missimi investigation), which then becomes a cross-schema reference the
+                # explore planner copies verbatim (bypassing search_path). Drop out-of-scope tables.
+                if scope_schema:
+                    _allow = scope_schema.strip().lower()
+                    linked_tables = [t for t in linked_tables
+                                     if "." not in t or t.split(".")[0].strip().lower() == _allow]
                 data_catalog = await asyncio.to_thread(
                     lambda: build_data_catalog(db, linked_tables)
                 )
@@ -1735,18 +1887,19 @@ async def _stream_investigation(
         # Prefer structured Data Catalog as the primary schema context (MindsDB-style)
         schema_for_agent = data_catalog if data_catalog else schema
 
-        # Inject the CANONICAL METRIC formulas so ADA resolves a metric (e.g. "revenue")
+        # Inject the UNIFIED metric grounding so ADA resolves a metric (e.g. "revenue")
         # to the SAME approved SQL the /chat path uses — closing the "revenue means two
-        # different things" gap. Reconciles the curated catalog (data/metrics.json) with
-        # the ontology's verified OntologyMetric.formula_sql. No-op when none exist.
+        # different things" / "Insight vs Deep disagree" gap. ONE resolver, both paths:
+        # the governed catalog (with NEVER rules) + the connection's north-star + verified
+        # ontology formulas. No-op when none exist.
         try:
-            from aughor.semantic.canonical import canonical_metrics_block
+            from aughor.semantic.canonical import unified_metric_grounding
             # Pass the schema we already fetched (full_schema, cached above) so the metric
             # schema-filter doesn't RE-INTROSPECT it — that redundant fetch was ~16s per
             # investigation on big warehouses (profiled), duplicating this same schema.
             # Use the EFFECTIVE scope schema (canvas OR an explicit schema-scoped run) so the
             # connection's GOVERNED north-star metrics for THIS schema are injected (RC2).
-            _canon = canonical_metrics_block(connection_id, scope_schema, schema_text=full_schema)
+            _canon = unified_metric_grounding(connection_id, scope_schema, schema_text=full_schema)
             if _canon:
                 schema_for_agent = f"{schema_for_agent}\n\n{_canon}"
         except Exception:
@@ -1776,6 +1929,7 @@ async def _stream_investigation(
             "sub_questions": [], "current_subq_idx": 0, "subq_answers": [], "explore_report": None,
             "investigation_phases": [], "ada_report": None, "_ada_intake": None,
             "canvas_id": canvas_id, "canvas_schema_context": canvas_schema_context,
+            "scope_schema": scope_schema or "",
             "data_catalog": data_catalog or "",
             "subq_data_portrait": {},
             "final_text_answer": "",

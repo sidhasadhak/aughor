@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "gen:api": "npx -y openapi-typescript http://localhost:8000/openapi.json -o lib/api.gen.ts"
   },
   "dependencies": {
     "@atlaskit/icon": "^35.0.0",

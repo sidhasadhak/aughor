@@ -1,11 +1,72 @@
 """Regression tests for the post-assessment quality fixes (2026-06-08):
 A) headline grounding, B) missing-column repair diagnosis, C) unsafe-metric guard.
 Each locks a concrete bug found by reading real outputs."""
-from aughor.routers.investigations import _ground_headline
+from aughor.routers.investigations import (
+    _ground_headline, _apply_currency, _is_time_series, _narrator_sample,
+)
 from aughor.agent.investigate import (
     _missing_column_hint, _unsafe_metric_sql, _safe_metric_fallback,
     _build_grounded_schema, _filter_schema,
 )
+
+
+# ── A3. Currency in chat prose (eval 2026-06-21) ──────────────────────────────
+# An EUR org rendered '$' in Insight/Deep ledes; tables/charts already honoured the
+# org currency. _apply_currency rewrites '$<number>' → the business symbol in prose.
+def test_currency_rewrites_dollar_before_number():
+    assert _apply_currency("Revenue is $104.8M across $5.00 orders", "€") == \
+        "Revenue is €104.8M across €5.00 orders"
+
+
+def test_currency_usd_is_a_noop():
+    assert _apply_currency("Revenue is $104.8M", "$") == "Revenue is $104.8M"
+
+
+def test_currency_leaves_bare_dollar_alone():
+    # '$' not followed by a number must not be rewritten.
+    assert _apply_currency("Costs are in $ terms", "€") == "Costs are in $ terms"
+
+
+def test_currency_empty_text_safe():
+    assert _apply_currency("", "€") == ""
+
+
+# ── A4. Insight time-series recent-window (eval 2026-06-21, Q15) ───────────────
+# Q15 (inventory turnover by month, 2022→2025) narrated "January through August 2022"
+# and never reached 2025 — the narrator got rows[:20] (oldest). _narrator_sample now
+# recent-weights a long time series so the narrative leads with current state.
+_TS_ROWS = [[f"{y}-{m:02d}", round(0.2 + 0.01 * i, 2)]
+            for i, (y, m) in enumerate((y, m) for y in (2022, 2023, 2024, 2025) for m in range(1, 13))][:42]
+
+
+def test_time_series_detected_by_column_name():
+    assert _is_time_series(["month", "turnover"], _TS_ROWS) is True
+    assert _is_time_series(["customer_country", "rev"], [["DE", 1], ["FR", 2], ["IT", 3]]) is False
+
+
+def test_time_series_detected_by_value_shape():
+    rows = [["2023-Q1", 1], ["2023-Q2", 2], ["2023-Q3", 3]]
+    assert _is_time_series(["period", "x"], rows) is True
+
+
+def test_narrator_sample_recent_weights_long_series():
+    sample, is_ts = _narrator_sample(["month", "turnover"], _TS_ROWS, n=20)
+    assert is_ts and len(sample) == 20
+    assert sample[0] == _TS_ROWS[0]                       # series start kept for net-change framing
+    assert any(str(r[0]).startswith("2025") for r in sample)  # most-recent periods present
+    assert sample[-1] == _TS_ROWS[-1]
+
+
+def test_narrator_sample_breakdown_keeps_head():
+    rows = [["credit_card", 70.8], ["debit", 70.1], ["voucher", 69.9]]
+    sample, is_ts = _narrator_sample(["payment_type", "aov"], rows)
+    assert not is_ts and sample == rows
+
+
+def test_narrator_sample_short_series_unchanged():
+    rows = [["2025-01", 1], ["2025-02", 2], ["2025-03", 3]]
+    sample, _ = _narrator_sample(["month", "x"], rows, n=20)
+    assert sample == rows  # ≤ n rows → all kept
 
 _SCHEMA = """TABLE: analytics.invoices  (1000 rows)
   invoice_id  BIGINT
@@ -52,6 +113,42 @@ def test_headline_accepts_legitimate_total():
             ["MIDDLE EAST", 44885458787.76]]
     hl = "Total revenue across all regions is $226.6B"
     assert _ground_headline(hl, ["region", "total_revenue"], rows) == hl
+
+
+# ── A2. Scalar percent/rate grounding (eval 2026-06-21, Q6) ───────────────────
+# The repeat-rate result was a single cell 28.62 but the headline asserted 42.3% —
+# both < 100, so the old >=100 floor let it through. A single-row result is one
+# metric value, so EVERY number in the headline must match it.
+def test_headline_grounds_wrong_scalar_percent():
+    out = _ground_headline("Overall repeat purchase rate is 42.3%",
+                           ["repeat_purchase_rate"], [["28.62"]])
+    assert out != "Overall repeat purchase rate is 42.3%"
+    assert "28.62%" in out and "42.3" not in out
+
+
+def test_headline_keeps_correct_scalar_percent():
+    hl = "Repeat purchase rate is 28.62%"
+    assert _ground_headline(hl, ["repeat_purchase_rate"], [["28.62"]]) == hl
+
+
+def test_headline_percent_matches_fraction_stored_rate():
+    # a rate stored as a fraction (0.2862) still grounds a "28.6%" claim
+    hl = "Repeat rate is 28.6%"
+    assert _ground_headline(hl, ["repeat_rate"], [["0.2862"]]) == hl
+
+
+def test_headline_breakdown_small_count_not_flagged():
+    # "across 5 payment types" is a row count, not a data value — multi-row keeps the
+    # >=100 floor so 5 is never grounded-out; the AOV cells are present and match.
+    rows = [["credit_card", "70.82"], ["debit", "70.1"], ["voucher", "69.9"],
+            ["paypal", "69.6"], ["boleto", "69.35"]]
+    hl = "AOV is roughly flat across 5 payment types (69.35-70.82)"
+    assert _ground_headline(hl, ["payment_type", "aov"], rows) == hl
+
+
+def test_headline_scalar_year_not_flagged():
+    hl = "In 2025 revenue was $104.8M"
+    assert _ground_headline(hl, ["revenue"], [["104800000"]]) == hl
 
 
 # ── B. Missing-column repair diagnosis ────────────────────────────────────────

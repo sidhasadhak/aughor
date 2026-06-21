@@ -773,6 +773,65 @@ async def create_connection_schema(conn_id: str, body: _SchemaCreate):
     return {"schema": schema, "message": "Schema created"}
 
 
+def _purge_schema_artifacts(conn_id: str, schema: str) -> None:
+    """Delete the derived intelligence for a (connection, schema) so a removed schema
+    leaves no stale profile/exploration behind in the Briefing/KPI strip. Best-effort."""
+    from aughor.kernel.errors import tolerate
+    try:
+        from aughor.profile import store as _pstore
+        _pstore.invalidate(conn_id, schema)
+    except Exception as e:
+        tolerate(e, "remove-schema: profile invalidate", counter="schema.remove.profile")
+    import re as _re
+    from pathlib import Path as _Path
+    safe = lambda s: _re.sub(r"[^A-Za-z0-9._-]", "_", s)  # noqa: E731
+    for pat in (f"exploration_{safe(conn_id)}__{safe(schema)}.json",
+                f"episodes_{safe(conn_id)}__{safe(schema)}.jsonl"):
+        try:
+            p = _Path("data") / pat
+            if p.exists():
+                p.unlink()
+        except Exception as e:
+            tolerate(e, "remove-schema: artifact unlink", counter="schema.remove.artifact")
+
+
+@router.delete("/connections/{conn_id}/schemas/{schema}", status_code=200)
+async def delete_connection_schema(conn_id: str, schema: str):
+    """Remove a whole schema from a workspace connection — drops its DuckDB schema +
+    every backing upload file, then purges the schema's derived profile/exploration."""
+    loop = asyncio.get_event_loop()
+    def _work():
+        db = _open_file_connector(conn_id, "drop_schema")
+        if not hasattr(db, "drop_schema"):
+            raise HTTPException(status_code=400, detail="Not a file connector")
+        try:
+            db.drop_schema(schema)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        finally:
+            db.close()
+    await loop.run_in_executor(None, _work)
+    _purge_schema_artifacts(conn_id, schema)
+    return {"message": f"Schema '{schema}' removed"}
+
+
+@router.delete("/connections/{conn_id}/tables/{table}", status_code=200)
+async def delete_connection_table(conn_id: str, table: str, schema: str = "main"):
+    """Remove a single table from a workspace connection — drops it from DuckDB and
+    deletes its backing upload file(s)."""
+    loop = asyncio.get_event_loop()
+    def _work():
+        db = _open_file_connector(conn_id, "delete_table")
+        if not hasattr(db, "delete_table"):
+            raise HTTPException(status_code=400, detail="Not a file connector")
+        try:
+            db.delete_table(table, schema)
+        finally:
+            db.close()
+    await loop.run_in_executor(None, _work)
+    return {"message": f"Table '{table}' removed"}
+
+
 # ── Process map + causal graph ────────────────────────────────────────────────
 
 @router.get("/connections/{conn_id}/process-map/{entity_id}")

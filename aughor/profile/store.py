@@ -64,6 +64,31 @@ def _read(p: Path) -> Optional[dict]:
         return None
 
 
+def _anchor_metric_trends(raw: Optional[dict]) -> Optional[dict]:
+    """Serve-time: re-anchor each north-star metric's ``chart_sql`` to the MOST RECENT N
+    buckets. LLM-authored trend SQL uses ``ORDER BY <bucket> LIMIT N`` (ascending), which
+    returns the OLDEST window — so on a multi-year dataset the briefing freezes on year-1
+    and the KPI delta is computed on stale history. ``recent_window`` is a deterministic,
+    idempotent, fail-open transform that ONLY touches a provably-ascending LIMITed time
+    trend (a top-N breakdown is left untouched). Done here, at the single read chokepoint,
+    so BOTH the /business-profile endpoint and the backend metric-moves get the fix — and
+    existing stored profiles are corrected without a re-inference. Best-effort."""
+    if not raw:
+        return raw
+    try:
+        from aughor.sql.trend_window import recent_window
+        for m in (raw.get("profile", {}).get("north_star_metrics") or []):
+            cs = (m.get("chart_sql") or "").strip()
+            if cs:
+                m["chart_sql"] = recent_window(cs)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "serve-time trend re-anchor is best-effort; the stored chart_sql is "
+                 "still returned (a stale-window trend, not a wrong number)",
+                 counter="profile.trend_reanchor")
+    return raw
+
+
 def load_raw(connection_id: str, schema_name: Optional[str] = None) -> Optional[dict]:
     """The stored payload for a (connection, schema), or None.
 
@@ -74,15 +99,18 @@ def load_raw(connection_id: str, schema_name: Optional[str] = None) -> Optional[
     returns the connection-level file if present, else — for a connection that has exactly
     ONE schema profile — that single profile (so a single-schema connection's default view
     still resolves). With several schema profiles and no connection-level one, None (the
-    aggregate view supplies the summary)."""
+    aggregate view supplies the summary).
+
+    Each metric's ``chart_sql`` is re-anchored to the most-recent window on read (see
+    ``_anchor_metric_trends``)."""
     if schema_name:
-        return _read(_path(connection_id, schema_name))
+        return _anchor_metric_trends(_read(_path(connection_id, schema_name)))
     conn_level = _read(_path(connection_id))
     if conn_level is not None:
-        return conn_level
+        return _anchor_metric_trends(conn_level)
     scoped = sorted(_DATA_DIR.glob(f"business_profile_{_safe(connection_id)}__*.json"))
     if len(scoped) == 1:
-        return _read(scoped[0])
+        return _anchor_metric_trends(_read(scoped[0]))
     return None
 
 
@@ -115,3 +143,18 @@ def invalidate(connection_id: str, schema_name: Optional[str] = None) -> None:
             p.unlink()
         except Exception:
             pass
+
+
+def invalidate_all() -> int:
+    """Delete EVERY stored business profile so they lazily re-infer on next access. Used
+    when an app-wide setting that changes inference (e.g. the declared industry) is updated,
+    so the chosen industry's curated metrics/recipes are re-captured for each dataset.
+    Returns the count removed. Best-effort per file."""
+    n = 0
+    for p in _DATA_DIR.glob("business_profile_*.json"):
+        try:
+            p.unlink()
+            n += 1
+        except Exception:
+            pass
+    return n

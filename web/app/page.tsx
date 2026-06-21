@@ -345,7 +345,6 @@ function WorkspaceSwitcher({
 function Topbar({
   onSearchOpen,
   onNavigate,
-  currentTab,
   connections,
   selectedConn,
   workspaces,
@@ -355,7 +354,6 @@ function Topbar({
 }: {
   onSearchOpen: () => void;
   onNavigate: (t: NavTab) => void;
-  currentTab: NavTab;
   connections: Connection[];
   selectedConn: string;
   workspaces: Workspace[];
@@ -408,14 +406,6 @@ function Topbar({
           onWorkspaceChange={onWorkspaceChange}
           onCreateWorkspace={onCreateWorkspace}
         />
-        <button
-          onClick={() => onNavigate("settings")}
-          title="Settings"
-          className={`aug-btn ${currentTab === "settings" ? "aug-btn-secondary" : "aug-btn-ghost"}`}
-          style={{ padding: 6, width: 28, height: 28, justifyContent: "center" }}
-        >
-          <NavIcon name="settings" size={15} color={currentTab === "settings" ? "var(--blue4)" : "currentColor"} />
-        </button>
         <div style={{
           width: 28, height: 28, borderRadius: "var(--r2)",
           background: "var(--bg-3)", border: "1px solid var(--b2)",
@@ -506,8 +496,9 @@ function Sidebar({
           </div>
         ))}
       </div>
-      <div style={{ padding: "10px 8px", borderTop: "1px solid var(--b0)" }}>
-        <div style={{ fontSize: 10, color: "var(--t4)", textAlign: "center", letterSpacing: ".04em" }}>
+      <div style={{ padding: "6px 8px 10px", borderTop: "1px solid var(--b0)" }}>
+        {renderItem({ id: "settings", icon: "settings", label: "Settings" })}
+        <div style={{ fontSize: 10, color: "var(--t4)", textAlign: "center", letterSpacing: ".04em", marginTop: 6 }}>
           v2 · Local
         </div>
       </div>
@@ -1040,65 +1031,79 @@ function SettingsScreen({ theme, setTheme, workspaceId, workspaceName }: { theme
     { id: "light", icon: "sun",  label: "Light", desc: "White backgrounds, dark text" },
   ];
 
+  type SettingsTab = "organization" | "appearance" | "models" | "system";
+  const [sub, setSub] = useState<SettingsTab>("organization");
+  const SUBS: Array<{ id: SettingsTab; label: string }> = [
+    { id: "organization", label: "Organization" },
+    { id: "appearance",   label: "Appearance" },
+    { id: "models",       label: "Models" },
+    { id: "system",       label: "System" },
+  ];
+
   return (
     <div className="aug-screen">
       <div className="aug-content-header">
         <NavIcon name="settings" size={14} color="var(--t3)" />
         <span style={{ fontSize: 13, fontWeight: 500 }}>Settings</span>
       </div>
+
+      {/* Sub-tab rail — grouped settings instead of one long scroll */}
+      <div style={{ display: "flex", alignItems: "center", gap: 2, padding: "8px 20px 0", borderBottom: "1px solid var(--b1)", flexShrink: 0 }}>
+        {SUBS.map(s => (
+          <button key={s.id} onClick={() => setSub(s.id)} style={{
+            padding: "7px 12px", fontSize: 12, fontWeight: 500, cursor: "pointer",
+            background: "none", border: "none",
+            color: sub === s.id ? "var(--t1)" : "var(--t3)",
+            borderBottom: `2px solid ${sub === s.id ? "var(--blue4)" : "transparent"}`,
+            marginBottom: -1,
+          }}>{s.label}</button>
+        ))}
+      </div>
+
       <div style={{ flex: 1, overflowY: "auto", padding: "18px 20px", display: "flex", flexDirection: "column", gap: 20 }}>
 
-        {/* Appearance */}
-        <div>
-          <div className="aug-label" style={{ marginBottom: 12 }}>Appearance</div>
-          <div style={{ display: "flex", gap: 10 }}>
-            {modes.map(m => (
-              <button key={m.id} onClick={() => setTheme(m.id)} style={{
-                flex: 1, display: "flex", alignItems: "center", gap: 12,
-                padding: "12px 14px", borderRadius: "var(--r3)", cursor: "pointer",
-                background: theme === m.id ? "var(--bg-sel)" : "var(--bg-2)",
-                border: `1px solid ${theme === m.id ? "var(--blue3)" : "var(--b1)"}`,
-                transition: "all .14s", textAlign: "left",
-              }}>
-                <div style={{
-                  width: 36, height: 28, borderRadius: "var(--r2)", flexShrink: 0,
-                  background: m.id === "dark" ? "#111821" : "#FFFFFF",
-                  border: `1px solid ${m.id === "dark" ? "#253552" : "#D2DCEB"}`,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                }}>
-                  <NavIcon name={m.icon} size={14} color={m.id === "dark" ? "#4C8EEE" : "#C08A00"} />
-                </div>
-                <div>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: theme === m.id ? "var(--blue5)" : "var(--t1)", marginBottom: 2 }}>{m.label}</div>
-                  <div style={{ fontSize: 10, color: "var(--t3)" }}>{m.desc}</div>
-                </div>
-                {theme === m.id && (
-                  <div style={{ marginLeft: "auto", flexShrink: 0 }}>
-                    <NavIcon name="check" size={13} color="var(--blue3)" />
-                  </div>
-                )}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Organization — identity, localization, per-workspace overrides */}
-        <div>
-          <div className="aug-label" style={{ marginBottom: 12 }}>Organization &amp; Localization</div>
+        {sub === "organization" && (
           <OrgSettingsPanel workspaceId={workspaceId} workspaceName={workspaceName} />
-        </div>
+        )}
 
-        {/* Inference — LLM provider / models / keys */}
-        <div>
-          <div className="aug-label" style={{ marginBottom: 12 }}>Inference</div>
-          <InferencePanel />
-        </div>
+        {sub === "appearance" && (
+          <div>
+            <div className="aug-label" style={{ marginBottom: 12 }}>Theme</div>
+            <div style={{ display: "flex", gap: 10 }}>
+              {modes.map(m => (
+                <button key={m.id} onClick={() => setTheme(m.id)} style={{
+                  flex: 1, display: "flex", alignItems: "center", gap: 12,
+                  padding: "12px 14px", borderRadius: "var(--r3)", cursor: "pointer",
+                  background: theme === m.id ? "var(--bg-sel)" : "var(--bg-2)",
+                  border: `1px solid ${theme === m.id ? "var(--blue3)" : "var(--b1)"}`,
+                  transition: "all .14s", textAlign: "left",
+                }}>
+                  <div style={{
+                    width: 36, height: 28, borderRadius: "var(--r2)", flexShrink: 0,
+                    background: m.id === "dark" ? "#111821" : "#FFFFFF",
+                    border: `1px solid ${m.id === "dark" ? "#253552" : "#D2DCEB"}`,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                  }}>
+                    <NavIcon name={m.icon} size={14} color={m.id === "dark" ? "#4C8EEE" : "#C08A00"} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: theme === m.id ? "var(--blue5)" : "var(--t1)", marginBottom: 2 }}>{m.label}</div>
+                    <div style={{ fontSize: 10, color: "var(--t3)" }}>{m.desc}</div>
+                  </div>
+                  {theme === m.id && (
+                    <div style={{ marginLeft: "auto", flexShrink: 0 }}>
+                      <NavIcon name="check" size={13} color="var(--blue3)" />
+                    </div>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
-        {/* System settings */}
-        <div>
-          <div className="aug-label" style={{ marginBottom: 12 }}>System</div>
-          <SystemPanel />
-        </div>
+        {sub === "models" && <InferencePanel />}
+
+        {sub === "system" && <SystemPanel />}
 
       </div>
     </div>
@@ -1711,7 +1716,6 @@ export default function Home() {
       <Topbar
         onSearchOpen={() => setShowSearch(true)}
         onNavigate={handleNavigate}
-        currentTab={tab}
         connections={wsConnections}
         selectedConn={selectedConn}
         workspaces={workspaces}
@@ -1870,6 +1874,7 @@ export default function Home() {
                 connections={wsConnections.filter(c => c.briefings_enabled !== false).map(c => ({ id: c.id, name: c.name }))}
                 onConnectionChange={setSelectedConn}
                 domainSection={explorationSection}
+                workspaceId={selectedWorkspace}
               />
             )}
 

@@ -505,6 +505,131 @@ def sum_over_chasm_fanout(sql: str, table_cols: dict | None = None, dialect: str
     return None
 
 
+# ── Measure × key arithmetic — a fabrication the fan-out guards CAN'T see: the row
+# count is right, but the VALUE is invented by multiplying a measure by a nominal id.
+# Tight key suffixes by design (NOT _code/_num/_number — those can be real measures):
+# a column ending here is an identifier, never a quantity. ──
+_ARITH_KEY_COL = re.compile(r"(?:^|_)(?:id|key|pk|sk|fk|uuid|guid)$", re.I)
+
+
+def _unwrap_arith(node):
+    """Peel CAST/TRY_CAST/parens off a node to reach the underlying column."""
+    from sqlglot import exp
+    while isinstance(node, (exp.Cast, exp.TryCast, exp.Paren)):
+        node = node.this
+    return node
+
+
+def _is_arith_key(node) -> bool:
+    """True if `node` (after unwrapping casts/parens) is a key/id column reference."""
+    from sqlglot import exp
+    node = _unwrap_arith(node)
+    return isinstance(node, exp.Column) and bool(_ARITH_KEY_COL.search((node.name or "").lower()))
+
+
+def measure_times_key_arithmetic(sql: str, table_cols: dict | None = None,
+                                 dialect: str = "duckdb") -> str | None:
+    """A SUM/AVG that MULTIPLIES by — or directly aggregates — an id/key column
+    fabricates a magnitude. An id is a nominal identifier, not a quantity, so
+    ``SUM(unit_price * order_item_id)`` (price × the row's PRIMARY KEY — the real-path
+    €150M "revenue" scar, with per-product garbage like P000545 "€36M", when
+    order_items carried no quantity column) and ``SUM(order_id)`` have no arithmetic
+    meaning. The fan-out detectors above watch for row-multiplication across joins;
+    they never see a measure multiplied by a key WITHIN one table, so this closes that
+    gap.
+
+    High-precision: a true key column is never a legitimate multiplicand or a SUM/AVG
+    argument, so this fires only on the unambiguous bug and stays silent on
+    ``SUM(quantity * unit_price)`` (no key) and ``COUNT(order_id)`` (counting keys is
+    valid — only SUM/AVG are checked). ``table_cols`` is accepted for call-site
+    symmetry with the sibling guards but unused (name-based detection needs no schema).
+    Static analysis; returns a reason string or None; never raises."""
+    try:
+        import sqlglot
+        from sqlglot import exp
+    except Exception:
+        return None
+    try:
+        tree = sqlglot.parse_one(sql, read=dialect)
+    except Exception:
+        return None
+    if tree is None:
+        return None
+
+    for agg in tree.find_all((exp.Sum, exp.Avg)):
+        inner = agg.this
+        if isinstance(inner, exp.Distinct) or isinstance(agg.parent, exp.Window):
+            continue
+        # (a) SUM/AVG directly over a key column — summing/averaging a nominal id.
+        if _is_arith_key(inner):
+            col = _unwrap_arith(inner)
+            return (
+                f"{agg.key.upper()}({col.name}) aggregates a key/id column — an id is a nominal "
+                f"identifier, not a measure, so its SUM/AVG is a fabricated magnitude; aggregate "
+                f"a real measure column instead"
+            )
+        # (b) a key column inside a multiplication within the aggregate — measure × id.
+        for mul in agg.find_all(exp.Mul):
+            for operand in (mul.this, mul.expression):
+                if _is_arith_key(operand):
+                    key = _unwrap_arith(operand)
+                    return (
+                        f"{agg.key.upper()}({mul.sql(dialect=dialect)}) multiplies by the key/id "
+                        f"column '{key.name}' — an id is not a quantity, so this fabricates a "
+                        f"magnitude (e.g. price × a row's primary key). Aggregate the measure alone, "
+                        f"or multiply by the real quantity column"
+                    )
+    return None
+
+
+def avg_of_row_ratios(sql: str, table_cols: dict | None = None,
+                      dialect: str = "duckdb") -> str | None:
+    """``AVG(<a> / <b>)`` — the mean of PER-ROW ratios — is the wrong recipe for a
+    group-level rate: it weights every row equally regardless of denominator magnitude,
+    so tiny-denominator rows dominate and the rate is skewed. The real-path scar: the Deep
+    path derived freight-% as ``AVG(freight / price)`` → 1.48% for Germany while the
+    correct ratio-of-sums (the Insight path) gave 2.17%. The right form is the RATIO OF
+    SUMS: ``SUM(a) / NULLIF(SUM(b), 0)`` — every prompt already mandates it; this enforces it.
+
+    High-precision: fires only on a non-DISTINCT, non-windowed AVG whose argument is a
+    DIVISION BY A COLUMN. So ``AVG(col)``, ``AVG(score / 100.0)`` (a constant scale), and
+    ``SUM(a)/SUM(b)`` / ``AVG(a)/AVG(b)`` (the Div is outside the AVG) are all left alone.
+    ``table_cols`` is accepted for call-site symmetry but unused. Returns a reason or None;
+    never raises."""
+    try:
+        import sqlglot
+        from sqlglot import exp
+    except Exception:
+        return None
+    try:
+        tree = sqlglot.parse_one(sql, read=dialect)
+    except Exception:
+        return None
+    if tree is None:
+        return None
+
+    for avg in tree.find_all(exp.Avg):
+        if isinstance(avg.this, exp.Distinct) or isinstance(avg.parent, exp.Window):
+            continue
+        arg = avg.this
+        while isinstance(arg, (exp.Paren, exp.Cast, exp.TryCast)):
+            arg = arg.this
+        if not isinstance(arg, exp.Div):
+            continue
+        den = arg.expression
+        if isinstance(den, exp.Nullif):
+            den = den.this if den.this is not None else (den.expressions[0] if den.expressions else den)
+        while isinstance(den, exp.Paren):
+            den = den.this
+        # Only a divisor that references a COLUMN is a per-row varying denominator (a true
+        # ratio); a pure numeric constant (AVG(x/100)) is just scaling and is fine.
+        if den.find(exp.Column) is not None:
+            return ("AVG(a/b) averages per-row ratios — for a group-level rate use the RATIO OF "
+                    "SUMS: SUM(a)/NULLIF(SUM(b),0). Averaging per-row ratios over-weights "
+                    "small-denominator rows and skews the rate (the freight-% 1.48%-vs-2.17% scar)")
+    return None
+
+
 def self_ratio_tautology(sql: str, dialect: str = "duckdb") -> str | None:
     """A rate whose NUMERATOR and DENOMINATOR are the SAME aggregate expression —
     ``SUM(x) / NULLIF(SUM(x), 0)``, ``COUNT(y) / COUNT(y)`` — is identically 1.0 for
@@ -802,9 +927,13 @@ def build_chasm_fanout_rewrite(sql: str, finding: "FanoutFinding", dialect: str 
     key in its own CTE, then join the CTEs to the hub so each satellite's SUM/COUNT is
     counted once (TPC-H verified: 153M vs the 4x-inflated 612M).
 
-    Returns rewritten SQL or None on any shape it can't prove correct: AVG/MIN/MAX or
-    COUNT(DISTINCT)/COUNT(*) aggs, a hub-column aggregate mixed in, a WHERE on a
-    satellite (predicates can't be safely split), a child-level GROUP BY, or a
+    AVG is also handled — decomposed into per-satellite SUM(x) + COUNT(x), divided as a
+    ratio-of-sums in the outer query (the only correct un-fanned mean; a fanned AVG is
+    weighted by the other satellite's multiplicity).
+
+    Returns rewritten SQL or None on any shape it can't prove correct: MIN/MAX or
+    COUNT(DISTINCT)/COUNT(*)/AVG(DISTINCT) aggs, a hub-column aggregate mixed in, a WHERE
+    on a satellite (predicates can't be safely split), a child-level GROUP BY, or a
     non-star join. Caller MUST dry-run/compare before adopting."""
     if finding is None or finding.kind != "chasm" or len(finding.satellites) < 2:
         return None
@@ -878,16 +1007,16 @@ def build_chasm_fanout_rewrite(sql: str, finding: "FanoutFinding", dialect: str 
             if (body.table or "").lower() != hub_alias:
                 return None
             proj_plan.append(("dim", body, out_alias))
-        elif isinstance(body, (exp.Sum, exp.Count)):
+        elif isinstance(body, (exp.Sum, exp.Count, exp.Avg)):
             inner = body.this
             if isinstance(inner, exp.Distinct) or not isinstance(inner, exp.Column):
-                return None  # COUNT(*)/COUNT(DISTINCT) unattributable
+                return None  # COUNT(*)/COUNT(DISTINCT)/AVG(DISTINCT) unattributable
             ta = (inner.table or "").lower()
             if ta not in sat_aliases:
                 return None
             proj_plan.append(("agg", ta, body, out_alias))
         else:
-            return None  # AVG/MIN/MAX/expr → bail
+            return None  # MIN/MAX/expr → bail (still can't prove correct)
     aggregated = {p[1] for p in proj_plan if p[0] == "agg"}
     if len(aggregated) < 2:
         return None
@@ -903,9 +1032,18 @@ def build_chasm_fanout_rewrite(sql: str, finding: "FanoutFinding", dialect: str 
         for p in proj_plan:
             if p[0] == "agg" and p[1] == sa:
                 body = p[2]
-                an = f"_a{ai}"; ai += 1
-                cproj.append(exp.alias_(type(body)(this=exp.column(body.this.name)), an))
-                agg_loc[id(body)] = (cte_name, an)
+                if isinstance(body, exp.Avg):
+                    # AVG over a chasm can't be summed; decompose into per-satellite
+                    # SUM(x) + COUNT(x), then divide the SUMS in the outer query.
+                    an_s, an_c = f"_a{ai}s", f"_a{ai}c"; ai += 1
+                    col = exp.column(body.this.name)
+                    cproj.append(exp.alias_(exp.Sum(this=col.copy()), an_s))
+                    cproj.append(exp.alias_(exp.Count(this=col.copy()), an_c))
+                    agg_loc[id(body)] = (cte_name, ("avg", an_s, an_c))
+                else:
+                    an = f"_a{ai}"; ai += 1
+                    cproj.append(exp.alias_(type(body)(this=exp.column(body.this.name)), an))
+                    agg_loc[id(body)] = (cte_name, ("sum", an))
         cte_sel = exp.Select(expressions=cproj).from_(exp.to_table(sat_aliases[sa])).group_by(exp.column(sat_key.name))
         ctes[sa] = (cte_name, cte_sel)
 
@@ -936,8 +1074,17 @@ def build_chasm_fanout_rewrite(sql: str, finding: "FanoutFinding", dialect: str 
             final_proj.append(exp.alias_(col, p[2]) if p[2] else col)
         else:
             body, out_alias = p[2], p[3]
-            cte_name, an = agg_loc[id(body)]
-            agg = exp.Sum(this=exp.column(an, table=cte_name))
+            cte_name, loc = agg_loc[id(body)]
+            if loc[0] == "avg":
+                _, an_s, an_c = loc
+                # ratio of summed parts = the true un-fanned mean (NULL-safe, float division).
+                num = exp.Mul(this=exp.Sum(this=exp.column(an_s, table=cte_name)),
+                              expression=exp.Literal.number("1.0"))
+                den = exp.func("NULLIF", exp.Sum(this=exp.column(an_c, table=cte_name)),
+                               exp.Literal.number("0"))
+                agg = exp.Div(this=num, expression=den)
+            else:
+                agg = exp.Sum(this=exp.column(loc[1], table=cte_name))
             out_name = out_alias or f"{body.key.lower()}_{body.this.name}"
             final_proj.append(exp.alias_(agg, out_name))
     outer.set("expressions", final_proj)

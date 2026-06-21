@@ -217,7 +217,15 @@ def synthesize_sql(intent: QueryIntent, ontology, *, metrics: Optional[list] = N
     if intent.intent_type == "scalar":
         sql = f"SELECT {expr} AS {alias} FROM {table}{where_sql}"
     elif intent.intent_type == "timeseries":
-        period = f"date_trunc('{intent.time_grain}', {time_col})"
+        # Bucket by the org's fiscal year when set (quarter/year boundaries shift); a strict
+        # no-op for the January default, so calendar-year orgs are unchanged.
+        from aughor.sql.fiscal import fiscal_period_expr
+        try:
+            from aughor.orgsettings import effective_settings
+            _fm = effective_settings(None).fiscal_year_start_month
+        except Exception:
+            _fm = 1
+        period = fiscal_period_expr(intent.time_grain, time_col, _fm, dialect)
         sql = (f"SELECT {period} AS period, {expr} AS {alias} "
                f"FROM {table}{where_sql} GROUP BY 1 ORDER BY 1")
     else:  # breakdown / ranking

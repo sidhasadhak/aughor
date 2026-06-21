@@ -58,6 +58,11 @@ export function effectiveChartPalette(): string {
   return _cache?.chart_palette ?? "";
 }
 
+/** The org IANA timezone (e.g. "Europe/London"), or "" to use the viewer's local zone. */
+export function effectiveTimezone(): string {
+  return _cache?.timezone ?? "";
+}
+
 // ── Monetary-column detection (name-only; the frontend has no per-column units) ──
 // Conservative: a column must name a money concept AND not look like a count / rate /
 // id / date, so a count, an id or a rate is never prefixed with a currency symbol.

@@ -38,6 +38,12 @@ class MetricDefinition(BaseModel):
     filters: list[str] = Field(default_factory=list, description="Default WHERE conditions always applied")
     unit: Optional[str] = Field(default=None, description="Display unit: '$', '%', 'days', etc.")
     caveats: Optional[str] = Field(default=None, description="Finance/data-team approved caveats or exclusions")
+    additivity: Optional[str] = Field(
+        default=None,
+        description="Declared additivity: 'additive' (summable across groups → share-of-total "
+                    "valid) or 'non_additive' (a ratio/avg/rate → never share-of-total). When "
+                    "set it OVERRIDES the SQL inference; omit to infer from the formula.",
+    )
     # Health scorecard fields (M13a)
     target_value: Optional[float] = Field(default=None, description="Target value for health scorecard")
     warning_threshold: Optional[float] = Field(default=None, description="Yellow-zone boundary (absolute value)")
@@ -433,6 +439,21 @@ def filter_metrics_to_schema(metrics: list, schema_text: str, dedupe: bool = Tru
     return _fold([m for m in metrics if _metric_matches_schema(m, tables, cols)])
 
 
+def metric_additivity(metric) -> bool:
+    """Whether a metric is ADDITIVE (summable across groups, so a share-of-total / Pareto is
+    valid). A DECLARED `additivity` field wins; otherwise infer from the formula via the same
+    SQL-authoritative gate the answer-summary concentration check uses (an AVG/ratio is
+    non-additive even behind an alias). Defaults to non-additive for unknowns — never claim a
+    share-of-total we can't justify. Lets a curated metric override a wrong inference."""
+    declared = (getattr(metric, "additivity", None) or "").strip().lower().replace("-", "_")
+    if declared == "additive":
+        return True
+    if declared == "non_additive":
+        return False
+    from aughor.tools.postproc import is_additive_measure
+    return is_additive_measure(getattr(metric, "name", "") or "", getattr(metric, "sql", "") or "")
+
+
 def build_metrics_block(
     path: Path | None = None, schema_text: str = "", connection_id: str = ""
 ) -> str:
@@ -453,12 +474,17 @@ def build_metrics_block(
     formulas the validator proved wrong are dropped.
     """
     metrics = list_metrics(path)
-    if schema_text:
-        _tables, _cols = _schema_tables_and_columns(schema_text)
-        if _tables:  # only filter when a schema actually parsed (else keep all)
-            metrics = [m for m in metrics if _metric_matches_schema(m, _tables, _cols)]
+    _tables, _cols = _schema_tables_and_columns(schema_text) if schema_text else (set(), set())
+    if _tables:  # only filter when a schema actually parsed (else keep all)
+        metrics = [m for m in metrics if _metric_matches_schema(m, _tables, _cols)]
     if connection_id:
         metrics = _apply_ontology_overlay(metrics, connection_id)
+        # Re-filter AFTER the overlay: it can INJECT a verified ontology metric that has no
+        # catalog counterpart, and that injection is NOT schema-checked — so a stale ontology
+        # formula (e.g. revenue = SUM(total_amount) on a connection whose orders has
+        # order_value, not total_amount) would leak a missing-column formula into the prompt.
+        if _tables:
+            metrics = [m for m in metrics if _metric_matches_schema(m, _tables, _cols)]
     metrics = _dedupe_by_name(metrics)  # never inject the same KPI twice with conflicting formulas
     if not metrics:
         return ""
@@ -481,6 +507,9 @@ def build_metrics_block(
             lines.append(f"    Always filter: {'; '.join(m.filters)}")
         if m.caveats:
             lines.append(f"    ⚠ {m.caveats}")
+        if not metric_additivity(m):
+            lines.append("    ∑ non-additive (a ratio/avg/rate): never sum across groups or "
+                         "compute a share-of-total / Pareto on it.")
         if m.freshness_sla:
             lines.append(f"    ⏱ Freshness: {m.freshness_sla}")
         if m.lineage:

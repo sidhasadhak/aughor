@@ -89,3 +89,32 @@ class TestOntologyOverlayKeepsCuratedCatalog:
         self._patch_ontology(monkeypatch, {"revenue": om})
         out = _apply_ontology_overlay(cat, "c1")
         assert len(out) == 1 and out[0].sql == "SUM(right)"
+
+
+# ── build_metrics_block re-filters AFTER the ontology overlay (2026-06-21) ──────
+# The overlay can INJECT a verified ontology metric with no catalog counterpart, and that
+# injection wasn't schema-checked — so a stale ontology formula (revenue=SUM(total_amount)
+# on a connection whose orders has order_value) leaked a missing-column formula into the
+# prompt. build_metrics_block now re-applies the schema filter after the overlay.
+def test_build_metrics_block_filters_overlay_injected_metric(monkeypatch):
+    from aughor.semantic import metrics as M
+    # schema has order_value, NOT total_amount (two-space col format the parser expects)
+    schema = "TABLE: orders\n  order_id  BIGINT\n  order_value  DOUBLE\n"
+    _tables, _cols = M._schema_tables_and_columns(schema)
+    assert "orders" in _tables and "order_value" in _cols and "total_amount" not in _cols
+    bad = _m("revenue", "SUM(total_amount)", tables=("orders",))  # stale formula, missing column
+    # overlay injects the stale metric (as if from a verified-but-stale ontology)
+    monkeypatch.setattr(M, "_apply_ontology_overlay", lambda ms, cid: list(ms) + [bad])
+    monkeypatch.setattr(M, "list_metrics", lambda *a, **k: [])    # empty catalog
+    out = M.build_metrics_block(schema_text=schema, connection_id="c")
+    assert "total_amount" not in out   # the injected missing-column metric is filtered out
+
+
+def test_build_metrics_block_keeps_overlay_metric_with_valid_columns(monkeypatch):
+    from aughor.semantic import metrics as M
+    schema = "TABLE: orders\n  order_id  BIGINT\n  order_value  DOUBLE\n"
+    good = _m("revenue", "SUM(order_value)", tables=("orders",))  # valid column
+    monkeypatch.setattr(M, "_apply_ontology_overlay", lambda ms, cid: list(ms) + [good])
+    monkeypatch.setattr(M, "list_metrics", lambda *a, **k: [])
+    out = M.build_metrics_block(schema_text=schema, connection_id="c")
+    assert "order_value" in out   # a valid overlay-injected metric survives
