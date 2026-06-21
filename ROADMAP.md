@@ -138,11 +138,33 @@ Grouped by area; each ✅ is verified shipped (git + code). Representative commi
 - ✅ **Live answer chart rendered broken (measure on the x-axis) while History rendered fine** — `Chart.tsx` trusted the LLM `chart_config` blindly; History drops it and falls back to correct inference. Chart now **validates the config's field roles** (x & y real columns, y numeric, x≠y, x a dimension/date except scatter) and falls back to the data-shape inference when incoherent. Live: "AOV by order status" renders `canceled`/`delivered` on the category axis.
 - ✅ **"Concentration" claimed for an AVERAGE metric** — `computeSummary()` summed five per-group **averages** into a fake 346.89 total and reported each as a "share" ("credit_card accounts for 20% of 346.89 … 60%"). Share-of-total/concentration is now **gated on measure additivity** (`web/lib/measureKind.ts` + `aughor/tools/postproc.py:is_additive_measure`, SQL-authoritative — `AVG()`/ratio ⇒ non-additive even behind an alias); a non-additive measure describes spread+leader instead ("AOV is roughly flat across 5 payment types"). The backend stats concentration operator is gated the same way (`sql` threaded into `analyze_query_result`) so the LLM evidence never carries a false Pareto signal.
 
+### Canvas/Settings IA, schema removal, industry steering & verdict lede (2026-06-21)
+*Same branch `2026-06-20-briefing-chart-fixes`, 5 commits (`d9495ef`, `554084f`, `4bc37f3`, `9743b53`); tsc clean, live-verified.*
+- ✅ **Canvas Intelligence tab removed** — the per-canvas Intelligence tab duplicated the global Briefing; canvas tabs are now Chat / History / Artifacts (`CanvasWorkspace.tsx`).
+- ✅ **Settings → left-sidebar tab with sub-tabs** — moved off the top-right gear into the sidebar; the screen is grouped into Organization / Appearance / Models / System sub-tabs instead of one long scroll (`app/page.tsx`).
+- ✅ **Remove a schema/table from a workspace** — `LocalUploadConnection.delete_table` + `DELETE /connections/{conn}/schemas/{schema}` (drops the schema + backing files, purges the schema's profile/exploration) and `…/tables/{table}`; Catalog "Remove schema" / "Remove" buttons with confirm; `main` guarded. Live-verified create→delete round-trip.
+- ✅ **Industry select → explorer steering** — when the org/workspace industry override differs from a dataset's inferred industry, the explorer Phase-8 steering pulls the SELECTED industry's curated KB (`match_industry`) and steers by ITS metrics; an industry change invalidates stored profiles for re-capture. Fixed a KB alias collision (`food_delivery` claimed `logistics`).
+- ✅ **Briefing verdict lede** — the hero now leads with one bold verdict + a one-line proof + a confidence RING + the primary action; scope/provenance demoted to a quiet footer (`BriefingPanel.tsx` `VerdictHero` + `ConfidenceRing`).
+
+### Agentic architecture ideation + missimi quality eval (2026-06-21)
+- ✅ **Agentic architecture plan** (no code) — [`docs/AGENTIC_ARCHITECTURE.md`](docs/AGENTIC_ARCHITECTURE.md): maps the implicit agents already running (explorer/ADA/monitors/briefer) on the `JobKernel` + event spine, the gap, a supervisor+blackboard model with background/active lanes, and a phased roadmap (registry + fleet view first).
+- ✅ **Missimi quality eval (Option B, 30 runs)** — [`docs/MISSIMI_EVAL_2026-06-21.md`](docs/MISSIMI_EVAL_2026-06-21.md): the session's fixes held; surfaced 3 critical + 1 false-conclusion defect with root causes. Findings feed §3 below. **Did NOT scale to 50+50** — fix the criticals first, then re-run as a regression.
+
 ---
 
 ## 3 · What's left
 
 Verified pending against code/git. `⬜` not started · `◑` partial.
+
+### Eval-derived quality fixes (2026-06-21 — from [`docs/MISSIMI_EVAL_2026-06-21.md`](docs/MISSIMI_EVAL_2026-06-21.md), do these BEFORE the full 50+50 re-run)
+- ⬜ **🔴 Block arithmetic on id/key columns** in the SQL grounding gate (AST: `<measure> * <*_id|PK>`, aggregates over id cols). A fabricated `SUM(unit_price * order_item_id)` revenue shipped at confidence (Q5).
+- ⬜ **🔴 Chat-headline number grounding** — extend the deep/ADA "never state a number not in the result" gate to the `/chat` headline (Q6: result 28.62% but headline said 42.3%).
+- ⬜ **🔴 Pin `explore`/deep search_path to the canvas schema** — `explore`-routed deep runs leak into other schemas (Q19/Q21/Q25 returned Apparel/Electronics for a beauty dataset); Insight is already scoped.
+- ⬜ **🟠 `cancelled→canceled` value-domain repair on `!=`/`NOT IN`** (not just `=`/`IN`) — Q29 concluded "cancellation rate is zero" despite 15,737 canceled orders.
+- ⬜ **🟠 Currency symbol in chat prose** — thread the effective currency into the chat narrator + a `$`→symbol post-pass (reuse the briefing `_cur()`); EUR org still renders `$` in ledes.
+- ⬜ **🟠 Deep reuses the ratio-of-sums recipe** (`_metric_is_ratio`) instead of re-deriving — Insight vs Deep disagreed on freight-% (2.17% vs 1.48%).
+- ⬜ **🟡 Insight time-series recent-window + deep-mode latency** — apply the recent-window default to ad-hoc time-series narratives (Q15 anchored on 2022); parallelize `score_evidence` (deep runs 200–450s, one timed out).
+- ⬜ **Then:** run the full 50+50 missimi eval as a regression to confirm closure + catch the long tail.
 
 ### Superset-derived backlog (see [`docs/SUPERSET_INTEGRATION.md`](docs/SUPERSET_INTEGRATION.md))
 - ⬜ **Error-registry enrichment** — Superset per-dialect SQL-error regex → `tools/error_classifier.py` (better FIX_SQL repair + user messages). *Needs live BigQuery/Snowflake to verify warehouse patterns.*
