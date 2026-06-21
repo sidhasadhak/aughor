@@ -210,6 +210,7 @@ function ConnectorActions({ connId, connType }: { connId: string; connType: stri
   const [syncing, setSyncing] = useState(false);
   const [files,   setFiles]   = useState<Array<{ filename: string; table_name: string; size_bytes: number }>>([]);
   const [uploading, setUploading] = useState(false);
+  const [restoreMsg, setRestoreMsg] = useState<string | null>(null);
   const fileInputRef = (typeof document !== "undefined") ? { current: null as HTMLInputElement | null } : { current: null };
 
   const isSyncable    = _SYNCABLE.includes(connType);
@@ -265,6 +266,16 @@ function ConnectorActions({ connId, connType }: { connId: string; connType: stri
     setFiles(f => f.filter(x => x.filename !== filename));
   };
 
+  const handleRestoreSamples = async () => {
+    setRestoreMsg("Restoring…");
+    try {
+      const r = await fetch(`${BASE_API}/connections/${connId}/restore-samples`, { method: "POST" });
+      setRestoreMsg(r.ok ? "Sample data restored — refresh to see it." : "Restore failed.");
+    } catch {
+      setRestoreMsg("Restore failed.");
+    }
+  };
+
   if (!isSyncable && !isKnowledge && !isFileUpload) return null;
 
   const BtnStyle: React.CSSProperties = {
@@ -309,6 +320,12 @@ function ConnectorActions({ connId, connType }: { connId: string; connType: stri
               ))}
             </div>
           )}
+          <button onClick={handleRestoreSamples}
+            style={{ marginTop: 10, background: "none", border: "none", cursor: "pointer", color: "var(--t4)", padding: 0, fontSize: 11, textDecoration: "underline" }}
+            title="Re-add the bundled sample schemas you previously removed">
+            Restore sample data
+          </button>
+          {restoreMsg && <p style={{ fontSize: 11, color: "var(--t4)", marginTop: 6 }}>{restoreMsg}</p>}
         </div>
       )}
     </div>
