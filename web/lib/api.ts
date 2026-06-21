@@ -1950,6 +1950,34 @@ export async function decompileSql(sql: string, dialect = "duckdb"): Promise<Dec
   return res.json();
 }
 
+// On-demand governed validation of an answer's query (the guard battery, re-run live).
+export interface QueryValidation {
+  passed: boolean;
+  issue_count: number;
+  fanout_hits: string[];
+  join_warnings: { table_a: string; col_a: string; table_b: string; col_b: string; overlap: number }[];
+  filter_warnings: { table: string; column: string; literal: string; op: string; suggestion: string }[];
+}
+
+export async function validateQuery(connId: string, sql: string): Promise<QueryValidation> {
+  const res = await fetch(`${BASE}/query/validate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ conn_id: connId, sql }),
+  });
+  if (!res.ok) throw new Error("Validation failed");
+  return res.json();
+}
+
+// Lightweight feedback/remember signal on a chat answer (journaled to the ledger).
+export async function sendChatFeedback(connId: string, turnId: string, verdict: "helpful" | "unhelpful", note = ""): Promise<void> {
+  await fetch(`${BASE}/chat/feedback`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ conn_id: connId, turn_id: turnId, verdict, note }),
+  }).catch(() => {});
+}
+
 // ── Evidence Ledger ────────────────────────────────────────────────────────────
 
 export interface EvidenceClaim {
