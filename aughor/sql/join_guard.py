@@ -199,6 +199,85 @@ def check_join_value_domains(
     return warnings
 
 
+# ── Build-time joinability: PREVENT a value-disjoint join, not just catch it ─────────
+# The query-time guard above catches a value-disjoint join when the model writes one. This
+# precomputes the SAME value-overlap signal at BUILD time over the NAME-inferred join
+# candidates, so a join whose two keys share a name-shape but hold disjoint values is
+# demoted to "do not join" BEFORE generation — the model never sees it as a valid FK, so it
+# can't draw it in the first place (prevention, not recovery). Bounded (only the small set
+# of name-matched candidates is probed), cached per connection, fail-open (an unverifiable
+# edge is KEPT — we never reject on inability to check).
+_JOINABLE_MAX_PROBES = 32
+_VERIFIED_JOIN_CACHE: dict = {}
+
+
+@dataclass
+class VerifiedJoin:
+    t1: str
+    c1: str
+    t2: str
+    c2: str
+    overlap: float        # max containment fraction across both directions; -1.0 = unverifiable
+    match: str = "exact"  # the name-inference confidence carried through
+
+
+def verify_join_edges(
+    conn: "DatabaseConnection",
+    joins: list,
+    *,
+    threshold: float = _THRESHOLD,
+    max_probes: int = _JOINABLE_MAX_PROBES,
+) -> tuple:
+    """Probe each name-inferred join edge for value overlap. Returns ``(verified, rejected)``
+    lists of :class:`VerifiedJoin`. An edge is VERIFIED when its keys actually share values
+    (a real FK → ~1.0) or can't be probed (fail-open), REJECTED when value-disjoint (a
+    name-shape coincidence → ~0.0)."""
+    verified: list = []
+    rejected: list = []
+    for j in (joins or [])[:max_probes]:
+        t1, c1, t2, c2 = j.get("t1"), j.get("c1"), j.get("t2"), j.get("c2")
+        if not all((t1, c1, t2, c2)):
+            continue
+        ov_ab = _probe_overlap(conn, t1, c1, t2, c2)
+        ov_ba = _probe_overlap(conn, t2, c2, t1, c1)
+        overlaps = [o for o in (ov_ab, ov_ba) if o is not None]
+        ov = max(overlaps) if overlaps else None
+        vj = VerifiedJoin(t1, c1, t2, c2, overlap=(ov if ov is not None else -1.0),
+                          match=j.get("match", "exact"))
+        (rejected if (ov is not None and ov < threshold) else verified).append(vj)
+    return verified, rejected
+
+
+def verified_join_edges(conn: "DatabaseConnection", joins: list, *, cache_key: str = "") -> tuple:
+    """Cached :func:`verify_join_edges` — computed once per (cache_key, edge-signature) so the
+    overlap probes run at build time, not per question. An empty ``cache_key`` disables caching."""
+    sig = tuple(sorted((j.get("t1"), j.get("c1"), j.get("t2"), j.get("c2")) for j in (joins or [])))
+    key = (cache_key, sig)
+    if cache_key and key in _VERIFIED_JOIN_CACHE:
+        return _VERIFIED_JOIN_CACHE[key]
+    result = verify_join_edges(conn, joins)
+    if cache_key:
+        _VERIFIED_JOIN_CACHE[key] = result
+    return result
+
+
+def render_verified_joins(verified: list, rejected: list) -> str:
+    """The data-catalog block: the value-verified FK joins to USE, plus an explicit
+    DO-NOT-JOIN list for the name-shape coincidences that hold disjoint values."""
+    lines: list = []
+    if verified:
+        lines.append("FOREIGN KEY JOINS (value-verified — use these exact keys to join the tables above):")
+        for v in verified:
+            lines.append(f"  {'✓' if v.overlap >= 0 else '·'} {v.t1}.{v.c1} = {v.t2}.{v.c2}")
+    if rejected:
+        lines.append("")
+        lines.append("DO NOT JOIN (these column pairs share a name but hold DISJOINT values — "
+                     "joining them fabricates rows):")
+        for r in rejected:
+            lines.append(f"  ✗ {r.t1}.{r.c1} ≠ {r.t2}.{r.c2}  ({r.overlap:.0%} value overlap)")
+    return "\n".join(lines)
+
+
 # ── WHERE/HAVING literal value-domain guard ─────────────────────────────────
 # The join guard protects join KEYS; this protects FILTER LITERALS. A model that
 # guesses an enum value — `order_status = 'cancelled'` when the data holds
