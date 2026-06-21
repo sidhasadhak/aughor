@@ -177,7 +177,8 @@ def kickoff_exploration(conn_id: str, schema_name: str | None = None, *, auto: b
 
     if auto:
         from aughor.kernel.agents import is_enabled
-        if not is_enabled("scout"):
+        from aughor.workspace.store import workspace_for_connection
+        if not is_enabled("scout", workspace_for_connection(conn_id)):
             import logging
             logging.getLogger(__name__).info(
                 "kickoff_exploration: Scout disabled by governance — skipping auto run for %s", conn_id)

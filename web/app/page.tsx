@@ -940,13 +940,19 @@ function fmtBudget(n: number | null): string {
 }
 
 // The Agents tab — the fleet roster + governance (enable/pause + budget + spend).
-function AgentsPanel() {
+function AgentsPanel({ workspaceId, workspaceName }: { workspaceId?: string; workspaceName?: string }) {
   const [agents, setAgents] = useState<AgentRosterEntry[]>([]);
   const [tried, setTried] = useState(false);
 
-  const load = () => getAgents().then(a => { setAgents(a); setTried(true); }).catch(() => setTried(true));
-  useEffect(() => { load(); }, []);
-  const toggle = (id: string, enabled: boolean) => { patchAgent(id, { enabled }).then(() => load()); };
+  useEffect(() => {
+    let alive = true;
+    getAgents(workspaceId)
+      .then(a => { if (alive) { setAgents(a); setTried(true); } })
+      .catch(() => { if (alive) setTried(true); });
+    return () => { alive = false; };
+  }, [workspaceId]);   // re-resolve governance when the scope (Org vs workspace) changes
+  const reload = () => getAgents(workspaceId).then(setAgents);
+  const toggle = (id: string, enabled: boolean) => { patchAgent(id, { enabled, workspace_id: workspaceId }).then(() => reload()); };
 
   if (!tried) {
     return <div style={{ padding: "40px 0", textAlign: "center" }}><p style={{ fontSize: 12, color: "var(--t3)" }}>Loading agents…</p></div>;
@@ -954,8 +960,13 @@ function AgentsPanel() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <p style={{ fontSize: 11, color: "var(--t3)", margin: 0 }}>
-        Your fleet — pause an agent or cap its per-run budget. Changes apply org-wide; budgets are honest
-        because every run is metered.
+        Governing{" "}
+        <strong style={{ color: "var(--t2)" }}>
+          {workspaceName ? `workspace “${workspaceName}”` : "your Org (all workspaces)"}
+        </strong>{" "}
+        — pause an agent or cap its per-run budget. Budgets are <strong style={{ color: "var(--t2)" }}>enforced live</strong>:
+        a run that exceeds its token or time budget is cancelled, because every run is metered.
+        {workspaceName && " Unset values inherit the Org default."}
       </p>
       {agents.map(a => {
         const isBackground = a.lane === "background";
@@ -1008,7 +1019,7 @@ function AgentsPanel() {
   );
 }
 
-function FleetScreen({ onNavigate }: { onNavigate: (t: NavTab) => void }) {
+function FleetScreen({ onNavigate, workspaceId, workspaceName }: { onNavigate: (t: NavTab) => void; workspaceId?: string; workspaceName?: string }) {
   const [view, setView] = useState<"activity" | "agents">("activity");
   const [jobs, setJobs] = useState<FleetJob[]>([]);
   const [tried, setTried] = useState(false);
@@ -1051,7 +1062,7 @@ function FleetScreen({ onNavigate }: { onNavigate: (t: NavTab) => void }) {
         </div>
       </div>
       <div style={{ flex: 1, overflowY: "auto", padding: "18px 20px" }}>
-        {view === "agents" ? <AgentsPanel /> : (<>
+        {view === "agents" ? <AgentsPanel workspaceId={workspaceId} workspaceName={workspaceName} /> : (<>
         <MiniStatRow>
           <MiniStat value={active} label="Running" tone="var(--blue4)" />
           <MiniStat value={ok} label="Succeeded" tone="var(--grn4)" />
@@ -2084,7 +2095,11 @@ export default function Home() {
 
             {tab === "fleet" && (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
-                <FleetScreen onNavigate={handleNavigate} />
+                <FleetScreen
+                  onNavigate={handleNavigate}
+                  workspaceId={activeWs && !activeWs.is_default ? activeWs.id : undefined}
+                  workspaceName={activeWs && !activeWs.is_default ? activeWs.name : undefined}
+                />
               </div>
             )}
 

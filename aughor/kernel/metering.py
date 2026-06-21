@@ -112,6 +112,28 @@ def record_query(rows: int = 0, ms: float = 0.0) -> None:
         tolerate(exc, "query metering", counter="metering")
 
 
+# A run's live metrics, also reachable by job_id — so the kernel heartbeat (a
+# separate task, which can't see the job task's contextvar) can enforce budgets.
+_by_job: dict[str, RunMetrics] = {}
+
+
+def register_job(job_id: str) -> None:
+    """Expose the current run's metrics under `job_id` for cross-task budget reads."""
+    m = _current.get()
+    if m is not None:
+        with _lock:
+            _by_job[job_id] = m
+
+
+def unregister_job(job_id: str) -> None:
+    with _lock:
+        _by_job.pop(job_id, None)
+
+
+def metrics_for_job(job_id: str) -> Optional[RunMetrics]:
+    return _by_job.get(job_id)
+
+
 @contextmanager
 def metered() -> Iterator[Optional[RunMetrics]]:
     """Set a fresh accumulator for the duration of the block.

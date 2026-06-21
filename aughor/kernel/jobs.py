@@ -151,13 +151,53 @@ class JobKernel:
         self._tasks[job_id] = task
         return job_id
 
+    def _resolve_governance(self, job_id: str):
+        """(governance, agent_id) for this job's agent, at its Org/workspace scope.
+        Best-effort — any failure yields the charter defaults (never blocks a run)."""
+        job = self.ledger.job_get(job_id) or {}
+        from aughor.kernel.agents import charter_for_kind, effective_governance
+        charter = charter_for_kind(job.get("kind"))
+        ws = None
+        try:
+            from aughor.workspace.store import workspace_for_connection
+            ws = workspace_for_connection(job.get("conn_id"))
+        except Exception:
+            ws = None
+        return effective_governance(charter.id, ws), charter.id
+
+    def _over_budget(self, job_id: str, gov, elapsed_s: float) -> Optional[str]:
+        """The budget this run has blown, or None. Tokens come from the live
+        metrics registry; time from the heartbeat's own clock."""
+        from aughor.kernel import metering
+        m = metering.metrics_for_job(job_id)
+        if gov.token_budget and m and m.total_tokens > gov.token_budget:
+            return f"token budget ({gov.token_budget:,} tokens)"
+        if gov.time_budget_s and elapsed_s > gov.time_budget_s:
+            return f"time budget ({gov.time_budget_s}s)"
+        return None
+
     async def _heartbeat_loop(self, job_id: str) -> None:
+        import time as _time
+        gov, agent_id = self._resolve_governance(job_id)
+        t0 = _time.monotonic()
         while True:
             await asyncio.sleep(_HEARTBEAT_SECONDS)
             try:
                 self.ledger.job_update(job_id, heartbeat_at=_now())
             except Exception:
                 logger.debug("heartbeat write failed for job %s", job_id, exc_info=True)
+            # Budget enforcement — the reliable kill: cancel raises CancelledError,
+            # which (unlike a plain exception) unwinds past the agent's fail-open
+            # try/excepts. We stamp the reason first; the CANCELLED transition keeps it.
+            over = self._over_budget(job_id, gov, _time.monotonic() - t0)
+            if over:
+                logger.info("job %s exceeded %s — cancelling (agent %s)", job_id, over, agent_id)
+                self.ledger.emit("budget.exceeded", {"agent": agent_id, "reason": over},
+                                 job_id=job_id,
+                                 conn_id=(self.ledger.job_get(job_id) or {}).get("conn_id"))
+                self.ledger.job_update(job_id, error=f"budget exceeded: {over}")
+                self.cancel(job_id)
+                return
 
     async def _run(self, job_id: str, coro_factory, on_finish) -> None:
         self._transition(job_id, JobState.RUNNING)
@@ -165,6 +205,7 @@ class JobKernel:
         final = JobState.FAILED
         _token = _current_job.set(job_id)
         _m_token = metering.start()
+        metering.register_job(job_id)   # so the heartbeat can enforce this run's budget
         try:
             await coro_factory()
             final = JobState.SUCCEEDED
@@ -189,6 +230,7 @@ class JobKernel:
             except Exception as _m_exc:
                 from aughor.kernel.errors import tolerate
                 tolerate(_m_exc, "job metrics flush", counter="metering")
+            metering.unregister_job(job_id)
             metering.reset(_m_token)
             _current_job.reset(_token)
             hb.cancel()

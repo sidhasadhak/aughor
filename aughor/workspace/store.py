@@ -177,6 +177,22 @@ def workspace_connection_ids(workspace_id: Optional[str]) -> Optional[set]:
     return set(ws.connection_ids) if ws else set()
 
 
+def workspace_for_connection(conn_id: Optional[str]) -> Optional[str]:
+    """The *specific* (non-default) workspace that owns a connection, for resolving
+    per-workspace agent governance. Returns ``None`` when the connection lives only
+    in the catch-all Default workspace (or nowhere) — i.e. it falls back to the
+    Org-wide (app) scope. Best-effort; never raises into a caller."""
+    if not conn_id:
+        return None
+    try:
+        for ws in list_workspaces():
+            if not ws.is_default and conn_id in (ws.connection_ids or []):
+                return ws.id
+    except Exception:
+        return None
+    return None
+
+
 # ── Default-workspace migration ───────────────────────────────────────────────
 
 def ensure_default_workspace() -> bool:
