@@ -717,6 +717,46 @@ def _implausible_ratio_claim(finding_text: str, cap: float = _IMPLAUSIBLE_RATIO_
     return ""
 
 
+# Named-metric ↔ SQL coherence: a finding that NAMES a spend-based metric (ROAS, CAC, ROI) must
+# have an ad-spend / cost term in its SQL. The real bug: the narrator labelled
+# SUM(order_value)/COUNT(DISTINCT order_id) — which is AOV — as "ROAS at 6.23"; that one wrong
+# word made the Briefing claim ROAS and the drill-down chase a revenue÷spend ratio that has no
+# clean grain (it fans out / binder-errors). ROAS/CAC are revenue-vs-SPEND metrics; if the query
+# never references spend or cost, it cannot be computing them.
+_SPEND_TERM_RE = re.compile(
+    r"\b(ad_?spend|marketing_?spend|\bspend\b|ad_?cost|marketing_?cost|\bcost\b|budget|cogs|cpc|cpm|cpa)\b", re.I)
+_NAMED_SPEND_METRIC = {
+    "roas": "ROAS (revenue ÷ ad spend)",
+    "return on ad spend": "ROAS (revenue ÷ ad spend)",
+    "return on advertising spend": "ROAS (revenue ÷ ad spend)",
+    "cac": "CAC (ad spend ÷ new customers)",
+    "customer acquisition cost": "CAC (ad spend ÷ new customers)",
+}
+
+
+def _mislabeled_named_metric(finding_text: str, sql: str) -> str | None:
+    """Reason when the claim ASSERTS a spend-based metric (ROAS/CAC) but the SQL has no spend/cost
+    term — so it cannot be computing that metric (it's an AOV / per-order average wearing the wrong
+    name). High-precision: fires only when the metric name is asserted WITH a value (not a passing
+    mention), the SQL is a ratio, and NO spend/cost term appears anywhere in it."""
+    if not finding_text or not sql:
+        return None
+    low_sql = sql.lower()
+    if "/" not in low_sql or _SPEND_TERM_RE.search(low_sql):
+        return None   # not a ratio, or it does reference spend/cost → the named metric is plausible
+    # The metric must be ASSERTED, not mentioned in passing — true when the name and a number land
+    # in the SAME clause/sentence ("ROAS at 6.23"). Clause-level keeps "ROAS is worth checking"
+    # (no number in that clause) from tripping it.
+    clauses = re.split(r"[.\n;]", finding_text.lower())
+    for name, canon in _NAMED_SPEND_METRIC.items():
+        nm_re = re.compile(r"\b" + re.escape(name) + r"\b")
+        if any(nm_re.search(c) and re.search(r"\d", c) for c in clauses):
+            return (f"claim asserts {canon} but the query has no ad-spend/cost term — it cannot "
+                    f"compute {canon.split()[0]} (e.g. SUM(order_value)/COUNT(orders) is AOV, not "
+                    "ROAS). Relabel to what the SQL actually measures.")
+    return None
+
+
 def verify_insight(rows, finding_text: str = "", sql: str = "", metric_ranges=None, conn=None, *, columns=None) -> tuple[bool, str]:
     """THE pre-emission trust gate: a candidate finding is surfaced ONLY if it passes every
     deterministic check. Returns (ok, reason). A SOTA platform treats generated claims as
@@ -758,6 +798,9 @@ def verify_insight(rows, finding_text: str = "", sql: str = "", metric_ranges=No
         cg = _claim_numbers_grounded(finding_text, rows)
         if cg:
             return (False, cg)
+        nm = _mislabeled_named_metric(finding_text, sql)
+        if nm:
+            return (False, nm)
         return (True, "")
     except Exception:
         return (True, "")  # fail-open: a gate bug must not suppress real findings
