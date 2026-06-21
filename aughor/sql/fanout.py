@@ -921,6 +921,29 @@ def build_parent_fanout_rewrite(sql: str, finding: "FanoutFinding", dialect: str
         return None
 
 
+def _split_and(node):
+    """Flatten a top-level AND (through parens) into its conjuncts; a non-AND is one conjunct."""
+    try:
+        from sqlglot import exp
+    except Exception:
+        return [node]
+    if isinstance(node, exp.Paren):
+        return _split_and(node.this)
+    if isinstance(node, exp.And):
+        return _split_and(node.left) + _split_and(node.right)
+    return [node]
+
+
+def _strip_table_quals(node):
+    """A copy of ``node`` with every column's table qualifier removed — for pushing a predicate
+    into a single-table CTE where the alias no longer exists."""
+    n = node.copy()
+    from sqlglot import exp
+    for c in n.find_all(exp.Column):
+        c.set("table", None)
+    return n
+
+
 def build_chasm_fanout_rewrite(sql: str, finding: "FanoutFinding", dialect: str = "duckdb"):
     """Deterministic de-fan for a CHASM (≥2 satellites of one hub aggregated across a
     star join — the clicks×impressions case). Pre-aggregate EACH satellite to the hub
@@ -931,10 +954,17 @@ def build_chasm_fanout_rewrite(sql: str, finding: "FanoutFinding", dialect: str 
     ratio-of-sums in the outer query (the only correct un-fanned mean; a fanned AVG is
     weighted by the other satellite's multiplicity).
 
+    A WHERE on a satellite is split: a top-level AND of single-table predicates pushes each
+    satellite predicate into that satellite's CTE (filtering its rows BEFORE the per-key
+    aggregation — which matches the original fanned semantics, INNER joins included) and keeps
+    hub predicates in the outer query. It still bails on a predicate that can't be cleanly
+    attributed (an OR/mixed-table conjunct, an unqualified column, or a satellite that isn't
+    aggregated, so has no CTE to receive it).
+
     Returns rewritten SQL or None on any shape it can't prove correct: MIN/MAX or
-    COUNT(DISTINCT)/COUNT(*)/AVG(DISTINCT) aggs, a hub-column aggregate mixed in, a WHERE
-    on a satellite (predicates can't be safely split), a child-level GROUP BY, or a
-    non-star join. Caller MUST dry-run/compare before adopting."""
+    COUNT(DISTINCT)/COUNT(*)/AVG(DISTINCT) aggs, a hub-column aggregate mixed in, an
+    unsplittable satellite WHERE, a child-level GROUP BY, or a non-star join. Caller MUST
+    dry-run/compare before adopting."""
     if finding is None or finding.kind != "chasm" or len(finding.satellites) < 2:
         return None
     try:
@@ -987,8 +1017,6 @@ def build_chasm_fanout_rewrite(sql: str, finding: "FanoutFinding", dialect: str 
             return None
 
     where = sel.args.get("where")
-    if where and any((c.table or "").lower() in sat_aliases for c in where.find_all(exp.Column)):
-        return None  # a satellite predicate can't be safely pushed into one CTE
 
     grp = sel.args.get("group")
     group_cols = []
@@ -1021,6 +1049,28 @@ def build_chasm_fanout_rewrite(sql: str, finding: "FanoutFinding", dialect: str 
     if len(aggregated) < 2:
         return None
 
+    # ── Satellite-WHERE splitting ────────────────────────────────────────────────
+    # Partition the WHERE's top-level AND conjuncts: hub predicates stay in the outer query;
+    # a predicate on exactly one AGGREGATED satellite is pushed into that satellite's CTE.
+    # Bail on anything we can't attribute cleanly (the original safe-bail, now narrowed).
+    sat_predicates: dict[str, list] = {}
+    hub_predicates: list = []
+    if where is not None:
+        for conj in _split_and(where.this):
+            cols = list(conj.find_all(exp.Column))
+            if not cols:
+                hub_predicates.append(conj)               # constant predicate → outer
+                continue
+            tbls = {(c.table or "").lower() for c in cols}
+            if "" in tbls:
+                return None                               # unqualified column — can't attribute
+            if tbls == {hub_alias}:
+                hub_predicates.append(conj)
+            elif len(tbls) == 1 and next(iter(tbls)) in aggregated:
+                sat_predicates.setdefault(next(iter(tbls)), []).append(conj)
+            else:
+                return None  # OR/mixed-table, or a predicate on a non-aggregated satellite
+
     # Build a CTE per aggregated satellite: SELECT sat_key AS _k, <aggs> GROUP BY sat_key.
     ctes = {}
     agg_loc = {}   # id(body) -> (cte_name, agg_alias)
@@ -1044,7 +1094,12 @@ def build_chasm_fanout_rewrite(sql: str, finding: "FanoutFinding", dialect: str 
                     an = f"_a{ai}"; ai += 1
                     cproj.append(exp.alias_(type(body)(this=exp.column(body.this.name)), an))
                     agg_loc[id(body)] = (cte_name, ("sum", an))
-        cte_sel = exp.Select(expressions=cproj).from_(exp.to_table(sat_aliases[sa])).group_by(exp.column(sat_key.name))
+        cte_sel = exp.Select(expressions=cproj).from_(exp.to_table(sat_aliases[sa]))
+        # Push this satellite's predicates INTO the CTE (alias-stripped) so its rows are
+        # filtered before the per-key aggregation — exactly what the original WHERE did.
+        for pred in sat_predicates.get(sa, []):
+            cte_sel = cte_sel.where(_strip_table_quals(pred))
+        cte_sel = cte_sel.group_by(exp.column(sat_key.name))
         ctes[sa] = (cte_name, cte_sel)
 
     # Clone the original (keeps hub FROM/WHERE/GROUP BY), swap satellite joins for CTE joins,
@@ -1057,6 +1112,17 @@ def build_chasm_fanout_rewrite(sql: str, finding: "FanoutFinding", dialect: str 
         if ja in sat_aliases:
             continue
         kept.append(j)
+    # When satellite predicates were pushed into CTEs, the outer query keeps only the hub
+    # predicates (rebuilt from the conjuncts). Untouched when nothing was split — preserving
+    # the original WHERE verbatim for the common no-satellite-filter path.
+    if sat_predicates:
+        if hub_predicates:
+            new_where = hub_predicates[0].copy()
+            for p in hub_predicates[1:]:
+                new_where = exp.And(this=new_where, expression=p.copy())
+            outer.set("where", exp.Where(this=new_where))
+        else:
+            outer.set("where", None)
     for sa in aggregated:
         cte_name = ctes[sa][0]
         hub_key = sat_join[sa][2]

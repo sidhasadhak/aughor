@@ -86,8 +86,55 @@ def test_chasm_count_supported():
     assert rw is not None and rw.lower().count("group by") == 2
 
 
-def test_chasm_bails_on_satellite_where():
-    assert _chasm(_CHASM_SQL + " WHERE l.l_quantity > 10") is None
+def test_chasm_splits_a_single_satellite_where_into_its_cte():
+    # FAN-b breadth: a predicate on one aggregated satellite is now pushed into that
+    # satellite's pre-agg CTE (was a bail). The lineitem filter lands in _s_l, not the outer.
+    rw = _chasm(_CHASM_SQL + " WHERE l.l_quantity > 10")
+    assert rw is not None
+    low = rw.lower()
+    assert low.count("group by") == 2
+    # the predicate rides inside the lineitem CTE (alias-stripped); with no hub predicate the
+    # outer query has no WHERE, so any WHERE present is the pushed-down CTE filter.
+    assert "where l_quantity > 10" in low
+    assert "inner join _s_l" in low and "inner join _s_ps" in low   # outer is a pure CTE star-join
+
+
+def test_chasm_splits_hub_and_satellite_predicates():
+    # AND of a hub predicate + a satellite predicate: hub stays outer, satellite pushes in.
+    rw = _chasm(_CHASM_SQL + " WHERE p.p_mfgr = 'M1' AND l.l_quantity > 10")
+    assert rw is not None
+    low = rw.lower()
+    assert "p_mfgr = 'm1'" in low and "l_quantity > 10" in low
+
+
+def test_chasm_still_bails_on_unsplittable_where():
+    # cross-table predicate (one conjunct touches two tables) → cannot attribute → bail
+    assert _chasm(_CHASM_SQL + " WHERE l.l_quantity > ps.ps_availqty") is None
+    # an OR spanning two satellites is a single conjunct touching both → bail
+    assert _chasm(_CHASM_SQL + " WHERE l.l_quantity > 10 OR ps.ps_availqty > 5") is None
+    # an unqualified column can't be attributed to a table → bail
+    assert _chasm(_CHASM_SQL + " WHERE l_quantity > 10") is None
+
+
+def test_chasm_satellite_where_is_numerically_correct():
+    # The real proof: pushing the filter into the CTE must equal the TRUE filtered un-fanned
+    # value, not the inflated cross-product. Runs on DuckDB.
+    import duckdb
+    con = duckdb.connect(":memory:")
+    con.execute("CREATE TABLE orders(order_id INT)"); con.execute("INSERT INTO orders VALUES (1),(2)")
+    con.execute("CREATE TABLE clicks(order_id INT, source VARCHAR, n_clicks INT)")
+    con.execute("INSERT INTO clicks VALUES (1,'google',10),(1,'google',20),(1,'bing',5),(2,'google',7)")
+    con.execute("CREATE TABLE impressions(order_id INT, n_imp INT)")
+    con.execute("INSERT INTO impressions VALUES (1,100),(1,200),(2,300),(2,400),(2,500)")
+    tc = {"orders": ["order_id"], "clicks": ["order_id", "source", "n_clicks"],
+          "impressions": ["order_id", "n_imp"]}
+    sql = ("SELECT SUM(c.n_clicks) AS clicks, SUM(i.n_imp) AS imps "
+           "FROM orders o JOIN clicks c ON o.order_id=c.order_id "
+           "JOIN impressions i ON o.order_id=i.order_id WHERE c.source = 'google'")
+    assert con.execute(sql).fetchone() == (81, 1800)         # the fanned (wrong) value
+    rw = build_chasm_fanout_rewrite(sql, detect_fanout(sql, tc))
+    assert rw is not None
+    assert con.execute(rw).fetchone() == (37, 1500)          # exact filtered un-fanned truth
 
 
 def test_chasm_rewrites_avg_as_ratio_of_sums():
