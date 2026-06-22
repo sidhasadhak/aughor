@@ -307,18 +307,58 @@ def propose_skill_from_investigation(
 
 
 def _autonomy_level(connection_id: str) -> int:
-    """Earned autonomy 0–3 for a connection. The L0–L3 ladder isn't built yet, so every
-    connection is L0 (manual-confirm). Centralized here so auto-promotion turns on the day the
-    ladder lands without touching the crystallizer."""
-    return 0
+    """The connection's earned autonomy 0–3 (from `memory.trust`, computed from its run track
+    record). Fail-safe to L0 (manual) on any error — auto-promotion never fires by accident."""
+    try:
+        from aughor.memory.trust import autonomy_level
+        return int(autonomy_level(connection_id).get("level", 0) or 0)
+    except Exception as exc:
+        logger.debug("_autonomy_level(%s) floored to L0: %s", connection_id, exc)
+        return 0
+
+
+def _run_signals(inv_id: str) -> dict:
+    """The recorded reflection signals for a run (from data/agent_runs.json), or {}."""
+    try:
+        return KeyedJsonStore("data/agent_runs.json", max_entries=2000).get(inv_id, {}) or {}
+    except Exception:
+        return {}
 
 
 def auto_crystallize(inv_id: str, connection_id: str) -> None:
-    """Auto-promote a skill-worthy run into a saved learned skill — but ONLY at an earned
-    autonomy level (L2+). At L0 (the only level today) this is a deliberate no-op: a strong run
-    is left as a candidate for the UI to confirm, never silently persisted (ungoverned auto-save
-    is exactly what the manual-confirm gate exists to prevent)."""
+    """Auto-promote a skill-worthy run into a saved learned skill — ONLY once a connection has
+    EARNED L2+ autonomy (a strong track record of clean runs). Double-gated: the run itself must
+    have been grounded + read-only, and the crystallized SQL must still pass the read-only EXPLAIN
+    dry-run. Below L2 this is a no-op (a strong run stays a UI-confirmed candidate). Best-effort:
+    never breaks the investigation stream."""
     if _autonomy_level(connection_id) < 2:
         return None
-    # Reserved for the autonomy ladder: propose → EXPLAIN-gate → save under the active schema.
+    run = _run_signals(inv_id)
+    if run and (not run.get("grounded") or not run.get("read_only", True)):
+        return None   # only auto-crystallize a clean run, even at L2+
+    try:
+        candidate = propose_skill_from_investigation(inv_id)
+        if candidate is None:
+            return None
+        schema = resolve_active_schema(connection_id)
+        from aughor.db.connection import open_connection_for
+        conn = open_connection_for(connection_id)
+
+        def _validator(sql: str) -> bool:
+            try:
+                return not conn.execute("auto_skill_dry_run", f"EXPLAIN {sql}").error
+            except Exception:
+                return False
+
+        try:
+            if save_skill(connection_id, schema, candidate, validator=_validator):
+                logger.info("[memory] auto-crystallized skill %s for %s (L2+ autonomy)",
+                            candidate.id, connection_id)
+        finally:
+            try:
+                conn.close()
+            except Exception as exc:
+                logger.debug("auto_crystallize conn close: %s", exc)
+    except Exception as exc:
+        logger.debug("auto_crystallize(%s) best-effort skip: %s", inv_id, exc)
     return None
