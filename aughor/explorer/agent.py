@@ -1681,32 +1681,12 @@ class SchemaExplorer:
             dss = [_ds(t) for t in e.source_tables if _ds(t)]
             return _C(dss).most_common(1)[0][0] if dss else ""
 
-        passes: list[tuple[str, str, list]] = []   # (pass_label, base_domain, entities)
-        for _domain, _entities in domain_entities.items():
-            if not multi_dataset:
-                passes.append((_domain, _domain, _entities))
-                continue
-            _by_ds: dict[str, list] = {}
-            for _e in _entities:
-                _by_ds.setdefault(_entity_ds(_e), []).append(_e)
-            _real = {k: v for k, v in _by_ds.items() if k}
-            if len(_real) <= 1:
-                # One (or zero) identifiable dataset — keep the domain whole.
-                passes.append((_domain, _domain, _entities))
-            else:
-                # Split: a labelled pass per dataset. Entities whose dataset can't be
-                # determined ride with the largest group so they're not dropped either.
-                _unknown = _by_ds.get("", [])
-                _primary = max(sorted(_real), key=lambda d: len(_real[d]))
-                for _ds_name in sorted(_real):
-                    _ents = list(_real[_ds_name])
-                    if _ds_name == _primary:
-                        _ents += _unknown
-                    passes.append((f"{_domain} · {_ds_name}", _domain, _ents))
-                logger.info(
-                    "[explorer:%s] Phase 8: %s domain spans %s — splitting into one pass per dataset",
-                    self.connection_id, _domain, sorted(_real),
-                )
+        passes, _pass_splits = _build_domain_passes(domain_entities, multi_dataset, _entity_ds)
+        for _split_domain, _split_datasets in _pass_splits:
+            logger.info(
+                "[explorer:%s] Phase 8: %s domain spans %s — splitting into one pass per dataset",
+                self.connection_id, _split_domain, _split_datasets,
+            )
 
         # ── Industry-aware steering (Business Profile) ──────────────────────────
         # The keystone for industry-aware intelligence. Load the connection's
@@ -3085,6 +3065,51 @@ class SchemaExplorer:
 
 
 # ── Helpers (module-level) ────────────────────────────────────────────────────
+
+def _build_domain_passes(domain_entities, multi_dataset, entity_ds):
+    """Split each ontology domain into per-dataset exploration passes so no uploaded
+    dataset is ever dropped — the "every dataset gets understood" guarantee.
+
+    On a multi-dataset connection a domain's entities can span unrelated uploaded
+    datasets (a Marketing domain over BOTH bakehouse and netflix). Keeping only the
+    dominant dataset's entities silently dropped the rest, so a single-table catalog
+    like ``netflix.netflix_titles`` — which loses every dominance contest — got ZERO
+    exploration and ZERO briefing (it just vanished). Splitting into one pass per
+    dataset keeps every pass single-dataset (so the in-loop isolation guards stay
+    no-ops) and drops nothing; entities whose dataset can't be determined ride with
+    the largest group. ``entity_ds(entity) -> str`` resolves an entity's dataset
+    ('' when unknown); on a single-dataset connection it is never called.
+
+    Returns ``(passes, splits)``: ``passes`` = ``[(pass_label, base_domain, entities)]``
+    (``base_domain`` still drives the angle checklist + insight tagging); ``splits`` =
+    ``[(domain, sorted_datasets)]`` for the caller to log.
+    """
+    passes: list[tuple[str, str, list]] = []   # (pass_label, base_domain, entities)
+    splits: list[tuple[str, list]] = []
+    for _domain, _entities in domain_entities.items():
+        if not multi_dataset:
+            passes.append((_domain, _domain, _entities))
+            continue
+        _by_ds: dict[str, list] = {}
+        for _e in _entities:
+            _by_ds.setdefault(entity_ds(_e), []).append(_e)
+        _real = {k: v for k, v in _by_ds.items() if k}
+        if len(_real) <= 1:
+            # One (or zero) identifiable dataset — keep the domain whole.
+            passes.append((_domain, _domain, _entities))
+        else:
+            # Split: a labelled pass per dataset. Entities whose dataset can't be
+            # determined ride with the largest group so they're not dropped either.
+            _unknown = _by_ds.get("", [])
+            _primary = max(sorted(_real), key=lambda d: len(_real[d]))
+            for _ds_name in sorted(_real):
+                _ents = list(_real[_ds_name])
+                if _ds_name == _primary:
+                    _ents += _unknown
+                passes.append((f"{_domain} · {_ds_name}", _domain, _ents))
+            splits.append((_domain, sorted(_real)))
+    return passes, splits
+
 
 def _find_status_col(col_map: dict) -> Optional[str]:
     """Return the most likely lifecycle/status column in a table's column map."""
