@@ -18,6 +18,7 @@ from aughor.metastore.models import (
     USAGE,
     Catalog,
     Grant,
+    Schema,
     catalog_securable,
     workspace_principal,
 )
@@ -58,6 +59,16 @@ def _ensure_schema(c: sqlite3.Connection) -> None:
         )
     """)
     c.execute("CREATE INDEX IF NOT EXISTS grants_principal ON grants(org_id, principal)")
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS schemas (
+            catalog_id  TEXT NOT NULL,
+            name        TEXT NOT NULL,
+            org_id      TEXT NOT NULL DEFAULT 'default',
+            created_at  TEXT NOT NULL,
+            updated_at  TEXT NOT NULL,
+            PRIMARY KEY (org_id, catalog_id, name)
+        )
+    """)
     c.commit()
 
 
@@ -72,6 +83,13 @@ def _row_to_grant(row: sqlite3.Row) -> Grant:
     return Grant(
         id=row["id"], org_id=row["org_id"], principal=row["principal"],
         securable=row["securable"], privilege=row["privilege"], created_at=row["created_at"],
+    )
+
+
+def _row_to_schema(row: sqlite3.Row) -> Schema:
+    return Schema(
+        catalog_id=row["catalog_id"], name=row["name"], org_id=row["org_id"],
+        created_at=row["created_at"], updated_at=row["updated_at"],
     )
 
 
@@ -177,3 +195,54 @@ def list_grants(org_id: Optional[str] = None, principal: Optional[str] = None,
 def grants_for_workspace(workspace_id: str, org_id: Optional[str] = None) -> List[Grant]:
     """All grants held by a workspace principal."""
     return list_grants(org_id=org_id, principal=workspace_principal(workspace_id))
+
+
+# ── schemas ───────────────────────────────────────────────────────────────────
+
+def upsert_schema(catalog_id: str, name: str, org_id: Optional[str] = None) -> Schema:
+    """Insert or touch a schema (keyed by org_id + catalog_id + name). Idempotent."""
+    oid = org_id or current_org_id()
+    now = _now()
+    c = _conn()
+    c.execute(
+        "INSERT INTO schemas (catalog_id, name, org_id, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?) "
+        "ON CONFLICT(org_id, catalog_id, name) DO UPDATE SET updated_at=excluded.updated_at",
+        (catalog_id, name, oid, now, now),
+    )
+    c.commit()
+    c.close()
+    return Schema(catalog_id=catalog_id, name=name, org_id=oid, created_at=now, updated_at=now)
+
+
+def list_schemas(catalog_id: str, org_id: Optional[str] = None) -> List[Schema]:
+    oid = org_id or current_org_id()
+    c = _conn()
+    rows = c.execute(
+        "SELECT * FROM schemas WHERE org_id=? AND catalog_id=? ORDER BY name", (oid, catalog_id)
+    ).fetchall()
+    c.close()
+    return [_row_to_schema(r) for r in rows]
+
+
+def set_catalog_schemas(catalog_id: str, names: List[str], org_id: Optional[str] = None) -> int:
+    """Reconcile a catalog's schemas to exactly ``names`` (upsert given, delete
+    absent). Returns the number of mutations. The caller supplies the schema names
+    (from live introspection) so this store stays free of DB-introspection."""
+    oid = org_id or current_org_id()
+    desired = set(names)
+    current = {s.name for s in list_schemas(catalog_id, org_id=oid)}
+    changed = 0
+    for n in desired - current:
+        upsert_schema(catalog_id, n, org_id=oid)
+        changed += 1
+    if current - desired:
+        c = _conn()
+        c.executemany(
+            "DELETE FROM schemas WHERE org_id=? AND catalog_id=? AND name=?",
+            [(oid, catalog_id, n) for n in current - desired],
+        )
+        c.commit()
+        c.close()
+        changed += len(current - desired)
+    return changed

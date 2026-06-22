@@ -12,8 +12,11 @@ from aughor.metastore.models import (
     USAGE,
     Catalog,
     Grant,
+    Schema,
     catalog_securable,
+    schema_securable,
     securable_catalog_id,
+    securable_schema,
     workspace_principal,
 )
 from aughor.metastore.store import (
@@ -23,8 +26,11 @@ from aughor.metastore.store import (
     grants_for_workspace,
     list_catalogs,
     list_grants,
+    list_schemas,
     revoke_grant,
+    set_catalog_schemas,
     upsert_catalog,
+    upsert_schema,
 )
 from aughor.metastore.sync import (
     accessible_catalog_ids,
@@ -37,11 +43,13 @@ from aughor.metastore.sync import (
 
 __all__ = [
     # models
-    "Catalog", "Grant", "USAGE",
+    "Catalog", "Grant", "Schema", "USAGE",
     "workspace_principal", "catalog_securable", "securable_catalog_id",
+    "schema_securable", "securable_schema",
     # store
     "upsert_catalog", "get_catalog", "list_catalogs", "delete_catalog",
     "add_grant", "revoke_grant", "list_grants", "grants_for_workspace",
+    "upsert_schema", "list_schemas", "set_catalog_schemas",
     # sync + resolver
     "sync_metastore_from_registry", "ensure_catalogs_for_connections",
     "ensure_grants_for_memberships", "reconcile_workspace_grants",

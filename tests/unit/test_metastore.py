@@ -142,6 +142,29 @@ class TestResolverParity:
         assert granted_catalog_ids("w1") == set()
 
 
+class TestSchemaStore:
+    def test_upsert_list_and_reconcile(self, stores):
+        from aughor.metastore import list_schemas, set_catalog_schemas, upsert_schema
+        upsert_schema("c1", "main")
+        upsert_schema("c1", "main")   # idempotent
+        assert {s.name for s in list_schemas("c1")} == {"main"}
+        # reconcile to a new set → one add, one delete
+        changed = set_catalog_schemas("c1", ["main", "finance"])
+        assert changed == 1 and {s.name for s in list_schemas("c1")} == {"main", "finance"}
+        changed = set_catalog_schemas("c1", ["finance"])
+        assert changed == 1 and {s.name for s in list_schemas("c1")} == {"finance"}
+        assert set_catalog_schemas("c1", ["finance"]) == 0   # idempotent
+
+    def test_full_name_and_securable_roundtrip(self, stores):
+        from aughor.metastore import schema_securable, securable_schema, upsert_schema
+        s = upsert_schema("cat1", "sales")
+        assert s.full_name == "cat1.sales"
+        sec = schema_securable("cat1", "sales")
+        assert sec == "schema:cat1.sales"
+        assert securable_schema(sec) == ("cat1", "sales")
+        assert securable_schema("catalog:cat1") is None   # not a schema securable
+
+
 class TestLiveGate:
     """`accessible_catalog_ids` is the wired data-path gate — reconcile-on-read keeps
     it provably equal to `workspace_connection_ids` with no explicit sync."""

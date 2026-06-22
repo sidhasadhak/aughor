@@ -110,6 +110,14 @@ async def get_catalog_tree(workspace_id: str | None = None):
             if allowed is not None and cid not in allowed:
                 continue  # not in the active workspace — don't surface its schema
             schemas = _quick_schemas(cid, conn_info.get("conn_type", "duckdb"))
+            # Keep the metastore's first-class Schema rows tracking live introspection
+            # (catalog.schema namespace). Best-effort — never break the tree build.
+            try:
+                from aughor.metastore import set_catalog_schemas
+                set_catalog_schemas(cid, [s["name"] for s in schemas])
+            except Exception as exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(exc, "metastore schema sync", counter="metastore.schema_sync")
             entries.append({
                 "conn_id": cid,
                 "name": conn_info["name"],
