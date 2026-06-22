@@ -30,7 +30,7 @@ DOSSIER_VERSION = 1
 
 
 def _bare(table: str) -> str:
-    """Bare table name, schema-qualifier stripped, lowercased. ``_tables_in_sql``
+    """Bare table name, schema-qualifier stripped, lowercased. ``scope.tables_in_sql``
     yields schema-qualified names (``ecommerce.orders``) while the structural facts
     are keyed bare (``orders``); normalising both sides is what makes the slice match
     (an exact compare silently dropped every fact — caught in live verification)."""

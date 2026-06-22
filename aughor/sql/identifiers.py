@@ -95,7 +95,7 @@ def qualify_table_names(
     On a multi-dataset connection the LLM often drops the schema qualifier — ``FROM
     reviews`` instead of ``FROM ecommerce.reviews``. DuckDB has no cross-schema search
     path, so that errors with "Table with name reviews does not exist"; worse, a bare
-    name hides a *cross-dataset* reference from :func:`_crosses_datasets` (which only
+    name hides a *cross-dataset* reference from :func:`~aughor.explorer.scope.crosses_datasets` (which only
     sees qualified names), letting a bakehouse-domain query silently reach into the
     ecommerce schema. Qualifying makes a same-dataset reference runnable and exposes a
     cross-dataset one to the guard.

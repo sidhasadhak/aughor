@@ -57,6 +57,11 @@ from aughor.explorer.windowing import (
     role_aware_time_window,
     window_for_tables,
 )
+from aughor.explorer.scope import (
+    dataset_of,
+    tables_in_sql,
+    crosses_datasets,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -105,41 +110,6 @@ _ACTIVE_SUBS   = ("pend", "process", "approv", "creat", "open", "activ", "run", 
 
 
 # _NO_DATA_RE moved to explorer/verify.py (with is_degenerate_result, its only user besides revalidate).
-
-
-# A connection can hold several UNRELATED uploaded datasets, each landing in its own
-# schema (e.g. a bakehouse CRM in `bakehouse.*` + an ecommerce store in `ecommerce.*`).
-# They share no real key, so any join across them is a hallucination — exactly the
-# `bakehouse.sales_customers ⋈ ecommerce.orders` garbage that produced a broken finding.
-# "Dataset" = the schema path (everything before the table name). The inferred join map
-# can't be trusted to separate them (it had a false-positive cross-schema edge), so the
-# schema is the reliable boundary.
-
-def _dataset_of(tbl: str) -> str:
-    """Schema path of a (possibly qualified) table name; '' when unqualified."""
-    parts = str(tbl).split(".")
-    return ".".join(parts[:-1]) if len(parts) > 1 else ""
-
-
-def _tables_in_sql(sql: str) -> set:
-    """Real (non-CTE) qualified table names referenced by a SQL string. Best-effort.
-
-    Delegates to the shared, CTE-safe extractor (aughor/sql/tables.py) so the
-    explorer's dataset-isolation guard, the chat scope guard, and the read-only
-    gate all share one tested table-extraction primitive (scope traversal +
-    flat fallback) instead of three ad-hoc walks."""
-    from aughor.sql.tables import extract_tables
-    return {r.qualified() for r in extract_tables(sql)}
-
-
-def _crosses_datasets(sql: str) -> bool:
-    """True when the SQL references real tables from ≥2 distinct schemas (datasets) — a
-    join across unrelated uploaded datasets. Operates on the generated SQL's *qualified*
-    table refs, so it works regardless of how the ontology stored source tables. Tables
-    with no schema qualifier are ignored (they can't be cross-dataset)."""
-    datasets = {_dataset_of(t) for t in _tables_in_sql(sql)}
-    datasets.discard("")
-    return len(datasets) > 1
 
 
 # The pre-emission trust gate + structural guards live in verify.py; the metric-naming layer in
@@ -408,7 +378,7 @@ class SchemaExplorer:
         if not self.schema_name:
             return False
         mine = self.schema_name.lower()
-        other = {_dataset_of(t).lower() for t in _tables_in_sql(sql)} - {mine, ""}
+        other = {dataset_of(t).lower() for t in tables_in_sql(sql)} - {mine, ""}
         return bool(other)
 
     # ── External control ──────────────────────────────────────────────────────
@@ -475,7 +445,7 @@ class SchemaExplorer:
             from aughor.kernel.ledger import Ledger
             from aughor.kernel.jobs import current_job_id
             _lineage = [("source_sql", "sql", sql)]
-            for _tbl in sorted(_tables_in_sql(sql))[:8]:
+            for _tbl in sorted(tables_in_sql(sql))[:8]:
                 _lineage.append(("input", f"table:{_tbl}", None))
             _lineage.append(("validated_by", "guard:numeric_grounding",
                              "all magnitudes matched result cells"))
@@ -1761,14 +1731,14 @@ class SchemaExplorer:
         # schemas (e.g. bakehouse + ecommerce). The generated SQL is schema-qualified, so a
         # bare→dataset map lets us also restrict the table context the LLM sees. No-op for a
         # single-schema connection.
-        _all_datasets = {_dataset_of(t) for t in (tp or {}) if _dataset_of(t)}
+        _all_datasets = {dataset_of(t) for t in (tp or {}) if dataset_of(t)}
         multi_dataset = len(_all_datasets) > 1
-        _bare2dataset = {str(q).split(".")[-1].lower(): _dataset_of(q)
-                         for q in (tp or {}) if _dataset_of(q)}
+        _bare2dataset = {str(q).split(".")[-1].lower(): dataset_of(q)
+                         for q in (tp or {}) if dataset_of(q)}
 
         def _ds(tbl):
             """Dataset (schema) of a possibly-bare table, via the qualified-table universe."""
-            return _dataset_of(tbl) or _bare2dataset.get(str(tbl).split(".")[-1].lower(), "")
+            return dataset_of(tbl) or _bare2dataset.get(str(tbl).split(".")[-1].lower(), "")
 
         if multi_dataset:
             logger.info("[explorer:%s] Phase 8: multi-dataset connection %s — isolating datasets",
@@ -2447,10 +2417,10 @@ class SchemaExplorer:
                 # Dataset-isolation guard: if the LLM still wrote a cross-dataset join,
                 # drop it — a hallucinated join between unrelated uploaded datasets that can
                 # only return garbage (the bakehouse ⋈ ecommerce class).
-                if multi_dataset and _crosses_datasets(nq.sql):
+                if multi_dataset and crosses_datasets(nq.sql):
                     logger.info(
                         "[explorer:%s] Phase 8: %s/%s — skipping cross-dataset join: %s",
-                        self.connection_id, domain, nq.angle, sorted(_tables_in_sql(nq.sql)),
+                        self.connection_id, domain, nq.angle, sorted(tables_in_sql(nq.sql)),
                     )
                     used += 1
                     budgets[domain] = used
@@ -2477,7 +2447,7 @@ class SchemaExplorer:
                 # cost column (missimi) can't mask a cost-less one (bakehouse).
                 try:
                     from aughor.semantic.metric_feasibility import unsupported_metric_gap
-                    _q_tables = {t.lower() for t in _tables_in_sql(nq.sql)}
+                    _q_tables = {t.lower() for t in tables_in_sql(nq.sql)}
                     _q_bare = {t.split(".")[-1] for t in _q_tables}
                     _q_cols = {
                         c for tk, cols in (sql_writer.table_cols or {}).items()
@@ -3167,7 +3137,7 @@ class SchemaExplorer:
                         rationale=getattr(interp, "rationale", "") or "",
                         rows=rows,
                         grounding=_g,
-                        tables=_tables_in_sql(sql),
+                        tables=tables_in_sql(sql),
                         state=self._state,
                         generated_at=insight["generated_at"],
                         data_fingerprint=self._state.get("schema_fingerprint"),

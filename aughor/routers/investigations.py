@@ -1657,7 +1657,7 @@ async def _build_origin_finding(
     ``insight_id``; falls back to the lightweight ``seed_context``/``seed_sql`` a caller
     passed inline (a finding predating dossier capture, or a chart drill). Best-effort.
     """
-    from aughor.explorer.agent import _tables_in_sql
+    from aughor.explorer.scope import tables_in_sql
     if insight_id:
         try:
             from aughor.kernel.ledger import Ledger
@@ -1675,7 +1675,7 @@ async def _build_origin_finding(
                     "insight_id": insight_id,
                     "finding": (dossier.get("finding") or "").strip(),
                     "sql": _sql,
-                    "tables": sorted(_tables_in_sql(_sql)) if _sql else [],
+                    "tables": sorted(tables_in_sql(_sql)) if _sql else [],
                     "result_cells": (dossier.get("result_cells") or "").strip(),
                     "structural": joins,
                     "narrative": (dossier.get("narrative") or "").strip(),
@@ -1690,7 +1690,7 @@ async def _build_origin_finding(
             "insight_id": insight_id or "",
             "finding": _sc,
             "sql": _sq,
-            "tables": sorted(_tables_in_sql(_sq)) if _sq else [],
+            "tables": sorted(tables_in_sql(_sq)) if _sq else [],
             "result_cells": "",
             "structural": [],
             "narrative": "",
