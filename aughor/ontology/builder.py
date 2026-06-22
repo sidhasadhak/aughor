@@ -15,8 +15,11 @@ Build pipeline:
 """
 from __future__ import annotations
 
+import logging
 import re
 from typing import TYPE_CHECKING, Optional
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from aughor.tools.profiler import ColumnProfile, TableProfile
@@ -980,6 +983,50 @@ def extract_structural_ontology(
         table_to_entity=table_to_entity,
         relationship_index=relationship_index,
     )
+
+
+def _edge_key(t1, c1, t2, c2) -> frozenset:
+    """Order-independent, qualification-tolerant key for a join edge — bare table stem + lc col."""
+    a = (str(t1).split(".")[-1].lower(), str(c1).lower())
+    b = (str(t2).split(".")[-1].lower(), str(c2).lower())
+    return frozenset({a, b})
+
+
+def apply_join_verifications(graph: "OntologyGraph", verified: list, rejected: list) -> "OntologyGraph":
+    """Persist joinable_with into the ontology: stamp each relationship's probed ``value_overlap``
+    and DROP the value-disjoint name-coincidences (a relationship whose two keys hold disjoint
+    values is not a real edge — keeping it lets a consumer draw a fabricating join). The verified
+    FKs get ``join_confidence='verified'``; an unprobeable edge (overlap −1) is left untouched
+    (fail-open — never demote what we couldn't check). Rebuilds ``relationship_index`` from the
+    survivors. Mutates + returns ``graph``; pure w.r.t. the DB (the caller does the probing)."""
+    ov_by_edge: dict = {}
+    for vj in (verified or []):
+        ov_by_edge[_edge_key(vj.t1, vj.c1, vj.t2, vj.c2)] = vj.overlap
+    rejected_edges = {_edge_key(vj.t1, vj.c1, vj.t2, vj.c2) for vj in (rejected or [])}
+
+    survivors: dict = {}
+    dropped = 0
+    for rid, rel in graph.relationships.items():
+        k = _edge_key(rel.from_table, rel.from_col, rel.to_table, rel.to_col)
+        if k in rejected_edges:
+            dropped += 1
+            continue                              # value-disjoint coincidence → not a real edge
+        ov = ov_by_edge.get(k)
+        if ov is not None and ov >= 0:
+            rel.value_overlap = ov
+            rel.join_confidence = "verified"
+        survivors[rid] = rel
+
+    graph.relationships = survivors
+    idx: dict = {eid: [] for eid in graph.entities}
+    for rel in survivors.values():
+        idx.setdefault(rel.from_entity, []).append(rel.to_entity)
+        idx.setdefault(rel.to_entity, []).append(rel.from_entity)
+    graph.relationship_index = idx
+    if dropped:
+        logger.info("[ontology:%s] dropped %d value-disjoint relationship(s) at build time",
+                    graph.connection_id, dropped)
+    return graph
 
 
 # ── Schema context rendering ──────────────────────────────────────────────────

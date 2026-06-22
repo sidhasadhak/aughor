@@ -304,6 +304,27 @@ def get_or_build_ontology(
             from aughor.kernel.errors import tolerate
             tolerate(exc, "measure-grain stamping is best-effort; the runtime probe still covers it",
                      counter="ontology.grain_stamp_failed")
+        # joinable_with — value-verify each relationship's join edge and persist the verdict as a
+        # first-class ontology fact (cross-process, reviewable, override-able), not just the
+        # in-process catalog cache: stamp the real FKs' overlap and DROP value-disjoint name
+        # coincidences so the saved graph never carries a fabricating edge. Build-time + cached.
+        try:
+            from aughor.sql.join_guard import verify_join_edges
+            from aughor.ontology.builder import apply_join_verifications
+            from aughor.db.connection import open_connection_for
+            edges = [{"t1": r.from_table, "c1": r.from_col, "t2": r.to_table, "c2": r.to_col,
+                      "match": r.join_confidence} for r in graph.relationships.values()]
+            if edges:
+                _vdb = open_connection_for(connection_id)
+                try:
+                    _verified, _rejected = verify_join_edges(_vdb, edges)
+                finally:
+                    _vdb.close()
+                apply_join_verifications(graph, _verified, _rejected)
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "ontology join value-verification is best-effort; catalog probe still covers it",
+                     counter="ontology.join_verify_failed")
         # Persist ONLY the structural graph to the fingerprint cache — learned
         # skills must never be baked in (they'd be wiped on rebuild and would
         # pollute the structural fingerprint).  Overlay happens after save.
